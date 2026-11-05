@@ -100,7 +100,8 @@ fn task_panic_releases_reservation_and_pending_tasks_finish() {
             effective_mount_path: directory.path().to_owned(),
         })
         .collect();
-    let result = std::panic::catch_unwind(|| download_all_parallel_with_runner(tasks, runner));
+    let result =
+        std::panic::catch_unwind(|| download_all_parallel_with_runner(tasks, runner, None));
 
     assert!(matches!(result, Ok(false)));
     for index in 1..10 {

@@ -88,4 +88,55 @@ impl CleanupDirectory {
     pub(super) fn proc_path(&self) -> PathBuf {
         PathBuf::from("/proc/self/fd").join(self.0.as_raw_fd().to_string())
     }
+
+    pub(super) fn metadata(&self) -> io::Result<fs::Metadata> {
+        self.0.metadata()
+    }
+
+    #[cfg(target_os = "linux")]
+    pub(super) fn rename_child_to(
+        &self,
+        name: &OsStr,
+        destination: &Self,
+        destination_name: &OsStr,
+    ) -> io::Result<()> {
+        let basename = |name: &OsStr| {
+            if name.as_bytes().is_empty() || name.as_bytes().contains(&b'/') {
+                return Err(io::Error::other("rename requires a non-empty basename"));
+            }
+            CString::new(name.as_bytes()).map_err(io::Error::other)
+        };
+        let name = basename(name)?;
+        let destination_name = basename(destination_name)?;
+        // SAFETY: both parents own live directory descriptors and both names
+        // are validated NUL-terminated basenames. NOREPLACE never overwrites
+        // another runtime child, including after a destination-name race.
+        let result = unsafe {
+            libc::renameat2(
+                self.0.as_raw_fd(),
+                name.as_ptr(),
+                destination.0.as_raw_fd(),
+                destination_name.as_ptr(),
+                libc::RENAME_NOREPLACE,
+            )
+        };
+        if result == 0 {
+            Ok(())
+        } else {
+            Err(io::Error::last_os_error())
+        }
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    pub(super) fn rename_child_to(
+        &self,
+        _name: &OsStr,
+        _destination: &Self,
+        _destination_name: &OsStr,
+    ) -> io::Result<()> {
+        Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "deferred Memory cleanup requires Linux renameat2",
+        ))
+    }
 }

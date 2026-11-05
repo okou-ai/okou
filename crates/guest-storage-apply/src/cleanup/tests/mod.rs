@@ -266,6 +266,7 @@ fn cleanup_mountpoint_continues_after_protected_root_entry() {
                 remove_entry(entry)
             }
         },
+        remove_directory_tree,
     );
 
     assert!(success);

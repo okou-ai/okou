@@ -13,6 +13,13 @@
 //! downloads. A failure stops later phases; a later failure does not restore
 //! completed filesystem changes.
 //!
+//! The explicit runtime entry points may isolate a replaced, disjoint Memory
+//! tree under the existing private runtime parent. Active paths are cleared
+//! before replacement; existing post-Run preparation owns physical deletion
+//! before reuse or Home publication. Allocation pressure can reclaim that exact
+//! discarded tree and retry an affected disjoint target once. Ordinary library
+//! entry points retain synchronous removal.
+//!
 //! Downloads whose targets do not overlap may run concurrently. A failed task
 //! does not cancel its siblings, so a `false` result can coexist with targets
 //! successfully materialized by other tasks. Archives extract in place, so a
@@ -62,6 +69,7 @@ pub mod input_telemetry;
 mod instructions;
 mod manifest;
 mod plan;
+mod quarantine;
 mod source;
 mod tar_metadata;
 mod telemetry;
@@ -71,6 +79,7 @@ use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
 use manifest::ManifestLoadError;
 use plan::{EmptyArtifactPreparation, RunPlan};
 use std::fs;
+use std::path::Path;
 use std::time::Instant;
 
 const LOG_TAG: &str = "sandbox:guest-storage-apply";
@@ -84,6 +93,16 @@ const LOG_TAG: &str = "sandbox:guest-storage-apply";
 /// starts, `false` does not roll back completed filesystem changes. See the
 /// manifest application section in the [`crate`] documentation for details.
 pub fn run(manifest_path: &str) -> bool {
+    run_path_in_runtime(manifest_path, None)
+}
+
+/// Apply a manifest with discarded Memory owned by the existing runtime cleanup.
+/// Noncanonical runtime layouts retain synchronous cleanup.
+pub fn run_in_runtime(manifest_path: &str, runtime_dir: &Path) -> bool {
+    run_path_in_runtime(manifest_path, Some(runtime_dir))
+}
+
+fn run_path_in_runtime(manifest_path: &str, runtime_dir: Option<&Path>) -> bool {
     let manifest = match manifest::load(manifest_path) {
         Ok(manifest) => manifest,
         Err(ManifestLoadError::Read(e)) => {
@@ -96,7 +115,7 @@ pub fn run(manifest_path: &str) -> bool {
         }
     };
 
-    run_manifest(manifest)
+    run_manifest_with_files_in_runtime(manifest, Vec::new(), runtime_dir)
 }
 
 /// Apply a manifest supplied as JSON bytes.
@@ -108,6 +127,15 @@ pub fn run(manifest_path: &str) -> bool {
 /// back completed filesystem changes. See the manifest application section in
 /// the [`crate`] documentation for details.
 pub fn run_manifest_bytes(manifest_json: &[u8]) -> bool {
+    run_manifest_bytes_in_context(manifest_json, None)
+}
+
+/// Apply canonical manifest bytes with the captured per-Run cleanup lifetime.
+pub fn run_manifest_bytes_in_runtime(manifest_json: &[u8], runtime_dir: &Path) -> bool {
+    run_manifest_bytes_in_context(manifest_json, Some(runtime_dir))
+}
+
+fn run_manifest_bytes_in_context(manifest_json: &[u8], runtime_dir: Option<&Path>) -> bool {
     let manifest = match manifest::parse(manifest_json) {
         Ok(manifest) => manifest,
         Err(e) => {
@@ -116,11 +144,20 @@ pub fn run_manifest_bytes(manifest_json: &[u8]) -> bool {
         }
     };
 
-    run_manifest(manifest)
+    run_manifest_with_files_in_runtime(manifest, Vec::new(), runtime_dir)
 }
 
 /// Apply bounded binary storage input after validating all mount bindings and files.
 pub fn run_storage_files_bytes(input: &[u8]) -> bool {
+    run_storage_files_in_context(input, None)
+}
+
+/// Apply validated decoded files with the captured per-Run cleanup lifetime.
+pub fn run_storage_files_bytes_in_runtime(input: &[u8], runtime_dir: &Path) -> bool {
+    run_storage_files_in_context(input, Some(runtime_dir))
+}
+
+fn run_storage_files_in_context(input: &[u8], runtime_dir: Option<&Path>) -> bool {
     use input_telemetry::{InputPhase, measure_phase, record_payload_size};
 
     let parsed = (|| {
@@ -147,7 +184,7 @@ pub fn run_storage_files_bytes(input: &[u8]) -> bool {
         Ok::<_, std::io::Error>((manifest, files))
     })();
     match parsed {
-        Ok((manifest, files)) => run_manifest_with_files(manifest, files),
+        Ok((manifest, files)) => run_manifest_with_files_in_runtime(manifest, files, runtime_dir),
         Err(error) => {
             log_error!(LOG_TAG, "Invalid decoded storage input: {error}");
             false
@@ -155,13 +192,10 @@ pub fn run_storage_files_bytes(input: &[u8]) -> bool {
     }
 }
 
-fn run_manifest(manifest: Manifest) -> bool {
-    run_manifest_with_files(manifest, Vec::new())
-}
-
-fn run_manifest_with_files(
+fn run_manifest_with_files_in_runtime(
     manifest: Manifest,
     files: Vec<guest_contracts::storage_files::StorageFiles>,
+    runtime_dir: Option<&Path>,
 ) -> bool {
     let plan_start = Instant::now();
     let mut plan = RunPlan::from_manifest(&manifest);
@@ -179,6 +213,16 @@ fn run_manifest_with_files(
         };
         task.set_files(group.files);
     }
+    let quarantine = match runtime_dir
+        .map(|runtime| quarantine::Quarantine::for_manifest(&manifest, runtime))
+        .transpose()
+    {
+        Ok(quarantine) => quarantine.flatten(),
+        Err(error) => {
+            log_error!(LOG_TAG, "Failed to prepare private Memory cleanup: {error}");
+            return false;
+        }
+    };
     record_sandbox_op(
         "guest_storage_apply_plan_build",
         plan_start.elapsed(),
@@ -204,7 +248,15 @@ fn run_manifest_with_files(
         .map(|entry| entry.mount_path.clone())
         .collect::<Vec<_>>();
     let stale_cleanup = telemetry::CleanupPhase::StalePaths.measure(cleanup_paths.len(), || {
-        cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots)
+        match quarantine.as_deref() {
+            Some(quarantine) => cleanup::cleanup_stale_paths_with_quarantine(
+                &cleanup_paths,
+                &preserved_paths,
+                &retained_roots,
+                quarantine,
+            ),
+            None => cleanup::cleanup_stale_paths(&cleanup_paths, &preserved_paths, &retained_roots),
+        }
     });
     let instruction_cleanup = stale_cleanup.success().then(|| {
         telemetry::CleanupPhase::Instructions.measure(instruction_cleanups.len(), || {
@@ -233,33 +285,34 @@ fn run_manifest_with_files(
     // Resolve all logical and physical target identities before downloads.
     // The scheduler uses both identities to serialize overlapping extraction.
     let target_prepare_start = Instant::now();
-    let download_tasks = match download::prepare_download_tasks(download_tasks) {
-        Ok(download_tasks) => {
-            record_sandbox_op(
-                "guest_storage_apply_target_prepare",
-                target_prepare_start.elapsed(),
-                true,
-                None,
-            );
-            download_tasks
-        }
-        Err(e) => {
-            record_sandbox_op(
-                "guest_storage_apply_target_prepare",
-                target_prepare_start.elapsed(),
-                false,
-                None,
-            );
-            log_error!(LOG_TAG, "{e}");
-            return false;
-        }
-    };
+    let download_tasks =
+        match download::prepare_download_tasks(download_tasks, quarantine.as_deref()) {
+            Ok(download_tasks) => {
+                record_sandbox_op(
+                    "guest_storage_apply_target_prepare",
+                    target_prepare_start.elapsed(),
+                    true,
+                    None,
+                );
+                download_tasks
+            }
+            Err(e) => {
+                record_sandbox_op(
+                    "guest_storage_apply_target_prepare",
+                    target_prepare_start.elapsed(),
+                    false,
+                    None,
+                );
+                log_error!(LOG_TAG, "{e}");
+                return false;
+            }
+        };
     if !prepare_empty_artifacts(&empty_artifacts) {
         return false;
     }
 
     let scheduler_start = Instant::now();
-    let success = download::download_all_parallel(download_tasks);
+    let success = download::download_all_parallel(download_tasks, quarantine);
     record_sandbox_op(
         "guest_storage_apply_archive_scheduler",
         scheduler_start.elapsed(),
