@@ -985,6 +985,11 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
+    module: "instructions",
+    contracts: ["instructionsContract"],
+    bindings: [],
+  },
+  {
     module: "integrations",
     contracts: [
       "integrationsFeishuDownloadFileContract",

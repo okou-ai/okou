@@ -375,6 +375,10 @@ export const clientDescriptorManifest = [
     contracts: ["imageIoGenerateContract"],
   },
   {
+    module: "instructions",
+    contracts: ["instructionsContract"],
+  },
+  {
     module: "integrations-agentphone",
     contracts: ["integrationsAgentPhoneContract"],
   },

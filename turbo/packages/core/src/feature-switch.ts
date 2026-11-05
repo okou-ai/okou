@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.SingleAgent]: {
+    maintainer: "lancy@okou.ai",
+    displayName: "My Okou",
+    description:
+      "Use personal Instructions and workspace Workflows with one Okou experience.",
+    enabled: false,
+  },
   [FeatureSwitchKey.FriendReferrals]: {
     maintainer: "yuma@okou.ai",
     displayName: "Friend referrals",

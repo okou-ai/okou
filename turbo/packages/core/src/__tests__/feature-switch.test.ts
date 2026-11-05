@@ -26,6 +26,22 @@ describe("FeatureSwitchKey", () => {
 });
 
 describe("isFeatureEnabled", () => {
+  it("keeps My Okou off for staff and external users until a member opts in", () => {
+    const key = FeatureSwitchKey.SingleAgent;
+    for (const context of [
+      { userId: "staff-member", orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" },
+      { userId: "external-member", orgId: "external-org" },
+    ]) {
+      expect(getAllFeatureStates(context)[key]).toBe(false);
+      expect(
+        getAllFeatureStates({ ...context, overrides: { [key]: true } })[key],
+      ).toBe(true);
+      expect(
+        getAllFeatureStates({ ...context, overrides: { [key]: false } })[key],
+      ).toBe(false);
+    }
+  });
+
   it("defaults CJK emphasis on for everyone and honors explicit overrides", () => {
     const key = FeatureSwitchKey.MarkdownCjkEmphasis;
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };

@@ -5,6 +5,18 @@
  * typing.
  */
 export { initContract } from "./base";
+export {
+  instructionsContract,
+  instructionsRequestSchema,
+  instructionsResponseSchema,
+  type InstructionsContract,
+  type InstructionsRequest,
+  type InstructionsResponse,
+} from "./instructions";
+export {
+  singleAgentRuntimeContextSchema,
+  type SingleAgentRuntimeContext,
+} from "./single-agent";
 export { runnersRunStartupContract } from "./runner-startup";
 export {
   ORG_OPENROUTER_PRESETS,
