@@ -24,7 +24,6 @@ import {
   subscriptionUsageWindows,
 } from "../../lib/subscription-usage-windows.ts";
 import { now } from "../../lib/time.ts";
-import { SubscriptionUsageRingPosition } from "./subscription-usage-ring.tsx";
 import { ProviderIcon } from "./components/settings/provider-icons.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { formatSubscriptionCredits } from "./subscription-credits-format.ts";
@@ -62,9 +61,7 @@ export function AccountMenuSubscriptionsPanel({
   onOpenUsage,
   resetPending = false,
   resetControl = "menu",
-  showRingPosition = false,
 }: {
-  readonly showRingPosition?: boolean;
   readonly loading: boolean;
   readonly rows: readonly AccountMenuSubscriptionUsageRow[];
   readonly onResetCodexUsage?: (resetCredits: number | null) => void;
@@ -86,7 +83,6 @@ export function AccountMenuSubscriptionsPanel({
                 <AccountMenuSubscriptionProviderSection
                   key={row.type}
                   row={row}
-                  showRingPosition={showRingPosition}
                   resetPending={resetPending}
                   resetControl={resetControl}
                   onResetCodexUsage={onResetCodexUsage}
@@ -136,14 +132,12 @@ function AccountMenuSubscriptionsSkeleton() {
 
 function AccountMenuSubscriptionProviderSection({
   row,
-  showRingPosition,
   resetPending,
   resetControl,
   onResetCodexUsage,
   onOpenUsage,
 }: {
   readonly row: AccountMenuSubscriptionUsageRow;
-  readonly showRingPosition: boolean;
   readonly resetPending: boolean;
   readonly resetControl: "menu" | "button";
   readonly onResetCodexUsage?: (resetCredits: number | null) => void;
@@ -212,7 +206,6 @@ function AccountMenuSubscriptionProviderSection({
           <SubscriptionProviderHeading
             type={row.type}
             label={label}
-            showRingPosition={showRingPosition}
             showAction={onOpenUsage !== undefined}
           />
           <div className="flex flex-col gap-2">
@@ -264,20 +257,17 @@ function AccountMenuSubscriptionProviderSection({
 
 function SubscriptionProviderHeading({
   type,
-  showRingPosition,
   label,
   showAction,
 }: {
   readonly type: AccountMenuSubscriptionUsageRow["type"];
   readonly label: string;
-  readonly showRingPosition: boolean;
   readonly showAction: boolean;
 }) {
   return (
     <h3 className="flex items-center gap-2 font-medium">
       <ProviderIcon type={type} size={16} />
       {label}
-      {showRingPosition && <SubscriptionUsageRingPosition type={type} />}
       {showAction && (
         <ChevronRight
           aria-hidden="true"

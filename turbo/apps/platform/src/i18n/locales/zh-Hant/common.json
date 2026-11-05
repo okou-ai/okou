@@ -5355,10 +5355,8 @@
         "credits": "點數",
         "fiveHourLimit": "5 小時額度",
         "label": "訂閱用量",
-        "leftSide": "左側",
         "lowUsage": "訂閱用量：剩餘額度低於 20%",
         "resetTimeUnavailable": "重置時間不可用",
-        "rightSide": "右側",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩餘用量",
         "weeklyLimit": "每週額度"
