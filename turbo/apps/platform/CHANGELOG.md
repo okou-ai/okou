@@ -13,6 +13,33 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1095.3](https://github.com/okou-ai/okou/compare/app-v0.1095.2...app-v0.1095.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** show the invitation code on ordinary signup ([#45329](https://github.com/okou-ai/okou/issues/45329)) ([bf51d83](https://github.com/okou-ai/okou/commit/bf51d83cc891f6d7ec34f5f9941425d7e110f27c))
+* **browser:** expire operation failure notices after three seconds ([#45331](https://github.com/okou-ai/okou/issues/45331)) ([e5d43fd](https://github.com/okou-ai/okou/commit/e5d43fd0a12ad79f1dfc69e24c6ceb20e2d0be29))
+
+
+### Refactoring
+
+* **platform:** centralize async helpers with lint tracking ([#45326](https://github.com/okou-ai/okou/issues/45326)) ([1a5864b](https://github.com/okou-ai/okou/commit/1a5864be4fc4fb5415814c23d06de2b78ab7d310))
+
+
+### Performance Improvements
+
+* **app:** cache chat connector overview and refresh changed targets ([#45294](https://github.com/okou-ai/okou/issues/45294)) ([1b68448](https://github.com/okou-ai/okou/commit/1b684482eb01e7ff92d743ae140f7d6ea5932c1d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.2
+    * @okouai/core bumped to 8.818.2
+    * @okouai/ui bumped to 1.19.1
+
 ## [0.1095.2](https://github.com/okou-ai/okou/compare/app-v0.1095.1...app-v0.1095.2) (2026-11-05)
 
 
