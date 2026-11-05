@@ -179,11 +179,15 @@ test("The breadcrumb links back to the Agent chat", async () => {
 
   await setupPage({ context, path: IDEAS_PATH });
   await screen.findByText("Browser screenshots");
-  const back = queryAllByRoleFast("link", screen.getByRole("main")).find(
-    (link) => {
-      return link.textContent === "Chat";
-    },
-  );
+  const breadcrumb = screen.getAllByRole("navigation").find((nav) => {
+    return nav.textContent === "Chat/Ideas & Use Cases";
+  });
+  if (!breadcrumb) {
+    throw new Error("Expected the ideas page breadcrumb");
+  }
+  const back = queryAllByRoleFast("link", breadcrumb).find((link) => {
+    return link.textContent === "Chat";
+  });
   if (!back) {
     throw new Error("Expected the breadcrumb link back to the chat");
   }
