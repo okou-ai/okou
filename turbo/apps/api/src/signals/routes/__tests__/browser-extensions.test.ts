@@ -47,7 +47,7 @@ function providerFixture(rejectCreate = false) {
   onTestFinished(completeInstallation);
 
   function session(id: string, status: "active" | "stopped") {
-    const webSocketUrl = `wss://${id}.cdp.browser-use.com/devtools/browser/test`;
+    const webSocketUrl = `wss://${id}.cdp.browser-use.com/`;
     return {
       id,
       status,
@@ -93,7 +93,8 @@ function providerFixture(rejectCreate = false) {
         );
       }
       const id = randomUUID();
-      const webSocketUrl = `wss://${id}.cdp.browser-use.com/devtools/browser/test`;
+      // The returned HTTPS gateway also accepts direct WSS at the same URL.
+      const webSocketUrl = `wss://${id}.cdp.browser-use.com/`;
       sessions.set(id, { status: "active" });
       server.use(
         http.get(`https://${id}.cdp.browser-use.com/json/version`, () => {
