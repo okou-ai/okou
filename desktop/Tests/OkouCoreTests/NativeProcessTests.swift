@@ -650,6 +650,7 @@ final class NativeProcessTests: XCTestCase {
     let executor = CommandExecutor(helper: helper)
     let response = await listApps(executor)
     XCTAssertEqual(response["status"].string, "failed")
+    await fulfillment(of: [collector.expectation(eventCount: 1)], timeout: 5)
     let event = try XCTUnwrap(collector.events().first)
     XCTAssertEqual(event["tags"]["nativeHelperFailure"].string, "launch_failed")
     XCTAssertFalse(event.formatted.contains("private-helper-installation"))
