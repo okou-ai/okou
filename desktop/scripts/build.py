@@ -242,7 +242,7 @@ def notarize(artifact, profile):
     raise RuntimeError(f"Notarization did not complete: {submission}")
 
 
-def package(app, identity, profile, should_notarize, output):
+def package(app, identity, profile, should_notarize, output, package_format):
     info = plistlib.loads((app / "Contents/Info.plist").read_bytes())
     name, version = info["CFBundleName"], info["CFBundleShortVersionString"]
     output.mkdir(parents=True, exist_ok=True)
@@ -254,6 +254,9 @@ def package(app, identity, profile, should_notarize, output):
         notarize(archive, profile)
         run("xcrun", "stapler", "staple", app)
         run("ditto", "-c", "-k", "--sequesterRsrc", "--keepParent", app, archive)
+    if package_format == "zip":
+        print(archive)
+        return
     with tempfile.TemporaryDirectory(prefix="okou-dmg-") as staging:
         run("ditto", app, Path(staging) / app.name)
         (Path(staging) / "Applications").symlink_to("/Applications")
@@ -294,13 +297,19 @@ def main():
     parser.add_argument("--sign", default="-", metavar="IDENTITY")
     parser.add_argument("--notarize", action="store_true")
     parser.add_argument("--notary-profile")
-    parser.add_argument("--package", action="store_true")
+    parser.add_argument(
+        "--package",
+        nargs="?",
+        choices=("zip", "all"),
+        const="all",
+        help="Create ZIP only, or ZIP and DMG (default when no format is specified)",
+    )
     parser.add_argument("--verify-only", action="store_true")
     args = parser.parse_args()
     if not re.fullmatch(r"\d+\.\d+\.\d+", args.version):
         parser.error("Version must be a numeric major.minor.patch")
-    if args.notarize and (args.sign == "-" or not args.package):
-        parser.error("Notarization requires Developer ID signing and --package")
+    if args.notarize and (args.sign == "-" or args.package != "all"):
+        parser.error("Notarization requires Developer ID signing and --package [all]")
     output = args.output.resolve()
     app = (
         args.app.resolve()
@@ -315,7 +324,9 @@ def main():
         verify_symbols(app, app.parent / "dSYMs")
     verify(app, args.version, args.development)
     if args.package:
-        package(app, args.sign, args.notary_profile, args.notarize, output)
+        package(
+            app, args.sign, args.notary_profile, args.notarize, output, args.package
+        )
     print(app)
 
 

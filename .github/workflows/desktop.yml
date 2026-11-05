@@ -132,7 +132,7 @@ jobs:
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PROD }}
           SENTRY_DSN_DESKTOP: ${{ secrets.SENTRY_DSN_DESKTOP }}
         run: |
-          python3 desktop/scripts/build.py --package
+          python3 desktop/scripts/build.py
           python3 - 'desktop/out/Okou-darwin-arm64/Okou.app/Contents/MacOS/Okou' 'ai.okou.desktop.native-auth' <<'PY'
           import json
           import subprocess
@@ -159,7 +159,7 @@ jobs:
           CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PREVIEW }}
           OKOU_DESKTOP_PLATFORM_URL: ${{ steps.preview.outputs.url }}
         run: |
-          python3 desktop/scripts/build.py --development --package
+          python3 desktop/scripts/build.py --development --package zip
           python3 - 'desktop/out/Okou Dev-darwin-arm64/Okou Dev.app/Contents/MacOS/Okou Dev' 'ai.okou.desktop.dev.native-auth' <<'PY'
           import json
           import subprocess
@@ -171,13 +171,13 @@ jobs:
           print(result.stdout)
           PY
 
-      - name: Stage native packages
+      - name: Stage preview package
+        if: github.event_name == 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: okou-desktop-macos-arm64-staging
           path: |
-            desktop/out/*.zip
-            desktop/out/Okou-darwin-arm64/dSYMs
+            desktop/out/Okou Dev-*.zip
             desktop/out/Okou Dev-darwin-arm64/dSYMs
           if-no-files-found: error
           retention-days: 1
@@ -207,20 +207,12 @@ jobs:
             exit 1
           fi
 
-      - name: Download native packages
+      - name: Download preview package
+        if: github.event_name == 'pull_request'
         uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: okou-desktop-macos-arm64-staging
           path: desktop/out
-
-      - name: Upload production-configured unsigned artifact
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
-        with:
-          name: okou-desktop-macos-arm64-unsigned
-          path: |
-            desktop/out/Okou-darwin-arm64-*.zip
-            desktop/out/Okou-darwin-arm64/dSYMs
-          if-no-files-found: error
 
       - name: Upload preview artifact
         if: github.event_name == 'pull_request'
@@ -231,6 +223,7 @@ jobs:
             desktop/out/Okou Dev-*.zip
             desktop/out/Okou Dev-darwin-arm64/dSYMs
           if-no-files-found: error
+          retention-days: 7
 
   deploy-desktop:
     name: deploy-desktop-macos-arm64
