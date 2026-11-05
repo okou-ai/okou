@@ -16,7 +16,6 @@ export enum FeatureSwitchKey {
   TikTokOAuthConnector = "tiktokOAuthConnector",
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
-  BentomlConnector = "bentomlConnector",
   CanvaConnector = "canvaConnector",
   DeelConnector = "deelConnector",
   DocuSignConnector = "docusignConnector",

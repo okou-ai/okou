@@ -262,11 +262,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the BILL Spend & Expense connector",
     enabled: false,
   },
-  [FeatureSwitchKey.BentomlConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the BentoML model serving connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.CanvaConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Canva design connector",

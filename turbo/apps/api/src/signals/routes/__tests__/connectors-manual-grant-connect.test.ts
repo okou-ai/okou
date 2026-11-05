@@ -882,7 +882,7 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
     );
   });
 
-  it("allows feature-gated manual grant auth outside discovery", async () => {
+  it("connects a BentoML account", async () => {
     await seedFixture();
     const client = setupApp({ context, routes: builtinConnectorsRoutes })(
       builtinConnectorManualGrantContract,
@@ -962,33 +962,5 @@ describe("POST /api/connectors/:connectorSlug/manual-grant", () => {
       "connector:changed",
       { connectorSlug: "openai" },
     );
-  });
-
-  it("allows feature-gated manual grant auth when enabled", async () => {
-    const fixture = await seedFixture();
-    await updateFeatureSwitches(fixture, {
-      [FeatureSwitchKey.BentomlConnector]: true,
-    });
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorManualGrantContract,
-    );
-
-    const response = await accept(
-      client.connect({
-        params: { connectorSlug: "bentoml" },
-        body: {
-          authMethod: "api-token",
-          account: { intent: "add" },
-          values: {
-            apiToken: "bento-token",
-            endpoint: "https://example.bentoml.test",
-          },
-        },
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    expect(response.body).toStrictEqual({ connectionId: expect.any(String) });
   });
 });
