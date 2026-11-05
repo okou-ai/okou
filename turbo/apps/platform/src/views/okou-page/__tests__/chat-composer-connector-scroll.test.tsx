@@ -55,7 +55,7 @@ async function setup(count: number) {
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);
   const popup = await screen.findByRole("dialog", { name: "Connectors" });
-  await within(popup).findByText("Scroll 7", { exact: true });
+  await within(popup).findByText("Scroll 1", { exact: true });
   return { popup, trigger };
 }
 
@@ -195,4 +195,32 @@ test("Keep a valid overview focus destination if the returning connector was rem
   expect(within(overview).queryByText("Scroll 7", { exact: true })).toBeNull();
   expect(overview.scrollTop).toBe(180);
   expect(overview).toHaveFocus();
+});
+
+test("Keep popup focus when the final connector disappears during account navigation", async () => {
+  const user = userEvent.setup();
+  const { popup } = await setup(1);
+  const panel = await openAccountPanel(popup, "Scroll 1");
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ respond }) => {
+      return respond(200, { connector: null });
+    },
+  );
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "scroll-1",
+  });
+  await waitFor(() => {
+    expect(queryFastControl("radio", "Account 1", panel)).toBeNull();
+  });
+  await user.keyboard("{Tab}");
+  await expect(findFastControl("button", "Back", panel)).resolves.toHaveFocus();
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(popup.contains(document.activeElement)).toBeTruthy();
+  });
+  await user.keyboard("{Tab}");
+  await expect(
+    findFastControl("button", "Add connectors", popup),
+  ).resolves.toHaveFocus();
 });

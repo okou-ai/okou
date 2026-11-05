@@ -145,6 +145,7 @@ export function ComposerConnectorMenuShell({
   const { t } = useTranslation();
   return (
     <div
+      ref={!hasContent && !loading ? contentRef : undefined}
       data-connector-panel
       // Base UI focuses this while loading; once ready, search is first.
       tabIndex={loading ? 0 : -1}
