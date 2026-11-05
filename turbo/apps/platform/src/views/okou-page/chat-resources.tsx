@@ -22,9 +22,6 @@ import {
 } from "@okouai/ui";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
-import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
-import { searchParams$ } from "../../signals/route.ts";
-import { SIDEBAR_PARAM } from "../../signals/chat-page/chat-thread-panes.ts";
 import { openThreadCatalogArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
@@ -35,7 +32,8 @@ import { emptyArtifactImg } from "./platform-assets.ts";
 import { ChatOrigin, ChatRelationships } from "./chat-relations.tsx";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { useTitleReveal } from "./use-title-reveal.ts";
-import { useChatHeaderActions } from "./chat-header-actions.ts";
+import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
+import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -52,18 +50,11 @@ export function ChatResourcesButton({
   readonly thread: ChatPanelSignals;
   readonly largeTarget?: boolean;
 }) {
-  const mainThreadId = useGet(currentChatThreadId$);
-  const secondaryThreadId = useGet(searchParams$).get(SIDEBAR_PARAM);
-  // The old pane can remain mounted while the next thread's metadata loads.
-  const current =
-    mainThreadId !== null &&
-    (thread.threadId === mainThreadId || thread.threadId === secondaryThreadId);
   return (
     <ChatResourcesButtonInner
       key={thread.threadId}
       thread={thread}
       largeTarget={largeTarget}
-      current={current}
     />
   );
 }
@@ -71,14 +62,13 @@ export function ChatResourcesButton({
 function ChatResourcesButtonInner({
   thread,
   largeTarget,
-  current,
 }: {
   readonly thread: ChatPanelSignals;
   readonly largeTarget: boolean;
-  readonly current: boolean;
 }) {
   const { t } = useTranslation();
-  const { transitioning } = useChatHeaderActions(thread);
+  // The old pane can remain mounted while the next thread's metadata loads.
+  const transitioning = useChatHeaderTransitioning(thread);
   const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
   const chosen = useGet(resources.chosen$);
@@ -91,7 +81,7 @@ function ChatResourcesButtonInner({
   // button while the underlying sources keep loading into their caches.
   const resourceLoading =
     (requested && settled === null) || preference.state === "loading";
-  const loading = !current || transitioning || resourceLoading;
+  const loading = transitioning || resourceLoading;
   // An automatic opening waits for something to show; a press shows the panel
   // even when it is empty.
   const shown = settled !== null && requested && (settled || chosen !== null);
@@ -103,7 +93,7 @@ function ChatResourcesButtonInner({
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
   const rootSignal = useGet(rootSignal$);
-  const visible = current && !transitioning && shown && boundary !== null;
+  const visible = !transitioning && shown && boundary !== null;
   const copyLabel = t(($) => {
     return $.chat.resources.copyLink;
   });
@@ -344,24 +334,16 @@ function ChatResourcesStatus({
   // and 12px below. The illustration's transparent margin takes the rest, so
   // the visible empty state sits centred.
   return (
-    <div className="flex flex-col items-center px-4 pt-6 pb-5 text-center">
-      <img
-        src={emptyArtifactImg}
-        alt=""
-        role="presentation"
-        className="h-16 w-16 object-contain opacity-80"
-      />
-      <p className="mt-2 text-sm font-medium text-foreground">
-        {t(($) => {
-          return $.chat.resources.emptyTitle;
-        })}
-      </p>
-      <p className="mt-0.5 text-[13px] leading-5 text-muted-foreground">
-        {t(($) => {
-          return $.chat.resources.emptyDescription;
-        })}
-      </p>
-    </div>
+    <ChatPanelEmptyState
+      image={emptyArtifactImg}
+      title={t(($) => {
+        return $.chat.resources.emptyTitle;
+      })}
+      description={t(($) => {
+        return $.chat.resources.emptyDescription;
+      })}
+      className="px-4 pt-6 pb-5"
+    />
   );
 }
 

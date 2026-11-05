@@ -1690,7 +1690,8 @@
       "displaysIn": "Se muestra en {{timezone}}",
       "edit": "Editar automatización",
       "editDescription": "Actualiza esta automatización del flujo de trabajo.",
-      "empty": "Todavía no hay automatizaciones.",
+      "emptyDescription": "Las automatizaciones que se ejecutan en este chat aparecerán aquí.",
+      "emptyTitle": "Aún no hay automatizaciones",
       "event": "Evento",
       "events": {
         "githubDeploymentStatus": "Estado de despliegue de GitHub creado",
@@ -1739,6 +1740,7 @@
         "to": "Para"
       },
       "lastRun": "Última ejecución",
+      "loadFailed": "No se pudieron cargar las automatizaciones",
       "match": "Coincidencia",
       "matchSummary": {
         "allInboundMessages": "Todos los mensajes entrantes",
@@ -2148,7 +2150,8 @@
         "draft": "Borrador",
         "draftOnly": "Las acciones se aplican a los borradores seleccionados",
         "drafts": "Borradores",
-        "empty": "No hay correos en esta conversación",
+        "emptyDescription": "Los borradores y correos enviados de este chat aparecerán aquí.",
+        "emptyTitle": "Aún no hay correos",
         "loadError": "No se pudieron cargar los correos",
         "loading": "Cargando correos",
         "noMatches": "No hay correos coincidentes",

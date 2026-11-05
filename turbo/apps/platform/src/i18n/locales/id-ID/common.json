@@ -1663,7 +1663,8 @@
       "displaysIn": "Ditampilkan di {{timezone}}",
       "edit": "Edit otomatisasi",
       "editDescription": "Perbarui otomatisasi alur kerja ini.",
-      "empty": "Belum ada otomatisasi.",
+      "emptyDescription": "Otomatisasi yang berjalan di chat ini akan muncul di sini.",
+      "emptyTitle": "Belum ada otomatisasi",
       "event": "Peristiwa",
       "events": {
         "githubDeploymentStatus": "Status deployment GitHub dibuat",
@@ -1709,6 +1710,7 @@
         "to": "Ke"
       },
       "lastRun": "Eksekusi terakhir",
+      "loadFailed": "Tidak dapat memuat otomatisasi",
       "match": "Cocokkan",
       "matchSummary": {
         "allInboundMessages": "Semua pesan masuk",
@@ -2107,7 +2109,8 @@
         "draft": "Draf",
         "draftOnly": "Tindakan berlaku untuk draf terpilih",
         "drafts": "Draf",
-        "empty": "Belum ada email dalam percakapan ini",
+        "emptyDescription": "Draf email dan email terkirim dari chat ini akan muncul di sini.",
+        "emptyTitle": "Belum ada email",
         "loadError": "Tidak dapat memuat email",
         "loading": "Memuat email",
         "noMatches": "Tidak ada email yang cocok",

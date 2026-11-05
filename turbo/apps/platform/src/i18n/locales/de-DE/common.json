@@ -1666,7 +1666,8 @@
       "displaysIn": "Wird angezeigt in {{timezone}}",
       "edit": "Automatisierung bearbeiten",
       "editDescription": "Aktualisieren Sie diese Workflow-Automatisierung.",
-      "empty": "Noch keine Automatisierungen.",
+      "emptyDescription": "Automatisierungen, die in diesem Chat laufen, werden hier angezeigt.",
+      "emptyTitle": "Noch keine Automatisierungen",
       "event": "Ereignis",
       "events": {
         "githubDeploymentStatus": "GitHub-Bereitstellungsstatus erstellt",
@@ -1712,6 +1713,7 @@
         "to": "An"
       },
       "lastRun": "Letzte Ausführung",
+      "loadFailed": "Automatisierungen konnten nicht geladen werden",
       "match": "Übereinstimmen",
       "matchSummary": {
         "allInboundMessages": "Alle eingehenden Nachrichten",
@@ -2114,7 +2116,8 @@
         "draft": "Entwurf",
         "draftOnly": "Aktionen gelten für ausgewählte Entwürfe",
         "drafts": "Entwürfe",
-        "empty": "Keine E-Mails in diesem Chat",
+        "emptyDescription": "E-Mail-Entwürfe und gesendete E-Mails aus diesem Chat werden hier angezeigt.",
+        "emptyTitle": "Noch keine E-Mails",
         "loadError": "E-Mails konnten nicht geladen werden",
         "loading": "E-Mails werden geladen",
         "noMatches": "Keine passenden E-Mails",

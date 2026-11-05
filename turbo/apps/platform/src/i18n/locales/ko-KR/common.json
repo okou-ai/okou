@@ -1663,7 +1663,8 @@
       "displaysIn": "{{timezone}}에 표시됨",
       "edit": "자동화 편집",
       "editDescription": "이 워크플로 자동화를 업데이트하세요.",
-      "empty": "아직 자동화가 없습니다.",
+      "emptyDescription": "이 채팅에서 실행되는 자동화가 여기에 표시됩니다.",
+      "emptyTitle": "아직 자동화가 없습니다",
       "event": "이벤트",
       "events": {
         "githubDeploymentStatus": "GitHub 배포 상태 생성됨",
@@ -1709,6 +1710,7 @@
         "to": "받는 사람"
       },
       "lastRun": "마지막 실행",
+      "loadFailed": "자동화를 불러오지 못했습니다",
       "match": "일치",
       "matchSummary": {
         "allInboundMessages": "모든 수신 메시지",
@@ -2107,7 +2109,8 @@
         "draft": "초안",
         "draftOnly": "선택한 초안에만 작업이 적용됩니다",
         "drafts": "초안",
-        "empty": "이 대화에 이메일이 없습니다",
+        "emptyDescription": "이 채팅의 이메일 초안과 보낸 이메일이 여기에 표시됩니다.",
+        "emptyTitle": "아직 이메일이 없습니다",
         "loadError": "이메일을 불러올 수 없습니다",
         "loading": "이메일 불러오는 중",
         "noMatches": "일치하는 이메일이 없습니다",

@@ -1690,7 +1690,8 @@
       "displaysIn": "Affiché dans {{timezone}}",
       "edit": "Modifier l'automatisation",
       "editDescription": "Mettre à jour cette automatisation de workflow.",
-      "empty": "Aucune automatisation pour le moment.",
+      "emptyDescription": "Les automatisations qui s’exécutent dans ce chat apparaîtront ici.",
+      "emptyTitle": "Aucune automatisation pour l’instant",
       "event": "Événement",
       "events": {
         "githubDeploymentStatus": "Statut de déploiement GitHub créé",
@@ -1739,6 +1740,7 @@
         "to": "À"
       },
       "lastRun": "Dernière exécution",
+      "loadFailed": "Impossible de charger les automatisations",
       "match": "Correspondance",
       "matchSummary": {
         "allInboundMessages": "Tous les messages entrants",
@@ -2148,7 +2150,8 @@
         "draft": "Brouillon",
         "draftOnly": "Les actions concernent les brouillons sélectionnés",
         "drafts": "Brouillons",
-        "empty": "Aucun e-mail dans cette conversation",
+        "emptyDescription": "Les brouillons et e-mails envoyés depuis ce chat apparaîtront ici.",
+        "emptyTitle": "Aucun e-mail pour l’instant",
         "loadError": "Impossible de charger les e-mails",
         "loading": "Chargement des e-mails",
         "noMatches": "Aucun e-mail correspondant",

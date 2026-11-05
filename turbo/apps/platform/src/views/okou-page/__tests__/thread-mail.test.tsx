@@ -256,14 +256,18 @@ async function openList() {
 }
 
 describe("thread email manager", () => {
-  it("hides the entry for an empty thread", async () => {
+  it("opens an empty state for a thread without email", async () => {
     installMails(0);
     await openChat(false);
+    const list = await openList();
+    await expect(
+      within(list).findByText("No emails yet"),
+    ).resolves.toBeInTheDocument();
     expect(
-      queryAllByRoleFast("button").some((element) => {
-        return element.getAttribute("aria-label") === "Manage emails";
+      within(list).queryByRole("textbox", {
+        name: "Search by subject or sender",
       }),
-    ).toBeFalsy();
+    ).toBeNull();
   });
 
   it("navigates filters with arrow keys, selects with Enter or Space, and restores focus on Escape", async () => {
@@ -586,7 +590,6 @@ describe("thread email manager", () => {
     const fixture = installMails();
     fixture.listing.fail = true;
     await openChat(false);
-    await screen.findAllByText("Temporary email list failure");
     const list = await openList();
     await within(list).findByRole("alert");
     expect(within(list).getByText("Unable to load emails")).toBeInTheDocument();

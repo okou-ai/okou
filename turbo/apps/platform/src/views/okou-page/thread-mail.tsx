@@ -46,7 +46,9 @@ import { hash$, pathname$, searchParams$ } from "../../signals/route.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
-import type { ChatHeaderActionsState } from "./chat-header-actions.ts";
+import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
+import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
+import { emptyArtifactImg } from "./platform-assets.ts";
 
 export function ThreadMailLink({
   thread,
@@ -92,23 +94,17 @@ export function ThreadMailLink({
 
 export function ThreadMailButton({
   thread,
-  header,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly header: ChatHeaderActionsState;
 }) {
   const exists = useGet(thread.threadExists$);
-  return exists ? (
-    <ThreadMailButtonInner thread={thread} header={header} />
-  ) : null;
+  return exists ? <ThreadMailButtonInner thread={thread} /> : null;
 }
 
 function ThreadMailButtonInner({
   thread,
-  header,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly header: ChatHeaderActionsState;
 }) {
   const { t } = useTranslation();
   const open = useGet(thread.mail.open$);
@@ -116,16 +112,13 @@ function ThreadMailButtonInner({
   const close = useSet(thread.mail.close$);
   const target = useGet(thread.sidebar.target$);
   const pending = useGet(thread.mail.pending$);
-  // Keep an already-open empty list usable after its last draft is deleted.
-  if (!open && pending === null && !header.mail) {
-    return null;
-  }
+  const transitioning = useChatHeaderTransitioning(thread);
   return (
     <>
       <Popover
         open={open}
         onOpenChange={(next, details) => {
-          if (next && header.pending) {
+          if (next && transitioning) {
             details.cancel();
             return;
           }
@@ -145,8 +138,8 @@ function ThreadMailButtonInner({
             <Button
               showTooltip
               type="button"
-              aria-disabled={(header.pending && !open) || undefined}
-              aria-busy={header.pending}
+              aria-disabled={(transitioning && !open) || undefined}
+              aria-busy={transitioning}
               variant="quiet"
               size="icon-sm"
               iconSize="md"
@@ -198,6 +191,8 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
   const query = useGet(manager.query$);
   const setQuery = useSet(manager.setQuery$);
   const close = useSet(manager.close$);
+  // Search and filters have nothing to act on until the chat has an email.
+  const empty = mails.state === "hasData" && mails.data.length === 0;
   return (
     <div className="shrink-0 space-y-3 border-b border-border/60 p-4">
       <div className="flex items-center gap-2">
@@ -222,26 +217,30 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
           <X size={16} />
         </Button>
       </div>
-      <div className="relative">
-        <Search
-          size={15}
-          className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
-        />
-        <Input
-          value={query}
-          onChange={(event) => {
-            setQuery(event.target.value);
-          }}
-          className="pl-9"
-          aria-label={t(($) => {
-            return $.chat.mail.manager.search;
-          })}
-          placeholder={t(($) => {
-            return $.chat.mail.manager.search;
-          })}
-        />
-      </div>
-      <ThreadMailFilters thread={thread} />
+      {!empty && (
+        <>
+          <div className="relative">
+            <Search
+              size={15}
+              className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-muted-foreground"
+            />
+            <Input
+              value={query}
+              onChange={(event) => {
+                setQuery(event.target.value);
+              }}
+              className="pl-9"
+              aria-label={t(($) => {
+                return $.chat.mail.manager.search;
+              })}
+              placeholder={t(($) => {
+                return $.chat.mail.manager.search;
+              })}
+            />
+          </div>
+          <ThreadMailFilters thread={thread} />
+        </>
+      )}
     </div>
   );
 }
@@ -364,9 +363,8 @@ function ThreadMailSelection({
 
 function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
+  const mails = useLastLoadable(thread.mail.mails$);
   const filtered = useLastLoadable(thread.mail.filtered$);
-  const query = useGet(thread.mail.query$);
-  const filter = useGet(thread.mail.filter$);
   const listRef = useSet(thread.mail.listRef$);
   const rows = filtered.state === "hasData" ? filtered.data : [];
   const showSelection = rows.some((mail) => {
@@ -390,15 +388,22 @@ function ThreadMailRows({ thread }: { readonly thread: ChatPanelSignals }) {
         </div>
       ) : filtered.state === "loading" ? (
         <ThreadMailRowsSkeleton />
+      ) : mails.state === "hasData" && mails.data.length === 0 ? (
+        <ChatPanelEmptyState
+          image={emptyArtifactImg}
+          title={t(($) => {
+            return $.chat.mail.manager.emptyTitle;
+          })}
+          description={t(($) => {
+            return $.chat.mail.manager.emptyDescription;
+          })}
+          className="px-4 py-6"
+        />
       ) : rows.length === 0 ? (
         <p className="p-8 text-center text-sm text-muted-foreground">
-          {query || filter !== "all"
-            ? t(($) => {
-                return $.chat.mail.manager.noMatches;
-              })
-            : t(($) => {
-                return $.chat.mail.manager.empty;
-              })}
+          {t(($) => {
+            return $.chat.mail.manager.noMatches;
+          })}
         </p>
       ) : (
         rows.map((mail) => {

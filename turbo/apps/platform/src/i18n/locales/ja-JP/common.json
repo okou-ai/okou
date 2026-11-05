@@ -1663,7 +1663,8 @@
       "displaysIn": "{{timezone}} に表示されます",
       "edit": "オートメーションの編集",
       "editDescription": "このワークフローオートメーションを更新します。",
-      "empty": "オートメーションはまだありません。",
+      "emptyDescription": "このチャットで実行されるオートメーションがここに表示されます。",
+      "emptyTitle": "まだオートメーションはありません",
       "event": "イベント",
       "events": {
         "githubDeploymentStatus": "GitHub デプロイメントステータスが作成されました",
@@ -1709,6 +1710,7 @@
         "to": "に"
       },
       "lastRun": "最後の実行",
+      "loadFailed": "オートメーションを読み込めませんでした",
       "match": "一致",
       "matchSummary": {
         "allInboundMessages": "すべての受信メッセージ",
@@ -2107,7 +2109,8 @@
         "draft": "下書き",
         "draftOnly": "選択した下書きのみが操作の対象です",
         "drafts": "下書き",
-        "empty": "この会話にはメールがありません",
+        "emptyDescription": "このチャットのメール下書きと送信済みメールがここに表示されます。",
+        "emptyTitle": "まだメールはありません",
         "loadError": "メールを読み込めませんでした",
         "loading": "メールを読み込み中",
         "noMatches": "一致するメールはありません",
