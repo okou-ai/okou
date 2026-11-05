@@ -4,8 +4,7 @@ use std::time::Duration;
 use super::*;
 use clap::{CommandFactory, Parser};
 use tokio::sync::oneshot;
-use tracing_subscriber::prelude::*;
-use tracing_test_support::CapturedEvents;
+use tracing_test_support::capture_current_thread_events;
 
 use crate::cmd::gc::test_support::test_home;
 
@@ -315,18 +314,14 @@ fn gc_keep_latest_help_describes_retention_policy() {
 }
 
 async fn capture_orphaned_lock_phase(home: &HomePaths, dry_run: bool) -> (GcReport, Vec<String>) {
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
-    tracing::callsite::rebuild_interest_cache();
-
-    let phase = gc_orphaned_locks(home, dry_run).await.unwrap();
-    let mut total = GcReport::default();
-    record_gc_phase(&mut total, "orphaned locks", phase, dry_run);
-
-    drop(guard);
-    let messages = captured
-        .entries()
+    let (total, events) = capture_current_thread_events(async {
+        let phase = gc_orphaned_locks(home, dry_run).await.unwrap();
+        let mut total = GcReport::default();
+        record_gc_phase(&mut total, "orphaned locks", phase, dry_run);
+        total
+    })
+    .await;
+    let messages = events
         .into_iter()
         .filter_map(|event| event.fields.get("message").cloned())
         .collect();

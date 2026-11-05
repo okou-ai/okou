@@ -4,6 +4,7 @@ use guest_contracts::diagnostics::{
     EventDeliveryDiagnostic, EventDeliveryFailedBatchDiagnostic, EventDeliveryResponseState,
     HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic, WorkloadResourceLimitDiagnostic,
 };
+use tracing_test_support::capture_current_thread_events as capture_async_events;
 
 #[tokio::test]
 async fn execute_inner_appends_stream_overflow_marker() {
@@ -655,19 +656,6 @@ async fn execute_inner_preserves_incomplete_stdout_on_backend_crash() {
     expected.extend_from_slice(STDOUT_STREAM_INCOMPLETE_MARKER);
     assert_eq!(stream_log, expected);
     assert_proxy_registry_empty(dir.path()).await;
-}
-
-async fn capture_async_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
-where
-    F: std::future::Future,
-{
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
-    tracing::callsite::rebuild_interest_cache();
-    let output = future.await;
-    drop(guard);
-    (output, captured.entries())
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
