@@ -145,6 +145,156 @@ test("A proven page accepts input before later sibling discovery settles", async
   await ready();
 });
 
+test("A background creation readmits the selected page before the remaining tab proof", async () => {
+  const { browser, start } = viewer();
+  await start();
+  await screen.findByLabelText("Later own tab");
+  await ready();
+
+  const selected = browser.holdNextMembership("own-first");
+  const background = browser.holdNextMembership("background");
+  act(() => {
+    const target = {
+      targetId: "background",
+      title: "Background",
+      url: "https://background.example.com",
+      windowId: 101,
+    };
+    browser.targets.push(target);
+    browser.nativeEvent("tab-created", target);
+    browser.event("Target.targetCreated", {
+      targetInfo: { ...target, type: "page" },
+    });
+  });
+  await selected.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(selected.release);
+  await background.received;
+  await ready();
+
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "during background discovery" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.insertText",
+        params: { text: "during background discovery" },
+      }),
+    );
+  });
+  await act(background.release);
+  await screen.findByLabelText("Background", { selector: '[role="tab"]' });
+  await ready();
+});
+
+test("Background removal readmits the selected page without disturbing navigation", async () => {
+  const { browser, start } = viewer();
+  await start();
+  await screen.findByLabelText("Later own tab");
+  await ready();
+
+  const proof = browser.holdNextMembership("own-first");
+  act(() => {
+    const removed = browser.targets.splice(-1, 1)[0]!;
+    browser.event("Target.targetDestroyed", { targetId: removed.targetId });
+    browser.nativeEvent("tab-removed", removed);
+  });
+  await proof.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(proof.release);
+  await ready();
+  expect(screen.queryByLabelText("Later own tab")).not.toBeInTheDocument();
+  const address = screen.getByLabelText("Address");
+  await userEvent.click(address);
+  await userEvent.keyboard(
+    "{Control>}a{/Control}after-removal.example/ready{Enter}",
+  );
+  await ready("http://after-removal.example/ready");
+  expect(browser.targets[0]?.url).toBe("http://after-removal.example/ready");
+});
+
+test("A move supersedes a held narrow refresh and cannot be downgraded by another creation", async () => {
+  const { browser, start } = viewer();
+  await start();
+  await screen.findByLabelText("Later own tab");
+  await ready();
+
+  const stale = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.duplicate("own-later");
+  });
+  await stale.received;
+  act(() => {
+    browser.move("own-first", 202);
+    browser.move("sibling-0", 101);
+    browser.duplicate("own-later");
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(stale.release);
+  await screen.findByLabelText("Sibling 0", { selector: '[role="tab"]' });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.queryByLabelText("First own tab")).not.toBeInTheDocument();
+  click(screen.getByLabelText("Sibling 0", { selector: '[role="tab"]' }));
+  await ready("https://sibling-0.example.com");
+});
+
+test("Closing during a narrow refresh waits for the background survivor proof", async () => {
+  const { browser, start } = viewer();
+  browser.targets.pop();
+  await start();
+  await ready();
+
+  const background = browser.holdNextMembership("background");
+  act(() => {
+    const target = {
+      targetId: "background",
+      title: "Background survivor",
+      url: "https://survivor.example.com",
+      windowId: 101,
+    };
+    browser.targets.push(target);
+    browser.nativeEvent("tab-created", target);
+    browser.event("Target.targetCreated", {
+      targetInfo: { ...target, type: "page" },
+    });
+  });
+  await background.received;
+  await ready();
+  click(screen.getByLabelText("Close First own tab"));
+  await act(background.release);
+  await ready("https://survivor.example.com");
+  expect(screen.queryByLabelText("First own tab")).not.toBeInTheDocument();
+  expect(
+    browser.targets.filter((target) => {
+      return target.windowId === 101;
+    }),
+  ).toStrictEqual([expect.objectContaining({ targetId: "background" })]);
+});
+
+test("A background lookup failure is rechecked after a non-moving tab event", async () => {
+  const { browser, start } = viewer();
+  const failed = browser.holdNextMembership("own-later");
+  await start();
+  await failed.received;
+  await act(failed.releaseFailure);
+  await ready();
+  expect(screen.queryByLabelText("Later own tab")).not.toBeInTheDocument();
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, {
+      tabId: 100,
+      windowId: 101,
+    });
+  });
+  await screen.findByLabelText("Later own tab");
+  await ready();
+});
+
 test("Reconnect admits its preferred tab before the remaining inventory", async () => {
   const { browser, start, advance } = viewer();
   await start();

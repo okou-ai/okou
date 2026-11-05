@@ -800,6 +800,7 @@ function createDiscoveryFailure(
 }
 
 type DiscoveryContext = ControllerContext<
+  | "attachedState$"
   | "available$"
   | "bootstrapping$"
   | "chosenOnce$"
@@ -841,10 +842,35 @@ function createDiscoveryRetry(
   return { canRetryDiscovery$, retryDiscovery$ };
 }
 
+function createDiscoveryInvalidation(
+  context: DiscoveryContext,
+  links$: ControllerDependencies<"retireCurrent$" | "selectedSession$">,
+) {
+  return command(
+    ({ get, set }, retainAttached: boolean, signal: AbortSignal) => {
+      signal.throwIfAborted();
+      if (!get(context.connected$)) {
+        return;
+      }
+      if (!retainAttached || !get(context.attachedState$)) {
+        set(get(links$).retireCurrent$, "target-replaced", true, true);
+      } else {
+        // Retain resources, not authority: discovery gates input and frame admission
+        // until the selected target has a fresh proof in this round.
+        const selected = get(get(links$).selectedSession$);
+        if (selected) {
+          set(selected.input.revoke$);
+        }
+        set(context.wake$);
+      }
+    },
+  );
+}
+
 function createDiscoveryGraph(
   context: DiscoveryContext,
   links$: ControllerDependencies<
-    "beginClosing$" | "retireCurrent$" | "selectTab$"
+    "beginClosing$" | "retireCurrent$" | "selectTab$" | "selectedSession$"
   >,
 ): Pick<
   ControllerLinks,
@@ -936,13 +962,7 @@ function createDiscoveryGraph(
       set(wake$);
     },
   );
-  const invalidated$ = command(({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    if (!get(connected$)) {
-      return;
-    }
-    set(get(links$).retireCurrent$, "target-replaced", true, true);
-  });
+  const invalidated$ = createDiscoveryInvalidation(context, links$);
   const discovery$ = computed((get) => {
     const directory = get(directory$);
     return directory
@@ -3198,7 +3218,12 @@ function createEventsGraph(
     const discovery = get(get(links$).discovery$);
     if (discovery) {
       detachBrowser(
-        set(discovery.refresh$, client.signal),
+        set(
+          event.kind === "tab-created" || event.kind === "tab-removed"
+            ? discovery.refreshMembers$
+            : discovery.refresh$,
+          client.signal,
+        ),
         Reason.DomCallback,
         "browser native membership validation",
       );
