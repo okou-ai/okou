@@ -1257,6 +1257,8 @@ function createDisplayGraph(
     return (
       !!discovery &&
       get(discovery.ready$) &&
+      // Losing the only proven tab does not make a partial inventory empty proof.
+      get(model.inventoryState$).round === null &&
       snapshot.selectedTargetId === null &&
       snapshot.targets.length === 0
     );

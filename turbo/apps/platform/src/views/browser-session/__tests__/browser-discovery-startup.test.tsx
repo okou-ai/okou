@@ -188,6 +188,27 @@ test("Creating a tab during the continuing scan retains unvisited own tabs", asy
   expect(screen.queryByLabelText("Sibling 19")).not.toBeInTheDocument();
 });
 
+test("Losing the first proven tab does not admit an empty window before discovery completes", async () => {
+  const { browser, start } = viewer();
+  const held = browser.holdNextMembership("sibling-3");
+  await start();
+  await held.received;
+  await ready();
+  act(() => {
+    browser.event("Target.targetDestroyed", { targetId: "own-first" });
+  });
+  await screen.findByText("No tabs open");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  ).toBeDisabled();
+  await act(held.release);
+  await ready("https://later.example.com");
+  expect(
+    screen.getByLabelText("Later own tab", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+});
+
 test("Closing the initially visible tab preserves the undiscovered survivor without an extra blank tab", async () => {
   const { browser, start } = viewer();
   const held = browser.holdNextMembership("sibling-3");
