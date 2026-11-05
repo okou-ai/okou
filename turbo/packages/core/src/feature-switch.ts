@@ -377,11 +377,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Enable the test-oauth connector, a synthetic OAuth 2.0 provider used only for automated tests. Off in prod.",
     enabled: false,
   },
-  [FeatureSwitchKey.FreshdeskConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Freshdesk helpdesk connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.StabilityAiConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Stability AI image generation connector",
