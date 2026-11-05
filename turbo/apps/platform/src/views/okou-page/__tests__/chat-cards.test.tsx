@@ -1289,9 +1289,12 @@ test.each([false, true])(
       // Duplicate realtime delivery can overlap reads of an applied tail.
       createChatEvent(THREAD_ID);
     });
-    await expect(
-      within(chat).findByText("Use the personal account", {}, replyWaitOptions),
-    ).resolves.toBeInTheDocument();
+    // Avoid serializing the entire chat for every missing-reply check.
+    await waitFor(() => {
+      expect(
+        within(chat).queryByText("Use the personal account"),
+      ).toBeInTheDocument();
+    }, replyWaitOptions);
     await waitFor(() => {
       expect(
         screen.getAllByTestId("connector-account-action-card"),
@@ -1312,13 +1315,11 @@ test.each([false, true])(
       lifecycle.completeRun("Continued with Personal GitHub");
       createChatEvent(THREAD_ID);
     });
-    await expect(
-      within(chat).findByText(
-        "Continued with Personal GitHub",
-        {},
-        replyWaitOptions,
-      ),
-    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        within(chat).queryByText("Continued with Personal GitHub"),
+      ).toBeInTheDocument();
+    }, replyWaitOptions);
 
     click(buttonIn(card, "Switch"));
     await waitFor(() => {
@@ -1344,13 +1345,11 @@ test.each([false, true])(
       lifecycle.completeRun("Continued with Work GitHub again");
       createChatEvent(THREAD_ID);
     });
-    await expect(
-      within(chat).findByText(
-        "Continued with Work GitHub again",
-        {},
-        replyWaitOptions,
-      ),
-    ).resolves.toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        within(chat).queryByText("Continued with Work GitHub again"),
+      ).toBeInTheDocument();
+    }, replyWaitOptions);
   },
 );
 
