@@ -3,9 +3,11 @@ import {
   type BrowserSession,
 } from "@okouai/api-contracts/contracts/browser";
 import {
+  chatThreadComputerUseHostContract,
   chatThreadEventsContract,
   userMessageDocumentSchema,
 } from "@okouai/api-contracts/contracts/chat-threads";
+import { remotesContract } from "@okouai/api-contracts/contracts/remotes";
 import { initClient } from "@okouai/api-contracts/client/transport";
 import {
   act,
@@ -28,6 +30,11 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+import {
+  chatListEvent,
+  chatListThread,
+  installChatListStream,
+} from "./chat-list-test-helpers.ts";
 import {
   mockBrowserCdp,
   TEST_BROWSER_EXTENSION,
@@ -277,6 +284,127 @@ test("An unauthorized Browser keeps its card and sidebar with an authorization p
     within(sidebar).queryByText("Browser not live"),
   ).not.toBeInTheDocument();
   expect(within(sidebar).getByLabelText("Close cloud browser")).toBeEnabled();
+});
+
+test("A committed Browser grant revalidates a denial from its optimistic update", async () => {
+  const user = userEvent.setup({ delay: null });
+  mockWideScreen();
+  const session: BrowserSession = {
+    ...liveBrowserSession(),
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
+  };
+  mockBrowserApi(session);
+  mockChatLifecycle(context, {
+    threadId: THREAD_ID,
+    cloudBrowserEnabled: false,
+    chatEvents: completedConversationEvents().map((event) => {
+      return event.id === "navigation-browser-reply"
+        ? {
+            ...event,
+            content: `[Browser](https://app.okou.ai/browsers/${THREAD_ID})`,
+          }
+        : event;
+    }),
+  });
+  const agentId = "c0000000-0000-4000-a000-000000000001";
+  const stream = installChatListStream(context, {
+    caseId: 5313,
+    snapshot: [chatListThread(1, "Browser grant", { id: THREAD_ID, agentId })],
+  });
+  context.mocks.api(remotesContract.overview, ({ respond }) => {
+    return respond(200, {
+      cloudBrowserAvailable: true,
+      cloudBrowserEnabledByDefault: true,
+      sshHosts: [],
+      vncHosts: [],
+      computerUseHosts: [],
+    });
+  });
+  const commit = context.mocks.deferred<void>();
+  const deniedRead = context.mocks.deferred<void>();
+  let committed = false;
+  let enabling = false;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    if (!committed) {
+      if (enabling) {
+        deniedRead.resolve();
+      }
+      return respond(403, {
+        error: {
+          code: "BROWSER_AUTHORIZATION_REQUIRED",
+          message: "Cloud browser is not enabled for this chat",
+        },
+      });
+    }
+    return respond(200, { browser: session });
+  });
+  context.mocks.api(
+    chatThreadComputerUseHostContract.update,
+    async ({ body, respond }) => {
+      if (!body.eventId || body.cloudBrowserEnabled !== true) {
+        throw new Error("Expected an identified Browser grant");
+      }
+      await commit.promise;
+      committed = true;
+      stream.setEvents([
+        chatListEvent(5313, 2, "computer_use_host_updated", THREAD_ID, {
+          id: body.eventId,
+          agentId,
+          cloudBrowserEnabled: true,
+        }),
+      ]);
+      context.mocks.ably.trigger("threadListChanged");
+      return respond(204);
+    },
+  );
+  const hold = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: {
+      [FeatureSwitchKey.CloudBrowserPanel]: true,
+      [FeatureSwitchKey.BrowserSharedOwner]: true,
+    },
+  });
+  await expectConversationReady();
+  click(
+    await waitFor(() => {
+      return buttonByName("Open");
+    }),
+  );
+  const sidebar = liveBrowserSidebar();
+  await within(sidebar).findByText(
+    "Cloud browser is not enabled for this chat",
+  );
+  click(buttonByName("Connectors"));
+  enabling = true;
+  await user.click(
+    await screen.findByRole("switch", {
+      name: "Cloud browser",
+      checked: false,
+    }),
+  );
+  await deniedRead.promise;
+  expect(
+    screen.getByRole("switch", { name: "Cloud browser", checked: true }),
+  ).toBeChecked();
+  commit.resolve();
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  expect(
+    within(sidebar).queryByText("Cloud browser is not enabled for this chat"),
+  ).not.toBeInTheDocument();
 });
 
 function visibleViewerMenu(
