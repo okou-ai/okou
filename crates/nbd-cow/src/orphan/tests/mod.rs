@@ -519,7 +519,8 @@ fn disconnect_holds_claim_through_netlink_and_returns_revalidated_state() {
         |_, _| Some(state(123, Some(16))),
         |_| Ok(false),
         |_| false,
-        |_| {
+        |device_index| {
+            assert_eq!(device_index, 3);
             assert!(!dropped_for_disconnect.get());
             Ok(())
         },
@@ -538,7 +539,10 @@ fn disconnect_returns_sourced_netlink_failure() {
         |_, _| Some(state(123, None)),
         |_| Ok(false),
         |_| panic!("dead-owner policy must not inspect current-process membership"),
-        |_| Err(NbdCowError::Io(std::io::Error::other("netlink failed"))),
+        |device_index| {
+            assert_eq!(device_index, 3);
+            Err(NbdCowError::Io(std::io::Error::other("netlink failed")))
+        },
     );
     match outcome {
         NbdOrphanDisconnect::Failed(NbdOrphanError::Disconnect {
