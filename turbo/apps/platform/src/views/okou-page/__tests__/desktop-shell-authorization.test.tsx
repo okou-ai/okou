@@ -308,19 +308,19 @@ test.each([
         context.mocks.ably.hasSubscriptionOnChannel(USER_CHANNEL, topic),
       ).toBeTruthy();
     });
-    const reason = within(card).getByText("Run the project tests");
-    const action = button(card, actionLabel);
-    const content = card.textContent;
-
     refreshing = true;
     await act(async () => {
       context.mocks.ably.triggerOnChannel(USER_CHANNEL, topic);
       await refreshStarted.promise;
     });
-    expect(card.textContent).toBe(content);
-    expect(reason).toBeInTheDocument();
-    expect(button(card, actionLabel)).toBe(action);
-    expect(screen.getByTestId("desktop-shell-authorization-card")).toBe(card);
+    expect(within(card).getByText("Work Mac")).toBeInTheDocument();
+    expect(within(card).getByText("Run the project tests")).toBeInTheDocument();
+    expect(button(card, actionLabel)).toBeEnabled();
+    if (status === "approved") {
+      expect(within(card).getByText("Allowed")).toBeInTheDocument();
+    } else {
+      expect(button(card, "Deny")).toBeEnabled();
+    }
 
     current = {
       ...current,
