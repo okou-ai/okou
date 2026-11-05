@@ -36,6 +36,7 @@ import shutil
 import subprocess
 import sys
 import time
+import uuid
 
 helper = "/usr/local/bin/guest-task-exec"
 main_runtime = pathlib.Path(sys.argv[1])
@@ -512,8 +513,9 @@ await import(pathToFileURL(realpathSync(process.env.BATCH_TEST_CLI)).href);
 ''')
 manifest = batch_root / "images.tsv"
 manifest.write_text("hero\tA synthetic test image\n")
-batch_env = dict(os.environ, BATCH_TEST_WORKER=str(worker), BATCH_TEST_CLI=cli_entrypoint,
-                 OKOU_TOKEN=captured_run_token(os.environ["OKOU_RUN_ID"]), SENTRY_DSN="",
+batch_run_id = str(uuid.uuid4())
+batch_env = dict(os.environ, BATCH_TEST_WORKER=str(worker), BATCH_TEST_CLI=cli_entrypoint, OKOU_RUN_ID=batch_run_id,
+                 OKOU_TOKEN=captured_run_token(batch_run_id), SENTRY_DSN="",
                  OKOU_API_BACKEND_URL="http://127.0.0.1:9", OKOU_DISABLED_PAID_TOOLS="[]")
 node = shutil.which("node")
 assert node, "Guest Node executable is missing"
@@ -557,7 +559,6 @@ print("image-batch-native-task-consumer-passed", flush=True)
 import http.server
 import shlex
 import threading
-import uuid
 
 pi_root = pathlib.Path("/tmp/vm0-process-containment/pi-subagents")
 pi_root.mkdir()
