@@ -15,6 +15,7 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   builtinConnector,
   connectorAccount,
+  chatConnectorOverviewFixture,
   createComposerConnectorHelpers,
   SCOUT_AGENT_ID,
 } from "./chat-composer-connectors-test-helpers.ts";
@@ -56,7 +57,7 @@ async function setup(count: number) {
   click(trigger);
   const popup = await screen.findByRole("dialog", { name: "Connectors" });
   await within(popup).findByText("Scroll 1", { exact: true });
-  return { popup, trigger };
+  return { popup, trigger, catalog, accounts };
 }
 
 async function connectorButton(popup: HTMLElement, label: string) {
@@ -197,9 +198,9 @@ test("Keep a valid overview focus destination if the returning connector was rem
   expect(overview).toHaveFocus();
 });
 
-test("Keep popup focus when the final connector disappears during account navigation", async () => {
+test("Keep popup focus as the final connector disappears and returns", async () => {
   const user = userEvent.setup();
-  const { popup } = await setup(1);
+  const { popup, catalog, accounts } = await setup(1);
   const panel = await openAccountPanel(popup, "Scroll 1");
   context.mocks.api(
     chatConnectorAccessContract.overviewTarget,
@@ -220,6 +221,25 @@ test("Keep popup focus when the final connector disappears during account naviga
     expect(popup.contains(document.activeElement)).toBeTruthy();
   });
   await user.keyboard("{Tab}");
+  await expect(
+    findFastControl("button", "Add connectors", popup),
+  ).resolves.toHaveFocus();
+  context.mocks.api(
+    chatConnectorAccessContract.overviewTarget,
+    ({ respond }) => {
+      return respond(200, {
+        connector: chatConnectorOverviewFixture({
+          target: { kind: "builtin", connectorSlug: catalog[0]!.slug },
+          label: catalog[0]!.label,
+          accounts,
+        }),
+      });
+    },
+  );
+  context.mocks.ably.trigger("connector:changed", {
+    connectorSlug: "scroll-1",
+  });
+  await within(popup).findByText("Scroll 1", { exact: true });
   await expect(
     findFastControl("button", "Add connectors", popup),
   ).resolves.toHaveFocus();

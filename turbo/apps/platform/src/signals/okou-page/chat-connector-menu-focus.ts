@@ -16,13 +16,15 @@ export function createChatConnectorMenuFocusSignals(
     set(returnKey$, null);
   });
   const setViewport$ = onRef<HTMLElement>(
-    command(({ get }, element: HTMLElement) => {
+    command(({ get, set }, element: HTMLElement) => {
       if (get(target$)) {
         // Keep entry focus outside nested controls that can consume Escape.
         element.focus({ preventScroll: true });
       } else {
         const key = get(returnKey$);
         if (key !== null) {
+          // A later data refresh must not replay this navigation handoff.
+          set(returnKey$, null);
           const row = Array.from(
             element.querySelectorAll<HTMLButtonElement>(
               "button[data-connector-target]",
