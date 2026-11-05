@@ -757,6 +757,21 @@
       "uses": 1
     },
     {
+      "file": "turbo/packages/db/scripts/migrations/029-connector-skill-bundles/backfill.ts",
+      "uses": 16,
+      "dependency": "module:turbo/packages/db/scripts/migrations/029-connector-skill-bundles/source"
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/029-connector-skill-bundles/source.ts",
+      "dependency": "sql:storage_versions",
+      "uses": 2
+    },
+    {
+      "file": "turbo/packages/db/scripts/migrations/029-connector-skill-bundles/source.ts",
+      "dependency": "sql:storages",
+      "uses": 2
+    },
+    {
       "file": "turbo/packages/db/src/index.ts",
       "uses": 2,
       "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"

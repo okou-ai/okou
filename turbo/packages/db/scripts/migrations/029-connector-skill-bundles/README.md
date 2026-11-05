@@ -44,3 +44,9 @@ plan after resolving them. An uncertain upload is resolved by readback, not a
 second PUT. Shared immutable bytes are retained if later publication loses a
 race. No transaction, automatic schedule, production dispatch or schema change
 is introduced by this operator.
+
+After acceptance and retirement, remove this operator, its dedicated tests,
+the three corresponding Storage dependency baseline entries and its one-time
+checker registration together. The registration is limited to these
+exact files and counts; it does not admit runtime consumers or permit later
+dependency growth or reintroduction after retirement.
