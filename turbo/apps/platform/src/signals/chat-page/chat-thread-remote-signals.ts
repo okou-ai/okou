@@ -1,6 +1,7 @@
 import { composerDraftSchema } from "@okouai/api-contracts/validators/chat-threads";
 import { command, computed, state, type Command } from "ccstate";
 import { chatArtifactCatalogChangedEvent } from "@okouai/api-contracts/validators/artifact-catalog";
+import { artifactChangedTopic } from "@okouai/api-contracts/validators/realtime";
 import {
   chatThreadByIdContract,
   chatThreadDraftContract,
@@ -41,6 +42,8 @@ interface ChatThreadRealtimeInvalidations {
   readonly threadDetail: RealtimeInvalidationCommands;
   readonly automations: RealtimeInvalidationCommands;
   readonly artifactCatalog: RealtimeInvalidationCommands;
+  /** A member's artifact changed, for example after a Google Drive sync. */
+  readonly artifacts: RealtimeInvalidationCommands;
 }
 
 interface ChatThreadRealtimeHandlers {
@@ -251,6 +254,11 @@ export const subscribeChatThreadRealtime$ = command(
         kind: "invalidate",
         topic: `chatThreadDetailChanged:${threadId}`,
         invalidations: invalidations.threadDetail,
+      },
+      {
+        kind: "invalidate",
+        topic: artifactChangedTopic,
+        invalidations: invalidations.artifacts,
       },
       {
         kind: "invalidate",

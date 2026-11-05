@@ -1,9 +1,14 @@
 import { command } from "ccstate";
 import { artifactGoogleDriveContract } from "@okouai/api-contracts/contracts/artifact-google-drive";
+import {
+  artifactChangedTopic,
+  type ArtifactChangedPayload,
+} from "@okouai/api-contracts/contracts/realtime";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
+import { publishUserSignal } from "../external/realtime";
 import { syncArtifactToGoogleDrive$ } from "../services/google-drive-artifact-sync.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -20,7 +25,7 @@ function uploadArtifactHandler(
     if (!body.ok) {
       return body.response;
     }
-    return await set(
+    const result = await set(
       syncArtifactToGoogleDrive$,
       {
         orgId: auth.orgId,
@@ -41,6 +46,13 @@ function uploadArtifactHandler(
       },
       signal,
     );
+    if (result.status === 200) {
+      // Open catalogs and artifact details re-read the synced Drive state.
+      await publishUserSignal([auth.userId], artifactChangedTopic, {
+        artifactId,
+      } satisfies ArtifactChangedPayload);
+    }
+    return result;
   });
 }
 

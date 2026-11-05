@@ -5,7 +5,6 @@ import { useTranslation } from "react-i18next";
 import {
   artifactCatalogSidebar,
   closeArtifactCatalogPreview$,
-  reloadArtifactCatalog$,
 } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import { artifactDetailPreview } from "../../signals/artifacts-page/artifact-catalog-preview.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -19,7 +18,6 @@ export function ArtifactCatalogSidebar() {
   const fullscreen = useGet(artifactCatalogSidebar.fullscreen$);
   const toggleFullscreen = useSet(artifactCatalogSidebar.toggleFullscreen$);
   const closePreview = useSet(closeArtifactCatalogPreview$);
-  const reload = useSet(reloadArtifactCatalog$);
   const pageSignal = useGet(pageSignal$);
   const close = () => {
     closePreview(pageSignal);
@@ -93,7 +91,6 @@ export function ArtifactCatalogSidebar() {
         text$={artifactCatalogSidebar.preview.text$}
         markdownTree$={artifactCatalogSidebar.preview.markdownTree$}
         onClose={close}
-        onSyncSuccess={reload}
       />
       <ArtifactDiagramLightbox signals={artifactCatalogSidebar.diagram} />
     </>

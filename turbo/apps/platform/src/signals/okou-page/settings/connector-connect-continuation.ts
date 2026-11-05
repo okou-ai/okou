@@ -8,6 +8,8 @@ import {
   routeChatActionCallback$,
   type ChatActionCallback,
 } from "../../chat-page/action-callback.ts";
+import { syncArtifactAndRefresh$ } from "../../chat-page/artifact-google-drive-sync.ts";
+import type { GoogleDriveUploadMode } from "@okouai/core/google-workspace-conversion";
 import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
@@ -74,7 +76,16 @@ export type ConnectorConnectOrigin =
   /** The standalone authorize route that a chat action linked to. */
   | { readonly kind: "directed-authorize"; readonly agentId: string }
   /** The composer registered under this key. */
-  | { readonly kind: "composer"; readonly hostKey: string };
+  | { readonly kind: "composer"; readonly hostKey: string }
+  /** Syncing this artifact to Google Drive, which needed a connection. */
+  | ({ readonly kind: "artifact-drive-sync" } & ArtifactDriveSyncTarget);
+
+interface ArtifactDriveSyncTarget {
+  readonly agentId: string;
+  readonly artifactId: string;
+  readonly filename?: string;
+  readonly mode: GoogleDriveUploadMode;
+}
 
 /**
  * The form surface that started the connection. A dialog surface is closed by
@@ -125,6 +136,7 @@ type ConnectorConnectPlan =
       readonly agentId: string;
       readonly callback: ChatActionCallback;
     }
+  | ({ readonly kind: "artifact-drive-sync" } & ArtifactDriveSyncTarget)
   | {
       readonly kind: "composer";
       readonly host: ComposerConnectHost;
@@ -183,6 +195,9 @@ const resolveConnectorConnectPlan$ = command(
           agentId: origin.agentId,
           callback: get(routeChatActionCallback$),
         };
+      }
+      case "artifact-drive-sync": {
+        return origin;
       }
       case "composer": {
         const host = get(composerConnectHosts$).get(origin.hostKey);
@@ -323,6 +338,21 @@ const continueConnectorConnectPlan$ = command(
         await set(finishComposerConnectorAddition$, plan, signal);
         return;
       }
+      case "artifact-drive-sync": {
+        await set(
+          syncArtifactAndRefresh$,
+          {
+            agentId: plan.agentId,
+            artifactId: plan.artifactId,
+            connectionId,
+            filename: plan.filename,
+            mode: plan.mode,
+            authorize: false,
+          },
+          signal,
+        );
+        return;
+      }
     }
   },
 );
@@ -365,6 +395,9 @@ const closeConnectorConnectModal$ = command(
           selectedConnectorSlug: null,
           selectedConnector: null,
         });
+        return;
+      }
+      case "artifact-drive-sync": {
         return;
       }
     }

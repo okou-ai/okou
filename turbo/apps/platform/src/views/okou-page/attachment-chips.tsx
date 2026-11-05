@@ -385,7 +385,6 @@ function artifactDialogSyncTarget(
     artifactId: artifact.artifactId,
     connectionId: artifact.googleDriveConnectionId,
     filename: artifact.filename,
-    onSyncSuccess: artifact.onSyncSuccess,
     synced: artifact.googleDriveSynced,
     mimeType: artifact.googleDriveMimeType,
     originalUploaded: artifact.googleDriveOriginalUploaded,

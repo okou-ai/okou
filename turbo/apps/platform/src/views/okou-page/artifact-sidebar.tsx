@@ -119,7 +119,6 @@ type ArtifactSidebarContentProps = {
   markdownTree$?: MarkdownPreviewTreeComputed;
   onBack?: () => void;
   onClose: () => void;
-  onSyncSuccess?: () => void;
   onDeleted?: () => void;
   syncTarget?: ArtifactDownloadSyncTarget;
   text$?: TextPreviewComputed;
@@ -195,18 +194,15 @@ export function ArtifactSidebar({
 function artifactSidebarSyncTargetForItem({
   agentId,
   item,
-  onSyncSuccess,
 }: {
   agentId?: string | null;
   item?: ArtifactSidebarItem;
-  onSyncSuccess?: () => void;
   threadId?: string;
 }): ArtifactDownloadSyncTarget | undefined {
   return item
     ? artifactSidebarSyncTarget({
         agentId,
         file: item.file,
-        onSyncSuccess,
       })
     : undefined;
 }
@@ -223,7 +219,6 @@ export function ArtifactSidebarContent({
   markdownTree$,
   onBack,
   onClose,
-  onSyncSuccess,
   onDeleted,
   syncTarget: providedSyncTarget,
   text$,
@@ -245,7 +240,6 @@ export function ArtifactSidebarContent({
     artifactSidebarSyncTargetForItem({
       agentId,
       item,
-      onSyncSuccess,
       threadId,
     });
   const recoveryTarget =
@@ -419,7 +413,6 @@ export function artifactSidebarSyncTarget(params: {
     ChatThreadArtifactFile,
     "artifactId" | "filename" | "googleDriveConnectionId" | "googleDriveSync"
   >;
-  onSyncSuccess?: () => void;
 }): ArtifactDownloadSyncTarget | undefined {
   const { file } = params;
   const artifactId = file.artifactId;
@@ -439,7 +432,6 @@ export function artifactSidebarSyncTarget(params: {
     artifactId,
     connectionId: file.googleDriveConnectionId,
     filename: file.filename,
-    onSyncSuccess: params.onSyncSuccess,
     synced: file.googleDriveSync?.status === "synced",
     originalUploaded:
       file.googleDriveSync?.status === "synced"

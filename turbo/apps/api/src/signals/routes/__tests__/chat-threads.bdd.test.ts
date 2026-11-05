@@ -1917,6 +1917,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         [200],
       );
       expect(synced.body).toMatchObject({ id: "private-drive-file" });
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "artifact:changed",
+        { artifactId: artifact.artifactId },
+      );
       expect(upload.contentTypeHeaders).toStrictEqual(["application/zip"]);
       expect(upload.contentRangeHeaders[0]).toMatch(/^bytes 0-\d+\/\d+$/u);
       const zip = new AdmZip(Buffer.from(upload.bodies[0]!));

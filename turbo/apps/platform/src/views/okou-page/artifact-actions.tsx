@@ -59,10 +59,8 @@ import {
   syncArtifactAndRefresh$,
   googleDriveSyncAccount$,
 } from "../../signals/chat-page/artifact-google-drive-sync.ts";
-import {
-  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  getOnlyAvailableCatalogBrowserAuthMethodDetail,
-} from "../../signals/okou-page/settings/connectors.ts";
+import { getOnlyAvailableCatalogBrowserAuthMethodDetail } from "../../signals/okou-page/settings/connectors.ts";
+import { connectBuiltinConnectorOAuthAuthCodeAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import { copyAttachmentLinkToClipboard } from "./attachment-url.ts";
 import type { ZoomableImageControls } from "./zoomable-image-canvas.tsx";
 
@@ -110,7 +108,6 @@ export type ArtifactDownloadSyncTarget = {
   readonly artifactId: string;
   readonly connectionId: string | undefined;
   readonly filename: string;
-  readonly onSyncSuccess?: () => void;
   readonly recovery: ChatThreadArtifactGoogleDriveRecovery | undefined;
   readonly synced: boolean;
   readonly mimeType?: string | undefined;
@@ -408,7 +405,7 @@ function useGoogleDriveMenuAction(
   const actionSignal =
     surface === "dialog" ? lightbox?.ownerSignal : pageSignal;
   const [connectionOperation, connectGoogleDrive] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
 
   const syncOrConnect = (
@@ -434,7 +431,6 @@ function useGoogleDriveMenuAction(
           filename: syncTarget.filename,
           mode,
           authorize,
-          onSyncSuccess: syncTarget.onSyncSuccess,
         },
         signal,
       );
@@ -479,8 +475,12 @@ function useGoogleDriveMenuAction(
         {
           connectorSlug: GOOGLE_DRIVE_CONNECTOR_SLUG,
           method: availability.googleDriveAuthMethod,
-          onSuccess: (connectionId, signal) => {
-            return run(connectionId, false, signal);
+          origin: {
+            kind: "artifact-drive-sync",
+            agentId,
+            artifactId: syncTarget.artifactId,
+            filename: syncTarget.filename,
+            mode,
           },
           options: {
             account: action.account,

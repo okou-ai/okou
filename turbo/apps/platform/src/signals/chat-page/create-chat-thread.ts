@@ -3084,6 +3084,9 @@ function createRunTracking({
               resourceCatalog.reload$,
               messages.sidebar.artifactCatalog.reload$,
             ],
+            artifacts: [
+              messages.sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
+            ],
             threadDetail: [
               cancellationRecovery.reload$,
               reloadConnectorAccountPreference$,

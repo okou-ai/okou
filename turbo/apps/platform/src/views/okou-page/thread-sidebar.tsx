@@ -337,9 +337,6 @@ function ThreadArtifactDetail({
   const detailLoadable = useLastLoadable(
     sidebar.artifactCatalog.selectedArtifactDetail$,
   );
-  const reloadDetail = useSet(
-    sidebar.artifactCatalog.reloadSelectedArtifactDetail$,
-  );
 
   const fullscreenState = {
     active: fullscreen,
@@ -425,7 +422,6 @@ function ThreadArtifactDetail({
             googleDriveConnectionId: detail.googleDriveConnectionId,
             googleDriveSync: detail.googleDriveSync,
           },
-          onSyncSuccess: reloadDetail,
         })}
         artifactRef={{
           url: preview.url,

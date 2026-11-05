@@ -55,7 +55,6 @@ export type AttachmentArtifactMetadata = {
   readonly googleDriveMimeType?: string | undefined;
   readonly googleDriveOriginalUploaded?: boolean | undefined;
   readonly googleDriveWebViewLink?: string | null | undefined;
-  readonly onSyncSuccess?: () => void;
   readonly runId: string;
   readonly size: number;
   readonly threadId: string;
