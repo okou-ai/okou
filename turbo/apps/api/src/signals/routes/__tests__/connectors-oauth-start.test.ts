@@ -319,30 +319,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
     },
   },
   {
-    connectorSlug: "docusign",
-    label: "DocuSign",
-    clientEnvPrefix: "DOCUSIGN",
-    authorizationEndpoint: "https://account-d.docusign.com/oauth/auth",
-    tokenUrl: "https://account-d.docusign.com/oauth/token",
-    pkce: true,
-    tokenResponse: {
-      access_token: "docusign-test-token",
-      refresh_token: "docusign-refresh-token",
-      expires_in: 28_800,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://account-d.docusign.com/oauth/userinfo", () => {
-          return HttpResponse.json({
-            sub: "docusign-user-123",
-            name: "DocuSign Test User",
-            email: "docusign@example.test",
-          });
-        }),
-      );
-    },
-  },
-  {
     connectorSlug: "dropbox",
     label: "Dropbox",
     clientEnvPrefix: "DROPBOX",

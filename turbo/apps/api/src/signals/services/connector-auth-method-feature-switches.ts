@@ -16,7 +16,6 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
   "bill\0api-token": FeatureSwitchKey.BillConnector,
   "canva\0oauth": FeatureSwitchKey.CanvaConnector,
   "deel\0oauth": FeatureSwitchKey.DeelConnector,
-  "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
   "garmin-connect\0oauth": FeatureSwitchKey.GarminConnectConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "neon\0oauth": FeatureSwitchKey.NeonConnector,

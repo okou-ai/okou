@@ -64,7 +64,6 @@ import { copperProvider } from "./connectors/copper/provider";
 import { cloudflareProvider } from "./connectors/cloudflare/provider";
 import { deelProvider } from "./connectors/deel/provider";
 import { datadogProvider } from "./connectors/datadog/provider";
-import { docusignProvider } from "./connectors/docusign/provider";
 import { dropboxProvider } from "./connectors/dropbox/provider";
 import { figmaProvider } from "./connectors/figma/provider";
 import { garminConnectProvider } from "./connectors/garmin-connect/provider";
@@ -996,7 +995,6 @@ const CONNECTOR_AUTH_METHOD_PROVIDER_ENTRIES = [
   ),
   authCodeRefreshProviderEntry("deel", "oauth", deelProvider),
   authCodeRefreshProviderEntry("datadog", "oauth", datadogProvider),
-  authCodeRefreshProviderEntry("docusign", "oauth", docusignProvider),
   authCodeRefreshProviderEntry("dropbox", "oauth", dropboxProvider),
   authCodeRefreshProviderEntry("figma", "oauth", figmaProvider),
   authCodeRefreshProviderEntry(

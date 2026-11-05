@@ -1005,17 +1005,6 @@ const connectors = [
     ],
   }),
   connector({
-    connectorSlug: "docusign",
-    label: "DocuSign",
-    authMethods: [
-      standardOauthMethod({
-        connectorSlug: "docusign",
-        prefix: "DOCUSIGN",
-        tokenEnvironmentNames: ["DOCUSIGN_TOKEN"],
-      }),
-    ],
-  }),
-  connector({
     connectorSlug: "dropbox",
     label: "Dropbox",
     authMethods: [

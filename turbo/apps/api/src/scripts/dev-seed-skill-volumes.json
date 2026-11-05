@@ -1452,28 +1452,6 @@
     "versionFileCount": 1
   },
   {
-    "url": "https://github.com/okou-ai/okou-skills/tree/main/docusign",
-    "name": "docusign",
-    "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/docusign/58b259631e32f424a1b5010fb7e84be9804e5013e0a023efb156d115fd4b5089",
-    "message": "Synced from vm0-ai/vm0-skills@0b6531f",
-    "fullPath": "okou-ai/okou-skills/tree/main/docusign",
-    "s3Prefix": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/docusign",
-    "commitSha": "0b6531ff69b14542fb7d17a96e6b0a5690665009",
-    "skillSize": 6007,
-    "storageId": "0c221287-8259-4076-9422-32a3664bcfbc",
-    "frontmatter": {
-      "name": "docusign",
-      "description": "DocuSign API for electronic signatures. Use when user mentions \"DocuSign\", \"e-signature\", \"sign document\", or \"send for signature\"."
-    },
-    "storageName": "agent-skills@vm0-ai/vm0-skills/tree/main/docusign",
-    "storageSize": 1877,
-    "versionHash": "58b259631e32f424a1b5010fb7e84be9804e5013e0a023efb156d115fd4b5089",
-    "versionSize": 1877,
-    "skillFileCount": 1,
-    "storageFileCount": 1,
-    "versionFileCount": 1
-  },
-  {
     "url": "https://github.com/okou-ai/okou-skills/tree/main/doppler",
     "name": "doppler",
     "s3Key": "__system__/volume/agent-skills@vm0-ai/vm0-skills/tree/main/doppler/8d17368c7b09ec8d21eb706aa33ee826f03f3943aaa098c9c70a805429ecca54",
