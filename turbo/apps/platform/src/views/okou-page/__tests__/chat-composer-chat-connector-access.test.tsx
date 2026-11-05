@@ -254,12 +254,15 @@ function installAccess(
   };
 }
 
-async function setup(path = `/chats/${SCOUT_THREAD_ID}`) {
+async function setup(path = `/chats/${SCOUT_THREAD_ID}`, singleAgent = false) {
   await setupPage({
     context,
     path,
     locale: "en-US",
-    featureSwitches: { [FeatureSwitchKey.ConnectorChatAccountAccess]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.ConnectorChatAccountAccess]: true,
+      [FeatureSwitchKey.SingleAgent]: singleAgent,
+    },
   });
   await findComposer();
 }
@@ -294,58 +297,66 @@ async function openDirectory(user: ReturnType<typeof userEvent.setup>) {
   return await screen.findByRole("dialog", { name: "Connectors" });
 }
 
-test("Directory permissions use the same connector rules without enabling accounts", async () => {
-  const user = userEvent.setup({ delay: null });
-  installAccess({ allOff: true });
-  await setup();
-  const trigger = await findFastControl("button", "Connectors");
-  await user.click(trigger);
-  click(await findFastControl("button", "Add connectors"));
-  const directory = await screen.findByRole("dialog", { name: "Connectors" });
-  await fill(
-    within(directory).getByPlaceholderText("Find connectors..."),
-    "GitHub",
-  );
-  click(await findFastControl("button", "Open GitHub details", directory));
-  click(await findFastControl("button", "Configure", directory));
-  const editor = await screen.findByRole("dialog", {
-    name: "GitHub permissions",
-  });
-  const permission = await within(editor).findByLabelText("repos|write", {
-    selector: '[role="group"]',
-  });
-  await waitFor(() => {
-    expect(editor.contains(document.activeElement)).toBeTruthy();
-  });
-  click(await findFastControl("button", "Deny", permission));
-  await user.click(await findFastControl("button", "Apply", editor));
-  await waitFor(() => {
+test.each([false, true])(
+  "Directory permissions preserve connector-wide rules and disabled accounts with personal mode %s",
+  async (singleAgent) => {
+    const user = userEvent.setup({ delay: null });
+    installAccess({ allOff: true });
+    await setup(undefined, singleAgent);
+    const trigger = await findFastControl("button", "Connectors");
+    await user.click(trigger);
+    click(await findFastControl("button", "Add connectors"));
+    const directory = await screen.findByRole("dialog", { name: "Connectors" });
+    await fill(
+      within(directory).getByPlaceholderText("Find connectors..."),
+      "GitHub",
+    );
+    click(await findFastControl("button", "Open GitHub details", directory));
+    click(await findFastControl("button", "Configure", directory));
+    const editor = await screen.findByRole("dialog", {
+      name: "GitHub permissions",
+    });
     expect(
-      screen.queryByRole("dialog", { name: "GitHub permissions" }),
-    ).toBeNull();
-    expect(trigger).toHaveFocus();
-  });
-  const row = await openMenu();
-  expect(row).toHaveTextContent("0 enabled");
-  click(row);
-  click(await findFastControl("button", "Permissions"));
-  const saved = await screen.findByRole("dialog", {
-    name: "GitHub permissions",
-  });
-  const savedPermission = await within(saved).findByLabelText("repos|write", {
-    selector: '[role="group"]',
-  });
-  await expect(
-    findFastControl("button", "Deny", savedPermission),
-  ).resolves.toHaveAttribute("aria-pressed", "true");
-  await user.keyboard("{Escape}");
-  await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "GitHub permissions" }),
-    ).toBeNull();
-    expect(trigger).toHaveFocus();
-  });
-});
+      within(editor).getByText(
+        "These rules apply to this connector across your chats and accounts.",
+      ),
+    ).toBeInTheDocument();
+    const permission = await within(editor).findByLabelText("repos|write", {
+      selector: '[role="group"]',
+    });
+    await waitFor(() => {
+      expect(editor.contains(document.activeElement)).toBeTruthy();
+    });
+    click(await findFastControl("button", "Deny", permission));
+    await user.click(await findFastControl("button", "Apply", editor));
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "GitHub permissions" }),
+      ).toBeNull();
+      expect(trigger).toHaveFocus();
+    });
+    const row = await openMenu();
+    expect(row).toHaveTextContent("0 enabled");
+    click(row);
+    click(await findFastControl("button", "Permissions"));
+    const saved = await screen.findByRole("dialog", {
+      name: "GitHub permissions",
+    });
+    const savedPermission = await within(saved).findByLabelText("repos|write", {
+      selector: '[role="group"]',
+    });
+    await expect(
+      findFastControl("button", "Deny", savedPermission),
+    ).resolves.toHaveAttribute("aria-pressed", "true");
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      expect(
+        screen.queryByRole("dialog", { name: "GitHub permissions" }),
+      ).toBeNull();
+      expect(trigger).toHaveFocus();
+    });
+  },
+);
 
 test("Account navigation retains computer controls, Remote access and Add connectors", async () => {
   const user = userEvent.setup({ delay: null });

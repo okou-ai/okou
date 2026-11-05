@@ -215,13 +215,13 @@ function PermissionsDrawerHeader({
     </>
   );
   const singleAgent = useGet(singleAgentEnabled$);
-  const description = singleAgent
+  const description = connectorScope
     ? t(($) => {
-        return $.myOkou.access;
+        return $.connectorChatAccess.permissionsDescription;
       })
-    : connectorScope
+    : singleAgent
       ? t(($) => {
-          return $.connectorChatAccess.permissionsDescription;
+          return $.myOkou.access;
         })
       : t(($) => {
           return $.connectors.permissions.descriptionAgent;
