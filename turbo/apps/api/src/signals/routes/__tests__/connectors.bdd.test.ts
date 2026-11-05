@@ -739,9 +739,6 @@ describe("CONN-02: OAuth start and callback", () => {
 
     const bdd = createBddApi(context);
     const actor = bdd.user();
-    await connectorsApi.updateFeatureSwitches(actor, {
-      [FeatureSwitchKey.DatadogConnector]: true,
-    });
 
     const start = await connectorsApi.startOauth(actor, "datadog", "oauth");
     const authorizationUrl = new URL(start.authorizationUrl);
