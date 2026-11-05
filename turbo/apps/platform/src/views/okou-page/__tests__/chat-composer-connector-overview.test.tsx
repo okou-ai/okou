@@ -13,7 +13,6 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
-import { navigateTo$ } from "../../../signals/route.ts";
 import {
   builtinConnector,
   connectorAccount,
@@ -501,24 +500,21 @@ test("Release the cached subscription on navigation and reload the returning Cha
   );
   await openAfterSetup();
   await findFastControl("button", "Probe 1Account 11 enabled");
-  await context.store.set(
-    navigateTo$,
-    "/agents/:agentId/chat",
-    { pathParams: { agentId: SCOUT_AGENT_ID } },
-    context.signal,
-  );
+  click(await findFastControl("button", "Connectors"));
+  click(await findFastControl("button", "New chat"));
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
+  });
   await findComposer();
   await waitFor(() => {
     return expect(
       context.mocks.ably.hasSubscription("connector:changed"),
     ).toBeFalsy();
   });
-  await context.store.set(
-    navigateTo$,
-    "/chats/:threadId",
-    { pathParams: { threadId: SCOUT_THREAD_ID } },
-    context.signal,
-  );
+  window.history.back();
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(`/chats/${SCOUT_THREAD_ID}`);
+  });
   await findComposer();
   const reopened = await openMenu();
   await findFastControl("button", "Probe 1Account 11 enabled", reopened);
