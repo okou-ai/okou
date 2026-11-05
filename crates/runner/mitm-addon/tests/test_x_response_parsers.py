@@ -496,7 +496,7 @@ class TestXJsonFinalize:
     @pytest.mark.parametrize(
         "chunk_size",
         [
-            pytest.param(2, id="two-byte"),
+            pytest.param(2, id="two-byte", marks=pytest.mark.shard_cost(1)),
             pytest.param(None, id="whole-body"),
         ],
     )

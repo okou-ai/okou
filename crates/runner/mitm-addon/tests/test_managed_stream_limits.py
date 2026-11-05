@@ -19,7 +19,12 @@ from tests.request_handler_helpers import _write_registry
 @pytest.mark.parametrize("http2", [False, True])
 @pytest.mark.parametrize("capture", [False, True])
 @pytest.mark.parametrize(
-    ("count", "size"), [(1, 40 * 1024 * 1024), (20, 64), (5, 30 * 1024 * 1024)]
+    ("count", "size"),
+    [
+        pytest.param(1, 40 * 1024 * 1024, marks=pytest.mark.shard_cost(1)),
+        (20, 64),
+        pytest.param(5, 30 * 1024 * 1024, marks=pytest.mark.shard_cost(3)),
+    ],
 )
 async def test_independent_removed_limits_over_native_wire(
     tmp_path, fake_firewall_headers, dialect, http2, capture, count, size

@@ -116,7 +116,7 @@ async def test_blocked_http_delivery_allows_status_logs_and_registry_enforcement
         assert api.request_count == 1
 
 
-@pytest.mark.parametrize("status", [204, 400, 500])
+@pytest.mark.parametrize("status", [204, 400, pytest.param(500, marks=pytest.mark.shard_cost(1))])
 async def test_quiescence_reports_real_delivery_outcomes_and_retained_retry(
     tmp_path, control, fresh_usage_executor, status
 ):

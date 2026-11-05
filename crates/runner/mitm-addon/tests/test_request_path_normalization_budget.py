@@ -149,8 +149,10 @@ async def test_exhausted_path_budget_rejects_before_connector_credentials(
         pytest.param("a" + "\u0344" * 15, id="expansion-at-limit"),
         pytest.param("a" + "\u0f73" * 15, id="class-zero-at-limit"),
         pytest.param("\u00e9" + "\u0300" * 29, id="precomposed-at-limit"),
-        pytest.param(("a" + "\u0315\u0300" * 15) * 1000, id="starter-resets"),
-        pytest.param("\u6587" * 32000, id="long-unicode"),
+        pytest.param(
+            ("a" + "\u0315\u0300" * 15) * 1000, id="starter-resets", marks=pytest.mark.shard_cost(1)
+        ),
+        pytest.param("\u6587" * 32000, id="long-unicode", marks=pytest.mark.shard_cost(2)),
         pytest.param(
             "caf\u00e9/\u6587\u6863/\uac01/\U0001f469\u200d\U0001f4bb", id="ordinary-unicode"
         ),
