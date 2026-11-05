@@ -6,11 +6,24 @@ RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const ruleTester = new RuleTester();
+const ruleTester = new RuleTester({
+  linterOptions: { reportUnusedDisableDirectives: "error" },
+});
 const filename = "/project/turbo/apps/platform/src/signals/feature/action.ts";
+const utilsFilename = "/project/turbo/apps/platform/src/signals/utils.ts";
 
 ruleTester.run("no-on-rejection", rule, {
   valid: [
+    {
+      filename: utilsFilename,
+      code: "export async function onRejection(operation) { return await operation; } function other(onRejection) { return onRejection(); }",
+    },
+    {
+      filename: utilsFilename,
+      code: `export async function onRejection(operation) { return await operation; }
+// eslint-disable-next-line @rule-tester/no-on-rejection -- Existing infrastructure boundary; preserve the original rejection.
+const result = onRejection(operation);`,
+    },
     {
       filename,
       code: 'import * as utils from "../utils.ts"; export type DeferredFactory = typeof utils.createDeferredPromise; export const isAbort = utils.isAbortError;',
@@ -79,6 +92,11 @@ const result = onRejection(operation, callback);`,
     },
   ],
   invalid: [
+    {
+      filename: utilsFilename,
+      code: "export async function onRejection(operation) { return await operation; } export function moved(operation) { return onRejection(operation); }",
+      errors: [{ messageId: "noOnRejection" }],
+    },
     {
       filename,
       code: 'import { onRejection } from "../utils.ts"; type Callback = typeof onRejection; onRejection(operation, callback);',

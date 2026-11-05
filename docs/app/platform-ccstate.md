@@ -45,6 +45,12 @@ moves duplicated loading/error state or redundant cancellation bookkeeping.
 propagate, derive request UI from loadables, and follow server change
 notifications instead of rolling back optimistic state.
 
+The `no-with-cleanup`, `no-settle`, `no-best-effort`, and `no-on-rejection`
+rules track runtime references to the helper binding both through imports and
+inside `signals/utils.ts`. Moving an existing wrapper into that module must
+move its next-line waiver with the reference; centralization does not remove
+legacy usage from the lint inventory. New unwaived references remain errors.
+
 `readImageDimensions` inherits the workspace dialog signal. Load, decode error,
 and cancellation all release the image listeners and object URL. Browser event
 adaptation uses `createDeferredPromise`; it does not justify a file exemption.

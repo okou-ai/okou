@@ -29,7 +29,8 @@ interface SignalsHelperRuleOptions<MessageId extends string> {
 
 /**
  * Reports runtime references to one Platform `signals/utils` helper, including
- * renamed imports, namespace access, value escapes and re-exports.
+ * local uses in its defining module, renamed imports, namespace access, value
+ * escapes and re-exports.
  */
 export function createSignalsHelperRule<MessageId extends string>({
   name,
@@ -64,6 +65,33 @@ export function createSignalsHelperRule<MessageId extends string>({
       }
 
       return {
+        "Program:exit"(node: TSESTree.Program): void {
+          if (!isSignalsUtils(context.filename)) {
+            return;
+          }
+          const moduleScope = context.sourceCode
+            .getScope(node)
+            .childScopes.find((scope) => scope.type === "module");
+          const variable = moduleScope?.set.get(helper);
+          if (
+            !variable?.defs.some(
+              (definition) =>
+                definition.type === "FunctionName" ||
+                definition.type === "Variable",
+            )
+          ) {
+            return;
+          }
+          for (const reference of variable.references) {
+            if (
+              reference.isValueReference &&
+              reference.isRead() &&
+              !isTypeQuery(reference.identifier)
+            ) {
+              report(reference.identifier);
+            }
+          }
+        },
         "ImportDeclaration:exit"(node: TSESTree.ImportDeclaration): void {
           if (
             node.importKind === "type" ||

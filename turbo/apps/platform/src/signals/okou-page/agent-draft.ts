@@ -7,9 +7,8 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
-import { debounceCommand } from "../command-scheduling.ts";
 import { collectSuccessfulAttachmentInfos } from "../chat-page/resolve-draft-attachments.ts";
-import { resetSignal, withCleanup } from "../utils.ts";
+import { debounceCommand, resetSignal, withCleanup } from "../utils.ts";
 import {
   createDraftSignals,
   createRestoredAttachment,

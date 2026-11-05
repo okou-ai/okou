@@ -6,11 +6,24 @@ RuleTester.afterAll = afterAll;
 RuleTester.describe = describe;
 RuleTester.it = it;
 
-const ruleTester = new RuleTester();
+const ruleTester = new RuleTester({
+  linterOptions: { reportUnusedDisableDirectives: "error" },
+});
 const filename = "/project/turbo/apps/platform/src/signals/feature/action.ts";
+const utilsFilename = "/project/turbo/apps/platform/src/signals/utils.ts";
 
 ruleTester.run("no-with-cleanup", rule, {
   valid: [
+    {
+      filename: utilsFilename,
+      code: "export async function withCleanup(operation) { return await operation; } function other(withCleanup) { return withCleanup(); }",
+    },
+    {
+      filename: utilsFilename,
+      code: `export async function withCleanup(operation) { return await operation; }
+// eslint-disable-next-line @rule-tester/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
+const result = withCleanup(operation);`,
+    },
     {
       filename,
       code: 'import * as utils from "../utils.ts"; export type DeferredFactory = typeof utils.createDeferredPromise; export const isAbort = utils.isAbortError;',
@@ -79,6 +92,11 @@ const result = withCleanup(operation, callback);`,
     },
   ],
   invalid: [
+    {
+      filename: utilsFilename,
+      code: "export async function withCleanup(operation) { return await operation; } export function moved(operation) { return withCleanup(operation); }",
+      errors: [{ messageId: "noWithCleanup" }],
+    },
     {
       filename,
       code: 'import { withCleanup } from "../utils.ts"; type Callback = typeof withCleanup; withCleanup(operation, callback);',

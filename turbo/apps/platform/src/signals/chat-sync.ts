@@ -2,10 +2,9 @@ import { command, computed } from "ccstate";
 
 import { syncAllActiveChatEvents$ } from "./chat-page/chat-event-signal-registry.ts";
 import { catchUpChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
-import { throttleCommand } from "./command-scheduling.ts";
 import { rootVersion$ } from "./root-signal.ts";
 import { installedSharedDatabaseBridge$ } from "./shared-database-bridge-state.ts";
-import { detach, Reason } from "./utils.ts";
+import { detach, Reason, throttleCommand } from "./utils.ts";
 
 const synchronizeChats$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
