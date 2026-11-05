@@ -4545,7 +4545,7 @@ function ThinkingLabel({
           onClick={() => {
             openQueueDrawer();
           }}
-          className="cursor-pointer underline underline-offset-2"
+          className="underline underline-offset-2"
         >
           {queueEllipsis}
         </button>
@@ -6662,7 +6662,7 @@ function ShareGroupSelectionColumn({
     >
       {/* The label covers the whole column, including the row's padding,
           and keeps its text for assistive technology only. */}
-      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-pointer data-disabled:pointer-events-none @[960px]:-right-2.5">
+      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-default data-disabled:pointer-events-none @[960px]:-right-2.5">
         <span className="sr-only">
           {shareGroupSelectionLabel(t, allSelected)}
         </span>

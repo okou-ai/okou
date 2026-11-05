@@ -113,7 +113,7 @@ export function OnboardingPosterCard({
     <label
       className={cn(
         surfaceVariants({ interactive: true }),
-        "relative flex min-h-[300px] flex-col overflow-hidden text-center",
+        "relative flex min-h-[300px] cursor-default flex-col overflow-hidden text-center",
         // A phone lists the answers as rows, so all three fit one screen.
         "max-sm:min-h-0 max-sm:flex-row max-sm:items-center max-sm:gap-3.5 max-sm:p-4 max-sm:text-left",
         selected && "border-primary",
@@ -172,7 +172,7 @@ export function OnboardingChoiceCard({
     <label
       className={cn(
         surfaceVariants({ interactive: true }),
-        "block px-4 py-3.5 max-sm:flex max-sm:min-h-16 max-sm:items-center max-sm:px-3 max-sm:py-2.5 max-sm:last:col-span-2",
+        "block cursor-default px-4 py-3.5 max-sm:flex max-sm:min-h-16 max-sm:items-center max-sm:px-3 max-sm:py-2.5 max-sm:last:col-span-2",
         selected && "border-primary",
       )}
     >

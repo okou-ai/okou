@@ -691,7 +691,7 @@ function ConnectorsBreadcrumb({
     <nav className="flex items-center gap-1.5 text-sm">
       <button
         type="button"
-        className="cursor-pointer rounded-md px-1 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
+        className="rounded-md px-1 py-0.5 text-muted-foreground transition-colors hover:text-foreground"
         onClick={onBack}
       >
         {t(($) => {

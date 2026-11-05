@@ -356,7 +356,7 @@ function VncHostSecurity({
   const { t } = useTranslation();
   return (
     <details className="border-t border-divider pt-4">
-      <summary className="cursor-pointer rounded-md text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <summary className="cursor-default rounded-md text-sm font-medium text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         {t(($) => {
           return $.remoteControlSetup.securityAndPermissions;
         })}

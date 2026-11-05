@@ -409,7 +409,7 @@ function GuideActions({ step }: { readonly step: GuideStep }) {
       )}
       {step.blocker && (
         <details className="group">
-          <summary className="flex cursor-pointer list-none items-center gap-1.5 rounded-md py-1 text-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+          <summary className="flex cursor-default list-none items-center gap-1.5 rounded-md py-1 text-sm text-muted-foreground hover:text-foreground [&::-webkit-details-marker]:hidden focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
             <ChevronRight
               size={14}
               className="shrink-0 transition-transform group-open:rotate-90"

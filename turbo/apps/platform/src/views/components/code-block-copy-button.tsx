@@ -39,7 +39,7 @@ export function CodeBlockCopyButton({ code }: { readonly code: string }) {
       text={code}
       showTooltip={false}
       className={cn(
-        "invisible absolute top-1.5 right-1.5 flex cursor-pointer",
+        "invisible absolute top-1.5 right-1.5 flex",
         "rounded-md bg-gray-200 p-1.5 text-[12px] text-muted-foreground",
         "transition-[visibility,background-color,color] duration-300 ease-[ease]",
         "[pre:hover_&]:visible",

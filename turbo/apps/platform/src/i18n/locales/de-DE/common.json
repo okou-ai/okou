@@ -5372,10 +5372,8 @@
         "credits": "Credits",
         "fiveHourLimit": "5-Stunden-Limit",
         "label": "Abonnementnutzung",
-        "leftSide": "Links",
         "lowUsage": "Abonnementnutzung: weniger als 20 % verbleibend",
         "resetTimeUnavailable": "Rücksetzzeit nicht verfügbar",
-        "rightSide": "Rechts",
         "usage": "{{provider}} Nutzung",
         "usageRemaining": "{{provider}} {{window}} übrig",
         "weeklyLimit": "Wochenlimit"

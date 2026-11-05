@@ -1025,6 +1025,173 @@ fn retryable_error_maps_to_warning() {
     );
 }
 
+fn access_program_error() -> Value {
+    json!({
+        "message": include_str!("../../../../../codex-mock/src/app_server/fixtures/access-program-http-body.json").trim_end(),
+        "codexErrorInfo": "other",
+        "additionalDetails": null,
+        "misalignment": null
+    })
+}
+
+fn mapped_terminal_errors(error: &Value) -> [Value; 2] {
+    [
+        mapped_event(
+            "error",
+            json!({
+                "threadId": "thread-1", "turnId": "turn-1", "willRetry": false, "error": error
+            }),
+        ),
+        mapped_event(
+            "turn/completed",
+            json!({
+                "threadId": "thread-1",
+                "turn": {"id": "turn-1", "status": "failed", "error": error}
+            }),
+        ),
+    ]
+}
+
+#[test]
+fn codex_access_program_rejection_survives_native_notification_normalization() {
+    let captured = access_program_error();
+    let body: Value = serde_json::from_str(captured["message"].as_str().unwrap()).unwrap();
+    for envelope in [
+        body.clone(),
+        json!({"type": "error", "status": 400, "error": body["error"]}),
+        json!({"type": "error", "status_code": 400, "error": body["error"]}),
+    ] {
+        let mut error = captured.clone();
+        error["message"] = json!(envelope.to_string());
+        for event in mapped_terminal_errors(&error) {
+            let diagnostic =
+                events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                    .expect("native terminal diagnostic");
+            assert_eq!(
+                diagnostic.failure_reason,
+                Some(FailureReason::CodexAccessProgramUnavailable)
+            );
+            assert_eq!(diagnostic.message, envelope.to_string());
+        }
+    }
+}
+
+#[test]
+fn codex_access_program_rejection_requires_exact_native_evidence() {
+    let captured = access_program_error();
+    let body: Value = serde_json::from_str(captured["message"].as_str().unwrap()).unwrap();
+    let mut near_misses = Vec::new();
+    for (field, value) in [
+        ("type", "server_error"),
+        ("code", "invalid_parameter"),
+        ("param", "access_programs"),
+        ("message", "The access_programs parameter is unavailable."),
+    ] {
+        let mut envelope = body.clone();
+        envelope["error"][field] = json!(value);
+        near_misses.push(envelope.to_string());
+    }
+    for envelope in [
+        json!({"type": "error", "status": 401, "error": body["error"]}),
+        json!({"type": "error", "status": "400", "error": body["error"]}),
+        json!({"type": "error", "status": 400, "status_code": 401, "error": body["error"]}),
+        json!({"type": "error", "error": body["error"]}),
+        json!({"status": 400, "error": body["error"]}),
+    ] {
+        near_misses.push(envelope.to_string());
+    }
+    near_misses.extend([
+        "The access_programs parameter is not enabled for this organization.".to_string(),
+        format!("The user quoted this rejection: {body}"),
+        format!("{body} trailing prose"),
+    ]);
+    for message in near_misses {
+        let mut error = captured.clone();
+        error["message"] = json!(message);
+        for event in mapped_terminal_errors(&error) {
+            let diagnostic =
+                events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                    .expect("native terminal diagnostic");
+            assert_ne!(
+                diagnostic.failure_reason,
+                Some(FailureReason::CodexAccessProgramUnavailable),
+                "{event}"
+            );
+        }
+    }
+
+    for (info, expected) in [
+        (
+            json!("unauthorized"),
+            Some(FailureReason::InvalidCredentials),
+        ),
+        (
+            json!("internalServerError"),
+            Some(FailureReason::ProviderServerError),
+        ),
+        (
+            json!({"httpConnectionFailed": {"httpStatusCode": 401}}),
+            None,
+        ),
+        (json!(null), None),
+    ] {
+        let mut error = captured.clone();
+        error["codexErrorInfo"] = info;
+        for event in mapped_terminal_errors(&error) {
+            let diagnostic =
+                events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                    .expect("native terminal diagnostic");
+            assert_eq!(diagnostic.failure_reason, expected, "{event}");
+        }
+    }
+
+    let mut display_only = captured;
+    display_only["additionalDetails"] = display_only["message"].clone();
+    display_only["message"] = json!("another request failed");
+    for event in mapped_terminal_errors(&display_only) {
+        let diagnostic =
+            events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw(""))
+                .expect("native terminal diagnostic");
+        assert_ne!(
+            diagnostic.failure_reason,
+            Some(FailureReason::CodexAccessProgramUnavailable)
+        );
+    }
+}
+
+#[test]
+fn codex_access_program_display_text_and_retriable_errors_are_not_terminal_failures() {
+    let error = access_program_error();
+    let events = [
+        mapped_event(
+            "error",
+            json!({
+                "threadId": "thread-1", "turnId": "turn-1", "willRetry": true, "error": error
+            }),
+        ),
+        mapped_event(
+            "item/completed",
+            json!({
+                "threadId": "thread-1", "turnId": "turn-1", "completedAtMs": 42,
+                "item": {"id": "message-1", "type": "agentMessage", "text": error["message"]}
+            }),
+        ),
+        mapped_event(
+            "turn/completed",
+            json!({
+                "threadId": "thread-1", "turn": {"id": "turn-1", "status": "completed", "error": null}
+            }),
+        ),
+    ];
+    for event in events {
+        assert_eq!(
+            events::masked_codex_failure_diagnostic(&event, &SecretMasker::from_raw("")),
+            None,
+            "{event}"
+        );
+    }
+}
+
 #[test]
 fn warning_maps_to_non_failure_event() {
     let event = mapped_event(
