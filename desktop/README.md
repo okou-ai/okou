@@ -15,7 +15,6 @@ contains the existing native Accessibility and ScreenCaptureKit backend.
 ```bash
 swift test --package-path desktop -j 4
 swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
-python3 desktop/scripts/build_test.py
 CLERK_PUBLISHABLE_KEY=pk_test_example \
   OKOU_DESKTOP_PLATFORM_URL=https://staging-app.omby.ai \
   python3 desktop/scripts/build.py --development --package zip
