@@ -1875,10 +1875,7 @@ const teamsExecutionInstallation$ = command(
     activity: TeamsMessageActivity,
     signal: AbortSignal,
   ): Promise<BoundTeamsInstallation | undefined> => {
-    const executionOrgId = connection.orgId ?? installation.orgId;
-    if (!executionOrgId) {
-      return undefined;
-    }
+    const executionOrgId = connection.orgId;
     const member = await set(
       getMemberRoleAndUpdateCache$,
       executionOrgId,
@@ -1888,9 +1885,8 @@ const teamsExecutionInstallation$ = command(
     if (
       member.kind !== "member" ||
       !installation.serviceUrl ||
-      (connection.orgId &&
-        (!connection.teamsAadObjectId ||
-          connection.teamsAadObjectId !== activity.sender.aadObjectId))
+      !connection.teamsAadObjectId ||
+      connection.teamsAadObjectId !== activity.sender.aadObjectId
     ) {
       return undefined;
     }

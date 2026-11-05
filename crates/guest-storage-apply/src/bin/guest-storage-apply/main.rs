@@ -5,6 +5,7 @@ use std::fs::File;
 #[cfg(unix)]
 use std::fs::OpenOptions;
 use std::io::{self, ErrorKind, Read as _};
+use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 const LOG_TAG: &str = "sandbox:guest-storage-apply";
@@ -19,10 +20,10 @@ enum ManifestInput {
 }
 
 fn main() {
-    if let Err(error) = install_runtime_log_paths() {
+    let runtime_dir = install_runtime_log_paths().unwrap_or_else(|error| {
         log_error!(LOG_TAG, "{error}");
         std::process::exit(1);
-    }
+    });
 
     let Some(input) = manifest_input_from_args() else {
         log_error!(LOG_TAG, "{USAGE}");
@@ -49,7 +50,7 @@ fn main() {
     }
 
     let start = Instant::now();
-    let success = run(input);
+    let success = run(input, &runtime_dir);
     let elapsed = start.elapsed();
 
     record_sandbox_op("download_total", elapsed, success, None);
@@ -61,7 +62,7 @@ fn main() {
     }
 }
 
-fn install_runtime_log_paths() -> Result<(), String> {
+fn install_runtime_log_paths() -> Result<PathBuf, String> {
     let run_id = std::env::var(env::RUN_ID_ENV).map_err(|_| {
         format!(
             "{} is required for guest-storage-apply runtime paths",
@@ -79,9 +80,9 @@ fn install_runtime_log_paths() -> Result<(), String> {
         .map_err(|error| format!("failed to resolve guest-storage-apply runtime paths: {error}"))?;
     guest_telemetry::log::set_system_log_file(runtime_paths::system_log_file(&run_dir));
     guest_telemetry::telemetry::set_sandbox_ops_log_file(runtime_paths::sandbox_ops_log_file(
-        run_dir,
+        &run_dir,
     ));
-    Ok(())
+    Ok(run_dir)
 }
 
 fn manifest_input_from_args() -> Option<ManifestInput> {
@@ -121,7 +122,7 @@ fn read_instruction_metadata(limit: usize) -> io::Result<Vec<u8>> {
     Ok(metadata)
 }
 
-fn run(input: ManifestInput) -> bool {
+fn run(input: ManifestInput, runtime_dir: &Path) -> bool {
     match input {
         ManifestInput::InstructionsStdin { .. } => {
             let Ok(metadata) =
@@ -156,9 +157,9 @@ fn run(input: ManifestInput) -> bool {
                 log_error!(LOG_TAG, "Failed to read bounded storage files input");
                 return false;
             }
-            guest_storage_apply::run_storage_files_bytes(&input)
+            guest_storage_apply::run_storage_files_bytes_in_runtime(&input, runtime_dir)
         }
-        ManifestInput::Path(manifest_path) => run_path(&manifest_path),
+        ManifestInput::Path(manifest_path) => run_path(&manifest_path, runtime_dir),
         ManifestInput::Stdin => {
             if !remove_stale_manifest_file(runtime_paths::STORAGE_MANIFEST_PATH) {
                 return false;
@@ -169,20 +170,20 @@ fn run(input: ManifestInput) -> bool {
                 log_error!(LOG_TAG, "Failed to read manifest from stdin: {e}");
                 return false;
             }
-            guest_storage_apply::run_manifest_bytes(&manifest_json)
+            guest_storage_apply::run_manifest_bytes_in_runtime(&manifest_json, runtime_dir)
         }
     }
 }
 
-fn run_path(manifest_path: &str) -> bool {
+fn run_path(manifest_path: &str, runtime_dir: &Path) -> bool {
     if manifest_path == runtime_paths::STORAGE_MANIFEST_PATH {
-        run_manifest_file_and_remove(manifest_path)
+        run_manifest_file_and_remove(manifest_path, runtime_dir)
     } else {
-        guest_storage_apply::run(manifest_path)
+        guest_storage_apply::run_in_runtime(manifest_path, runtime_dir)
     }
 }
 
-fn run_manifest_file_and_remove(manifest_path: &str) -> bool {
+fn run_manifest_file_and_remove(manifest_path: &str, runtime_dir: &Path) -> bool {
     let manifest_json = match read_manifest_file(manifest_path) {
         Ok(manifest_json) => manifest_json,
         Err(e) => {
@@ -196,7 +197,7 @@ fn run_manifest_file_and_remove(manifest_path: &str) -> bool {
         return false;
     }
 
-    guest_storage_apply::run_manifest_bytes(&manifest_json)
+    guest_storage_apply::run_manifest_bytes_in_runtime(&manifest_json, runtime_dir)
 }
 
 fn read_manifest_file(path: &str) -> io::Result<Vec<u8>> {

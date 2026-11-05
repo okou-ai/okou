@@ -3,9 +3,9 @@ import { isEditableTarget, matchShortcut } from "@okouai/ui";
 import {
   currentLeftThread$,
   currentRightThread$,
-  loadLeftThread$,
-  loadRightThread$,
 } from "./chat-thread-panes.ts";
+import { navigateChatList$ } from "./chat-list-navigation.ts";
+import { threadRowKey } from "./chat-thread-list-rows.ts";
 import type { ChatPanelSignals } from "./chat-panel-signals.ts";
 import { pinChatThread$, unpinChatThread$ } from "./chat-event.ts";
 import { setChatThreadArchivedWithFeedback$ } from "./chat-thread-archive.ts";
@@ -19,10 +19,7 @@ import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
 import { CHAT_THREAD_EMOJI_OPTIONS } from "./chat-thread-title.ts";
 import { onRef } from "../utils.ts";
 import { openChatThreadEmojiMenu$ } from "../okou-page/sidebar-state.ts";
-import {
-  currentChatThreadId$,
-  currentChatThreadNavigationList$,
-} from "../agent-chat.ts";
+import { currentChatThreadId$ } from "../agent-chat.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import {
   setupGlobalShortcut,
@@ -30,50 +27,10 @@ import {
 } from "../../lib/setup-global-shortcut.ts";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { scrollToThread$ } from "./sidebar-chat-thread-scroll.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 
 type ChatThreadPane = "main" | "side";
-
-type ChatThreadNavigationDirection = "prev" | "next";
-
-function findAdjacentListedThreadId({
-  currentThreadId,
-  direction,
-  excludedThreadId,
-  listedThreadIds,
-  orderedThreadIds,
-}: {
-  currentThreadId: string;
-  direction: ChatThreadNavigationDirection;
-  excludedThreadId: string | null;
-  listedThreadIds: readonly string[];
-  orderedThreadIds: readonly string[];
-}): string | undefined {
-  const currentIndex = orderedThreadIds.indexOf(currentThreadId);
-  if (currentIndex === -1) {
-    return undefined;
-  }
-
-  const listed = new Set(listedThreadIds);
-  const step = direction === "prev" ? -1 : 1;
-  for (
-    let index = currentIndex + step;
-    index >= 0 && index < orderedThreadIds.length;
-    index += step
-  ) {
-    const candidate = orderedThreadIds[index];
-    if (
-      candidate !== undefined &&
-      candidate !== excludedThreadId &&
-      listed.has(candidate)
-    ) {
-      return candidate;
-    }
-  }
-  return undefined;
-}
 
 function isPlainArrowScroll(event: KeyboardEvent): boolean {
   return matchShortcut("arrowup", event) || matchShortcut("arrowdown", event);
@@ -588,27 +545,14 @@ export const setChatKeyboardScrollRoot$ = onRef(
       }
       const otherPaneThreadId =
         pane === "main" ? rightThread?.threadId : leftThread?.threadId;
-      const navigation = await get(currentChatThreadNavigationList$);
-      const targetId = findAdjacentListedThreadId({
-        currentThreadId: currentId,
-        direction,
-        excludedThreadId: otherPaneThreadId ?? null,
-        listedThreadIds: navigation.listedThreadIds,
-        orderedThreadIds: navigation.orderedThreadIds,
-      });
-      if (!targetId) {
-        return;
-      }
-      if (pane === "main") {
-        set(loadLeftThread$, targetId);
-      } else {
-        set(loadRightThread$, targetId);
-      }
+      // The selection outlives this page, which it may leave for a Project.
       await set(
-        scrollToThread$,
+        navigateChatList$,
         {
-          threadId: targetId,
-          align: direction === "next" ? "bottom" : "top",
+          currentKey: threadRowKey(currentId),
+          direction,
+          pane: pane === "main" ? "main" : "side",
+          excludedThreadId: otherPaneThreadId ?? null,
         },
         get(rootSignal$),
       );

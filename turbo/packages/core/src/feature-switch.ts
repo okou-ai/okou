@@ -257,19 +257,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Ahrefs SEO connector",
     enabled: false,
   },
-  [FeatureSwitchKey.BentomlConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the BentoML model serving connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.CanvaConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Canva design connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.DeelConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Deel HR connector",
     enabled: false,
   },
   [FeatureSwitchKey.DocuSignConnector]: {
@@ -282,19 +272,9 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Mercury banking connector",
     enabled: false,
   },
-  [FeatureSwitchKey.GarminConnectConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Garmin Connect wellness connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.RedditConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Reddit connector integration",
-    enabled: false,
-  },
-  [FeatureSwitchKey.SupabaseConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Supabase database connector integration",
     enabled: false,
   },
   [FeatureSwitchKey.PayPalConnector]: {
