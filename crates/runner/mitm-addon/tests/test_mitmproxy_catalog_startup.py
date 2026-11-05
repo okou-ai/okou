@@ -100,6 +100,7 @@ asyncio.run(main())
 """
 
 
+@pytest.mark.shard_cost(2)
 @pytest.mark.parametrize("valid", [True, False])
 @pytest.mark.parametrize("managed", [True, False])
 async def test_listener_waits_for_catalog_and_preserves_standalone_options(
