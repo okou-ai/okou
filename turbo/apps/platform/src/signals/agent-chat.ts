@@ -17,6 +17,7 @@ import {
 import {
   buildChatThreadListRows,
   buildChatThreadNavigationList,
+  threadRowKey,
   type ChatThreadListRow,
   type ChatThreadNavigationList,
 } from "./chat-page/chat-thread-list-rows.ts";
@@ -203,7 +204,7 @@ function createChatThreadListView({
     currentThreadListed$: computed((get): boolean => {
       const threadId = get(currentChatThreadId$);
       return threadId
-        ? get(navigation$).listedThreadIds.includes(threadId)
+        ? get(navigation$).listedKeys.includes(threadRowKey(threadId))
         : false;
     }),
     hasHiddenArchivedThreads$,

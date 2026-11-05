@@ -14,9 +14,11 @@ import {
   unreadChatThreadListSignals$,
   type ChatThreadListSignals,
 } from "../agent-chat.ts";
-import type {
-  ChatThreadListRow,
-  ThreadChatThreadListRow,
+import {
+  listedThreadIds,
+  threadRowKey,
+  type ChatThreadListRow,
+  type ThreadChatThreadListRow,
 } from "./chat-thread-list-rows.ts";
 import {
   sidebarChatThreadItemSignalsRegistry$,
@@ -54,8 +56,9 @@ interface SidebarChatThreadScrollMetrics {
   readonly clientHeight: number;
 }
 
-export interface ScrollToThreadRequest {
-  readonly threadId: string;
+export interface ScrollToRowRequest {
+  /** The row key of a Project or chat in the list. */
+  readonly key: string;
   readonly align?: ChatThreadVirtualListScrollAlign;
 }
 
@@ -68,9 +71,9 @@ export interface SidebarChatThreadScrollSignals {
     (() => void) | undefined,
     [HTMLElement | null]
   >;
-  readonly scrollToThread$: Command<
+  readonly scrollToRow$: Command<
     Promise<boolean>,
-    [string | ScrollToThreadRequest, AbortSignal]
+    [ScrollToRowRequest, AbortSignal]
   >;
   readonly scrollCurrentChatThreadOnRef$: Command<
     (() => void) | undefined,
@@ -107,7 +110,7 @@ export const unreadSidebarChatThreadRows$ = computed(async (get) => {
   return attachItemSignals(
     get(list.rows$),
     get(sidebarChatThreadItemSignalsRegistry$).reconcile(
-      get(list.navigation$).listedThreadIds,
+      listedThreadIds(get(list.rows$)),
     ),
   );
 });
@@ -122,7 +125,7 @@ function createSidebarChatThreadViewportSignals(
     return attachItemSignals(
       get(list.rows$),
       get(sidebarChatThreadItemSignalsRegistry$).reconcile(
-        get(list.navigation$).listedThreadIds,
+        listedThreadIds(get(list.rows$)),
       ),
     );
   });
@@ -252,19 +255,14 @@ export function createSidebarChatThreadScrollSignals({
     domSignals,
     rowHeight,
   );
-  const scrollToThread$ = command(
-    async (
-      { get, set },
-      request: string | ScrollToThreadRequest,
-      signal: AbortSignal,
-    ) => {
-      const threadId = typeof request === "string" ? request : request.threadId;
-      const align = typeof request === "string" ? "top" : request.align;
+  const scrollToRow$ = command(
+    async ({ get, set }, request: ScrollToRowRequest, signal: AbortSignal) => {
+      const { key, align = "top" } = request;
       const list = await get(list$);
       signal.throwIfAborted();
 
       const index = get(list.rows$).findIndex((row) => {
-        return row.kind === "thread" && row.threadId === threadId;
+        return row.key === key;
       });
       if (index === -1) {
         return false;
@@ -279,7 +277,11 @@ export function createSidebarChatThreadScrollSignals({
       if (!threadId) {
         return;
       }
-      await set(scrollToThread$, { threadId, align: "top" }, signal);
+      await set(
+        scrollToRow$,
+        { key: threadRowKey(threadId), align: "top" },
+        signal,
+      );
     }),
   );
 
@@ -289,7 +291,7 @@ export function createSidebarChatThreadScrollSignals({
     setScrollMetrics$: domSignals.setScrollMetrics$,
     setScrollViewport$: domSignals.setScrollViewport$,
     refreshScrollViewport$: domSignals.refreshScrollViewport$,
-    scrollToThread$,
+    scrollToRow$,
     scrollCurrentChatThreadOnRef$,
   };
 }
@@ -320,19 +322,19 @@ export const refreshSidebarChatThreadLayoutOnRef$ = onRef(
   }),
 );
 
-export const scrollToThread$ = command(
+export const scrollToChatListRow$ = command(
   async (
     { set },
-    request: string | ScrollToThreadRequest,
+    request: ScrollToRowRequest,
     signal: AbortSignal,
   ): Promise<boolean> => {
     const responsiveScroll = set(
-      responsiveSidebarChatThreadScrollSignals.scrollToThread$,
+      responsiveSidebarChatThreadScrollSignals.scrollToRow$,
       request,
       signal,
     );
     const threeColumnScroll = set(
-      threeColumnSidebarChatThreadScrollSignals.scrollToThread$,
+      threeColumnSidebarChatThreadScrollSignals.scrollToRow$,
       request,
       signal,
     );

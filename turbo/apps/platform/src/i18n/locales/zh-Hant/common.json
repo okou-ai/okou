@@ -4957,6 +4957,7 @@
     "saving": "正在保存…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project 不可用"
   },
   "queue": {

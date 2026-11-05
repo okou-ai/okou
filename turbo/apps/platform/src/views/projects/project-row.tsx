@@ -37,6 +37,8 @@ import type {
   ProjectChatThreadListRow,
 } from "../../signals/chat-page/chat-thread-list-rows.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
+import { selectedProjectId$ } from "../../signals/projects/project-navigation.ts";
+import { Link } from "../router/link.tsx";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatThreadStateText } from "../okou-page/sidebar-shared.tsx";
 import {
@@ -262,52 +264,78 @@ function ProjectTrigger({
   touch,
   layout,
   expanded,
+  active,
   rowId,
   unread,
 }: ProjectRowProps & {
   readonly expanded: boolean;
+  readonly active: boolean;
   readonly rowId: string;
   readonly unread: boolean;
 }) {
+  const { t } = useTranslation();
   const toggle = useSet(toggleProject$);
   const edit = useGet(projectInlineRename$);
   const renaming = edit?.rowId === rowId;
   const startRename = useSet(startProjectInlineRename$);
   const Icon = expanded ? FolderOpen : Folder;
+  const rowHeight = layout === "list" ? "h-14" : "h-8";
   return (
     <div className="grid min-w-0 flex-1">
-      <button
-        type="button"
-        data-project-trigger=""
-        aria-expanded={expanded}
-        onClick={() => {
-          return toggle(project.id);
-        }}
-        onDoubleClick={(event) => {
-          if (
-            event.metaKey ||
-            event.ctrlKey ||
-            event.shiftKey ||
-            event.altKey
-          ) {
-            return;
-          }
-          startRename(project.id, rowId);
-        }}
+      <div
         className={cn(
-          "col-start-1 row-start-1 flex min-w-0 items-center gap-2 rounded-lg px-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-          layout === "list" ? "h-14 px-3 text-base leading-5" : "h-8",
+          "col-start-1 row-start-1 flex min-w-0 items-center",
+          renaming && "invisible",
         )}
       >
-        <Icon
-          size={16}
-          className={cn("shrink-0 opacity-70", renaming && "invisible")}
-        />
-        <span className={cn("truncate", renaming && "invisible")}>
-          {project.name}
-        </span>
-        <ChatThreadStateText state={unread ? "unread" : null} />
-      </button>
+        {/* The folder folds the Project's chats; the name opens its page. */}
+        <button
+          type="button"
+          aria-expanded={expanded}
+          aria-label={t(
+            ($) => {
+              return $.projects.toggle;
+            },
+            { name: project.name },
+          )}
+          onClick={() => {
+            return toggle(project.id);
+          }}
+          className={cn(
+            "flex shrink-0 items-center justify-center rounded-lg text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            rowHeight,
+            layout === "list" ? "w-10 pl-3 pr-1" : "w-8 px-2",
+          )}
+        >
+          <Icon size={16} className="shrink-0 opacity-70" />
+        </button>
+        <Link
+          pathname="/projects/:projectId"
+          options={{ pathParams: { projectId: project.id } }}
+          data-project-trigger=""
+          aria-current={active ? "page" : undefined}
+          onDoubleClick={(event) => {
+            if (
+              event.metaKey ||
+              event.ctrlKey ||
+              event.shiftKey ||
+              event.altKey
+            ) {
+              return;
+            }
+            startRename(project.id, rowId);
+          }}
+          className={cn(
+            "flex min-w-0 flex-1 items-center gap-2 rounded-lg pr-2 text-left text-sm text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+            rowHeight,
+            layout === "list" && "pl-2 text-base leading-5",
+            active && "font-medium",
+          )}
+        >
+          <span className="truncate">{project.name}</span>
+          <ChatThreadStateText state={unread ? "unread" : null} />
+        </Link>
+      </div>
       {renaming && (
         <ProjectRenameForm
           project={project}
@@ -333,6 +361,8 @@ export function ProjectRow({
 }) {
   const { t } = useTranslation();
   const { project, expanded } = row;
+  // A Project's page makes its row the list's current item.
+  const active = useGet(selectedProjectId$) === project.id;
   const unread = useLastResolved(unreadProjectIds$)?.has(project.id) ?? false;
   const showUnread = !expanded && unread;
   const [creation, create] = useLoadableSet(newProjectThread$);
@@ -341,12 +371,18 @@ export function ProjectRow({
     detach(create(project.id, signal), Reason.DomCallback);
   }
   return (
-    <div className="group/project flex min-w-0 items-center rounded-lg hover:bg-state-hover">
+    <div
+      className={cn(
+        "group/project flex min-w-0 items-center rounded-lg motion-safe:transition-colors motion-safe:duration-[180ms]",
+        active ? "bg-state-selected" : "hover:bg-state-hover",
+      )}
+    >
       <ProjectTrigger
         project={project}
         touch={touch}
         layout={layout}
         expanded={expanded}
+        active={active}
         rowId={`project-${touch ? "touch" : "sidebar"}-${project.id}`}
         unread={showUnread}
       />

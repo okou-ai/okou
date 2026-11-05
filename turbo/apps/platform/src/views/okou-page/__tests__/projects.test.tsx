@@ -87,6 +87,17 @@ function button(name: string, container: QueryScope = document) {
   }
   return found;
 }
+// The folder icon folds a Project; its name links to the Project's page.
+function projectToggle(name: string, projectId = id) {
+  return button(`Show or hide chats in ${name}`, projectRows(projectId));
+}
+function projectLink(name: string, projectId = id) {
+  const link = namedLink(projectRows(projectId), name);
+  if (!link) {
+    throw new Error(`Project link ${name} not found`);
+  }
+  return link;
+}
 function findMenuItem(name: string) {
   return waitFor(() => {
     const item = queryAllByRoleFast("menuitem").find((candidate) => {
@@ -175,7 +186,7 @@ test("Cached Projects appear before chat setup and remote synchronization finish
     sharedWorkerTestTransport: "message-port" as const,
   };
   await setupPage({ context: { ...context, signal }, ...options });
-  expect(button("Launch", projectRows())).toBeInTheDocument();
+  expect(projectToggle("Launch")).toBeInTheDocument();
 
   context.store.set(resetPage$);
   releasePageDom();
@@ -211,7 +222,7 @@ test("Cached Projects appear before chat setup and remote synchronization finish
     await page.content;
     await chatSetupStarted.promise;
     await waitFor(() => {
-      expect(button("Launch", projectRows())).toBeInTheDocument();
+      expect(projectToggle("Launch")).toBeInTheDocument();
     });
     expect(threadLink(thread.id)).toBeInTheDocument();
     expect(chatSetup.settled()).toBeFalsy();
@@ -273,7 +284,7 @@ test("Projects stay visible when returning from a chat to its pinned Agent", asy
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
     sharedWorkerTestTransport: "message-port",
   });
-  click(button("Launch", projectRows()));
+  click(projectToggle("Launch"));
   expect(namedLink(projectRows(), "Launch planning")).toBeInTheDocument();
   const agent = await waitFor(() => {
     const link = document.querySelector(
@@ -326,7 +337,7 @@ test.each(["account", "workspace"] as const)(
       ...workspace.pageOptions,
       featureSwitches: { [FeatureSwitchKey.Projects]: true },
     });
-    expect(button("Launch", projectRows())).toBeInTheDocument();
+    expect(projectToggle("Launch")).toBeInTheDocument();
 
     const clerk = context.mocks.clerk();
     act(() => {
@@ -372,33 +383,24 @@ test("Projects remember open and collapsed states after a page reload", async ()
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   };
   await setupPage({ context: { ...context, signal }, ...options });
-  expect(button("Launch", projectRows())).toHaveAttribute(
-    "aria-expanded",
-    "true",
-  );
-  expect(button("Research", projectRows(otherId))).toHaveAttribute(
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(projectToggle("Research", otherId)).toHaveAttribute(
     "aria-expanded",
     "false",
   );
 
-  click(button("Launch", projectRows()));
-  click(button("Research", projectRows(otherId)));
-  expect(button("Launch", projectRows())).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
+  click(projectToggle("Launch"));
+  click(projectToggle("Research", otherId));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   expect(namedLink(projectRows(otherId), "Research notes")).toBeInTheDocument();
 
   context.store.set(resetPage$);
   releasePageDom();
   await setupPage({ context: reloadedContext, ...options });
 
-  expect(button("Launch", projectRows())).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   expect(namedLink(projectRows(), "Launch planning")).toBeNull();
-  expect(button("Research", projectRows(otherId))).toHaveAttribute(
+  expect(projectToggle("Research", otherId)).toHaveAttribute(
     "aria-expanded",
     "true",
   );
@@ -422,11 +424,8 @@ test.each(["account", "workspace"] as const)(
       featureSwitches: { [FeatureSwitchKey.Projects]: true },
     };
     await setupPage({ context: { ...context, signal }, ...options });
-    click(button("Launch", projectRows()));
-    expect(button("Launch", projectRows())).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    click(projectToggle("Launch"));
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
 
     context.store.set(resetPage$);
     releasePageDom();
@@ -447,15 +446,9 @@ test.each(["account", "workspace"] as const)(
       },
     });
 
-    expect(button("Launch", projectRows())).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    click(button("Launch", projectRows()));
-    expect(button("Launch", projectRows())).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+    click(projectToggle("Launch"));
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
   },
 );
 
@@ -482,20 +475,11 @@ test.each(["not json", '{"invalid":"true"}'])(
       featureSwitches: { [FeatureSwitchKey.Projects]: true },
     });
 
-    expect(button("Launch", projectRows())).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
-    click(button("Launch", projectRows()));
-    expect(button("Launch", projectRows())).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
-    click(button("Launch", projectRows()));
-    expect(button("Launch", projectRows())).toHaveAttribute(
-      "aria-expanded",
-      "false",
-    );
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+    click(projectToggle("Launch"));
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+    click(projectToggle("Launch"));
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   },
 );
 
@@ -530,7 +514,7 @@ test("Projects show cross-Agent chats inline and follow the list filter without 
     },
   });
   const user = userEvent.setup({ delay: null });
-  await user.click(button("Launch", projectRows()));
+  await user.click(projectToggle("Launch"));
   expect(namedLink(projectRows(), "Launch planning")).toBeVisible();
   expect(namedLink(projectRows(), "Other Agent research")).toHaveAttribute(
     "href",
@@ -545,49 +529,120 @@ test("Projects show cross-Agent chats inline and follow the list filter without 
     expect(namedLink(projectRows(), "Archived research")).toBeVisible();
   });
   expect(namedLink(projectRows(), "Launch planning")).toBeNull();
-  await user.click(button("Launch", projectRows()));
-  expect(button("Launch", projectRows())).toHaveAttribute(
-    "aria-expanded",
-    "false",
-  );
+  await user.click(projectToggle("Launch"));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
 });
-test("Chat navigation shortcuts move through expanded Projects and the chats outside them", async () => {
-  const ordinary = continuityThread(113, 1, "Ordinary chat");
-  const member = {
-    ...continuityThread(113, 2, "Launch planning"),
-    projectId: id,
-  };
+function pressChatNavigation(direction: "ArrowUp" | "ArrowDown") {
+  return userEvent
+    .setup({ delay: null })
+    .keyboard(`{Control>}{Shift>}{${direction}}{/Shift}{/Control}`);
+}
+function activeListItem() {
+  return (
+    document
+      .querySelector('[data-testid="sidebar-chat-threads-virtual-list"]')
+      ?.querySelector('[aria-current="page"]') ?? null
+  );
+}
+async function setupProjectNavigation(caseId: number, path: string) {
+  // Project: A1, A, A2 (newest first); B stays outside it.
+  const b = continuityThread(caseId, 1, "Thread B");
+  const a2 = { ...continuityThread(caseId, 2, "Thread A2"), projectId: id };
+  const a = { ...continuityThread(caseId, 3, "Thread A"), projectId: id };
+  const a1 = { ...continuityThread(caseId, 4, "Thread A1"), projectId: id };
   const workspace = installContinuityWorkspace(context, {
-    caseId: 113,
-    threads: [ordinary, member],
+    caseId,
+    threads: [b, a2, a, a1],
   });
+  // A Project page lists the default Agent's chats, so these belong to it.
+  context.mocks.data.onboardingStatus({ defaultAgentId: b.agentId });
   metadata();
   await setupPage({
     context,
-    path: `/chats/${ordinary.id}`,
+    path: path
+      .replace(":b", b.id)
+      .replace(":a1", a1.id)
+      .replace(":a2", a2.id)
+      .replace(":a", a.id),
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  const user = userEvent.setup({ delay: null });
-  await user.click(button("Launch", projectRows()));
-  expect(namedLink(projectRows(), "Launch planning")).toBeInTheDocument();
-  const input = await screen.findByRole("textbox", { name: "Message" });
-  input.focus();
+  return { a1, a, a2, b };
+}
+
+test("Chat navigation shortcuts move through expanded Projects and the chats outside them", async () => {
+  const { a2, b } = await setupProjectNavigation(113, "/chats/:b");
+  await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
+  expect(namedLink(projectRows(), "Thread A2")).toBeInTheDocument();
+  (await screen.findByRole("textbox", { name: "Message" })).focus();
 
   // The first chat outside Projects continues upward into the Project above.
-  await user.keyboard("{Control>}{Shift>}{ArrowUp}{/Shift}{/Control}");
+  await pressChatNavigation("ArrowUp");
   await waitFor(() => {
-    expect(location.pathname).toBe(`/chats/${member.id}`);
+    expect(location.pathname).toBe(`/chats/${a2.id}`);
   });
-  expect(new URLSearchParams(location.search).get("project")).toBe(id);
-  expect(threadLink(member.id)).toHaveAttribute("aria-current", "page");
+  // A chat knows its Project, so its URL carries no Project context.
+  expect(location.search).toBe("");
+  expect(threadLink(a2.id)).toHaveAttribute("aria-current", "page");
 
-  await user.keyboard("{Control>}{Shift>}{ArrowDown}{/Shift}{/Control}");
+  await pressChatNavigation("ArrowDown");
   await waitFor(() => {
-    expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+    expect(location.pathname).toBe(`/chats/${b.id}`);
   });
-  expect(new URLSearchParams(location.search).get("project")).toBeNull();
+});
+
+test("A folded Project keeps the open chat's place: up selects the Project and down passes the fold", async () => {
+  const { a, b } = await setupProjectNavigation(114, "/chats/:a");
+  // Opening a chat reveals its Project the first time.
+  await waitFor(() => {
+    expect(threadLink(a.id)).toHaveAttribute("aria-current", "page");
+  });
+  await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(location.pathname).toBe(`/chats/${a.id}`);
+  expect(activeListItem()).toBeNull();
+  (await screen.findByRole("textbox", { name: "Message" })).focus();
+
+  await pressChatNavigation("ArrowDown");
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${b.id}`);
+  });
+
+  await pressChatNavigation("ArrowUp");
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/projects/${id}`);
+  });
+  await waitFor(() => {
+    expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
+  });
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+});
+
+test("A Project page moves down into its chats when unfolded and past them when folded", async () => {
+  const { a1, b } = await setupProjectNavigation(115, `/projects/${id}`);
+  await waitFor(() => {
+    expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
+  });
+  // A Project page leaves the Project folded the way it was.
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+
+  await pressChatNavigation("ArrowDown");
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${b.id}`);
+  });
+  await pressChatNavigation("ArrowUp");
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/projects/${id}`);
+  });
+
+  await userEvent.setup({ delay: null }).click(projectToggle("Launch"));
+  (await screen.findByRole("textbox", { name: "Message" })).focus();
+  await pressChatNavigation("ArrowDown");
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${a1.id}`);
+  });
+  expect(threadLink(a1.id)).toHaveAttribute("aria-current", "page");
 });
 test("ordinary lists hide assigned chats and @Project inserts captured identity without navigating", async () => {
   const ordinary = continuityThread(91, 1, "Ordinary chat");
@@ -714,7 +769,10 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   );
   await user.click(button("Save"));
   await waitFor(() => {
-    return expect(button("Campaign")).toHaveAttribute("aria-expanded", "true");
+    return expect(button("Show or hide chats in Campaign")).toHaveAttribute(
+      "aria-expanded",
+      "true",
+    );
   });
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(confirmation.settled()).toBeFalsy();
@@ -729,7 +787,7 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   await fill(input, "Campaign two");
   await user.click(button("Save"));
   await waitFor(() => {
-    return expect(button("Campaign two")).toBeInTheDocument();
+    return expect(namedLink(document, "Campaign two")).toBeInTheDocument();
   });
   await waitFor(() => {
     expect(button("Options for Campaign two")).toHaveFocus();
@@ -848,7 +906,7 @@ test("Creating a Project from a chat moves it immediately and survives navigatio
     }
     return projectId;
   });
-  expect(button("Campaign", projectRows(groupProjectId))).toHaveAttribute(
+  expect(projectToggle("Campaign", groupProjectId)).toHaveAttribute(
     "aria-expanded",
     "true",
   );
@@ -862,18 +920,19 @@ test("Creating a Project from a chat moves it immediately and survives navigatio
     throw new Error("Project identity missing");
   }
 
-  await user.click(button("Campaign", projectRows(groupProjectId)));
+  await user.click(projectToggle("Campaign", groupProjectId));
   await user.click(threadLink(other.id));
   await waitFor(() => {
     expect(location.pathname).toBe(`/chats/${other.id}`);
   });
   confirmation.resolve();
   await waitFor(() => {
-    expect(
-      button("Campaign confirmed", projectRows(projectId)),
-    ).toHaveAttribute("aria-expanded", "false");
+    expect(projectToggle("Campaign confirmed", projectId)).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
   });
-  await user.click(button("Campaign confirmed", projectRows(projectId)));
+  await user.click(projectToggle("Campaign confirmed", projectId));
   await waitFor(() => {
     expect(
       namedLink(projectRows(projectId), "Campaign planning"),
@@ -978,9 +1037,9 @@ test("A new Project accepts a new chat after its pending creation is confirmed",
   );
   await user.click(button("Save"));
   const groupProjectId = await waitFor(() => {
-    const projectId = button("Campaign").closest<HTMLElement>(
-      "[data-project-row-id]",
-    )?.dataset.projectRowId;
+    const projectId = button(
+      "Show or hide chats in Campaign",
+    ).closest<HTMLElement>("[data-project-row-id]")?.dataset.projectRowId;
     if (!projectId) {
       throw new Error("Project not found");
     }
@@ -1169,7 +1228,7 @@ test("Dropping over an existing Project chat moves immediately while the request
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  click(button("Launch", projectRows()));
+  click(projectToggle("Launch"));
   const source = threadLink(ordinary.id);
   const target = threadLink(member.id);
   const dataTransfer = createDataTransferStub({ "text/uri-list": source.href });
@@ -1185,7 +1244,7 @@ test("Dropping over an existing Project chat moves immediately while the request
     target,
     new MouseEvent("dragleave", {
       bubbles: true,
-      relatedTarget: button("Launch", projectRows()),
+      relatedTarget: projectToggle("Launch"),
     }),
   );
   expect(screen.getByRole("tooltip")).toHaveTextContent("Move to Launch");
@@ -1225,8 +1284,8 @@ test("A cross-Agent Project chat can be dragged onto another collapsed Project",
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  click(button("Launch", projectRows()));
-  expect(button("Research", projectRows(secondId))).toHaveAttribute(
+  click(projectToggle("Launch"));
+  expect(projectToggle("Research", secondId)).toHaveAttribute(
     "aria-expanded",
     "false",
   );
@@ -1242,7 +1301,7 @@ test("A cross-Agent Project chat can be dragged onto another collapsed Project",
       namedLink(projectRows(secondId), "Cross-Agent research"),
     ).toBeInTheDocument();
   });
-  expect(button("Research", projectRows(secondId))).toHaveAttribute(
+  expect(projectToggle("Research", secondId)).toHaveAttribute(
     "aria-expanded",
     "true",
   );
@@ -1269,7 +1328,7 @@ test("Escape cancels a Project drag, and unrelated drags or the current Project 
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  click(button("Launch", projectRows()));
+  click(projectToggle("Launch"));
   const dataTransfer = createDataTransferStub();
   fireEvent.dragStart(threadLink(ordinary.id), { dataTransfer });
   fireEvent.dragOver(projectRow(), { dataTransfer });
@@ -1334,7 +1393,7 @@ test("A failed drag move shows an error beside its destination", async () => {
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
 });
 
-test("Project deep links open the Chat workspace with the Project expanded", async () => {
+test("Project deep links open the Project page with its composer", async () => {
   const member = {
     ...continuityThread(94, 1, "Launch planning"),
     projectId: id,
@@ -1351,16 +1410,19 @@ test("Project deep links open the Chat workspace with the Project expanded", asy
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
   await waitFor(() => {
-    return expect(button("Launch", projectRows())).toHaveAttribute(
-      "aria-expanded",
-      "true",
+    expect(screen.getByTestId("project-page-heading")).toHaveTextContent(
+      "Launch",
     );
   });
-  expect(namedLink(projectRows(), "Launch planning")).toBeInTheDocument();
-  expect(location.pathname).toContain("/chat");
+  expect(location.pathname).toBe(`/projects/${id}`);
+  expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
+  expect(projectLink("Launch")).toHaveAttribute("href", `/projects/${id}`);
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
 });
 
-test("Project new chat opens before confirmation and retains its entry Agent", async () => {
+test("Project new chat opens before confirmation with the default Agent", async () => {
   const confirmation = context.mocks.deferred<void>();
   const persisted = context.mocks.deferred<void>();
   const ordinary = continuityThread(95, 1, "Ordinary chat");
@@ -1410,7 +1472,9 @@ test("Project new chat opens before confirmation and retains its entry Agent", a
     if (!body.clientThreadId) {
       throw new Error("Client chat identity missing");
     }
-    expect(body.agentId).toBe(ordinary.agentId);
+    // Projects compose with the workspace's default Agent from the
+    // onboarding status, whichever Agent's chat was open.
+    expect(body.agentId).toBe("c0000000-0000-4000-a000-000000000001");
     expect(body.projectId).toBe(id);
     createdId = body.clientThreadId;
     await confirmation.promise;
@@ -1451,21 +1515,16 @@ test("Project new chat opens before confirmation and retains its entry Agent", a
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
   const user = userEvent.setup({ delay: null });
-  await user.click(button("Launch", projectRows()));
+  await user.click(projectToggle("Launch"));
   const link = namedLink(projectRows(), "Other Agent research");
   if (!link) {
     throw new Error("Member chat missing");
   }
-  await waitFor(() => {
-    return expect(link.getAttribute("href")).toContain(
-      `projectAgent=${ordinary.agentId}`,
-    );
-  });
+  expect(link).toHaveAttribute("href", `/chats/${other.id}`);
   await user.click(link);
   await waitFor(() => {
     return expect(location.pathname).toBe(`/chats/${other.id}`);
   });
-  expect(location.search).toContain(`projectAgent=${ordinary.agentId}`);
   await user.click(button("New chat", projectRows()));
   await waitFor(() => {
     expect(namedLink(projectRows(), "New chat")).toHaveAttribute(
@@ -1475,8 +1534,7 @@ test("Project new chat opens before confirmation and retains its entry Agent", a
     expect(createdId).toBeDefined();
     expect(location.pathname).toBe(`/chats/${createdId}`);
   });
-  expect(location.search).toContain(`project=${id}`);
-  expect(location.search).toContain(`projectAgent=${ordinary.agentId}`);
+  expect(location.search).toBe("");
   expect(confirmation.settled()).toBeFalsy();
   confirmation.resolve();
   await persisted.promise;
@@ -1560,14 +1618,14 @@ test("Project rename closes immediately and yields to persisted events", async (
   );
   click(button("Save"));
   await waitFor(() => {
-    expect(button("Launch renamed", projectRows())).toBeInTheDocument();
+    expect(projectToggle("Launch renamed")).toBeInTheDocument();
     expect(button("Options for Launch renamed", projectRows())).toHaveFocus();
   });
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(confirmation.settled()).toBeFalsy();
   confirmation.resolve();
   await waitFor(() => {
-    expect(button("Launch confirmed", projectRows())).toBeInTheDocument();
+    expect(projectToggle("Launch confirmed")).toBeInTheDocument();
   });
 });
 
@@ -1733,7 +1791,7 @@ test("Deleting another Agent's Project chat removes it before confirmation", asy
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  click(button("Launch", projectRows()));
+  click(projectToggle("Launch"));
   const row = document.querySelector<HTMLElement>(
     `[data-sidebar-chat-thread-row-id="${member.id}"]`,
   );
@@ -1780,9 +1838,9 @@ test("PWA uses the same Projects and a bottom sheet for Thread membership", asyn
   });
   const user = userEvent.setup({ delay: null });
   await waitFor(() => {
-    return expect(button("Launch", projectRows())).toBeInTheDocument();
+    return expect(projectToggle("Launch")).toBeInTheDocument();
   });
-  await user.click(button("Launch", projectRows()));
+  await user.click(projectToggle("Launch"));
   const row = document.querySelector<HTMLElement>(
     `[data-sidebar-chat-thread-row-id="${member.id}"]`,
   );
@@ -1872,10 +1930,7 @@ test("A Project mention reveals a folded chat sidebar and keeps the current conv
   await user.click(mention);
   await waitFor(() => {
     expect(screen.getByTestId("chat-list-column")).toBeInTheDocument();
-    expect(button("Launch", projectRows())).toHaveAttribute(
-      "aria-expanded",
-      "true",
-    );
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
   });
   expect(namedLink(projectRows(), "Launch planning")).toBeInTheDocument();
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);

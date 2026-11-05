@@ -40,12 +40,39 @@ export type ChatThreadListRow =
   | ProjectStatusChatThreadListRow;
 
 export interface ChatThreadNavigationList {
-  /** Every chat in list order, including chats a filter or fold hides. */
-  readonly orderedThreadIds: readonly string[];
-  /** Chats with a visible row, which navigation can select. */
-  readonly listedThreadIds: readonly string[];
-  /** The Project of each listed chat inside a Project. */
-  readonly threadProjectIds: ReadonlyMap<string, string>;
+  /**
+   * Every Project and chat in list order by row key, including the ones a
+   * fold, filter or "show more" limit hides, so a hidden current item keeps
+   * its position.
+   */
+  readonly orderedKeys: readonly string[];
+  /** Keys of the Projects and chats with a visible row. */
+  readonly listedKeys: readonly string[];
+}
+
+export function projectRowKey(projectId: string): string {
+  return `project:${projectId}`;
+}
+
+export function threadRowKey(threadId: string): string {
+  return `thread:${threadId}`;
+}
+
+export function projectIdOfRowKey(key: string): string | null {
+  return key.startsWith("project:") ? key.slice("project:".length) : null;
+}
+
+export function threadIdOfRowKey(key: string): string | null {
+  return key.startsWith("thread:") ? key.slice("thread:".length) : null;
+}
+
+/** Chat rows in list order, which own one item signal each. */
+export function listedThreadIds(
+  rows: readonly ChatThreadListRow[],
+): readonly string[] {
+  return rows.flatMap((row) => {
+    return row.kind === "thread" ? [row.threadId] : [];
+  });
 }
 
 function groupProjectThreadIds(
@@ -81,7 +108,7 @@ function projectGroupRows({
   const rows: ChatThreadListRow[] = [
     {
       kind: "project",
-      key: `project:${projectId}`,
+      key: projectRowKey(projectId),
       projectId,
       project,
       expanded,
@@ -100,7 +127,7 @@ function projectGroupRows({
     for (const threadId of threadIds.slice(0, limit)) {
       rows.push({
         kind: "thread",
-        key: `thread:${threadId}`,
+        key: threadRowKey(threadId),
         threadId,
         projectId,
         listIndex: null,
@@ -158,7 +185,7 @@ export function buildChatThreadListRows({
   for (const [listIndex, threadId] of threadIds.entries()) {
     rows.push({
       kind: "thread",
-      key: `thread:${threadId}`,
+      key: threadRowKey(threadId),
       threadId,
       projectId: null,
       listIndex,
@@ -180,25 +207,18 @@ export function buildChatThreadNavigationList({
   allThreadIds: readonly string[];
 }): ChatThreadNavigationList {
   const projectThreadIds = groupProjectThreadIds(allProjectThreads);
-  const listedThreadIds: string[] = [];
-  const threadProjectIds = new Map<string, string>();
-  for (const row of rows) {
-    if (row.kind !== "thread") {
-      continue;
-    }
-    listedThreadIds.push(row.threadId);
-    if (row.projectId !== null) {
-      threadProjectIds.set(row.threadId, row.projectId);
-    }
-  }
   return {
-    orderedThreadIds: [
+    orderedKeys: [
       ...projects.flatMap((project) => {
-        return projectThreadIds.get(project.id) ?? [];
+        return [
+          projectRowKey(project.id),
+          ...(projectThreadIds.get(project.id) ?? []).map(threadRowKey),
+        ];
       }),
-      ...allThreadIds,
+      ...allThreadIds.map(threadRowKey),
     ],
-    listedThreadIds,
-    threadProjectIds,
+    listedKeys: rows.flatMap((row) => {
+      return row.kind === "project" || row.kind === "thread" ? [row.key] : [];
+    }),
   };
 }

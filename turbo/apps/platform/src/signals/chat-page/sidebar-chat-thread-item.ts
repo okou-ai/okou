@@ -31,11 +31,6 @@ export type SidebarChatThreadIndicatorState =
 export type SidebarChatThreadPaneIndicator = "main" | "sidebar";
 export type SidebarChatThreadTargetPane = "main" | "sidebar";
 
-export interface SidebarProjectContext {
-  readonly projectId: string;
-  readonly agentId: string;
-}
-
 export interface SidebarChatThreadItemSignals {
   readonly threadId: string;
   readonly title$: Computed<string | null>;
@@ -49,10 +44,7 @@ export interface SidebarChatThreadItemSignals {
   readonly indicatorState$: Computed<
     Promise<SidebarChatThreadIndicatorState | null>
   >;
-  readonly select$: Command<
-    boolean,
-    [SidebarChatThreadTargetPane, SidebarProjectContext?]
-  >;
+  readonly select$: Command<boolean, [SidebarChatThreadTargetPane]>;
   readonly togglePinned$: Command<Promise<void>, [AbortSignal]>;
   readonly toggleArchived$: Command<Promise<void>, [AbortSignal]>;
   readonly toggleMuted$: Command<Promise<void>, [AbortSignal]>;
@@ -150,37 +142,31 @@ interface SidebarChatThreadItemSignalsRegistry {
 }
 
 function createThreadSelectionCommand(threadId: string) {
-  return command(
-    (
-      { get, set },
-      pane: SidebarChatThreadTargetPane,
-      projectContext?: SidebarProjectContext,
-    ) => {
-      const mainThreadId = get(pathParams$)?.threadId;
-      if (typeof mainThreadId !== "string") {
-        set(setSidebarExpanded$, false);
-        return false;
-      }
-
-      if (pane === "sidebar") {
-        const currentLeftId = get(currentLeftThread$)?.threadId ?? null;
-        const currentRightId = get(currentRightThread$)?.threadId ?? null;
-        if (threadId === currentLeftId) {
-          return true;
-        }
-        if (threadId === currentRightId) {
-          set(unloadRightThread$);
-        } else {
-          set(loadRightThread$, threadId);
-        }
-      } else if (get(currentLeftThread$)?.threadId !== threadId) {
-        set(loadLeftThread$, threadId, projectContext);
-      }
-
+  return command(({ get, set }, pane: SidebarChatThreadTargetPane) => {
+    const mainThreadId = get(pathParams$)?.threadId;
+    if (typeof mainThreadId !== "string") {
       set(setSidebarExpanded$, false);
-      return true;
-    },
-  );
+      return false;
+    }
+
+    if (pane === "sidebar") {
+      const currentLeftId = get(currentLeftThread$)?.threadId ?? null;
+      const currentRightId = get(currentRightThread$)?.threadId ?? null;
+      if (threadId === currentLeftId) {
+        return true;
+      }
+      if (threadId === currentRightId) {
+        set(unloadRightThread$);
+      } else {
+        set(loadRightThread$, threadId);
+      }
+    } else if (get(currentLeftThread$)?.threadId !== threadId) {
+      set(loadLeftThread$, threadId);
+    }
+
+    set(setSidebarExpanded$, false);
+    return true;
+  });
 }
 
 function createSidebarChatThreadItemSignals(

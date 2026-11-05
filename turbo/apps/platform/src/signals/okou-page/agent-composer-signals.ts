@@ -87,6 +87,8 @@ const noOpEventAction$ = command(
 
 interface AgentComposerOptions {
   readonly forward?: ChatForwardContext;
+  /** A Project page starts its chats in that Project. */
+  readonly projectId?: string;
   readonly onOptimisticSend?: () => void;
 }
 
@@ -127,6 +129,7 @@ function createAgentSubmitMessage(
         send,
         {
           agentId,
+          ...(options.projectId ? { projectId: options.projectId } : {}),
           draft,
           prompt: submission.prompt,
           generationTemplate: submission.generationTemplate,
@@ -230,6 +233,7 @@ export function createForwardAgentComposerSignals(
 interface AgentComposerContext {
   readonly agentId: string;
   readonly agentDraft: EnsuredAgentDraft;
+  readonly projectId?: string;
 }
 
 const internalAgentComposerContext$ = state<AgentComposerContext | null>(null);
@@ -248,5 +252,6 @@ export const agentChatComposerSignals$ = computed((get) => {
   return createAgentComposerSignalsWithDraft(
     context.agentId,
     context.agentDraft,
+    context.projectId ? { projectId: context.projectId } : {},
   );
 });

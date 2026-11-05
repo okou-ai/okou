@@ -7,7 +7,6 @@ import {
   projectThreadDragEventsRef$,
   startProjectThreadDrag$,
 } from "../../signals/projects/project-thread-drag.ts";
-import { projectCreationAgentId$ } from "../../signals/projects/project-selected-agent.ts";
 import {
   ProjectCreateButton,
   ProjectRow,
@@ -94,7 +93,6 @@ import {
   type SidebarChatThreadWindow,
 } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 import type {
-  SidebarProjectContext,
   SidebarChatThreadIndicatorState,
   SidebarChatThreadItemSignals,
 } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
@@ -614,12 +612,10 @@ function ChatThreadItemLink({
   signals,
   shortcutNumber,
   touch,
-  projectContext,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
   touch: boolean;
-  projectContext?: SidebarProjectContext;
 }) {
   const { t } = useTranslation();
   const title = useGet(signals.title$);
@@ -644,12 +640,6 @@ function ChatThreadItemLink({
       pathname="/chats/:threadId"
       options={{
         pathParams: { threadId: signals.threadId },
-        searchParams: projectContext
-          ? new URLSearchParams({
-              project: projectContext.projectId,
-              projectAgent: projectContext.agentId,
-            })
-          : undefined,
       }}
       aria-current={isCurrentPage ? "page" : undefined}
       data-sidebar-chat-thread-id={signals.threadId}
@@ -668,7 +658,7 @@ function ChatThreadItemLink({
         if (e.metaKey || e.ctrlKey || e.shiftKey) {
           return;
         }
-        if (select(e.altKey ? "sidebar" : "main", projectContext)) {
+        if (select(e.altKey ? "sidebar" : "main")) {
           e.preventDefault();
         }
       }}
@@ -831,13 +821,11 @@ export function ChatThreadItem({
   shortcutNumber,
   rowIndex,
   touch = false,
-  projectContext,
 }: {
   signals: SidebarChatThreadItemSignals;
   shortcutNumber: number | undefined;
   rowIndex: number;
   touch?: boolean;
-  projectContext?: SidebarProjectContext;
 }) {
   return (
     <div
@@ -848,7 +836,6 @@ export function ChatThreadItem({
         signals={signals}
         shortcutNumber={shortcutNumber}
         touch={touch}
-        projectContext={projectContext}
       />
       <ChatThreadItemRename signals={signals} touch={touch} />
       <div
@@ -1902,14 +1889,12 @@ function ChatThreadListRowContent({
   touch,
   layout,
   shortcuts,
-  projectAgentId,
 }: {
   row: SidebarChatThreadRow;
   index: number;
   touch: boolean;
   layout: ProjectRowLayout;
   shortcuts: boolean;
-  projectAgentId: string | null | undefined;
 }) {
   if (row.kind === "project") {
     return <ProjectRow row={row} touch={touch} layout={layout} />;
@@ -1928,11 +1913,6 @@ function ChatThreadListRowContent({
           : undefined
       }
       touch={touch}
-      projectContext={
-        row.projectId !== null && projectAgentId
-          ? { projectId: row.projectId, agentId: projectAgentId }
-          : undefined
-      }
     />
   );
 }
@@ -2016,7 +1996,6 @@ function ChatThreadListRowsView({
   children?: ReactNode;
 }) {
   const { t } = useTranslation();
-  const projectAgentId = useLastResolved(projectCreationAgentId$);
   const [moving, move] = useLoadableSet(moveDraggedProjectThread$);
   const signal = useGet(rootSignal$);
   const dragEventsRef = useSet(projectThreadDragEventsRef$);
@@ -2052,7 +2031,6 @@ function ChatThreadListRowsView({
                 touch={touch}
                 layout={layout}
                 shortcuts={shortcuts}
-                projectAgentId={projectAgentId}
               />
             </ChatThreadListRowFrame>
           );

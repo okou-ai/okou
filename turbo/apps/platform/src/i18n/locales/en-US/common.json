@@ -4972,6 +4972,7 @@
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
+    "toggle": "Show or hide chats in {{name}}",
     "unavailable": "Project unavailable"
   },
   "queue": {

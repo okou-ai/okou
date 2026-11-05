@@ -20,7 +20,7 @@ import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { rootVersion$ } from "../root-signal.ts";
 import { accept } from "../../lib/accept.ts";
-import { searchParams$, pathParams$ } from "../route.ts";
+import { pathParams$ } from "../route.ts";
 import {
   catchUpChatThreadEventSource$,
   eventDrivenChatThreads$,
@@ -146,13 +146,15 @@ export const hydrateProjects$ = command(
       }
     }
     await set(syncProjects$, signal);
+    // An open chat reveals its Project the first time; a Project page leaves
+    // the Project folded the way its member left it.
     const threadId = get(pathParams$)?.threadId;
     const projectId =
       typeof threadId === "string"
         ? get(eventDrivenChatThreads$).find((thread) => {
             return thread.id === threadId;
           })?.projectId
-        : get(searchParams$).get("project");
+        : null;
     if (projectId) {
       set(expandProject$, projectId, { ifUnset: true });
     }

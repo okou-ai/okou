@@ -5,7 +5,8 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { user$ } from "../../signals/auth.ts";
-import { Pin } from "lucide-react";
+import { FolderOpen, Pin } from "lucide-react";
+import type { Project } from "@okouai/api-contracts/validators/projects";
 import {
   Button,
   Tooltip,
@@ -454,7 +455,33 @@ function GreetingAvatarHat({ url }: { url: string }) {
   );
 }
 
-function AgentComposerPage() {
+function ProjectComposerHeading({ project }: { project: Project }) {
+  return (
+    <div
+      data-testid="project-page-heading"
+      className="flex max-w-full items-center gap-3"
+    >
+      <FolderOpen
+        aria-hidden="true"
+        className="size-7 shrink-0 text-muted-foreground"
+      />
+      <h2 className="min-w-0 truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
+        {project.name}
+      </h2>
+    </div>
+  );
+}
+
+/**
+ * The new-chat page of an Agent, or of a Project when one is given: the
+ * Project's heading takes the greeting's place above the same composer. A
+ * Project that is still loading reserves the heading row.
+ */
+export function AgentComposerPage({
+  project,
+}: {
+  project?: Project | null;
+} = {}) {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
   const user = useLastResolved(user$);
@@ -536,7 +563,9 @@ function AgentComposerPage() {
                 renders incomplete. Reserve the finished row's height, but do
                 not let the avatar run a throwaway entrance before the real
                 greeting can mount under its final identity. */}
-            {currentChatAgentId === undefined || tagline === "" ? null : (
+            {project !== undefined ? (
+              project && <ProjectComposerHeading project={project} />
+            ) : currentChatAgentId === undefined || tagline === "" ? null : (
               <div
                 key={greetingIdentity}
                 data-slot="chat-greeting"

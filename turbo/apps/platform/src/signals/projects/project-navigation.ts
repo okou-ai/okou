@@ -4,13 +4,12 @@ import { projects$ } from "./projects.ts";
 import { expandProject$ } from "./project-expansion.ts";
 import { showChatSidebar$ } from "../okou-page/nav.ts";
 import { command, computed } from "ccstate";
-import { pathParams$, searchParams$ } from "../route.ts";
+import { pathParams$ } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
+/** The Project whose page is open. */
 export const selectedProjectId$ = computed((get) => {
   const id =
-    get(activeRoute$) === "project"
-      ? get(pathParams$)?.projectId
-      : get(searchParams$).get("project");
+    get(activeRoute$) === "project" ? get(pathParams$)?.projectId : null;
   return typeof id === "string" ? id : null;
 });
 
