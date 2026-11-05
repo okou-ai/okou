@@ -1,15 +1,74 @@
 import type { DesktopShellAuthorization } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { useGet, useLastLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Check, Terminal, Loader2 } from "lucide-react";
+import {
+  Ban,
+  Check,
+  CircleAlert,
+  Clock3,
+  Loader2,
+  Monitor,
+  ShieldCheck,
+  Terminal,
+  X,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { Button, cn } from "@okouai/ui";
+import {
+  Button,
+  Dialog,
+  DialogClose,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+  IconButton,
+  cn,
+} from "@okouai/ui";
 import { i18n } from "../../i18n/index.ts";
 import type { DesktopShellAuthorizationSignals } from "../../signals/chat-page/desktop-shell-authorization-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatCard } from "./components/chat-card.tsx";
-import { ChatCardDetails } from "./components/chat-card-details.tsx";
+
+type ShellAction = "approve" | "deny" | "revoke";
+
+function authorizationTitle(
+  data: DesktopShellAuthorization | null,
+  loading: boolean,
+): string {
+  if (loading || data?.status === "pending") {
+    return i18n.t(($) => {
+      return $.desktopShellAuthorization.title;
+    });
+  }
+  if (!data) {
+    return i18n.t(($) => {
+      return $.desktopShellAuthorization.unavailableTitle;
+    });
+  }
+  switch (data.status) {
+    case "approved": {
+      return i18n.t(($) => {
+        return $.desktopShellAuthorization.allowedTitle;
+      });
+    }
+    case "denied": {
+      return i18n.t(($) => {
+        return $.desktopShellAuthorization.deniedTitle;
+      });
+    }
+    case "revoked": {
+      return i18n.t(($) => {
+        return $.desktopShellAuthorization.revoked;
+      });
+    }
+    case "expired": {
+      return i18n.t(($) => {
+        return $.desktopShellAuthorization.expiredTitle;
+      });
+    }
+  }
+}
 
 function authorizationStatus(data: DesktopShellAuthorization): string | null {
   switch (data.status) {
@@ -79,67 +138,144 @@ function approvalBlocker(
   }
 }
 
-function AuthorizationStatus({
+function AuthorizationIcon({
   data,
   loading,
 }: {
   data: DesktopShellAuthorization | null;
   loading: boolean;
 }) {
-  const { t } = useTranslation();
-  const status = loading
-    ? t(($) => {
-        return $.desktopShellAuthorization.loading;
-      })
-    : data
-      ? authorizationStatus(data)
-      : t(($) => {
-          return $.desktopShellAuthorization.unavailable;
-        });
+  const Icon = loading
+    ? Loader2
+    : !data
+      ? CircleAlert
+      : data.status === "approved"
+        ? Check
+        : data.status === "expired"
+          ? Clock3
+          : data.status === "denied" || data.status === "revoked"
+            ? Ban
+            : ShieldCheck;
   return (
-    <span
+    <div
       className={cn(
-        "inline-flex min-w-0 items-center gap-1 text-xs font-medium text-muted-foreground",
+        "flex size-10 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground",
         data?.status === "approved" && "text-emerald-700 dark:text-emerald-400",
       )}
-      aria-live="polite"
     >
-      {loading ? <Loader2 size={14} className="shrink-0 animate-spin" /> : null}
-      {data?.status === "approved" ? (
-        <Check size={14} className="shrink-0" aria-hidden />
-      ) : null}
-      {status}
-    </span>
+      <Icon
+        size={22}
+        aria-hidden
+        className={loading ? "animate-spin" : undefined}
+      />
+    </div>
+  );
+}
+
+function AuthorizationDetails({
+  data,
+  loading,
+  failed,
+}: {
+  data: DesktopShellAuthorization | null;
+  loading: boolean;
+  failed: boolean;
+}) {
+  const { t } = useTranslation();
+  const blocker = approvalBlocker(data);
+  const status = data
+    ? authorizationStatus(data)
+    : t(($) => {
+        return $.desktopShellAuthorization.unavailable;
+      });
+  return (
+    <div className="min-w-0 space-y-5 text-sm">
+      {data && (
+        <div className="space-y-2 rounded-lg border border-border bg-gray-50 p-4">
+          <div className="flex min-w-0 items-start gap-2 font-medium">
+            <Monitor size={17} className="mt-0.5 shrink-0" aria-hidden />
+            <span className="min-w-0 break-words">{data.computerName}</span>
+          </div>
+          {(data.status === "pending" || data.status === "approved") && (
+            <div className="flex items-start gap-2 text-xs leading-5 text-muted-foreground">
+              <Clock3 size={14} className="mt-0.5 shrink-0" aria-hidden />
+              {data.status === "pending"
+                ? t(($) => {
+                    return $.desktopShellAuthorization.duration;
+                  })
+                : t(($) => {
+                    return $.desktopShellAuthorization.scope;
+                  })}
+            </div>
+          )}
+        </div>
+      )}
+      <div>
+        <h3 className="mb-2 font-medium">
+          {t(($) => {
+            return $.desktopShellAuthorization.reasonTitle;
+          })}
+        </h3>
+        <p className="break-words whitespace-pre-wrap leading-7 text-muted-foreground">
+          {data?.reason ??
+            t(($) => {
+              return $.desktopShellAuthorization.description;
+            })}
+        </p>
+      </div>
+      {loading ? (
+        <p role="status" className="text-muted-foreground">
+          {t(($) => {
+            return $.desktopShellAuthorization.loading;
+          })}
+        </p>
+      ) : (
+        status && (
+          <p role="status" className="text-muted-foreground">
+            {status}
+          </p>
+        )
+      )}
+      {blocker && (
+        <p className="text-amber-700 dark:text-amber-400" aria-live="polite">
+          {blocker}
+        </p>
+      )}
+      {failed && (
+        <p className="text-destructive" role="alert">
+          {t(($) => {
+            return $.desktopShellAuthorization.actionFailed;
+          })}
+        </p>
+      )}
+    </div>
   );
 }
 
 function AuthorizationActions({
-  signals,
   data,
-  loading,
+  busy,
+  failed,
+  onAction,
+  standalone = false,
 }: {
-  signals: DesktopShellAuthorizationSignals;
   data: DesktopShellAuthorization | null;
-  loading: boolean;
+  busy: boolean;
+  failed: boolean;
+  onAction: (action: ShellAction) => void;
+  standalone?: boolean;
 }) {
   const { t } = useTranslation();
-  const signal = useGet(pageSignal$);
-  const [action, act] = useLoadableSet(signals.act$);
-  const busy = action.state === "loading";
-  const blocked =
-    data?.status === "pending" && data.approvalBlockedReason !== null;
-  const failed = action.state === "hasError";
+  const blocked = data?.approvalBlockedReason !== null;
   return (
-    <div className="col-span-2 row-start-3 ml-auto flex min-h-8 max-w-full flex-wrap items-center justify-end gap-2 @[640px]:col-span-1 @[640px]:col-start-3 @[640px]:row-start-1">
-      <AuthorizationStatus data={data} loading={loading} />
-      {data?.status === "pending" && (
+    <div className="flex flex-wrap justify-end gap-2">
+      {data?.status === "pending" ? (
         <>
           <Button
-            size="sm"
             variant="neutral"
             disabled={busy || failed}
             onClick={() => {
-              detach(act("deny", signal), Reason.DomCallback);
+              return onAction("deny");
             }}
           >
             {t(($) => {
@@ -147,11 +283,15 @@ function AuthorizationActions({
             })}
           </Button>
           <Button
-            size="sm"
-            className="bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
-            disabled={busy || blocked || failed}
+            pending={busy}
+            disabled={blocked || failed}
+            className={
+              standalone
+                ? "bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
+                : undefined
+            }
             onClick={() => {
-              detach(act("approve", signal), Reason.DomCallback);
+              return onAction("approve");
             }}
           >
             {t(($) => {
@@ -159,29 +299,133 @@ function AuthorizationActions({
             })}
           </Button>
         </>
-      )}
-      {data?.status === "approved" && (
-        <Button
-          size="sm"
-          variant="quiet"
-          disabled={busy || failed}
-          onClick={() => {
-            detach(act("revoke", signal), Reason.DomCallback);
-          }}
-        >
+      ) : standalone ? (
+        data?.status === "approved" && (
+          <Button
+            variant="neutral"
+            pending={busy}
+            disabled={failed}
+            onClick={() => {
+              return onAction("revoke");
+            }}
+          >
+            {t(($) => {
+              return $.desktopShellAuthorization.revoke;
+            })}
+          </Button>
+        )
+      ) : (
+        <DialogClose render={<Button variant="neutral" />}>
           {t(($) => {
-            return $.desktopShellAuthorization.revoke;
+            return $.settings.shared.close;
           })}
-        </Button>
-      )}
-      {failed && (
-        <p className="basis-full text-xs text-destructive" role="alert">
-          {t(($) => {
-            return $.desktopShellAuthorization.actionFailed;
-          })}
-        </p>
+        </DialogClose>
       )}
     </div>
+  );
+}
+
+function AuthorizationSummary({
+  data,
+  loading,
+  busy,
+  failed,
+  onAction,
+}: {
+  data: DesktopShellAuthorization | null;
+  loading: boolean;
+  busy: boolean;
+  failed: boolean;
+  onAction: (action: ShellAction) => void;
+}) {
+  const { t } = useTranslation();
+  const summary = failed
+    ? t(($) => {
+        return $.desktopShellAuthorization.actionFailed;
+      })
+    : data
+      ? t(
+          ($) => {
+            return data.status === "pending"
+              ? $.desktopShellAuthorization.pendingSummary
+              : data.status === "expired"
+                ? $.desktopShellAuthorization.accessEnded
+                : $.desktopShellAuthorization.summary;
+          },
+          { computer: data.computerName },
+        )
+      : loading
+        ? t(($) => {
+            return $.desktopShellAuthorization.loading;
+          })
+        : t(($) => {
+            return $.desktopShellAuthorization.checkFailed;
+          });
+  return (
+    <ChatCard
+      data-testid="desktop-shell-authorization-card"
+      aria-busy={loading || busy}
+      className="flex h-[136px] w-full flex-col justify-between gap-3 px-4 py-3 @[640px]:h-[88px] @[640px]:flex-row @[640px]:items-center"
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-3">
+        <AuthorizationIcon data={data} loading={loading} />
+        <div className="min-w-0 flex-1">
+          <div
+            className="truncate text-[0.9375rem] font-medium leading-5"
+            aria-live="polite"
+          >
+            {authorizationTitle(data, loading)}
+          </div>
+          <p
+            className={cn(
+              "mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground",
+              failed && "text-destructive",
+            )}
+            role={failed ? "alert" : undefined}
+          >
+            {summary}
+          </p>
+        </div>
+      </div>
+      <div className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-1.5">
+        {data?.status === "approved" && (
+          <Button
+            variant="quiet"
+            size="sm"
+            pending={busy}
+            disabled={failed}
+            onClick={() => {
+              return onAction("revoke");
+            }}
+          >
+            {t(($) => {
+              return $.desktopShellAuthorization.revoke;
+            })}
+          </Button>
+        )}
+        {data ? (
+          <DialogTrigger render={<Button variant="neutral" size="sm" />}>
+            {data.status === "pending"
+              ? t(($) => {
+                  return $.desktopShellAuthorization.review;
+                })
+              : t(($) => {
+                  return $.desktopShellAuthorization.details;
+                })}
+          </DialogTrigger>
+        ) : (
+          <Button variant="neutral" size="sm" disabled>
+            {loading
+              ? t(($) => {
+                  return $.desktopShellAuthorization.loading;
+                })
+              : t(($) => {
+                  return $.desktopShellAuthorization.unavailable;
+                })}
+          </Button>
+        )}
+      </div>
+    </ChatCard>
   );
 }
 
@@ -196,82 +440,80 @@ export function DesktopShellAuthorizationCard({
   const request = useLastLoadable(signals.request$);
   const data = request.state === "hasData" ? request.data : null;
   const loading = request.state === "loading";
-  const blocker = approvalBlocker(data);
-  const reason =
-    data?.reason ??
-    t(($) => {
-      return $.desktopShellAuthorization.description;
-    });
-  const viewReason = t(($) => {
-    return $.desktopShellAuthorization.viewReason;
-  });
-  return (
-    <ChatCard
-      data-testid="desktop-shell-authorization-card"
-      className={cn(
-        "grid w-full grid-cols-[40px_minmax(0,1fr)] grid-rows-[auto_minmax(0,1fr)_auto] gap-x-3 gap-y-2 p-3 @[640px]:grid-cols-[40px_minmax(0,1fr)_auto] @[640px]:grid-rows-[auto_minmax(0,1fr)] @[640px]:p-4",
-        !standalone && "h-48 @[640px]:h-32",
-      )}
-    >
-      <div className="col-start-1 row-start-1 flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-gray-50">
-        <Terminal size={22} aria-hidden />
-      </div>
-      <div className="col-start-2 row-start-1 min-w-0 self-center">
-        <div className="truncate text-[0.9375rem] font-medium leading-5">
-          {t(($) => {
-            return $.desktopShellAuthorization.title;
-          })}
+  const signal = useGet(pageSignal$);
+  const [action, act] = useLoadableSet(signals.act$);
+  const busy = action.state === "loading";
+  const failed = action.state === "hasError";
+  const onAction = (next: ShellAction) => {
+    detach(act(next, signal), Reason.DomCallback);
+  };
+  if (standalone) {
+    return (
+      <ChatCard
+        data-testid="desktop-shell-authorization-card"
+        className="w-full space-y-5 p-6"
+      >
+        <div className="flex items-center gap-3">
+          <AuthorizationIcon data={data} loading={loading} />
+          <h1 className="text-lg font-medium">
+            {authorizationTitle(data, loading)}
+          </h1>
         </div>
-        {data && (
-          <div className="mt-0.5 truncate text-sm leading-5 text-muted-foreground">
-            {data.computerName}
+        <AuthorizationDetails data={data} loading={loading} failed={failed} />
+        <AuthorizationActions
+          data={data}
+          busy={busy}
+          failed={failed}
+          onAction={onAction}
+          standalone
+        />
+      </ChatCard>
+    );
+  }
+  return (
+    <Dialog>
+      <AuthorizationSummary
+        data={data}
+        loading={loading}
+        busy={busy}
+        failed={failed}
+        onAction={onAction}
+      />
+      <DialogContent
+        maxWidth={560}
+        showCloseButton={false}
+        aria-describedby={undefined}
+      >
+        <DialogHeader className="flex-row items-center gap-3 space-y-0 text-left">
+          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground">
+            <Terminal size={22} aria-hidden />
           </div>
-        )}
-      </div>
-      <div className="col-span-2 row-start-2 min-h-0 min-w-0 overflow-y-auto @[640px]:col-start-2">
-        {standalone || !data ? (
-          <p className="text-sm leading-5 break-words whitespace-pre-wrap">
-            {reason}
-          </p>
-        ) : (
-          <ChatCardDetails
-            title={t(($) => {
-              return $.desktopShellAuthorization.reasonTitle;
+          <DialogTitle className="min-w-0 flex-1 font-medium leading-6">
+            {t(($) => {
+              return $.desktopShellAuthorization.title;
             })}
-            triggerLabel={viewReason}
-            trigger={
-              <Button
-                variant="quiet"
-                className="flex h-auto w-full min-w-0 justify-start px-0 py-0 text-left font-normal whitespace-normal text-foreground"
-                aria-label={viewReason}
-                showTooltip
-              >
-                <span
-                  className={cn(
-                    "text-sm leading-5 break-words whitespace-pre-wrap",
-                    blocker
-                      ? "line-clamp-1"
-                      : "line-clamp-3 @[640px]:line-clamp-2",
-                  )}
-                >
-                  {reason}
-                </span>
-              </Button>
+          </DialogTitle>
+          <DialogClose
+            render={
+              <IconButton
+                className="shrink-0"
+                aria-label={t(($) => {
+                  return $.settings.shared.close;
+                })}
+              />
             }
           >
-            <p className="text-foreground whitespace-pre-wrap">{reason}</p>
-          </ChatCardDetails>
-        )}
-        {blocker && (
-          <p
-            className="mt-1 text-xs leading-5 text-amber-700 dark:text-amber-400"
-            aria-live="polite"
-          >
-            {blocker}
-          </p>
-        )}
-      </div>
-      <AuthorizationActions signals={signals} data={data} loading={loading} />
-    </ChatCard>
+            <X size={20} />
+          </DialogClose>
+        </DialogHeader>
+        <AuthorizationDetails data={data} loading={loading} failed={failed} />
+        <AuthorizationActions
+          data={data}
+          busy={busy}
+          failed={failed}
+          onAction={onAction}
+        />
+      </DialogContent>
+    </Dialog>
   );
 }

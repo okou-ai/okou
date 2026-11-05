@@ -4012,8 +4012,10 @@
     }
   },
   "desktopShellAuthorization": {
+    "accessEnded": "{{computer}} · Zugriff beendet",
     "actionFailed": "Autorisierung konnte nicht aktualisiert werden.",
     "allow": "Für 1 Stunde erlauben",
+    "allowedTitle": "Shell-Zugriff erlaubt",
     "approved": "Erlaubt",
     "blocked": {
       "chatBusy": "Warte vor der Genehmigung, bis der aktuelle Run in diesem Chat beendet ist.",
@@ -4021,18 +4023,27 @@
       "runActive": "Warte vor der Genehmigung, bis der anfragende Run beendet ist.",
       "runUnavailable": "Der anfragende Run ist nicht verfügbar. Bitte in diesem Chat um eine neue Anfrage."
     },
+    "checkFailed": "Der Zugriff konnte nicht geprüft werden. Versuche es später erneut.",
     "denied": "Anfrage abgelehnt",
+    "deniedTitle": "Shell-Zugriff abgelehnt",
     "deny": "Ablehnen",
     "description": "Der Agent benötigt die Berechtigung, die Shell auf deinem Computer zu verwenden.",
+    "details": "Details",
+    "duration": "Der Zugriff gilt nach der Genehmigung für 1 Stunde",
     "expired": "Autorisierung abgelaufen",
+    "expiredTitle": "Shell-Zugriff abgelaufen",
     "loading": "Autorisierung wird geladen…",
+    "pendingSummary": "{{computer}} · 1 Stunde",
     "reasonTitle": "Grund für den Zugriff",
     "requestExpired": "Anfrage abgelaufen",
-    "revoke": "Zugriff widerrufen",
+    "review": "Zugriff prüfen",
+    "revoke": "Widerrufen",
     "revoked": "Shell-Zugriff widerrufen",
+    "scope": "Eine Stunde Zugriff für diesen Chat",
+    "summary": "{{computer}} · Dieser Chat",
     "title": "Shell-Zugriff",
     "unavailable": "Autorisierung nicht verfügbar",
-    "viewReason": "Vollständige Begründung ansehen"
+    "unavailableTitle": "Shell-Zugriff nicht verfügbar"
   },
   "documentTemplates": {
     "agreementNote": "Ein Ausgangspunkt für Ihre Vereinbarung. Prüfen Sie die Bedingungen für Ihr Projekt und die geltende Rechtsordnung vor der Unterzeichnung.",

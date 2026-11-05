@@ -3998,8 +3998,10 @@
     }
   },
   "desktopShellAuthorization": {
+    "accessEnded": "{{computer}} · Akses telah berakhir",
     "actionFailed": "Tidak dapat memperbarui otorisasi.",
     "allow": "Izinkan selama 1 jam",
+    "allowedTitle": "Akses Shell diizinkan",
     "approved": "Diizinkan",
     "blocked": {
       "chatBusy": "Tunggu Run yang sedang berjalan di chat ini selesai sebelum menyetujui.",
@@ -4007,18 +4009,27 @@
       "runActive": "Tunggu Run yang mengajukan permintaan selesai sebelum menyetujui.",
       "runUnavailable": "Run yang mengajukan permintaan tidak tersedia. Minta permintaan baru di chat ini."
     },
+    "checkFailed": "Tidak dapat memeriksa akses. Coba lagi nanti.",
     "denied": "Permintaan ditolak",
+    "deniedTitle": "Akses Shell ditolak",
     "deny": "Tolak",
     "description": "Agen memerlukan izin untuk menggunakan Shell di komputer Anda.",
+    "details": "Detail",
+    "duration": "Akses berlaku selama 1 jam setelah disetujui",
     "expired": "Otorisasi kedaluwarsa",
+    "expiredTitle": "Akses Shell kedaluwarsa",
     "loading": "Memuat otorisasi…",
+    "pendingSummary": "{{computer}} · 1 jam",
     "reasonTitle": "Alasan akses",
     "requestExpired": "Permintaan kedaluwarsa",
-    "revoke": "Cabut akses",
+    "review": "Tinjau akses",
+    "revoke": "Cabut",
     "revoked": "Akses Shell dicabut",
+    "scope": "Akses satu jam untuk chat ini",
+    "summary": "{{computer}} · Chat ini",
     "title": "Akses Shell",
     "unavailable": "Otorisasi tidak tersedia",
-    "viewReason": "Lihat alasan lengkap"
+    "unavailableTitle": "Akses Shell tidak tersedia"
   },
   "documentTemplates": {
     "agreementNote": "Titik awal untuk perjanjian Anda. Tinjau ketentuan sesuai proyek dan yurisdiksi sebelum menandatangani.",

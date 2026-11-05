@@ -3998,8 +3998,10 @@
     }
   },
   "desktopShellAuthorization": {
+    "accessEnded": "{{computer}} · アクセス終了",
     "actionFailed": "承認を更新できませんでした。",
     "allow": "1 時間許可",
+    "allowedTitle": "Shell アクセスは許可されています",
     "approved": "許可済み",
     "blocked": {
       "chatBusy": "このチャットで実行中の Run が終了してから承認してください。",
@@ -4007,18 +4009,27 @@
       "runActive": "リクエスト元の Run が終了してから承認してください。",
       "runUnavailable": "リクエスト元の Run は利用できません。このチャットで新しいリクエストを依頼してください。"
     },
+    "checkFailed": "アクセスを確認できませんでした。後でもう一度お試しください。",
     "denied": "リクエストを拒否しました",
+    "deniedTitle": "Shell アクセスは拒否されました",
     "deny": "拒否",
     "description": "エージェントがコンピュータ上で Shell を使用するには許可が必要です。",
+    "details": "詳細",
+    "duration": "承認後、1 時間アクセスできます",
     "expired": "承認の有効期限が切れました",
+    "expiredTitle": "Shell アクセスの有効期限切れ",
     "loading": "承認を読み込み中…",
+    "pendingSummary": "{{computer}} · 1 時間",
     "reasonTitle": "アクセスの目的",
     "requestExpired": "リクエストの有効期限切れ",
-    "revoke": "アクセスを取り消す",
+    "review": "アクセスを確認",
+    "revoke": "取り消す",
     "revoked": "Shell へのアクセスを取り消しました",
+    "scope": "このチャットでの 1 時間のアクセス",
+    "summary": "{{computer}} · このチャット",
     "title": "Shell アクセス",
     "unavailable": "承認を利用できません",
-    "viewReason": "説明をすべて表示"
+    "unavailableTitle": "Shell アクセスを利用できません"
   },
   "documentTemplates": {
     "agreementNote": "契約書のたたき台です。署名前に、プロジェクトと適用法に合わせて条項を確認してください。",

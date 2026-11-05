@@ -3998,8 +3998,10 @@
     }
   },
   "desktopShellAuthorization": {
+    "accessEnded": "{{computer}} · 액세스 종료됨",
     "actionFailed": "권한을 업데이트하지 못했습니다.",
     "allow": "1시간 허용",
+    "allowedTitle": "Shell 액세스 허용됨",
     "approved": "허용됨",
     "blocked": {
       "chatBusy": "이 채팅에서 실행 중인 Run이 끝난 후 승인하세요.",
@@ -4007,18 +4009,27 @@
       "runActive": "요청을 보낸 Run이 끝난 후 승인하세요.",
       "runUnavailable": "요청을 보낸 Run을 사용할 수 없습니다. 이 채팅에서 새 요청을 부탁하세요."
     },
+    "checkFailed": "액세스를 확인할 수 없습니다. 나중에 다시 시도하세요.",
     "denied": "요청 거부됨",
+    "deniedTitle": "Shell 액세스 거부됨",
     "deny": "거부",
     "description": "에이전트가 컴퓨터에서 Shell을 사용하려면 권한이 필요합니다.",
+    "details": "세부 정보",
+    "duration": "승인 후 1시간 동안 액세스할 수 있습니다",
     "expired": "권한 만료됨",
+    "expiredTitle": "Shell 액세스 만료됨",
     "loading": "권한을 불러오는 중…",
+    "pendingSummary": "{{computer}} · 1시간",
     "reasonTitle": "접근 목적",
     "requestExpired": "요청 만료",
-    "revoke": "접근 취소",
+    "review": "액세스 검토",
+    "revoke": "취소",
     "revoked": "Shell 접근 취소됨",
+    "scope": "이 채팅에서 1시간 동안 액세스",
+    "summary": "{{computer}} · 이 채팅",
     "title": "Shell 접근",
     "unavailable": "권한을 사용할 수 없음",
-    "viewReason": "전체 설명 보기"
+    "unavailableTitle": "Shell 액세스를 사용할 수 없음"
   },
   "documentTemplates": {
     "agreementNote": "계약서 작성을 위한 출발점입니다. 서명 전에 프로젝트와 관할 법률에 맞게 조항을 검토하세요.",

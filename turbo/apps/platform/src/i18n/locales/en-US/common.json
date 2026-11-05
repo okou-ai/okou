@@ -4010,8 +4010,10 @@
     }
   },
   "desktopShellAuthorization": {
+    "accessEnded": "{{computer}} · Access has ended",
     "actionFailed": "Could not update authorization.",
     "allow": "Allow for 1 hour",
+    "allowedTitle": "Shell access allowed",
     "approved": "Allowed",
     "blocked": {
       "chatBusy": "Wait for the current Run in this chat to finish before approving.",
@@ -4019,18 +4021,27 @@
       "runActive": "Wait for the requesting Run to finish before approving.",
       "runUnavailable": "The requesting Run is unavailable. Ask for a new request in this chat."
     },
+    "checkFailed": "Couldn’t check access. Try again later.",
     "denied": "Request denied",
+    "deniedTitle": "Shell access denied",
     "deny": "Deny",
     "description": "The agent needs permission to use Shell on your computer.",
+    "details": "Details",
+    "duration": "Access lasts for 1 hour after approval",
     "expired": "Authorization expired",
+    "expiredTitle": "Shell access expired",
     "loading": "Loading authorization…",
+    "pendingSummary": "{{computer}} · 1 hour",
     "reasonTitle": "Reason for access",
     "requestExpired": "Request expired",
-    "revoke": "Revoke access",
+    "review": "Review access",
+    "revoke": "Revoke",
     "revoked": "Shell access revoked",
+    "scope": "One-hour access for this chat",
+    "summary": "{{computer}} · This chat",
     "title": "Shell access",
     "unavailable": "Authorization unavailable",
-    "viewReason": "View full reason"
+    "unavailableTitle": "Shell access unavailable"
   },
   "documentTemplates": {
     "agreementNote": "A starting point for your agreement. Review the terms for your project and jurisdiction before signing.",
