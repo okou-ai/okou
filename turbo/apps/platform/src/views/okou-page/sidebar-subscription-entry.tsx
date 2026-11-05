@@ -47,9 +47,6 @@ export function SidebarSubscriptionUsage({
     <Popover open={open} onOpenChange={previewUsage}>
       <PopoverTrigger
         ref={setEntry}
-        openOnHover
-        delay={200}
-        closeDelay={250}
         aria-describedby="sidebar-subscription-ring-summary"
         aria-label={
           usage.lowUsage
