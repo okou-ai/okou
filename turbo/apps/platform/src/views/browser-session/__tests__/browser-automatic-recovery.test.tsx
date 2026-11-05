@@ -788,6 +788,46 @@ test("A split image socket is replaced without replacing its healthy control soc
   expect(viewer.errorLogs()).toHaveLength(0);
 });
 
+test("The final split image failure retains its original connection observations", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  await splitConnection();
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false }, 1);
+  });
+  await pendingRecovery();
+  viewer.advance(180_000);
+  const retry = await screen.findByText("Retry live image", {
+    selector: "button",
+  });
+  await waitFor(() => {
+    expect(retry).toBeEnabled();
+  });
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    type: "exception",
+    error: { name: "CdpFault", kind: "frame" },
+    context: {
+      contexts: {
+        browser_recovery: { outcome: "exhausted" },
+        browser_connection: {
+          source: "native-close",
+          role: "frames",
+          phase: "open",
+          code: 1006,
+          was_clean: false,
+        },
+      },
+    },
+  });
+  expect(JSON.stringify(viewer.sentry.reports)).not.toContain("private");
+  expect(viewer.errorLogs()).toHaveLength(0);
+  click(retry);
+  await ready();
+  expect(viewer.sentry.reports).toHaveLength(1);
+});
+
 test("Manual recovery serializes its transient failures with automatic policy", async () => {
   const viewer = mockViewer();
   let phase: "denied" | "temporary" | "ready" = "denied";

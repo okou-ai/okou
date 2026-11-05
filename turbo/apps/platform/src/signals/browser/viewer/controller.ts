@@ -2995,6 +2995,7 @@ function createFramesDisconnectionHandling(
       error: diagnostic(
         new CdpFault("frame", fault.message, undefined, undefined, {
           cause: fault,
+          connection: fault.connection,
         }),
       ),
     });
