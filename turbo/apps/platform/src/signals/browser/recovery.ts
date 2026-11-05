@@ -325,10 +325,11 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
           finishRecovery(completion, { status: "restored" });
           return;
         }
-        const mode =
-          !automatic && index === 0
-            ? initialMode
-            : failure(get(ports.view$))?.mode;
+        const current = failure(get(ports.view$));
+        if (current) {
+          lastError = current.error;
+        }
+        const mode = !automatic && index === 0 ? initialMode : current?.mode;
         if (!mode) {
           finishRecovery(completion, { status: "terminal", error: lastError });
           return;
@@ -355,7 +356,11 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
           return;
         }
         lastError = attemptError(result.reason, get(ports.view$));
-        if (!lastError.transient || failure(get(ports.view$))?.mode === null) {
+        const stopped = failure(get(ports.view$));
+        if (stopped?.mode === null) {
+          lastError = stopped.error;
+        }
+        if (!lastError.transient || stopped?.mode === null) {
           finishRecovery(completion, { status: "terminal", error: lastError });
           return;
         }

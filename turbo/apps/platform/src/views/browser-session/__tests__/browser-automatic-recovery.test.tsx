@@ -405,39 +405,60 @@ test("A different selected target clears the previous picture while its first fr
   await ready("https://other.example");
 });
 
-test("Definitive authorization loss clears the picture and ends the reconnecting notice", async () => {
-  const viewer = mockViewer();
-  await viewer.start();
-  await ready();
-  const canvas = screen.getByLabelText<HTMLCanvasElement>("Live browser view");
-  const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(403, { error: { code: "FORBIDDEN", message: "Revoked" } });
-  });
-  act(() => {
-    return viewer.browser.disconnect({ code: 1006, wasClean: false });
-  });
-  await pendingRecovery();
-  viewer.advance(1000);
-  await waitFor(() => {
-    return expect(reconnect()).toBeEnabled();
-  });
-  expect(clear).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
-  expect(canvas).toHaveAttribute("aria-hidden", "true");
-  expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(viewer.sentry.reports).toHaveLength(1);
-  expect(viewer.sentry.reports[0]).toMatchObject({
-    context: {
-      tags: { browser_event: "recovery-stopped", logger: "Browser" },
-      contexts: {
-        browser_recovery: { outcome: "terminal" },
-        browser_http: { status: 403, code: "FORBIDDEN" },
+test.each(["attempt", "pacing"] as const)(
+  "Definitive authorization loss during %s clears the picture and ends the reconnecting notice",
+  async (phase) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    const canvas =
+      screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+    const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
+    const denied = context.mocks.deferred<void>();
+    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+      denied.resolve();
+      return respond(403, { error: { code: "FORBIDDEN", message: "Revoked" } });
+    });
+    act(() => {
+      return viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    await pendingRecovery();
+    if (phase === "pacing") {
+      act(() => {
+        context.mocks.ably.trigger("browserSessionChanged", { threadId });
+      });
+      await act(async () => {
+        await denied.promise;
+      });
+    }
+    await waitFor(() => {
+      expect(canvas).toHaveAttribute(
+        "aria-hidden",
+        phase === "pacing" ? "true" : "false",
+      );
+    });
+    expect(viewer.sentry.reports).toHaveLength(0);
+    viewer.advance(1000);
+    await waitFor(() => {
+      return expect(reconnect()).toBeEnabled();
+    });
+    expect(clear).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
+    expect(canvas).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(viewer.sentry.reports).toHaveLength(1);
+    expect(viewer.sentry.reports[0]).toMatchObject({
+      context: {
+        tags: { browser_event: "recovery-stopped", logger: "Browser" },
+        contexts: {
+          browser_recovery: { outcome: "terminal" },
+          browser_http: { status: 403, code: "FORBIDDEN" },
+        },
       },
-    },
-  });
-  expect(viewer.startupErrors).toHaveLength(0);
-});
+    });
+    expect(viewer.startupErrors).toHaveLength(0);
+  },
+);
 
 test.each(["shared", "split"] as const)(
   "Automatic %s image recovery retains healthy control",
