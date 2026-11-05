@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.3](https://github.com/okou-ai/okou/compare/ios-v0.25.2...ios-v0.25.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* **ios:** start voice capture before quota checks complete ([#45324](https://github.com/okou-ai/okou/issues/45324)) ([768172f](https://github.com/okou-ai/okou/commit/768172f593d9488da5dfaef0b1608f5e148b16ed))
+
 ## [0.25.2](https://github.com/okou-ai/okou/compare/ios-v0.25.1...ios-v0.25.2) (2026-11-05)
 
 
