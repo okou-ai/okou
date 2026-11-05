@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""One-run simulator load intervention; process snapshots omit argv and env."""
+"""Verify runtime cache availability before observing a cold simulator launch."""
 
 import datetime
 import json
@@ -55,10 +55,6 @@ def snapshot(label):
 
 
 execute("hardware", ["sysctl", "hw.ncpu", "hw.memsize", "vm.swapusage"])
-execute("before-boot-xcode-version", ["xcodebuild", "-version"], required=True)
-execute(
-    "cache-command-help", ["xcrun", "simctl", "runtime", "dyld_shared_cache", "--help"]
-)
 snapshot("before-cold-boot")
 inventory = json.loads(
     execute(
@@ -78,32 +74,23 @@ devices = [
 ]
 if len(devices) != 1 or devices[0]["state"] != "Shutdown":
     raise ValueError("Load comparison requires the exact configured shutdown simulator")
-device = devices[0]["udid"]
+execute(
+    "ensure-runtime-dyld-cache",
+    ["xcrun", "simctl", "runtime", "dyld_shared_cache", "update", runtime],
+    timeout=420,
+    required=True,
+)
+version = [
+    "env",
+    "DYLD_PRINT_STATISTICS=1",
+    "DYLD_PRINT_STATISTICS_DETAILS=1",
+    str(Path(os.environ["DEVELOPER_DIR"]) / "usr/bin/xcodebuild"),
+    "-version",
+]
+execute("before-boot-xcode-version", version, timeout=180, required=True)
+snapshot("after-cache-before-boot")
 boot = [sys.executable, "ios/scripts/preboot-simulator.py"]
 execute("cold-boot", boot, timeout=600, required=True)
 snapshot("after-cold-boot")
-execute(
-    "cold-xcode-version",
-    [
-        sys.executable,
-        "ios/scripts/sample-xcode-startup.py",
-        "--delay",
-        "1",
-        "--window",
-        "180",
-        "--privileged-sample",
-        str(output / "cold-version-stack"),
-        "--",
-        "xcodebuild",
-        "-version",
-    ],
-    # The observer owns its child process group and handles cancellation. Let
-    # the existing job deadline bound the command instead of SIGKILLing that
-    # observer and bypassing its child cleanup on a subprocess.run timeout.
-    timeout=None,
-    required=True,
-)
+execute("cold-xcode-version", version, timeout=420, required=True)
 snapshot("after-cold-version")
-execute("shutdown", ["xcrun", "simctl", "shutdown", device], timeout=120, required=True)
-snapshot("after-shutdown")
-execute("after-shutdown-xcode-version", ["xcodebuild", "-version"], required=True)

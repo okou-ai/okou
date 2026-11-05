@@ -52,6 +52,12 @@ if command == 'xcrun':
         mark('boot-finished')
     elif args == ['simctl', 'shutdown', 'configured']:
         mark('shutdown')
+    elif args[:4] == ['simctl', 'runtime', 'dyld_shared_cache', 'update']:
+        if args[4:] != ['com.apple.CoreSimulator.SimRuntime.iOS-26-2']:
+            sys.exit('Cache probe must select only the configured runtime')
+        if (state / 'boot-started').exists():
+            sys.exit('Cache probe must finish before cold simulator startup')
+        mark('runtime-cache-checked')
     elif args[0] != 'swift-format':
         raise ValueError(args)
 elif command == 'swift':
@@ -153,9 +159,13 @@ class CIProcessTests(unittest.TestCase):
             executable = mock / name
             executable.write_text(MOCK)
             executable.chmod(0o755)
+        developer = self.root / "Developer"
+        (developer / "usr").mkdir(parents=True)
+        (developer / "usr/bin").symlink_to(mock, target_is_directory=True)
         self.env = os.environ | {
             "PATH": f"{mock}:{os.environ['PATH']}",
             "RUNNER_TEMP": str(self.root / "work"),
+            "DEVELOPER_DIR": str(developer),
             "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
             "CI_PROCESS_STATE": str(self.state),
             "CI_PROCESS_SCENARIO": "success",
