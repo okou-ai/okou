@@ -266,41 +266,45 @@ async def test_fresh_hit_changes_count_bound_eviction_order(real_flow):
             etag=f'"lru-{index}"',
         )
 
-    recently_used = catalog_flow(real_flow, version="lru-0")
-    await catalog_cache.prepare_request(recently_used, request_end_stream=True)
-    assert recently_used.response is not None
-
+    # Without a hit, count overflow evicts the oldest entry and retains the newest.
     await install_catalog(
         catalog_flow(real_flow, version="lru-overflow"),
         body=small_body,
         etag='"lru-overflow"',
     )
 
-    untouched = catalog_flow(real_flow, version="lru-1")
+    oldest = catalog_flow(real_flow, version="lru-0")
+    await prepare_miss(oldest)
+    catalog_cache.handle_error(oldest)
+    newest = catalog_flow(real_flow, version="lru-overflow")
+    await catalog_cache.prepare_request(newest, request_end_stream=True)
+    assert newest.response is not None
+
+    # A fresh hit protects the oldest survivor when the same full cache overflows again.
+    recently_used = catalog_flow(real_flow, version="lru-1")
+    await catalog_cache.prepare_request(recently_used, request_end_stream=True)
+    assert recently_used.response is not None
+
+    await install_catalog(
+        catalog_flow(real_flow, version="lru-after-hit"),
+        body=small_body,
+        etag='"lru-after-hit"',
+    )
+
+    untouched = catalog_flow(real_flow, version="lru-2")
     await prepare_miss(untouched)
     catalog_cache.handle_error(untouched)
 
-    retained = catalog_flow(real_flow, version="lru-0")
+    retained = catalog_flow(real_flow, version="lru-1")
     await catalog_cache.prepare_request(retained, request_end_stream=True)
     assert retained.response is not None
 
+    newest_after_hit = catalog_flow(real_flow, version="lru-after-hit")
+    await catalog_cache.prepare_request(newest_after_hit, request_end_stream=True)
+    assert newest_after_hit.response is not None
 
-async def test_count_and_byte_bounds_evict_least_recent_entries(real_flow):
-    small_body = b'{"models":[]}'
-    for index in range(catalog_cache.MAX_ENTRIES + 1):
-        await install_catalog(
-            catalog_flow(real_flow, version=f"count-{index}"),
-            body=small_body,
-            etag=f'"count-{index}"',
-        )
 
-    count_oldest = catalog_flow(real_flow, version="count-0")
-    await prepare_miss(count_oldest)
-    catalog_cache.handle_error(count_oldest)
-    count_newest = catalog_flow(real_flow, version=f"count-{catalog_cache.MAX_ENTRIES}")
-    await catalog_cache.prepare_request(count_newest, request_end_stream=True)
-    assert count_newest.response is not None
-
+async def test_byte_bound_evicts_least_recent_entries(real_flow):
     catalog_cache.reset_for_tests()
     large_padding = "x" * (catalog_cache.MAX_ENTRY_BYTES - 64)
     large_body = json.dumps({"models": [], "padding": large_padding}).encode()
