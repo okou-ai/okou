@@ -56,42 +56,52 @@ test.each([
   },
 );
 
-test.each(["sign-in", "sign-up"] as const)(
-  "%s preserves the consent query when Clerk moves the return into its hash",
-  async (mode) => {
-    const target = consentUrl();
-    await setupPage({
-      context,
-      host: "app.vm7.ai",
-      path: `/${mode}#/?redirect_url=${encodeURIComponent(target)}`,
-      auth: null,
-      env: clerkEnvironment(),
-    });
+test("Sign-in preserves the consent query when Clerk moves the return into its hash", async () => {
+  const target = consentUrl();
+  await setupPage({
+    context,
+    host: "app.vm7.ai",
+    path: `/sign-in#/?redirect_url=${encodeURIComponent(target)}`,
+    auth: null,
+    env: clerkEnvironment(),
+  });
 
-    let modeSwitchUrl: string | null | undefined;
-    if (mode === "sign-in") {
-      const form = screen.getByTestId("clerk-sign-in");
-      expect(form).toHaveAttribute("data-clerk-force-redirect-url", target);
-      modeSwitchUrl = form.dataset.clerkSignUpUrl;
-    } else {
-      modeSwitchUrl = signupControl("link", "Sign in").getAttribute("href");
-      click(signupControl("button", "Google"));
-      await waitFor(() => {
-        expect(
-          mockedClerk.client.signUp.authenticateWithRedirect,
-        ).toHaveBeenCalledWith({
-          strategy: "oauth_google",
-          redirectUrl: `${previewApp}/sign-up/sso-callback?redirect_url=${encodeURIComponent(target)}`,
-          redirectUrlComplete: target,
-        });
-      });
-    }
-    const switchUrl = new URL(modeSwitchUrl ?? "", location.origin);
+  const form = screen.getByTestId("clerk-sign-in");
+  expect(form).toHaveAttribute("data-clerk-force-redirect-url", target);
+  const switchUrl = new URL(form.dataset.clerkSignUpUrl ?? "", location.origin);
+  expect(new URLSearchParams(switchUrl.hash.slice(3)).get("redirect_url")).toBe(
+    target,
+  );
+});
+
+test("Signup preserves the consent query in OAuth and sign-in navigation from its hash", async () => {
+  const target = consentUrl();
+  await setupPage({
+    context,
+    host: "app.vm7.ai",
+    path: `/sign-up#/?redirect_url=${encodeURIComponent(target)}`,
+    auth: null,
+    env: clerkEnvironment(),
+  });
+
+  const switchUrl = new URL(
+    signupControl("link", "Sign in").getAttribute("href") ?? "",
+    location.origin,
+  );
+  expect(new URLSearchParams(switchUrl.hash.slice(3)).get("redirect_url")).toBe(
+    target,
+  );
+  click(signupControl("button", "Google"));
+  await waitFor(() => {
     expect(
-      new URLSearchParams(switchUrl.hash.slice(3)).get("redirect_url"),
-    ).toBe(target);
-  },
-);
+      mockedClerk.client.signUp.authenticateWithRedirect,
+    ).toHaveBeenCalledWith({
+      strategy: "oauth_google",
+      redirectUrl: `${previewApp}/sign-up/sso-callback?redirect_url=${encodeURIComponent(target)}`,
+      redirectUrlComplete: target,
+    });
+  });
+});
 
 test.each([
   "https://oauth-test.accounts.dev/oauth-consent",
