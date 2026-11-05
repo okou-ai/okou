@@ -25,12 +25,12 @@ import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
   type ConnectorConnectSuccess,
   builtinPollingOAuthDeviceAuthSlug$,
-  submitBuiltinManualGrantAndSettle$,
   setBuiltinManualGrantFormValue$,
   builtinManualGrantFormValuesFor$,
   getOnlyManualBuiltinConnectorStatusAuthMethod,
   manualGrantInputValuesForMethod,
 } from "../../signals/okou-page/settings/connectors.ts";
+import { submitBuiltinManualGrantAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import { hasTokenInputValue } from "../../signals/okou-page/settings/token-input.ts";
 import { detach, onDomEventFn, Reason } from "../../signals/utils.ts";
 import {
@@ -82,18 +82,16 @@ function ManualGrantForm({
   connectorLabel,
   manualGrantMethod,
   accountOptions,
-  onSuccess,
 }: {
   connectorSlug: ConnectorSlug;
   agentId: string | null;
   connectorLabel: string;
   manualGrantMethod: PublicConnectorCatalogAuthMethodDetail;
   accountOptions: ConnectorAccountMutationOptions;
-  onSuccess: ConnectorConnectSuccess;
 }) {
   const { t } = useTranslation();
   const [submitLoadable, submit] = useLoadableSet(
-    submitBuiltinManualGrantAndSettle$,
+    submitBuiltinManualGrantAndContinue$,
   );
   const setFormValue = useSet(setBuiltinManualGrantFormValue$);
   const pageSignal = useGet(pageSignal$);
@@ -124,7 +122,8 @@ function ManualGrantForm({
             ...(agentId ? { agentId } : { authorizeVisibleAgents: true }),
             ...accountOptions,
           },
-          onSuccess,
+          origin: { kind: "directed-connect", agentId },
+          surface: "directed-manual-grant-dialog",
         },
         pageSignal,
       );
@@ -194,7 +193,6 @@ function ManualGrantDialog({
   accountOptions,
   open,
   onOpenChange,
-  onSuccess,
 }: {
   connectorSlug: ConnectorSlug;
   agentId: string | null;
@@ -204,7 +202,6 @@ function ManualGrantDialog({
   accountOptions: ConnectorAccountMutationOptions | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  onSuccess: ConnectorConnectSuccess;
 }) {
   if (!manualGrantMethod || !accountOptions) {
     return null;
@@ -224,11 +221,6 @@ function ManualGrantDialog({
           connectorLabel={connectorLabel}
           manualGrantMethod={manualGrantMethod}
           accountOptions={accountOptions}
-          onSuccess={async (connectionId, signal) => {
-            await onSuccess(connectionId, signal);
-            signal.throwIfAborted();
-            onOpenChange(false);
-          }}
         />
       </DialogContent>
     </Dialog>
@@ -368,7 +360,6 @@ function DirectedConnectDialogs({
         accountOptions={accountOptions}
         open={manualGrantDialogOpen}
         onOpenChange={setManualGrantDialogOpen}
-        onSuccess={onSuccess}
       />
       <DirectedConnectModal
         open={connectModalOpen}

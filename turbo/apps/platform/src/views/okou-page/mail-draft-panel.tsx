@@ -171,22 +171,18 @@ function UnavailableMailDraftSidebar({
 }
 
 function MailReconnectButton({
-  signals,
   connectionId,
   provider,
   standalone,
 }: {
-  readonly signals: MailDraftSignals;
   readonly connectionId: string | undefined;
   readonly provider: MailProvider;
   readonly standalone: boolean;
 }) {
   const { t } = useTranslation();
-  const reloadDraft = useSet(signals.reloadDraft$);
   const { reconnect, reconnectDisabled, reconnecting } = useMailReconnect(
     provider,
     connectionId,
-    reloadDraft,
   );
   return (
     <Button
@@ -1311,7 +1307,6 @@ export function MailDraftPanel({
         )}
         action={
           <MailReconnectButton
-            signals={signals}
             provider={draftLoadable.data.provider}
             connectionId={draftLoadable.data.reconnectConnectionId}
             standalone={!onClose}

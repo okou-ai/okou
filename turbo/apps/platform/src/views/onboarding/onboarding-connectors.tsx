@@ -10,14 +10,13 @@ import {
 import {
   connectBuiltinConnectorNoAuth$,
   connectBuiltinConnectorOAuthAuthCode$,
-  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
   builtinPollingOAuthDeviceAuthSlug$,
   getOnlyAvailableBuiltinConnectorStatusBrowserAuthMethodDetail,
-  runBuiltinConnectorConnectSuccess$,
   selectedBuiltinConnectorCatalogItem$,
   selectedBuiltinConnectorSlug$,
   setSelectedBuiltinConnectorSlug$,
 } from "../../signals/okou-page/settings/connectors.ts";
+import { connectBuiltinConnectorOAuthAuthCodeAndContinue$ } from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import { onboardingSourceConnectors$ } from "../../signals/onboarding/onboarding-sources-first-catalog.ts";
 import { onboardingMakeConnectorItems$ } from "../../signals/onboarding/onboarding-connector-items.ts";
 import type {
@@ -251,9 +250,8 @@ function useSourceConnectorActivate(
   const pageSignal = useGet(pageSignal$);
   const selectConnector = useSet(setSelectedBuiltinConnectorSlug$);
   const [connection, directConnect] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
-  const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
 
   const activate = (
     item: PlatformConnectorCatalogConnectItem,
@@ -275,16 +273,9 @@ function useSourceConnectorActivate(
               authorizeVisibleAgents: true,
               ...accountOptions,
             },
-            onSuccess: (connectionId, signal) => {
-              return runConnectSuccess(
-                () => {
-                  onConnected?.(item.slug);
-                },
-                connectionId,
-                item.slug,
-                signal,
-              );
-            },
+            origin: onConnected
+              ? { kind: "onboarding-source" }
+              : { kind: "none" },
           },
           pageSignal,
         ),

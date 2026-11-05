@@ -1958,6 +1958,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       set(registries.browserUserActionCardSignals.subscribe$, signal);
       set(registries.browserAuthorizationCardSignals.subscribe$, signal);
       set(registries.walletCardSignals.subscribe$, signal);
+      set(registries.mailDraftCardSignals.subscribe$, signal);
     },
   );
 

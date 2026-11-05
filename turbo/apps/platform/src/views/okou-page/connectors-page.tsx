@@ -61,9 +61,6 @@ import {
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
   connectorCatalogDiscovery$,
-  connectBuiltinConnectorOAuthAuthCodeAndSettle$,
-  connectBuiltinConnectorNoAuthAndSettle$,
-  runBuiltinConnectorConnectSuccess$,
   connectorsSearch$,
   connectorsCategoryFilter$,
   connectorsConnectionFilter$,
@@ -75,6 +72,10 @@ import {
   setBuiltinConnectorScopeReviewSelection$,
   type ConnectorsConnectionFilter,
 } from "../../signals/okou-page/settings/connectors.ts";
+import {
+  connectBuiltinConnectorNoAuthAndContinue$,
+  connectBuiltinConnectorOAuthAuthCodeAndContinue$,
+} from "../../signals/okou-page/settings/connector-connect-continuation.ts";
 import {
   buildConnectorShelves,
   emptyConnectorShelfLayout,
@@ -1324,38 +1325,14 @@ function ManagedConnectorAccessDialogBody({
 }
 
 function useBuiltinConnectorConnectHandlers() {
-  const finishAccountConnection = useSet(finishConnectorAccountConnection$);
-  const runConnectSuccess = useSet(runBuiltinConnectorConnectSuccess$);
   const openAccountConnect = useSet(openBuiltinAccountConnectDialog$);
   const [browserAuth, connect] = useLoadableSet(
-    connectBuiltinConnectorOAuthAuthCodeAndSettle$,
+    connectBuiltinConnectorOAuthAuthCodeAndContinue$,
   );
   const [noAuth, connectNoAuth] = useLoadableSet(
-    connectBuiltinConnectorNoAuthAndSettle$,
+    connectBuiltinConnectorNoAuthAndContinue$,
   );
   const signal = useGet(pageSignal$);
-  const finishExplicitAccountAdd = async (
-    connector: PlatformConnectorCatalogStatusItem,
-    connectionId: string,
-    attemptSignal: AbortSignal,
-  ): Promise<void> => {
-    await runConnectSuccess(
-      (completedConnectionId, continuationSignal) => {
-        return finishAccountConnection(
-          {
-            target: { kind: "builtin", connectorSlug: connector.slug },
-            connectionId: completedConnectionId,
-            connectorLabel: connector.label,
-            mode: { kind: "add" },
-          },
-          continuationSignal,
-        );
-      },
-      connectionId,
-      connector.slug,
-      attemptSignal,
-    );
-  };
 
   const accountConnectHandlers = (
     connector: PlatformConnectorCatalogStatusItem,
@@ -1375,13 +1352,7 @@ function useBuiltinConnectorConnectHandlers() {
               connectorLabel: connector.label,
               connectorIcon: connector.icon,
             },
-            onSuccess: (connectionId, attemptSignal) => {
-              return finishExplicitAccountAdd(
-                connector,
-                connectionId,
-                attemptSignal,
-              );
-            },
+            origin: { kind: "account", mode: { kind: "add" } },
           },
           signal,
         );
@@ -1396,13 +1367,7 @@ function useBuiltinConnectorConnectHandlers() {
               authorizeVisibleAgents: true,
               connectorLabel: connector.label,
             },
-            onSuccess: (connectionId, attemptSignal) => {
-              return finishExplicitAccountAdd(
-                connector,
-                connectionId,
-                attemptSignal,
-              );
-            },
+            origin: { kind: "account", mode: { kind: "add" } },
           },
           signal,
         );
