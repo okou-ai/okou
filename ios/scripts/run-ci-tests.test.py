@@ -50,6 +50,8 @@ if command == 'xcrun':
         if scenario == 'cancel-boot':
             wait_for('allow-boot')
         mark('boot-finished')
+    elif args == ['simctl', 'shutdown', 'configured']:
+        mark('shutdown')
     elif args[0] != 'swift-format':
         raise ValueError(args)
 elif command == 'swift':
@@ -58,6 +60,9 @@ elif command == 'swift':
     if scenario == 'package-failure':
         sys.exit(19)
 elif command == 'xcodebuild':
+    if args == ['-version']:
+        print('Xcode 27.1\nBuild version controlled')
+        sys.exit(0)
     if '-resolvePackageDependencies' in args:
         role = 'prepare'
         mark('prepare-started')
@@ -131,6 +136,9 @@ class CIProcessTests(unittest.TestCase):
             "sample-xcode-startup.py",
         ):
             shutil.copy2(SCRIPTS / name, scripts / name)
+        operations = self.repo / "ops"
+        operations.mkdir()
+        shutil.copy2(SCRIPTS.parents[1] / "ops/ios-startup-probe.py", operations)
         resolved = (
             self.repo
             / "ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved"

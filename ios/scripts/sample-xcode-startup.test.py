@@ -78,6 +78,10 @@ elif command == 'sample':
     if scenario == 'unavailable':
         mark('sample-finished')
         sys.exit('sample: permission denied')
+    if scenario == 'missing-report':
+        mark('sample-finished')
+        print('pid_for_task failed; no report was produced')
+        sys.exit(0)
     target = pathlib.Path(sys.argv[sys.argv.index('-file') + 1])
     target.write_text('Thread_0 startup_wait\n' + ('x' * 300000))
     mark('sample-finished')
@@ -87,6 +91,26 @@ else:
 
 
 class StartupSamplingTests(unittest.TestCase):
+    def test_privileged_sampling_preserves_the_command_and_produces_a_report(self):
+        mock = Path(self.env["PATH"].split(os.pathsep)[0])
+        sudo = mock / "sudo"
+        sudo.write_text(
+            "#!/usr/bin/env python3\nimport os, sys\n"
+            "assert sys.argv[1] == '-n'\nos.execvp(sys.argv[2], sys.argv[2:])\n"
+        )
+        sudo.chmod(0o755)
+        result = self.invoke("--privileged-sample")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(list(self.reports.glob("*.sample.txt")))
+
+    def test_successful_tool_without_a_stack_is_recorded_as_unavailable(self):
+        self.env["SAMPLING_TEST_SCENARIO"] = "missing-report"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(
+            any(x["event"] == "stack_report_unavailable" for x in self.events())
+        )
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.addCleanup(self.temp.cleanup)
@@ -162,9 +186,7 @@ class StartupSamplingTests(unittest.TestCase):
         self.assertIsNotNone(self.summary()["command_banner_seconds"])
         events = self.events()
         names = [event["event"] for event in events]
-        self.assertLess(
-            names.index("command_banner"), names.index("observer_stopped")
-        )
+        self.assertLess(names.index("command_banner"), names.index("observer_stopped"))
         self.assertLess(
             names.index("observer_stopped"), names.index("compiler_finished")
         )

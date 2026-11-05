@@ -124,7 +124,7 @@ if [[ "$ios_test_phase" == all || "$ios_test_phase" == run ]]; then
   if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
     echo "iOS starting test process observer" >&2
     mkdir -p "$build_root/startup-samples"
-    python3 ios/scripts/sample-xcode-startup.py "$build_root/startup-samples/test" -- \
+    python3 ios/scripts/sample-xcode-startup.py --privileged-sample "$build_root/startup-samples/test" -- \
       xcodebuild "${test_args[@]}"
   else
     xcodebuild "${test_args[@]}"

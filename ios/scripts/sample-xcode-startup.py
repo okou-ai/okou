@@ -99,7 +99,9 @@ def observe(args):
                                 "observation_interrupted",
                                 tool=command[0],
                                 file=path.name,
-                                reason="startup_finished" if stop.is_set() else "deadline",
+                                reason="startup_finished"
+                                if stop.is_set()
+                                else "deadline",
                                 timeout_seconds=timeout,
                             )
                             return False
@@ -137,12 +139,26 @@ def observe(args):
                 # Sample the owned compiler first: a saturated host may take
                 # many seconds even to enumerate processes or launch a tool.
                 if time.monotonic() - started >= next_stack:
-                    report = args.output / f"{prefix}-xcodebuild-{process.pid}.sample.txt"
-                    capture(
+                    report = (
+                        args.output / f"{prefix}-xcodebuild-{process.pid}.sample.txt"
+                    )
+                    sample_command = [
+                        "sample",
+                        str(process.pid),
+                        "1",
+                        "20",
+                        "-file",
+                        str(report),
+                    ]
+                    if args.privileged_sample:
+                        sample_command = ["sudo", "-n", *sample_command]
+                    sampled = capture(
                         f"{prefix}-xcodebuild-{process.pid}-sampler",
-                        ["sample", str(process.pid), "1", "20", "-file", str(report)],
+                        sample_command,
                         45,
                     )
+                    if sampled and (not report.exists() or report.stat().st_size == 0):
+                        record("stack_report_unavailable", file=report.name)
                     cap_report(report)
                     next_stack = next(stack_offsets, float("inf"))
                 capture(
@@ -197,7 +213,9 @@ def observe(args):
                     output_open = False
                     continue
                 if summary["first_output_seconds"] is None:
-                    summary["first_output_seconds"] = round(time.monotonic() - started, 3)
+                    summary["first_output_seconds"] = round(
+                        time.monotonic() - started, 3
+                    )
                     record("first_output")
                 sys.stdout.buffer.write(chunk)
                 sys.stdout.buffer.flush()
@@ -244,6 +262,7 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--delay", type=float, default=15)
     parser.add_argument("--window", type=float, default=240)
+    parser.add_argument("--privileged-sample", action="store_true")
     parser.add_argument("output", type=Path)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
