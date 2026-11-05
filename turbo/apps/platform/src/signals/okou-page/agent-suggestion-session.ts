@@ -12,7 +12,6 @@ import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { slideSuggestionRows$ } from "./agent-suggestion-motion.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 
 type FeedbackKind =
@@ -217,7 +216,7 @@ export const enterAgentSuggestions$ = command(
   },
 );
 
-/** Records how a card was handled and slides it below the waiting cards. */
+/** Records how a card was handled and moves it below the waiting cards. */
 export const settleAgentSuggestion$ = command(
   (
     { get, set },
@@ -230,7 +229,6 @@ export const settleAgentSuggestion$ = command(
       return;
     }
     const session = get(session$);
-    set(slideSuggestionRows$);
     set(entry.hidden$, true);
     set(session.settled$, [
       ...get(session.settled$).filter((candidate) => {
@@ -268,7 +266,6 @@ export const linkAgentSuggestionThread$ = command(
 export const restoreAgentSuggestion$ = command(
   ({ get, set }, entry: AgentSuggestionEntry) => {
     const session = get(session$);
-    set(slideSuggestionRows$);
     set(entry.hidden$, false);
     set(
       session.settled$,
@@ -296,7 +293,6 @@ function settledFeedback(
 export const closeSettledSuggestion$ = command(
   ({ get, set }, entry: AgentSuggestionEntry) => {
     const session = get(session$);
-    set(slideSuggestionRows$);
     set(
       session.settled$,
       get(session.settled$).filter((candidate) => {

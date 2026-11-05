@@ -47,7 +47,6 @@ import {
   saveSuggestionFeedbackReason$,
   type SuggestionOutcome,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
-import { suggestionListRef$ } from "../../signals/okou-page/agent-suggestion-motion.ts";
 import {
   agentSuggestionComposerItem$,
   closeAgentSuggestionComposer$,
@@ -635,7 +634,6 @@ function AgentSuggestionCard({
 export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(agentSuggestionFeedItems$);
-  const listRef = useSet(suggestionListRef$);
   const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
   const finish = useSet(finishAgentSuggestionComposer$);
   const signal = useGet(pageSignal$);
@@ -660,14 +658,12 @@ export function AgentSuggestions() {
         return $.chat.agentSuggestions.label;
       })}
     >
-      {/* Handled cards follow the waiting ones; rows slide when a card is
-          handled or restored. */}
-      <ul ref={listRef} className="flex flex-col gap-4">
+      {/* Handled cards follow the waiting ones in the order handled. */}
+      <ul className="flex flex-col gap-4">
         {result.data.map(({ entry, outcome }) => {
           return (
             <li
               key={entry.item.id}
-              data-suggestion-row={entry.item.id}
               className="@container/suggestion relative min-w-0"
             >
               {outcome ? (
