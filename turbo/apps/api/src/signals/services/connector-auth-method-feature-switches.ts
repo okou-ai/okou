@@ -13,7 +13,6 @@ const FEATURE_SWITCH_BY_AUTH_METHOD = Object.freeze<
 >({
   "ahrefs\0oauth": FeatureSwitchKey.AhrefsConnector,
   "canva\0oauth": FeatureSwitchKey.CanvaConnector,
-  "deel\0oauth": FeatureSwitchKey.DeelConnector,
   "docusign\0oauth": FeatureSwitchKey.DocuSignConnector,
   "mercury\0oauth": FeatureSwitchKey.MercuryConnector,
   "neon\0oauth": FeatureSwitchKey.NeonConnector,

@@ -293,30 +293,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
     },
   },
   {
-    connectorSlug: "deel",
-    label: "Deel",
-    clientEnvPrefix: "DEEL",
-    authorizationEndpoint: "https://app.deel.com/oauth2/authorize",
-    tokenUrl: "https://app.deel.com/oauth2/tokens",
-    pkce: true,
-    tokenResponse: {
-      access_token: "deel-test-token",
-      refresh_token: "deel-refresh-token",
-      expires_in: 2_592_000,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.letsdeel.com/rest/people/me", () => {
-          return HttpResponse.json({
-            id: "deel-user-123",
-            full_name: "Deel Test User",
-            email: "deel@example.test",
-          });
-        }),
-      );
-    },
-  },
-  {
     connectorSlug: "docusign",
     label: "DocuSign",
     clientEnvPrefix: "DOCUSIGN",

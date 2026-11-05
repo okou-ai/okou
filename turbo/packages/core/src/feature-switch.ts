@@ -262,11 +262,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Canva design connector",
     enabled: false,
   },
-  [FeatureSwitchKey.DeelConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Deel HR connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.DocuSignConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
