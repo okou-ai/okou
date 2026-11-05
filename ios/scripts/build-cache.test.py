@@ -17,16 +17,27 @@ def yaml(path):
     return json.loads(subprocess.check_output(["yq", "-o=json", ".", str(path)]))
 
 
-def compare_literals(expression):
+def evaluate_literals(expression):
     expression = expression.replace("&&", " and ").replace("||", " or ")
     comparison = ast.parse(expression, mode="eval").body
     if isinstance(comparison, ast.BoolOp):
-        values = [compare_literals(ast.unparse(value)) for value in comparison.values]
-        if isinstance(comparison.op, ast.And):
-            return all(values)
-        if isinstance(comparison.op, ast.Or):
-            return any(values)
-        raise ValueError("Unsupported cache-routing boolean operator")
+        for node in comparison.values:
+            value = evaluate_literals(ast.unparse(node))
+            if isinstance(comparison.op, ast.And) and not value:
+                return value
+            if isinstance(comparison.op, ast.Or) and value:
+                return value
+        return value
+    if isinstance(comparison, ast.Constant):
+        return ast.literal_eval(comparison)
+    if (
+        isinstance(comparison, ast.Call)
+        and isinstance(comparison.func, ast.Name)
+        and comparison.func.id == "format"
+        and not comparison.keywords
+    ):
+        arguments = [ast.literal_eval(node) for node in comparison.args]
+        return arguments[0].format(*arguments[1:])
     if not isinstance(comparison, ast.Compare) or len(comparison.ops) != 1:
         raise ValueError("Expected one literal cache-routing comparison")
     left = ast.literal_eval(comparison.left)
@@ -200,9 +211,7 @@ class BuildCacheTests(unittest.TestCase):
                 .replace("&&", " and ")
                 .replace("||", " or ")
             )
-            self.assertEqual(
-                eval(expression, {"__builtins__": {}, "format": str.format}), expected
-            )
+            self.assertEqual(evaluate_literals(expression), expected)
         for role, job in workflow["jobs"].items():
             for ref in (
                 "refs/heads/main",
@@ -225,7 +234,7 @@ class BuildCacheTests(unittest.TestCase):
                             and event != "workflow_run",
                         }
                         self.assertEqual(
-                            compare_literals(condition),
+                            evaluate_literals(condition),
                             ref == "refs/heads/main" and selected[role],
                         )
         for role in ("warm", "warm-archive"):
@@ -272,7 +281,7 @@ class BuildCacheTests(unittest.TestCase):
                                 "steps.cache.outputs.compilation-hit", repr(compilation)
                             )
                         )
-                        self.assertEqual(compare_literals(condition), needed[role])
+                        self.assertEqual(evaluate_literals(condition), needed[role])
 
     def test_cache_lookups_can_skip_downloads_only_for_complete_warm_hits(self):
         inputs = self.action["inputs"]
@@ -304,7 +313,7 @@ class BuildCacheTests(unittest.TestCase):
                             for name, value in values.items():
                                 condition = condition.replace(name, repr(value))
                             self.assertEqual(
-                                compare_literals(condition),
+                                evaluate_literals(condition),
                                 restore
                                 and (
                                     role != "compilation"
