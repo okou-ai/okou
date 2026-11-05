@@ -102,7 +102,8 @@ interface SendNewThreadMessageRequest {
   composerTask?: ComposerTaskSelection;
   routeSearchParams?: URLSearchParams;
   forward?: ChatForwardContext;
-  onOptimisticSend?: () => void;
+  /** Runs once the new thread is published, before its send is confirmed. */
+  onOptimisticSend?: (threadId: string) => void;
   connectorSelections?: readonly ConnectorAccountSelection[];
   initialConnectorAccess?: PendingChatConnectorAccess;
   initialRemoteAccessOverrides?: readonly InitialRemoteAccessOverride[];
@@ -862,7 +863,7 @@ const sendNewThreadMessage$ = command(
     if (request.composerTask) {
       set(rememberComposerTaskForThread$, threadId, request.composerTask);
     }
-    request.onOptimisticSend?.();
+    request.onOptimisticSend?.(threadId);
     const clearDraftResult = set(
       clearSubmittedNewThreadDraft$,
       {

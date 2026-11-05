@@ -1655,10 +1655,13 @@
       "label": "Sugestões",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this ({{scope}}).",
+      "messageSent": "Mensagem enviada",
       "notPlanned": "Not planned",
       "notPlannedRecorded": "Noted — this is not planned",
+      "openChat": "Abrir conversa",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sending": "Enviando…",
       "sent": "Enviado para uma nova conversa",
       "undoFeedback": "Undo",
       "useSuggestion": "Usar sugestão"

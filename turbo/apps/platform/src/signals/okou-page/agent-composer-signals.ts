@@ -94,7 +94,7 @@ interface AgentComposerOptions {
   readonly inPlace?: boolean;
   /** A Project page starts its chats in that Project. */
   readonly projectId?: string;
-  readonly onOptimisticSend?: () => void;
+  readonly onOptimisticSend?: (threadId: string) => void;
 }
 
 function createAgentSubmitMessage(
@@ -239,7 +239,7 @@ export function createForwardAgentComposerSignals(
 export function createInPlaceAgentComposerSignals(
   agentId: string,
   agentDraft: EnsuredAgentDraft,
-  onOptimisticSend: () => void,
+  onOptimisticSend: (threadId: string) => void,
 ) {
   return createAgentComposerSignalsWithDraft(agentId, agentDraft, {
     inPlace: true,
