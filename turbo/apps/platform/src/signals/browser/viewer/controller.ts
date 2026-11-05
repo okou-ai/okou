@@ -611,11 +611,9 @@ function createTabOpeningGraph(
   });
   const open$ = command(async ({ get, set }, signal: AbortSignal) => {
     const opening = {};
-    const existing = new Set(
-      get(model.snapshot$).targets.map((target) => {
-        return target.id;
-      }),
-    );
+    // Known identities predate this opening even before membership settles.
+    // Close decisions still require their current authoritative scope proof.
+    const existing = get(model.knownTargetIds$);
     set(openings$, new Map(get(openings$)).set(opening, existing));
     using _opening = {
       [Symbol.dispose]: () => {
@@ -813,7 +811,9 @@ type DiscoveryContext = ControllerContext<
   | "directory$"
   | "model"
   | "nativeHost"
+  | "preferredTargetId"
   | "readinessFailure$"
+  | "selectedOwner$"
   | "wake$"
 >;
 
@@ -844,7 +844,7 @@ function createDiscoveryRetry(
 function createDiscoveryGraph(
   context: DiscoveryContext,
   links$: ControllerDependencies<
-    "beginClosing$" | "retireCurrent$" | "selectTab$" | "selectedSession$"
+    "beginClosing$" | "retireCurrent$" | "selectTab$"
   >,
 ): Pick<
   ControllerLinks,
@@ -881,7 +881,7 @@ function createDiscoveryGraph(
       let selected = snapshot.selectedTargetId;
       if (
         selected &&
-        !snapshot.targets.some((target) => {
+        !snapshot.inventory.targets.some((target) => {
           return target.id === selected;
         }) &&
         !get(closingTargets$).has(selected)
@@ -902,7 +902,7 @@ function createDiscoveryGraph(
       }
       if (
         selected &&
-        !get(get(links$).selectedSession$) &&
+        !get(context.selectedOwner$) &&
         !get(hasSelectionRecovery$) &&
         !get(context.creationOwner$) &&
         get(available$)
@@ -917,17 +917,17 @@ function createDiscoveryGraph(
         !get(context.creationOwner$) &&
         !get(chosenOnce$) &&
         !get(bootstrapping$) &&
-        snapshot.targets[0] &&
+        snapshot.inventory.targets[0] &&
         get(available$)
       ) {
         detachBrowser(
-          set(get(links$).selectTab$, snapshot.targets[0].id, signal),
+          set(get(links$).selectTab$, snapshot.inventory.targets[0].id, signal),
           Reason.DomCallback,
           "browser discovered selection",
         );
       } else if (
         !selected &&
-        !snapshot.targets.length &&
+        !snapshot.inventory.targets.length &&
         !get(context.creationOwner$)
       ) {
         set(model.transition$, { type: "target-lost", error: null });
@@ -955,6 +955,7 @@ function createDiscoveryGraph(
             inventory$: model.inventoryUpdate$,
           },
           {
+            preferredTargetId: context.preferredTargetId,
             invalidated$,
             changed$: discoveryChanged$,
             failed$: discoveryFailed$,
@@ -1143,7 +1144,7 @@ function createSelectedSessionsGraph(
         get(available$) &&
         get(selectedOwner$) === attached.owner &&
         !!discovery &&
-        get(discovery.ready$) &&
+        get(discovery.admitted$) &&
         get(discovery.selectedTargetId$) === attached.owner.targetId
       );
     });
@@ -1253,9 +1254,9 @@ function createDisplayGraph(
     const snapshot = get(model.snapshot$);
     return (
       !!discovery &&
-      get(discovery.ready$) &&
-      snapshot.selectedTargetId === null &&
-      snapshot.targets.length === 0
+      get(discovery.admitted$) &&
+      get(model.empty$) &&
+      snapshot.selectedTargetId === null
     );
   });
   return {
@@ -1849,7 +1850,7 @@ function createAttachmentAdmission(
   const waitForDiscovery$ = command(
     async ({ get, set }, owner: SelectionOwner, signal: AbortSignal) => {
       const discovery = get(get(links$).discovery$)!;
-      while (!get(discovery.ready$)) {
+      while (!get(discovery.admitted$)) {
         set(assertCurrent$, owner, signal);
         await set(waitEvent$, signal);
       }
@@ -2350,7 +2351,7 @@ function createSelectionGraph(
         await set(get(links$).retryDiscovery$, signal);
         set(assertAvailable$, signal);
       }
-      const target = get(model.snapshot$).targets.find((target) => {
+      const target = get(model.snapshot$).inventory.targets.find((target) => {
         return target.id === targetId;
       });
       if (!target) {
@@ -2900,7 +2901,7 @@ function createActiveTargetFollowing(
     ): Promise<void> => {
       if (
         !get(available$) ||
-        !get(model.snapshot$).targets.some((target) => {
+        !get(model.snapshot$).inventory.targets.some((target) => {
           return target.id === targetId;
         })
       ) {
@@ -3270,22 +3271,35 @@ function createFramesConnectionGraph(
 }
 
 /** Temporary admission loss parks startup; actual failure or owner end rejects. */
-function createAdmissionWait(
+function createInitialDiscovery(
   context: ControllerContext<"available$" | "readinessFailure$" | "waitEvent$">,
+  links$: ControllerDependencies<"discovery$">,
 ) {
-  return command(async ({ get, set }, signal: AbortSignal) => {
-    while (true) {
-      signal.throwIfAborted();
-      const failure = get(context.readinessFailure$);
-      if (failure) {
-        throw failure;
+  return command(
+    async ({ get, set }, signal: AbortSignal, lifetime: AbortSignal) => {
+      // Discovery publishes failures and readiness; remaining native work belongs
+      // to the transport after the first proven batch is admitted.
+      detachBrowser(
+        Promise.allSettled([
+          set(get(get(links$).discovery$)!.start$, lifetime),
+        ]),
+        Reason.Daemon,
+        "browser initial target discovery",
+      );
+      while (true) {
+        signal.throwIfAborted();
+        const failure = get(context.readinessFailure$);
+        if (failure) {
+          throw failure;
+        }
+        const discovery = get(get(links$).discovery$);
+        if (get(context.available$) && discovery && get(discovery.admitted$)) {
+          return;
+        }
+        await set(context.waitEvent$, signal);
       }
-      if (get(context.available$)) {
-        return;
-      }
-      await set(context.waitEvent$, signal);
-    }
-  });
+    },
+  );
 }
 
 function initialTarget(
@@ -3340,7 +3354,7 @@ function createConnectionBootstrap(
     bootstrapping$,
     displaySize$,
   } = context;
-  const waitAvailable$ = createAdmissionWait(context);
+  const startDiscovery$ = createInitialDiscovery(context, links$);
   return command(async ({ get, set }, signal: AbortSignal) => {
     validateConfiguration(connection.cdpUrl, connection.windowId ?? undefined);
     const transport = get(model.transport$);
@@ -3413,11 +3427,9 @@ function createConnectionBootstrap(
     set(display.measure$, get(displaySize$));
     set(display.setSuspended$, !get(authority$) || get(model.intent$).paused);
     set(display.start$, client.signal);
-    await set(get(get(links$).discovery$)!.start$, client.signal);
-    signal.throwIfAborted();
-    await set(waitAvailable$, signal);
+    await set(startDiscovery$, signal, client.signal);
     set(bootstrapping$, false);
-    const targets = get(model.snapshot$).targets;
+    const targets = get(model.snapshot$).inventory.targets;
     const first = initialTarget(targets, context.preferredTargetId);
     if (first) {
       return set(get(links$).select$, first.id, signal);
@@ -3768,19 +3780,49 @@ function createTabCreationGraph(
   return { cancelCreation$, createTab$, creatingTab$ };
 }
 
-function createTabClosingGraph(
-  context: ControllerContext<
-    | "assertAvailable$"
-    | "clientState$"
-    | "closingTargets$"
-    | "connection"
-    | "directory$"
-    | "model"
-    | "tabOpening"
-    | "targetRevision$"
-  >,
+type TabClosingContext = ControllerContext<
+  | "assertAvailable$"
+  | "clientState$"
+  | "closingTargets$"
+  | "connection"
+  | "directory$"
+  | "model"
+  | "tabOpening"
+  | "targetRevision$"
+>;
+
+function createCloseInventoryWait(
+  context: ControllerContext<"assertAvailable$" | "model">,
   links$: ControllerDependencies<
-    "discovery$" | "discoveryChanged$" | "retireCurrent$" | "selectTab$"
+    "canRetryDiscovery$" | "discovery$" | "retryDiscovery$"
+  >,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    set(context.assertAvailable$, signal);
+    const selectionIntent = get(context.model.intent$).selection;
+    // Input can be ready before the inventory is complete. Revalidate a failed
+    // read or join the current scan before counting survivors for a close.
+    if (get(get(links$).canRetryDiscovery$)) {
+      await set(get(links$).retryDiscovery$, signal);
+    }
+    const snapshot = await set(
+      get(get(links$).discovery$)!.readComplete$,
+      signal,
+    );
+    set(context.assertAvailable$, signal);
+    return { snapshot, selectionIntent };
+  });
+}
+
+function createTabClosingGraph(
+  context: TabClosingContext,
+  links$: ControllerDependencies<
+    | "canRetryDiscovery$"
+    | "discovery$"
+    | "discoveryChanged$"
+    | "retireCurrent$"
+    | "retryDiscovery$"
+    | "selectTab$"
   >,
 ) {
   const {
@@ -3792,15 +3834,18 @@ function createTabClosingGraph(
     directory$,
     tabOpening,
   } = context;
+  const waitForInventory$ = createCloseInventoryWait(context, links$);
   const closeTab$ = command(
     async (
       { get, set },
       targetId: string,
       signal: AbortSignal,
     ): Promise<void> => {
-      set(assertAvailable$, signal);
-      const snapshot = get(model.snapshot$);
-      const index = snapshot.targets.findIndex((target) => {
+      const { snapshot, selectionIntent } = await set(
+        waitForInventory$,
+        signal,
+      );
+      const index = snapshot.inventory.targets.findIndex((target) => {
         return target.id === targetId;
       });
       if (index === -1) {
@@ -3809,7 +3854,6 @@ function createTabClosingGraph(
           "The tab is no longer available in this scope.",
         );
       }
-      const selectionIntent = get(model.intent$).selection;
       const client = get(clientState$)!;
       const directory = get(directory$)!;
       const discovery = get(get(links$).discovery$)!;
@@ -3827,7 +3871,7 @@ function createTabClosingGraph(
       const preserveWindow =
         context.connection.windowId !== null &&
         context.connection.windowId !== undefined &&
-        snapshot.targets.every((target) => {
+        snapshot.inventory.targets.every((target) => {
           return (
             get(closingTargets$).has(target.id) ||
             !set(tabOpening.canKeepWindow$, target.id)
@@ -3861,11 +3905,11 @@ function createTabClosingGraph(
         get(model.intent$).selection === selectionIntent
       ) {
         const preceding = new Set(
-          snapshot.targets.slice(0, index).map((target) => {
+          snapshot.inventory.targets.slice(0, index).map((target) => {
             return target.id;
           }),
         );
-        const targets = get(model.snapshot$).targets;
+        const targets = get(model.snapshot$).inventory.targets;
         const next =
           targets.find((target) => {
             return !preceding.has(target.id);
@@ -3883,7 +3927,7 @@ function createTabClosingGraph(
       }
       set(discovery.removed$, targetId, client.signal);
       if (
-        get(model.snapshot$).targets.some((target) => {
+        get(model.snapshot$).inventory.targets.some((target) => {
           return target.id === targetId;
         })
       ) {
@@ -3913,10 +3957,12 @@ function createTabsGraph(
   >,
   links$: ControllerDependencies<
     | "canCreate$"
+    | "canRetryDiscovery$"
     | "discovery$"
     | "discoveryChanged$"
     | "restoreSelection$"
     | "retireCurrent$"
+    | "retryDiscovery$"
     | "selectTab$"
   >,
 ): Pick<
@@ -4347,7 +4393,7 @@ function createSelectionSettingsGraph(
       const targetId = get(model.selectedTabId$);
       if (
         targetId &&
-        get(model.snapshot$).targets.some((target) => {
+        get(model.snapshot$).inventory.targets.some((target) => {
           return target.id === targetId;
         })
       ) {
@@ -4362,7 +4408,7 @@ function createSelectionSettingsGraph(
       if (owner) {
         return set(get(links$).waitSelection$, owner, signal);
       }
-      const first = get(model.snapshot$).targets[0];
+      const first = get(model.snapshot$).inventory.targets[0];
       if (first && !get(chosenOnce$)) {
         return set(get(links$).select$, first.id, signal);
       }

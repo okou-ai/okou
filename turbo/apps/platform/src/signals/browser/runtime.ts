@@ -1586,7 +1586,7 @@ function createRuntimeRecovery(
       usable:
         authorized &&
         ((controls.streaming && get(graph.selectedInput$) !== null) ||
-          (snapshot.targets.length === 0 && get(lease.controller.canCreate$))),
+          (get(context.model.empty$) && get(lease.controller.canCreate$))),
       snapshot,
       image: get(context.model.imageRecovery$),
     };

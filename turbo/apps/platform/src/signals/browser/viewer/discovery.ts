@@ -21,6 +21,7 @@ interface DiscoveryModel {
   readonly inventory$: Command<TargetInventory, [InventoryEvent]>;
 }
 interface DiscoveryOptions {
+  readonly preferredTargetId: string | null;
   readonly invalidated$: Command<void, [AbortSignal]>;
   readonly changed$: Command<void, [AbortSignal]>;
   readonly failed$: Command<void, [unknown, AbortSignal]>;
@@ -46,14 +47,16 @@ function createDiscoveryState(model: DiscoveryModel) {
       get(epoch$) === get(model.inventoryState$).epoch
     );
   });
-  const ready$ = computed((get) => {
+  const admitted$ = computed((get) => {
     return (
-      get(active$) && get(model.inventoryState$).ready && !get(validating$)
+      get(active$) &&
+      get(model.inventoryState$).coverage !== "pending" &&
+      !get(validating$)
     );
   });
   const selectedTargetId$ = computed((get) => {
     const id = get(model.snapshot$).selectedTargetId;
-    return get(ready$) &&
+    return get(admitted$) &&
       id &&
       get(model.inventoryState$).entries.get(id)?.membership?.member
       ? id
@@ -71,7 +74,7 @@ function createDiscoveryState(model: DiscoveryModel) {
     unwatchAbort$,
     listeners$,
     active$,
-    ready$,
+    admitted$,
     selectedTargetId$,
   };
 }
@@ -89,7 +92,7 @@ function createDiscoveryLifecycle(
     fullWanted$,
     epoch$,
     active$,
-    ready$,
+    admitted$,
     validating$,
   } = nodes;
   const close$ = command(({ get, set }) => {
@@ -111,6 +114,7 @@ function createDiscoveryLifecycle(
     }
     if (isRecoverableReadFailure(error)) {
       // Failed proof revokes admission, not the healthy transport or epoch.
+      set(model.inventory$, { type: "invalidate-round" });
       set(validating$, true);
     } else {
       set(close$);
@@ -120,7 +124,7 @@ function createDiscoveryLifecycle(
   const commit$ = command(
     ({ get, set }, event: InventoryEvent, signal: AbortSignal) => {
       set(model.inventory$, event);
-      if (get(ready$)) {
+      if (get(admitted$)) {
         set(options.changed$, signal);
       }
     },
@@ -263,15 +267,17 @@ function createMembershipReads(
         set(commit$, { type: "listed", round, targets: pages }, signal);
         set(initialized$, true);
       }
-      const selected = get(model.snapshot$).selectedTargetId;
+      const selected =
+        get(model.snapshot$).selectedTargetId ?? options.preferredTargetId;
       const ids = [...get(model.inventoryState$).entries.keys()].sort(
         (a, b) => {
           return Number(b === selected) - Number(a === selected);
         },
       );
       for (let offset = 0; offset < ids.length; offset += 4) {
+        const batch = ids.slice(offset, offset + 4);
         const results = await Promise.allSettled(
-          ids.slice(offset, offset + 4).map((id) => {
+          batch.map((id) => {
             return set(readMembership$, id, round, signal);
           }),
         );
@@ -284,6 +290,23 @@ function createMembershipReads(
         });
         if (rejected?.status === "rejected") {
           throw rejected.reason;
+        }
+        const inventory = get(model.inventoryState$);
+        if (
+          inventory.coverage === "pending" &&
+          batch.some((id) => {
+            const entry = inventory.entries.get(id);
+            return (
+              entry?.target &&
+              entry.membership?.member &&
+              entry.membership.order >= round.order
+            );
+          })
+        ) {
+          // Admit only proven pages; the same bounded scan fills the remaining tabs.
+          set(model.inventory$, { type: "admit-round", round });
+          set(validating$, false);
+          set(options.changed$, signal);
         }
       }
       if (!set(roundCurrent$, round)) {
@@ -464,6 +487,31 @@ function createDiscoveryStart(
   });
 }
 
+function createCompleteInventoryRead(
+  nodes: DiscoveryState,
+  model: DiscoveryModel,
+  start$: Command<Promise<void>, [AbortSignal]>,
+  waitForDrain$: Command<Promise<void>, [AbortSignal]>,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    await set(start$, signal);
+    // A concurrent invalidation can start another drain before an observer resumes.
+    while (get(nodes.running$)) {
+      await set(waitForDrain$, signal);
+    }
+    signal.throwIfAborted();
+    const snapshot = get(model.snapshot$);
+    const inventory = snapshot.inventory;
+    if (!get(nodes.admitted$) || inventory.status !== "complete") {
+      throw new CdpFault(
+        "protocol",
+        "Browser target inventory is not complete.",
+      );
+    }
+    return { ...snapshot, inventory };
+  });
+}
+
 function createDiscoveryTargets(
   nodes: DiscoveryState,
   model: DiscoveryModel,
@@ -510,8 +558,9 @@ function createDiscoveryTargets(
       const dirty = new Set(get(dirty$));
       dirty.delete(target.id);
       set(dirty$, dirty);
+      const scanning = get(model.inventoryState$).round !== null;
       set(lifecycle.commit$, { type: "created", target, observation }, signal);
-      if (get(validating$)) {
+      if (get(validating$) || scanning) {
         set(fullWanted$, true);
       }
       return (
@@ -602,6 +651,12 @@ export function createTargetDiscovery(
     refresh$,
     waitForDrain$,
   );
+  const readComplete$ = createCompleteInventoryRead(
+    nodes,
+    model,
+    start$,
+    waitForDrain$,
+  );
   const targets = createDiscoveryTargets(nodes, model, lifecycle);
   const event$ = createDiscoveryEvents(
     nodes,
@@ -612,9 +667,10 @@ export function createTargetDiscovery(
   );
   return {
     active$: nodes.active$,
-    ready$: nodes.ready$,
+    admitted$: nodes.admitted$,
     selectedTargetId$: nodes.selectedTargetId$,
     start$,
+    readComplete$,
     refresh$,
     ...targets,
     event$,
