@@ -108,6 +108,44 @@ test("Common Markdown features remain recognizable", async () => {
   expect(completedItem).toBeChecked();
 });
 
+test("Email contacts and compose templates keep their native mail destinations", async () => {
+  const chat = createMarkdownChatFixture(context);
+  const contacts = [
+    { text: "jane@example.com", href: "mailto:jane@example.com" },
+    { text: "Alex Rivera", href: "mailto:alex@example.com" },
+    {
+      text: "Contact the team",
+      href: "mailto:first@example.com,second@example.com?subject=Hello",
+    },
+  ];
+  const rows = completedMessageRows(
+    chat,
+    [
+      "Jane Doe — Growth Lead — jane@example.com",
+      "",
+      "- [Alex Rivera](mailto:alex@example.com)",
+      "- [Contact the team](mailto:first@example.com,second@example.com?subject=Hello)",
+    ].join("\n"),
+  );
+  chat.install({
+    rows: () => {
+      return rows;
+    },
+  });
+
+  await setupPage({ context, path: chat.path, host: "app.okou.ai" });
+
+  const frame = markdownFrameFor(await screen.findByText("Alex Rivera"));
+  for (const { text, href } of contacts) {
+    const link = queryAllByRoleFast("link", frame).find((candidate) => {
+      return candidate.textContent === text;
+    });
+    expect(link).toHaveAttribute("href", href);
+    expect(link).toHaveAttribute("target", "_blank");
+    expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  }
+});
+
 test("A complete HEX color has a preview in a plain assistant response", async () => {
   const chat = createMarkdownChatFixture(context);
   const source = "Primary color #12ABef is ready.";

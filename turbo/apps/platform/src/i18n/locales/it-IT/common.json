@@ -2106,7 +2106,6 @@
       "partsHeading_other": "{{count}} parti citate dalla tua risposta",
       "placeholder": "Fai una domanda o commenta questa citazione",
       "quote": "Cita",
-      "quoteEmail": "Cita {{email}}",
       "remove": "Rimuovi feedback",
       "sentEmailDescription": "un'e-mail inviata",
       "sourcePartHeading": "Citato da {{description}}",

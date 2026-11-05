@@ -2066,7 +2066,6 @@
       "partsHeading_other": "답변에서 {{count}}개 부분 인용",
       "placeholder": "이 인용문에 대해 질문하거나 의견을 남기세요",
       "quote": "인용",
-      "quoteEmail": "{{email}} 인용",
       "remove": "피드백 제거",
       "sentEmailDescription": "보낸 이메일",
       "sourcePartHeading": "{{description}}에서 인용",

@@ -2066,7 +2066,6 @@
       "partsHeading_other": "返信から {{count}} 件を引用",
       "placeholder": "この引用について質問またはコメント",
       "quote": "引用",
-      "quoteEmail": "{{email}} を引用",
       "remove": "フィードバックを削除する",
       "sentEmailDescription": "送信済みメール",
       "sourcePartHeading": "{{description}}から引用",
