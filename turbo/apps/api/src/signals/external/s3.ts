@@ -21,6 +21,7 @@ import {
   linkLayoutSegment,
 } from "@okouai/api-contracts/contracts/link-layout";
 import { command, computed, type Computed } from "ccstate";
+import { createHash } from "node:crypto";
 
 import { PRIVATE_ARTIFACT_CACHE_CONTROL } from "@okouai/api-contracts/contracts/artifact-cache";
 import {
@@ -30,8 +31,13 @@ import {
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { env } from "../../lib/env";
 import { createLazyS3Client } from "../../lib/s3-client";
+import { singleton } from "../../lib/singleton";
 import { detach, Mechanism, settle } from "../utils";
 const S3_DELETE_OBJECTS_LIMIT = 1000;
+// Follow actual client configuration, without retaining a retired transport.
+const signingCacheIdentities = singleton(() => {
+  return new WeakMap<S3Client, string>();
+});
 
 export interface S3Object {
   readonly key: string;
@@ -215,16 +221,24 @@ function createS3ClientGetter(
   usePublicEndpoint = false,
 ): () => S3Client {
   const getClient = createLazyS3Client((requestHandler) => {
-    return new S3Client({
+    const signingConfig = {
       region: env("S3_REGION") ?? "auto",
       endpoint: usePublicEndpoint
         ? env("S3_PUBLIC_ENDPOINT")
         : (env("S3_ENDPOINT") ?? defaultS3Endpoint()),
       credentials: credentials(),
       forcePathStyle: env("S3_FORCE_PATH_STYLE") === "true",
+    };
+    const client = new S3Client({
+      ...signingConfig,
       requestChecksumCalculation: "WHEN_REQUIRED",
       requestHandler,
     });
+    signingCacheIdentities().set(
+      client,
+      createHash("sha256").update(JSON.stringify(signingConfig)).digest("hex"),
+    );
+    return client;
   });
   return () => {
     // Keep required credential validation fail-closed on warm clients too.
@@ -343,6 +357,21 @@ function s3ClientForBucket(
   }
   return usePublicEndpoint ? publicS3Client$ : s3Client$;
 }
+
+/** Opaque identity for the credentials and endpoint of the selected client. */
+export const presignedGetUrlCacheIdentity$ = command(
+  (
+    { get },
+    args: { readonly bucket: string; readonly publicEndpoint: boolean },
+  ) => {
+    const client = get(s3ClientForBucket(args.bucket, args.publicEndpoint));
+    const identity = signingCacheIdentities().get(client);
+    if (identity === undefined) {
+      throw new Error("S3 signing client is missing its cache identity");
+    }
+    return identity;
+  },
+);
 
 export type PresignedGetUrlSigner = (
   bucket: string,

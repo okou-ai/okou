@@ -1,5 +1,6 @@
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
+import { CONTENT_BUNDLE_URL_PRUNE_LIMIT } from "./content-bundle-presigned-url-cache";
 import {
   PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
   PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
@@ -65,6 +66,12 @@ export const pruneStoragePresignedUrlCache$ = command(
           scope: "hosted_site_preview",
           limit: PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
         },
+        signal,
+      ),
+      // Shared disposable URL cleanup also owns the Storage-independent scope.
+      set(
+        pruneStoragePresignedUrls$,
+        { scope: "content_bundle", limit: CONTENT_BUNDLE_URL_PRUNE_LIMIT },
         signal,
       ),
     ]);

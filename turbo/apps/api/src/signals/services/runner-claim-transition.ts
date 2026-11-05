@@ -29,6 +29,11 @@ import { runnerJobQueueExpiredCondition } from "./runner-job-queue-lifecycle.ser
 import { agentInstructionsClaimSelectionSql } from "./agent-instructions-claim.service";
 import { contentBundleAvailableCondition } from "./content-bundle-claim";
 import {
+  cachedContentBundleUrlSchema,
+  contentBundleUrlCacheSnapshotSql,
+  type ContentBundleUrlCacheContext,
+} from "./content-bundle-presigned-url-cache";
+import {
   claimedWorkflowSchema,
   workflowClaimSelectionSql,
   type ClaimedWorkflow,
@@ -41,6 +46,9 @@ export type ClaimTransitionResult =
       readonly claimedAt: Date;
       readonly workflows: readonly ClaimedWorkflow[];
       readonly instructionsBundle: ContentBundle | null;
+      readonly cachedBundleUrls: readonly zInfer<
+        typeof cachedContentBundleUrlSchema
+      >[];
     }
   | { readonly status: "workflow-unavailable" }
   | { readonly status: "agent-unavailable" }
@@ -61,6 +69,7 @@ export const claimTransitionSqlRowSchema = object({
   claimedAtMs: number().nullable(),
   workflows: zArray(claimedWorkflowSchema),
   instructionsBundle: contentBundleSchema.nullable(),
+  cachedBundleUrls: zArray(cachedContentBundleUrlSchema),
 });
 
 export function decodeClaimTransitionResult(
@@ -79,6 +88,7 @@ export function decodeClaimTransitionResult(
       claimedAt: new Date(row.claimedAtMs),
       workflows: row.workflows,
       instructionsBundle: row.instructionsBundle,
+      cachedBundleUrls: row.cachedBundleUrls,
     };
   }
   return { status: row.status };
@@ -164,6 +174,10 @@ export function buildClaimTransitionSql(
     readonly version: string | null;
   },
   workflowInput: WorkflowClaimInput,
+  bundleUrlCache: {
+    readonly context: ContentBundleUrlCacheContext;
+    readonly additionalHashes: readonly string[];
+  },
 ): SQL {
   // Materialized outputs make the row locks depend on run, then queue.
   return sql`
@@ -272,6 +286,7 @@ export function buildClaimTransitionSql(
               FROM updated_run
             ) AS "claimedAtMs",
             CASE WHEN EXISTS (SELECT 1 FROM updated_run) THEN (SELECT documents FROM workflow_selection) ELSE '[]'::jsonb END AS workflows,
-            CASE WHEN EXISTS (SELECT 1 FROM updated_run) THEN (SELECT "instructionsBundle" FROM selected_agent) ELSE NULL END AS "instructionsBundle"
+            CASE WHEN EXISTS (SELECT 1 FROM updated_run) THEN (SELECT "instructionsBundle" FROM selected_agent) ELSE NULL END AS "instructionsBundle",
+            CASE WHEN EXISTS (SELECT 1 FROM updated_run) THEN ${contentBundleUrlCacheSnapshotSql(bundleUrlCache.context, bundleUrlCache.additionalHashes)} ELSE '[]'::jsonb END AS "cachedBundleUrls"
           `;
 }

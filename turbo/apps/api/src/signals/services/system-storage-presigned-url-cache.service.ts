@@ -955,7 +955,10 @@ export const pruneStoragePresignedUrls$ = command(
   async (
     { set },
     input: {
-      readonly scope: StoragePresignedUrlCacheScope | "hosted_site_preview";
+      readonly scope:
+        | StoragePresignedUrlCacheScope
+        | "hosted_site_preview"
+        | "content_bundle";
       readonly limit: number;
       readonly objectKeyPrefix?: string;
     },
