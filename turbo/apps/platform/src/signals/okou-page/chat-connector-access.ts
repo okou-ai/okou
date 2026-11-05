@@ -204,18 +204,17 @@ function pendingConnectorOverride(
   };
 }
 
+/** Saves and cache reconciliation share the Chat page's lifetime. */
 function createChatConnectorMutations({
   pending$,
   target$,
   active$,
-  resetSave$,
   refreshTarget$,
   threadId,
 }: {
   readonly pending$: State<PendingChatConnectorAccess>;
   readonly target$: State<ChatConnectorMenuTarget | null>;
   readonly active$: Computed<Promise<ChatConnectorOverview | null>>;
-  readonly resetSave$: ReturnType<typeof resetSignal>;
   readonly refreshTarget$: Command<
     Promise<void>,
     [ConnectorAccountTarget, AbortSignal]
@@ -227,9 +226,9 @@ function createChatConnectorMutations({
       { get, set },
       connectionId: string,
       enabled: boolean | null,
-      parentSignal: AbortSignal,
+      signal: AbortSignal,
     ) => {
-      const signal = set(resetSave$, parentSignal);
+      signal.throwIfAborted();
       const entry = get(target$);
       if (!entry) {
         return;
@@ -244,7 +243,7 @@ function createChatConnectorMutations({
           [200],
           signal,
         );
-        await set(refreshTarget$, entry.target, get(pageSignal$));
+        await set(refreshTarget$, entry.target, signal);
       } else {
         const active = await get(active$);
         signal.throwIfAborted();
@@ -266,8 +265,7 @@ function createChatConnectorMutations({
     },
   );
   const select$ = command(
-    async ({ get, set }, connectionId: string, parentSignal: AbortSignal) => {
-      const signal = set(resetSave$, parentSignal);
+    async ({ get, set }, connectionId: string, signal: AbortSignal) => {
       const active = await get(active$);
       signal.throwIfAborted();
       if (
@@ -287,7 +285,7 @@ function createChatConnectorMutations({
           [200],
           signal,
         );
-        await set(refreshTarget$, active.target, get(pageSignal$));
+        await set(refreshTarget$, active.target, signal);
         await get(active$);
         signal.throwIfAborted();
       } else {
@@ -321,7 +319,6 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     null,
   );
   const resetOwner$ = resetSignal();
-  const resetSave$ = resetSignal();
   const target$ = state<ChatConnectorMenuTarget | null>(null);
   const permissions$ = state<ConnectorPermissionsTarget | null>(null);
   const permissionSignals$ = computed((get) => {
@@ -341,7 +338,6 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     set(cache.open$, parentSignal);
   });
   const closeTarget$ = command(({ set }) => {
-    set(resetSave$);
     set(target$, null);
     set(list.clearTarget$);
   });
@@ -352,7 +348,6 @@ export function createChatConnectorAccessSignals(threadId?: string) {
   });
   const openTarget$ = command(
     ({ set }, target: ChatConnectorMenuTarget, signal: AbortSignal) => {
-      set(resetSave$);
       set(target$, target);
       set(list.setTarget$, target.target, signal);
     },
@@ -361,7 +356,6 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     pending$,
     target$,
     active$,
-    resetSave$,
     refreshTarget$: cache.refreshTarget$,
     threadId,
   });

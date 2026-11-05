@@ -64,6 +64,7 @@ function installAccess(
     rejectSelection?: boolean;
     custom?: boolean;
     noPermissions?: boolean;
+    beforeSaveResponse?: () => Promise<void>;
   } = {},
 ) {
   const accessTarget = options.custom
@@ -201,7 +202,7 @@ function installAccess(
   );
   context.mocks.api(
     chatConnectorAccessContract.setThreadOverride,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond }) => {
       access(params.threadId);
       const chat = chats.get(params.threadId)!;
       if (body.enabled === null) {
@@ -209,12 +210,13 @@ function installAccess(
       } else {
         chat.overrides.set(params.connectionId, body.enabled);
       }
+      await options.beforeSaveResponse?.();
       return respond(200, access(params.threadId));
     },
   );
   context.mocks.api(
     chatConnectorAccessContract.setThreadCurrent,
-    ({ params, body, respond }) => {
+    async ({ params, body, respond }) => {
       if (rejectSelection) {
         rejectSelection = false;
         return respond(403, {
@@ -226,6 +228,7 @@ function installAccess(
       }
       access(params.threadId);
       chats.get(params.threadId)!.current = body.connectionId;
+      await options.beforeSaveResponse?.();
       return respond(200, access(params.threadId));
     },
   );
@@ -505,6 +508,73 @@ test("Refresh the displayed account after a Run changes the Chat selection", asy
   await waitFor(() => {
     expect(row).toHaveTextContent("Personal");
   });
+});
+
+test.each(["selection", "override"] as const)(
+  "Finish a saved Chat %s after closing and reopening its menu",
+  async (kind) => {
+    const user = userEvent.setup({ delay: null });
+    const committed = context.mocks.deferred<void>();
+    const response = context.mocks.deferred<void>();
+    installAccess({
+      beforeSaveResponse: () => {
+        committed.resolve();
+        return response.promise;
+      },
+    });
+    await setup();
+    click(await openMenu());
+    if (kind === "selection") {
+      click(await findFastControl("radio", "Personal"));
+    } else {
+      await chooseAccess(user, "Work", "Off");
+    }
+    await committed.promise;
+    await user.keyboard("{Escape}");
+    await waitFor(() => {
+      return expect(
+        screen.queryByRole("dialog", { name: "Connectors" }),
+      ).toBeNull();
+    });
+    const reopened = await openMenu();
+    expect(reopened).toHaveTextContent("Work");
+    response.resolve();
+    await waitFor(() => {
+      return expect(reopened).toHaveTextContent("Personal");
+    });
+    expect(reopened).toHaveTextContent(
+      kind === "selection" ? "2 enabled" : "1 enabled",
+    );
+  },
+);
+
+test("Release a pending account save and its cached state when leaving the Chat", async () => {
+  const user = userEvent.setup({ delay: null });
+  const fixture = installAccess();
+  const started = context.mocks.deferred<AbortSignal>();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(
+    chatConnectorAccessContract.setThreadCurrent,
+    async ({ request, params, body, respond }) => {
+      fixture.selectFromRun(params.threadId, body.connectionId);
+      started.resolve(request.signal);
+      await response.promise;
+      return respond(200, fixture.access(params.threadId));
+    },
+  );
+  await setup();
+  click(await openMenu());
+  click(await findFastControl("radio", "Personal"));
+  const requestSignal = await started.promise;
+  await user.keyboard("{Escape}");
+  click(await findFastControl("button", "New chat"));
+  await waitFor(() => {
+    expect(window.location.pathname).toBe(`/agents/${SCOUT_AGENT_ID}/chat`);
+    expect(requestSignal.aborted).toBeTruthy();
+  });
+  response.resolve();
+  await findComposer();
+  await expect(openMenu()).resolves.toHaveTextContent("Work");
 });
 
 test("Persist current account and nullable Chat overrides across menu reopening", async () => {
