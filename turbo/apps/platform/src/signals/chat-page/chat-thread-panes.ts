@@ -1,6 +1,5 @@
 import { command, computed, state, type Command } from "ccstate";
 import { currentChatThreadId$ } from "../agent-chat.ts";
-import { activeRoute$ } from "../active-route.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { logger } from "../log.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
@@ -79,7 +78,16 @@ function createChatThreadPaneSignals(
   });
   const loadThread$ = command(
     ({ get, set }, target: ChatThreadTarget): ChatPanelSignals => {
-      set(internalThread$, target);
+      // Route setup runs again for every navigation that keeps this thread on
+      // screen (a side pane, a mail or sidebar parameter, an event link). The
+      // pane keeps the panel it already shows; another thread gets a new one.
+      const current = get(internalThread$);
+      if (
+        current?.threadId !== target.threadId ||
+        current.agentId !== target.agentId
+      ) {
+        set(internalThread$, target);
+      }
       const thread = get(panel$);
       if (!thread) {
         throw new Error("chat pane did not derive its panel");
@@ -110,6 +118,16 @@ const leftPane = createChatThreadPaneSignals(
 );
 const rightPane = createChatThreadPaneSignals(setCurrentRightPane$);
 
+/**
+ * Only the chat page shows thread panes. Every other page releases both
+ * panels in its setup; the chat page keeps, replaces or clears each pane by
+ * the thread it shows.
+ */
+export const clearChatThreadPanes$ = command(({ set }) => {
+  set(leftPane.clear$);
+  set(rightPane.clear$);
+});
+
 // Thread-owned sidebars are anchored to the previous thread's messages.
 const closeThreadSidebars$ = command(({ get, set }) => {
   for (const thread of [get(currentLeftThread$), get(currentRightThread$)]) {
@@ -122,7 +140,6 @@ const closeThreadSidebars$ = command(({ get, set }) => {
 export const unloadRightThread$ = command(({ get, set }) => {
   const currentRightThread = get(currentRightThread$);
   if (currentRightThread) {
-    set(currentRightThread.resetRenderedChatGroupsIfAtBottom$);
     set(currentRightThread.sidebar.dismiss$);
   }
   set(rightPane.clear$);
@@ -178,28 +195,6 @@ const resolvePaneThread$ = command(
 
 // Every path that ends a pane setup goes through the router, so the route
 // signal is the pane's setup lifetime.
-const beginPaneSetup$ = command(
-  (
-    { get, set },
-    pane: ChatThreadPaneSignals,
-    routeSignal: AbortSignal,
-  ): AbortSignal => {
-    routeSignal.addEventListener(
-      "abort",
-      () => {
-        // A non-chat page must never inherit this pane on re-entry.
-        // Chat-to-chat setup keeps the reference so the outer thread section
-        // can preserve its established DOM identity until replacement.
-        if (get(activeRoute$) !== "chat") {
-          set(pane.clear$);
-        }
-      },
-      { once: true },
-    );
-    return routeSignal;
-  },
-);
-
 const setupPaneThread$ = command(
   async (
     { set },
@@ -208,7 +203,6 @@ const setupPaneThread$ = command(
     initialEventId: string | null,
     parentSignal: AbortSignal,
   ): Promise<void> => {
-    const signal = set(beginPaneSetup$, pane, parentSignal);
     const threadId = meta.id;
 
     L.debug("setupPaneThread$ start", { threadId });
@@ -228,7 +222,7 @@ const setupPaneThread$ = command(
         thread,
         initialEventId,
       },
-      signal,
+      parentSignal,
     );
   },
 );
@@ -240,10 +234,9 @@ const setupPaneNotFound$ = command(
     threadId: string,
     parentSignal: AbortSignal,
   ): void => {
-    const signal = set(beginPaneSetup$, pane, parentSignal);
     set(pane.loadNotFound$, threadId);
     if (pane.onNotFoundReady$) {
-      set(pane.onNotFoundReady$, signal);
+      set(pane.onNotFoundReady$, parentSignal);
     }
   },
 );
@@ -328,11 +321,6 @@ export const loadRightThread$ = command(
 
     if (get(currentRightThread$)?.threadId === threadId) {
       return;
-    }
-
-    const currentRightThread = get(currentRightThread$);
-    if (currentRightThread && currentRightThread.threadId !== threadId) {
-      set(currentRightThread.resetRenderedChatGroupsIfAtBottom$);
     }
 
     set(closeThreadSidebars$);

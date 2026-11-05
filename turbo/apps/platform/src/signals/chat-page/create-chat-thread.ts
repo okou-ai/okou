@@ -2420,10 +2420,8 @@ function createChatThreadMessagePipeline({
     return get(initialEventsReady$);
   });
   const renderWindow = createChatRenderWindow({
-    threadId,
     allSemanticChatGroups$: projections.allSemanticChatGroups$,
     threadScrollPosition$: position.threadScrollPosition$,
-    awayFromBottom$: position.awayFromBottom$,
     eventRenderResources$: resources.eventRenderResources$,
     ensureUserMessageDocuments$: resources.ensureUserMessageDocuments$,
     ensureEventTrees$: resources.ensureEventTrees$,
@@ -2579,16 +2577,8 @@ interface RunTrackingDeps {
   resourceCatalog: ReturnType<typeof createArtifacts>["resourceCatalog"];
 }
 
-interface ChatRenderWindowState {
-  cursorGroupId: string | null;
-}
-
 const INITIAL_RENDER_GROUP_COUNT = 5;
 const RENDER_GROUP_LOAD_INCREMENT = 10;
-
-const renderWindowStateByThreadId$ = state(
-  new Map<string, ChatRenderWindowState>(),
-);
 
 // A turn without events (the pending assistant turn) takes no window slot of
 // its own; it stays with the turn before it.
@@ -2682,23 +2672,6 @@ function previousRenderWindowStartIndex(
   );
 }
 
-function renderWindowStateForThread(
-  stateByThreadId: ReadonlyMap<string, ChatRenderWindowState>,
-  threadId: string,
-): ChatRenderWindowState {
-  return stateByThreadId.get(threadId) ?? { cursorGroupId: null };
-}
-
-function setThreadRenderWindowState(
-  stateByThreadId: ReadonlyMap<string, ChatRenderWindowState>,
-  threadId: string,
-  nextState: ChatRenderWindowState,
-): Map<string, ChatRenderWindowState> {
-  const next = new Map(stateByThreadId);
-  next.set(threadId, nextState);
-  return next;
-}
-
 function eventRunStartIndex(
   groups: readonly ChatEventGroup[],
   eventId: string,
@@ -2727,10 +2700,8 @@ function scrollTargetStartIndex(
 }
 
 interface ChatRenderWindowOptions {
-  readonly threadId: string;
   readonly allSemanticChatGroups$: Computed<ChatEventGroup[]>;
   readonly threadScrollPosition$: Computed<ThreadScrollPosition | null>;
-  readonly awayFromBottom$: Computed<boolean>;
   readonly eventRenderResources$: Computed<ChatEventRenderResources>;
   readonly ensureUserMessageDocuments$: Command<void, [readonly ChatEvent[]]>;
   readonly ensureEventTrees$: Command<
@@ -2749,7 +2720,7 @@ interface ChatRenderWindowOptions {
 }
 
 interface PreloadPreviousRenderWindowOptions {
-  readonly threadId: string;
+  readonly cursorGroupId$: State<string | null>;
   readonly allSemanticChatGroups$: Computed<ChatEventGroup[]>;
   readonly ensureVisibleEventTrees$: Command<
     Promise<void>,
@@ -2758,7 +2729,7 @@ interface PreloadPreviousRenderWindowOptions {
 }
 
 function createPreloadPreviousRenderWindowForEvent({
-  threadId,
+  cursorGroupId$,
   allSemanticChatGroups$,
   ensureVisibleEventTrees$,
 }: PreloadPreviousRenderWindowOptions): Command<
@@ -2781,26 +2752,13 @@ function createPreloadPreviousRenderWindowForEvent({
         groups,
         targetStartIndex,
       );
-      const current = renderWindowStateForThread(
-        get(renderWindowStateByThreadId$),
-        threadId,
-      );
       const requestedStartIndex = renderWindowStartIndex(
         groups,
-        current.cursorGroupId,
+        get(cursorGroupId$),
       );
       const nextStartIndex = Math.min(requestedStartIndex, preloadStartIndex);
       if (nextStartIndex < requestedStartIndex) {
-        set(
-          renderWindowStateByThreadId$,
-          setThreadRenderWindowState(
-            get(renderWindowStateByThreadId$),
-            threadId,
-            {
-              cursorGroupId: groups[nextStartIndex]?.beginEventId ?? null,
-            },
-          ),
-        );
+        set(cursorGroupId$, groups[nextStartIndex]?.beginEventId ?? null);
       }
       // Locator jumps need stable content above the destination before their
       // smooth-scroll request commits. Persist this one-time expansion in the
@@ -2847,16 +2805,14 @@ function createEnsureVisibleEventTrees({
         return group.events;
       });
       set(ensureUserMessageDocuments$, visibleEvents);
-      const richContentReady = set(ensureEventTrees$, visibleEvents, signal);
-      // Rows show the window with every resource prepared synchronously, then
-      // again once rich bodies finish parsing.
+      await set(ensureEventTrees$, visibleEvents, signal);
+      signal.throwIfAborted();
+      // Rows reflect the window once its bodies are parsed; diagram layout
+      // below does not change them.
       set(syncVisibleRows$);
       if (revealPreparedEvents) {
         set(initialEventsReady$, true);
       }
-      await richContentReady;
-      signal.throwIfAborted();
-      set(syncVisibleRows$);
       await set(
         prewarmMermaidDiagrams$,
         mermaidDiagrams,
@@ -2886,10 +2842,8 @@ function createRenderedVisibleChatGroups(
 }
 
 function createChatRenderWindow({
-  threadId,
   allSemanticChatGroups$,
   threadScrollPosition$,
-  awayFromBottom$,
   eventRenderResources$,
   ensureUserMessageDocuments$,
   ensureEventTrees$,
@@ -2898,13 +2852,16 @@ function createChatRenderWindow({
   syncVisibleRunUsage$,
   initialEventsReady$,
 }: ChatRenderWindowOptions) {
+  // The earliest group loaded above the default window. The panel lives while
+  // its pane shows this thread; a later visit restores from the reading
+  // position alone.
+  const cursorGroupId$ = state<string | null>(null);
   const visibleChatGroups$ = computed((get): ChatEventGroup[] => {
     const groups = get(allSemanticChatGroups$);
-    const { cursorGroupId } = renderWindowStateForThread(
-      get(renderWindowStateByThreadId$),
-      threadId,
+    const requestedStartIndex = renderWindowStartIndex(
+      groups,
+      get(cursorGroupId$),
     );
-    const requestedStartIndex = renderWindowStartIndex(groups, cursorGroupId);
     // A complete window cannot be extended by a reading-position anchor.
     if (requestedStartIndex === 0) {
       return groups;
@@ -2945,22 +2902,18 @@ function createChatRenderWindow({
 
   const preloadPreviousRenderWindowForEvent$ =
     createPreloadPreviousRenderWindowForEvent({
-      threadId,
+      cursorGroupId$,
       allSemanticChatGroups$,
       ensureVisibleEventTrees$,
     });
 
   const loadMoreRenderedChatGroups$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      const current = renderWindowStateForThread(
-        get(renderWindowStateByThreadId$),
-        threadId,
-      );
       const groups = get(allSemanticChatGroups$);
       signal.throwIfAborted();
       const requestedStartIndex = renderWindowStartIndex(
         groups,
-        current.cursorGroupId,
+        get(cursorGroupId$),
       );
       const targetStartIndex = scrollTargetStartIndex(
         groups,
@@ -2974,16 +2927,7 @@ function createChatRenderWindow({
       if (nextStartIndex === startIndex) {
         return false;
       }
-      set(
-        renderWindowStateByThreadId$,
-        setThreadRenderWindowState(
-          get(renderWindowStateByThreadId$),
-          threadId,
-          {
-            cursorGroupId: groups[nextStartIndex]?.beginEventId ?? null,
-          },
-        ),
-      );
+      set(cursorGroupId$, groups[nextStartIndex]?.beginEventId ?? null);
       // The newly revealed groups need trees before the prepend renders, so
       // the caller's scroll restoration lands on the final layout.
       await set(ensureVisibleEventTrees$, false, signal);
@@ -2991,37 +2935,12 @@ function createChatRenderWindow({
     },
   );
 
-  const resetRenderedChatGroupsIfAtBottom$ = command(({ get, set }) => {
-    if (get(awayFromBottom$)) {
-      return;
-    }
-    const current = renderWindowStateForThread(
-      get(renderWindowStateByThreadId$),
-      threadId,
-    );
-    if (current.cursorGroupId === null) {
-      return;
-    }
-    // Resetting the cursor only shrinks the window — the visible slice is a
-    // suffix, so every event it still holds already has its tree and no
-    // ensure pass is needed here, only the rows.
-    set(
-      renderWindowStateByThreadId$,
-      setThreadRenderWindowState(get(renderWindowStateByThreadId$), threadId, {
-        ...current,
-        cursorGroupId: null,
-      }),
-    );
-    set(syncVisibleRows$);
-  });
-
   return {
     visibleRenderedChatGroups$,
     visibleRows$,
     ensureVisibleEventTrees$,
     preloadPreviousRenderWindowForEvent$,
     loadMoreRenderedChatGroups$,
-    resetRenderedChatGroupsIfAtBottom$,
   };
 }
 
@@ -3635,8 +3554,6 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     recommendedFollowupSource$: events.recommendedFollowupSource$,
     donePhrase$: events.donePhrase$,
     loadEarlierGroupsAfterScroll$: events.loadEarlierGroupsAfterScroll$,
-    resetRenderedChatGroupsIfAtBottom$:
-      events.resetRenderedChatGroupsIfAtBottom$,
   };
 }
 

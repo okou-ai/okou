@@ -114,7 +114,6 @@ export interface MessageListSignals {
     Promise<boolean>,
     [AbortSignal]
   >;
-  readonly resetRenderedChatGroupsIfAtBottom$: Command<void, []>;
   readonly artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>;
 }
 
@@ -237,7 +236,6 @@ export interface ChatPanelSignals {
     Promise<boolean>,
     [AbortSignal]
   >;
-  readonly resetRenderedChatGroupsIfAtBottom$: Command<void, []>;
   readonly subscribeChatThread$: Command<Promise<void>, [AbortSignal]>;
   // -- Thinking indicator ---------------------------------------------------
   readonly thinkingPhrase$: Computed<string>;

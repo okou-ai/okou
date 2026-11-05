@@ -413,9 +413,9 @@ function createChatThreadRow(
  * derivation into the rows, so the list changes when rows are added, removed
  * or reordered, and each row changes only when its own content does.
  *
- * Every write that changes the window or its prepared resources runs the sync
- * afterwards; rows keep the identity they were created with for the thread's
- * lifetime.
+ * The render window syncs after every write that changes it or its prepared
+ * resources. Rows keep the identity they were created with while the pane
+ * keeps this panel.
  */
 export function createChatThreadRows({
   renderedGroups$,
