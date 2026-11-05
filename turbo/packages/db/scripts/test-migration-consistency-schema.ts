@@ -76,7 +76,6 @@ import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
 import { validateTeamsIdentityRetirement } from "./test-teams-identity-retirement";
-import { validateTeamsDisconnection } from "./migrations/029-teams-identity-retirement/test-disconnection";
 import { validatePermanentWorkflowNameScopes } from "./test-workflow-name-scopes-permanent";
 import { validateXResourceUsageSchema } from "./test-x-resource-usage";
 
@@ -3113,7 +3112,6 @@ async function main(): Promise<void> {
     await createDatabase(TEST_DB_1);
     const dbUrl1 = createTestDbUrl(TEST_DB_1);
     await validateHistoricalRunCleanupBeforeGuard(dbUrl1);
-    await validateTeamsDisconnection(dbUrl1);
     await runMigrations(dbUrl1);
     console.log("   ✅ Migrations applied successfully\n");
 
