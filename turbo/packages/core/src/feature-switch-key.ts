@@ -36,7 +36,6 @@ export enum FeatureSwitchKey {
   Banking = "banking",
   Lab = "_lab",
   TestOauthConnector = "_testOauthConnector",
-  StabilityAiConnector = "stabilityAiConnector",
   ZoomConnector = "zoomConnector",
   WorkdayConnector = "workdayConnector",
   RealAgentInPreview = "_realAgentInPreview",
