@@ -157,6 +157,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   private struct PrefetchedContent {
     let measurement: Measurement
+    let context: MessageRenderPlan.Context?
     let view: UIView
     let observation: CellHeightObservation
   }
@@ -170,6 +171,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   private var markdownLookahead: Task<Void, Never>?
   private var contentPrefetchContainer: UIView?
   private var prefetchedContent: [String: PrefetchedContent] = [:]
+  private var contentOrder: [String] = []
   private var prefetchTask: Task<Void, Never>?
   private var displayedWidth: CGFloat = 0
   private var displayedCategory = UIContentSizeCategory.unspecified
@@ -273,9 +275,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       cell.quote = source.quote
       cell.clipsToBounds = true
       let prepared = prefetchedContent.removeValue(forKey: row.id)
-      if let prepared, prepared.measurement == measurement {
-        prepared.observation.cell = cell
-        cell.showPrefetchedContent(prepared.view)
+      contentOrder.removeAll { $0 == row.id }
+      if let prepared, matchesContent(prepared) {
+        showContent(prepared, in: cell)
         if let height = prepared.observation.height {
           observeHeight(
             height, row: row, width: measurement.width, category: measurement.category,
@@ -285,7 +287,17 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         prepared?.view.removeFromSuperview()
         let observation = CellHeightObservation()
         observation.cell = cell
-        cell.setMessageConfiguration(messageConfiguration(row, measurement, observation))
+        let configuration = messageConfiguration(row, measurement, observation)
+        if canRetainContent(for: row) {
+          // Preserve the rendered tree as well as its size when UIKit recycles the cell.
+          showContent(
+            PrefetchedContent(
+              measurement: measurement, context: row.message.map(source.renderContext),
+              view: configuration.makeContentView(),
+              observation: observation), in: cell)
+        } else {
+          cell.setMessageConfiguration(configuration)
+        }
       }
       return cell
     }
@@ -335,6 +347,67 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       && collection.isUserInteractionEnabled && source.sendTransition?.isActive != true
   }
 
+  private func canRetainContent(for row: ConversationCollectionRow) -> Bool {
+    if case .work(let section, false, _, _) = row { return section.endTime != nil }
+    guard case .message(let message, _, _, nil, false, false) = row,
+      message.attachments.isEmpty, message.text.utf8.count <= 8_192
+    else { return false }
+    if message.role == .assistant {
+      guard
+        let plan = source.markdown.cachedPlan(
+          for: message.text, context: source.renderContext(message))
+      else { return false }
+      return plan.hasStableHeight && plan.resources.isEmpty
+    }
+    guard message.role == .user, message.modelChange == nil, message.inputError == nil,
+      let document = message.userMessage, document.annotation == nil,
+      document.bodyParts.count == 1, document.bodyParts.first?.type == "text"
+    else { return false }
+    return true
+  }
+
+  private func showContent(_ content: PrefetchedContent, in cell: MessageSelectionCell) {
+    content.observation.cell = cell
+    cell.showPrefetchedContent(content.view) { [weak self] view in
+      content.observation.cell = nil
+      guard let self, !stopped, matchesContent(content)
+      else {
+        view.removeFromSuperview()
+        return
+      }
+      retainContent(content)
+    }
+  }
+
+  private func matchesContent(_ content: PrefetchedContent) -> Bool {
+    measurements[content.measurement.row.id] == content.measurement
+      && content.context == content.measurement.row.message.map(source.renderContext)
+  }
+
+  private func retainContent(_ content: PrefetchedContent) {
+    let id = content.measurement.row.id
+    if let previous = prefetchedContent[id], previous.view !== content.view {
+      previous.view.removeFromSuperview()
+    }
+    let measurement = content.measurement
+    let rich = measurement.row.message?.role == .assistant
+    let host: UIView = rich ? contentPrefetchHost() : view
+    host.addSubview(content.view)
+    content.view.frame = CGRect(
+      x: rich ? -measurement.width : -2 * measurement.width, y: 0,
+      width: measurement.width, height: measurement.height)
+    content.view.isUserInteractionEnabled = false
+    content.view.accessibilityElementsHidden = true
+    prefetchedContent[id] = content
+    contentOrder.removeAll { $0 == id }
+    contentOrder.append(id)
+    // Keep a bounded set of recently displayed hosts across successive swipes.
+    // Completed work headers are cheap to retain alongside the prepared message trees.
+    while contentOrder.count > 32 {
+      prefetchedContent.removeValue(forKey: contentOrder.removeFirst())?.view.removeFromSuperview()
+    }
+  }
+
   private func prefetchNearbyContent() {
     prefetchTask?.cancel()
     guard canPrefetchContent else { return }
@@ -368,14 +441,19 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     let richIDs = Set(rich.prefix(8))
     let plainIDs = Set(plain.prefix(6))
     // Prepare the expensive rows above the reader first so a quick follow-up swipe can use them.
+    let headers = nearby.filter { id in
+      if case .work(let section, false, _, _) = displayedRows[id] {
+        return section.endTime != nil
+      }
+      return false
+    }
     let candidates =
       above.filter { richIDs.contains($0) } + above.filter { plainIDs.contains($0) }
       + below.filter { richIDs.contains($0) } + below.filter { plainIDs.contains($0) }
-    for id in prefetchedContent.keys
-    where !candidates.contains(id)
-      || prefetchedContent[id]?.measurement != measurements[id]
-    {
+      + headers
+    for (id, content) in prefetchedContent where !matchesContent(content) {
       prefetchedContent.removeValue(forKey: id)?.view.removeFromSuperview()
+      contentOrder.removeAll { $0 == id }
     }
     if let container = contentPrefetchContainer, container.subviews.isEmpty {
       container.removeFromSuperview()
@@ -391,16 +469,10 @@ final class ConversationCollectionController<Content: View>: UIViewController,
         else { continue }
         let observation = CellHeightObservation()
         let content = messageConfiguration(row, measurement, observation).makeContentView()
-        let usesViewport = richIDs.contains(id)
-        let host: UIView = usesViewport ? contentPrefetchHost() : view
-        content.frame = CGRect(
-          x: usesViewport ? -measurement.width : -2 * measurement.width,
-          y: 0, width: measurement.width, height: measurement.height)
-        content.isUserInteractionEnabled = false
-        content.accessibilityElementsHidden = true
-        host.addSubview(content)
-        prefetchedContent[id] = .init(
-          measurement: measurement, view: content, observation: observation)
+        retainContent(
+          .init(
+            measurement: measurement, context: row.message.map(source.renderContext),
+            view: content, observation: observation))
       }
     }
   }
@@ -429,6 +501,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     prefetchTask = nil
     for content in prefetchedContent.values { content.view.removeFromSuperview() }
     prefetchedContent.removeAll()
+    contentOrder.removeAll()
   }
 
   override func didReceiveMemoryWarning() {
