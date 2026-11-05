@@ -53,6 +53,7 @@ import type {
   CustomConnectorAccountMutationIntent,
   CustomConnectorAccountMutationOptions,
 } from "./connector-account-dialogs.ts";
+import { showCreatedDirectoryConnector$ } from "./connector-directory-route.ts";
 
 const internalReload$ = state(0);
 
@@ -294,7 +295,6 @@ export const createCustomConnector$ = command(
   async (
     { get, set },
     body: CreateCustomConnectorBody,
-    onCreated: ((connector: CustomConnectorResponse) => void) | undefined,
     signal: AbortSignal,
   ): Promise<CustomConnectorResponse> => {
     const dialog = get(internalDialog$);
@@ -320,7 +320,9 @@ export const createCustomConnector$ = command(
     );
     if (get(internalDialog$) === dialog) {
       set(closeCustomConnectorDialog$);
-      onCreated?.(connector);
+      // The create dialog lives in the connector directory, which reveals
+      // the new connector in its custom scope.
+      set(showCreatedDirectoryConnector$, connector.id);
     }
     return connector;
   },

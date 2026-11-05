@@ -71,11 +71,6 @@ interface SettingsTabProps {
   deleteWorkflowsState: "loading" | "error" | "ready";
   /** Agents the caller can copy a workflow onto before deleting this agent. */
   deleteCopyTargets?: readonly AgentDeleteCopyTarget[];
-  /** Copy a workflow onto another agent before the agent is deleted. */
-  onCopyWorkflowBeforeDelete?: (
-    workflowId: string,
-    toAgentId: string,
-  ) => Promise<void>;
   updateSettings$: Command<
     Promise<void>,
     [
@@ -90,8 +85,8 @@ interface SettingsTabProps {
     ]
   >;
   inputId?: string;
-  /** Callback to delete the agent. */
-  onDelete?: () => Promise<void>;
+  /** Whether the agent can be deleted from this tab. */
+  canDelete?: boolean;
 }
 
 function AvatarSettingsControl({
@@ -213,11 +208,10 @@ export function SettingsTab({
   canEditVisibility = true,
   updateSettings$,
   inputId = "okou-agent-name",
-  onDelete,
+  canDelete = false,
   deleteWorkflows,
   deleteWorkflowsState,
   deleteCopyTargets = [],
-  onCopyWorkflowBeforeDelete,
 }: SettingsTabProps) {
   const { t } = useTranslation("agents");
   const defaults = {
@@ -560,15 +554,13 @@ export function SettingsTab({
           </CardContent>
         </Card>
 
-        {onDelete && (
+        {canDelete && (
           <AgentDeleteDialog
             agentId={agentId}
             resolvedAgentName={resolvedAgentName}
-            onDelete={onDelete}
             deleteWorkflows={deleteWorkflows}
             deleteWorkflowsState={deleteWorkflowsState}
             deleteCopyTargets={deleteCopyTargets}
-            onCopyWorkflowBeforeDelete={onCopyWorkflowBeforeDelete}
           />
         )}
       </div>

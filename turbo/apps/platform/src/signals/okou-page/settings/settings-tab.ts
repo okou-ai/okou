@@ -1,6 +1,10 @@
 import { command, computed, state } from "ccstate";
 import type { Tone } from "../../../views/okou-page/tone-constants.ts";
-import { currentAgentVisibleWorkflows$ } from "../../workflows-page/workflows-signals.ts";
+import {
+  copyWorkflow$,
+  currentAgentVisibleWorkflows$,
+} from "../../workflows-page/workflows-signals.ts";
+import { deleteAgentAndReturnToList$ } from "../job-detail/actions.ts";
 
 interface SettingsFormValues {
   name: string;
@@ -134,23 +138,14 @@ export const setAgentDeleteCopyChoices$ = command(
   },
 );
 
+/**
+ * Copies the chosen workflows onto other agents, then deletes the agent and
+ * returns to the agent list.
+ */
 export const deleteAgent$ = command(
   async (
     { get, set },
-    {
-      sessionId,
-      deleteFn,
-      copyWorkflow,
-      workflowIds,
-    }: {
-      readonly sessionId: string;
-      readonly deleteFn: () => Promise<void>;
-      readonly copyWorkflow?: (
-        workflowId: string,
-        toAgentId: string,
-      ) => Promise<void>;
-      readonly workflowIds: readonly string[];
-    },
+    sessionId: string,
     signal: AbortSignal,
   ): Promise<void> => {
     signal.throwIfAborted();
@@ -162,36 +157,36 @@ export const deleteAgent$ = command(
     ) {
       return;
     }
-    // Only workflows belonging to this agent can be copied before deletion.
+    // Never start a rescue from an unavailable source-workflow list, and only
+    // workflows belonging to this agent can be copied before deletion.
+    const workflows = await get(currentAgentVisibleWorkflows$);
+    signal.throwIfAborted();
     const rescues = Object.entries(session.choices).filter(
       ([workflowId, toAgentId]) => {
         return (
           toAgentId !== "__delete_with_agent__" &&
-          workflowIds.includes(workflowId)
+          workflows.some((workflow) => {
+            return workflow.id === workflowId;
+          })
         );
       },
     );
-    // Never start a rescue from an unavailable source-workflow list.
-    await get(currentAgentVisibleWorkflows$);
-    signal.throwIfAborted();
-    if (copyWorkflow) {
-      for (const [workflowId, toAgentId] of rescues) {
-        await copyWorkflow(workflowId, toAgentId);
-        signal.throwIfAborted();
-        const current = get(internalAgentDeleteSession$);
-        if (current?.id !== sessionId) {
-          return;
-        }
-        // Settle the updated workflow list before another copy or deletion.
-        await get(currentAgentVisibleWorkflows$);
-        signal.throwIfAborted();
+    for (const [workflowId, toAgentId] of rescues) {
+      await set(copyWorkflow$, { workflowId, toAgentId }, signal);
+      signal.throwIfAborted();
+      const current = get(internalAgentDeleteSession$);
+      if (current?.id !== sessionId) {
+        return;
       }
+      // Settle the updated workflow list before another copy or deletion.
+      await get(currentAgentVisibleWorkflows$);
+      signal.throwIfAborted();
     }
     const current = get(internalAgentDeleteSession$);
     if (current?.id !== sessionId) {
       return;
     }
-    await deleteFn();
+    await set(deleteAgentAndReturnToList$, signal);
     signal.throwIfAborted();
     const completed = get(internalAgentDeleteSession$);
     if (completed?.id === sessionId) {

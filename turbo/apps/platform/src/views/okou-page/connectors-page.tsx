@@ -58,7 +58,6 @@ import {
   connectorDirectoryCustomScope$,
   connectorsScope$,
   setConnectorsScope$,
-  showCreatedDirectoryConnector$,
 } from "../../signals/okou-page/settings/connector-directory-route.ts";
 import {
   connectorCatalogDiscovery$,
@@ -1759,12 +1758,5 @@ function BuiltinScopeReviewBody() {
 }
 
 function DirectoryCustomDialogs() {
-  const showCreated = useSet(showCreatedDirectoryConnector$);
-  return (
-    <CustomConnectorDirectoryDialogs
-      onCreated={(connector) => {
-        showCreated(connector.id);
-      }}
-    />
-  );
+  return <CustomConnectorDirectoryDialogs />;
 }

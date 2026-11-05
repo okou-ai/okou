@@ -79,3 +79,44 @@ test("A completed creation preserves a newer connector draft and directory searc
     "first",
   );
 });
+
+test("Reveal and focus a newly created connector in the directory", async () => {
+  mockCustomConnectorStory(context);
+  const connector = customConnector({
+    displayName: "First API",
+    prefixTemplates: ["http://api.acme.test/v1/"],
+  });
+  let created = false;
+  context.mocks.api(customConnectorsContract.list, ({ respond }) => {
+    return respond(200, { connectors: created ? [connector] : [] });
+  });
+  context.mocks.api(customConnectorsContract.create, ({ respond }) => {
+    created = true;
+    return respond(201, connector);
+  });
+  await setupPage({ context, path: "/connectors?scope=custom" });
+  await waitFor(() => {
+    return expect(
+      getConnectorAction("button", "New custom connector"),
+    ).toBeEnabled();
+  });
+  click(getConnectorAction("button", "New custom connector"));
+  const create = await screen.findByRole("dialog", {
+    name: "New custom connector",
+  });
+  await fill(within(create).getByLabelText("Display name"), "First API");
+  await fill(
+    within(create).getByLabelText(/Prefixes/u),
+    "http://api.acme.test/v1/",
+  );
+  click(getConnectorAction("button", "Add authentication", create));
+  const menu = await screen.findByRole("menu");
+  click(getConnectorAction("menuitem", "API authentication", menu));
+  click(getConnectorAction("button", "Create", create));
+
+  await waitFor(() => {
+    expect(create).not.toBeInTheDocument();
+    expect(document.activeElement).not.toBe(document.body);
+    expect(document.activeElement).toHaveTextContent("First API");
+  });
+});

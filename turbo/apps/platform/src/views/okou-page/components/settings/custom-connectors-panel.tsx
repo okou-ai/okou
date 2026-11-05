@@ -371,11 +371,7 @@ function CustomConnectorRow({
   );
 }
 
-function CustomConnectorDialogs({
-  onCreated,
-}: {
-  readonly onCreated?: (connector: CustomConnectorResponse) => void;
-}) {
+function CustomConnectorDialogs() {
   const dialog = useGet(customConnectorDialog$);
   const closeDialog = useSet(closeCustomConnectorDialog$);
   const connectedTargetsLoadable = useLastLoadable(
@@ -391,9 +387,7 @@ function CustomConnectorDialogs({
     hasAccessAccount === true;
   return (
     <>
-      {dialog.kind === "create" && (
-        <CustomConnectorCreateDialog onCreated={onCreated} />
-      )}
+      {dialog.kind === "create" && <CustomConnectorCreateDialog />}
       {dialog.kind === "edit" && (
         <CustomConnectorCreateDialog connector={dialog.connector} />
       )}
@@ -617,14 +611,10 @@ function CustomAccountDialogs() {
   );
 }
 
-export function CustomConnectorDirectoryDialogs({
-  onCreated,
-}: {
-  readonly onCreated: (connector: CustomConnectorResponse) => void;
-}) {
+export function CustomConnectorDirectoryDialogs() {
   return (
     <>
-      <CustomConnectorDialogs onCreated={onCreated} />
+      <CustomConnectorDialogs />
       <CustomAccountDialogs />
     </>
   );
