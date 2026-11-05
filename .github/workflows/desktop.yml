@@ -103,6 +103,9 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
+      - name: Observe cold dependency inputs
+        run: python3 .github/scripts/desktop-dependency-probe.py before
+
       - name: Test native Desktop runtime
         run: swift test --package-path desktop -j 4
 
@@ -111,6 +114,10 @@ jobs:
 
       - name: Test native debug symbol pipeline
         run: python3 desktop/scripts/debug_symbols_test.py
+
+      - name: Observe native dependency stores
+        if: ${{ !cancelled() }}
+        run: python3 .github/scripts/desktop-dependency-probe.py after-tests
 
   package-macos:
     name: package-macos-arm64
@@ -126,6 +133,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Observe cold dependency inputs
+        run: python3 .github/scripts/desktop-dependency-probe.py before
 
       - name: Build production-configured native app
         env:
@@ -170,6 +180,10 @@ jobs:
           assert proof["signedIn"] is False, proof
           print(result.stdout)
           PY
+
+      - name: Observe package dependency stores
+        if: ${{ !cancelled() }}
+        run: python3 .github/scripts/desktop-dependency-probe.py after-packages
 
       - name: Stage native packages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
