@@ -3,6 +3,7 @@ import {
   and,
   asc,
   eq,
+  exists,
   gt,
   inArray,
   ne,
@@ -11,6 +12,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { object, uuid } from "zod";
+import { alias } from "drizzle-orm/pg-core";
 import type { ProactiveWorkflowKind } from "@okouai/api-contracts/contracts/proactive";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { workflows } from "@okouai/db/schema/workflow";
@@ -334,6 +336,7 @@ export const ensureProactiveWorkflows$ = command(
 export const reconcileProactiveWorkflows$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const minute = nowDate().getUTCMinutes();
+    const installedWorkflows = alias(workflows, "proactive_workflow");
     let cursor: ProactiveWorkflowOwner | undefined;
     while (true) {
       const candidates = await get(db$)
@@ -344,23 +347,32 @@ export const reconcileProactiveWorkflows$ = command(
         .from(orgMembersMetadata)
         .where(
           and(
-            sql`(${orgMembersMetadata.proactiveSuggestionsEnabled} = true OR ${orgMembersMetadata.proactiveLearningEnabled} = true OR EXISTS (
-              SELECT 1 FROM workflows AS proactive_workflow WHERE proactive_workflow.org_id = ${orgMembersMetadata.orgId}
-                AND proactive_workflow.owner_user_id = ${orgMembersMetadata.userId}
-                AND proactive_workflow.official_definition_name IN (${sql.join(
-                  [
-                    ...Object.values(PROACTIVE_WORKFLOW_DEFINITIONS).map(
-                      (definition) => {
-                        return definition.name;
-                      },
+            or(
+              eq(orgMembersMetadata.proactiveSuggestionsEnabled, true),
+              eq(orgMembersMetadata.proactiveLearningEnabled, true),
+              exists(
+                get(db$)
+                  .select({ id: installedWorkflows.id })
+                  .from(installedWorkflows)
+                  .where(
+                    and(
+                      eq(installedWorkflows.orgId, orgMembersMetadata.orgId),
+                      eq(
+                        installedWorkflows.ownerUserId,
+                        orgMembersMetadata.userId,
+                      ),
+                      inArray(installedWorkflows.officialDefinitionName, [
+                        ...Object.values(PROACTIVE_WORKFLOW_DEFINITIONS).map(
+                          (definition) => {
+                            return definition.name;
+                          },
+                        ),
+                        ...RETIRED_PROACTIVE_DEFINITION_NAMES,
+                      ]),
                     ),
-                    ...RETIRED_PROACTIVE_DEFINITION_NAMES,
-                  ].map((name) => {
-                    return sql`${name}`;
-                  }),
-                  sql`, `,
-                )})
-            ))`,
+                  ),
+              ),
+            ),
             sql`(('x' || substr(encode(sha256(convert_to(${orgMembersMetadata.orgId} || '/' || ${orgMembersMetadata.userId}, 'UTF8')), 'hex'), 1, 8))::bit(32)::bigint % 60) = ${minute}`,
             cursor
               ? or(

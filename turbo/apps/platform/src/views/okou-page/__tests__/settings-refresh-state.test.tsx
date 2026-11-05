@@ -121,27 +121,27 @@ test.each([false, true])(
     let enabled = initialEnabled;
     const refreshing = context.mocks.deferred<void>();
     const release = context.mocks.deferred<void>();
+    context.mocks.api(proactiveSuggestionsContract.get, ({ respond }) => {
+      return respond(200, {
+        enabled: true,
+        status: "enabled",
+        unavailableReason: null,
+      });
+    });
     context.mocks.api(
-      proactiveSuggestionsContract.get,
+      proactiveLearningContract.get,
       async ({ respond, withSignal }) => {
         if (saved) {
           refreshing.resolve();
           await withSignal(release.promise);
         }
         return respond(200, {
-          enabled: true,
-          status: "enabled",
+          enabled,
+          status: enabled ? "enabled" : "paused",
           unavailableReason: null,
         });
       },
     );
-    context.mocks.api(proactiveLearningContract.get, ({ respond }) => {
-      return respond(200, {
-        enabled,
-        status: enabled ? "enabled" : "paused",
-        unavailableReason: null,
-      });
-    });
     context.mocks.api(proactiveLearningContract.update, ({ body, respond }) => {
       saved = true;
       enabled = body.enabled;
@@ -170,13 +170,16 @@ test.each([false, true])(
     });
     click(learning);
     await refreshing.promise;
-    await waitFor(() => {
-      expect(learning).toHaveAttribute("aria-checked", String(!initialEnabled));
-      expect(learning).toBeEnabled();
-    });
+    expect(learning).toHaveAttribute("aria-disabled", "true");
+    expect(learning).toHaveAttribute("aria-checked", String(initialEnabled));
     expect(suggestions).toBeChecked();
     expect(suggestions).toBeEnabled();
     release.resolve();
+    await waitFor(() => {
+      expect(learning).toHaveAttribute("aria-checked", String(!initialEnabled));
+      expect(learning).not.toHaveAttribute("aria-disabled", "true");
+    });
+    expect(suggestions).toBeChecked();
   },
 );
 

@@ -368,7 +368,7 @@ describe("Proactive Learning preference", () => {
     );
     expect(pending.body).toMatchObject({
       enabled: true,
-      status: "preparing",
+      status: "paused",
       unavailableReason: "missing-timezone",
     });
     const cancelled = await accept(
