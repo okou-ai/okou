@@ -12,10 +12,13 @@ import { createDeferredPromise } from "../../utils";
 import { workflowsRoutes } from "../workflows";
 import { workflowAutomationsRoutes } from "../workflow-automations";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createBillingMediaApi } from "./helpers/api-bdd-billing-media";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createRouteMocks } from "./helpers/route-test";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
+import { publicChatActor } from "./helpers/public-chat-actor";
+import { publicRunOwner } from "./helpers/public-run-owner";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -382,4 +385,126 @@ test("rejects a member copy if its default target changes during publication", a
       return row.name === source.name && row.visibility === "private";
     }),
   ).toStrictEqual([]);
+});
+
+test("keeps captured workspace Workflow scope after claim and a live switch change", async () => {
+  const owned = await publicChatActor(context, { tier: "team" });
+  const runs = createRunsApi(context);
+  await owned.run(async () => {
+    installWorkflowVolumeS3Fixture(context);
+    const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
+    if (!defaultAgentId) {
+      throw new Error("Expected workspace executor");
+    }
+    const source = await accept(
+      collection().create({
+        headers: headers(owned.actor),
+        body: {
+          agentId: defaultAgentId,
+          name: `runtime-copy-${randomUUID().slice(0, 8)}`,
+          visibility: "public",
+          instruction: "Shared runtime procedure",
+        },
+      }),
+      [201],
+    );
+    const other = await bdd.createAgent(owned.actor, {
+      displayName: "Retained legacy executor",
+      visibility: "public",
+    });
+    const legacy = await accept(
+      collection().create({
+        headers: headers(owned.actor),
+        body: {
+          agentId: other.agentId,
+          name: `runtime-legacy-${randomUUID().slice(0, 8)}`,
+          visibility: "public",
+        },
+      }),
+      [201],
+    );
+    const member = bdd.user({
+      orgId: owned.actor.orgId,
+      orgRole: "org:member",
+    });
+    const owner = publicRunOwner(context, member, {
+      continueAcceptedOperations: true,
+    });
+    await owner.run(async () => {
+      await bdd.completeOnboarding(member);
+      await runs.ensurePersonalSubscriptionModel(member);
+      await billing.updateFeatureSwitches(member, { singleAgent: true });
+      const queued = await runs.createThreadRun(member, {
+        agentId: defaultAgentId,
+        prompt: "Make my private Workflow copy",
+        model: "auto",
+      });
+      const claim = await runs.claimRunnerJob(queued.runId);
+      owner.rememberClaim(queued.runId, claim.sandboxToken);
+      expect(claim.featureFlags).toMatchObject({ singleAgent: true });
+      await billing.updateFeatureSwitches(member, { singleAgent: false });
+      const runHeaders = {
+        authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN!}`,
+      };
+      const copied = await accept(
+        detail().copy({
+          headers: runHeaders,
+          params: { workflowId: source.body.id },
+          body: { toAgentId: defaultAgentId },
+        }),
+        [201],
+      );
+      expect(copied.body).toMatchObject({
+        ownerUserId: member.userId,
+        visibility: "private",
+        canPublish: false,
+      });
+      const listed = await accept(
+        collection().list({ headers: runHeaders }),
+        [200],
+      );
+      const listedIds = listed.body.map((row) => {
+        return row.id;
+      });
+      expect(listedIds).toContain(copied.body.id);
+      expect(listedIds).not.toContain(legacy.body.id);
+      await accept(
+        visibility().publish({
+          headers: runHeaders,
+          params: { workflowId: copied.body.id },
+        }),
+        [403],
+      );
+      await accept(
+        collection().create({
+          headers: runHeaders,
+          body: {
+            agentId: other.agentId,
+            name: `wrong-namespace-${randomUUID().slice(0, 8)}`,
+          },
+        }),
+        [403],
+      );
+      await runs.requestCancelRun(member, queued.runId, [200]);
+      const retained = await runs.createThreadRun(member, {
+        agentId: defaultAgentId,
+        prompt: "Keep legacy Workflow scope",
+        model: "auto",
+      });
+      await billing.updateFeatureSwitches(member, { singleAgent: true });
+      const retainedClaim = await runs.claimRunnerJob(retained.runId);
+      owner.rememberClaim(retained.runId, retainedClaim.sandboxToken);
+      expect(retainedClaim.featureFlags).toMatchObject({ singleAgent: false });
+      await accept(
+        detail().copy({
+          headers: {
+            authorization: `Bearer ${retainedClaim.platformEnvironment.OKOU_TOKEN!}`,
+          },
+          params: { workflowId: source.body.id },
+          body: { toAgentId: defaultAgentId },
+        }),
+        [403],
+      );
+    });
+  });
 });
