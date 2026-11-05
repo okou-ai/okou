@@ -254,7 +254,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       source.anchor.followBottom()
       scrollingEnded()
     }
-    updateContentInsets()
     (collection as? ConversationAccessibilityCollection)?.beginsAccessibilityScroll = {
       [weak self] in
       guard let self else { return }
@@ -327,6 +326,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
       controller.publishViewportChange()
       controller.prepareRowsIfNeeded()
     }
+    // Insets can synchronously lay out and commit cached rows. Finish installing the
+    // data source and child views before allowing that first layout pass.
+    updateContentInsets()
   }
 
   private func messageConfiguration(
