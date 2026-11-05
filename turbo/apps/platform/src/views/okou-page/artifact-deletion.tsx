@@ -28,7 +28,11 @@ import {
   type ArtifactDeletionSourceKind,
 } from "../../signals/artifact-deletion.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
+import {
+  artifactDeletionSurface,
+  confirmArtifactDeletion$,
+  type ArtifactDeletionOrigin,
+} from "../../signals/artifact-deletion-origin.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type { CatalogArtifact } from "../../signals/artifacts-page/create-artifact-catalog-signals.ts";
 
@@ -110,16 +114,12 @@ export function ArtifactPageDeleteButton({
   readonly artifactId: string;
   readonly sourceKind: ArtifactDeletionSourceKind;
 }) {
-  const navigate = useSet(detachedNavigateTo$);
   return (
     <ArtifactDeleteButton
       artifactId={artifactId}
       sourceKind={sourceKind}
-      surface="page"
+      origin={{ kind: "artifact-page" }}
       iconSize={18}
-      onDeleted={() => {
-        navigate("/artifacts");
-      }}
     />
   );
 }
@@ -128,17 +128,16 @@ export function ArtifactPageDeleteButton({
 export function ArtifactDeleteButton({
   artifactId,
   sourceKind,
-  surface,
-  onDeleted,
+  origin,
   iconSize = 16,
 }: {
   readonly artifactId?: string;
   readonly sourceKind?: ArtifactDeletionSourceKind;
-  readonly surface: "dialog" | "sidebar" | "page";
-  readonly onDeleted: () => void;
+  /** The surface deleting the artifact; it decides what follows. */
+  readonly origin: ArtifactDeletionOrigin;
   readonly iconSize?: number;
 }) {
-  const scope = artifactPreviewDeletionScope(surface);
+  const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
   const mountRef = useSet(scope.mountRef$);
   const session = useGet(scope.session$);
   if (!artifactId) {
@@ -157,7 +156,7 @@ export function ArtifactDeleteButton({
           <PreviewArtifactDeleteButton
             key={artifactId}
             session={session}
-            onDeleted={onDeleted}
+            origin={origin}
             iconSize={iconSize}
           />
         )}
@@ -167,11 +166,11 @@ export function ArtifactDeleteButton({
 
 function PreviewArtifactDeleteButton({
   session,
-  onDeleted,
+  origin,
   iconSize,
 }: {
   readonly session: PreviewArtifactDeletion;
-  readonly onDeleted: () => void;
+  readonly origin: ArtifactDeletionOrigin;
   readonly iconSize: number;
 }) {
   const { t } = useTranslation();
@@ -181,7 +180,7 @@ function PreviewArtifactDeleteButton({
   const requestDeletion = useSet(session.request$);
   const close = useSet(session.close$);
   const finalFocus = useSet(session.finalFocus$);
-  const [deletion, confirm] = useLoadableSet(session.confirm$);
+  const [deletion, confirm] = useLoadableSet(confirmArtifactDeletion$);
   return (
     <>
       {detail.state === "hasData" && detail.data && (
@@ -212,7 +211,7 @@ function PreviewArtifactDeleteButton({
         onCancel={close}
         onConfirm={() => {
           detach(
-            confirm(onDeleted, pageSignal),
+            confirm(origin, pageSignal),
             Reason.DomCallback,
             "delete preview artifact",
           );

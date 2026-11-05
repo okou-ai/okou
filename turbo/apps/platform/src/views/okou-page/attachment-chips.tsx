@@ -1,5 +1,4 @@
 import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
-import { closeArtifactCatalogPreview$ } from "../../signals/artifacts-page/artifact-catalog-signals.ts";
 import {
   ArtifactPreviewCloseButton,
   ArtifactPreviewDialogFrame,
@@ -1386,7 +1385,6 @@ function ArtifactPreviewDialogActions({
     toggleLightboxDialogFullscreen$,
   );
   const shareUrl = useLastResolved(preview.shareUrl$);
-  const closeDeletedPreview = useSet(closeArtifactCatalogPreview$);
   const showShare = preview.shareAvailable !== false;
   const showSplitView = preview.splitViewAvailable !== false;
   const closeLightboxImmediately = useSet(closeLightboxImmediately$);
@@ -1445,11 +1443,8 @@ function ArtifactPreviewDialogActions({
       />
       <ArtifactDeleteButton
         artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-        surface="dialog"
+        origin={{ kind: "preview-dialog" }}
         iconSize={18}
-        onDeleted={() => {
-          closeDeletedPreview(rootSignal);
-        }}
       />
       <ArtifactActionSeparator />
       {showSplitView && (

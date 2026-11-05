@@ -91,6 +91,7 @@ export function ArtifactCatalogSidebar() {
         text$={artifactCatalogSidebar.preview.text$}
         markdownTree$={artifactCatalogSidebar.preview.markdownTree$}
         onClose={close}
+        deletionOrigin={{ kind: "catalog-sidebar" }}
       />
       <ArtifactDiagramLightbox signals={artifactCatalogSidebar.diagram} />
     </>
