@@ -348,6 +348,22 @@ export function threadMeta(threadId: string) {
   });
 }
 
+/** A disable/re-enable batch can leave the value unchanged but replace authority. */
+export function threadComputerAccessVersion(threadId: string) {
+  return computed((get): string | null => {
+    let version: string | null = null;
+    for (const event of get(allChatThreadsEvents$)) {
+      if (
+        event.chatThreadId === threadId &&
+        (event.kind === "computer_use_host_updated" || event.kind === "created")
+      ) {
+        version = event.id;
+      }
+    }
+    return version;
+  });
+}
+
 function threadMetaFromMetadata(metadata: ChatThreadMetadata): ThreadMeta {
   return {
     id: metadata.id,

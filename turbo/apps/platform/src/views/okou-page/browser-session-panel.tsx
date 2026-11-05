@@ -3,11 +3,12 @@ import type { ReactNode } from "react";
 import { AppWindow, AppWindowMac, Loader2, Play } from "lucide-react";
 import { Button, cn, LayoutPanel } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 
 import {
   browserSessionReclaimHint,
+  isBrowserUnauthorized,
   type BrowserSessionPanelState,
   type BrowserSessionSignals,
 } from "../../signals/chat-page/browser-session-block.ts";
@@ -137,6 +138,25 @@ export function BrowserSessionUnavailable() {
   );
 }
 
+function UnauthorizedBrowserSession({
+  actions,
+}: {
+  readonly actions: ReactNode;
+}) {
+  const { t } = useTranslation();
+  return (
+    <PanelFrame>
+      <PanelActions actions={actions} />
+      <PanelMessage
+        icon={<AppWindowMac size={26} className="text-muted-foreground" />}
+        title={t(($) => {
+          return $.browserSession.authorizationRequired;
+        })}
+      />
+    </PanelFrame>
+  );
+}
+
 function PanelActions({ actions }: { readonly actions: ReactNode }) {
   if (!actions) {
     return null;
@@ -177,6 +197,7 @@ function BrowserCdpViewer({
     !controls.recovery &&
     connection.state === "hasData" &&
     connection.data !== null &&
+    !isBrowserUnauthorized(connection.data) &&
     (connection.data.requestedSession.liveUrl !== liveUrl ||
       connection.data.requestedSession.window?.instanceId !== instanceId ||
       connection.data.requestedSession.window?.primaryWindowId !== windowId);
@@ -305,6 +326,9 @@ function equalPanelSessions(
   previous: BrowserSessionPanelState | null,
   next: BrowserSessionPanelState | null,
 ): boolean {
+  if (isBrowserUnauthorized(previous) || isBrowserUnauthorized(next)) {
+    return previous?.status === next?.status;
+  }
   return (
     previous === next ||
     (previous !== null &&
@@ -325,6 +349,10 @@ export function BrowserSessionPanel({
   const sessionLoadable = useLastLoadable(signals.panelSession$, {
     equalityFn: equalPanelSessions,
   });
+  const connection = useLoadable(signals.viewerConnection$);
+  // A replaced grant needs a fresh DOM owner to reconcile its descriptor.
+  // Lease timestamps and ordinary session reloads preserve that owner.
+  const authorizationScope = useGet(signals.authorizationScope$);
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
@@ -332,6 +360,12 @@ export function BrowserSessionPanel({
   const pageSignal = useGet(pageSignal$);
 
   const actionsRow = <PanelActions actions={actions} />;
+  if (
+    connection.state === "hasData" &&
+    isBrowserUnauthorized(connection.data)
+  ) {
+    return <UnauthorizedBrowserSession actions={actions} />;
+  }
   if (sessionLoadable.state === "loading") {
     return (
       <PanelFrame>
@@ -350,9 +384,13 @@ export function BrowserSessionPanel({
   }
 
   const session = sessionLoadable.data;
+  if (isBrowserUnauthorized(session)) {
+    return <UnauthorizedBrowserSession actions={actions} />;
+  }
   if (session?.status !== "active") {
     return (
       <PausedBrowserSession
+        key={authorizationScope}
         signals={signals}
         starting={starting}
         onStart={() => {
@@ -367,6 +405,7 @@ export function BrowserSessionPanel({
   return (
     <PanelFrame panelRef={keepAliveRef}>
       <BrowserCdpViewer
+        key={authorizationScope}
         signals={signals}
         liveUrl={session.liveUrl}
         instanceId={session.instanceId}

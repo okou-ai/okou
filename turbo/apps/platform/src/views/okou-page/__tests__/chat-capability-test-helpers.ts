@@ -286,9 +286,11 @@ export function createChatCapabilityHelpers(context: TestContext) {
     readonly events: MockChatEventInput[];
     readonly threadTitle?: string;
     readonly selectedModel?: string | null;
+    readonly cloudBrowserEnabled?: boolean;
     readonly onSend?: (send: CapturedChatSend) => void;
   }): void {
     installRunChat({
+      cloudBrowserEnabled: args.cloudBrowserEnabled,
       chatEvents: args.events,
       threadTitle: args.threadTitle ?? "Capability conversation",
       ...(args.selectedModel === undefined

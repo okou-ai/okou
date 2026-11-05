@@ -1388,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "輸入網址",
+    "authorizationRequired": "此對話未啟用雲端瀏覽器",
     "blankPage": {
       "description": "{{assistantName}} 工作時會在這裡開啟網頁。你也可以在上方輸入網址自行瀏覽。",
       "title": "尚未開啟網頁"

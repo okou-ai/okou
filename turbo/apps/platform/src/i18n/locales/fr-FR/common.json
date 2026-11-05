@@ -1412,6 +1412,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "Saisir une URL",
+    "authorizationRequired": "Le navigateur cloud n’est pas activé pour cette conversation",
     "blankPage": {
       "description": "{{assistantName}} ouvre les pages ici pendant qu’il travaille. Saisissez une URL ci-dessus pour naviguer vous-même.",
       "title": "Rien d’ouvert pour l’instant"

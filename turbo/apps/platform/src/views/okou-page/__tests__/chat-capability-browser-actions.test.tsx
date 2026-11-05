@@ -293,6 +293,7 @@ async function openManagedBrowserChat(
   const foreignBrowserUrl = `https://app.okou.ai/browsers/${OTHER_THREAD_ID}`;
   const untrustedBrowserUrl = `https://app.okou.ai.evil.test/browsers/${RUN_THREAD_ID}`;
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(
       [
         `[Research session](${trustedBrowserUrl})`,
@@ -426,6 +427,7 @@ test.each([false, true])(
       liveUrl: null,
     });
     installCapabilityChat({
+      cloudBrowserEnabled: true,
       events: completedConversation(
         `[Research session](https://app.okou.ai/browsers/${RUN_THREAD_ID})`,
       ),
@@ -566,6 +568,7 @@ test("Recognize trusted assistant actions without trusting lookalikes", async ()
     `https://app.okou.ai/agents/${OTHER_AGENT_ID}/permissions?connectorSlug=slack&permission=messages.read`,
   ].join("\n\n");
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: [
       promptEvent({
         id: "safe-actions-user",
@@ -649,6 +652,7 @@ test.each([true, false])(
     const firstCheckStarted = createDeferredPromise<void>(context.signal);
     const releaseFirstCheck = createDeferredPromise<void>(context.signal);
     installCapabilityChat({
+      cloudBrowserEnabled: true,
       events: completedConversation(
         [
           `[Enter details](${browserInputUrl()})`,
@@ -821,6 +825,7 @@ test.each([true, false])(
 
 test("Closing an inline form clears password and code drafts while preserving ordinary text", async () => {
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -877,6 +882,7 @@ test("Closing an inline form clears password and code drafts while preserving or
 
 test("Shared inline forms retain sensitive drafts until their final owner closes", async () => {
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(
       `[First input](${browserInputUrl()})\n\n[Same input](${browserInputRelativeUrl()})`,
     ),
@@ -985,6 +991,7 @@ test("An inline native datetime-local picker keeps a wall-clock string through c
     };
   };
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1055,6 +1062,7 @@ test("An inline Browser input dialog confirms a required native checkbox", async
     };
   };
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1135,6 +1143,7 @@ test("An inline Browser slider confirms the observed website position without na
     };
   };
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(`[Choose a level](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1220,6 +1229,7 @@ test("An inline Browser color picker confirms the observed website selection wit
     };
   };
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(`[Choose a color](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1302,6 +1312,7 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
     };
   };
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1438,6 +1449,7 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
     };
   };
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1491,6 +1503,7 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
 test("A pending transcript card becomes consumed when the standalone form completes", async () => {
   let state: BrowserUserActionResponse["state"] = "pending";
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1522,6 +1535,7 @@ test.each(["apply", "cancel"] as const)(
   async (operation) => {
     const current$ = state<BrowserUserActionResponse["state"]>("pending");
     installCapabilityChat({
+      cloudBrowserEnabled: true,
       events: completedConversation(`[Enter details](${browserInputUrl()})`),
     });
     context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1580,6 +1594,7 @@ test.each(["apply", "cancel"] as const)(
 test("Duplicate initially applying cards recover after a thread change signal", async () => {
   let actionState: BrowserUserActionResponse["state"] = "applying";
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(
       `[First input](${browserInputUrl()})\n\n[Same input](${browserInputRelativeUrl()})`,
     ),
@@ -1611,6 +1626,7 @@ test.each([
   "Leaving an open dialog clears the $label draft",
   async ({ label, value }) => {
     installCapabilityChat({
+      cloudBrowserEnabled: true,
       events: completedConversation(`[Enter details](${browserInputUrl()})`),
       selectedModel: null,
     });
@@ -1671,6 +1687,7 @@ test.each([
 
 test("A freshly mounted transcript card reads accepted Browser callback delivery", async () => {
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(`[Enter details](${browserInputUrl()})`),
   });
   context.mocks.api(browserUserActionsContract.get, ({ respond }) => {
@@ -1694,6 +1711,7 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
 
 test("Absolute and relative Browser input URLs both render dialog cards", async () => {
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(
       [
         `[Absolute input](${browserInputUrl()})`,
@@ -1742,6 +1760,7 @@ test("Keep feature-disabled and foreign Browser actions inert without hiding the
     liveUrl: null,
   });
   installCapabilityChat({
+    cloudBrowserEnabled: true,
     events: completedConversation(
       [
         `[Disabled input](${browserInputUrl()})`,

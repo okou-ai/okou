@@ -184,8 +184,10 @@ function openConversation(
   chatEvents: MockChatEventInput[],
   refined = false,
   pwaNavigation = false,
+  cloudBrowserEnabled = true,
 ): Promise<void> {
   mockChatLifecycle(context, {
+    cloudBrowserEnabled,
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
     chatEvents,
@@ -239,6 +241,43 @@ function buttonByName(
 function liveBrowserSidebar(): HTMLElement {
   return screen.getByRole("complementary", { name: "Cloud browser" });
 }
+
+test("An unauthorized Browser keeps its card and sidebar with an authorization placeholder", async () => {
+  mockBrowserApi(liveBrowserSession());
+  const events = completedConversationEvents().map((event) => {
+    return event.id === "navigation-browser-reply"
+      ? {
+          ...event,
+          content: `[Browser](https://app.okou.ai/browsers/${THREAD_ID})`,
+        }
+      : event;
+  });
+  await openConversation(events, true, false, false);
+  await expectConversationReady();
+  const card = await waitFor(() => {
+    const element = document.querySelector<HTMLElement>(
+      "[data-browser-session-card]",
+    );
+    if (!element) {
+      throw new Error("Browser card is not mounted");
+    }
+    return element;
+  });
+  click(card);
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  expect(
+    within(sidebar).getByText("Cloud browser is not enabled for this chat"),
+  ).toBeInTheDocument();
+  expect(
+    within(sidebar).queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(sidebar).queryByText("Browser not live"),
+  ).not.toBeInTheDocument();
+  expect(within(sidebar).getByLabelText("Close cloud browser")).toBeEnabled();
+});
 
 function visibleViewerMenu(
   _viewer: HTMLElement,
@@ -765,6 +804,7 @@ test("Take over the cloud browser without stopping the working run and hand it b
   ];
   const takeOverAccepted = createDeferredPromise<void>(context.signal);
   mockChatLifecycle(context, {
+    cloudBrowserEnabled: true,
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
     chatEvents,
@@ -905,6 +945,7 @@ test.each(["mouse", "keyboard", "composition", "touch"] as const)(
     mockBrowserApi(liveBrowserSession());
     const runId = "d0000000-0000-4000-a000-000000000903";
     mockChatLifecycle(context, {
+      cloudBrowserEnabled: true,
       threadId: THREAD_ID,
       threadTitle: "Browser navigation",
       chatEvents: [
@@ -1037,6 +1078,7 @@ test.each([true, false])(
     const { native } = mockBrowserApi(liveBrowserSession());
     const runId = "d0000000-0000-4000-a000-000000000905";
     mockChatLifecycle(context, {
+      cloudBrowserEnabled: true,
       threadId: THREAD_ID,
       threadTitle: "Browser navigation",
       chatEvents: [
@@ -1130,7 +1172,7 @@ test("A delayed handback cannot clear a newer run's page-input takeover", async 
       }
     },
   };
-  mockChatLifecycle(context, lifecycle);
+  mockChatLifecycle(context, { ...lifecycle, cloudBrowserEnabled: true });
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
@@ -1231,6 +1273,7 @@ test("A failed handback does not poison the next explicit handback", async () =>
   const runId = "d0000000-0000-4000-a000-000000000908";
   const rejected = createDeferredPromise<void>(context.signal);
   mockChatLifecycle(context, {
+    cloudBrowserEnabled: true,
     threadId: THREAD_ID,
     chatEvents: [
       {
@@ -1285,6 +1328,7 @@ test("Hand back after using the cloud browser between runs continues in one step
   mockBrowserApi(liveBrowserSession());
   const runId = "d0000000-0000-4000-a000-000000000904";
   mockChatLifecycle(context, {
+    cloudBrowserEnabled: true,
     threadId: THREAD_ID,
     threadTitle: "Browser navigation",
     chatEvents: [
