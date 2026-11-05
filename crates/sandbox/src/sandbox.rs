@@ -324,9 +324,9 @@ pub struct SevereMemoryRetentionDiagnostics {
 ///
 /// Providers report only stages that apply to a start. The snapshot stage is
 /// absent for a fresh boot, and the DNS stage is absent when the provider does
-/// not perform a guest DNS readiness check. On a successful start, reported
-/// stages are ordered, non-overlapping wall-clock intervals. Concurrent work
-/// belongs to the interval that contains it; for example, guest connection
+/// not perform a guest DNS readiness check. Home validation and DNS readiness
+/// can overlap: their durations must not be summed to compute startup latency.
+/// Other stages are non-overlapping wall-clock intervals; guest connection
 /// waiting measures only the residual wait after backend startup completes.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SandboxStartStage {
@@ -336,6 +336,8 @@ pub enum SandboxStartStage {
     SnapshotLoadResume,
     /// Waits for the residual guest control connection after backend startup.
     GuestConnectionWait,
+    /// Validates and mounts the actual attached Home; may overlap DNS readiness.
+    GuestHomeValidation,
     /// Proves that the configured guest DNS path is ready.
     GuestDnsReadiness,
     /// Publishes the guest and starts the remaining host runtime services.
@@ -345,13 +347,13 @@ pub enum SandboxStartStage {
 impl SandboxStartStage {
     /// All start stages in stable catalog order.
     ///
-    /// Providers can omit stages that do not apply. This order describes the
-    /// successful critical path, not a completeness guarantee after failure or
-    /// cancellation.
-    pub const ALL: [Self; 5] = [
+    /// Providers can omit stages that do not apply. This is a catalog order,
+    /// not a completion order or a completeness guarantee after cancellation.
+    pub const ALL: [Self; 6] = [
         Self::BackendLaunch,
         Self::SnapshotLoadResume,
         Self::GuestConnectionWait,
+        Self::GuestHomeValidation,
         Self::GuestDnsReadiness,
         Self::RuntimeFinalize,
     ];
@@ -360,15 +362,16 @@ impl SandboxStartStage {
 /// Receives optional low-cardinality sandbox start timing records.
 ///
 /// Providers that override [`Sandbox::start_with_observer`] invoke the callback
-/// for every applicable stage when it resolves, before running failure
-/// diagnostics or cleanup. Earlier successful callbacks remain valid when a
+/// for every applicable stage before running failure diagnostics or cleanup.
+/// Concurrent readiness callbacks may be buffered until both gates settle;
+/// each duration still measures only its own operation. Successful callbacks remain valid when a
 /// later stage fails. Cancellation can leave a completed prefix without a
 /// callback for the in-progress stage. Implementations using the default method
 /// report no stages.
 ///
-/// For an overriding implementation, successful start stages are
-/// non-overlapping and cover the provider start critical path after lifecycle
-/// precondition checks. A failed parent start can additionally include
+/// Home-validation and DNS-readiness stages may overlap; do not add their
+/// durations. Other successful stages follow the provider start critical path
+/// after lifecycle precondition checks. A failed parent start can additionally include
 /// diagnostics and cleanup after the failed stage callback. Observer callbacks
 /// are informational and never own lifecycle transitions or cleanup.
 pub trait SandboxStartObserver: Send {

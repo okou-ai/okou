@@ -417,7 +417,9 @@ impl Sandbox for ObservedStartSandbox {
             if self.omit_optional_stages
                 && matches!(
                     stage,
-                    SandboxStartStage::SnapshotLoadResume | SandboxStartStage::GuestDnsReadiness
+                    SandboxStartStage::SnapshotLoadResume
+                        | SandboxStartStage::GuestHomeValidation
+                        | SandboxStartStage::GuestDnsReadiness
                 )
             {
                 continue;
@@ -781,6 +783,7 @@ const FRESH_SANDBOX_START_STAGE_ACTIONS: &[&str] = &[
     "runner_fresh_sandbox_start_backend_launch",
     "runner_fresh_sandbox_start_snapshot_load_resume",
     "runner_fresh_sandbox_start_guest_connection_wait",
+    "runner_fresh_sandbox_start_guest_home_validation",
     "runner_fresh_sandbox_start_guest_dns_readiness",
     "runner_fresh_sandbox_start_runtime_finalize",
 ];
@@ -1336,7 +1339,7 @@ async fn execute_job_keeps_dns_attempt_failures_inside_the_successful_start() {
     assert_action_duration(
         &telemetry,
         "runner_fresh_sandbox_start_guest_dns_readiness",
-        33,
+        34,
     );
     assert_action_success(
         &telemetry,
