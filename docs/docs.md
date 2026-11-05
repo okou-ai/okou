@@ -115,6 +115,8 @@ owning surface.
 
 ## iOS
 
+- [Mobile Design System](ios/mobile-design-system.md): native design authority,
+  shared Web color roles, mobile tokens, assets, reusable components, and previews.
 - [iOS testing](ios/ios-testing.md): native entry points, package contracts,
   observable assertions, layout synchronization, isolation, and device acceptance.
 - [iOS setup and CI](../ios/README.md): local commands and required checks.

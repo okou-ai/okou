@@ -1,5 +1,8 @@
 # Okou for iOS
 
+For native UI work, start with the [Mobile Design System](../docs/ios/mobile-design-system.md)
+and [`AGENTS.md`](AGENTS.md). Shared tokens and reusable UI live in `Okou/DesignSystem/`.
+
 Native SwiftUI MVP for iPhone in portrait orientation, targeting iOS 26 or later.
 This folder is a standalone Xcode project inside the Okou monorepo. It does not
 require XcodeGen, CocoaPods, or a pnpm workspace wrapper.
@@ -22,28 +25,41 @@ remain temporary: interrupted uploads require explicit retry through the existin
 uploader, and purged copies require reselection. Restored uploads are checked
 against the file authority before sending. Its home screen follows the mobile
 web agent-chat structure with an agent avatar, greeting, and composer; focusing
-the compact composer animates it into a multiline field. The ChatGPT-style
-sliding sidebar contains pinned agents and recent chats scoped to the selected
-agent, with workspace switching at the top and a bottom new-chat action. Its
-settings menu provides account actions. Native list actions support pinning,
-archiving, and renaming chats. The chat header's native More menu also supports
-muting. Archive and mute controls follow the existing `chatThreadArchiving` and
+the compact composer animates it into a multiline field. The full-screen
+sidebar (Grok-style: the chat slides away and blurs) contains active chats, pinned
+agents and recent chats scoped to the selected agent, filtered like the web (Inbox,
+Unread, Archived, Muted). Workspace switching and "back to chat" sit at the top; the
+bottom bar has the account photo for Settings, search, and new chat. Native list actions support pinning,
+archiving, and renaming chats. The chat header has no title; its native More menu
+names the agent (opening its profile) and also supports muting. Archive and mute controls follow the existing `chatThreadArchiving` and
 `chatThreadMuting` feature switches; muted chats can still be unmuted after the
 muting switch is turned off. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected
 agent and the existing saved model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.
-Workspace setup and Okou account management remain on the web.
+Workspace setup remains on the web. Settings shows the profile, workspace,
+notifications, appearance, language, support and version, and offers sign-out and
+account deletion (Clerk self-deletion when the instance allows it, otherwise the web).
+The new-chat screen greets with the agent and the description of a custom one; the
+greeting's avatar opens the agent's profile and saved workflows.
 
 Conversation history renders durable user messages and assistant results using
 the official Textual 0.5.0 release. The renderer supports Markdown headings, lists,
-quotes, tables, links, images, and code blocks, with text selection, code copying, and horizontal
-overflow for wide tables and code. Ably notifications trigger fresh API reads;
-transient token output is not rendered. The native composer Connector sheet supports
-service access, conversation account choices, permission grants, discovery and
+quotes, tables, links, images, and code blocks, with text selection, code copying, and
+horizontal overflow for wide tables and code. Ably notifications trigger fresh API reads.
+While a visible chat runs, its `run-output` channel streams text (Pi runs emit it) until
+the durable event with the same id replaces it. The composer offers recoverable voice
+input (a glass bar above the composer with a live waveform; a recording is kept with its
+draft until it is used or discarded) through the web's voice-io APIs, and camera and
+document-scan attachments where the device supports them. The native composer Connector
+sheet supports service access, conversation account choices, permission grants, a
+Manus-style catalog (category chips, cards that connect with "+", connector detail
+pages) and
 connection, Cloud Browser, Computer Use, and SSH/VNC conversation access. Separate
-setup/settings destinations open in Safari and refresh on return. Conversation
-sharing and artifact publishing remain outside this local UI.
+setup/settings destinations open in Safari and refresh on return. An answer can be
+copied, shared as text, or shared as a workspace or public link to that exchange;
+artifact publishing remains on the web. Mail drafts and Desktop Shell authorizations
+render as native cards that send, discard, allow, deny or revoke after confirmation.
 Generated results retain inline link labels and show native cards for Markdown image
 embeds. Images support enlarged system viewing and navigation within their transcript
 group. Video/audio use system playback; PDF and supported Office files use Quick Look.

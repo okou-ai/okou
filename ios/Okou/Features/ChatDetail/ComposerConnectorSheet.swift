@@ -1,35 +1,6 @@
 import ChatData
 import SwiftUI
 
-struct ComposerConnectorButton: View {
-  let store: ComposerConnectorStore
-  @State private var presented = false
-
-  var body: some View {
-    Button {
-      presented = true
-    } label: {
-      Image(systemName: "powerplug").font(.system(size: 19)).frame(width: 44, height: 44)
-    }
-    .accessibilityLabel("Connectors")
-    .accessibilityIdentifier("composer-connectors")
-    .accessibilityValue(store.uncertain ? "Confirm settings before sending" : "")
-    .overlay(alignment: .topTrailing) {
-      if store.uncertain {
-        Image(systemName: "exclamationmark.circle.fill").font(.caption2).foregroundStyle(.orange)
-          .accessibilityHidden(true)
-      }
-    }
-    .disabled(store.agentID == nil)
-    .sheet(isPresented: $presented) {
-      ComposerConnectorSheet(store: store)
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
-    }
-    .onChange(of: store.agentID) { _, _ in presented = false }
-  }
-}
-
 struct ComposerConnectorSheet: View {
   @Bindable var store: ComposerConnectorStore
   @State private var search = ""
@@ -45,20 +16,20 @@ struct ComposerConnectorSheet: View {
           ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
         }
         if let notice = store.notice {
-          Text(notice).font(.footnote).foregroundStyle(.secondary)
+          Text(notice).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
         }
         Section {
           NavigationLink {
             ComposerRemoteControls(store: store)
           } label: {
-            Label("Remote control", systemImage: "desktopcomputer").foregroundStyle(.primary)
+            OkouRowLabel("Remote control", okouSymbol: "monitor")
           }
         }
         Section {
           if let error = store.connectorError, store.error == nil {
             ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
           } else if store.isLoading && store.connectors.isEmpty && store.error == nil {
-            ProgressView("Loading connectors…")
+            OkouLoadingRow("Loading connectors…")
           } else {
             ForEach(
               store.connectors.filter {
@@ -72,32 +43,40 @@ struct ComposerConnectorSheet: View {
                 store.chatAccountAccess
                   ? "Connect a service to use it in this chat."
                   : "Connect a service to make it available to this Agent."
-              ).foregroundStyle(
-                .secondary)
+              )
+              .foregroundStyle(OkouColor.mutedForeground)
             }
           }
           NavigationLink {
             ComposerConnectorDirectory(store: store)
           } label: {
-            Label("Add connectors", systemImage: "plus").foregroundStyle(.primary)
+            OkouRowLabel("Add connectors", okouSymbol: "plus")
           }
         } header: {
-          Text("Services").font(.subheadline).fontWeight(.regular).textCase(nil)
-        } footer: {
-          Text(
-            store.chatAccountAccess
-              ? "Account choices apply to this chat."
-              : "Service access applies to this Agent. Account choices apply to this chat.")
+          // The rule belongs above the switches it explains, not under a long list.
+          VStack(alignment: .leading, spacing: OkouSpace.two) {
+            Text("Services").okouSectionHeader()
+            Group {
+              if store.chatAccountAccess {
+                Text("Account choices apply to this chat.")
+              } else {
+                Text("Switches apply to this Agent. Account choices apply to this chat.")
+              }
+            }
+            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+            .textCase(nil)
+          }
         }
       }
       .listSectionSpacing(16)
       .searchable(text: $search, prompt: "Find connectors")
+      .okouGroupedBackground()
       .navigationTitle("Connectors")
       .navigationBarTitleDisplayMode(.inline)
       .navigationDestination(item: $destination) { destination in
         connectorDestination(destination)
       }
-      .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+      .toolbar { OkouCloseToolbarItem { dismiss() } }
       .alert(
         "Could not open connector",
         isPresented: Binding(
@@ -127,110 +106,107 @@ struct ComposerConnectorSheet: View {
     .onDisappear { store.authorization.cancel() }
   }
 
+  /// With chat account access a service opens the accounts this chat may use; otherwise it
+  /// is a switch for this Agent with account and permission shortcuts.
   @ViewBuilder
   private func connectorRow(_ connector: ChatComposerConnector) -> some View {
     if store.chatAccountAccess {
       NavigationLink {
         ComposerChatConnectorAccounts(store: store, connector: connector)
       } label: {
-        Label {
-          VStack(alignment: .leading, spacing: 4) {
-            Text(connector.label).foregroundStyle(.primary).lineLimit(1)
+        HStack(spacing: OkouSpace.md) {
+          ConnectorLogo(
+            icon: connector.icon, fallback: connector.target.kind == "custom" ? "puzzle" : "plug"
+          )
+          .frame(width: OkouControl.rowLeadingSlot, height: OkouControl.rowLeadingSlot)
+          VStack(alignment: .leading, spacing: OkouSpace.two) {
+            Text(connector.label)
+              .font(.okou(.body)).foregroundStyle(OkouColor.foreground).lineLimit(1)
             if let access = connector.access {
-              if let account = connector.currentAccount {
-                Text("\(account.label) · \(access.enabledCount) enabled")
-                  .font(.caption).foregroundStyle(.secondary).lineLimit(1)
-              } else {
-                Text(access.available ? "Account unavailable" : "Off")
-                  .font(.caption).foregroundStyle(.secondary)
+              Group {
+                if let account = connector.currentAccount {
+                  Text("\(account.label) · \(access.enabledCount) enabled")
+                } else if access.available {
+                  Text("Account unavailable")
+                } else {
+                  Text("Off")
+                }
               }
+              .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
             }
           }
-        } icon: {
-          Image(
-            systemName: connector.target.kind == "custom" ? "puzzlepiece.extension" : "powerplug"
-          ).foregroundStyle(.secondary)
         }
-      }.disabled(store.isSaving)
+      }
+      .disabled(store.isSaving)
     } else {
       legacyConnectorRow(connector)
     }
   }
 
+  /// One line per service: its logo and name, account and permission shortcuts once it is
+  /// allowed, and the switch that allows it for this Agent.
   private func legacyConnectorRow(_ connector: ChatComposerConnector) -> some View {
-    VStack(alignment: .leading, spacing: 0) {
-      HStack {
-        Label(
-          connector.label,
-          systemImage: connector.target.kind == "custom" ? "puzzlepiece.extension" : "powerplug"
-        )
-        .lineLimit(1)
-        .truncationMode(.tail)
-        .layoutPriority(1)
-        Spacer(minLength: 8)
-        if store.isSaving && savingConnectorID == connector.id {
-          ProgressView().controlSize(.small)
-        }
-        Toggle(
-          connector.label,
-          isOn: Binding(
-            get: { connector.authorized },
-            set: { enabled in
-              if enabled && connector.permissionBundleRef != nil {
-                store.openWeb(path: "connectors")
-              } else {
-                Task {
-                  guard !store.isSaving, !store.uncertain else { return }
-                  savingConnectorID = connector.id
-                  defer { savingConnectorID = nil }
-                  await store.setAuthorized(connector, enabled: enabled)
-                }
-              }
-            })
-        )
-        .toggleStyle(.switch)
-        .tint(.green)
-        .fixedSize(horizontal: true, vertical: false)
-        .labelsHidden().disabled(store.isSaving || store.uncertain)
-        .accessibilityLabel("Allow \(connector.label) for this Agent")
+    HStack(spacing: OkouSpace.md) {
+      OkouRowLabel(
+        Text(connector.label)
+      ) {
+        ConnectorLogo(
+          icon: connector.icon, fallback: connector.target.kind == "custom" ? "puzzle" : "plug")
       }
-      .frame(minHeight: 44)
-      if connector.authorized && (!connector.managed || connector.hasPermissions) {
-        HStack(spacing: 16) {
-          if !connector.managed {
-            Button {
-              destination = .accounts(connector.id)
-            } label: {
-              HStack(spacing: 4) {
-                Text("Account")
-                Image(systemName: "chevron.right").font(.caption2)
-              }
-              .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-              .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Account for \(connector.label)")
-          }
-          if connector.hasPermissions && connector.target.connectorSlug != nil {
-            Button {
-              destination = .permissions(connector.id)
-            } label: {
-              HStack(spacing: 4) {
-                Text("Permissions")
-                Image(systemName: "chevron.right").font(.caption2)
-              }
-              .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading)
-              .contentShape(Rectangle())
-            }
-            .accessibilityLabel("Permissions for \(connector.label)")
-          }
-        }
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
-        .buttonStyle(.borderless)
-        .padding(.leading, 32)
+      .lineLimit(1)
+      .truncationMode(.tail)
+      .layoutPriority(1)
+      Spacer(minLength: OkouSpace.sm)
+      if store.isSaving && savingConnectorID == connector.id {
+        ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
       }
+      if connector.authorized && !connector.managed {
+        rowAction("circle-user-round", label: "Account for \(connector.label)") {
+          destination = .accounts(connector.id)
+        }
+      }
+      if connector.authorized && connector.hasPermissions && connector.target.connectorSlug != nil {
+        rowAction("sliders-horizontal", label: "Permissions for \(connector.label)") {
+          destination = .permissions(connector.id)
+        }
+      }
+      Toggle(
+        connector.label,
+        isOn: Binding(
+          get: { connector.authorized },
+          set: { enabled in
+            if enabled && connector.permissionBundleRef != nil {
+              store.openWeb(path: "connectors")
+            } else {
+              Task {
+                guard !store.isSaving, !store.uncertain else { return }
+                savingConnectorID = connector.id
+                defer { savingConnectorID = nil }
+                await store.setAuthorized(connector, enabled: enabled)
+              }
+            }
+          })
+      )
+      .toggleStyle(.switch)
+      .tint(OkouColor.primary400)
+      .fixedSize(horizontal: true, vertical: false)
+      .labelsHidden().disabled(store.isSaving || store.uncertain)
+      .accessibilityLabel("Allow \(connector.label) for this Agent")
     }
     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+  }
+
+  private func rowAction(
+    _ icon: String, label: LocalizedStringKey, action: @escaping () -> Void
+  ) -> some View {
+    Button(action: action) {
+      OkouIcon(icon, size: OkouIconSize.standard)
+        .foregroundStyle(OkouColor.mutedForeground)
+        .frame(width: OkouControl.inlineActionHeight, height: OkouControl.inlineActionHeight)
+        .contentShape(Rectangle())
+    }
+    .buttonStyle(.borderless)
+    .accessibilityLabel(label)
   }
 
   @ViewBuilder
@@ -245,8 +221,8 @@ struct ComposerConnectorSheet: View {
         }
       }
     } else {
-      ContentUnavailableView(
-        "Connector unavailable", systemImage: "powerplug",
+      OkouEmptyState(
+        "Connector unavailable", icon: "plug",
         description: Text("Return to Connectors to choose an available service."))
     }
   }
@@ -263,16 +239,13 @@ struct ComposerConnectorSheet: View {
   }
 }
 
+/// A connector read failed: the shared quiet load-error row.
 struct ConnectorLoadError: View {
   let error: String
   var isLoading = false
   let retry: @MainActor () async -> Void
   var body: some View {
-    VStack(alignment: .leading, spacing: 8) {
-      Text(error).foregroundStyle(.red).font(.callout)
-      Button(isLoading ? "Refreshing…" : "Refresh") { Task { await retry() } }
-        .disabled(isLoading)
-    }
+    OkouLoadErrorRow(message: error, actionTitle: "Refresh", isRetrying: isLoading, retry: retry)
   }
 }
 
@@ -286,7 +259,7 @@ private struct ComposerRemoteControls: View {
         ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
       }
       if let remotes = store.remotes, store.remoteError == nil {
-        Section("Cloud Browser") {
+        Section {
           Toggle(
             "Cloud Browser",
             isOn: Binding(
@@ -298,12 +271,18 @@ private struct ComposerRemoteControls: View {
               })
           )
           .toggleStyle(.switch)
-          .tint(.green)
+          .tint(OkouColor.primary400)
           .disabled(store.isSaving || store.uncertain || !remotes.cloudBrowserAvailable)
-          if !remotes.cloudBrowserAvailable {
-            Text("Cloud Browser is not available for this workspace.").font(.footnote)
-              .foregroundStyle(.secondary)
+        } header: {
+          Text("Cloud Browser").okouSectionHeader()
+        } footer: {
+          Group {
+            if !remotes.cloudBrowserAvailable {
+              Text("Cloud Browser is not available for this workspace.")
+            }
+
           }
+          .okouSectionNote()
         }
         Section {
           ForEach(store.visibleComputerUseHosts) { host in
@@ -320,25 +299,29 @@ private struct ComposerRemoteControls: View {
               VStack(alignment: .leading) {
                 Text(host.displayName)
                 if host.status == "offline" {
-                  Text("Offline").font(.caption).foregroundStyle(.secondary)
+                  Text("Offline").font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
                 }
               }
             }
             .toggleStyle(.switch)
-            .tint(.green)
+            .tint(OkouColor.primary400)
             .disabled(store.isSaving || store.uncertain)
           }
           if store.visibleComputerUseHosts.isEmpty {
-            Text("No online computers").foregroundStyle(.secondary)
+            Text("No online computers").foregroundStyle(OkouColor.mutedForeground)
           }
           Button("Connect my computer") { showsDesktopSetup = true }
         } header: {
-          Text("Your computer")
+          Text("Your computer").okouSectionHeader()
         } footer: {
-          Text("Choose Cloud Browser or one computer for this chat.")
+          Group {
+            Text("Choose Cloud Browser or one computer for this chat.")
+
+          }
+          .okouSectionNote()
         }
         ForEach(ChatRemoteProtocol.allCases, id: \.rawValue) { proto in
-          Section(proto.rawValue.uppercased()) {
+          Section {
             ForEach(store.hosts(proto)) { host in
               Picker(
                 host.displayName,
@@ -354,17 +337,22 @@ private struct ComposerRemoteControls: View {
                 Text(host.defaultEnabled ? "Default (on)" : "Default (off)").tag("default")
                 Text("On").tag("on")
                 Text("Off").tag("off")
-              }.disabled(store.isSaving || store.uncertain)
+              }
+              .okouValuePicker()
+              .disabled(store.isSaving || store.uncertain)
               if proto == .vnc { dependencies(host) }
             }
             Button("Configure \(proto.rawValue.uppercased()) hosts") { store.setupRemote(proto) }
+          } header: {
+            Text(verbatim: proto.rawValue.uppercased()).okouSectionHeader()
           }
         }
       } else if store.isLoading {
-        ProgressView("Loading remote access…")
+        OkouLoadingRow("Loading remote access…")
       }
     }
-    .navigationTitle("Remote control")
+    .okouGroupedBackground()
+    .navigationTitle("Computers & browser")
     .navigationBarTitleDisplayMode(.inline)
     .sheet(isPresented: $showsDesktopSetup) {
       NavigationStack {
@@ -373,12 +361,9 @@ private struct ComposerRemoteControls: View {
           ShareLink("Share Desktop download link", item: store.service.desktopDownloadURL)
           Link("Download for Mac", destination: store.service.desktopDownloadURL)
         }
+        .okouGroupedBackground()
         .navigationTitle("Connect my computer")
-        .toolbar {
-          ToolbarItem(placement: .confirmationAction) {
-            Button("Done") { showsDesktopSetup = false }
-          }
-        }
+        .toolbar { OkouCloseToolbarItem { showsDesktopSetup = false } }
       }.presentationDetents([.medium])
     }
   }
@@ -396,9 +381,10 @@ private struct ComposerRemoteControls: View {
         enabled
           ? "SSH enabled: \(ssh?.displayName ?? id)"
           : "Also enable SSH: \(ssh?.displayName ?? "Unavailable host")",
-        systemImage: enabled ? "checkmark.circle" : "exclamationmark.triangle"
+        okouSymbol: enabled ? "circle-check" : "triangle-alert", iconSize: OkouIconSize.inline
       )
-      .font(.caption).foregroundStyle(enabled ? Color.secondary : Color.orange)
+      .font(.okou(.caption)).foregroundStyle(
+        enabled ? OkouColor.mutedForeground : OkouStatusColor.warning)
     }
   }
 }

@@ -13,8 +13,7 @@ struct ChatSyncStatusView: View {
       if let displayed, displayed != dismissed {
         ChatFeedbackSurface(
           message: displayed.label,
-          systemImage: displayed == .unavailable
-            ? "exclamationmark.circle" : "arrow.triangle.2.circlepath",
+          icon: displayed == .unavailable ? "circle-alert" : "refresh-cw",
           isWorking: isRetrying || displayed != .unavailable,
           actionTitle: displayed == .unavailable ? String(localized: "Retry") : nil,
           actionEnabled: state == .unavailable,

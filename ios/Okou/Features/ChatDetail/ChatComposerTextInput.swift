@@ -18,7 +18,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var document: Binding<ChatDraftDocument>? = nil
   var searchableRanges: (@MainActor () -> [NSRange])? = nil
   var focusRequested: (@MainActor () -> Void)? = nil
-  var placeholder = "Message Okou"
+  var placeholder = String(localized: "Message Okou")
   var identifier = "message-input"
   var expanded = false
   @Environment(\.isEnabled) private var isEnabled
@@ -36,7 +36,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.delegate = context.coordinator
     view.pasteDelegate = context.coordinator
     view.accessibilityIdentifier = "message-input"
-    view.accessibilityLabel = "Message Okou"
+    view.accessibilityLabel = String(localized: "Message Okou")
     container.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     updateUIView(container, context: context)
     return container
@@ -118,8 +118,12 @@ struct ChatComposerTextInput: UIViewRepresentable {
     let height = uiView.textView.sizeThatFits(
       CGSize(width: width, height: .greatestFiniteMagnitude)
     ).height
+    // Typed text is never cut: any draft keeps its full height (up to six lines, then it
+    // scrolls), focused or not. Only an empty field collapses to one line.
+    let hasText = !(uiView.textView.text ?? "").isEmpty
     return CGSize(
-      width: width, height: isFocused || expanded ? min(max(height, line * 2), line * 6) : line)
+      width: width,
+      height: isFocused || expanded || hasText ? min(max(height, line * 2), line * 6) : line)
   }
 
   static func dismantleUIView(_ container: ComposerInputContainer, coordinator: Coordinator) {
@@ -253,12 +257,14 @@ final class ComposerTextView: UITextView {
 
   init() {
     super.init(frame: .zero, textContainer: nil)
-    placeholder.text = "Message Okou"
+    placeholder.text = String(localized: "Message Okou")
     placeholder.font = ComposerAttributedDocument.font
     placeholder.adjustsFontForContentSizeCategory = true
-    placeholder.textColor = .placeholderText
+    // gray-600 (3.1:1), lighter than Web's muted-foreground: a placeholder reads as a hint.
+    placeholder.textColor = UIColor(OkouColor.placeholder)
     placeholder.isAccessibilityElement = false
     placeholder.isUserInteractionEnabled = false
+    placeholder.lineBreakMode = .byTruncatingTail
     addSubview(placeholder)
     registerForTraitChanges([
       UITraitPreferredContentSizeCategory.self, UITraitUserInterfaceStyle.self,
@@ -441,7 +447,10 @@ final class ComposerTextView: UITextView {
 
   override func layoutSubviews() {
     super.layoutSubviews()
-    placeholder.frame = CGRect(origin: .zero, size: placeholder.sizeThatFits(bounds.size))
+    // Long agent names truncate inside the field instead of running under the controls.
+    let fitted = placeholder.sizeThatFits(bounds.size)
+    placeholder.frame = CGRect(
+      origin: .zero, size: CGSize(width: min(fitted.width, bounds.width), height: fitted.height))
   }
 
   override func canPerformAction(_ action: Selector, withSender sender: Any?) -> Bool {

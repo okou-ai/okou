@@ -7,6 +7,7 @@ struct ChatFeedbackComposer: View {
   let inputID: UUID
   @Binding var isFocused: Bool
   let acceptsImages: Bool
+  var placeholder = String(localized: "Message Okou")
   @State private var focusedBlock: UUID?
   @State private var contentHeight: CGFloat = 24
 
@@ -16,25 +17,26 @@ struct ChatFeedbackComposer: View {
     let appendID = blocks.last(where: { $0.isFeedback || $0.hasParagraph })?.id ?? blocks.last?.id
     ScrollViewReader { scroll in
       ScrollView {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: OkouSpace.md) {
           ForEach(Array(blocks.enumerated()), id: \.element.id) { order, block in
             if block.isFeedback || !block.content.text.isEmpty
               || !block.content.contextLabels.isEmpty || block.id == blocks.last?.id
               || focusedBlock == block.id
             {
-              VStack(alignment: .leading, spacing: 8) {
+              VStack(alignment: .leading, spacing: OkouSpace.sm) {
                 if let quote = block.quote {
-                  HStack(alignment: .top, spacing: 8) {
-                    Text(quote).font(.subheadline).foregroundStyle(.secondary)
+                  HStack(alignment: .top, spacing: OkouSpace.sm) {
+                    Text(quote).font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
                       .frame(maxWidth: .infinity, alignment: .leading)
-                      .padding(.leading, 10)
+                      .padding(.leading, OkouSpace.ten)
                       .overlay(alignment: .leading) {
-                        Rectangle().fill(.quaternary).frame(width: 2)
+                        Rectangle().fill(OkouColor.borderOnFill).frame(width: 2)
                       }
                     Button {
                       state.removeFeedback(block.id)
                     } label: {
-                      Image(systemName: "xmark").frame(width: 44, height: 44)
+                      OkouToolbarIcon("x").frame(
+                        width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
                     }
                     .accessibilityLabel("Remove feedback")
                     .accessibilityIdentifier("remove-feedback-\(block.id)")
@@ -76,7 +78,8 @@ struct ChatFeedbackComposer: View {
                     state.editorBlocks.first(where: { $0.id == block.id })?.searchableRanges ?? []
                   },
                   focusRequested: { state.requestEditorFocus(block.id) },
-                  placeholder: block.isFeedback ? "Ask or comment on this quote" : "Message Okou",
+                  placeholder: block.isFeedback
+                    ? String(localized: "Ask or comment on this quote") : placeholder,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
                   expanded: state.document.hasFeedback
                 )

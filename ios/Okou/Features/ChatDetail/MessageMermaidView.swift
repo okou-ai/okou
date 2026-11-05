@@ -23,17 +23,22 @@ struct MessageMermaidView: View {
       if failed {
         StructuredText(code, parser: PreparedMessageParser(content: original))
       } else {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(alignment: .leading, spacing: OkouSpace.sm) {
           HStack {
-            Label("Diagram", systemImage: "point.3.connected.trianglepath.dotted")
-              .font(.caption).foregroundStyle(.secondary)
+            Label("Diagram", okouSymbol: "workflow")
+              .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
             Spacer()
             Button {
               UIPasteboard.general.string = code
             } label: {
-              Image(systemName: "doc.on.doc")
+              OkouIcon("copy", size: OkouIconSize.inline)
+                .foregroundStyle(OkouColor.mutedForeground)
+                .frame(
+                  width: OkouControl.minimumTarget, height: OkouControl.inlineActionHeight
+                )
+                .contentShape(Rectangle())
             }
-            .buttonStyle(.borderless)
+            .buttonStyle(.plain)
             .accessibilityLabel("Copy diagram source")
           }
           Button {
@@ -43,17 +48,18 @@ struct MessageMermaidView: View {
             ZStack {
               Color.clear
               if let image {
-                Image(uiImage: image).resizable().scaledToFit().padding(8)
+                Image(uiImage: image).resizable().scaledToFit().padding(OkouSpace.sm)
               } else {
                 ProgressView()
               }
             }
             .aspectRatio(4 / 3, contentMode: .fit)
-            .background(Color(uiColor: .secondarySystemBackground))
-            .clipShape(RoundedRectangle(cornerRadius: 10))
+            .background(OkouColor.stateHover)
+            .clipShape(RoundedRectangle(cornerRadius: OkouRadius.control))
             .overlay(alignment: .bottomTrailing) {
-              Image(systemName: "arrow.up.left.and.arrow.down.right")
-                .font(.caption).padding(8).foregroundStyle(.secondary)
+              OkouToolbarIcon("maximize-2").padding(OkouSpace.sm)
+                .foregroundStyle(
+                  OkouColor.mutedForeground)
             }
           }
           .buttonStyle(.plain)
@@ -61,16 +67,16 @@ struct MessageMermaidView: View {
           .accessibilityLabel("Expand diagram")
           DisclosureGroup("Diagram source") {
             ScrollView(.horizontal) {
-              Text(code).font(.system(.caption, design: .monospaced))
-                .textSelection(.enabled).padding(.vertical, 8)
+              Text(code).font(.okou(.caption, design: .monospaced))
+                .textSelection(.enabled).padding(.vertical, OkouSpace.sm)
             }
           }
-          .font(.caption).foregroundStyle(.secondary)
+          .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, OkouSpace.sm)
       }
     }
-    .padding(.bottom, 16)
+    .padding(.bottom, OkouSpace.lg)
     .task(id: Request(code: code, dark: colorScheme == .dark, loads: loadsContent)) {
       guard loadsContent else { return }
       image = nil
@@ -90,35 +96,34 @@ struct MessageMermaidView: View {
       if let image {
         NavigationStack {
           MermaidZoomView(image: image, zoomStep: zoomStep)
-            .background(Color(uiColor: .systemBackground))
+            .background(OkouColor.background)
             .navigationTitle("Diagram")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
-              ToolbarItem(placement: .cancellationAction) {
-                Button("Done") { expanded = false }
-              }
-              ToolbarItem(placement: .primaryAction) {
+              ToolbarItem(placement: .topBarTrailing) {
                 HStack {
                   Button {
                     zoomStep -= 1
                   } label: {
-                    Image(systemName: "minus.magnifyingglass")
+                    OkouToolbarIcon("zoom-out")
                   }
                   .accessibilityLabel("Zoom out")
                   Button {
                     zoomStep += 1
                   } label: {
-                    Image(systemName: "plus.magnifyingglass")
+                    OkouToolbarIcon("zoom-in")
                   }
                   .accessibilityLabel("Zoom in")
                   Button {
                     UIPasteboard.general.string = code
                   } label: {
-                    Image(systemName: "doc.on.doc")
+                    OkouToolbarIcon("copy")
                   }
                   .accessibilityLabel("Copy diagram source")
                 }
               }
+              ToolbarSpacer(.fixed, placement: .topBarTrailing)
+              OkouCloseToolbarItem { expanded = false }
             }
         }
       }

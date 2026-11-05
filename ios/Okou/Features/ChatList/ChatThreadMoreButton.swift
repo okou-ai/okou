@@ -4,11 +4,12 @@ import SwiftUI
 struct ChatThreadMoreButton: View {
   let store: WorkspaceStore
   let threadID: String
+  let openAgent: () -> Void
 
   var body: some View {
     if store.list.threads.contains(where: { $0.id == threadID }) {
-      ChatThreadMoreControl(store: store, threadID: threadID)
-        .frame(width: 44, height: 44)
+      ChatThreadMoreControl(store: store, threadID: threadID, openAgent: openAgent)
+        .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
     }
   }
 }
@@ -16,19 +17,18 @@ struct ChatThreadMoreButton: View {
 private struct ChatThreadMoreControl: UIViewRepresentable {
   let store: WorkspaceStore
   let threadID: String
+  let openAgent: () -> Void
 
   func makeUIView(context: Context) -> UIButton {
     let button = UIButton(type: .system)
     var configuration = UIButton.Configuration.glass()
     configuration.cornerStyle = .capsule
     configuration.contentInsets = .zero
-    configuration.image = UIImage(systemName: "ellipsis")
-    configuration.preferredSymbolConfigurationForImage = UIImage.SymbolConfiguration(
-      pointSize: 19, weight: .medium)
+    configuration.image = OkouIcon.uiImage("ellipsis")
     button.configuration = configuration
     button.showsMenuAsPrimaryAction = true
     button.accessibilityIdentifier = "chat-thread-more"
-    button.accessibilityLabel = "More chat actions"
+    button.accessibilityLabel = String(localized: "More chat actions")
     return button
   }
 
@@ -38,8 +38,8 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
     let pinned = thread.pinnedAt != nil
     let enabled = !store.needsUpgrade && list.canUpdate(threadID)
     let pin = UIAction(
-      title: pinned ? "Unpin chat" : "Pin chat",
-      image: UIImage(systemName: pinned ? "pin.slash" : "pin"),
+      title: pinned ? String(localized: "Unpin chat") : String(localized: "Pin chat"),
+      image: OkouIcon.uiImage(pinned ? "pin-off" : "pin"),
       identifier: UIAction.Identifier("chat-pin"),
       attributes: !store.needsUpgrade && list.canPin(threadID) ? [] : .disabled
     ) { _ in
@@ -47,16 +47,62 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
       Task { await list.togglePinned(threadID) }
     }
     let rename = UIAction(
-      title: "Rename", image: UIImage(systemName: "pencil"),
+      title: String(localized: "Rename"), image: OkouIcon.uiImage("pencil"),
       identifier: UIAction.Identifier("chat-rename"),
       attributes: enabled && !list.isSavingRename ? [] : .disabled
     ) { _ in list.beginRename(threadID) }
-    var actions: [UIMenuElement] = [pin, rename]
+    // The same status markers the web offers; they live in the title so both clients agree.
+    let currentStatus = thread.titleParts.emoji
+    var statusActions: [UIMenuElement] = ChatThreadStatus.allCases.map { status in
+      UIAction(
+        title: "\(status.rawValue)  \(status.label)",
+        identifier: UIAction.Identifier("chat-status-\(status.label)"),
+        attributes: enabled ? [] : .disabled,
+        state: currentStatus == status.rawValue ? .on : .off
+      ) { _ in
+        guard let current = list.threads.first(where: { $0.id == threadID }) else { return }
+        Task { await list.rename(current, title: current.title(withStatus: status.rawValue)) }
+      }
+    }
+    if currentStatus != nil {
+      statusActions.append(
+        UIMenu(
+          options: .displayInline,
+          children: [
+            UIAction(
+              title: String(localized: "Clear status"), image: OkouIcon.uiImage("x"),
+              identifier: UIAction.Identifier("chat-status-clear"),
+              attributes: enabled ? [] : .disabled
+            ) { _ in
+              guard let current = list.threads.first(where: { $0.id == threadID }) else { return }
+              Task { await list.rename(current, title: current.title(withStatus: nil)) }
+            }
+          ]))
+    }
+    let status = UIMenu(
+      title: String(localized: "Status"), image: OkouIcon.uiImage("circle-check"),
+      children: statusActions)
+    let openWeb = UIAction(
+      title: String(localized: "Open on web"), image: OkouIcon.uiImage("arrow-up-right"),
+      identifier: UIAction.Identifier("chat-open-web")
+    ) { _ in
+      UIApplication.shared.open(store.webURL.appending(path: "chats/\(threadID)"))
+    }
+    // The header has no title; the agent doing the work is named first in its menu.
+    let agentName =
+      store.list.agents.first(where: { $0.agentId == thread.agentID })?.displayName ?? "Okou"
+    let agent = UIAction(
+      title: agentName, subtitle: String(localized: "Agent profile"),
+      image: OkouIcon.uiImage("bot"), identifier: UIAction.Identifier("chat-agent")
+    ) { _ in openAgent() }
+    var actions: [UIMenuElement] = [
+      UIMenu(options: .displayInline, children: [agent]), pin, rename, status, openWeb,
+    ]
     if list.canMuteChats || thread.isMuted {
       actions.append(
         UIAction(
-          title: thread.isMuted ? "Unmute chat" : "Mute chat",
-          image: UIImage(systemName: thread.isMuted ? "bell" : "bell.slash"),
+          title: thread.isMuted ? String(localized: "Unmute chat") : String(localized: "Mute chat"),
+          image: OkouIcon.uiImage(thread.isMuted ? "bell" : "bell-off"),
           identifier: UIAction.Identifier("chat-mute"),
           attributes: !store.needsUpgrade && list.canMute(threadID) ? [] : .disabled
         ) { _ in
@@ -66,8 +112,9 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
     }
     if list.canArchiveChats {
       let archive = UIAction(
-        title: thread.isArchived ? "Unarchive chat" : "Archive chat",
-        image: UIImage(systemName: thread.isArchived ? "archivebox.fill" : "archivebox"),
+        title: thread.isArchived
+          ? String(localized: "Unarchive chat") : String(localized: "Archive chat"),
+        image: OkouIcon.uiImage(thread.isArchived ? "archive-restore" : "archive"),
         identifier: UIAction.Identifier("chat-archive"),
         attributes: enabled && (thread.isArchived || !store.isCreating) ? [] : .disabled
       ) { _ in
@@ -78,16 +125,17 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
       }
       actions.append(UIMenu(options: .displayInline, children: [archive]))
     }
-    let menu = UIMenu(children: actions)
+    let menu = UIMenu(title: thread.displayTitle, children: actions)
     button.menu = menu
     button.contextMenuInteraction?.updateVisibleMenu { _ in menu }
-    button.tintColor = .label
+    button.tintColor = UIColor(OkouColor.foreground)
     // A pending action only disables the relevant menu items, never the entry.
     button.isEnabled = !store.needsUpgrade
     button.accessibilityValue =
       [
-        pinned ? "Pinned" : "Not pinned", thread.isMuted ? "Muted" : nil,
-        thread.isArchived ? "Archived" : nil,
+        pinned ? String(localized: "Pinned") : String(localized: "Not pinned"),
+        thread.isMuted ? String(localized: "Muted") : nil,
+        thread.isArchived ? String(localized: "Archived") : nil,
       ].compactMap { $0 }.joined(separator: ", ")
   }
 }

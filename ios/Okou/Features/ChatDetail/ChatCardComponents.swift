@@ -1,41 +1,29 @@
 import SwiftUI
 
 struct ChatCardSurface: ViewModifier {
-  @Environment(\.colorScheme) private var colorScheme
-
   func body(content: Content) -> some View {
-    content
-      .background(
-        Color(uiColor: colorScheme == .dark ? .secondarySystemBackground : .systemBackground),
-        in: RoundedRectangle(cornerRadius: 16)
-      )
-      .overlay {
-        RoundedRectangle(cornerRadius: 16)
-          .strokeBorder(Color(uiColor: .separator).opacity(0.4), lineWidth: 0.5)
-          .allowsHitTesting(false)
-      }
+    content.modifier(OkouSurfaceStyle(radius: OkouRadius.chat))
   }
 }
 
+/// A transcript card's heading, as the web draws it (`AssistantErrorCard`): a 16 pt glyph in
+/// `brand-text` on the title's first line, no tile behind it; the title in callout medium and
+/// every detail line in one supporting style. Callers do not restyle the details.
 struct ChatCardHeader<Details: View>: View {
   let title: String
-  let systemImage: String
+  let icon: String
   var titleLineLimit: Int? = nil
   @ViewBuilder let details: () -> Details
-  @ScaledMetric(relativeTo: .subheadline) private var titleSize: CGFloat = 15
-  @ScaledMetric(relativeTo: .subheadline) private var bodySize: CGFloat = 14
-  @ScaledMetric(relativeTo: .body) private var iconSize: CGFloat = 40
-  @ScaledMetric(relativeTo: .body) private var symbolSize: CGFloat = 22
+  /// One line of callout Geist, so the glyph centres on the title's first line.
+  @ScaledMetric(relativeTo: .callout) private var titleLineHeight: CGFloat = 21
 
   var body: some View {
-    HStack(spacing: 12) {
-      Image(systemName: systemImage)
-        .font(.system(size: symbolSize))
-        .foregroundStyle(.secondary)
-        .frame(width: iconSize, height: iconSize)
-        .background(Color(uiColor: .tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8))
+    HStack(alignment: .top, spacing: OkouSpace.ten) {
+      OkouIcon(icon, size: OkouIconSize.inline)
+        .foregroundStyle(OkouColor.brandText)
+        .frame(height: titleLineHeight)
         .accessibilityHidden(true)
-      VStack(alignment: .leading, spacing: 2) {
+      VStack(alignment: .leading, spacing: OkouSpace.two) {
         Group {
           if let titleLineLimit {
             Text(title).lineLimit(titleLineLimit)
@@ -43,8 +31,11 @@ struct ChatCardHeader<Details: View>: View {
             Text(title)
           }
         }
-        .font(.system(size: titleSize, weight: .medium)).foregroundStyle(.primary)
-        details().font(.system(size: bodySize)).foregroundStyle(.secondary)
+        .font(.okou(.callout).weight(.medium))
+        .foregroundStyle(OkouColor.foreground)
+        details()
+          .font(.okou(.subheadline))
+          .foregroundStyle(OkouColor.mutedForeground)
       }
       .fixedSize(horizontal: false, vertical: true)
       .frame(maxWidth: .infinity, alignment: .leading)
@@ -57,7 +48,7 @@ struct ChatActionCard<Information: View, Actions: View>: View {
   @ViewBuilder let actions: () -> Actions
   @Environment(\.dynamicTypeSize) private var dynamicTypeSize
   @ScaledMetric(relativeTo: .body) private var minimumContentHeight: CGFloat = 120
-  @ScaledMetric(relativeTo: .body) private var minimumActionHeight: CGFloat = 44
+  @ScaledMetric(relativeTo: .body) private var minimumActionHeight = OkouControl.minimumTarget
   @ScaledMetric(relativeTo: .body) private var horizontalActionWidth: CGFloat = 208
 
   var body: some View {
@@ -66,7 +57,7 @@ struct ChatActionCard<Information: View, Actions: View>: View {
         verticalContent
       } else {
         ViewThatFits(in: .horizontal) {
-          HStack(spacing: 12) {
+          HStack(spacing: OkouSpace.md) {
             information().frame(maxWidth: .infinity, alignment: .leading)
             actions().frame(width: horizontalActionWidth)
           }
@@ -77,14 +68,14 @@ struct ChatActionCard<Information: View, Actions: View>: View {
       }
     }
     .buttonStyle(ChatCardButtonStyle())
-    .padding(.horizontal, 16)
-    .padding(.vertical, 12)
+    .padding(.horizontal, OkouSpace.lg)
+    .padding(.vertical, OkouSpace.md)
     .frame(maxWidth: .infinity, alignment: .leading)
     .modifier(ChatCardSurface())
   }
 
   private var verticalContent: some View {
-    VStack(alignment: .leading, spacing: 12) {
+    VStack(alignment: .leading, spacing: OkouSpace.md) {
       information().frame(minHeight: 64, alignment: .leading)
       actions().frame(minHeight: minimumActionHeight, alignment: .leading)
     }
@@ -92,32 +83,76 @@ struct ChatActionCard<Information: View, Actions: View>: View {
   }
 }
 
+/// A card's actions: the web's small outline button (`gray-400` edge, background fill), the
+/// card's one committing action filled with `primary`, or a bare text `detail`. Pressing lays
+/// the pressed state over the fill; a destructive role (Discard, Deny) is drawn in red.
 struct ChatCardButtonStyle: ButtonStyle {
-  enum Emphasis { case standard, detail }
+  /// `primary` is the card's one committing action, such as Send or Allow.
+  enum Emphasis { case standard, detail, primary }
   var emphasis: Emphasis = .standard
   @Environment(\.isEnabled) private var isEnabled
-  @ScaledMetric(relativeTo: .subheadline) private var fontSize: CGFloat = 15
-  @ScaledMetric(relativeTo: .body) private var minimumHeight: CGFloat = 44
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @ScaledMetric(relativeTo: .body) private var minimumHeight = OkouControl.minimumTarget
 
   func makeBody(configuration: Configuration) -> some View {
-    configuration.label
-      .font(.system(size: fontSize, weight: .medium))
-      .foregroundStyle(isEnabled ? Color.primary : Color.secondary)
-      .padding(.horizontal, 12)
-      .padding(.vertical, 8)
-      .frame(maxWidth: emphasis == .standard ? .infinity : nil, minHeight: minimumHeight)
-      .background(
-        emphasis == .standard ? Color(uiColor: .systemBackground) : .clear,
-        in: RoundedRectangle(cornerRadius: 8)
-      )
+    let shape = RoundedRectangle(cornerRadius: OkouRadius.small, style: .continuous)
+    var width: CGFloat? = .infinity
+    if emphasis == .detail {
+      width = nil
+    }
+    return configuration.label
+      .font(.okou(.subheadline).weight(.medium))
+      .foregroundStyle(labelColor(role: configuration.role))
+      .padding(.horizontal, OkouSpace.md)
+      .padding(.vertical, OkouSpace.sm)
+      .frame(maxWidth: width, minHeight: minimumHeight)
+      .background(fill(pressed: configuration.isPressed), in: shape)
       .overlay {
         if emphasis == .standard {
-          RoundedRectangle(cornerRadius: 8)
-            .strokeBorder(Color(uiColor: .separator).opacity(0.4), lineWidth: 0.5)
+          shape
+            .fill(configuration.isPressed ? OkouColor.statePressed : Color.clear)
+            .allowsHitTesting(false)
+          shape
+            .strokeBorder(OkouColor.gray400, lineWidth: OkouSpace.hairline)
             .allowsHitTesting(false)
         }
       }
-      .contentShape(RoundedRectangle(cornerRadius: 8))
-      .opacity(configuration.isPressed ? 0.65 : 1)
+      .opacity(opacity(pressed: configuration.isPressed))
+      .contentShape(shape)
+      .animation(reduceMotion ? nil : OkouMotion.press, value: configuration.isPressed)
+  }
+
+  private func labelColor(role: ButtonRole?) -> Color {
+    if emphasis == .primary {
+      return OkouColor.primaryForeground
+    }
+    if role == .destructive {
+      return OkouColor.destructive
+    }
+    return OkouColor.foreground
+  }
+
+  private func fill(pressed: Bool) -> Color {
+    switch emphasis {
+    case .primary:
+      if pressed {
+        return OkouColor.primaryPressed
+      }
+      return OkouColor.primary
+    case .standard:
+      return OkouColor.background
+    case .detail:
+      return Color.clear
+    }
+  }
+
+  private func opacity(pressed: Bool) -> Double {
+    if !isEnabled {
+      return 0.5
+    }
+    if emphasis == .detail && pressed {
+      return 0.6
+    }
+    return 1
   }
 }

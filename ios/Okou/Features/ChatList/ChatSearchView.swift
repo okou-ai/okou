@@ -19,65 +19,82 @@ struct ChatSearchView: View {
     NavigationStack {
       List {
         if workspace.list.isLoading && workspace.list.threads.isEmpty {
-          ProgressView("Loading chats…")
+          loadingRow("Loading chats…")
         } else if let error = workspace.list.error {
-          VStack(alignment: .leading, spacing: 8) {
-            Text(error).foregroundStyle(.secondary)
-            Button("Reload chats") { Task { await workspace.list.refresh() } }
+          OkouLoadErrorRow(message: error, actionTitle: "Reload chats") {
+            await workspace.list.refresh()
           }
         }
-        if let error = search.openingError { Text(error).foregroundStyle(.secondary) }
+        if let error = search.openingError {
+          Text(error).foregroundStyle(OkouColor.mutedForeground)
+        }
         let titles = search.titleResults(in: titleThreads)
         if !titles.isEmpty {
-          Section(search.keyword.isEmpty ? "Recent chats" : "Chat titles") {
+          Section {
             ForEach(titles) { thread in
               resultButton(threadID: thread.id) {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: OkouSpace.xs) {
                   Text(thread.displayTitle).lineLimit(1)
-                  Text(agentName(thread.agentID)).font(.caption).foregroundStyle(.secondary)
+                  Text(agentName(thread.agentID)).font(.okou(.caption)).foregroundStyle(
+                    OkouColor.mutedForeground)
                 }
               }
             }
+          } header: {
+            Text(search.keyword.isEmpty ? LocalizedStringKey("Recent chats") : "Chat titles")
+              .okouSectionHeader()
           }
         }
         if !search.keyword.isEmpty {
-          Section("Messages") {
-            ForEach(search.messages) { result in
-              resultButton(threadID: result.chatThreadId) {
-                VStack(alignment: .leading, spacing: 4) {
+          Section {
+            // One row per chat: several matches in the same chat are counted, not repeated.
+            ForEach(messageGroups, id: \.result.chatThreadId) { group in
+              resultButton(threadID: group.result.chatThreadId) {
+                VStack(alignment: .leading, spacing: OkouSpace.xs) {
                   Text(
-                    workspace.list.threads.first { $0.id == result.chatThreadId }?.displayTitle
-                      ?? result.agentName
+                    workspace.list.threads.first { $0.id == group.result.chatThreadId }?
+                      .displayTitle ?? group.result.agentName
                   )
                   .lineLimit(1)
-                  Text(result.snippet).font(.subheadline).foregroundStyle(.secondary).lineLimit(2)
-                  Text(result.matchedMessage.createdAt, style: .date)
-                    .font(.caption).foregroundStyle(.secondary)
+                  Text(group.result.snippet).font(.okou(.subheadline)).foregroundStyle(
+                    OkouColor.mutedForeground
+                  ).lineLimit(2)
+                  HStack(spacing: OkouSpace.xs) {
+                    Text(group.result.matchedMessage.createdAt, style: .date)
+                    if group.count > 1 {
+                      Text(verbatim: "·")
+                      Text("\(group.count) matches")
+                    }
+                  }
+                  .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
                 }
               }
-              .accessibilityIdentifier("search-message-\(result.id)")
+              .accessibilityIdentifier("search-message-\(group.result.id)")
             }
             if search.isLoading {
-              ProgressView("Searching messages…")
+              loadingRow("Searching messages…")
             } else if let error = search.error {
-              VStack(alignment: .leading, spacing: 8) {
-                Text(error).foregroundStyle(.secondary)
-                Button("Try again") { search.retry() }
-              }
+              OkouLoadErrorRow(message: error) { search.retry() }
             } else if search.messages.isEmpty {
               Text(titles.isEmpty ? "No matching chats or messages." : "No matching messages.")
-                .foregroundStyle(.secondary)
+                .foregroundStyle(OkouColor.mutedForeground)
             }
-          }
-          Section {
-            Text("Recent messages may take time to appear in search.")
-              .font(.footnote).foregroundStyle(.secondary)
+          } header: {
+            Text("Messages").okouSectionHeader()
+          } footer: {
+            Group {
+              Text("Recent messages may take time to appear in search.")
+                .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+
+            }
+            .okouSectionNote()
           }
         } else {
           Text("Search chat titles and messages across this workspace.")
-            .font(.footnote).foregroundStyle(.secondary)
+            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
         }
       }
+      .okouGroupedBackground()
       .navigationTitle("Search chats")
       .navigationBarTitleDisplayMode(.inline)
       .searchable(
@@ -85,11 +102,27 @@ struct ChatSearchView: View {
         placement: .navigationBarDrawer(displayMode: .always), prompt: "Search workspace chats"
       )
       .toolbar {
-        ToolbarItem(placement: .cancellationAction) {
-          Button("Done") { search.dismiss() }
-        }
+        OkouCloseToolbarItem { search.dismiss() }
       }
     }
+  }
+
+  private var messageGroups: [(result: ChatSearchResult, count: Int)] {
+    var order: [String] = []
+    var groups: [String: (result: ChatSearchResult, count: Int)] = [:]
+    for result in search.messages {
+      if let existing = groups[result.chatThreadId] {
+        groups[result.chatThreadId] = (existing.result, existing.count + 1)
+      } else {
+        order.append(result.chatThreadId)
+        groups[result.chatThreadId] = (result, 1)
+      }
+    }
+    return order.compactMap { groups[$0] }
+  }
+
+  private func loadingRow(_ title: LocalizedStringKey) -> some View {
+    OkouLoadingRow(title)
   }
 
   private func agentName(_ id: String) -> String {

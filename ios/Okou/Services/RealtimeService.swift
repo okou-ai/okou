@@ -2,9 +2,19 @@ import Ably
 import ChatData
 import Foundation
 
-/// Notifications invalidate durable API reads; no transient output is rendered.
+/// Notifications invalidate durable API reads. The one transient exception is a running
+/// run's text output, which streams on its own channel until the durable event replaces it.
 @MainActor
 final class RealtimeService {
+  /// One chunk of an assistant message while its run is live (`sessionOutputDeltaSchema`).
+  struct RunOutputDelta: Sendable {
+    let threadID: String
+    let runID: String
+    let eventID: String
+    let chunkIndex: Int
+    let delta: String
+  }
+
   private let userID: String
   private let workspaceID: String
   private let tokenProvider: @Sendable () async throws -> Data
@@ -135,6 +145,46 @@ final class RealtimeService {
     guard let realtime, realtime.connection.state == .connected else { return }
     let presence = realtime.channels.get("user-org-foreground:\(userID):\(workspaceID)").presence
     if isForeground { presence.enter(nil) } else { presence.leave(nil) }
+  }
+
+  /// Streams one run's text. The channel and capability are the ones the web uses; the
+  /// returned closure detaches it. Deltas carry the id of the event that will persist them.
+  func subscribeRunOutput(
+    runID: String, handler: @escaping @MainActor @Sendable (RunOutputDelta) -> Void
+  ) -> (@MainActor () -> Void)? {
+    guard let realtime else { return nil }
+    let name = "run-output:\(userID):\(workspaceID):\(runID)"
+    let channel = realtime.channels.get(name)
+    let generation = generation
+    channel.subscribe(runID) { [weak self] message in
+      guard let delta = Self.decodeDelta(message.data) else { return }
+      Task { @MainActor [weak self] in
+        guard let self, self.generation == generation else { return }
+        handler(delta)
+      }
+    }
+    return { [weak self] in
+      channel.unsubscribe()
+      channel.detach()
+      self?.realtime?.channels.release(name)
+    }
+  }
+
+  nonisolated private static func decodeDelta(_ data: Any?) -> RunOutputDelta? {
+    var object = data as? [String: Any]
+    if object == nil, let text = data as? String,
+      let json = try? JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any]
+    {
+      object = json
+    }
+    guard let object, let threadID = object["threadId"] as? String,
+      let runID = object["runId"] as? String, let eventID = object["eventId"] as? String,
+      let delta = object["delta"] as? String,
+      let chunkIndex = (object["chunkIndex"] as? NSNumber)?.intValue, chunkIndex >= 0
+    else { return nil }
+    return RunOutputDelta(
+      threadID: threadID.lowercased(), runID: runID.lowercased(), eventID: eventID.lowercased(),
+      chunkIndex: chunkIndex, delta: delta)
   }
 
   func stop() {

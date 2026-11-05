@@ -8,6 +8,15 @@ final class AuthenticationService {
   struct Workspace: Identifiable, Equatable, Sendable {
     let id: String
     let name: String
+    let imageURL: URL?
+    let hasImage: Bool
+
+    init(id: String, name: String, imageURL: URL? = nil, hasImage: Bool = false) {
+      self.id = id
+      self.name = name
+      self.imageURL = imageURL
+      self.hasImage = hasImage
+    }
   }
 
   enum AuthenticationError: LocalizedError {
@@ -108,6 +117,33 @@ final class AuthenticationService {
 
   var firstName: String? {
     clerk?.user?.firstName
+  }
+
+  struct Profile: Equatable {
+    let name: String?
+    let email: String?
+    let imageURL: URL?
+    let hasImage: Bool
+  }
+
+  var profile: Profile? {
+    guard let user = clerk?.user else { return nil }
+    let name = [user.firstName, user.lastName].compactMap { $0 }.joined(separator: " ")
+    return Profile(
+      name: name.isEmpty ? nil : name, email: user.primaryEmailAddress?.emailAddress,
+      imageURL: URL(string: user.imageUrl), hasImage: user.hasImage)
+  }
+
+  /// Clerk's instance setting that lets a user delete their own account from the client.
+  var canDeleteAccount: Bool { clerk?.user?.deleteSelfEnabled == true }
+
+  /// Deletes the signed-in user in Clerk; the API cleans up through its `user.deleted` hook.
+  func deleteAccount() async throws {
+    guard let clerk, let user = clerk.user else { throw AuthenticationError.notConfigured }
+    try await user.delete()
+    try? await clerk.auth.signOut()
+    clearWorkspaces()
+    errorMessage = nil
   }
 
   var activeWorkspaceID: String? {
@@ -234,7 +270,11 @@ final class AuthenticationService {
         if response.data.isEmpty || memberships.count >= response.totalCount { break }
         page += 1
       }
-      workspaces = memberships.map { Workspace(id: $0.organization.id, name: $0.organization.name) }
+      workspaces = memberships.map {
+        Workspace(
+          id: $0.organization.id, name: $0.organization.name,
+          imageURL: URL(string: $0.organization.imageUrl), hasImage: $0.organization.hasImage)
+      }
       workspacesSessionID = session.id
       workspacesUserID = user.id
       errorMessage = nil

@@ -10,11 +10,11 @@ struct ConversationActivityLabel: View {
 
   var body: some View {
     let text = state == .running ? summary.text ?? state.label : state.label
-    HStack(spacing: 8) {
-      ProgressView().controlSize(.small).frame(width: 16).accessibilityHidden(true)
+    HStack(spacing: OkouSpace.sm) {
+      OkouRunningIndicator().frame(width: 16)
       Text(verbatim: text)
-        .font(.subheadline)
-        .foregroundStyle(.secondary)
+        .font(.okou(.subheadline))
+        .foregroundStyle(OkouColor.mutedForeground)
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
     }

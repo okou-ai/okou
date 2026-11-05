@@ -1,39 +1,36 @@
+import ChatDomain
 import SwiftUI
 
+/// Glass controls over the transcript and no title: the menu, then the chat's model as a
+/// capsule (as Kimi and ChatGPT place it), and the chat's "…" menu on the right. The selected
+/// row in the sidebar says which chat this is, and the transcript's soft edge blurs under the
+/// bar. The agent's profile is in the "…" menu (and on the home greeting's avatar).
 struct ChatWorkspaceHeader: View {
   let store: WorkspaceStore
   let height: CGFloat
   let openSidebar: () -> Void
+  let openAgent: () -> Void
+  /// The model of the chat on screen, or of the next new chat on the home screen.
+  var modelSelection: ChatModelSelectionStore? = nil
 
   var body: some View {
-    ZStack {
-      Text(
-        store.newChatSubmission?.isPresenting == true
-          ? "New chat"
-          : store.list.threads.first(where: { $0.id == store.selectedThreadID })?.displayTitle
-            ?? store.currentAgentName
-      )
-      .font(.system(size: 17, weight: .semibold))
-      .lineLimit(1)
-      .padding(.horizontal, 66)
-      HStack {
-        Button(action: openSidebar) {
-          Image(systemName: "line.3.horizontal")
-            .font(.system(size: 19, weight: .medium))
-            .frame(width: 32, height: 32)
-        }
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
-        .accessibilityLabel("Open sidebar")
-        .accessibilityIdentifier("open-sidebar")
-        Spacer()
-        if let thread = store.list.threads.first(where: { $0.id == store.selectedThreadID }) {
-          ChatThreadMoreButton(store: store, threadID: thread.id)
-        }
+    HStack(spacing: OkouSpace.sm) {
+      Button(action: openSidebar) {
+        OkouToolbarIcon("menu").modifier(OkouGlassControl(shape: .circle))
+      }
+      .accessibilityLabel("Open sidebar")
+      .accessibilityIdentifier("open-sidebar")
+      if let modelSelection {
+        ChatModelPickerButton(selection: modelSelection)
+          .disabled(store.needsUpgrade)
+      }
+      Spacer(minLength: OkouSpace.sm)
+      if let threadID = store.selectedThreadID {
+        ChatThreadMoreButton(store: store, threadID: threadID, openAgent: openAgent)
       }
     }
     .buttonStyle(.plain)
-    .padding(.horizontal, 16)
+    .padding(.horizontal, OkouSpace.lg)
     .frame(height: height)
   }
 }

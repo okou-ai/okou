@@ -68,8 +68,8 @@ struct NewChatSubmissionView: View {
         message: submission.message.message, webURL: webURL, viewer: submission.viewer,
         loadsAttachments: true, sendTransition: submission.transition
       )
-      .padding(.horizontal, 20)
-      .padding(.top, 20)
+      .padding(.horizontal, OkouSpace.xl)
+      .padding(.top, OkouSpace.xl)
     }
     .defaultScrollAnchor(.bottom, for: .initialOffset)
     .defaultScrollAnchor(.top, for: .alignment)

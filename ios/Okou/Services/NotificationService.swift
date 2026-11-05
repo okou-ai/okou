@@ -291,6 +291,24 @@ final class NotificationService {
     await refreshNotificationState(userID: nil)
   }
 
+  /// Asks once, right after a message is sent: the first moment a notification has a job
+  /// ("your chat finished"), instead of waiting for the user to find Settings.
+  func requestAfterSend() async {
+    guard status == .notDetermined else { return }
+    await enable()
+  }
+
+  /// Like sign-out, the device binding goes first; then the account itself is deleted.
+  func deleteAccount(authentication: AuthenticationService) async throws {
+    workspaceNavigation?.cancel()
+    workspaceNavigation = nil
+    pendingDestination = nil
+    try? await unregister()
+    try await authentication.deleteAccount()
+    await update(workspace: nil)
+    await refreshNotificationState(userID: nil)
+  }
+
   func unregister() async throws {
     guard let workspace, binding != nil || defaults.bool(forKey: "ios-push-registration-attempted")
     else { return }

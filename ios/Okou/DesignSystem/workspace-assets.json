@@ -1,0 +1,49 @@
+{
+  "sources": {
+    "turbo/packages/core/src/workspace-logo.ts": "ff398783843854ba408d8bcb9e1b927db5f58a4f270d27aa3a0ca71987a499d7",
+    "turbo/packages/core/src/agent-avatar-texture.ts": "f1538a6a5a86d8b364954303e45fd62fe7bc2db71536569271193596d10602bb",
+    "turbo/apps/platform/src/views/components/okou-logomark.tsx": "f81dcb50fff1e7a293dcec6efb731d55bea424964c766643dec5e3796701c92b"
+  },
+  "assets": [
+    {
+      "name": "WorkspaceDefault-0",
+      "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v1-brand-tiles-20260921/dash-pink-pink.svg",
+      "sha256": "865d62ce5b09262655461a489b0c7bfeaad270078299385940c8e68da7065d4d"
+    },
+    {
+      "name": "WorkspaceDefault-1",
+      "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v2-tonal-dark-grounds-20261028/dash-coral-red.svg",
+      "sha256": "b94af4419d1e333599856ad2434e25297ff2d94aeeb33be291117f8b285a0180"
+    },
+    {
+      "name": "WorkspaceDefault-2",
+      "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v1-brand-tiles-20260921/drop-lightblue-blue.svg",
+      "sha256": "ebee3c409a56560d7ea8aa4ae7b52a751738d707ee11b096cf3099536a17e655"
+    },
+    {
+      "name": "WorkspaceDefault-3",
+      "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v2-tonal-dark-grounds-20261028/drop-blue-navy.svg",
+      "sha256": "9407d7a108bcc9f227e4ade5699d1bf92f03c67d5c25628a7a3c9e0a6c4ae344"
+    },
+    {
+      "name": "WorkspaceDefault-4",
+      "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v1-brand-tiles-20260921/loop-yellow-orange.svg",
+      "sha256": "985ff4ca7b4dc31e7fead40f1c8a45bd78676c3cb05f30669fcd8756021d8310"
+    },
+    {
+      "name": "WorkspaceDefault-5",
+      "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v2-tonal-dark-grounds-20261028/loop-orange-amber.svg",
+      "sha256": "5d01b5bffe091d355d421e139510c3365ea61e72162d499fcfdc359c01e3870b"
+    },
+    {
+      "name": "WorkspaceDefault-6",
+      "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v1-brand-tiles-20260921/stripe-lime-green.svg",
+      "sha256": "8cc1bcf4adc8066d2a458f26381741d90af78f0639779c7c34cf425592d5dee0"
+    },
+    {
+      "name": "WorkspaceDefault-7",
+      "url": "https://static.vm0.io/platform/views/zero-page/assets/avatar-texture/v2-tonal-dark-grounds-20261028/stripe-teal-pine.svg",
+      "sha256": "4ddd17e8e2bbed0e3f1e1b7e7670ddcbe83862478adfcc180187b064b766d103"
+    }
+  ]
+}

@@ -15,6 +15,7 @@ struct MessageBodyView: View, Equatable {
   let actionContext: MessageActionContext?
   let connectorActions: ConnectorActionStore?
   let permissionActions: PermissionActionRegistry?
+  let approvals: ApprovalCardRegistry?
   let artifacts: MessageArtifactStore?
   let artifactImageSources: [String]
   let loadsActions: Bool
@@ -32,7 +33,7 @@ struct MessageBodyView: View, Equatable {
   init(
     text: String, baseURL: URL, markdown: MessageMarkdownCache,
     actionContext: MessageActionContext? = nil, connectorActions: ConnectorActionStore? = nil,
-    permissionActions: PermissionActionRegistry? = nil,
+    permissionActions: PermissionActionRegistry? = nil, approvals: ApprovalCardRegistry? = nil,
     artifacts: MessageArtifactStore? = nil, artifactImageSources: [String] = [],
     loadsActions: Bool = false, loadsDiagrams: Bool = true
   ) {
@@ -42,6 +43,7 @@ struct MessageBodyView: View, Equatable {
     self.actionContext = actionContext
     self.connectorActions = connectorActions
     self.permissionActions = permissionActions
+    self.approvals = approvals
     self.artifacts = artifacts
     self.artifactImageSources = artifactImageSources
     self.loadsActions = loadsActions
@@ -60,7 +62,7 @@ struct MessageBodyView: View, Equatable {
   nonisolated static func == (lhs: Self, rhs: Self) -> Bool {
     lhs.text == rhs.text && lhs.baseURL == rhs.baseURL && lhs.markdown === rhs.markdown
       && lhs.actionContext == rhs.actionContext && lhs.connectorActions === rhs.connectorActions
-      && lhs.permissionActions === rhs.permissionActions
+      && lhs.permissionActions === rhs.permissionActions && lhs.approvals === rhs.approvals
       && lhs.artifacts === rhs.artifacts && lhs.artifactImageSources == rhs.artifactImageSources
       && lhs.loadsActions == rhs.loadsActions
       && lhs.loadsDiagrams == rhs.loadsDiagrams
@@ -78,9 +80,8 @@ struct MessageBodyView: View, Equatable {
       }
     }
     // Keep overrides closest to the content; the bundled style sets the same environment keys.
-    .textual.codeBlockStyle(MessageCodeBlockStyle())
     .textual.tableStyle(.overflow)
-    .textual.structuredTextStyle(.gitHub)
+    .modifier(OkouMarkdownStyle())
     .textual.imageAttachmentLoader(
       MessageImageLoader(baseURL: baseURL, artifacts: artifacts, loadsContent: loadsActions)
     )
@@ -118,6 +119,8 @@ private struct MessageRenderUnitView: View {
   let message: MessageBodyView
   let resources: [ChatArtifact]
   let measurement: MessageUnitMeasurements.Session?
+  /// VoiceOver reads inline code as text; the drawn chips are for sighted reading.
+  @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
   var body: some View {
     if let measurement, let key = unit.sizeKey {
@@ -145,8 +148,11 @@ private struct MessageRenderUnitView: View {
         }
       }
     case .markdown(let fragment, _):
-      StructuredText(message.text, parser: PreparedMessageParser(content: fragment))
-        .id(fragment)
+      StructuredText(
+        message.text, parser: PreparedMessageParser(content: fragment, drawsInlineCode: !voiceOver)
+      )
+      .id(fragment)
+      .id(voiceOver)
     case .connector(let action):
       if let store = message.connectorActions {
         ConnectorActionCard(action: action, store: store, loadsState: message.loadsActions)
@@ -161,15 +167,22 @@ private struct MessageRenderUnitView: View {
       }
     case .unavailablePermission:
       ChatCardHeader(
-        title: String(localized: "Permission request unavailable"),
-        systemImage: "exclamationmark.shield"
+        title: String(localized: "Permission request unavailable"), icon: "shield-alert"
       ) {
         EmptyView()
       }
-      .padding(.horizontal, 16)
-      .padding(.vertical, 12)
+      .padding(.horizontal, OkouSpace.lg)
+      .padding(.vertical, OkouSpace.md)
       .frame(maxWidth: .infinity, minHeight: 88, alignment: .leading)
       .modifier(ChatCardSurface())
+    case .mailDraft(let id):
+      if let approvals = message.approvals {
+        MailDraftCard(store: approvals.mailDraft(id), loadsState: message.loadsActions)
+      }
+    case .shellAuthorization(let id):
+      if let approvals = message.approvals {
+        ShellAuthorizationCard(store: approvals.shell(id), loadsState: message.loadsActions)
+      }
     case .artifact(let resource, let label, let destination):
       if let viewer = message.artifacts {
         MessageArtifactCard(
@@ -184,38 +197,6 @@ private struct MessageRenderUnitView: View {
       )
       .id(code)
     }
-  }
-}
-
-private struct MessageCodeBlockStyle: StructuredText.CodeBlockStyle {
-  func makeBody(configuration: Configuration) -> some View {
-    let language = configuration.languageHint ?? ""
-    VStack(alignment: .leading, spacing: 8) {
-      HStack {
-        Text(language.isEmpty ? "Code" : language)
-          .font(.caption)
-          .foregroundStyle(.secondary)
-        Spacer()
-        Button {
-          configuration.codeBlock.copyToPasteboard()
-        } label: {
-          Image(systemName: "doc.on.doc")
-        }
-        .buttonStyle(.borderless)
-        .accessibilityLabel("Copy code")
-      }
-      // Textual's overflow container keeps text selection local to this code block.
-      Overflow {
-        configuration.label
-          .textual.fontScale(0.85)
-          .monospaced()
-          .fixedSize(horizontal: false, vertical: true)
-          .padding(.vertical, 2)
-      }
-    }
-    .padding(12)
-    .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 12))
-    .textual.blockSpacing(.init(top: 0, bottom: 16))
   }
 }
 
@@ -280,6 +261,6 @@ private struct MessageImageLoader: AttachmentLoader {
       baseURL: URL(string: "https://app.okou.ai")!,
       markdown: MessageMarkdownCache(baseURL: URL(string: "https://app.okou.ai")!)
     )
-    .padding(20)
+    .padding(OkouSpace.xl)
   }
 }

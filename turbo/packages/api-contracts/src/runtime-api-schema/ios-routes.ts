@@ -49,6 +49,9 @@ import {
   customConnectorValuesContract,
   customConnectorsContract,
 } from "../contracts/custom-connectors";
+import { desktopShellAuthorizationContract } from "../contracts/desktop-shell-authorization";
+import { mailContract } from "../contracts/mail";
+import { sharedThreadVisibilityContract } from "../contracts/shared-thread-visibility";
 import { featureSwitchesContract } from "../contracts/feature-switches";
 import { hostContract } from "../contracts/host";
 import { iosNotificationsContract } from "../contracts/ios-notifications";
@@ -462,6 +465,29 @@ const iosContracts: readonly {
     route: workflowsCollectionContract.composer,
   },
   { id: "ios.workflowsDetailContract.get", route: workflowsDetailContract.get },
+  {
+    id: "ios.desktopShellAuthorizationContract.get",
+    route: desktopShellAuthorizationContract.get,
+  },
+  {
+    id: "ios.desktopShellAuthorizationContract.approve",
+    route: desktopShellAuthorizationContract.approve,
+  },
+  {
+    id: "ios.desktopShellAuthorizationContract.deny",
+    route: desktopShellAuthorizationContract.deny,
+  },
+  {
+    id: "ios.desktopShellAuthorizationContract.revoke",
+    route: desktopShellAuthorizationContract.revoke,
+  },
+  { id: "ios.mailContract.getDraft", route: mailContract.getDraft },
+  { id: "ios.mailContract.sendDraft", route: mailContract.sendDraft },
+  { id: "ios.mailContract.deleteDraft", route: mailContract.deleteDraft },
+  {
+    id: "ios.sharedThreadVisibilityContract.create",
+    route: sharedThreadVisibilityContract.create,
+  },
 ];
 
 export const iosRouteBindings: readonly RuntimeApiRouteBinding[] =

@@ -8,23 +8,38 @@ struct RecommendedFollowupList: View {
 
   var body: some View {
     let contentInsets = UIEdgeInsets(top: 0, left: 26, bottom: 0, right: 20)
-    VStack(alignment: .leading, spacing: 12) {
-      HStack {
-        if let finishedAt {
-          Text(
-            "Keep going · \(finishedAt.formatted(.dateTime.month(.abbreviated).day().hour().minute()))"
-          )
-        } else {
-          Text("Keep going")
+    VStack(alignment: .leading, spacing: OkouSpace.sm) {
+      // The web's run-section divider: a quiet serif italic label and a faint rule.
+      HStack(spacing: OkouSpace.sm) {
+        // The label keeps its line; the rule takes what is left.
+        Group {
+          if let finishedAt {
+            Text("Keep going · \(Self.timestamp.string(from: finishedAt))")
+          } else {
+            Text("Keep going")
+          }
         }
-        Rectangle().frame(height: 1).accessibilityHidden(true)
+        .lineLimit(1)
+        .layoutPriority(1)
+        Rectangle()
+          .fill(OkouColor.divider.opacity(0.4))
+          .frame(height: 1)
+          .accessibilityHidden(true)
       }
-      .font(.caption).foregroundStyle(.secondary)
+      .font(.okou(.subheadline, design: .serif).italic())
+      .foregroundStyle(OkouColor.mutedForeground.opacity(0.5))
       .padding(.leading, contentInsets.left)
       .padding(.trailing, contentInsets.right)
       RecommendedFollowupRail(source: source, contentInsets: contentInsets, select: select)
     }
   }
+
+  /// The web's chat timestamp: "Sep 8, 6:33 PM", localized.
+  private static let timestamp: DateFormatter = {
+    let formatter = DateFormatter()
+    formatter.setLocalizedDateFormatFromTemplate("MMMdjmm")
+    return formatter
+  }()
 
 }
 
@@ -33,7 +48,7 @@ private struct RecommendedFollowupRail: UIViewRepresentable {
   let contentInsets: UIEdgeInsets
   let select: (String) -> Void
   @ScaledMetric(relativeTo: .subheadline) private var fontSize: CGFloat = 15
-  @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = 18
+  @ScaledMetric(relativeTo: .subheadline) private var iconSize: CGFloat = OkouIconSize.inline
   @ScaledMetric(relativeTo: .subheadline) private var maximumCardWidth: CGFloat = 272
 
   func makeUIView(context: Context) -> RecommendedFollowupRailView {
@@ -72,7 +87,7 @@ final class RecommendedFollowupRailView: UIScrollView {
     contentInsetAdjustmentBehavior = .never
     contentInset = contentInsets
     accessibilityIdentifier = "recommended-followups"
-    accessibilityLabel = "Keep going"
+    accessibilityLabel = String(localized: "Keep going")
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
@@ -143,10 +158,10 @@ final class RecommendedFollowupRailView: UIScrollView {
 
   private func icon(_ followup: ChatRecommendedFollowup) -> String {
     switch followup.generationType {
-    case .image: "photo"
-    case .presentation: "chart.xyaxis.line"
+    case .image: "image"
+    case .presentation: "chart-no-axes-combined"
     case .website: "link"
-    default: "shippingbox"
+    default: "package"
     }
   }
 
@@ -168,14 +183,16 @@ private final class RecommendedFollowupButton: UIButton {
 
   init() {
     super.init(frame: .zero)
-    layer.cornerRadius = 16
-    backgroundColor = .secondarySystemFill
+    // Web quick reply: the neutral hover layer, not a tinted fill, and supporting-text colour.
+    layer.cornerRadius = OkouRadius.card
+    layer.cornerCurve = .continuous
+    backgroundColor = UIColor(OkouColor.stateHover)
     promptLabel.numberOfLines = 2
     promptLabel.lineBreakMode = .byTruncatingTail
-    promptLabel.textColor = .label
+    promptLabel.textColor = UIColor(OkouColor.mutedForeground.opacity(0.8))
     promptLabel.isUserInteractionEnabled = false
     promptLabel.isAccessibilityElement = false
-    typeIcon.tintColor = .secondaryLabel
+    typeIcon.tintColor = UIColor(OkouColor.mutedForeground)
     typeIcon.contentMode = .scaleAspectFit
     typeIcon.isAccessibilityElement = false
     addSubview(promptLabel)
@@ -187,7 +204,13 @@ private final class RecommendedFollowupButton: UIButton {
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
   override var isHighlighted: Bool {
-    didSet { backgroundColor = isHighlighted ? .systemGray4 : .secondarySystemFill }
+    didSet {
+      if isHighlighted {
+        backgroundColor = UIColor(OkouColor.statePressed)
+      } else {
+        backgroundColor = UIColor(OkouColor.stateHover)
+      }
+    }
   }
 
   override func accessibilityActivate() -> Bool {
@@ -199,8 +222,8 @@ private final class RecommendedFollowupButton: UIButton {
 
   func configure(prompt: String, icon: String?, fontSize: CGFloat, iconSize: CGFloat) {
     promptLabel.text = prompt
-    promptLabel.font = .systemFont(ofSize: fontSize)
-    typeIcon.image = icon.flatMap { UIImage(systemName: $0) }
+    promptLabel.font = OkouTypography.font(ofSize: fontSize)
+    typeIcon.image = icon.flatMap { OkouIcon.uiImage($0) }
     iconWidth = icon == nil ? 0 : iconSize
   }
 

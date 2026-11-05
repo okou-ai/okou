@@ -1,0 +1,14 @@
+/* Bundle display name */
+"CFBundleDisplayName" = "Okou";
+
+/* Bundle name */
+"CFBundleName" = "Okou";
+
+/* Privacy - Camera Usage Description */
+"NSCameraUsageDescription" = "메시지에 첨부할 사진을 찍거나 문서를 스캔할 때 Okou가 카메라를 사용합니다.";
+
+/* Privacy - Microphone Usage Description */
+"NSMicrophoneUsageDescription" = "메시지를 음성으로 입력할 때 Okou가 마이크를 사용합니다.";
+
+/* Privacy - Photo Library Usage Description */
+"NSPhotoLibraryUsageDescription" = "Okou는 최근 사진을 보여 주어 메시지에 첨부할 수 있게 합니다.";
