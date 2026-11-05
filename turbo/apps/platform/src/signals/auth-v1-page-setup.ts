@@ -8,7 +8,6 @@ import {
 } from "../views/auth-v1/auth-v1-page.tsx";
 import {
   clerk$,
-  clerkUser$,
   ensureClerkUiLoaded$,
   readOAuthConsentContinuation,
   resolveAuthBrandContext,
@@ -75,13 +74,9 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
       return;
     }
     const signals = createAuthV1ClerkSignals(clerk);
-    const user = await get(clerkUser$);
-    signal.throwIfAborted();
     const showSignupStart =
       mode === "sign-up" &&
       location.pathname === "/sign-up" &&
-      !user &&
-      !clerk.client?.signUp.status &&
       !new URLSearchParams(location.search).has("__clerk_ticket");
     set(resetSignupStart$);
     set(
