@@ -728,6 +728,13 @@
     --brand-text: var(--primary-700); /* #885600 */
     --brand-text-hover: var(--primary-800); /* #6C4300 */
 
+    /* Selected text is a solid brand fill with white text: the fill clears 3:1
+       against the selected row and the label clears 4.5:1 on the fill. A wash
+       light enough to keep dark text readable cannot reach 3:1 against the
+       near-white rows, so the text inverts instead. */
+    --selection: var(--primary-700); /* #885600 */
+    --selection-foreground: var(--white);
+
     /* The selected label sits on the brand stop while the product's own
        palette is active; a colour theme repoints it at that theme's hue. */
     --selected-foreground: var(--brand-text);
@@ -898,6 +905,10 @@
     --brand-subtle: var(--primary-950); /* #31200B */
     --brand-text: var(--primary-300); /* #FFA500 */
     --brand-text-hover: var(--primary-200); /* #FFC580 */
+
+    /* See the light note, inverted: a light brand fill under dark text. */
+    --selection: var(--primary-200); /* #FFC580 */
+    --selection-foreground: 0 0% 14.1%; /* #242424 - the light foreground */
 
     /* See the light note: the same default, on this theme's brand stop. */
     --selected-foreground: var(--brand-text);

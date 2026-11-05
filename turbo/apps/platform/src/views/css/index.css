@@ -1020,10 +1020,10 @@ body {
   }
 }
 
-/* Global selection color */
+/* Global selection color. See `--selection` in the UI tokens. */
 ::selection {
-  background-color: hsl(var(--brand-subtle));
-  color: hsl(var(--foreground));
+  background-color: hsl(var(--selection));
+  color: hsl(var(--selection-foreground));
 }
 
 /* ==========================================================================
@@ -1629,7 +1629,7 @@ details > summary {
 
   /* Accent text and its wash on the palette's own hue. Every consumer of these
      is interface accent — links, highlighted icons, the slash marker, quest
-     counters, the selection highlight — not the brand mark, so an Amber value
+     counters — not the brand mark, so an Amber value
      here read as a second colour system under a blue or pink palette. A preset
      supplies one anchor and no ramp, so the text stop is built the way
      `--nav-copy` is: the preset's hue at a fixed saturation and a lightness
@@ -1639,6 +1639,12 @@ details > summary {
   --brand-text: var(--okou-color-theme-hue) 55% 28%;
   --brand-text-hover: var(--okou-color-theme-hue) 55% 22%;
   --brand-subtle: var(--okou-color-theme-hue) 55% 94%;
+
+  /* Selected text on the palette's hue. HSL lightness is not perceptual, so the
+     stop is set for the lightest hues (Citrus Spark, Deep Lagoon): the fill
+     still clears 3:1 against the selected row and white text 4.5:1 on it. */
+  --selection: var(--okou-color-theme-hue) 50% 32%;
+  --selection-foreground: 0 0% 100%;
 
   --gray-0: var(--okou-color-theme-hue) 100% 99.5%;
   --gray-50: var(--okou-color-theme-hue) 38% 98.2%;
@@ -1683,6 +1689,10 @@ details > summary {
   --brand-text: var(--okou-color-theme-hue) 72% 80%;
   --brand-text-hover: var(--okou-color-theme-hue) 72% 88%;
   --brand-subtle: var(--okou-color-theme-hue) 25% 22%;
+  /* See the light note, inverted: a light fill under dark text, set for the
+     darkest hue (Daydream). */
+  --selection: var(--okou-color-theme-hue) 55% 72%;
+  --selection-foreground: 0 0% 14.1%;
 
   --gray-0: var(--okou-color-theme-hue) 5% 10.8%;
   --gray-50: var(--okou-color-theme-hue) 5% 14%;
