@@ -22,6 +22,9 @@ permissions:
   contents: read
   actions: read
 
+env:
+  npm_config_audit: "false"
+
 concurrency:
   group: production-connector-skill-backfill
   cancel-in-progress: false
