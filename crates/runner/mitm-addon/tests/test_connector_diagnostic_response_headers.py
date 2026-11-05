@@ -54,7 +54,7 @@ def _complete_diagnostic(flow: http.HTTPFlow, *, streamed: bool) -> bytes:
     assert flow.response.headers["Content-Type"] == "application/json"
     assert flow.response.headers.get_all("Content-Encoding") == []
     assert flow.response.headers.get_all("Transfer-Encoding") == []
-    if streamed:
+    if emitted is not None:
         assert content == emitted
     if flow.request.method == "HEAD":
         assert content == b""
