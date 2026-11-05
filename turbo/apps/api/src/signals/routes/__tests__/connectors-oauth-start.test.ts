@@ -106,7 +106,7 @@ function mockAuthenticatedSession(): void {
   );
 }
 
-// #30570 pre-stages twenty launch-gated OAuth connectors on the direct Okou App
+// #30570 pre-stages launch-gated OAuth connectors on the direct Okou App
 // callback. Each case pins the provider-specific authorization and token
 // exchange contract that must survive the callback change.
 type LaunchGatedDirectOkouCase = {
@@ -556,30 +556,6 @@ const LAUNCH_GATED_DIRECT_OKOU_CASES: readonly LaunchGatedDirectOkouCase[] = [
             account_id: "spotify-user-123",
             display_name: "Spotify Test User",
             email: "spotify@example.test",
-          });
-        }),
-      );
-    },
-  },
-  {
-    connectorSlug: "supabase",
-    label: "Supabase",
-    clientEnvPrefix: "SUPABASE",
-    authorizationEndpoint: "https://api.supabase.com/v1/oauth/authorize",
-    tokenUrl: "https://api.supabase.com/v1/oauth/token",
-    pkce: true,
-    tokenResponse: {
-      access_token: "supabase-test-token",
-      refresh_token: "supabase-refresh-token",
-      expires_in: 3600,
-    },
-    mockUserInfo: () => {
-      server.use(
-        http.get("https://api.supabase.com/v1/profile", () => {
-          return HttpResponse.json({
-            gotrue_id: "supabase-user-123",
-            primary_email: "supabase@example.test",
-            username: "supabase-test-user",
           });
         }),
       );

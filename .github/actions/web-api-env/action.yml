@@ -394,7 +394,6 @@ runs:
           VERCEL
           SENTRY
           INTERVALS_ICU
-          SUPABASE
           XERO
           MONDAY
           WEBFLOW

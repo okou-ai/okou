@@ -1918,33 +1918,6 @@ export const CONNECTOR_AUTH_PROVIDER_METHOD_REGISTRATIONS = [
     },
   },
   {
-    connectorSlug: "supabase",
-    authMethodId: "oauth",
-    contract: {
-      client: {
-        kind: "static-confidential-env",
-        clientIdEnv: "SUPABASE_OAUTH_CLIENT_ID",
-        clientSecretEnv: "SUPABASE_OAUTH_CLIENT_SECRET",
-      },
-      grant: {
-        kind: "auth-code",
-        callbackOrigin: "web",
-        outputNames: ["accessToken", "refreshToken"],
-        startOptionNames: [],
-      },
-      access: {
-        kind: "refresh-token",
-        inputNames: ["refreshToken"],
-        outputNames: ["accessToken", "refreshToken"],
-        platformSecrets: [],
-      },
-      revoke: {
-        kind: "none",
-        inputNames: [],
-      },
-    },
-  },
-  {
     connectorSlug: "test-oauth",
     authMethodId: "api",
     contract: {
