@@ -39,7 +39,7 @@ import { notFound } from "../../lib/error";
 import { nullableDriverValueDecoder } from "../../lib/db-structured-result";
 import { db$, writeDb$ } from "../external/db";
 import { publishConnectorPermissionUpdatedSafely } from "../external/realtime";
-import { nowDate } from "../../lib/time";
+import { monotonicNow, nowDate } from "../../lib/time";
 import {
   defaultFirewallPolicyForPermissionIndex,
   networkPolicyForFirewallPolicy,
@@ -228,6 +228,12 @@ export function networkPolicyRefreshConnectorSlugs(
   ];
 }
 
+/** Optional content-free capture; absent phases were skipped, not measured as zero. */
+export interface NetworkPolicyRefreshTimingCapture {
+  permissionReadMs?: number;
+  policyBuildMs?: number;
+}
+
 /** Runtime callers supply their captured catalog; the finite read remains
  * awaited by their existing read group and its cancellation boundary. */
 export const readActiveNetworkPolicyRefreshes$ = command(
@@ -238,6 +244,7 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       readonly connectorSlugs: readonly string[];
       readonly snapshot: ConnectorRuntimeLookup;
       readonly memberRules: readonly ResolvedPermissionGrant[] | undefined;
+      readonly timing?: NetworkPolicyRefreshTimingCapture;
     },
     checkedAt: Date = nowDate(),
   ): Promise<readonly ActiveNetworkPolicyRefresh[]> => {
@@ -254,6 +261,10 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       return [];
     }
 
+    const permissionReadStartedAt =
+      args.timing && args.memberRules === undefined
+        ? monotonicNow()
+        : undefined;
     const grants =
       args.memberRules ??
       (await get(db$)
@@ -272,6 +283,10 @@ export const readActiveNetworkPolicyRefreshes$ = command(
           asc(userPermissionGrants.connectorSlug),
           asc(userPermissionGrants.permission),
         ));
+    if (args.timing && permissionReadStartedAt !== undefined) {
+      args.timing.permissionReadMs = monotonicNow() - permissionReadStartedAt;
+    }
+    const policyBuildStartedAt = args.timing ? monotonicNow() : undefined;
     const indexes = await Promise.all(
       uniqueConnectorSlugs.map(async (connectorSlug) => {
         return {
@@ -282,7 +297,7 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       }),
     );
 
-    return activeNetworkPolicyRefreshesForPermissionBaselines(
+    const refreshes = activeNetworkPolicyRefreshesForPermissionBaselines(
       indexes.flatMap(({ connectorSlug, index }) => {
         return index
           ? [
@@ -296,6 +311,11 @@ export const readActiveNetworkPolicyRefreshes$ = command(
       }),
       grants,
     );
+    if (args.timing && policyBuildStartedAt !== undefined) {
+      // Index promises are local, but this is elapsed wall time, not isolated CPU.
+      args.timing.policyBuildMs = monotonicNow() - policyBuildStartedAt;
+    }
+    return refreshes;
   },
 );
 

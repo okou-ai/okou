@@ -142,6 +142,7 @@ import {
   mergeNetworkPolicyRefreshes,
   networkPolicyRefreshesRecord,
   readActiveNetworkPolicyRefreshes$,
+  type NetworkPolicyRefreshTimingCapture,
 } from "../services/user-permission-grants.service";
 import { safeSync, settle, tapError } from "../utils";
 
@@ -231,6 +232,16 @@ type ClaimRouteTimingActionType =
   | "claim_route_secret_materialization"
   | "claim_route_response_assembly"
   | "claim_route_response_network_policy_refresh"
+  | "claim_route_content_bundles"
+  | "claim_route_content_bundle_instructions_sign"
+  | "claim_route_content_bundle_skills_sign"
+  | "claim_route_content_bundle_response_assembly"
+  | "claim_route_policy_catalog_read"
+  | "claim_route_policy_catalog_materialize"
+  | "claim_route_policy_permission_read"
+  | "claim_route_policy_evaluate"
+  | "claim_route_policy_build"
+  | "claim_route_policy_merge"
   | "claim_route_response_resume_session"
   | "claim_route_transition_running"
   | "claim_route_transition_execute";
@@ -337,6 +348,53 @@ class ClaimRouteTimingCollector {
       durationMs: Math.max(0, finishedAt - startedAt),
       timestamp: new Date(finishedAt).toISOString(),
     });
+  }
+
+  /** Monotonic wall intervals, including async scheduling, never signature CPU. */
+  recordDuration(
+    actionType: ClaimRouteTimingActionType,
+    durationMs: number,
+    dimensions?: Readonly<Record<string, string>>,
+  ): void {
+    this.records.push({
+      actionType,
+      spanKind: "nested",
+      durationMs: Math.max(0, durationMs),
+      timestamp: nowDate().toISOString(),
+      dimensions,
+    });
+  }
+
+  recordPolicyRefreshPhases(args: {
+    readonly catalogReadMs: number;
+    readonly catalogMaterializeMs: number;
+    readonly permissionSource: "member" | "agent";
+    readonly permissionReadMs: number | undefined;
+    readonly policyEvaluateMs: number;
+    readonly policyBuildMs: number | undefined;
+    readonly mergeMs: number;
+  }): void {
+    const dimensions = {
+      permission_source: args.permissionSource,
+      permission_read:
+        args.permissionReadMs === undefined ? "skipped" : "performed",
+    };
+    const phases: readonly (readonly [
+      ClaimRouteTimingActionType,
+      number | undefined,
+    ])[] = [
+      ["claim_route_policy_catalog_read", args.catalogReadMs],
+      ["claim_route_policy_catalog_materialize", args.catalogMaterializeMs],
+      ["claim_route_policy_permission_read", args.permissionReadMs],
+      ["claim_route_policy_evaluate", args.policyEvaluateMs],
+      ["claim_route_policy_build", args.policyBuildMs],
+      ["claim_route_policy_merge", args.mergeMs],
+    ];
+    for (const [actionType, durationMs] of phases) {
+      if (durationMs !== undefined) {
+        this.recordDuration(actionType, durationMs, dimensions);
+      }
+    }
   }
 
   measureInvalidKeySecretMaterialization<T>(
@@ -1091,9 +1149,12 @@ const withClaimedContentBundles$ = command(
       readonly workflowInput: WorkflowClaimInput;
       readonly officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"];
       readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
+      readonly timing: ClaimRouteTimingCollector;
     },
     signal: AbortSignal,
   ): Promise<ExecutionContext> => {
+    const startedAt = monotonicNow();
+    const instructionsStartedAt = monotonicNow();
     const instructions =
       args.claim.instructionsBundle === null
         ? undefined
@@ -1102,6 +1163,14 @@ const withClaimedContentBundles$ = command(
             args.claim.instructionsBundle,
             signal,
           );
+    if (instructions !== undefined) {
+      args.timing.recordDuration(
+        "claim_route_content_bundle_instructions_sign",
+        monotonicNow() - instructionsStartedAt,
+      );
+    }
+    // One wall interval for the concurrent group, not a sum of per-URL timers.
+    const skillsStartedAt = monotonicNow();
     const skills = await Promise.all(
       [
         ...args.claim.workflows.map((workflow) => {
@@ -1131,12 +1200,17 @@ const withClaimedContentBundles$ = command(
       }),
     );
     signal.throwIfAborted();
+    args.timing.recordDuration(
+      "claim_route_content_bundle_skills_sign",
+      monotonicNow() - skillsStartedAt,
+    );
+    const assemblyStartedAt = monotonicNow();
     const bundledMountPaths = new Set(
       skills.map((skill) => {
         return skill.mountPath;
       }),
     );
-    return {
+    const responseBody: ExecutionContext = {
       ...args.responseBody,
       contentBundles: { format: "tar-gzip-v1", instructions, skills },
       storageManifest: {
@@ -1150,6 +1224,34 @@ const withClaimedContentBundles$ = command(
         }),
       },
     };
+    args.timing.recordDuration(
+      "claim_route_content_bundle_response_assembly",
+      monotonicNow() - assemblyStartedAt,
+    );
+    // Only aggregate counts escape this request; no hash, mount or URL is logged.
+    const uniqueBundles = new Set(
+      skills.map((skill) => {
+        return skill.sha256;
+      }),
+    );
+    if (instructions) {
+      uniqueBundles.add(instructions.sha256);
+    }
+    args.timing.recordDuration(
+      "claim_route_content_bundles",
+      monotonicNow() - startedAt,
+      {
+        bundle_count: String(skills.length + (instructions ? 1 : 0)),
+        unique_bundle_count: String(uniqueBundles.size),
+        instruction_bundle_count: instructions ? "1" : "0",
+        workflow_bundle_count: String(args.claim.workflows.length),
+        official_workflow_bundle_count: String(
+          args.officialWorkflowBundles?.length ?? 0,
+        ),
+        seed_skill_bundle_count: String(args.seedSkillBundles.length),
+      },
+    );
+    return responseBody;
   },
 );
 
@@ -1303,9 +1405,97 @@ async function secretValuesForRunner(
   });
 }
 
-const readClaimNetworkPolicyRefreshes$ = command(
+const readClaimCurrentNetworkPolicyRefreshes$ = command(
   async (
     { get, set },
+    args: {
+      readonly scope: { orgId: string; userId: string; agentId: string };
+      readonly storedContext: StoredExecutionContext;
+      readonly builtinConnectorSlugs: readonly string[];
+      readonly timing: ClaimRouteTimingCollector;
+    },
+  ): Promise<
+    Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
+  > => {
+    const { scope, builtinConnectorSlugs } = args;
+    const plan = connectorRuntimeSlugSelectionReadPlan({
+      connectorSlugs: builtinConnectorSlugs,
+    });
+    const catalogReadStartedAt = monotonicNow();
+    const rows = await get(db$)
+      .select(plan.columns)
+      .from(connectorCatalog)
+      .leftJoin(connectorCatalogEntries, plan.join)
+      .where(connectorCatalogCurrentWhere());
+    const catalogReadMs = monotonicNow() - catalogReadStartedAt;
+    const catalogMaterializeStartedAt = monotonicNow();
+    const snapshot = connectorRuntimeSlugSelectionFromRows(
+      plan.selection,
+      rows,
+    );
+    const checkedAt = nowDate();
+    const catalogMaterializeMs = monotonicNow() - catalogMaterializeStartedAt;
+    const permissionSource = args.storedContext.featureFlags?.[
+      FeatureSwitchKey.ConnectorChatAccountAccess
+    ]
+      ? "member"
+      : "agent";
+    const permissionReadStartedAt = monotonicNow();
+    const memberRules =
+      permissionSource === "member"
+        ? await get(db$)
+            .select(memberConnectorPermissionColumns())
+            .from(connectorPermissionGrants)
+            .where(
+              and(
+                activeMemberConnectorPermissionCondition(scope, checkedAt),
+                inArray(
+                  connectorPermissionGrants.connectorSlug,
+                  builtinConnectorSlugs,
+                ),
+              ),
+            )
+        : undefined;
+    const memberReadMs =
+      memberRules === undefined
+        ? undefined
+        : monotonicNow() - permissionReadStartedAt;
+    const policyTiming: NetworkPolicyRefreshTimingCapture = {};
+    const policyEvaluateStartedAt = monotonicNow();
+    const refreshes = await set(
+      readActiveNetworkPolicyRefreshes$,
+      {
+        scope,
+        connectorSlugs: builtinConnectorSlugs,
+        snapshot,
+        memberRules,
+        timing: policyTiming,
+      },
+      checkedAt,
+    );
+    const policyEvaluateMs = monotonicNow() - policyEvaluateStartedAt;
+    const mergeStartedAt = monotonicNow();
+    const networkPolicies = mergeNetworkPolicyRefreshes(
+      args.storedContext.networkPolicies ?? {},
+      refreshes,
+    );
+    const networkPolicyRefreshes = networkPolicyRefreshesRecord(refreshes);
+    args.timing.recordPolicyRefreshPhases({
+      catalogReadMs,
+      catalogMaterializeMs,
+      permissionSource,
+      permissionReadMs: memberReadMs ?? policyTiming.permissionReadMs,
+      policyEvaluateMs,
+      policyBuildMs: policyTiming.policyBuildMs,
+      mergeMs: monotonicNow() - mergeStartedAt,
+    });
+    return { networkPolicies, networkPolicyRefreshes };
+  },
+);
+
+const readClaimNetworkPolicyRefreshes$ = command(
+  async (
+    { set },
     args: {
       readonly run: ClaimedRun;
       readonly storedContext: StoredExecutionContext;
@@ -1357,59 +1547,17 @@ const readClaimNetworkPolicyRefreshes$ = command(
           );
         }
 
-        const scope = {
-          orgId: args.run.orgId,
-          userId: args.run.userId,
-          agentId: args.run.agentId,
-        };
-        const plan = connectorRuntimeSlugSelectionReadPlan({
-          connectorSlugs: builtinConnectorSlugs,
-        });
-        const rows = await get(db$)
-          .select(plan.columns)
-          .from(connectorCatalog)
-          .leftJoin(connectorCatalogEntries, plan.join)
-          .where(connectorCatalogCurrentWhere());
-        const snapshot = connectorRuntimeSlugSelectionFromRows(
-          plan.selection,
-          rows,
-        );
-        const checkedAt = nowDate();
-        const memberRules = args.storedContext.featureFlags?.[
-          FeatureSwitchKey.ConnectorChatAccountAccess
-        ]
-          ? await get(db$)
-              .select(memberConnectorPermissionColumns())
-              .from(connectorPermissionGrants)
-              .where(
-                and(
-                  activeMemberConnectorPermissionCondition(scope, checkedAt),
-                  inArray(
-                    connectorPermissionGrants.connectorSlug,
-                    builtinConnectorSlugs,
-                  ),
-                ),
-              )
-          : undefined;
-        const refreshes = await set(
-          readActiveNetworkPolicyRefreshes$,
-          {
-            scope,
-            connectorSlugs: builtinConnectorSlugs,
-            snapshot,
-            memberRules,
-          },
-          checkedAt,
-        );
-
         return {
-          value: {
-            networkPolicies: mergeNetworkPolicyRefreshes(
-              storedNetworkPolicies,
-              refreshes,
-            ),
-            networkPolicyRefreshes: networkPolicyRefreshesRecord(refreshes),
-          },
+          value: await set(readClaimCurrentNetworkPolicyRefreshes$, {
+            scope: {
+              orgId: args.run.orgId,
+              userId: args.run.userId,
+              agentId: args.run.agentId,
+            },
+            storedContext: args.storedContext,
+            builtinConnectorSlugs,
+            timing: args.timing,
+          }),
           path: "current_catalog",
         };
       })(),
@@ -2095,6 +2243,7 @@ const claimAuthorizedJob$ = command(
         workflowInput,
         officialWorkflowBundles: storedContext.officialWorkflowBundles,
         seedSkillBundles: storedContext.seedSkillBundles,
+        timing: claimRouteTiming,
       },
       signal,
     );
