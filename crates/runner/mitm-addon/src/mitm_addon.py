@@ -1296,6 +1296,35 @@ def _authorize_managed_upload(
     )
 
 
+def _reject_buffered_allowed_request_body(
+    flow: http.HTTPFlow,
+    *,
+    classification: request_classification.FirewallAllow
+    | request_classification.FirewallPolicyAllow,
+    body_check: _BufferedRequestBodyCheck,
+    error: str,
+    message: str,
+    max_body_bytes: int,
+) -> None:
+    """Record and terminate an allowed request rejected by buffered body admission."""
+    _start_request_timing(flow)
+    prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
+    flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
+    flow_metadata.set_firewall_decision(flow.metadata, "ALLOW", error=error)
+    log_proxy_entry(
+        flow_metadata.proxy_log_path(flow.metadata),
+        "warn",
+        message,
+        type="firewall",
+        firewall_base=flow.metadata[metadata_keys.FIREWALL_BASE],
+        error=error,
+        framing_error=body_check.reason,
+        observed_size=body_check.observed_size,
+        request_body_limit_bytes=max_body_bytes,
+    )
+    _terminate_classified_requestheaders(flow)
+
+
 def _check_data_router_request_body(
     flow: http.HTTPFlow,
     *,
@@ -1316,22 +1345,14 @@ def _check_data_router_request_body(
         if body_check.kind == "too_large"
         else "data_router_request_body_length_required"
     )
-    _start_request_timing(flow)
-    prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
-    flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
-    flow_metadata.set_firewall_decision(flow.metadata, "ALLOW", error=error)
-    log_proxy_entry(
-        flow_metadata.proxy_log_path(flow.metadata),
-        "warn",
-        "Data Router request-body limit rejected",
-        type="firewall",
-        firewall_base=flow.metadata[metadata_keys.FIREWALL_BASE],
+    _reject_buffered_allowed_request_body(
+        flow,
+        classification=classification,
+        body_check=body_check,
         error=error,
-        framing_error=body_check.reason,
-        observed_size=body_check.observed_size,
-        request_body_limit_bytes=DATA_ROUTER_REQUEST_BODY_MAX_BYTES,
+        message="Data Router request-body limit rejected",
+        max_body_bytes=DATA_ROUTER_REQUEST_BODY_MAX_BYTES,
     )
-    _terminate_classified_requestheaders(flow)
 
 
 def _admit_buffered_public_destination_request(
@@ -1367,22 +1388,14 @@ def _admit_buffered_public_destination_request(
     else:
         error = "public_destination_request_body_length_required"
 
-    _start_request_timing(flow)
-    prepare_firewall_metadata(flow, classification.firewall_allow, classification.sandbox_info)
-    flow.metadata[metadata_keys.SUPPRESS_REQUEST_BODY_CAPTURE] = True
-    flow_metadata.set_firewall_decision(flow.metadata, "ALLOW", error=error)
-    log_proxy_entry(
-        flow_metadata.proxy_log_path(flow.metadata),
-        "warn",
-        "publicDestination request-body admission rejected",
-        type="firewall",
-        firewall_base=flow.metadata[metadata_keys.FIREWALL_BASE],
+    _reject_buffered_allowed_request_body(
+        flow,
+        classification=classification,
+        body_check=body_check,
         error=error,
-        framing_error=body_check.reason,
-        observed_size=body_check.observed_size,
-        request_body_limit_bytes=public_destination_body_admission.MAX_REQUEST_BODY_BYTES,
+        message="publicDestination request-body admission rejected",
+        max_body_bytes=public_destination_body_admission.MAX_REQUEST_BODY_BYTES,
     )
-    _terminate_classified_requestheaders(flow)
 
 
 def _admit_buffered_aws_sigv4_request(
