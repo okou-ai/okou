@@ -763,7 +763,7 @@ function websiteTemplateCardImageUrl(item: WebsiteTemplateItem): string {
 }
 
 /** The cover width every type's shelf uses, so the rows line up across tabs. */
-const PRESENTATION_SHELF_COVER = "w-[200px]";
+const PRESENTATION_SHELF_COVER = "w-full";
 
 function WebsiteTemplateCard({
   item,
@@ -3357,9 +3357,8 @@ export function ComposerPresentationRecommendations({
         </Button>
       </div>
       <ComposerRail
-        signals={signals}
         rail="templates:presentation"
-        gap="gap-3"
+        itemWidth={200}
         items={[
           <TemplateImportCard
             key="import"

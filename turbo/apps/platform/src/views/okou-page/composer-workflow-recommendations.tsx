@@ -88,7 +88,7 @@ function WorkflowTile({
       type="button"
       variant="quiet"
       data-slot="workflow-recommendation-tile"
-      className={cn(RAIL_TILE, "w-[200px]")}
+      className={cn(RAIL_TILE, "w-full")}
       onClick={() => {
         onSelect(item);
       }}
@@ -320,9 +320,8 @@ export function ComposerWorkflowRecommendations({
         </Button>
       </div>
       <ComposerRail
-        signals={signals}
         rail="templates:workflow"
-        gap="gap-3"
+        itemWidth={200}
         items={WORKFLOW_RECOMMENDATIONS.map((item) => {
           return (
             <WorkflowTile

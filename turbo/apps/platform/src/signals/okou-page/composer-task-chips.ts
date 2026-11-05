@@ -11,8 +11,7 @@ import type {
   ComposerCreateSignals,
 } from "./composer-create.ts";
 import { createComposerVisualizationSignals } from "./composer-visualization.ts";
-import { onRef, settle } from "../utils.ts";
-import { observeRail, type RailTravel } from "./rail-travel.ts";
+import { settle } from "../utils.ts";
 import { customTemplateCatalog$ } from "./custom-template-library.ts";
 import { createComposerTaskOverflowSignals } from "./composer-task-overflow.ts";
 
@@ -73,43 +72,6 @@ function createDocumentCategorySignals() {
     },
   );
   return { documentCategory$, setDocumentCategory$ };
-}
-
-function createTaskRailSignals() {
-  /**
-   * How far a rail can still travel, per rail. A rail that has never reported
-   * is assumed to fit, which hides both pagers until a measurement proves
-   * otherwise.
-   */
-  const internalRailTravel$ = state<Readonly<Record<string, RailTravel>>>({});
-  const railTravel$ = computed((get) => {
-    return get(internalRailTravel$);
-  });
-  const setRailTravel$ = command(
-    ({ get, set }, rail: string, travel: RailTravel) => {
-      const current = get(internalRailTravel$)[rail];
-      if (
-        current?.canScrollBack === travel.canScrollBack &&
-        current.canScrollForward === travel.canScrollForward
-      ) {
-        return;
-      }
-      set(internalRailTravel$, { ...get(internalRailTravel$), [rail]: travel });
-    },
-  );
-  /** Owns one row's DOM lifecycle; the observers report what layout knows. */
-  const bindRail$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
-      const rail = element.dataset.rail;
-      if (!rail) {
-        return;
-      }
-      observeRail(element, signal, (travel) => {
-        set(setRailTravel$, rail, travel);
-      });
-    }),
-  );
-  return { railTravel$, setRailTravel$, bindRail$ };
 }
 
 export function createComposerTaskChipsSignals(
@@ -199,7 +161,6 @@ export function createComposerTaskChipsSignals(
     const task = get(task$);
     return task === null;
   });
-  const { railTravel$, setRailTravel$, bindRail$ } = createTaskRailSignals();
   return {
     task$,
     customTemplates$,
@@ -207,9 +168,6 @@ export function createComposerTaskChipsSignals(
     taskMenuFinalFocus$,
     openTask$,
     selectTemplate$,
-    railTravel$,
-    setRailTravel$,
-    bindRail$,
     workflows,
     visualization,
     overflow,
