@@ -1827,6 +1827,18 @@ function attachmentSessionId(value: unknown, message: string): string {
   return value.sessionId;
 }
 
+/** Independent domain effects stay with their admitted attachment's owner. */
+function enableDomains(
+  client: CdpClient,
+  sessionId: string,
+  signal: AbortSignal,
+): Promise<unknown>[] {
+  return [
+    client.request("Inspector.enable", undefined, sessionId, undefined, signal),
+    client.request("Page.enable", undefined, sessionId, undefined, signal),
+  ];
+}
+
 function createAttachmentAdmission(
   context: ControllerContext<
     | "available$"
@@ -1891,32 +1903,6 @@ function createAttachmentInitialization(
   assertCurrent$: Command<void, [SelectionOwner, AbortSignal]>,
 ) {
   const { wake$, nativeHost } = context;
-  const enable$ = command(
-    async (
-      { set },
-      owner: SelectionOwner,
-      client: CdpClient,
-      sessionId: string,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      await client.request(
-        "Inspector.enable",
-        undefined,
-        sessionId,
-        undefined,
-        signal,
-      );
-      set(assertCurrent$, owner, signal);
-      await client.request(
-        "Page.enable",
-        undefined,
-        sessionId,
-        undefined,
-        signal,
-      );
-      set(assertCurrent$, owner, signal);
-    },
-  );
   const initialize$ = command(
     async (
       { get, set },
@@ -1952,7 +1938,7 @@ function createAttachmentInitialization(
       set(wake$);
     },
   );
-  return { enable$, initialize$ };
+  return { initialize$ };
 }
 
 type AttachmentContext = ControllerContext<
@@ -1984,7 +1970,7 @@ function createAttachmentGraph(
     context,
     links$,
   );
-  const { enable$, initialize$ } = createAttachmentInitialization(
+  const { initialize$ } = createAttachmentInitialization(
     context,
     links$,
     assertCurrent$,
@@ -2003,8 +1989,9 @@ function createAttachmentGraph(
       let sessionId: string | null = null;
       let frameSessionId: string | null = null;
       let published = false;
-      using _unpublished = {
-        [Symbol.dispose]: () => {
+      let enabling: Promise<unknown>[] = [];
+      await using _unpublished = {
+        [Symbol.asyncDispose]: async () => {
           set(selection.release$, owner);
           if (published) {
             return;
@@ -2017,6 +2004,9 @@ function createAttachmentGraph(
           if (sessionId) {
             client.notify("Target.detachFromTarget", { sessionId });
           }
+          // Detachment ends a silent enable peer. Join both original requests
+          // after cleanup so its deadline cannot replace the primary failure.
+          await Promise.allSettled(enabling);
         },
       };
       const attached: unknown = await client.request(
@@ -2069,7 +2059,10 @@ function createAttachmentGraph(
       await set(directory.assertMember$, owner.targetId, signal);
       signal.throwIfAborted();
       set(assertCurrent$, owner, signal);
-      await set(enable$, owner, client, sessionId, signal);
+      enabling = enableDomains(client, sessionId, signal);
+      await Promise.all(enabling);
+      signal.throwIfAborted();
+      set(assertCurrent$, owner, signal);
       const attachment: AttachedSelection = {
         owner,
         client,
