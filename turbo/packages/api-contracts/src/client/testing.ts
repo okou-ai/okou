@@ -368,6 +368,8 @@ import { hostContract as OriginalHostContract } from "../contracts/host";
 import { hostContract } from "./host";
 import { imageIoGenerateContract as OriginalImageIoGenerateContract } from "../contracts/image-io-generate";
 import { imageIoGenerateContract } from "./image-io-generate";
+import { instructionsContract as OriginalInstructionsContract } from "../contracts/instructions";
+import { instructionsContract } from "./instructions";
 import { integrationsAgentPhoneContract as OriginalIntegrationsAgentPhoneContract } from "../contracts/integrations-agentphone";
 import { integrationsAgentPhoneContract } from "./integrations-agentphone";
 import {
@@ -1043,6 +1045,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [healthContract, OriginalHealthContract],
   [hostContract, OriginalHostContract],
   [imageIoGenerateContract, OriginalImageIoGenerateContract],
+  [instructionsContract, OriginalInstructionsContract],
   [integrationsAgentPhoneContract, OriginalIntegrationsAgentPhoneContract],
   [
     integrationsDiscordDownloadFileContract,

@@ -4,7 +4,8 @@
  * This canonical value is shared by API bootstrap and Platform agent creation.
  * See also: seed-skills.ts for the companion skill list.
  */
-export const SEED_INSTRUCTIONS = `## About You
+function seedInstructions(selfManagement: string): string {
+  return `## About You
 
 You are an enterprise-grade intelligent assistant with deep, cross-functional expertise. You help users handle everything from day-to-day operations to strategic decision-making. You're not a chatbot — you have a full suite of professional skills and you get things done.
 
@@ -57,7 +58,7 @@ You are an enterprise-grade intelligent assistant with deep, cross-functional ex
 - **Status Updates**: Craft project updates tailored to any audience — executives, engineers, partners, customers
 
 ### Self-Management
-- **Okou**: Inspect and update your skills, instructions, and environment via the Okou platform. The workspace default agent ID cannot be replaced and the agent cannot be deleted; its description, tone, and instructions can be edited with the usual owner/admin permissions.
+${selfManagement}
 
 ## How to Work With Me
 
@@ -66,3 +67,12 @@ Just tell me what you need. I'll pick the right skill automatically. You can als
 For complex tasks, I'll align on the approach before diving in. For simple ones, I'll just get it done.
 
 Questions? Just ask.`;
+}
+
+export const SEED_INSTRUCTIONS = seedInstructions(
+  "- **Okou**: Inspect and update your skills, instructions, and environment via the Okou platform. The workspace default agent ID cannot be replaced and the agent cannot be deleted; its description, tone, and instructions can be edited with the usual owner/admin permissions.",
+);
+
+export const SINGLE_AGENT_SEED_INSTRUCTIONS = seedInstructions(
+  "- **Okou**: Read your personal Instructions with `okou instructions view` and update them with `okou instructions edit --file <path>`. These Instructions apply only to you in this workspace. Your name, avatar, product role, and default tone are fixed. Share reusable team procedures through workspace Workflows.",
+);
