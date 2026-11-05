@@ -477,8 +477,8 @@ grouped rows with the shared 28 pt glyph slot, a 17 pt name and two 15 pt muted 
   with WebKit and caches it. The `plug`/`puzzle` glyph is only the loading and
   custom-connector fallback.
 - Account preferences live in the grouped Settings sheet: profile, workspace,
-  notifications, appearance, language, support, version, then sign out and delete
-  account. Destructive session actions stay apart from preferences. The account photo and
+  notifications, appearance, language, support, version, then sign out.
+  Destructive session actions stay apart from preferences. The account photo and
   the workspace mark are one size (`OkouAvatarSize.account`, 40 pt, the height of the
   account row's two lines), and the workspace card's rows share that slot so their text
   starts with the account name. The version is a row in Support, as in ChatGPT and

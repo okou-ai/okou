@@ -37,8 +37,6 @@ struct ChatSettingsView: View {
   @AppStorage(OkouAppearancePreference.storageKey) private var appearance =
     OkouAppearancePreference.system.rawValue
   @State private var signingOut = false
-  @State private var confirmsDeletion = false
-  @State private var deleting = false
 
   private static let securityURL = URL(string: "https://www.okou.ai/en/security")!
   private static let supportEmail = "contact@okou.ai"
@@ -145,20 +143,7 @@ struct ChatSettingsView: View {
             }
             .foregroundStyle(OkouColor.destructive)
           }
-          .disabled(signingOut || deleting)
-          Button(role: .destructive) {
-            confirmsDeletion = true
-          } label: {
-            HStack {
-              settingsLabel("Delete account", icon: "trash-2")
-              if deleting {
-                Spacer()
-                ProgressView()
-              }
-            }
-            .foregroundStyle(OkouColor.destructive)
-          }
-          .disabled(signingOut || deleting)
+          .disabled(signingOut)
         } header: {
           Text("Account").okouSectionHeader()
         }
@@ -169,27 +154,6 @@ struct ChatSettingsView: View {
       .navigationTitle("Settings")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
-      .confirmationDialog(
-        "Delete your Okou account?", isPresented: $confirmsDeletion, titleVisibility: .visible
-      ) {
-        if authentication.canDeleteAccount {
-          Button("Delete account", role: .destructive) { deleteAccount() }
-        } else {
-          Button("Continue on the web") {
-            openURL(
-              store.webURL.appending(queryItems: [
-                URLQueryItem(name: "settings", value: "preference")
-              ]))
-          }
-        }
-        Button("Cancel", role: .cancel) {}
-      } message: {
-        Text(
-          authentication.canDeleteAccount
-            ? "Your profile and sign-in are removed permanently. Workspaces you own keep their chats until they are deleted separately."
-            : "Account deletion is finished in your account settings on the Okou website."
-        )
-      }
     }
   }
 
@@ -235,20 +199,6 @@ struct ChatSettingsView: View {
     let version = info?["CFBundleShortVersionString"] as? String ?? "–"
     let build = info?["CFBundleVersion"] as? String ?? "–"
     return "\(version) (\(build))"
-  }
-
-  private func deleteAccount() {
-    deleting = true
-    Task {
-      defer { deleting = false }
-      do {
-        try await notifications.deleteAccount(authentication: authentication)
-        dismiss()
-      } catch {
-        accountError = error.localizedDescription
-        dismiss()
-      }
-    }
   }
 
   private func settingsLabel(_ title: LocalizedStringKey, icon: String) -> some View {

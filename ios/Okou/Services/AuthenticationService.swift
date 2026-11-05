@@ -134,18 +134,6 @@ final class AuthenticationService {
       imageURL: URL(string: user.imageUrl), hasImage: user.hasImage)
   }
 
-  /// Clerk's instance setting that lets a user delete their own account from the client.
-  var canDeleteAccount: Bool { clerk?.user?.deleteSelfEnabled == true }
-
-  /// Deletes the signed-in user in Clerk; the API cleans up through its `user.deleted` hook.
-  func deleteAccount() async throws {
-    guard let clerk, let user = clerk.user else { throw AuthenticationError.notConfigured }
-    try await user.delete()
-    try? await clerk.auth.signOut()
-    clearWorkspaces()
-    errorMessage = nil
-  }
-
   var activeWorkspaceID: String? {
     guard isAuthenticated,
       !isSwitchingWorkspace,
