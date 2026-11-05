@@ -300,11 +300,10 @@ test.each([false, true])(
     expect(menu).not.toHaveTextContent("Use more models");
     const user = userEvent.setup();
     await user.keyboard("{Escape}");
-    await user.hover(
-      await within(screen.getByTestId("labeled-nav-rail")).findByLabelText(
-        /^Subscription usage/,
-      ),
-    );
+    const usageEntry = await within(
+      screen.getByTestId("labeled-nav-rail"),
+    ).findByLabelText(/^Subscription usage/);
+    click(usageEntry);
     await screen.findByRole("region", { name: "ChatGPT usage" });
   },
 );
