@@ -636,6 +636,8 @@ export async function validatePermanentConnectorCatalogColumns(
           hash,
           slug: connector.slug,
           ...connectorCatalogEntryColumns(connector),
+          skillContentBundle: null,
+          skillContentBundleSourceVersionId: null,
         };
       })
       .sort((a, b) => {

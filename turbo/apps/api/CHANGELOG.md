@@ -10,6 +10,82 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.48.8](https://github.com/okou-ai/okou/compare/api-v2.48.7...api-v2.48.8) (2026-11-05)
+
+
+### Refactoring
+
+* **teams:** retire v1 upload protocol independently of account ownership ([#45413](https://github.com/okou-ai/okou/issues/45413)) ([a63d7c1](https://github.com/okou-ai/okou/commit/a63d7c10b05eda93f6ba0cd1b719f988796fb1c3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.4
+    * @okouai/core bumped to 8.818.5
+    * @okouai/db bumped to 2.22.6
+    * @okouai/pi-agent-runtime bumped to 1.51.69
+
+## [2.48.7](https://github.com/okou-ai/okou/compare/api-v2.48.6...api-v2.48.7) (2026-11-05)
+
+
+### Refactoring
+
+* remove close connector feature switch ([#45384](https://github.com/okou-ai/okou/issues/45384)) ([50e1913](https://github.com/okou-ai/okou/commit/50e1913bdce011ced6e184c0806bf389e61052e4))
+* remove expensify connector feature switch ([#45387](https://github.com/okou-ai/okou/issues/45387)) ([5c434bc](https://github.com/okou-ai/okou/commit/5c434bc83fddc0ba7dbfdead87154c73eb28d154))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.818.4
+    * @okouai/db bumped to 2.22.5
+    * @okouai/pi-agent-runtime bumped to 1.51.68
+
+## [2.48.6](https://github.com/okou-ai/okou/compare/api-v2.48.5...api-v2.48.6) (2026-11-05)
+
+
+### Refactoring
+
+* **api:** prepare connector skill bundle references ([#45339](https://github.com/okou-ai/okou/issues/45339)) ([6a51f10](https://github.com/okou-ai/okou/commit/6a51f10737ae9c0e2ee40509387fbd6f04b0f095))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.3
+    * @okouai/connectors bumped to 3.21.3
+    * @okouai/core bumped to 8.818.3
+    * @okouai/db bumped to 2.22.4
+    * @okouai/pi-agent-runtime bumped to 1.51.67
+
+## [2.48.5](https://github.com/okou-ai/okou/compare/api-v2.48.4...api-v2.48.5) (2026-11-05)
+
+
+### Bug Fixes
+
+* **api:** preserve connector permission scope and grant expiry ([#45340](https://github.com/okou-ai/okou/issues/45340)) ([5d9c758](https://github.com/okou-ai/okou/commit/5d9c758aeaae80e595011dbe1da099097a462759))
+
+## [2.48.4](https://github.com/okou-ai/okou/compare/api-v2.48.3...api-v2.48.4) (2026-11-05)
+
+
+### Performance Improvements
+
+* **app:** cache chat connector overview and refresh changed targets ([#45294](https://github.com/okou-ai/okou/issues/45294)) ([1b68448](https://github.com/okou-ai/okou/commit/1b684482eb01e7ff92d743ae140f7d6ea5932c1d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.2
+    * @okouai/core bumped to 8.818.2
+    * @okouai/db bumped to 2.22.3
+    * @okouai/pi-agent-runtime bumped to 1.51.66
+
 ## [2.48.3](https://github.com/okou-ai/okou/compare/api-v2.48.2...api-v2.48.3) (2026-11-05)
 
 

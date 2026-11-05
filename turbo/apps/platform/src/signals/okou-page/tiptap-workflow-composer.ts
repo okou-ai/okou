@@ -212,6 +212,17 @@ function feedbackPlaceholder(
   });
 }
 
+/** A suggestion quote asks for its own direction in every composer. */
+function composerFeedbackPlaceholder(
+  custom: (() => string) | undefined,
+): (suggestionContext: SuggestionContext | null) => string {
+  return (suggestionContext) => {
+    return custom && !suggestionContext
+      ? custom()
+      : feedbackPlaceholder(suggestionContext);
+  };
+}
+
 interface WorkflowHighlightStorage {
   workflowNames: readonly string[];
 }
@@ -3399,7 +3410,7 @@ export function createWorkflowComposerSignals<
   // preview follows the keyboard again, including when the menu reopens.
   const previewSuggestionIndexState$ = state<number | null>(null);
   const runtime = createWorkflowComposerRuntime(
-    options.feedbackPlaceholder ?? feedbackPlaceholder,
+    composerFeedbackPlaceholder(options.feedbackPlaceholder),
   );
   const agentMentionAvatarRuntime = createAgentMentionAvatarRuntime();
   const compositionGate = createCompositionGate();

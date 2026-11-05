@@ -338,6 +338,7 @@ async fn assert_cancelled_telemetry_owner_finishes_upload(
 ) -> Result<(), Box<dyn std::error::Error>> {
     use tokio::io::AsyncWriteExt;
 
+    let _guard = lock_test_state().await;
     let files = ExplicitTelemetryFiles::new("cancelled-owner")?;
     guest_agent::paths::write_private(files.paths.system_log_file(), "pending\n")?;
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await?;

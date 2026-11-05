@@ -29,6 +29,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::future::Future;
 use std::sync::{Arc, Mutex, MutexGuard};
 
 use tracing::field::{Field, Visit};
@@ -98,6 +99,45 @@ impl CapturedEvents {
             Err(poisoned) => poisoned.into_inner(),
         }
     }
+}
+
+/// Captures events while polling a future and returns its output and an event snapshot.
+///
+/// The previous subscriber is restored whenever a poll returns, including while the future is
+/// pending. Work outside the future's polls therefore retains its original subscriber. Dropping
+/// the future or unwinding through a poll also restores the previous subscriber.
+pub async fn capture_future_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
+where
+    F: Future,
+{
+    use tracing::instrument::WithSubscriber;
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let output = future.with_subscriber(subscriber).await;
+    (output, captured.entries())
+}
+
+/// Captures current-thread events throughout an awaited operation.
+///
+/// Unlike [`capture_future_events`], this keeps the subscriber installed while the future is
+/// pending, so interleaved work on the same thread is captured too. Poll and drop the returned
+/// future on the same thread. Completion, cancellation and panic restore the previous subscriber;
+/// on completion, restoration precedes the returned event snapshot.
+pub async fn capture_current_thread_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
+where
+    F: Future,
+{
+    use tracing_subscriber::layer::SubscriberExt;
+
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let guard = tracing::subscriber::set_default(subscriber);
+    tracing::callsite::rebuild_interest_cache();
+    let output = future.await;
+    drop(guard);
+    (output, captured.entries())
 }
 
 impl<S> Layer<S> for CapturedEvents

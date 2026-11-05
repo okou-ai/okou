@@ -50,6 +50,7 @@ import { validatePermanentAgentInstructions } from "./test-agent-instructions-pe
 import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-snapshot";
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
+import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
 import { validatePermanentArtifactThreadCatalog } from "./test-artifact-thread-catalog-permanent";
 import { validateBillingRunLifecycle } from "./test-billing-run-lifecycle-permanent";
@@ -3216,6 +3217,7 @@ async function main(): Promise<void> {
     await validateAgentRunLaunchSnapshotSchema(dbUrl1);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl1);
     await validateSeedSkillBundleSchema(dbUrl1);
+    await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);
     await validatePermanentWorkflowNameScopes(dbUrl1);
     await validateOfficialAutomationBindingSchema(dbUrl1);
@@ -3266,6 +3268,7 @@ async function main(): Promise<void> {
     await validateAgentRunLaunchSnapshotSchema(dbUrl2);
     await validateAgentRunOfficialWorkflowProvenanceSchema(dbUrl2);
     await validateSeedSkillBundleSchema(dbUrl2);
+    await validateConnectorSkillBundleSchema(dbUrl2);
     await validateChatConnectorAccessSchema(dbUrl2);
     await validatePermanentWorkflowNameScopes(dbUrl2);
     await validateOfficialAutomationBindingSchema(dbUrl2);

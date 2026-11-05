@@ -129,6 +129,7 @@ function release(args: {
   readonly label?: string;
   readonly httpSlug?: string;
   readonly mcpSlug?: string;
+  readonly skill?: ReturnType<typeof bundledSkill>;
   readonly mutate?: (catalog: Record<string, unknown>) => void;
 }) {
   const version = args.version ?? CATALOG_VERSION;
@@ -147,7 +148,13 @@ function release(args: {
       groups: [],
     },
     connectors: [
-      httpConnector(args.httpSlug ?? "catalog-service", args.label ?? "HTTP"),
+      {
+        ...httpConnector(
+          args.httpSlug ?? "catalog-service",
+          args.label ?? "HTTP",
+        ),
+        ...(args.skill ? { skill: args.skill } : {}),
+      },
       mcpConnector(args.mcpSlug),
     ],
   };
@@ -166,6 +173,41 @@ function release(args: {
       ["connectors/v4/active.json", bytes(pointer)],
       [catalogKey, catalogBytes],
     ]),
+  };
+}
+
+function bundledSkill() {
+  const versionId = createHash("sha256").update(randomUUID()).digest("hex");
+  const storageName = "connector-skill@catalog-service";
+  return {
+    kind: "bundled" as const,
+    versionId,
+    storageName,
+    storageVersionPrefix: `__system__/volume/${storageName}/${versionId}`,
+    size: 32,
+    archiveSize: 128,
+    fileCount: 1,
+  };
+}
+
+function preparationReceipt(
+  catalogDigest: string,
+  skill: ReturnType<typeof bundledSkill>,
+  sourceVersionId = skill.versionId,
+) {
+  return {
+    key: `connectors/skill-bundles/v1/${catalogDigest.slice(7)}.json`,
+    bytes: bytes({
+      version: 1,
+      catalogDigest,
+      skills: [
+        {
+          slug: "catalog-service",
+          sourceVersionId,
+          bundle: { sha256: "b".repeat(64), archiveBytes: skill.archiveSize },
+        },
+      ],
+    }),
   };
 }
 
@@ -192,7 +234,9 @@ function serveObjects(objects: ReadonlyMap<string, Buffer>): void {
     }
     const object = objects.get(key);
     if (object === undefined) {
-      return Promise.reject(new Error("Object unavailable"));
+      return Promise.reject(
+        Object.assign(new Error("Object unavailable"), { name: "NoSuchKey" }),
+      );
     }
     return Promise.resolve({
       ContentLength: object.length,
@@ -234,6 +278,56 @@ beforeEach(() => {
 });
 
 describe("connector catalog v4 preparation", () => {
+  it("prepares a receipt arriving after the catalog was accepted and reuses the prepared generation", async () => {
+    const client = (
+      await setupApp({
+        context,
+        routes: cronConnectorCatalogRoutes,
+        isolatePg: true,
+      })
+    )(cronConnectorCatalogContract);
+    const skill = bundledSkill();
+    const candidate = release({ skill });
+    serveObjects(candidate.objects);
+    expect((await sync(client)).body.outcome).toBe("accepted");
+    const receipt = preparationReceipt(candidate.pointer.catalogDigest, skill);
+    candidate.objects.set(receipt.key, receipt.bytes);
+    serveObjects(candidate.objects);
+    expect((await sync(client)).body.outcome).toBe("unchanged");
+    // Completed metadata preparation no longer depends on re-reading the
+    // receipt; the serving catalog and its captured source remain available.
+    serveObjects(
+      new Map([["connectors/v4/active.json", bytes(candidate.pointer)]]),
+    );
+    expect((await sync(client)).body.outcome).toBe("unchanged");
+    const listed = await publicCatalog();
+    expect(JSON.stringify(listed.body)).toContain("catalog-service");
+  });
+
+  it("retains the serving catalog when a receipt binds a candidate to a different source version", async () => {
+    const client = (
+      await setupApp({
+        context,
+        routes: cronConnectorCatalogRoutes,
+        isolatePg: true,
+      })
+    )(cronConnectorCatalogContract);
+    const serving = (await publicCatalog()).body;
+    const skill = bundledSkill();
+    const candidate = release({ skill, label: "Rejected Skill bundle" });
+    const receipt = preparationReceipt(
+      candidate.pointer.catalogDigest,
+      skill,
+      "e".repeat(64),
+    );
+    candidate.objects.set(receipt.key, receipt.bytes);
+    serveObjects(candidate.objects);
+    expect((await sync(client)).body).toStrictEqual({
+      outcome: "rejected",
+      failureCode: "invalid-reference",
+    });
+    expect((await publicCatalog()).body).toStrictEqual(serving);
+  });
   it("keeps serving the catalog when its source is unavailable", async () => {
     const serving = (await publicCatalog()).body;
     serveObjects(new Map());

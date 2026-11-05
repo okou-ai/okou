@@ -5,7 +5,6 @@ import {
   integrationsLarkUploadInitContract,
   integrationsGithubUploadInitContract,
   integrationsPhoneUploadInitContract,
-  integrationsTeamsUploadInitContract,
   integrationsTelegramUploadInitContract,
 } from "@okouai/api-contracts/contracts/integrations";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
@@ -16,7 +15,6 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { integrationsFeishuFileRoutes } from "../integrations-feishu-files";
 import { integrationsGithubUploadInitRoutes } from "../integrations-github-upload-init";
 import { integrationsPhoneUploadInitRoutes } from "../integrations-phone-upload-init";
-import { integrationsTeamsUploadInitRoutes } from "../integrations-teams-upload-init";
 import { integrationsTelegramUploadInitRoutes } from "../integrations-telegram-upload-init";
 import { uploadsCompleteRoutes } from "../uploads-complete";
 import { webFileUrlRoutes } from "../web-file-url";
@@ -46,11 +44,6 @@ const integrations = [
     name: "Phone",
     contract: integrationsPhoneUploadInitContract,
     routes: integrationsPhoneUploadInitRoutes,
-  },
-  {
-    name: "Teams",
-    contract: integrationsTeamsUploadInitContract,
-    routes: integrationsTeamsUploadInitRoutes,
   },
   {
     name: "Telegram",

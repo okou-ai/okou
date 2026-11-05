@@ -13,6 +13,94 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1095.7](https://github.com/okou-ai/okou/compare/app-v0.1095.6...app-v0.1095.7) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** reserve the pointer cursor for links ([#45410](https://github.com/okou-ai/okou/issues/45410)) ([a362219](https://github.com/okou-ai/okou/commit/a3622192416bde93d9f063e5bc15f6451ee838cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.4
+    * @okouai/core bumped to 8.818.5
+    * @okouai/ui bumped to 1.19.3
+
+## [0.1095.6](https://github.com/okou-ai/okou/compare/app-v0.1095.5...app-v0.1095.6) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** keep invitation code visible for returning signup visitors ([#45370](https://github.com/okou-ai/okou/issues/45370)) ([4e6ac29](https://github.com/okou-ai/okou/commit/4e6ac29b944f9cdeb27d481189261026698c5eb0))
+* **app:** open sidebar usage on click only ([#45375](https://github.com/okou-ai/okou/issues/45375)) ([0dbb20b](https://github.com/okou-ai/okou/commit/0dbb20bba49ef03fedeab53e1cb3b1cb93c96673))
+* **browser:** use server-authoritative session authorization ([#45332](https://github.com/okou-ai/okou/issues/45332)) ([5bec95a](https://github.com/okou-ai/okou/commit/5bec95a6c33f4989747094db13b56636fb8bc77d))
+
+
+### Refactoring
+
+* **app:** derive rail boundaries without observers ([#45355](https://github.com/okou-ai/okou/issues/45355)) ([b390ac7](https://github.com/okou-ai/okou/commit/b390ac7209c2cbc2c43bf07afb249096fe80e301))
+
+
+### Performance Improvements
+
+* **app:** isolate chat header refresh rendering ([#45373](https://github.com/okou-ai/okou/issues/45373)) ([453a5de](https://github.com/okou-ai/okou/commit/453a5de930be543f4d364a8e6a54d0b59bb017e9))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.818.4
+    * @okouai/ui bumped to 1.19.2
+
+## [0.1095.5](https://github.com/okou-ai/okou/compare/app-v0.1095.4...app-v0.1095.5) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.3
+    * @okouai/connectors bumped to 3.21.3
+    * @okouai/core bumped to 8.818.3
+
+## [0.1095.4](https://github.com/okou-ai/okou/compare/app-v0.1095.3...app-v0.1095.4) (2026-11-05)
+
+
+### Bug Fixes
+
+* **browser:** report recovery failures only after retries stop ([#45323](https://github.com/okou-ai/okou/issues/45323)) ([00ee1b8](https://github.com/okou-ai/okou/commit/00ee1b83a64c5cbe9c8fd597848c6f8246580cf0))
+
+## [0.1095.3](https://github.com/okou-ai/okou/compare/app-v0.1095.2...app-v0.1095.3) (2026-11-05)
+
+
+### Bug Fixes
+
+* **app:** show the invitation code on ordinary signup ([#45329](https://github.com/okou-ai/okou/issues/45329)) ([bf51d83](https://github.com/okou-ai/okou/commit/bf51d83cc891f6d7ec34f5f9941425d7e110f27c))
+* **browser:** expire operation failure notices after three seconds ([#45331](https://github.com/okou-ai/okou/issues/45331)) ([e5d43fd](https://github.com/okou-ai/okou/commit/e5d43fd0a12ad79f1dfc69e24c6ceb20e2d0be29))
+
+
+### Refactoring
+
+* **platform:** centralize async helpers with lint tracking ([#45326](https://github.com/okou-ai/okou/issues/45326)) ([1a5864b](https://github.com/okou-ai/okou/commit/1a5864be4fc4fb5415814c23d06de2b78ab7d310))
+
+
+### Performance Improvements
+
+* **app:** cache chat connector overview and refresh changed targets ([#45294](https://github.com/okou-ai/okou/issues/45294)) ([1b68448](https://github.com/okou-ai/okou/commit/1b684482eb01e7ff92d743ae140f7d6ea5932c1d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.2
+    * @okouai/core bumped to 8.818.2
+    * @okouai/ui bumped to 1.19.1
+
 ## [0.1095.2](https://github.com/okou-ai/okou/compare/app-v0.1095.1...app-v0.1095.2) (2026-11-05)
 
 

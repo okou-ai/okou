@@ -245,6 +245,7 @@ def test_empty_shard_does_not_pass(suite: Path) -> None:
     assert sum(len(report["selected"]) for _, report in results) == 1
 
 
+@pytest.mark.shard_cost(1)
 def test_failing_shard_preserves_pytest_failure(suite: Path) -> None:
     (suite / "tests/test_failure.py").write_text("def test_failure():\n    assert False\n")
     failure = "tests/test_failure.py::test_failure"

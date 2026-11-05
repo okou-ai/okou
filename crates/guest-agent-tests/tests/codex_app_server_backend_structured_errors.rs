@@ -37,6 +37,14 @@ async fn codex_app_server_classifies_supported_structured_errors()
             expected_reason: Some(FailureReason::OutputTokenLimit),
         },
         StructuredErrorCase {
+            scenario: "runtime-turn-failed-access-program",
+            expected_reason: Some(FailureReason::CodexAccessProgramUnavailable),
+        },
+        StructuredErrorCase {
+            scenario: "runtime-access-program-error",
+            expected_reason: Some(FailureReason::CodexAccessProgramUnavailable),
+        },
+        StructuredErrorCase {
             scenario: "runtime-turn-failed-context-window-exceeded",
             expected_reason: Some(FailureReason::ContextWindowExceeded),
         },
@@ -158,6 +166,35 @@ async fn codex_app_server_classifies_supported_structured_errors()
             "scenario: {}",
             case.scenario
         );
+
+        if case.expected_reason == Some(FailureReason::CodexAccessProgramUnavailable) {
+            let serialized = serde_json::to_value(&terminal_failure.diagnostic)?;
+            assert_eq!(
+                serialized["failureReason"],
+                "codex_access_program_unavailable"
+            );
+            let log = std::fs::read_to_string(runtime.paths.agent_log_file())?;
+            let events = log
+                .lines()
+                .map(serde_json::from_str::<Value>)
+                .collect::<Result<Vec<_>, _>>()?;
+            let expected_type = if case.scenario == "runtime-access-program-error" {
+                "error"
+            } else {
+                "turn.completed"
+            };
+            let terminal = events
+                .iter()
+                .find(|event| event["type"] == expected_type)
+                .ok_or("missing native access-program terminal event")?;
+            let error = if expected_type == "error" {
+                &terminal["error"]
+            } else {
+                &terminal["turn"]["error"]
+            };
+            assert_eq!(error["codex_error_info"], "other");
+            assert_eq!(error["message"], diagnostic.message);
+        }
 
         if case.expected_reason == Some(FailureReason::OutputTokenLimit) {
             assert_eq!(

@@ -92,6 +92,7 @@ def test_registered_flow_metadata_keys_are_unique():
     assert flow_metadata_key_linter.duplicate_registered_metadata_keys() == {}
 
 
+@pytest.mark.shard_cost(2)
 def test_registered_flow_metadata_keys_use_registry_constants():
     assert flow_metadata_key_linter.repository_metadata_key_violations() == []
 

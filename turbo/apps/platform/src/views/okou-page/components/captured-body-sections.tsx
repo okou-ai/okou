@@ -69,7 +69,7 @@ function CollapsibleSection({
       <details className="group">
         <summary
           className={cn(
-            "flex min-h-6 items-center gap-2 cursor-pointer list-none w-full text-left rounded-md hover:bg-state-hover",
+            "flex min-h-6 items-center gap-2 cursor-default list-none w-full text-left rounded-md hover:bg-state-hover",
             copyText && "pr-8",
           )}
         >

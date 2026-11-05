@@ -1388,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "URL を入力",
+    "authorizationRequired": "このチャットではクラウドブラウザーが有効になっていません",
     "blankPage": {
       "description": "{{assistantName}} は作業中にここでページを開きます。上で URL を入力して自分で閲覧することもできます。",
       "title": "まだページが開かれていません"
@@ -1633,6 +1634,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "新しいチャットに送信しました",
       "undoFeedback": "Undo",
       "useSuggestion": "提案を使う"
     },
@@ -5351,10 +5353,8 @@
         "credits": "クレジット",
         "fiveHourLimit": "5時間の上限",
         "label": "サブスクリプションの使用状況",
-        "leftSide": "左側",
         "lowUsage": "サブスクリプションの使用状況：残り20%未満",
         "resetTimeUnavailable": "リセット時間は利用不可",
-        "rightSide": "右側",
         "usage": "{{provider}}の使用量",
         "usageRemaining": "{{provider}} {{window}} 残り",
         "weeklyLimit": "週間上限"

@@ -1,5 +1,12 @@
 import { createHash } from "node:crypto";
-import { mkdtemp, mkdir, writeFile, readFile, rm } from "node:fs/promises";
+import {
+  chmod,
+  mkdtemp,
+  mkdir,
+  writeFile,
+  readFile,
+  rm,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { gunzipSync } from "node:zlib";
@@ -13,6 +20,7 @@ import { workflowAttachmentPath } from "./workflow-attachment-bundle";
 export interface ContentBundleFile {
   readonly path: string;
   readonly content: Buffer;
+  readonly mode?: 0o600 | 0o644 | 0o755;
 }
 const MAX_CONTENT_BYTES = 32 * 1024 * 1024;
 const MAX_FILES = 501;
@@ -39,6 +47,8 @@ function validateFiles(
     if (workflowAttachmentPath(file.path) !== file.path || paths.has(file.path))
       throw new Error("Ambiguous content bundle path");
     paths.add(file.path);
+    if (file.mode !== undefined && ![0o600, 0o644, 0o755].includes(file.mode))
+      throw new Error("Invalid content bundle file mode");
     size += file.content.length;
   }
   if (
@@ -74,6 +84,7 @@ export async function prepareContentBundle(
       const path = join(directory, file.path);
       await mkdir(dirname(path), { recursive: true });
       await writeFile(path, file.content, { mode: 0o600 });
+      await chmod(path, file.mode ?? 0o600);
     }
     const archivePath = join(root, "archive.tar.gz");
     await create(

@@ -135,22 +135,3 @@ function UsageArc({
     </g>
   );
 }
-
-export function SubscriptionUsageRingPosition({
-  type,
-}: {
-  readonly type: AccountMenuSubscriptionUsageRow["type"];
-}) {
-  const { t } = useTranslation();
-  return (
-    <span className="shrink-0 text-xs font-normal text-muted-foreground">
-      {type === "codex-oauth-token"
-        ? t(($) => {
-            return $.settings.accountMenu.subscriptions.leftSide;
-          })
-        : t(($) => {
-            return $.settings.accountMenu.subscriptions.rightSide;
-          })}
-    </span>
-  );
-}

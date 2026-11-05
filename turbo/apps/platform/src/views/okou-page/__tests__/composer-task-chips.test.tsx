@@ -2,6 +2,7 @@ import {
   mockTaskChipLayout,
   taskMenuItem,
 } from "./composer-task-chip-layout.ts";
+import { mockRailBrowserLayout, renderedRail } from "./rail-browser-layout.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   act,
@@ -539,6 +540,84 @@ test.each([
     expect(editor).toHaveTextContent("Keep my draft");
   },
 );
+
+test("Document rails page independently using their current viewport widths", async () => {
+  const layout = mockRailBrowserLayout({
+    viewportWidth: 400,
+    contentWidth: 1600,
+  });
+  mockTemplateChat();
+  await setupChips();
+  click(
+    button("Document", screen.getByRole("group", { name: "Choose a task" })),
+  );
+  const shelf = await screen.findByRole("group", {
+    name: "Document templates",
+  });
+  const firstTemplate = await waitFor(() => {
+    return button("Use template Content brief", shelf);
+  });
+  const filters = within(shelf).getByRole("group", {
+    name: "Document category",
+  });
+  const filterRail = renderedRail(button("Creative brief", filters));
+  const templateRail = renderedRail(firstTemplate);
+  layout.setViewportWidth(templateRail.viewport, 460);
+
+  click(button("Next page", filterRail.root));
+  expect(filterRail.viewport.scrollLeft).toBe(336);
+  expect(templateRail.viewport.scrollLeft).toBe(0);
+
+  click(button("Next page", templateRail.root));
+  expect(templateRail.viewport.scrollLeft).toBe(396);
+  expect(filterRail.viewport.scrollLeft).toBe(336);
+
+  // The next click uses the resized scrollport, not its width at mount.
+  layout.setViewportWidth(templateRail.viewport, 300);
+  fireEvent(window, new Event("resize"));
+  click(button("Next page", templateRail.root));
+  expect(templateRail.viewport.scrollLeft).toBe(632);
+  expect(filterRail.viewport.scrollLeft).toBe(336);
+
+  click(button("Previous page", templateRail.root));
+  expect(templateRail.viewport.scrollLeft).toBe(396);
+  expect(filterRail.viewport.scrollLeft).toBe(336);
+
+  click(button("Previous page", filterRail.root));
+  expect(filterRail.viewport.scrollLeft).toBe(0);
+  expect(templateRail.viewport.scrollLeft).toBe(396);
+});
+
+test("Document filters keep keyboard navigation and selection inside their rail", async () => {
+  mockTemplateChat();
+  const user = userEvent.setup({ delay: null });
+  await setupChips();
+  click(
+    button("Document", screen.getByRole("group", { name: "Choose a task" })),
+  );
+  const shelf = await screen.findByRole("group", {
+    name: "Document templates",
+  });
+  await expect(
+    within(shelf).findByLabelText("Use template Content brief"),
+  ).resolves.toBeInTheDocument();
+  const filters = within(shelf).getByRole("group", {
+    name: "Document category",
+  });
+
+  await user.click(button("Creative brief", filters));
+  await user.keyboard("{ArrowRight}");
+  expect(button("Contract", filters)).toHaveFocus();
+  await user.keyboard("{Enter}");
+
+  await expect(
+    within(shelf).findByLabelText("Use template Mutual NDA"),
+  ).resolves.toBeInTheDocument();
+  expect(button("Contract", filters)).toHaveAttribute("aria-pressed", "true");
+  expect(
+    within(shelf).queryByLabelText("Use template Content brief"),
+  ).not.toBeInTheDocument();
+});
 
 test("Task chips do not replace the composer in an existing conversation", async () => {
   mockTemplateChat();

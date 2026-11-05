@@ -13,12 +13,15 @@ transport, command executor, host lifecycle, and preferences. `ComputerUse/`
 contains the existing native Accessibility and ScreenCaptureKit backend.
 
 ```bash
-swift test --package-path desktop -j 4
+swift test --package-path desktop -j 4 --parallel --num-workers 2
 swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 CLERK_PUBLISHABLE_KEY=pk_test_example \
   OKOU_DESKTOP_PLATFORM_URL=https://staging-app.omby.ai \
-  python3 desktop/scripts/build.py --development --package
+  python3 desktop/scripts/build.py --development --package zip
 ```
+
+The root package runs XCTest cases in separate processes with two workers, as
+in CI. `-j 4` separately limits compilation jobs.
 
 Use the real staging publishable key. Development packages use `Okou Dev`,
 `ai.okou.desktop.dev`, and a separate Application Support directory. Production
@@ -30,10 +33,18 @@ configuration, helper presence, and bundled resources without signing in or
 registering a host. Production builds also require `SENTRY_DSN_DESKTOP`; package
 verification rejects a missing DSN so error reporting cannot silently disappear.
 
-Ordinary CI runs native checks and package construction on separate macOS runners. After
-both succeed, `build-macos-arm64` publishes the validated production and PR-preview
-ZIP/symbol artifacts under their existing names. The `okou-desktop-macos-arm64-staging`
-artifact is the intermediate handoff and is retained for one day.
+`--package zip` creates only a ZIP; bare `--package` creates both ZIP and DMG for
+distribution. Omitting `--package` still builds and verifies the app and symbols.
+
+Ordinary CI runs native checks and app construction on separate macOS runners.
+Production configuration is built and validated without distribution archives.
+PRs additionally create a Preview ZIP and matching symbols. After both jobs
+succeed, `build-macos-arm64` publishes them as
+`okou-desktop-macos-arm64-preview-unsigned`, retained for seven days. The PR-only
+`okou-desktop-macos-arm64-staging` handoff contains the same Preview files and is
+retained for one day. Non-PR validation does not upload GitHub Actions artifacts;
+canonical R2 artifacts and signed release ZIP/DMG publication follow the release
+process below.
 
 ### Error diagnostics
 

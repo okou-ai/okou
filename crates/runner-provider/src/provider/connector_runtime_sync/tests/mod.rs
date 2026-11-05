@@ -1,4 +1,5 @@
 use super::*;
+use tracing_test_support::capture_future_events as capture_sync_events;
 
 mod account_binding;
 
@@ -7,7 +8,6 @@ use serde_json::json;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::watch;
-use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
 
@@ -507,16 +507,6 @@ fn connector_runtime_sync_response(target: serde_json::Value) -> serde_json::Val
             },
         }],
     })
-}
-
-async fn capture_sync_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
-where
-    F: std::future::Future,
-{
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let output = future.with_subscriber(subscriber).await;
-    (output, captured.entries())
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {

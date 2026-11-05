@@ -184,7 +184,8 @@ jobs:
                 native_kerberos_needed=true
                 native_gssapi_peer_needed=true
                 ;;
-              crates/kerberos-worker/tests/check-native-kerberos.sh)
+              crates/kerberos-worker/tests/check-native-kerberos.sh | \
+              crates/runner-remote/*)
                 native_kerberos_needed=true
                 ;;
               crates/rfb-client/tests/check-native-gssapi-peer.sh | \
@@ -930,6 +931,12 @@ jobs:
           RUSTUP_TOOLCHAIN: stable
           NATIVE_TEST_OWNER: ubuntu
         run: bash crates/kerberos-worker/tests/check-native-kerberos.sh --privileged-synthetic
+      - name: Verify VNC starts during real Kerberos contention
+        shell: bash
+        env:
+          RUSTUP_TOOLCHAIN: stable
+          NATIVE_TEST_OWNER: ubuntu
+        run: bash crates/runner-remote/tests/check-native-vnc-kerberos.sh
       # The host key's X64 writer remains check; this matrix owns ARM64 only.
       - name: Save pinned ARM64 Kerberos dependencies
         if: github.ref == 'refs/heads/main' && runner.arch == 'ARM64' && steps.kerberos-cache.outputs.cache-hit != 'true'
@@ -942,7 +949,9 @@ jobs:
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: native-kerberos-${{ matrix.os }}
-          path: crates/target/native-kerberos-receipt/
+          path: |
+            crates/target/native-kerberos-receipt/
+            crates/target/native-vnc-kerberos-receipt/
           if-no-files-found: error
           retention-days: 14
 

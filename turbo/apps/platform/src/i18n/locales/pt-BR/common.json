@@ -1412,6 +1412,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "Digite uma URL",
+    "authorizationRequired": "O navegador na nuvem não está ativado para esta conversa",
     "blankPage": {
       "description": "{{assistantName}} abre páginas aqui enquanto trabalha. Digite uma URL acima para navegar por conta própria.",
       "title": "Nada aberto ainda"
@@ -1658,6 +1659,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "Enviado para uma nova conversa",
       "undoFeedback": "Undo",
       "useSuggestion": "Usar sugestão"
     },
@@ -5429,10 +5431,8 @@
         "credits": "Créditos",
         "fiveHourLimit": "Limite de 5 horas",
         "label": "Uso de assinaturas",
-        "leftSide": "Esquerda",
         "lowUsage": "Uso de assinaturas: menos de 20% restante",
         "resetTimeUnavailable": "Horário de redefinição indisponível",
-        "rightSide": "Direita",
         "usage": "Uso de {{provider}}",
         "usageRemaining": "{{provider}}: {{window}} restante",
         "weeklyLimit": "Limite semanal"

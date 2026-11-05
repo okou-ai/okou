@@ -1388,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "URL 입력",
+    "authorizationRequired": "이 채팅에서는 클라우드 브라우저가 활성화되지 않았습니다",
     "blankPage": {
       "description": "{{assistantName}}이(가) 작업하는 동안 여기에서 페이지를 엽니다. 위에 URL을 입력해 직접 둘러볼 수도 있습니다.",
       "title": "아직 열린 페이지가 없습니다"
@@ -1633,6 +1634,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "새 채팅으로 보냈습니다",
       "undoFeedback": "Undo",
       "useSuggestion": "제안 사용"
     },
@@ -5351,10 +5353,8 @@
         "credits": "크레딧",
         "fiveHourLimit": "5시간 한도",
         "label": "구독 사용량",
-        "leftSide": "왼쪽",
         "lowUsage": "구독 사용량: 남은 한도 20% 미만",
         "resetTimeUnavailable": "재설정 시간 사용 불가",
-        "rightSide": "오른쪽",
         "usage": "{{provider}} 사용량",
         "usageRemaining": "{{provider}} {{window}} 남음",
         "weeklyLimit": "주간 한도"

@@ -576,28 +576,48 @@ version_gc_test!(gc_versions_rechecks_artifact_type_before_removal, {
     std::fs::create_dir_all(&version_config).unwrap();
     age_version_past_gc_min_age(&home, version);
     let analysis = analyze_version_gc(&home, None, None).await.unwrap();
+    assert_eq!(
+        analysis.entries,
+        [VersionGcEntry {
+            name: version.to_string(),
+            retained: None,
+        }],
+        "the version must be removable before its artifact type changes"
+    );
 
     std::fs::remove_dir(&version_config).unwrap();
     std::fs::write(&version_config, "replacement file").unwrap();
-
-    let removed = gc_versions_with_analysis_and_uninstall(
-        &home,
-        false,
-        analysis,
-        successful_fake_uninstall_service_unit,
-    )
-    .await
-    .unwrap();
-
-    assert!(removed.is_empty());
+    age_version_past_gc_min_age(&home, version);
     assert!(
-        version_bin.exists(),
-        "a replacement path must stop the whole version cleanup"
+        version_gc_age(&home, version).await >= GC_MIN_AGE,
+        "the replacement must reach the type recheck rather than the age guard"
     );
-    assert!(
-        version_config.is_file(),
-        "the replacement path must remain untouched"
-    );
+
+    for dry_run in [true, false] {
+        let removed =
+            gc_versions_with_analysis_and_uninstall(&home, dry_run, analysis.clone(), |_| {
+                panic!("a replacement path must prevent service uninstall")
+            })
+            .await
+            .unwrap();
+
+        assert!(
+            removed.is_empty(),
+            "a replacement path must not be reported as removable or removed (dry_run={dry_run})"
+        );
+        assert!(
+            version_bin.is_dir(),
+            "a replacement path must stop the whole version cleanup"
+        );
+        assert!(
+            version_config.is_file(),
+            "the replacement path must remain untouched"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&version_config).unwrap(),
+            "replacement file"
+        );
+    }
 });
 
 version_gc_test!(gc_versions_skips_version_when_service_lock_is_held, {

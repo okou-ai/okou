@@ -29,11 +29,12 @@ import {
 } from "../external/s3";
 import { safeSync, settle } from "../utils";
 import { prepareImmutableCatalogEntries$ } from "./connector-catalog-immutable.service";
+import { prepareConnectorCatalogSkillBundles$ } from "./connector-catalog-skill-bundles.service";
 import { acceptedConnectorCatalogRelease$ } from "./connector-catalog-release.service";
 import {
   connectorCatalogSkillFailure,
   type ConnectorCatalogSkillFailure,
-} from "./connector-catalog-skill-registration.service";
+} from "./connector-catalog-skill-error";
 import {
   connectorCatalogSource,
   type ConnectorCatalogSource,
@@ -225,6 +226,7 @@ const publishCandidate$ = command(
           signal,
         );
         signal.throwIfAborted();
+        await set(prepareConnectorCatalogSkillBundles$, hash, signal);
         const { switched } = await set(
           publishCatalogPointer$,
           {
@@ -251,6 +253,59 @@ const publishCandidate$ = command(
       error: result.error,
     });
     throw new ConnectorCatalogPersistenceError();
+  },
+);
+
+const prepareUnchangedCatalog$ = command(
+  async (
+    { set },
+    args: {
+      readonly source: ConnectorCatalogSource;
+      readonly pointer: ConnectorCatalogActivePointer;
+      readonly fillCatalogVersion: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<ConnectorCatalogSyncAttemptReport> => {
+    const { source, pointer } = args;
+    const prepared = await settle(
+      set(prepareConnectorCatalogSkillBundles$, pointer.catalogDigest, signal),
+      signal,
+    );
+    signal.throwIfAborted();
+    if (!prepared.ok) {
+      const failure = connectorCatalogSkillFailure(prepared.error);
+      if (!failure) {
+        throw prepared.error;
+      }
+      return rejectedAttempt({
+        source,
+        failureCode: failure.code,
+        pointer,
+        servingHash: pointer.catalogDigest,
+      });
+    }
+    if (args.fillCatalogVersion) {
+      // The caller validated the original artifact. Do not attach its version
+      // to a concurrently switched generation.
+      await set(writeDb$)
+        .update(connectorCatalog)
+        .set({ catalogVersion: pointer.catalogVersion })
+        .where(
+          and(
+            eq(
+              connectorCatalog.schemaVersion,
+              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
+            ),
+            eq(connectorCatalog.hash, pointer.catalogDigest),
+          ),
+        );
+      signal.throwIfAborted();
+    }
+    log.debug("Connector catalog unchanged", {
+      sourceId: source.sourceId,
+      catalogDigest: pointer.catalogDigest,
+    });
+    return { outcome: "unchanged", failureCode: null };
   },
 );
 
@@ -285,11 +340,11 @@ export const syncConnectorCatalog$ = command(
       unchanged &&
       servingCatalog?.catalogVersion === pointer.catalogVersion
     ) {
-      log.debug("Connector catalog unchanged", {
-        sourceId: source.sourceId,
-        catalogDigest: servingHash,
-      });
-      return { outcome: "unchanged", failureCode: null };
+      return await set(
+        prepareUnchangedCatalog$,
+        { source, pointer, fillCatalogVersion: false },
+        signal,
+      );
     }
 
     const candidateResult = await set(
@@ -314,21 +369,11 @@ export const syncConnectorCatalog$ = command(
     if (unchanged) {
       // Older catalog pointers have no version. Validate the original artifact
       // before filling it, and never attach it to a concurrently switched hash.
-      signal.throwIfAborted();
-      await set(writeDb$)
-        .update(connectorCatalog)
-        .set({ catalogVersion: candidate.identity.catalogVersion })
-        .where(
-          and(
-            eq(
-              connectorCatalog.schemaVersion,
-              SUPPORTED_CONNECTOR_CATALOG_SCHEMA_VERSION,
-            ),
-            eq(connectorCatalog.hash, candidate.identity.catalogDigest),
-          ),
-        );
-      signal.throwIfAborted();
-      return { outcome: "unchanged", failureCode: null };
+      return await set(
+        prepareUnchangedCatalog$,
+        { source, pointer, fillCatalogVersion: true },
+        signal,
+      );
     }
 
     // Compare permission bundles against the generation serving before the

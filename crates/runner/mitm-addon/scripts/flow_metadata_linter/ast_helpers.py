@@ -31,6 +31,15 @@ class _StaticIterableOutcomes:
         return any(node is None for node in self.ordered)
 
 
+def _expression_branches(node: ast.AST) -> list[ast.expr] | None:
+    """Return conservative conditional/boolean result branches in source order."""
+    if isinstance(node, ast.IfExp):
+        return [node.body, node.orelse]
+    if isinstance(node, ast.BoolOp):
+        return node.values
+    return None
+
+
 def _target_requires_unpacking(node: ast.AST | None) -> bool:
     """Return whether binding ``node`` starts with structural sequence unpacking."""
     return isinstance(node, ast.List | ast.Tuple)
@@ -164,16 +173,10 @@ def _static_iterable_first_outcomes(
     """Return static first (or last) nodes and whether the iterable may be empty."""
     if isinstance(node, ast.NamedExpr):
         return _static_iterable_first_outcomes(node.value, reverse=reverse)
-    if isinstance(node, ast.IfExp):
+    branches = _expression_branches(node)
+    if branches is not None:
         return _merge_static_alternatives(
-            [
-                _static_iterable_first_outcomes(node.body, reverse=reverse),
-                _static_iterable_first_outcomes(node.orelse, reverse=reverse),
-            ]
-        )
-    if isinstance(node, ast.BoolOp):
-        return _merge_static_alternatives(
-            [_static_iterable_first_outcomes(value, reverse=reverse) for value in node.values]
+            [_static_iterable_first_outcomes(value, reverse=reverse) for value in branches]
         )
     if isinstance(node, ast.Dict | ast.DictComp):
         return _static_mapping_first_key_outcomes(node, reverse=reverse)
@@ -244,10 +247,10 @@ def _static_iterable_extreme_outcomes(node: ast.AST, *, largest: bool) -> _Stati
     """Project sorted endpoints without enumerating combinations of starred alternatives."""
     if isinstance(node, ast.NamedExpr):
         return _static_iterable_extreme_outcomes(node.value, largest=largest)
-    if isinstance(node, ast.IfExp | ast.BoolOp):
-        alternatives = [node.body, node.orelse] if isinstance(node, ast.IfExp) else node.values
+    branches = _expression_branches(node)
+    if branches is not None:
         return _merge_static_alternatives(
-            [_static_iterable_extreme_outcomes(value, largest=largest) for value in alternatives]
+            [_static_iterable_extreme_outcomes(value, largest=largest) for value in branches]
         )
     if (
         isinstance(node, ast.Call)
@@ -326,16 +329,10 @@ def _static_iterable_element_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
     """Return statically visible iterable elements without imposing an order."""
     if isinstance(node, ast.NamedExpr):
         return _static_iterable_element_outcomes(node.value)
-    if isinstance(node, ast.IfExp):
+    branches = _expression_branches(node)
+    if branches is not None:
         return _merge_static_alternatives(
-            [
-                _static_iterable_element_outcomes(node.body),
-                _static_iterable_element_outcomes(node.orelse),
-            ]
-        )
-    if isinstance(node, ast.BoolOp):
-        return _merge_static_alternatives(
-            [_static_iterable_element_outcomes(value) for value in node.values]
+            [_static_iterable_element_outcomes(value) for value in branches]
         )
     if isinstance(node, ast.Dict | ast.DictComp):
         return _static_mapping_key_outcomes(node)
@@ -386,16 +383,10 @@ def _static_mapping_first_key_outcomes(
         return _static_mapping_key_outcomes(node)
     if isinstance(node, ast.NamedExpr):
         return _static_mapping_first_key_outcomes(node.value)
-    if isinstance(node, ast.IfExp):
+    branches = _expression_branches(node)
+    if branches is not None:
         return _merge_static_alternatives(
-            [
-                _static_mapping_first_key_outcomes(node.body),
-                _static_mapping_first_key_outcomes(node.orelse),
-            ]
-        )
-    if isinstance(node, ast.BoolOp):
-        return _merge_static_alternatives(
-            [_static_mapping_first_key_outcomes(value) for value in node.values]
+            [_static_mapping_first_key_outcomes(value) for value in branches]
         )
     if isinstance(node, ast.Dict):
         outcomes: list[ast.AST | None] = [None]
@@ -426,16 +417,10 @@ def _static_mapping_first_key_outcomes(
 def _static_mapping_key_outcomes(node: ast.AST) -> _StaticIterableOutcomes:
     if isinstance(node, ast.NamedExpr):
         return _static_mapping_key_outcomes(node.value)
-    if isinstance(node, ast.IfExp):
+    branches = _expression_branches(node)
+    if branches is not None:
         return _merge_static_alternatives(
-            [
-                _static_mapping_key_outcomes(node.body),
-                _static_mapping_key_outcomes(node.orelse),
-            ]
-        )
-    if isinstance(node, ast.BoolOp):
-        return _merge_static_alternatives(
-            [_static_mapping_key_outcomes(value) for value in node.values]
+            [_static_mapping_key_outcomes(value) for value in branches]
         )
     if isinstance(node, ast.Dict):
         result: list[ast.AST] = []
@@ -502,18 +487,12 @@ def _static_mapping_input_key_outcomes(
 ) -> _StaticIterableOutcomes:
     if isinstance(node, ast.NamedExpr):
         return _static_mapping_input_key_outcomes(node.value, include_all=include_all)
-    if isinstance(node, ast.IfExp):
-        return _merge_static_alternatives(
-            [
-                _static_mapping_input_key_outcomes(node.body, include_all=include_all),
-                _static_mapping_input_key_outcomes(node.orelse, include_all=include_all),
-            ]
-        )
-    if isinstance(node, ast.BoolOp):
+    branches = _expression_branches(node)
+    if branches is not None:
         return _merge_static_alternatives(
             [
                 _static_mapping_input_key_outcomes(value, include_all=include_all)
-                for value in node.values
+                for value in branches
             ]
         )
     if _is_static_mapping_expression(node):
@@ -534,13 +513,10 @@ def _static_mapping_input_key_outcomes(
 def _static_pair_key_nodes(node: ast.AST) -> list[ast.AST]:
     if isinstance(node, ast.NamedExpr):
         return _static_pair_key_nodes(node.value)
-    if isinstance(node, ast.IfExp):
+    branches = _expression_branches(node)
+    if branches is not None:
         return _deduplicate_static_nodes(
-            [*_static_pair_key_nodes(node.body), *_static_pair_key_nodes(node.orelse)]
-        )
-    if isinstance(node, ast.BoolOp):
-        return _deduplicate_static_nodes(
-            [key for value in node.values for key in _static_pair_key_nodes(value)]
+            [key for value in branches for key in _static_pair_key_nodes(value)]
         )
     if not isinstance(node, ast.List | ast.Tuple) or len(node.elts) != _MAPPING_PAIR_LENGTH:
         return []
@@ -615,12 +591,9 @@ def _is_unbound_dict_method_call(node: ast.Call, method_name: str) -> bool:
 def _is_static_mapping_expression(node: ast.AST) -> bool:
     if isinstance(node, ast.NamedExpr):
         return _is_static_mapping_expression(node.value)
-    if isinstance(node, ast.IfExp):
-        return _is_static_mapping_expression(node.body) and _is_static_mapping_expression(
-            node.orelse
-        )
-    if isinstance(node, ast.BoolOp):
-        return all(_is_static_mapping_expression(value) for value in node.values)
+    branches = _expression_branches(node)
+    if branches is not None:
+        return all(_is_static_mapping_expression(value) for value in branches)
     return isinstance(node, ast.Dict | ast.DictComp) or (
         isinstance(node, ast.Call)
         and (
@@ -927,10 +900,9 @@ def _truth_test_may_raise(node: ast.AST) -> bool:
         return False
     if isinstance(node, ast.NamedExpr):
         return _truth_test_may_raise(node.value)
-    if isinstance(node, ast.IfExp):
-        return _truth_test_may_raise(node.body) or _truth_test_may_raise(node.orelse)
-    if isinstance(node, ast.BoolOp):
-        return any(_truth_test_may_raise(value) for value in node.values)
+    branches = _expression_branches(node)
+    if branches is not None:
+        return any(_truth_test_may_raise(value) for value in branches)
     if isinstance(node, ast.Compare):
         return _comparison_operator_may_raise(node.ops[-1])
     return not (isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.Not))

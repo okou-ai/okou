@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
+use tracing_test_support::capture_current_thread_events as capture_sandbox_run_events;
 
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use futures_util::FutureExt;
@@ -115,19 +116,6 @@ fn assert_no_telemetry_action(telemetry: &crate::telemetry::JobTelemetry, action
         ops.iter().all(|(op_action, _, _)| op_action != action),
         "unexpected telemetry action {action}, got: {ops:?}"
     );
-}
-
-async fn capture_sandbox_run_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
-where
-    F: std::future::Future,
-{
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
-    tracing::callsite::rebuild_interest_cache();
-    let output = future.await;
-    drop(guard);
-    (output, captured.entries())
 }
 
 fn captured_events_named<'a>(events: &'a [CapturedEvent], message: &str) -> Vec<&'a CapturedEvent> {

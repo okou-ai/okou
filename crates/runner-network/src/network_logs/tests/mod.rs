@@ -1,13 +1,13 @@
 use std::fmt::Write as _;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use tracing_test_support::capture_current_thread_events as capture_async_log_events;
 
 use api_contracts::generated::constants::client::headers::CLIENT_REQUEST_ID_HEADER;
 use httpmock::prelude::*;
 use serde_json::{Map, Value, json};
 use tokio::io::AsyncWriteExt as _;
-use tracing_subscriber::prelude::*;
-use tracing_test_support::{CapturedEvent, CapturedEvents};
+use tracing_test_support::CapturedEvent;
 
 use super::test_http::{HttpClient, HttpClientConfig};
 
@@ -379,19 +379,6 @@ fn sequenced_log_fixture_preserves_escaping_order_and_sequence_boundaries() {
             assert_eq!(log.to_string(), original);
         }
     }
-}
-
-async fn capture_async_log_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
-where
-    F: std::future::Future,
-{
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
-    tracing::callsite::rebuild_interest_cache();
-    let output = future.await;
-    drop(guard);
-    (output, captured.entries())
 }
 
 // Only simulated response-delay tests need to prevent automatic clock advancement

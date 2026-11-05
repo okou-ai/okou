@@ -1,7 +1,7 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-connections";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
@@ -386,7 +386,7 @@ test("Count the whole category on a chip, not the slice discovery returned", asy
   ).toBeVisible();
 });
 
-test("Show the whole category the chip counted, not the browse slice", async () => {
+test("Open full connector categories and switch between them with the keyboard", async () => {
   const user = userEvent.setup({ delay: null });
   installComposerConnectorFixture({
     catalog: rankedCatalog(),
@@ -400,35 +400,33 @@ test("Show the whole category the chip counted, not the browse slice", async () 
 
   const dialog = await openDirectory(user);
   const chip = await waitFor(() => {
-    const match = Array.from(
-      dialog.querySelectorAll<HTMLElement>("[data-connector-category-chip]"),
-    ).find((element) => {
-      return element.textContent === "Mail16";
-    });
-    if (!match) {
-      throw new Error("Expected the Mail category chip to count sixteen");
-    }
-    return match;
+    return dialogButton(dialog, "Mail16");
   });
+  act(() => {
+    chip.focus();
+  });
+  expect(chip).toHaveFocus();
 
   // The chip says sixteen, so entering it has to show sixteen -- a browse
   // response carries at most twelve of any one category.
-  await user.click(chip);
-  await waitFor(() => {
-    expect(within(dialog).getByText("Help Scout")).toBeVisible();
-  });
+  await user.keyboard("{Enter}");
+  await expect(
+    within(dialog).findByText("Help Scout"),
+  ).resolves.toBeInTheDocument();
   expect(within(dialog).getAllByTestId("connector-card-label")).toHaveLength(
     16,
   );
 
-  // The chip row still offers every category, so the reader can pick another.
-  expect(
-    Array.from(
-      dialog.querySelectorAll<HTMLElement>("[data-connector-category-chip]"),
-    ).map((element) => {
-      return element.textContent;
-    }),
-  ).toContain("Voice50");
+  // Filtering retains other category buttons and their keyboard activation.
+  act(() => {
+    dialogButton(dialog, "Voice50").focus();
+  });
+  expect(dialogButton(dialog, "Voice50")).toHaveFocus();
+  await user.keyboard(" ");
+  await expect(
+    within(dialog).findByText("3Scribe"),
+  ).resolves.toBeInTheDocument();
+  expect(within(dialog).getAllByTestId("connector-card-label")).toHaveLength(2);
 });
 
 async function tabToCard(

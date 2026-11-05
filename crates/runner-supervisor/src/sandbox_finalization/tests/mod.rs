@@ -1,8 +1,8 @@
 use super::*;
 use std::collections::{HashMap, HashSet};
-use std::future::Future;
 use std::sync::Arc;
 use std::time::Duration;
+use tracing_test_support::capture_current_thread_events as capture_async_log_events;
 
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use guest_contracts::reuse_preparation::{FilesystemCapacity, ReusePreparationReport};
@@ -13,8 +13,7 @@ use sandbox::{ExecResult, SandboxFactory, SandboxId};
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 use sha2::{Digest, Sha256};
 use tracing::Level;
-use tracing_subscriber::prelude::*;
-use tracing_test_support::{CapturedEvent, CapturedEvents};
+use tracing_test_support::CapturedEvent;
 
 use crate::idle_lifecycle::SharedIdlePool;
 use crate::job_lifecycle::{ActiveBudgetLease, RunCleanupDisposition, RunCleanupState};
@@ -99,19 +98,6 @@ fn test_budget_lease() -> (Arc<ResourceBudget>, BudgetLease) {
     let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 0));
     let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
     (budget, lease)
-}
-
-async fn capture_async_log_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
-where
-    F: Future,
-{
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
-    tracing::callsite::rebuild_interest_cache();
-    let output = future.await;
-    drop(guard);
-    (output, captured.entries())
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {

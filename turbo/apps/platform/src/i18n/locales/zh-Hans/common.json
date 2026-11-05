@@ -1388,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "输入网址",
+    "authorizationRequired": "此对话未启用云端浏览器",
     "blankPage": {
       "description": "{{assistantName}} 工作时会在这里打开网页。你也可以在上方输入网址自己浏览。",
       "title": "还没有打开网页"
@@ -1633,6 +1634,7 @@
       "notPlannedRecorded": "已记下，这件事暂无计划",
       "reasonLabel": "补充原因（选填）",
       "saveReason": "保存",
+      "sent": "已发送到新聊天",
       "undoFeedback": "撤销",
       "useSuggestion": "使用建议"
     },
@@ -5351,10 +5353,8 @@
         "credits": "积分",
         "fiveHourLimit": "5 小时额度",
         "label": "订阅用量",
-        "leftSide": "左侧",
         "lowUsage": "订阅用量：剩余额度低于 20%",
         "resetTimeUnavailable": "重置时间不可用",
-        "rightSide": "右侧",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩余用量",
         "weeklyLimit": "每周额度"

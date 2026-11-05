@@ -747,17 +747,7 @@ impl Authority {
         }
         supported_profiles.extend(rsa_aes_profiles(supports_ssh));
         supported_profiles.extend(super::native::profiles());
-        let kerberos_admitted = if let Some((root, owner, deadline)) = kerberos_probe {
-            Box::pin(kerberos_worker::probe_owned(root, deadline, Some(owner)))
-                .await
-                .is_ok()
-        } else {
-            false
-        };
-        if kerberos_admitted {
-            supported_profiles.extend(super::kerberos::profiles(supports_ssh));
-        }
-        let request = ResolveRequest {
+        let mut request = ResolveRequest {
             connection_id: connection.to_string(),
             runner_identity: ResolveRequestRunnerIdentity {
                 runner_id: self.identity.runner_id().to_string(),
@@ -765,7 +755,7 @@ impl Authority {
             },
             supported_profiles,
         };
-        let (response, created_at) = self
+        let (mut response, mut created_at) = self
             .call::<ResolveResponse>(
                 routes::resolve::route(routes::resolve::Params {
                     run_id: &run.to_string(),
@@ -773,6 +763,30 @@ impl Authority {
                 &request,
             )
             .await?;
+        // An unsupported profile is refused by the API before decrypting any
+        // credentials. Probe only then, so ordinary starts never queue behind
+        // native authentication, while Kerberos still requires actual bootstrap
+        // and confirmed teardown before its credentials may be requested.
+        let mut kerberos_admitted = false;
+        if matches!(response, ResolveResponse::UnsupportedProfile)
+            && let Some((root, owner, deadline)) = kerberos_probe
+            && Box::pin(kerberos_worker::probe_owned(root, deadline, Some(owner)))
+                .await
+                .is_ok()
+        {
+            kerberos_admitted = true;
+            request
+                .supported_profiles
+                .extend(super::kerberos::profiles(supports_ssh));
+            (response, created_at) = self
+                .call::<ResolveResponse>(
+                    routes::resolve::route(routes::resolve::Params {
+                        run_id: &run.to_string(),
+                    }),
+                    &request,
+                )
+                .await?;
+        }
         // Credential parsing can fail after the API has identified the exact
         // configuration. Preserve that identity for the passive failure report.
         diagnostic_identity.created_at = created_at;

@@ -4,8 +4,7 @@ use guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_SUCCESS;
 use sandbox::{Sandbox, SandboxError, SandboxOperation, SandboxOperationReason};
 use sandbox_mock::MockSandbox;
 use tracing::Level;
-use tracing_subscriber::prelude::*;
-use tracing_test_support::{CapturedEvent, CapturedEvents};
+use tracing_test_support::{CapturedEvent, capture_current_thread_events};
 
 fn report(
     before_bytes: u64,
@@ -33,13 +32,7 @@ async fn capture_preparation(
     sandbox: &MockSandbox,
     run_id: RunId,
 ) -> (Result<(), IdleReusePreparationFailure>, Vec<CapturedEvent>) {
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let guard = tracing::subscriber::set_default(subscriber);
-    tracing::callsite::rebuild_interest_cache();
-    let result = execute_preparation(sandbox, run_id, run_id, None).await;
-    drop(guard);
-    (result, captured.entries())
+    capture_current_thread_events(execute_preparation(sandbox, run_id, run_id, None)).await
 }
 
 async fn execute_preparation(

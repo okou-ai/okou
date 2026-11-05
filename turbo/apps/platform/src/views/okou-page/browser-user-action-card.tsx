@@ -1178,7 +1178,7 @@ function BrowserColorControl({
         <input
           id={inputId}
           type="color"
-          className="h-10 w-16 min-w-0 cursor-pointer rounded border border-border bg-input p-1 disabled:cursor-not-allowed"
+          className="h-10 w-16 min-w-0 rounded border border-border bg-input p-1 disabled:cursor-not-allowed"
           aria-describedby={describedBy}
           value={choice?.value ?? observed}
           disabled={busy}

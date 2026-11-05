@@ -424,7 +424,7 @@ function ChatThreadMenuButton({
       variant="quiet"
       size="icon-2xs"
       className={cn(
-        `group/thread-menu pointer-events-auto absolute left-1 top-1 cursor-pointer rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
+        `group/thread-menu pointer-events-auto absolute left-1 top-1 rounded-md ${touch ? "min-h-11 min-w-11" : ""} ${
           hasRestingIndicator
             ? ""
             : "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover:opacity-100 focus-visible:opacity-100 data-popup-open:opacity-100"
@@ -1529,7 +1529,7 @@ function ChatThreadsTitle({
           onClick={() => {
             setCollapsed(!collapsed);
           }}
-          className="h-8 min-w-0 flex-1 cursor-pointer justify-start gap-1 px-2 text-[13px] leading-4 text-nav-copy-muted hover:bg-transparent hover:text-nav-copy active:bg-transparent group-hover:text-nav-copy [&_svg]:size-3"
+          className="h-8 min-w-0 flex-1 justify-start gap-1 px-2 text-[13px] leading-4 text-nav-copy-muted hover:bg-transparent hover:text-nav-copy active:bg-transparent group-hover:text-nav-copy [&_svg]:size-3"
         >
           <span className="min-w-0 truncate">{titleLabel}</span>
           <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">

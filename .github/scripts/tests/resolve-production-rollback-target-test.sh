@@ -40,6 +40,8 @@ case "${1:-}" in
       else
         [ "${MOCK_REGISTRY_ARCHIVE_READER_VALID:-1}" = "1" ]
       fi
+    elif [ "${3:-}" = "6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e" ]; then
+      [ "${MOCK_TEAMS_UPLOAD_V2_CLI_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d" ]; then
       [ "${MOCK_TEAMS_IDENTITY_PREPARATION_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "$MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR" ]; then
@@ -293,6 +295,10 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *rollback-floors/teams-upload-v2-cli* ]]; then
+      printf '%s\n' "${MOCK_TEAMS_UPLOAD_V2_CLI_COMMIT-6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/teams-identity-retirement-preparation* ]]; then
       printf '%s\n' "${MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT-7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d}"
       exit 0
@@ -2218,6 +2224,19 @@ for expectation in \
   [ ! -s "${tmp_dir}/teams-identity-preparation.output" ] || fail "incompatible Teams API must not publish outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Teams preparation floor must reject before provider or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_TEAMS_UPLOAD_V2_CLI_COMMIT=|Cannot resolve the merged Teams v2 upload CLI on main" \
+  "MOCK_TEAMS_UPLOAD_V2_CLI_COMMIT=invalid|Cannot resolve the merged Teams v2 upload CLI on main" \
+  "MOCK_TEAMS_UPLOAD_V2_CLI_VALID=0|Runner release runner-rs-v1.2.3 predates the Teams v2 upload CLI"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" \
+    run_resolver "${tmp_dir}/teams-upload-v2-cli.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/teams-upload-v2-cli.output" ] || fail "v1 Teams Runner must not publish outputs"
+  if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+    fail "v1 Teams Runner must reject before Runner artifact or host access"
   fi
 done
 

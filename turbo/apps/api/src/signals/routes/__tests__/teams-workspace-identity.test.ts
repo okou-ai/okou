@@ -792,6 +792,7 @@ test.each([
               contentType: "text/plain",
               length: bytes.length,
               canonical: {
+                version: 2,
                 operationId,
                 checksumSha256: createHash("sha256")
                   .update(bytes)
@@ -853,6 +854,7 @@ test.each([
               contentType: "text/plain",
               length: bytes.length,
               canonical: {
+                version: 2,
                 operationId: uncertainOperation,
                 checksumSha256: createHash("sha256")
                   .update(bytes)

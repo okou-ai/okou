@@ -6,9 +6,8 @@ use runner_types::ids::RunId;
 use std::os::unix::fs::PermissionsExt;
 use tokio::io::AsyncWriteExt;
 use tracing::Level;
-use tracing::instrument::WithSubscriber;
-use tracing_subscriber::prelude::*;
-use tracing_test_support::{CapturedEvent, CapturedEvents};
+use tracing_test_support::CapturedEvent;
+use tracing_test_support::capture_future_events as capture_mitmdump_monitor_events;
 
 static ADDON_FILES: std::sync::LazyLock<Vec<(String, String)>> =
     std::sync::LazyLock::new(load_test_addon_files);
@@ -51,16 +50,6 @@ fn load_test_addon_files() -> Vec<(String, String)> {
     collect(&root, &root, &mut files);
     files.sort_by(|a, b| a.0.cmp(&b.0));
     files
-}
-
-async fn capture_mitmdump_monitor_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
-where
-    F: std::future::Future,
-{
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let output = future.with_subscriber(subscriber).await;
-    (output, captured.entries())
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {

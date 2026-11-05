@@ -2909,10 +2909,12 @@ function ChatThread({
   isMain,
   thread,
   header,
+  children,
 }: {
   isMain?: boolean;
   thread: ChatPanelSignals;
   header: ChatHeaderActionsState;
+  children: ReactNode;
 }) {
   const { t } = useTranslation();
   const setContainerRef = useSet(
@@ -2929,7 +2931,9 @@ function ChatThread({
       ref={setContainerRef}
       tabIndex={-1}
     >
-      <ChatThreadContent thread={thread} header={header} />
+      <ChatThreadContent thread={thread} header={header}>
+        {children}
+      </ChatThreadContent>
       {isMain ? <ChatThreadAppSkeletonHandoff thread={thread} /> : null}
     </section>
   );
@@ -2951,12 +2955,16 @@ function MissingChatThread({ threadId }: { threadId: string }) {
   );
 }
 
-function ChatThreadPane({
+// Keep retained header state outside the thread key. Body children are created
+// by the pane so header-only updates do not re-render the conversation.
+function ChatThreadPaneFrame({
   isMain,
   pane,
+  children,
 }: {
   isMain?: boolean;
   pane: Exclude<ChatThreadPaneState, null>;
+  children: ReactNode;
 }) {
   const header = useChatHeaderActions(
     pane.kind === "thread" ? pane.thread : null,
@@ -2968,9 +2976,25 @@ function ChatThreadPane({
       isMain={isMain}
       thread={pane.thread}
       header={header}
-    />
+    >
+      {children}
+    </ChatThread>
   ) : (
     <MissingChatThread threadId={pane.threadId} />
+  );
+}
+
+function ChatThreadPane({
+  isMain,
+  pane,
+}: {
+  isMain?: boolean;
+  pane: Exclude<ChatThreadPaneState, null>;
+}) {
+  return (
+    <ChatThreadPaneFrame isMain={isMain} pane={pane}>
+      {pane.kind === "thread" ? <ChatThreadBody thread={pane.thread} /> : null}
+    </ChatThreadPaneFrame>
   );
 }
 
@@ -3953,9 +3977,11 @@ function ChatThreadResourceLayout({
 function ChatThreadContent({
   thread,
   header,
+  children,
 }: {
   thread: ChatPanelSignals;
   header: ChatHeaderActionsState;
+  children: ReactNode;
 }) {
   const exists = useGet(thread.threadExists$);
   if (!exists) {
@@ -3965,6 +3991,14 @@ function ChatThreadContent({
   return (
     <>
       <ChatThreadHeader thread={thread} header={header} />
+      {children}
+    </>
+  );
+}
+
+function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
+  return (
+    <>
       <ChatThreadResourceLayout thread={thread}>
         <div className="flex h-full min-w-0 flex-col">
           <ChatThreadEventsPane thread={thread} />
@@ -4511,7 +4545,7 @@ function ThinkingLabel({
           onClick={() => {
             openQueueDrawer();
           }}
-          className="cursor-pointer underline underline-offset-2"
+          className="underline underline-offset-2"
         >
           {queueEllipsis}
         </button>
@@ -6628,7 +6662,7 @@ function ShareGroupSelectionColumn({
     >
       {/* The label covers the whole column, including the row's padding,
           and keeps its text for assistive technology only. */}
-      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-pointer data-disabled:pointer-events-none @[960px]:-right-2.5">
+      <Field.Label className="absolute -inset-y-1.5 -left-2 -right-2 cursor-default data-disabled:pointer-events-none @[960px]:-right-2.5">
         <span className="sr-only">
           {shareGroupSelectionLabel(t, allSelected)}
         </span>

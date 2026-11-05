@@ -402,26 +402,23 @@ struct PiDelivery {
     log: String,
 }
 
-// Follow serde_json's map order, including workspace preserve_order builds,
-// while borrowing the large message instead of cloning it into a fixture Value.
-struct SessionRecord<'a> {
+// Follow each envelope's map order, including preserve_order builds, while
+// borrowing the complete canonical message instead of escaping it again.
+struct MessageRecord<'a> {
     fields: &'a serde_json::Map<String, Value>,
-    message: &'a Value,
+    message: &'a serde_json::value::RawValue,
 }
 
-impl serde::Serialize for SessionRecord<'_> {
+impl serde::Serialize for MessageRecord<'_> {
     fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
         use serde::ser::SerializeMap as _;
         let mut map = serializer.serialize_map(Some(self.fields.len()))?;
         for (name, value) in self.fields {
-            map.serialize_entry(
-                name,
-                if name == "message" {
-                    self.message
-                } else {
-                    value
-                },
-            )?;
+            if name == "message" {
+                map.serialize_entry(name, self.message)?;
+            } else {
+                map.serialize_entry(name, value)?;
+            }
         }
         map.end()
     }
@@ -430,7 +427,7 @@ impl serde::Serialize for SessionRecord<'_> {
 fn write_session_record(
     output: impl Write,
     index: usize,
-    message: &Value,
+    message: &serde_json::value::RawValue,
 ) -> serde_json::Result<()> {
     let mut fields = serde_json::Map::new();
     fields.insert("type".into(), json!("message"));
@@ -443,7 +440,7 @@ fn write_session_record(
     fields.insert("message".into(), Value::Null);
     serde_json::to_writer(
         output,
-        &SessionRecord {
+        &MessageRecord {
             fields: &fields,
             message,
         },
@@ -456,14 +453,43 @@ fn borrowed_session_record_preserves_canonical_bytes() -> Result<(), serde_json:
     for index in [0, 1] {
         let original = json!({"type":"message","id":format!("message-{index}"),"parentId":if index == 0 {None} else {Some(format!("message-{}",index-1))},"timestamp":"2026-09-11T00:00:00Z","message":message});
         let mut actual = Vec::new();
-        write_session_record(&mut actual, index, &message)?;
+        write_session_record(
+            &mut actual,
+            index,
+            &serde_json::value::to_raw_value(&message)?,
+        )?;
         assert_eq!(actual, original.to_string().as_bytes());
     }
     Ok(())
 }
 
+// Reuse the complete canonical message in both independent source streams.
+// RawValue is produced by serde_json, never by hand-built JSON fragments.
+fn write_delivery_records(
+    rpc: &mut impl Write,
+    session: &mut impl Write,
+    messages: &[Value],
+) -> Result<(), Box<dyn std::error::Error>> {
+    for (index, event) in messages.iter().enumerate() {
+        let fields = event.as_object().ok_or("RPC fixture must be an object")?;
+        let message = serde_json::value::to_raw_value(&event["message"])?;
+        serde_json::to_writer(
+            &mut *rpc,
+            &MessageRecord {
+                fields,
+                message: &message,
+            },
+        )?;
+        rpc.write_all(b"\n")?;
+        write_session_record(&mut *session, index, &message)?;
+        session.write_all(b"\n")?;
+    }
+    Ok(())
+}
+
 #[test]
-fn streamed_session_records_preserve_every_canonical_line() -> Result<(), serde_json::Error> {
+fn streamed_session_records_preserve_every_canonical_line() -> Result<(), Box<dyn std::error::Error>>
+{
     for messages in [
         vec![],
         vec![Value::Null],
@@ -471,17 +497,28 @@ fn streamed_session_records_preserve_every_canonical_line() -> Result<(), serde_
             json!({}),
             json!({"role":"assistant", "content":[{"text":"你好\"\\\n\0"}]}),
         ],
+        (0..12)
+            .map(|index| json!({"index":index, "z-field":"last", "a-field":[true, null]}))
+            .collect(),
     ] {
-        let mut actual = b"existing-header\n".to_vec();
-        let mut expected = String::from("existing-header\n");
-        for (index, message) in messages.iter().enumerate() {
-            write_session_record(&mut actual, index, message)?;
-            actual.push(b'\n');
+        let events = messages.iter().map(|message| json!({
+            "type":"message_end", "message":message, "z-extra":"你好\"\\\n\0", "a-extra":[null, true]
+        })).collect::<Vec<_>>();
+        let mut rpc = b"existing-rpc-header\n".to_vec();
+        let mut session = b"existing-session-header\n".to_vec();
+        write_delivery_records(&mut rpc, &mut session, &events)?;
+        let mut expected_rpc = String::from("existing-rpc-header\n");
+        let mut expected_session = String::from("existing-session-header\n");
+        for (index, event) in events.iter().enumerate() {
+            expected_rpc.push_str(&event.to_string());
+            expected_rpc.push('\n');
+            let message = &event["message"];
             let original = json!({"type":"message","id":format!("message-{index}"),"parentId":if index == 0 {None} else {Some(format!("message-{}",index-1))},"timestamp":"2026-09-11T00:00:00Z","message":message});
-            expected.push_str(&original.to_string());
-            expected.push('\n');
+            expected_session.push_str(&original.to_string());
+            expected_session.push('\n');
         }
-        assert_eq!(actual, expected.as_bytes());
+        assert_eq!(rpc, expected_rpc.as_bytes());
+        assert_eq!(session, expected_session.as_bytes());
     }
     Ok(())
 }
@@ -517,25 +554,17 @@ async fn deliver_pi_rpc_with_skips(
         .suffix(&format!("_{session_id}.jsonl"))
         .tempfile_in(session_dir)?;
     let session_path = session_file.path();
-    // Batch the serializers' small escaped-string writes into unchanged JSONL.
     let mut original = BufWriter::new(Vec::new());
-    for event in messages {
-        serde_json::to_writer(&mut original, event)?;
-        original.write_all(b"\n")?;
-    }
+    let mut session = BufWriter::new(serde_json::to_vec(
+        &json!({"type":"session","version":3,"id":session_id,"timestamp":"2026-09-11T00:00:00Z","cwd":"/home/user/workspace"}),
+    )?);
+    session.write_all(b"\n")?;
+    write_delivery_records(&mut original, &mut session, messages)?;
     let original = String::from_utf8(original.into_inner()?)?;
     assert!(original.lines().all(
         |line| line.len() < guest_contracts::stdout_framing::ORDINARY_CLI_STDOUT_MAX_LINE_BYTES
     ));
     std::fs::write(&events_path, &original)?;
-    let mut session = BufWriter::new(serde_json::to_vec(
-        &json!({"type":"session","version":3,"id":session_id,"timestamp":"2026-09-11T00:00:00Z","cwd":"/home/user/workspace"}),
-    )?);
-    session.write_all(b"\n")?;
-    for (index, event) in messages.iter().enumerate() {
-        write_session_record(&mut session, index, &event["message"])?;
-        session.write_all(b"\n")?;
-    }
     let session = String::from_utf8(session.into_inner()?)?;
     std::fs::write(session_path, &session)?;
     let commands_path = tmp.path().join("commands.jsonl");

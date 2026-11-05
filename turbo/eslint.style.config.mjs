@@ -62,6 +62,36 @@ const strokeWidthRestrictions = [
   },
 ];
 
+// Cursor follows the element, not the click handler: a link (an anchor or
+// Router `Link` with a destination) draws the browser's pointer by itself, and
+// buttons and other controls keep the default arrow, as native apps do. A
+// hand-written pointer only ever lands on a non-link, so it is the one cursor
+// that is never needed. Non-native control hosts (`<summary>`, a row `<label>`,
+// an option row, a span-based switch) state `cursor-default` instead, so text
+// inside them does not show the I-beam. See "Cursor" in docs/app/styles.md.
+const POINTER_CURSOR_CLASS =
+  "(^|[\\s:])!?cursor-(pointer|\\[pointer\\])!?($|\\s)";
+const POINTER_CURSOR_MESSAGE =
+  "Links draw the pointer cursor natively; buttons and controls keep the default arrow. Remove the pointer cursor, use `cursor-default` on a non-native control host, or make real navigation an anchor or Router `Link`. See docs/app/styles.md.";
+const cursorRestrictions = [
+  {
+    selector: `Literal[value=/${POINTER_CURSOR_CLASS}/]`,
+    message: POINTER_CURSOR_MESSAGE,
+  },
+  {
+    selector: `TemplateElement[value.raw=/${POINTER_CURSOR_CLASS}/]`,
+    message: POINTER_CURSOR_MESSAGE,
+  },
+  {
+    selector: "Property[key.name='cursor'] Literal[value=/^\\s*pointer\\s*$/]",
+    message: POINTER_CURSOR_MESSAGE,
+  },
+  {
+    selector: "Property[key.value='cursor'] Literal[value=/^\\s*pointer\\s*$/]",
+    message: POINTER_CURSOR_MESSAGE,
+  },
+];
+
 const productionSourceFiles = [
   "apps/platform/src/**/*.{ts,tsx}",
   "packages/ui/src/**/*.{ts,tsx}",
@@ -125,7 +155,11 @@ export default [
           ignore: allowlistedClasses.map(exactRegex),
         },
       ],
-      "no-restricted-syntax": ["error", ...strokeWidthRestrictions],
+      "no-restricted-syntax": [
+        "error",
+        ...strokeWidthRestrictions,
+        ...cursorRestrictions,
+      ],
     },
   },
   {
@@ -139,13 +173,14 @@ export default [
     //   worth re-examining on its own merits; it is carried unchanged here
     //   rather than settled by a guard that was not written for it.
     //
-    // Neither is a competing opinion about how thick a border is.
+    // Neither is a competing opinion about how thick a border is. The
+    // exemption covers stroke width only; the cursor restriction still applies.
     files: [
       "apps/platform/src/views/components/mermaid-diagram.tsx",
       "apps/platform/src/views/okou-page/components/chat-card.tsx",
     ],
     rules: {
-      "no-restricted-syntax": "off",
+      "no-restricted-syntax": ["error", ...cursorRestrictions],
     },
   },
 ];

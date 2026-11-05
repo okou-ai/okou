@@ -1,4 +1,4 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import {
   integrationsTeamsMessageContract,
   integrationsTeamsUploadCompleteContract,
@@ -20,6 +20,23 @@ import type { TeamsConnectFixture } from "./helpers/teams-connect";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
+
+function canonicalUpload(
+  bytes: string,
+  target: {
+    user?: string;
+    conversationId?: string;
+    activityId?: string;
+    text?: string;
+  },
+) {
+  return {
+    version: 2 as const,
+    operationId: randomUUID(),
+    checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+    ...target,
+  };
+}
 
 function captureTeamsRequests(
   installation: TeamsConnectFixture,
@@ -210,6 +227,10 @@ describe("Teams installation read ownership", () => {
           headers,
           body: {
             filename: "notes.txt",
+            canonical: canonicalUpload(bytes, {
+              user: "me",
+              text: "Uploaded notes",
+            }),
             contentType: "text/plain",
             length: Buffer.byteLength(bytes),
           },
@@ -225,7 +246,10 @@ describe("Teams installation read ownership", () => {
         (
           await fetch(initialized.body.uploadUrl, {
             method: "PUT",
-            headers: initialized.body.uploadHeaders,
+            headers: {
+              "Content-Type": "text/plain",
+              ...initialized.body.uploadHeaders,
+            },
             body: bytes,
             signal: context.signal,
           })
@@ -238,6 +262,7 @@ describe("Teams installation read ownership", () => {
           headers,
           body: {
             uploadId: initialized.body.uploadId,
+            operationId: initialized.body.operationId,
             user: "me",
             text: "Uploaded notes",
           },
@@ -311,16 +336,24 @@ describe("Teams installation read ownership", () => {
     });
   });
 
-  it("reports the missing installation before resolving an uploaded file", async () => {
+  it("reports the missing installation before allocating an upload", async () => {
     const owner = createPublicConnectorActor(context);
     await owner.run(async () => {
       await createBddApi(context).bootstrapLimitedFreeOnboarding(owner.actor, {
         displayName: "No Teams installation",
       });
       const response = await accept(
-        setupApp({ context, routes: integrationsTeamsUploadCompleteRoutes })(
-          integrationsTeamsUploadCompleteContract,
-        ).complete({ headers, body: { uploadId: randomUUID(), user: "me" } }),
+        setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
+          integrationsTeamsUploadInitContract,
+        ).init({
+          headers,
+          body: {
+            filename: "missing.txt",
+            contentType: "text/plain",
+            length: 7,
+            canonical: canonicalUpload("missing", { user: "me" }),
+          },
+        }),
         [404],
       );
       expect(response.body).toStrictEqual({
@@ -367,11 +400,7 @@ describe("Teams target command ownership", () => {
     const owner = createPublicTeamsDispatchFixture(context);
     await owner.run(async () => {
       const fixture = await owner.create({ withDefaultAgent: true });
-      await owner.disconnect(fixture);
-      expectDisconnectedInstallation(
-        await owner.status(fixture),
-        fixture.installation.teamsTenantId,
-      );
+      captureTeamsRequests(fixture.installation, "a:disconnected-upload");
       installSharedThreadStorage(context);
       const client = setupApp({
         context,
@@ -385,6 +414,7 @@ describe("Teams target command ownership", () => {
           headers,
           body: {
             filename: "disconnected.txt",
+            canonical: canonicalUpload(bytes, { user: "me" }),
             contentType: "text/plain",
             length: Buffer.byteLength(bytes),
           },
@@ -395,16 +425,28 @@ describe("Teams target command ownership", () => {
         (
           await fetch(initialized.body.uploadUrl, {
             method: "PUT",
-            headers: initialized.body.uploadHeaders,
+            headers: {
+              "Content-Type": "text/plain",
+              ...initialized.body.uploadHeaders,
+            },
             body: bytes,
             signal: context.signal,
           })
         ).status,
       ).toBe(200);
+      await owner.disconnect(fixture);
+      expectDisconnectedInstallation(
+        await owner.status(fixture),
+        fixture.installation.teamsTenantId,
+      );
       const disconnected = await accept(
         client.complete({
           headers,
-          body: { uploadId: initialized.body.uploadId, user: "me" },
+          body: {
+            uploadId: initialized.body.uploadId,
+            operationId: initialized.body.operationId,
+            user: "me",
+          },
         }),
         [404],
       );
@@ -503,17 +545,35 @@ describe("Teams explicit target delivery", () => {
             headers,
             body: {
               filename: "explicit.txt",
+              canonical: canonicalUpload(bytes, {
+                user: teamsUserId,
+                text: "Explicit attachment",
+              }),
               contentType: "text/plain",
               length: Buffer.byteLength(bytes),
             },
           }),
-          [200],
+          [200, 404],
         );
+        if (!connected) {
+          expect(initialized.status).toBe(404);
+          expect(initialized.body).toMatchObject({
+            error: { code: "NOT_FOUND" },
+          });
+          expect(requests).toStrictEqual([]);
+          return;
+        }
+        if (initialized.status !== 200) {
+          throw new Error("Expected authorized Teams initialization");
+        }
         expect(
           (
             await fetch(initialized.body.uploadUrl, {
               method: "PUT",
-              headers: initialized.body.uploadHeaders,
+              headers: {
+                "Content-Type": "text/plain",
+                ...initialized.body.uploadHeaders,
+              },
               body: bytes,
               signal: context.signal,
             })
@@ -526,18 +586,13 @@ describe("Teams explicit target delivery", () => {
             headers,
             body: {
               uploadId: initialized.body.uploadId,
+              operationId: initialized.body.operationId,
               user: teamsUserId,
               text: "Explicit attachment",
             },
           }),
           [200, 404],
         );
-        if (!connected) {
-          expect(response.status).toBe(404);
-          expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-          expect(requests).toStrictEqual([]);
-          return;
-        }
         expect(response.status).toBe(200);
         if (response.status !== 200) {
           throw new Error("Expected authorized Teams delivery");
@@ -656,17 +711,36 @@ describe("Teams explicit target delivery", () => {
             headers,
             body: {
               filename: "reply.txt",
+              canonical: canonicalUpload(bytes, {
+                conversationId,
+                activityId,
+                text: "Reply attachment",
+              }),
               contentType: "text/plain",
               length: Buffer.byteLength(bytes),
             },
           }),
-          [200],
+          [200, 404],
         );
+        if (!connected) {
+          expect(initialized.status).toBe(404);
+          expect(initialized.body).toMatchObject({
+            error: { code: "NOT_FOUND" },
+          });
+          expect(requests).toStrictEqual([]);
+          return;
+        }
+        if (initialized.status !== 200) {
+          throw new Error("Expected authorized Teams initialization");
+        }
         expect(
           (
             await fetch(initialized.body.uploadUrl, {
               method: "PUT",
-              headers: initialized.body.uploadHeaders,
+              headers: {
+                "Content-Type": "text/plain",
+                ...initialized.body.uploadHeaders,
+              },
               body: bytes,
               signal: context.signal,
             })
@@ -679,6 +753,7 @@ describe("Teams explicit target delivery", () => {
             headers,
             body: {
               uploadId: initialized.body.uploadId,
+              operationId: initialized.body.operationId,
               conversationId,
               activityId,
               text: "Reply attachment",
@@ -686,12 +761,6 @@ describe("Teams explicit target delivery", () => {
           }),
           [200, 404],
         );
-        if (!connected) {
-          expect(response.status).toBe(404);
-          expect(response.body).toMatchObject({ error: { code: "NOT_FOUND" } });
-          expect(requests).toStrictEqual([]);
-          return;
-        }
         expect(response.status).toBe(200);
         if (response.status !== 200) {
           throw new Error("Expected authorized Teams delivery");

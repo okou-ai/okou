@@ -34,7 +34,7 @@ async function openSubscriptionUsage(): Promise<HTMLElement> {
   const entry = await within(
     screen.getByTestId("labeled-nav-rail"),
   ).findByLabelText(/^Subscription usage/);
-  await userEvent.setup().hover(entry);
+  click(entry);
   return screen.findByTestId("account-menu-subscriptions");
 }
 
@@ -67,7 +67,7 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
   ).not.toBeInTheDocument();
 });
 
-test("Preview subscriptions from the rail and open Models in Settings", async () => {
+test("Open subscriptions by clicking the rail and open Models in Settings", async () => {
   const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
@@ -98,10 +98,10 @@ test("Preview subscriptions from the rail and open Models in Settings", async ()
   const codex = within(panel).getByRole("region", { name: "ChatGPT usage" });
   const claude = within(panel).getByRole("region", { name: "Claude usage" });
   expect(
-    within(codex).getByRole("heading", { name: "ChatGPT Left side" }),
+    within(codex).getByRole("heading", { name: "ChatGPT" }),
   ).toBeInTheDocument();
   expect(
-    within(claude).getByRole("heading", { name: "Claude Right side" }),
+    within(claude).getByRole("heading", { name: "Claude" }),
   ).toBeInTheDocument();
   expect(within(codex).getAllByRole("meter")).toHaveLength(1);
   expect(within(claude).getAllByRole("meter")).toHaveLength(2);
@@ -126,9 +126,7 @@ test("Preview subscriptions from the rail and open Models in Settings", async ()
       formatResetInTimeZone("2030-01-07T00:00:00.000Z", "America/New_York"),
     );
   });
-  await user.hover(
-    within(claude).getByRole("heading", { name: "Claude Right side" }),
-  );
+  await user.hover(within(claude).getByRole("heading", { name: "Claude" }));
   await waitFor(() => {
     expectVisibleText(
       formatResetInTimeZone("2030-01-01T05:00:00.000Z", "America/New_York"),
@@ -453,7 +451,7 @@ test.each(["Escape", "Cancel"])(
     expect(
       screen.queryByTestId("account-menu-subscriptions"),
     ).not.toBeInTheDocument();
-    await user.hover(entry);
+    click(entry);
     await expect(
       screen.findByTestId("account-menu-subscriptions"),
     ).resolves.toBeInTheDocument();

@@ -1,4 +1,5 @@
 import { jsonb, text } from "drizzle-orm/pg-core";
+import { connectorSkillBundleColumns } from "./connector-skill-bundle";
 import type {
   ImmutableConnectorCatalogIcon,
   ImmutableConnectorCatalogAuthMethods,
@@ -24,6 +25,7 @@ export function connectorCatalogColumns() {
       .notNull(),
     mcp: jsonb("mcp").$type<ImmutableConnectorCatalogMcp>(),
     skill: jsonb("skill").$type<ImmutableConnectorCatalogSkill>().notNull(),
+    ...connectorSkillBundleColumns(),
     firewall: jsonb("firewall")
       .$type<ImmutableConnectorCatalogFirewall>()
       .notNull(),

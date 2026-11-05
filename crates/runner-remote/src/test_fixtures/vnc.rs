@@ -74,7 +74,14 @@ pub(crate) fn optional_kerberos_request(
     expected: Value,
     supports_ssh: bool,
 ) -> impl Fn(&httpmock::HttpMockRequest) -> bool + Send + Sync + 'static {
-    let mut capable = expected.clone();
+    let capable = with_kerberos_profiles(expected.clone(), supports_ssh);
+    move |request| {
+        serde_json::from_slice::<Value>(request.body_ref())
+            .is_ok_and(|body| body == expected || body == capable)
+    }
+}
+
+pub(crate) fn with_kerberos_profiles(mut capable: Value, supports_ssh: bool) -> Value {
     for transport in ["direct", "ssh", "cloudflare_access", "tailscale"] {
         if transport == "ssh" && !supports_ssh {
             continue;
@@ -101,8 +108,5 @@ pub(crate) fn optional_kerberos_request(
             }
         }
     }
-    move |request| {
-        serde_json::from_slice::<Value>(request.body_ref())
-            .is_ok_and(|body| body == expected || body == capable)
-    }
+    capable
 }

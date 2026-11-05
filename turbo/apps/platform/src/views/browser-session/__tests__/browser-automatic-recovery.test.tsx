@@ -26,6 +26,7 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockMonotonicNow, mockNow } from "../../../lib/time.ts";
+import { initSentry } from "../../../lib/sentry.ts";
 
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
@@ -41,7 +42,10 @@ function mockViewer() {
   mockNow(() => {
     return now + elapsed;
   }, context.signal);
-  recordBrowserStartupErrors();
+  const startupErrors = recordBrowserStartupErrors();
+  const errorLog = vi.spyOn(console, "error");
+  const sentry = context.mocks.sentry();
+  initSentry();
   const browser = mockBrowserCdp(context, endpoint, {
     targets: [
       {
@@ -101,6 +105,13 @@ function mockViewer() {
   });
   return {
     browser,
+    sentry,
+    startupErrors,
+    errorLogs() {
+      return errorLog.mock.calls.filter(([prefix]) => {
+        return prefix === "[E][Browser]" || prefix === "[E][Promise]";
+      });
+    },
     session,
     start(enabled = true, refined = false) {
       return setupPage({
@@ -214,6 +225,8 @@ test("Automatic connection recovery survives transient descriptors and restores 
   });
   await pendingRecovery();
   for (const [index, interval] of [1000, 2000, 4000].entries()) {
+    expect(viewer.sentry.reports).toHaveLength(0);
+    expect(viewer.errorLogs()).toHaveLength(0);
     viewer.advance(interval);
     await act(async () => {
       await replies[index]!.promise;
@@ -229,6 +242,8 @@ test("Automatic connection recovery survives transient descriptors and restores 
     });
   });
   expect(reads).toBe(3);
+  expect(viewer.sentry.reports).toHaveLength(0);
+  expect(viewer.errorLogs()).toHaveLength(0);
   expect(
     screen.queryByLabelText("Sibling", { selector: '[role="tab"]' }),
   ).not.toBeInTheDocument();
@@ -390,28 +405,60 @@ test("A different selected target clears the previous picture while its first fr
   await ready("https://other.example");
 });
 
-test("Definitive authorization loss clears the picture and ends the reconnecting notice", async () => {
-  const viewer = mockViewer();
-  await viewer.start();
-  await ready();
-  const canvas = screen.getByLabelText<HTMLCanvasElement>("Live browser view");
-  const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    return respond(403, { error: { code: "FORBIDDEN", message: "Revoked" } });
-  });
-  act(() => {
-    return viewer.browser.disconnect({ code: 1006, wasClean: false });
-  });
-  await pendingRecovery();
-  viewer.advance(1000);
-  await waitFor(() => {
-    return expect(reconnect()).toBeEnabled();
-  });
-  expect(clear).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
-  expect(canvas).toHaveAttribute("aria-hidden", "true");
-  expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-});
+test.each(["attempt", "pacing"] as const)(
+  "Definitive authorization loss during %s clears the picture and ends the reconnecting notice",
+  async (phase) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    const canvas =
+      screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+    const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
+    const denied = context.mocks.deferred<void>();
+    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+      denied.resolve();
+      return respond(403, { error: { code: "FORBIDDEN", message: "Revoked" } });
+    });
+    act(() => {
+      return viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    await pendingRecovery();
+    if (phase === "pacing") {
+      act(() => {
+        context.mocks.ably.trigger("browserSessionChanged", { threadId });
+      });
+      await act(async () => {
+        await denied.promise;
+      });
+    }
+    await waitFor(() => {
+      expect(canvas).toHaveAttribute(
+        "aria-hidden",
+        phase === "pacing" ? "true" : "false",
+      );
+    });
+    expect(viewer.sentry.reports).toHaveLength(0);
+    viewer.advance(1000);
+    await waitFor(() => {
+      return expect(reconnect()).toBeEnabled();
+    });
+    expect(clear).toHaveBeenCalledWith(0, 0, canvas.width, canvas.height);
+    expect(canvas).toHaveAttribute("aria-hidden", "true");
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(viewer.sentry.reports).toHaveLength(1);
+    expect(viewer.sentry.reports[0]).toMatchObject({
+      context: {
+        tags: { browser_event: "recovery-stopped", logger: "Browser" },
+        contexts: {
+          browser_recovery: { outcome: "terminal" },
+          browser_http: { status: 403, code: "FORBIDDEN" },
+        },
+      },
+    });
+    expect(viewer.startupErrors).toHaveLength(0);
+  },
+);
 
 test.each(["shared", "split"] as const)(
   "Automatic %s image recovery retains healthy control",
@@ -443,6 +490,8 @@ test.each(["shared", "split"] as const)(
     });
     expect(viewer.browser.connections()).toBe(connections);
     expect(clear).not.toHaveBeenCalled();
+    expect(viewer.sentry.reports).toHaveLength(0);
+    expect(viewer.errorLogs()).toHaveLength(0);
   },
 );
 
@@ -475,6 +524,8 @@ test("Exhausted automatic recovery stops after three attempts and permits a fres
   });
   await pendingRecovery();
   for (const [index, interval] of [1000, 2000, 4000].entries()) {
+    expect(viewer.sentry.reports).toHaveLength(0);
+    expect(viewer.errorLogs()).toHaveLength(0);
     viewer.advance(interval);
     await act(async () => {
       await replies[index]!.promise;
@@ -488,11 +539,23 @@ test("Exhausted automatic recovery stops after three attempts and permits a fres
     "The browser action could not be completed. Check the browser before trying again.",
   );
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    context: {
+      tags: { browser_event: "recovery-stopped", logger: "Browser" },
+      contexts: {
+        browser_recovery: { outcome: "exhausted" },
+        browser_http: { status: 500, code: "INTERNAL_SERVER_ERROR" },
+      },
+    },
+  });
+  expect(viewer.errorLogs()).toHaveLength(0);
   unavailable = false;
   viewer.advance(61_000);
   click(reconnect());
   await ready();
   expect(reads).toBe(4);
+  expect(viewer.sentry.reports).toHaveLength(1);
 });
 
 test.each([403, 409] as const)(
@@ -521,11 +584,19 @@ test.each([403, 409] as const)(
     await waitFor(() => {
       expect(reconnect()).toBeEnabled();
     });
+    expect(viewer.sentry.reports).toHaveLength(1);
+    click(reconnect());
+    await waitFor(() => {
+      expect(viewer.sentry.reports).toHaveLength(2);
+      expect(reconnect()).toBeEnabled();
+    });
+    expect(viewer.errorLogs()).toHaveLength(0);
     viewer.advance(180_000);
     denied = false;
     click(reconnect());
     await ready();
-    expect(reads).toBe(2);
+    expect(reads).toBe(3);
+    expect(viewer.sentry.reports).toHaveLength(2);
   },
 );
 
@@ -548,6 +619,10 @@ test("The episode ceiling ends a stalled descriptor and late work cannot start a
   const viewer = mockViewer();
   await viewer.start();
   await ready();
+  const navigation = viewer.browser.holdNext("Page.navigate");
+  await fill(screen.getByLabelText("Address"), "next.example");
+  await userEvent.keyboard("{Enter}");
+  await navigation.received;
   const received = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   let reads = 0;
@@ -564,24 +639,49 @@ test("The episode ceiling ends a stalled descriptor and late work cannot start a
     });
   });
   act(() => {
-    viewer.browser.disconnect({ code: 1006, wasClean: false });
+    viewer.browser.failConnection();
   });
   await pendingRecovery();
   viewer.advance(1000);
   await act(async () => {
     await received.promise;
   });
+  expect(viewer.sentry.reports).toHaveLength(0);
+  expect(viewer.errorLogs()).toHaveLength(0);
   viewer.advance(180_000);
   await waitFor(() => {
     expect(reconnect()).toBeEnabled();
   });
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    type: "exception",
+    error: { name: "CdpFault", kind: "connection" },
+    context: {
+      contexts: {
+        browser_recovery: { outcome: "exhausted" },
+        browser_connection: {
+          source: "native-error",
+          role: "control",
+          phase: "open",
+          ready_state: 3,
+          pending_requests: 1,
+        },
+      },
+    },
+  });
+  expect(JSON.stringify(viewer.sentry.reports)).not.toContain("private");
   await act(() => {
     release.resolve();
   });
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   click(reconnect());
-  await ready();
+  await ready("http://next.example/");
+  await act(async () => {
+    await navigation.release();
+  });
   expect(reads).toBe(2);
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.errorLogs()).toHaveLength(0);
 });
 
 test("Missing initial paint recovers automatically and rejects the retired first image", async () => {
@@ -640,12 +740,14 @@ test("The episode ceiling shows its final error while the last native bootstrap 
   expect(screen.getByRole("alert")).toHaveTextContent(
     "The browser did not become ready in time. Reconnect the browser.",
   );
+  expect(viewer.sentry.reports).toHaveLength(1);
   click(reconnect());
   await ready();
   await act(async () => {
     await attachment.release();
   });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(viewer.sentry.reports).toHaveLength(1);
 });
 
 test("A split image socket is replaced without replacing its healthy control socket", async () => {
@@ -682,6 +784,48 @@ test("A split image socket is replaced without replacing its healthy control soc
       .at(-1)?.connectionId,
   ).toBe(control);
   expect(viewer.browser.connections()).toBe(connections + 1);
+  expect(viewer.sentry.reports).toHaveLength(0);
+  expect(viewer.errorLogs()).toHaveLength(0);
+});
+
+test("The final split image failure retains its original connection observations", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  await splitConnection();
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false }, 1);
+  });
+  await pendingRecovery();
+  viewer.advance(180_000);
+  const retry = await screen.findByText("Retry live image", {
+    selector: "button",
+  });
+  await waitFor(() => {
+    expect(retry).toBeEnabled();
+  });
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    type: "exception",
+    error: { name: "CdpFault", kind: "frame" },
+    context: {
+      contexts: {
+        browser_recovery: { outcome: "exhausted" },
+        browser_connection: {
+          source: "native-close",
+          role: "frames",
+          phase: "open",
+          code: 1006,
+          was_clean: false,
+        },
+      },
+    },
+  });
+  expect(JSON.stringify(viewer.sentry.reports)).not.toContain("private");
+  expect(viewer.errorLogs()).toHaveLength(0);
+  click(retry);
+  await ready();
+  expect(viewer.sentry.reports).toHaveLength(1);
 });
 
 test("Manual recovery serializes its transient failures with automatic policy", async () => {
@@ -753,6 +897,8 @@ test("Pausing cancels recovery pacing and resuming recovers the current owner", 
       text: "after resume",
     });
   });
+  expect(viewer.sentry.reports).toHaveLength(0);
+  expect(viewer.errorLogs()).toHaveLength(0);
 });
 
 test("Selecting another tab cancels held automatic image recovery and old pixels", async () => {
@@ -863,11 +1009,19 @@ test("Unmounting during recovery clears the retained surface and cancels further
   viewer.advance(180_000);
   expect(viewer.browser.connections()).toBe(1);
   expect(viewer.browser.activeConnections()).toBe(0);
+  expect(viewer.sentry.reports).toHaveLength(0);
+  expect(viewer.errorLogs()).toHaveLength(0);
 });
 
-test.each(["input", "navigation", "creation"] as const)(
-  "Automatic recovery never replays uncertain %s",
-  async (effect) => {
+test.each(
+  (["input", "navigation", "creation"] as const).flatMap((effect) => {
+    return (["connection", "worker"] as const).map((loss) => {
+      return { effect, loss };
+    });
+  }),
+)(
+  "Automatic recovery never replays uncertain $effect after $loss loss",
+  async ({ effect, loss }) => {
     const viewer = mockViewer();
     await viewer.start();
     await ready();
@@ -887,9 +1041,15 @@ test.each(["input", "navigation", "creation"] as const)(
     }
     await receipt.received;
     act(() => {
-      viewer.browser.disconnect({ code: 1006, wasClean: false });
+      if (loss === "worker") {
+        viewer.browser.resetWorker();
+      } else {
+        viewer.browser.disconnect({ code: 1006, wasClean: false });
+      }
     });
     await pendingRecovery();
+    expect(viewer.sentry.reports).toStrictEqual([]);
+    expect(viewer.errorLogs()).toHaveLength(0);
     viewer.advance(1000);
     await ready(
       effect === "navigation"
@@ -918,6 +1078,8 @@ test.each(["input", "navigation", "creation"] as const)(
       }).length,
     };
     expect(effectCounts[effect]).toBe(effect === "input" ? 2 : 1);
+    expect(viewer.sentry.reports).toHaveLength(0);
+    expect(viewer.errorLogs()).toHaveLength(0);
   },
 );
 
@@ -928,6 +1090,15 @@ test("Unsupported capability loss is terminal rather than an automatic retry", a
   await screen.findByText("Browser view unavailable");
   await waitFor(() => {
     expect(reconnect()).toBeEnabled();
+  });
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    error: {
+      name: "CdpFault",
+      kind: "unsupported-capability",
+      request: { method: "Page.enable", code: -32_601 },
+    },
+    context: { contexts: { browser_recovery: { outcome: "terminal" } } },
   });
   viewer.advance(180_000);
   click(reconnect());
@@ -1130,6 +1301,13 @@ test("Rejected navigation remains local and does not trigger resource replay", a
       return request.method === "Page.navigate";
     }),
   ).toHaveLength(1);
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    type: "exception",
+    error: { name: "NavigationFault" },
+    context: { tags: { logger: "Promise" } },
+  });
+  expect(viewer.errorLogs()).toHaveLength(1);
 });
 
 async function failImageAttempts(
@@ -1200,6 +1378,10 @@ test("Exhausted local image recovery permits a new manual image retry", async ()
   await waitFor(() => {
     expect(retry).toBeEnabled();
   });
+  expect(viewer.sentry.reports).toHaveLength(1);
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    context: { contexts: { browser_recovery: { outcome: "exhausted" } } },
+  });
   click(retry);
   await ready();
   await insertText("after exhausted image recovery");
@@ -1208,6 +1390,7 @@ test("Exhausted local image recovery permits a new manual image retry", async ()
       text: "after exhausted image recovery",
     });
   });
+  expect(viewer.sentry.reports).toHaveLength(1);
   expect(viewer.browser.connections()).toBe(connections);
 });
 

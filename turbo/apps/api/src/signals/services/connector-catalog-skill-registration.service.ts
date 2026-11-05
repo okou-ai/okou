@@ -10,6 +10,7 @@ import type {
   ConnectorCatalogArtifactConnector,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { enqueuePiResourceVersionIndexes$ } from "./pi-resource-version-index.service";
+import { ConnectorCatalogSkillError } from "./connector-catalog-skill-error";
 
 const SYSTEM_STORAGE_CREATOR = "system";
 
@@ -44,26 +45,6 @@ export interface PreparedConnectorSkillRegistration {
   readonly size: number;
   readonly archiveSize: number;
   readonly fileCount: number;
-}
-
-export interface ConnectorCatalogSkillFailure {
-  readonly code: ConnectorCatalogSyncFailureCode;
-  readonly cacheable: boolean;
-}
-
-class ConnectorCatalogSkillError extends Error {
-  constructor(readonly failure: ConnectorCatalogSkillFailure) {
-    super(failure.code);
-    this.name = "ConnectorCatalogSkillError";
-  }
-}
-
-export function connectorCatalogSkillFailure(
-  error: unknown,
-): ConnectorCatalogSkillFailure | undefined {
-  return error instanceof ConnectorCatalogSkillError
-    ? error.failure
-    : undefined;
 }
 
 function fail(

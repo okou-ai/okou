@@ -1390,6 +1390,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "URL दर्ज करें",
+    "authorizationRequired": "इस चैट के लिए क्लाउड ब्राउज़र सक्षम नहीं है",
     "blankPage": {
       "description": "{{assistantName}} काम करते समय यहां पेज खोलता है। खुद ब्राउज़ करने के लिए ऊपर URL दर्ज करें।",
       "title": "अभी कुछ नहीं खुला है"
@@ -1635,6 +1636,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "नई चैट में भेजा गया",
       "undoFeedback": "Undo",
       "useSuggestion": "सुझाव इस्तेमाल करें"
     },
@@ -5368,10 +5370,8 @@
         "credits": "क्रेडिट",
         "fiveHourLimit": "5 घंटे की सीमा",
         "label": "सदस्यता का उपयोग",
-        "leftSide": "बाईं ओर",
         "lowUsage": "सदस्यता का उपयोग: 20% से कम शेष",
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
-        "rightSide": "दाईं ओर",
         "usage": "{{provider}} उपयोग",
         "usageRemaining": "{{provider}} {{window}} शेष",
         "weeklyLimit": "साप्ताहिक सीमा"

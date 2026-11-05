@@ -4,6 +4,7 @@ import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 
 import { pageRail } from "../../signals/okou-page/rail-travel.ts";
+import { RAIL_BOUNDARY_INPUTS } from "./rail-boundary.ts";
 
 /**
  * The one control that moves a horizontal row. There is no carousel primitive
@@ -21,7 +22,7 @@ import { pageRail } from "../../signals/okou-page/rail-travel.ts";
  * surroundings reads as a hole punched in them rather than a control raised off
  * the row.
  *
- * The row it moves is found by `data-rail` inside the nearest `data-rail-root`,
+ * The row it moves is the direct `data-rail` child of the nearest `data-rail-root`,
  * so a rail can be nested inside another one without a pager reaching past its
  * own row.
  */
@@ -46,13 +47,18 @@ export function RailPager({
       className={cn(
         "absolute top-1/2 z-10 size-7 -translate-y-1/2 rounded-full p-0",
         "border border-border shadow-sm hover:bg-state-hover-overlay",
+        "invisible animate-rail-pager-visibility",
+        RAIL_BOUNDARY_INPUTS,
+        side === "back"
+          ? "[--rail-can-travel:var(--rail-can-back,0)]"
+          : "[--rail-can-travel:var(--rail-can-forward,0)]",
         surfaceClassName,
         className,
       )}
       aria-label={label}
       onClick={(event) => {
         const root = event.currentTarget.closest("[data-rail-root]");
-        const rail = root?.querySelector<HTMLElement>("[data-rail]");
+        const rail = root?.querySelector<HTMLElement>(":scope > [data-rail]");
         if (!rail) {
           return;
         }

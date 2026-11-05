@@ -1388,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "輸入網址",
+    "authorizationRequired": "此對話未啟用雲端瀏覽器",
     "blankPage": {
       "description": "{{assistantName}} 工作時會在這裡開啟網頁。你也可以在上方輸入網址自行瀏覽。",
       "title": "尚未開啟網頁"
@@ -1633,6 +1634,7 @@
       "notPlannedRecorded": "已記下，這件事暫無計劃",
       "reasonLabel": "補充原因（選填）",
       "saveReason": "儲存",
+      "sent": "已傳送到新聊天",
       "undoFeedback": "復原",
       "useSuggestion": "使用建議"
     },
@@ -5351,10 +5353,8 @@
         "credits": "點數",
         "fiveHourLimit": "5 小時額度",
         "label": "訂閱用量",
-        "leftSide": "左側",
         "lowUsage": "訂閱用量：剩餘額度低於 20%",
         "resetTimeUnavailable": "重置時間不可用",
-        "rightSide": "右側",
         "usage": "{{provider}}用量",
         "usageRemaining": "{{provider}}{{window}}剩餘用量",
         "weeklyLimit": "每週額度"

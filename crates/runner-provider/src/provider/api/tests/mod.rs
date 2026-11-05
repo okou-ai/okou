@@ -6,6 +6,7 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tracing::{Level, instrument::WithSubscriber};
 use tracing_subscriber::prelude::*;
+use tracing_test_support::capture_future_events as capture_api_provider_events;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
 use uuid::Uuid;
 
@@ -511,16 +512,6 @@ fn api_provider_for_test_with_claim_cooldown_capacity(
         cancel_tokens: RunCancellationRegistry::new(),
         cancel,
     })
-}
-
-async fn capture_api_provider_events<F>(future: F) -> (F::Output, Vec<CapturedEvent>)
-where
-    F: std::future::Future,
-{
-    let captured = CapturedEvents::default();
-    let subscriber = tracing_subscriber::registry().with(captured.clone());
-    let output = future.with_subscriber(subscriber).await;
-    (output, captured.entries())
 }
 
 async fn advance_pending_discovery_retry<F>(

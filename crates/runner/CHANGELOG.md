@@ -1,5 +1,51 @@
 # Changelog
 
+## [0.244.19](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.18...runner-rs-v0.244.19) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize asynchronous tracing capture policies ([#45412](https://github.com/okou-ai/okou/issues/45412)) ([754c972](https://github.com/okou-ai/okou/commit/754c9729deefd62bfa5efdb7eba12a551773526a))
+
+
+### Performance Improvements
+
+* **runner:** discard diagnostic response headers without decoding values ([#45414](https://github.com/okou-ai/okou/issues/45414)) ([d334b29](https://github.com/okou-ai/okou/commit/d334b297e22be9d89b2e49003a034f092dd89404))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.18](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.17...runner-rs-v0.244.18) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** isolate request and response capture policies ([#45380](https://github.com/okou-ai/okou/issues/45380)) ([c1117ae](https://github.com/okou-ai/okou/commit/c1117aec4d6b8363247f0ff61f9cbe834130c032))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.17](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.16...runner-rs-v0.244.17) (2026-11-05)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
+## [0.244.16](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.15...runner-rs-v0.244.16) (2026-11-05)
+
+
+### Refactoring
+
+* **python:** centralize expression branch enumeration ([#45351](https://github.com/okou-ai/okou/issues/45351)) ([d529f39](https://github.com/okou-ai/okou/commit/d529f393ce0bf89bdc18fa1c6bdbc122a384d24d))
+
+## [0.244.15](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.14...runner-rs-v0.244.15) (2026-11-05)
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.14](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.13...runner-rs-v0.244.14) (2026-11-05)
 
 ### Release Dependencies

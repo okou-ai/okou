@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.21.38](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.37...runner-supervisor-v0.21.38) (2026-11-05)
+
+
+### Refactoring
+
+* **test-support:** centralize asynchronous tracing capture policies ([#45412](https://github.com/okou-ai/okou/issues/45412)) ([754c972](https://github.com/okou-ai/okou/commit/754c9729deefd62bfa5efdb7eba12a551773526a))
+
+## [0.21.37](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.36...runner-supervisor-v0.21.37) (2026-11-05)
+
+## [0.21.36](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.35...runner-supervisor-v0.21.36) (2026-11-05)
+
 ## [0.21.35](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.34...runner-supervisor-v0.21.35) (2026-11-05)
 
 ## [0.21.34](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.33...runner-supervisor-v0.21.34) (2026-11-05)

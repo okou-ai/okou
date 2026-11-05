@@ -7,6 +7,8 @@ already owns, or as a generic loop that repairs layout and scrolling afterward.
 This guide complements [effects and commands](../react.md#effects-and-ownership),
 [ccstate lifecycle ownership](../../.claude/skills/ccstate/SKILL.md),
 [styles](styles.md), and [stable chat cards](../chat.md#fixed-height-and-stable-layout).
+For horizontal shelves and filter/category rows, see the concrete
+[rail geometry and content-commit contract](rail-travel.md).
 
 ## Recognize the Anti-Pattern
 
@@ -119,6 +121,50 @@ Do not add continuous measurement without a required behavior. In particular,
 the locator must not measure the transcript on every streaming update. Keeping
 the chat pinned to the tail and deriving the locator are separate concerns with
 different inputs.
+
+### Coordinate geometry and destination commits
+
+Separate CSS width distribution from any data projection that needs a numeric
+space budget. Measure a stable container that does not change identity when an
+overflow control appears, reserve that control's space once, and treat unknown
+or zero geometry as unavailable space rather than an infinite budget.
+
+When multiple layout owners can animate, establish a conservative budget before
+the moving layout is painted. A lower-only transaction limit must survive
+interruptions and newly moving siblings. Reconcile the current owners and their
+actual width/flex-basis transitions on run, end, and cancel; one terminal event
+does not prove that all owners have settled. Release the limit only at that
+shared completion boundary, not after a guessed duration or continuous sampling.
+
+Direct manipulation must disable interpolation on every affected width owner,
+including an owner remounted during the gesture. Explicit `transition-none` is
+important: removing a transition-property utility while retaining a nonzero
+duration can leave CSS's default `all` active. Keep discrete button animations
+separate, and do not animate passive flex children as independent width owners.
+When taking over an existing animation, preserve its displayed geometry before
+cancelling it, while respecting the layout's minimum constraints.
+
+A final gesture sample must reach the DOM before direct-manipulation ownership
+is released or persisted. Otherwise React can batch that sample with restored
+button-animation styles. Use a discrete synchronous completion boundary when
+that ordering is required, not a per-move render scheduler. Cancellation, blur,
+and unmount release the resource without applying a later terminal sample.
+
+Deduplicate acknowledgements only when the committed elements, domain
+identities, relevant containers, and semantic geometry keys are identical.
+Reset the record with its DOM owner; never let it swallow mount, navigation, or
+a distinct commit, or delay newer geometry behind an earlier asynchronous
+restore. Native viewport and actual geometry-owner transition events still
+refresh motion independently. Unrelated content and scroll owners retain their
+own restoration lifetimes.
+
+Focus handoffs have a DOM mount lifetime independent of a remote connection.
+Record user intent as an exact request and consume it once at the corresponding
+enabled destination commit. Shared `LayoutCommit` and `RequestCommit` boundaries
+use stable callbacks and semantic keys, not render counters or fresh-per-render
+requests. A remote operation receipt is not a DOM commit. Revalidate mount,
+authority, selection, destination availability, and retained intent before
+focusing; later user input supersedes a pending handoff.
 
 ## Preserve ccstate Ownership
 

@@ -1,5 +1,46 @@
 # Changelog
 
+## [8.818.5](https://github.com/okou-ai/okou/compare/core-v8.818.4...core-v8.818.5) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.4
+
+## [8.818.4](https://github.com/okou-ai/okou/compare/core-v8.818.3...core-v8.818.4) (2026-11-05)
+
+
+### Refactoring
+
+* remove close connector feature switch ([#45384](https://github.com/okou-ai/okou/issues/45384)) ([50e1913](https://github.com/okou-ai/okou/commit/50e1913bdce011ced6e184c0806bf389e61052e4))
+* remove expensify connector feature switch ([#45387](https://github.com/okou-ai/okou/issues/45387)) ([5c434bc](https://github.com/okou-ai/okou/commit/5c434bc83fddc0ba7dbfdead87154c73eb28d154))
+* remove freshdesk connector feature switch ([#45382](https://github.com/okou-ai/okou/issues/45382)) ([efded4f](https://github.com/okou-ai/okou/commit/efded4f3baba7f072fe80feb27819e313535ce13))
+
+## [8.818.3](https://github.com/okou-ai/okou/compare/core-v8.818.2...core-v8.818.3) (2026-11-05)
+
+
+### Refactoring
+
+* **api:** prepare connector skill bundle references ([#45339](https://github.com/okou-ai/okou/issues/45339)) ([6a51f10](https://github.com/okou-ai/okou/commit/6a51f10737ae9c0e2ee40509387fbd6f04b0f095))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.3
+
+## [8.818.2](https://github.com/okou-ai/okou/compare/core-v8.818.1...core-v8.818.2) (2026-11-05)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.42.2
+
 ## [8.818.1](https://github.com/okou-ai/okou/compare/core-v8.818.0...core-v8.818.1) (2026-11-05)
 
 

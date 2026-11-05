@@ -1412,6 +1412,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "Introduce una URL",
+    "authorizationRequired": "El navegador en la nube no está habilitado para este chat",
     "blankPage": {
       "description": "{{assistantName}} abre páginas aquí mientras trabaja. Introduce una URL arriba para navegar por tu cuenta.",
       "title": "Aún no hay nada abierto"
@@ -1658,6 +1659,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "Enviado a un nuevo chat",
       "undoFeedback": "Undo",
       "useSuggestion": "Usar sugerencia"
     },
@@ -5429,10 +5431,8 @@
         "credits": "Créditos",
         "fiveHourLimit": "Límite de 5 horas",
         "label": "Uso de suscripciones",
-        "leftSide": "Izquierda",
         "lowUsage": "Uso de suscripciones: queda menos del 20 %",
         "resetTimeUnavailable": "Hora de reinicio no disponible",
-        "rightSide": "Derecha",
         "usage": "Uso de {{provider}}",
         "usageRemaining": "{{window}} restante de {{provider}}",
         "weeklyLimit": "Límite semanal"

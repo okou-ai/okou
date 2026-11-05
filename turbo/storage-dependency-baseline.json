@@ -172,11 +172,6 @@
       "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {
-      "file": "turbo/apps/api/src/signals/services/connector-catalog-sync.service.ts",
-      "uses": 3,
-      "dependency": "module:turbo/apps/api/src/signals/services/connector-catalog-skill-registration.service"
-    },
-    {
       "file": "turbo/apps/api/src/signals/services/connector-catalog-wakeup-plan.ts",
       "uses": 11,
       "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
@@ -253,11 +248,6 @@
     },
     {
       "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
-      "uses": 3,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-publication.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/custom-connector.service.ts",
       "uses": 87,
       "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
     },
@@ -269,11 +259,6 @@
     {
       "file": "turbo/apps/api/src/signals/services/custom-runtime-snapshot-query.ts",
       "uses": 16,
-      "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/execution-agent-connectors.service.ts",
-      "uses": 2,
       "dependency": "module:turbo/packages/db/src/schema/org-custom-connector"
     },
     {
@@ -305,11 +290,6 @@
       "file": "turbo/apps/api/src/signals/services/feishu-custom-connector.service.ts",
       "uses": 2,
       "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-publication-sql"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/feishu-custom-connector.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-publication.service"
     },
     {
       "file": "turbo/apps/api/src/signals/services/feishu-custom-connector.service.ts",

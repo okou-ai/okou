@@ -99,7 +99,7 @@ test("Recompute the gutter when an artifact pane opens and its divider moves", a
     ).toBe("clamp(400px, 440px, calc(100% - 420px))");
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
-  fireEvent.pointerUp(handle, { ...pointer, buttons: 0 });
+  fireEvent.pointerUp(handle, { ...pointer, buttons: 0, clientX: 1000 });
 });
 
 test("Dismiss a manually opened narrow panel on composer click and keep it closed when the gutter widens", async () => {

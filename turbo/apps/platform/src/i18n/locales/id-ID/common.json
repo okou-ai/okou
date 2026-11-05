@@ -1388,6 +1388,7 @@
   },
   "browserSession": {
     "addressPlaceholder": "Masukkan URL",
+    "authorizationRequired": "Browser cloud belum diaktifkan untuk chat ini",
     "blankPage": {
       "description": "{{assistantName}} membuka halaman di sini saat bekerja. Masukkan URL di atas untuk menjelajah sendiri.",
       "title": "Belum ada yang dibuka"
@@ -1633,6 +1634,7 @@
       "notPlannedRecorded": "Noted — this is not planned",
       "reasonLabel": "Add a reason (optional)",
       "saveReason": "Save",
+      "sent": "Dikirim ke chat baru",
       "undoFeedback": "Undo",
       "useSuggestion": "Gunakan saran"
     },
@@ -5351,10 +5353,8 @@
         "credits": "Kredit",
         "fiveHourLimit": "Batas 5 jam",
         "label": "Penggunaan langganan",
-        "leftSide": "Kiri",
         "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
-        "rightSide": "Kanan",
         "usage": "Penggunaan {{provider}}",
         "usageRemaining": "Sisa {{provider}} {{window}}",
         "weeklyLimit": "Batas mingguan"

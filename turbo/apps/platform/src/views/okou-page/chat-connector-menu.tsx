@@ -52,7 +52,7 @@ function ChatAccountChoiceRow({
   const identity = connectorAccountExternalIdentity(account);
   return (
     <div className="flex items-center gap-2 rounded-md px-2 py-2 hover:bg-state-hover">
-      <label className="flex min-w-0 flex-1 cursor-pointer items-center gap-2.5">
+      <label className="flex min-w-0 flex-1 cursor-default items-center gap-2.5">
         <Radio
           value={account.id}
           disabled={!access.enabled || account.connectionStatus !== "connected"}

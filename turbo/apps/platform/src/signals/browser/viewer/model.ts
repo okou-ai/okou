@@ -1,7 +1,7 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import {
   initialInventory,
-  inventoryTargets,
+  inventorySnapshot,
   transitionInventory,
   type InventoryEvent,
 } from "./target-inventory.ts";
@@ -83,7 +83,7 @@ function confirmsSubmission(
   );
 }
 
-type ViewerLifecycle = Omit<ViewerSnapshot, "targets">;
+type ViewerLifecycle = Omit<ViewerSnapshot, "inventory">;
 
 function initialLifecycle(): ViewerLifecycle {
   return {
@@ -142,11 +142,32 @@ function createModelValues(
     draftState$,
     spaceState$,
   } = atoms;
+  const inventory$ = computed((get) => {
+    return inventorySnapshot(get(inventoryInternal$));
+  });
   const targets$ = computed((get) => {
-    return inventoryTargets(get(inventoryInternal$));
+    return get(inventory$).targets;
+  });
+  const empty$ = computed((get) => {
+    const inventory = get(inventory$);
+    return inventory.status === "complete" && inventory.targets.length === 0;
+  });
+  const knownTargetIds$: Computed<ReadonlySet<string>> = computed((get) => {
+    return new Set(get(inventoryInternal$).entries.keys());
   });
   const snapshot$ = computed((get): ViewerSnapshot => {
-    return { ...get(lifecycleState$), targets: get(targets$) };
+    const lifecycle = get(lifecycleState$);
+    const inventory = get(inventory$);
+    // An exhausted visible projection is not an empty-window proof.
+    if (
+      lifecycle.status === "unavailable" &&
+      inventory.status !== "complete" &&
+      inventory.targets.length === 0 &&
+      (!lifecycle.error || lifecycle.error.kind === "target-unavailable")
+    ) {
+      return { ...lifecycle, status: "connecting", error: null, inventory };
+    }
+    return { ...lifecycle, inventory };
   });
   const intent$ = computed((get) => {
     return get(intentState$);
@@ -208,6 +229,9 @@ function createModelValues(
   });
   return {
     snapshot$,
+    inventory$,
+    empty$,
+    knownTargetIds$,
     targets$,
     intent$,
     inventoryState$,
@@ -226,13 +250,6 @@ function createModelValues(
 }
 type ModelValues = ReturnType<typeof createModelValues>;
 
-function emptySnapshot(snapshot: ViewerSnapshot): boolean {
-  return (
-    snapshot.status === "unavailable" &&
-    !snapshot.targets.length &&
-    (!snapshot.error || snapshot.error.kind === "target-unavailable")
-  );
-}
 function recoverySnapshot(snapshot: ViewerSnapshot): boolean {
   return (
     snapshot.status === "error" ||
@@ -248,8 +265,14 @@ function createModelPresentation(
   creationReadySource$: Computed<boolean>,
 ) {
   const { loadingPreviewState$, scopedState$ } = atoms;
-  const { snapshot$, imageRecovery$, connected$, intent$, navigation$ } =
-    values;
+  const {
+    snapshot$,
+    empty$,
+    imageRecovery$,
+    connected$,
+    intent$,
+    navigation$,
+  } = values;
   const presentation$ = computed((get) => {
     const snapshot = get(snapshot$);
     const document = get(navigation$);
@@ -263,7 +286,7 @@ function createModelPresentation(
         (snapshot.status === "connecting" || snapshot.status === "streaming") &&
         (document
           ? document.url === "about:blank"
-          : snapshot.targets.some((target) => {
+          : snapshot.inventory.targets.some((target) => {
               return target.id === snapshot.selectedTargetId && target.blank;
             })),
     };
@@ -272,7 +295,10 @@ function createModelPresentation(
     const snapshot = get(snapshot$);
     const image = get(imageRecovery$);
     const scoped = get(scopedState$);
-    const empty = emptySnapshot(snapshot);
+    const empty =
+      get(empty$) &&
+      snapshot.status === "unavailable" &&
+      (!snapshot.error || snapshot.error.kind === "target-unavailable");
     const recovery = recoverySnapshot(snapshot);
     const streaming = snapshot.status === "streaming";
     const canMutateTabs = get(connected$) && !get(intent$).paused;

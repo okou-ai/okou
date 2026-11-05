@@ -47,9 +47,6 @@ export function SidebarSubscriptionUsage({
     <Popover open={open} onOpenChange={previewUsage}>
       <PopoverTrigger
         ref={setEntry}
-        openOnHover
-        delay={200}
-        closeDelay={250}
         aria-describedby="sidebar-subscription-ring-summary"
         aria-label={
           usage.lowUsage
@@ -63,7 +60,7 @@ export function SidebarSubscriptionUsage({
             variant="quiet"
             size="icon"
             className={cn(
-              "relative size-11 shrink-0 cursor-pointer p-1 text-muted-foreground",
+              "relative size-11 shrink-0 p-1 text-muted-foreground",
               open && "bg-state-hover",
             )}
           />
@@ -80,7 +77,6 @@ export function SidebarSubscriptionUsage({
         aria-label={label}
       >
         <AccountMenuSubscriptionsPanel
-          showRingPosition={usage.rows.length === 2}
           loading={false}
           rows={usage.rows}
           resetControl="button"

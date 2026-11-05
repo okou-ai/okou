@@ -1,9 +1,11 @@
-import { command } from "ccstate";
+import { command, computed, state } from "ccstate";
 import type {
   Suggestion,
   SuggestionOption,
 } from "@okouai/api-contracts/contracts/suggestions";
-import { currentAgentId$, defaultAgentId$ } from "../agent.ts";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
+import { defaultAgentId$ } from "../agent.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
@@ -11,23 +13,23 @@ import {
   ensureDraft$,
   resumeThreadDraftHandoff$,
 } from "../chat-page/create-chat-thread.ts";
-import { ensureAgentDraft$ } from "./agent-draft.ts";
+import { sendNewThreadWithoutNavigation$ } from "../chat-page/optimistic-chat-thread-page.ts";
+import { createAgentDraftSignals } from "./agent-draft.ts";
 import { resetSignal } from "../utils.ts";
-import { agentSuggestionEntries$ } from "./agent-suggestion-session.ts";
-import { agentChatComposerSignals$ } from "./agent-composer-signals.ts";
+import {
+  agentSuggestionEntries$,
+  type AgentSuggestionEntry,
+} from "./agent-suggestion-session.ts";
+import { createInPlaceAgentComposerSignals } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
+import type { ComposerSignals } from "./composer-signals.ts";
 import {
+  createMessageDocumentSnapshot,
   messageDocumentToPrompt,
-  textToMessageDocument,
 } from "./user-message-document-codec.ts";
-import {
-  readSuggestionContext,
-  suggestionContextPart,
-  suggestionFeedbacks,
-} from "@okouai/api-contracts/contracts/suggestion-context";
+import { suggestionContextPart } from "@okouai/api-contracts/contracts/suggestion-context";
 import type {
   UserMessageDocument,
-  FeedbackNotePart,
   ComposerDraft,
 } from "@okouai/api-contracts/contracts/chat-threads";
 
@@ -46,28 +48,12 @@ async function suggestionDraftVersion(draft: ComposerDraft): Promise<string> {
     .join("");
 }
 
-function withSuggestionContext(
-  current: UserMessageDocument | null,
+/** The saved background as one quote whose note carries the member's direction. */
+function suggestionContextDocument(
   item: Suggestion,
   contextVersion: string,
   attachmentIds: readonly string[],
 ): UserMessageDocument {
-  const previous = current ? suggestionFeedbacks(current) : [];
-  const parts =
-    current?.parts.filter((part, index) => {
-      return (
-        readSuggestionContext(part) === null &&
-        !(
-          part.type === "feedback" &&
-          readSuggestionContext(current.parts[index - 1])
-        )
-      );
-    }) ?? [];
-  const note: FeedbackNotePart[] = previous.flatMap(({ part }, index) => {
-    return index === 0
-      ? part.note
-      : [{ type: "text", text: "\n" }, ...part.note];
-  });
   const background = item.customOption.draft.draftUserMessage?.parts.find(
     (part) => {
       return part.type === "feedback";
@@ -76,12 +62,11 @@ function withSuggestionContext(
   if (background?.type !== "feedback") {
     throw new Error("Missing suggestion background");
   }
-  const document: UserMessageDocument = {
+  return {
     version: 1,
     parts: [
-      ...parts,
       suggestionContextPart({
-        draftId: previous[0]?.context.draftId ?? crypto.randomUUID(),
+        draftId: crypto.randomUUID(),
         suggestionId: item.id,
         optionId: "custom",
         titleSnapshot: item.title,
@@ -89,187 +74,243 @@ function withSuggestionContext(
         contextVersion,
         attachmentIds: [...attachmentIds],
       }),
-      { ...background, note },
+      { ...background, note: [] },
     ],
   };
-  return document;
 }
 
-const resetPreparation$ = resetSignal();
+function showSuggestionSent(): void {
+  toast.success(
+    i18n.t(($) => {
+      return $.chat.agentSuggestions.sent;
+    }),
+  );
+}
+
+interface SuggestionComposerSession {
+  readonly item: Suggestion;
+  readonly agentId: string;
+  /** Supplied by the Feed view, which owns the dialog's completion. */
+  readonly onOptimisticSend: () => void;
+}
+
+const internalSuggestionComposer$ = state<SuggestionComposerSession | null>(
+  null,
+);
+const resetSuggestionComposer$ = resetSignal();
 
 /**
- * The Feed has no composer of its own. A prepared draft continues in the
- * default agent's home, whose setup loads and persists any pending handoff.
+ * One unsaved default-Agent composer per open custom-direction dialog, so the
+ * Agent's own draft is neither read nor replaced.
  */
-const openAgentComposer$ = command(
-  async ({ get, set }, agentId: string, signal: AbortSignal) => {
-    await set(
-      navigateTo$,
-      ROUTES.agentChat,
-      { pathParams: { agentId } },
-      signal,
-    );
-    signal.throwIfAborted();
-    // The home recovers an unreachable agent onto another surface; focus only
-    // the composer that received the draft.
-    if (get(currentAgentId$) === agentId) {
-      set(get(agentChatComposerSignals$).editor.focus$);
-    }
-  },
-);
+const suggestionComposerGraph$ = computed((get) => {
+  const session = get(internalSuggestionComposer$);
+  if (!session) {
+    return null;
+  }
+  const agentDraft = createAgentDraftSignals(session.agentId);
+  return {
+    draft: agentDraft.draft,
+    composer: createInPlaceAgentComposerSignals(
+      session.agentId,
+      agentDraft,
+      session.onOptimisticSend,
+    ),
+  };
+});
 
-/** Prepare the saved, complete context in the default agent's composer without consuming it. */
-export const prepareAgentSuggestion$ = command(
-  async ({ get, set }, item: Suggestion, pageSignal: AbortSignal) => {
-    const signal = set(resetPreparation$, pageSignal);
-    const agentId = await get(defaultAgentId$);
+/** The card whose custom direction is being written in the Feed dialog. */
+export const agentSuggestionComposerItem$ = computed((get) => {
+  return get(internalSuggestionComposer$)?.item ?? null;
+});
+
+export const closeAgentSuggestionComposer$ = command(({ set }) => {
+  set(resetSuggestionComposer$);
+  set(internalSuggestionComposer$, null);
+});
+
+/**
+ * Opens the custom direction composer for the default Agent over the Feed and
+ * installs the card's background before the composer mounts.
+ */
+export const openAgentSuggestionComposer$ = command(
+  async (
+    { get, set },
+    item: Suggestion,
+    onOptimisticSend: () => void,
+    pageSignal: AbortSignal,
+  ): Promise<ComposerSignals> => {
+    const signal = set(resetSuggestionComposer$, pageSignal);
+    const [agentId, entries] = await Promise.all([
+      get(defaultAgentId$),
+      get(agentSuggestionEntries$),
+    ]);
     signal.throwIfAborted();
-    if (!agentId) {
+    const visible = entries.some((card) => {
+      return card.item.id === item.id && !get(card.hidden$);
+    });
+    if (!agentId || !visible) {
       throw new Error("Suggestion target is unavailable");
     }
-    const entry = set(ensureAgentDraft$, agentId);
-    await set(entry.load$, signal);
-    const draft = entry.draft;
     const contextVersion = await suggestionDraftVersion(
       item.customOption.draft,
     );
     signal.throwIfAborted();
-    const cards = await get(agentSuggestionEntries$);
-    signal.throwIfAborted();
-    if (
-      !cards.some((card) => {
-        return card.item.id === item.id && !get(card.hidden$);
-      })
-    ) {
-      return;
-    }
-    const current =
-      set(draft.readEditorDocument$)?.toMessageDocument({
-        selectedTemplate: get(draft.generationTemplate$),
-      }) ??
-      set(draft.peekRestoredUserMessage$) ??
-      textToMessageDocument(get(draft.input$));
-    const previous = current ? suggestionFeedbacks(current) : [];
-    const currentAttachmentIds = new Set(
-      get(draft.attachments$).map((attachment) => {
-        return attachment.restoredFileId;
-      }),
-    );
-    if (
-      previous.some(({ context }) => {
-        return (
-          context.suggestionId === item.id &&
-          context.contextVersion === contextVersion &&
-          (item.customOption.draft.draftAttachments ?? []).every((file) => {
-            return currentAttachmentIds.has(file.id);
-          })
-        );
-      })
-    ) {
-      await set(openAgentComposer$, agentId, get(rootSignal$));
-      return;
-    }
-    const oldAttachmentIds = new Set(
-      previous.flatMap(({ context }) => {
-        return context.attachmentIds;
-      }),
-    );
-    for (const attachment of get(draft.attachments$)) {
-      if (oldAttachmentIds.has(attachment.restoredFileId ?? "")) {
-        set(attachment.cancel$);
-      }
-    }
-    const attachments = get(draft.attachments$).filter((attachment) => {
-      return !oldAttachmentIds.has(attachment.restoredFileId ?? "");
-    });
-    const addedAttachments = (
-      item.customOption.draft.draftAttachments ?? []
-    ).filter((attachment) => {
-      return !attachments.some((existing) => {
-        return existing.restoredFileId === attachment.id;
-      });
-    });
-    const document = withSuggestionContext(
-      current,
+    const files = item.customOption.draft.draftAttachments ?? [];
+    const document = suggestionContextDocument(
       item,
       contextVersion,
-      addedAttachments.map((attachment) => {
-        return attachment.id;
+      files.map((file) => {
+        return file.id;
       }),
     );
     const content = messageDocumentToPrompt(document);
     if (content === null) {
       throw new Error("Invalid suggestion background");
     }
-    // Leaving the Feed is part of this action, so the installed context is
-    // reconciled, saved and opened beyond the Feed visit.
-    const committed = get(rootSignal$);
-    const seeded = set(
-      draft.seed$,
+    const session = { item, agentId, onOptimisticSend };
+    set(internalSuggestionComposer$, session);
+    // Leaving the Feed or opening another card's dialog ends this session.
+    signal.addEventListener(
+      "abort",
+      () => {
+        if (get(internalSuggestionComposer$) === session) {
+          set(internalSuggestionComposer$, null);
+        }
+      },
+      { once: true },
+    );
+    const graph = get(suggestionComposerGraph$);
+    if (!graph) {
+      throw new Error("Suggestion composer is unavailable");
+    }
+    set(graph.composer.voice.setup$, signal);
+    await set(
+      graph.draft.seed$,
       {
         content,
         userMessage: document,
-        generationTemplate: get(draft.generationTemplate$),
-        attachments: [
-          ...attachments,
-          ...addedAttachments.map(createRestoredAttachment),
-        ],
+        generationTemplate: undefined,
+        attachments: files.map(createRestoredAttachment),
       },
-      committed,
+      signal,
     );
-    await Promise.all([
-      seeded,
-      set(entry.queueDraftSync$, committed),
-      set(openAgentComposer$, agentId, committed),
-    ]);
+    signal.throwIfAborted();
+    return graph.composer;
   },
 );
 
-const applyAgentSuggestionDraft$ = command(
+/**
+ * The API consumes the card when it accepts the custom follow-up, before the
+ * optimistic thread is published; the Feed then drops the card in place.
+ */
+export const finishAgentSuggestionComposer$ = command(
   async (
     { get, set },
+    item: Suggestion,
+    pageSignal: AbortSignal,
+  ): Promise<void> => {
+    if (get(internalSuggestionComposer$)?.item === item) {
+      set(closeAgentSuggestionComposer$);
+    }
+    showSuggestionSent();
+    const entries = await get(agentSuggestionEntries$);
+    pageSignal.throwIfAborted();
+    for (const entry of entries) {
+      if (entry.item.id === item.id) {
+        set(entry.hidden$, true);
+      }
+    }
+  },
+);
+
+/**
+ * Starts the chosen action in a new thread of the default Agent and keeps the
+ * Feed in place. The card is consumed once its input is accepted.
+ */
+const sendAgentSuggestionOption$ = command(
+  async (
+    { set },
+    entry: AgentSuggestionEntry,
     option: SuggestionOption,
     agentId: string,
     signal: AbortSignal,
-  ) => {
-    const target =
-      option.threadId === null ? set(ensureAgentDraft$, agentId) : null;
-    const draft =
-      option.threadId !== null
-        ? set(ensureDraft$, option.threadId)
-        : set(ensureAgentDraft$, agentId).draft;
-    // Installing the draft is synchronous; attachment reconciliation and
-    // persistence must not delay focus or navigation.
-    const installed = set(draft.prependComposerDraft$, option.draft, signal);
-    if (option.threadId !== null) {
-      await Promise.all([
-        installed,
-        set(
-          navigateTo$,
-          ROUTES.chat,
-          {
-            pathParams: { threadId: option.threadId },
-          },
-          signal,
+  ): Promise<void> => {
+    const userMessage = option.draft.draftUserMessage;
+    if (!userMessage) {
+      throw new Error("Missing suggestion composer document");
+    }
+    const prompt = messageDocumentToPrompt(userMessage);
+    if (prompt === null) {
+      throw new Error("Invalid suggestion composer document");
+    }
+    const draft = entry.optionDraft;
+    await set(
+      draft.seed$,
+      {
+        content: prompt,
+        userMessage,
+        generationTemplate: undefined,
+        attachments: (option.draft.draftAttachments ?? []).map(
+          createRestoredAttachment,
         ),
-      ]);
-      signal.throwIfAborted();
-      // The destination normally loads and persists its handoff. An unavailable
-      // target has no composer, so retain the prepared draft through that path too.
-      if (get(draft.composerDraftHandoff$)) {
-        await set(resumeThreadDraftHandoff$, option.threadId, signal);
-      }
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    const sent = await set(
+      sendNewThreadWithoutNavigation$,
+      {
+        agentId,
+        draft,
+        preserveAgentDraft: true,
+        prompt,
+        generationTemplate: undefined,
+        editorDocument: createMessageDocumentSnapshot(userMessage),
+        onOptimisticSend: showSuggestionSent,
+      },
+      signal,
+    );
+    if (!sent) {
+      // Nothing was sent, so the card stays available for another choice.
+      set(entry.hidden$, false);
       return;
     }
-    if (!target) {
-      throw new Error("Suggestion target is unavailable");
-    }
-    await Promise.all([installed, set(openAgentComposer$, agentId, signal)]);
+    await set(entry.enqueue$, { type: "consume", optionId: option.id }, signal);
+  },
+);
+
+/**
+ * An existing conversation continues in its own composer, where the member
+ * joins any running work in that thread.
+ */
+const openAgentSuggestionThread$ = command(
+  async (
+    { get, set },
+    option: SuggestionOption,
+    threadId: string,
+    signal: AbortSignal,
+  ) => {
+    const draft = set(ensureDraft$, threadId);
+    // Installing the draft is synchronous; attachment reconciliation and
+    // persistence must not delay navigation.
+    const installed = set(draft.prependComposerDraft$, option.draft, signal);
+    await Promise.all([
+      installed,
+      set(
+        navigateTo$,
+        ROUTES.chat,
+        {
+          pathParams: { threadId },
+        },
+        signal,
+      ),
+    ]);
     signal.throwIfAborted();
-    // The agent home normally loads and persists its handoff. A recovered
-    // destination has no composer, so retain the prepared draft here too.
+    // The destination normally loads and persists its handoff. An unavailable
+    // target has no composer, so retain the prepared draft through that path too.
     if (get(draft.composerDraftHandoff$)) {
-      await set(target.load$, signal);
+      await set(resumeThreadDraftHandoff$, threadId, signal);
     }
   },
 );
@@ -301,14 +342,18 @@ export const startAgentSuggestion$ = command(
     if (!agentId) {
       throw new Error("Suggestion target is unavailable");
     }
+    // The send and the recorded choice outlive the Feed visit.
     const signal = get(rootSignal$);
-    set(resetPreparation$);
     set(entry.hidden$, true);
+    if (option.threadId === null) {
+      await set(sendAgentSuggestionOption$, entry, option, agentId, signal);
+      return;
+    }
     // The loaded card owns this visit's choice and draft. Recording the choice
     // cannot replace it with a later server version or hold the card in place.
     await Promise.all([
       set(entry.enqueue$, { type: "consume", optionId }, signal),
-      set(applyAgentSuggestionDraft$, option, agentId, signal),
+      set(openAgentSuggestionThread$, option, option.threadId, signal),
     ]);
   },
 );

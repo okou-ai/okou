@@ -219,7 +219,7 @@ function DirectoryConnectorCard({
       className={cn(
         DIRECTORY_SURFACE,
         "flex flex-col overflow-hidden text-left focus:bg-state-selected",
-        interactive ? "cursor-pointer hover:bg-card-hover" : "cursor-default",
+        interactive && "hover:bg-card-hover",
         unavailable && "opacity-60",
       )}
       onClick={activate}
@@ -380,10 +380,7 @@ function AccountsConnectorCard({
                     { connector: connector.label },
                   )
             }
-            className={cn(
-              "absolute inset-0 z-10 rounded-[inherit] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-              blocked ? "cursor-default" : "cursor-pointer",
-            )}
+            className="absolute inset-0 z-10 rounded-[inherit] border-0 bg-transparent p-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
             disabled={blocked}
             onClick={activate}
           />

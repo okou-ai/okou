@@ -6,6 +6,7 @@ import {
   integrationsTeamsUploadInitContract,
   integrationsTeamsUploadCompleteContract,
 } from "@okouai/api-contracts/contracts/integrations";
+import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { createStore } from "ccstate";
 import { HttpResponse, http } from "msw";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -17,6 +18,7 @@ import { server } from "../../../mocks/server";
 import { integrationsTeamsMessageRoutes } from "../integrations-teams-message";
 import { integrationsTeamsUploadCompleteRoutes } from "../integrations-teams-upload-complete";
 import { integrationsTeamsUploadInitRoutes } from "../integrations-teams-upload-init";
+import { webFileUrlRoutes } from "../web-file-url";
 import { installSharedThreadStorage } from "./helpers/shared-thread-storage";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
 import { seedOrgMembership$ } from "./helpers/org-membership";
@@ -134,6 +136,45 @@ async function seedConnectedTeams(fixture: TeamsConnectFixture): Promise<void> {
   mocks.clerk.session(fixture.userId, fixture.orgId, "org:admin");
 
   await connectTeamsAccountForTest(context, fixture);
+}
+
+async function uploadTeamsFixtureFile(target: {
+  conversationId?: string;
+  user?: string;
+  activityId?: string;
+  text?: string;
+}) {
+  installSharedThreadStorage(context);
+  const bytes = Buffer.alloc(1234, "x");
+  const initialized = await accept(
+    setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
+      integrationsTeamsUploadInitContract,
+    ).init({
+      headers: { authorization: "Bearer clerk-session" },
+      body: {
+        filename: "report.pdf",
+        contentType: "application/pdf",
+        length: bytes.length,
+        canonical: {
+          version: 2,
+          operationId: randomUUID(),
+          checksumSha256: createHash("sha256").update(bytes).digest("hex"),
+          ...target,
+        },
+      },
+    }),
+    [200],
+  );
+  const uploaded = await fetch(initialized.body.uploadUrl, {
+    method: "PUT",
+    headers: {
+      "Content-Type": "application/pdf",
+      ...initialized.body.uploadHeaders,
+    },
+    body: bytes,
+  });
+  expect(uploaded.status).toBe(200);
+  return initialized.body;
 }
 
 describe("Microsoft Teams integration CLI routes", () => {
@@ -502,32 +543,6 @@ describe("Microsoft Teams integration CLI routes", () => {
     expect(response.status).toBe(403);
   });
 
-  it("keeps unversioned non-Run initialization compatible during the v2 preparation", async () => {
-    const fixture = teamsFixture();
-    fixtures.push(fixture);
-    await seedConnectedTeams(fixture);
-    const initialized = await accept(
-      setupApp({ context, routes: integrationsTeamsUploadInitRoutes })(
-        integrationsTeamsUploadInitContract,
-      ).init({
-        headers: { authorization: "Bearer clerk-session" },
-        body: {
-          filename: "report.txt",
-          contentType: "text/plain",
-          length: 12,
-          canonical: {
-            operationId: randomUUID(),
-            checksumSha256: "a".repeat(64),
-            conversationId: fixture.teamsConversationId,
-          },
-        },
-      }),
-      [200],
-    );
-    expect(initialized.body.operationId).toBeUndefined();
-    expect(initialized.body.uploadUrl).toBeTruthy();
-  });
-
   it("sends an uploaded file URL as a Teams attachment", async () => {
     const fixture = teamsFixture();
     fixtures.push(fixture);
@@ -535,15 +550,11 @@ describe("Microsoft Teams integration CLI routes", () => {
     const captured: CapturedTeamsActivity = {};
     const outgoing = mockOutgoingTeams(fixture, captured);
 
-    const uploadId = randomUUID();
-    mocks.s3.listObjects([
-      {
-        bucket: "test-user-artifacts",
-        key: `artifacts/${fixture.userId}/${uploadId}/report.pdf`,
-        size: 1234,
-      },
-    ]);
-
+    const prepared = await uploadTeamsFixtureFile({
+      conversationId: fixture.teamsConversationId,
+      activityId: fixture.teamsThreadId,
+      text: "Daily report",
+    });
     const client = setupApp({
       context,
       routes: integrationsTeamsUploadCompleteRoutes,
@@ -551,7 +562,8 @@ describe("Microsoft Teams integration CLI routes", () => {
     const response = await accept(
       client.complete({
         body: {
-          uploadId,
+          uploadId: prepared.uploadId,
+          operationId: prepared.operationId,
           conversationId: fixture.teamsConversationId,
           activityId: fixture.teamsThreadId,
           contentType: "application/pdf",
@@ -569,7 +581,26 @@ describe("Microsoft Teams integration CLI routes", () => {
       mimetype: "application/pdf",
       size: 1234,
     });
-    expect(response.body.url).toContain(uploadId);
+    expect(response.body.url).toBe(prepared.fileUrl);
+    const files = setupApp({ context, routes: webFileUrlRoutes })(
+      webFilesContract,
+    );
+    const preview = await accept(
+      files.fileUrl({
+        headers: { authorization: "Bearer clerk-session" },
+        query: { file_id: prepared.uploadId },
+      }),
+      [200],
+    );
+    expect(preview.body.publicUrl).toBeNull();
+    mocks.clerk.session(fixture.userId, "another-org");
+    await accept(
+      files.fileUrl({
+        headers: { authorization: "Bearer clerk-session" },
+        query: { file_id: prepared.uploadId },
+      }),
+      [404],
+    );
     expect(captured.body?.text).toContain("Daily report");
     expect(captured.body?.text).toContain("[report.pdf]");
     expect(captured.body).toMatchObject({
@@ -578,7 +609,9 @@ describe("Microsoft Teams integration CLI routes", () => {
       attachments: [
         {
           contentType: "application/pdf",
-          contentUrl: response.body.url,
+          contentUrl: expect.stringContaining(
+            "https://attachment-storage.example/test-private-artifacts/",
+          ),
           name: "report.pdf",
         },
       ],
@@ -595,15 +628,9 @@ describe("Microsoft Teams integration CLI routes", () => {
       const recipientId = target === "me" ? fixture.teamsUserId : target;
       const outgoing = mockOutgoingTeams(fixture, captured, recipientId);
 
-      const uploadId = randomUUID();
-      mocks.s3.listObjects([
-        {
-          bucket: "test-user-artifacts",
-          key: `artifacts/${fixture.userId}/${uploadId}/report.pdf`,
-          size: 1234,
-        },
-      ]);
-
+      const prepared = await uploadTeamsFixtureFile({
+        user: target,
+      });
       const client = setupApp({
         context,
         routes: integrationsTeamsUploadCompleteRoutes,
@@ -611,7 +638,8 @@ describe("Microsoft Teams integration CLI routes", () => {
       const response = await accept(
         client.complete({
           body: {
-            uploadId,
+            uploadId: prepared.uploadId,
+            operationId: prepared.operationId,
             user: target,
             contentType: "application/pdf",
           },
@@ -642,7 +670,9 @@ describe("Microsoft Teams integration CLI routes", () => {
         attachments: [
           {
             contentType: "application/pdf",
-            contentUrl: response.body.url,
+            contentUrl: expect.stringContaining(
+              "https://attachment-storage.example/test-private-artifacts/",
+            ),
             name: "report.pdf",
           },
         ],

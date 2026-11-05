@@ -272,11 +272,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Canva design connector",
     enabled: false,
   },
-  [FeatureSwitchKey.DatadogConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Datadog observability connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.DeelConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Deel HR connector",
@@ -285,11 +280,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.DocuSignConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the DocuSign e-signature connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.ExpensifyConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Expensify accounting connector",
     enabled: false,
   },
   [FeatureSwitchKey.MercuryConnector]: {
@@ -322,16 +312,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the Supabase database connector integration",
     enabled: false,
   },
-  [FeatureSwitchKey.CloseConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Close CRM connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.WebflowConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Webflow site management connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.PayPalConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the PayPal payments connector",
@@ -340,11 +320,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.RampConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Ramp spend management connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.ResendConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Resend email service connector",
     enabled: false,
   },
   [FeatureSwitchKey.SpotifyConnector]: {
@@ -375,16 +350,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "liangyou@okou.ai",
     description:
       "Enable the test-oauth connector, a synthetic OAuth 2.0 provider used only for automated tests. Off in prod.",
-    enabled: false,
-  },
-  [FeatureSwitchKey.FreshdeskConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Freshdesk helpdesk connector",
-    enabled: false,
-  },
-  [FeatureSwitchKey.StabilityAiConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Stability AI image generation connector",
     enabled: false,
   },
   [FeatureSwitchKey.ZoomConnector]: {

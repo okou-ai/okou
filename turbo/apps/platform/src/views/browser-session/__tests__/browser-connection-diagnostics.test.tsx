@@ -159,6 +159,9 @@ test.each([
     await waitFor(() => {
       expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
     });
+    const creation = browser.holdNextNative("createTab");
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    await creation.received;
     act(() => {
       if (failure === "epoch change") {
         browser.resetWorker();
@@ -176,6 +179,9 @@ test.each([
       }
     });
     await screen.findByText("Browser disconnected");
+    await act(async () => {
+      await creation.release();
+    });
     expect(sentry.reports).toHaveLength(1);
     expect(sentry.reports[0]).toMatchObject({
       type: "exception",

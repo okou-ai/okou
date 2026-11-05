@@ -75,8 +75,8 @@ function CollapsibleText({ text }: { text: string }) {
   }
 
   return (
-    <details className="group cursor-pointer">
-      <summary className="list-none">
+    <details className="group">
+      <summary className="cursor-default list-none">
         <div className="line-clamp-1 group-open:line-clamp-none">
           <MarkdownContent text={text} />
         </div>
@@ -109,7 +109,7 @@ function ThinkingSummary({
     <div className={`${GROUP_SPACING} relative`}>
       {showConnector && <Connector isDashed={isDashed} />}
       <details className="group" open={hasSearchMatch}>
-        <summary className="cursor-pointer list-none w-full text-left">
+        <summary className="cursor-default list-none w-full text-left">
           <div className="flex items-center gap-2">
             <StatusDot variant="success" />
             <span className="font-semibold text-sm text-foreground shrink-0">
@@ -301,7 +301,7 @@ function TaskEventGroupCard({
         />
       )}
       <details className="group relative">
-        <summary className="cursor-pointer list-none relative py-2">
+        <summary className="cursor-default list-none relative py-2">
           <div className="flex gap-2 items-center">
             {isRunning ? (
               <Loader className="h-3 w-3 text-yellow-600 animate-spin shrink-0" />
@@ -566,7 +566,7 @@ function ResultEventGroupCard({
         />
       )}
       <details className="group relative" open>
-        <summary className="cursor-pointer list-none relative py-2">
+        <summary className="cursor-default list-none relative py-2">
           <div className="flex gap-2 items-center">
             <StatusDot variant={isError ? "error" : "primary"} />
             <span className="font-semibold text-sm text-foreground">
@@ -696,7 +696,7 @@ function TodoCard({
         />
       )}
       <details className="group" open={hasSearchMatch}>
-        <summary className="cursor-pointer list-none relative">
+        <summary className="cursor-default list-none relative">
           <div className="flex gap-2 items-center">
             <StatusDot variant="todo" />
             <span className="font-semibold text-sm text-foreground shrink-0">
@@ -902,7 +902,7 @@ function CollapsedToolGroup({
       {showConnector && <Connector isDashed={isDashed} />}
       <div className="relative">
         <details className="group">
-          <summary className="cursor-pointer list-none w-full text-left">
+          <summary className="cursor-default list-none w-full text-left">
             <div className="flex items-center gap-2">
               <StatusDot variant="success" />
               <span className="font-semibold text-sm text-foreground truncate min-w-0">

@@ -170,6 +170,7 @@ async fn agentphone_typing_refresh_repeats_without_making_failures_fatal() {
 
 #[tokio::test(start_paused = true)]
 async fn heartbeat_does_not_replay_overdue_ticks_after_slow_request() {
+    let _guard = lock_test_state().await;
     const INTERVAL: Duration = Duration::from_millis(20);
     const SLOW_REQUEST_DURATION: Duration = Duration::from_millis(55);
 

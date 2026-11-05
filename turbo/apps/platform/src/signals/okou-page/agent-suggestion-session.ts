@@ -12,6 +12,7 @@ import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { rootSignal$ } from "../root-signal.ts";
+import { createDraftSignals } from "./chat-draft.ts";
 
 type FeedbackKind =
   "already_done" | "not_planned" | "less_like_this" | "dismissed";
@@ -93,7 +94,10 @@ function createSuggestionEntry(item: Suggestion) {
     set(result$, result);
     return result;
   });
-  return { item, hidden$, result$, enqueue$, retry$ };
+  // A chosen action is sent from this card's own unsaved draft, so the
+  // default Agent's composer is neither read nor replaced.
+  const optionDraft = createDraftSignals();
+  return { item, hidden$, result$, enqueue$, retry$, optionDraft };
 }
 export type AgentSuggestionEntry = ReturnType<typeof createSuggestionEntry>;
 
@@ -116,7 +120,7 @@ const agentSuggestionsEnabled$ = computed(async (get) => {
   if (!get(suggestionFeedEnabled$)) {
     return false;
   }
-  // A new-chat option continues in the default agent's composer.
+  // A new-chat option starts in the default agent.
   return (await get(defaultAgentId$)) !== null;
 });
 

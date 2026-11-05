@@ -113,6 +113,7 @@ async def test_websocket_usage_diagnostics_bound_encoding_and_output_before_reco
     assert not model_websocket_usage.is_enabled(flow)
 
 
+@pytest.mark.shard_cost(1)
 @pytest.mark.parametrize("termination", ["websocket_end", "error"])
 async def test_websocket_usage_diagnostic_budget_isolated_and_released(
     tmp_path,

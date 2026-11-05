@@ -1,4 +1,9 @@
 import { randomUUID } from "node:crypto";
+import { HeadObjectCommand, PutObjectCommand } from "@aws-sdk/client-s3";
+import {
+  contentBundleDigest,
+  readContentBundle,
+} from "@okouai/core/content-bundle";
 
 import {
   customConnectorByIdContract,
@@ -110,7 +115,162 @@ function clients() {
   return api;
 }
 
+function acceptSkillUploads(failBundle = false) {
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (
+      command instanceof HeadObjectCommand &&
+      command.input.Key?.startsWith("bundles/v1/")
+    ) {
+      return Promise.reject(
+        Object.assign(new Error("Object missing"), { name: "NotFound" }),
+      );
+    }
+    if (
+      failBundle &&
+      command instanceof PutObjectCommand &&
+      command.input.Key?.startsWith("bundles/v1/")
+    ) {
+      return Promise.reject(new Error("Bundle upload unavailable"));
+    }
+    return Promise.resolve({});
+  });
+}
+
+function uploadedArchives() {
+  return context.mocks.s3.send.mock.calls.flatMap(([command]) => {
+    return command instanceof PutObjectCommand &&
+      typeof command.input.Key === "string" &&
+      command.input.Body instanceof Uint8Array
+      ? [
+          {
+            key: command.input.Key,
+            archive: Buffer.from(command.input.Body),
+            condition: command.input.IfNoneMatch,
+          },
+        ]
+      : [];
+  });
+}
+
+function archiveFiles(archive: Buffer) {
+  return readContentBundle(archive, {
+    sha256: contentBundleDigest(archive),
+    archiveBytes: archive.length,
+  });
+}
+
 describe("Custom connector authentication modes", () => {
+  it.each(["http", "mcp"] as const)(
+    "prepares identical Skill files in legacy and immutable %s publications",
+    async (kind) => {
+      const api = clients();
+      acceptSkillUploads();
+      const skillMarkdown =
+        "Use the connected account.\n保留空白和 Unicode。\n";
+      const input = {
+        ...definition("none", `https://${randomUUID()}.example.test/`, kind),
+        skillMarkdown,
+      };
+      const created = await accept(
+        api.collection.create({
+          headers,
+          body: input,
+        }),
+        [201],
+      );
+      const read = await accept(
+        api.connector.get({ headers, params: { id: created.body.id } }),
+        [200],
+      );
+      expect(read.body.skillMarkdown).toBe(skillMarkdown);
+      const archives = uploadedArchives();
+      const legacy = archives.find((file) => {
+        return file.key.endsWith("/archive.tar.gz");
+      });
+      const prepared = archives.find((file) => {
+        return file.key.startsWith("bundles/v1/");
+      });
+      if (!legacy || !prepared) {
+        throw new Error("Expected both Skill publications");
+      }
+      expect(prepared.key).toBe(
+        `bundles/v1/${contentBundleDigest(prepared.archive)}.tar.gz`,
+      );
+      expect(prepared.condition).toBe("*");
+      expect(archiveFiles(prepared.archive)).toStrictEqual(
+        archiveFiles(legacy.archive),
+      );
+      expect(archiveFiles(prepared.archive)[0]?.content.toString()).toContain(
+        skillMarkdown,
+      );
+      context.mocks.s3.send.mockRejectedValue(
+        new Error("Object store unavailable"),
+      );
+      const retried = await accept(
+        api.connector.update({
+          headers,
+          params: { id: created.body.id },
+          body: input,
+        }),
+        [200],
+      );
+      expect(retried.body.skillMarkdown).toBe(skillMarkdown);
+    },
+  );
+
+  it("retains the current Skill after a failed bundle upload and allows a normal retry", async () => {
+    const api = clients();
+    const input = definition("none", "https://skill-retry.example.test/");
+    acceptSkillUploads();
+    const created = await accept(
+      api.collection.create({
+        headers,
+        body: {
+          ...input,
+          skillMarkdown: "Original Skill",
+        },
+      }),
+      [201],
+    );
+    const params = { id: created.body.id };
+    acceptSkillUploads(true);
+    await accept(
+      api.connector.update({
+        headers,
+        params,
+        body: { ...input, skillMarkdown: "Updated Skill" },
+      }),
+      [500],
+    );
+    const retained = await accept(
+      api.connector.get({ headers, params }),
+      [200],
+    );
+    expect(retained.body.skillMarkdown).toBe("Original Skill");
+    acceptSkillUploads();
+    await accept(
+      api.connector.update({
+        headers,
+        params,
+        body: { ...input, skillMarkdown: "Updated Skill" },
+      }),
+      [200],
+    );
+    const updated = await accept(api.connector.get({ headers, params }), [200]);
+    expect(updated.body.skillMarkdown).toBe("Updated Skill");
+    await accept(
+      api.connector.update({
+        headers,
+        params,
+        body: { ...input, skillMarkdown: null },
+      }),
+      [200],
+    );
+    expect(
+      (await accept(api.connector.get({ headers, params }), [200])).body
+        .skillMarkdown,
+    ).toBeNull();
+  });
   it.each([
     ["http", true],
     ["http", false],

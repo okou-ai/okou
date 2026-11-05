@@ -252,17 +252,52 @@ async function openFeedFromHome(draft: string): Promise<void> {
   await fill(composer(), draft);
   click(link("/feed"));
 }
-async function waitForFocusedHomeComposer(): Promise<void> {
-  await waitFor(() => {
-    expect(pathname()).toBe(homePath);
-    expect(composer()).toHaveFocus();
+const SENT = "Sent to a new chat";
+const REFERENCED_THREAD = {
+  type: "chat_thread",
+  threadId,
+  titleSnapshot: "Referenced decision",
+} as const;
+interface SentInput {
+  readonly threadId?: string;
+  readonly userMessage?: UserMessageDocument;
+}
+// Resolves with the chat input the Feed sends while the page stays in place.
+function captureSend(): Promise<SentInput> {
+  const sent = context.mocks.deferred<SentInput>();
+  mockChatLifecycle(context, {
+    onSendRequest: ({ threadId: sentThreadId, userMessage }) => {
+      if (!sent.settled()) {
+        sent.resolve({ threadId: sentThreadId, userMessage });
+      }
+    },
   });
+  return sent.promise;
+}
+async function openCustomDirection(
+  container: ParentNode = document.body,
+): Promise<{ dialog: HTMLElement; note: HTMLElement }> {
+  click(button("I’d like to…", "button", container));
+  const dialog = await screen.findByRole("dialog");
+  const note = await within(dialog).findByRole("textbox", {
+    name: "What do you have in mind?",
+  });
+  return { dialog, note };
+}
+async function writeDirection(note: HTMLElement, text: string): Promise<void> {
+  const user = userEvent.setup();
+  await user.click(note);
+  await user.keyboard(text);
 }
 
-test("Selecting a cached card restores its draft after server cleanup", async () => {
+test("A cached card still sends its action after server cleanup", async () => {
   const suggestion = { ...makeSuggestion(), consumeToken: "a".repeat(64) };
   const pool = mockPool([suggestion]);
+  const consumedWith = context.mocks.deferred<string | undefined>();
   context.mocks.api(suggestionsContract.consume, ({ body, respond }) => {
+    if (!consumedWith.settled()) {
+      consumedWith.resolve(body.snapshot?.consumeToken);
+    }
     if (body.snapshot?.consumeToken !== suggestion.consumeToken) {
       return respond(409, {
         error: { code: "CONFLICT", message: "Unavailable" },
@@ -274,15 +309,15 @@ test("Selecting a cached card restores its draft after server cleanup", async ()
       selectedOptionId: body.optionId,
     });
   });
-  await openFeedFromHome("My original draft");
+  const sent = captureSend();
+  await openFeed();
   await screen.findByText(suggestion.title);
   pool.withdrawAll();
   click(button(makeOption().label));
-  await waitFor(() => {
-    expect(pathname()).toBe(homePath);
-    expect(composer()).toHaveTextContent("Referenced decision");
-    expect(composer()).toHaveTextContent("My original draft");
-  });
+  await screen.findByText(SENT);
+  expect((await sent).userMessage?.parts).toContainEqual(REFERENCED_THREAD);
+  await expect(consumedWith.promise).resolves.toBe(suggestion.consumeToken);
+  expect(pathname()).toBe("/feed");
 });
 
 test("The Feed sidebar entry opens the suggestions on their own page", async () => {
@@ -309,8 +344,7 @@ test("Each Feed visit loads new suggestions and an empty pool says so", async ()
   await screen.findByText(makeSuggestion().title);
   expect(screen.queryByText(EMPTY_FEED)).not.toBeInTheDocument();
 });
-test("An expanded suggestion adds the selected option to the ordinary composer without replacing its draft", async () => {
-  const user = userEvent.setup();
+test("Choosing an action sends it to a new thread and keeps the Feed and the home draft", async () => {
   const selected = makeOption({ id: "prepare", label: "Prepare response" });
   const suggestion = {
     ...makeSuggestion(),
@@ -328,23 +362,36 @@ test("An expanded suggestion adds the selected option to the ordinary composer w
       makeOption({ id: "summarize", label: "Summarize the decision" }),
     ],
   };
-  const pool = mockPool([suggestion]);
+  const next = {
+    ...makeSuggestion(),
+    id: "a0000000-0000-4000-a000-000000000002",
+    title: "Review the budget",
+  };
+  const pool = mockPool([suggestion, next]);
+  const sent = captureSend();
   await openFeedFromHome("My original draft");
-  await screen.findByText(makeSuggestion().title);
+  await screen.findByText(suggestion.title);
   expect(button("Review decision")).toBeInTheDocument();
   expect(button("Summarize the decision")).toBeInTheDocument();
-  await user.click(button(selected.label));
+  click(button(selected.label));
+  await screen.findByText(SENT);
+  expect(pathname()).toBe("/feed");
+  expect(feedItemLabels()).toStrictEqual([next.title]);
   await waitFor(() => {
-    expect(pathname()).toBe(homePath);
-    expect(composer()).toHaveTextContent("Referenced decision");
+    expect(pool.selections).toStrictEqual([
+      { id: suggestion.id, optionId: selected.id },
+    ]);
+  });
+  const message = (await sent).userMessage;
+  expect(message?.parts).toContainEqual(REFERENCED_THREAD);
+  expect(JSON.stringify(message)).not.toContain("Unselected action");
+  click(link(homePath));
+  await waitFor(() => {
     expect(composer()).toHaveTextContent("My original draft");
   });
-  expect(pool.consumed).toStrictEqual([makeSuggestion().id]);
-  expect(pool.selections).toStrictEqual([
-    { id: suggestion.id, optionId: selected.id },
-  ]);
-  expect(composer()).not.toHaveTextContent("Unselected action");
+  expect(composer()).not.toHaveTextContent("Referenced decision");
 });
+
 test("An existing-thread suggestion merges its content and attachments with the remote draft", async () => {
   const incoming = draftAttachment("suggested.txt", {
     id: "a0000000-0000-4000-a000-000000000081",
@@ -461,25 +508,29 @@ test("A consumed suggestion is saved when target metadata is unavailable", async
   });
   expect(pool.consumed).toStrictEqual([suggestion.id]);
 });
-test("A choice keeps the locally prepared draft when another session consumed the card", async () => {
+test("A choice is still sent when another session consumed the card", async () => {
   const pool = mockPool();
+  const consumed = context.mocks.deferred<void>();
   context.mocks.api(suggestionsContract.consume, ({ respond }) => {
     // Another session consumed it first and the API announced the change.
     pool.withdrawAll();
     notifySuggestionsChanged();
+    consumed.resolve();
     return respond(409, {
       error: { code: "CONFLICT", message: "Already consumed" },
     });
   });
-  await openFeedFromHome("Keep this draft");
+  const sent = captureSend();
+  await openFeed();
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
-  await waitFor(() => {
-    expect(pathname()).toBe(homePath);
-    expect(composer()).toHaveTextContent("Keep this draft");
-    expect(composer()).toHaveTextContent("Referenced decision");
-  });
+  await screen.findByText(SENT);
+  expect((await sent).userMessage?.parts).toContainEqual(REFERENCED_THREAD);
+  await consumed.promise;
+  expect(pathname()).toBe("/feed");
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
+
 test("A suggestion uses the ordinary composer to join a running target chat", async () => {
   const runId = "d0000000-0000-4000-a000-000000000821";
   const queued: UserMessageDocument[] = [];
@@ -530,8 +581,10 @@ test("A suggestion uses the ordinary composer to join a running target chat", as
 });
 test("The loaded option keeps its draft and destination when the server responds with a later version", async () => {
   mockPool();
-  mockChatLifecycle(context, { threadId });
+  const sent = captureSend();
+  const consumed = context.mocks.deferred<void>();
   context.mocks.api(suggestionsContract.consume, ({ respond }) => {
+    consumed.resolve();
     return respond(200, {
       ...makeSuggestion(),
       status: "consumed",
@@ -553,10 +606,12 @@ test("The loaded option keeps its draft and destination when the server responds
   await openFeed();
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
-  await waitFor(() => {
-    expect(pathname()).toBe(homePath);
-    expect(composer()).toHaveTextContent("Referenced decision");
-  });
+  const message = await sent;
+  expect(message.threadId).not.toBe(threadId);
+  expect(message.userMessage?.parts).toContainEqual(REFERENCED_THREAD);
+  expect(JSON.stringify(message.userMessage)).not.toContain("Updated action");
+  await consumed.promise;
+  expect(pathname()).toBe("/feed");
 });
 function numberedSuggestions(count: number): Suggestion[] {
   return Array.from({ length: count }, (_, index) => {
@@ -576,7 +631,7 @@ function feedItemLabels(): (string | null)[] {
       return content.textContent;
     });
 }
-test("The Feed lists every suggestion card and opens the chosen card's draft", async () => {
+test("The Feed lists every suggestion card and sends the chosen card's action in place", async () => {
   const items = numberedSuggestions(3).map((item, index) => {
     return {
       ...item,
@@ -600,6 +655,7 @@ test("The Feed lists every suggestion card and opens the chosen card's draft", a
     };
   });
   mockPool(items);
+  const sent = captureSend();
   await openFeed();
   const suggestions = await screen.findByRole("region", {
     name: "Suggestions",
@@ -620,8 +676,12 @@ test("The Feed lists every suggestion card and opens the chosen card's draft", a
     expect(button("Dismiss", "button", card)).toBeEnabled();
   }
   click(button(items[1].options[0].label, "button", cards[1]));
-  await waitForFocusedHomeComposer();
-  expect(composer()).toHaveTextContent("Draft for suggested action 2");
+  await screen.findByText(SENT);
+  expect(feedItemLabels()).toStrictEqual([items[0].title, items[2].title]);
+  expect(JSON.stringify((await sent).userMessage)).toContain(
+    "Draft for suggested action 2",
+  );
+  expect(pathname()).toBe("/feed");
 });
 test("Dismissing a suggestion removes only its card and keeps the remaining suggestion available", async () => {
   const pool = mockPool(numberedSuggestions(2));
@@ -694,7 +754,7 @@ test("With the switch off, the Feed route is not found", async () => {
     screen.findByRole("heading", { name: "That page isn't here." }),
   ).resolves.toBeInTheDocument();
 });
-test("Feed options continue in the default Agent after visiting a secondary Agent", async () => {
+test("Feed options start in the default Agent after visiting a secondary Agent", async () => {
   const secondary = "c0000000-0000-4000-a000-000000000002";
   const agents: AgentResponse[] = [agentId, secondary].map((id) => {
     return {
@@ -721,6 +781,17 @@ test("Feed options continue in the default Agent after visiting a secondary Agen
     return respond(200, found);
   });
   mockPool();
+  mockChatLifecycle(context);
+  const sender = context.mocks.deferred<string>();
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    if (!sender.settled()) {
+      sender.resolve(body.agentId);
+    }
+    return respond(201, {
+      threadId: body.threadId ?? threadId,
+      createdAt: "2026-10-27T00:00:00Z",
+    });
+  });
   await setupPage({
     context,
     path: `/agents/${secondary}/chat`,
@@ -730,21 +801,13 @@ test("Feed options continue in the default Agent after visiting a secondary Agen
   click(link("/feed"));
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
-  await waitFor(() => {
-    expect(pathname()).toBe(homePath);
-    expect(composer()).toHaveTextContent("Referenced decision");
-  });
+  await screen.findByText(SENT);
+  await expect(sender.promise).resolves.toBe(agentId);
+  expect(pathname()).toBe("/feed");
 });
 
-test("Custom direction stays expanded above the feedback actions and only prepares the default Agent's composer", async () => {
+test("Custom direction opens a dialog composer for the default Agent without touching its home draft", async () => {
   const pool = mockPool();
-  const saved: UserMessageDocument[] = [];
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
-    if (body.draftUserMessage) {
-      saved.push(body.draftUserMessage);
-    }
-    return respond(204);
-  });
   await openFeedFromHome("Keep my original draft");
   await screen.findByText(makeSuggestion().title);
   const custom = button("I’d like to…");
@@ -755,36 +818,32 @@ test("Custom direction stays expanded above the feedback actions and only prepar
     custom.compareDocumentPosition(button("Dismiss")) &
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
-  await userEvent.setup().click(custom);
-  await waitForFocusedHomeComposer();
-  expect(
-    screen.getByRole("textbox", { name: "What do you have in mind?" }),
-  ).toBeInTheDocument();
-  expect(composer()).toHaveTextContent("Keep my original draft");
+  const { dialog, note } = await openCustomDirection();
+  expect(pathname()).toBe("/feed");
   expect(composer()).toHaveTextContent(makeSuggestion().title);
   expect(composer()).not.toHaveTextContent("launch-plan-v2");
-  expect(button("Send")).toBeDisabled();
+  expect(composer()).not.toHaveTextContent("Keep my original draft");
+  expect(button("Send", "button", dialog)).toBeDisabled();
+  await writeDirection(note, "What decision should I make first?");
+  await waitFor(() => {
+    expect(button("Send", "button", dialog)).toBeEnabled();
+  });
   expect(pool.consumed).toStrictEqual([]);
+  click(within(dialog).getByLabelText("Close"));
   await waitFor(() => {
-    return expect(saved.length).toBeGreaterThan(0);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  const quote = suggestionFeedbacks(
-    saved.at(-1) ?? { version: 1, parts: [] },
-  )[0];
-  expect(quote.part.quote).toContain("source launch-plan-v2");
-  expect(quote.part.note).toStrictEqual([]);
-  await userEvent.setup().keyboard("What decision should I make first?");
+  expect(
+    screen.getByRole("article", { name: makeSuggestion().title }),
+  ).toBeInTheDocument();
+  click(link(homePath));
   await waitFor(() => {
-    return expect(button("Send")).not.toBeDisabled();
+    expect(composer()).toHaveTextContent("Keep my original draft");
   });
-  await userEvent.setup().click(button("Remove feedback"));
-  expect(composer()).toHaveTextContent("What decision should I make first?");
-  expect(composer()).toHaveTextContent("Keep my original draft");
   expect(composer()).not.toHaveTextContent(makeSuggestion().title);
-  expect(pool.consumed).toStrictEqual([]);
 });
 
-test("Choosing another card's custom direction replaces the prepared context and keeps the note", async () => {
+test("Each custom direction dialog starts from its own card's background", async () => {
   const first = makeSuggestion();
   const second: Suggestion = {
     ...makeSuggestion(),
@@ -808,50 +867,31 @@ test("Choosing another card's custom direction replaces the prepared context and
     },
   };
   mockPool([first, second]);
-  const saved: UserMessageDocument[] = [];
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
-    if (body.draftUserMessage) {
-      saved.push(body.draftUserMessage);
-    }
-    return respond(204);
-  });
   await openFeed();
   await screen.findByText(first.title);
-  await userEvent.setup().click(button("I’d like to…"));
-  await waitForFocusedHomeComposer();
-  expect(composer()).toHaveTextContent(first.title);
-  await userEvent.setup().keyboard("Assess the risks first");
-  click(link("/feed"));
-  await screen.findByText(first.title);
-  click(
-    button(
-      "I’d like to…",
-      "button",
-      screen.getByRole("article", { name: second.title }),
-    ),
+  const opened = await openCustomDirection(
+    screen.getByRole("article", { name: first.title }),
   );
+  expect(composer()).toHaveTextContent(first.title);
+  await writeDirection(opened.note, "Assess the risks first");
+  click(within(opened.dialog).getByLabelText("Close"));
   await waitFor(() => {
-    expect(pathname()).toBe(homePath);
-    expect(composer()).toHaveTextContent(second.title);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
+  await openCustomDirection(
+    screen.getByRole("article", { name: second.title }),
+  );
+  expect(composer()).toHaveTextContent(second.title);
   expect(composer()).not.toHaveTextContent(first.title);
-  expect(composer()).toHaveTextContent("Assess the risks first");
+  expect(composer()).not.toHaveTextContent("Assess the risks first");
+  click(within(screen.getByRole("dialog")).getByLabelText("Close"));
   await waitFor(() => {
-    return expect(
-      suggestionFeedbacks(saved.at(-1) ?? { version: 1, parts: [] })[0]?.part
-        .quote,
-    ).toContain("BUDGET-42");
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(
-    suggestionFeedbacks(saved.at(-1) ?? { version: 1, parts: [] }),
-  ).toHaveLength(1);
-  expect(
-    suggestionFeedbacks(saved.at(-1) ?? { version: 1, parts: [] })[0].part
-      .quote,
-  ).not.toContain("launch-plan-v2");
+  expect(feedItemLabels()).toStrictEqual([first.title, second.title]);
 });
 
-test("A custom follow-up retains its draft on failure and reuses its identities until acceptance", async () => {
+test("A custom follow-up retains its dialog on failure and reuses its identities until acceptance", async () => {
   const pool = mockPool();
   mockChatLifecycle(context);
   const attempts: {
@@ -885,42 +925,42 @@ test("A custom follow-up retains its draft on failure and reuses its identities 
   });
   await openFeed();
   await screen.findByText(makeSuggestion().title);
-  await userEvent.setup().click(button("I’d like to…"));
-  await waitForFocusedHomeComposer();
-  await userEvent.setup().keyboard("Assess the budget risk first");
+  const { dialog, note } = await openCustomDirection();
+  await writeDirection(note, "Assess the budget risk first");
   await waitFor(() => {
-    return expect(button("Send")).not.toBeDisabled();
+    return expect(button("Send", "button", dialog)).not.toBeDisabled();
   });
-  await userEvent.setup().click(button("Send"));
+  click(button("Send", "button", dialog));
   await screen.findByText("Follow-up temporarily unavailable");
-  expect(pathname()).toBe(homePath);
+  expect(pathname()).toBe("/feed");
   expect(composer()).toHaveTextContent("Assess the budget risk first");
   expect(composer()).toHaveTextContent(makeSuggestion().title);
-  expect(pool.consumed).toStrictEqual([]);
   failing = false;
-  await userEvent.setup().click(button("Send"));
+  click(button("Send", "button", dialog));
   await retryRequested.promise;
   expect(composer()).toHaveTextContent("Assess the budget risk first");
   expect(attempts[1]).toStrictEqual(attempts[0]);
-  expect(
-    suggestionFeedbacks(attempts[1].userMessage ?? { version: 1, parts: [] })[0]
-      .part.quote,
-  ).toContain("launch-plan-v2");
+  const [quote] = suggestionFeedbacks(
+    attempts[1].userMessage ?? { version: 1, parts: [] },
+  );
+  expect(quote.part.quote).toContain("launch-plan-v2");
+  expect(JSON.stringify(quote.part.note)).toContain(
+    "Assess the budget risk first",
+  );
   acceptRetry.resolve();
+  await screen.findByText(SENT);
   await waitFor(() => {
-    return expect(pathname()).toBe(`/chats/${attempts[1].threadId}`);
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  await expect(
-    screen.findByText("Assess the budget risk first"),
-  ).resolves.toBeInTheDocument();
+  expect(pathname()).toBe("/feed");
   expect(
-    screen.queryByText(
-      "Launch background: source launch-plan-v2. Budget and owner are not confirmed.",
-    ),
+    screen.queryByRole("article", { name: makeSuggestion().title }),
   ).not.toBeInTheDocument();
+  // The API records the custom follow-up when it accepts the input.
+  expect(pool.consumed).toStrictEqual([]);
 });
 
-test("Removing custom context preserves the member's original draft and files", async () => {
+test("The custom direction dialog sends the background files without the home draft", async () => {
   const incoming = draftAttachment("suggestion-background.txt", {
     id: "a0000000-0000-4000-a000-000000000091",
     contentType: "text/plain",
@@ -963,22 +1003,28 @@ test("Removing custom context preserves the member's original draft and files", 
       draftAttachments: [original],
     });
   });
-  await openFeed();
-  await screen.findByText(suggestion.title);
-  await userEvent.setup().click(button("I’d like to…"));
-  await waitForFocusedHomeComposer();
-  await screen.findByText("suggestion-background.txt");
+  const sent = captureSend();
+  await setupPage({ context, path: homePath, featureSwitches: features });
   await screen.findByText("my-original.txt");
-  await userEvent.setup().keyboard("Keep my own requirements");
-  await userEvent.setup().click(button("Remove feedback"));
+  click(link("/feed"));
+  await screen.findByText(suggestion.title);
+  const { dialog, note } = await openCustomDirection();
+  await within(dialog).findByText("suggestion-background.txt");
+  expect(within(dialog).queryByText("my-original.txt")).not.toBeInTheDocument();
+  expect(composer()).not.toHaveTextContent("My saved draft");
+  await writeDirection(note, "Keep my own requirements");
   await waitFor(() => {
-    return expect(
-      screen.queryByText("suggestion-background.txt"),
-    ).not.toBeInTheDocument();
+    expect(button("Send", "button", dialog)).toBeEnabled();
   });
-  expect(screen.getByText("my-original.txt")).toBeInTheDocument();
-  expect(composer()).toHaveTextContent("My saved draft");
-  expect(composer()).toHaveTextContent("Keep my own requirements");
+  click(button("Send", "button", dialog));
+  await screen.findByText(SENT);
+  const message = (await sent).userMessage;
+  expect(message?.parts).toContainEqual(
+    expect.objectContaining({ type: "file", fileId: incoming.id }),
+  );
+  expect(JSON.stringify(message)).not.toContain(original.id);
+  expect(JSON.stringify(message)).not.toContain("My saved draft");
+  expect(pathname()).toBe("/feed");
 });
 
 test("Feedback stays available after the last card, accepts an optional reason, and undo restores the card", async () => {
@@ -1227,13 +1273,12 @@ test("Reason edits and Undo are local while their writes follow the original fee
   expect(screen.getByText(item.title)).toBeInTheDocument();
 });
 
-test("Choosing an option opens the focused default Agent composer while consumption and draft saving wait", async () => {
+test("Choosing an action confirms the send while its consumption is still saving", async () => {
   const items = numberedSuggestions(2);
   mockPool(items);
+  mockChatLifecycle(context);
   const requested = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
-  const saving = context.mocks.deferred<void>();
-  const releaseSave = context.mocks.deferred<void>();
   context.mocks.api(suggestionsContract.consume, async ({ body, respond }) => {
     requested.resolve();
     await release.promise;
@@ -1243,40 +1288,19 @@ test("Choosing an option opens the focused default Agent composer while consumpt
       selectedOptionId: body.optionId,
     });
   });
-  context.mocks.api(agentDraftContract.patch, async ({ respond }) => {
-    saving.resolve();
-    await releaseSave.promise;
-    return respond(204);
-  });
   await openFeed();
   await screen.findByText(items[0].title);
-  click(button(makeOption().label));
+  click(
+    button(
+      makeOption().label,
+      "button",
+      screen.getByRole("article", { name: items[0].title }),
+    ),
+  );
   await requested.promise;
-  await waitForFocusedHomeComposer();
-  expect(composer()).toHaveTextContent("Referenced decision");
-  await saving.promise;
-  expect(pathname()).toBe(homePath);
-  releaseSave.resolve();
-  release.resolve();
-});
-
-test("Custom direction opens the focused composer before its draft saving finishes", async () => {
-  const items = numberedSuggestions(2);
-  const pool = mockPool(items);
-  const saving = context.mocks.deferred<void>();
-  const release = context.mocks.deferred<void>();
-  context.mocks.api(agentDraftContract.patch, async ({ respond }) => {
-    saving.resolve();
-    await release.promise;
-    return respond(204);
-  });
-  await openFeed();
-  await screen.findByText(items[0].title);
-  click(button("I’d like to…"));
-  await waitForFocusedHomeComposer();
-  expect(composer()).toHaveTextContent(items[0].title);
-  await saving.promise;
-  expect(pool.consumed).toStrictEqual([]);
+  await screen.findByText(SENT);
+  expect(feedItemLabels()).toStrictEqual([items[1].title]);
+  expect(pathname()).toBe("/feed");
   release.resolve();
 });
 
@@ -1322,26 +1346,4 @@ test("An existing conversation opens before consumption and its remote draft fin
     expect(composer()).toHaveTextContent("My saved target draft");
   });
   releaseConsumption.resolve();
-});
-
-test("An immediate option choice supersedes custom preparation before it can change the composer", async () => {
-  mockPool();
-  const saved = context.mocks.deferred<UserMessageDocument>();
-  context.mocks.api(agentDraftContract.patch, ({ body, respond }) => {
-    if (body.draftUserMessage) {
-      saved.resolve(body.draftUserMessage);
-    }
-    return respond(204);
-  });
-  await openFeed();
-  await screen.findByText(makeSuggestion().title);
-  click(button("I’d like to…"));
-  click(button(makeOption().label));
-  await waitFor(() => {
-    expect(pathname()).toBe(homePath);
-    expect(composer()).toHaveTextContent("Referenced decision");
-  });
-  const document = await saved.promise;
-  expect(suggestionFeedbacks(document)).toHaveLength(0);
-  expect(button("Send")).toBeEnabled();
 });

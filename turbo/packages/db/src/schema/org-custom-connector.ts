@@ -22,6 +22,7 @@ import type {
 } from "@okouai/db/jsonb-contracts/org-custom-connector";
 
 import { storageVersions } from "./storage";
+import { connectorSkillBundleColumns } from "../columns/connector-skill-bundle";
 
 export type {
   OrgCustomConnectorField,
@@ -77,6 +78,9 @@ export const orgCustomConnectors = pgTable(
     skillStorageVersionId: varchar("skill_storage_version_id", {
       length: 64,
     }),
+    // Outgoing writers can leave this reference stale; activation must match
+    // its source version against skillStorageVersionId after writer drain.
+    ...connectorSkillBundleColumns(),
     storageVersion: bigint("storage_version", { mode: "number" })
       .notNull()
       .default(1),
@@ -179,6 +183,27 @@ export const orgCustomConnectors = pgTable(
       check(
         "chk_org_custom_connectors_skill_size",
         sql`${table.skillMarkdown} IS NULL OR octet_length(${table.skillMarkdown}) <= 65536`,
+      ),
+      check(
+        "org_custom_connectors_skill_content_bundle_check",
+        sql`(
+          (${table.skillContentBundle} IS NULL AND ${table.skillContentBundleSourceVersionId} IS NULL)
+          OR (
+            ${table.skillContentBundle} IS NOT NULL
+            AND ${table.skillContentBundleSourceVersionId} IS NOT NULL
+            AND ${table.skillContentBundleSourceVersionId} ~ '^[0-9a-f]{64}$'
+            AND jsonb_typeof(${table.skillContentBundle}) = 'object'
+            AND ${table.skillContentBundle} ?& ARRAY['sha256', 'archiveBytes']
+            AND (${table.skillContentBundle} - 'sha256' - 'archiveBytes') = '{}'::jsonb
+            AND jsonb_typeof(${table.skillContentBundle}->'sha256') = 'string'
+            AND ${table.skillContentBundle}->>'sha256' ~ '^[0-9a-f]{64}$'
+            AND CASE WHEN jsonb_typeof(${table.skillContentBundle}->'archiveBytes') = 'number'
+              THEN (${table.skillContentBundle}->>'archiveBytes')::numeric BETWEEN 1 AND 33554432
+                AND trunc((${table.skillContentBundle}->>'archiveBytes')::numeric) = (${table.skillContentBundle}->>'archiveBytes')::numeric
+              ELSE false
+            END
+          )
+        ) IS TRUE`,
       ),
       check(
         "chk_org_custom_connectors_skill_version_pair",

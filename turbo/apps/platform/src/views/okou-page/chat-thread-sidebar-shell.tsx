@@ -2,7 +2,7 @@ import type { ChatLayoutSignals } from "../../signals/chat-page/chat-layout.ts";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
 import type { CSSProperties, ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
-import { cn, LayoutPanel } from "@okouai/ui";
+import { cn, LayoutPanel, RequestCommit } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -17,10 +17,16 @@ import {
 } from "../../signals/chat-page/chat-thread-sidebar-layout.ts";
 import {
   chatListWidth$,
-  storedChatListHidden$,
+  chatListResizing$,
   unifiedChatWorkspace$,
 } from "../../signals/okou-page/unified-chat-workspace.ts";
 import { ResizeSeam } from "./resize-seam.tsx";
+import { sidebarOff$ } from "../../signals/okou-page/nav.ts";
+import { workspaceResizing$ } from "../../signals/chat-page/workspace-resize.ts";
+import {
+  workspaceLayoutThreads$,
+  type WorkspaceLayoutThreads,
+} from "../../signals/chat-page/workspace-layout-commit.ts";
 
 function sidebarWidthValue(width: number | null, unified: boolean): string {
   if (!unified) {
@@ -40,14 +46,18 @@ function chatThreadSidebarLayout(
   unified: boolean,
   resizing: boolean,
   animateEntry: boolean,
+  open: boolean,
 ): { style: CSSProperties; transition: string } {
   const widthValue = sidebarWidthValue(width, unified);
   return {
     style: { "--chat-thread-sidebar-width": widthValue } as CSSProperties,
     transition:
       resizing || !animateEntry
-        ? ""
-        : "transition-[flex-basis,width] duration-[240ms] motion-reduce:transition-none",
+        ? "transition-none"
+        : cn(
+            "transition-[flex-basis,width] motion-reduce:transition-none",
+            open ? "duration-[180ms]" : "duration-[240ms]",
+          ),
   };
 }
 
@@ -141,13 +151,11 @@ function workspaceFrameClassName(
 function sidebarPanelClassName({
   open,
   unified,
-  animateEntry,
   transition,
   workspace,
 }: {
   readonly open: boolean;
   readonly unified: boolean;
-  readonly animateEntry: boolean;
   readonly transition: string;
   readonly workspace:
     | { readonly pwaNavigation: boolean; readonly fullscreen: boolean }
@@ -158,7 +166,6 @@ function sidebarPanelClassName({
     workspace && "md:rounded-2xl xl:rounded-l-none",
     workspace?.pwaNavigation && !workspace.fullscreen && "[--okou-safe-b:0px]",
     transition,
-    open && animateEntry && "duration-[180ms]",
     open
       ? "flex-1 basis-0 xl:w-[var(--chat-thread-sidebar-width)] xl:flex-none xl:basis-[var(--chat-thread-sidebar-width)]"
       : "pointer-events-none w-0 flex-none basis-0",
@@ -166,20 +173,13 @@ function sidebarPanelClassName({
   );
 }
 
-export function ChatThreadSidebarShell({
-  children,
-  layout,
-  animateEntry,
-  onSidebarLayoutCommit,
-  open,
-  sidebar,
-  widthKey = "default",
-  workspace,
-}: {
+interface ChatThreadSidebarShellProps {
   readonly children: ReactNode;
   readonly layout: ChatLayoutSignals;
   readonly animateEntry: boolean;
   readonly onSidebarLayoutCommit?: () => void;
+  readonly onWorkspaceLayoutCommit?: (threads: WorkspaceLayoutThreads) => void;
+  readonly ownerKey?: string;
   readonly open: boolean;
   readonly sidebar: ReactNode;
   /** Which remembered width the unified workspace gives this panel. */
@@ -191,31 +191,52 @@ export function ChatThreadSidebarShell({
     readonly pwaNavigation: boolean;
     readonly fullscreen: boolean;
   };
-}) {
+}
+
+export function ChatThreadSidebarShell({
+  children,
+  layout,
+  animateEntry,
+  onSidebarLayoutCommit,
+  onWorkspaceLayoutCommit,
+  ownerKey = "",
+  open,
+  sidebar,
+  widthKey = "default",
+  workspace,
+}: ChatThreadSidebarShellProps) {
   const transitionRef = useSet(layout.transitionOnRef$);
   const { unified, width } = useChatThreadSidebarWidth(widthKey);
   const resizing = useGet(chatThreadSidebarResizing$);
+  const workspaceResizing = useGet(workspaceResizing$);
+  const workspaceThreads = useGet(workspaceLayoutThreads$);
   // The chat list shares the workspace row, so its geometry sizes this panel.
   const chatListWidth = useGet(chatListWidth$);
-  const chatListHidden = useGet(storedChatListHidden$);
+  const chatListHidden = useGet(sidebarOff$);
+  const chatListResizing = useGet(chatListResizing$);
   const { style, transition } = chatThreadSidebarLayout(
     width,
     unified,
-    resizing,
+    workspaceResizing,
     animateEntry,
+    open,
   );
 
-  const sidebarLayoutKey = [
+  const sidebarLayoutKey = JSON.stringify([
+    open,
+    ownerKey,
+    widthKey,
     width,
     unified,
     resizing,
     animateEntry,
     chatListWidth,
     chatListHidden,
+    chatListResizing,
     workspace?.beside,
     workspace?.pwaNavigation,
     workspace?.fullscreen,
-  ].join(":");
+  ]);
 
   const handle = open ? (
     <ChatThreadSidebarResizeHandle
@@ -231,7 +252,6 @@ export function ChatThreadSidebarShell({
       <div
         className={cn(
           "min-w-0 min-h-0",
-          transition,
           open ? "hidden xl:flex flex-1 basis-0" : "flex flex-1",
         )}
       >
@@ -243,10 +263,12 @@ export function ChatThreadSidebarShell({
         layoutKey={sidebarLayoutKey}
         onLayoutCommit={onSidebarLayoutCommit}
         data-testid="chat-thread-sidebar-pane"
+        data-sidebar-layout-owner="panel"
+        data-sidebar-layout-key={sidebarLayoutKey}
+        data-sidebar-layout-resizing={workspaceResizing ? "true" : undefined}
         className={sidebarPanelClassName({
           open,
           unified,
-          animateEntry,
           transition,
           workspace,
         })}
@@ -258,7 +280,7 @@ export function ChatThreadSidebarShell({
     </>
   );
 
-  return withChatScrollLayout(
+  const frame = (
     <div
       ref={transitionRef}
       // The shell frame must not establish a stacking context or containing
@@ -279,7 +301,17 @@ export function ChatThreadSidebarShell({
       ) : (
         panes
       )}
-    </div>,
-    { measureWidth: true },
+    </div>
+  );
+  return onWorkspaceLayoutCommit ? (
+    <RequestCommit
+      request={workspaceThreads}
+      commitKey={sidebarLayoutKey}
+      onCommit={onWorkspaceLayoutCommit}
+    >
+      {frame}
+    </RequestCommit>
+  ) : (
+    withChatScrollLayout(frame, { measureWidth: true })
   );
 }

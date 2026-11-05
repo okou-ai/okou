@@ -331,7 +331,7 @@ export function VncNetworkFields({
         <div hidden={hideConnectionDetails}>
           {!protectedRoute ? (
             <details className="rounded-lg border border-divider p-3">
-              <summary className="cursor-pointer rounded-md text-sm text-muted-foreground hover:text-foreground">
+              <summary className="cursor-default rounded-md text-sm text-muted-foreground hover:text-foreground">
                 {t(($) => {
                   return $.remoteConnectionHelp.advancedNetwork;
                 })}
