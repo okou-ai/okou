@@ -1,28 +1,14 @@
 use std::future::Future;
 use std::path::{Path, PathBuf};
-use std::sync::mpsc;
 use std::task::{Context, Waker};
 
 use runner_host::gc::{ExistingLockProbe, LockProbe, probe_existing_lock, probe_lock};
-use runner_host::test_fixtures::blocking_worker::BlockingWorkerRelease as ReleaseWorkerOnDrop;
-use tokio::runtime::{Builder, Runtime};
-use tokio::task::JoinHandle;
+use runner_host::test_fixtures::blocking_worker::occupy_blocking_worker;
+use tokio::runtime::Builder;
 
 use super::*;
 
 const WAIT: Duration = Duration::from_secs(5);
-
-fn occupy_blocking_worker(runtime: &Runtime) -> (ReleaseWorkerOnDrop, JoinHandle<()>) {
-    let (started, started_rx) = mpsc::sync_channel(0);
-    let (release, release_rx) = mpsc::channel();
-    let gate = ReleaseWorkerOnDrop::new(release);
-    let worker = runtime.spawn_blocking(move || {
-        started.send(()).unwrap();
-        release_rx.recv().unwrap();
-    });
-    started_rx.recv_timeout(WAIT).unwrap();
-    (gate, worker)
-}
 
 fn service_paths(root: &Path) -> (PathBuf, PathBuf) {
     let home = test_home(root);
@@ -56,7 +42,7 @@ fn cancelled_removal_retains_service_authority(failing: bool) {
         .max_blocking_threads(1)
         .build()
         .unwrap();
-    let (gate, worker) = occupy_blocking_worker(&runtime);
+    let (gate, worker) = occupy_blocking_worker(&runtime, WAIT);
     let mut removal = Box::pin(remove_version_dir(&path, lock, real_remove_dir_all));
     let entered = runtime.enter();
     assert!(
