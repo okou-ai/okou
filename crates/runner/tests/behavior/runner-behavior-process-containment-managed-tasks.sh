@@ -26,6 +26,7 @@ parent="/sys/fs/cgroup$operation"
 # The packaged native helper and actual broker are the task boundary. These
 # ordinary processes need no Pi session, provider credential or subagent command.
 python3 - "$parent/workload/runtime" "$relative" <<'MANAGED_TASK_PY'
+import base64
 import errno
 import json
 import os
@@ -440,6 +441,35 @@ subprocess.run(["sudo", "--preserve-env=OKOU_TOOL_CGROUP_PROCS_ENDPOINT", "pytho
 # Exercise the shipped image-batch consumer through the public CLI entry point.
 # Only its target entrypoint is an ordinary fixture, so no paid provider runs.
 # The native helper, private Node pipe, admission and lifecycle owner are real.
+def captured_run_token(run_id):
+    # Match the CLI's captured-run-token.ts fixture: mode is resolved from the
+    # admitted Run snapshot, without contacting a live member feature API.
+    def encode(value):
+        return base64.urlsafe_b64encode(json.dumps(value).encode()).decode().rstrip("=")
+
+    header = encode({"alg": "HS256"})
+    payload = encode({"scope": "okou", "userId": "test-user", "orgId": "test-org",
+                      "runId": run_id, "capabilities": [], "iat": 0, "exp": 4102444800})
+    return f"vm0_sandbox_{header}.{payload}.test-signature"
+
+
+def consumer_cli(command, *, env, timeout):
+    try:
+        return subprocess.run(command, env=env, check=True, capture_output=True, text=True, timeout=timeout)
+    except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+        secrets = sorted({value for key, value in env.items() if value and any(
+            part in key.upper() for part in ("TOKEN", "KEY", "SECRET", "PASSWORD", "COOKIE", "AUTHORIZATION", "CREDENTIAL")
+        )}, key=len, reverse=True)
+        for stream in ("stdout", "stderr"):
+            output = getattr(error, stream) or ""
+            if isinstance(output, bytes):
+                output = output.decode(errors="replace")
+            for value in secrets:
+                output = output.replace(value, "[redacted]")
+            print(f"CLI {stream} tail: {output[-2000:]}", file=sys.stderr, flush=True)
+        raise
+
+
 batch_root = pathlib.Path("/tmp/vm0-process-containment/image-batch")
 batch_root.mkdir()
 cli = shutil.which("okou")
@@ -483,15 +513,15 @@ await import(pathToFileURL(realpathSync(process.env.BATCH_TEST_CLI)).href);
 manifest = batch_root / "images.tsv"
 manifest.write_text("hero\tA synthetic test image\n")
 batch_env = dict(os.environ, BATCH_TEST_WORKER=str(worker), BATCH_TEST_CLI=cli_entrypoint,
-                 OKOU_TOKEN="synthetic-image-batch-test-token", SENTRY_DSN="",
+                 OKOU_TOKEN=captured_run_token(os.environ["OKOU_RUN_ID"]), SENTRY_DSN="",
                  OKOU_API_BACKEND_URL="http://127.0.0.1:9", OKOU_DISABLED_PAID_TOOLS="[]")
 node = shutil.which("node")
 assert node, "Guest Node executable is missing"
 batch_tasks = []
 for name in ("first", "second"):
     state = batch_root / name
-    started = subprocess.run([node, str(driver), "generate", "image-batch", "start", str(manifest), str(state)],
-                             env=batch_env, check=True, capture_output=True, text=True, timeout=40)
+    started = consumer_cli([node, str(driver), "generate", "image-batch", "start", str(manifest), str(state)],
+                           env=batch_env, timeout=40)
     assert "Image batch started:" in started.stdout
     assert "image-batch-worker-output" not in started.stdout
     deadline = time.monotonic() + 10
@@ -512,8 +542,8 @@ for name in ("first", "second"):
 assert batch_tasks[0][1] != batch_tasks[1][1]
 for state, task_path, pid in batch_tasks:
     (state / "release-worker").touch()
-    waited = subprocess.run([cli, "generate", "image-batch", "wait", str(state), "--timeout", "10"],
-                            env=batch_env, check=True, capture_output=True, text=True, timeout=20)
+    waited = consumer_cli([cli, "generate", "image-batch", "wait", str(state), "--timeout", "10"],
+                          env=batch_env, timeout=20)
     assert "hero\thttps://cdn.example/fixture.png" in waited.stdout
     assert "Image batch joined:" in waited.stdout
     assert "image-batch-worker-output" in (state / "output.log").read_text()
@@ -588,10 +618,12 @@ class PiProvider(http.server.BaseHTTPRequestHandler):
 
 provider = http.server.ThreadingHTTPServer(("127.0.0.1", 0), PiProvider)
 threading.Thread(target=provider.serve_forever, daemon=True).start()
-pi_env = dict(os.environ, OKOU_RUN_ID=str(uuid.uuid4()), OKOU_PI_SESSION_ROLE="parent",
+pi_run_id = str(uuid.uuid4())
+pi_env = dict(os.environ, OKOU_RUN_ID=pi_run_id, OKOU_PI_SESSION_ROLE="parent",
               OKOU_PI_SESSION_ID="native-parent", OKOU_PI_RUNTIME_ROOT=str(pi_root),
               OKOU_PI_LAUNCH_PAYLOAD_FILE=str(pi_launch), OKOU_PI_EFFECTIVE_THINKING_LEVEL="high",
-              OPENAI_API_KEY="synthetic-subagent-key", OKOU_TOKEN="synthetic-subagent-token", SENTRY_DSN="")
+              OPENAI_API_KEY="synthetic-subagent-key", OKOU_TOKEN=captured_run_token(pi_run_id), SENTRY_DSN="",
+              OKOU_API_BACKEND_URL="http://127.0.0.1:9")
 pi_env["OKOU_PI_MODEL_CONFIG"] = json.dumps({
     "schemaVersion": 5, "provider": "openrouter", "baseUrl": f"http://127.0.0.1:{provider.server_port}/v1",
     "model": "deepseek/deepseek-v4.1-flash", "dialect": "openai-completions", "transport": "sse",
@@ -600,8 +632,7 @@ pi_env["OKOU_PI_MODEL_CONFIG"] = json.dumps({
 
 
 def pi_command(*args):
-    result = subprocess.run([cli, "subagent", *args], env=pi_env, capture_output=True, text=True, timeout=40)
-    assert result.returncode == 0, (args, result.stdout, result.stderr)
+    result = consumer_cli([cli, "subagent", *args], env=pi_env, timeout=40)
     return result.stdout
 
 
