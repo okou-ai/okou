@@ -34,7 +34,6 @@ export enum FeatureSwitchKey {
   Lab = "_lab",
   TestOauthConnector = "_testOauthConnector",
   ZoomConnector = "zoomConnector",
-  WorkdayConnector = "workdayConnector",
   RealAgentInPreview = "_realAgentInPreview",
   ZapierConnector = "zapierConnector",
   ArtifactSidebarPreview = "artifactSidebarPreview",
