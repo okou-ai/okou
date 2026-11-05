@@ -680,6 +680,9 @@ fn turn_failure_message(failure: TurnFailure) -> &'static str {
             "Error running remote compact task: stream disconnected before completion: An error occurred while processing your request. You can retry your request, or contact us through our help center at help.openai.com if the error persists. Please include the request ID req_compaction in your message."
         }
         TurnFailure::OutputTokenLimit => "Incomplete response returned, reason: max_output_tokens",
+        TurnFailure::AccessProgram => {
+            include_str!("fixtures/access-program-http-body.json").trim_end()
+        }
         TurnFailure::ContentPolicyRejection => {
             r#"{"error":{"message":"Content Exists Risk","type":"invalid_request_error","param":null,"code":"invalid_request_error"}}"#
         }
@@ -703,6 +706,7 @@ fn turn_failure_error_info(failure: TurnFailure) -> Option<Value> {
         | TurnFailure::InvalidRequestFormat => None,
         TurnFailure::BiologicalRiskRejection
         | TurnFailure::OutputTokenLimit
+        | TurnFailure::AccessProgram
         | TurnFailure::ProviderStreamServerError
         | TurnFailure::RemoteCompactionServerError
         | TurnFailure::RequestSend
