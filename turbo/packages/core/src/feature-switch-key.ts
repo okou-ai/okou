@@ -17,7 +17,6 @@ export enum FeatureSwitchKey {
   AhrefsConnector = "ahrefsConnector",
   BillConnector = "billConnector",
   BentomlConnector = "bentomlConnector",
-  CanvaConnector = "canvaConnector",
   DeelConnector = "deelConnector",
   DocuSignConnector = "docusignConnector",
   MercuryConnector = "mercuryConnector",

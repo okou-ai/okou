@@ -267,11 +267,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Enable the BentoML model serving connector",
     enabled: false,
   },
-  [FeatureSwitchKey.CanvaConnector]: {
-    maintainer: "yuma@okou.ai",
-    description: "Enable the Canva design connector",
-    enabled: false,
-  },
   [FeatureSwitchKey.DeelConnector]: {
     maintainer: "yuma@okou.ai",
     description: "Enable the Deel HR connector",
