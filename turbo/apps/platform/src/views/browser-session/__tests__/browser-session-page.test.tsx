@@ -850,6 +850,37 @@ test("A denied renewal revokes a healthy viewer without waiting for native disco
   expect(screen.queryByText("Browser not live")).not.toBeInTheDocument();
 });
 
+test("Losing authorization while starting replaces the stopped state with the authorization placeholder", async () => {
+  mockBrowserSession(
+    browserSession({
+      status: "suspended",
+      liveUrl: null,
+      idleExpiresAt: null,
+      suspendedAt: "2026-09-01T10:10:00.000Z",
+      suspensionReason: "idle",
+    }),
+  );
+  context.mocks.api(browserContract.open, ({ respond }) => {
+    return respond(403, {
+      error: {
+        code: "BROWSER_AUTHORIZATION_REQUIRED",
+        message: "Browser authorization was revoked",
+      },
+    });
+  });
+  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await screen.findByText("Browser not live");
+  click(getButton("Start browser"));
+  await screen.findByText(AUTHORIZATION_REQUIRED);
+  expect(screen.queryByText("Start browser")).not.toBeInTheDocument();
+  expect(
+    screen.queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Browser authorization was revoked"),
+  ).not.toBeInTheDocument();
+});
+
 test("An unrelated permission failure remains an observable error", async () => {
   context.mocks.api(browserContract.get, ({ respond }) => {
     return respond(403, {
