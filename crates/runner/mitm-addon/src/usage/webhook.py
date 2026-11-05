@@ -253,8 +253,8 @@ def _do_post_webhook_attempts(
                 attempt=attempt + 1,
             )
             return _SUCCESS
-        except urllib.error.HTTPError as exc:
-            if not _is_retryable_http_error(exc):
+        except (urllib.error.URLError, OSError, TimeoutError) as exc:
+            if isinstance(exc, urllib.error.HTTPError) and not _is_retryable_http_error(exc):
                 _log_webhook_entry(
                     proxy_log_path,
                     "error",
@@ -267,19 +267,6 @@ def _do_post_webhook_attempts(
                     error=str(exc),
                 )
                 return _PERMANENT_FAILURE
-            outcome = _handle_retryable_webhook_failure(
-                proxy_log_path=proxy_log_path,
-                url=url,
-                log_type=log_type,
-                payload=payload,
-                payload_bytes=payload_bytes,
-                attempt=attempt,
-                max_retries=max_retries,
-                exc=exc,
-            )
-            if outcome is not None:
-                return outcome
-        except (urllib.error.URLError, OSError, TimeoutError) as exc:
             outcome = _handle_retryable_webhook_failure(
                 proxy_log_path=proxy_log_path,
                 url=url,
