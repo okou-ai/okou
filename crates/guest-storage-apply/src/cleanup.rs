@@ -317,10 +317,6 @@ fn remove_directory_tree(path: &Path) -> io::Result<RemoveOutcome> {
     }
 }
 
-pub(crate) fn remove_partial_target(path: &Path) -> io::Result<()> {
-    remove_directory_tree(path).map(|_| ())
-}
-
 /// Index path relationships once per cleanup pass, so lookups depend on path
 /// depth rather than the number of unrelated preserved mounts.
 struct PreservedPaths {

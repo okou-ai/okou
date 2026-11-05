@@ -73,18 +73,13 @@ impl DownloadTask {
         }
     }
 
-    fn prepare(
-        self,
-        quarantine: Option<&crate::quarantine::Quarantine>,
-    ) -> Result<PreparedDownloadTask, String> {
-        crate::quarantine::prepare_directory(Path::new(&self.mount_path), quarantine).map_err(
-            |e| {
-                format!(
-                    "{} target preparation failed: failed to create directory {}: {e}",
-                    self.label, self.mount_path
-                )
-            },
-        )?;
+    fn prepare(self) -> Result<PreparedDownloadTask, String> {
+        fs::create_dir_all(&self.mount_path).map_err(|e| {
+            format!(
+                "{} target preparation failed: failed to create directory {}: {e}",
+                self.label, self.mount_path
+            )
+        })?;
         let effective_mount_path = Path::new(&self.mount_path).canonicalize().map_err(|e| {
             format!(
                 "{} target preparation failed: failed to resolve directory {}: {e}",
@@ -304,29 +299,21 @@ impl DownloadScheduler {
 /// Prepare download targets before any archive worker can start.
 pub(crate) fn prepare_download_tasks(
     tasks: Vec<DownloadTask>,
-    quarantine: Option<&crate::quarantine::Quarantine>,
 ) -> Result<Vec<PreparedDownloadTask>, String> {
-    tasks
-        .into_iter()
-        .map(|task| task.prepare(quarantine))
-        .collect()
+    tasks.into_iter().map(DownloadTask::prepare).collect()
 }
 
 /// Download all prepared tasks in parallel using std::thread.
 /// Allows additional overlap for remote header waits while keeping local-only
 /// extraction bounded. Serializes logically or physically overlapping mounts.
 /// Returns true if all downloads succeeded, false if any failed.
-pub(crate) fn download_all_parallel(
-    tasks: Vec<PreparedDownloadTask>,
-    quarantine: Option<Arc<crate::quarantine::Quarantine>>,
-) -> bool {
-    download_all_parallel_with_runner(tasks, run_download_attempt, quarantine)
+pub(crate) fn download_all_parallel(tasks: Vec<PreparedDownloadTask>) -> bool {
+    download_all_parallel_with_runner(tasks, run_download_attempt)
 }
 
 fn download_all_parallel_with_runner(
     tasks: Vec<PreparedDownloadTask>,
     attempt_runner: AttemptRunner,
-    quarantine: Option<Arc<crate::quarantine::Quarantine>>,
 ) -> bool {
     // Remote requests spend time waiting for headers before extraction can
     // start. Grow only for actual remote work; decoded HTTP-origin inputs and
@@ -370,7 +357,6 @@ fn download_all_parallel_with_runner(
         for _ in 0..concurrency {
             let work_rx = Arc::clone(&work_rx);
             let completion_tx = completion_tx.clone();
-            let quarantine = quarantine.clone();
             scope.spawn(move || {
                 loop {
                     // Only receiving is serialized; extraction and panic
@@ -386,11 +372,7 @@ fn download_all_parallel_with_runner(
                         break;
                     };
                     let outcome = std::panic::catch_unwind(AssertUnwindSafe(|| {
-                        run_with_space_recovery(
-                            &mut download,
-                            attempt_runner,
-                            quarantine.as_deref(),
-                        )
+                        attempt_runner(&mut download)
                     }))
                     .map(AttemptOutcome::Finished)
                     .unwrap_or_else(|e| AttemptOutcome::Panicked(panic_message(e.as_ref())));
@@ -426,44 +408,6 @@ fn download_all_parallel_with_runner(
     });
     telemetry.finish();
     success
-}
-
-fn run_with_space_recovery(
-    download: &mut StartedDownload,
-    attempt_runner: AttemptRunner,
-    quarantine: Option<&crate::quarantine::Quarantine>,
-) -> Result<(), DownloadError> {
-    let first = attempt_runner(download);
-    let Err(error) = first else {
-        return first;
-    };
-    if !error.is_space_exhausted()
-        || !quarantine.is_some_and(|quarantine| {
-            quarantine.reclaim_for(Path::new(download.task.task.mount_path()))
-        })
-    {
-        return Err(error);
-    }
-    let target = Path::new(download.task.task.mount_path());
-    // Admission proved that every declared target is disjoint, has no
-    // symlink ancestors and belongs to this same unaliased filesystem.
-    // No other archive worker can own data below this partial target.
-    crate::cleanup::remove_partial_target(target)
-        .and_then(|()| fs::create_dir_all(target))
-        .map_err(|error| {
-            DownloadError::from_io("Memory space-recovery target reset failed", error)
-        })?;
-    let resolved = target.canonicalize().map_err(|error| {
-        DownloadError::from_io("Memory space-recovery target resolution failed", error)
-    })?;
-    if resolved != normalize_path(target) {
-        return Err(DownloadError::new(
-            "Memory space-recovery target identity changed",
-        ));
-    }
-    download.task.effective_mount_path = resolved;
-    guest_telemetry::log_info!(LOG_TAG, "Retrying input after reclaiming discarded Memory");
-    attempt_runner(download)
 }
 
 fn find_startable_download(
@@ -539,7 +483,7 @@ fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadEr
             download.task.effective_mount_path(),
             download.concurrency,
         )
-        .map_err(|error| DownloadError::from_io("Decoded storage write failed", error));
+        .map_err(|error| DownloadError::new(format!("Decoded storage write failed: {error}")));
     }
     download_and_extract(
         &download.task.task.url,
@@ -560,10 +504,10 @@ fn download_and_extract(
     concurrency: usize,
 ) -> Result<(), DownloadError> {
     fs::create_dir_all(target_path).map_err(|e| {
-        DownloadError::from_io(
-            format!("Failed to create directory {}", target_path.display()),
-            e,
-        )
+        DownloadError::new(format!(
+            "Failed to create directory {}: {e}",
+            target_path.display()
+        ))
     })?;
 
     let attempt_metrics = remote_metrics

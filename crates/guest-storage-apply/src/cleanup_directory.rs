@@ -136,7 +136,7 @@ impl CleanupDirectory {
     ) -> io::Result<()> {
         Err(io::Error::new(
             io::ErrorKind::Unsupported,
-            "deferred Memory cleanup requires Linux renameat2",
+            "deferred input cleanup requires Linux renameat2",
         ))
     }
 }

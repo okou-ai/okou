@@ -13,12 +13,11 @@
 //! downloads. A failure stops later phases; a later failure does not restore
 //! completed filesystem changes.
 //!
-//! The explicit runtime entry points may isolate a replaced, disjoint Memory
-//! tree under the existing private runtime parent. Active paths are cleared
+//! The explicit runtime entry points may isolate discarded input directories
+//! under the existing private runtime parent. Active paths are cleared
 //! before replacement; existing post-Run preparation owns physical deletion
-//! before reuse or Home publication. Allocation pressure can reclaim that exact
-//! discarded tree and retry an affected disjoint target once. Ordinary library
-//! entry points retain synchronous removal.
+//! before reuse or Home publication. This retains old disk allocations until
+//! cleanup; ordinary library entry points retain synchronous removal.
 //!
 //! Downloads whose targets do not overlap may run concurrently. A failed task
 //! does not cancel its siblings, so a `false` result can coexist with targets
@@ -78,6 +77,7 @@ use guest_contracts::storage_manifest::Manifest;
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};
 use manifest::ManifestLoadError;
 use plan::{EmptyArtifactPreparation, RunPlan};
+use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
@@ -95,7 +95,7 @@ pub fn run(manifest_path: &str) -> bool {
     run_path_in_runtime(manifest_path, None)
 }
 
-/// Apply a manifest with discarded Memory owned by the existing runtime cleanup.
+/// Apply a manifest with discarded inputs owned by the existing runtime cleanup.
 /// Noncanonical runtime layouts retain synchronous cleanup.
 pub fn run_in_runtime(manifest_path: &str, runtime_dir: &Path) -> bool {
     run_path_in_runtime(manifest_path, Some(runtime_dir))
@@ -218,7 +218,7 @@ fn run_manifest_with_files_in_runtime(
     {
         Ok(quarantine) => quarantine.flatten(),
         Err(error) => {
-            log_error!(LOG_TAG, "Failed to prepare private Memory cleanup: {error}");
+            log_error!(LOG_TAG, "Failed to prepare private input cleanup: {error}");
             return false;
         }
     };
@@ -247,7 +247,7 @@ fn run_manifest_with_files_in_runtime(
         .map(|entry| entry.mount_path.clone())
         .collect::<Vec<_>>();
     let stale_cleanup = telemetry::CleanupPhase::StalePaths.measure(cleanup_paths.len(), || {
-        match quarantine.as_deref() {
+        match quarantine.as_ref() {
             Some(quarantine) => cleanup::cleanup_stale_paths_with_quarantine(
                 &cleanup_paths,
                 &preserved_paths,
@@ -284,34 +284,33 @@ fn run_manifest_with_files_in_runtime(
     // Resolve all logical and physical target identities before downloads.
     // The scheduler uses both identities to serialize overlapping extraction.
     let target_prepare_start = Instant::now();
-    let download_tasks =
-        match download::prepare_download_tasks(download_tasks, quarantine.as_deref()) {
-            Ok(download_tasks) => {
-                record_sandbox_op(
-                    "guest_storage_apply_target_prepare",
-                    target_prepare_start.elapsed(),
-                    true,
-                    None,
-                );
-                download_tasks
-            }
-            Err(e) => {
-                record_sandbox_op(
-                    "guest_storage_apply_target_prepare",
-                    target_prepare_start.elapsed(),
-                    false,
-                    None,
-                );
-                log_error!(LOG_TAG, "{e}");
-                return false;
-            }
-        };
-    if !prepare_empty_artifacts(&empty_artifacts, quarantine.as_deref()) {
+    let download_tasks = match download::prepare_download_tasks(download_tasks) {
+        Ok(download_tasks) => {
+            record_sandbox_op(
+                "guest_storage_apply_target_prepare",
+                target_prepare_start.elapsed(),
+                true,
+                None,
+            );
+            download_tasks
+        }
+        Err(e) => {
+            record_sandbox_op(
+                "guest_storage_apply_target_prepare",
+                target_prepare_start.elapsed(),
+                false,
+                None,
+            );
+            log_error!(LOG_TAG, "{e}");
+            return false;
+        }
+    };
+    if !prepare_empty_artifacts(&empty_artifacts) {
         return false;
     }
 
     let scheduler_start = Instant::now();
-    let success = download::download_all_parallel(download_tasks, quarantine);
+    let success = download::download_all_parallel(download_tasks);
     record_sandbox_op(
         "guest_storage_apply_archive_scheduler",
         scheduler_start.elapsed(),
@@ -324,13 +323,10 @@ fn run_manifest_with_files_in_runtime(
     success
 }
 
-fn prepare_empty_artifacts(
-    entries: &[EmptyArtifactPreparation],
-    quarantine: Option<&quarantine::Quarantine>,
-) -> bool {
+fn prepare_empty_artifacts(entries: &[EmptyArtifactPreparation]) -> bool {
     for entry in entries {
         let start = Instant::now();
-        match quarantine::prepare_directory(Path::new(&entry.mount_path), quarantine) {
+        match fs::create_dir_all(&entry.mount_path) {
             Ok(()) => {
                 record_sandbox_op("artifact_empty_prepare", start.elapsed(), true, None);
                 log_info!(

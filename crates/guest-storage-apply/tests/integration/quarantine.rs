@@ -55,7 +55,7 @@ fn discarded(fixture: &BinaryLoggingFixture) -> io::Result<Vec<PathBuf>> {
 
 #[test]
 fn replacement_isolates_the_exact_old_tree_for_later_owned_cleanup() {
-    for decoded in [false, true] {
+    for (decoded, writeback) in [(false, false), (true, false), (false, true), (true, true)] {
         let fixture = fixture().unwrap();
         let memory = target(&fixture);
         fs::create_dir_all(memory.join("nested/deeper")).unwrap();
@@ -65,7 +65,10 @@ fn replacement_isolates_the_exact_old_tree_for_later_owned_cleanup() {
         fs::write(outside.join("keep"), b"outside content").unwrap();
         symlink(&outside, memory.join("outside-link")).unwrap();
         let original = fs::metadata(&memory).unwrap().ino();
-        let manifest = serde_json::to_vec(&manifest(&fixture).unwrap()).unwrap();
+        let mut input = manifest(&fixture).unwrap();
+        input["storageMounts"][0]["name"] = json!("project-files");
+        input["storageMounts"][0]["writeback"] = json!(writeback);
+        let manifest = serde_json::to_vec(&input).unwrap();
         let output = if decoded {
             let files = vec![storage_files::StorageFile {
                 path: "new.md".into(),
@@ -194,7 +197,7 @@ fn unsafe_runtime_alias_does_not_grant_isolation_authority() {
 }
 
 #[test]
-fn an_unrelated_input_error_does_not_trigger_physical_memory_reclamation() {
+fn required_input_failure_keeps_the_discarded_tree_in_post_run_custody() {
     let fixture = fixture().unwrap();
     let memory = target(&fixture);
     fs::create_dir_all(memory.join("nested")).unwrap();
@@ -218,4 +221,100 @@ fn an_unrelated_input_error_does_not_trigger_physical_memory_reclamation() {
         fs::read(discarded.first().unwrap().join("nested/old.md")).unwrap(),
         b"old memory"
     );
+}
+
+#[test]
+fn removed_parent_and_child_share_the_exact_discarded_parent_tree() {
+    let fixture = fixture().unwrap();
+    let root = fixture.dir.path().join("removed-input");
+    let child = root.join("nested");
+    fs::create_dir_all(&child).unwrap();
+    fs::write(child.join("old"), b"removed content").unwrap();
+    let original = fs::metadata(&root).unwrap().ino();
+    let input = json!({"storageMounts": [], "cleanupPaths": [child, root]});
+    let output = fixture
+        .run_manifest_stdin(&serde_json::to_vec(&input).unwrap())
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!root.exists());
+    let discarded = discarded(&fixture).unwrap();
+    assert_eq!(discarded.len(), 1);
+    assert_eq!(fs::metadata(&discarded[0]).unwrap().ino(), original);
+    assert_eq!(
+        fs::read(discarded[0].join("nested/old")).unwrap(),
+        b"removed content"
+    );
+}
+
+#[test]
+fn overlapping_replacements_restore_both_inputs_after_parent_isolation() {
+    let fixture = fixture().unwrap();
+    let root = target(&fixture);
+    let child = root.join("nested");
+    fs::create_dir_all(&child).unwrap();
+    fs::write(child.join("old"), b"stale").unwrap();
+    let original = fs::metadata(&root).unwrap().ino();
+    let archive = fixture.dir.path().join("child.tar.gz");
+    fs::write(
+        &archive,
+        create_tar_gz(&[("child.md", b"child input")]).unwrap(),
+    )
+    .unwrap();
+    let mut input = manifest(&fixture).unwrap();
+    input["storageMounts"][0]["name"] = json!("parent-input");
+    input["storageMounts"][0]["writeback"] = json!(false);
+    input["storageMounts"].as_array_mut().unwrap().push(json!({
+        "name": "child-input", "mountPath": child,
+        "archiveUrl": format!("file://{}", archive.display())
+    }));
+    input["cleanupPaths"] = json!([child, root]);
+    let output = fixture
+        .run_manifest_stdin(&serde_json::to_vec(&input).unwrap())
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(root.join("new.md")).unwrap(), b"new memory");
+    assert_eq!(fs::read(child.join("child.md")).unwrap(), b"child input");
+    assert_eq!(fs::read_dir(&child).unwrap().count(), 1);
+    let discarded = discarded(&fixture).unwrap();
+    assert_eq!(discarded.len(), 1);
+    assert_eq!(fs::metadata(&discarded[0]).unwrap().ino(), original);
+    assert_eq!(fs::read(discarded[0].join("nested/old")).unwrap(), b"stale");
+}
+
+#[test]
+fn an_input_alias_of_the_private_parent_keeps_cleanup_synchronous() {
+    let fixture = fixture().unwrap();
+    let memory = target(&fixture);
+    fs::create_dir_all(&memory).unwrap();
+    fs::write(memory.join("old"), b"old").unwrap();
+    let alias = fixture.dir.path().join("private-alias");
+    symlink(fixture.logs.runtime_dir.parent().unwrap(), &alias).unwrap();
+    let mut input = manifest(&fixture).unwrap();
+    input["storageMounts"].as_array_mut().unwrap().push(json!({
+        "mountPath": alias, "cached": true
+    }));
+    let output = fixture
+        .run_manifest_stdin(&serde_json::to_vec(&input).unwrap())
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(memory.join("new.md")).unwrap(), b"new memory");
+    assert!(
+        fs::symlink_metadata(alias)
+            .unwrap()
+            .file_type()
+            .is_symlink()
+    );
+    assert!(discarded(&fixture).unwrap().is_empty());
 }

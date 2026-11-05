@@ -290,7 +290,7 @@ fn diagnostic_path(path: &Path) -> String {
 }
 
 fn archive_error(message: impl Into<String>, error: io::Error) -> DownloadError {
-    DownloadError::from_io(message, error)
+    DownloadError::new(format!("{}: {error}", message.into()))
 }
 
 /// Check whether `path` stays within `target` after lexical normalization.
