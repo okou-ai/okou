@@ -1,12 +1,13 @@
 #![allow(clippy::expect_used, clippy::panic, clippy::unwrap_used)]
 
 use cli_test_support::child::{
-    ChildOutputReader as OutputReader, collect_child_output as collect_output,
+    ChildOutputReader as OutputReader, DirectChildWaitOutcome as ChildWaitOutcome,
+    collect_child_output as collect_output, wait_child_with_timeout,
+    wait_child_with_timeout_before_kill,
 };
 use std::io::{ErrorKind, Write};
 use std::path::Path;
-use std::process::{Child, Command, ExitStatus, Output, Stdio};
-use std::sync::mpsc::{self, Receiver};
+use std::process::{Child, Command, Output, Stdio};
 use std::time::{Duration, Instant};
 
 const BIN: &str = env!("CARGO_BIN_EXE_guest-write-file");
@@ -17,7 +18,6 @@ const USAGE: &str = concat!(
     "       guest-write-file --batch [--private]",
 );
 const HELPER_KILL_TIMEOUT: Duration = Duration::from_secs(1);
-const CHILD_WAIT_POLL_INTERVAL: Duration = Duration::from_millis(1);
 
 fn run_helper(args: &[&str], stdin: &[u8]) -> std::process::Output {
     run_helper_with_current_dir(args, stdin, None)
@@ -121,76 +121,6 @@ fn wait_with_timeout(mut child: Child, timeout: Duration) -> Output {
             panic!("wait for guest-write-file failed: {error}");
         }
     }
-}
-
-enum ChildWaitOutcome {
-    Exited(ExitStatus),
-    TimedOut(ExitStatus),
-    ReapTimedOut,
-    KillFailed(std::io::Error),
-    ReapFailed(std::io::Error),
-    WaitFailed(std::io::Error),
-}
-
-fn wait_child_with_timeout(
-    child: Child,
-    timeout: Duration,
-    kill_timeout: Duration,
-) -> ChildWaitOutcome {
-    wait_child_with_timeout_before_kill(child, timeout, kill_timeout, |_| {})
-}
-
-fn wait_child_with_timeout_before_kill(
-    mut child: Child,
-    timeout: Duration,
-    kill_timeout: Duration,
-    before_kill: impl FnOnce(u32),
-) -> ChildWaitOutcome {
-    // This function alone owns exit observation and signaling. The child only
-    // moves to another waiter after signaling authority has been consumed.
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return ChildWaitOutcome::Exited(status),
-            Ok(None) => {}
-            Err(error) => {
-                // A wait error can mean another actor reaped the child without
-                // caching its status here, so a later numeric-PID kill is unsafe.
-                spawn_child_reaper(child);
-                return ChildWaitOutcome::WaitFailed(error);
-            }
-        }
-
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break;
-        }
-        std::thread::sleep(remaining.min(CHILD_WAIT_POLL_INTERVAL));
-    }
-
-    before_kill(child.id());
-    let kill_result = child.kill();
-    let reaper_rx = spawn_child_reaper(child);
-    if let Err(error) = kill_result {
-        return ChildWaitOutcome::KillFailed(error);
-    }
-
-    match reaper_rx.recv_timeout(kill_timeout) {
-        Ok(Ok(status)) => ChildWaitOutcome::TimedOut(status),
-        Ok(Err(error)) => ChildWaitOutcome::ReapFailed(error),
-        Err(mpsc::RecvTimeoutError::Timeout) => ChildWaitOutcome::ReapTimedOut,
-        Err(mpsc::RecvTimeoutError::Disconnected) => ChildWaitOutcome::ReapFailed(
-            std::io::Error::other("child reaper exited without status"),
-        ),
-    }
-}
-
-fn spawn_child_reaper(mut child: Child) -> Receiver<std::io::Result<ExitStatus>> {
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(child.wait());
-    });
-    rx
 }
 
 #[cfg(unix)]

@@ -1,9 +1,12 @@
 use cli_test_support::child::{
-    ChildOutputReader as OutputReader, collect_child_output as collect_output,
+    ChildOutputReader as OutputReader, DirectChildWaitOutcome,
+    collect_child_output as collect_output, spawn_child_reaper,
+    wait_child_with_timeout_before_kill as wait_direct_child_before_kill,
 };
 use std::path::{Path, PathBuf};
 use std::process::{Child, ChildStdin, ChildStdout, Command, ExitStatus, Output, Stdio};
-use std::sync::mpsc::{self, Receiver};
+#[cfg(unix)]
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 #[cfg(unix)]
@@ -354,56 +357,19 @@ pub(crate) fn wait_child_with_timeout(
 }
 
 fn wait_child_with_timeout_before_kill(
-    mut child: Child,
+    child: Child,
     timeout: Duration,
     kill_timeout: Duration,
     before_kill: impl FnOnce(u32),
 ) -> ChildWaitOutcome {
-    // This function alone owns exit observation and signaling. The child only
-    // moves to another waiter after signaling authority has been consumed.
-    let deadline = Instant::now() + timeout;
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return ChildWaitOutcome::Exited(status),
-            Ok(None) => {}
-            Err(error) => {
-                // A wait error can mean another actor reaped the child without
-                // caching its status here, so a later numeric-PID kill is unsafe.
-                spawn_child_reaper(child);
-                return ChildWaitOutcome::WaitFailed(error);
-            }
-        }
-
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        if remaining.is_zero() {
-            break;
-        }
-        std::thread::sleep(remaining.min(CHILD_WAIT_POLL_INTERVAL));
+    match wait_direct_child_before_kill(child, timeout, kill_timeout, before_kill) {
+        DirectChildWaitOutcome::Exited(status) => ChildWaitOutcome::Exited(status),
+        DirectChildWaitOutcome::TimedOut(status) => ChildWaitOutcome::TimedOut(status),
+        DirectChildWaitOutcome::ReapTimedOut => ChildWaitOutcome::ReapTimedOut,
+        DirectChildWaitOutcome::KillFailed(error) => ChildWaitOutcome::KillFailed(error),
+        DirectChildWaitOutcome::ReapFailed(error) => ChildWaitOutcome::ReapFailed(error),
+        DirectChildWaitOutcome::WaitFailed(error) => ChildWaitOutcome::WaitFailed(error),
     }
-
-    before_kill(child.id());
-    let kill_result = child.kill();
-    let reaper_rx = spawn_child_reaper(child);
-    if let Err(error) = kill_result {
-        return ChildWaitOutcome::KillFailed(error);
-    }
-
-    match reaper_rx.recv_timeout(kill_timeout) {
-        Ok(Ok(status)) => ChildWaitOutcome::TimedOut(status),
-        Ok(Err(error)) => ChildWaitOutcome::ReapFailed(error),
-        Err(mpsc::RecvTimeoutError::Timeout) => ChildWaitOutcome::ReapTimedOut,
-        Err(mpsc::RecvTimeoutError::Disconnected) => ChildWaitOutcome::ReapFailed(
-            std::io::Error::other("child reaper exited without status"),
-        ),
-    }
-}
-
-fn spawn_child_reaper(mut child: Child) -> Receiver<std::io::Result<ExitStatus>> {
-    let (tx, rx) = mpsc::channel();
-    std::thread::spawn(move || {
-        let _ = tx.send(child.wait());
-    });
-    rx
 }
 
 pub(crate) fn require_session_file(codex_home: &Path) -> std::io::Result<PathBuf> {
