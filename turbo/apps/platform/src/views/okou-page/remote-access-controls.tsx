@@ -208,12 +208,17 @@ export function AccessChoiceSelect({
   value,
   readOnly,
   onChange,
+  popupFocus,
 }: {
   ariaLabel: string;
   defaultEnabled: boolean;
   value: "default" | "on" | "off";
   readOnly: boolean;
   onChange: (enabled: boolean | null) => void | Promise<void>;
+  popupFocus?: {
+    readonly remember: (popup: HTMLDivElement) => void;
+    readonly restore: () => false;
+  };
 }) {
   const { t } = useTranslation();
   const defaultLabel = t(($) => {
@@ -287,7 +292,18 @@ export function AccessChoiceSelect({
           </SelectValue>
         </SelectTrigger>
       </div>
-      <SelectContent align="start" className="w-max max-w-[calc(100vw-2rem)]">
+      <SelectContent
+        align="start"
+        className="w-max max-w-[calc(100vw-2rem)]"
+        onFocus={
+          popupFocus
+            ? (event) => {
+                popupFocus.remember(event.currentTarget);
+              }
+            : undefined
+        }
+        finalFocus={popupFocus?.restore}
+      >
         {items.map((item) => {
           return (
             <SelectItem key={item.value} value={item.value}>

@@ -41,11 +41,16 @@ function ChatAccountChoiceRow({
   access,
   busy,
   onChange,
+  popupFocus,
 }: {
   readonly account: ConnectorAccountConnection;
   readonly access: ChatConnectorAccess["accounts"][number];
   readonly busy: boolean;
   readonly onChange: (enabled: boolean | null) => Promise<void>;
+  readonly popupFocus: {
+    readonly remember: (popup: HTMLDivElement) => void;
+    readonly restore: () => false;
+  };
 }) {
   const { t } = useTranslation();
   const name = useConnectorAccountLabel()(account);
@@ -91,6 +96,7 @@ function ChatAccountChoiceRow({
         }
         readOnly={busy}
         onChange={onChange}
+        popupFocus={popupFocus}
       />
     </div>
   );
@@ -105,6 +111,8 @@ function ChatAccountChoices({
 }) {
   const { t } = useTranslation();
   const accounts = signals.connector.chatAccess;
+  const rememberSelectFocus = useSet(accounts.navigation.rememberSelectFocus$);
+  const restoreSelectFocus = useSet(accounts.navigation.restoreSelectFocus$);
   const list = useLoadable(accounts.list.accounts$);
   const current = useLoadable(accounts.current$);
   const previous = useLastResolved(accounts.list.accounts$);
@@ -167,6 +175,14 @@ function ChatAccountChoices({
               account={account}
               access={access}
               busy={busy}
+              popupFocus={{
+                remember: (popup) => {
+                  rememberSelectFocus(account.id, popup);
+                },
+                restore: () => {
+                  return restoreSelectFocus(account.id);
+                },
+              }}
               onChange={(enabled) => {
                 return override(account.id, enabled, signal);
               }}
@@ -236,6 +252,7 @@ function ConnectorOverviewRow({
   return (
     <button
       type="button"
+      data-connector-target={connectorAccountTargetKey(entry.target)}
       onClick={onOpen}
       className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-state-hover"
     >
@@ -366,15 +383,13 @@ function AccountPanelFooter({
 function ChatConnectorOverviewRetry({
   signals,
   failed,
-  target,
 }: {
   readonly signals: ComposerSignals;
   readonly failed: boolean;
-  readonly target: ChatConnectorMenuTarget | null;
 }) {
   const { t } = useTranslation();
   const retry = useSet(signals.connector.chatAccess.retry$);
-  if (!failed || target) {
+  if (!failed) {
     return null;
   }
   return (
@@ -390,6 +405,59 @@ function ChatConnectorOverviewRetry({
         })}
       </Button>
     </div>
+  );
+}
+
+function ChatConnectorAccountPanel({
+  signals,
+  target,
+  entry,
+  unavailable,
+}: {
+  readonly signals: ComposerSignals;
+  readonly target: ChatConnectorMenuTarget;
+  readonly entry: ChatConnectorOverview | undefined;
+  readonly unavailable: boolean;
+}) {
+  const { t } = useTranslation();
+  const back = useSet(signals.connector.chatAccess.closeTarget$);
+  return (
+    <>
+      <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
+        <IconTooltipButton
+          aria-label={t(($) => {
+            return $.chat.connectors.back;
+          })}
+          className="rounded-md p-1 text-muted-foreground hover:bg-state-hover"
+          onClick={() => {
+            back();
+          }}
+        >
+          <ChevronLeft size={16} />
+        </IconTooltipButton>
+        <span className="min-w-0 truncate text-sm font-medium">
+          {target.label}
+        </span>
+      </div>
+      {entry ? (
+        <ChatAccountChoices signals={signals} entry={entry} />
+      ) : (
+        <p className="px-3 py-2 text-sm text-muted-foreground">
+          {unavailable
+            ? t(($) => {
+                return $.connectors.accounts.accountsUnavailable;
+              })
+            : t(($) => {
+                return $.connectors.accounts.loading;
+              })}
+        </p>
+      )}
+      <AccountPanelFooter
+        signals={signals}
+        target={target}
+        savedAccounts={Boolean(entry?.access.accounts.length)}
+      />
+    </>
   );
 }
 
@@ -410,7 +478,7 @@ export function ChatConnectorMenu({
     overview.state === "hasError" || notifications.state === "hasError";
   const previous = useLastResolved(accounts.overview$);
   const target = useGet(accounts.target$);
-  const back = useSet(accounts.closeTarget$);
+  const setViewport = useSet(accounts.navigation.setViewport$);
   const ui = useGet(signals.connector.connectorUiState$);
   const searchConnectors = useSet(signals.connector.searchConnectors$);
   const entries =
@@ -431,7 +499,7 @@ export function ChatConnectorMenu({
           connectorAccountTargetKey(target.target)
         );
       })
-    : null;
+    : undefined;
   return (
     <ComposerConnectorMenuShell
       loading={overview.state === "loading" && !previous}
@@ -450,51 +518,25 @@ export function ChatConnectorMenu({
       footer={footer}
       contentRole={target ? "group" : "list"}
       contentLabel={target?.label}
+      contentKey={
+        target
+          ? connectorAccountTargetKey(target.target)
+          : `overview:${ui.popoverSearch}`
+      }
+      contentRef={setViewport}
     >
-      <ChatConnectorOverviewRetry
-        signals={signals}
-        failed={failed}
-        target={target}
-      />
       {target ? (
-        <>
-          <div className="flex shrink-0 items-center gap-2 px-3 py-2.5">
-            <IconTooltipButton
-              aria-label={t(($) => {
-                return $.chat.connectors.back;
-              })}
-              className="rounded-md p-1 text-muted-foreground hover:bg-state-hover"
-              onClick={() => {
-                back();
-              }}
-            >
-              <ChevronLeft size={16} />
-            </IconTooltipButton>
-            <span className="min-w-0 truncate text-sm font-medium">
-              {target.label}
-            </span>
-          </div>
-          {active ? (
-            <ChatAccountChoices signals={signals} entry={active} />
-          ) : (
-            <p className="px-3 py-2 text-sm text-muted-foreground">
-              {overview.state === "hasError"
-                ? t(($) => {
-                    return $.connectors.accounts.accountsUnavailable;
-                  })
-                : t(($) => {
-                    return $.connectors.accounts.loading;
-                  })}
-            </p>
-          )}
-          <AccountPanelFooter
-            signals={signals}
-            target={target}
-            savedAccounts={Boolean(active?.access.accounts.length)}
-          />
-        </>
+        <ChatConnectorAccountPanel
+          signals={signals}
+          target={target}
+          entry={active}
+          unavailable={overview.state !== "loading"}
+        />
       ) : (
-        <ChatConnectorOverviewList signals={signals} entries={filtered} />
+        <>
+          <ChatConnectorOverviewRetry signals={signals} failed={failed} />
+          <ChatConnectorOverviewList signals={signals} entries={filtered} />
+        </>
       )}
     </ComposerConnectorMenuShell>
   );

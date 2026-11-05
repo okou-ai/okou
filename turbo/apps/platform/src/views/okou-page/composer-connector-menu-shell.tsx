@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Search } from "lucide-react";
 import { cn, PopoverClose } from "@okouai/ui";
@@ -89,6 +89,8 @@ export function ComposerConnectorMenuShell({
   onOpenAddDialog,
   contentRole = "list",
   contentLabel,
+  contentKey,
+  contentRef,
 }: {
   readonly children: ReactNode;
   readonly footer: ReactNode;
@@ -101,10 +103,13 @@ export function ComposerConnectorMenuShell({
   readonly onOpenAddDialog: () => void;
   readonly contentRole?: "list" | "group";
   readonly contentLabel?: string;
+  readonly contentKey?: string;
+  readonly contentRef?: Ref<HTMLDivElement>;
 }) {
   const { t } = useTranslation();
   return (
     <div
+      ref={!hasContent && !loading ? contentRef : undefined}
       data-connector-panel
       // Base UI focuses this while loading; once ready, search is first.
       tabIndex={loading ? 0 : -1}
@@ -143,6 +148,9 @@ export function ComposerConnectorMenuShell({
             </div>
           ) : (
             <div
+              key={contentKey}
+              ref={contentRef}
+              tabIndex={contentRef ? -1 : undefined}
               role={contentRole}
               aria-label={
                 contentLabel ??
@@ -150,7 +158,6 @@ export function ComposerConnectorMenuShell({
                   return $.chat.connectors.title;
                 })
               }
-              // Keep list padding inside the bounded scroller, including clipped rows.
               className={cn(
                 "flex min-h-0 flex-1 flex-col overflow-y-auto pb-2",
                 !showSearch && "max-h-67 pt-1",
