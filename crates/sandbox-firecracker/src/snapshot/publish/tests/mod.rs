@@ -6,20 +6,10 @@ use sandbox::{PendingSnapshotPublish, SnapshotProvider};
 use crate::paths::SnapshotOutputPaths;
 use crate::snapshot::cow::snapshot_attempt_cow_file;
 use crate::snapshot::provider::FirecrackerSnapshotProvider;
+use crate::snapshot::tests::write_snapshot_artifacts;
 use crate::snapshot::{SNAPSHOT_COMPLETE_MARKER_CONTENT, SnapshotError};
 
 use super::*;
-
-async fn write_required_snapshot_artifacts(output: &SnapshotOutputPaths) {
-    tokio::fs::create_dir_all(output.dir())
-        .await
-        .expect("create output dir");
-    for artifact in [output.snapshot(), output.memory()] {
-        tokio::fs::write(&artifact, b"snapshot artifact")
-            .await
-            .unwrap_or_else(|e| panic!("write {}: {e}", artifact.display()));
-    }
-}
 
 async fn write_kept_cow_for_test(work: &Path, token: &str) -> KeptCow {
     let cow_file = snapshot_attempt_cow_file(work, token);
@@ -44,7 +34,7 @@ async fn write_kept_cow_for_test(work: &Path, token: &str) -> KeptCow {
 async fn snapshot_publish_commit_moves_cow_and_writes_complete_marker() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let kept_cow = write_kept_cow_for_test(&output.work_dir(), "publish-ok").await;
     let attempt_dir = kept_cow
         .cow_file
@@ -79,7 +69,7 @@ async fn snapshot_publish_commit_moves_cow_and_writes_complete_marker() {
 async fn pending_snapshot_publish_commit_writes_complete_marker() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let kept_cow = write_kept_cow_for_test(&output.work_dir(), "pending-commit").await;
 
     let mut pending: Box<dyn PendingSnapshotPublish> =
@@ -109,7 +99,7 @@ async fn pending_snapshot_publish_commit_writes_complete_marker() {
 async fn pending_snapshot_publish_commit_multi_thread_runtime_writes_complete_marker() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let kept_cow = write_kept_cow_for_test(&output.work_dir(), "pending-commit-multi-thread").await;
     let mut pending: Box<dyn PendingSnapshotPublish> =
         Box::new(FirecrackerPendingSnapshotPublish::new(
@@ -175,7 +165,7 @@ async fn pending_snapshot_publish_commit_failure_does_not_publish_marker() {
 async fn pending_snapshot_publish_discard_does_not_publish_marker_or_stable_cow() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let kept_cow = write_kept_cow_for_test(&output.work_dir(), "pending-discard").await;
     let attempt_dir = kept_cow
         .cow_file
@@ -231,7 +221,7 @@ async fn pending_snapshot_publish_discard_does_not_publish_marker_or_stable_cow(
 async fn pending_snapshot_publish_discard_failure_keeps_cleanup_state_for_retry() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let cow_file = snapshot_attempt_cow_file(&output.work_dir(), "pending-discard-retry");
     let attempt_dir = cow_file.parent().expect("attempt dir").to_path_buf();
     tokio::fs::create_dir_all(&cow_file)
@@ -300,7 +290,7 @@ async fn pending_snapshot_publish_discard_failure_keeps_cleanup_state_for_retry(
 async fn pending_snapshot_publish_discard_output_cleanup_failure_keeps_state_for_retry() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     tokio::fs::remove_file(output.snapshot())
         .await
         .expect("remove snapshot file");
@@ -363,7 +353,7 @@ async fn pending_snapshot_publish_discard_output_cleanup_failure_keeps_state_for
 async fn pending_snapshot_publish_drop_cleans_temp_without_publishing() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let kept_cow = write_kept_cow_for_test(&output.work_dir(), "pending-drop").await;
     let attempt_dir = kept_cow
         .cow_file
@@ -496,7 +486,7 @@ async fn snapshot_publish_commit_failure_keeps_cleanup_state_for_partial_output(
 async fn pending_snapshot_publish_discard_recovers_after_partial_bitmap_publish() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     tokio::fs::create_dir(output.cow())
         .await
         .expect("block cow rename with directory");
@@ -562,7 +552,7 @@ async fn pending_snapshot_publish_discard_recovers_after_partial_bitmap_publish(
 async fn snapshot_publish_cleanup_kept_cow_does_not_publish_stable_output() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let kept_cow = write_kept_cow_for_test(&output.work_dir(), "cleanup-kept").await;
     let mut publish_attempt = SnapshotPublishAttempt::new_with_kept_cow_for_test(kept_cow);
 
@@ -591,7 +581,7 @@ async fn snapshot_publish_cleanup_kept_cow_does_not_publish_stable_output() {
 async fn snapshot_publish_cleanup_keeps_retry_state_when_temp_cleanup_fails() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let cow_file = snapshot_attempt_cow_file(&output.work_dir(), "cleanup-retry");
     let attempt_dir = cow_file.parent().expect("attempt dir");
     tokio::fs::create_dir_all(&cow_file)
@@ -626,7 +616,7 @@ async fn snapshot_publish_cleanup_keeps_retry_state_when_temp_cleanup_fails() {
 async fn snapshot_publish_cleanup_keep_cow_error_does_not_publish() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let mut publish_attempt = SnapshotPublishAttempt::new_with_keep_future_for_test(async move {
         Err(nbd_cow::error::NbdCowError::Io(std::io::Error::other(
             "keep cow failed",
@@ -656,7 +646,7 @@ async fn snapshot_publish_cleanup_keep_cow_error_does_not_publish() {
 async fn snapshot_publish_cleanup_waits_for_keep_cow_without_committing() {
     let dir = tempfile::tempdir().expect("tempdir");
     let output = SnapshotOutputPaths::new(dir.path().join("output"));
-    write_required_snapshot_artifacts(&output).await;
+    write_snapshot_artifacts(&output, [output.snapshot(), output.memory()]).await;
     let kept_cow = write_kept_cow_for_test(&output.work_dir(), "pending-keep").await;
     let (started_tx, started_rx) = tokio::sync::oneshot::channel();
     let (kept_tx, kept_rx) = tokio::sync::oneshot::channel();
