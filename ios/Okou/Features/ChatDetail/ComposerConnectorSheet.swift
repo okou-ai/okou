@@ -2,6 +2,7 @@ import ChatData
 import SwiftUI
 
 struct ComposerConnectorSheet: View {
+  @Environment(\.singleAgentExperience) private var singleAgent
   @Bindable var store: ComposerConnectorStore
   @State private var search = ""
   @State private var destination: ConnectorDestination?
@@ -42,7 +43,9 @@ struct ComposerConnectorSheet: View {
               Text(
                 store.chatAccountAccess
                   ? "Connect a service to use it in this chat."
-                  : "Connect a service to make it available in this chat."
+                  : (singleAgent
+                    ? "Connect a service to make it available to Okou in this workspace."
+                    : "Connect a service to make it available to this Agent.")
               )
               .foregroundStyle(OkouColor.mutedForeground)
             }
@@ -191,7 +194,10 @@ struct ComposerConnectorSheet: View {
       .tint(OkouColor.primary400)
       .fixedSize(horizontal: true, vertical: false)
       .labelsHidden().disabled(store.isSaving || store.uncertain)
-      .accessibilityLabel("Allow \(connector.label) for Okou in this chat")
+      .accessibilityLabel(
+        singleAgent
+          ? String(localized: "Allow \(connector.label) for Okou in this workspace")
+          : String(localized: "Allow \(connector.label) for this Agent"))
     }
     .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
   }

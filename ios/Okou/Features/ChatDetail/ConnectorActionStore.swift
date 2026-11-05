@@ -373,7 +373,7 @@ final class ConnectorActionStore {
       flow.action.callbackPrompt == nil
       ? (verified.chatAccountAccess
         ? String(localized: "Account connected.")
-        : String(localized: "Connected and authorized for this chat."))
+        : String(localized: "Connected and authorized."))
       : String(localized: "Connected. Chat continued.")
     flow.browserURL = nil
     flow.session = nil

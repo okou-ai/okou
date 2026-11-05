@@ -164,7 +164,9 @@ struct PermissionActionDetails: View {
         Text(
           store.snapshot?.connectorScoped == true
             ? "These permissions apply to this connector across your chats and accounts."
-            : "These permissions apply to your account for Okou in this chat."
+            : (singleAgent
+              ? "These permissions apply to your account for Okou across chats in this workspace."
+              : "These permissions apply to your account for this Agent.")
         )
         .okouSectionNote()
       }

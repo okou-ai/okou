@@ -81,7 +81,9 @@ struct PermissionBatchDetails: View {
               Text(
                 snapshot.connectorScoped
                   ? "These permissions apply to these connectors across your chats and accounts."
-                  : "These permissions apply to your account for Okou in this chat."
+                  : (singleAgent
+                    ? "These permissions apply to your account for Okou across chats in this workspace."
+                    : "These permissions apply to your account for this Agent.")
               )
               .font(.footnote).foregroundStyle(.secondary)
               ForEach(snapshot.groups) { group in
