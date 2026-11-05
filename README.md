@@ -44,7 +44,7 @@ You @mention Okou the way you would ask a colleague — without spelling out the
 >
 > **Okou** 9:24 AM
 > Read the brand brief. Publishing as soon as it reads right.
-> → *Litoral Coastal Hotel Site — published*
+> → _Litoral Coastal Hotel Site — published_
 >
 > **Dan** 9:31 AM
 > Reads well. Can you send the launch note to the list?
@@ -60,12 +60,12 @@ It works out the angle, picks its own tools, and does the job in the open where 
 
 One person works out how a job should get done. That becomes something the whole team can run.
 
-| | |
-|---|---|
-| **1. Run** | Someone asks for a piece of work the way they would ask a colleague. Okou figures out the steps. |
-| **2. Save** | When it sees the job repeat, Okou offers to keep the run — the instructions it followed and the tools it reached for, saved together. |
-| **3. Hand over** | The workflow belongs to the workspace, not to one person. A teammate runs it from chat or Slack without rebuilding any setup. |
-| **4. Automate** | Put it on a schedule or a trigger, and the work starts arriving before anyone asks. |
+|                  |                                                                                                                                       |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **1. Run**       | Someone asks for a piece of work the way they would ask a colleague. Okou figures out the steps.                                      |
+| **2. Save**      | When it sees the job repeat, Okou offers to keep the run — the instructions it followed and the tools it reached for, saved together. |
+| **3. Hand over** | The workflow belongs to the workspace, not to one person. A teammate runs it from chat or Slack without rebuilding any setup.         |
+| **4. Automate**  | Put it on a schedule or a trigger, and the work starts arriving before anyone asks.                                                   |
 
 Each teammate runs it **with their own permissions** — a shared workflow never borrows someone else's access.
 
@@ -77,7 +77,7 @@ Ask for five things and you get five chats, each doing its own work. Nothing wai
 
 > **Theo:** Get everything ready for Thursday's launch.
 >
-> *Four chats opened · all running* — landing page published · 412 CRM records updated · newsletter drafted, not sent · eight-slide deck built from the numbers.
+> _Four chats opened · all running_ — landing page published · 412 CRM records updated · newsletter drafted, not sent · eight-slide deck built from the numbers.
 
 ---
 
@@ -97,12 +97,12 @@ Read our [Security overview](https://www.okou.ai/en/security).
 
 ## What teams hand to it
 
-| | |
-|---|---|
-| 🪄 **Founders** | Morning brief across calendar, Linear, Slack and X. Investor updates drafted from live metrics. Inbox triaged down to what only you can answer. |
-| 📣 **Sales & Marketing** | Prospect and creator research into a tracker. Outreach written from each prospect's own content. Leads scored, follow-ups drafted, campaign results in Slack on Monday. |
-| ⚙️ **Engineering** | Sentry noise grouped by root cause and filed as issues. Weekly tech-debt scan. Slack bug reports turned into scoped tickets. Release notes from merged PRs. |
-| 🛟 **Operations & Support** | Weekly status reports. Day-one onboarding checklists. Meeting digests with owners. Approvals and deadlines chased on schedule. |
+|                             |                                                                                                                                                                         |
+| --------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 🪄 **Founders**             | Morning brief across calendar, Linear, Slack and X. Investor updates drafted from live metrics. Inbox triaged down to what only you can answer.                         |
+| 📣 **Sales & Marketing**    | Prospect and creator research into a tracker. Outreach written from each prospect's own content. Leads scored, follow-ups drafted, campaign results in Slack on Monday. |
+| ⚙️ **Engineering**          | Sentry noise grouped by root cause and filed as issues. Weekly tech-debt scan. Slack bug reports turned into scoped tickets. Release notes from merged PRs.             |
+| 🛟 **Operations & Support** | Weekly status reports. Day-one onboarding checklists. Meeting digests with owners. Approvals and deadlines chased on schedule.                                          |
 
 👉 **[Explore 30+ ready-to-use recipes →](https://www.okou.ai/en/workflow-automation-examples)**
 
@@ -110,7 +110,7 @@ Read our [Security overview](https://www.okou.ai/en/security).
 
 ## Works with the tools you already use
 
-Slack · GitHub · Gmail · Google Calendar · Google Sheets · Notion · Linear · Sentry · Axiom · HubSpot · Intercom · Figma · Vercel · Dropbox · DocuSign · Deel · Airtable · Ahrefs · Meta Ads · X · Reddit · …and [3,000+ more connectors](https://www.okou.ai/en/integrations).
+Slack · GitHub · Gmail · Google Calendar · Google Sheets · Notion · Linear · Sentry · Axiom · HubSpot · Intercom · Figma · Vercel · Dropbox · DocuSign · Deel · Airtable · Ahrefs · Meta Ads · X · …and [3,000+ more connectors](https://www.okou.ai/en/integrations).
 
 Model providers are yours to pick — Anthropic, OpenAI, DeepSeek, Google and others, selected per run or per agent.
 
