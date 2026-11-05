@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import { useTranslation } from "react-i18next";
 import { Plus, Search } from "lucide-react";
 import { cn, PopoverClose } from "@okouai/ui";
@@ -89,6 +89,8 @@ export function ComposerConnectorMenuShell({
   onOpenAddDialog,
   contentRole = "list",
   contentLabel,
+  contentKey,
+  contentRef,
 }: {
   readonly children: ReactNode;
   readonly footer: ReactNode;
@@ -101,6 +103,8 @@ export function ComposerConnectorMenuShell({
   readonly onOpenAddDialog: () => void;
   readonly contentRole?: "list" | "group";
   readonly contentLabel?: string;
+  readonly contentKey?: string;
+  readonly contentRef?: Ref<HTMLDivElement>;
 }) {
   const { t } = useTranslation();
   return (
@@ -143,6 +147,9 @@ export function ComposerConnectorMenuShell({
             </div>
           ) : (
             <div
+              key={contentKey}
+              ref={contentRef}
+              tabIndex={contentRef ? -1 : undefined}
               role={contentRole}
               aria-label={
                 contentLabel ??

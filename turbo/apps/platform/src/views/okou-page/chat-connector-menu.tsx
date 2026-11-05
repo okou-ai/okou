@@ -236,6 +236,7 @@ function ConnectorOverviewRow({
   return (
     <button
       type="button"
+      data-connector-target={connectorAccountTargetKey(entry.target)}
       onClick={onOpen}
       className="flex w-full items-center gap-2.5 rounded-md px-2 py-2 text-left hover:bg-state-hover"
     >
@@ -411,6 +412,7 @@ export function ChatConnectorMenu({
   const previous = useLastResolved(accounts.overview$);
   const target = useGet(accounts.target$);
   const back = useSet(accounts.closeTarget$);
+  const setViewport = useSet(accounts.scroll.setViewport$);
   const ui = useGet(signals.connector.connectorUiState$);
   const searchConnectors = useSet(signals.connector.searchConnectors$);
   const entries =
@@ -450,6 +452,10 @@ export function ChatConnectorMenu({
       footer={footer}
       contentRole={target ? "group" : "list"}
       contentLabel={target?.label}
+      contentKey={
+        target ? connectorAccountTargetKey(target.target) : "overview"
+      }
+      contentRef={setViewport}
     >
       <ChatConnectorOverviewRetry
         signals={signals}
