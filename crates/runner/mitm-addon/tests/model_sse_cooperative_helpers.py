@@ -3,6 +3,7 @@
 import gzip
 import json
 import zlib
+from functools import lru_cache
 from pathlib import Path
 
 import brotli
@@ -60,6 +61,12 @@ def model_sse_update(protocol: str, output: int) -> bytes:
         data = {"usage": {"completion_tokens": output}}
     prefix = f"event: {event}\n".encode() if event else b""
     return prefix + b"data: " + json.dumps(data, separators=(",", ":")).encode() + b"\n\n"
+
+
+@lru_cache(maxsize=6)
+def model_sse_updates(protocol: str, count: int) -> bytes:
+    """Reuse the three protocols' 40/10,000-event inputs, never per-flow state."""
+    return b"".join(model_sse_update(protocol, index) for index in range(1, count + 1))
 
 
 def model_sse_terminal(protocol: str, output: int) -> bytes:

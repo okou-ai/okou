@@ -27,6 +27,7 @@ from tests.model_sse_cooperative_helpers import (
     make_model_sse_pipeline_flow,
     model_sse_terminal,
     model_sse_update,
+    model_sse_updates,
 )
 from tests.pending_helpers import assert_pending
 from tests.x_flow_helpers import make_x_pipeline_flow, x_json_user_page
@@ -108,9 +109,7 @@ async def test_native_read_loop_waits_for_inspection_and_hook_completion(
         expected_first_work = 0
     else:
         flow = make_model_sse_pipeline_flow(real_flow, tmp_path)
-        first_wire = gzip.compress(
-            b"".join(model_sse_update("anthropic", index) for index in range(1, 10_001))
-        )
+        first_wire = gzip.compress(model_sse_updates("anthropic", 10_000))
         second_wire = gzip.compress(model_sse_terminal("anthropic", 10_001))
         expected_first_work = 10_000
     assert len(first_wire) < 65_535
