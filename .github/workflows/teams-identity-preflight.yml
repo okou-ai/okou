@@ -1,0 +1,67 @@
+name: Read production Teams ownership readiness
+
+env:
+  npm_config_audit: "false"
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: teams-identity-preflight
+  cancel-in-progress: false
+
+jobs:
+  preflight:
+    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
+    timeout-minutes: 10
+    environment: production
+    env:
+      NODE_OPTIONS: --max-old-space-size=3072
+      TZ: UTC
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/toolchain-init
+      - name: Install the production database resolver
+        run: npm install -g neonctl@2.15.0
+      - name: Run the fixed read-only ownership query
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! database_url=$(neonctl connection-string production \
+            --project-id "$NEON_PROJECT_ID" --database-name neondb \
+            --role-name neondb_owner --ssl verify-full \
+            2> "$RUNNER_TEMP/teams-preflight-resolver.stderr"); then
+            echo "::error::Unable to resolve the production database for the read-only preflight"
+            exit 1
+          fi
+          case "$database_url" in
+            postgres://*|postgresql://*) ;;
+            *) echo "::error::Invalid production database connection"; exit 1 ;;
+          esac
+          WORKFLOW_COMMAND_DATA="${database_url//%/%25}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\r'/%0D}"
+          WORKFLOW_COMMAND_DATA="${WORKFLOW_COMMAND_DATA//$'\n'/%0A}"
+          printf '::add-mask::%s\n' "$WORKFLOW_COMMAND_DATA"
+          DATABASE_URL="$database_url" pnpm --dir turbo/packages/db exec tsx \
+            scripts/migrations/029-teams-identity-retirement/preflight.ts \
+            > "$RUNNER_TEMP/teams-identity-preflight.json"
+      - name: Retain aggregate readiness evidence
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: teams-identity-preflight-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/teams-identity-preflight.json
+          if-no-files-found: error
+          retention-days: 7
