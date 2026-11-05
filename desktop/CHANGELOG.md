@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.55.7](https://github.com/okou-ai/okou/compare/desktop-v0.55.6...desktop-v0.55.7) (2026-11-05)
+
+
+### Bug Fixes
+
+* **desktop:** attribute elapsed native timeouts to owning deadlines ([#45274](https://github.com/okou-ai/okou/issues/45274)) ([c8fa913](https://github.com/okou-ai/okou/commit/c8fa913b4a5c96bd02d351a9621ea53e610da44f))
+
+
+### CI
+
+* parallelize desktop native checks and packaging ([#45255](https://github.com/okou-ai/okou/issues/45255)) ([c9ce92e](https://github.com/okou-ai/okou/commit/c9ce92e76b8f8812c33c391b1a5231051ceec7c6))
+
 ## [0.55.6](https://github.com/okou-ai/okou/compare/desktop-v0.55.5...desktop-v0.55.6) (2026-11-03)
 
 

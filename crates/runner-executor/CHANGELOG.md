@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.12](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.11...runner-executor-v0.19.12) (2026-11-05)
+
+
+### Refactoring
+
+* **executor:** share diagnostic exit-code projection ([#45277](https://github.com/okou-ai/okou/issues/45277)) ([b96fa89](https://github.com/okou-ai/okou/commit/b96fa89625931a826284d3fec522eea09a38f319))
+
 ## [0.19.11](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.10...runner-executor-v0.19.11) (2026-11-04)
 
 ## [0.19.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.9...runner-executor-v0.19.10) (2026-11-04)

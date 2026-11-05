@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.60](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.59...guest-control-proto-v0.22.60) (2026-11-05)
+
+
+### Refactoring
+
+* **guest-control:** share bounded result capture validation ([#45289](https://github.com/okou-ai/okou/issues/45289)) ([ae9b0ce](https://github.com/okou-ai/okou/commit/ae9b0ce9e127f2a7f671dcfa57c262f2a09fd7d4))
+
 ## [0.22.59](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.58...guest-control-proto-v0.22.59) (2026-11-04)
 
 

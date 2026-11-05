@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.39"
+version = "0.109.40"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2053,7 +2053,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.147"
+version = "0.1.148"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2093,7 +2093,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.74"
+version = "0.23.75"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2111,7 +2111,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.22.59"
+version = "0.22.60"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.74"
+version = "0.24.75"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2137,7 +2137,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.140"
+version = "0.12.141"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.60"
+version = "0.20.61"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.274"
+version = "0.1.275"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -4046,7 +4046,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.12"
+version = "0.244.13"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4120,7 +4120,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.19.11"
+version = "0.19.12"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4193,7 +4193,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.63"
+version = "0.17.64"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4256,7 +4256,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.16.7"
+version = "0.16.8"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4300,7 +4300,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.9"
+version = "0.31.10"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4401,7 +4401,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.8.27"
+version = "0.8.28"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4445,7 +4445,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.21.33"
+version = "0.21.34"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4769,7 +4769,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.67"
+version = "0.53.68"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4807,7 +4807,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.17.43"
+version = "0.17.44"
 dependencies = [
  "async-trait",
  "guest-contracts",
