@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { writeDb$ } from "../external/db";
-import { CONTENT_BUNDLE_URL_PRUNE_LIMIT } from "./content-bundle-presigned-url-cache";
 import {
+  CONTENT_BUNDLE_URL_PRUNE_LIMIT,
   PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
   PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT,
   pruneStoragePresignedUrls$,

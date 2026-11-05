@@ -407,12 +407,18 @@ const privateArtifactsGetUrlSigner$ = createPresignedGetUrlSigner(
 const privateArtifactsPublicGetUrlSigner$ = createPresignedGetUrlSigner(
   privateArtifactsPublicS3Client$,
 );
+const marketingHandoffGetUrlSigner$ = createPresignedGetUrlSigner(
+  marketingHandoffS3Client$,
+);
 
 /** Select a preconstructed signer without creating request-scoped signals. */
 export function presignedGetUrlSignerForBucket(
   bucket: string,
   usePublicEndpoint = false,
 ): Computed<PresignedGetUrlSigner> {
+  if (bucket === env("R2_MARKETING_HANDOFF_BUCKET_NAME")) {
+    return marketingHandoffGetUrlSigner$;
+  }
   if (bucket === env("R2_PRIVATE_ARTIFACTS_BUCKET_NAME")) {
     return usePublicEndpoint
       ? privateArtifactsPublicGetUrlSigner$

@@ -2,21 +2,15 @@ import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presi
 import { contentBundleKey } from "@okouai/core/content-bundle";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { command } from "ccstate";
-import { and, eq, gt, gte, sql, type SQL } from "drizzle-orm";
-import { alias } from "drizzle-orm/pg-core";
+import { and, eq, gte, sql, type SQL } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { number, object, string } from "zod";
 import { env } from "../../lib/env";
-import { logger } from "../../lib/log";
-import { monotonicNow, nowDateSql } from "../../lib/time";
-import { writeDb$ } from "../external/db";
+import { nowDateSql } from "../../lib/time";
 import { presignedGetUrlCacheIdentity$ } from "../external/s3";
-import { settle } from "../utils";
+import { STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS } from "./system-storage-presigned-url-cache.service";
 
-const L = logger("ContentBundleUrlCache");
-const CACHE_SCOPE = "content_bundle";
-export const CONTENT_BUNDLE_URL_MIN_REMAINING_MS = 4 * 60 * 60 * 1000;
-export const CONTENT_BUNDLE_URL_PRUNE_LIMIT = 512;
+const CACHE_SCOPE = "content_bundle" as const;
 
 export interface ContentBundleUrlCacheContext {
   readonly bucket: string;
@@ -28,17 +22,6 @@ export const cachedContentBundleUrlSchema = object({
   url: string(),
   expiresAtMs: number(),
 });
-
-export interface ContentBundleUrlCacheWrite {
-  readonly sha256: string;
-  readonly url: string;
-  readonly issuedAt: Date;
-}
-
-export interface ContentBundleUrlCachePublication {
-  readonly durationMs: number;
-  readonly status: "skipped" | "written" | "error";
-}
 
 export const prepareContentBundleUrlCache$ = command(
   ({ set }): ContentBundleUrlCacheContext => {
@@ -72,6 +55,25 @@ function cacheKey(
     .digest("hex");
 }
 
+/** Adapt immutable bundle identity to the existing signed-object cache engine. */
+export function contentBundleUrlCacheRequest(
+  context: ContentBundleUrlCacheContext,
+  sha256: string,
+) {
+  return {
+    cacheKey: cacheKey(context, sha256),
+    request: {
+      scope: CACHE_SCOPE,
+      bucket: context.bucket,
+      objectKey: contentBundleKey(sha256),
+      storageVersionId: sha256,
+      resolvedOrgId: null,
+      publicEndpoint: false,
+    },
+    ttlSeconds: PRESIGNED_URL_TTL_SECONDS,
+  };
+}
+
 /** Read only the successful claim's selected identities, in its atomic statement. */
 export function contentBundleUrlCacheSnapshotSql(
   context: ContentBundleUrlCacheContext,
@@ -102,77 +104,8 @@ export function contentBundleUrlCacheSnapshotSql(
       eq(systemStoragePresignedUrlCache.scope, CACHE_SCOPE),
       gte(
         systemStoragePresignedUrlCache.expiresAt,
-        sql`${nowDateSql()} + ${CONTENT_BUNDLE_URL_MIN_REMAINING_MS} * interval '1 millisecond'`,
+        sql`${nowDateSql()} + ${STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS} * interval '1 millisecond'`,
       ),
     )}
   )`;
 }
-
-/** Disposable publication never changes the already-signed response's authority. */
-export const persistContentBundleUrls$ = command(
-  async (
-    { set },
-    context: ContentBundleUrlCacheContext,
-    writes: readonly ContentBundleUrlCacheWrite[],
-    signal: AbortSignal,
-  ): Promise<ContentBundleUrlCachePublication> => {
-    signal.throwIfAborted();
-    const startedAt = monotonicNow();
-    if (writes.length === 0) {
-      return { durationMs: monotonicNow() - startedAt, status: "skipped" };
-    }
-    const values = writes
-      .map((write) => {
-        return {
-          cacheKey: cacheKey(context, write.sha256),
-          scope: CACHE_SCOPE,
-          bucket: context.bucket,
-          objectKey: contentBundleKey(write.sha256),
-          // This shared cache column is historical; no Storage entity is involved.
-          storageVersionId: write.sha256,
-          resolvedOrgId: null,
-          publicEndpoint: false,
-          ttlSeconds: PRESIGNED_URL_TTL_SECONDS,
-          presignedUrl: write.url,
-          expiresAt: new Date(
-            write.issuedAt.getTime() + PRESIGNED_URL_TTL_SECONDS * 1000,
-          ),
-          lastRequestedAt: write.issuedAt,
-          updatedAt: write.issuedAt,
-        };
-      })
-      .sort((left, right) => {
-        return left.cacheKey.localeCompare(right.cacheKey);
-      });
-    const excluded = alias(systemStoragePresignedUrlCache, "excluded");
-    const result = await settle(
-      set(writeDb$)
-        .insert(systemStoragePresignedUrlCache)
-        .values(values)
-        .onConflictDoUpdate({
-          target: systemStoragePresignedUrlCache.cacheKey,
-          set: {
-            presignedUrl: excluded.presignedUrl,
-            expiresAt: excluded.expiresAt,
-            lastRequestedAt: excluded.lastRequestedAt,
-            updatedAt: excluded.updatedAt,
-          },
-          setWhere: gt(
-            excluded.expiresAt,
-            systemStoragePresignedUrlCache.expiresAt,
-          ),
-        }),
-      signal,
-    );
-    if (!result.ok) {
-      // A driver error can contain SQL parameters, including the signed URLs.
-      L.warn("Content Bundle URL cache publication failed", {
-        cacheEntryCount: values.length,
-      });
-    }
-    return {
-      durationMs: monotonicNow() - startedAt,
-      status: result.ok ? "written" : "error",
-    };
-  },
-);

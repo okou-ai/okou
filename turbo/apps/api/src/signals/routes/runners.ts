@@ -91,12 +91,14 @@ import {
 } from "../services/content-bundle-claim";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import {
-  persistContentBundleUrls$,
   prepareContentBundleUrlCache$,
   type ContentBundleUrlCacheContext,
-  type ContentBundleUrlCacheWrite,
-  type ContentBundleUrlCachePublication,
 } from "../services/content-bundle-presigned-url-cache";
+import {
+  persistStoragePresignedUrls$,
+  type StoragePresignedUrlCacheWrite,
+  type StoragePresignedUrlCachePublication,
+} from "../services/system-storage-presigned-url-cache.service";
 import {
   workflowClaimInput,
   type WorkflowClaimInput,
@@ -379,7 +381,9 @@ class ClaimRouteTimingCollector {
     });
   }
 
-  recordBundleCachePublication(result: ContentBundleUrlCachePublication): void {
+  recordBundleCachePublication(
+    result: StoragePresignedUrlCachePublication,
+  ): void {
     this.records.push({
       actionType: "claim_route_content_bundle_cache_write",
       spanKind: "background",
@@ -1205,7 +1209,7 @@ const withClaimedContentBundles$ = command(
     signal: AbortSignal,
   ): Promise<{
     readonly responseBody: ExecutionContext;
-    readonly cacheWrites: readonly ContentBundleUrlCacheWrite[];
+    readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
   }> => {
     const startedAt = monotonicNow();
     const cachedUrls = new Map(
@@ -1816,7 +1820,7 @@ function scheduleSuccessfulClaimSideEffects(args: {
   readonly telemetry: ClaimTimingTelemetry | undefined;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
-  readonly cachePublication: Promise<ContentBundleUrlCachePublication>;
+  readonly cachePublication: Promise<StoragePresignedUrlCachePublication>;
 }): void {
   const { job, run } = args.jobWithRun;
   const queueCreatedAtMs = job.createdAt.getTime();
@@ -1901,7 +1905,7 @@ function scheduleClaimSucceededSideEffects(args: {
   readonly reuseKey: string | null;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
-  readonly cachePublication: Promise<ContentBundleUrlCachePublication>;
+  readonly cachePublication: Promise<StoragePresignedUrlCachePublication>;
 }): void {
   waitUntil(
     tapError(recordClaimTimingMetrics(args), (error) => {
@@ -1944,7 +1948,7 @@ interface ClaimTimingMetricArgs {
   readonly reuseKey: string | null;
   readonly runnerAttribution: RunnerClaimAttribution | undefined;
   readonly claimRouteTiming: ClaimRouteTimingCollector;
-  readonly cachePublication: Promise<ContentBundleUrlCachePublication>;
+  readonly cachePublication: Promise<StoragePresignedUrlCachePublication>;
 }
 
 type ClaimTimingMetricValueKey =
@@ -2364,12 +2368,7 @@ const claimAuthorizedJob$ = command(
       telemetry: args.telemetry,
       runnerAttribution: args.runnerAttribution,
       claimRouteTiming,
-      cachePublication: set(
-        persistContentBundleUrls$,
-        bundleUrlCache,
-        cacheWrites,
-        signal,
-      ),
+      cachePublication: set(persistStoragePresignedUrls$, cacheWrites, signal),
     });
 
     return response;

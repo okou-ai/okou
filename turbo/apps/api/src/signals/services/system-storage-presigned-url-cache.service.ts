@@ -5,28 +5,40 @@ import {
 } from "@okouai/api-contracts/contracts/presigned-urls";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { command } from "ccstate";
-import { and, eq, inArray, like, lte, sql, type SQL } from "drizzle-orm";
+import { and, eq, gt, inArray, like, lte, sql, type SQL } from "drizzle-orm";
+import { alias } from "drizzle-orm/pg-core";
 import { createHash } from "node:crypto";
 import { object, string } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { env } from "../../lib/env";
-import { nowDate, timestampWithoutTimeZone } from "../../lib/time";
+import { logger } from "../../lib/log";
+import {
+  monotonicNow,
+  nowDate,
+  timestampWithoutTimeZone,
+} from "../../lib/time";
 import { writeDb$ } from "../external/db";
 import {
   presignedGetUrlSignerForBucket,
   type PresignedGetUrlSigner,
 } from "../external/s3";
+import { settle } from "../utils";
+
+const L = logger("StoragePresignedUrlCache");
 
 type StoragePresignedUrlCacheScope =
   | "system_storage"
   | "workflow_skill_storage"
   | "readonly_storage"
   | "presentation_template_preview"
-  | "private_artifact_preview";
+  | "private_artifact_preview"
+  | "content_bundle";
 
 export type StorageManifestPresignedUrlCacheScope = Exclude<
   StoragePresignedUrlCacheScope,
-  "presentation_template_preview" | "private_artifact_preview"
+  | "presentation_template_preview"
+  | "private_artifact_preview"
+  | "content_bundle"
 >;
 
 export type StorageManifestCacheBranch = "requested" | "captured";
@@ -53,8 +65,10 @@ export const PRESENTATION_TEMPLATE_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
 const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_CACHE_POLICY =
   "private-artifact-preview-url-v1";
 export const PRIVATE_ARTIFACT_PREVIEW_PRESIGNED_URL_PRUNE_LIMIT = 512;
+export const CONTENT_BUNDLE_URL_PRUNE_LIMIT = 512;
 // Leave enough time for Runner launch and archive downloads after cache selection.
-const STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS = 4 * 60 * 60 * 1000;
+export const STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS =
+  4 * 60 * 60 * 1000;
 const deletedCacheRowSchema = object({ cacheKey: string() });
 
 type StoragePresignedUrlCacheStatus = "hit" | "miss";
@@ -118,7 +132,7 @@ export interface StoragePresignedUrlResult {
   readonly status: StoragePresignedUrlCacheStatus;
 }
 
-interface CacheRowValue {
+export interface StoragePresignedUrlCacheWrite {
   readonly cacheKey: string;
   readonly scope: StoragePresignedUrlCacheScope;
   readonly bucket: string;
@@ -131,6 +145,11 @@ interface CacheRowValue {
   readonly expiresAt: Date;
   readonly lastRequestedAt: Date;
   readonly updatedAt: Date;
+}
+
+export interface StoragePresignedUrlCachePublication {
+  readonly durationMs: number;
+  readonly status: "skipped" | "written" | "error";
 }
 
 /** The same canonical JSON key as the JS signer's key, for index/cache JOINs. */
@@ -351,19 +370,23 @@ function objectKeyPrefixCondition(objectKeyPrefix: string | undefined) {
       )} escape '\\'`;
 }
 
-interface CacheSigningRequest {
+interface StoragePresignedUrlSigningRequest {
   readonly request: StoragePresignedUrlRequest;
   readonly cacheKey: string;
   readonly ttlSeconds: number;
+}
+
+interface CacheSigningRequest extends StoragePresignedUrlSigningRequest {
   readonly issuedAt: Date;
   readonly lastRequestedAt: Date;
 }
 
 function cacheSigningOptions(args: CacheSigningRequest) {
   const privatePreview = args.request.scope === "private_artifact_preview";
-  const signingDate = privatePreview
-    ? new Date(Math.floor(args.issuedAt.getTime() / 1000) * 1000)
-    : undefined;
+  const signingDate =
+    privatePreview || args.request.scope === "content_bundle"
+      ? new Date(Math.floor(args.issuedAt.getTime() / 1000) * 1000)
+      : undefined;
   return {
     filename: privatePreview ? args.request.filename : undefined,
     signingDate,
@@ -377,11 +400,12 @@ function cacheSigningOptions(args: CacheSigningRequest) {
 function signedCacheValue(
   args: CacheSigningRequest,
   presignedUrl: string,
-): CacheRowValue {
+): StoragePresignedUrlCacheWrite {
   const privatePreview = args.request.scope === "private_artifact_preview";
-  const signingDate = privatePreview
-    ? new Date(Math.floor(args.issuedAt.getTime() / 1000) * 1000)
-    : undefined;
+  const signingDate =
+    privatePreview || args.request.scope === "content_bundle"
+      ? new Date(Math.floor(args.issuedAt.getTime() / 1000) * 1000)
+      : undefined;
   const expiresAt = expirationFromIssuedAt(
     signingDate ?? args.issuedAt,
     privatePreview ? PRESIGNED_URL_TTL_SECONDS : args.ttlSeconds,
@@ -406,7 +430,7 @@ async function signCacheValue(
   args: CacheSigningRequest & {
     readonly sign: PresignedGetUrlSigner;
   },
-): Promise<CacheRowValue> {
+): Promise<StoragePresignedUrlCacheWrite> {
   const presignedUrl = await args.sign(
     args.request.bucket,
     args.request.objectKey,
@@ -415,7 +439,9 @@ async function signCacheValue(
   return signedCacheValue(args, presignedUrl);
 }
 
-function storagePresignedUrlCacheValues(values: readonly CacheRowValue[]) {
+function storagePresignedUrlCacheValues(
+  values: readonly StoragePresignedUrlCacheWrite[],
+) {
   return [...values]
     .sort((left, right) => {
       return left.cacheKey.localeCompare(right.cacheKey);
@@ -453,6 +479,51 @@ function storagePresignedUrlCacheConflictSet() {
     updatedAt: sql`excluded.updated_at`,
   };
 }
+
+/** Entry-owned optional publication, shared by Storage and bundle claims. */
+export const persistStoragePresignedUrls$ = command(
+  async (
+    { set },
+    values: readonly StoragePresignedUrlCacheWrite[],
+    signal: AbortSignal,
+  ): Promise<StoragePresignedUrlCachePublication> => {
+    signal.throwIfAborted();
+    const startedAt = monotonicNow();
+    const unique = new Map(
+      values.map((value) => {
+        return [value.cacheKey, value];
+      }),
+    );
+    if (unique.size === 0) {
+      return { durationMs: monotonicNow() - startedAt, status: "skipped" };
+    }
+    const excluded = alias(systemStoragePresignedUrlCache, "excluded");
+    const result = await settle(
+      set(writeDb$)
+        .insert(systemStoragePresignedUrlCache)
+        .values(storagePresignedUrlCacheValues([...unique.values()]))
+        .onConflictDoUpdate({
+          target: systemStoragePresignedUrlCache.cacheKey,
+          set: storagePresignedUrlCacheConflictSet(),
+          setWhere: gt(
+            excluded.expiresAt,
+            systemStoragePresignedUrlCache.expiresAt,
+          ),
+        }),
+      signal,
+    );
+    if (!result.ok) {
+      // Driver errors can contain SQL parameters, including bearer URLs.
+      L.warn("Presigned URL cache publication failed", {
+        cacheEntryCount: unique.size,
+      });
+    }
+    return {
+      durationMs: monotonicNow() - startedAt,
+      status: result.ok ? "written" : "error",
+    };
+  },
+);
 
 export interface SelectedStoragePresignedUrlCacheRow {
   readonly cacheKey: string;
@@ -655,7 +726,7 @@ function classifyStoragePresignedUrlCacheRows(args: {
 function appendFreshStoragePresignedUrlResults(args: {
   readonly results: Map<string, StoragePresignedUrlResult>;
   readonly needsFresh: readonly StoragePresignedUrlFreshRequest[];
-  readonly freshValues: readonly CacheRowValue[];
+  readonly freshValues: readonly StoragePresignedUrlCacheWrite[];
 }): void {
   for (let index = 0; index < args.needsFresh.length; index += 1) {
     const entry = args.needsFresh[index];
@@ -718,16 +789,19 @@ function storageManifestSigningRequests(
 }
 
 /** Classify the captured cache snapshot at the owner's signing clock. */
-function storageManifestSigningPlan(
-  unique: ReturnType<typeof storageManifestSigningRequests>,
-  prefetchedRows: StorageManifestPresignedUrlCacheSnapshot,
+function storagePresignedUrlSigningPlan(
+  unique: ReadonlyMap<string, StoragePresignedUrlSigningRequest>,
+  rows: readonly SelectedStoragePresignedUrlCacheRow[],
   issuedAt: Date,
 ) {
+  const rowsByKey = new Map(
+    rows.map((row) => {
+      return [row.cacheKey, row];
+    }),
+  );
   const results = new Map<string, StoragePresignedUrlResult>();
   const missing = [...unique.values()].filter((entry) => {
-    const row = prefetchedRows.rowsByScope
-      .get(entry.request.scope as StorageManifestPresignedUrlCacheScope)
-      ?.get(entry.cacheKey);
+    const row = rowsByKey.get(entry.cacheKey);
     if (
       !row ||
       !hasReusablePresignedUrlLifetime({
@@ -749,19 +823,23 @@ function storageManifestSigningPlan(
   return { results, missing, issuedAt };
 }
 
-/** Classify a captured database snapshot and sign misses entirely in memory. */
-export async function signStorageManifestPresignedUrls(
-  args: ManifestSigningSnapshot & {
-    readonly sign: PresignedGetUrlSigner;
-  },
-): Promise<{
+/** Classify captured object URLs and sign misses, without database or object I/O. */
+export async function signStoragePresignedUrls(args: {
+  readonly requests: readonly StoragePresignedUrlSigningRequest[];
+  readonly rows: readonly SelectedStoragePresignedUrlCacheRow[];
+  readonly sign: PresignedGetUrlSigner;
+}): Promise<{
   readonly results: ReadonlyMap<string, StoragePresignedUrlResult>;
-  readonly freshValues: readonly CacheRowValue[];
+  readonly freshValues: readonly StoragePresignedUrlCacheWrite[];
 }> {
-  const requests = storageManifestSigningRequests(args.input);
-  const { results, missing, issuedAt } = storageManifestSigningPlan(
+  const requests = new Map(
+    args.requests.map((entry) => {
+      return [entry.cacheKey, entry];
+    }),
+  );
+  const { results, missing, issuedAt } = storagePresignedUrlSigningPlan(
     requests,
-    args.prefetchedRows,
+    args.rows,
     nowDate(),
   );
   const freshValues = await Promise.all(
@@ -780,6 +858,21 @@ export async function signStorageManifestPresignedUrls(
     freshValues,
   });
   return { results, freshValues };
+}
+
+/** Preserve manifest adapters and key identities on the shared signing engine. */
+export async function signStorageManifestPresignedUrls(
+  args: ManifestSigningSnapshot & {
+    readonly sign: PresignedGetUrlSigner;
+  },
+) {
+  return await signStoragePresignedUrls({
+    requests: [...storageManifestSigningRequests(args.input).values()],
+    rows: [...args.prefetchedRows.rowsByScope.values()].flatMap((rows) => {
+      return [...rows.values()];
+    }),
+    sign: args.sign,
+  });
 }
 
 /** Callers observe cancellation after this complete finite lookup/sign/write stage. */

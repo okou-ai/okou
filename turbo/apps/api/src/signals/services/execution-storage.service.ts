@@ -4,16 +4,12 @@ import {
   VOLUME_ORG_USER_ID,
 } from "@okouai/core/storage-names";
 import { storages, storageVersions } from "@okouai/db/schema/storage";
-import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
 import { command, computed, type Computed } from "ccstate";
-import { alias } from "drizzle-orm/pg-core";
 import { env } from "../../lib/env";
-import { logger } from "../../lib/log";
-import { writeDb$ } from "../external/db";
 import { publicPresignedGetUrlSigner$ } from "../external/s3";
-import { settle } from "../utils";
 import type { ExecutionStorageCacheRows } from "./execution-storage-cache-read.service";
 import {
+  persistStoragePresignedUrls$,
   readOnlyStoragePresignedUrlCacheKey,
   signStorageManifestPresignedUrls,
   storageManifestPresignedUrlCacheLookupPairs,
@@ -92,7 +88,6 @@ type CacheSnapshot = Parameters<
 type FreshCacheValues = Awaited<
   ReturnType<typeof signStorageManifestPresignedUrls>
 >["freshValues"];
-const log = logger("ExecutionStorage");
 
 function mountKey(mount: ExecutionStorageIdentity): string {
   return JSON.stringify([
@@ -283,58 +278,6 @@ function preparedMounts(
   );
 }
 
-/** Cache persistence is an explicit log-only exception, owned after commit. */
-const persistPresignedUrlCache$ = command(
-  async (
-    { set },
-    values: FreshCacheValues,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    signal.throwIfAborted();
-    const unique = [
-      ...new Map(
-        values.map((value) => {
-          return [value.cacheKey, value];
-        }),
-      ).values(),
-    ].sort((a, b) => {
-      return a.cacheKey.localeCompare(b.cacheKey);
-    });
-    if (unique.length === 0) {
-      return;
-    }
-    const excluded = alias(systemStoragePresignedUrlCache, "excluded");
-    const result = await settle(
-      set(writeDb$)
-        .insert(systemStoragePresignedUrlCache)
-        .values(unique)
-        .onConflictDoUpdate({
-          target: systemStoragePresignedUrlCache.cacheKey,
-          set: {
-            scope: excluded.scope,
-            bucket: excluded.bucket,
-            objectKey: excluded.objectKey,
-            storageVersionId: excluded.storageVersionId,
-            resolvedOrgId: excluded.resolvedOrgId,
-            publicEndpoint: excluded.publicEndpoint,
-            ttlSeconds: excluded.ttlSeconds,
-            presignedUrl: excluded.presignedUrl,
-            expiresAt: excluded.expiresAt,
-            lastRequestedAt: excluded.lastRequestedAt,
-            updatedAt: excluded.updatedAt,
-          },
-        }),
-    );
-    signal.throwIfAborted();
-    if (!result.ok) {
-      log.error("Failed to update execution storage presigned URL cache", {
-        cacheEntryCount: unique.length,
-        error: result.error,
-      });
-    }
-  },
-);
-
 /** The canonical Thread already resolved exact rows; never reread those identities. */
 export function createResolvedExecutionStorageObjects(
   mounts: readonly ExecutionStorageRequest[],
@@ -431,6 +374,6 @@ export const updateExecutionStoragePresignedUrlCache$ = command(
         ? [mount.presignedUrlCacheWrite]
         : [];
     });
-    await set(persistPresignedUrlCache$, values, signal);
+    await set(persistStoragePresignedUrls$, values, signal);
   },
 );
