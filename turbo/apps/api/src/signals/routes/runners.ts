@@ -91,7 +91,7 @@ import {
 } from "../services/content-bundle-claim";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import {
-  prepareContentBundleUrlCache$,
+  contentBundleUrlCacheContext$,
   type ContentBundleUrlCacheContext,
 } from "../services/content-bundle-presigned-url-cache";
 import {
@@ -2247,7 +2247,7 @@ const resolveStoredExecutionContextForClaim$ = command(
 
 const claimAuthorizedJob$ = command(
   async (
-    { set },
+    { get, set },
     args: {
       readonly runId: string;
       readonly authType: RunnerAuthContext["type"];
@@ -2292,7 +2292,7 @@ const claimAuthorizedJob$ = command(
     );
     signal.throwIfAborted();
 
-    const bundleUrlCache = set(prepareContentBundleUrlCache$);
+    const bundleUrlCache = get(contentBundleUrlCacheContext$);
     claimRouteTiming.recordElapsed(
       "claim_route_request_to_transition_start",
       "parent",

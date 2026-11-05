@@ -1,13 +1,12 @@
 import { PRESIGNED_URL_TTL_SECONDS } from "@okouai/api-contracts/contracts/presigned-urls";
 import { contentBundleKey } from "@okouai/core/content-bundle";
 import { systemStoragePresignedUrlCache } from "@okouai/db/runtime/system-storage-presigned-url-cache";
-import { command } from "ccstate";
+import { computed } from "ccstate";
 import { and, eq, gte, sql, type SQL } from "drizzle-orm";
 import { createHash } from "node:crypto";
 import { number, object, string } from "zod";
 import { env } from "../../lib/env";
 import { nowDateSql } from "../../lib/time";
-import { presignedGetUrlCacheIdentity$ } from "../external/s3";
 import { STORAGE_MANIFEST_PRESIGNED_URL_MIN_REMAINING_MS } from "./system-storage-presigned-url-cache.service";
 
 const CACHE_SCOPE = "content_bundle" as const;
@@ -23,13 +22,9 @@ export const cachedContentBundleUrlSchema = object({
   expiresAtMs: number(),
 });
 
-export const prepareContentBundleUrlCache$ = command(
-  ({ set }): ContentBundleUrlCacheContext => {
+export const contentBundleUrlCacheContext$ = computed(
+  (): ContentBundleUrlCacheContext => {
     const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    const signingIdentity = set(presignedGetUrlCacheIdentity$, {
-      bucket,
-      publicEndpoint: false,
-    });
     return {
       bucket,
       keyPrefix: createHash("sha256")
@@ -37,7 +32,14 @@ export const prepareContentBundleUrlCache$ = command(
           JSON.stringify([
             "content-bundle-url-v1",
             bucket,
-            signingIdentity,
+            // Deployment configuration is fixed for this instance.
+            env("R2_ACCESS_KEY_ID"),
+            env("R2_SECRET_ACCESS_KEY"),
+            env("R2_ACCOUNT_ID"),
+            env("S3_ENDPOINT"),
+            env("S3_REGION"),
+            env("S3_FORCE_PATH_STYLE"),
+            "private",
             PRESIGNED_URL_TTL_SECONDS,
           ]),
         )
