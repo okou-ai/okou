@@ -21,7 +21,7 @@ import {
   type AgentSuggestionEntry,
 } from "./agent-suggestion-session.ts";
 import { createInPlaceAgentComposerSignals } from "./agent-composer-signals.ts";
-import { createDraftSignals, createRestoredAttachment } from "./chat-draft.ts";
+import { createRestoredAttachment } from "./chat-draft.ts";
 import type { ComposerSignals } from "./composer-signals.ts";
 import {
   createMessageDocumentSnapshot,
@@ -89,7 +89,9 @@ function showSuggestionSent(): void {
 
 interface SuggestionComposerSession {
   readonly item: Suggestion;
-  readonly composer: Promise<ComposerSignals>;
+  readonly agentId: string;
+  /** Supplied by the Feed view, which owns the dialog's completion. */
+  readonly onOptimisticSend: () => void;
 }
 
 const internalSuggestionComposer$ = state<SuggestionComposerSession | null>(
@@ -97,14 +99,29 @@ const internalSuggestionComposer$ = state<SuggestionComposerSession | null>(
 );
 const resetSuggestionComposer$ = resetSignal();
 
+/**
+ * One unsaved default-Agent composer per open custom-direction dialog, so the
+ * Agent's own draft is neither read nor replaced.
+ */
+const suggestionComposerGraph$ = computed((get) => {
+  const session = get(internalSuggestionComposer$);
+  if (!session) {
+    return null;
+  }
+  const agentDraft = createAgentDraftSignals(session.agentId);
+  return {
+    draft: agentDraft.draft,
+    composer: createInPlaceAgentComposerSignals(
+      session.agentId,
+      agentDraft,
+      session.onOptimisticSend,
+    ),
+  };
+});
+
 /** The card whose custom direction is being written in the Feed dialog. */
 export const agentSuggestionComposerItem$ = computed((get) => {
   return get(internalSuggestionComposer$)?.item ?? null;
-});
-
-export const agentSuggestionComposer$ = computed(async (get) => {
-  const session = get(internalSuggestionComposer$);
-  return session ? await session.composer : null;
 });
 
 export const closeAgentSuggestionComposer$ = command(({ set }) => {
@@ -113,24 +130,26 @@ export const closeAgentSuggestionComposer$ = command(({ set }) => {
 });
 
 /**
- * The dialog composer starts from an unsaved copy of the card's background, so
- * the default Agent's own draft is neither read nor replaced.
+ * Opens the custom direction composer for the default Agent over the Feed and
+ * installs the card's background before the composer mounts.
  */
-const prepareSuggestionComposer$ = command(
+export const openAgentSuggestionComposer$ = command(
   async (
     { get, set },
     item: Suggestion,
-    signal: AbortSignal,
+    onOptimisticSend: () => void,
+    pageSignal: AbortSignal,
   ): Promise<ComposerSignals> => {
+    const signal = set(resetSuggestionComposer$, pageSignal);
     const [agentId, entries] = await Promise.all([
       get(defaultAgentId$),
       get(agentSuggestionEntries$),
     ]);
     signal.throwIfAborted();
-    const entry = entries.find((card) => {
+    const visible = entries.some((card) => {
       return card.item.id === item.id && !get(card.hidden$);
     });
-    if (!agentId || !entry) {
+    if (!agentId || !visible) {
       throw new Error("Suggestion target is unavailable");
     }
     const contextVersion = await suggestionDraftVersion(
@@ -149,42 +168,9 @@ const prepareSuggestionComposer$ = command(
     if (content === null) {
       throw new Error("Invalid suggestion background");
     }
-    const agentDraft = createAgentDraftSignals(agentId);
-    // The API consumes the card when it accepts this input, before the
-    // optimistic thread is published.
-    const composer = createInPlaceAgentComposerSignals(
-      agentId,
-      agentDraft,
-      () => {
-        set(entry.hidden$, true);
-        set(closeAgentSuggestionComposer$);
-        showSuggestionSent();
-      },
-    );
-    set(composer.voice.setup$, signal);
-    await set(
-      agentDraft.draft.seed$,
-      {
-        content,
-        userMessage: document,
-        generationTemplate: undefined,
-        attachments: files.map(createRestoredAttachment),
-      },
-      signal,
-    );
-    signal.throwIfAborted();
-    return composer;
-  },
-);
-
-/** Opens the custom direction composer for the default Agent over the Feed. */
-export const openAgentSuggestionComposer$ = command(
-  ({ get, set }, item: Suggestion, pageSignal: AbortSignal) => {
-    const signal = set(resetSuggestionComposer$, pageSignal);
-    const composer = set(prepareSuggestionComposer$, item, signal);
-    const session = { item, composer };
+    const session = { item, agentId, onOptimisticSend };
     set(internalSuggestionComposer$, session);
-    // Leaving the Feed ends the dialog with its page.
+    // Leaving the Feed or opening another card's dialog ends this session.
     signal.addEventListener(
       "abort",
       () => {
@@ -194,7 +180,47 @@ export const openAgentSuggestionComposer$ = command(
       },
       { once: true },
     );
-    return composer;
+    const graph = get(suggestionComposerGraph$);
+    if (!graph) {
+      throw new Error("Suggestion composer is unavailable");
+    }
+    set(graph.composer.voice.setup$, signal);
+    await set(
+      graph.draft.seed$,
+      {
+        content,
+        userMessage: document,
+        generationTemplate: undefined,
+        attachments: files.map(createRestoredAttachment),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
+    return graph.composer;
+  },
+);
+
+/**
+ * The API consumes the card when it accepts the custom follow-up, before the
+ * optimistic thread is published; the Feed then drops the card in place.
+ */
+export const finishAgentSuggestionComposer$ = command(
+  async (
+    { get, set },
+    item: Suggestion,
+    pageSignal: AbortSignal,
+  ): Promise<void> => {
+    if (get(internalSuggestionComposer$)?.item === item) {
+      set(closeAgentSuggestionComposer$);
+    }
+    showSuggestionSent();
+    const entries = await get(agentSuggestionEntries$);
+    pageSignal.throwIfAborted();
+    for (const entry of entries) {
+      if (entry.item.id === item.id) {
+        set(entry.hidden$, true);
+      }
+    }
   },
 );
 
@@ -218,7 +244,7 @@ const sendAgentSuggestionOption$ = command(
     if (prompt === null) {
       throw new Error("Invalid suggestion composer document");
     }
-    const draft = createDraftSignals();
+    const draft = entry.optionDraft;
     await set(
       draft.seed$,
       {

@@ -5,6 +5,7 @@ import {
   useLoadable,
   useSet,
 } from "ccstate-react";
+import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
   ArrowRight,
@@ -46,12 +47,13 @@ import {
   saveSuggestionFeedbackReason$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
-  agentSuggestionComposer$,
   agentSuggestionComposerItem$,
   closeAgentSuggestionComposer$,
+  finishAgentSuggestionComposer$,
   openAgentSuggestionComposer$,
   startAgentSuggestion$,
 } from "../../signals/okou-page/agent-suggestions.ts";
+import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
@@ -382,14 +384,22 @@ export function SuggestionSaveErrors() {
     : null;
 }
 
+type ComposerPreparation =
+  | { readonly state: "idle" | "loading" }
+  | { readonly state: "hasData"; readonly data: ComposerSignals }
+  | { readonly state: "hasError"; readonly error: unknown };
+
 /**
  * The custom direction is written over the Feed, like a forward: the default
  * Agent receives it in a new thread and the member stays on the next card.
  */
-function AgentSuggestionComposerDialog() {
+function AgentSuggestionComposerDialog({
+  composer,
+}: {
+  readonly composer: ComposerPreparation;
+}) {
   const { t } = useTranslation();
   const item = useGet(agentSuggestionComposerItem$);
-  const composer = useLoadable(agentSuggestionComposer$);
   const close = useSet(closeAgentSuggestionComposer$);
   const agentId = useLastResolved(defaultAgentId$);
   const assistantName = useGet(assistantName$);
@@ -429,7 +439,7 @@ function AgentSuggestionComposerDialog() {
             })}
           </DialogDescription>
         </DialogHeader>
-        {composer.state === "hasData" && composer.data ? (
+        {composer.state === "hasData" ? (
           <div className="w-full min-w-0 p-5" data-chat-composer>
             <ChatComposer signals={composer.data} showPendingItems={false} />
           </div>
@@ -451,10 +461,15 @@ function AgentSuggestionComposerDialog() {
   );
 }
 
-function AgentSuggestionCard({ item }: { readonly item: Suggestion }) {
+function AgentSuggestionCard({
+  item,
+  onCustomDirection,
+}: {
+  readonly item: Suggestion;
+  readonly onCustomDirection: (item: Suggestion) => void;
+}) {
   const { t } = useTranslation();
   const start = useSet(startAgentSuggestion$);
-  const openComposer = useSet(openAgentSuggestionComposer$);
   const submitFeedback = useSet(submitAgentSuggestionFeedback$);
   const signal = useGet(pageSignal$);
   return (
@@ -493,7 +508,7 @@ function AgentSuggestionCard({ item }: { readonly item: Suggestion }) {
           })}
           <CustomDirectionOption
             onClick={() => {
-              detach(openComposer(item, signal), Reason.DomCallback);
+              onCustomDirection(item);
             }}
           />
           <AgentSuggestionActions
@@ -517,6 +532,21 @@ export function AgentSuggestions() {
   const { t } = useTranslation();
   const result = useLastLoadable(agentSuggestionFeedItems$);
   const feedback = useGet(suggestionFeedbackConfirmation$);
+  const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
+  const finish = useSet(finishAgentSuggestionComposer$);
+  const signal = useGet(pageSignal$);
+  const openCustomDirection = (item: Suggestion) => {
+    detach(
+      openComposer(
+        item,
+        () => {
+          detach(finish(item, signal), Reason.DomCallback);
+        },
+        signal,
+      ),
+      Reason.DomCallback,
+    );
+  };
   if (result.state !== "hasData" || result.data.length === 0) {
     return null;
   }
@@ -536,13 +566,16 @@ export function AgentSuggestions() {
               {feedback?.item.id === item.id ? (
                 <SuggestionFeedbackNotice />
               ) : (
-                <AgentSuggestionCard item={item} />
+                <AgentSuggestionCard
+                  item={item}
+                  onCustomDirection={openCustomDirection}
+                />
               )}
             </li>
           );
         })}
       </ul>
-      <AgentSuggestionComposerDialog />
+      <AgentSuggestionComposerDialog composer={composer} />
     </section>
   );
 }
