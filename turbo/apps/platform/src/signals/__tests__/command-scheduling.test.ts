@@ -182,7 +182,7 @@ test.each([
   },
 );
 
-test("A background loop drops a failed round and runs the next one", async () => {
+test("A background loop reports a failed round and runs the next one", async () => {
   const rounds: string[] = [];
   const finished = context.mocks.deferred<void>();
   setLoop(

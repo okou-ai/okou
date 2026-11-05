@@ -82,8 +82,11 @@ external browser/protocol lifetimes. These broad exclusions are separate from
 the explicit primitive exceptions above.
 
 Operations whose terminal error or result controls subsequent work use the
-waiting entry point. Loops propagate failures without replaying the body; a fresh notification or
-business action can initiate new work.
+waiting entry point, which propagates failures without replaying the body. A
+background `setLoop` behaves like `setInterval`: a failed round is reported like
+detached work and the next round runs on schedule, never sooner than one
+second later. A realtime loop drops a failed notification and waits for the
+next one.
 
 ## Active module state
 

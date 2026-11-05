@@ -267,8 +267,10 @@ feature-specific failure handling uses `onError`.
 
 Use `waitLoopUntil` or `waitAbly*LoopUntil$` when subsequent work depends on a
 loop finishing. These return the internal promise and propagate cancellation
-and failure. Both entry points share the same loop and cleanup logic. Errors propagate
-without retrying the body.
+and failure without retrying the body. Both entry points share the same loop
+and cleanup logic. The background `setLoop` instead treats each round like a
+`setInterval` tick: a failed round is reported like detached work, and the next
+round runs on schedule. Only cancellation ends it early.
 
 Do not wrap the background starters in another detach. An explicitly
 background, non-periodic process such as Desktop sign-in or realtime startup

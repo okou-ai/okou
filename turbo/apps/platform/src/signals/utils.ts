@@ -27,6 +27,13 @@ class PromiseTracker {
 
 const tracker = new PromiseTracker();
 
+/** Report a failure that no caller awaits: detached work and loop rounds. */
+function reportUnawaitedRejection(error: unknown, reason: Reason): void {
+  if (!isAbortError(error) && !(error instanceof ApiError && error.expected)) {
+    L.error(`Detached promise rejected [${reason}]`, error);
+  }
+}
+
 export function detach<T>(
   promise: T | Promise<T>,
   reason: Reason,
@@ -43,12 +50,7 @@ export function detach<T>(
     silencePromise = Promise.resolve(promise).then(
       () => {},
       (error: unknown) => {
-        if (
-          !isAbortError(error) &&
-          !(error instanceof ApiError && error.expected)
-        ) {
-          L.error(`Detached promise rejected [${reason}]`, error);
-        }
+        reportUnawaitedRejection(error, reason);
       },
     );
   }
@@ -259,8 +261,9 @@ interface LoopOptions {
 
 /**
  * Start an owner-scoped background loop; completion is tracked by detach.
- * Like a realtime subscription, a failed round is dropped and the loop runs
- * the next one on its schedule. Only cancellation ends the loop early.
+ * Like setInterval, a failed round does not stop the loop: it is reported the
+ * way detached work is, and the next round runs on schedule. Only
+ * cancellation ends the loop early.
  */
 export function setLoop(
   loopBody: LoopBody,
@@ -311,11 +314,12 @@ async function internalSetLoop(
     if (onFailure === "propagate") {
       done = await loopBody(signal);
     } else {
-      // eslint-disable-next-line no-restricted-syntax -- a failed round is dropped; the loop retries on its schedule
+      // eslint-disable-next-line no-restricted-syntax -- a failed round is reported like detached work; the loop continues on schedule
       try {
         done = await loopBody(signal);
       } catch (error) {
         throwIfAbort(error);
+        reportUnawaitedRejection(error, Reason.Daemon);
         failed = true;
       }
     }
