@@ -316,11 +316,9 @@ test.each([
     expect(within(card).getByText("Work Mac")).toBeInTheDocument();
     expect(within(card).getByText("Run the project tests")).toBeInTheDocument();
     expect(button(card, actionLabel)).toBeEnabled();
-    if (status === "approved") {
-      expect(within(card).getByText("Allowed")).toBeInTheDocument();
-    } else {
-      expect(button(card, "Deny")).toBeEnabled();
-    }
+    expect(
+      within(card).getByText(status === "approved" ? "Allowed" : "Deny"),
+    ).toBeInTheDocument();
 
     current = {
       ...current,
