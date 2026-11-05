@@ -6,7 +6,7 @@ description = "Runner storage planning, archive delivery, and host/R2 caches"
 
 [features]
 # Exposes deterministic seams for Runner's existing cross-crate tests.
-test-support = ["dep:http-body"]
+test-support = ["dep:aws-smithy-mocks", "dep:http-body"]
 
 [dependencies]
 api-contracts.workspace = true
@@ -16,6 +16,7 @@ runner-types.workspace = true
 sandbox.workspace = true
 
 aws-sdk-s3 = { workspace = true, features = ["behavior-version-latest", "default-https-client", "rt-tokio"] }
+aws-smithy-mocks = { workspace = true, optional = true }
 bytes = { workspace = true, features = ["std"] }
 chrono = { workspace = true, features = ["now", "serde"] }
 flate2 = { workspace = true, features = ["runtime_detection", "rust_backend"] }
