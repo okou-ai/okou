@@ -104,9 +104,7 @@ def validate(directory):
         initial, waiting, lost = [event["evidence"] for event in events[:3]]
         mode = "panic" if case.startswith("SpeculativePanic-") else "drop"
         path = initial.get("status_path")
-        if (not isinstance(path, str) or not pathlib.PurePosixPath(path).is_absolute()
-                or str(pathlib.PurePosixPath(path)) != path or ".." in pathlib.PurePosixPath(path).parts
-                or pathlib.PurePosixPath(path).name != "status.json" or path in paths):
+        if not failure.valid_status_path(path) or path in paths:
             raise ValueError("invalid or replayed speculative private status path")
         paths.add(path)
         baseline = initial.get("published_status")

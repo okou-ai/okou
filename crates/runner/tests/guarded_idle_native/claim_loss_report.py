@@ -99,9 +99,7 @@ def validate(directory, *, cases=CASES, policy_key="native_claim_loss_policy_jso
         if not pressure.integer(selected, 1):
             raise ValueError("claim original insertion revision missing")
         path = waiting.get("status_path")
-        if (not isinstance(path, str) or not pathlib.PurePosixPath(path).is_absolute()
-                or str(pathlib.PurePosixPath(path)) != path or ".." in pathlib.PurePosixPath(path).parts
-                or pathlib.PurePosixPath(path).name != "status.json" or path in paths):
+        if not failure.valid_status_path(path) or path in paths:
             raise ValueError("claim private status path replayed or changed")
         paths.add(path)
         runner = request(waiting.get("request"), run, terminal[1]["monotonic_ns"], events[0]["monotonic_ns"])

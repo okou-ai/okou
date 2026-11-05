@@ -19,6 +19,17 @@ PHASES = ("tail_blocked", "pool_wait_progress", "tail_wait_progress", "status_wa
           "status_failed", "status_retried", "producers_joined")
 
 
+def valid_status_path(value):
+    """Check the private status destination without resolving or rewriting it."""
+    return (
+        isinstance(value, str)
+        and pathlib.PurePosixPath(value).is_absolute()
+        and str(pathlib.PurePosixPath(value)) == value
+        and ".." not in pathlib.PurePosixPath(value).parts
+        and pathlib.PurePosixPath(value).name == "status.json"
+    )
+
+
 def status(value, sandbox=None, previous=None):
     if not isinstance(value, dict):
         raise ValueError("status publication has no original JSON")
@@ -65,10 +76,7 @@ def validate(directory):
             raise ValueError("status failure changed original identity or tail ordering")
         blocked, pool, tail, waiting, failed, retried, joined = [e["evidence"] for e in events]
         status_path = blocked.get("status_path")
-        if (not isinstance(status_path, str) or not pathlib.PurePosixPath(status_path).is_absolute()
-                or str(pathlib.PurePosixPath(status_path)) != status_path
-                or pathlib.PurePosixPath(status_path).name != "status.json"
-                or ".." in pathlib.PurePosixPath(status_path).parts or status_path in paths):
+        if not valid_status_path(status_path) or status_path in paths:
             raise ValueError("status-failure private destination identity changed")
         paths.add(status_path)
         status(blocked.get("published_status"), sandbox=identity[0])

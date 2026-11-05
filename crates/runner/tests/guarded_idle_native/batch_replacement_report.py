@@ -63,9 +63,7 @@ def validate(directory, cases=CASES, policy_key="native_batch_replacement_policy
                 raise ValueError("replacement original saving/old refusal/new recovery order changed")
         blocked, tail, pool, progress, saved, waiting, refused, retired, joined = [e["evidence"] for e in events]
         path = blocked.get("status_path")
-        if (not isinstance(path,str) or not pathlib.PurePosixPath(path).is_absolute()
-                or str(pathlib.PurePosixPath(path)) != path or ".." in pathlib.PurePosixPath(path).parts
-                or pathlib.PurePosixPath(path).name != "status.json" or path in paths):
+        if not failure.valid_status_path(path) or path in paths:
             raise ValueError("replacement private status path changed")
         paths.add(path)
         initial = blocked.get("published_status")
