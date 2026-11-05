@@ -21,6 +21,7 @@ import {
   IconButton,
   Input,
   Textarea,
+  TransientAlert,
   Tabs,
   TabsList,
   TabsTrigger,
@@ -51,11 +52,11 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 
 function BrowserOperationError({
-  failed,
+  occurrences,
   duplicateMessage,
   className = "border-b border-divider px-3 py-2 text-sm text-muted-foreground",
 }: {
-  readonly failed: boolean;
+  readonly occurrences: readonly (object | false | null)[];
   readonly duplicateMessage?: string;
   readonly className?: string;
 }) {
@@ -63,13 +64,16 @@ function BrowserOperationError({
   const message = t(($) => {
     return $.browserViewer.operationFailed;
   });
-  if (!failed || message === duplicateMessage) {
-    return null;
-  }
   return (
-    <p role="alert" className={className}>
+    <TransientAlert
+      occurrences={occurrences.filter((occurrence): occurrence is object => {
+        return Boolean(occurrence);
+      })}
+      hidden={message === duplicateMessage}
+      className={className}
+    >
       {message}
-    </p>
+    </TransientAlert>
   );
 }
 
@@ -82,7 +86,7 @@ function BrowserSettings({
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  // The owner remains mounted when the menu closes, including its operation errors.
+  // Keep the request owner mounted when the menu closes.
   const [captureOperation, changeCapture] = useLoadableSet(
     signals.changeCapture$,
   );
@@ -94,7 +98,7 @@ function BrowserSettings({
   );
   const [syncOperation, syncDisplay] = useLoadableSet(signals.syncDisplay$);
   // Transport replacement uses the root recovery pipeline and its current error.
-  const failed = [captureOperation, windowOperation, syncOperation].some(
+  const failures = [captureOperation, windowOperation, syncOperation].filter(
     (operation) => {
       return (
         operation.state === "hasError" &&
@@ -161,7 +165,7 @@ function BrowserSettings({
         </DropdownMenuContent>
       </DropdownMenu>
       <BrowserOperationError
-        failed={failed}
+        occurrences={failures}
         className="absolute right-2 top-full z-20 max-w-64 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
       />
     </>
@@ -429,6 +433,13 @@ interface BrowserNavigationProps {
   readonly settingsDisabled: boolean;
 }
 
+function isCurrentNavigationFailure(error: unknown, scope: object | null) {
+  return (
+    isBrowserOperationFailure(error) &&
+    (!(error instanceof NavigationFault) || error.scope === scope)
+  );
+}
+
 function BrowserNavigation({
   signals,
   settingsDisabled,
@@ -447,13 +458,14 @@ function BrowserNavigation({
   const [operation, navigate] = useLoadableSet(signals.navigate$);
   const navigating = operation.state === "loading";
   const entries = history.state === "hasData" ? history.data : null;
-  const failed =
-    (history.state === "hasError" &&
-      isBrowserOperationFailure(history.error)) ||
-    (operation.state === "hasError" &&
-      isBrowserOperationFailure(operation.error) &&
-      (!(operation.error instanceof NavigationFault) ||
-        operation.error.scope === scope));
+  const failures = [
+    history.state === "hasError" &&
+      isBrowserOperationFailure(history.error) &&
+      history,
+    operation.state === "hasError" &&
+      isCurrentNavigationFailure(operation.error, scope) &&
+      operation,
+  ];
   return (
     <div className="relative flex shrink-0 items-center gap-1 border-b border-divider px-2 py-1.5">
       <IconButton
@@ -549,7 +561,7 @@ function BrowserNavigation({
       <BrowserSettings signals={signals} disabled={settingsDisabled} />
       {/* Overlays keep the canvas box stable; layout changes are commanded. */}
       <BrowserOperationError
-        failed={failed}
+        occurrences={failures}
         className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
       />
     </div>
@@ -625,10 +637,11 @@ function BrowserTab({
         <X size={12} />
       </IconButton>
       <BrowserOperationError
-        failed={
+        occurrences={[
           closeOperation.state === "hasError" &&
-          isBrowserOperationFailure(closeOperation.error)
-        }
+            isBrowserOperationFailure(closeOperation.error) &&
+            closeOperation,
+        ]}
         className="absolute left-0 top-full z-20 w-56 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
       />
     </div>
@@ -767,15 +780,16 @@ function useBrowserRecovery(signals: BrowserSignals) {
     reconnectOperation.state === "loading";
   // The current runtime presents connection failures. Action loadables retain
   // only local command feedback; an old Reconnect must not become current again.
-  const failed =
-    displayRecovery !== null ||
-    (!recovering &&
+  const failures = [
+    displayRecovery,
+    !recovering &&
       retryOperation.state === "hasError" &&
-      isBrowserOperationFailure(retryOperation.error)) ||
-    (reloadOperation.state === "hasError" &&
-      isBrowserOperationFailure(reloadOperation.error) &&
-      (!(reloadOperation.error instanceof NavigationFault) ||
-        reloadOperation.error.scope === navigationScope));
+      isBrowserOperationFailure(retryOperation.error) &&
+      retryOperation,
+    reloadOperation.state === "hasError" &&
+      isCurrentNavigationFailure(reloadOperation.error, navigationScope) &&
+      reloadOperation,
+  ];
   const recoveryError =
     recoveryOperation.state === "hasData" &&
     recoveryOperation.data &&
@@ -784,7 +798,7 @@ function useBrowserRecovery(signals: BrowserSignals) {
       : null;
   return {
     pending,
-    failed,
+    failures,
     recovering,
     recoveryError,
     retryImage,
@@ -899,6 +913,31 @@ function BrowserRecoveryActions({
   );
 }
 
+function useBrowserStatusText(signals: BrowserSignals, recovering: boolean) {
+  const { t } = useTranslation();
+  const controls = useGet(signals.controls$);
+  const presentation = useGet(signals.presentation$);
+  return recovering || presentation.status === "connecting"
+    ? t(($) => {
+        return $.browserViewer.connecting;
+      })
+    : presentation.status === "paused"
+      ? t(($) => {
+          return $.browserViewer.paused;
+        })
+      : controls.emptyScoped || controls.emptyUnscoped
+        ? t(($) => {
+            return $.browserViewer.noTabs;
+          })
+        : presentation.status === "disconnected"
+          ? t(($) => {
+              return $.browserViewer.disconnected;
+            })
+          : t(($) => {
+              return $.browserViewer.unavailable;
+            });
+}
+
 function BrowserStatus({
   signals,
   creating,
@@ -910,66 +949,50 @@ function BrowserStatus({
   readonly contentVisible: boolean;
   readonly onCreate: () => Promise<string>;
 }) {
-  const { t } = useTranslation();
-  const controls = useGet(signals.controls$);
   const presentation = useGet(signals.presentation$);
   const recovery = useBrowserRecovery(signals);
-  const { failed, recovering, recoveryError } = recovery;
+  const { failures, recovering, recoveryError } = recovery;
+  const text = useBrowserStatusText(signals, recovering);
   const error = presentation.error
     ? (recoveryError ?? presentation.error)
     : null;
-  if (contentVisible || (recovering && presentation.retainedFrame)) {
-    return (
-      <BrowserOperationError
-        failed={failed}
-        className="absolute inset-x-3 top-3 z-10 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
-      />
-    );
-  }
-  const text =
-    recovering || presentation.status === "connecting"
-      ? t(($) => {
-          return $.browserViewer.connecting;
-        })
-      : presentation.status === "paused"
-        ? t(($) => {
-            return $.browserViewer.paused;
-          })
-        : controls.emptyScoped || controls.emptyUnscoped
-          ? t(($) => {
-              return $.browserViewer.noTabs;
-            })
-          : presentation.status === "disconnected"
-            ? t(($) => {
-                return $.browserViewer.disconnected;
-              })
-            : t(($) => {
-                return $.browserViewer.unavailable;
-              });
+  const showStatus =
+    !contentVisible && !(recovering && presentation.retainedFrame);
   return (
     <div
-      role="status"
-      className="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-5 text-center text-sm text-muted-foreground"
+      role={showStatus ? "status" : undefined}
+      className={
+        showStatus
+          ? "absolute inset-0 flex flex-col items-center justify-center gap-3 bg-background px-5 text-center text-sm text-muted-foreground"
+          : "contents"
+      }
     >
-      {(recovering || presentation.status === "connecting") && (
+      {showStatus && (recovering || presentation.status === "connecting") && (
         <Loader2 size={20} className="animate-spin" />
       )}
-      <p>{text}</p>
-      {!recovering && error && error.message !== text && (
+      {showStatus && <p>{text}</p>}
+      {showStatus && !recovering && error && error.message !== text && (
         <p role="alert" className="max-w-md break-words">
           {error.message}
         </p>
       )}
-      <BrowserRecoveryActions
-        signals={signals}
-        recovery={recovery}
-        creating={creating}
-        onCreate={onCreate}
-      />
+      {showStatus && (
+        <BrowserRecoveryActions
+          signals={signals}
+          recovery={recovery}
+          creating={creating}
+          onCreate={onCreate}
+        />
+      )}
+      {/* Keep notice ownership stable when status gives way to live content. */}
       <BrowserOperationError
-        failed={failed}
-        duplicateMessage={error?.message}
-        className="text-sm"
+        occurrences={failures}
+        duplicateMessage={showStatus ? error?.message : undefined}
+        className={
+          showStatus
+            ? "text-sm"
+            : "absolute inset-x-3 top-3 z-10 rounded-lg border border-divider bg-popover p-3 text-sm shadow-md"
+        }
       />
     </div>
   );
@@ -1012,10 +1035,11 @@ function BrowserClipboard({ signals }: { readonly signals: BrowserSignals }) {
         />
       )}
       <BrowserOperationError
-        failed={
+        occurrences={[
           copyOperation.state === "hasError" &&
-          isBrowserOperationFailure(copyOperation.error)
-        }
+            isBrowserOperationFailure(copyOperation.error) &&
+            copyOperation,
+        ]}
         className="text-sm"
       />
       <div className="flex justify-end gap-2">
@@ -1142,15 +1166,17 @@ export function Browser({
         className="relative min-h-0 flex-1"
       >
         <BrowserOperationError
-          failed={[selectOperation, createOperation].some((operation) => {
-            return (
-              operation.state === "hasError" &&
-              isBrowserOperationFailure(
-                operation.error,
-                imageRecovery !== null || controls.streaming,
-              )
-            );
-          })}
+          occurrences={[selectOperation, createOperation].filter(
+            (operation) => {
+              return (
+                operation.state === "hasError" &&
+                isBrowserOperationFailure(
+                  operation.error,
+                  imageRecovery !== null || controls.streaming,
+                )
+              );
+            },
+          )}
           className="absolute inset-x-3 top-3 z-20 rounded-lg border border-surface-border bg-popover p-3 text-sm shadow-md"
         />
         <div
