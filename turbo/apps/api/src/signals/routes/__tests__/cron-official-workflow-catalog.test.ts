@@ -35,6 +35,23 @@ import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-cat
 
 const context = testContext();
 
+function expectScopeGuidance(
+  instruction: string | null | undefined,
+  learning: boolean,
+) {
+  if (learning) {
+    expect(instruction).toContain(
+      "changes to personal Instructions or shared Agent instructions",
+    );
+    expect(instruction).toContain(
+      "Never override a higher-priority framework write restriction",
+    );
+  } else {
+    expect(instruction).toContain("okou chat list --help");
+    expect(instruction).not.toContain("--all-agents");
+  }
+}
+
 test("requires authentication to publish the Official Workflow catalog", async () => {
   mockEnv("CRON_SECRET", "official-workflow-catalog-cron-secret");
   const app = setupApp({
@@ -184,6 +201,7 @@ test.each([
       );
     });
     expect(detail.body.instruction).toContain(heading);
+    expectScopeGuidance(detail.body.instruction, learning);
     expect(detail.body.fileContents).toStrictEqual(expect.any(Array));
     const automations = await owned.run(() => {
       return accept(
@@ -271,6 +289,7 @@ test.each([
     }
     const files = readClaimedContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);
+    expectScopeGuidance(files.get("SKILL.md")?.toString(), learning);
     await owned.run(() => {
       return fixture.failChatRun(
         runId,

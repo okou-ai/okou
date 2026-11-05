@@ -480,7 +480,7 @@ describe("okou connector permission-request command", () => {
 
     expect(mockConsoleError).toHaveBeenCalledWith(
       expect.stringContaining(
-        "--callback-prompt can only target the current web chat thread and agent",
+        "--callback-prompt requires the current web chat and its execution context",
       ),
     );
   });

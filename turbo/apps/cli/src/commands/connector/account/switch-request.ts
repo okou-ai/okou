@@ -123,7 +123,7 @@ Notes:
         const agentId = getOkouAgentId()?.trim();
         if (!agentId) {
           throw new Error(
-            "Connector account switches require the current web chat agent",
+            "Connector account switches require the current web chat execution context",
           );
         }
         const [{ connectors }, customConnectors, agentContext] =
@@ -134,7 +134,7 @@ Notes:
           ]);
         if (!agentContext) {
           throw new Error(
-            "Connector account switches require the current web chat agent",
+            "Connector account switches require the current web chat execution context",
           );
         }
         const discoveredConnectors = connectorDiscoveryItems(
@@ -172,7 +172,7 @@ Notes:
           !isConnectorDiscoveryAuthorized(connector, agentContext)
         ) {
           throw new Error(
-            `Connector ${slug} is not authorized for the current web chat agent`,
+            `Connector ${slug} is not authorized for the current web chat execution context`,
           );
         }
 

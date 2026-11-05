@@ -1,3 +1,7 @@
+import {
+  resolveCommandMode,
+  modeHelp,
+} from "../../../lib/command/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
 import {
@@ -61,6 +65,7 @@ async function resolveCustomAgentContext(agentId: string | undefined): Promise<{
   readonly agentId: string;
   readonly displayName: string;
   readonly authorizedIds: Set<string>;
+  readonly personal: boolean;
 } | null> {
   if (!agentId) {
     return null;
@@ -69,6 +74,7 @@ async function resolveCustomAgentContext(agentId: string | undefined): Promise<{
     const context = await resolveConnectorDiscoveryAgentContext(agentId);
     return context
       ? {
+          personal: context.personal,
           agentId: context.agentId,
           displayName: context.displayName,
           authorizedIds: context.authorizedCustomConnectorIds,
@@ -80,6 +86,7 @@ async function resolveCustomAgentContext(agentId: string | undefined): Promise<{
     getAgentCustomConnectorGrants(agentId),
   ]);
   return {
+    personal: await resolveCommandMode(),
     agentId: agent.agentId,
     displayName: agent.displayName ?? agent.agentId,
     authorizedIds: new Set(
@@ -103,17 +110,28 @@ const listCommand = new Command()
   .option("--json", "Output current org custom connectors as JSON")
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Lists org definitions with the current member's saved-account directory, including
 inside a run. This is separate from the accounts admitted to the current run;
 use connector list for that view. The ID column contains UUIDs for custom
 status/update and custom:<uuid> diagnostic selectors.
 Saved-account presence does not establish health, defaults, or runtime availability.
 Omit --agent inside a run to inspect the current Agent's access.`,
+      `
+Inspect custom connector definitions, your saved accounts and effective Okou access.
+These are distinct states: a definition alone does not connect or authorize anything.
+Use the documented create/update inputs for definitions, connector connect for
+member credentials and connector oauth start for existing authorization flows.
+Fine-grained HTTP permissions use Connectors settings; MCP access is connector-level.
+Inside a Run, account identity comes only from its admitted context. Missing details
+grant nothing and never select another member's account. JSON fields remain stable.
+`,
+    ),
   )
   .action(
     withErrorHandler(async (options: { agent?: string; json?: boolean }) => {
-      const agentId = resolveConnectorAgentId(options.agent);
+      const agentId = await resolveConnectorAgentId(options.agent);
       const [connectors, agentCtx, connected] = await Promise.all([
         listCustomConnectors(),
         resolveCustomAgentContext(agentId),
@@ -178,7 +196,9 @@ Omit --agent inside a run to inspect the current Agent's access.`,
         header.push(
           chatConnectorAccountsEnabled()
             ? "ALLOWED IN THIS CHAT"
-            : `AUTHORIZED FOR ${agentCtx.displayName}`,
+            : agentCtx.personal
+              ? "YOUR OKOU ACCESS"
+              : `AUTHORIZED FOR ${agentCtx.displayName}`,
         );
       }
       console.log(chalk.dim(header.join("  ")));
@@ -218,12 +238,23 @@ const statusCommand = new Command()
   .option("--json", "Output current org custom connector status as JSON")
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Accepts a custom connector full slug, UUID, or exact unique display name,
 optionally prefixed with custom:. Use UUIDs for stable automation.
 Shows current org definition/member status, including inside a run. For the
 account admitted to a run, use connector status with its connector selector.
 Omit --agent inside a run to inspect the current Agent's access.`,
+      `
+Inspect custom connector definitions, your saved accounts and effective Okou access.
+These are distinct states: a definition alone does not connect or authorize anything.
+Use the documented create/update inputs for definitions, connector connect for
+member credentials and connector oauth start for existing authorization flows.
+Fine-grained HTTP permissions use Connectors settings; MCP access is connector-level.
+Inside a Run, account identity comes only from its admitted context. Missing details
+grant nothing and never select another member's account. JSON fields remain stable.
+`,
+    ),
   )
   .action(
     withErrorHandler(
@@ -231,7 +262,7 @@ Omit --agent inside a run to inspect the current Agent's access.`,
         connectorSelector: string,
         options: { agent?: string; json?: boolean },
       ) => {
-        const agentId = resolveConnectorAgentId(options.agent);
+        const agentId = await resolveConnectorAgentId(options.agent);
         const connectorId = await resolveCustomConnectorId(connectorSelector);
         const [connector, agentCtx] = await Promise.all([
           getCustomConnector(connectorId),
@@ -350,7 +381,8 @@ export const customConnectorCommand = new Command()
   .addCommand(statusCommand)
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Types and authentication:
   HTTP: none, manual, oauth.
   MCP over Streamable HTTP: none, manual, oauth, automatic.
@@ -375,4 +407,14 @@ Definitions and access:
 
 To add a custom connector:
   Run "okou connector custom create -h" and follow the definition-only creation workflow.`,
+      `
+Inspect custom connector definitions, your saved accounts and effective Okou access.
+These are distinct states: a definition alone does not connect or authorize anything.
+Use the documented create/update inputs for definitions, connector connect for
+member credentials and connector oauth start for existing authorization flows.
+Fine-grained HTTP permissions use Connectors settings; MCP access is connector-level.
+Inside a Run, account identity comes only from its admitted context. Missing details
+grant nothing and never select another member's account. JSON fields remain stable.
+`,
+    ),
   );

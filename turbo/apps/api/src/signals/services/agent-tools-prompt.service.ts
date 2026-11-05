@@ -1,3 +1,4 @@
+import { SINGLE_AGENT_SCOPE_PROMPT } from "./single-agent-scope-prompt";
 import type { AVAILABLE_PAID_TOOL_IDS } from "@okouai/api-contracts/contracts/paid-tools";
 import { PLAN_UPGRADE_CLI_HINT } from "@okouai/api-contracts/contracts/errors";
 import {
@@ -51,6 +52,7 @@ function buildIntegrationToolsPrompt(): readonly string[] {
 
 /** Captured Run settings that select the agent tools prompt text. */
 export interface AgentToolsPromptInputs {
+  readonly singleAgent: boolean;
   readonly disabledPaidTools: readonly string[];
   readonly bankingEnabled: boolean;
   readonly larkEnabled: boolean;
@@ -64,12 +66,14 @@ export interface AgentToolsPromptInputs {
 }
 
 export function buildAgentToolsPromptInputs(args: {
+  readonly singleAgent: boolean;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly cloudBrowserEnabled: boolean;
   readonly disabledPaidTools: readonly string[];
 }): AgentToolsPromptInputs {
   const context = args.featureSwitchContext;
   return {
+    singleAgent: args.singleAgent,
     disabledPaidTools: args.disabledPaidTools,
     chatConnectorAccountsEnabled: isFeatureEnabled(
       FeatureSwitchKey.ConnectorChatAccountAccess,
@@ -228,9 +232,9 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
       : []),
     "- Third-party services (GitHub, Slack, Notion, 4,000+ more) can be accessed through connectors. `okou connector search <service-name>` searches every supported service and reports which matching connectors are available to the current run. For supported services, connectors provide a smoother and safer experience: provider credentials stay outside the sandbox and are resolved at the network boundary. When a user wants to connect a third-party service, search for it first. List connected: `okou connector list`. Inspect: `okou connector status <slug>`.",
     "- Connector accounts: inspect the current account with `okou connector status <slug> --json` and list alternatives with `okou connector account list <slug> --json`. Use only an exact `connectionId` returned by these commands; never invent an ID or reuse one from another connector.",
-    `- Disconnect a saved connector account with \`okou connector account disconnect <selector> --connection-id <uuid>\` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account across all Agents. Read \`okou connector account disconnect --help\` for reconnection risks. Use \`okou connector account impact\` to inspect affected references first. ${args.chatConnectorAccountsEnabled ? "To change only Chat access, use the Chat account allowance controls; disconnect removes the saved account globally." : "To remove only this Agent's access while keeping the account connected, use `okou connector unauthorize <selector>` instead."}`,
+    `- Disconnect a saved connector account with \`okou connector account disconnect <selector> --connection-id <uuid>\` using an exact ID discovered for that connector. It applies directly without an approval step and removes the user's saved account ${args.singleAgent ? "throughout this workspace" : "across all Agents"}. Read \`okou connector account disconnect --help\` for reconnection risks. Use \`okou connector account impact\` to inspect affected references first. ${args.chatConnectorAccountsEnabled ? "To change only Chat access, use the Chat account allowance controls; disconnect removes the saved account globally." : args.singleAgent ? "To remove only your Okou access while keeping the account connected, use `okou connector unauthorize <selector>` instead." : "To remove only this Agent's access while keeping the account connected, use `okou connector unauthorize <selector>` instead."}`,
     args.chatConnectorAccountsEnabled
-      ? "- Connector account access follows this Chat. Inventory includes enabled and isCurrent. Switch an enabled account directly in this Run with `okou connector account switch <slug> --connection-id <uuid>`; a successful switch also saves this Chat's current account for subsequent Runs. For a disabled account, request exact owner approval with `okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>`. Return the exact URL and end the turn; confirmation enables only that account in this Chat and starts the callback round. Firewall permissions are shared across this member's Chats, Agents and accounts; switching does not reset them. Listener accounts do not grant execution access."
+      ? `- Connector account access follows this Chat. Inventory includes enabled and isCurrent. Switch an enabled account directly in this Run with \`okou connector account switch <slug> --connection-id <uuid>\`; a successful switch also saves this Chat's current account for subsequent Runs. For a disabled account, request exact owner approval with \`okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>\`. Return the exact URL and end the turn; confirmation enables only that account in this Chat and starts the callback round. Firewall permissions are shared across this member's ${args.singleAgent ? "Chats and accounts in this workspace" : "Chats, Agents and accounts"}; switching does not reset them. Listener accounts do not grant execution access.`
       : "- Request one account switch in the current web chat with `okou connector account switch-request <slug> --connection-id <uuid> --callback-prompt <prompt>`. This changes only the current thread's override for future runs, not the current run or global default. Keep the callback prompt concise and do not include secrets because it is included in the URL. Share the returned link and end the turn; Okou starts the callback round only after the user confirms and the selection succeeds.",
     "- Custom connectors: when the user wants to add their own custom connector, run `okou connector custom -h` first and follow its guidance.",
     "- Model availability and provider routing are workspace model settings, separate from connectors. Use `okou model ls` to list allowed models and `okou model switch` for model-switching guidance.",
@@ -254,8 +258,12 @@ export function buildAgentToolsPrompt(args: AgentToolsPromptInputs): string {
       : [
           "- Multiple access actions: do not use callback commands or URLs when the turn needs multiple connector or permission actions. Return all generated links in one response, one link per line, using only ordinary non-callback links, and wait for the user to finish all of them.",
         ]),
-    "- Inspect yourself: `okou whoami` for identity and permissions, `okou agent view $OKOU_AGENT_ID --instructions` for your current settings.",
-    ...instructionsAndMemoryGuidance,
+    ...(args.singleAgent
+      ? [instructionsAndMemoryGuidance[0], SINGLE_AGENT_SCOPE_PROMPT]
+      : [
+          "- Inspect yourself: `okou whoami` for identity and permissions, `okou agent view $OKOU_AGENT_ID --instructions` for your current settings.",
+          ...instructionsAndMemoryGuidance,
+        ]),
     `- Manage workflows with \`okou workflow --help\`. Create or update a durable workflow with \`okou workflow create|edit <name>\`, passing the workflow body via \`--instruction <text>\` or \`--instruction-file <path>\`; its \`SKILL.md\` is synthesized from the name, description, and instruction. \`--dir <path>\` uploads supplementary files only and must not contain a \`SKILL.md\` (it is rejected).`,
   ].join("\n");
 }

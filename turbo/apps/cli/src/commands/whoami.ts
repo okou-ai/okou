@@ -1,3 +1,5 @@
+import { getCurrentMember } from "../lib/api/domains/auth";
+import { modeHelp, resolveCommandMode } from "../lib/command/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
 import {
@@ -110,6 +112,7 @@ function printConnectorPermissions(info: ConnectorPermissionInfo): void {
 
 function printCustomConnectorPermissions(
   info: CustomConnectorPermissionInfo | undefined,
+  personal: boolean,
 ): void {
   const authorization = info?.authorization;
   const enablement =
@@ -118,7 +121,9 @@ function printCustomConnectorPermissions(
       : authorization?.state === "not-enabled"
         ? "not enabled"
         : "unavailable";
-  console.log(`    Agent enablement: ${enablement}`);
+  console.log(
+    `    ${personal ? "Okou access" : "Agent enablement"}: ${enablement}`,
+  );
 
   if (!info || info.model.kind === "unavailable") {
     console.log(chalk.dim("    Permission information unavailable"));
@@ -170,10 +175,12 @@ function printRunConnectorPermissions(
   connector: RunConnectorAccountEntry,
   builtinPermissions: ReadonlyMap<string, ConnectorPermissionInfo>,
   customPermissions: ReadonlyMap<string, CustomConnectorPermissionInfo>,
+  personal: boolean,
 ): void {
   if (connector.target.kind === "custom") {
     printCustomConnectorPermissions(
       customPermissions.get(connector.target.customConnectorId),
+      personal,
     );
     return;
   }
@@ -287,14 +294,29 @@ async function printChatConnectorPermissions() {
   }
 }
 
+async function printRunIdentity(
+  agentId: string | undefined,
+  payload: ReturnType<typeof decodeSandboxTokenPayload>,
+): Promise<boolean> {
+  const personal = await resolveCommandMode();
+  if (personal) {
+    console.log(`User ID:    ${payload?.userId ?? chalk.dim("unavailable")}`);
+    console.log(
+      `Chat ID:    ${process.env.OKOU_CHAT_THREAD_ID ?? chalk.dim("unavailable")}`,
+    );
+  } else console.log(`Agent ID:   ${agentId}`);
+  console.log(`Run ID:     ${payload?.runId ?? chalk.dim("unavailable")}`);
+  console.log(`Org ID:     ${payload?.orgId ?? chalk.dim("unavailable")}`);
+  await printWorkspace();
+
+  return personal;
+}
+
 async function showSandboxInfo(showPermissions: boolean): Promise<void> {
   const agentId = getOkouAgentId();
   const payload = decodeSandboxTokenPayload();
 
-  console.log(`Agent ID:   ${agentId}`);
-  console.log(`Run ID:     ${payload?.runId ?? chalk.dim("unavailable")}`);
-  console.log(`Org ID:     ${payload?.orgId ?? chalk.dim("unavailable")}`);
-  await printWorkspace();
+  const personal = await printRunIdentity(agentId, payload);
 
   // Capabilities section
   if (payload?.capabilities?.length) {
@@ -377,6 +399,7 @@ async function showSandboxInfo(showPermissions: boolean): Promise<void> {
           connector,
           permissionInfoBySlug,
           customPermissionInfoById,
+          personal,
         );
       }
     }
@@ -386,6 +409,15 @@ async function showSandboxInfo(showPermissions: boolean): Promise<void> {
 }
 
 async function showLocalInfo(): Promise<void> {
+  if (await resolveCommandMode()) {
+    const member = await getCurrentMember();
+    console.log(`User ID:    ${member.userId}`);
+    console.log(`Email:      ${member.email}`);
+    console.log(`Org ID:     ${member.orgId ?? chalk.dim("unavailable")}`);
+    console.log(`API:        ${await getApiUrl()}`);
+    await printWorkspace();
+    return;
+  }
   const token = await getToken();
   const apiUrl = await getApiUrl();
   const payload = token ? decodeSandboxTokenPayload(token) : undefined;
@@ -424,7 +456,8 @@ export const whoamiCommand = new Command()
   )
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Examples:
   okou whoami
   okou whoami --permissions
@@ -440,6 +473,14 @@ Notes:
   - Outside a sandbox, shows authentication and org information;
     --permissions does not expand connector permissions
   - Your agent ID is also available as $OKOU_AGENT_ID`,
+      `
+Shows your authenticated user, workspace, Chat and Run, plus effective capabilities.
+Use --permissions for connector enablement, fine-grained permissions and original expiry.
+Accounts admitted to this Run remain authoritative; missing details grant nothing.
+Switching accounts does not reset permissions. Inspect saved personal Instructions
+with okou instructions view; editing them applies to the next start of work.
+Outside a Run, --permissions does not expand connector permissions.`,
+    ),
   )
   .action(
     withErrorHandler(async (options: { permissions?: boolean }) => {

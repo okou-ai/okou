@@ -1,3 +1,4 @@
+import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import chalk from "chalk";
 import type { CallToolResult } from "@modelcontextprotocol/client";
 import {
@@ -89,7 +90,9 @@ const listCommand = new Command()
   .description(
     chatConnectorAccountsEnabled()
       ? "List MCP connectors available in this Chat"
-      : "List MCP connectors authorized for this Agent",
+      : decodeSandboxTokenPayload()?.singleAgent
+        ? "List MCP connectors authorized for this Run"
+        : "List MCP connectors authorized for this Agent",
   )
   .option("--json", "Print compact JSON")
   .action(
@@ -119,7 +122,9 @@ const listCommand = new Command()
           chalk.dim(
             chatConnectorAccountsEnabled()
               ? "No MCP connectors have an allowed account in this Chat"
-              : "No MCP connectors are authorized for this Agent",
+              : decodeSandboxTokenPayload()?.singleAgent
+                ? "No MCP connectors are authorized for this Run"
+                : "No MCP connectors are authorized for this Agent",
           ),
         );
         return;
@@ -303,7 +308,7 @@ Examples:
 
 Notes:
   - Select by full slug, custom UUID, builtin:<selector>, custom:<selector>, or an exact unique display name
-  - ${chatConnectorAccountsEnabled() ? "Available only inside a Run, using this Chat's allowed current account" : "Available only inside an Agent Run and scoped to its Agent's current authorization"}
+  - ${chatConnectorAccountsEnabled() ? "Available only inside a Run, using this Chat's allowed current account" : decodeSandboxTokenPayload()?.singleAgent ? "Available only inside a Run and scoped to its current authorization" : "Available only inside an Agent Run and scoped to its Agent's current authorization"}
   - Runner remains execution authority; authorization changes may require a new Run
   - Runner applies endpoint policy and injects connector credentials
   - Successful call JSON is the raw MCP result; failed --json calls use a stable error envelope

@@ -47,6 +47,7 @@ function createIntegrationPrompts(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   featureSwitches$: AgentRunContextSignals["featureSwitches$"],
   threadContext: ThreadContext,
+  singleAgent$: Computed<Promise<boolean>>,
 ) {
   const framework$ = computed(async (get) => {
     const framework = await get(threadContext.providerFramework$);
@@ -59,6 +60,7 @@ function createIntegrationPrompts(
     pickedEvent$,
     featureSwitches$,
     framework$,
+    singleAgent$,
   );
   return {
     web: webPrompt$,
@@ -114,6 +116,17 @@ function createExecutionPromptSources(
   const featureSwitches$ = computed((get) => {
     return get(bootstrap.featureSwitches$);
   });
+  const singleAgent$ = computed(async (get) => {
+    const [agent, features] = await Promise.all([
+      get(agent$),
+      get(featureSwitches$),
+    ]);
+    return (
+      agent !== null &&
+      agent.id === agent.defaultAgentId &&
+      isFeatureEnabled(FeatureSwitchKey.SingleAgent, features)
+    );
+  });
   const memberRoutes$ = computed((get) => {
     return get(bootstrap.memberRoutes$);
   });
@@ -149,6 +162,7 @@ function createExecutionPromptSources(
   });
   return {
     agent$,
+    singleAgent$,
     memberMetadata$,
     featureSwitches$,
     memberRoutes$,
@@ -168,6 +182,7 @@ export function createPromptAndSkillVolumesSignals(
   const sources = createExecutionPromptSources(bootstrap, threadContext);
   const {
     agent$,
+    singleAgent$,
     memberMetadata$,
     featureSwitches$,
     authorizedConnectors$,
@@ -186,12 +201,14 @@ export function createPromptAndSkillVolumesSignals(
     pickedEvent$,
     featureSwitches$,
     threadContext,
+    singleAgent$,
   );
   const agentPrompt$ = createAgentPrompt(
     agent$,
     featureSwitches$,
     cloudBrowserEnabled$,
     disabledPaidTools$,
+    singleAgent$,
   );
   const suggestionsPrompt$ = createSuggestionsPrompt(
     bootstrap,
@@ -205,7 +222,10 @@ export function createPromptAndSkillVolumesSignals(
     featureSwitches$,
   );
   const rotatedPrompt$ = createRotatedPrompt(pickedEvent$);
-  const connectors$ = createConnectorsContext(authorizedConnectors$);
+  const connectors$ = createConnectorsContext(
+    authorizedConnectors$,
+    singleAgent$,
+  );
   const runtimePrompt$ = createRuntimePrompt(
     selectedImageModel$,
     disabledPaidTools$,

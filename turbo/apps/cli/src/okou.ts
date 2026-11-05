@@ -17,6 +17,13 @@ import {
   startPiCliObservation,
 } from "./lib/pi-startup-timing.js";
 
+import {
+  AGENT_UNAVAILABLE,
+  configureCommandMode,
+  resolveCommandMode,
+} from "./lib/command/single-agent.js";
+import { withErrorHandler } from "./lib/command/with-error-handler.js";
+
 import { isPiSession } from "./lib/pi-session-env.js";
 
 observePiCliEntryImports();
@@ -43,6 +50,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   __subagent_loop__: null,
   subagent: null,
   agent: "agent:read",
+  instructions: ["instructions:read", "instructions:write"],
   workflow: "agent:read",
   connector: ["connector:read", "connector:write"],
   "remote-control": ["connector:read", "connector:write"],
@@ -190,6 +198,15 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
       "Inspect and switch personal subscriptions; create user-confirmed reset links",
     load: async () => {
       return (await import("./commands/subscription")).subscriptionCommand;
+    },
+  },
+  {
+    name: "instructions",
+    description: "Read or replace your personal Instructions",
+    load: async () => {
+      return (
+        await import("./commands/instructions")
+      ).createInstructionsCommand();
     },
   },
   {
@@ -486,7 +503,10 @@ function buildDefaultCommands(): Command[] {
 function shouldHideCommand(
   name: string,
   payload: SandboxTokenPayload | undefined,
+  singleAgent = payload?.singleAgent === true,
 ): boolean {
+  if (name === "agent" && singleAgent) return true;
+  if (name === "instructions" && !singleAgent) return true;
   if (name.startsWith("__")) return true;
   if (name === "subagent") return !isPiSession();
   if (!payload) return RUN_ONLY_COMMANDS.has(name);
@@ -505,8 +525,10 @@ function addCommandWithVisibility(
   prog: Command,
   cmd: Command,
   payload: SandboxTokenPayload | undefined,
+  singleAgent: boolean,
 ): void {
-  const hidden = shouldHideCommand(cmd.name(), payload);
+  configureCommandMode(cmd, singleAgent);
+  const hidden = shouldHideCommand(cmd.name(), payload, singleAgent);
   prog.addCommand(cmd, hidden ? { hidden: true } : {});
 }
 
@@ -555,16 +577,35 @@ export async function registerRequestedCommand(
   argv: string[] = process.argv,
 ): Promise<void> {
   const requestedCommandName = getRequestedCommandName(argv);
+  const singleAgent = await resolveCommandMode();
   const finishImport = startPiCliObservation("cli_command_import");
   let importOutcome: "success" | "error" = "error";
   let requestedCommand: Command | undefined;
   try {
-    requestedCommand = await loadRequestedCommand(requestedCommandName);
+    requestedCommand =
+      singleAgent && requestedCommandName === "agent"
+        ? new Command("agent")
+            .description(AGENT_UNAVAILABLE)
+            .allowUnknownOption()
+            .allowExcessArguments()
+            .action(
+              withErrorHandler(async () => {
+                throw new Error(AGENT_UNAVAILABLE);
+              }),
+            )
+        : await loadRequestedCommand(requestedCommandName);
     importOutcome = "success";
   } finally {
     finishImport(importOutcome);
   }
-  registerCommands(prog, requestedCommand ? [requestedCommand] : undefined);
+  registerCommands(
+    prog,
+    requestedCommand ? [requestedCommand] : undefined,
+    singleAgent,
+  );
+  prog.addHelpText("after", () => {
+    return buildHelpText(decodeSandboxTokenPayload(), singleAgent);
+  });
 
   if (
     getNonOptionArgs(argv)[0] === "help" &&
@@ -591,6 +632,7 @@ function commandExampleIfVisible(
 
 export function buildHelpText(
   payload: SandboxTokenPayload | undefined = decodeSandboxTokenPayload(),
+  singleAgent = payload?.singleAgent === true,
 ): string {
   const canReadHost = !payload || payload.capabilities.includes("host:read");
   const canWriteHost = !payload || payload.capabilities.includes("host:write");
@@ -644,7 +686,11 @@ export function buildHelpText(
     "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",
     "  Subscriptions?        okou subscription list",
-    "  Update yourself?       okou agent --help",
+    ...(singleAgent
+      ? shouldHideCommand("instructions", payload, true)
+        ? []
+        : ["  Personal Instructions? okou instructions view"]
+      : ["  Update yourself?       okou agent --help"]),
     "  Manage workflows?     okou workflow --help",
     ...commandExampleIfVisible(
       "chat",
@@ -713,13 +759,17 @@ export function buildHelpText(
  *
  * @param commands - override default commands (used in tests)
  */
-export function registerCommands(prog: Command, commands?: Command[]): void {
+export function registerCommands(
+  prog: Command,
+  commands?: Command[],
+  singleAgent = decodeSandboxTokenPayload()?.singleAgent === true,
+): void {
   instrumentCommand(prog);
   const token = getOkouToken();
   const payload = token ? decodeSandboxTokenPayload(token) : undefined;
 
   for (const cmd of commands ?? buildDefaultCommands()) {
-    addCommandWithVisibility(prog, cmd, payload);
+    addCommandWithVisibility(prog, cmd, payload, singleAgent);
   }
 }
 
@@ -730,10 +780,7 @@ declare const __CLI_VERSION__: string;
 program
   .name("okou")
   .description("Okou CLI — interact with Okou from inside the sandbox")
-  .version(__CLI_VERSION__)
-  .addHelpText("after", () => {
-    return buildHelpText();
-  });
+  .version(__CLI_VERSION__);
 
 export { program };
 
@@ -750,6 +797,8 @@ if (
   } finally {
     finishProxy(proxyOutcome);
   }
-  await registerRequestedCommand(program);
-  program.parse();
+  await withErrorHandler(async () => {
+    await registerRequestedCommand(program);
+    await program.parseAsync();
+  })();
 }

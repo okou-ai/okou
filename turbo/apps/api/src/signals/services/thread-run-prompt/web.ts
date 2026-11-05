@@ -24,6 +24,7 @@ export function createWebThreadPrompt(
   pickedEvent$: Computed<Promise<PickedThreadInputEvent | null>>,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
   framework$: Computed<Promise<SupportedFramework>>,
+  singleAgent$: Computed<Promise<boolean>>,
 ): Computed<Promise<RunPromptAndSkills | null>> {
   const projectContext$ = computed(async (get) => {
     const picked = await get(pickedEvent$);
@@ -76,7 +77,9 @@ export function createWebThreadPrompt(
       );
     }
     lines.push(
-      "Discover ALL related conversations with `okou chat list --project-id <PROJECT_ID> --limit all --json`, including archived and muted chats across Agents. Read relevant history with `okou chat messages --thread-id <id> --output-dir threads`. Check current availability with `okou project get <PROJECT_ID> --json`. Each call checks live ownership and membership. A mention does not move this conversation, switch its Agent, or grant another Agent's instructions, connectors, credentials, or execution identity.",
+      (await get(singleAgent$))
+        ? "Discover ALL related conversations with `okou chat list --project-id <PROJECT_ID> --limit all --json`, including your authorized archived and muted chats. Read relevant history with `okou chat messages --thread-id <id> --output-dir threads`. Check current availability with `okou project get <PROJECT_ID> --json`. Each call checks ownership and membership. A mention does not move this conversation, change its execution context, or grant access to accounts, credentials, Instructions or private data."
+        : "Discover ALL related conversations with `okou chat list --project-id <PROJECT_ID> --limit all --json`, including archived and muted chats across Agents. Read relevant history with `okou chat messages --thread-id <id> --output-dir threads`. Check current availability with `okou project get <PROJECT_ID> --json`. Each call checks live ownership and membership. A mention does not move this conversation, switch its Agent, or grant another Agent's instructions, connectors, credentials, or execution identity.",
     );
     return lines.join("\n\n");
   });
@@ -114,6 +117,7 @@ export function createWebThreadPrompt(
           incompleteContext: "",
           priorContext: "",
           context: {
+            singleAgent: await get(singleAgent$),
             projectContext,
             generationTemplatePrompt: "",
             computerUseHostDisplayName: null,

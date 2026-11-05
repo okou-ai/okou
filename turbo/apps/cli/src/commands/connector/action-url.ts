@@ -60,7 +60,7 @@ export function finalizeActionUrl(
   const threadId = currentChatThreadId(agentId);
   if (!threadId) {
     throw new Error(
-      "--callback-prompt can only target the current web chat thread and agent",
+      "--callback-prompt requires the current web chat and its execution context",
     );
   }
   return serializeCallbackActionUrl(actionUrl, threadId, normalizedPrompt);

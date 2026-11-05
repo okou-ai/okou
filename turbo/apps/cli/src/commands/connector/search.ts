@@ -1,3 +1,4 @@
+import { modeHelp } from "../../lib/command/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
 import { connectorAccountTargetKey } from "@okouai/api-contracts/contracts/connector-accounts";
@@ -198,7 +199,11 @@ function printSearchResults<T extends ConnectorDiscoveryDefinition>(args: {
     args.accountHeader.padEnd(accountWidth),
   ];
   if (args.agentContext) {
-    headerParts.push(`AUTHORIZED FOR ${args.agentContext.displayName}`);
+    headerParts.push(
+      args.agentContext.personal
+        ? "YOUR OKOU ACCESS"
+        : `AUTHORIZED FOR ${args.agentContext.displayName}`,
+    );
   }
   console.log(chalk.dim(headerParts.join("  ")));
 
@@ -253,7 +258,8 @@ export const searchCommand = new Command()
   )
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Scope:
   Searches the builtin catalog and org custom HTTP/MCP definitions.
   Inside a run, availability and account identity describe the accounts admitted
@@ -274,6 +280,16 @@ Callbacks:
 Examples:
   okou connector search github --limit 1
   okou connector search notion`,
+      `
+Discover supported builtin and custom HTTP/MCP connectors and their availability.
+Accounts and Okou access resolve automatically in the current workspace.
+Inside a Run, distinguish admitted accounts from saved accounts not admitted here.
+Use --json to inspect identifiers; unknown metadata never establishes access.
+For one connection action, use --limit 1 with --callback-prompt when supported.
+Return the exact action URL and end the turn for approval; keep the prompt concise
+and free of secrets. Multiple access actions require ordinary links and no callback.
+`,
+    ),
   )
   .action(
     withErrorHandler(
@@ -286,7 +302,7 @@ Examples:
           json?: boolean;
         },
       ) => {
-        const agentId = resolveConnectorAgentId(options.agent);
+        const agentId = await resolveConnectorAgentId(options.agent);
         const trimmed = keyword.trim();
         if (!trimmed) {
           throw new Error("Keyword cannot be empty.");

@@ -1,3 +1,6 @@
+import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { AGENT_UNAVAILABLE } from "../../lib/command/single-agent";
+import { withErrorHandler } from "../../lib/command/with-error-handler";
 import { Command } from "commander";
 import { createCommand } from "./create";
 import { editCommand } from "./edit";
@@ -7,6 +10,12 @@ import { deleteCommand } from "./delete";
 
 export const agentCommand = new Command("agent")
   .description("View or manage agents")
+  .hook(
+    "preAction",
+    withErrorHandler(async () => {
+      if (await singleAgentEnabled()) throw new Error(AGENT_UNAVAILABLE);
+    }),
+  )
   .addCommand(createCommand)
   .addCommand(editCommand)
   .addCommand(viewCommand)

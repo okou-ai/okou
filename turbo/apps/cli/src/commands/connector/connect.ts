@@ -1,3 +1,4 @@
+import { modeHelp } from "../../lib/command/single-agent";
 import { record, string } from "zod";
 import { Command, Option } from "commander";
 import chalk from "chalk";
@@ -150,7 +151,8 @@ export const connectCommand = addAccountMutationOptions(
   .option("--json", "Print the connection receipt and verified account as JSON")
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Input is a JSON object: {"apiKey":"..."}. Use a protected temporary file or stdin.
 Custom connections require --add or --reconnect <connection-id>. none accepts an
 empty object; HTTP non-secret variables use declared field names. Existing
@@ -162,6 +164,15 @@ Examples:
   okou connector connect custom:<uuid> --reconnect <connection-id> --input -
   okou connector connect custom:<uuid> --add
   okou connector account list <selector> --json`,
+      `
+Connect your own builtin manual or custom manual/no-auth account.
+Use --add for a new account or --reconnect <connection-id> for an existing one.
+Read secret fields from the supported input file; never print credentials or put
+them in chat. OAuth/OpenID/automatic flows use connector oauth start instead.
+A connection does not grant Okou access or change fine-grained permissions.
+Inspect connector account list/status after completion. Return action URLs verbatim.
+`,
+    ),
   )
   .action(
     withErrorHandler(async (selector: string, options: ConnectOptions) => {

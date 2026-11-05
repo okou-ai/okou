@@ -252,7 +252,7 @@ describe("okou connector account switch-request command", () => {
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
 
-  it("requires the current web chat agent", async () => {
+  it("requires the current web chat execution context", async () => {
     vi.stubEnv("OKOU_AGENT_ID", "");
 
     await expect(
@@ -268,7 +268,7 @@ describe("okou connector account switch-request command", () => {
     ).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "Connector account switches require the current web chat agent",
+      "Connector account switches require the current web chat execution context",
     );
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
@@ -335,7 +335,7 @@ describe("okou connector account switch-request command", () => {
     ).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "Connector github is not authorized for the current web chat agent",
+      "Connector github is not authorized for the current web chat execution context",
     );
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });
@@ -389,7 +389,7 @@ describe("okou connector account switch-request command", () => {
     ).rejects.toThrow("process.exit called");
 
     expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
-      "--callback-prompt can only target the current web chat thread and agent",
+      "--callback-prompt requires the current web chat and its execution context",
     );
     expect(mockConsoleLog).not.toHaveBeenCalled();
   });

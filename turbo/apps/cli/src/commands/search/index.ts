@@ -1,3 +1,5 @@
+import { singleAgentEnabled } from "../../lib/api/single-agent";
+import { personalExecutorId } from "../../lib/command/single-agent";
 import { Command } from "commander";
 import chalk from "chalk";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -75,7 +77,10 @@ function renderChatMessage(msg: ChatSearchMessage): void {
   console.log(msg.content);
 }
 
-function renderChatResults(response: ChatSearchResponse): void {
+function renderChatResults(
+  response: ChatSearchResponse,
+  personal: boolean,
+): void {
   let isFirst = true;
   for (const result of response.results) {
     if (!isFirst) console.log();
@@ -83,7 +88,7 @@ function renderChatResults(response: ChatSearchResponse): void {
 
     console.log(
       chalk.bold(
-        `── Thread ${result.chatThreadId} (${result.agentName}) ──────────`,
+        `── Thread ${result.chatThreadId}${personal ? "" : ` (${result.agentName})`} ──────────`,
       ),
     );
     renderChatMessage(result.matchedMessage);
@@ -94,6 +99,11 @@ async function runChatSource(
   query: string,
   options: SearchOptions,
 ): Promise<void> {
+  const personal = await singleAgentEnabled();
+  if (personal && options.agent !== undefined)
+    throw new Error(
+      "Agent selection is unavailable in My Okou. Remove --agent.",
+    );
   if (options.agent !== undefined && !isUuid(options.agent)) {
     console.error(
       chalk.red(`✗ Invalid agent ID "${options.agent}" — expected a UUID`),
@@ -108,7 +118,7 @@ async function runChatSource(
 
   const response = await searchChat({
     keyword: query,
-    agentId: options.agent,
+    agentId: personal ? await personalExecutorId() : options.agent,
     since,
   });
 
@@ -122,7 +132,7 @@ async function runChatSource(
     return;
   }
 
-  renderChatResults(response);
+  renderChatResults(response, personal);
 }
 
 async function runSlackSource(

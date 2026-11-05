@@ -1,3 +1,8 @@
+import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
+import {
+  personalExecutorId,
+  resolveCommandMode,
+} from "../../lib/command/single-agent";
 import {
   getAgent,
   getAgentCustomConnectorGrants,
@@ -10,6 +15,7 @@ import {
 } from "../../lib/api/domains/run-connector-accounts";
 
 interface AgentContext {
+  personal: boolean;
   agentId: string;
   displayName: string;
   authorizedConnectorSlugs: Set<string>;
@@ -19,9 +25,24 @@ export interface ConnectorDiscoveryAgentContext extends AgentContext {
   authorizedCustomConnectorIds: Set<string>;
 }
 
-export function resolveConnectorAgentId(
+export async function resolveConnectorAgentId(
   flagAgentId: string | undefined,
-): string | undefined {
+): Promise<string | undefined> {
+  if (await resolveCommandMode()) {
+    if (flagAgentId !== undefined)
+      throw new Error(
+        "Agent selection is unavailable in My Okou. Remove --agent to use your own workspace access.",
+      );
+    if (decodeSandboxTokenPayload()) {
+      const executorId = getOkouAgentId();
+      if (!executorId)
+        throw new Error(
+          "The current Run execution context is unavailable. Do not substitute another executor.",
+        );
+      return executorId;
+    }
+    return personalExecutorId();
+  }
   const runAgentId = getOkouAgentId();
   if (
     runAgentId !== undefined &&
@@ -39,6 +60,7 @@ export async function resolveAgentContext(
   agentId: string | undefined,
 ): Promise<AgentContext | null> {
   if (!agentId) return null;
+  const personal = await resolveCommandMode();
 
   if (chatConnectorAccountsEnabled()) {
     const [agent, inventory] = await Promise.all([
@@ -46,6 +68,7 @@ export async function resolveAgentContext(
       listRunConnectorAccounts(),
     ]);
     return {
+      personal,
       agentId: agent.agentId,
       displayName: agent.displayName ?? agent.agentId,
       authorizedConnectorSlugs: new Set(
@@ -64,6 +87,7 @@ export async function resolveAgentContext(
   ]);
 
   return {
+    personal,
     agentId: agent.agentId,
     displayName: agent.displayName ?? agent.agentId,
     authorizedConnectorSlugs: new Set(enabledConnectorSlugs),
@@ -74,6 +98,7 @@ export async function resolveConnectorDiscoveryAgentContext(
   agentId: string | undefined,
 ): Promise<ConnectorDiscoveryAgentContext | null> {
   if (!agentId) return null;
+  const personal = await resolveCommandMode();
 
   if (chatConnectorAccountsEnabled()) {
     const [agent, inventory] = await Promise.all([
@@ -81,6 +106,7 @@ export async function resolveConnectorDiscoveryAgentContext(
       listRunConnectorAccounts(),
     ]);
     return {
+      personal,
       agentId: agent.agentId,
       displayName: agent.displayName ?? agent.agentId,
       authorizedConnectorSlugs: new Set(
@@ -108,6 +134,7 @@ export async function resolveConnectorDiscoveryAgentContext(
     ]);
 
   return {
+    personal,
     agentId: agent.agentId,
     displayName: agent.displayName ?? agent.agentId,
     authorizedConnectorSlugs: new Set(enabledConnectorSlugs),

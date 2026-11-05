@@ -32,7 +32,7 @@ Examples:
   Create a chat:     okou chat create "Launch plan"
   Send a message:    okou chat send --text "Continue"
   Cancel a run:      okou chat cancel --thread-id <thread-id> --run-id <run-id>
-  List agent chats:  okou chat list
+  List your chats:  okou chat list
   Show this chat:    okou chat get
   Show another:      okou chat get --thread-id <thread-id>
   Sync messages:     okou chat messages --thread-id <thread-id> --output-dir threads

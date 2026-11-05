@@ -6,9 +6,13 @@ const MCP_CONNECTOR_PROMPT_INVENTORY_LIMIT = 20;
 
 export function createConnectorsContext(
   authorizedConnectors$: Computed<Promise<AuthorizedConnectors>>,
+  singleAgent$: Computed<Promise<boolean>>,
 ): Computed<Promise<RunPromptAndSkills>> {
   return computed(async (get): Promise<RunPromptAndSkills> => {
-    const connectors = await get(authorizedConnectors$);
+    const [connectors, singleAgent] = await Promise.all([
+      get(authorizedConnectors$),
+      get(singleAgent$),
+    ]);
     const customVolumes: SkillVolume[] = [];
     const builtinVolumes: SkillVolume[] = [];
     for (const connector of connectors) {
@@ -31,14 +35,19 @@ export function createConnectorsContext(
       }
     }
     return {
-      systemPromptVariables: { connectors: connectorPrompt(connectors) },
+      systemPromptVariables: {
+        connectors: connectorPrompt(connectors, singleAgent),
+      },
       userPromptVariables: {},
       skillVolumes: [...customVolumes, ...builtinVolumes],
     };
   });
 }
 
-function connectorPrompt(connectors: AuthorizedConnectors): string {
+function connectorPrompt(
+  connectors: AuthorizedConnectors,
+  singleAgent: boolean,
+): string {
   const slugs = connectors
     .filter((connector) => {
       return connector.isMcp;
@@ -64,7 +73,9 @@ function connectorPrompt(connectors: AuthorizedConnectors): string {
   return [
     "# MCP Connectors",
     "",
-    "The following MCP connectors are authorized for this Agent:",
+    singleAgent
+      ? "The following MCP connectors are authorized for this Run:"
+      : "The following MCP connectors are authorized for this Agent:",
     ...inventory,
     "",
     "Authorization does not guarantee that an account is connected or currently available.",

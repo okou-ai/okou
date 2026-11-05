@@ -223,12 +223,17 @@ describe("connector unauthorize", () => {
     expect(log).not.toHaveBeenCalled();
   });
 
-  it("requires --agent outside a run before any request", async () => {
+  it("requires --agent in legacy mode before any mutation", async () => {
     vi.stubEnv("OKOU_AGENT_ID", undefined);
     const requests: string[] = [];
     server.use(
       http.all("*", ({ request }) => {
         requests.push(request.url);
+        if (request.url.endsWith("/api/feature-switches"))
+          return HttpResponse.json({
+            switches: {},
+            effectiveSwitches: { singleAgent: false },
+          });
         return HttpResponse.json({ error: "Unexpected" }, { status: 500 });
       }),
     );
@@ -240,7 +245,7 @@ describe("connector unauthorize", () => {
     expect(error.mock.calls.flat().join("\n")).toContain(
       "Specify the Agent with --agent <id>",
     );
-    expect(requests).toEqual([]);
+    expect(requests).toEqual([`${API}/api/feature-switches`]);
   });
 
   it("rejects an empty explicit Agent instead of revoking from the current Agent", async () => {
@@ -248,6 +253,11 @@ describe("connector unauthorize", () => {
     server.use(
       http.all("*", ({ request }) => {
         requests.push(request.url);
+        if (request.url.endsWith("/api/feature-switches"))
+          return HttpResponse.json({
+            switches: {},
+            effectiveSwitches: { singleAgent: false },
+          });
         return HttpResponse.json({ error: "Unexpected" }, { status: 500 });
       }),
     );
@@ -259,6 +269,6 @@ describe("connector unauthorize", () => {
     expect(error.mock.calls.flat().join("\n")).toContain(
       "Specify the Agent with --agent <id>",
     );
-    expect(requests).toEqual([]);
+    expect(requests).toEqual([`${API}/api/feature-switches`]);
   });
 });

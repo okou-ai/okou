@@ -1,3 +1,7 @@
+import {
+  modeHelp,
+  PERSONAL_CONNECTOR_HELP,
+} from "../../lib/command/single-agent";
 import { Command } from "commander";
 import { checkConnectorCommand } from "./check";
 import { connectCommand } from "./connect";
@@ -26,7 +30,8 @@ export const connectorCommand = new Command()
   .addCommand(unauthorizeCommand, { hidden: chatConnectorAccountsEnabled() })
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Choose a command:
   list/status   Inspect the current run's admitted accounts. Outside a run,
                 list includes builtin and custom connectors; status is builtin-only.
@@ -92,4 +97,6 @@ Examples:
   okou connector check --connector custom:_acme-search --url https://api.acme.test/items
 
 Use each command's --help for its supported selectors and callback limits.`,
+      PERSONAL_CONNECTOR_HELP,
+    ),
   );

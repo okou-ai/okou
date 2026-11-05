@@ -34,7 +34,7 @@ export async function resolvePermissionRequestBatch(args: {
   const agentId = args.agentId?.trim();
   if (!agentId || agentId !== args.agentId) {
     throw new Error(
-      "Batch permission requests require a current Agent or --agent <id>.",
+      "Batch permission requests require a current workspace execution context.",
     );
   }
   let input: unknown;

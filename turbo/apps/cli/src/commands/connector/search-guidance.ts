@@ -1,3 +1,4 @@
+import { decodeSandboxTokenPayload } from "../../lib/api/sandbox-token";
 import type { ConnectorDiscoveryAgentContext } from "./agent-context";
 import type { ConnectedConnectors } from "@okouai/api-contracts/contracts/connected-connectors";
 import {
@@ -22,9 +23,10 @@ export interface ConnectorSearchAction {
 
 function accountSettingsAction(
   connector: Pick<ConnectorDiscoveryDefinition, "kind" | "slug" | "label">,
+  personal = decodeSandboxTokenPayload()?.singleAgent === true,
 ): ConnectorSearchAction {
   return {
-    label: `Review ${connector.label} accounts and agent access`,
+    label: `Review ${connector.label} accounts and ${personal ? "Okou" : "agent"} access`,
     path: "/connectors",
     supportsCallback: false,
   };
@@ -32,9 +34,10 @@ function accountSettingsAction(
 
 function connectAction(
   connector: Pick<ConnectorDiscoveryDefinition, "kind" | "slug" | "label">,
+  personal = decodeSandboxTokenPayload()?.singleAgent === true,
 ): ConnectorSearchAction {
   return connector.kind === "custom"
-    ? accountSettingsAction(connector)
+    ? accountSettingsAction(connector, personal)
     : {
         label: `Connect or authorize ${connector.label}`,
         path: `/connectors/${connector.slug}/connect`,
@@ -75,15 +78,15 @@ export function currentConnectorSearchAction(
     !agentContext || isConnectorDiscoveryAuthorized(connector, agentContext);
   const hasSavedAccounts = connectorHasSavedAccounts(connector, directory);
   if (connector.kind === "custom") {
-    return accountSettingsAction(connector);
+    return accountSettingsAction(connector, agentContext?.personal);
   }
   if (!hasSavedAccounts) {
-    return connectAction(connector);
+    return connectAction(connector, agentContext?.personal);
   }
   // The directory cannot establish the health or default of a saved account.
 
   return authorized
-    ? accountSettingsAction(connector)
+    ? accountSettingsAction(connector, agentContext?.personal)
     : {
         label: `Authorize ${connector.label}`,
         path: `/connectors/${connector.slug}/authorize`,

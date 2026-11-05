@@ -1,3 +1,4 @@
+import { modeHelp } from "../../lib/command/single-agent";
 import { Command, Option } from "commander";
 import { UNKNOWN_PERMISSION_GRANT } from "@okouai/connectors/firewall-types";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
@@ -287,7 +288,8 @@ export const permissionRequestCommand = addAwsDiagnosticOptions(
   .addOption(callbackPromptOption)
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Examples:
   okou connector permission-request github --permission contents:read --url https://api.github.com/repos/okou-ai/okou --method GET
 ${callbackPromptExample}  okou connector permission-request gmail --permission messages.write --url https://gmail.googleapis.com/gmail/v1/users/me/messages --method POST --agent <agent-id>
@@ -337,6 +339,25 @@ ${callbackPromptNotes}  - One batch link may use a single callback for all inclu
   - When multiple separate connector or permission action links are needed, do not use callbacks; return each ordinary action URL on its own line and wait for all confirmations
   - Return every generated action URL verbatim with all query parameters
   - Builtin permission requests update the current user's connector grants after confirmation`,
+      `
+Request only the concrete builtin permission diagnosed by connector check.
+Inspect okou whoami --permissions first; already-allowed permissions need no approval.
+Supply a selector, --permission, the failed --url and --method, plus observed AWS
+selectors when applicable. Provider OAuth scope names are not Okou permissions.
+Custom HTTP permissions use Connectors settings; MCP has connector-level access.
+
+For several diagnosed operations use --batch-file <path>. The JSON array contains
+{ connector, permission, url, method } and optional AWS diagnostic selectors.
+The CLI rechecks every item, skips already allowed grants and returns one batch link.
+The user chooses the grant duration on the confirmation page.
+
+Use --callback-prompt only for this turn's sole access action (one batch counts as
+one action), in the current web chat. Keep it concise and free of secrets. Return
+the exact URL and end the turn. With multiple actions, return ordinary links.
+Accounts and authorization resolve from your workspace execution context; switching
+accounts never resets permissions. Browser/Computer Use consent remains separate.
+`,
+    ),
   )
   .action(
     withErrorHandler(
@@ -380,7 +401,7 @@ ${callbackPromptNotes}  - One batch link may use a single callback for all inclu
           }
           const batch = await resolvePermissionRequestBatch({
             batchFile: opts.batchFile,
-            agentId: resolveConnectorAgentId(opts.agent),
+            agentId: await resolveConnectorAgentId(opts.agent),
             callbackPrompt: opts.callbackPrompt,
           });
           for (const summary of batch.summaries) console.log(summary);
@@ -417,7 +438,7 @@ ${callbackPromptNotes}  - One batch link may use a single callback for all inclu
             "Supply a selector and --permission for a single request, or use --batch-file <path>.",
           );
         }
-        const agentId = resolveConnectorAgentId(opts.agent);
+        const agentId = await resolveConnectorAgentId(opts.agent);
         if (opts.url !== undefined) {
           validateDiagnosticUrl(opts.url);
         }

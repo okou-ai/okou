@@ -1,3 +1,4 @@
+import { modeHelp } from "../../../lib/command/single-agent";
 import { readManagementInput } from "../../../lib/management-input";
 import { customConnectorMetadata } from "../management";
 
@@ -84,7 +85,8 @@ export const createCustomConnectorCommand = new Command()
   )
   .addHelpText(
     "after",
-    `
+    modeHelp(
+      `
 Types and authentication:
   HTTP uses prefixTemplates and supports authMode: none, manual, oauth.
   HTTP API prefixes accept http:// or https://.
@@ -245,6 +247,17 @@ Notes:
   - OAuth app client secrets are definition-time configuration, matching UI
     creation, and should be kept in a temporary file that is never committed.
   - Requires an organization admin.`,
+      `
+Create a custom connector definition in the current workspace using the documented
+file/options. Definition creation remains subject to your existing permissions.
+A definition does not connect an account, complete OAuth, or grant Okou access.
+Use connector connect for manual/no-auth credentials or connector oauth start for
+supported authorization flows, then review fine-grained permissions in settings.
+A supported --callback-prompt requires this web chat's execution context and must
+be the sole access action in the turn. Return the exact URL and end the turn.
+Do not include secrets in callback prompts or chat.
+`,
+    ),
   )
   .action(
     withErrorHandler(async (options: CreateOptions) => {
