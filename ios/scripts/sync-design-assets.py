@@ -4,12 +4,12 @@
 import argparse
 import base64
 import hashlib
+import http.client
 import io
 import json
 import re
 import subprocess
 import tarfile
-import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -37,9 +37,17 @@ def main():
     if args.archive:
         data = args.archive.read_bytes()
     else:
-        url = f"https://registry.npmjs.org/lucide-static/-/lucide-static-{version}.tgz"
-        with urllib.request.urlopen(url, timeout=30) as response:
+        if not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", version):
+            parser.error("Lucide version must be an exact stable release")
+        connection = http.client.HTTPSConnection("registry.npmjs.org", timeout=30)
+        try:
+            connection.request("GET", f"/lucide-static/-/lucide-static-{version}.tgz")
+            response = connection.getresponse()
+            if response.status != 200:
+                parser.error(f"Lucide archive download failed: HTTP {response.status}")
             data = response.read()
+        finally:
+            connection.close()
     integrity = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode()
     if integrity != manifest["integrity"]:
         parser.error("Lucide archive integrity mismatch")
