@@ -1633,6 +1633,7 @@
       "notPlannedRecorded": "已记下，这件事暂无计划",
       "reasonLabel": "补充原因（选填）",
       "saveReason": "保存",
+      "sent": "已发送到新聊天",
       "undoFeedback": "撤销",
       "useSuggestion": "使用建议"
     },

@@ -553,6 +553,37 @@ export function createEditorDocumentSnapshot(
   });
 }
 
+/**
+ * Freezes a prepared business document for a send that has no mounted editor.
+ * File parts follow the draft's usable attachments, as an unmounted draft does.
+ */
+export function createMessageDocumentSnapshot(
+  document: UserMessageDocument,
+): EditorDocumentSnapshot {
+  const toDraft = (
+    context: EditorDocumentContext = {},
+  ): EditorDraftDocument | null => {
+    const userMessage = restoredMessageToDraftDocument(
+      document,
+      context.attachments ?? [],
+    );
+    return userMessage ? { userMessage } : null;
+  };
+  return Object.freeze({
+    toEditorDocument() {
+      const editorDocument = draftToEditorDoc(document);
+      if (!editorDocument) {
+        throw new Error("Invalid prepared message document");
+      }
+      return editorDocument;
+    },
+    toMessageDocument(context: EditorDocumentContext = {}) {
+      return toDraft(context)?.userMessage ?? null;
+    },
+    toDraft,
+  });
+}
+
 /** Creates the business document for sends that do not originate in Tiptap. */
 export function textToMessageDocument(
   text: string,

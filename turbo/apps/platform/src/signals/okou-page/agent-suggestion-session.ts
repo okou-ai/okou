@@ -116,7 +116,7 @@ const agentSuggestionsEnabled$ = computed(async (get) => {
   if (!get(suggestionFeedEnabled$)) {
     return false;
   }
-  // A new-chat option continues in the default agent's composer.
+  // A new-chat option starts in the default agent.
   return (await get(defaultAgentId$)) !== null;
 });
 
