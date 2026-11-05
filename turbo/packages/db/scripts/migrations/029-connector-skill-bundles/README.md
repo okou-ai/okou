@@ -42,10 +42,39 @@ bundle metadata columns. A matching rerun performs no metadata update or PUT.
 Conflicts fail instead of overwriting a newer owner or object; review a fresh
 plan after resolving them. An uncertain upload is resolved by readback, not a
 second PUT. Shared immutable bytes are retained if later publication loses a
-race. No transaction, automatic schedule, production dispatch or schema change
-is introduced by this operator.
+race. No transaction, automatic schedule or schema change is introduced.
 
-After acceptance and retirement, remove this operator, its dedicated tests,
+## Controlled production entry point
+
+The manual `Backfill Production Connector Skill Bundles` GitHub workflow runs
+only on `main`, behind the existing `production` environment. Its production
+wrapper fixes the three approved connector/org/storage/source-version bindings
+in `production-plan.ts`; it cannot accept an arbitrary connector inventory.
+Neon and R2 credentials remain inside the protected runner, and the temporary
+connection file is removed and its absence checked even after failure.
+
+Dispatch `mode=plan` first. Inspect its metadata-only `connector-skill-plan-<run>`
+artifact, successful read-only verification and summary SHA-256. Separately
+dispatch `mode=apply` with that run ID and exact hash. Both dispatches must use
+the same `main` commit and serving API revision. If either advances, generate
+a fresh plan. A failed/replayed plan run is rejected. Apply does not generate
+its own approval or start automatically after plan generation.
+
+The wrapper independently verifies the protected production Neon branch,
+unique writer endpoint, fixed R2 account/bucket, and canonical API deployment.
+The serving API must descend from bundle-preparation deployment, and its alias
+cutover must be older than the previous deployment's verified 300-second request
+limit. Apply retains per-owner receipts, verifies that every other owner field
+is unchanged, then runs the successful operation once more and verifies stable
+owner `xmin`. The operator performs full object readback on both executions.
+
+Do not rerun a failed or interrupted apply workflow: inspect its partial
+receipts and current references, then generate and review a fresh plan. Only a
+successful first apply permits the wrapper's explicit idempotence check.
+Receipts contain identifiers and hashes, never Skill bodies or credentials.
+
+After acceptance and retirement, remove this operator, its production workflow
+and wrapper, its dedicated tests,
 the three corresponding Storage dependency baseline entries and its one-time
 checker registration together. The registration is limited to these
 exact files and counts; it does not admit runtime consumers or permit later
