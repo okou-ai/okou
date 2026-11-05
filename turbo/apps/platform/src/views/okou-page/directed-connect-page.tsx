@@ -23,7 +23,6 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import { ConnectorIcon } from "./components/settings/connector-icons.tsx";
 import {
-  type ConnectorConnectSuccess,
   builtinPollingOAuthDeviceAuthSlug$,
   setBuiltinManualGrantFormValue$,
   builtinManualGrantFormValuesFor$,
@@ -42,7 +41,6 @@ import {
   directedConnectCatalogItem$,
   directedConnectExactAccount$,
   directedConnectAccounts$,
-  reloadDirectedConnectAccounts$,
   directedConnectAgentId$,
   directedConnectAgentName$,
   manualGrantDialogKey$,
@@ -60,8 +58,6 @@ import type { FormEvent, ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { assistantName$ } from "../../signals/branding.ts";
 import { ConnectorHelpText } from "./components/settings/connector-help-text.tsx";
-import { completeDirectedConnectorAction$ } from "../../signals/connectors-page/directed-connector-callback.ts";
-import { routeChatActionCallback$ } from "../../signals/chat-page/action-callback.ts";
 import {
   customConnectors$,
   resetCustomConnectorConnectInput$,
@@ -754,14 +750,10 @@ function CustomDirectedConnectorDialog({
   connection,
   open,
   agentId,
-  onClose,
-  onSuccess,
 }: {
   readonly connection: CustomConnectorConnection | null;
   readonly open: boolean;
   readonly agentId: string | null;
-  readonly onClose: () => void;
-  readonly onSuccess: ConnectorConnectSuccess;
 }) {
   if (!connection || !open) {
     return null;
@@ -771,8 +763,7 @@ function CustomDirectedConnectorDialog({
       connector={connection.connector}
       {...(agentId ? { agentId } : {})}
       accountOptions={connection.accountOptions}
-      onClose={onClose}
-      onSuccess={onSuccess}
+      origin={{ kind: "directed-connect", agentId }}
     />
   );
 }
@@ -790,9 +781,6 @@ function CustomDirectedConnectCard({
   const dialogKey = useGet(directedConnectCustomDialogKey$);
   const setDialogKey = useSet(setDirectedConnectCustomDialogKey$);
   const resetConnectInput = useSet(resetCustomConnectorConnectInput$);
-  const completeAction = useSet(completeDirectedConnectorAction$);
-  const reloadAccounts = useSet(reloadDirectedConnectAccounts$);
-  const actionCallback = useGet(routeChatActionCallback$);
   const signal = useGet(pageSignal$);
   const connectors =
     connectorsLoadable.state === "hasData" ? connectorsLoadable.data : [];
@@ -813,13 +801,6 @@ function CustomDirectedConnectCard({
     agentNameLoadable.data.displayName
       ? agentNameLoadable.data.displayName
       : assistantName;
-  const handleConnectSuccess: ConnectorConnectSuccess = (
-    _connectionId,
-    attemptSignal,
-  ) => {
-    reloadAccounts(attemptSignal);
-    return completeAction(agentId, actionCallback, attemptSignal);
-  };
   const setDialogOpen = (open: boolean) => {
     setDialogKey(open ? { connectorSlug, agentId } : null, signal);
   };
@@ -863,10 +844,6 @@ function CustomDirectedConnectCard({
         connection={connection}
         open={dialogOpen}
         agentId={agentId}
-        onClose={() => {
-          setDialogOpen(false);
-        }}
-        onSuccess={handleConnectSuccess}
       />
     </>
   );

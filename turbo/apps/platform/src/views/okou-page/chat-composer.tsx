@@ -6572,8 +6572,6 @@ function ComposerConnectorConnectDialogs({
   agentId,
   connectHostKey,
   onBuiltinClose,
-  onCustomClose,
-  onCustomSuccess,
 }: {
   readonly selectedConnector: PlatformConnectorCatalogStatusItem | undefined;
   readonly selectedConnectorAccountOptions: DefaultConnectorAccountMutationOptions | null;
@@ -6583,8 +6581,6 @@ function ComposerConnectorConnectDialogs({
   /** The composer's registration as the origin of its connections. */
   readonly connectHostKey: string;
   readonly onBuiltinClose: () => void;
-  readonly onCustomClose: () => void;
-  readonly onCustomSuccess: () => void;
 }) {
   return (
     <>
@@ -6602,8 +6598,7 @@ function ComposerConnectorConnectDialogs({
           connector={selectedCustomConnector}
           agentId={agentId}
           accountOptions={selectedCustomConnectorAccountOptions}
-          onClose={onCustomClose}
-          onSuccess={onCustomSuccess}
+          origin={{ kind: "composer", hostKey: connectHostKey }}
         />
       ) : null}
     </>
@@ -6777,9 +6772,6 @@ function ComposerConnectorDialogsSlot({
     signals.connector.openConnectorPermissions$,
   );
   const directoryFinalFocus = useSet(signals.connector.directoryFinalFocus$);
-  const completeCustomAddition = useSet(
-    signals.connectorCompletion.completeCustomConnectorAddition$,
-  );
 
   const pageSignal = useGet(pageSignal$);
   const selectedCustomConnectorId = connectorUi.selectedCustomConnectorId;
@@ -6870,12 +6862,6 @@ function ComposerConnectorDialogsSlot({
             selectedConnectorSlug: null,
             selectedConnector: null,
           });
-        }}
-        onCustomClose={() => {
-          updateConnectorUi({ selectedCustomConnectorId: null });
-        }}
-        onCustomSuccess={() => {
-          completeCustomAddition();
         }}
       />
       {connectorUi.showAddDialog && (

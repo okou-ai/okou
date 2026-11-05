@@ -14,7 +14,9 @@ import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
   completeCatalogConnectorChatAction$,
+  completeCustomConnectorChatAction$,
   completeExactReconnectChatAction$,
+  refreshCustomConnectorChatAccount$,
 } from "../../chat-page/connector-action-block.ts";
 import {
   completeDirectedConnectorAuthorization$,
@@ -22,6 +24,8 @@ import {
 } from "../../connectors-page/directed-authorize-slug.ts";
 import { completeDirectedConnectorAction$ } from "../../connectors-page/directed-connector-callback.ts";
 import {
+  reloadDirectedConnectAccounts$,
+  setDirectedConnectCustomDialogKey$,
   setDirectedConnectModalKey$,
   setManualGrantDialogKey$,
 } from "../../connectors-page/directed-connect-slug.ts";
@@ -37,9 +41,15 @@ import {
 import type { ComposerConnectorData } from "../connectors.ts";
 import {
   closeBuiltinAccountConnectDialog$,
+  closeCustomAccountConnectDialog$,
   finishConnectorAccountConnection$,
   type ConnectorAccountConnectMode,
 } from "./connector-account-dialogs.ts";
+import {
+  cancelCustomConnectorConnection$,
+  connectCustomConnectorAuthorizationAndSettle$,
+  submitCustomConnectorConnection$,
+} from "./custom-connectors.ts";
 import {
   clearBuiltinConnectorExternalCode$,
   clearBuiltinConnectorOAuthDeviceAuth$,
@@ -580,6 +590,258 @@ export const completeBuiltinConnectorExternalCodeAndContinue$ = command(
             finishConnectorConnect$,
             plan,
             surface,
+            connectionId,
+            attemptSignal,
+          );
+        },
+      },
+      signal,
+    );
+  },
+);
+
+// ---------------------------------------------------------------------------
+// Custom connectors
+// ---------------------------------------------------------------------------
+
+/** Where a custom connector connection was started; see ConnectorConnectOrigin. */
+export type CustomConnectorConnectOrigin =
+  /** Connector settings: add or reconnect an account of this connector. */
+  | { readonly kind: "account"; readonly mode: ConnectorAccountConnectMode }
+  /** The chat connector action that opened the connect dialog. */
+  | { readonly kind: "chat-action" }
+  /** The standalone connect route that a chat action linked to. */
+  | { readonly kind: "directed-connect"; readonly agentId: string | null }
+  /** The composer registered under this key. */
+  | { readonly kind: "composer"; readonly hostKey: string };
+
+interface ConnectedCustomConnector {
+  readonly id: string;
+  readonly displayName: string;
+}
+
+type CustomConnectorConnectPlan =
+  | { readonly kind: "none" }
+  | {
+      readonly kind: "account";
+      readonly connector: ConnectedCustomConnector;
+      readonly mode: ConnectorAccountConnectMode;
+    }
+  | {
+      readonly kind: "chat-action";
+      readonly action: Extract<ActiveChatConnectorAction, { kind: "custom" }>;
+    }
+  | {
+      readonly kind: "directed-connect";
+      readonly agentId: string | null;
+      readonly callback: ChatActionCallback;
+    }
+  | { readonly kind: "composer"; readonly host: ComposerConnectHost };
+
+const resolveCustomConnectorConnectPlan$ = command(
+  (
+    { get },
+    origin: CustomConnectorConnectOrigin,
+    connector: ConnectedCustomConnector,
+  ): CustomConnectorConnectPlan => {
+    switch (origin.kind) {
+      case "account": {
+        return { kind: "account", connector, mode: origin.mode };
+      }
+      case "chat-action": {
+        const action = get(activeChatConnectorAction$);
+        return action?.kind === "custom"
+          ? { kind: "chat-action", action }
+          : { kind: "none" };
+      }
+      case "directed-connect": {
+        return {
+          kind: "directed-connect",
+          agentId: origin.agentId,
+          callback: get(routeChatActionCallback$),
+        };
+      }
+      case "composer": {
+        const host = get(composerConnectHosts$).get(origin.hostKey);
+        return host ? { kind: "composer", host } : { kind: "none" };
+      }
+    }
+  },
+);
+
+/** Follows any accepted connection, authorized for its target or not. */
+const continueCustomConnectorConnected$ = command(
+  async (
+    { set },
+    plan: CustomConnectorConnectPlan,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    if (plan.kind === "chat-action") {
+      await set(refreshCustomConnectorChatAccount$, plan.action, signal);
+    }
+  },
+);
+
+/** Follows a connection that is ready for the surface that started it. */
+const continueCustomConnectorSucceeded$ = command(
+  async (
+    { set },
+    plan: CustomConnectorConnectPlan,
+    connectionId: string,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    switch (plan.kind) {
+      case "none": {
+        return;
+      }
+      case "account": {
+        await set(
+          finishConnectorAccountConnection$,
+          {
+            target: { kind: "custom", customConnectorId: plan.connector.id },
+            connectionId,
+            connectorLabel: plan.connector.displayName,
+            mode: plan.mode,
+          },
+          signal,
+        );
+        return;
+      }
+      case "chat-action": {
+        await set(completeCustomConnectorChatAction$, plan.action, signal);
+        return;
+      }
+      case "directed-connect": {
+        set(reloadDirectedConnectAccounts$, signal);
+        await set(
+          completeDirectedConnectorAction$,
+          plan.agentId,
+          plan.callback,
+          signal,
+        );
+        return;
+      }
+      case "composer": {
+        set(plan.host.completeCustomConnectorAddition$);
+        return;
+      }
+    }
+  },
+);
+
+/** Closes the connect dialog of the surface that started the connection. */
+const closeCustomConnectorConnectSurface$ = command(
+  (
+    { get, set },
+    origin: CustomConnectorConnectOrigin,
+    signal: AbortSignal,
+  ): void => {
+    switch (origin.kind) {
+      case "account": {
+        set(closeCustomAccountConnectDialog$);
+        return;
+      }
+      case "chat-action": {
+        set(closeChatConnectorActionConnectDialog$);
+        return;
+      }
+      case "directed-connect": {
+        set(setDirectedConnectCustomDialogKey$, null, signal);
+        return;
+      }
+      case "composer": {
+        const host = get(composerConnectHosts$).get(origin.hostKey);
+        if (host) {
+          set(host.connector.updateConnectorUiState$, {
+            selectedCustomConnectorId: null,
+          });
+        }
+        return;
+      }
+    }
+  },
+);
+
+type CustomConnectionArgs = Omit<
+  CommandArgs<typeof submitCustomConnectorConnection$>[0],
+  "onConnected" | "onSuccess" | "onClose"
+> & { readonly origin: CustomConnectorConnectOrigin };
+
+/** One loadable owns the connection, its continuation and the dialog close. */
+export const submitCustomConnectorConnectionAndContinue$ = command(
+  async (
+    { set },
+    { origin, ...args }: CustomConnectionArgs,
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const plan = set(
+      resolveCustomConnectorConnectPlan$,
+      origin,
+      args.connector,
+    );
+    await set(
+      submitCustomConnectorConnection$,
+      {
+        ...args,
+        onConnected: (_connectionId, attemptSignal) => {
+          return set(continueCustomConnectorConnected$, plan, attemptSignal);
+        },
+        onSuccess: (connectionId, attemptSignal) => {
+          return set(
+            continueCustomConnectorSucceeded$,
+            plan,
+            connectionId,
+            attemptSignal,
+          );
+        },
+        onClose: () => {
+          set(closeCustomConnectorConnectSurface$, origin, signal);
+        },
+      },
+      signal,
+    );
+  },
+);
+
+export const cancelCustomConnectorConnectionFrom$ = command(
+  (
+    { set },
+    origin: CustomConnectorConnectOrigin,
+    signal: AbortSignal,
+  ): void => {
+    set(cancelCustomConnectorConnection$, () => {
+      set(closeCustomConnectorConnectSurface$, origin, signal);
+    });
+  },
+);
+
+/** A card-triggered authorization that continues from its origin. */
+export const connectCustomConnectorAuthorizationAndContinue$ = command(
+  async (
+    { set },
+    {
+      origin,
+      connector,
+      ...args
+    }: Omit<
+      CommandArgs<typeof connectCustomConnectorAuthorizationAndSettle$>[0],
+      "onSuccess" | "id"
+    > & {
+      readonly origin: CustomConnectorConnectOrigin;
+      readonly connector: ConnectedCustomConnector;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const plan = set(resolveCustomConnectorConnectPlan$, origin, connector);
+    await set(
+      connectCustomConnectorAuthorizationAndSettle$,
+      {
+        ...args,
+        id: connector.id,
+        onSuccess: (connectionId, attemptSignal) => {
+          return set(
+            continueCustomConnectorSucceeded$,
+            plan,
             connectionId,
             attemptSignal,
           );

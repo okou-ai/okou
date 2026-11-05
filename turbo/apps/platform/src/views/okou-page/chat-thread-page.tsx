@@ -199,8 +199,6 @@ import type {
 import {
   activeChatConnectorAction$,
   closeChatConnectorActionConnectDialog$,
-  completeCustomConnectorChatAction$,
-  refreshCustomConnectorChatAccount$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
   chatEventDisplayError,
@@ -4649,8 +4647,6 @@ function ChatConnectorActionConnectModal() {
 function ActiveChatConnectorActionConnectModal() {
   const active = useGet(activeChatConnectorAction$);
   const close = useSet(closeChatConnectorActionConnectDialog$);
-  const completeCustomConnector = useSet(completeCustomConnectorChatAction$);
-  const refreshCustomAccount = useSet(refreshCustomConnectorChatAccount$);
   const customConnectors = useLastResolved(customConnectors$);
   const accountLabelOf = useConnectorAccountLabel();
 
@@ -4670,13 +4666,7 @@ function ActiveChatConnectorActionConnectModal() {
         connector={connector}
         agentId={active.agentId}
         accountOptions={accountOptions}
-        onClose={close}
-        onConnected={async (_connectionId, attemptSignal) => {
-          await refreshCustomAccount(active, attemptSignal);
-        }}
-        onSuccess={async (_connectionId, attemptSignal) => {
-          await completeCustomConnector(active, attemptSignal);
-        }}
+        origin={{ kind: "chat-action" }}
       />
     ) : null;
   }

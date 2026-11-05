@@ -17,7 +17,6 @@ import {
 import type { CustomConnectorResponse } from "@okouai/api-contracts/contracts/custom-connectors";
 import {
   closeCustomConnectorDialog$,
-  connectCustomConnectorAuthorizationAndSettle$,
   customConnectorAuthorizedAgentsById$,
   customConnectorDialog$,
   openCustomConnectorAccessDialog$,
@@ -44,15 +43,14 @@ import {
   type ConnectorInventoryStatus,
 } from "./connector-card.tsx";
 import {
-  closeCustomAccountConnectDialog$,
   closeCustomAccountManager$,
   customAccountConnectDialog$,
   customAccountManager$,
-  finishConnectorAccountConnection$,
   openCustomAccountConnectDialog$,
   openCustomAccountManager$,
 } from "../../../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { focusCreatedDirectoryConnector$ } from "../../../../signals/okou-page/settings/connector-directory-route.ts";
+import { connectCustomConnectorAuthorizationAndContinue$ } from "../../../../signals/okou-page/settings/connector-connect-continuation.ts";
 
 function connectsDirectlyWithAuthorization(
   connector: CustomConnectorResponse,
@@ -431,41 +429,19 @@ export function CustomConnectorGrid({
   const openAccess = useSet(openCustomConnectorAccessDialog$);
   const openDelete = useSet(openCustomConnectorDeleteDialog$);
   const [connection, connectAccountAuthorization] = useLoadableSet(
-    connectCustomConnectorAuthorizationAndSettle$,
+    connectCustomConnectorAuthorizationAndContinue$,
   );
   const signal = useGet(pageSignal$);
   const openAccountManager = useSet(openCustomAccountManager$);
   const openAccountConnect = useSet(openCustomAccountConnectDialog$);
-  const finishAccountConnection = useSet(finishConnectorAccountConnection$);
-  const finishExplicitAccountAdd = async (
-    connector: CustomConnectorResponse,
-    connectionId: string,
-    attemptSignal: AbortSignal,
-  ): Promise<void> => {
-    await finishAccountConnection(
-      {
-        target: { kind: "custom", customConnectorId: connector.id },
-        connectionId,
-        connectorLabel: connector.displayName,
-        mode: { kind: "add" },
-      },
-      attemptSignal,
-    );
-  };
   const handleConnect = (connector: CustomConnectorResponse) => {
     if (connectsDirectlyWithAuthorization(connector)) {
       detach(
         connectAccountAuthorization(
           {
-            id: connector.id,
+            connector,
             account: { intent: "add" },
-            onSuccess: (connectionId, attemptSignal) => {
-              return finishExplicitAccountAdd(
-                connector,
-                connectionId,
-                attemptSignal,
-              );
-            },
+            origin: { kind: "account", mode: { kind: "add" } },
           },
           signal,
         ),
@@ -516,11 +492,9 @@ function CustomAccountDialogs() {
   const managedAccounts = useGet(customAccountManager$);
   const accountConnect = useGet(customAccountConnectDialog$);
   const closeAccountManager = useSet(closeCustomAccountManager$);
-  const closeAccountConnect = useSet(closeCustomAccountConnectDialog$);
   const openAccountConnect = useSet(openCustomAccountConnectDialog$);
-  const finishAccountConnection = useSet(finishConnectorAccountConnection$);
   const connectAccountAuthorization = useSet(
-    connectCustomConnectorAuthorizationAndSettle$,
+    connectCustomConnectorAuthorizationAndContinue$,
   );
   const signal = useGet(pageSignal$);
   return (
@@ -538,21 +512,7 @@ function CustomAccountDialogs() {
                     connectionId: accountConnect.mode.connectionId,
                   },
           }}
-          onClose={closeAccountConnect}
-          onSuccess={async (connectionId, attemptSignal) => {
-            await finishAccountConnection(
-              {
-                target: {
-                  kind: "custom",
-                  customConnectorId: accountConnect.connector.id,
-                },
-                connectionId,
-                connectorLabel: accountConnect.connector.displayName,
-                mode: accountConnect.mode,
-              },
-              attemptSignal,
-            );
-          }}
+          origin={{ kind: "account", mode: accountConnect.mode }}
         />
       ) : null}
       {managedAccounts ? (
@@ -573,22 +533,9 @@ function CustomAccountDialogs() {
               detach(
                 connectAccountAuthorization(
                   {
-                    id: managedAccounts.id,
+                    connector: managedAccounts,
                     account: { intent: "add" },
-                    onSuccess: (connectionId, attemptSignal) => {
-                      return finishAccountConnection(
-                        {
-                          target: {
-                            kind: "custom",
-                            customConnectorId: managedAccounts.id,
-                          },
-                          connectionId,
-                          connectorLabel: managedAccounts.displayName,
-                          mode: { kind: "add" },
-                        },
-                        attemptSignal,
-                      );
-                    },
+                    origin: { kind: "account", mode: { kind: "add" } },
                   },
                   signal,
                 ),

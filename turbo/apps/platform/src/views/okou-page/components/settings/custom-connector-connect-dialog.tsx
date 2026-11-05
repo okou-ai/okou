@@ -27,11 +27,14 @@ import { useTranslation } from "react-i18next";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
 import {
-  submitCustomConnectorConnection$,
-  cancelCustomConnectorConnection$,
   customConnectorConnectForm$,
   setCustomConnectorConnectField$,
 } from "../../../../signals/okou-page/settings/custom-connectors.ts";
+import {
+  cancelCustomConnectorConnectionFrom$,
+  submitCustomConnectorConnectionAndContinue$,
+  type CustomConnectorConnectOrigin,
+} from "../../../../signals/okou-page/settings/connector-connect-continuation.ts";
 import { sanitizeTokenInputRecord } from "../../../../signals/okou-page/settings/token-input.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { CustomConnectorIcon } from "./custom-connector-icon.tsx";
@@ -220,15 +223,8 @@ function ConnectDialogFooter({
 interface CustomConnectorConnectDialogProps {
   readonly connector: CustomConnectorResponse;
   readonly agentId?: string;
-  readonly onClose?: () => void;
-  readonly onConnected?: (
-    connectionId: string,
-    signal: AbortSignal,
-  ) => void | Promise<void>;
-  readonly onSuccess?: (
-    connectionId: string,
-    signal: AbortSignal,
-  ) => void | Promise<void>;
+  /** Where the connection was started; it decides what follows and closes. */
+  readonly origin: CustomConnectorConnectOrigin;
   readonly accountOptions: CustomConnectorAccountMutationOptions;
   readonly accountMode?: ConnectorAccountConnectMode;
 }
@@ -397,9 +393,7 @@ function CustomConnectorSecretDescription({
 function CustomConnectorConnectDialogContent({
   connector,
   agentId,
-  onClose,
-  onConnected,
-  onSuccess,
+  origin,
   accountOptions,
   accountMode,
   setupAvailable,
@@ -414,10 +408,10 @@ function CustomConnectorConnectDialogContent({
   const form = useGet(customConnectorConnectForm$);
   const setField = useSet(setCustomConnectorConnectField$);
   const [connectionLoadable, submit] = useLoadableSet(
-    submitCustomConnectorConnection$,
+    submitCustomConnectorConnectionAndContinue$,
   );
   const submitting = connectionLoadable.state === "loading";
-  const cancelConnection = useSet(cancelCustomConnectorConnection$);
+  const cancelConnection = useSet(cancelCustomConnectorConnectionFrom$);
   const signal = useGet(pageSignal$);
   const authorization =
     connector.authMode === "oauth" || connector.authMode === "automatic";
@@ -435,7 +429,7 @@ function CustomConnectorConnectDialogContent({
     (authorization || (hasRequiredValues && (noAuth || values.length > 0)));
 
   const cancel = () => {
-    cancelConnection(onClose);
+    cancelConnection(origin, signal);
   };
 
   const onSubmit = (event: FormEvent<HTMLFormElement>) => {
@@ -451,9 +445,7 @@ function CustomConnectorConnectDialogContent({
           values,
           accountOptions,
           accountMode,
-          onConnected,
-          onSuccess,
-          onClose,
+          origin,
         },
         signal,
       ),

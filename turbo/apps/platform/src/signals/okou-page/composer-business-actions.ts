@@ -189,7 +189,12 @@ export function createComposerConnectorCompletion(
     set(
       registerComposerConnectHost$,
       connectHostKey,
-      { agentId, connector, completeConnectorAddition$ },
+      {
+        agentId,
+        connector,
+        completeConnectorAddition$,
+        completeCustomConnectorAddition$,
+      },
       signal,
     );
   });

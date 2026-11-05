@@ -18,6 +18,7 @@ export interface ComposerConnectHost {
     Promise<boolean>,
     [ConnectorSlug, boolean, AbortSignal]
   >;
+  readonly completeCustomConnectorAddition$: Command<void, []>;
 }
 
 const internalComposerConnectHosts$ = state<
