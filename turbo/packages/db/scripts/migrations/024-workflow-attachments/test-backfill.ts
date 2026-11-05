@@ -118,6 +118,8 @@ const runFor = async (targetWorkflowId: string, ...args: string[]) => {
     process.execPath,
     [
       "--import",
+      new URL("../../fixtures/migration-cli-warning.mjs", import.meta.url).href,
+      "--import",
       "tsx",
       "scripts/migrations/024-workflow-attachments/backfill.ts",
       "--workflow-id",

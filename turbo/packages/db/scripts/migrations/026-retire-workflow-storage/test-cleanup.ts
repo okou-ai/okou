@@ -168,6 +168,9 @@ try {
         process.execPath,
         [
           "--import",
+          new URL("../../fixtures/migration-cli-warning.mjs", import.meta.url)
+            .href,
+          "--import",
           "tsx",
           "scripts/migrations/026-retire-workflow-storage/cleanup.ts",
           "--output",

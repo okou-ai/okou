@@ -13,13 +13,10 @@ assert.deepEqual(parseMigrationCliStderr(`  ${record}\r\n`), expected);
 
 const before = "diagnostic before the failure record";
 const after = "diagnostic after the failure record";
-const warningImport = `data:text/javascript,${encodeURIComponent(`
-  process.stderr.write(${JSON.stringify(`${before}\n`)});
-  process.emitWarning("migration CLI regression warning", { code: "MIGRATION_CLI_TEST" });
-  process.once("beforeExit", () => {
-    process.stderr.write(${JSON.stringify(`${after}\n`)});
-  });
-`)}`;
+const warningImport = new URL(
+  "./fixtures/migration-cli-warning.mjs",
+  import.meta.url,
+).href;
 await assert.rejects(
   promisify(execFile)(process.execPath, [
     "--import",
