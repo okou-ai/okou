@@ -57,9 +57,21 @@ class BuildPackagingTests(unittest.TestCase):
         ):
             source = cls.root / f"main-{index}.c"
             source.write_text("int main(void) { return 0; }\n")
+            object_file = source.with_suffix(".o")
             binary = contents / relative
             binary.parent.mkdir(parents=True)
-            run("xcrun", "clang", "-arch", "arm64", "-g", source, "-o", binary)
+            run(
+                "xcrun",
+                "clang",
+                "-arch",
+                "arm64",
+                "-g",
+                "-c",
+                source,
+                "-o",
+                object_file,
+            )
+            run("xcrun", "clang", "-arch", "arm64", object_file, "-o", binary)
             run("dsymutil", binary, "-o", cls.symbols / bundle)
         run("codesign", "--force", "--sign", "-", cls.app)
 
