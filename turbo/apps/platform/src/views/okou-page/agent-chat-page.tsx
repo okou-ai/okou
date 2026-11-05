@@ -376,7 +376,6 @@ function ChatAgentAvatar({ agentId }: { agentId: string | null | undefined }) {
                   })}
                   className={cn(
                     AGENT_AVATAR_FRAME,
-                    "cursor-pointer",
                     textureUrl || costume
                       ? // The frame's background is behind the texture and a
                         // textured frame has no border to recolour, so hover

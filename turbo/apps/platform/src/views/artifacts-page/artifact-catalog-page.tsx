@@ -330,7 +330,7 @@ function ArtifactCatalogCard({
         onOpen(artifact.id);
       }}
       className={cn(
-        "group flex w-full min-w-0 cursor-pointer flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+        "group flex w-full min-w-0 flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
         gallery
           ? "rounded-surface"
           : "overflow-hidden rounded-lg border border-border bg-card transition-colors hover:border-foreground/20",
@@ -678,7 +678,7 @@ function ArtifactCatalogKindFilter({
               onKindChange(kind);
             }}
             className={cn(
-              "inline-flex h-7 shrink-0 cursor-pointer items-center rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors",
+              "inline-flex h-7 shrink-0 items-center rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors",
               selected
                 ? "bg-muted text-foreground"
                 : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",

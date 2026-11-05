@@ -393,7 +393,7 @@ function ExpandedManageSection() {
         size="sm"
         aria-expanded={!manageCollapsed}
         aria-controls={MANAGE_CONTENT_ID}
-        className="group flex h-8 w-full shrink-0 cursor-pointer items-center justify-between rounded-lg pl-2 pr-0 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
+        className="group flex h-8 w-full shrink-0 items-center justify-between rounded-lg pl-2 pr-0 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
         onClick={() => {
           return setManageCollapsed(!manageCollapsed);
         }}

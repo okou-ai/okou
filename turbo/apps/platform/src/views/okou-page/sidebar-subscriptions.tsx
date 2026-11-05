@@ -304,7 +304,7 @@ function subscriptionInformationTarget(
         onClick={onOpenUsage}
         className={cn(
           informationClassName,
-          onOpenUsage && "cursor-pointer active:bg-state-pressed",
+          onOpenUsage && "active:bg-state-pressed",
         )}
       />
     );
@@ -315,10 +315,7 @@ function subscriptionInformationTarget(
       <button
         type="button"
         onClick={onOpenUsage}
-        className={cn(
-          informationClassName,
-          "cursor-pointer active:bg-state-pressed",
-        )}
+        className={cn(informationClassName, "active:bg-state-pressed")}
       />
     );
   }

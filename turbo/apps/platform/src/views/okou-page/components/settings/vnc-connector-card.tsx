@@ -34,7 +34,7 @@ export function VncConnectorCard() {
           aria-label={t(($) => {
             return $.vnc.manage;
           })}
-          className="absolute inset-0 z-10 cursor-pointer rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+          className="absolute inset-0 z-10 rounded-[inherit] outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
         />
       }
       indicator={

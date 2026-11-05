@@ -140,7 +140,7 @@ export function TailscaleFields({
         {config && <TailscaleTags config={config} />}
         {!config && (
           <details className="border-t border-divider pt-4">
-            <summary className="cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+            <summary className="cursor-default rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
               {t(($) => {
                 return $.remoteControlSetup.allowedTags;
               })}

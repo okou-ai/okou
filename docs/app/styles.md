@@ -21,6 +21,7 @@ Building something:
 | Building a dropdown, menu or select row                   | [Menu and select rows](#menu-and-select-rows)                                                                                                                                   |
 | Putting an icon tile or fill inside a hoverable row       | [Fills inside interactive rows](#fills-inside-interactive-rows)                                                                                                                 |
 | Building a button or a select                             | [Neutral button and select variants](#neutral-button-and-select-variants)                                                                                                       |
+| Making something clickable, or choosing its cursor        | [Cursor](#cursor), [Semantic elements and Base UI composition](#semantic-elements-and-base-ui-composition)                                                                      |
 | Building a dialog, sheet or scrolling body                | [Icon controls and dialog bodies](#icon-controls-and-dialog-bodies), [Dialog viewport ownership](#dialog-viewport-ownership)                                                    |
 | Building a card inside the chat transcript                | [Chat transcript cards](#chat-transcript-cards)                                                                                                                                 |
 | Adding an overlay, fullscreen panel or action bar         | [Floating layers and portal ownership](#floating-layers-and-portal-ownership)                                                                                                   |
@@ -728,6 +729,34 @@ primitive's public types before adopting a newer documentation example. See
 [Base UI composition](https://base-ui.com/react/handbook/composition),
 [Button semantics](https://base-ui.com/react/components/button#rendering-links-as-buttons),
 and [shadcn links](https://ui.shadcn.com/docs/components/base/button#as-link).
+
+### Cursor
+
+The cursor follows the final DOM element, not the click handler. A pointer
+means "this goes somewhere"; actions and controls keep the arrow, as they do in
+native apps and in Tailwind v4's preflight.
+
+| Final element                                                                                                                                                        | Cursor                                                                |
+| -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
+| Anchor or Router `Link` with a destination                                                                                                                           | The browser's pointer, drawn natively. Add nothing.                   |
+| `Button`, a native `<button>`, Base UI `Toggle`, or a trigger rendered as a button                                                                                   | The default arrow, drawn natively. Add nothing.                       |
+| A non-native control host: `<summary>`, a row `<label>` around a control, an option or menu row, a clickable table row, the span-based `Switch`, `Checkbox`, `Radio` | `cursor-default`, so text inside the control does not show the I-beam |
+
+`cursor-pointer` and `cursor: pointer` are therefore never needed: the pointer
+belongs to links, and links already draw it. The style lint rejects both in
+Platform and UI source. Something that seems to need the pointer is navigation
+and should be an anchor or `Link` with its destination. Cursors that describe a
+specific affordance, such as `cursor-not-allowed`, `cursor-grab`, resize
+cursors and `cursor-zoom-in`, are outside this rule.
+
+An anchor carries a real destination where it is written.
+`ccstate/require-anchor-href` rejects an `<a>` without `href`, with an empty,
+`#` or `javascript:` href, or with `role="button"`. An anchor whose plain click
+performs something other than navigation, such as copying its URL, is a button.
+Client-side routing and in-app previews remain links when modified clicks keep
+the real destination. The PDF download link, whose object URL is attached in
+its ref callback so the URL lives exactly as long as the anchor, is the one
+configured exemption.
 
 ### Chat scrollbars
 

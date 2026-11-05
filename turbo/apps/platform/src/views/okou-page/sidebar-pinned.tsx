@@ -636,7 +636,7 @@ function VerticalPinnedAgentSection() {
         size="sm"
         aria-expanded={!collapsed}
         aria-controls={PINNED_AGENTS_CONTENT_ID}
-        className="group flex h-8 w-full cursor-pointer items-center rounded-lg px-2 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
+        className="group flex h-8 w-full items-center rounded-lg px-2 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
         data-testid="pinned-section-header"
         onClick={() => {
           return setCollapsed(!collapsed);

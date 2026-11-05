@@ -107,7 +107,7 @@ const CHAT_INLINE_MEDIA_PREVIEW_CHROME_CLASS = cn(
 );
 
 const CHAT_INLINE_MEDIA_THUMBNAIL_PREVIEW_CLASS = cn(
-  "aspect-[10/9] w-[50px] max-w-full cursor-pointer rounded-lg",
+  "aspect-[10/9] w-[50px] max-w-full rounded-lg",
   CHAT_INLINE_MEDIA_PREVIEW_CHROME_CLASS,
 );
 export const CHAT_INLINE_IMAGE_PREVIEW_CLASS = cn(
@@ -119,7 +119,7 @@ export const CHAT_INLINE_VIDEO_ATTACHMENT_PREVIEW_CLASS = cn(
   "bg-black",
 );
 export const CHAT_INLINE_VIDEO_BODY_PREVIEW_CLASS = cn(
-  "aspect-[16/10] w-[min(100%,400px)] max-w-full cursor-pointer rounded-lg",
+  "aspect-[16/10] w-[min(100%,400px)] max-w-full rounded-lg",
   CHAT_INLINE_MEDIA_PREVIEW_CHROME_CLASS,
   "bg-black",
 );

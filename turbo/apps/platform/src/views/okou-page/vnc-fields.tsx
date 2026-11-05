@@ -161,7 +161,7 @@ export function VncDisplayNameField({
   if (!connection && setup?.fromComputer && setup.protocol === "vnc") {
     return (
       <details className="text-sm">
-        <summary className="w-fit cursor-pointer rounded-md py-1 text-muted-foreground hover:text-foreground">
+        <summary className="w-fit cursor-default rounded-md py-1 text-muted-foreground hover:text-foreground">
           {t(($) => {
             return $.remoteControlSetup.optionalName;
           })}
@@ -324,7 +324,7 @@ function VncPortSettings({
   const { t } = useTranslation();
   return (
     <details>
-      <summary className="w-fit cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+      <summary className="w-fit cursor-default rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
         {t(($) => {
           return $.remoteControlSetup.more;
         })}
@@ -707,7 +707,7 @@ function VncProfileGuidance({
         <p>{description}</p>
       </div>
       <details className="border-t border-divider pt-4">
-        <summary className="cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <summary className="cursor-default rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t(($) => {
             return $.remoteConnectionHelp.loginDifferences;
           })}
@@ -717,7 +717,7 @@ function VncProfileGuidance({
         </div>
       </details>
       <details className="border-t border-divider pt-4">
-        <summary className="cursor-pointer rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+        <summary className="cursor-default rounded-md py-1 text-sm text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
           {t(($) => {
             return $.remoteConnectionHelp.technicalDetails;
           })}
@@ -827,7 +827,7 @@ export function ComputerScreenService({
             })}
           </p>
           <details className="text-sm">
-            <summary className="w-fit cursor-pointer text-muted-foreground hover:text-foreground">
+            <summary className="w-fit cursor-default text-muted-foreground hover:text-foreground">
               {t(($) => {
                 return $.remoteControlSetup.more;
               })}

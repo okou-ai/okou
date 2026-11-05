@@ -188,7 +188,7 @@ export function OnboardingSourceOutcome({
   const figure = <OutcomeFigure industry={industry} connector={connector} />;
   return mobile ? (
     <details className="mt-5 rounded-xl border border-border px-4 py-3">
-      <summary className="cursor-pointer text-sm hover:text-muted-foreground">
+      <summary className="cursor-default text-sm hover:text-muted-foreground">
         {t(($) => {
           return $.onboarding.sourcesFirst.outcomes.expandLabel;
         })}

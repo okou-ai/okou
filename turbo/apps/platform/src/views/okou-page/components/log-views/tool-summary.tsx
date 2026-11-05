@@ -64,7 +64,7 @@ function ToolSummaryHeader({
   };
 
   return (
-    <summary className="cursor-pointer list-none w-full text-left">
+    <summary className="cursor-default list-none w-full text-left">
       <div className="flex items-center gap-2">
         <StatusDot variant={getStatusVariant()} />
         <span className="font-semibold text-sm text-foreground shrink-0">
@@ -411,7 +411,7 @@ function ToolResultDetails({
           className="[&[open]>summary]:hidden"
           data-testid="tool-result-expand"
         >
-          <summary className="list-none cursor-pointer text-xs text-muted-foreground hover:text-foreground">
+          <summary className="list-none cursor-default text-xs text-muted-foreground hover:text-foreground">
             {t(
               ($) => {
                 return $.activity.events.remainingLines;

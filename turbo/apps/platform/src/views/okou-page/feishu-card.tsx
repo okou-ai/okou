@@ -1618,7 +1618,7 @@ function FeishuSetupFaq() {
       </div>
       <div className="divide-y divide-border/50">
         <details className="group px-4 py-4 sm:px-5">
-          <summary className="flex cursor-pointer list-none items-start gap-2 text-sm font-medium text-foreground">
+          <summary className="flex cursor-default list-none items-start gap-2 text-sm font-medium text-foreground">
             <ChevronRight
               size={17}
               aria-hidden="true"
@@ -1650,7 +1650,7 @@ function FeishuSetupFaq() {
           </div>
         </details>
         <details className="group px-4 py-4 sm:px-5">
-          <summary className="flex cursor-pointer list-none items-start gap-2 text-sm font-medium text-foreground">
+          <summary className="flex cursor-default list-none items-start gap-2 text-sm font-medium text-foreground">
             <ChevronRight
               size={17}
               aria-hidden="true"
@@ -1671,7 +1671,7 @@ function FeishuSetupFaq() {
           </p>
         </details>
         <details className="group px-4 py-4 sm:px-5">
-          <summary className="flex cursor-pointer list-none items-start gap-2 text-sm font-medium text-foreground">
+          <summary className="flex cursor-default list-none items-start gap-2 text-sm font-medium text-foreground">
             <ChevronRight
               size={17}
               aria-hidden="true"

@@ -37,6 +37,7 @@
  * - no-react-class-component: Disallow React class components — use function components with hooks
  * - prefer-ui-components: Disallow raw button/input/textarea styled like a @okouai/ui component
  * - menu-row-height: Disallow caller-owned row height on shared menu/select rows
+ * - require-anchor-href: Require anchors to carry a real destination instead of simulating a button
  */
 
 import signalDollarSuffix from "./rules/signal-dollar-suffix.ts";
@@ -84,6 +85,7 @@ import noMockApiRawAsync from "./rules/no-mockapi-raw-async.ts";
 import noReactClassComponent from "./rules/no-react-class-component.ts";
 import preferUiComponents from "./rules/prefer-ui-components.ts";
 import menuRowHeight from "./rules/menu-row-height.ts";
+import requireAnchorHref from "./rules/require-anchor-href.ts";
 
 const plugin = {
   meta: {
@@ -136,6 +138,7 @@ const plugin = {
     "no-react-class-component": noReactClassComponent,
     "prefer-ui-components": preferUiComponents,
     "menu-row-height": menuRowHeight,
+    "require-anchor-href": requireAnchorHref,
   },
 };
 

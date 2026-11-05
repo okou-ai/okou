@@ -149,7 +149,7 @@ function connectorPillClassName({
     "inline-flex h-6 shrink-0 items-center gap-1.5 rounded-full border border-border/80 bg-white px-2 text-[11px] font-medium leading-none shadow-[0_0_2px_rgba(0,0,0,0.06)]",
     muted ? "text-muted-foreground" : "text-foreground/70",
     interactive &&
-      "cursor-pointer transition-colors hover:border-border hover:bg-state-hover hover:text-foreground",
+      "transition-colors hover:border-border hover:bg-state-hover hover:text-foreground",
   );
 }
 
@@ -988,7 +988,7 @@ function FilterPills<T extends string>({
               onChange(option.value);
             }}
             className={cn(
-              "inline-flex h-7 shrink-0 cursor-pointer items-center rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors",
+              "inline-flex h-7 shrink-0 items-center rounded-md border border-border px-2.5 text-sm font-medium leading-none transition-colors",
               active
                 ? "bg-muted text-foreground"
                 : "bg-background text-muted-foreground hover:bg-state-hover hover:text-foreground",
