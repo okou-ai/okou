@@ -1074,7 +1074,7 @@ test.each(["active", "suspended"] as const)(
   async (status) => {
     const { authorize, cachedChatThreadEvents } = mockChatAuthorization(false);
     const { session } = mockSharedViewer();
-    mockBrowserSession(
+    const currentSession =
       status === "active"
         ? session
         : browserSession({
@@ -1083,8 +1083,18 @@ test.each(["active", "suspended"] as const)(
             idleExpiresAt: null,
             suspendedAt: "2026-09-01T10:10:00.000Z",
             suspensionReason: "idle",
-          }),
-    );
+          });
+    let enabled = false;
+    context.mocks.api(browserContract.get, ({ respond }) => {
+      return enabled
+        ? respond(200, { browser: currentSession })
+        : respond(403, {
+            error: {
+              code: "BROWSER_AUTHORIZATION_REQUIRED",
+              message: AUTHORIZATION_REQUIRED,
+            },
+          });
+    });
     const hold = context.mocks.deferred<void>();
     context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
       await hold.promise;
@@ -1096,6 +1106,7 @@ test.each(["active", "suspended"] as const)(
       cachedChatThreadEvents,
     });
     await screen.findByText(AUTHORIZATION_REQUIRED);
+    enabled = true;
     authorize(true);
     if (status === "active") {
       await expectStreamingViewer();
@@ -1106,6 +1117,7 @@ test.each(["active", "suspended"] as const)(
       status === "suspended",
     );
     expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+    enabled = false;
     authorize(false);
     await screen.findByText(AUTHORIZATION_REQUIRED);
     expect(

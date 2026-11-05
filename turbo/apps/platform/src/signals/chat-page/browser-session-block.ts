@@ -33,10 +33,7 @@ import {
   type ImageLoadSignals,
 } from "../image-load.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
-import {
-  threadComputerAccessVersion,
-  threadMeta,
-} from "./chat-thread-event-sourcing.ts";
+import { threadComputerAccessVersion } from "./chat-thread-event-sourcing.ts";
 
 // One heartbeat per minute keeps an open browser panel comfortably inside its
 // ten-minute idle lease without making the lease itself stackable.
@@ -469,14 +466,9 @@ function createBrowserSessionKeepAliveSignals(
 
 function createBrowserSessionReadSignals(descriptor: BrowserSessionDescriptor) {
   const reloadVersion$ = state(0);
-  const metadata$ = threadMeta(descriptor.threadId);
   const accessVersion$ = threadComputerAccessVersion(descriptor.threadId);
-  const disabled$ = computed((get) => {
-    // Unknown metadata still delegates authorization to the Browser API.
-    return get(metadata$)?.cloudBrowserEnabled === false;
-  });
   const authorizationScope$ = computed((get) => {
-    return `${get(disabled$)}:${get(accessVersion$) ?? "initial"}`;
+    return get(accessVersion$) ?? "initial";
   });
   const lifetime$ = computed((get) => {
     get(reloadVersion$);
@@ -490,9 +482,6 @@ function createBrowserSessionReadSignals(descriptor: BrowserSessionDescriptor) {
   const lifecycleSession$ = computed(
     async (get): Promise<BrowserSessionResult> => {
       const lifetime = get(lifetime$);
-      if (get(disabled$)) {
-        return UNAUTHORIZED;
-      }
       const override = get(lifetime.sessionOverride$);
       return override === undefined
         ? await fetchBrowserSession(get(apiClient$), descriptor.threadId)

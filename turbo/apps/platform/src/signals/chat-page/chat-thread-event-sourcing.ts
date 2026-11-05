@@ -348,7 +348,7 @@ export function threadMeta(threadId: string) {
   });
 }
 
-/** Canonical and optimistic access changes independently own Browser reads. */
+/** Access changes invalidate Browser reads; only server responses authorize. */
 export function threadComputerAccessVersion(threadId: string) {
   return computed((get): string | null => {
     const snapshot = get(chatThreadEventState$).snapshot;

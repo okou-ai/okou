@@ -255,6 +255,14 @@ function liveBrowserSidebar(): HTMLElement {
 
 test("An unauthorized Browser keeps its card and sidebar with an authorization placeholder", async () => {
   mockBrowserApi(liveBrowserSession());
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return respond(403, {
+      error: {
+        code: "BROWSER_AUTHORIZATION_REQUIRED",
+        message: "Cloud browser is not enabled for this chat",
+      },
+    });
+  });
   const events = completedConversationEvents().map((event) => {
     return event.id === "navigation-browser-reply"
       ? {
@@ -470,6 +478,185 @@ test.each(["event", "snapshot"] as const)(
     expect(
       within(sidebar).queryByLabelText("Remote browser input"),
     ).not.toBeInTheDocument();
+  },
+);
+
+test.each(["event", "snapshot"] as const)(
+  "A canonical regrant restores the Browser after a local disable confirmed by %s",
+  async (confirmation) => {
+    const user = userEvent.setup({ delay: null });
+    mockWideScreen();
+    const session: BrowserSession = {
+      ...liveBrowserSession(),
+      window: {
+        instanceId: "22222222-2222-4222-8222-222222222222",
+        primaryWindowId: 0,
+      },
+    };
+    mockBrowserApi(session);
+    mockChatLifecycle(context, {
+      threadId: THREAD_ID,
+      cloudBrowserEnabled: true,
+    });
+    const agentId = "c0000000-0000-4000-a000-000000000001";
+    const stream = installChatListStream(context, {
+      caseId: 5314,
+      snapshot: [
+        chatListThread(1, "Browser enabled", {
+          id: THREAD_ID,
+          agentId,
+          cloudBrowserEnabled: true,
+        }),
+      ],
+    });
+    context.mocks.api(remotesContract.overview, ({ respond }) => {
+      return respond(200, {
+        cloudBrowserAvailable: true,
+        cloudBrowserEnabledByDefault: true,
+        sshHosts: [],
+        vncHosts: [],
+        computerUseHosts: [],
+      });
+    });
+    const commit = context.mocks.deferred<void>();
+    const revalidate = context.mocks.deferred<void>();
+    const hold = context.mocks.deferred<void>();
+    const events: ReturnType<typeof chatListEvent>[] = [];
+    let committed = false;
+    let enabled = true;
+    let restoring = false;
+    if (confirmation === "snapshot") {
+      context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+        return respond(
+          200,
+          mockChatThreadSnapshotResponse(context, {
+            chatThreads: [
+              chatListThread(1, "Browser enabled", {
+                id: THREAD_ID,
+                agentId,
+                cloudBrowserEnabled: !committed,
+              }),
+            ],
+            latestEventId:
+              events[0]?.id ?? chatListEvent(5314, 1, "created", THREAD_ID).id,
+            latestSeqId: committed ? 2 : 1,
+          }),
+        );
+      });
+      context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+        return committed && (query.sinceSeqId ?? 0) < 2
+          ? respond(410, {
+              error: {
+                code: "CHAT_THREAD_EVENTS_EXPIRED",
+                message: "Chat thread events cursor has expired",
+              },
+            })
+          : respond(200, {
+              events: events.filter((event) => {
+                return event.seqId > (query.sinceSeqId ?? 0);
+              }),
+              hasMore: false,
+            });
+      });
+    }
+    context.mocks.api(browserContract.get, async ({ respond }) => {
+      if (restoring) {
+        await revalidate.promise;
+      }
+      return enabled
+        ? respond(200, { browser: session })
+        : respond(403, {
+            error: {
+              code: "BROWSER_AUTHORIZATION_REQUIRED",
+              message: "Cloud browser is not enabled for this chat",
+            },
+          });
+    });
+    context.mocks.api(browserContract.open, ({ respond }) => {
+      return respond(200, { browser: session });
+    });
+    context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+      await hold.promise;
+      return respond(200, { browser: session });
+    });
+    context.mocks.api(
+      chatThreadComputerUseHostContract.update,
+      async ({ body, respond }) => {
+        if (!body.eventId || body.cloudBrowserEnabled !== false) {
+          throw new Error("Expected an identified Browser disable");
+        }
+        await commit.promise;
+        committed = true;
+        enabled = false;
+        events.push(
+          chatListEvent(5314, 2, "computer_use_host_updated", THREAD_ID, {
+            id: body.eventId,
+            agentId,
+            cloudBrowserEnabled: false,
+          }),
+          chatListEvent(5314, 3, "renamed", THREAD_ID, {
+            agentId,
+            title: "Browser disabled",
+          }),
+        );
+        stream.setEvents(events);
+        context.mocks.ably.trigger("threadListChanged");
+        return respond(204);
+      },
+    );
+    await setupPage({
+      context,
+      path: `/chats/${THREAD_ID}`,
+      host: "app.okou.ai",
+      featureSwitches: {
+        [FeatureSwitchKey.CloudBrowserPanel]: true,
+        [FeatureSwitchKey.BrowserSharedOwner]: true,
+      },
+    });
+    await expectConversationReady();
+    click(buttonByName("Open browser"));
+    const sidebar = liveBrowserSidebar();
+    await waitFor(() => {
+      expect(
+        within(sidebar).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
+    click(buttonByName("Connectors"));
+    await user.click(
+      await screen.findByRole("switch", {
+        name: "Cloud browser",
+        checked: true,
+      }),
+    );
+    commit.resolve();
+    await screen.findAllByText("Browser disabled");
+    await within(sidebar).findByText(
+      "Cloud browser is not enabled for this chat",
+    );
+    enabled = true;
+    restoring = true;
+    events.push(
+      chatListEvent(5314, 4, "computer_use_host_updated", THREAD_ID, {
+        agentId,
+        cloudBrowserEnabled: true,
+      }),
+      chatListEvent(5314, 5, "renamed", THREAD_ID, {
+        agentId,
+        title: "Browser enabled again",
+      }),
+    );
+    stream.setEvents(events);
+    context.mocks.ably.trigger("threadListChanged");
+    await screen.findAllByText("Browser enabled again");
+    expect(
+      within(sidebar).queryByLabelText("Remote browser input"),
+    ).not.toBeInTheDocument();
+    revalidate.resolve();
+    await waitFor(() => {
+      expect(
+        within(sidebar).getByLabelText("Remote browser input"),
+      ).toBeEnabled();
+    });
   },
 );
 
