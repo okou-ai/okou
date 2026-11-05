@@ -103,30 +103,17 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Observe cold dependency inputs
-        run: python3 .github/scripts/desktop-dependency-probe.py before
-
       - name: Test native Desktop runtime
         run: swift test --package-path desktop -j 4 --disable-automatic-resolution
 
       - name: Test Computer Use helper
-        run: |
-          # Temporary paired experiment; remove before final readiness.
-          if (( GITHUB_RUN_ATTEMPT % 2 == 0 )); then
-            swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution --scratch-path "$GITHUB_WORKSPACE/desktop/.build"
-          else
-            swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
-          fi
+        run: swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution --scratch-path "$GITHUB_WORKSPACE/desktop/.build"
 
       - name: Test native debug symbol pipeline
         run: python3 desktop/scripts/debug_symbols_test.py
 
       - name: Verify locked Desktop dependencies
         run: git diff --exit-code -- desktop/Package.resolved desktop/ComputerUse/Package.resolved desktop/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-
-      - name: Observe native dependency stores
-        if: ${{ !cancelled() }}
-        run: python3 .github/scripts/desktop-dependency-probe.py after-tests
 
   package-macos:
     name: package-macos-arm64
@@ -142,9 +129,6 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-
-      - name: Observe cold dependency inputs
-        run: python3 .github/scripts/desktop-dependency-probe.py before
 
       - name: Build production-configured native app
         env:
@@ -192,10 +176,6 @@ jobs:
 
       - name: Verify locked Desktop dependencies
         run: git diff --exit-code -- desktop/Package.resolved desktop/ComputerUse/Package.resolved desktop/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
-
-      - name: Observe package dependency stores
-        if: ${{ !cancelled() }}
-        run: python3 .github/scripts/desktop-dependency-probe.py after-packages
 
       - name: Stage native packages
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
