@@ -24,7 +24,10 @@ import {
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
-import { requestChatListLayout$ } from "./chat-list-layout.ts";
+import {
+  CHAT_LIST_LAYOUT_EVENT,
+  refreshChatListLayout$,
+} from "./chat-list-layout.ts";
 
 const CHAT_THREAD_VIRTUAL_FALLBACK_WINDOW_SIZE = 100;
 const CHAT_THREAD_VIRTUAL_OVERSCAN = 8;
@@ -69,8 +72,6 @@ export interface SidebarChatThreadScrollSignals {
     (() => void) | undefined,
     [HTMLElement | null]
   >;
-  /** Measures the viewport at the commit that fulfills a layout request. */
-  readonly commitLayoutRequest$: Command<void, []>;
   readonly scrollToRow$: Command<
     Promise<boolean>,
     [ScrollToRowRequest, AbortSignal]
@@ -86,7 +87,7 @@ function emptyScrollMetrics(): SidebarChatThreadScrollMetrics {
 }
 
 // Each viewport reads its height only when something that can change it has
-// happened: its own mount, a browser resize, or a layout request from the
+// happened: its own mount, a browser resize, or a layout refresh from the
 // operation that changed the space around it.
 function createSidebarChatThreadDomSignals(restoreScrollPosition: boolean) {
   const internalViewport$ = state<HTMLElement | null>(null);
@@ -120,14 +121,14 @@ function createSidebarChatThreadDomSignals(restoreScrollPosition: boolean) {
       set(internalScrollMetrics$, metrics);
     },
   );
-  const scheduleResizeMeasurement$ = command(
+  const scheduleViewportMeasurement$ = command(
     ({ get, set }, viewport: HTMLElement, signal: AbortSignal) => {
       if (get(resizeScheduled$)) {
         return;
       }
       set(resizeScheduled$, true);
-      // Coalesce a burst of browser resize events into one read of the
-      // latest layout in this frame.
+      // Resizes and layout refreshes share one read of the latest layout in
+      // the next frame, after the change that requested it has rendered.
       animationFrame(
         () => {
           set(resizeScheduled$, false);
@@ -137,12 +138,6 @@ function createSidebarChatThreadDomSignals(restoreScrollPosition: boolean) {
       );
     },
   );
-  const commitLayoutRequest$ = command(({ get, set }) => {
-    const viewport = get(internalViewport$);
-    if (viewport) {
-      set(measureScrollViewport$, viewport);
-    }
-  });
   const clearScrollViewport$ = command(
     ({ get, set }, viewport: HTMLElement) => {
       if (get(internalViewport$) !== viewport) {
@@ -163,13 +158,13 @@ function createSidebarChatThreadDomSignals(restoreScrollPosition: boolean) {
       set(internalViewport$, viewport);
       set(resizeScheduled$, false);
       set(measureScrollViewport$, viewport);
-      window.addEventListener(
-        "resize",
-        () => {
-          set(scheduleResizeMeasurement$, viewport, signal);
-        },
-        { signal },
-      );
+      const scheduleMeasurement = () => {
+        set(scheduleViewportMeasurement$, viewport, signal);
+      };
+      window.addEventListener("resize", scheduleMeasurement, { signal });
+      window.addEventListener(CHAT_LIST_LAYOUT_EVENT, scheduleMeasurement, {
+        signal,
+      });
       signal.addEventListener(
         "abort",
         () => {
@@ -191,7 +186,6 @@ function createSidebarChatThreadDomSignals(restoreScrollPosition: boolean) {
     scrollMetrics$,
     setScrollViewport$,
     setScrollMetrics$,
-    commitLayoutRequest$,
   };
 }
 
@@ -281,7 +275,7 @@ function createSidebarChatThreadViewportSignals(
     const rows = get(rows$);
     const rowCount = get(rowCount$);
     // The window follows the recorded metrics only; every change to them is
-    // written by a scroll, a resize or a fulfilled layout request.
+    // written by a scroll, a resize or a layout refresh.
     const { scrollTop, clientHeight: measuredViewportHeight } = get(
       domSignals.scrollMetrics$,
     );
@@ -435,7 +429,6 @@ export function createSidebarChatThreadScrollSignals({
     list$,
     setScrollMetrics$: domSignals.setScrollMetrics$,
     setScrollViewport$: domSignals.setScrollViewport$,
-    commitLayoutRequest$: domSignals.commitLayoutRequest$,
     scrollToRow$,
     scrollCurrentChatThreadOnRef$,
   };
@@ -451,11 +444,11 @@ export const threeColumnSidebarChatThreadScrollSignals =
 // when the remaining height needs to be measured again.
 export const refreshSidebarChatThreadLayoutOnRef$ = onRef(
   command(({ set }, _element: HTMLElement, signal: AbortSignal) => {
-    set(requestChatListLayout$);
+    set(refreshChatListLayout$);
     signal.addEventListener(
       "abort",
       () => {
-        set(requestChatListLayout$);
+        set(refreshChatListLayout$);
       },
       { once: true },
     );

@@ -1,19 +1,13 @@
-import { command, computed, state } from "ccstate";
+import { command } from "ccstate";
 
-const internalChatListLayoutRequest$ = state<symbol | null>(null);
-
-/**
- * The latest change to the space beside the chat list. Every mounted chat list
- * viewport fulfills it at the commit that carries the change.
- */
-export const chatListLayoutRequest$ = computed((get) => {
-  return get(internalChatListLayoutRequest$);
-});
+/** Dispatched on `window`; each mounted chat list viewport listens for it. */
+export const CHAT_LIST_LAYOUT_EVENT = "okou-chat-list-layout";
 
 /**
- * Called by the operation that changes the chat list's available height, in
- * the same synchronous update as the state that renders the change.
+ * Called by the operation that changes the space beside the chat list. Every
+ * mounted chat list viewport measures itself in the next animation frame,
+ * under its own mount lifetime, coalesced with browser resizes.
  */
-export const requestChatListLayout$ = command(({ set }) => {
-  set(internalChatListLayoutRequest$, Symbol("chat-list-layout"));
+export const refreshChatListLayout$ = command(() => {
+  window.dispatchEvent(new Event(CHAT_LIST_LAYOUT_EVENT));
 });

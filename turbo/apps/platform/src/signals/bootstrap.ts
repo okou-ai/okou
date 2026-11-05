@@ -36,7 +36,7 @@ import {
 import { registerServiceWorker$ } from "../lib/push-notifications.ts";
 import { onDomEventFn, resetSignal } from "./utils.ts";
 import { setupVisualViewportKeyboardState } from "../lib/visual-viewport-keyboard.ts";
-import { requestChatListLayout$ } from "./chat-page/chat-list-layout.ts";
+import { refreshChatListLayout$ } from "./chat-page/chat-list-layout.ts";
 import "./pwa-install.ts";
 import { ROUTES, type RoutePath } from "./route-paths.ts";
 
@@ -688,7 +688,7 @@ export const bootstrap$ = command(
       },
       () => {
         // The mobile tab bar hides while the keyboard is open.
-        set(requestChatListLayout$);
+        set(refreshChatListLayout$);
       },
     );
     set(captureDiscordApprovalFragment$, signal);

@@ -1,7 +1,7 @@
 import { ArrowUpRight, TriangleAlert, Wrench, X } from "lucide-react";
 import { useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { LayoutCommit, useMediaQuery } from "@okouai/ui";
+import { useMediaQuery } from "@okouai/ui";
 import { Button } from "@okouai/ui/components/ui/button";
 import { Card, CardContent } from "@okouai/ui/components/ui/card";
 
@@ -10,7 +10,6 @@ import {
   type InstatusIssue,
   visibleInstatusIssues$,
 } from "../../signals/instatus-status.ts";
-import { requestChatListLayout$ } from "../../signals/chat-page/chat-list-layout.ts";
 import { resolvePlatformServiceStatusConfig } from "../../lib/platform-host.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../okou-page/sidebar-breakpoint.ts";
 
@@ -156,48 +155,35 @@ export function InstatusStatusNotice({
   const { t } = useTranslation();
   const issues = useLastResolved(visibleInstatusIssues$) ?? [];
   const dismissIssue = useSet(dismissInstatusIssue$);
-  const requestChatListLayout = useSet(requestChatListLayout$);
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   const config = resolvePlatformServiceStatusConfig(window.location.hostname);
   const placementMatchesViewport =
     placement === "floating" ? isDesktop : !isDesktop;
 
-  const notice =
-    config && placementMatchesViewport && issues.length > 0 ? (
-      <div
-        role="region"
-        aria-label={t(($) => {
-          return $.serviceStatus.label;
-        })}
-        className={placementClassName(placement)}
-      >
-        {issues.map((issue) => {
-          return (
-            <div key={issue.id} className="pointer-events-auto">
-              <InstatusIssueNotice
-                issue={issue}
-                onDismiss={dismissIssue}
-                compact={placement !== "floating"}
-                pageBaseUrl={config.pageBaseUrl}
-              />
-            </div>
-          );
-        })}
-      </div>
-    ) : null;
-
-  if (placement === "floating") {
-    return notice;
+  if (!config || !placementMatchesViewport || issues.length === 0) {
+    return null;
   }
-  // Inline notices take their height from the chat list below them. The
-  // displayed issues arrive from an asynchronous fetch, so the commit that
-  // shows or removes them is where that height changes.
+
   return (
-    <LayoutCommit
-      layoutKey={notice ? JSON.stringify(issues) : ""}
-      onLayoutCommit={requestChatListLayout}
+    <div
+      role="region"
+      aria-label={t(($) => {
+        return $.serviceStatus.label;
+      })}
+      className={placementClassName(placement)}
     >
-      {notice}
-    </LayoutCommit>
+      {issues.map((issue) => {
+        return (
+          <div key={issue.id} className="pointer-events-auto">
+            <InstatusIssueNotice
+              issue={issue}
+              onDismiss={dismissIssue}
+              compact={placement !== "floating"}
+              pageBaseUrl={config.pageBaseUrl}
+            />
+          </div>
+        );
+      })}
+    </div>
   );
 }

@@ -3,8 +3,9 @@ import { command, computed, state } from "ccstate";
 import { delay } from "signal-timers";
 
 import { localStorageSignals } from "./external/local-storage.ts";
-import { isRecord, jsonParseOr, setLoop } from "./utils.ts";
+import { detach, isRecord, jsonParseOr, Reason, setLoop } from "./utils.ts";
 import { resolvePlatformServiceStatusConfig } from "../lib/platform-host.ts";
+import { refreshChatListLayout$ } from "./chat-page/chat-list-layout.ts";
 
 const STATUS_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
 
@@ -123,6 +124,19 @@ export const dismissInstatusIssue$ = command(
       setDismissedIssueIdsRaw$,
       JSON.stringify(Array.from(nextDismissedIssueIds)),
     );
+    // Mobile notices sit above the chat list.
+    set(refreshChatListLayout$);
+  },
+);
+
+// Mobile notices sit above the chat list, so each fetched result can change
+// its height. A failed fetch leaves the previous notices, and the height, as
+// they were; it fails only this round's refresh, not the polling loop.
+const refreshChatListLayoutAfterIssues$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    await get(visibleInstatusIssues$);
+    signal.throwIfAborted();
+    set(refreshChatListLayout$);
   },
 );
 
@@ -134,6 +148,11 @@ export const pollInstatusIssues$ = command(
 
     setLoop(
       async (loopSignal) => {
+        detach(
+          set(refreshChatListLayoutAfterIssues$, loopSignal),
+          Reason.Daemon,
+          "service notice layout",
+        );
         await delay(STATUS_REFRESH_INTERVAL_MS, { signal: loopSignal });
         set(refreshVersion$, (version) => {
           return version + 1;

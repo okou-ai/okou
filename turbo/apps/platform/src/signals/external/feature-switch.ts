@@ -14,7 +14,7 @@ import {
   featureSwitchState$,
   setFeatureSwitchState$,
 } from "./feature-switch-state.ts";
-import { requestChatListLayout$ } from "../chat-page/chat-list-layout.ts";
+import { refreshChatListLayout$ } from "../chat-page/chat-list-layout.ts";
 
 type FeatureSwitchClerk = Pick<Clerk, "organization" | "session" | "user">;
 
@@ -107,7 +107,7 @@ export const applyFeatureSwitches$ = command(
       return previous[key] !== switches[key];
     });
     if (changed) {
-      set(requestChatListLayout$);
+      set(refreshChatListLayout$);
     }
   },
 );
