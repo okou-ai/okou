@@ -15,21 +15,24 @@ import {
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
 import { bootstrapSkeleton } from "../../../test/bootstrap-skeleton.ts";
+import { signupControl } from "./signup-test-helpers.ts";
 
 const context = testContext();
 const signedInContext = createTestRuntime(context);
 
-test("An unavailable referral link still opens the normal signup form", async () => {
+test("An unavailable referral code can be cleared to continue signup", async () => {
   context.mocks.api(friendReferralsContract.visit, ({ respond }) => {
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Referral link is unavailable" },
     });
   });
   await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
-  expect(screen.getByTestId("clerk-sign-up")).toBeInTheDocument();
-  expect(
-    screen.queryByLabelText("Invitation code (optional)"),
-  ).not.toBeInTheDocument();
+  const code = screen.getByLabelText("Invitation code (optional)");
+  expect(code).toHaveValue("a7k2p9");
+  expect(code).toHaveAttribute("aria-invalid", "true");
+  expect(signupControl("button", "Continue")).toBeDisabled();
+  await fill(code, "");
+  expect(signupControl("button", "Continue")).toBeEnabled();
   expect(document.title).toBe("Sign up | Okou");
 });
 
@@ -71,9 +74,8 @@ test("A friend can enter, correct, or remove an optional invitation code", async
           error: { code: "NOT_FOUND", message: "Referral link is unavailable" },
         });
   });
-  await setupSignedOutPage("/sign-up?friend_referral=a7k2p9");
+  await setupSignedOutPage("/sign-up");
   const code = screen.getByLabelText("Invitation code (optional)");
-  await fill(code, "");
   expect(code).toHaveValue("");
   const user = userEvent.setup({ delay: null });
   await user.type(code, "wrong!");
@@ -287,7 +289,7 @@ test("Clerk cross-origin navigation stays browser-owned", async () => {
 test("The hosted sign-up form renders with an allowed redirect URL", async () => {
   const redirectUrl = PRESENTATION_ONBOARDING_URL;
   await setupSignedOutPage(
-    `/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}`,
+    `/sign-up/verify-email-address?redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
 
   const signUp = screen.getByTestId("clerk-sign-up");
@@ -350,11 +352,10 @@ test("Okou auth intent survives Clerk moving the redirect into the hash", async 
     `/sign-up#/?redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
 
-  const signUp = screen.getByTestId("clerk-sign-up");
-  expect(signUp).toHaveAttribute("data-clerk-force-redirect-url", redirectUrl);
-  expect(signUp.dataset.clerkSignInUrl).toContain(
+  expect(signupControl("link", "Sign in").getAttribute("href")).toContain(
     `redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
+  expect(screen.getByLabelText("Invitation code (optional)")).toHaveValue("");
   expect(document.title).toBe("Sign up | Okou");
   expect(okouBrandLink()).toHaveAttribute("href", "/");
 });
@@ -374,7 +375,7 @@ test("An untrusted redirect URL returns to the default app", async () => {
 
 test("Default sign-up redirects do not propagate acquisition parameters", async () => {
   await setupSignedOutPage(
-    "/sign-up?gclid=click-123&utm_campaign=summer#/verify?step=code",
+    "/sign-up/verify-email-address?gclid=click-123&utm_campaign=summer#/verify?step=code",
   );
 
   const redirectUrl = new URL(
@@ -386,7 +387,7 @@ test("Default sign-up redirects do not propagate acquisition parameters", async 
 test("Sign-up redirects to sibling origins of the current host are kept", async () => {
   const redirectUrl = "https://www.okou.ai/connector/success?vm0_theme=light";
   await setupSignedOutPage(
-    `/sign-up?redirect_url=${encodeURIComponent(redirectUrl)}`,
+    `/sign-up/verify-email-address?redirect_url=${encodeURIComponent(redirectUrl)}`,
   );
 
   expect(
@@ -396,7 +397,7 @@ test("Sign-up redirects to sibling origins of the current host are kept", async 
 
 test("Sign-up redirects to other environments fall back to onboarding", async () => {
   await setupSignedOutPage(
-    "/sign-up?redirect_url=https%3A%2F%2Fstaging-www.omby.ai%2Fconnector%2Fsuccess",
+    "/sign-up/verify-email-address?redirect_url=https%3A%2F%2Fstaging-www.omby.ai%2Fconnector%2Fsuccess",
   );
 
   expect(
@@ -406,7 +407,7 @@ test("Sign-up redirects to other environments fall back to onboarding", async ()
 
 test("Hosted auth reaches the brand home and the theme toggle", async () => {
   context.mocks.browser.matchMedia(false);
-  await setupSignedOutPage("/sign-up");
+  await setupSignedOutPage("/sign-up/continue");
 
   // The wordmark is a same-origin static asset, so it must not request CORS.
   const logoImage = screen.getByAltText("Okou");
