@@ -7,13 +7,11 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use guest_contracts::home_mount::{HOME_DRIVE_MOUNT_TIMEOUT_MS, HOME_MOUNT_PATH};
-use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES,
-};
+use guest_control_proto::{ExecTermination, HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES};
 
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
-use crate::helper_output::truncate_utf8;
+use crate::helper_output::{captured_or_empty, truncate_utf8};
 use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::wait::{
@@ -201,8 +199,8 @@ fn handle_request(
         seq,
         output.termination,
         output.duration_ms,
-        captured_output(&output.stdout),
-        captured_output(&output.stderr),
+        captured_or_empty(&output.stdout),
+        captured_or_empty(&output.stderr),
         &output.diagnostic,
     )
     .map_err(to_io_error)?;
@@ -351,13 +349,6 @@ fn failed_output(
             stream_truncated: false,
         },
         diagnostic: truncate_utf8(diagnostic, MAX_DIAGNOSTIC_BYTES),
-    }
-}
-
-fn captured_output(result: &BoundedDrainResult) -> ExecCapturedOutput<'_> {
-    ExecCapturedOutput::Captured {
-        bytes: result.captured.as_deref().unwrap_or_default(),
-        truncated: result.capture_truncated,
     }
 }
 
