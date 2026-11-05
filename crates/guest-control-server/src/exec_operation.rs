@@ -72,6 +72,7 @@ use crate::drain::{
 };
 use crate::error::to_io_error;
 use crate::exec_control::ExecControlGuard;
+use crate::helper_output::captured_or_discarded;
 use crate::log::log;
 use crate::process::kill_and_reap_child;
 use crate::process_containment::{
@@ -985,8 +986,8 @@ impl RunningExec {
 
         completion.finish(
             termination,
-            captured_output(&stdout_result),
-            captured_output(&stderr_result),
+            captured_or_discarded(&stdout_result),
+            captured_or_discarded(&stderr_result),
             &diagnostic,
         );
     }
@@ -1824,16 +1825,6 @@ where
     )
     .map_err(to_io_error)?;
     writer.write_frame_after_lock(&encoded, after_lock)
-}
-
-fn captured_output(result: &BoundedDrainResult) -> ExecCapturedOutput<'_> {
-    match result.captured.as_deref() {
-        Some(bytes) => ExecCapturedOutput::Captured {
-            bytes,
-            truncated: result.capture_truncated,
-        },
-        None => ExecCapturedOutput::Discarded,
-    }
 }
 
 fn empty_output_for_policy(policy: ExecOutputPolicy) -> ExecCapturedOutput<'static> {

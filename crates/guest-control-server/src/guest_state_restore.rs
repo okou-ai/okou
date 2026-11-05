@@ -7,14 +7,13 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES,
-    GuestStateRestoreTimezone,
+    ExecTermination, GUEST_STATE_RESTORE_OUTPUT_LIMIT_BYTES, GuestStateRestoreTimezone,
 };
 
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::helper_input::FixedInputWriter;
-use crate::helper_output::truncate_utf8;
+use crate::helper_output::{captured_or_empty, truncate_utf8};
 use crate::log::log;
 use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
@@ -209,7 +208,7 @@ fn handle_request(
         connection_cancel,
         drain_deadline,
     });
-    let stderr = captured_output(&output.stderr);
+    let stderr = captured_or_empty(&output.stderr);
     let mut frame = Vec::new();
     guest_control_proto::encode_guest_state_restore_result_frame_into(
         &mut frame,
@@ -396,13 +395,6 @@ fn failed_output(
             stream_truncated: false,
         },
         diagnostic: truncate_utf8(diagnostic, MAX_DIAGNOSTIC_BYTES),
-    }
-}
-
-fn captured_output(result: &BoundedDrainResult) -> ExecCapturedOutput<'_> {
-    ExecCapturedOutput::Captured {
-        bytes: result.captured.as_deref().unwrap_or_default(),
-        truncated: result.capture_truncated,
     }
 }
 

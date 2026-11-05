@@ -8,9 +8,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
-use guest_control_proto::{
-    ExecCapturedOutput, ExecTermination, GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES,
-};
+use guest_control_proto::{ExecTermination, GUEST_STORAGE_MANIFEST_OUTPUT_LIMIT_BYTES};
 
 use crate::contained_command::{
     CommandStdio, ContainedChild as Child, ContainedCommand as Command, ContainedCommandExt,
@@ -18,7 +16,7 @@ use crate::contained_command::{
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::helper_input::FixedInputWriter;
-use crate::helper_output::truncate_utf8;
+use crate::helper_output::{captured_or_empty, truncate_utf8};
 use crate::log::log;
 use crate::process::kill_and_reap_child;
 use crate::process_containment::{
@@ -280,8 +278,8 @@ fn handle_request(
         resources: &mut resources,
     });
     let response_prepare_started = Instant::now();
-    let stdout = captured_output(&output.stdout);
-    let stderr = captured_output(&output.stderr);
+    let stdout = captured_or_empty(&output.stdout);
+    let stderr = captured_or_empty(&output.stderr);
     let resource_summary = if instruction_operation.is_none() {
         serde_json::to_vec(&TerminalEvidence {
             resources: resources.as_ref(),
@@ -656,13 +654,6 @@ fn failed_output(
             stream_truncated: false,
         },
         diagnostic: truncate_utf8(diagnostic, MAX_DIAGNOSTIC_BYTES),
-    }
-}
-
-fn captured_output(result: &BoundedDrainResult) -> ExecCapturedOutput<'_> {
-    ExecCapturedOutput::Captured {
-        bytes: result.captured.as_deref().unwrap_or_default(),
-        truncated: result.capture_truncated,
     }
 }
 
