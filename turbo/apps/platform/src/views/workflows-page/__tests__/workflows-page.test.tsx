@@ -4493,6 +4493,17 @@ test("Make private copy opens the existing private definition without overwritin
   await waitFor(() => {
     expect(buttonByText("Make private copy")).toBeEnabled();
   });
+  const metadata = screen.getByLabelText("Workflow metadata");
+  expect(
+    within(metadata).getByText(
+      "/sales-research uses your private copy. You are viewing the shared definition.",
+    ),
+  ).toBeInTheDocument();
+  const privateLink = linkByText("Open private copy");
+  expect(privateLink).toHaveAttribute(
+    "href",
+    `/workflows/${COPIED_WORKFLOW_ID}/instructions`,
+  );
   click(buttonByText("Make private copy"));
   const dialog = await screen.findByRole("dialog", {
     name: "Make private copy",

@@ -7111,9 +7111,12 @@
       "copyDescription": "在此工作区创建你自己的私有工作流。只会复制你自己的自动化。",
       "copyExists": "你已有同名私有工作流，可打开它继续编辑。",
       "createDescription": "在此工作区与个人 Okou 一起创建工作流。",
+      "descriptionHelp": "告诉 Okou 何时使用这个工作流。",
       "makePrivateCopy": "创建私有副本",
       "openPrivateCopy": "打开私有副本",
       "overridden": "已使用你的私有版本",
+      "overrideHelp": "/{{name}} 使用你的私有副本。你正在查看共享定义。",
+      "publicationPermissionRequired": "你没有在此工作区发布工作流的权限。",
       "sharedWith": "与 {{workspace}} 共享",
       "usedFor": "用于 /{{name}}"
     }

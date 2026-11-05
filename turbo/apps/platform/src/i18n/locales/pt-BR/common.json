@@ -7208,9 +7208,12 @@
       "copyDescription": "Crie seu próprio fluxo privado neste espaço de trabalho. Apenas suas automações são copiadas.",
       "copyExists": "Você já tem um fluxo privado com este nome. Abra-o para continuar.",
       "createDescription": "Crie um fluxo com seu Okou pessoal neste espaço de trabalho.",
+      "descriptionHelp": "Diga ao Okou quando usar este fluxo.",
       "makePrivateCopy": "Criar cópia privada",
       "openPrivateCopy": "Abrir cópia privada",
       "overridden": "Substituído para você",
+      "overrideHelp": "/{{name}} usa sua cópia privada. Você está vendo a definição compartilhada.",
+      "publicationPermissionRequired": "Você não tem permissão para publicar fluxos neste espaço de trabalho.",
       "sharedWith": "Compartilhado com {{workspace}}",
       "usedFor": "Usado para /{{name}}"
     }

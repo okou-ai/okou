@@ -1498,12 +1498,21 @@ function WorkflowMetadataFields({
       </InlineSettingsRow>
       <InlineSettingsRow
         label={copy.slug}
-        description={`${i18n.t(
-          ($) => {
-            return $.workflows.detail.metadata.slugHelp;
-          },
-          { command: slugCommand },
-        )} ${copy.slugTitle}`}
+        description={
+          singleAgent && detail.shadowedBy
+            ? i18n.t(
+                ($) => {
+                  return $.workflows.workspace.overrideHelp;
+                },
+                { name: detail.name },
+              )
+            : `${i18n.t(
+                ($) => {
+                  return $.workflows.detail.metadata.slugHelp;
+                },
+                { command: slugCommand },
+              )} ${copy.slugTitle}`
+        }
         wideControls
       >
         <Input
@@ -1531,7 +1540,13 @@ function WorkflowMetadataFields({
       </InlineSettingsRow>
       <InlineSettingsRow
         label={copy.description}
-        description={copy.descriptionHelp}
+        description={
+          singleAgent
+            ? i18n.t(($) => {
+                return $.workflows.workspace.descriptionHelp;
+              })
+            : copy.descriptionHelp
+        }
         wideControls
       >
         <Textarea
@@ -1667,8 +1682,33 @@ function ShadowWarning({
 }: {
   readonly detail: WorkflowDetailResponse;
 }) {
+  const singleAgent = useLastResolved(singleAgentWorkflows$);
   if (!detail.shadowedBy) {
     return null;
+  }
+  if (singleAgent) {
+    return (
+      <div className="mb-4 flex flex-wrap items-center gap-2 rounded-md border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-sm text-amber-800 dark:text-amber-200">
+        <AlertTriangle size={16} className="shrink-0" />
+        <span>
+          {i18n.t(
+            ($) => {
+              return $.workflows.workspace.overrideHelp;
+            },
+            { name: detail.name },
+          )}
+        </span>
+        <Link
+          pathname={ROUTES.workflowDetailInstructions}
+          options={{ pathParams: { workflowId: detail.shadowedBy.id } }}
+          className="font-medium underline hover:text-foreground"
+        >
+          {i18n.t(($) => {
+            return $.workflows.workspace.openPrivateCopy;
+          })}
+        </Link>
+      </div>
+    );
   }
 
   return (
@@ -1757,7 +1797,11 @@ function WorkflowPublicToggle({
       </div>
       {publishBlocked ? (
         <p className="text-xs leading-5 text-muted-foreground">
-          {copy.adminRequired}
+          {singleAgent
+            ? i18n.t(($) => {
+                return $.workflows.workspace.publicationPermissionRequired;
+              })
+            : copy.adminRequired}
         </p>
       ) : null}
       <Dialog open={demoteConfirmOpen} onOpenChange={setDemoteConfirmOpen}>

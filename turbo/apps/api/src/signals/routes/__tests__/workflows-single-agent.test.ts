@@ -186,9 +186,11 @@ test("ordinary members create and copy private Workflows without gaining public 
     }),
     [200],
   );
-  expect(aliceCommands.body.find((row) => row.name === source.name)?.id).toBe(
-    copied.body.id,
-  );
+  expect(
+    aliceCommands.body.find((row) => {
+      return row.name === source.name;
+    })?.id,
+  ).toBe(copied.body.id);
   const bobCommands = await accept(
     collection().composer({
       headers: headers(bob),
@@ -196,9 +198,11 @@ test("ordinary members create and copy private Workflows without gaining public 
     }),
     [200],
   );
-  expect(bobCommands.body.find((row) => row.name === source.name)?.id).toBe(
-    source.id,
-  );
+  expect(
+    bobCommands.body.find((row) => {
+      return row.name === source.name;
+    })?.id,
+  ).toBe(source.id);
   const aliceList = await accept(
     collection().list({ headers: headers(alice) }),
     [200],
