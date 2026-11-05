@@ -1,5 +1,7 @@
 # Changelog
 
+## [0.5.13](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.12...nbd-cow-v0.5.13) (2026-11-05)
+
 ## [0.5.12](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.11...nbd-cow-v0.5.12) (2026-11-04)
 
 ## [0.5.11](https://github.com/okou-ai/okou/compare/nbd-cow-v0.5.10...nbd-cow-v0.5.11) (2026-11-04)

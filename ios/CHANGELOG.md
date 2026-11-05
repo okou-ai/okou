@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.25.2](https://github.com/okou-ai/okou/compare/ios-v0.25.1...ios-v0.25.2) (2026-11-05)
+
+
+### Performance Improvements
+
+* **ios:** retain rendered conversation rows across scrolls ([#45307](https://github.com/okou-ai/okou/issues/45307)) ([391bc36](https://github.com/okou-ai/okou/commit/391bc364ce508c365e6ae333126e26b367a0ffd0))
+
 ## [0.25.1](https://github.com/okou-ai/okou/compare/ios-v0.25.0...ios-v0.25.1) (2026-11-04)
 
 

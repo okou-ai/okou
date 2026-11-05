@@ -1075,7 +1075,7 @@ dependencies = [
 
 [[package]]
 name = "cli-test-support"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "aho-corasick",
  "base64 0.23.1",
@@ -1118,7 +1118,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.47"
+version = "0.12.48"
 dependencies = [
  "chrono",
  "clap",
@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.40"
+version = "0.109.41"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2053,7 +2053,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.148"
+version = "0.1.149"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.75"
+version = "0.24.76"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2137,7 +2137,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.141"
+version = "0.12.142"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.61"
+version = "0.20.62"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.29.1"
+version = "0.29.2"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -2228,7 +2228,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.3.55"
+version = "0.3.56"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2241,7 +2241,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.275"
+version = "0.1.276"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -3086,7 +3086,7 @@ dependencies = [
 
 [[package]]
 name = "nbd-cow"
-version = "0.5.12"
+version = "0.5.13"
 dependencies = [
  "bitvec",
  "cli-test-support",
@@ -4046,7 +4046,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.13"
+version = "0.244.14"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4120,7 +4120,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.19.12"
+version = "0.19.13"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4168,7 +4168,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.10.25"
+version = "0.10.26"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -4193,7 +4193,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.64"
+version = "0.17.65"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4224,7 +4224,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.4.6"
+version = "0.4.7"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4256,7 +4256,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.16.8"
+version = "0.16.9"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4300,7 +4300,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.10"
+version = "0.31.11"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4401,7 +4401,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.8.28"
+version = "0.8.29"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4445,7 +4445,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.21.34"
+version = "0.21.35"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4769,7 +4769,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.68"
+version = "0.53.69"
 dependencies = [
  "api-contracts",
  "async-trait",

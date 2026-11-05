@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.48](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.47...codex-mock-v0.12.48) (2026-11-05)
+
+
+### Refactoring
+
+* **test:** share direct-child timeout and reaping protocol ([#45322](https://github.com/okou-ai/okou/issues/45322)) ([e1bab91](https://github.com/okou-ai/okou/commit/e1bab91248db4f9e1ea0435efdbf80de5c536ee3))
+
 ## [0.12.47](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.46...codex-mock-v0.12.47) (2026-11-04)
 
 

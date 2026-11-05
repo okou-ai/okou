@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.276](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.275...guest-write-file-v0.1.276) (2026-11-05)
+
+
+### Refactoring
+
+* **test:** share direct-child timeout and reaping protocol ([#45322](https://github.com/okou-ai/okou/issues/45322)) ([e1bab91](https://github.com/okou-ai/okou/commit/e1bab91248db4f9e1ea0435efdbf80de5c536ee3))
+
 ## [0.1.275](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.274...guest-write-file-v0.1.275) (2026-11-05)
 
 ## [0.1.274](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.273...guest-write-file-v0.1.274) (2026-11-04)
