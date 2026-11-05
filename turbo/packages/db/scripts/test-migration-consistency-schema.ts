@@ -3161,6 +3161,14 @@ async function main(): Promise<void> {
       ),
     );
 
+    console.log("=== Custom Connector Skill backfill CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/029-connector-skill-bundles/test-backfill.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
     console.log("=== Presentation template copy CLI ===");
     console.log(
       execCommand(

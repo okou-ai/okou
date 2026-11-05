@@ -232,3 +232,53 @@ await test("initial registration cannot admit same-PR dependencies, and activate
   f.write(baselinePath, JSON.stringify(f.inventory()));
   f.check(invalidBase, false, /bootstrap is closed/);
 });
+
+await test("reviewed Connector migration registers once without admitting runtime consumers or resurrection", (t) => {
+  const f = fixture(t);
+  f.write(checkerPath, "// Preceding frozen Storage dependency checker\n");
+  const preceding = f.commit();
+  const directory =
+    "turbo/packages/db/scripts/migrations/029-connector-skill-bundles/";
+  const source = directory + "source.ts";
+  const entry = directory + "backfill.ts";
+  const sourceCode = [
+    "export function load() { return [",
+    JSON.stringify("SELECT id FROM storages JOIN storage_versions ON true") +
+      ",",
+    JSON.stringify("SELECT id FROM storage_versions JOIN storages ON true"),
+    "]; }",
+  ].join("\n");
+  const entryCode = 'import { load } from "./source"; load();';
+  f.write(source, sourceCode);
+  f.write(entry, entryCode);
+  f.write(checkerPath, readFileSync(checker, "utf8"));
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(preceding, true);
+  const registered = f.commit();
+
+  // Even growth below the original registration ceiling is denied afterward.
+  f.write(entry, entryCode + "\nload();");
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(registered, false, /grew from/);
+  f.write(entry, entryCode);
+  f.write(
+    feature,
+    'import { load } from "../../../packages/db/scripts/migrations/029-connector-skill-bundles/source"; load();',
+  );
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(registered, false, /New legacy Storage dependencies are prohibited/);
+  rmSync(join(f.root, feature));
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(registered, true);
+
+  rmSync(join(f.root, source));
+  rmSync(join(f.root, entry));
+  f.git("add", "-u");
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(registered, true);
+  const retired = f.commit();
+  f.write(source, sourceCode);
+  f.write(entry, entryCode);
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(retired, false, /grew from 0/);
+});
