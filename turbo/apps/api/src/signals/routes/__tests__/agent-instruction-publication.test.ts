@@ -15,6 +15,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { agentInstructionsRoutes } from "../agent-instructions";
 import { agentsRoutes } from "../agents";
 import { createRouteMocks } from "./helpers/route-test";
+import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
 
 const context = testContext();
@@ -268,14 +269,33 @@ describe("Agent database instructions", () => {
     const storage = installWorkflowVolumeS3Fixture(context);
     const started = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
+    function releaseWrite() {
+      if (!release.settled()) {
+        release.resolve();
+      }
+    }
+    const owner = createFixtureOperationOwner(
+      () => {
+        return Promise.resolve();
+      },
+      { beforeDrain: releaseWrite },
+    );
     storage.beforeNextBundleWrite(async () => {
       started.resolve();
       await release.promise;
     });
-    const pending = settleIncludingAbort(instructionFixture());
-    await started.promise;
-    const secondResult = await settleIncludingAbort(instructionFixture());
-    release.resolve();
+    const pending = settleIncludingAbort(owner.run(instructionFixture));
+    const secondResult = await settleIncludingAbort(async () => {
+      const early = await Promise.race([started.promise, pending]);
+      if (early !== undefined) {
+        if (!early.ok) {
+          throw early.error;
+        }
+        throw new Error("Agent creation finished before bundle publication");
+      }
+      return await owner.run(instructionFixture);
+    });
+    releaseWrite();
     const first = await pending;
     if (!first.ok) {
       throw first.error;
