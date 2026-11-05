@@ -72,6 +72,7 @@ import {
 } from "./resolve-draft-attachments.ts";
 import { createSessionOutputStreamSignals } from "./session-output-stream.ts";
 import { createThreadSidebarSignals } from "./thread-sidebar.ts";
+import { createThreadImageNavigationSignals } from "./event-image-navigation.ts";
 
 import {
   isInterruptControlEvent,
@@ -987,26 +988,22 @@ function createRenderedChatGroups(
       get(eventRenderResources$),
     );
   });
-  const eventImageGroups$ = computed(
-    (get): Promise<EventImageGroupProjection[]> => {
-      return Promise.resolve(
-        get(allChatGroups$).map((group) => {
+  const eventImageGroups$ = computed((get): EventImageGroupProjection[] => {
+    return get(allChatGroups$).map((group) => {
+      return {
+        role: group.role,
+        events: group.events.map((event) => {
           return {
-            role: group.role,
-            events: group.events.map((event) => {
-              return {
-                userMessage: isInputChatEvent(event)
-                  ? event.userMessage
-                  : undefined,
-                userMessageRenderDocument: event.userMessageRenderDocument,
-                tree: event.tree,
-              };
-            }),
+            userMessage: isInputChatEvent(event)
+              ? event.userMessage
+              : undefined,
+            userMessageRenderDocument: event.userMessageRenderDocument,
+            tree: event.tree,
           };
         }),
-      );
-    },
-  );
+      };
+    });
+  });
 
   return {
     allChatGroups$,
@@ -1325,6 +1322,11 @@ function createEventSemanticSignals(
         : null;
     },
   );
+  // The message list only places the status row; the row subscribes to the
+  // indicator content itself.
+  const thinkingIndicatorsShown$ = computed(async (get): Promise<boolean> => {
+    return (await get(thinkingIndicators$)) !== null;
+  });
   const runFinished$ = computed((get): Promise<boolean> => {
     return Promise.resolve(
       !get(runActive$) && runFinishedFromGroups(get(semanticGroups$)),
@@ -1346,6 +1348,7 @@ function createEventSemanticSignals(
   });
   return {
     thinkingIndicators$,
+    thinkingIndicatorsShown$,
     runFinished$,
     recommendedFollowupSource$,
     donePhrase$,
@@ -2474,6 +2477,10 @@ function createChatThreadMessagePipeline({
   return {
     scroll,
     sidebar: effects.sidebar,
+    imageNavigation: createThreadImageNavigationSignals(
+      projections.eventImageGroups$,
+      effects.sidebar.target$,
+    ),
     firstTaskUpgradeEligible$: createFirstTaskUpgradeEligibility(
       projections.allSemanticChatGroups$,
     ),
@@ -3599,10 +3606,11 @@ function publicChatThreadEventSignals(events: MessageListSignals) {
     assistantErrorRecoveryEventId$: events.assistantErrorRecoveryEventId$,
     retryAssistantError$: events.retryAssistantError$,
     resetCodexSubscriptionAndRetry$: events.resetCodexSubscriptionAndRetry$,
-    eventImageGroups$: events.eventImageGroups$,
+    imageNavigation: events.imageNavigation,
     browserSessionSignals: events.browserSessionSignals,
     hasEvents$: events.hasEvents$,
     thinkingIndicators$: events.thinkingIndicators$,
+    thinkingIndicatorsShown$: events.thinkingIndicatorsShown$,
     runFinished$: events.runFinished$,
     recommendedFollowupSource$: events.recommendedFollowupSource$,
     donePhrase$: events.donePhrase$,

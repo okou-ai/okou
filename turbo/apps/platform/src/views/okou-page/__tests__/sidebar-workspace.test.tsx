@@ -44,7 +44,13 @@ const {
   prepareAgents,
 } = createSidebarHelpers(context);
 
-async function setupWorkspaceSearch() {
+async function setupWorkspaceSearch({
+  runningThreadIds = [],
+  unreadThreadIds = [],
+}: {
+  readonly runningThreadIds?: readonly string[];
+  readonly unreadThreadIds?: readonly string[];
+} = {}) {
   prepareAgents();
   mockSidebarThreadStory([
     createThread(RESEARCH_THREAD_ID, "Deployment notes", {
@@ -54,6 +60,24 @@ async function setupWorkspaceSearch() {
       agent: { id: SUPPORT_AGENT_ID, avatarUrl: null },
     }),
   ]);
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: {},
+      threads: Object.fromEntries([
+        ...runningThreadIds.map((threadId) => {
+          return [threadId, "active" as const];
+        }),
+        ...unreadThreadIds.map((threadId) => {
+          return [threadId, "unread" as const];
+        }),
+      ]),
+      unreadAt: Object.fromEntries(
+        unreadThreadIds.map((threadId) => {
+          return [threadId, "2026-03-10T00:05:00Z"];
+        }),
+      ),
+    });
+  });
   context.mocks.api(chatSearchContract.search, ({ query, respond }) => {
     return respond(200, {
       results:
@@ -109,6 +133,34 @@ test("Filter workspace search to matching messages", async () => {
     within(dialog).queryByText("Deployment notes"),
   ).not.toBeInTheDocument();
   expect(within(dialog).getByText("Incident response")).toBeInTheDocument();
+});
+
+function searchResultOption(dialog: HTMLElement, text: string): HTMLElement {
+  const option = within(dialog)
+    .getByText(text)
+    .closest<HTMLElement>('[role="option"]');
+  if (!option) {
+    throw new Error(`No search result contains ${text}`);
+  }
+  return option;
+}
+
+test("Show running and unread chat states in workspace search results", async () => {
+  const dialog = await setupWorkspaceSearch({
+    runningThreadIds: [RESEARCH_THREAD_ID],
+    unreadThreadIds: [INCIDENT_THREAD_ID],
+  });
+
+  await waitFor(() => {
+    expect(within(dialog).getByText("2 results")).toBeInTheDocument();
+    // The chat-title match and the message match each show their chat's state.
+    expect(searchResultOption(dialog, "Deployment notes")).toHaveTextContent(
+      "Running",
+    );
+    expect(searchResultOption(dialog, "Incident response")).toHaveTextContent(
+      "Unread",
+    );
+  });
 });
 
 test("Filter workspace search to chats and navigate", async () => {

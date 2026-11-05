@@ -15,13 +15,6 @@ import { AvatarSvgPreview, AvatarTextureLayer } from "./avatar-svg-preview.tsx";
 import { isLegacyAvatarSvgConfig } from "./avatar-svg-utils.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 
-function equalAgentDisplayNames(
-  previous: string | null | undefined,
-  next: string | null | undefined,
-): boolean {
-  return (previous ?? null) === (next ?? null);
-}
-
 /**
  * Returns labels for the current agent-scoped chat thread list.
  * Used by both the sidebar thread list and the full chat-list page so the two
@@ -30,9 +23,7 @@ function equalAgentDisplayNames(
 export function useChatThreadsTitleLabels() {
   const { t } = useTranslation();
   const assistantName = useGet(assistantName$);
-  const agentDisplayName = useLastResolved(currentChatAgentDisplayName$, {
-    equalityFn: equalAgentDisplayNames,
-  });
+  const agentDisplayName = useLastResolved(currentChatAgentDisplayName$);
   const agentName = agentDisplayName ?? assistantName;
   return {
     titleLabel: t(

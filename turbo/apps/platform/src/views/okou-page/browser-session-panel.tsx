@@ -9,7 +9,6 @@ import { useTranslation } from "react-i18next";
 import {
   browserSessionReclaimHint,
   isBrowserUnauthorized,
-  type BrowserSessionPanelState,
   type BrowserSessionSignals,
 } from "../../signals/chat-page/browser-session-block.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -322,33 +321,17 @@ function PausedBrowserSession({
   );
 }
 
-function equalPanelSessions(
-  previous: BrowserSessionPanelState | null,
-  next: BrowserSessionPanelState | null,
-): boolean {
-  if (isBrowserUnauthorized(previous) || isBrowserUnauthorized(next)) {
-    return previous?.status === next?.status;
-  }
-  return (
-    previous === next ||
-    (previous !== null &&
-      next !== null &&
-      previous.status === next.status &&
-      previous.screenshotUrl === next.screenshotUrl &&
-      previous.liveUrl === next.liveUrl &&
-      previous.instanceId === next.instanceId &&
-      previous.windowId === next.windowId)
-  );
-}
-
 function BrowserSessionPanelContent({
   signals,
   actions,
   overlay,
 }: BrowserSessionPanelProps) {
-  const sessionLoadable = useLastLoadable(signals.panelSession$, {
-    equalityFn: equalPanelSessions,
-  });
+  // All four read the same session; the panel waits for every value so the
+  // viewer never mounts with a partial identity.
+  const status = useLastLoadable(signals.panelStatus$);
+  const liveUrl = useLastLoadable(signals.panelLiveUrl$);
+  const instanceId = useLastLoadable(signals.panelInstanceId$);
+  const windowId = useLastLoadable(signals.panelWindowId$);
   const connection = useLoadable(signals.viewerConnection$);
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
   const keepAliveRef = useSet(signals.keepAliveRef$);
@@ -363,7 +346,7 @@ function BrowserSessionPanelContent({
   ) {
     return <UnauthorizedBrowserSession actions={actions} />;
   }
-  if (sessionLoadable.state === "loading") {
+  if (status.state === "loading") {
     return (
       <PanelFrame>
         {actionsRow}
@@ -371,7 +354,7 @@ function BrowserSessionPanelContent({
       </PanelFrame>
     );
   }
-  if (sessionLoadable.state === "hasError") {
+  if (status.state === "hasError") {
     return (
       <PanelFrame>
         {actionsRow}
@@ -380,11 +363,10 @@ function BrowserSessionPanelContent({
     );
   }
 
-  const session = sessionLoadable.data;
-  if (isBrowserUnauthorized(session)) {
+  if (status.data === "unauthorized") {
     return <UnauthorizedBrowserSession actions={actions} />;
   }
-  if (session?.status !== "active") {
+  if (status.data !== "active") {
     return (
       <PausedBrowserSession
         signals={signals}
@@ -398,13 +380,26 @@ function BrowserSessionPanelContent({
     );
   }
 
+  if (
+    liveUrl.state !== "hasData" ||
+    instanceId.state !== "hasData" ||
+    windowId.state !== "hasData"
+  ) {
+    return (
+      <PanelFrame>
+        {actionsRow}
+        <LoadingBody />
+      </PanelFrame>
+    );
+  }
+
   return (
     <PanelFrame panelRef={keepAliveRef}>
       <BrowserCdpViewer
         signals={signals}
-        liveUrl={session.liveUrl}
-        instanceId={session.instanceId}
-        windowId={session.windowId}
+        liveUrl={liveUrl.data}
+        instanceId={instanceId.data}
+        windowId={windowId.data}
         refined={refined}
         actions={actions}
         overlay={overlay}
@@ -412,7 +407,7 @@ function BrowserSessionPanelContent({
       {refined ? null : (
         <div className="flex shrink-0 items-center gap-3 whitespace-nowrap border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
           <p className="min-w-0 flex-1 truncate">
-            {browserSessionReclaimHint(session)}
+            {browserSessionReclaimHint({ status: status.data })}
           </p>
           <BrowserRecoveryStatus signals={signals.browser} />
         </div>

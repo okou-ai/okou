@@ -15,21 +15,3 @@ export function equalArrays<T>(
     return equalItem(item, next[index]!);
   });
 }
-
-export function equalSets<T>(
-  previous: ReadonlySet<T>,
-  next: ReadonlySet<T>,
-): boolean {
-  if (previous === next) {
-    return true;
-  }
-  if (previous.size !== next.size) {
-    return false;
-  }
-  for (const item of previous) {
-    if (!next.has(item)) {
-      return false;
-    }
-  }
-  return true;
-}

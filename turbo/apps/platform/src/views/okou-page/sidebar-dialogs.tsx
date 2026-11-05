@@ -75,7 +75,6 @@ import {
   threadNumberShortcutIndex$,
 } from "../../signals/okou-page/thread-number-shortcuts.ts";
 import { ThreadNumberShortcutHint } from "./thread-number-shortcut-hint.tsx";
-import { equalSets } from "../../lib/equality.ts";
 import { AgentAvatarImg, ChatThreadStateText } from "./sidebar-shared.tsx";
 import {
   threeColumnAgentSearchResults$,
@@ -393,24 +392,18 @@ function filterAgentDialogItems<T extends AgentDialogItem>(
   });
 }
 
-type ChatThreadCommandIndicatorValue = "running" | "unread" | null;
-
-function chatThreadCommandIndicator(
-  threadId: string,
-  activeThreadIds: ReadonlySet<string> | undefined,
-  unreadThreadIds: ReadonlySet<string> | undefined,
-): ChatThreadCommandIndicatorValue {
-  if (activeThreadIds?.has(threadId)) {
-    return "running";
-  }
-  return unreadThreadIds?.has(threadId) ? "unread" : null;
-}
-
+// Each row subscribes on its own, so an indicator change repaints only that
+// row's dot instead of the whole result list.
 function ChatThreadCommandIndicator({
-  indicator,
+  threadId,
 }: {
-  readonly indicator: ChatThreadCommandIndicatorValue;
+  readonly threadId: string;
 }) {
+  const running =
+    useLastResolved(sidebarActiveThreadIds$)?.has(threadId) ?? false;
+  const unread =
+    useLastResolved(sidebarUnreadThreadIds$)?.has(threadId) ?? false;
+  const indicator = running ? "running" : unread ? "unread" : null;
   if (indicator === null) {
     return null;
   }
@@ -536,11 +529,12 @@ function ChatMessageSnippet({
  * filter row above, whether or not a row is unread.
  */
 function SpotlightRowMeta({
-  indicator,
+  indicatorThreadId,
   timestamp,
   shortcutNumber,
 }: {
-  readonly indicator: ChatThreadCommandIndicatorValue;
+  /** The chat whose state dot this row shows; null for rows without one. */
+  readonly indicatorThreadId: string | null;
   readonly timestamp: string;
   readonly shortcutNumber: number | undefined;
 }) {
@@ -549,7 +543,9 @@ function SpotlightRowMeta({
       {/* w-3.5 fits the widest indicator (RunningIndicator is 0.86rem) so the
           running dot is not squashed and the timestamp never shifts. */}
       <span className="flex w-3.5 shrink-0 justify-center">
-        <ChatThreadCommandIndicator indicator={indicator} />
+        {indicatorThreadId !== null && (
+          <ChatThreadCommandIndicator threadId={indicatorThreadId} />
+        )}
       </span>
       <span className="text-xs text-[hsl(var(--gray-700))]">{timestamp}</span>
       <ThreadNumberShortcutHint shortcutNumber={shortcutNumber} />
@@ -569,12 +565,10 @@ const SPOTLIGHT_AVATAR_CLASS =
 
 function SpotlightThreadCommandItem({
   thread,
-  indicator,
   onSelect,
   shortcutNumber,
 }: {
   readonly thread: WorkspaceSearchChatThread;
-  readonly indicator: ChatThreadCommandIndicatorValue;
   readonly onSelect: () => void;
   readonly shortcutNumber: number | undefined;
 }) {
@@ -594,7 +588,7 @@ function SpotlightThreadCommandItem({
       </span>
       <SpotlightRowMeta
         shortcutNumber={shortcutNumber}
-        indicator={indicator}
+        indicatorThreadId={thread.id}
         timestamp={formatRelativeTimestamp(thread.sortAt)}
       />
     </CommandItem>
@@ -604,13 +598,11 @@ function SpotlightThreadCommandItem({
 function SpotlightMessageCommandItem({
   message,
   thread,
-  indicator,
   onSelect,
   shortcutNumber,
 }: {
   readonly message: ChatSearchResult;
   readonly thread: WorkspaceSearchChatThread | undefined;
-  readonly indicator: ChatThreadCommandIndicatorValue;
   readonly onSelect: () => void;
   readonly shortcutNumber: number | undefined;
 }) {
@@ -637,7 +629,7 @@ function SpotlightMessageCommandItem({
       </span>
       <SpotlightRowMeta
         shortcutNumber={shortcutNumber}
-        indicator={indicator}
+        indicatorThreadId={message.chatThreadId}
         timestamp={formatRelativeTimestamp(message.matchedMessage.createdAt)}
       />
     </CommandItem>
@@ -702,7 +694,7 @@ function SpotlightWorkflowCommandItem({
       </span>
       <SpotlightRowMeta
         shortcutNumber={shortcutNumber}
-        indicator={null}
+        indicatorThreadId={null}
         timestamp={formatRelativeTimestamp(workflow.createdAt)}
       />
     </CommandItem>
@@ -828,7 +820,7 @@ function SpotlightArtifactCommandItem({
       </span>
       <SpotlightRowMeta
         shortcutNumber={shortcutNumber}
-        indicator={null}
+        indicatorThreadId={null}
         timestamp={formatRelativeTimestamp(artifact.createdAt)}
       />
     </CommandItem>
@@ -976,8 +968,6 @@ interface SpotlightSearchResultsProps {
   readonly workflows: readonly WorkflowSummary[];
   readonly artifacts: readonly ThreeColumnArtifactSearchItem[];
   readonly threadMap: ReadonlyMap<string, WorkspaceSearchChatThread>;
-  readonly activeThreadIds: ReadonlySet<string> | undefined;
-  readonly unreadThreadIds: ReadonlySet<string> | undefined;
   readonly searching: boolean;
   readonly showNoResults: boolean;
   readonly onSelectChatThread: (threadId: string) => void;
@@ -1063,8 +1053,6 @@ function SpotlightSearchResults({
   workflows,
   artifacts,
   threadMap,
-  activeThreadIds,
-  unreadThreadIds,
   searching,
   showNoResults,
   onSelectChatThread,
@@ -1094,11 +1082,6 @@ function SpotlightSearchResults({
               shortcutNumber={shortcutNumber(index)}
               key={thread.id}
               thread={thread}
-              indicator={chatThreadCommandIndicator(
-                thread.id,
-                activeThreadIds,
-                unreadThreadIds,
-              )}
               onSelect={() => {
                 return onSelectChatThread(thread.id);
               }}
@@ -1112,11 +1095,6 @@ function SpotlightSearchResults({
               key={`${message.matchedMessage.chatThreadId}:${message.matchedMessage.seqId}`}
               message={message}
               thread={threadMap.get(message.chatThreadId)}
-              indicator={chatThreadCommandIndicator(
-                message.chatThreadId,
-                activeThreadIds,
-                unreadThreadIds,
-              )}
               onSelect={() => {
                 return onSelectChatThread(message.chatThreadId);
               }}
@@ -1232,12 +1210,6 @@ export function ThreeColumnSearchDialog({
   const agentLoadable = useLoadable(threeColumnAgentSearchResults$);
   const workflowLoadable = useLoadable(threeColumnWorkflowSearchResults$);
   const artifactLoadable = useLoadable(threeColumnArtifactSearchResults$);
-  const activeThreadIds = useLastResolved(sidebarActiveThreadIds$, {
-    equalityFn: equalSets,
-  });
-  const unreadThreadIds = useLastResolved(sidebarUnreadThreadIds$, {
-    equalityFn: equalSets,
-  });
   const trimmedQuery = query.trim().toLowerCase();
   const threadMatches = spotlightRowsFromLoadable(
     threadLoadable,
@@ -1421,8 +1393,6 @@ export function ThreeColumnSearchDialog({
           workflows={visibleWorkflows}
           artifacts={visibleArtifacts}
           threadMap={threadMap}
-          activeThreadIds={activeThreadIds}
-          unreadThreadIds={unreadThreadIds}
           searching={visibleSearching}
           showNoResults={showNoResults}
           onSelectChatThread={selectThread}

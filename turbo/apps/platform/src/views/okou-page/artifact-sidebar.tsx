@@ -73,11 +73,8 @@ import {
   type ArtifactTitleLink,
 } from "./artifact-display.ts";
 import { ArtifactTitle } from "./artifact-title.tsx";
-import {
-  currentEventImageArtifactNavigation,
-  equalEventImageGroups,
-  type ImageArtifactNavigationItem,
-} from "./artifact-image-navigation.ts";
+import type { ImageArtifactNavigationItem } from "./artifact-image-navigation.ts";
+import type { EventImageNavigationDirection } from "../../signals/chat-page/event-image-navigation.ts";
 import { AutoFocusedArtifactIframe } from "./auto-focused-artifact-iframe.tsx";
 import { PresentationArtifactViewport } from "./presentation-artifact-viewport.tsx";
 import { OfficeDocumentPreview } from "./office-document-preview.tsx";
@@ -143,31 +140,29 @@ export function ArtifactSidebar({
   const pageSignal = useGet(pageSignal$);
   const loadable = useLastLoadable(thread.artifacts$);
   const agentId = thread.agentId;
-  const eventGroups = useLastResolved(thread.eventImageGroups$, {
-    equalityFn: equalEventImageGroups,
-  });
+  const imageNavigation = thread.imageNavigation.sidebar;
+  const hasPreviousImage = useGet(imageNavigation.hasPrevious$);
+  const hasNextImage = useGet(imageNavigation.hasNext$);
+  const resolveImageNavigationTarget = useSet(imageNavigation.target$);
   const text$ = providedText$ ?? artifactRef.text$;
   const markdownTree$ = providedMarkdownTree$ ?? artifactRef.markdownTree$;
   const item =
     loadable.state === "hasData"
       ? findArtifactItemForUrl(loadable.data, artifactRef.url)
       : undefined;
-  const imageNavigation =
-    loadable.state === "hasData"
-      ? currentEventImageArtifactNavigation(
-          loadable.data,
-          eventGroups ?? [],
-          artifactRef.url,
-        )
-      : {};
   const imageNavigationAction = (
-    navigationItem: ImageArtifactNavigationItem | undefined,
+    direction: EventImageNavigationDirection,
+    available: boolean,
   ) => {
-    if (!navigationItem) {
+    if (loadable.state !== "hasData" || !available) {
       return undefined;
     }
+    const runs = loadable.data;
     return () => {
-      onNavigateImage(navigationItem);
+      const navigationItem = resolveImageNavigationTarget(direction, runs);
+      if (navigationItem) {
+        onNavigateImage(navigationItem);
+      }
     };
   };
 
@@ -179,8 +174,8 @@ export function ArtifactSidebar({
         fullscreenState={fullscreenState}
         imageCanvasSignals={thread.sidebar.imageCanvas}
         imageNavigation={{
-          onNext: imageNavigationAction(imageNavigation.next),
-          onPrevious: imageNavigationAction(imageNavigation.previous),
+          onNext: imageNavigationAction("next", hasNextImage),
+          onPrevious: imageNavigationAction("previous", hasPreviousImage),
         }}
         item={item}
         markdownTree$={markdownTree$}
