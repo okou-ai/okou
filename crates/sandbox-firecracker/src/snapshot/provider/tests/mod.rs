@@ -3,6 +3,7 @@ use sandbox::SnapshotProvider;
 use crate::paths::SnapshotOutputPaths;
 use crate::snapshot::SNAPSHOT_COMPLETE_MARKER_CONTENT;
 use crate::snapshot::output::publish_snapshot_complete_marker;
+use crate::snapshot::tests::write_snapshot_artifacts;
 
 use super::*;
 
@@ -20,14 +21,6 @@ impl SnapshotOutputFixture {
             .expect("create output dir");
         Self { _dir: dir, output }
     }
-
-    async fn write_required_snapshot_artifacts(&self) {
-        for artifact in self.output.required_artifacts() {
-            tokio::fs::write(&artifact, b"snapshot artifact")
-                .await
-                .unwrap_or_else(|e| panic!("write {}: {e}", artifact.display()));
-        }
-    }
 }
 
 async fn write_complete_marker(output: &SnapshotOutputPaths) {
@@ -39,7 +32,7 @@ async fn write_complete_marker(output: &SnapshotOutputPaths) {
 #[tokio::test]
 async fn paired_home_snapshot_completeness_requires_current_layout_marker() {
     let fixture = SnapshotOutputFixture::new().await;
-    fixture.write_required_snapshot_artifacts().await;
+    write_snapshot_artifacts(&fixture.output, fixture.output.required_artifacts()).await;
     tokio::fs::write(fixture.output.complete_marker(), b"snapshot-complete-v1\n")
         .await
         .unwrap();
@@ -67,7 +60,7 @@ async fn paired_home_snapshot_completeness_requires_current_layout_marker() {
 async fn snapshot_provider_requires_cow_bitmap_for_complete_snapshot() {
     let fixture = SnapshotOutputFixture::new().await;
     let output = &fixture.output;
-    fixture.write_required_snapshot_artifacts().await;
+    write_snapshot_artifacts(&fixture.output, fixture.output.required_artifacts()).await;
     tokio::fs::remove_file(output.cow_bitmap())
         .await
         .expect("remove cow bitmap");
@@ -99,7 +92,7 @@ async fn snapshot_provider_requires_cow_bitmap_for_complete_snapshot() {
 async fn snapshot_provider_requires_complete_marker_for_complete_snapshot() {
     let fixture = SnapshotOutputFixture::new().await;
     let output = &fixture.output;
-    fixture.write_required_snapshot_artifacts().await;
+    write_snapshot_artifacts(&fixture.output, fixture.output.required_artifacts()).await;
 
     let provider = FirecrackerSnapshotProvider;
     assert!(
@@ -126,7 +119,7 @@ async fn snapshot_provider_requires_complete_marker_for_complete_snapshot() {
 async fn snapshot_provider_rejects_symlinked_complete_marker() {
     let fixture = SnapshotOutputFixture::new().await;
     let output = &fixture.output;
-    fixture.write_required_snapshot_artifacts().await;
+    write_snapshot_artifacts(&fixture.output, fixture.output.required_artifacts()).await;
     let target = output.dir().join("complete-marker-target");
     tokio::fs::write(&target, SNAPSHOT_COMPLETE_MARKER_CONTENT)
         .await
@@ -145,7 +138,7 @@ async fn snapshot_provider_rejects_symlinked_complete_marker() {
 async fn snapshot_provider_rejects_valid_marker_with_missing_artifact() {
     let fixture = SnapshotOutputFixture::new().await;
     let output = &fixture.output;
-    fixture.write_required_snapshot_artifacts().await;
+    write_snapshot_artifacts(&fixture.output, fixture.output.required_artifacts()).await;
     publish_snapshot_complete_marker(output).expect("publish complete marker");
     tokio::fs::remove_file(output.cow_bitmap())
         .await
@@ -162,7 +155,7 @@ async fn snapshot_provider_rejects_valid_marker_with_missing_artifact() {
 async fn snapshot_provider_rejects_valid_marker_with_directory_artifact() {
     let fixture = SnapshotOutputFixture::new().await;
     let output = &fixture.output;
-    fixture.write_required_snapshot_artifacts().await;
+    write_snapshot_artifacts(&fixture.output, fixture.output.required_artifacts()).await;
     tokio::fs::remove_file(output.snapshot())
         .await
         .expect("remove snapshot file");
@@ -182,7 +175,7 @@ async fn snapshot_provider_rejects_valid_marker_with_directory_artifact() {
 async fn snapshot_provider_rejects_valid_marker_with_symlink_artifact() {
     let fixture = SnapshotOutputFixture::new().await;
     let output = &fixture.output;
-    fixture.write_required_snapshot_artifacts().await;
+    write_snapshot_artifacts(&fixture.output, fixture.output.required_artifacts()).await;
     let target = output.dir().join("target-snapshot.bin");
     tokio::fs::write(&target, b"target snapshot")
         .await

@@ -1,4 +1,20 @@
+use std::path::PathBuf;
+
 use super::*;
+
+pub(super) async fn write_snapshot_artifacts(
+    output: &SnapshotOutputPaths,
+    artifacts: impl IntoIterator<Item = PathBuf>,
+) {
+    tokio::fs::create_dir_all(output.dir())
+        .await
+        .expect("create output dir");
+    for artifact in artifacts {
+        tokio::fs::write(&artifact, b"snapshot artifact")
+            .await
+            .unwrap_or_else(|e| panic!("write {}: {e}", artifact.display()));
+    }
+}
 
 #[tokio::test]
 async fn create_uncommitted_snapshot_rejects_invalid_socket_id_before_output_cleanup() {

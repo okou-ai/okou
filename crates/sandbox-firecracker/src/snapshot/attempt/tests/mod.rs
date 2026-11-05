@@ -9,23 +9,13 @@ use crate::api::ApiError;
 use crate::paths::{SandboxPaths, SnapshotOutputPaths, SockPaths};
 use crate::snapshot::cow::{snapshot_attempt_cow_file, snapshot_attempt_home_image_file};
 use crate::snapshot::publish::SnapshotPublishAttempt;
+use crate::snapshot::tests::write_snapshot_artifacts;
 
 use super::cleanup::{AttemptHomeImage, SnapshotCleanupPresence, SnapshotCleanupReport};
 
 use super::*;
 
 mod early_setup;
-
-async fn write_required_snapshot_artifacts(output: &SnapshotOutputPaths) {
-    tokio::fs::create_dir_all(output.dir())
-        .await
-        .expect("create output dir");
-    for artifact in [output.snapshot(), output.memory()] {
-        tokio::fs::write(&artifact, b"snapshot artifact")
-            .await
-            .unwrap_or_else(|e| panic!("write {}: {e}", artifact.display()));
-    }
-}
 
 async fn write_kept_cow_for_test(work: &Path, token: &str) -> KeptCow {
     let cow_file = snapshot_attempt_cow_file(work, token);
@@ -273,7 +263,11 @@ async fn snapshot_cleanup_finalizer_removes_attempt_dir_after_workspace_and_publ
 async fn snapshot_attempt_drop_handoff_cleans_publish_resolve_cancellation() {
     let dir = tempfile::tempdir().expect("tempdir");
     let (mut attempt, _sock_dir) = snapshot_attempt_for_test(&dir);
-    write_required_snapshot_artifacts(attempt.output()).await;
+    write_snapshot_artifacts(
+        attempt.output(),
+        [attempt.output().snapshot(), attempt.output().memory()],
+    )
+    .await;
     let kept_cow = write_kept_cow_for_test(&attempt.output().work_dir(), "cancel-resolve").await;
     let cow_file = kept_cow.cow_file.clone();
     let bitmap_file = kept_cow.bitmap_file.clone();
