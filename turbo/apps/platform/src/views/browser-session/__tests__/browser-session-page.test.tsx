@@ -3,7 +3,10 @@ import {
   type BrowserSession,
   type BrowserViewerConnection,
 } from "@okouai/api-contracts/contracts/browser";
-import { chatThreadByIdContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatThreadByIdContract,
+  chatThreadsContract,
+} from "@okouai/api-contracts/contracts/chat-threads";
 import {
   act,
   fireEvent,
@@ -21,13 +24,18 @@ import {
   fill,
   queryAllByRoleFast,
   setupPage,
+  startPage,
 } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatThreadSnapshotResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import {
   mockBrowserCdp,
   TEST_BROWSER_EXTENSION,
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import {
+  cachedChatListEvents,
   chatListEvent,
   chatListThread,
   installChatListStream,
@@ -40,16 +48,17 @@ const AUTHORIZATION_REQUIRED = "Cloud browser is not enabled for this chat";
 
 function mockChatAuthorization(enabled: boolean) {
   const events: ReturnType<typeof chatListEvent>[] = [];
+  const snapshot = [
+    chatListThread(1, "Browser authorization", {
+      id: THREAD_ID,
+      cloudBrowserEnabled: enabled,
+    }),
+  ];
   const stream = installChatListStream(context, {
     caseId: 5312,
-    snapshot: [
-      chatListThread(1, "Browser authorization", {
-        id: THREAD_ID,
-        cloudBrowserEnabled: enabled,
-      }),
-    ],
+    snapshot,
   });
-  return (authorized: boolean) => {
+  const authorize = (authorized: boolean) => {
     events.push(
       chatListEvent(
         5312,
@@ -63,6 +72,10 @@ function mockChatAuthorization(enabled: boolean) {
     );
     stream.setEvents(events);
     context.mocks.ably.trigger("threadListChanged");
+  };
+  return {
+    authorize,
+    cachedChatThreadEvents: cachedChatListEvents(5312, snapshot),
   };
 }
 
@@ -825,6 +838,122 @@ test.each(["session", "connection"] as const)(
   },
 );
 
+test("A granted initial snapshot revalidates an earlier authorization denial", async () => {
+  const snapshot = context.mocks.deferred<void>();
+  installChatListStream(context, {
+    caseId: 5314,
+    snapshot: [
+      chatListThread(1, "Browser authorization", {
+        id: THREAD_ID,
+        cloudBrowserEnabled: true,
+      }),
+    ],
+    remoteGate: snapshot.promise,
+  });
+  const { session } = mockSharedViewer();
+  let granted = false;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return granted
+      ? respond(200, { browser: session })
+      : respond(403, {
+          error: {
+            code: "BROWSER_AUTHORIZATION_REQUIRED",
+            message: AUTHORIZATION_REQUIRED,
+          },
+        });
+  });
+  const hold = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  const page = await startPage({ context, path: `/browsers/${THREAD_ID}` });
+  await page.content;
+  await screen.findByText(AUTHORIZATION_REQUIRED);
+  granted = true;
+  snapshot.resolve();
+  await page.ready;
+  await expectStreamingViewer();
+  expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
+
+test("A replacement snapshot revalidates a renewed grant with unchanged cached authorization", async () => {
+  const thread = chatListThread(1, "Browser snapshot grant", {
+    id: THREAD_ID,
+    cloudBrowserEnabled: true,
+  });
+  installChatListStream(context, { caseId: 5315, snapshot: [thread] });
+  let revision = 1;
+  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [thread],
+        latestEventId: chatListEvent(
+          5315,
+          revision,
+          "computer_use_host_updated",
+          THREAD_ID,
+        ).id,
+        latestSeqId: revision,
+      }),
+    );
+  });
+  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+    return (query.sinceSeqId ?? 0) < revision
+      ? respond(410, {
+          error: {
+            code: "CHAT_THREAD_EVENTS_EXPIRED",
+            message: "Chat thread events cursor has expired",
+          },
+        })
+      : respond(200, { events: [], hasMore: false });
+  });
+  const { session } = mockSharedViewer();
+  let allowed = true;
+  context.mocks.api(browserContract.get, ({ respond }) => {
+    return allowed
+      ? respond(200, { browser: session })
+      : respond(403, {
+          error: {
+            code: "BROWSER_AUTHORIZATION_REQUIRED",
+            message: AUTHORIZATION_REQUIRED,
+          },
+        });
+  });
+  const deny = context.mocks.deferred<void>();
+  const hold = context.mocks.deferred<void>();
+  let first = true;
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    if (first) {
+      first = false;
+      await deny.promise;
+      allowed = false;
+      return respond(403, {
+        error: {
+          code: "BROWSER_AUTHORIZATION_REQUIRED",
+          message: AUTHORIZATION_REQUIRED,
+        },
+      });
+    }
+    await hold.promise;
+    return respond(200, { browser: session });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents: cachedChatListEvents(5315, [thread]),
+  });
+  await expectStreamingViewer();
+  deny.resolve();
+  await screen.findByText(AUTHORIZATION_REQUIRED);
+  allowed = true;
+  revision = 2;
+  context.mocks.ably.trigger("threadListChanged");
+  await expectStreamingViewer();
+  expect(screen.queryByText(AUTHORIZATION_REQUIRED)).not.toBeInTheDocument();
+});
+
 test("A denied renewal revokes a healthy viewer without waiting for native disconnection", async () => {
   const { session } = mockSharedViewer();
   mockBrowserSession(session);
@@ -896,7 +1025,7 @@ test("An unrelated permission failure remains an observable error", async () => 
 test.each(["active", "suspended"] as const)(
   "Restoring chat authorization revalidates an existing %s Browser",
   async (status) => {
-    const authorize = mockChatAuthorization(false);
+    const { authorize, cachedChatThreadEvents } = mockChatAuthorization(false);
     const { session } = mockSharedViewer();
     mockBrowserSession(
       status === "active"
@@ -914,7 +1043,11 @@ test.each(["active", "suspended"] as const)(
       await hold.promise;
       return respond(200, { browser: session });
     });
-    await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+    await setupPage({
+      context,
+      path: `/browsers/${THREAD_ID}`,
+      cachedChatThreadEvents,
+    });
     await screen.findByText(AUTHORIZATION_REQUIRED);
     authorize(true);
     if (status === "active") {
@@ -971,7 +1104,7 @@ test("A denied renewal from a previous reload cannot revoke the current same-win
 });
 
 test("A renewed grant revalidates a healthy viewer and ignores a previous grant's denied renewal", async () => {
-  const authorize = mockChatAuthorization(true);
+  const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
   const { session } = mockSharedViewer();
   mockBrowserSession(session);
   const deny = context.mocks.deferred<void>();
@@ -1009,7 +1142,11 @@ test("A renewed grant revalidates a healthy viewer and ignores a previous grant'
     await hold.promise;
     return respond(200, { browser: session });
   });
-  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents,
+  });
   await expectStreamingViewer();
   await leaseRequested.promise;
   authorize(false);
@@ -1025,7 +1162,7 @@ test("A renewed grant revalidates a healthy viewer and ignores a previous grant'
 });
 
 test("A batched disable and re-enable clears a denied lease even when cached authorization was true", async () => {
-  const authorize = mockChatAuthorization(true);
+  const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
   const { session } = mockSharedViewer();
   mockBrowserSession(session);
   const deny = context.mocks.deferred<void>();
@@ -1045,7 +1182,11 @@ test("A batched disable and re-enable clears a denied lease even when cached aut
     await hold.promise;
     return respond(200, { browser: session });
   });
-  await setupPage({ context, path: `/browsers/${THREAD_ID}` });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents,
+  });
   await expectStreamingViewer();
   deny.resolve();
   await screen.findByText(AUTHORIZATION_REQUIRED);

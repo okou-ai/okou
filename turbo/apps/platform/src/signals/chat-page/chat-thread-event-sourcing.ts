@@ -348,10 +348,18 @@ export function threadMeta(threadId: string) {
   });
 }
 
-/** Both a new grant and its persistence replace the current Browser authority. */
+/** Grants can be confirmed by an event or already included in a new snapshot. */
 export function threadComputerAccessVersion(threadId: string) {
   return computed((get): string | null => {
-    let version: string | null = null;
+    const snapshot = get(chatThreadEventState$).snapshot;
+    // A snapshot can confirm a grant without retaining its event. Only a
+    // snapshot containing this thread supplies its authorization baseline.
+    const baseline = snapshot?.chatThreads.some((thread) => {
+      return thread.id === threadId;
+    })
+      ? `snapshot:${snapshot.latestSeqId ?? "empty"}`
+      : null;
+    let version = baseline;
     for (const event of get(allChatThreadsEvents$)) {
       if (
         event.chatThreadId === threadId &&
@@ -359,7 +367,7 @@ export function threadComputerAccessVersion(threadId: string) {
       ) {
         // A server acknowledgement keeps the optimistic UUID. Its sequence
         // must still revalidate a denial received before the grant committed.
-        version = `${event.id}:${event.seqId ?? "optimistic"}`;
+        version = `${baseline ?? "initial"}:${event.id}:${event.seqId ?? "optimistic"}`;
       }
     }
     return version;
