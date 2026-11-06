@@ -22,14 +22,18 @@ interface DiscoveryModel {
 }
 interface DiscoveryOptions {
   readonly preferredTargetId: string | null;
-  readonly invalidated$: Command<void, [AbortSignal]>;
+  readonly invalidated$: Command<void, [boolean, AbortSignal]>;
+  readonly settleInput$: Command<Promise<void>, [AbortSignal]>;
   readonly changed$: Command<void, [AbortSignal]>;
   readonly failed$: Command<void, [unknown, AbortSignal]>;
 }
 
+type RefreshScope = "all" | "members";
+
 function createDiscoveryState(model: DiscoveryModel) {
   const dirty$ = state<ReadonlySet<string>>(new Set());
   const fullWanted$ = state(false);
+  const refreshScope$ = state<RefreshScope>("all");
   const running$ = state(false);
   const started$ = state(false);
   const closed$ = state(false);
@@ -56,15 +60,19 @@ function createDiscoveryState(model: DiscoveryModel) {
   });
   const selectedTargetId$ = computed((get) => {
     const id = get(model.snapshot$).selectedTargetId;
+    const inventory = get(model.inventoryState$);
+    const membership = id ? inventory.entries.get(id)?.membership : null;
     return get(admitted$) &&
       id &&
-      get(model.inventoryState$).entries.get(id)?.membership?.member
+      membership?.member &&
+      (!inventory.round || membership.order >= inventory.round.order)
       ? id
       : null;
   });
   return {
     dirty$,
     fullWanted$,
+    refreshScope$,
     running$,
     started$,
     closed$,
@@ -116,6 +124,7 @@ function createDiscoveryLifecycle(
       // Failed proof revokes admission, not the healthy transport or epoch.
       set(model.inventory$, { type: "invalidate-round" });
       set(validating$, true);
+      set(nodes.refreshScope$, "all");
     } else {
       set(close$);
     }
@@ -221,14 +230,14 @@ function createMembershipReader(
           }
         }
       }
-      // Preserve main's background scope-fault classification as negative membership.
-      // Native bridge/window validation remains fail-closed in assertWindow$/contains$.
+      // A failed background proof stays hidden, but must be read again on refresh.
+      // Only a successful negative lookup proves that a page is foreign.
       set(
         commit$,
         {
           type: "membership",
           observation,
-          member: result.status === "fulfilled" && result.value,
+          member: result.status === "fulfilled" ? result.value : null,
         },
         signal,
       );
@@ -251,12 +260,20 @@ function createMembershipReads(
     async (
       { get, set },
       round: InventoryRound,
+      scope: RefreshScope,
       signal: AbortSignal,
     ): Promise<void> => {
       await set(directory.assertWindow$, signal);
       signal.throwIfAborted();
       if (!set(roundCurrent$, round)) {
         return;
+      }
+      if (scope === "members") {
+        await set(options.settleInput$, signal);
+        signal.throwIfAborted();
+        if (!set(roundCurrent$, round)) {
+          return;
+        }
       }
       if (!get(initialized$)) {
         const pages = await set(directory.read$, signal);
@@ -269,13 +286,24 @@ function createMembershipReads(
       }
       const selected =
         get(model.snapshot$).selectedTargetId ?? options.preferredTargetId;
-      const ids = [...get(model.inventoryState$).entries.keys()].sort(
-        (a, b) => {
+      const ids = [...get(model.inventoryState$).entries]
+        .filter(([, entry]) => {
+          // Create/remove cannot move a surviving foreign page into this window.
+          // Moves/replacements and cold or failed discovery always recheck all.
+          return scope === "all" || entry.membership?.member !== false;
+        })
+        .map(([id]) => {
+          return id;
+        })
+        .sort((a, b) => {
           return Number(b === selected) - Number(a === selected);
-        },
-      );
-      for (let offset = 0; offset < ids.length; offset += 4) {
-        const batch = ids.slice(offset, offset + 4);
+        });
+      for (let offset = 0; offset < ids.length;) {
+        // An established selection's proof must not wait for a background read.
+        const size =
+          scope === "members" && offset === 0 && ids[0] === selected ? 1 : 4;
+        const batch = ids.slice(offset, offset + size);
+        offset += batch.length;
         const results = await Promise.allSettled(
           batch.map((id) => {
             return set(readMembership$, id, round, signal);
@@ -293,13 +321,14 @@ function createMembershipReads(
         }
         const inventory = get(model.inventoryState$);
         if (
-          inventory.coverage === "pending" &&
+          (inventory.coverage === "pending" || scope === "members") &&
           batch.some((id) => {
             const entry = inventory.entries.get(id);
             return (
               entry?.target &&
               entry.membership?.member &&
-              entry.membership.order >= round.order
+              entry.membership.order >= round.order &&
+              (scope === "all" || !selected || id === selected)
             );
           })
         ) {
@@ -318,10 +347,10 @@ function createMembershipReads(
     },
   );
   const readFull$ = command(
-    async ({ set }, signal: AbortSignal): Promise<void> => {
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
       const round = set(model.inventory$, { type: "begin-round" }).round!;
       const [result] = await Promise.allSettled([
-        set(readRound$, round, signal),
+        set(readRound$, round, get(nodes.refreshScope$), signal),
       ]);
       signal.throwIfAborted();
       // Completion clears the round; only a still-current failed round may fail discovery.
@@ -435,18 +464,23 @@ function createDiscoveryRefresh(
   model: DiscoveryModel,
   options: DiscoveryOptions,
   drain$: Command<Promise<void>, [AbortSignal]>,
+  scope: RefreshScope,
 ) {
-  const { active$, validating$, fullWanted$ } = nodes;
+  const { active$, validating$, fullWanted$, refreshScope$ } = nodes;
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
     if (!get(active$)) {
       return;
     }
+    // A weaker notification cannot downgrade an unfinished full proof.
+    const narrow =
+      scope === "members" &&
+      (get(model.inventoryState$).coverage === "complete" ||
+        get(refreshScope$) === "members");
+    set(refreshScope$, narrow ? "members" : "all");
     set(model.inventory$, { type: "invalidate-round" });
-    if (!get(validating$)) {
-      set(validating$, true);
-      set(options.invalidated$, signal);
-    }
+    set(validating$, true);
+    set(options.invalidated$, narrow, signal);
     if (!get(active$)) {
       return;
     }
@@ -643,7 +677,14 @@ export function createTargetDiscovery(
     readMembership$,
     waitForDrain$,
   );
-  const refresh$ = createDiscoveryRefresh(nodes, model, options, drain$);
+  const refresh$ = createDiscoveryRefresh(nodes, model, options, drain$, "all");
+  const refreshMembers$ = createDiscoveryRefresh(
+    nodes,
+    model,
+    options,
+    drain$,
+    "members",
+  );
   const start$ = createDiscoveryStart(
     nodes,
     model,
@@ -672,6 +713,7 @@ export function createTargetDiscovery(
     start$,
     readComplete$,
     refresh$,
+    refreshMembers$,
     ...targets,
     event$,
     close$: lifecycle.close$,
