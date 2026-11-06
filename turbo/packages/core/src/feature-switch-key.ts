@@ -9,7 +9,6 @@ export enum FeatureSwitchKey {
   Projects = "projects",
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
   ConnectorSkillBundleDelivery = "_connectorSkillBundleDelivery",
-  ChatThinkingBrandMotion = "chatThinkingBrandMotion",
   FeatureGuides = "featureGuides",
   BatchConnectorPermissions = "batchConnectorPermissions",
   DesktopShell = "desktopShell",

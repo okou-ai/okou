@@ -85,13 +85,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatThinkingBrandMotion]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Chat thinking brand motion",
-    description:
-      "Use a textured, breathing brand mark with subtle scaling, sheen, and cycling brand colors in chat thinking states.",
-    enabled: false,
-  },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
     displayName: "Feature guides",
