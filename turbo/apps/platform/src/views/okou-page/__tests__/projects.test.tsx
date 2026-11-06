@@ -511,7 +511,6 @@ test("Projects show cross-Agent chats inline and follow the list filter without 
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.Projects]: true,
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
     },
   });
   const user = userEvent.setup({ delay: null });

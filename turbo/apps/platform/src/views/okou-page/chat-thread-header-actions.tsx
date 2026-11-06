@@ -13,7 +13,6 @@ import {
   Pin,
   PinOff,
 } from "lucide-react";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   Button,
   DropdownMenu,
@@ -31,7 +30,6 @@ import {
 import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat-thread-archive.ts";
 import { setChatThreadMutedWithFeedback$ } from "../../signals/chat-page/chat-thread-mute.ts";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
@@ -77,16 +75,8 @@ export function ChatThreadMutedButton({
 function MobileMuteMenuItem({ thread }: { readonly thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
   const muted = useGet(thread.threadMeta$)?.muted === true;
   const setMuted = useSet(setChatThreadMutedWithFeedback$);
-  // As in the row menu, a chat muted before the switch went off can still be
-  // unmuted.
-  if (!enabled && !muted) {
-    return null;
-  }
-
   return (
     <DropdownMenuItem
       className="min-h-11"
@@ -144,8 +134,6 @@ export function MobileChatThreadMoreMenu({
   const pinned = useGet(thread.pin.pinned$);
   const setPinned = useSet(thread.pin.setPinned$);
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archived = useGet(thread.threadMeta$)?.archived === true;
   const [archiveLoadable, archive] = useLoadableSet(
     setChatThreadArchivedWithFeedback$,
@@ -202,35 +190,33 @@ export function MobileChatThreadMoreMenu({
           })}
         </DropdownMenuItem>
         <MobileMuteMenuItem thread={thread} />
-        {archiveEnabled && (
-          <DropdownMenuItem
-            className="min-h-11"
-            disabled={archiving}
-            onClick={() => {
-              detach(
-                archive(
-                  {
-                    threadId: thread.threadId,
-                    archived: !archived,
-                    leaveToAgentId: thread.agentId,
-                  },
-                  // Archiving navigates away immediately, which aborts the page signal.
-                  rootSignal,
-                ),
-                Reason.DomCallback,
-              );
-            }}
-          >
-            {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
-            {archived
-              ? t(($) => {
-                  return $.chat.sidebar.unarchive;
-                })
-              : t(($) => {
-                  return $.chat.sidebar.archive;
-                })}
-          </DropdownMenuItem>
-        )}
+        <DropdownMenuItem
+          className="min-h-11"
+          disabled={archiving}
+          onClick={() => {
+            detach(
+              archive(
+                {
+                  threadId: thread.threadId,
+                  archived: !archived,
+                  leaveToAgentId: thread.agentId,
+                },
+                // Archiving navigates away immediately, which aborts the page signal.
+                rootSignal,
+              ),
+              Reason.DomCallback,
+            );
+          }}
+        >
+          {archived ? <ArchiveRestore size={16} /> : <Archive size={16} />}
+          {archived
+            ? t(($) => {
+                return $.chat.sidebar.unarchive;
+              })
+            : t(($) => {
+                return $.chat.sidebar.archive;
+              })}
+        </DropdownMenuItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="min-h-11"

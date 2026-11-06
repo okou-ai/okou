@@ -11,14 +11,14 @@ struct ChatSidebarView: View {
   let close: () -> Void
   let newChat: (String?) -> Void
 
-  /// The web's chat filters: Inbox (or All chats without archiving), Unread, Archived, Muted.
+  /// The web's chat filters: Inbox, Unread, Archived, Muted.
   private enum ThreadFilter {
     case recent, unread, archived, muted
   }
 
   private func filterTitle(_ filter: ThreadFilter) -> LocalizedStringKey {
     switch filter {
-    case .recent: store.list.canArchiveChats ? "Inbox" : "All chats"
+    case .recent: "Inbox"
     case .unread: "Unread"
     case .archived: "Archived"
     case .muted: "Muted"
@@ -57,7 +57,7 @@ struct ChatSidebarView: View {
       get: {
         if store.list.onlyUnread { return .unread }
         if showMuted { return .muted }
-        if store.list.canArchiveChats && showArchived { return .archived }
+        if showArchived { return .archived }
         return .recent
       },
       set: {
@@ -340,30 +340,26 @@ struct ChatSidebarView: View {
       }
       .disabled(
         !store.list.canUpdate(thread.id) || store.list.isSavingRename || store.needsUpgrade)
-      if store.list.canArchiveChats {
-        Button(
-          thread.isArchived ? "Unarchive" : "Archive",
-          okouSymbol: thread.isArchived ? "archive-restore" : "archive"
-        ) {
-          Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
-        }
-        .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      Button(
+        thread.isArchived ? "Unarchive" : "Archive",
+        okouSymbol: thread.isArchived ? "archive-restore" : "archive"
+      ) {
+        Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
       }
+      .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
     }
     // Every row action is on the right swipe: a left swipe anywhere in the sidebar closes it.
     .swipeActions(edge: .leading, allowsFullSwipe: false) {
       if !thread.isMuted {
         readAction(thread, read: thread.isUnread).tint(OkouSwipeTint.readState)
       }
-      if store.list.canArchiveChats {
-        Button {
-          Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
-        } label: {
-          Label(thread.isArchived ? "Unarchive" : "Archive", okouSymbol: "archive")
-        }
-        .tint(OkouSwipeTint.neutral)
-        .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      Button {
+        Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
+      } label: {
+        Label(thread.isArchived ? "Unarchive" : "Archive", okouSymbol: "archive")
       }
+      .tint(OkouSwipeTint.neutral)
+      .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
     }
 
   }
@@ -373,12 +369,8 @@ struct ChatSidebarView: View {
       Picker("Chats", selection: threadFilter) {
         Text(filterTitle(.recent)).tag(ThreadFilter.recent)
         Text(filterTitle(.unread)).tag(ThreadFilter.unread)
-        if store.list.canArchiveChats {
-          Text(filterTitle(.archived)).tag(ThreadFilter.archived)
-        }
-        if store.list.canMuteChats {
-          Text(filterTitle(.muted)).tag(ThreadFilter.muted)
-        }
+        Text(filterTitle(.archived)).tag(ThreadFilter.archived)
+        Text(filterTitle(.muted)).tag(ThreadFilter.muted)
       }
       .pickerStyle(.inline)
       if let agentID = store.selectedAgentID {

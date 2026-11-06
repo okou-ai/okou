@@ -408,8 +408,6 @@ function useThreadActions(
   const setArchived = useSet(setChatThreadArchivedWithFeedback$);
   const startSharing = useSet(startComposerThreadSharing$);
   const meta = useGet(chatThreadMetaMap$);
-  const archiving =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const threadId = composer.threadId;
   if (threadId === undefined) {
     return [];
@@ -465,23 +463,21 @@ function useThreadActions(
       },
     },
   ];
-  if (archiving) {
-    actions.push({
-      id: "archive",
-      Icon: Archive,
-      label: t(($) => {
-        return $.chat.composer.slashActions.archive;
-      }),
-      keywords: ["archive"],
-      run: () => {
-        leave();
-        detach(
-          setArchived({ threadId, archived: true }, pageSignal),
-          Reason.DomCallback,
-        );
-      },
-    });
-  }
+  actions.push({
+    id: "archive",
+    Icon: Archive,
+    label: t(($) => {
+      return $.chat.composer.slashActions.archive;
+    }),
+    keywords: ["archive"],
+    run: () => {
+      leave();
+      detach(
+        setArchived({ threadId, archived: true }, pageSignal),
+        Reason.DomCallback,
+      );
+    },
+  });
   actions.push({
     id: "share",
     Icon: Share2,

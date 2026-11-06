@@ -538,7 +538,7 @@ final class WorkspaceStore {
     restoreOnUndo: Bool = false, reopenOnSuccess: Bool = false,
     eventID: String = UUID().uuidString.lowercased()
   ) async -> Bool {
-    guard !closed, !needsUpgrade, list.canArchiveChats, list.canUpdate(id),
+    guard !closed, !needsUpgrade, list.canUpdate(id),
       let thread = list.threads.first(where: { $0.id == id })
     else { return false }
     let leaving = archived && leaveDetail && selectedThreadID == id
@@ -592,9 +592,8 @@ final class WorkspaceStore {
         muted
         ? "Chat muted"
         : "Chat unmuted"
-      let canUndo = muted || list.canMuteChats
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: message, actionTitle: canUndo ? "Undo" : nil
+        threadID: id, message: message, actionTitle: "Undo"
       ) { [weak self] in
         // Undo restores mute state without clearing unread replies, like the PWA.
         await self?.setMuted(id, muted: !muted, markRead: false)

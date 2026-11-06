@@ -2331,7 +2331,6 @@
       "number": "번호"
     },
     "sidebar": {
-      "allChats": "모든 채팅",
       "archive": "채팅 보관",
       "archived": "보관됨",
       "chatsWith": "{{agentName}}와의 채팅",

@@ -36,8 +36,6 @@ export enum FeatureSwitchKey {
   CodexExecution = "_codexExecution",
   ChatHomeCompliance = "chatHomeCompliance",
   AutoContinueBusyChats = "_autoContinueBusyChats",
-  ChatThreadArchiving = "chatThreadArchiving",
-  ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",
   ChatMessagePdf = "chatMessagePdf",
   PresentationConvert = "presentationConvert",
