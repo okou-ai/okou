@@ -112,6 +112,37 @@ function reportedCleanupError(
   return report.error;
 }
 
+test("A selected membership refresh preserves address selection before the first edit", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "Address",
+  });
+  await userEvent.click(address);
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.duplicate("example-page");
+  });
+  await proof.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(address).toBeEnabled();
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("https://example.com");
+  expect(address.selectionStart).toBe(2);
+  await act(async () => {
+    await proof.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("https://example.com");
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(2);
+  await userEvent.keyboard("x");
+  expect(address).toHaveValue("htxtps://example.com");
+  expect(address.selectionStart).toBe(3);
+});
+
 test("A selected membership refresh preserves local address text, focus and caret", async () => {
   const browser = await setupViewer(0);
   const address = screen.getByRole<HTMLInputElement>("textbox", {
@@ -146,6 +177,46 @@ test("A selected membership refresh preserves local address text, focus and care
     expect(address).toHaveValue("http://drxaft.example/path");
   });
   expect(browser.targets[0]?.url).toBe("http://drxaft.example/path");
+});
+
+test("Address blur releases an unchanged baseline but retains an unsent edit", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText("Address");
+  await userEvent.click(address);
+  act(() => {
+    browser.event(
+      "Page.frameNavigated",
+      {
+        frame: {
+          id: "example-frame",
+          loaderId: "background-loader",
+          url: "https://background.example/",
+        },
+      },
+      browser.pageSession("example-page"),
+    );
+  });
+  expect(address).toHaveValue("https://example.com");
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).not.toHaveFocus();
+  expect(address).toHaveValue("https://background.example/");
+  await fill(address, "unsent.example/path");
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  act(() => {
+    browser.event(
+      "Page.frameNavigated",
+      {
+        frame: {
+          id: "example-frame",
+          loaderId: "later-background-loader",
+          url: "https://later-background.example/",
+        },
+      },
+      browser.pageSession("example-page"),
+    );
+  });
+  expect(address).not.toHaveFocus();
+  expect(address).toHaveValue("unsent.example/path");
 });
 
 test("An invalid local address remains a draft across membership reattachment", async () => {

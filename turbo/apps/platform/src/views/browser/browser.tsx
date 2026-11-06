@@ -459,6 +459,7 @@ function BrowserAddress({
   const address = useGet(signals.address$);
   const addressRef = useSet(signals.refs.address$);
   const focus = useSet(signals.focusAddress$);
+  const blur = useSet(signals.blurAddress$);
   const edit = useSet(signals.editAddress$);
   const reset = useSet(signals.resetAddress$);
   return (
@@ -491,6 +492,9 @@ function BrowserAddress({
           aria-busy={navigating}
           onFocus={() => {
             return focus();
+          }}
+          onBlur={() => {
+            return blur();
           }}
           onChange={(event) => {
             return edit(event.currentTarget.value);
