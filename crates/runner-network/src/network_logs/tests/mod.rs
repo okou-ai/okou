@@ -322,10 +322,11 @@ fn one_entry_per_batch_logs(count: usize) -> Vec<serde_json::Value> {
         .collect()
 }
 
-fn sequenced_log_content(
+fn write_sequenced_logs(
+    writer: &mut impl std::io::Write,
     log: &serde_json::Value,
     sequences: impl IntoIterator<Item = usize>,
-) -> String {
+) -> usize {
     let fields = log.as_object().unwrap();
     assert!(fields.contains_key("sequence"));
     let mut prefix = vec![b'{'];
@@ -349,23 +350,26 @@ fn sequenced_log_content(
         }
     }
     suffix.extend_from_slice(b"}\n");
-    let sequences = sequences.into_iter();
-    let capacity =
-        sequences.size_hint().0 * (prefix.len() + suffix.len() + usize::MAX.ilog10() as usize + 1);
-    let mut content = Vec::with_capacity(capacity);
+    let mut written = 0;
     for sequence in sequences {
-        content.extend_from_slice(&prefix);
-        serde_json::to_writer(&mut content, &sequence).unwrap();
-        content.extend_from_slice(&suffix);
+        let sequence = sequence.to_string();
+        writer.write_all(&prefix).unwrap();
+        writer.write_all(sequence.as_bytes()).unwrap();
+        writer.write_all(&suffix).unwrap();
+        written += prefix.len() + sequence.len() + suffix.len();
     }
-    if content.is_empty() {
-        content.push(b'\n');
+    if written == 0 {
+        writer.write_all(b"\n").unwrap();
+        written = 1;
     }
-    String::from_utf8(content).unwrap()
+    written
 }
 
-fn one_entry_per_batch_log_content(count: usize) -> String {
-    sequenced_log_content(&one_entry_per_batch_log(0), 0..count)
+fn write_one_entry_per_batch_logs(path: &std::path::Path, count: usize) -> usize {
+    let mut file = std::io::BufWriter::new(std::fs::File::create(path).unwrap());
+    let written = write_sequenced_logs(&mut file, &one_entry_per_batch_log(0), 0..count);
+    file.flush().unwrap();
+    written
 }
 
 #[test]
@@ -388,7 +392,10 @@ fn sequenced_log_fixture_preserves_escaping_order_and_sequence_boundaries() {
                 .collect::<Vec<_>>()
                 .join("\n")
                 + "\n";
-            assert_eq!(sequenced_log_content(&log, sequences), expected);
+            let mut content = Vec::new();
+            let written = write_sequenced_logs(&mut content, &log, sequences);
+            assert_eq!(content, expected.as_bytes());
+            assert_eq!(written, expected.len());
             assert_eq!(log.to_string(), original);
         }
     }
@@ -763,8 +770,7 @@ async fn upload_network_logs_allows_exact_batch_budget() {
     let dir = tempfile::tempdir().unwrap();
     let path = network_log_file(&dir);
     let run_id = RunId::from(uuid::Uuid::nil());
-    let content = one_entry_per_batch_log_content(NETWORK_LOG_UPLOAD_MAX_BATCHES);
-    tokio::fs::write(&path, content).await.unwrap();
+    write_one_entry_per_batch_logs(&path, NETWORK_LOG_UPLOAD_MAX_BATCHES);
 
     let server = MockServer::start_async().await;
     let upload = server
@@ -886,12 +892,11 @@ async fn upload_network_logs_stops_at_batch_budget() {
     let path = network_log_file(&dir);
     let run_id = RunId::from(uuid::Uuid::nil());
     let uploaded_count = NETWORK_LOG_UPLOAD_MAX_BATCHES;
-    let content = one_entry_per_batch_log_content(uploaded_count + 2);
+    let source_bytes = write_one_entry_per_batch_logs(&path, uploaded_count + 2);
     let mut dropped_log = one_entry_per_batch_log(uploaded_count);
     let dropped_entry_bytes = estimated_entry_bytes(&serde_json::to_string(&dropped_log).unwrap());
     *dropped_log.get_mut("sequence").unwrap() = json!(uploaded_count + 1);
     let remaining_source_bytes = serde_json::to_string(&dropped_log).unwrap().len() + 1;
-    tokio::fs::write(&path, &content).await.unwrap();
 
     let server = MockServer::start_async().await;
     let upload = server
@@ -922,11 +927,11 @@ async fn upload_network_logs_stops_at_batch_budget() {
             "inactive request field {field} should be omitted; event={event:#?}"
         );
     }
-    assert_event_field(event, "source_file_bytes", &content.len().to_string());
+    assert_event_field(event, "source_file_bytes", &source_bytes.to_string());
     assert_event_field(
         event,
         "source_bytes_examined",
-        &(content.len() - remaining_source_bytes).to_string(),
+        &(source_bytes - remaining_source_bytes).to_string(),
     );
     assert_event_field(
         event,
