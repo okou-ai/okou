@@ -18,6 +18,7 @@ export const setupMyOkouPage$ = command(
     const signals = await get(myOkouSignals$);
     signal.throwIfAborted();
     set(signals.retry$);
+    set(signals.watch$, signal);
     window.addEventListener(
       "beforeunload",
       (event) => {

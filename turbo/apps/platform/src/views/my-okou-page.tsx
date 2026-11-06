@@ -1,5 +1,5 @@
 import { DetailPageShell } from "./components/detail-page-layout.tsx";
-import { useGet, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
@@ -10,6 +10,7 @@ import { TiptapInstructionsEditor } from "./okou-page/tiptap-instructions-editor
 import { UnsavedBar } from "./okou-page/unsaved-bar.tsx";
 import { AvatarFromUrl } from "./okou-page/sidebar-shared.tsx";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
+import { InstructionsConflict } from "./okou-page/instructions-conflict.tsx";
 
 export function MyOkouPage() {
   const signals = useLoadable(myOkouSignals$);
@@ -36,10 +37,15 @@ function PersonalInstructions({
   readonly signals: MyOkouSignals;
 }) {
   const { t } = useTranslation();
-  const saved = useLoadable(signals.saved$);
+  const saved = useLastLoadable(signals.saved$);
   const draft = useGet(signals.draft$);
   const revision = useGet(signals.revision$);
-  const conflict = useGet(signals.conflict$);
+  const saveConflict = useGet(signals.conflict$);
+  const conflict =
+    saveConflict ||
+    (draft !== null &&
+      saved.state === "hasData" &&
+      draft.version !== saved.data.version);
   const edit = useSet(signals.edit$);
   const discard = useSet(signals.discard$);
   const retry = useSet(signals.retry$);
@@ -47,7 +53,7 @@ function PersonalInstructions({
   const [result, save] = useLoadableSet(signals.save$);
   const [reloadResult, reloadLatest] = useLoadableSet(signals.reloadLatest$);
   const saving = result.state === "loading" || reloadResult.state === "loading";
-  const dirty = draft !== null && draft.content !== draft.savedContent;
+  const dirty = draft !== null;
   const content =
     draft?.content ?? (saved.state === "hasData" ? saved.data.content : "");
   return (
@@ -75,7 +81,7 @@ function PersonalInstructions({
         </div>
       ) : (
         <TiptapInstructionsEditor
-          key={`${revision}:${draft?.savedContent ?? saved.data.content}`}
+          key={`${revision}:${draft?.version ?? saved.data.version}`}
           initialContent={content}
           onChange={(value) => {
             edit(value, saved.data);
@@ -101,24 +107,12 @@ function PersonalInstructions({
           </p>
         )}
       {conflict && (
-        <div role="alert" className="mt-4 space-y-3 text-sm">
-          <p>
-            {t(($) => {
-              return $.myOkou.conflict;
-            })}
-          </p>
-          <Button
-            variant="outline"
-            disabled={saving}
-            onClick={() => {
-              detach(reloadLatest(signal), Reason.DomCallback);
-            }}
-          >
-            {t(($) => {
-              return $.myOkou.reload;
-            })}
-          </Button>
-        </div>
+        <InstructionsConflict
+          loading={saving}
+          onReload={() => {
+            detach(reloadLatest(signal), Reason.DomCallback);
+          }}
+        />
       )}
       <InstructionsHints dirty={dirty} />
       {(dirty || saving) && (

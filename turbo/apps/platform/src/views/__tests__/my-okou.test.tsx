@@ -1,5 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import userEvent from "@testing-library/user-event";
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -9,6 +10,7 @@ import {
   setupPage,
 } from "../../__tests__/page-helper.ts";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
+import { sessionStorageSignals } from "../../signals/external/session-storage.ts";
 
 const context = testContext();
 
@@ -141,6 +143,85 @@ test("A concurrent CLI save cannot be overwritten without explicit reload", asyn
   await waitFor(() => {
     expect(screen.getByLabelText("Instructions")).toHaveTextContent(
       "Newer CLI instructions",
+    );
+  });
+});
+
+test("An undone edit cannot hide later CLI instructions", async () => {
+  const editor = await setupPersonal();
+  await fill(editor, "Temporary edit");
+  await screen.findByTestId("unsaved-bar");
+  const user = userEvent.setup({ delay: null });
+  await user.keyboard("{Control>}z{/Control}");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Instructions")).toHaveTextContent(
+      "Use concise updates",
+    );
+  });
+  context.mocks.api(instructionsContract.get, ({ respond }) => {
+    return respond(200, response("Instructions saved by CLI", "opaque-v2"));
+  });
+  context.mocks.ably.trigger("personalInstructionsChanged");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Instructions")).toHaveTextContent(
+      "Instructions saved by CLI",
+    );
+  });
+  expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+});
+
+test("A clean draft retained by an older App yields to the latest saved Instructions", async () => {
+  // The previous editor retained this browser draft after undoing all edits.
+  const storage = sessionStorageSignals(
+    "instructions-draft:org_default:test-user-123",
+  );
+  context.store.set(
+    storage.set$,
+    JSON.stringify({
+      content: "Previous instructions",
+      savedContent: "Previous instructions",
+      version: "opaque-v0",
+    }),
+  );
+  await setupPersonal("Latest saved instructions");
+  expect(screen.getByLabelText("Instructions")).toHaveTextContent(
+    "Latest saved instructions",
+  );
+});
+
+test("A newer saved version keeps the local draft and offers reload before saving", async () => {
+  const editor = await setupPersonal();
+  await fill(editor, "Local draft to keep");
+  await screen.findByTestId("unsaved-bar");
+  context.mocks.api(instructionsContract.get, ({ respond }) => {
+    return respond(200, response("Newer saved instructions", "opaque-v2"));
+  });
+  context.mocks.ably.trigger("personalInstructionsChanged");
+  await screen.findByText(/Your saved instructions changed elsewhere/);
+  expect(screen.getByLabelText("Instructions")).toHaveTextContent(
+    "Local draft to keep",
+  );
+  expect(button("Save")).toBeDisabled();
+  click(button("Reload saved instructions"));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Instructions")).toHaveTextContent(
+      "Newer saved instructions",
+    );
+  });
+  expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+});
+
+test("Returning to the tab catches instruction updates missed while away", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  await setupPersonal();
+  visibility.changeTo("hidden");
+  context.mocks.api(instructionsContract.get, ({ respond }) => {
+    return respond(200, response("Saved while away", "opaque-v2"));
+  });
+  visibility.changeTo("visible");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Instructions")).toHaveTextContent(
+      "Saved while away",
     );
   });
 });

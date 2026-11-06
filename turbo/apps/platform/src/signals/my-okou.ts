@@ -9,6 +9,7 @@ import { clerk$, authenticatedSessionKey$ } from "./auth.ts";
 import { sessionStorageSignals } from "./external/session-storage.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
+import { watchInstructionsUpdates$ } from "./instructions-updates.ts";
 
 const draftSchema = object({
   content: string(),
@@ -19,26 +20,57 @@ const draftSchema = object({
 // Session storage retains drafts across navigation and Clerk workspace changes.
 // Keys include both owners; neither the public executor ID nor the last page
 // supplies ownership. A retained version still participates in stale-write checks.
+function createPersonalInstructionsDraft(orgId: string, userId: string) {
+  const storage = sessionStorageSignals(
+    `instructions-draft:${orgId}:${userId}`,
+  );
+  const revision$ = state(0);
+  const conflict$ = state(false);
+  const draft$ = computed((get) => {
+    const value = get(storage.get$);
+    if (!value) {
+      return null;
+    }
+    const draft = draftSchema.parse(JSON.parse(value));
+    return draft.content === draft.savedContent ? null : draft;
+  });
+  const edit$ = command(
+    ({ get, set }, content: string, saved: InstructionsResponse) => {
+      const draft = get(draft$);
+      if (content === (draft?.savedContent ?? saved.content)) {
+        set(storage.clear$);
+        set(conflict$, false);
+        return;
+      }
+      set(
+        storage.set$,
+        JSON.stringify({
+          content,
+          version: draft?.version ?? saved.version,
+          savedContent: draft?.savedContent ?? saved.content,
+        }),
+      );
+    },
+  );
+  const discard$ = command(({ set }) => {
+    set(storage.clear$);
+    set(conflict$, false);
+    set(revision$, (value) => {
+      return value + 1;
+    });
+  });
+  return { draft$, revision$, conflict$, edit$, discard$ };
+}
+
 function createMyOkouSignals(
   orgId: string,
   userId: string,
   clerk: Pick<BrowserClerk, "organization" | "user" | "session">,
   sessionId: string,
 ) {
-  const storage = sessionStorageSignals(
-    `instructions-draft:${orgId}:${userId}`,
-  );
+  const draft = createPersonalInstructionsDraft(orgId, userId);
   const reload$ = state(0);
-  const revision$ = state(0);
-  const conflict$ = state(false);
   const published$ = state<InstructionsResponse | null>(null);
-  const draft$ = computed((get) => {
-    const value = get(storage.get$);
-    if (!value) {
-      return null;
-    }
-    return draftSchema.parse(JSON.parse(value));
-  });
   const client$ = computed((get) => {
     return get(apiClient$)(instructionsContract, {
       getTokenGuard: () => {
@@ -71,25 +103,12 @@ function createMyOkouSignals(
       return value + 1;
     });
   });
-  const edit$ = command(
-    ({ get, set }, content: string, saved: InstructionsResponse) => {
-      const draft = get(draft$);
-      set(
-        storage.set$,
-        JSON.stringify({
-          content,
-          version: draft?.version ?? saved.version,
-          savedContent: draft?.savedContent ?? saved.content,
-        }),
-      );
-    },
-  );
-  const discard$ = command(({ set }) => {
-    set(storage.clear$);
-    set(conflict$, false);
-    set(revision$, (value) => {
-      return value + 1;
-    });
+  const watch$ = command(({ set }, signal: AbortSignal) => {
+    set(
+      watchInstructionsUpdates$,
+      { scope: "user", topic: "personalInstructionsChanged", reload$: retry$ },
+      signal,
+    );
   });
   const reloadLatest$ = command(async ({ get, set }, signal: AbortSignal) => {
     const response = await accept(
@@ -98,28 +117,28 @@ function createMyOkouSignals(
     );
     signal.throwIfAborted();
     set(published$, response.body);
-    set(discard$);
+    set(draft.discard$);
   });
   const save$ = command(async ({ get, set }, signal: AbortSignal) => {
-    const draft = get(draft$);
-    if (!draft) {
+    const edit = get(draft.draft$);
+    if (!edit) {
       return;
     }
     signal.throwIfAborted();
     const response = await accept(
       get(client$).update({
-        body: { content: draft.content, ifVersion: draft.version },
+        body: { content: edit.content, ifVersion: edit.version },
         fetchOptions: { signal },
       }),
       [200, 409],
     );
     signal.throwIfAborted();
     if (response.status === 409) {
-      set(conflict$, true);
+      set(draft.conflict$, true);
       return;
     }
     set(published$, response.body);
-    set(discard$);
+    set(draft.discard$);
     toast.success(
       i18n.t(($) => {
         return $.myOkou.saved;
@@ -128,12 +147,9 @@ function createMyOkouSignals(
   });
   return {
     saved$,
-    draft$,
-    revision$,
-    conflict$,
-    edit$,
-    discard$,
+    ...draft,
     retry$,
+    watch$,
     reloadLatest$,
     save$,
   };
