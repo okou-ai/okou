@@ -3,11 +3,11 @@ import { currentChatThreadNavigationList$ } from "../agent-chat.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { rootSignal$ } from "../root-signal.ts";
+import { currentLeftThread$ } from "./chat-thread-panes.ts";
 import {
-  currentLeftThread$,
   loadLeftThread$,
   loadRightThread$,
-} from "./chat-thread-panes.ts";
+} from "./chat-thread-pane-navigation.ts";
 import {
   projectIdOfRowKey,
   threadIdOfRowKey,

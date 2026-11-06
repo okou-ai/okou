@@ -106,3 +106,38 @@ test("Fork sends the selected passage and its source to a new personal chat", as
   expect(send.prompt).not.toContain("An unrelated answer.");
   expect(originalComposer).toHaveTextContent("Keep my unfinished notes");
 });
+
+test("Forward sends the passage with its source thread to the chosen agent", async () => {
+  const sends: CapturedChatSend[] = [];
+  installCapabilityChat({
+    events: completedConversation(`The ${PASSAGE}.`),
+    onSend(send) {
+      sends.push(send);
+    },
+  });
+  await setupPage({
+    context,
+    path: RUN_PATH,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
+  });
+  await screen.findByRole("textbox", { name: "Message" });
+  await selectPassage(PASSAGE);
+  click(await findEnabledButton("Forward"));
+  const dialog = await screen.findByRole("dialog", { name: "Forward to" });
+  click(await within(dialog).findByRole("option", { name: "Okou" }));
+  const note = await within(dialog).findByRole("textbox", {
+    name: "Add a message",
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.type(note, "Share this with the launch team");
+
+  click(await findEnabledButton("Send", dialog));
+
+  const send = await waitForSend(sends, 1);
+  expect(send.threadId).not.toBe(RUN_THREAD_ID);
+  expect(send.sourceRunId).toBe(FIRST_CAPABILITY_RUN_ID);
+  expect(send.userMessage?.parts).toStrictEqual([
+    expect.objectContaining({ type: "feedback", quote: PASSAGE }),
+  ]);
+  expect(send.prompt).toContain("Share this with the launch team");
+});

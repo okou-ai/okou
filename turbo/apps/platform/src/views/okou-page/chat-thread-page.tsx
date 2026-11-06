@@ -3592,25 +3592,12 @@ function ChatThreadNotFound() {
 }
 
 function ChatThreadFeedbackSlot({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
   const sharingPhase = useGet(thread.sharing.phase$);
   const agentId = useGet(thread.threadAgentId$);
-  const title = useGet(thread.threadTitle$);
   if (sharingPhase !== "idle" || agentId === null) {
     return null;
   }
-  return (
-    <ChatFeedbackSelection
-      feedback={thread.feedback}
-      sourceAgentId={agentId}
-      sourceThreadTitle={
-        title ??
-        t(($) => {
-          return $.chat.newChat;
-        })
-      }
-    />
-  );
+  return <ChatFeedbackSelection feedback={thread.feedback} />;
 }
 
 function ChatThreadResourceLayout({

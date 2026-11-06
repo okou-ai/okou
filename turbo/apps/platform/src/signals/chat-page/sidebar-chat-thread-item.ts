@@ -8,11 +8,13 @@ import { pinChatThread$, unpinChatThread$ } from "./chat-event.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
+  unloadRightThread$,
+} from "./chat-thread-panes.ts";
+import {
   loadLeftThread$,
   loadRightThread$,
   SIDEBAR_PARAM,
-  unloadRightThread$,
-} from "./chat-thread-panes.ts";
+} from "./chat-thread-pane-navigation.ts";
 import {
   openRenameChatThreadDialogForThreadId$,
   renameChatThreadFromInput$,

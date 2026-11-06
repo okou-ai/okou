@@ -140,11 +140,6 @@ export function createComposerDraftActions(
   };
 }
 
-export type ComposerAttachmentAnnotationActions = Pick<
-  ReturnType<typeof createComposerDraftActions>,
-  "confirmAttachmentAnnotations$"
->;
-
 export function createComposerConnectorCompletion(
   connector: ComposerConnectorSignals,
   agentId: string,

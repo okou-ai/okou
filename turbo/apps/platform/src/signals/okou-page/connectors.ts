@@ -13,6 +13,11 @@ import { apiClient$ } from "../api-client.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { firewallPermissionMetadataByConnector } from "../firewall-permission-metadata.ts";
 import { userPermissionGrantsByAgent } from "../permission-allow/permission-allow-signals.ts";
+import { i18n } from "../../i18n/index.ts";
+import {
+  createAgentPermissionDrawerSave,
+  type PermissionDrawerSession,
+} from "./settings/permission-drawer-session.ts";
 import { onRef, resetSignal, withCleanup } from "../utils.ts";
 import { reloadAgentConnectorAuthorizations$ } from "./agent-connector-authorizations.ts";
 import {
@@ -135,6 +140,8 @@ export interface ComposerConnectorSignals {
   readonly connectorPermissionGrants$: Computed<
     Promise<readonly PlatformUserPermissionGrant[]>
   >;
+  /** The composer agent's permission drawer for the selected connector. */
+  readonly permissionDrawer: PermissionDrawerSession;
   readonly accounts: ComposerConnectorAccountSignals;
   readonly chatAccess: ReturnType<typeof createChatConnectorAccessSignals>;
   readonly reloadAccountPreference$: Command<void, []>;
@@ -560,6 +567,26 @@ export function createComposerConnectorSignals(
       return await get(userPermissionGrantsByAgent({ agentId }));
     },
   );
+  const permissionDrawer: PermissionDrawerSession = {
+    grants$: connectorPermissionGrants$,
+    metadata$: connectorPermissionMetadata$,
+    save$: createAgentPermissionDrawerSave(
+      computed(() => {
+        return agentId;
+      }),
+      () => {
+        return i18n.t(($) => {
+          return $.chat.permissions.updated;
+        });
+      },
+    ),
+    close$: command(({ set }) => {
+      set(ui.updateConnectorUiState$, {
+        permissionConnectorSlug: null,
+        permissionConnector: null,
+      });
+    }),
+  };
 
   return {
     data$,
@@ -576,6 +603,7 @@ export function createComposerConnectorSignals(
     ...ui,
     connectorPermissionMetadata$,
     connectorPermissionGrants$,
+    permissionDrawer,
     accounts,
     chatAccess,
     reloadAccountPreference$: command(({ set }) => {

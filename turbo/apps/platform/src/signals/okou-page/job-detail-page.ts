@@ -5,6 +5,12 @@ import { onRef } from "../utils.ts";
 import { toggleAgentConnector$ } from "./job-detail/connectors.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
+import { currentAgentId$ } from "../agent.ts";
+import { currentAgentUserPermissionGrants$ } from "../permission-allow/permission-allow-signals.ts";
+import {
+  createAgentPermissionDrawerSave,
+  type PermissionDrawerSession,
+} from "./settings/permission-drawer-session.ts";
 
 // ---------------------------------------------------------------------------
 // JobPermissionsTab UI state
@@ -27,6 +33,23 @@ export const agentPermissionMetadata$ = computed(async (get) => {
   }
   return await get(firewallPermissionMetadataByConnector({ connectorSlug }));
 });
+
+/** The agent page's permission drawer edits the current agent's grants. */
+export const agentPermissionDrawer: Readonly<PermissionDrawerSession> = {
+  grants$: currentAgentUserPermissionGrants$,
+  metadata$: agentPermissionMetadata$,
+  save$: createAgentPermissionDrawerSave(currentAgentId$, () => {
+    return i18n.t(
+      ($) => {
+        return $.authorization.permissionsUpdated;
+      },
+      { ns: "agents" },
+    );
+  }),
+  close$: command(({ set }) => {
+    set(setPermConnectorSlug$, null);
+  }),
+};
 
 const internalPermSearch$ = state("");
 export const permSearch$ = computed((get) => {

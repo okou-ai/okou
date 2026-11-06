@@ -5,6 +5,7 @@ import { logger } from "../log.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { withoutThreadMailParams } from "./thread-mail-location.ts";
+import { SIDEBAR_PARAM } from "./chat-thread-pane-navigation.ts";
 import { adoptComposerTaskHandoff$ } from "../okou-page/composer-task-handoff.ts";
 import {
   createChatPanelSignals,
@@ -27,7 +28,6 @@ import {
   syncPrimaryThread$,
 } from "./sync-primary-thread.ts";
 
-export const SIDEBAR_PARAM = "sidebar";
 export {
   currentLeftPane$,
   currentLeftThread$,
@@ -126,15 +126,6 @@ const rightPane = createChatThreadPaneSignals(setCurrentRightPane$);
 export const clearChatThreadPanes$ = command(({ set }) => {
   set(leftPane.clear$);
   set(rightPane.clear$);
-});
-
-// Thread-owned sidebars are anchored to the previous thread's messages.
-const closeThreadSidebars$ = command(({ get, set }) => {
-  for (const thread of [get(currentLeftThread$), get(currentRightThread$)]) {
-    if (thread) {
-      set(thread.sidebar.dismiss$);
-    }
-  }
 });
 
 export const unloadRightThread$ = command(({ get, set }) => {
@@ -283,58 +274,5 @@ export const setupRightThreadNotFound$ = command(
     parentSignal: AbortSignal,
   ): Promise<void> => {
     await set(setupPaneNotFound$, rightPane, threadId, parentSignal);
-  },
-);
-
-export const loadLeftThread$ = command(
-  ({ get, set }, threadId: string): void => {
-    if (get(currentChatThreadId$) === threadId) {
-      return;
-    }
-
-    // Drop sidebar state before switching threads because its content is
-    // anchored to the previous thread's messages.
-    set(closeThreadSidebars$);
-
-    const params = get(searchParams$);
-    const next =
-      params.get("mailThread") === threadId ||
-      params.get("mailThread") === params.get(SIDEBAR_PARAM)
-        ? new URLSearchParams(params)
-        : withoutThreadMailParams(params);
-    if (next.get(SIDEBAR_PARAM) === threadId) {
-      next.delete(SIDEBAR_PARAM);
-    }
-    set(detachedNavigateTo$, ROUTES.chat, {
-      pathParams: { threadId },
-      searchParams: next,
-    });
-  },
-);
-
-export const loadRightThread$ = command(
-  ({ get, set }, threadId: string): void => {
-    const mainThreadId = get(currentChatThreadId$);
-    if (!mainThreadId || mainThreadId === threadId) {
-      return;
-    }
-
-    if (get(currentRightThread$)?.threadId === threadId) {
-      return;
-    }
-
-    set(closeThreadSidebars$);
-
-    const params = get(searchParams$);
-    const next =
-      params.get("mailThread") === mainThreadId ||
-      params.get("mailThread") === threadId
-        ? new URLSearchParams(params)
-        : withoutThreadMailParams(params);
-    next.set(SIDEBAR_PARAM, threadId);
-    set(detachedNavigateTo$, ROUTES.chat, {
-      pathParams: { threadId: mainThreadId },
-      searchParams: next,
-    });
   },
 );
