@@ -1,5 +1,4 @@
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -110,32 +109,28 @@ test("A public conversation renders shared messages with Okou branding", async (
   );
 });
 
-test.each([false, true])(
-  "A shared conversation respects the viewer's CJK emphasis switch: %s",
-  async (enabled) => {
-    const source = "**机构与身份：**个人站 Artibiotics";
-    context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
-      return respond(
-        200,
-        sharedThread({
-          messages: [{ messageIndex: 0, role: "assistant", content: source }],
-        }),
-      );
-    });
-
-    await setupSharedThreadPage(context, {
-      host: "app.okou.ai",
-      auth: { user: { id: "cjk-share-reader", fullName: "Share Reader" } },
-      featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: enabled },
-    });
-
-    const content = await screen.findByText(enabled ? "机构与身份：" : source);
-    expect(content.tagName).toBe(enabled ? "STRONG" : "P");
-    expect(content.closest("p")?.textContent).toBe(
-      enabled ? "机构与身份：个人站 Artibiotics" : source,
+test("A shared conversation renders CJK emphasis", async () => {
+  const source = "**机构与身份：**个人站 Artibiotics";
+  context.mocks.api(sharedThreadsContract.get, ({ respond }) => {
+    return respond(
+      200,
+      sharedThread({
+        messages: [{ messageIndex: 0, role: "assistant", content: source }],
+      }),
     );
-  },
-);
+  });
+
+  await setupSharedThreadPage(context, {
+    host: "app.okou.ai",
+    auth: { user: { id: "cjk-share-reader", fullName: "Share Reader" } },
+  });
+
+  const content = await screen.findByText("机构与身份：");
+  expect(content.tagName).toBe("STRONG");
+  expect(content.closest("p")?.textContent).toBe(
+    "机构与身份：个人站 Artibiotics",
+  );
+});
 
 test("A link inside a public prompt is clickable for a signed-out visitor", async () => {
   const content =

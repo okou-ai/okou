@@ -9,6 +9,7 @@ mod fresh_teardown;
 mod group_failures;
 mod http_reuse;
 mod large_selection;
+mod mixed_preparation;
 mod phase_diagnostics;
 mod rejected_observation;
 
@@ -1887,6 +1888,7 @@ async fn fresh_delivery_cancellation_drains_started_publication() {
         phase_records: FreshArchivePhaseRecords::default(),
         classification: JoinSet::new(),
         groups: None,
+        owned_keys: HashSet::new(),
         apply: Vec::new(),
         fetches: JoinSet::new(),
         publications: JoinSet::new(),

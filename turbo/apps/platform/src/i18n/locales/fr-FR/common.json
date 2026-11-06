@@ -2118,6 +2118,11 @@
       "sourcePartsHeading_many": "{{count}} parties citées depuis {{description}}",
       "sourcePartsHeading_other": "{{count}} parties citées depuis {{description}}"
     },
+    "fork": {
+      "action": "Fork",
+      "description": "Démarrer une nouvelle discussion avec cette sélection",
+      "sent": "Nouvelle discussion créée"
+    },
     "forward": {
       "action": "Transférer",
       "agents": "Agents",
@@ -2384,7 +2389,6 @@
       "number": "numéro"
     },
     "sidebar": {
-      "allChats": "Toutes les discussions",
       "archive": "Archiver la discussion",
       "archived": "Archivées",
       "chatsWith": "Discussions avec {{agentName}}",
@@ -4304,7 +4308,6 @@
     "instructions": "Instructions",
     "loadError": "Impossible de charger vos instructions. Réessayez.",
     "markdown": "Écrivez en texte brut ou en Markdown",
-    "newChat": "Nouvelle conversation",
     "placeholder": "Indiquez à Okou comment vous aimez travailler…",
     "reload": "Recharger les instructions enregistrées",
     "retry": "Réessayer",

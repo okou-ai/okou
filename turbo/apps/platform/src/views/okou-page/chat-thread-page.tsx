@@ -155,7 +155,6 @@ import {
   emptyAutomationsImg,
   emptyChatImg,
   thinkingBrandMotionImg,
-  thinkingSpinnerImg,
 } from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { ChatThreadMutedButton } from "./chat-thread-header-actions.tsx";
@@ -4476,8 +4475,6 @@ function ThinkingLabel({
 }
 
 function ThinkingLoader() {
-  const brandMotion =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThinkingBrandMotion];
   return (
     <span
       aria-hidden
@@ -4485,15 +4482,11 @@ function ThinkingLoader() {
       className="inline-flex size-4 shrink-0 items-center justify-center"
     >
       <img
-        src={brandMotion ? thinkingBrandMotionImg : thinkingSpinnerImg}
+        src={thinkingBrandMotionImg}
         alt=""
         // The 48px asset has a 4px inset. A 17px canvas makes its visible
         // mark match the perceived size of the 16px line icons.
-        className={cn(
-          "size-[17px] max-w-none shrink-0",
-          !brandMotion &&
-            "animate-spin [animation-duration:1.4s] will-change-transform motion-reduce:animate-none",
-        )}
+        className="size-[17px] max-w-none shrink-0"
       />
     </span>
   );
@@ -8819,10 +8812,7 @@ function PagedGroupActions({
             return event.tree !== undefined;
           }) ? (
             <MessagePdfAction
-              key={JSON.stringify([
-                switches[FeatureSwitchKey.MarkdownCjkEmphasis],
-                pdfContents,
-              ])}
+              key={JSON.stringify(pdfContents)}
               contents={pdfContents}
               trees={persistedMessages.flatMap((event) => {
                 return event.tree ? [event.tree] : [];

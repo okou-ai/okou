@@ -1917,43 +1917,6 @@
         }
       }
     },
-    "All chats": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Alle Chats" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Todas las conversaciones" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Toutes les discussions" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "सभी चैट" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Semua chat" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Tutte le chat" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "すべてのチャット" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "모든 채팅" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Todas as conversas" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "全部聊天" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "全部聊天" }
-        }
-      }
-    },
     "All photos": {
       "localizations": {
         "de": {

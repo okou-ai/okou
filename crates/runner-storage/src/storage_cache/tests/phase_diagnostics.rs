@@ -37,24 +37,24 @@ async fn observe_phase(
     .expect("the released HTTP phase must complete");
 }
 
-struct GatedResponse {
-    url: String,
-    requested: oneshot::Receiver<()>,
-    headers: oneshot::Sender<()>,
-    body: oneshot::Sender<()>,
-    task: ResponseTask,
+pub(super) struct GatedResponse {
+    pub(super) url: String,
+    pub(super) requested: oneshot::Receiver<()>,
+    pub(super) headers: oneshot::Sender<()>,
+    pub(super) body: oneshot::Sender<()>,
+    pub(super) task: ResponseTask,
 }
 
-struct ResponseTask(Option<AbortOnDropHandle<()>>);
+pub(super) struct ResponseTask(Option<AbortOnDropHandle<()>>);
 
 impl ResponseTask {
-    async fn finish(mut self) {
+    pub(super) async fn finish(mut self) {
         join_raw_http_task(self.0.take().unwrap().detach(), "gated phase response").await;
     }
 }
 
 impl GatedResponse {
-    async fn start(bytes: Vec<u8>) -> Self {
+    pub(super) async fn start(bytes: Vec<u8>) -> Self {
         Self::start_with_header_recovery(bytes, false).await
     }
 

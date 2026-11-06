@@ -343,12 +343,12 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   `OkouFloatingPanelStyle`: the same card, card radius, plus the floating shadow.
   Not `.regularMaterial` — a grey material block did not match the rest of the UI.
 - **Edges under bars**: scroll edges default to native `.soft` (`OkouAppearance`).
-  Where a custom bar's text sits over scrolling text the edge must hide it:
-  - The chat transcript is `.soft` at both edges: its header holds only glass controls
-    and no title. Its UIKit collection view gets the header and composer heights as
-    `additionalSafeAreaInsets`, not `contentInset`, so the edge effects cover both bars.
-  - The warm sidebar hides the system top edge and paints its header in `sidebar`
-    with a 16 pt fade; the system hard band is white and read as a separate block.
+  - The chat transcript and sidebar use the native `.soft` top edge so scrolling
+    content blurs beneath the header. Do not paint an opaque sidebar header or fade.
+  - Both hide the bottom scroll-edge effect: content shows through beneath the
+    composer and sidebar footer, while the controls retain their own Liquid Glass.
+  - The transcript's UIKit collection view gets the header and composer heights as
+    `additionalSafeAreaInsets`, not `contentInset`, preserving safe-area layout.
     Verify both themes with text scrolled under each bar after changing either.
 - Do not replace native Glass, Blur or safe-area bars with opaque cards, arbitrary
   opacity fills or custom outlines. Follow Reduce Transparency and Reduce Motion.

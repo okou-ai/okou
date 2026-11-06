@@ -282,13 +282,6 @@ function ChatThreadMuteMenuItem({
   const muted = useGet(signals.muted$);
   const toggleMuted = useSet(signals.toggleMuted$);
   const pageSignal = useGet(pageSignal$);
-  const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
-  // The API keeps suppressing a chat muted before the switch went off, so
-  // unmuting stays available for as long as one exists.
-  if (!enabled && !muted) {
-    return null;
-  }
   const label = muted
     ? t(($) => {
         return $.chat.sidebar.unmute;
@@ -318,11 +311,6 @@ function ChatThreadArchiveMenuSection({
 }: {
   signals: SidebarChatThreadItemSignals;
 }) {
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
-  if (!archiveEnabled) {
-    return null;
-  }
   return (
     <>
       <ChatThreadArchiveMenuItem signals={signals} />
@@ -1157,8 +1145,6 @@ function ChatThreads({
   listSignals: SidebarChatThreadListSignals;
 }) {
   const { t } = useTranslation();
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
   const rowCount = useGet(listSignals.count$);
@@ -1183,7 +1169,7 @@ function ChatThreads({
         />
       );
     }
-    if (archiveEnabled && archivedOnly) {
+    if (archivedOnly) {
       return (
         <ChatThreadListEmptyState
           message={t(($) => {
@@ -1317,11 +1303,7 @@ function ChatThreadFilterMenuItems() {
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const muteEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
   const selectFilter = useSelectChatThreadFilter();
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
 
   return (
     <>
@@ -1334,13 +1316,9 @@ function ChatThreadFilterMenuItems() {
           size={16}
           className={`mr-2 ${unreadOnly || archivedOnly || mutedOnly ? "invisible" : ""}`}
         />
-        {archiveEnabled
-          ? t(($) => {
-              return $.chat.sidebar.inbox;
-            })
-          : t(($) => {
-              return $.chat.sidebar.allChats;
-            })}
+        {t(($) => {
+          return $.chat.sidebar.inbox;
+        })}
       </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
@@ -1358,33 +1336,29 @@ function ChatThreadFilterMenuItems() {
           shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
         />
       </DropdownMenuItem>
-      {archiveEnabled ? (
-        <DropdownMenuItem
-          onClick={() => {
-            selectFilter("archived");
-          }}
-        >
-          <Check
-            size={16}
-            className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
-          />
-          {t(($) => {
-            return $.chat.sidebar.archived;
-          })}
-        </DropdownMenuItem>
-      ) : null}
-      {muteEnabled ? (
-        <DropdownMenuItem
-          onClick={() => {
-            selectFilter("muted");
-          }}
-        >
-          <Check size={16} className={`mr-2 ${mutedOnly ? "" : "invisible"}`} />
-          {t(($) => {
-            return $.chat.sidebar.muted;
-          })}
-        </DropdownMenuItem>
-      ) : null}
+      <DropdownMenuItem
+        onClick={() => {
+          selectFilter("archived");
+        }}
+      >
+        <Check
+          size={16}
+          className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
+        />
+        {t(($) => {
+          return $.chat.sidebar.archived;
+        })}
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        onClick={() => {
+          selectFilter("muted");
+        }}
+      >
+        <Check size={16} className={`mr-2 ${mutedOnly ? "" : "invisible"}`} />
+        {t(($) => {
+          return $.chat.sidebar.muted;
+        })}
+      </DropdownMenuItem>
     </>
   );
 }
@@ -1440,11 +1414,6 @@ export function useChatThreadsFilterLabel(): string | null {
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
-  if (!archiveEnabled) {
-    return null;
-  }
   return unreadOnly
     ? t(($) => {
         return $.chat.sidebar.unreadOnly;
@@ -1460,7 +1429,7 @@ export function useChatThreadsFilterLabel(): string | null {
         : null;
 }
 
-// With archiving on, a non-default filter names itself in the title so the list
+// A non-default filter names itself in the title so the list
 // never looks like the inbox while it shows archived, unread, or muted chats.
 function useChatThreadsFilteredTitleLabel() {
   const { t } = useTranslation();

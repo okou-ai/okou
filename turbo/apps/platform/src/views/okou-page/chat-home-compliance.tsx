@@ -1,16 +1,7 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { useLastResolved } from "ccstate-react";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   ComplianceBadges,
   useComplianceTitle,
 } from "../components/compliance-badges.tsx";
-
-/** Whether the chat home carries the compliance row under its scroller. */
-export function useChatHomeComplianceVisible(): boolean {
-  const features = useLastResolved(featureSwitch$);
-  return features?.[FeatureSwitchKey.ChatHomeCompliance] ?? false;
-}
 
 /**
  * The compliance badges at the foot of the chat home. The row sits outside the
@@ -21,12 +12,7 @@ export function useChatHomeComplianceVisible(): boolean {
  * it would sit between the field and the home indicator.
  */
 export function ChatHomeCompliance() {
-  const visible = useChatHomeComplianceVisible();
   const title = useComplianceTitle();
-
-  if (!visible) {
-    return null;
-  }
 
   return (
     <section

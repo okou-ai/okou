@@ -81,33 +81,29 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
       title: String(localized: "Status"), image: OkouIcon.uiImage("circle-check"),
       children: statusActions)
     var actions: [UIMenuElement] = [pin, rename, status]
-    if list.canMuteChats || thread.isMuted {
-      actions.append(
-        UIAction(
-          title: thread.isMuted ? String(localized: "Unmute chat") : String(localized: "Mute chat"),
-          image: OkouIcon.uiImage(thread.isMuted ? "bell" : "bell-off"),
-          identifier: UIAction.Identifier("chat-mute"),
-          attributes: !store.needsUpgrade && list.canMute(threadID) ? [] : .disabled
-        ) { _ in
-          guard let current = list.threads.first(where: { $0.id == threadID }) else { return }
-          Task { await store.setMuted(threadID, muted: !current.isMuted) }
-        })
-    }
-    if list.canArchiveChats {
-      let archive = UIAction(
-        title: thread.isArchived
-          ? String(localized: "Unarchive chat") : String(localized: "Archive chat"),
-        image: OkouIcon.uiImage(thread.isArchived ? "archive-restore" : "archive"),
-        identifier: UIAction.Identifier("chat-archive"),
-        attributes: enabled && (thread.isArchived || !store.isCreating) ? [] : .disabled
+    actions.append(
+      UIAction(
+        title: thread.isMuted ? String(localized: "Unmute chat") : String(localized: "Mute chat"),
+        image: OkouIcon.uiImage(thread.isMuted ? "bell" : "bell-off"),
+        identifier: UIAction.Identifier("chat-mute"),
+        attributes: !store.needsUpgrade && list.canMute(threadID) ? [] : .disabled
       ) { _ in
         guard let current = list.threads.first(where: { $0.id == threadID }) else { return }
-        Task {
-          await store.setArchived(threadID, archived: !current.isArchived, leaveDetail: true)
-        }
+        Task { await store.setMuted(threadID, muted: !current.isMuted) }
+      })
+    let archive = UIAction(
+      title: thread.isArchived
+        ? String(localized: "Unarchive chat") : String(localized: "Archive chat"),
+      image: OkouIcon.uiImage(thread.isArchived ? "archive-restore" : "archive"),
+      identifier: UIAction.Identifier("chat-archive"),
+      attributes: enabled && (thread.isArchived || !store.isCreating) ? [] : .disabled
+    ) { _ in
+      guard let current = list.threads.first(where: { $0.id == threadID }) else { return }
+      Task {
+        await store.setArchived(threadID, archived: !current.isArchived, leaveDetail: true)
       }
-      actions.append(UIMenu(options: .displayInline, children: [archive]))
     }
+    actions.append(UIMenu(options: .displayInline, children: [archive]))
     let menu = UIMenu(title: thread.displayTitle, children: actions)
     button.menu = menu
     button.contextMenuInteraction?.updateVisibleMenu { _ in menu }

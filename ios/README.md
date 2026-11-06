@@ -31,9 +31,7 @@ and recent chats scoped to the selected agent, filtered like the web (Inbox,
 Unread, Archived, Muted). Workspace switching and "back to chat" sit at the top; the
 bottom bar has the account photo for Settings, search, and new chat. Native list actions support pinning,
 archiving, and renaming chats. The chat header has no title; its native More menu
-also supports muting. Archive and mute controls follow the existing `chatThreadArchiving` and
-`chatThreadMuting` feature switches; muted chats can still be unmuted after the
-muting switch is turned off. Opening a new chat is local and immediate;
+also supports muting. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected
 agent and the existing saved model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.

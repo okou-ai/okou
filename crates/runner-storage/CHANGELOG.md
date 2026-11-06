@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.35](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.34...runner-storage-v0.8.35) (2026-11-06)
+
+
+### Performance Improvements
+
+* **runner:** overlap cached archive preparation with cold delivery ([#45657](https://github.com/okou-ai/okou/issues/45657)) ([b9c39f2](https://github.com/okou-ai/okou/commit/b9c39f26a6cd588e164164c75a79c462d9fc6128))
+
 ## [0.8.34](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.33...runner-storage-v0.8.34) (2026-11-06)
 
 ## [0.8.33](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.32...runner-storage-v0.8.33) (2026-11-06)

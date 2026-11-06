@@ -346,6 +346,22 @@ fn assert_action_once_with_duration(telemetry: &JobTelemetry, action: &str, dura
 }
 
 fn assert_reused_proxy_registration_timing(telemetry: &JobTelemetry) {
+    for action in [
+        "runner_proxy_register_prepare",
+        "runner_proxy_register_lock",
+        "runner_proxy_register_read",
+        "runner_proxy_register_parse",
+        "runner_proxy_register_mutate",
+        "runner_proxy_register_capacity",
+        "runner_proxy_register_serialize",
+        "runner_proxy_register_digest",
+        "runner_proxy_register_publish_queue",
+        "runner_proxy_register_publish_write",
+        "runner_proxy_register_publish",
+        "runner_proxy_register_network_log",
+    ] {
+        assert_action_outcome(telemetry, action, true, None);
+    }
     let operations = telemetry.pending_ops_with_duration_snapshot();
     let registrations: Vec<_> = operations
         .iter()
@@ -1028,6 +1044,8 @@ async fn execute_job_records_runner_pre_spawn_and_fresh_path_timing() {
         "runner_fresh_sandbox_prepare",
         "runner_fresh_sandbox_factory_create",
         "runner_fresh_sandbox_proxy_register",
+        "runner_proxy_register_publish_write",
+        "runner_proxy_register_network_log",
         "runner_fresh_sandbox_start",
         "runner_guest_timezone_sync",
         "runner_required_private_files_write",

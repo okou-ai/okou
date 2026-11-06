@@ -54,8 +54,6 @@ async function prepare(main: number | null = 1, side = false) {
     path,
     ...workspace.pageOptions,
     featureSwitches: {
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
-      [FeatureSwitchKey.ChatThreadMuting]: true,
       [FeatureSwitchKey.ChatThreadInlineRename]: true,
     },
   });

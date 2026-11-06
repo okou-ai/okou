@@ -597,13 +597,15 @@ async fn publish_catalog_cache(
     content: Vec<u8>,
     guard: Flock<File>,
 ) -> ProviderResult<()> {
-    runner_host::state_file::spawn_locked_private_atomic_write(cache_path, content, guard)
-        .await
-        .map_err(|error| {
-            ProviderError::Internal(format!(
-                "builtin firewall catalog cache publication task failed: {error}"
-            ))
-        })??;
+    let report =
+        runner_host::state_file::spawn_locked_private_atomic_write(cache_path, content, guard)
+            .await
+            .map_err(|error| {
+                ProviderError::Internal(format!(
+                    "builtin firewall catalog cache publication task failed: {error}"
+                ))
+            })?;
+    report.result?;
     Ok(())
 }
 

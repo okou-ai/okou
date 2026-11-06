@@ -1,5 +1,4 @@
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { describe, expect, it } from "vitest";
 
@@ -11,7 +10,6 @@ import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createChatCallbacksApi } from "./helpers/api-bdd-chat-callbacks";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -212,16 +210,6 @@ describe("bulk Agent read-cursor notifications stay bounded", () => {
     if (!threadId) {
       throw new Error("Expected one unread thread");
     }
-    await bdd.readOnboardingStatus(fixture.actor);
-    await updateFeatureSwitchesForUser(
-      context,
-      {
-        userId: fixture.actor.userId,
-        orgId: fixture.orgId,
-        orgRole: fixture.actor.orgRole,
-      },
-      { [FeatureSwitchKey.ChatThreadMuting]: true },
-    );
     await chat.requestSetThreadMuted(fixture.actor, threadId, true, [204]);
     clearPublishedNotifications();
 

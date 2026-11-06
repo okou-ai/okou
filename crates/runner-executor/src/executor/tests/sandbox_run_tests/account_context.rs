@@ -122,10 +122,23 @@ async fn runtime_account_binding_updates_the_private_guest_context() {
     );
     switch.assert_calls(1);
     wait_gate.release_one();
-    let (outcome, _) = tokio::time::timeout(Duration::from_secs(5), task)
+    let (outcome, telemetry) = tokio::time::timeout(Duration::from_secs(5), task)
         .await
         .unwrap()
         .unwrap();
     assert_eq!(outcome.exit_code(), 0);
+    let registrations: Vec<_> = telemetry
+        .pending_ops_snapshot()
+        .into_iter()
+        .filter(|op| op.0 == "runner_proxy_register_connector_runtime")
+        .collect();
+    assert_eq!(
+        registrations,
+        vec![(
+            "runner_proxy_register_connector_runtime".to_string(),
+            true,
+            None
+        )]
+    );
     provider.shutdown().await;
 }

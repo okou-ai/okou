@@ -17,6 +17,7 @@ import { agentsRoutes } from "../agents";
 import { createRouteMocks } from "./helpers/route-test";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { createDeferredPromise, settleIncludingAbort } from "../../utils";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -50,7 +51,11 @@ async function instructionFixture(visibility: "public" | "private" = "public") {
     agents: app(agentsByIdContract),
     async content() {
       const result = await accept(instructions.get({ headers, params }), [200]);
-      return result.body.content;
+      const content = result.body.content;
+      if (content === null) {
+        throw new Error("Expected saved instructions for the test Agent");
+      }
+      return content;
     },
     async update(content: string) {
       return await accept(
@@ -62,6 +67,45 @@ async function instructionFixture(visibility: "public" | "private" = "public") {
 }
 
 describe("Agent database instructions", () => {
+  it("invalidates organization editors without publishing private instruction data", async () => {
+    const fixture = await instructionFixture("private");
+    await fixture.update("Private instructions");
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `org:${fixture.orgId}`,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "agentInstructionsChanged",
+      null,
+    );
+    await expect(fixture.content()).resolves.toBe("Private instructions");
+  });
+
+  it("keeps a newer edit when the editor submits an outdated baseline", async () => {
+    const fixture = await instructionFixture();
+    await fixture.update("Original instructions");
+    const baseline = await fixture.content();
+    await fixture.update("Newer instructions");
+    await accept(
+      fixture.instructions.update({
+        headers,
+        params: fixture.params,
+        body: { content: "Outdated draft", ifContent: baseline },
+      }),
+      [409],
+    );
+    await expect(fixture.content()).resolves.toBe("Newer instructions");
+    await accept(
+      fixture.instructions.update({
+        headers,
+        params: fixture.params,
+        body: { content: "Reviewed edit", ifContent: "Newer instructions" },
+      }),
+      [200],
+    );
+    await expect(fixture.content()).resolves.toBe("Reviewed edit");
+  });
+
   it.each([
     { operation: "lookup", command: HeadObjectCommand },
     { operation: "upload", command: PutObjectCommand },
@@ -173,23 +217,26 @@ describe("Agent database instructions", () => {
 
   it("keeps a coherent accepted edit under concurrent publication", async () => {
     const fixture = await instructionFixture();
+    const baseline = await fixture.content();
     const results = await Promise.all(
       ["First edit", "Second edit"].map((content) => {
         return accept(
           fixture.instructions.update({
             headers,
             params: fixture.params,
-            body: { content },
+            body: { content, ifContent: baseline },
           }),
           [200, 409],
         );
       }),
     );
     expect(
-      results.some((result) => {
-        return result.status === 200;
-      }),
-    ).toBeTruthy();
+      results
+        .map((result) => {
+          return result.status;
+        })
+        .sort(),
+    ).toStrictEqual([200, 409]);
     const current = await fixture.content();
     expect(["First edit", "Second edit"]).toContain(current);
     await fixture.update("After both commits");
@@ -332,6 +379,15 @@ describe("Agent database instructions", () => {
       "[AGENT_PROFILE]\nLegacy profile\n[/AGENT_PROFILE]\n  Body for editing  ",
     );
     await expect(fixture.content()).resolves.toBe("Body for editing");
+    await accept(
+      fixture.instructions.update({
+        headers,
+        params: fixture.params,
+        body: { content: "Edited body", ifContent: "Body for editing" },
+      }),
+      [200],
+    );
+    await expect(fixture.content()).resolves.toBe("Edited body");
   });
 
   it("preserves profile fields when updating instructions", async () => {

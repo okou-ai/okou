@@ -23,7 +23,6 @@ import {
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
 } from "@okouai/core";
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
 import { testContext } from "../../../__tests__/test-context";
@@ -42,7 +41,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -1520,14 +1518,6 @@ describe("CHAT-02: completed chat callback", () => {
     "consumes the whole thread's unread state without push or unarchive for a Slack %s run",
     async (status) => {
       const { actor, runnerGroup } = await entitledChatActor();
-      if (!actor.orgId) {
-        throw new Error("Expected organization");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-        { [FeatureSwitchKey.ChatThreadArchiving]: true },
-      );
       integrations.configureSlackAppMocks();
       await integrations.configureNativeSubscriptionModels(actor);
       const slackUserId = `U_${randomUUID().replaceAll("-", "")}`;
@@ -1689,17 +1679,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("keeps muted runs active but suppresses terminal unread, push and automatic unarchive", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      {
-        [FeatureSwitchKey.ChatThreadArchiving]: true,
-        [FeatureSwitchKey.ChatThreadMuting]: true,
-      },
-    );
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
     async function readIndicators() {
@@ -1764,14 +1743,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("unarchives the thread when a completed or failed run makes it unread, but not on cancellation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected the chat actor to be org-scoped");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.ChatThreadArchiving]: true },
-    );
     async function startArchivedRun(prompt: string) {
       const run = await startChatRun(actor, { agentId, prompt });
       await chat.requestSetThreadArchived(actor, run.threadId, true, [204]);
@@ -5138,13 +5109,6 @@ describe("CHAT-02: push notification gating", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId! },
-      {
-        chatThreadMuting: true,
-      },
-    );
     const run = await startChatRun(actor, {
       agentId,
       prompt: "Badge lifecycle",
@@ -5295,11 +5259,6 @@ describe("CHAT-02: push notification gating", () => {
     async (scenario) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const provider = await createApnsFixture(context);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId! },
-        { chatThreadMuting: true },
-      );
       await registerIosPush(context, { ...actor, orgId: actor.orgId! });
       const run = await startChatRun(actor, {
         agentId,

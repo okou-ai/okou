@@ -323,20 +323,6 @@ describe("Automatic continuation after a busy model", () => {
       await latestRun(fixture, threadId),
       "provider_rate_limited",
     );
-    createRouteMocks(context).clerk.session(
-      fixture.actor.userId,
-      fixture.actor.orgId,
-      fixture.actor.orgRole,
-    );
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { switches: { [FeatureSwitchKey.ChatThreadArchiving]: true } },
-      }),
-      [200],
-    );
     await chat.requestSetThreadArchived(fixture.actor, threadId, true, [204]);
     await fixture.tick(60_000);
     await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
