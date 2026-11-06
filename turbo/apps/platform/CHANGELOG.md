@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1099.2](https://github.com/okou-ai/okou/compare/app-v0.1099.1...app-v0.1099.2) (2026-11-06)
+
+
+### Refactoring
+
+* remove four fully rolled-out feature switches ([#45747](https://github.com/okou-ai/okou/issues/45747)) ([0f03d03](https://github.com/okou-ai/okou/commit/0f03d03881ff81b8eb72e1ceca6a80619603873c))
+
+
+### Performance Improvements
+
+* **browser:** combine authorized viewer acquisition ([#45723](https://github.com/okou-ai/okou/issues/45723)) ([92a34a9](https://github.com/okou-ai/okou/commit/92a34a9767f5c87fb7413a88fafa7d6e9febddef))
+* **browser:** retain initialized viewers across tab switches ([#45706](https://github.com/okou-ai/okou/issues/45706)) ([5287482](https://github.com/okou-ai/okou/commit/528748292b772700929c55c27f8688947e1106a3))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.2
+    * @okouai/core bumped to 8.822.2
+
 ## [0.1099.1](https://github.com/okou-ai/okou/compare/app-v0.1099.0...app-v0.1099.1) (2026-11-06)
 
 

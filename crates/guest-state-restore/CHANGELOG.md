@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.2](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.1...guest-state-restore-v0.4.2) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** centralize the guest timezone name contract ([#45757](https://github.com/okou-ai/okou/issues/45757)) ([42118c3](https://github.com/okou-ai/okou/commit/42118c395c62650600d4eb3e41e841876510eb75))
+
 ## [0.4.1](https://github.com/okou-ai/okou/compare/guest-state-restore-v0.4.0...guest-state-restore-v0.4.1) (2026-11-01)
 
 
