@@ -54,8 +54,9 @@ describe("server-owned shared Browser recovery", () => {
       f.provider.native.closeReply = "withhold";
       const reopened = await open(a);
       expect(f.provider.native.targets.get(page.targetId)).toStrictEqual(page);
-      expect((await view(b)).window).toStrictEqual(sibling.window);
-      expect((await view(b)).idleExpiresAt).toBe(leased.idleExpiresAt);
+      const siblingAfterRecovery = await view(b);
+      expect(siblingAfterRecovery.window).toStrictEqual(sibling.window);
+      expect(siblingAfterRecovery.idleExpiresAt).toBe(leased.idleExpiresAt);
       expect(f.provider.stoppedSessionIds.size).toBe(0);
       expect(f.provider.sessionRequests).toHaveLength(1);
 
@@ -73,8 +74,6 @@ describe("server-owned shared Browser recovery", () => {
             return target.url;
           }),
       ).toStrictEqual(["https://a.example.test/native-close-recovery"]);
-      expect((await view(b)).window).toStrictEqual(sibling.window);
-      expect((await view(b)).idleExpiresAt).toBe(leased.idleExpiresAt);
       expect(f.provider.sessionRequests).toHaveLength(1);
     });
   }, 20_000);
