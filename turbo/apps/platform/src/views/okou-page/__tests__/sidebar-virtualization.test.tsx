@@ -6,13 +6,7 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
@@ -26,7 +20,6 @@ import {
   mockChatThreadSnapshotResponse,
   testContext,
 } from "../../../signals/__tests__/test-helpers.ts";
-import { pwaChatThreadScrollSignals$ } from "../../../signals/okou-page/pwa-chat-list.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
@@ -603,17 +596,20 @@ test("Measure the mobile chat list only after the main stylesheet bounds it", as
     featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
   });
   await screen.findByRole("navigation", { name: "Main navigation" });
-  // The list's rows are ready; only the stylesheet holds the viewport back.
-  const scrollSignals = context.store.get(pwaChatThreadScrollSignals$);
-  const list = await act(async () => {
-    return await context.store.get(scrollSignals.list$);
+  // Workspace search lists the same chats outside the chat list, so finding
+  // one proves the rows are ready; only the stylesheet holds the list back.
+  click(await screen.findByLabelText("Search workspace"));
+  const search = await screen.findByRole("dialog", {
+    name: "Search workspace...",
   });
-  await waitFor(() => {
-    expect(context.store.get(list.count$)).toBe(threadCount);
-  });
+  await within(search).findAllByText("History 1");
   expect(
     screen.queryAllByTestId("sidebar-chat-thread-virtual-row"),
   ).toHaveLength(0);
+  fireEvent.keyDown(search, { key: "Escape" });
+  await waitFor(() => {
+    expect(search).not.toBeInTheDocument();
+  });
 
   stylesheetActive = true;
   stylesheet.resolve("loaded");
