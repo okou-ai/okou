@@ -321,6 +321,26 @@ function PausedBrowserSession({
   );
 }
 
+function BrowserSessionFooter({
+  signals,
+}: Pick<BrowserSessionPanelProps, "signals">) {
+  const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
+  const status = useLastLoadable(signals.panelStatus$);
+  if (refined) {
+    return null;
+  }
+  return (
+    <div className="flex shrink-0 items-center gap-3 whitespace-nowrap border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
+      <p className="min-w-0 flex-1 truncate">
+        {status.state === "hasData" && status.data === "active"
+          ? browserSessionReclaimHint({ status: status.data })
+          : null}
+      </p>
+      <BrowserLoadingStatus signals={signals.browser} />
+    </div>
+  );
+}
+
 function BrowserSessionPanelContent({
   signals,
   actions,
@@ -334,6 +354,8 @@ function BrowserSessionPanelContent({
   const windowId = useLastLoadable(signals.panelWindowId$);
   const connection = useLoadable(signals.viewerConnection$);
   const refined = useGet(featureSwitch$)[FeatureSwitchKey.CloudBrowserPanel];
+  const sharedViewer =
+    useGet(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner];
   const keepAliveRef = useSet(signals.keepAliveRef$);
   const [startOperation, start] = useLoadableSet(signals.start$);
   const starting = startOperation.state === "loading";
@@ -346,7 +368,7 @@ function BrowserSessionPanelContent({
   ) {
     return <UnauthorizedBrowserSession actions={actions} />;
   }
-  if (status.state === "loading") {
+  if (status.state === "loading" && !sharedViewer) {
     return (
       <PanelFrame>
         {actionsRow}
@@ -354,7 +376,7 @@ function BrowserSessionPanelContent({
       </PanelFrame>
     );
   }
-  if (status.state === "hasError") {
+  if (status.state === "hasError" && !sharedViewer) {
     return (
       <PanelFrame>
         {actionsRow}
@@ -363,10 +385,10 @@ function BrowserSessionPanelContent({
     );
   }
 
-  if (status.data === "unauthorized") {
+  if (status.state === "hasData" && status.data === "unauthorized") {
     return <UnauthorizedBrowserSession actions={actions} />;
   }
-  if (status.data !== "active") {
+  if (status.state === "hasData" && status.data !== "active") {
     return (
       <PausedBrowserSession
         signals={signals}
@@ -381,9 +403,10 @@ function BrowserSessionPanelContent({
   }
 
   if (
-    liveUrl.state !== "hasData" ||
-    instanceId.state !== "hasData" ||
-    windowId.state !== "hasData"
+    !sharedViewer &&
+    (liveUrl.state !== "hasData" ||
+      instanceId.state !== "hasData" ||
+      windowId.state !== "hasData")
   ) {
     return (
       <PanelFrame>
@@ -394,24 +417,25 @@ function BrowserSessionPanelContent({
   }
 
   return (
-    <PanelFrame panelRef={keepAliveRef}>
+    <PanelFrame
+      panelRef={
+        status.state === "hasData" && status.data === "active"
+          ? keepAliveRef
+          : undefined
+      }
+    >
       <BrowserCdpViewer
         signals={signals}
-        liveUrl={liveUrl.data}
-        instanceId={instanceId.data}
-        windowId={windowId.data}
+        liveUrl={liveUrl.state === "hasData" ? liveUrl.data : null}
+        instanceId={
+          instanceId.state === "hasData" ? instanceId.data : undefined
+        }
+        windowId={windowId.state === "hasData" ? windowId.data : undefined}
         refined={refined}
         actions={actions}
         overlay={overlay}
       />
-      {refined ? null : (
-        <div className="flex shrink-0 items-center gap-3 whitespace-nowrap border-t border-border/60 px-3.5 py-2 text-[11px] leading-4 text-muted-foreground">
-          <p className="min-w-0 flex-1 truncate">
-            {browserSessionReclaimHint({ status: status.data })}
-          </p>
-          <BrowserLoadingStatus signals={signals.browser} />
-        </div>
-      )}
+      <BrowserSessionFooter signals={signals} />
     </PanelFrame>
   );
 }
@@ -420,5 +444,17 @@ export function BrowserSessionPanel(props: BrowserSessionPanelProps) {
   // A grant owns operation state as well as mounted native/heartbeat resources.
   // Lease timestamps and ordinary session reloads preserve this owner.
   const authorizationScope = useGet(props.signals.authorizationScope$);
+  // Keep a confirmed denial visible across a grant's pending revalidation.
+  // The keyed native owner must not expose input before that grant is read.
+  const status = useLastLoadable(props.signals.panelStatus$);
+  const sharedViewer =
+    useGet(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner];
+  if (
+    sharedViewer &&
+    status.state === "hasData" &&
+    status.data === "unauthorized"
+  ) {
+    return <UnauthorizedBrowserSession actions={props.actions} />;
+  }
   return <BrowserSessionPanelContent key={authorizationScope} {...props} />;
 }

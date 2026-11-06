@@ -28,10 +28,14 @@ function client() {
   return setupApp({ context, routes: browserRoutes })(browserContract);
 }
 
-function request(chat: Chat, entry: "run" | "chat" = "run") {
+async function request(chat: Chat, entry: "run" | "chat" = "run") {
   return entry === "chat"
-    ? client().open({ headers, params: { threadId: chat.threadId }, body: {} })
-    : client().use({
+    ? await client().open({
+        headers,
+        params: { threadId: chat.threadId },
+        body: {},
+      })
+    : await client().use({
         headers: { authorization: `Bearer ${okouTokenFromClaim(chat.claim)}` },
         body: {},
       });

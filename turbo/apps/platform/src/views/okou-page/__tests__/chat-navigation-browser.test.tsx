@@ -77,6 +77,27 @@ interface BrowserApiControl {
   readonly native: ReturnType<typeof mockBrowserCdp>;
 }
 
+function browserReadResponse(
+  browser: BrowserSession,
+  query: { readonly viewer?: "native" } | undefined,
+) {
+  return {
+    browser,
+    ...(query?.viewer === "native"
+      ? {
+          viewer:
+            browser.status === "active"
+              ? {
+                  browser,
+                  cdpUrl: "wss://cdp.browser-use.com/sidebar",
+                  extension: TEST_BROWSER_EXTENSION,
+                }
+              : null,
+        }
+      : {}),
+  };
+}
+
 function mockBrowserApi(
   initialSession: BrowserSession | null,
   targets?: NonNullable<Parameters<typeof mockBrowserCdp>[2]>["targets"],
@@ -84,7 +105,7 @@ function mockBrowserApi(
   let currentSession = initialSession;
   let closeRequestCount = 0;
 
-  context.mocks.api(browserContract.get, ({ respond }) => {
+  context.mocks.api(browserContract.get, ({ query, respond }) => {
     return currentSession === null
       ? respond(404, {
           error: {
@@ -92,7 +113,7 @@ function mockBrowserApi(
             message: "Managed browser not found",
           },
         })
-      : respond(200, { browser: currentSession });
+      : respond(200, browserReadResponse(currentSession, query));
   });
   context.mocks.api(browserContract.open, ({ respond }) => {
     currentSession = liveBrowserSession();
@@ -198,6 +219,7 @@ function openConversation(
   refined = false,
   pwaNavigation = false,
   cloudBrowserEnabled = true,
+  sharedOwner = false,
 ): Promise<void> {
   mockChatLifecycle(context, {
     cloudBrowserEnabled,
@@ -212,6 +234,7 @@ function openConversation(
     featureSwitches: {
       [FeatureSwitchKey.CloudBrowserPanel]: refined,
       [FeatureSwitchKey.PwaNavigation]: pwaNavigation,
+      [FeatureSwitchKey.BrowserSharedOwner]: sharedOwner,
     },
   });
 }
@@ -254,6 +277,105 @@ function buttonByName(
 function liveBrowserSidebar(): HTMLElement {
   return screen.getByRole("complementary", { name: "Cloud browser" });
 }
+
+test("A summary card and a previous Start cannot authorize a reopened shared viewer", async () => {
+  mockWideScreen();
+  const session: BrowserSession = {
+    ...liveBrowserSession(),
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
+  };
+  const { native } = mockBrowserApi(session);
+  const viewer = {
+    browser: session,
+    cdpUrl: "wss://cdp.browser-use.com/sidebar",
+    extension: TEST_BROWSER_EXTENSION,
+  };
+  let active = false;
+  let denied = false;
+  let viewerReads = 0;
+  context.mocks.api(browserContract.get, ({ query, respond }) => {
+    const browser = active
+      ? session
+      : {
+          ...session,
+          status: "suspended" as const,
+          window: undefined,
+          idleExpiresAt: null,
+        };
+    if (query?.viewer !== "native") {
+      return respond(200, { browser });
+    }
+    viewerReads++;
+    return denied
+      ? respond(403, {
+          error: {
+            code: "BROWSER_AUTHORIZATION_REQUIRED",
+            message: "Cloud browser is not enabled for this chat",
+          },
+        })
+      : respond(200, { browser, viewer: active ? viewer : null });
+  });
+  context.mocks.api(browserContract.open, ({ respond }) => {
+    active = true;
+    return respond(200, { browser: session, viewer });
+  });
+  const events = completedConversationEvents().map((event) => {
+    return event.id === "navigation-browser-reply"
+      ? {
+          ...event,
+          content: `[Browser](https://app.okou.ai/browsers/${THREAD_ID})`,
+        }
+      : event;
+  });
+  await openConversation(events, false, false, true, true);
+  await expectConversationReady();
+  const card = await waitFor(() => {
+    const card = document.querySelector<HTMLElement>(
+      "[data-browser-session-card]",
+    );
+    if (!card) {
+      throw new Error("Expected the summary card");
+    }
+    return card;
+  });
+  expect(viewerReads).toBe(0);
+  expect(native.connections()).toBe(0);
+  click(card);
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  await waitFor(() => {
+    return expect(buttonByName("Start browser", sidebar)).toBeEnabled();
+  });
+  click(buttonByName("Start browser", sidebar));
+  await waitFor(() => {
+    return expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  expect(viewerReads).toBe(1);
+  click(buttonByName("Close cloud browser", sidebar));
+  await waitFor(() => {
+    return expect(
+      screen.queryByRole("complementary", { name: "Cloud browser" }),
+    ).not.toBeInTheDocument();
+  });
+  denied = true;
+  click(card);
+  const reopened = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  await within(reopened).findByText(
+    "Cloud browser is not enabled for this chat",
+  );
+  expect(
+    within(reopened).queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
+  expect(viewerReads).toBe(2);
+});
 
 test("An unauthorized Browser keeps its card and sidebar with an authorization placeholder", async () => {
   mockBrowserApi(liveBrowserSession());
@@ -386,7 +508,7 @@ test.each(["event", "snapshot"] as const)(
             });
       });
     }
-    context.mocks.api(browserContract.get, ({ respond }) => {
+    context.mocks.api(browserContract.get, ({ query, respond }) => {
       if (!committed || revoked) {
         if (enabling && !committed) {
           deniedRead.resolve();
@@ -398,7 +520,7 @@ test.each(["event", "snapshot"] as const)(
           },
         });
       }
-      return respond(200, { browser: session });
+      return respond(200, browserReadResponse(session, query));
     });
     context.mocks.api(
       chatThreadComputerUseHostContract.update,
@@ -561,12 +683,12 @@ test.each(["event", "snapshot"] as const)(
             });
       });
     }
-    context.mocks.api(browserContract.get, async ({ respond }) => {
+    context.mocks.api(browserContract.get, async ({ query, respond }) => {
       if (restoring) {
         await revalidate.promise;
       }
       return enabled
-        ? respond(200, { browser: session })
+        ? respond(200, browserReadResponse(session, query))
         : respond(403, {
             error: {
               code: "BROWSER_AUTHORIZATION_REQUIRED",

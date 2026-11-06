@@ -142,6 +142,7 @@ import {
 import { createAssistantErrorRecoverySignals } from "./assistant-error-recovery.ts";
 import { createBankingCardSignalsRegistry } from "./banking-action-block.ts";
 import { createBrowserSessionSignals } from "./browser-session-block.ts";
+import { activeSidebarBrowserThreadId$ } from "./thread-sidebar-coordinator.ts";
 import { createBrowserUserActionCardSignalsRegistry } from "./browser-user-action-block.ts";
 import type { ChatActionContext } from "./chat-action-context.ts";
 import { createChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
@@ -1986,6 +1987,9 @@ function createPagedEventResources({
   const mailDraftCardSignals = createMailDraftCardSignalsRegistry(threadId);
   const browserSessionSignals = createBrowserSessionSignals(
     threadId,
+    computed((get) => {
+      return get(activeSidebarBrowserThreadId$) === threadId;
+    }),
     onBrowserPageInput$,
   );
   const artifactCardSignals = createArtifactCardSignalsRegistry();

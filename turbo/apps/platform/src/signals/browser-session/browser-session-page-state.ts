@@ -13,10 +13,17 @@ export interface BrowserSessionPageSignals {
   readonly threadAccessible$: Computed<Promise<boolean>>;
 }
 
+const standaloneViewerRequested$ = computed(() => {
+  return true;
+});
+
 export function createBrowserSessionPageSignals(
   threadId: string,
 ): BrowserSessionPageSignals {
-  const browser = createBrowserSessionSignals(threadId);
+  const browser = createBrowserSessionSignals(
+    threadId,
+    standaloneViewerRequested$,
+  );
   const threadAccessible$ = computed(async (get): Promise<boolean> => {
     const session = await get(browser.session$);
     if (session) {

@@ -58,7 +58,14 @@ function viewer() {
     },
   };
   context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser: session });
+    return respond(200, {
+      browser: session,
+      viewer: {
+        browser: session,
+        cdpUrl: endpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      },
+    });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: session });
