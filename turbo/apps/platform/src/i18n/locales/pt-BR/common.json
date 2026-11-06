@@ -4088,7 +4088,6 @@
     "deniedTitle": "Acesso ao Shell negado",
     "deny": "Negar",
     "description": "O agente precisa de permissão para usar o Shell no seu computador.",
-    "details": "Detalhes",
     "duration": "O acesso dura 1 hora após a aprovação",
     "expired": "Autorização expirada",
     "expiredTitle": "Acesso ao Shell expirado",

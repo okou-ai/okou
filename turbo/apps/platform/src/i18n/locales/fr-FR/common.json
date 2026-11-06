@@ -4088,7 +4088,6 @@
     "deniedTitle": "Accès Shell refusé",
     "deny": "Refuser",
     "description": "L’agent a besoin d’une autorisation pour utiliser Shell sur votre ordinateur.",
-    "details": "Détails",
     "duration": "L’accès dure 1 heure après l’approbation",
     "expired": "Autorisation expirée",
     "expiredTitle": "Accès Shell expiré",

@@ -4021,7 +4021,6 @@
     "deniedTitle": "Akses Shell ditolak",
     "deny": "Tolak",
     "description": "Agen memerlukan izin untuk menggunakan Shell di komputer Anda.",
-    "details": "Detail",
     "duration": "Akses berlaku selama 1 jam setelah disetujui",
     "expired": "Otorisasi kedaluwarsa",
     "expiredTitle": "Akses Shell kedaluwarsa",

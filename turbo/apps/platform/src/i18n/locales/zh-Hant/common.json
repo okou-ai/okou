@@ -4021,7 +4021,6 @@
     "deniedTitle": "Shell 存取已拒絕",
     "deny": "拒絕",
     "description": "Agent 需要取得在你的電腦上使用 Shell 的權限。",
-    "details": "詳細資訊",
     "duration": "核准後可存取 1 小時",
     "expired": "授權已到期",
     "expiredTitle": "Shell 存取已到期",

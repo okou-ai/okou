@@ -4035,7 +4035,6 @@
     "deniedTitle": "Shell-Zugriff abgelehnt",
     "deny": "Ablehnen",
     "description": "Der Agent benötigt die Berechtigung, die Shell auf deinem Computer zu verwenden.",
-    "details": "Details",
     "duration": "Der Zugriff gilt nach der Genehmigung für 1 Stunde",
     "expired": "Autorisierung abgelaufen",
     "expiredTitle": "Shell-Zugriff abgelaufen",

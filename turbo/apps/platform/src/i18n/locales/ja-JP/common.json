@@ -4021,7 +4021,6 @@
     "deniedTitle": "Shell アクセスは拒否されました",
     "deny": "拒否",
     "description": "エージェントがコンピュータ上で Shell を使用するには許可が必要です。",
-    "details": "詳細",
     "duration": "承認後、1 時間アクセスできます",
     "expired": "承認の有効期限が切れました",
     "expiredTitle": "Shell アクセスの有効期限切れ",

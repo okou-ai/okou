@@ -4088,7 +4088,6 @@
     "deniedTitle": "Acceso a Shell denegado",
     "deny": "Rechazar",
     "description": "El agente necesita permiso para usar Shell en tu ordenador.",
-    "details": "Detalles",
     "duration": "El acceso dura 1 hora después de aprobarlo",
     "expired": "Autorización caducada",
     "expiredTitle": "Acceso a Shell caducado",

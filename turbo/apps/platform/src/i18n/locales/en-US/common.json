@@ -4033,7 +4033,6 @@
     "deniedTitle": "Shell access denied",
     "deny": "Deny",
     "description": "The agent needs permission to use Shell on your computer.",
-    "details": "Details",
     "duration": "Access lasts for 1 hour after approval",
     "expired": "Authorization expired",
     "expiredTitle": "Shell access expired",

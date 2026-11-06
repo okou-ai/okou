@@ -9,21 +9,9 @@ import {
   Loader2,
   Monitor,
   ShieldCheck,
-  Terminal,
-  X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import {
-  Button,
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-  IconButton,
-  cn,
-} from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import { i18n } from "../../i18n/index.ts";
 import type { DesktopShellAuthorizationSignals } from "../../signals/chat-page/desktop-shell-authorization-block.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -257,13 +245,11 @@ function AuthorizationActions({
   busy,
   failed,
   onAction,
-  standalone = false,
 }: {
   data: DesktopShellAuthorization | null;
   busy: boolean;
   failed: boolean;
   onAction: (action: ShellAction) => void;
-  standalone?: boolean;
 }) {
   const { t } = useTranslation();
   const blocked = data?.approvalBlockedReason !== null;
@@ -285,11 +271,7 @@ function AuthorizationActions({
           <Button
             pending={busy}
             disabled={blocked || failed}
-            className={
-              standalone
-                ? "bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
-                : undefined
-            }
+            className="bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
             onClick={() => {
               return onAction("approve");
             }}
@@ -299,7 +281,7 @@ function AuthorizationActions({
             })}
           </Button>
         </>
-      ) : standalone ? (
+      ) : (
         data?.status === "approved" && (
           <Button
             variant="neutral"
@@ -314,12 +296,6 @@ function AuthorizationActions({
             })}
           </Button>
         )
-      ) : (
-        <DialogClose render={<Button variant="neutral" />}>
-          {t(($) => {
-            return $.settings.shared.close;
-          })}
-        </DialogClose>
       )}
     </div>
   );
@@ -366,7 +342,7 @@ function AuthorizationSummary({
     <ChatCard
       data-testid="desktop-shell-authorization-card"
       aria-busy={loading || busy}
-      className="flex h-[224px] w-full flex-col justify-between gap-3 px-4 py-3 @[320px]:h-[200px] @[640px]:h-[144px] @[640px]:flex-row @[640px]:items-center"
+      className="flex min-h-[224px] w-full flex-col justify-between gap-3 px-4 py-3 @[320px]:min-h-[200px] @[640px]:min-h-[144px] @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <AuthorizationIcon data={data} loading={loading} />
@@ -386,15 +362,17 @@ function AuthorizationSummary({
           >
             {summary}
           </p>
-          {data?.status === "pending" && (
+          {data && (
+            <p className="mt-1 break-words whitespace-pre-wrap text-sm leading-5 text-muted-foreground">
+              {data.reason}
+            </p>
+          )}
+          {blocker && (
             <p
-              className={cn(
-                "mt-1 line-clamp-2 break-words text-sm leading-5 text-muted-foreground",
-                blocker && "text-amber-700 dark:text-amber-400",
-              )}
+              className="mt-1 break-words text-sm leading-5 text-amber-700 dark:text-amber-400"
               aria-live="polite"
             >
-              {blocker ?? data.reason}
+              {blocker}
             </p>
           )}
         </div>
@@ -415,13 +393,7 @@ function AuthorizationSummary({
             })}
           </Button>
         )}
-        {data ? (
-          <DialogTrigger render={<Button variant="quiet" size="sm" />}>
-            {t(($) => {
-              return $.desktopShellAuthorization.details;
-            })}
-          </DialogTrigger>
-        ) : (
+        {!data && (
           <Button variant="neutral" size="sm" disabled>
             {loading
               ? t(($) => {
@@ -438,7 +410,6 @@ function AuthorizationSummary({
             busy={busy}
             failed={failed}
             onAction={onAction}
-            standalone
           />
         )}
       </div>
@@ -453,7 +424,6 @@ export function DesktopShellAuthorizationCard({
   signals: DesktopShellAuthorizationSignals;
   standalone?: boolean;
 }) {
-  const { t } = useTranslation();
   const request = useLastLoadable(signals.request$);
   const data = request.state === "hasData" ? request.data : null;
   const loading = request.state === "loading";
@@ -482,55 +452,17 @@ export function DesktopShellAuthorizationCard({
           busy={busy}
           failed={failed}
           onAction={onAction}
-          standalone
         />
       </ChatCard>
     );
   }
   return (
-    <Dialog>
-      <AuthorizationSummary
-        data={data}
-        loading={loading}
-        busy={busy}
-        failed={failed}
-        onAction={onAction}
-      />
-      <DialogContent
-        maxWidth={560}
-        showCloseButton={false}
-        aria-describedby={undefined}
-      >
-        <DialogHeader className="flex-row items-center gap-3 space-y-0 text-left">
-          <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-gray-50 text-muted-foreground">
-            <Terminal size={22} aria-hidden />
-          </div>
-          <DialogTitle className="min-w-0 flex-1 font-medium leading-6">
-            {t(($) => {
-              return $.desktopShellAuthorization.title;
-            })}
-          </DialogTitle>
-          <DialogClose
-            render={
-              <IconButton
-                className="shrink-0"
-                aria-label={t(($) => {
-                  return $.settings.shared.close;
-                })}
-              />
-            }
-          >
-            <X size={20} />
-          </DialogClose>
-        </DialogHeader>
-        <AuthorizationDetails data={data} loading={loading} failed={failed} />
-        <AuthorizationActions
-          data={data}
-          busy={busy}
-          failed={failed}
-          onAction={onAction}
-        />
-      </DialogContent>
-    </Dialog>
+    <AuthorizationSummary
+      data={data}
+      loading={loading}
+      busy={busy}
+      failed={failed}
+      onAction={onAction}
+    />
   );
 }

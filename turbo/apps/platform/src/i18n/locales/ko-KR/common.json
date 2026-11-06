@@ -4021,7 +4021,6 @@
     "deniedTitle": "Shell 액세스 거부됨",
     "deny": "거부",
     "description": "에이전트가 컴퓨터에서 Shell을 사용하려면 권한이 필요합니다.",
-    "details": "세부 정보",
     "duration": "승인 후 1시간 동안 액세스할 수 있습니다",
     "expired": "권한 만료됨",
     "expiredTitle": "Shell 액세스 만료됨",

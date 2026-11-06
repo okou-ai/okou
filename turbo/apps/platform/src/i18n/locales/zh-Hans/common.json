@@ -4021,7 +4021,6 @@
     "deniedTitle": "Shell 访问已拒绝",
     "deny": "拒绝",
     "description": "Agent 需要获得在你的电脑上使用 Shell 的权限。",
-    "details": "详情",
     "duration": "批准后可访问 1 小时",
     "expired": "授权已到期",
     "expiredTitle": "Shell 访问已过期",
