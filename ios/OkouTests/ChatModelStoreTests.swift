@@ -285,6 +285,7 @@ final class ChatModelCommandTests: XCTestCase {
 
   func testNewChatKeepsEachModelsEffortAndSavesDefaultOnlyOnExplicitAction() async throws {
     let writes = Mutex<[URLRequest]>([])
+    let reads = Mutex<[String: Int]>([:])
     let savedPreference = Mutex<String?>(nil)
     let fixture = ChatHTTPFixture { request in
       if request.httpMethod == "PUT" {
@@ -300,6 +301,7 @@ final class ChatModelCommandTests: XCTestCase {
         savedPreference.withLock { $0 = preference }
         return ChatHTTPResponse(body: preference)
       }
+      reads.withLock { $0[request.url!.path, default: 0] += 1 }
       if request.url?.path == "/api/user-model-preference",
         let saved = savedPreference.withLock({ $0 })
       {
@@ -328,12 +330,15 @@ final class ChatModelCommandTests: XCTestCase {
     XCTAssertTrue(writes.withLock { $0.isEmpty })
     await selection.open()
     XCTAssertTrue(writes.withLock { $0.isEmpty })
+    var expectedReads = reads.withLock { $0 }
+    expectedReads["/api/user-model-preference", default: 0] += 1
     await selection.saveForFutureChats()
     XCTAssertEqual(writes.withLock { $0.count }, 1)
     XCTAssertTrue(selection.savedDefault)
     selection.resetNewChat()
     XCTAssertEqual(selection.selection.serviceTier, "priority")
     XCTAssertEqual(selection.effectiveEffort, "max")
+    XCTAssertEqual(reads.withLock { $0 }, expectedReads)
   }
 
   func testPlanRestrictionsAndMissingRoutesStayVisibleButCannotSend() async throws {

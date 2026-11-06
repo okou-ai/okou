@@ -328,7 +328,7 @@ final class WorkspaceStore {
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
     if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
     {
-      await modelStore.refresh()
+      await modelStore.refresh(batch)
     }
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
