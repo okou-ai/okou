@@ -1,6 +1,7 @@
 """Real original-FD range acquisition and complete original/CLI replay."""
 
 import copy
+import errno
 from functools import cache
 import hashlib
 import json
@@ -50,6 +51,31 @@ def original(root, size=SIZE):
     except BaseException:
         os.close(fd)
         raise
+
+
+def _copy_original(source, destination):
+    # Keep a complete, independently writable replay copy without routing every
+    # payload through the generic sendfile fast path.
+    with source.open("rb") as reader, destination.open("wb") as writer:
+        remaining = os.fstat(reader.fileno()).st_size
+        while remaining:
+            try:
+                copied = os.copy_file_range(reader.fileno(), writer.fileno(), remaining)
+            except OSError as error:
+                # Kernel/filesystem range-copy support is optional. Continue at
+                # the actual cursors even if a prefix was already transferred.
+                if error.errno not in (
+                    errno.ENOSYS,
+                    errno.EXDEV,
+                    errno.EOPNOTSUPP,
+                    errno.EINVAL,
+                ):
+                    raise
+                shutil.copyfileobj(reader, writer)
+                return
+            if not copied:
+                raise OSError("original fixture copy stopped before EOF")
+            remaining -= copied
 
 
 class ScanTests(unittest.TestCase):
@@ -219,7 +245,7 @@ class ScanTests(unittest.TestCase):
         capture = json.loads((root / "capture.json").read_bytes())
         self.assertEqual(capture["summary"]["before"]["mtime_ns"], -1)
         self.assertEqual(capture["summary"]["after"]["mtime_ns"], -1)
-        shutil.copyfile(self.path, root / "original.bin")
+        _copy_original(self.path, root / "original.bin")
         self.assertEqual(
             replay(
                 root,
@@ -293,7 +319,7 @@ class OriginalReplayTests(unittest.TestCase):
             cls.receipt = json.loads(result.stdout)
         finally:
             os.close(fd)
-        shutil.copyfile(path, cls.capture_root / "original.bin")
+        _copy_original(path, cls.capture_root / "original.bin")
         cls.capture = json.loads((cls.capture_root / "capture.json").read_bytes())
         cls.events = [
             json.loads(line)
@@ -424,7 +450,7 @@ class OriginalReplayTests(unittest.TestCase):
             self.check()
         shutil.copyfile(self.capture_root / SOURCES[0], self.root / SOURCES[0])
         (self.root / "original.bin").unlink()
-        shutil.copyfile(self.capture_root / "original.bin", self.root / "original.bin")
+        _copy_original(self.capture_root / "original.bin", self.root / "original.bin")
         with (self.root / "original.bin").open("r+b") as stream:
             stream.write(b"changed")
         with self.assertRaisesRegex(ValueError, "payload hash"):
