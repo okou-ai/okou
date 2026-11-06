@@ -3,13 +3,13 @@
 use std::time::Duration;
 
 use api_contracts::generated::{routes, types::runners::runs::startup::Request};
-use runner_provider::{ProviderError, http::HttpClient};
+use runner_provider::http::HttpClient;
 use runner_types::{ids::RunId, types::SandboxStartupPath};
 use tokio_util::{sync::CancellationToken, task::AbortOnDropHandle};
-use tracing::{Instrument, error, info};
+use tracing::{Instrument, error};
 
 const STARTUP_REPORT_TIMEOUT: Duration = Duration::from_secs(2);
-const STARTUP_REPORT_MAX_ATTEMPTS: usize = 3;
+const STARTUP_REPORT_MAX_ATTEMPTS: u8 = 3;
 const STARTUP_REPORT_RETRY_DELAY: Duration = Duration::from_secs(2);
 
 /// Owned delivery of the authenticated Agent-ready fact, independent of Run finalization.
@@ -64,8 +64,7 @@ pub(super) async fn report_startup_path(
     };
     // This ancillary fact cannot prevent guest execution. Old/rolled-back APIs
     // may lack the additive route; exhausted delivery leaves the Run path NULL.
-    for attempt in 1..=STARTUP_REPORT_MAX_ATTEMPTS {
-        let result = tokio::select! {
+    let result = tokio::select! {
             biased;
             () = cancel.cancelled() => return,
             result = http.request_resolved_route(
@@ -75,52 +74,16 @@ pub(super) async fn report_startup_path(
                     },
                 ),
                 sandbox_token,
-            ).json(&body).timeout(STARTUP_REPORT_TIMEOUT).send("run startup") => result,
-        };
-        let will_retry = match result {
-            Ok(response) => {
-                let status = response.status();
-                if status == reqwest::StatusCode::NO_CONTENT {
-                    return;
-                }
-                let retryable = matches!(
-                    status,
-                    reqwest::StatusCode::REQUEST_TIMEOUT
-                        | reqwest::StatusCode::MISDIRECTED_REQUEST
-                        | reqwest::StatusCode::TOO_EARLY
-                        | reqwest::StatusCode::TOO_MANY_REQUESTS
-                ) || status.is_server_error();
-                let will_retry = retryable && attempt < STARTUP_REPORT_MAX_ATTEMPTS;
-                if will_retry {
-                    info!(%run_id, %status, attempt, max_attempts = STARTUP_REPORT_MAX_ATTEMPTS,
-                        will_retry, "sandbox startup report failed, retrying");
-                } else {
-                    error!(%run_id, %status, attempt, max_attempts = STARTUP_REPORT_MAX_ATTEMPTS,
-                        will_retry, "sandbox startup report failed");
-                }
-                will_retry
-            }
-            Err(error) => {
-                let will_retry = matches!(&error, ProviderError::ApiTransport(_))
-                    && attempt < STARTUP_REPORT_MAX_ATTEMPTS;
-                if will_retry {
-                    info!(%run_id, %error, attempt, max_attempts = STARTUP_REPORT_MAX_ATTEMPTS,
-                        will_retry, "sandbox startup report failed, retrying");
-                } else {
-                    error!(%run_id, %error, attempt, max_attempts = STARTUP_REPORT_MAX_ATTEMPTS,
-                        will_retry, "sandbox startup report failed");
-                }
-                will_retry
-            }
-        };
-        if !will_retry {
-            return;
+            ).json(&body).timeout(STARTUP_REPORT_TIMEOUT)
+                .retry_transient(STARTUP_REPORT_MAX_ATTEMPTS, STARTUP_REPORT_RETRY_DELAY)
+                .send("run startup") => result,
+    };
+    match result {
+        Ok(response) if response.status() == reqwest::StatusCode::NO_CONTENT => {}
+        Ok(response) => {
+            error!(%run_id, status = %response.status(), "sandbox startup report failed")
         }
-        tokio::select! {
-            biased;
-            () = cancel.cancelled() => return,
-            () = tokio::time::sleep(STARTUP_REPORT_RETRY_DELAY) => {},
-        }
+        Err(error) => error!(%run_id, %error, "sandbox startup report failed"),
     }
 }
 

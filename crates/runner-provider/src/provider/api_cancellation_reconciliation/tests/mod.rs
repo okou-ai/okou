@@ -191,7 +191,11 @@ async fn observe(
 
 #[tokio::test]
 async fn real_connection_reset_keeps_typed_safe_request_context() {
-    let server = RawHttpTestServer::spawn(vec![RawHttpAction::ResetConnection]).await;
+    let server = RawHttpTestServer::spawn(vec![
+        RawHttpAction::ResetConnection,
+        RawHttpAction::ResetConnection,
+    ])
+    .await;
     let controller = controller_for_url(server.url());
     let run_id = RunId::new_v4();
 
@@ -216,6 +220,76 @@ async fn real_connection_reset_keeps_typed_safe_request_context() {
 
     server.assert_finished().await;
     controller.shutdown().await;
+}
+
+#[tokio::test]
+async fn recovered_status_and_outer_deadline_keep_the_final_wire_attempt_identity() {
+    for expire in [false, true] {
+        let mut server = Server::new().await;
+        let controller = server.controller();
+        let read = controller
+            .client
+            .read(RunId::new_v4(), "sandbox-test-token");
+        tokio::pin!(read);
+        let mut ids = Vec::new();
+        let mut final_peer = None;
+        for _ in 0..2 {
+            let request = tokio::select! {
+                biased;
+                request = server.next() => request,
+                result = &mut read => panic!("read completed before the recovery request: {result:?}"),
+            };
+            ids.push(
+                request
+                    .text
+                    .lines()
+                    .find_map(|line| {
+                        let (name, value) = line.split_once(':')?;
+                        name.eq_ignore_ascii_case("x-client-request-id")
+                            .then_some(value.trim().to_owned())
+                    })
+                    .unwrap(),
+            );
+            if ids.len() == 1 {
+                request.socket.set_zero_linger().unwrap();
+            } else {
+                final_peer = Some(request);
+            }
+        }
+        assert_ne!(ids[0], ids[1]);
+        let peer = final_peer.unwrap();
+        let waiting_peer = if expire {
+            Some(peer)
+        } else {
+            peer.respond("403 Forbidden", "").await;
+            None
+        };
+        if expire {
+            tokio::time::pause();
+            tokio::time::advance(REQUEST_DEADLINE + Duration::from_millis(1)).await;
+        }
+        let result = read.await;
+        if expire {
+            tokio::time::resume();
+        }
+        let context = match result {
+            Err(ReadError::Deadline(context)) if expire => context,
+            Err(ReadError::Status { status, request })
+                if !expire && status == StatusCode::FORBIDDEN =>
+            {
+                request
+            }
+            other => panic!("expected final status or deadline: {other:?}"),
+        };
+        assert_eq!(context.client_request_id, ids[1]);
+        if let Some(peer) = waiting_peer {
+            peer.disconnected().await;
+        }
+        assert!(server.requests.try_recv().is_err());
+        controller.shutdown().await;
+        server.task.abort();
+        assert!(server.task.await.unwrap_err().is_cancelled());
+    }
 }
 
 #[tokio::test]
@@ -358,7 +432,11 @@ async fn retirement_does_not_claim_recovery_after_a_real_reset() {
     let captured = CapturedEvents::default();
     let _subscriber =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
-    let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::ResetConnection]).await;
+    let mut server = RawHttpTestServer::spawn(vec![
+        RawHttpAction::ResetConnection,
+        RawHttpAction::ResetConnection,
+    ])
+    .await;
     let controller = controller_for_url(server.url());
     let registry = RunCancellationRegistry::new();
     let run_id = RunId::new_v4();
@@ -367,6 +445,7 @@ async fn retirement_does_not_claim_recovery_after_a_real_reset() {
     server
         .next_request("cancellation reconciliation read")
         .await;
+    server.next_request("shared reset recovery").await;
     server.assert_finished().await;
     bounded(async {
         while events(&captured, FAILURE).is_empty() {
@@ -383,6 +462,9 @@ async fn retirement_does_not_claim_recovery_after_a_real_reset() {
 
 #[tokio::test(start_paused = true)]
 async fn real_reset_then_present_null_reports_local_recovery_without_cancellation() {
+    // Run native I/O and its short shared recovery on running time. Pause only
+    // after the exhausted failure is observed to test the next periodic tick.
+    tokio::time::resume();
     let captured = CapturedEvents::default();
     let _subscriber =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
@@ -395,6 +477,7 @@ async fn real_reset_then_present_null_reports_local_recovery_without_cancellatio
     })
     .to_string();
     let mut server = RawHttpTestServer::spawn(vec![
+        RawHttpAction::ResetConnection,
         RawHttpAction::ResetConnection,
         RawHttpAction::Respond(crate::test_fixtures::raw_http::json_response(
             "200 OK", &response,
@@ -414,6 +497,8 @@ async fn real_reset_then_present_null_reports_local_recovery_without_cancellatio
         }
     })
     .await;
+    server.next_request("shared reset recovery").await;
+    tokio::time::pause();
     tokio::time::advance(INTERVAL).await;
     server
         .next_request("cancellation reconciliation retry")

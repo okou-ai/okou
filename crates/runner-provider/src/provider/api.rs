@@ -48,7 +48,9 @@ use crate::error::{
     ApiBodyReadError, ApiFailureKind, ApiStatusError, ApiTransportCause, ApiTransportError,
     ProviderError, ProviderResult,
 };
-use crate::http::{ApiRequestBuilder, HttpClient, response_cf_ray};
+use crate::http::{
+    ApiRequestBuilder, HttpClient, RecoveryPolicy, RetryConditions, is_transient_http_status,
+};
 use crate::run_cancellation::RunCancellationRegistry;
 #[cfg(test)]
 use guest_contracts::okou_cli::OkouCliInstalledPackage;
@@ -554,60 +556,24 @@ impl ApiProvider {
         }
     }
 
-    async fn claim_with_preference_recovery(
-        &self,
-        candidate: &JobCandidate,
-    ) -> Result<Option<SuccessfulClaimResponse>, ClaimApiError> {
-        let claim = || {
-            self.api.claim(
-                candidate,
-                &self.runner_identity,
-                self.runner_hostname.as_deref(),
-                self.installed_okou_cli.as_ref(),
-            )
+    fn claim_recovery_policy(&self, candidate: &JobCandidate) -> RecoveryPolicy {
+        let Some(preference) = candidate
+            .runner_preference()
+            .filter(|preference| preference.targets(self.runner_identity))
+            .filter(|_| candidate.reuse_key().is_some())
+        else {
+            return RecoveryPolicy::never();
         };
-        let result = claim().await;
-        let (status, failure_cause) = match &result {
-            Err(ClaimApiError::Request(ProviderError::ApiStatus(error)))
-                if error.status == StatusCode::INTERNAL_SERVER_ERROR =>
-            {
-                (Some(error.status.as_u16()), None)
-            }
-            Err(ClaimApiError::Request(ProviderError::ApiTransport(error)))
-                if error.failure_cause == ApiTransportCause::ConnectionReset =>
-            {
-                (None, Some(error.failure_cause.as_str()))
-            }
-            _ => return result,
-        };
-        let Some(preference) = candidate.runner_preference().filter(|preference| {
-            preference.targets(self.runner_identity)
-                && preference.remaining() > PREFERRED_CLAIM_RETRY_DELAY
-        }) else {
-            return result;
-        };
-        if candidate.reuse_key().is_none() || self.cancel.is_cancelled() {
-            return result;
-        }
-
-        tokio::select! {
-            biased;
-            () = self.cancel.cancelled() => return result,
-            () = tokio::time::sleep(PREFERRED_CLAIM_RETRY_DELAY) => {}
-        }
-        if self.cancel.is_cancelled() || preference.is_expired() {
-            return result;
-        }
-        warn!(
-            run_id = %candidate.run_id(),
-            status,
-            failure_cause,
-            retry_after_ms = duration_ms(PREFERRED_CLAIM_RETRY_DELAY),
-            "claim failed, retrying preferred candidate"
-        );
-        // Keep this inside the caller's original admission and in-flight guard.
-        // The API still decides ownership; a committed/lost claim can return 404.
-        claim().await
+        // The API decides ownership; a committed/lost claim can return 404.
+        // The shared executor checks cancellation/expiry only before replay,
+        // allowing the original admitted attempt to drain.
+        RecoveryPolicy::bounded(
+            2,
+            PREFERRED_CLAIM_RETRY_DELAY,
+            RetryConditions::ResetOrStatus(StatusCode::INTERNAL_SERVER_ERROR),
+        )
+        .until(preference.deadline(), self.cancel.clone())
+        .full_attempt_timeouts()
     }
 
     async fn wait_for_direct_candidate(&self) -> Option<DirectJobCandidate> {
@@ -939,7 +905,16 @@ impl JobProvider for ApiProvider {
         // Legacy/notification candidates omit the claim capability, so even a
         // stale hint cannot claim a v4 Run without the durable barrier.
         let claim_request_started_at = Instant::now();
-        let claim_result = self.claim_with_preference_recovery(&candidate).await;
+        let claim_result = self
+            .api
+            .claim(
+                &candidate,
+                &self.runner_identity,
+                self.runner_hostname.as_deref(),
+                self.installed_okou_cli.as_ref(),
+                self.claim_recovery_policy(&candidate),
+            )
+            .await;
         let claim_request_elapsed = claim_request_started_at.elapsed();
         match claim_result {
             Ok(Some(SuccessfulClaimResponse {
@@ -1096,79 +1071,15 @@ impl JobProvider for ApiProvider {
             }
         };
 
-        const MAX_ATTEMPTS: usize = 3;
-        const RETRY_DELAY: Duration = Duration::from_secs(2);
-
-        for attempt in 1..=MAX_ATTEMPTS {
-            match self.api.complete(&token, &request).await {
-                Ok(()) => return,
-                Err(e) => {
-                    let (retryable, status, failure_kind) = match &e {
-                        ProviderError::ApiStatus(api_error) => (
-                            is_transient_http_status(api_error.status),
-                            api_error.status.as_str(),
-                            "http_status",
-                        ),
-                        ProviderError::ApiTransport(api_error) => {
-                            (true, "", api_error.failure_kind.as_str())
-                        }
-                        _ => (false, "", "local"),
-                    };
-                    let will_retry = retryable && attempt < MAX_ATTEMPTS;
-
-                    if will_retry {
-                        info!(
-                            run_id = %run_id,
-                            error = %e,
-                            attempt,
-                            max_attempts = MAX_ATTEMPTS,
-                            will_retry,
-                            status,
-                            failure_kind,
-                            "completion report failed, retrying"
-                        );
-                        tokio::time::sleep(RETRY_DELAY).await;
-                        continue;
-                    }
-
-                    if attempt > 1 {
-                        error!(
-                            run_id = %run_id,
-                            error = %e,
-                            attempt,
-                            max_attempts = MAX_ATTEMPTS,
-                            will_retry,
-                            status,
-                            failure_kind,
-                            "failed to report completion after retry"
-                        );
-                    } else {
-                        error!(
-                            run_id = %run_id,
-                            error = %e,
-                            attempt,
-                            max_attempts = MAX_ATTEMPTS,
-                            will_retry,
-                            status,
-                            failure_kind,
-                            "failed to report completion"
-                        );
-                    }
-                    return;
-                }
-            }
+        if let Err(error) = self.api.complete(&token, &request).await {
+            let (status, failure_kind) = match &error {
+                ProviderError::ApiStatus(error) => (error.status.as_str(), "http_status"),
+                ProviderError::ApiTransport(error) => ("", error.failure_kind.as_str()),
+                _ => ("", "local"),
+            };
+            error!(run_id = %run_id, error = %error, status, failure_kind, "failed to report completion");
         }
     }
-}
-
-fn is_transient_http_status(status: StatusCode) -> bool {
-    matches!(
-        status,
-        StatusCode::REQUEST_TIMEOUT
-            | StatusCode::MISDIRECTED_REQUEST
-            | StatusCode::TOO_EARLY
-            | StatusCode::TOO_MANY_REQUESTS
-    ) || status.is_server_error()
 }
 
 fn classify_claim_failure(error: &ClaimApiError) -> ClaimFailureDecision {
@@ -1648,7 +1559,8 @@ impl ApiClient {
         let resp = send_api(
             self.http
                 .request_route(routes::runners::poll::POLL, &self.token)
-                .json(&body),
+                .json(&body)
+                .idempotent(),
             "poll",
         )
         .await?;
@@ -1668,7 +1580,8 @@ impl ApiClient {
         let resp = send_api(
             self.http
                 .request_route(routes::runners::heartbeat::HEARTBEAT, &self.token)
-                .json(state),
+                .json(state)
+                .idempotent(),
             "heartbeat",
         )
         .await?;
@@ -1686,6 +1599,7 @@ impl ApiClient {
         runner_identity: &RunnerProcessIdentity,
         runner_hostname: Option<&str>,
         installed_okou_cli: Option<&InstalledOkouCli>,
+        recovery: RecoveryPolicy,
     ) -> Result<Option<SuccessfulClaimResponse>, ClaimApiError> {
         let claim_started_at = Instant::now();
         let run_id = candidate.run_id();
@@ -1704,13 +1618,15 @@ impl ApiClient {
             ),
             &self.token,
         );
-        let request = request.query(&[("workflowSkills", "2")]).json(&body);
-        let request_to_response_headers_started_at = Instant::now();
+        let request = request
+            .query(&[("workflowSkills", "2")])
+            .json(&body)
+            .recovery(recovery);
         let request = request.prepare("claim").map_err(|error| match error {
             ProviderError::Api(message) => ProviderError::Api(format!("claim: {message}")),
             error => error,
         })?;
-        let request_context = request.context().clone();
+        let mut request_context = request.context().clone();
         // This is the handoff to reqwest execution, not a physical socket write.
         // Connection, transport, edge and server work are not split by this clock.
         let execution_started_at = Instant::now();
@@ -1735,26 +1651,38 @@ impl ApiClient {
         let mut headers_elapsed = None;
         let mut body_read_elapsed = None;
         let mut decode_elapsed = None;
+        let mut final_execution_started_at = execution_started_at;
+        // These are per-wire-request metrics consumed by the API. Keep their
+        // existing typed preparation without retaining a business retry loop.
+        let mut prepare_replay = |request: &mut reqwest::Request| {
+            let body = claim_request_body(
+                candidate,
+                runner_identity,
+                runner_hostname,
+                installed_okou_cli,
+            );
+            let bytes = serde_json::to_vec(&body)
+                .map_err(|_| ProviderError::Api("claim: serialize request body".into()))?;
+            *request.body_mut() = Some(bytes.into());
+            request
+                .headers_mut()
+                .remove(reqwest::header::CONTENT_LENGTH);
+            Ok(())
+        };
         let result = async {
-            let resp = request.send_observed_claim(run_id, execution_started_at).await?;
-            let headers_received_at = Instant::now();
+            let attempt = request
+                .send_observed_claim(run_id, execution_started_at, Some(&mut prepare_replay))
+                .await;
+            request_context = attempt.context;
+            final_execution_started_at = attempt.started;
+            let resp = attempt.result?;
+            let headers_received_at = attempt.finished;
             let request_to_response_headers_elapsed =
-                headers_received_at.duration_since(request_to_response_headers_started_at);
+                headers_received_at.duration_since(attempt.started);
             let execution_to_response_headers_elapsed =
-                headers_received_at.duration_since(execution_started_at);
+                headers_received_at.duration_since(attempt.started);
             headers_elapsed = Some(execution_to_response_headers_elapsed);
             status = Some(resp.status().as_u16());
-            info!(
-                run_id = %run_id,
-                client_request_id = %request_context.client_request_id,
-                client_session_id = %request_context.client_session_id,
-                http_status = status,
-                execution_to_response_headers_ms = duration_ms(execution_to_response_headers_elapsed),
-                http_version = ?resp.version(),
-                response_cf_ray = response_cf_ray(resp.headers()),
-                response_vercel_id = claim_vercel_id(resp.headers()),
-                "claim response headers received"
-            );
 
             if resp.status() == StatusCode::NOT_FOUND {
                 return Ok(None);
@@ -1821,7 +1749,7 @@ impl ApiClient {
             http_status = status,
             response_headers_received = headers_elapsed.is_some(),
             claim_elapsed_ms = duration_ms(completed_at.duration_since(claim_started_at)),
-            execution_to_completion_ms = duration_ms(completed_at.duration_since(execution_started_at)),
+            execution_to_completion_ms = duration_ms(completed_at.duration_since(final_execution_started_at)),
             execution_to_response_headers_ms = headers_elapsed.map(duration_ms),
             response_body_read_ms = body_read_elapsed.map(duration_ms),
             response_decode_ms = decode_elapsed.map(duration_ms),
@@ -1840,14 +1768,22 @@ impl ApiClient {
         let runner_identity =
             RunnerProcessIdentity::new("550e8400-e29b-41d4-a716-446655440000".parse().unwrap(), 7)
                 .unwrap();
-        self.claim(candidate, &runner_identity, None, None).await
+        self.claim(
+            candidate,
+            &runner_identity,
+            None,
+            None,
+            RecoveryPolicy::never(),
+        )
+        .await
     }
     /// Report job completion. Uses the per-job **sandbox token** for auth.
     async fn complete(&self, sandbox_token: &str, request: &CompleteRequest) -> ProviderResult<()> {
         let resp = send_api(
             self.http
                 .request_route(routes::webhooks::agent::complete::COMPLETE, sandbox_token)
-                .json(request),
+                .json(request)
+                .retry_transient(3, Duration::from_secs(2)),
             "complete",
         )
         .await?;
@@ -2017,25 +1953,8 @@ impl ApiClient {
             )
             .timeout(BUILTIN_FIREWALL_CATALOG_RESOLVE_TIMEOUT)
             .json(&serde_json::json!({}))
+            .idempotent()
     }
-}
-
-// Only provider-issued request identifiers are retained, never arbitrary
-// response headers. Invalid/unknown shapes are simply unobserved diagnostics.
-fn claim_vercel_id(headers: &reqwest::header::HeaderMap) -> Option<&str> {
-    let value = headers.get("x-vercel-id")?.to_str().ok()?;
-    let (region, request_id) = value.split_once("::")?;
-    (value.len() <= 128
-        && (4..=6).contains(&region.len())
-        && region
-            .bytes()
-            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
-        && region.bytes().any(|byte| byte.is_ascii_digit())
-        && !request_id.is_empty()
-        && request_id
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'-')))
-    .then_some(value)
 }
 
 // The callback is a no-op in production and lets raw-HTTP tests acknowledge the

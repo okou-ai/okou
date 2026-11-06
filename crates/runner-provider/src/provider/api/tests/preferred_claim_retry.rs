@@ -27,13 +27,10 @@ fn request_id(request: &str) -> &str {
 async fn preferred_claim_recovers_retryable_failure_within_the_original_operation() {
     let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
     let sensitive_body = "private-claim-error-body";
-    for failure in [
-        RawHttpAction::Respond(http_response(
-            "500 Internal Server Error",
-            sensitive_body.as_bytes(),
-        )),
+    for (index, failure) in [
+        RawHttpAction::Respond(format!("HTTP/1.1 500 Internal Server Error\r\nContent-Length: {}\r\nConnection: close\r\ncf-ray: 0123456789abcdef-SEA\r\nx-vercel-id: iad1::request-1\r\n\r\n{sensitive_body}", sensitive_body.len()).into_bytes()),
         RawHttpAction::ResetConnection,
-    ] {
+    ].into_iter().enumerate() {
         let server = RawHttpTestServer::spawn(vec![
             failure,
             RawHttpAction::Respond(json_response("200 OK", RUNNER_CLAIM_RESPONSE_FIXTURE)),
@@ -57,6 +54,16 @@ async fn preferred_claim_recovers_retryable_failure_within_the_original_operatio
         let requests = server.assert_finished_with_requests().await;
         assert_eq!(requests.len(), 2);
         assert_ne!(request_id(&requests[0]), request_id(&requests[1]));
+        let headers: Vec<_> = events.iter().filter(|event| event.fields.get("message").map(String::as_str) == Some("claim response headers received")).collect();
+        assert_eq!(headers.len(), if index == 0 { 2 } else { 1 });
+        if index == 0 {
+            assert_eq!(event_field(headers[0], "client_request_id"), request_id(&requests[0]));
+            assert_eq!(event_field(headers[0], "http_status"), "500");
+            assert_eq!(event_field(headers[0], "response_cf_ray"), "0123456789abcdef-SEA");
+            assert_eq!(event_field(headers[0], "response_vercel_id"), "iad1::request-1");
+        }
+        assert_eq!(event_field(headers.last().unwrap(), "client_request_id"), request_id(&requests[1]));
+        let mut bodies = Vec::new();
         for request in &requests {
             assert!(request.starts_with(&format!(
                 "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2 "
@@ -68,7 +75,18 @@ async fn preferred_claim_recovers_retryable_failure_within_the_original_operatio
                 serde_json::json!(test_runner_identity())
             );
             assert_eq!(body["telemetry"]["runnerPreferenceClaimState"], "active");
+            bodies.push(body);
         }
+        let first_ms = bodies[0]["telemetry"]["jobDiscoveredToClaimRequestMs"]
+            .as_u64()
+            .unwrap();
+        let second_ms = bodies[1]["telemetry"]["jobDiscoveredToClaimRequestMs"]
+            .as_u64()
+            .unwrap();
+        assert!(
+            second_ms >= first_ms + duration_ms(PREFERRED_CLAIM_RETRY_DELAY),
+            "claim telemetry must include the failed attempt and backoff"
+        );
         assert!(
             !format!("{events:#?}").contains(sensitive_body),
             "failed claim response bodies must stay private"

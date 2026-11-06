@@ -459,13 +459,16 @@ impl ReadClient {
             ])
             .prepare("run cancellation reconciliation")
             .map_err(|_| ReadError::Prepare)?;
-        let request_context = request.context().clone();
+        let mut request_context = request.context().clone();
         let requested_url = request.url().clone();
         let read = timeout(REQUEST_DEADLINE, async {
-            let mut response = request.send().await.map_err(|error| match error {
-                ProviderError::ApiTransport(error) => ReadError::Transport(error),
-                _ => ReadError::Send,
-            })?;
+            let mut response = request
+                .send_with_context(&mut request_context)
+                .await
+                .map_err(|error| match error {
+                    ProviderError::ApiTransport(error) => ReadError::Transport(error),
+                    _ => ReadError::Send,
+                })?;
             if response.url() != &requested_url {
                 return Err(ReadError::Redirect);
             }
