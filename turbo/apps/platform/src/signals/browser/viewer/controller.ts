@@ -4668,7 +4668,8 @@ function createVisibilitySettingsGraph(
         get(selected.alive$) &&
         !get(model.imageRecovery$) &&
         (get(selected.visibility.receipt$) !== null ||
-          get(selected.readiness.usable$));
+          (get(selected.readiness.initialized$) &&
+            get(selected.readiness.painted$)));
       if (!retained) {
         set(get(links$).retireCurrent$, "paused", false);
       }

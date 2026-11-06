@@ -2777,12 +2777,12 @@ test("A hidden page pauses input and resumes the selected tab when visible", asy
   expect(screen.queryByText("Connecting to browser…")).toBeNull();
   expect(screen.getByText("Updating view…")).toBeInTheDocument();
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  act(() => {
+  await act(async () => {
     browser.event(
       "Page.screencastFrame",
       {
         data: "AAAA",
-        sessionId: 1,
+        sessionId: 991,
         metadata: {
           timestamp: 0.5,
           offsetTop: 0,
@@ -2795,6 +2795,14 @@ test("A hidden page pauses input and resumes the selected tab when visible", asy
       },
       browser.pageSession("other-page"),
     );
+    await waitFor(() => {
+      expect(browser.requests).toContainEqual(
+        expect.objectContaining({
+          method: "Page.screencastFrameAck",
+          params: { sessionId: 991 },
+        }),
+      );
+    });
   });
   expect(screen.getByText("Updating view…")).toBeInTheDocument();
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
@@ -2843,6 +2851,39 @@ test("Rapid visibility changes retain the preview until original capture cleanup
   await userEvent.keyboard("{Enter}");
   await waitFor(() => {
     expect(address).toHaveValue("http://after-visibility.example/ready");
+  });
+});
+
+test("A visibility pause during membership revalidation retains the initialized preview until fresh proof and image", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer(0);
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+  });
+  await proof.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(screen.queryByText("Connecting to browser…")).toBeNull();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(async () => {
+    await proof.release();
+    await image.received;
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
 });
 
