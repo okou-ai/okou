@@ -174,11 +174,6 @@ function MyOkouHeader() {
           </p>
         </div>
       </header>
-      <h2 className="mb-3 text-sm font-medium">
-        {t(($) => {
-          return $.myOkou.instructions;
-        })}
-      </h2>
     </>
   );
 }
