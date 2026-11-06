@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.13](https://github.com/okou-ai/okou/compare/runner-network-v0.4.12...runner-network-v0.4.13) (2026-11-06)
+
+
+### Performance Improvements
+
+* **runner:** attribute proxy registration stages ([#45643](https://github.com/okou-ai/okou/issues/45643)) ([955305f](https://github.com/okou-ai/okou/commit/955305f6facb4ad91e711141847bef87b63e2660))
+
 ## [0.4.12](https://github.com/okou-ai/okou/compare/runner-network-v0.4.11...runner-network-v0.4.12) (2026-11-06)
 
 
