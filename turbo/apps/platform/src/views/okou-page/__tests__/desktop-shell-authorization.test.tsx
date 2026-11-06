@@ -84,7 +84,7 @@ async function setupChat(
   });
 }
 
-async function openDetails(card: HTMLElement, label = "Review access") {
+async function openDetails(card: HTMLElement, label = "Details") {
   await waitFor(() => {
     return expect(button(card, label)).toBeEnabled();
   });
@@ -100,7 +100,7 @@ function approvedAuthorization() {
   });
 }
 
-test("A user reviews the reason before approving and can revoke directly from the summary", async () => {
+test("A user approves from the card and can revoke without opening details", async () => {
   let current = authorization();
   let approvals = 0;
   context.mocks.api(contract.get, ({ respond }) => {
@@ -119,16 +119,13 @@ test("A user reviews the reason before approving and can revoke directly from th
   });
   await setupChat(`[Allow Shell access](${URL})`);
   const card = await screen.findByTestId("desktop-shell-authorization-card");
-  const dialog = await openDetails(card);
-  expect(card).toHaveTextContent("Work Mac · 1 hour");
-  expect(within(dialog).getByText("Run the project tests")).toBeInTheDocument();
-  expect(approvals).toBe(0);
-  click(button(dialog, "Allow for 1 hour"));
-  await within(dialog).findByText("Allowed");
-  click(button(dialog, "Close"));
   await waitFor(() => {
-    return expect(button(card, "Details")).toHaveFocus();
+    expect(button(card, "Allow for 1 hour")).toBeEnabled();
   });
+  expect(card).toHaveTextContent("Work Mac · 1 hour");
+  expect(within(card).getByText("Run the project tests")).toBeInTheDocument();
+  click(button(card, "Allow for 1 hour"));
+  await within(card).findByText("Shell access allowed");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   expect(card).toHaveTextContent("Work Mac · This chat");
   expect(approvals).toBe(1);
@@ -183,7 +180,7 @@ test("The complete reason is readable in a dialog and Escape returns focus to th
   expect(within(dialog).getByText(reason.trim())).toBeInTheDocument();
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
-    return expect(button(card, "Review access")).toHaveFocus();
+    return expect(button(card, "Details")).toHaveFocus();
   });
 });
 
@@ -196,6 +193,9 @@ test("A blocked request can be reviewed without offering approval", async () => 
   });
   await setupChat(URL);
   const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await within(card).findByText("Select Work Mac again before approving.");
+  expect(button(card, "Allow for 1 hour")).toBeDisabled();
+  expect(button(card, "Deny")).toBeEnabled();
   const dialog = await openDetails(card);
   expect(
     within(dialog).getByText("Select Work Mac again before approving."),
@@ -204,7 +204,7 @@ test("A blocked request can be reviewed without offering approval", async () => 
   expect(button(dialog, "Deny")).toBeEnabled();
 });
 
-test("Denying from the details shows its result and closing returns focus to the summary", async () => {
+test("A user denies directly from the card and can inspect the result", async () => {
   let current = authorization();
   context.mocks.api(contract.get, ({ respond }) => {
     return respond(200, current);
@@ -216,13 +216,11 @@ test("Denying from the details shows its result and closing returns focus to the
   });
   await setupChat(URL);
   const card = await screen.findByTestId("desktop-shell-authorization-card");
-  const dialog = await openDetails(card);
-  click(button(dialog, "Deny"));
-  await within(dialog).findByText("Request denied");
-  click(button(dialog, "Close"));
   await waitFor(() => {
-    return expect(button(card, "Details")).toHaveFocus();
+    expect(button(card, "Deny")).toBeEnabled();
   });
+  click(button(card, "Deny"));
+  await within(card).findByText("Shell access denied");
   expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   const details = await openDetails(card, "Details");
   expect(within(details).getByText("Request denied")).toBeInTheDocument();
@@ -249,7 +247,7 @@ test("Closing and reopening details preserves a pending action and its failure",
   await started.promise;
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
-    return expect(button(card, "Review access")).toHaveFocus();
+    return expect(button(card, "Details")).toHaveFocus();
   });
   const dialog = await openDetails(card);
   expect(button(dialog, "Allow for 1 hour")).toHaveAttribute(
@@ -281,7 +279,7 @@ test("Attaching realtime does not refetch a shell card, but a shell event update
   await setupChat(URL, "message-port");
   const card = await screen.findByTestId("desktop-shell-authorization-card");
   await waitFor(() => {
-    return expect(button(card, "Review access")).toBeEnabled();
+    return expect(button(card, "Details")).toBeEnabled();
   });
   await attach.started;
   current = approvedAuthorization();
@@ -291,7 +289,7 @@ test("Attaching realtime does not refetch a shell card, but a shell event update
       context.mocks.ably.hasSubscriptionOnChannel(USER_CHANNEL, SHELL_TOPIC),
     ).toBeTruthy();
   });
-  expect(button(card, "Review access")).toBeEnabled();
+  expect(button(card, "Details")).toBeEnabled();
   expect(
     within(card).queryByText("Shell access allowed"),
   ).not.toBeInTheDocument();
@@ -368,7 +366,7 @@ test.each([
     });
     await setupChat(URL, "message-port");
     const card = await screen.findByTestId("desktop-shell-authorization-card");
-    const label = status === "approved" ? "Details" : "Review access";
+    const label = "Details";
     await waitFor(() => {
       return expect(button(card, label)).toBeEnabled();
     });
@@ -445,7 +443,7 @@ test("A host change makes an unavailable authorization stop offering review", as
   await setupChat(URL, "message-port");
   const card = await screen.findByTestId("desktop-shell-authorization-card");
   await waitFor(() => {
-    expect(button(card, "Review access")).toBeEnabled();
+    expect(button(card, "Details")).toBeEnabled();
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
         USER_CHANNEL,
@@ -456,7 +454,7 @@ test("A host change makes an unavailable authorization stop offering review", as
   available = false;
   context.mocks.ably.triggerOnChannel(USER_CHANNEL, "computerUseHostsChanged");
   await within(card).findByText("Shell access unavailable");
-  expect(findButton(card, "Review access")).toBeUndefined();
+  expect(findButton(card, "Details")).toBeUndefined();
 });
 
 test("A request update rearms its deadline and expires it without another event", async () => {
@@ -521,7 +519,7 @@ test("A shell event expires its grant when the timer elapses before the wall-clo
   await setupChat(URL);
   const card = await screen.findByTestId("desktop-shell-authorization-card");
   await waitFor(() => {
-    expect(button(card, "Review access")).toBeEnabled();
+    expect(button(card, "Details")).toBeEnabled();
     expect(context.mocks.ably.hasSubscription(SHELL_TOPIC)).toBeTruthy();
   });
   current = authorization({

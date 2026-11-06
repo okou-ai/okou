@@ -1015,8 +1015,11 @@
       "unavailableTitle": "Lien d'autorisation indisponible"
     },
     "computerUse": {
+      "actionFailed": "Impossible d’autoriser cet ordinateur. Actualisez la conversation pour réessayer.",
       "authorize": "Autoriser",
       "authorized": "Autorisé",
+      "authorizedDescription": "Accès à l’ordinateur activé pour les prochaines exécutions de cette conversation.",
+      "cardDescription": "Choisissez un ordinateur pour cette conversation. Cela déconnecte le navigateur cloud.",
       "checkingCompatibility": "Vérification de la compatibilité",
       "description": "Choisissez un ordinateur en ligne pour que {{assistantName}} l'utilise dans {{source}}.",
       "downloadMac": "Télécharger pour macOS",
@@ -1025,6 +1028,7 @@
       "macRequirement": "Nécessite un Mac avec puce Apple et macOS 14 ou version ultérieure. Les Mac Intel ne sont pas pris en charge.",
       "noHostsDescription": "Ouvrez {{desktopApplicationName}} sur votre Mac pour le connecter.",
       "noHostsTitle": "Aucun ordinateur en ligne",
+      "selectComputer": "Sélectionner un ordinateur",
       "sources": {
         "chat": "ce fil de discussion chat",
         "slack": "ce fil de discussion Slack",
@@ -1501,7 +1505,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "Autoriser",
       "cancel": "Annuler",
       "confirm": "Confirmer",
       "continue": "Continuer",
@@ -1952,7 +1955,6 @@
     },
     "computerUse": {
       "authorization": "Autorisation d'utilisation de l'ordinateur",
-      "authorizationDescription": "Sélectionnez un hôte de bureau pour les futures exécutions dans ce fil.",
       "checkingCompatibility": "Vérification de la compatibilité",
       "cloudBrowser": "Navigateur cloud",
       "connectMyComputer": "Connecter mon ordinateur",
@@ -4094,7 +4096,6 @@
     "pendingSummary": "{{computer}} · 1 heure",
     "reasonTitle": "Motif de l’accès",
     "requestExpired": "Demande expirée",
-    "review": "Vérifier l’accès",
     "revoke": "Révoquer",
     "revoked": "Accès à Shell révoqué",
     "scope": "Une heure d’accès pour cette discussion",

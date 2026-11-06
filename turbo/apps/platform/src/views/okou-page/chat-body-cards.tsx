@@ -2,7 +2,6 @@ import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
 import { now } from "../../lib/time.ts";
 import type { ArtifactSignals } from "../../signals/chat-page/artifact-card-signals.ts";
-import type { ComputerUseAuthorizationSignals } from "../../signals/chat-page/computer-use-authorization-block.ts";
 import type {
   CatalogConnectorSignals,
   ConnectorSignals,
@@ -54,15 +53,7 @@ import {
   useSet,
 } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import {
-  AlertCircle,
-  ArrowUpRight,
-  Coins,
-  Image,
-  Loader2,
-  Monitor,
-  Play,
-} from "lucide-react";
+import { AlertCircle, Coins, Image, Loader2, Play } from "lucide-react";
 import type { MouseEvent as ReactMouseEvent } from "react";
 
 import type { MarkdownCardRef } from "../../signals/chat-page/markdown-card-ref.ts";
@@ -74,6 +65,7 @@ import {
 import { BrowserSessionCard } from "./browser-session-card.tsx";
 import { BrowserUserActionCard } from "./browser-user-action-card.tsx";
 import { BrowserAuthorizationCard } from "./browser-authorization-card.tsx";
+import { ComputerUseAuthorizationCard } from "./computer-use-authorization-card.tsx";
 import { ChatCard } from "./components/chat-card.tsx";
 import { DesktopShellAuthorizationCard } from "./desktop-shell-authorization-card.tsx";
 import { BankingActionCard } from "./banking-action-card.tsx";
@@ -699,49 +691,6 @@ function ConnectorActionCard({ signals }: { signals: ConnectorSignals }) {
         <CustomConnectorActionCard signals={signals} />
       )}
     </div>
-  );
-}
-
-function ComputerUseAuthorizationCard({
-  signals,
-}: {
-  signals: ComputerUseAuthorizationSignals;
-}) {
-  const { t } = useTranslation();
-  return (
-    <ChatCard
-      data-testid="computer-use-authorization-card"
-      className="flex h-[136px] w-full flex-col justify-between @[640px]:h-[88px] gap-3 p-3 text-left @[640px]:flex-row @[640px]:items-center @[640px]:justify-between"
-    >
-      <div className="flex min-w-0 items-center gap-3">
-        <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border/70 bg-muted/40">
-          <Monitor size={22} />
-        </div>
-        <div className="min-w-0">
-          <div className="truncate text-[0.9375rem] font-medium text-foreground">
-            {t(($) => {
-              return $.chat.computerUse.authorization;
-            })}
-          </div>
-          <div className="mt-0.5 line-clamp-2 text-sm leading-5 text-muted-foreground">
-            {t(($) => {
-              return $.chat.computerUse.authorizationDescription;
-            })}
-          </div>
-        </div>
-      </div>
-      <a
-        href={signals.href}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex h-9 w-full shrink-0 items-center justify-center gap-2 rounded-lg border border-border bg-background px-3 text-[0.9375rem] font-medium text-foreground transition-colors hover:bg-state-hover @[640px]:w-auto"
-      >
-        {t(($) => {
-          return $.chat.actions.authorize;
-        })}
-        <ArrowUpRight size={15} />
-      </a>
-    </ChatCard>
   );
 }
 

@@ -997,8 +997,11 @@
       "unavailableTitle": "Tautan otorisasi tidak tersedia"
     },
     "computerUse": {
+      "actionFailed": "Tidak dapat mengizinkan komputer ini. Muat ulang obrolan untuk mencoba lagi.",
       "authorize": "Otorisasi",
       "authorized": "Diotorisasi",
+      "authorizedDescription": "Akses komputer diaktifkan untuk proses berikutnya dalam obrolan ini.",
+      "cardDescription": "Pilih komputer untuk obrolan ini. Ini akan memutus peramban cloud.",
       "checkingCompatibility": "Memeriksa kompatibilitas",
       "description": "Pilih komputer online untuk digunakan {{assistantName}} di {{source}}.",
       "downloadMac": "Unduh untuk macOS",
@@ -1007,6 +1010,7 @@
       "macRequirement": "Memerlukan Mac Apple silicon dengan macOS 14 atau yang lebih baru. Mac Intel tidak didukung.",
       "noHostsDescription": "Buka {{desktopApplicationName}} di Mac Anda agar perangkat terhubung.",
       "noHostsTitle": "Tidak ada komputer online",
+      "selectComputer": "Pilih komputer",
       "sources": {
         "chat": "thread chat ini",
         "slack": "thread Slack ini",
@@ -1476,7 +1480,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "Otorisasi",
       "cancel": "Batal",
       "confirm": "Konfirmasi",
       "continue": "Lanjutkan",
@@ -1920,7 +1923,6 @@
     },
     "computerUse": {
       "authorization": "Otorisasi Computer Use",
-      "authorizationDescription": "Pilih host Desktop untuk eksekusi mendatang di thread ini.",
       "checkingCompatibility": "Memeriksa kompatibilitas",
       "cloudBrowser": "Browser cloud",
       "connectMyComputer": "Hubungkan komputer saya",
@@ -4027,7 +4029,6 @@
     "pendingSummary": "{{computer}} · 1 jam",
     "reasonTitle": "Alasan akses",
     "requestExpired": "Permintaan kedaluwarsa",
-    "review": "Tinjau akses",
     "revoke": "Cabut",
     "revoked": "Akses Shell dicabut",
     "scope": "Akses satu jam untuk chat ini",

@@ -339,6 +339,7 @@ function AuthorizationSummary({
   onAction: (action: ShellAction) => void;
 }) {
   const { t } = useTranslation();
+  const blocker = approvalBlocker(data);
   const summary = failed
     ? t(($) => {
         return $.desktopShellAuthorization.actionFailed;
@@ -365,7 +366,7 @@ function AuthorizationSummary({
     <ChatCard
       data-testid="desktop-shell-authorization-card"
       aria-busy={loading || busy}
-      className="flex h-[136px] w-full flex-col justify-between gap-3 px-4 py-3 @[640px]:h-[88px] @[640px]:flex-row @[640px]:items-center"
+      className="flex h-[224px] w-full flex-col justify-between gap-3 px-4 py-3 @[320px]:h-[200px] @[640px]:h-[144px] @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <AuthorizationIcon data={data} loading={loading} />
@@ -385,9 +386,20 @@ function AuthorizationSummary({
           >
             {summary}
           </p>
+          {data?.status === "pending" && (
+            <p
+              className={cn(
+                "mt-1 line-clamp-2 break-words text-sm leading-5 text-muted-foreground",
+                blocker && "text-amber-700 dark:text-amber-400",
+              )}
+              aria-live="polite"
+            >
+              {blocker ?? data.reason}
+            </p>
+          )}
         </div>
       </div>
-      <div className="ml-auto flex max-w-full shrink-0 items-center justify-end gap-1.5">
+      <div className="ml-auto flex max-w-full shrink-0 flex-wrap items-center justify-end gap-2">
         {data?.status === "approved" && (
           <Button
             variant="quiet"
@@ -404,14 +416,10 @@ function AuthorizationSummary({
           </Button>
         )}
         {data ? (
-          <DialogTrigger render={<Button variant="neutral" size="sm" />}>
-            {data.status === "pending"
-              ? t(($) => {
-                  return $.desktopShellAuthorization.review;
-                })
-              : t(($) => {
-                  return $.desktopShellAuthorization.details;
-                })}
+          <DialogTrigger render={<Button variant="quiet" size="sm" />}>
+            {t(($) => {
+              return $.desktopShellAuthorization.details;
+            })}
           </DialogTrigger>
         ) : (
           <Button variant="neutral" size="sm" disabled>
@@ -423,6 +431,15 @@ function AuthorizationSummary({
                   return $.desktopShellAuthorization.unavailable;
                 })}
           </Button>
+        )}
+        {data?.status === "pending" && (
+          <AuthorizationActions
+            data={data}
+            busy={busy}
+            failed={failed}
+            onAction={onAction}
+            standalone
+          />
         )}
       </div>
     </ChatCard>

@@ -998,8 +998,11 @@
       "unavailableTitle": "Authorization link unavailable"
     },
     "computerUse": {
+      "actionFailed": "Could not authorize this computer. Refresh the chat to try again.",
       "authorize": "Authorize",
       "authorized": "Authorized",
+      "authorizedDescription": "Computer access enabled for future runs in this chat.",
+      "cardDescription": "Choose a computer for this chat. This disconnects the cloud browser.",
       "checkingCompatibility": "Checking compatibility",
       "description": "Choose an online computer for {{assistantName}} to use in {{source}}.",
       "downloadMac": "Download for macOS",
@@ -1008,6 +1011,7 @@
       "macRequirement": "Requires an Apple silicon Mac with macOS 14 or newer. Intel Macs aren't supported.",
       "noHostsDescription": "Open {{desktopApplicationName}} on your Mac to bring it online.",
       "noHostsTitle": "No online computers",
+      "selectComputer": "Select a computer",
       "sources": {
         "chat": "this chat thread",
         "slack": "this Slack thread",
@@ -1478,7 +1482,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "Authorize",
       "cancel": "Cancel",
       "confirm": "Confirm",
       "continue": "Continue",
@@ -1924,7 +1927,6 @@
     },
     "computerUse": {
       "authorization": "Computer Use authorization",
-      "authorizationDescription": "Select a Desktop host for future runs in this thread.",
       "checkingCompatibility": "Checking compatibility",
       "cloudBrowser": "Cloud browser",
       "connectMyComputer": "Connect my computer",
@@ -4039,7 +4041,6 @@
     "pendingSummary": "{{computer}} · 1 hour",
     "reasonTitle": "Reason for access",
     "requestExpired": "Request expired",
-    "review": "Review access",
     "revoke": "Revoke",
     "revoked": "Shell access revoked",
     "scope": "One-hour access for this chat",

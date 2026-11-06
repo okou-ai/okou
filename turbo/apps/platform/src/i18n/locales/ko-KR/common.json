@@ -997,8 +997,11 @@
       "unavailableTitle": "인증 링크를 사용할 수 없음"
     },
     "computerUse": {
+      "actionFailed": "이 컴퓨터를 승인하지 못했습니다. 채팅을 새로고침한 후 다시 시도하세요.",
       "authorize": "승인",
       "authorized": "승인됨",
+      "authorizedDescription": "이 채팅의 향후 실행을 위해 컴퓨터 액세스가 활성화되었습니다.",
+      "cardDescription": "이 채팅에 사용할 컴퓨터를 선택하세요. 클라우드 브라우저 연결이 해제됩니다.",
       "checkingCompatibility": "호환성 확인 중",
       "description": "{{assistantName}}가 {{source}}에서 사용할 온라인 컴퓨터를 선택하세요.",
       "downloadMac": "macOS용 다운로드",
@@ -1007,6 +1010,7 @@
       "macRequirement": "Apple 실리콘 Mac과 macOS 14 이상 필요합니다. Intel Mac은 지원되지 않습니다.",
       "noHostsDescription": "Mac에서 {{desktopApplicationName}}을 열어 온라인으로 연결하세요.",
       "noHostsTitle": "온라인 컴퓨터 없음",
+      "selectComputer": "컴퓨터 선택",
       "sources": {
         "chat": "이 채팅 스레드",
         "slack": "이 Slack 스레드",
@@ -1476,7 +1480,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "승인",
       "cancel": "취소",
       "confirm": "확인",
       "continue": "계속",
@@ -1920,7 +1923,6 @@
     },
     "computerUse": {
       "authorization": "컴퓨터 사용 권한",
-      "authorizationDescription": "이 스레드의 향후 실행을 위해 데스크톱 호스트를 선택하세요.",
       "checkingCompatibility": "호환성 확인 중",
       "cloudBrowser": "클라우드 브라우저",
       "connectMyComputer": "내 컴퓨터 연결",
@@ -4027,7 +4029,6 @@
     "pendingSummary": "{{computer}} · 1시간",
     "reasonTitle": "접근 목적",
     "requestExpired": "요청 만료",
-    "review": "액세스 검토",
     "revoke": "취소",
     "revoked": "Shell 접근 취소됨",
     "scope": "이 채팅에서 1시간 동안 액세스",

@@ -998,8 +998,11 @@
       "unavailableTitle": "प्राधिकरण लिंक अनुपलब्ध है"
     },
     "computerUse": {
+      "actionFailed": "इस कंप्यूटर को अनुमति नहीं दी जा सकी। फिर से कोशिश करने के लिए चैट रीफ़्रेश करें।",
       "authorize": "अधिकृत",
       "authorized": "अधिकृत",
+      "authorizedDescription": "इस चैट में आगे के रन के लिए कंप्यूटर ऐक्सेस चालू है।",
+      "cardDescription": "इस चैट के लिए कंप्यूटर चुनें। इससे क्लाउड ब्राउज़र डिस्कनेक्ट हो जाएगा।",
       "checkingCompatibility": "अनुकूलता की जाँच हो रही है",
       "description": "{{source}} में उपयोग हेतु {{assistantName}} के लिए एक ऑनलाइन कंप्यूटर चुनें।",
       "downloadMac": "macOS के लिए डाउनलोड करें",
@@ -1008,6 +1011,7 @@
       "macRequirement": "macOS 14 या नए संस्करण वाला Apple सिलिकॉन Mac आवश्यक है। Intel Mac समर्थित नहीं हैं.",
       "noHostsDescription": "अपने Mac को ऑनलाइन लाने के लिए उस पर {{desktopApplicationName}} खोलें।",
       "noHostsTitle": "कोई ऑनलाइन कंप्यूटर नहीं",
+      "selectComputer": "कंप्यूटर चुनें",
       "sources": {
         "chat": "यह चैट थ्रेड",
         "slack": "यह Slack थ्रेड",
@@ -1478,7 +1482,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "अधिकृत करें",
       "cancel": "रद्द करें",
       "confirm": "पुष्टि करें",
       "continue": "जारी रखें",
@@ -1924,7 +1927,6 @@
     },
     "computerUse": {
       "authorization": "कंप्यूटर उपयोग प्राधिकरण",
-      "authorizationDescription": "इस थ्रेड में भविष्य में चलने के लिए एक डेस्कटॉप होस्ट चुनें।",
       "checkingCompatibility": "अनुकूलता की जाँच हो रही है",
       "cloudBrowser": "क्लाउड ब्राउज़र",
       "connectMyComputer": "मेरा कंप्यूटर कनेक्ट करें",
@@ -4041,7 +4043,6 @@
     "pendingSummary": "{{computer}} · 1 घंटा",
     "reasonTitle": "ऐक्सेस का कारण",
     "requestExpired": "अनुरोध की अवधि समाप्त",
-    "review": "एक्सेस की समीक्षा करें",
     "revoke": "रद्द करें",
     "revoked": "Shell का ऐक्सेस रद्द किया गया",
     "scope": "इस चैट के लिए एक घंटे का एक्सेस",

@@ -997,8 +997,11 @@
       "unavailableTitle": "認証リンクは使用できません"
     },
     "computerUse": {
+      "actionFailed": "このコンピューターを承認できませんでした。チャットを再読み込みして再試行してください。",
       "authorize": "承認する",
       "authorized": "認可された",
+      "authorizedDescription": "このチャットの今後の実行でコンピューターへのアクセスが有効になりました。",
+      "cardDescription": "このチャットで使うコンピューターを選択してください。クラウドブラウザーは切断されます。",
       "checkingCompatibility": "互換性の確認",
       "description": "{{source}} で使用する {{assistantName}} のオンライン コンピューターを選択します。",
       "downloadMac": "macOS をダウンロード",
@@ -1007,6 +1010,7 @@
       "macRequirement": "macOS 14 以降を搭載した Apple Silicon Mac が必要です。 Intel Mac はサポートされていません。",
       "noHostsDescription": "Mac で {{desktopApplicationName}} を開いてオンラインにしてください。",
       "noHostsTitle": "オンラインコンピュータはありません",
+      "selectComputer": "コンピューターを選択",
       "sources": {
         "chat": "このチャットスレッド",
         "slack": "この Slack スレッド",
@@ -1476,7 +1480,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "承認する",
       "cancel": "キャンセル",
       "confirm": "確認する",
       "continue": "続ける",
@@ -1920,7 +1923,6 @@
     },
     "computerUse": {
       "authorization": "コンピュータの使用許可",
-      "authorizationDescription": "このスレッドで今後実行するデスクトップ ホストを選択してください。",
       "checkingCompatibility": "互換性の確認",
       "cloudBrowser": "クラウドブラウザ",
       "connectMyComputer": "コンピューターを接続する",
@@ -4027,7 +4029,6 @@
     "pendingSummary": "{{computer}} · 1 時間",
     "reasonTitle": "アクセスの目的",
     "requestExpired": "リクエストの有効期限切れ",
-    "review": "アクセスを確認",
     "revoke": "取り消す",
     "revoked": "Shell へのアクセスを取り消しました",
     "scope": "このチャットでの 1 時間のアクセス",

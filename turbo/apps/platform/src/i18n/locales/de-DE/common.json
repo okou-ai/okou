@@ -998,8 +998,11 @@
       "unavailableTitle": "Autorisierungslink nicht verfügbar"
     },
     "computerUse": {
+      "actionFailed": "Dieser Computer konnte nicht autorisiert werden. Lade den Chat neu, um es erneut zu versuchen.",
       "authorize": "Autorisieren",
       "authorized": "Autorisiert",
+      "authorizedDescription": "Computerzugriff für zukünftige Ausführungen in diesem Chat aktiviert.",
+      "cardDescription": "Wähle einen Computer für diesen Chat. Dadurch wird der Cloud-Browser getrennt.",
       "checkingCompatibility": "Kompatibilität prüfen",
       "description": "Wählen Sie einen Online-Computer aus, den {{assistantName}} in {{source}} verwenden soll.",
       "downloadMac": "Für macOS herunterladen",
@@ -1008,6 +1011,7 @@
       "macRequirement": "Erfordert einen Apple Silicon Mac mit macOS 14 oder neuer. Intel-Macs werden nicht unterstützt.",
       "noHostsDescription": "Öffne {{desktopApplicationName}} auf deinem Mac, um ihn online zu bringen.",
       "noHostsTitle": "Keine Online-Computer",
+      "selectComputer": "Computer auswählen",
       "sources": {
         "chat": "dieser Chat-Thread",
         "slack": "dieser Slack-Thread",
@@ -1478,7 +1482,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "Autorisieren",
       "cancel": "Abbrechen",
       "confirm": "Bestätigen",
       "continue": "Weiter",
@@ -1924,7 +1927,6 @@
     },
     "computerUse": {
       "authorization": "Berechtigung zur Computernutzung",
-      "authorizationDescription": "Wählen Sie in diesem Thread einen Desktop-Host für zukünftige Ausführungen aus.",
       "checkingCompatibility": "Kompatibilität prüfen",
       "cloudBrowser": "Cloud-Browser",
       "connectMyComputer": "Meinen Computer verbinden",
@@ -4041,7 +4043,6 @@
     "pendingSummary": "{{computer}} · 1 Stunde",
     "reasonTitle": "Grund für den Zugriff",
     "requestExpired": "Anfrage abgelaufen",
-    "review": "Zugriff prüfen",
     "revoke": "Widerrufen",
     "revoked": "Shell-Zugriff widerrufen",
     "scope": "Eine Stunde Zugriff für diesen Chat",

@@ -1,3 +1,4 @@
+import { computerUseAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -34,6 +35,14 @@ const CHANNEL = sessionOutputChannelName(
 );
 
 function activeRun(additionalRunIds: readonly string[] = []) {
+  context.mocks.api(
+    computerUseAuthorizationRequestsContract.get,
+    ({ respond }) => {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Request unavailable" },
+      });
+    },
+  );
   const events = [
     promptEvent({
       id: "stream-prompt",
@@ -220,10 +229,8 @@ test("Only terminated URLs become cards when two actions share a streaming line"
   push(1, " ");
   await waitFor(() => {
     expect(
-      screen.getAllByTestId("computer-use-authorization-card").map((card) => {
-        return card.querySelector("a")?.href;
-      }),
-    ).toStrictEqual([first, second]);
+      screen.getAllByTestId("computer-use-authorization-card"),
+    ).toHaveLength(2);
   });
 
   events.push(

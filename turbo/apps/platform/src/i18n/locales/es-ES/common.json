@@ -1015,8 +1015,11 @@
       "unavailableTitle": "Enlace de autorización no disponible"
     },
     "computerUse": {
+      "actionFailed": "No se pudo autorizar este ordenador. Actualiza el chat para volver a intentarlo.",
       "authorize": "Autorizar",
       "authorized": "Autorizado",
+      "authorizedDescription": "Acceso al ordenador activado para futuras ejecuciones en este chat.",
+      "cardDescription": "Elige un ordenador para este chat. Esto desconecta el navegador en la nube.",
       "checkingCompatibility": "Comprobación de compatibilidad",
       "description": "Elige un ordenador en línea para que {{assistantName}} lo use en {{source}}.",
       "downloadMac": "Descargar para macOS",
@@ -1025,6 +1028,7 @@
       "macRequirement": "Requiere un Mac Apple Silicon con macOS 14 o más reciente. No se soportan Macs Intel.",
       "noHostsDescription": "Abre {{desktopApplicationName}} en tu Mac para conectarlo.",
       "noHostsTitle": "No hay ordenadores en línea",
+      "selectComputer": "Seleccionar un ordenador",
       "sources": {
         "chat": "Este hilo de chat",
         "slack": "Este hilo de Slack",
@@ -1501,7 +1505,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "Autorizar",
       "cancel": "Cancelar",
       "confirm": "Confirmar",
       "continue": "Continuar",
@@ -1952,7 +1955,6 @@
     },
     "computerUse": {
       "authorization": "Autorización para el uso de ordenadores",
-      "authorizationDescription": "Selecciona un host de escritorio para las próximas ejecuciones de esta conversación.",
       "checkingCompatibility": "Comprobación de compatibilidad",
       "cloudBrowser": "Navegador en la nube",
       "connectMyComputer": "Conectar mi ordenador",
@@ -4094,7 +4096,6 @@
     "pendingSummary": "{{computer}} · 1 hora",
     "reasonTitle": "Motivo del acceso",
     "requestExpired": "Solicitud caducada",
-    "review": "Revisar acceso",
     "revoke": "Revocar",
     "revoked": "Acceso a Shell revocado",
     "scope": "Acceso de una hora para este chat",
