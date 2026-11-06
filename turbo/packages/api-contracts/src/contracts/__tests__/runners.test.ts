@@ -66,6 +66,20 @@ describe("cancellation recovery timing contract", () => {
 const claimCapabilities = { piModelConfigGenerations: [1, 2, 3] };
 
 describe("runner claim attribution contract", () => {
+  it("allows previous claims and explicit single-character Skill support", () => {
+    const query = runnersJobClaimContract.claim.query;
+    expect(query.parse({ workflowSkills: "2" })).toStrictEqual({
+      workflowSkills: "2",
+    });
+    expect(
+      query.parse({ workflowSkills: "2", singleCharacterSkills: "1" }),
+    ).toStrictEqual({ workflowSkills: "2", singleCharacterSkills: "1" });
+    expect(
+      query.safeParse({ workflowSkills: "2", singleCharacterSkills: "2" })
+        .success,
+    ).toBe(false);
+  });
+
   it("accepts an optional bounded runner hostname", () => {
     const previousRequest = runnersJobClaimContract.claim.body.parse({
       capabilities: claimCapabilities,

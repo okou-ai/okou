@@ -32,7 +32,15 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "7474747474747474747474747474747474747474" ]; then
+    if [ "${3:-}" = "f00df00df00df00df00df00df00df00df00df00d" ]; then
+      [ "${MOCK_SINGLE_CHARACTER_SKILL_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_SINGLE_CHARACTER_SKILL_RUNNER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_SINGLE_CHARACTER_SKILL_RUNNER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "7474747474747474747474747474747474747474" ]; then
       [ "${MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7373737373737373737373737373737373737373" ]; then
       [ "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_VALID:-1}" = "1" ]
@@ -297,6 +305,10 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *rollback-floors/single-character-skill-bundle-reader* ]]; then
+      printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_API_COMMIT-f00df00df00df00df00df00df00df00df00df00d}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/connector-skill-bundle-claims* ]]; then
       printf '%s\n' "${MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_COMMIT-7474747474747474747474747474747474747474}"
       exit 0
@@ -407,6 +419,11 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/single-character-skill-bundle-reader" ]; then
+      [ "${MOCK_SINGLE_CHARACTER_SKILL_READ_FAIL:-0}" = "0" ] || exit 1
+      printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_RUNNER_COMMIT-beefbeefbeefbeefbeefbeefbeefbeefbeefbeef}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/registry-archive-reader" ]; then
       [ "${MOCK_REGISTRY_ARCHIVE_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_REGISTRY_ARCHIVE_READER_COMMIT-$MOCK_REGISTRY_ARCHIVE_READER_FLOOR}"
@@ -2233,6 +2250,30 @@ for expectation in \
     fail "Connector claim reader floor must fail before artifact or host access"
   fi
 done
+
+for expectation in \
+  "MOCK_SINGLE_CHARACTER_SKILL_READ_FAIL=1|Cannot read the single-character Skill Runner reader rollback floor from main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_RUNNER_COMMIT=|Missing or invalid single-character Skill Runner reader rollback floor" \
+  "MOCK_SINGLE_CHARACTER_SKILL_RUNNER_COMMIT=invalid|Missing or invalid single-character Skill Runner reader rollback floor" \
+  "MOCK_SINGLE_CHARACTER_SKILL_RUNNER_ON_MAIN=0|Single-character Skill Runner reader rollback floor is not on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_API_COMMIT=|Cannot resolve the merged single-character Skill API reader on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_API_COMMIT=invalid|Cannot resolve the merged single-character Skill API reader on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_API_VALID=0|Rollback target predates the single-character Skill API reader"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" run_resolver "${tmp_dir}/single-character-api.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/single-character-api.output" ] || fail "incompatible Skill readers must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Skill API floors must fail before artifact or host access"
+  fi
+done
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates single-character Skill bundle support" \
+  run_resolver "${tmp_dir}/single-character-runner.output" MOCK_SINGLE_CHARACTER_SKILL_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/single-character-runner.output" ] || fail "incompatible Skill Runner must not publish rollback outputs"
+if grep -Eq '^ssh ' "${tmp_dir}/boundaries.log"; then
+  fail "invalid Skill Runner floors must fail before host access"
+fi
 
 for expectation in \
   "MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT=|Cannot resolve the merged Teams identity preparation on main" \

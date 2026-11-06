@@ -1188,7 +1188,10 @@ export const runnersJobClaimContract = c.router({
     pathParams: object({
       id: uuid(),
     }),
-    query: object({ workflowSkills: literal("2") }),
+    query: object({
+      workflowSkills: literal("2"),
+      singleCharacterSkills: literal("1").optional(),
+    }),
     body: object({
       runnerIdentity: runnerProcessIdentitySchema.optional(),
       runnerHostname: runnerHostnameSchema.optional(),

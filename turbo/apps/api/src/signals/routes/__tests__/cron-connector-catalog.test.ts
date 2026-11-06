@@ -518,6 +518,12 @@ describe("connector catalog valid lifecycle", () => {
         prompt: "Use the X Connector Skill",
         model,
       });
+      await owner.run(async () => {
+        await fixture.api.heartbeatRunner(owner.runnerGroup);
+        await fixture.api.requestClaimRunnerJob(true, run.runId, [404]);
+        const queued = await fixture.api.readRun(owner.actor, run.runId);
+        expect(queued.status).toBe("pending");
+      });
       const { claim, sandboxHeaders } = await owner.claimChatRun(
         owner.runnerGroup,
         run.runId,

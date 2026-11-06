@@ -4185,7 +4185,10 @@ async fn api_provider_claim_accepts_single_character_connector_skill() {
     let claim_path = format!("/api/runners/jobs/{run_id}/claim");
     let request = server
         .mock_async(|when, then| {
-            when.method(POST).path(claim_path.as_str());
+            when.method(POST)
+                .path(claim_path.as_str())
+                .query_param("workflowSkills", "2")
+                .query_param("singleCharacterSkills", "1");
             then.status(200).json_body(body);
         })
         .await;
