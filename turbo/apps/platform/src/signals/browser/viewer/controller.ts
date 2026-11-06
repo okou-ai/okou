@@ -94,7 +94,10 @@ import {
   type CaptureSettings,
 } from "./capture.ts";
 import { createScreencast } from "./screencast.ts";
-import { createSelectedVisibility } from "./visibility.ts";
+import {
+  createPresentationScope,
+  createSelectedPresentation,
+} from "./presentation.ts";
 import { createTargetDiscovery } from "./discovery.ts";
 import { readFavicon } from "./favicon.ts";
 import {
@@ -210,7 +213,11 @@ function createSessionReadiness(
   const progress$ = state<{
     readonly initialization: "pending" | "complete";
     readonly picture: "pending" | "painted";
-  }>({ initialization: "pending", picture: "pending" });
+    readonly established: boolean;
+  }>({ initialization: "pending", picture: "pending", established: false });
+  const established$ = computed((get) => {
+    return get(progress$).established;
+  });
   const initialized$ = computed((get) => {
     return get(progress$).initialization === "complete";
   });
@@ -237,22 +244,32 @@ function createSessionReadiness(
       return;
     }
     const progress = get(progress$);
-    if (event === "input-initialized") {
-      if (progress.initialization === "complete") {
-        return;
-      }
-      set(progress$, { ...progress, initialization: "complete" });
+    const initialization =
+      event === "input-initialized" ? "complete" : progress.initialization;
+    const picture =
+      event === "frame-painted"
+        ? "painted"
+        : event === "capture-pending"
+          ? "pending"
+          : progress.picture;
+    const established =
+      progress.established ||
+      (initialization === "complete" &&
+        picture === "painted" &&
+        get(authority.admitted$));
+    if (
+      initialization !== progress.initialization ||
+      picture !== progress.picture ||
+      established !== progress.established
+    ) {
+      set(progress$, { initialization, picture, established });
     } else if (event !== "admission-changed") {
-      const picture = event === "frame-painted" ? "painted" : "pending";
-      if (progress.picture === picture) {
-        return;
-      }
-      set(progress$, { ...progress, picture });
+      return;
     }
     // Admission remains derived from native proof, never copied into progress.
     set(changed$, owner);
   });
-  return { initialized$, painted$, phase$, usable$, transition$ };
+  return { initialized$, painted$, established$, phase$, usable$, transition$ };
 }
 
 interface SelectedSessionHost {
@@ -284,9 +301,11 @@ function createSelectedSession(
 ) {
   const { sink, directory, nativeHost, settings$, failed$, started$ } = host;
   const { alive$, admitted$ } = authority;
-  const presenting$ = state(true);
+  const scope = createPresentationScope(attached, alive$, host.intent$);
   const active$ = computed((get) => {
-    return get(admitted$) && !get(host.intent$).paused && get(presenting$);
+    return (
+      get(admitted$) && !get(host.intent$).paused && get(scope.presenting$)
+    );
   });
   const readiness = createSessionReadiness(
     attached.owner,
@@ -321,15 +340,15 @@ function createSelectedSession(
   });
   const captureFailed$ = command(
     async ({ set }, error: unknown, signal: AbortSignal): Promise<void> => {
-      await set(failed$, attached.owner, error, signal);
+      signal.throwIfAborted();
+      await set(failed$, attached.owner, error, attached.client.signal);
     },
   );
   const captureStarted$ = command(
     ({ set }, settings: CaptureSettings, signal: AbortSignal) => {
       signal.throwIfAborted();
       set(readiness.transition$, "capture-pending");
-      // Visibility resume and explicit image recovery share this capture owner.
-      set(presenting$, true);
+      set(scope.starting$, signal);
       set(geometry.setCapture$, {
         width: settings.maxWidth,
         height: settings.maxHeight,
@@ -361,6 +380,7 @@ function createSelectedSession(
     settings$,
     stream,
     captureFailed$,
+    scope$: scope.scope$,
   });
   const session = {
     attached,
@@ -380,10 +400,11 @@ function createSelectedSession(
   };
   return {
     ...session,
-    visibility: createSelectedVisibility(
-      { ...session, presenting$, invalidatePicture$ },
-      host.intent$,
-    ),
+    presentation: createSelectedPresentation({
+      ...session,
+      scope,
+      invalidatePicture$,
+    }),
   };
 }
 type SelectedSession = ReturnType<typeof createSelectedSession>;
@@ -398,6 +419,7 @@ interface SessionRefreshNodes {
   readonly settings$: Computed<CaptureSettings>;
   readonly stream: ReturnType<typeof createScreencast>;
   readonly captureFailed$: Command<Promise<void>, [unknown, AbortSignal]>;
+  readonly scope$: Command<AbortSignal, [AbortSignal]>;
 }
 type RefreshIntent = { readonly prepare$: Command<Promise<void>, []> };
 
@@ -485,7 +507,7 @@ function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
       prepare$: Command<Promise<void>, []>,
       signal: AbortSignal,
     ): Promise<void> => {
-      signal.throwIfAborted();
+      const operation = set(nodes.scope$, signal);
       if (get(refreshIntent$)) {
         throw new CdpFault(
           "display",
@@ -501,8 +523,9 @@ function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
           }
         },
       };
-      await set(stream.exclusive$, restartExclusive$, signal);
+      await set(stream.exclusive$, restartExclusive$, operation);
       signal.throwIfAborted();
+      operation.throwIfAborted();
       if (!get(alive$)) {
         throw cancelled();
       }
@@ -524,6 +547,7 @@ function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
         attached.client,
         attached.sessionId,
         nodes.frameCurrent,
+        signal,
       );
       signal.throwIfAborted();
       if (boundary === null || !get(alive$)) {
@@ -1226,6 +1250,7 @@ function createCaptureRecoveryGraph(
       }
       const fault = diagnostic(error);
       set(selected.failure$, error);
+      set(selected.presentation.cancel$);
       if (!isImageFailure(fault)) {
         set(readinessFailure$, error);
         set(get(links$).retireCurrent$, "target-replaced", false, true);
@@ -1530,22 +1555,27 @@ function createCaptureGraph(
       if (!selected || !get(selected.alive$)) {
         throw cancelled();
       }
-      await set(selected.waitForAdmission$, signal);
+      const operation = set(selected.presentation.scope$, signal);
+      await set(selected.waitForAdmission$, operation);
+      signal.throwIfAborted();
+      operation.throwIfAborted();
       if (!get(capturePending$)) {
         return;
       }
       const requested = get(settings$);
       set(selected.readiness.transition$, "capture-pending");
-      await set(selected.stream.configure$, requested, signal);
+      await set(selected.presentation.configure$, requested, operation);
       signal.throwIfAborted();
+      operation.throwIfAborted();
       if (
         !get(selected.alive$) ||
         !sameCaptureSettings(requested, get(settings$))
       ) {
         throw cancelled();
       }
-      await set(get(links$).waitReady$, selected.attached.owner, signal);
+      await set(get(links$).waitReady$, selected.attached.owner, operation);
       signal.throwIfAborted();
+      operation.throwIfAborted();
       if (!sameCaptureSettings(requested, get(settings$))) {
         throw cancelled();
       }
@@ -1801,7 +1831,7 @@ function createRetirementsGraph(
     ) => {
       const selected = get(get(links$).selectedSession$);
       if (selected) {
-        set(selected.visibility.cancel$);
+        set(selected.presentation.cancel$);
         const image = get(model.imageRecovery$);
         const fence: Retirement = {
           owner: image?.owner ?? {},
@@ -2133,7 +2163,7 @@ function createAttachmentInitialization(
       const selected = get(get(links$).selectedSession$)!;
       const [inputResult, captureResult] = await Promise.allSettled([
         set(selected.input.start$, client.signal),
-        set(selected.stream.start$, frames.signal),
+        set(selected.presentation.start$, frames.signal),
       ]);
       signal.throwIfAborted();
       set(assertCurrent$, owner, signal);
@@ -2808,7 +2838,7 @@ function createScreencastEvent(
       !selected ||
       source !== selected.attached.frames ||
       id !== selected.attached.frameSessionId ||
-      !get(selected.visibility.presenting$) ||
+      !get(selected.presentation.presenting$) ||
       !get(selected.stream.acceptingFrames$) ||
       typeof params.data !== "string"
     ) {
@@ -4385,6 +4415,7 @@ function createImageRetryGraph(
         await set(get(links$).selectTab$, image.targetId, signal);
         return;
       }
+      const operation = set(selected.presentation.replace$, signal);
       const abort = () => {
         if (get(selectedOwner$) === selected.attached.owner) {
           set(get(links$).retireCurrent$, "target-replaced", false);
@@ -4398,8 +4429,8 @@ function createImageRetryGraph(
       };
       const [result] = await Promise.allSettled([
         (async () => {
-          await set(get(links$).waitRetirement$, image.targetId, signal);
-          set(assertAvailable$, signal);
+          await set(get(links$).waitRetirement$, image.targetId, operation);
+          set(assertAvailable$, operation);
           const settled = get(model.imageRecovery$);
           if (settled?.owner !== image.owner || settled.phase !== "ready") {
             throw cancelled();
@@ -4418,13 +4449,8 @@ function createImageRetryGraph(
           ) {
             throw cancelled();
           }
-          await set(
-            selected.stream.retry$,
-            selected.prepareRetry$,
-            retry.starting$,
-            signal,
-          );
-          signal.throwIfAborted();
+          await set(selected.presentation.retry$, retry.starting$, operation);
+          operation.throwIfAborted();
           if (!get(selected.alive$)) {
             throw cancelled();
           }
@@ -4432,10 +4458,11 @@ function createImageRetryGraph(
             type: "image-released",
             owner: image.owner,
           });
-          await set(get(links$).waitReady$, selected.attached.owner, signal);
+          await set(get(links$).waitReady$, selected.attached.owner, operation);
         })(),
       ]);
       signal.throwIfAborted();
+      operation.throwIfAborted();
       if (result.status === "rejected") {
         if (get(selected.alive$)) {
           set(get(links$).imageEvent$, {
@@ -4449,7 +4476,7 @@ function createImageRetryGraph(
         }
         throw result.reason;
       }
-      signal.throwIfAborted();
+      operation.throwIfAborted();
     },
   );
   return { retryStartingGraph$, retryImage$ };
@@ -4669,9 +4696,7 @@ function createVisibilitySettingsGraph(
         selected &&
         get(selected.alive$) &&
         !get(model.imageRecovery$) &&
-        (get(selected.visibility.receipt$) !== null ||
-          (get(selected.readiness.initialized$) &&
-            get(selected.readiness.painted$)));
+        get(selected.readiness.established$);
       if (!retained) {
         set(get(links$).retireCurrent$, "paused", false);
       }
@@ -4691,14 +4716,14 @@ function createVisibilitySettingsGraph(
           paused
             ? (async () => {
                 const receipt = await set(
-                  selected.visibility.pause$,
+                  selected.presentation.pause$,
                   display?.waitForIdle$ ?? null,
                 );
                 if (receipt.status === "rejected") {
                   throw receipt.reason;
                 }
               })()
-            : set(selected.visibility.resume$, signal),
+            : set(selected.presentation.resume$, signal),
         ]);
         signal.throwIfAborted();
         if (

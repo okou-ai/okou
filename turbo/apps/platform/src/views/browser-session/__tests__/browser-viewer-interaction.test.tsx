@@ -2919,17 +2919,21 @@ test.each([
   },
 );
 
-async function startCaptureDuringNavigation() {
+async function startCaptureDuringNavigation(
+  previouslyPaused = true,
+  failedReply = true,
+) {
   const visibility = context.mocks.browser.visibilityState("visible");
   const browser = await setupViewer(0);
-  // Keep the initialized owner eligible for retention during later capture work.
-  act(() => {
-    visibility.changeTo("hidden");
-  });
-  await screen.findByText("Viewing paused");
-  act(() => {
-    visibility.changeTo("visible");
-  });
+  if (previouslyPaused) {
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await screen.findByText("Viewing paused");
+    act(() => {
+      visibility.changeTo("visible");
+    });
+  }
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
   });
@@ -2942,8 +2946,11 @@ async function startCaptureDuringNavigation() {
   if (!png) {
     throw new Error("Missing PNG option");
   }
-  browser.failNext("Page.startScreencast", "Capture raced with navigation");
+  if (failedReply) {
+    browser.failNext("Page.startScreencast", "Capture raced with navigation");
+  }
   const capture = browser.holdNext("Page.startScreencast");
+  const image = browser.holdTargetFrames("example-page");
   act(() => {
     browser.event(
       "Page.frameStartedNavigating",
@@ -2953,14 +2960,13 @@ async function startCaptureDuringNavigation() {
   });
   await userEvent.click(png);
   await capture.received;
-  return { browser, capture, visibility };
+  return { browser, capture, visibility, image };
 }
 
 test("An unchanged capture retries its navigation-related failure after navigation ends", async () => {
-  const { browser, capture } = await startCaptureDuringNavigation();
+  const { browser, capture, image } = await startCaptureDuringNavigation();
   await act(capture.release);
   expect(screen.queryByText("Browser view unavailable")).toBeNull();
-  const image = browser.holdTargetFrames("example-page");
   act(() => {
     browser.event(
       "Page.frameStoppedLoading",
@@ -2981,36 +2987,42 @@ test("An unchanged capture retries its navigation-related failure after navigati
   expect(browser.captures.at(-1)).toMatchObject({ format: "png" });
 });
 
-test.each(["before reply", "after reply"] as const)(
-  "A capture failure paused %s recovers without waiting for its old navigation",
-  async (visibilityOrder) => {
-    const { browser, capture, visibility } =
-      await startCaptureDuringNavigation();
-    if (visibilityOrder === "after reply") {
+test.each(
+  (["first pause", "later pause"] as const).flatMap((history) => {
+    return (["success", "failure"] as const).flatMap((reply) => {
+      return (["before reply", "after reply"] as const).map((order) => {
+        return { history, reply, order };
+      });
+    });
+  }),
+)(
+  "A $history $order cancels the obsolete capture $reply and preserves its session",
+  async ({ history, reply, order }) => {
+    const { browser, capture, visibility, image } =
+      await startCaptureDuringNavigation(
+        history === "later pause",
+        reply === "failure",
+      );
+    const canvas = screen.getByRole("img", { name: "Live browser view" });
+    const attachments = browser.requests.filter((request) => {
+      return request.method === "Target.attachToTarget";
+    }).length;
+    if (order === "after reply") {
       await act(capture.release);
     }
+    const resumed = browser.holdNext("Page.startScreencast");
     act(() => {
       visibility.changeTo("hidden");
       visibility.changeTo("visible");
     });
+    expect(screen.getByRole("img", { name: "Live browser view" })).toBe(canvas);
+    expect(screen.queryByText("Connecting to browser…")).toBeNull();
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    if (visibilityOrder === "before reply") {
-      await act(capture.release);
-    }
-    await screen.findByText("Browser view unavailable");
-    const retry = await waitFor(() => {
-      const button = queryAllByRoleFast("button").find((candidate) => {
-        return candidate.textContent?.trim() === "Retry live image";
-      });
-      expect(button).toBeEnabled();
-      return button!;
-    });
-    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    const image = browser.holdTargetFrames("example-page");
-    await userEvent.click(retry);
     await act(async () => {
-      await image.received;
+      await resumed.received;
+      await resumed.release();
     });
+    expect(screen.getByText("Updating view…")).toBeInTheDocument();
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     act(() => {
       image.release();
@@ -3019,6 +3031,12 @@ test.each(["before reply", "after reply"] as const)(
       expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
     });
     expect(browser.captures.at(-1)).toMatchObject({ format: "png" });
+    const stops = browser.requests.filter((request) => {
+      return request.method === "Page.stopScreencast";
+    }).length;
+    if (order === "before reply") {
+      await act(capture.release);
+    }
     act(() => {
       browser.event(
         "Page.frameStoppedLoading",
@@ -3037,6 +3055,82 @@ test.each(["before reply", "after reply"] as const)(
         params: { text: "after capture navigation retry" },
       });
     });
+    expect(screen.queryByText("Browser view unavailable")).toBeNull();
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Target.attachToTarget";
+      }),
+    ).toHaveLength(attachments);
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Page.stopScreencast";
+      }),
+    ).toHaveLength(stops);
+  },
+);
+
+test.each(["preparation", "first image"] as const)(
+  "Pausing an explicit image retry during %s leaves its replacement owner usable",
+  async (phase) => {
+    const visibility = context.mocks.browser.visibilityState("visible");
+    const browser = await setupViewer(0);
+    act(() => {
+      browser.frame("!");
+    });
+    await screen.findByText("Browser view unavailable");
+    const retry = await waitFor(() => {
+      const button = queryAllByRoleFast("button").find((candidate) => {
+        return candidate.textContent?.trim() === "Retry live image";
+      });
+      expect(button).toBeEnabled();
+      return button!;
+    });
+    const old =
+      phase === "preparation"
+        ? browser.holdNext("Page.createIsolatedWorld")
+        : browser.holdTargetFrames("example-page");
+    await userEvent.click(retry);
+    await act(async () => {
+      await old.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await screen.findByText("Viewing paused");
+    const fresh = browser.holdNext("Page.startScreencast");
+    const image = browser.holdTargetFrames("example-page");
+    act(() => {
+      visibility.changeTo("visible");
+    });
+    await act(async () => {
+      await fresh.received;
+      await fresh.release();
+      await image.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      image.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    await act(async () => {
+      await old.release();
+    });
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    fireEvent.input(screen.getByLabelText("Remote browser input"), {
+      target: { value: "after interrupted image retry" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        params: { text: "after interrupted image retry" },
+      });
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+    expect(screen.queryByText("Browser view unavailable")).toBeNull();
   },
 );
 

@@ -231,21 +231,15 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
     set(halted$, true);
     set(pause$);
   });
-  const fail$ = command(
-    async (
-      { get, set },
-      error: unknown,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      signal.throwIfAborted();
-      if (!get(alive$) || get(halted$)) {
-        return;
-      }
-      set(suspend$);
-      await set(owner.failed$, error, signal);
-      signal.throwIfAborted();
-    },
-  );
+  const fail$ = command(({ get, set }, error: unknown, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    if (!get(alive$) || get(halted$)) {
+      return;
+    }
+    set(suspend$);
+    // Failure invalidates foreground work; its original cleanup must still finish.
+    return set(owner.failed$, error, owner.client.signal);
+  });
 
   const detached$ = command(({ set }) => {
     // CDP session teardown disables Page and releases its native screencast.
@@ -533,7 +527,6 @@ function createCaptureConfiguration(
     navigationRevision$,
     navigating$,
     accepting$,
-    revision$,
     invalidateFrames$,
   } = graph;
   const {
@@ -563,14 +556,11 @@ function createCaptureConfiguration(
         // Coalesce every preference received before the stop receipt.
         const next = get(desired$);
         const navigation = get(navigationRevision$);
-        const revision = get(revision$);
         const [started] = await Promise.allSettled([set(begin$, next, signal)]);
         signal.throwIfAborted();
         if (started.status === "rejected") {
           const error: unknown = started.reason;
           if (
-            // A pause/stop may have invalidated this capture before its reply.
-            revision !== get(revision$) ||
             !previous ||
             recoveredNavigation ||
             !(error instanceof CdpFault) ||
@@ -652,7 +642,7 @@ function createCaptureLifecycle(
       if (!get(started$)) {
         set(started$, true);
         set(ownerActive$, true);
-        signal.addEventListener(
+        owner.client.signal.addEventListener(
           "abort",
           () => {
             set(abort$);
@@ -660,9 +650,9 @@ function createCaptureLifecycle(
           { once: true },
         );
         // Publishing startup facts can synchronously retire the owner.
-        if (signal.aborted) {
+        if (owner.client.signal.aborted) {
           set(abort$);
-          signal.throwIfAborted();
+          owner.client.signal.throwIfAborted();
         }
       }
       await set(reconcile$, signal);

@@ -8,11 +8,19 @@ export async function captureBoundary(
   client: CdpClient,
   sessionId: string,
   current: () => boolean,
+  signal: AbortSignal,
 ): Promise<number | null> {
+  signal.throwIfAborted();
   if (!current()) {
     return null;
   }
-  const tree = await client.request("Page.getFrameTree", undefined, sessionId);
+  const tree = await client.request(
+    "Page.getFrameTree",
+    undefined,
+    sessionId,
+    undefined,
+    signal,
+  );
   if (!current()) {
     return null;
   }
@@ -23,6 +31,8 @@ export async function captureBoundary(
       worldName: "okou-browser-display",
     },
     sessionId,
+    undefined,
+    signal,
   );
   if (!current()) {
     return null;
@@ -43,6 +53,7 @@ export async function captureBoundary(
     },
     sessionId,
     release,
+    signal,
   );
   release(clock);
   if (!current()) {
