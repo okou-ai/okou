@@ -2253,6 +2253,7 @@
       "unavailableSsh": "不可用的 SSH 主机"
     },
     "resources": {
+      "close": "关闭成果和聊天",
       "collapse": "收起",
       "copyLink": "复制链接",
       "emptyDescription": "这个对话里生成的文件、网站等成果会显示在这里。",

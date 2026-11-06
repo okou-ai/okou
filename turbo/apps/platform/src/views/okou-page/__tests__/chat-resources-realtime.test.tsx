@@ -74,7 +74,7 @@ test.each(["notification", "reconnect"] as const)(
   async (delivery) => {
     const chat = await setupPublishingChat();
     click(resourceButton());
-    const resources = await screen.findByRole("region", {
+    const resources = await screen.findByRole("dialog", {
       name: "Artifacts and chats",
     });
     await within(resources).findByText("No artifacts yet");
@@ -104,7 +104,7 @@ test("Show the latest published video when resources are first opened", async ()
     context.mocks.ably.trigger(topic);
   });
   click(resourceButton());
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(
@@ -115,7 +115,7 @@ test("Show the latest published video when resources are first opened", async ()
 test("Refresh only the notified chat catalog", async () => {
   const chat = await setupPublishingChat();
   click(resourceButton());
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await within(resources).findByText("No artifacts yet");

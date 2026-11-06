@@ -2253,6 +2253,7 @@
       "unavailableSsh": "host SSH tidak tersedia"
     },
     "resources": {
+      "close": "Tutup artefak dan obrolan",
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
       "emptyDescription": "File, situs web, dan artefak lain yang dibuat di chat ini akan muncul di sini.",

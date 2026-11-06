@@ -860,7 +860,7 @@ test("Follow the Resources origin link to its parent run", async () => {
   });
   await waitForThreadMessage(peerId, "Child message 1");
   click(buttonNamed("Artifacts and chats"));
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const parent = await within(resources).findByText("Parent conversation");

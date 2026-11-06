@@ -2253,6 +2253,7 @@
       "unavailableSsh": "利用できない SSH ホスト"
     },
     "resources": {
+      "close": "アーティファクトとチャットを閉じる",
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
       "emptyDescription": "このチャットで作成されたファイルやウェブサイトなどのアーティファクトがここに表示されます。",

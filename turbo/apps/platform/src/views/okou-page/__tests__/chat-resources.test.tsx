@@ -58,7 +58,7 @@ test("Open an empty chat's panel on press while it loads, then replace the loadi
   // Nothing opens or loads on its own; the press opens the panel at once.
   expect(resourceState()).toStrictEqual({ open: false, visible: false });
   click(resourceButton());
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   expect(
@@ -133,7 +133,7 @@ test("Open a pressed panel at once, draw its resources complete, and reuse them 
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
   click(resourceButton());
   // The press opens the panel at once; its rows draw once every source answers.
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   expect(
@@ -155,7 +155,7 @@ test("Open a pressed panel at once, draw its resources complete, and reuse them 
   // Reopening keeps the loaded resources, even if the service's list changes.
   resourcesAvailable = false;
   click(resourceButton());
-  const reopened = await screen.findByRole("region", {
+  const reopened = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   expect(within(reopened).getByText("report.pdf")).toBeInTheDocument();
@@ -181,7 +181,7 @@ test("Display a resource loading error without showing an empty state", async ()
 
   click(resourceButton());
 
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(
@@ -247,7 +247,7 @@ test("Expand and collapse the artifacts list in place", async () => {
 test("Show artifacts in the floating panel while links remain in the transcript", async () => {
   await setupResources();
   const panel = resourcePanel()!;
-  expect(resourceButton()).not.toHaveAttribute("aria-haspopup");
+  expect(resourceButton()).toHaveAttribute("aria-haspopup", "dialog");
   expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
   expect(resourceButton()).toHaveAttribute("aria-controls", panel.id);
   await within(panel).findByText("report.pdf");
@@ -264,6 +264,14 @@ test("Show artifacts in the floating panel while links remain in the transcript"
   expect(
     screen.queryByTestId("thread-sidebar-artifacts"),
   ).not.toBeInTheDocument();
+  // Like Emails, the panel is titled and closes from its own header.
+  expect(
+    within(panel).getByRole("heading", { name: "Artifacts and chats" }),
+  ).toBeInTheDocument();
+  click(buttonNamed("Close artifacts and chats", panel));
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
 });
 
 test.each([0, 20])(
@@ -303,7 +311,7 @@ test.each([0, 20])(
     expect(resourceButton()).toBeEnabled();
     expect(resourcePanel()).not.toBeInTheDocument();
     click(resourceButton());
-    const panel = await screen.findByRole("region", {
+    const panel = await screen.findByRole("dialog", {
       name: "Artifacts and chats",
     });
     await within(panel).findByText("No artifacts yet");

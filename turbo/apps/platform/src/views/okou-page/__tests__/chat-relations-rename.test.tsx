@@ -156,7 +156,7 @@ async function setupRelationships({
     await userEvent.click(trigger);
     const panel = await waitFor(() => {
       const found = screen
-        .getAllByRole("region", { name: "Artifacts and chats" })
+        .getAllByRole("dialog", { name: "Artifacts and chats" })
         .find((candidate) => {
           return (
             within(candidate).queryByText("From", { exact: true }) !== null

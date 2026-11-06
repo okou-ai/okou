@@ -2300,6 +2300,7 @@
       "unavailableSsh": "host SSH no disponible"
     },
     "resources": {
+      "close": "Cerrar artefactos y chats",
       "collapse": "Contraer",
       "copyLink": "Copiar enlace",
       "emptyDescription": "Los archivos, sitios web y otros artefactos creados en este chat aparecerán aquí.",

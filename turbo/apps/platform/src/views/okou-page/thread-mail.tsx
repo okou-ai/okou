@@ -21,15 +21,7 @@ import {
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ComponentProps } from "react";
-import {
-  ChevronRight,
-  Loader2,
-  Mail,
-  Search,
-  Send,
-  Trash,
-  X,
-} from "lucide-react";
+import { ChevronRight, Loader2, Mail, Search, Send, Trash } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
@@ -48,6 +40,10 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
+import {
+  CHAT_HEADER_PANEL_CLASS,
+  ChatHeaderPanelHeader,
+} from "./chat-header-panel.tsx";
 import { emptyArtifactImg } from "./platform-assets.ts";
 
 export function ThreadMailLink({
@@ -163,7 +159,7 @@ function ThreadMailButtonInner({
               ? false
               : undefined
           }
-          className="flex max-h-[min(600px,var(--available-height))] w-[min(440px,calc(100vw-2rem))] flex-col overflow-hidden p-0"
+          className={CHAT_HEADER_PANEL_CLASS}
         >
           <ThreadMailList thread={thread} />
         </PopoverContent>
@@ -196,31 +192,17 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
   // Search and filters have nothing to act on until the chat has an email.
   const empty = mails.state === "hasData" && mails.data.length === 0;
   return (
-    <div className="shrink-0 space-y-3 border-b border-border/60 p-4">
-      <div className="flex items-center gap-2">
-        <Mail size={18} className="text-muted-foreground" />
-        <h2 className="flex-1 text-sm font-medium">
-          {t(($) => {
-            return $.chat.mail.manager.title;
-          })}
-          {mails.state === "hasData" && (
-            <span className="ml-2 text-xs text-muted-foreground">
-              {mails.data.length}
-            </span>
-          )}
-        </h2>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          onClick={close}
-          aria-label={t(($) => {
-            return $.chat.mail.manager.close;
-          })}
-        >
-          <X size={16} />
-        </Button>
-      </div>
+    <ChatHeaderPanelHeader
+      icon={<Mail size={18} />}
+      title={t(($) => {
+        return $.chat.mail.manager.title;
+      })}
+      count={mails.state === "hasData" ? mails.data.length : undefined}
+      closeLabel={t(($) => {
+        return $.chat.mail.manager.close;
+      })}
+      onClose={close}
+    >
       {loading && <ThreadMailHeaderSkeleton />}
       {!loading && !empty && (
         <>
@@ -246,7 +228,7 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
           <ThreadMailFilters thread={thread} />
         </>
       )}
-    </div>
+    </ChatHeaderPanelHeader>
   );
 }
 

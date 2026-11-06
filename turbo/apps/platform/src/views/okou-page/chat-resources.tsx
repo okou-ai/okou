@@ -35,6 +35,10 @@ import { useTitleReveal } from "./use-title-reveal.ts";
 import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import {
+  CHAT_HEADER_PANEL_CLASS,
+  ChatHeaderPanelHeader,
+} from "./chat-header-panel.tsx";
+import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
   RESOURCE_GLYPH_CLASS,
@@ -69,15 +73,10 @@ function ChatResourcesButtonInner({
   const { t } = useTranslation();
   // The old pane can remain mounted while the next thread's metadata loads.
   const transitioning = useChatHeaderTransitioning(thread);
-  const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
   const open = useGet(resources.open$);
-  const anchor = useGet(resources.anchor$);
-  const boundary = useGet(resources.boundary$);
-  const collisionBoundary = useGet(resources.collisionBoundary$);
-  const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
-  const visible = !transitioning && open && boundary !== null;
+  const visible = !transitioning && open;
   const copyLabel = t(($) => {
     return $.chat.resources.copyLink;
   });
@@ -91,22 +90,8 @@ function ChatResourcesButtonInner({
   return (
     <Popover
       open={visible}
-      modal={false}
       onOpenChange={(nextOpen, details) => {
         if (nextOpen && transitioning) {
-          details.cancel();
-          return;
-        }
-        // The popup is positioned against the transcript, so Base UI treats a
-        // press on the trigger as outside; the trigger press toggles instead.
-        const outside =
-          details.reason === "outside-press" || details.reason === "focus-out";
-        if (
-          !nextOpen &&
-          outside &&
-          details.event.target instanceof Node &&
-          anchor?.contains(details.event.target)
-        ) {
           details.cancel();
           return;
         }
@@ -114,33 +99,30 @@ function ChatResourcesButtonInner({
       }}
     >
       <ChatResourcesTrigger
-        thread={thread}
         open={visible}
         loading={transitioning}
         largeTarget={largeTarget}
       />
       <PopoverContent
-        ref={popupRef}
-        // Persistent resources share the chat's keyboard context.
-        role="region"
-        anchor={popupAnchor ?? undefined}
-        collisionBoundary={collisionBoundary ?? undefined}
-        collisionPadding={16}
-        collisionAvoidance={{
-          side: "none",
-          align: "shift",
-          fallbackAxisSide: "none",
-        }}
-        side="bottom"
-        sideOffset={0}
         align="end"
-        // The panel shares the chat's keyboard context; focus stays put.
-        initialFocus={false}
+        sideOffset={8}
         aria-label={t(($) => {
           return $.chat.resources.title;
         })}
-        className="flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0"
+        className={CHAT_HEADER_PANEL_CLASS}
       >
+        <ChatHeaderPanelHeader
+          icon={<Package size={18} />}
+          title={t(($) => {
+            return $.chat.resources.title;
+          })}
+          closeLabel={t(($) => {
+            return $.chat.resources.close;
+          })}
+          onClose={() => {
+            setOpen(false);
+          }}
+        />
         {visible ? (
           <ChatResourcesContent
             thread={thread}
@@ -208,19 +190,15 @@ function ChatResourcesSkeleton() {
 }
 
 function ChatResourcesTrigger({
-  thread,
   open,
   loading,
   largeTarget,
 }: {
-  readonly thread: ChatPanelSignals;
   readonly open: boolean;
   readonly loading: boolean;
   readonly largeTarget: boolean;
 }) {
   const { t } = useTranslation();
-  const anchorRef = useSet(thread.resources.anchorOnRef$);
-  const blurControl = useSet(thread.resources.blurControl$);
   const label = t(($) => {
     return $.chat.resources.title;
   });
@@ -233,12 +211,6 @@ function ChatResourcesTrigger({
         <TooltipTrigger
           render={
             <PopoverTrigger
-              ref={anchorRef}
-              aria-haspopup={undefined}
-              onBlur={(event) => {
-                // The resource button and popup form one keyboard interaction zone.
-                blurControl(event.relatedTarget);
-              }}
               render={
                 <Button
                   type="button"

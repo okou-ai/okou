@@ -47,20 +47,6 @@ test("Dismiss the panel with Escape", async () => {
   });
 });
 
-test("Dismiss the panel when keyboard focus moves to the composer", async () => {
-  await setupResources({ open: false });
-  await userEvent.click(resourceButton());
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  act(() => {
-    composer().focus();
-  });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-});
-
 test("Toggle resources on mobile and dismiss them from the composer", async () => {
   await setupResources({ open: false, desktop: false });
   await userEvent.click(resourceButton());
@@ -129,7 +115,7 @@ test("Preserve category expansion controls after switching to mobile", async () 
   act(() => {
     media.setMatches(false);
   });
-  const mobilePanel = await screen.findByRole("region", {
+  const mobilePanel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const artifacts = within(mobilePanel).getByRole("region", {

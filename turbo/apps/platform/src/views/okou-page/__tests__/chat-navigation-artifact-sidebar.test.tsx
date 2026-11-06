@@ -837,7 +837,7 @@ test("Show artifacts that belong to the current thread", async () => {
   });
   click(resourcesControl());
 
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await waitFor(() => {

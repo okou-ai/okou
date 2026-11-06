@@ -130,7 +130,7 @@ function messagesCaret(container: HTMLElement, title: string) {
   });
 }
 async function openMessages(title: string) {
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await within(panel).findByText(title);
@@ -237,7 +237,7 @@ test("Keep loaded relationships visible when another source fails", async () => 
       });
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(
@@ -289,7 +289,7 @@ test("Start the next chat closed and draw its panel once its relationships answe
     );
   });
   expect(
-    screen.queryByRole("region", { name: "Artifacts and chats" }),
+    screen.queryByRole("dialog", { name: "Artifacts and chats" }),
   ).not.toBeInTheDocument();
   // Nothing from the previous chat while this one loads.
   const panel = await openResources();
@@ -320,7 +320,7 @@ test("Show the first source and created chats with their status", async () => {
       mockCommunications();
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(within(panel).findByText("Slack")).resolves.toBeInTheDocument();
@@ -379,7 +379,7 @@ test("Keep an unknown first-run origin when a later run has a Slack source", asy
       mockCommunications();
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(
@@ -407,7 +407,7 @@ test("Link the first-run agent source directly to its parent run", async () => {
       }),
     ],
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const row = (await within(panel).findByText("Parent planning chat")).closest(
@@ -469,7 +469,7 @@ test("List an agent origin once when it is also a related chat", async () => {
       mockCommunications();
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const chats = await within(panel).findByRole("region", { name: "Chats" });
@@ -646,7 +646,7 @@ test("Show empty chats and unavailable relationship targets without inventing an
       });
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
 
@@ -675,7 +675,7 @@ test("Keep other sections visible when a relationship list fails", async () => {
       mockCommunications();
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(
@@ -698,7 +698,7 @@ test("Show artifacts without an empty related chats section", async () => {
       });
     },
   });
-  const popup = await screen.findByRole("region", {
+  const popup = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await within(popup).findByText("report.pdf");
@@ -713,7 +713,7 @@ test("Show a queued related chat's status as text", async () => {
       mockCommunications(21, { status: "queued", receivedCount: 0 });
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const row = (
@@ -763,7 +763,7 @@ test("Preview three unique chats and expand the complete list", async () => {
       });
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const chats = await within(panel).findByRole("region", { name: "Chats" });
@@ -806,7 +806,7 @@ test("Close an open message history when the Chats section collapses", async () 
       mockMessages([message()]);
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const chats = await within(panel).findByRole("region", { name: "Chats" });

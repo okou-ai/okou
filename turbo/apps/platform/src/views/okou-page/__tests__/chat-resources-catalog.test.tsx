@@ -70,7 +70,7 @@ test("Browse artifacts without source URLs in the popover and sidebar without sh
       );
     },
   });
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await within(resources).findByText("report.pdf");
@@ -157,7 +157,7 @@ test.each([
         );
       },
     });
-    const resources = await screen.findByRole("region", {
+    const resources = await screen.findByRole("dialog", {
       name: "Artifacts and chats",
     });
     await within(resources).findByText(title);
@@ -168,7 +168,7 @@ test.each([
 test("Copy an artifact's on-demand detail URL without opening its preview", async () => {
   const clipboard = context.mocks.browser.clipboardWriteText();
   await setupResources({ sourceUrl: false });
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const artifacts = within(resources).getByRole("region", {
@@ -210,7 +210,7 @@ test("Copying a private artifact reports failure without exposing its signed or 
       });
     },
   });
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const artifacts = within(resources).getByRole("region", {
@@ -236,7 +236,7 @@ test("Copying an unavailable artifact reports failure", async () => {
       });
     },
   });
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const artifacts = within(resources).getByRole("region", {
@@ -254,7 +254,7 @@ test("Copying an artifact reports a browser clipboard failure", async () => {
     new DOMException("Clipboard unavailable", "NotAllowedError"),
   );
   await setupResources();
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const artifacts = within(resources).getByRole("region", {

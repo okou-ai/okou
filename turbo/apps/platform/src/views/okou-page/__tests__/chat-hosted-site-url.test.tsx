@@ -192,7 +192,7 @@ async function copyFromResources() {
   if (!resourcePanel()) {
     click(resourceButton());
   }
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const title = await within(resources).findByText(siteTitle);

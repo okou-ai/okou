@@ -39,7 +39,7 @@ export async function openResources() {
       return resourceButton();
     }),
   );
-  return await screen.findByRole("region", { name: "Artifacts and chats" });
+  return await screen.findByRole("dialog", { name: "Artifacts and chats" });
 }
 
 export async function setupResources(
@@ -113,7 +113,7 @@ export function resourceButton() {
   return buttonNamed("Artifacts and chats");
 }
 export function resourcePanel() {
-  return screen.queryByRole("region", { name: "Artifacts and chats" });
+  return screen.queryByRole("dialog", { name: "Artifacts and chats" });
 }
 export function composer() {
   const editor = document.querySelector<HTMLElement>(

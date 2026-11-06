@@ -54,108 +54,31 @@ export const copyChatResourceArtifact$ = command(
   },
 );
 
-function createResourceElementRef() {
-  const element$ = state<HTMLElement | null>(null);
-  const onRef$ = onRef(
-    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
-      set(element$, element);
-      signal.addEventListener(
-        "abort",
-        () => {
-          // A closing desktop popup can detach after its mobile replacement.
-          if (get(element$) !== element) {
-            return;
-          }
-          set(element$, null);
-        },
-        { once: true },
-      );
-    }),
-  );
-  return {
-    element$: computed((get) => {
-      return get(element$);
-    }),
-    onRef$,
-  };
-}
-
-function resourcePopupAnchor(boundary: HTMLElement | null) {
-  return boundary
-    ? {
-        contextElement: boundary,
-        getBoundingClientRect: () => {
-          const rect = boundary.getBoundingClientRect();
-          return new DOMRect(rect.right - 16, rect.top + 16, 0, 0);
-        },
-      }
-    : null;
-}
-
 function createChatResourcePanelSignals() {
-  // A header panel like the others: a press opens it, any outside press,
-  // focus leaving or Escape closes it, and each chat starts closed.
+  // A header popover like Emails: a press opens it, an outside press, focus
+  // leaving or Escape closes it, and each visit to the chat starts closed.
   const open$ = state(false);
-  const anchor = createResourceElementRef();
-  const popup = createResourceElementRef();
-  const boundary$ = state<HTMLElement | null>(null);
-  const collisionBoundary$ = state<HTMLElement | null>(null);
   const setOpen$ = command(({ set }, open: boolean) => {
     set(open$, open);
   });
   const layoutOnRef$ = onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
-      const viewport = element.querySelector<HTMLElement>(
-        "[data-scroll-container]",
-      );
-      if (!viewport) {
-        return;
-      }
-      set(boundary$, viewport);
-      // Use the whole pane so the composer does not shorten the resource list.
-      set(collisionBoundary$, element);
+    command(({ set }, _element: HTMLElement, signal: AbortSignal) => {
       set(open$, false);
       signal.addEventListener(
         "abort",
         () => {
-          set(boundary$, null);
-          set(collisionBoundary$, null);
           set(open$, false);
         },
         { once: true },
       );
     }),
   );
-  const blurControl$ = command(({ get, set }, target: EventTarget | null) => {
-    if (
-      target instanceof Node &&
-      (get(anchor.element$)?.contains(target) ||
-        get(popup.element$)?.contains(target))
-    ) {
-      return;
-    }
-    set(open$, false);
-  });
-
   return {
     open$: computed((get) => {
       return get(open$);
     }),
     setOpen$,
     layoutOnRef$,
-    anchorOnRef$: anchor.onRef$,
-    popupOnRef$: popup.onRef$,
-    blurControl$,
-    anchor$: anchor.element$,
-    boundary$: computed((get) => {
-      return get(boundary$);
-    }),
-    collisionBoundary$: computed((get) => {
-      return get(collisionBoundary$);
-    }),
-    popupAnchor$: computed((get) => {
-      return resourcePopupAnchor(get(boundary$));
-    }),
   };
 }
 
