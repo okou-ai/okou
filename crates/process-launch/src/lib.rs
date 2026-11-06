@@ -3,6 +3,7 @@
 mod child;
 mod command;
 mod fd;
+mod mount_namespace;
 mod spawn;
 
 #[cfg(feature = "tokio")]

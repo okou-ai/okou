@@ -51,13 +51,9 @@ const FACTORY_SNAPSHOT_RESTORE_COMMAND_GROUPS: &[&[&str]] = &[
     NETWORK_COMMANDS,
     COW_POOL_SNAPSHOT_RESTORE_COMMANDS,
     HOME_IMAGE_CREATE_COMMANDS,
-    SNAPSHOT_PRIVATE_MOUNT_RESTORE_COMMANDS,
+    SNAPSHOT_STALE_TARGET_COMMANDS,
 ];
-const SNAPSHOT_CREATE_COMMAND_GROUPS: &[&[&str]] = &[
-    NETWORK_COMMANDS,
-    HOME_IMAGE_CREATE_COMMANDS,
-    SNAPSHOT_PRIVATE_MOUNT_CREATE_COMMANDS,
-];
+const SNAPSHOT_CREATE_COMMAND_GROUPS: &[&[&str]] = &[NETWORK_COMMANDS, HOME_IMAGE_CREATE_COMMANDS];
 
 const NETWORK_COMMANDS: &[&str] = &[
     "ip",
@@ -68,8 +64,9 @@ const NETWORK_COMMANDS: &[&str] = &[
     "sysctl",
 ];
 const DNS_INPUT_FILTER_COMMANDS: &[&str] = &["ip6tables", "ip6tables-save", "ip6tables-restore"];
-const SNAPSHOT_PRIVATE_MOUNT_CREATE_COMMANDS: &[&str] = &["unshare", "bash", "mount"];
-const SNAPSHOT_PRIVATE_MOUNT_RESTORE_COMMANDS: &[&str] = &["unshare", "bash", "mount", "umount"];
+// Host-side repair of a stale shared target still uses umount, separately from
+// the child's prepared private namespace setup.
+const SNAPSHOT_STALE_TARGET_COMMANDS: &[&str] = &["umount"];
 const COW_POOL_SNAPSHOT_RESTORE_COMMANDS: &[&str] = &["cp"];
 const HOME_IMAGE_CREATE_COMMANDS: &[&str] = &["mkfs.ext4"];
 
