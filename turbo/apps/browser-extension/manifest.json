@@ -8,6 +8,15 @@
     "webNavigation",
     "tabs"
   ],
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["page-fonts.js"],
+      "run_at": "document_end",
+      "all_frames": true,
+      "match_about_blank": true
+    }
+  ],
   "action": {
     "default_title": "Okou Browser"
   },

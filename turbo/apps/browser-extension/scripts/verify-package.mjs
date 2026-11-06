@@ -13,7 +13,7 @@ const entries = execFileSync("unzip", ["-Z1", archive], { encoding: "utf8" })
   .trim()
   .split("\n")
   .sort();
-assert.deepEqual(entries, ["background.js", "manifest.json"]);
+assert.deepEqual(entries, ["background.js", "manifest.json", "page-fonts.js"]);
 const manifest = JSON.parse(
   execFileSync("unzip", ["-p", archive, "manifest.json"], { encoding: "utf8" }),
 );

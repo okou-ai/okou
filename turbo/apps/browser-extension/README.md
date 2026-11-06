@@ -2,6 +2,8 @@
 
 The first-party MV3 extension owns source-window consolidation and native window/tab control. The portable CDP client/protocol lives in `@okouai/browser-extension-client`. The worker and client have independent connection/session lifetimes; disposing a client never closes user tabs or windows.
 
+An isolated content script supplies the installed `Arial Unicode MS` face after a page's existing font choices for non-Latin text and native text controls. It preserves named fonts and other font properties, follows text/typography mutations, and discovers open shadow roots present in observed subtrees. It downloads no fonts, reads no control values, and sends no page text outside the document. The content-script match scope grants access to HTTP(S) documents and matching frames. Implicit platform fallback and resulting line wrapping can change; an unavailable or incomplete installed face cannot repair missing glyphs. Closed shadow roots, shadow roots attached later without a document mutation, CSSOM-only font changes without observed events, raster canvas/images, embedded document fonts and browser chrome are not universally repaired.
+
 From this directory:
 
 Packaging requires `zip` and `unzip`. Release-boundary tests also use `yq`; CI runs these commands on the standard Ubuntu runner.
