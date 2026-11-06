@@ -242,7 +242,7 @@ export const readActiveNetworkPolicyRefreshes$ = command(
     args: {
       readonly scope: UserPermissionGrantScope;
       readonly connectorSlugs: readonly string[];
-      readonly snapshot: ConnectorRuntimeLookup;
+      readonly snapshot: Pick<ConnectorRuntimeLookup, "serverFirewalls">;
       readonly memberRules: readonly ResolvedPermissionGrant[] | undefined;
       readonly timing?: NetworkPolicyRefreshTimingCapture;
     },
