@@ -57,8 +57,6 @@ interface MarkdownParseOptions {
   readonly escapeHtml?: boolean;
   /** Recognize only explicit Agent-message math delimiters. */
   readonly math?: boolean;
-  /** Repair paired asterisk emphasis at CJK punctuation boundaries. */
-  readonly cjkEmphasis?: boolean;
   /**
    * Replace closed ```mermaid fences with diagram marker nodes. Only surfaces
    * whose trees are prepared by a command enable this — the command resolves
@@ -494,9 +492,7 @@ export function parseMarkdownTree(
   // Tiptap registers editor-only tokenizers on the global marked instance.
   // Keep display parsing independent of which editors have been opened.
   const parser = math ? new Marked(math.extension) : new Marked();
-  if (options.cjkEmphasis) {
-    parser.use(createCjkEmphasisExtension({ math: options.math === true }));
-  }
+  parser.use(createCjkEmphasisExtension({ math: options.math === true }));
   const html = parser.parse(source, {
     async: false,
     renderer:

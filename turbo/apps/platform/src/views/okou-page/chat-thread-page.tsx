@@ -8819,10 +8819,7 @@ function PagedGroupActions({
             return event.tree !== undefined;
           }) ? (
             <MessagePdfAction
-              key={JSON.stringify([
-                switches[FeatureSwitchKey.MarkdownCjkEmphasis],
-                pdfContents,
-              ])}
+              key={JSON.stringify(pdfContents)}
               contents={pdfContents}
               trees={persistedMessages.flatMap((event) => {
                 return event.tree ? [event.tree] : [];
