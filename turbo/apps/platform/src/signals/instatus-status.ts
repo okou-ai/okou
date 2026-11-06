@@ -1,10 +1,10 @@
 import { fetchResource } from "../lib/resource-fetch.ts";
 import { command, computed, state } from "ccstate";
-import { delay } from "signal-timers";
 
 import { localStorageSignals } from "./external/local-storage.ts";
 import { isRecord, jsonParseOr, setLoop } from "./utils.ts";
 import { resolvePlatformServiceStatusConfig } from "../lib/platform-host.ts";
+import { refreshChatListLayout$ } from "./chat-page/chat-list-layout.ts";
 
 const STATUS_REFRESH_INTERVAL_MS = 3 * 60 * 1000;
 
@@ -116,32 +116,44 @@ export const visibleInstatusIssues$ = computed(
 );
 
 export const dismissInstatusIssue$ = command(
-  ({ get, set }, issueId: string) => {
+  async ({ get, set }, issueId: string, signal: AbortSignal) => {
     const nextDismissedIssueIds = new Set(get(dismissedIssueIds$));
     nextDismissedIssueIds.add(issueId);
     set(
       setDismissedIssueIdsRaw$,
       JSON.stringify(Array.from(nextDismissedIssueIds)),
     );
+    // Mobile notices sit above the chat list.
+    await set(refreshChatListLayout$, signal);
   },
 );
 
 export const pollInstatusIssues$ = command(
-  ({ set }, signal: AbortSignal): void => {
+  ({ get, set }, signal: AbortSignal): void => {
     if (!resolvePlatformServiceStatusConfig(window.location.hostname)) {
       return;
     }
 
+    // The first round reads the notices' initial fetch; each later round
+    // refetches them. A failed fetch drops only its round.
+    let refetch = false;
     setLoop(
       async (loopSignal) => {
-        await delay(STATUS_REFRESH_INTERVAL_MS, { signal: loopSignal });
-        set(refreshVersion$, (version) => {
-          return version + 1;
-        });
+        if (refetch) {
+          set(refreshVersion$, (version) => {
+            return version + 1;
+          });
+        }
+        refetch = true;
+        await get(visibleInstatusIssues$);
+        loopSignal.throwIfAborted();
+        // Mobile notices sit above the chat list.
+        await set(refreshChatListLayout$, loopSignal);
         return false;
       },
-      0,
+      STATUS_REFRESH_INTERVAL_MS,
       signal,
+      { testIntervalMs: STATUS_REFRESH_INTERVAL_MS },
     );
   },
 );

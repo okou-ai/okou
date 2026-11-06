@@ -10,7 +10,7 @@ import {
   setSettingsDialogOpen$,
 } from "../../signals/okou-page/settings/settings-dialog.ts";
 import { isOrgAdmin$ } from "../../signals/org.ts";
-import { refreshSidebarChatThreadLayoutOnRef$ } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
+import { refreshSidebarChatThreadLayoutOnRef$ } from "../../signals/chat-page/chat-list-layout.ts";
 
 function nextTierInfo(
   tier: string,

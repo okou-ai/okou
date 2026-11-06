@@ -59,7 +59,7 @@ export function InstallBanner() {
         showTooltip
         type="button"
         onClick={() => {
-          dismiss();
+          detach(dismiss(pageSignal), Reason.DomCallback);
         }}
         variant="quiet"
         size="icon-xs"

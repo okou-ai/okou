@@ -147,7 +147,11 @@ async function resizeAndSettle(
   await clock.flushUpdate();
 }
 
-function startViewportKeyboardState(): ControlledViewportClock {
+function startViewportKeyboardState(
+  onKeyboardOpenChange: () => Promise<void> = () => {
+    return Promise.resolve();
+  },
+): ControlledViewportClock {
   const resetSettled$ = resetSignal();
   const { store, signal } = context;
   const clock = new ControlledViewportClock();
@@ -156,6 +160,7 @@ function startViewportKeyboardState(): ControlledViewportClock {
     () => {
       return store.set(resetSettled$, signal);
     },
+    onKeyboardOpenChange,
     clock.waitForSettle,
   );
   return clock;
@@ -223,4 +228,31 @@ test("An ordinary mobile browser does not force-scroll the page for the keyboard
 
   expect(document.documentElement.dataset.keyboardOpen).toBe("true");
   expect(scrollIntoView).not.toHaveBeenCalled();
+});
+
+test("Report each keyboard open and close once to the layout beside it", async () => {
+  const viewport = new MockVisualViewport(844);
+  setInnerHeight(844);
+  setStandalone(true);
+  installVisualViewport(viewport);
+  const { editor } = focusComposer(true);
+  const openStates: (string | undefined)[] = [];
+
+  const clock = startViewportKeyboardState(() => {
+    openStates.push(document.documentElement.dataset.keyboardOpen);
+    return Promise.resolve();
+  });
+  await resizeAndSettle(viewport, clock, 520, 100);
+  expect(openStates).toStrictEqual(["true"]);
+
+  // Caret-driven panning keeps the keyboard open.
+  viewport.offsetTop = 280;
+  viewport.dispatchEvent(new Event("scroll"));
+  await clock.flushUpdate();
+  await resizeAndSettle(viewport, clock, 500, 100);
+  expect(openStates).toStrictEqual(["true"]);
+
+  editor.blur();
+  await resizeAndSettle(viewport, clock, 844, 0);
+  expect(openStates).toStrictEqual(["true", undefined]);
 });

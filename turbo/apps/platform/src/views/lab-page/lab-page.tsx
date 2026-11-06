@@ -16,10 +16,12 @@ import {
 import { useTranslation } from "react-i18next";
 import {
   featureSwitch$,
-  resetFeatureSwitches$,
-  setFeatureSwitch$,
   availableFeatureSwitchKeys$,
 } from "../../signals/external/feature-switch.ts";
+import {
+  resetLabFeatureSwitches$,
+  setLabFeatureSwitch$,
+} from "../../signals/lab-page/lab-feature-switches.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
@@ -264,8 +266,8 @@ export function LabPage() {
   const { t } = useTranslation();
   const features = useLastResolved(featureSwitch$);
   const availableKeys = useLoadable(availableFeatureSwitchKeys$);
-  const [toggleLoadable, setFeature] = useLoadableSet(setFeatureSwitch$);
-  const [resetLoadable, reset] = useLoadableSet(resetFeatureSwitches$);
+  const [toggleLoadable, setFeature] = useLoadableSet(setLabFeatureSwitch$);
+  const [resetLoadable, reset] = useLoadableSet(resetLabFeatureSwitches$);
   const maintainerFilter = useGet(labMaintainerFilter$);
   const setMaintainerFilter = useSet(setLabMaintainerFilter$);
   const resetting = resetLoadable.state === "loading";

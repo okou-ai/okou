@@ -224,9 +224,13 @@ function updateKeyboardLayout(
   state: KeyboardViewportState,
   viewport: VisualViewport,
   commitOpening: boolean,
+  onKeyboardOpenChange: () => Promise<void>,
 ): void {
   const keyboardWasOpen = state.keyboardOpen;
   updateKeyboardViewportState(state, viewport, commitOpening);
+  if (keyboardWasOpen !== state.keyboardOpen) {
+    detach(onKeyboardOpenChange(), Reason.DomCallback, "keyboard layout");
+  }
   if (!keyboardWasOpen && state.keyboardOpen) {
     if (state.revealFrameId !== null) {
       window.cancelAnimationFrame(state.revealFrameId);
@@ -248,6 +252,8 @@ function updateKeyboardLayout(
 export function setupVisualViewportKeyboardState(
   signal: AbortSignal,
   resetSettledSignal: () => AbortSignal,
+  /** Runs after the open state, and the layout that hides with it, changes. */
+  onKeyboardOpenChange: () => Promise<void>,
   waitForSettle: (signal: AbortSignal) => Promise<void> = (settledSignal) => {
     return delay(VIEWPORT_SETTLE_DELAY_MS, { signal: settledSignal });
   },
@@ -284,7 +290,7 @@ export function setupVisualViewportKeyboardState(
       return;
     }
     settledTimerSignal = null;
-    updateKeyboardLayout(state, viewport, true);
+    updateKeyboardLayout(state, viewport, true, onKeyboardOpenChange);
   };
 
   const scheduleUpdate = () => {
@@ -293,7 +299,7 @@ export function setupVisualViewportKeyboardState(
     if (scheduledFrameId === null) {
       scheduledFrameId = window.requestAnimationFrame(() => {
         scheduledFrameId = null;
-        updateKeyboardLayout(state, viewport, false);
+        updateKeyboardLayout(state, viewport, false, onKeyboardOpenChange);
       });
     }
 
@@ -311,10 +317,14 @@ export function setupVisualViewportKeyboardState(
   };
 
   const scheduleBaselineReset = () => {
+    const keyboardWasOpen = state.keyboardOpen;
     state.resetBaselineOnSettle = true;
     state.keyboardOpen = false;
     cancelSettledUpdate();
     setKeyboardClosed();
+    if (keyboardWasOpen) {
+      detach(onKeyboardOpenChange(), Reason.DomCallback, "keyboard layout");
+    }
 
     // Some WebKit versions emit orientationchange before the new viewport
     // metrics and others emit it afterwards. Commit immediately only for the
@@ -332,7 +342,7 @@ export function setupVisualViewportKeyboardState(
   window.addEventListener("orientationchange", scheduleBaselineReset);
   document.addEventListener("focusin", scheduleUpdate);
   document.addEventListener("focusout", scheduleUpdate);
-  updateKeyboardLayout(state, viewport, false);
+  updateKeyboardLayout(state, viewport, false, onKeyboardOpenChange);
 
   let cleanedUp = false;
   const cleanup = () => {

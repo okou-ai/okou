@@ -154,21 +154,6 @@ export const setSessionListCollapsed$ = command(
 );
 
 // ---------------------------------------------------------------------------
-// Manage section collapse state (Sidebar)
-// ---------------------------------------------------------------------------
-const manageSectionCollapsedStorage = localStorageSignals(
-  "sidebar-manage-section-collapsed",
-);
-export const manageSectionCollapsed$ = computed((get) => {
-  return get(manageSectionCollapsedStorage.get$) === "true";
-});
-export const setManageSectionCollapsed$ = command(
-  ({ set }, collapsed: boolean) => {
-    set(manageSectionCollapsedStorage.set$, String(collapsed));
-  },
-);
-
-// ---------------------------------------------------------------------------
 // Three-column search dialog state
 // ---------------------------------------------------------------------------
 export type ThreeColumnSearchFilter =

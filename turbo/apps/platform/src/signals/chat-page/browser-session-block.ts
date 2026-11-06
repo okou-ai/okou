@@ -204,7 +204,8 @@ async function requestBrowserSessionLease(
     throw error;
   }
   // No response confirms this idempotent renewal; its owner decides when to
-  // renew again. Unknown failures and cancellation must still stop the work.
+  // renew again. An unknown failure fails this round, which the heartbeat
+  // loop reports before renewing again; cancellation stops the work.
   return null;
 }
 
@@ -439,8 +440,8 @@ function createBrowserSessionKeepAliveSignals(
             !response ||
             (!isBrowserUnauthorized(response) && response.status >= 500)
           ) {
-            // Only this idempotent renewal can continue at the normal interval.
-            // An outage must not replay input or invalidate the mounted viewer.
+            // An outage keeps the mounted viewer and renews at the normal
+            // interval. It must not replay input or invalidate the viewer.
             if (!reportedFailure) {
               // Gateway failures need not have an application error body.
               L.error(

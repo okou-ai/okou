@@ -5,6 +5,7 @@ import { MessageSquare, Search, SquarePen } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { Skeleton } from "@okouai/ui/components/ui/skeleton";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
+import { mainStylesheetLoaded$ } from "../../signals/app-skeleton.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
@@ -243,8 +244,11 @@ function PwaChatListContent() {
   const { t } = useTranslation();
   const scrollSignals = useGet(pwaChatThreadScrollSignals$);
   const list = useLoadable(scrollSignals.list$);
+  // The viewport measures its height when it mounts. Before the main
+  // stylesheet bounds it, that height is the whole list's.
+  const stylesheetLoaded = useLastResolved(mainStylesheetLoaded$) === true;
 
-  if (list.state === "loading") {
+  if (list.state === "loading" || !stylesheetLoaded) {
     return (
       <div className="space-y-3 px-4 py-3" aria-busy="true">
         {[0, 1, 2, 3, 4, 5].map((index) => {

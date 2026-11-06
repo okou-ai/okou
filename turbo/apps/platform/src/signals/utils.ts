@@ -27,6 +27,13 @@ class PromiseTracker {
 
 const tracker = new PromiseTracker();
 
+/** Report a failure that no caller awaits: detached work and loop rounds. */
+function reportUnawaitedRejection(error: unknown, reason: Reason): void {
+  if (!isAbortError(error) && !(error instanceof ApiError && error.expected)) {
+    L.error(`Detached promise rejected [${reason}]`, error);
+  }
+}
+
 export function detach<T>(
   promise: T | Promise<T>,
   reason: Reason,
@@ -43,12 +50,7 @@ export function detach<T>(
     silencePromise = Promise.resolve(promise).then(
       () => {},
       (error: unknown) => {
-        if (
-          !isAbortError(error) &&
-          !(error instanceof ApiError && error.expected)
-        ) {
-          L.error(`Detached promise rejected [${reason}]`, error);
-        }
+        reportUnawaitedRejection(error, reason);
       },
     );
   }
@@ -247,6 +249,8 @@ export function abortAfter(
 }
 
 const MAX_LOOP_COUNT_IN_TEST = 100;
+// A round that fails before reaching its own wait must not retry in a spin.
+const FAILED_LOOP_ROUND_MIN_DELAY_MS = 1000;
 
 type LoopBody = (signal: AbortSignal) => Promise<boolean> | boolean;
 
@@ -255,7 +259,12 @@ interface LoopOptions {
   testIntervalMs?: number;
 }
 
-/** Start an owner-scoped background loop; completion is tracked by detach. */
+/**
+ * Start an owner-scoped background loop; completion is tracked by detach.
+ * Like setInterval, a failed round does not stop the loop: it is reported the
+ * way detached work is, and the next round runs on schedule. Only
+ * cancellation ends the loop early.
+ */
 export function setLoop(
   loopBody: LoopBody,
   interval: number,
@@ -263,7 +272,7 @@ export function setLoop(
   options: LoopOptions = {},
 ): void {
   detach(
-    internalSetLoop(loopBody, interval, signal, options),
+    internalSetLoop(loopBody, interval, signal, options, "continue"),
     Reason.Daemon,
     "loop",
   );
@@ -276,7 +285,7 @@ export function waitLoopUntil(
   signal: AbortSignal,
   options: LoopOptions = {},
 ): Promise<void> {
-  return internalSetLoop(loopBody, interval, signal, options);
+  return internalSetLoop(loopBody, interval, signal, options, "propagate");
 }
 
 async function internalSetLoop(
@@ -284,6 +293,7 @@ async function internalSetLoop(
   interval: number,
   signal: AbortSignal,
   options: LoopOptions,
+  onFailure: "continue" | "propagate",
 ): Promise<void> {
   let loopCount = 0;
   while (!signal.aborted) {
@@ -297,12 +307,30 @@ async function internalSetLoop(
       );
     }
 
-    const done = await loopBody(signal);
+    // Each round awaits its body exactly once, so a loop's ordering against
+    // other work does not depend on how failures are handled.
+    let done = false;
+    let failed = false;
+    if (onFailure === "propagate") {
+      done = await loopBody(signal);
+    } else {
+      // eslint-disable-next-line no-restricted-syntax -- a failed round is reported like detached work; the loop continues on schedule
+      try {
+        done = await loopBody(signal);
+      } catch (error) {
+        throwIfAbort(error);
+        reportUnawaitedRejection(error, Reason.Daemon);
+        failed = true;
+      }
+    }
     if (done) {
       return;
     }
+    const nextInterval = failed
+      ? Math.max(interval, FAILED_LOOP_ROUND_MIN_DELAY_MS)
+      : interval;
     // Yield in tests so observable UI updates can render between iterations.
-    await delay(IN_VITEST ? (options.testIntervalMs ?? 0) : interval, {
+    await delay(IN_VITEST ? (options.testIntervalMs ?? 0) : nextInterval, {
       signal,
     });
   }
