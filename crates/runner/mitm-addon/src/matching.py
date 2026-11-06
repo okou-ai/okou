@@ -21,7 +21,6 @@ import connector_intent
 import connector_runtime_metadata
 import content_length
 import firewall_auth_config
-from firewall_auth_config import auth_config_injects_ordinary_upstream_credentials
 from firewall_matching import base_url as _firewall_base_url
 from firewall_matching import patterns as _firewall_patterns
 from firewall_matching.base_url import (
@@ -63,6 +62,10 @@ from runtime_url_parsing import split_runtime_url
 from url_syntax import (
     has_raw_whitespace,
     has_unsafe_url_codepoint,
+)
+
+auth_config_injects_ordinary_upstream_credentials = (
+    firewall_auth_config.auth_config_injects_ordinary_upstream_credentials
 )
 
 firewall_base_config_is_valid = _firewall_base_url.firewall_base_config_is_valid
