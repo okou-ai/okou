@@ -133,31 +133,46 @@ async function setupRelationships({
     ...workspace.pageOptions,
     path: `/chats/${parent.id}?sidebar=${child.id}`,
   });
-  // Both panes open their resources; the child's lists the parent with From.
-  const panel = await waitFor(() => {
-    const found = screen
-      .getAllByRole("region", { name: "Artifacts and chats" })
-      .find((candidate) => {
-        return within(candidate).queryByText("From", { exact: true }) !== null;
-      });
-    if (!found) {
-      throw new Error("Expected the resource panel listing the parent chat");
-    }
-    return found;
-  });
-  const chats = within(panel).getByRole("region", { name: "Chats" });
   const parentPane = document.querySelector<HTMLElement>(
     `[data-chat-thread-container-id="${parent.id}"]`,
   );
-  if (!parentPane) {
-    throw new Error("Expected the parent chat pane");
-  }
   const childPane = document.querySelector<HTMLElement>(
     `[data-chat-thread-container-id="${child.id}"]`,
   );
-  if (!childPane) {
-    throw new Error("Expected the child chat pane");
+  if (!parentPane || !childPane) {
+    throw new Error("Expected the parent and child chat panes");
   }
+  /** Open the child's panel, which lists the parent with From. */
+  const openChildChats = async () => {
+    const trigger = await waitFor(() => {
+      const found = queryAllByRoleFast("button", childPane).find((button) => {
+        return button.getAttribute("aria-label") === "Artifacts and chats";
+      });
+      if (!found) {
+        throw new Error("Expected the child's resource button");
+      }
+      return found;
+    });
+    await userEvent.click(trigger);
+    const panel = await waitFor(() => {
+      const found = screen
+        .getAllByRole("region", { name: "Artifacts and chats" })
+        .find((candidate) => {
+          return (
+            within(candidate).queryByText("From", { exact: true }) !== null
+          );
+        });
+      if (!found) {
+        throw new Error("Expected the resource panel listing the parent chat");
+      }
+      return found;
+    });
+    return {
+      panel,
+      chats: within(panel).getByRole("region", { name: "Chats" }),
+    };
+  };
+  const { panel, chats } = await openChildChats();
   return {
     parent,
     panel,
@@ -165,27 +180,7 @@ async function setupRelationships({
     parentPane,
     /** Reopen the child's panel after an outside press dismissed it. */
     async reopenChildChats() {
-      const trigger = queryAllByRoleFast("button", childPane).find((button) => {
-        return button.getAttribute("aria-label") === "Artifacts and chats";
-      });
-      if (!trigger) {
-        throw new Error("Expected the child's resource button");
-      }
-      await userEvent.click(trigger);
-      const reopened = await waitFor(() => {
-        const found = screen
-          .getAllByRole("region", { name: "Artifacts and chats" })
-          .find((candidate) => {
-            return (
-              within(candidate).queryByText("From", { exact: true }) !== null
-            );
-          });
-        if (!found) {
-          throw new Error("Expected the reopened resource panel");
-        }
-        return found;
-      });
-      return within(reopened).getByRole("region", { name: "Chats" });
+      return (await openChildChats()).chats;
     },
     saveResponse,
     relationshipResponse,

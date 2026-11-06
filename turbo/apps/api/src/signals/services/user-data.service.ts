@@ -90,6 +90,17 @@ function parseUserLocale(value: unknown): UserLocale | null {
   throw new Error(`Unexpected user locale: ${String(value)}`);
 }
 
+/**
+ * The chat artifacts panel no longer opens on its own, so this preference is
+ * retired: reads always answer `false` and writes are ignored.
+ *
+ * Rollout fallback. Surface: old web App -> API, where cached pages still read
+ * and write the field. Gate: the replacement App is live and the web client
+ * floor excludes older builds; then remove the contract field, which also
+ * needs proof for the iOS-registered `GET /api/user-preferences` response.
+ */
+const RETIRED_CHAT_RESOURCES_PREFERENCE = false;
+
 export function userPreferences({
   orgId,
   userId,
@@ -105,8 +116,6 @@ export function userPreferences({
           sendMode: orgMembersMetadata.sendMode,
           cloudBrowserEnabledByDefault:
             orgMembersMetadata.cloudBrowserEnabledByDefault,
-          chatResourcesEnabledByDefault:
-            orgMembersMetadata.chatResourcesEnabledByDefault,
           theme: orgMembersMetadata.theme,
           colorTheme: orgMembersMetadata.colorTheme,
           captureNetworkBodiesRemaining:
@@ -142,7 +151,7 @@ export function userPreferences({
         pinnedAgentIds: [],
         sendMode: "enter",
         cloudBrowserEnabledByDefault: true,
-        chatResourcesEnabledByDefault: true,
+        chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
         theme: null,
         colorTheme: null,
         captureNetworkBodiesRemaining: 0,
@@ -159,7 +168,7 @@ export function userPreferences({
       ),
       sendMode: parseSendMode(row.sendMode),
       cloudBrowserEnabledByDefault: row.cloudBrowserEnabledByDefault,
-      chatResourcesEnabledByDefault: row.chatResourcesEnabledByDefault,
+      chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
       theme: parseThemePreference(row.theme),
       colorTheme: parseColorTheme(row.colorTheme),
       captureNetworkBodiesRemaining: row.captureNetworkBodiesRemaining ?? 0,
@@ -252,9 +261,7 @@ function mergeUserPreferences(
     cloudBrowserEnabledByDefault:
       preferences.cloudBrowserEnabledByDefault ??
       existing.cloudBrowserEnabledByDefault,
-    chatResourcesEnabledByDefault:
-      preferences.chatResourcesEnabledByDefault ??
-      existing.chatResourcesEnabledByDefault,
+    chatResourcesEnabledByDefault: RETIRED_CHAT_RESOURCES_PREFERENCE,
     theme: preferences.theme ?? existing.theme ?? null,
     colorTheme: preferences.colorTheme ?? existing.colorTheme ?? null,
     captureNetworkBodiesRemaining:
@@ -280,9 +287,6 @@ function userPreferenceUpdateColumns(
     }),
     ...(preferences.cloudBrowserEnabledByDefault !== undefined && {
       cloudBrowserEnabledByDefault: preferences.cloudBrowserEnabledByDefault,
-    }),
-    ...(preferences.chatResourcesEnabledByDefault !== undefined && {
-      chatResourcesEnabledByDefault: preferences.chatResourcesEnabledByDefault,
     }),
     ...(preferences.theme !== undefined && { theme: preferences.theme }),
     ...(preferences.colorTheme !== undefined && {
@@ -331,7 +335,6 @@ export const updateUserPreferences$ = command(
         pinnedAgentIds: merged.pinnedAgentIds,
         sendMode: merged.sendMode,
         cloudBrowserEnabledByDefault: merged.cloudBrowserEnabledByDefault,
-        chatResourcesEnabledByDefault: merged.chatResourcesEnabledByDefault,
         theme: merged.theme,
         colorTheme: merged.colorTheme,
         captureNetworkBodiesRemaining: merged.captureNetworkBodiesRemaining,

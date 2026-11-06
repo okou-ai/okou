@@ -8,33 +8,8 @@ import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
 } from "../hosted-site-url-changes.ts";
-import {
-  updateUserPreference$,
-  userPreferences$,
-} from "../okou-page/settings/user-preferences.ts";
 import { onRef } from "../utils.ts";
 import type { ChatRelationSignals } from "./chat-relations.ts";
-
-const RESOURCE_PANEL_MIN_GUTTER = 408;
-
-/** Whether the resource panel shows on its own when there is room beside the transcript. */
-const chatResourcesEnabledByDefault$ = computed(async (get) => {
-  return (await get(userPreferences$)).chatResourcesEnabledByDefault;
-});
-
-// Every press writes its value, even one the cache already holds: a quick
-// second press must not be skipped because the first is still being saved.
-const saveChatResourcesPreference$ = command(
-  async ({ get, set }, open: boolean, signal: AbortSignal) => {
-    await set(
-      updateUserPreference$,
-      { chatResourcesEnabledByDefault: open },
-      signal,
-    );
-    await get(userPreferences$);
-    signal.throwIfAborted();
-  },
-);
 
 export const copyChatResourceArtifact$ = command(
   async (
@@ -117,124 +92,35 @@ function resourcePopupAnchor(boundary: HTMLElement | null) {
     : null;
 }
 
-interface ResourcePanelChoice {
-  readonly open: boolean;
-  readonly narrow: boolean;
-}
-
-function resourceGutterWidth(viewport: HTMLElement, column: HTMLElement) {
-  return Math.max(
-    0,
-    viewport.getBoundingClientRect().right -
-      column.getBoundingClientRect().right,
-  );
-}
-
-function createResourcePanelChoice(wide$: Computed<boolean>) {
-  // The user's choice in this chat. A close always holds; an open made with
-  // room beside the transcript steps aside while that room is gone.
-  const choice$ = state<ResourcePanelChoice | null>(null);
-  const instantOpening$ = state(false);
-  const chosen$ = computed((get) => {
-    const choice = get(choice$);
-    return choice ? choice.open && (choice.narrow || get(wide$)) : null;
-  });
-  /** Whether the panel should show once its resources are ready. */
-  const requested$ = computed(async (get) => {
-    return (
-      get(chosen$) ??
-      (get(wide$) && (await get(chatResourcesEnabledByDefault$)))
-    );
-  });
-  const setOpen$ = command(({ get, set }, open: boolean) => {
-    set(instantOpening$, false);
-    set(choice$, { open, narrow: !get(wide$) });
-  });
-  // A press acts on this chat at once, like every other header panel. With
-  // room beside the transcript it also becomes the preference for every chat;
-  // without it, a press only peeks in this chat and leaves the preference alone.
-  const press$ = command(
-    async ({ get, set }, open: boolean, signal: AbortSignal) => {
-      const wide = get(wide$);
-      set(instantOpening$, open);
-      // An explicit open also shows a chat that has nothing to list yet.
-      set(choice$, { open, narrow: !wide });
-      if (wide) {
-        await set(saveChatResourcesPreference$, open, signal);
-      }
-    },
-  );
-  return {
-    requested$,
-    chosen$,
-    setOpen$,
-    press$,
-    instantOpening$: computed((get) => {
-      return get(instantOpening$);
-    }),
-    finishOpening$: command(({ set }) => {
-      // Base UI calls this after removing its starting style. A later automatic
-      // opening, including one caused by a wider gutter, keeps its animation.
-      set(instantOpening$, false);
-    }),
-    reset$: command(({ set }) => {
-      set(choice$, null);
-      set(instantOpening$, false);
-    }),
-  };
-}
-
 function createChatResourcePanelSignals() {
-  const gutterWidth$ = state(0);
+  // A header panel like the others: a press opens it, any outside press,
+  // focus leaving or Escape closes it, and each chat starts closed.
+  const open$ = state(false);
   const anchor = createResourceElementRef();
   const popup = createResourceElementRef();
   const boundary$ = state<HTMLElement | null>(null);
   const collisionBoundary$ = state<HTMLElement | null>(null);
-  const messageColumn$ = state<HTMLElement | null>(null);
-  const wide$ = computed((get) => {
-    return get(gutterWidth$) > RESOURCE_PANEL_MIN_GUTTER;
-  });
-  const { reset$: resetChoice$, ...choice } = createResourcePanelChoice(wide$);
-  const measure$ = command(({ get, set }) => {
-    const viewport = get(boundary$);
-    const column = get(messageColumn$);
-    if (!viewport || !column) {
-      return;
-    }
-    const width = resourceGutterWidth(viewport, column);
-    set(gutterWidth$, width);
+  const setOpen$ = command(({ set }, open: boolean) => {
+    set(open$, open);
   });
   const layoutOnRef$ = onRef(
     command(({ set }, element: HTMLElement, signal: AbortSignal) => {
       const viewport = element.querySelector<HTMLElement>(
         "[data-scroll-container]",
       );
-      const column = element.querySelector<HTMLElement>(
-        "[data-message-container]",
-      );
-      if (!viewport || !column) {
+      if (!viewport) {
         return;
       }
       set(boundary$, viewport);
       // Use the whole pane so the composer does not shorten the resource list.
       set(collisionBoundary$, element);
-      set(messageColumn$, column);
-      set(resetChoice$);
-      const measure = () => {
-        set(measure$);
-      };
-      // Shell commits and width transitions call measure$ after applying
-      // application-owned layout. Native viewport changes have their own event.
-      window.addEventListener("resize", measure, { signal });
-      window.visualViewport?.addEventListener("resize", measure, { signal });
-      measure();
+      set(open$, false);
       signal.addEventListener(
         "abort",
         () => {
           set(boundary$, null);
           set(collisionBoundary$, null);
-          set(messageColumn$, null);
-          set(resetChoice$);
+          set(open$, false);
         },
         { once: true },
       );
@@ -248,12 +134,14 @@ function createChatResourcePanelSignals() {
     ) {
       return;
     }
-    set(choice.setOpen$, false);
+    set(open$, false);
   });
 
   return {
-    ...choice,
-    measure$,
+    open$: computed((get) => {
+      return get(open$);
+    }),
+    setOpen$,
     layoutOnRef$,
     anchorOnRef$: anchor.onRef$,
     popupOnRef$: popup.onRef$,
@@ -283,35 +171,19 @@ export function createChatResourceSignals(
     }
     return await get(catalog.catalog$);
   });
-  // Cache the complete answer independently of whether the panel is requested.
-  // Keep readiness primitive so catalogue paging does not redraw ready rows.
-  const settledContent$ = computed(async (get) => {
+  // Draw only once every source has answered so the panel never grows in
+  // steps. The panel reads this only while it shows, so a chat whose panel
+  // never opens loads nothing; a reopened panel reuses the cached answer.
+  const ready$ = computed(async (get) => {
     // Initial events change the relation revision, invalidating earlier reads.
     if (!get(initialEventsReady$)) {
-      return null;
+      return false;
     }
-    const origin = get(relations.origin$);
-    const [page, chats] = await Promise.allSettled([
+    const [page] = await Promise.allSettled([
       get(content$),
       get(relations.chats.data$),
     ]);
-    if (page.status === "fulfilled" && page.value === null) {
-      return null;
-    }
-    return (
-      page.status === "rejected" ||
-      Boolean(page.value?.artifacts.length) ||
-      origin?.kind === "source" ||
-      chats.status === "rejected" ||
-      chats.value.items.length > 0 ||
-      chats.value.failed
-    );
-  });
-  // The current request starts lazy loading, but stepping aside neither cancels
-  // pending sources nor replaces their cached results. Draw only once every
-  // source has answered so the panel never opens empty or grows in steps.
-  const settled$ = computed(async (get) => {
-    return (await get(panel.requested$)) ? await get(settledContent$) : null;
+    return page.status === "rejected" || page.value !== null;
   });
   const expandedSections$ = state({
     chats: false,
@@ -345,7 +217,7 @@ export function createChatResourceSignals(
       },
     ),
     content$,
-    settled$,
+    ready$,
     catalog,
     ...panel,
   };

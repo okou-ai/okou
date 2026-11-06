@@ -2,15 +2,9 @@ import {
   artifactCatalogContract,
   type ArtifactSummary,
 } from "@okouai/api-contracts/contracts/artifact-catalog";
-import {
-  userPreferencesContract,
-  type UpdateUserPreferencesRequest,
-  type UserPreferencesResponse,
-} from "@okouai/api-contracts/contracts/user-preferences";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { act, fireEvent, screen, within } from "@testing-library/react";
-import { vi } from "vitest";
-import { setupPage } from "../../../__tests__/page-helper.ts";
+import { screen, waitFor, within } from "@testing-library/react";
+import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   artifactSummary,
@@ -23,9 +17,6 @@ import {
 
 export function createChatResourcesHelpers(context: TestContext) {
   return {
-    recordPreferenceUpdates: (enabled: boolean, hold?: Promise<void>) => {
-      return recordPreferenceUpdates(context, enabled, hold);
-    },
     setupResources: (options?: Parameters<typeof setupResources>[1]) => {
       return setupResources(context, options);
     },
@@ -41,48 +32,27 @@ export function createChatResourcesHelpers(context: TestContext) {
 const REPORT_URL = "https://files.example.test/report.pdf";
 export const RESOURCE_ARTIFACT_ID = "e0000000-0000-4000-a000-000000000999";
 
-export function installResourceGeometry(initialGutter: number) {
-  let gutter = initialGutter;
-  const original = HTMLElement.prototype.getBoundingClientRect;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-    function (this: HTMLElement) {
-      if (Object.hasOwn(this.dataset, "scrollContainer")) {
-        return new DOMRect(0, 80, 1800, 700);
-      }
-      if (Object.hasOwn(this.dataset, "messageContainer")) {
-        return new DOMRect(900 - gutter, 80, 900, 700);
-      }
-      return original.call(this);
-    },
+/** Open the chat's resource panel and wait for its complete content. */
+export async function openResources() {
+  click(
+    await waitFor(() => {
+      return resourceButton();
+    }),
   );
-  return (nextGutter: number, notifyResize = true) => {
-    act(() => {
-      gutter = nextGutter;
-      if (notifyResize) {
-        fireEvent(window, new Event("resize"));
-      }
-    });
-  };
+  return await screen.findByRole("region", { name: "Artifacts and chats" });
 }
 
 export async function setupResources(
   context: TestContext,
   options: {
-    readonly gutter?: number;
-    readonly preferred?: boolean;
+    readonly open?: boolean;
     readonly desktop?: boolean;
     readonly sourceUrl?: boolean;
     readonly aliasUrl?: string;
     readonly mock?: () => void;
   } = {},
 ) {
-  const resize = installResourceGeometry(options.gutter ?? 480);
   context.mocks.browser.matchMedia(options.desktop ?? true);
-  if (options.preferred !== undefined) {
-    context.mocks.data.userPreferences({
-      chatResourcesEnabledByDefault: options.preferred,
-    });
-  }
   const report = {
     ...artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf"),
     ...(options.sourceUrl === false ? {} : { sourceUrl: REPORT_URL }),
@@ -134,42 +104,9 @@ export async function setupResources(
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
   });
   await screen.findByText("Find useful resources");
-  return resize;
-}
-
-/** Serve user preferences from one record and keep every update body. */
-export function recordPreferenceUpdates(
-  context: TestContext,
-  chatResourcesEnabledByDefault: boolean,
-  hold?: Promise<void>,
-) {
-  let preferences: UserPreferencesResponse = {
-    timezone: "Etc/UTC",
-    locale: "en-US",
-    supportedLocales: ["en-US"],
-    pinnedAgentIds: [],
-    sendMode: "enter",
-    cloudBrowserEnabledByDefault: true,
-    chatResourcesEnabledByDefault,
-    theme: "system",
-    colorTheme: null,
-    captureNetworkBodiesRemaining: 0,
-    memoryInitialized: true,
-  };
-  const updates: UpdateUserPreferencesRequest[] = [];
-  context.mocks.api(userPreferencesContract.get, ({ respond }) => {
-    return respond(200, preferences);
-  });
-  context.mocks.api(
-    userPreferencesContract.update,
-    async ({ body, respond }) => {
-      updates.push({ ...body });
-      await hold;
-      preferences = { ...preferences, ...body };
-      return respond(200, preferences);
-    },
-  );
-  return updates;
+  if (options.open ?? true) {
+    await openResources();
+  }
 }
 
 export function resourceButton() {
@@ -204,7 +141,6 @@ export async function setupOverflowResources(
     readonly mock?: (catalog: readonly ArtifactSummary[]) => void;
   } = {},
 ) {
-  const resize = installResourceGeometry(480);
   const media = context.mocks.browser.matchMedia(true);
   context.mocks.data.userPreferences({
     timezone: "Etc/UTC",
@@ -287,9 +223,7 @@ export async function setupOverflowResources(
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
   });
-  const panel = await screen.findByRole("region", {
-    name: "Artifacts and chats",
-  });
+  const panel = await openResources();
   await within(panel).findByText("report-1.pdf");
-  return { panel, media, resize };
+  return { panel, media };
 }

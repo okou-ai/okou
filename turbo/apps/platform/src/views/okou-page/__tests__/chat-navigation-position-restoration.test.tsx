@@ -805,7 +805,6 @@ test("Follow a run link in the current conversation", async () => {
 });
 
 test("Follow the Resources origin link to its parent run", async () => {
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   const linkedRunId = "d0000000-0000-4000-a000-000000000801";
   const peerId = "d0000000-0000-4000-a000-000000000802";
   const linkedText = "Linked message 3";

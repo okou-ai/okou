@@ -14,10 +14,7 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
   openResourceArtifact,
 } from "./chat-navigation-artifact-test-helpers.ts";
-import {
-  installResourceGeometry,
-  resourceButton,
-} from "./chat-resources-test-helpers.ts";
+import { resourceButton } from "./chat-resources-test-helpers.ts";
 import {
   createChatRunFixtures,
   promptEvent,
@@ -35,9 +32,7 @@ async function setupPublishingChat() {
     ...artifactSummary("e0000000-0000-4000-a000-000000000999", "file", TITLE),
     videoSourceUrl: "https://files.example.test/artifact-video-test.mp4",
   };
-  installResourceGeometry(200);
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   const runId = "d0000000-0000-4000-a000-000000000841";
   installRunChat({
     chatEvents: [
@@ -140,9 +135,7 @@ test("Refresh only the notified chat catalog", async () => {
 });
 
 test("Show a newly published video in the already-open artifact gallery", async () => {
-  installResourceGeometry(200);
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   const site = artifactSummary(
     "e0000000-0000-4000-a000-000000000998",
     "hosted-site",

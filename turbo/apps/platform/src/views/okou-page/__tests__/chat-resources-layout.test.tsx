@@ -7,7 +7,6 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -23,126 +22,22 @@ const context = testContext();
 const { setupResources, setupOverflowResources } =
   createChatResourcesHelpers(context);
 
-test("Recompute at 408px from the actual gutter on native viewport resize", async () => {
-  const resize = await setupResources({ gutter: 408 });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  resize(409);
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  resize(408);
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
+test("Start each chat with the resource panel closed", async () => {
+  await setupResources({ open: false });
+  expect(resourceState()).toStrictEqual({ open: false, visible: false });
 });
 
-test("Recompute the gutter after toggling the chat list at fixed browser width", async () => {
-  const setGeometry = await setupResources({ gutter: 408 });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  setGeometry(409, false);
-  await userEvent.click(buttonNamed("Hide chat list"));
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  setGeometry(408, false);
-  await userEvent.click(buttonNamed("Show chat list"));
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-});
-
-test("Recompute the gutter when an artifact pane opens and its divider moves", async () => {
-  const setGeometry = await setupResources();
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  setGeometry(408, false);
-  const panel = resourcePanel()!;
-  await within(panel).findByText("report.pdf");
-  await userEvent.click(
-    queryAllByRoleFast("button", panel).find((button) => {
-      return button.textContent?.includes("report.pdf");
-    })!,
-  );
-  const handle = await screen.findByRole("separator", {
-    name: "Resize sidebar",
-  });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  // Keep this element's geometry separate from the transcript prototype mock.
-  Object.defineProperty(handle.parentElement!, "getBoundingClientRect", {
-    value: () => {
-      return new DOMRect(0, 0, 1440, 900);
-    },
-    configurable: true,
-  });
-  const pointer = {
-    pointerId: 1,
-    pointerType: "touch",
-    isPrimary: true,
-    button: 0,
-    buttons: 1,
-  };
-  fireEvent.pointerDown(handle, { ...pointer, clientX: 840 });
-  setGeometry(409, false);
-  fireEvent.pointerMove(handle, { ...pointer, clientX: 1000 });
-  await waitFor(() => {
-    expect(
-      handle
-        .closest<HTMLElement>('[style*="--chat-thread-sidebar-width"]')
-        ?.style.getPropertyValue("--chat-thread-sidebar-width"),
-    ).toBe("clamp(400px, 440px, calc(100% - 420px))");
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  fireEvent.pointerUp(handle, { ...pointer, buttons: 0, clientX: 1000 });
-});
-
-test("Dismiss a manually opened narrow panel on composer click and keep it closed when the gutter widens", async () => {
-  const resize = await setupResources({ gutter: 200 });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  await userEvent.click(resourceButton());
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
+test("Dismiss the panel on a composer click, like other header panels", async () => {
+  await setupResources();
+  expect(resourceState()).toStrictEqual({ open: true, visible: true });
   await userEvent.click(composer());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  resize(250);
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  resize(409);
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
 });
 
-test("Dismiss a wide panel on composer click or Escape, like other header panels, and keep it closed through layout changes", async () => {
-  const resize = await setupResources();
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
-  await userEvent.click(composer());
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  resize(300);
-  resize(500);
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  await userEvent.click(resourceButton());
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
+test("Dismiss the panel with Escape", async () => {
+  await setupResources();
   act(() => {
     resourcePanel()?.focus();
   });
@@ -150,18 +45,10 @@ test("Dismiss a wide panel on composer click or Escape, like other header panels
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  resize(300);
-  resize(500);
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
 });
 
-test("Dismiss a narrow panel when keyboard focus moves to the composer", async () => {
-  const resize = await setupResources({ gutter: 200 });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
+test("Dismiss the panel when keyboard focus moves to the composer", async () => {
+  await setupResources({ open: false });
   await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
@@ -172,17 +59,10 @@ test("Dismiss a narrow panel when keyboard focus moves to the composer", async (
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  resize(500);
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
 });
 
 test("Toggle resources on mobile and dismiss them from the composer", async () => {
-  await setupResources({ gutter: 16, desktop: false });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
+  await setupResources({ open: false, desktop: false });
   await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
@@ -194,10 +74,7 @@ test("Toggle resources on mobile and dismiss them from the composer", async () =
 });
 
 test("Toggle the artifact panel with the keyboard", async () => {
-  const resize = await setupResources({ gutter: 200 });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
+  await setupResources({ open: false });
   act(() => {
     resourceButton().focus();
   });
@@ -209,18 +86,12 @@ test("Toggle the artifact panel with the keyboard", async () => {
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
-  resize(500);
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
 });
 
 test("Return focus to the resource trigger when Escape dismisses its content", async () => {
   await setupResources();
   const user = userEvent.setup();
-  const panel = await screen.findByRole("region", {
-    name: "Artifacts and chats",
-  });
+  const panel = resourcePanel()!;
   act(() => {
     resourceButton().focus();
   });
@@ -241,15 +112,7 @@ test("Return focus to the resource trigger when Escape dismisses its content", a
 });
 
 test("Preserve category expansion controls after switching to mobile", async () => {
-  const { media, resize } = await setupOverflowResources(4);
-  resize(200);
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  await userEvent.click(resourceButton());
-  const panel = await screen.findByRole("region", {
-    name: "Artifacts and chats",
-  });
+  const { panel, media } = await setupOverflowResources(4);
   await userEvent.click(
     buttonNamed(
       "Show more",

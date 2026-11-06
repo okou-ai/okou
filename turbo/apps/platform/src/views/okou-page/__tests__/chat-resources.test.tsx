@@ -21,21 +21,17 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createChatResourcesHelpers,
   RESOURCE_ARTIFACT_ID,
-  installResourceGeometry,
   resourceButton,
   resourcePanel,
   resourceState,
 } from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
-const { setupOverflowResources, setupResources, recordPreferenceUpdates } =
+const { setupOverflowResources, setupResources } =
   createChatResourcesHelpers(context);
 
 test("Open an empty chat's panel on press while it loads, then replace the loading state with its hint", async () => {
-  installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
-  const preferenceSaved = createDeferredPromise<void>(context.signal);
-  recordPreferenceUpdates(true, preferenceSaved.promise);
   mockArtifactConversation(context, {
     catalog: [],
     artifactRuns: () => {
@@ -59,10 +55,8 @@ test("Open an empty chat's panel on press while it loads, then replace the loadi
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
   });
   await screen.findByTestId("chat-thread-header-title");
-  // The saved default asks for the panel, but an automatic opening waits for
-  // something to show. The button still takes a press meanwhile.
+  // Nothing opens or loads on its own; the press opens the panel at once.
   expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
   click(resourceButton());
   const panel = await screen.findByRole("region", {
     name: "Artifacts and chats",
@@ -81,13 +75,10 @@ test("Open an empty chat's panel on press while it loads, then replace the loadi
     ),
   ).toBeInTheDocument();
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
-  preferenceSaved.resolve();
 });
 
 test("Open a pressed panel at once, draw its resources complete, and reuse them when reopened", async () => {
-  installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, {
     catalog: [],
     chatEvents: [
@@ -172,47 +163,8 @@ test("Open a pressed panel at once, draw its resources complete, and reuse them 
   expect(within(reopened).queryByRole("status")).not.toBeInTheDocument();
 });
 
-test("Open the pending resources at once on a press after the gutter narrows", async () => {
-  const resize = installResourceGeometry(480);
-  context.mocks.browser.matchMedia(true);
-  mockArtifactConversation(context, { catalog: [], chatEvents: [] });
-  const response = createDeferredPromise<void>(context.signal);
-  context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
-    await response.promise;
-    return respond(200, {
-      artifacts: [artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf")],
-      nextCursor: null,
-    });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-  });
-  await screen.findByTestId("chat-thread-header-title");
-  // The saved default starts loading while the panel has room.
-  expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  resize(200);
-  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
-  expect(resourceState()).toStrictEqual({ open: false, visible: false });
-
-  click(resourceButton());
-  const panel = await screen.findByRole("region", {
-    name: "Artifacts and chats",
-  });
-  expect(
-    within(panel).getByRole("status", { name: "Loading artifacts" }),
-  ).toBeInTheDocument();
-  response.resolve();
-  await expect(
-    within(panel).findByText("report.pdf"),
-  ).resolves.toBeInTheDocument();
-  expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
-});
-
 test("Display a resource loading error without showing an empty state", async () => {
-  installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, { catalog: [], chatEvents: [] });
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(500, {
@@ -238,10 +190,8 @@ test("Display a resource loading error without showing an empty state", async ()
 });
 
 test("Name the closed resource trigger in a tooltip until the panel opens", async () => {
-  await setupResources({ preferred: false });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
+  await setupResources({ open: false });
+  expect(resourceState()).toStrictEqual({ open: false, visible: false });
   const user = userEvent.setup();
   await user.hover(resourceButton());
   const tooltip = await screen.findByText("Artifacts and chats");
@@ -296,9 +246,6 @@ test("Expand and collapse the artifacts list in place", async () => {
 
 test("Show artifacts in the floating panel while links remain in the transcript", async () => {
   await setupResources();
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
   const panel = resourcePanel()!;
   expect(resourceButton()).not.toHaveAttribute("aria-haspopup");
   expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
@@ -322,11 +269,7 @@ test("Show artifacts in the floating panel while links remain in the transcript"
 test.each([0, 20])(
   "Show empty resources for a link-only chat with a link in message %i",
   async (linkIndex) => {
-    installResourceGeometry(480);
     context.mocks.browser.matchMedia(true);
-    context.mocks.data.userPreferences({
-      chatResourcesEnabledByDefault: false,
-    });
     mockArtifactConversation(context, {
       catalog: [],
       chatEvents: Array.from({ length: 21 }, (_, index) => {

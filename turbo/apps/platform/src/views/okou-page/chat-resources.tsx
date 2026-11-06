@@ -25,7 +25,6 @@ import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-c
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { openThreadCatalogArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { copyChatResourceArtifact$ } from "../../signals/chat-page/chat-resources.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
@@ -72,23 +71,13 @@ function ChatResourcesButtonInner({
   const transitioning = useChatHeaderTransitioning(thread);
   const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
-  const chosen = useGet(resources.chosen$);
-  const instantOpening = useGet(resources.instantOpening$);
-  const finishOpening = useSet(resources.finishOpening$);
-  const press = useSet(resources.press$);
-  const requested = useLastResolved(resources.requested$) ?? false;
-  const settled = useLastResolved(resources.settled$) ?? null;
-  // A press opens the panel at once and its body shows the loading state, like
-  // every other header panel. An automatic opening waits for something to show.
-  const shown =
-    chosen === true || (chosen === null && requested && settled === true);
+  const open = useGet(resources.open$);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
   const collisionBoundary = useGet(resources.collisionBoundary$);
   const popupAnchor = useGet(resources.popupAnchor$);
   const setOpen = useSet(resources.setOpen$);
-  const rootSignal = useGet(rootSignal$);
-  const visible = !transitioning && shown && boundary !== null;
+  const visible = !transitioning && open && boundary !== null;
   const copyLabel = t(($) => {
     return $.chat.resources.copyLink;
   });
@@ -103,18 +92,15 @@ function ChatResourcesButtonInner({
     <Popover
       open={visible}
       modal={false}
-      onOpenChangeComplete={finishOpening}
       onOpenChange={(nextOpen, details) => {
-        if (details.reason === "trigger-press") {
-          // The preference outlives the page.
-          if (!transitioning) {
-            detach(press(!shown, rootSignal), Reason.DomCallback);
-          }
+        if (nextOpen && transitioning) {
+          details.cancel();
           return;
         }
+        // The popup is positioned against the transcript, so Base UI treats a
+        // press on the trigger as outside; the trigger press toggles instead.
         const outside =
           details.reason === "outside-press" || details.reason === "focus-out";
-        // The trigger's own press toggles above.
         if (
           !nextOpen &&
           outside &&
@@ -129,7 +115,7 @@ function ChatResourcesButtonInner({
     >
       <ChatResourcesTrigger
         thread={thread}
-        open={shown}
+        open={visible}
         loading={transitioning}
         largeTarget={largeTarget}
       />
@@ -148,31 +134,48 @@ function ChatResourcesButtonInner({
         side="bottom"
         sideOffset={0}
         align="end"
-        // Automatic opening must never take focus away from the composer.
+        // The panel shares the chat's keyboard context; focus stays put.
         initialFocus={false}
         aria-label={t(($) => {
           return $.chat.resources.title;
         })}
-        className={cn(
-          "flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
-          // A press needs no transparent starting frame; positioning still owns
-          // hiding the popup until its coordinates are ready.
-          instantOpening &&
-            "data-open:transition-none data-starting-style:opacity-100 data-starting-style:[transform:none]",
-        )}
+        className="flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0"
       >
-        {!visible ? null : settled === null ? (
-          <ChatResourcesSkeleton />
-        ) : (
-          <ChatResourcesBody
+        {visible ? (
+          <ChatResourcesContent
             thread={thread}
             copyLabel={copyLabel}
             copyGlyph={copyGlyph}
             copyTooltip={copyTooltip}
           />
-        )}
+        ) : null}
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** Loads only while shown, then draws every source at once. */
+function ChatResourcesContent({
+  thread,
+  copyLabel,
+  copyGlyph,
+  copyTooltip,
+}: {
+  readonly thread: ChatPanelSignals;
+  readonly copyLabel: string;
+  readonly copyGlyph: ReactNode;
+  readonly copyTooltip: ReactNode;
+}) {
+  const ready = useLastResolved(thread.resources.ready$) ?? false;
+  return ready ? (
+    <ChatResourcesBody
+      thread={thread}
+      copyLabel={copyLabel}
+      copyGlyph={copyGlyph}
+      copyTooltip={copyTooltip}
+    />
+  ) : (
+    <ChatResourcesSkeleton />
   );
 }
 

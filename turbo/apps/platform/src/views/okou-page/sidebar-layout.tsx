@@ -575,7 +575,6 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
         {children}
       </SidebarWorkspace>
     </div>,
-    { measureWidth: true },
   );
 }
 
