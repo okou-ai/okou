@@ -2,7 +2,8 @@ import {
   attachmentPreviewSignalsFor,
   type AttachmentPreviewSignals,
 } from "../attachment-resource-url.ts";
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
+import type { ChatAttachment } from "./chat-draft.ts";
 import {
   openArtifactInOpenSidebar$,
   openArtifactSidebar$,
@@ -25,10 +26,7 @@ import { onRef, resetSignal } from "../utils.ts";
 import { createObjectUrlResource } from "../object-url-resource.ts";
 import { createArtifactDiagramPreviewSignals } from "../artifact-diagram-preview.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import type {
-  ChatThreadArtifactGoogleDriveRecovery,
-  ImageAnnotation,
-} from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatThreadArtifactGoogleDriveRecovery } from "@okouai/api-contracts/contracts/chat-threads";
 import { createZoomableImageCanvasSignals } from "../zoomable-image-canvas.ts";
 
 // ---------------------------------------------------------------------------
@@ -93,6 +91,21 @@ type AttachmentPreviewSource =
   | { readonly url: string; readonly file?: undefined }
   | { readonly url?: string; readonly file: File };
 
+/** The image a viewer hands to the annotation editor. */
+export interface AnnotationImage {
+  readonly url: string;
+  readonly preview?: AttachmentPreviewSignals;
+}
+
+/**
+ * A composer draft attachment the viewer may mark up. The viewer reads its
+ * upload and marks live, and its composer opens the editor on it.
+ */
+export interface AttachmentAnnotationTarget {
+  readonly attachment: ChatAttachment;
+  readonly annotate$: Command<void, [ChatAttachment, AnnotationImage]>;
+}
+
 type AttachmentImageLightboxInput = AttachmentPreviewSource & {
   readonly catalogArtifactId?: string;
   /** Reuse the initiating surface's already resolved credential. */
@@ -102,10 +115,7 @@ type AttachmentImageLightboxInput = AttachmentPreviewSource & {
    * draft. Artifacts and sent messages open the same lightbox without it, so
    * the annotate affordance simply is not there for something immutable.
    */
-  readonly annotationTarget?: {
-    readonly annotations: ImageAnnotation | null;
-    readonly open: () => void;
-  };
+  readonly annotationTarget?: AttachmentAnnotationTarget;
   readonly filename?: string;
   readonly threadId?: string;
   readonly artifact?: AttachmentArtifactMetadata;
@@ -192,6 +202,20 @@ const disposeLightboxSession$ = command(({ set }) => {
  */
 export const closeLightboxImmediately$ = command(({ set }) => {
   set(disposeLightboxSession$);
+});
+
+/** Hands the previewed draft image to its composer's annotation editor. */
+export const annotateLightboxImage$ = command(({ get, set }) => {
+  const lightbox = get(internalLightboxState$);
+  if (lightbox?.kind !== "image" || !lightbox.annotationTarget) {
+    return;
+  }
+  const { attachment, annotate$ } = lightbox.annotationTarget;
+  set(annotate$, attachment, { url: lightbox.url, preview: lightbox.preview });
+  // The editor owns the whole surface while it is open, so the read-only
+  // viewer steps aside — instantly, or the two dialogs cross-fade and the
+  // modal appears to jump.
+  set(closeLightboxImmediately$);
 });
 
 const disposeLightboxForDialogUnmountToken$ = command(

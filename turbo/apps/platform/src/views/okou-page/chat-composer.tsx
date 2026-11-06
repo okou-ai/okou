@@ -6554,8 +6554,7 @@ function ComposerAttachments({ signals }: { signals: ComposerSignals }) {
   return withChatScrollLayout(
     <AttachmentChips
       attachments={attachments}
-      annotationSignals={signals.imageAnnotation}
-      annotationActions={signals.draft}
+      previewHost={signals}
       onRemove={(attachment) => {
         removeAttachment(attachment);
         notifyDraftChanged();
