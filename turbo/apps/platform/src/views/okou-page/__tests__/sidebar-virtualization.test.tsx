@@ -131,7 +131,11 @@ test("Restore the mobile chat-list scroll position after reopening the sidebar",
   mockViewportHeight(() => {
     return 5 * ROW_HEIGHT;
   }, threadCount);
-  await setupPage({ context, path: "/agents" });
+  await setupPage({
+    context,
+    path: "/agents",
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
   const agentCard = await screen.findByText("Nova");
   expect(agentCard).toBeInTheDocument();
   click(screen.getByLabelText("Open menu"));
@@ -490,7 +494,11 @@ test("Remeasure the drawer chat list when the Manage section collapses and expan
     const manage = document.getElementById("sidebar-manage-content");
     return manage?.hidden ? 12 * ROW_HEIGHT : 5 * ROW_HEIGHT;
   });
-  await setupPage({ context, path: "/agents" });
+  await setupPage({
+    context,
+    path: "/agents",
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
   await screen.findByText("Nova");
 
   const drawer = openDrawerChatList();
@@ -533,7 +541,12 @@ test("Remeasure the drawer chat list when a service notice arrives and is dismis
     );
     return notice ? 5 * ROW_HEIGHT : 12 * ROW_HEIGHT;
   });
-  await setupPage({ context, host: "app.okou.ai", path: "/agents" });
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: "/agents",
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
   await screen.findByText("Nova");
 
   const drawer = openDrawerChatList();

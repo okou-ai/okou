@@ -31,18 +31,18 @@ const CHAT_LIST_PATH = `/agents/${CHAT_LIST_AGENT_ID}/chat`;
 
 const legacyEnvironments = [
   {
-    name: "the default switch setting in a mobile PWA",
+    name: "a disabled switch in a mobile PWA",
     caseId: 71,
     standalone: true,
     desktop: false,
-    featureSwitches: {},
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   },
   {
-    name: "the default switch setting in a regular mobile browser",
+    name: "a disabled switch in a regular mobile browser",
     caseId: 72,
     standalone: false,
     desktop: false,
-    featureSwitches: {},
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   },
   {
     name: "an enabled switch in a desktop PWA",

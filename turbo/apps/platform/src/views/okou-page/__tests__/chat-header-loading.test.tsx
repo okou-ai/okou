@@ -3,6 +3,7 @@ import { expect, test } from "vitest";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -160,7 +161,12 @@ async function setupHeaders({
       );
     },
   );
-  await setupPage({ context, path, ...workspace.pageOptions });
+  await setupPage({
+    context,
+    path,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
   await waitFor(() => {
     expect(fastButton("Share messages")).toHaveAttribute(
       "aria-disabled",

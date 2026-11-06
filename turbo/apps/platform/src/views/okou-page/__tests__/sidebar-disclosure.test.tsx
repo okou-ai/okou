@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click, queryAllByRoleFast } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -24,7 +25,11 @@ test.each([
     const user = userEvent.setup({ delay: null });
     mockMobileLayout();
     prepareDefaultAgent();
-    await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    await setupSidebarPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+    });
 
     click(screen.getByLabelText("Open menu"));
     const drawer = mobileSidebar();

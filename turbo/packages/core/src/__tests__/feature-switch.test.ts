@@ -41,6 +41,25 @@ describe("isFeatureEnabled", () => {
     }
   });
 
+  it.each([
+    FeatureSwitchKey.ChatMessagePdf,
+    FeatureSwitchKey.PwaNavigation,
+    FeatureSwitchKey.SidebarSubscriptionUsage,
+  ])("releases %s to everyone and honors explicit opt-outs", (key) => {
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const [context, enabled] of [
+      [{}, true],
+      [{ userId: "external-user", orgId: "external-org" }, true],
+      [staff, true],
+      [{ orgId: "external-org", overrides: { [key]: false } }, false],
+      [{ ...staff, overrides: { [key]: false } }, false],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
+  });
+
   it.each([FeatureSwitchKey.ConnectorChatAccountAccess])(
     "defaults %s to staff and honors Lab overrides",
     (key) => {
@@ -359,7 +378,7 @@ describe("getFeatureSwitchMetadata", () => {
       "alpha",
     );
     expect(
-      metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
+      metadata[FeatureSwitchKey.ConnectorChatAccountAccess].rolloutStage,
     ).toBe("beta");
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
   });
