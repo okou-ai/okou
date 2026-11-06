@@ -30,6 +30,7 @@ async fn actual_formatted_home_checkpoint_retains_transaction_until_cleanup() {
         device_pool: device_pool.clone(),
     });
     let mut factory = FirecrackerFactory {
+        snapshot_memory: None,
         home_drive_pressure: None,
         config: test_config(dir.path().join("factory")),
         factory_paths,
@@ -143,6 +144,7 @@ fn cancelled_owned_home_create_cleans_workspace_after_physical_io_finishes() {
             device_pool: device_pool.clone(),
         });
         let mut factory = FirecrackerFactory {
+            snapshot_memory: None,
             home_drive_pressure: None,
             config: test_config(dir.path().join("factory")),
             factory_paths,

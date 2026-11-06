@@ -56,6 +56,7 @@ mod runtime;
 mod runtime_dirs;
 mod sandbox;
 mod snapshot;
+mod snapshot_memory;
 mod snapshot_mount_namespace;
 
 pub use api::{ApiClient, ApiError, BalloonStatistics};
