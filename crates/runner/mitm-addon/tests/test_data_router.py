@@ -500,6 +500,7 @@ async def test_native_http1_discards_request_ids_without_value_conversion(
         *discarded[:1],
         (b"Content-Length", str(len(body)).encode()),
         (b"X-Okou-Data-Request-Ids", b"near match"),
+        (b"X-Okou-Data-Request-Ix", b"same-length near match"),
         *discarded[1:],
         (b"x-keep", b"second"),
     )
@@ -508,6 +509,7 @@ async def test_native_http1_discards_request_ids_without_value_conversion(
         (b"X-Keep", b"first\xff"),
         (b"Content-Length", str(len(body)).encode()),
         (b"X-Okou-Data-Request-Ids", b"near match"),
+        (b"X-Okou-Data-Request-Ix", b"same-length near match"),
         (b"x-keep", b"second"),
         (b"Authorization", b"Bearer service-token"),
     )
