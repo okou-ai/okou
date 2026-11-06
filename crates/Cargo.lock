@@ -1088,6 +1088,7 @@ dependencies = [
  "serde",
  "serde_json",
  "shell-quote",
+ "tar",
  "tokio",
  "tokio-util",
 ]

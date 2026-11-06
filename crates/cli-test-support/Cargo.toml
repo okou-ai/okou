@@ -16,6 +16,7 @@ test-support = [
     "dep:serde",
     "dep:serde_json",
     "dep:shell-quote",
+    "dep:tar",
     "dep:tokio",
     "dep:tokio-util",
 ]
@@ -30,6 +31,7 @@ rustix = { workspace = true, optional = true, features = ["process", "std"] }
 serde = { workspace = true, optional = true, features = ["derive", "std"] }
 serde_json = { workspace = true, optional = true, features = ["raw_value", "std"] }
 shell-quote = { workspace = true, optional = true }
+tar = { workspace = true, optional = true }
 tokio = { workspace = true, optional = true, features = ["fs", "io-util", "macros", "net", "process", "rt", "sync", "time"] }
 tokio-util = { workspace = true, optional = true, features = ["rt"] }
 

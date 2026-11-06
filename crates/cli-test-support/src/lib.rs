@@ -14,4 +14,5 @@ pub mod json_fixture;
 pub mod mock_build;
 pub mod process_session;
 pub mod readiness;
+pub mod tar_fixture;
 pub mod thread;
