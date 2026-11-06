@@ -59,10 +59,27 @@ async function sharedGrants(
   );
 }
 
+async function claimAndCancel(
+  actor: ApiTestUser,
+  agentId: string,
+  runnerGroup: string,
+) {
+  const queued = await sendChatRun(actor, {
+    agentId,
+    prompt: "use the current connector permission definitions",
+  });
+  const { claim, sandboxHeaders } = await claimChatRun(
+    runnerGroup,
+    queued.runId,
+  );
+  await cancelChatRun(actor, queued.runId, sandboxHeaders);
+  return claim;
+}
+
 describe.each([false, true])(
   "Runner claim current connector permissions (Chat accounts: %s)",
   (chatAccounts) => {
-    it("uses catalog policy changes published after the Run was queued", async () => {
+    it("uses current permission definitions across warm claims, publication and rollback", async () => {
       const publisher = (
         await setupApp({
           context,
@@ -81,104 +98,160 @@ describe.each([false, true])(
       await connectors.updateFeatureSwitches(actor, {
         connectorChatAccountAccess: chatAccounts,
       });
-      const queued = await sendChatRun(actor, {
-        agentId,
-        prompt: "use the current Figma catalog policy",
-      });
-      const artifact = connectorCatalogArtifactSchema.parse(
+      const original = connectorCatalogArtifactSchema.parse(
         structuredClone(API_TEST_CONNECTOR_CATALOG_ARTIFACT),
       );
-      artifact.catalogVersion = `2099-11-06.${randomUUID()}`;
+      original.catalogVersion = `2099-11-06.${randomUUID()}`;
+      async function publish(artifact: typeof original) {
+        const raw = Buffer.from(JSON.stringify(artifact));
+        const catalogDigest = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
+        const key = `connectors/v4/releases/${artifact.catalogVersion}/catalog.json`;
+        const bundledConnector = artifact.connectors.find((connector) => {
+          return connector.slug === "nintendo-store";
+        });
+        if (bundledConnector?.skill.kind !== "bundled") {
+          throw new Error("Expected the baseline Nintendo Skill bundle");
+        }
+        const receiptKey = `connectors/skill-bundles/v1/${catalogDigest.slice(7)}.json`;
+        const receipt = Buffer.from(
+          JSON.stringify({
+            version: 1,
+            catalogDigest,
+            skills: [
+              {
+                slug: bundledConnector.slug,
+                sourceVersionId: bundledConnector.skill.versionId,
+                bundle: {
+                  sha256: baselineSkillBundle.sha256,
+                  archiveBytes: baselineSkillBundle.archiveBytes,
+                },
+              },
+            ],
+          }),
+        );
+        const pointer = Buffer.from(
+          JSON.stringify({
+            catalogVersion: artifact.catalogVersion,
+            catalogKey: key,
+            catalogDigest,
+          }),
+        );
+        const send = context.mocks.s3.send.getMockImplementation();
+        if (!send) {
+          throw new Error("Expected the actor object-storage fixture");
+        }
+        context.mocks.s3.send.mockImplementation((command: unknown) => {
+          if (command instanceof GetObjectCommand) {
+            const bytes =
+              command.input.Key === CONNECTOR_CATALOG_ACTIVE_KEY
+                ? pointer
+                : command.input.Key === key
+                  ? raw
+                  : command.input.Key === receiptKey
+                    ? receipt
+                    : undefined;
+            if (bytes) {
+              return Promise.resolve({
+                ContentLength: bytes.length,
+                Body: {
+                  async *[Symbol.asyncIterator]() {
+                    yield bytes;
+                  },
+                },
+              });
+            }
+          }
+          return send(command);
+        });
+        const published = await accept(
+          publisher.sync({
+            headers: { authorization: "Bearer test-cron-secret" },
+          }),
+          [200],
+        );
+        expect(published.body).toStrictEqual({
+          outcome: "accepted",
+          failureCode: null,
+        });
+      }
+
+      await publish(original);
+      const first = await claimAndCancel(actor, agentId, runnerGroup);
+      expect(first.networkPolicies?.figma).toStrictEqual({
+        allow: ["file_content:read"],
+        deny: [],
+        ask: [],
+        unknownPolicy: "allow",
+      });
+      const queued = await sendChatRun(actor, {
+        agentId,
+        prompt: "use definitions published after this Run was queued",
+      });
+      const artifact = connectorCatalogArtifactSchema.parse(
+        structuredClone(original),
+      );
+      // The content digest changes even when the published version is reused.
       const figma = artifact.connectors.find((connector) => {
         return connector.slug === "figma";
       });
       if (figma?.firewall.kind !== "generated") {
         throw new Error("Expected the generated Figma firewall");
       }
+      const api = figma.firewall.config.apis[0];
+      if (!api) {
+        throw new Error("Expected the Figma API");
+      }
+      api.permissions = [
+        ...(api.permissions ?? []),
+        {
+          name: "file_comments:read",
+          rules: ["GET /v1/files/{file_key}/comments"],
+        },
+      ];
       figma.firewall.defaultAllowed = [];
       figma.firewall.defaultUnknownPolicy = "ask";
-      const raw = Buffer.from(JSON.stringify(artifact));
-      const catalogDigest = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
-      const key = `connectors/v4/releases/${artifact.catalogVersion}/catalog.json`;
-      const bundledConnector = artifact.connectors.find((connector) => {
-        return connector.slug === "nintendo-store";
-      });
-      if (bundledConnector?.skill.kind !== "bundled") {
-        throw new Error("Expected the baseline Nintendo Skill bundle");
-      }
-      const receiptKey = `connectors/skill-bundles/v1/${catalogDigest.slice(7)}.json`;
-      const receipt = Buffer.from(
-        JSON.stringify({
-          version: 1,
-          catalogDigest,
-          skills: [
-            {
-              slug: bundledConnector.slug,
-              sourceVersionId: bundledConnector.skill.versionId,
-              bundle: {
-                sha256: baselineSkillBundle.sha256,
-                archiveBytes: baselineSkillBundle.archiveBytes,
-              },
-            },
-          ],
-        }),
-      );
-      const pointer = Buffer.from(
-        JSON.stringify({
-          catalogVersion: artifact.catalogVersion,
-          catalogKey: key,
-          catalogDigest,
-        }),
-      );
-      const send = context.mocks.s3.send.getMockImplementation();
-      if (!send) {
-        throw new Error("Expected the actor object-storage fixture");
-      }
-      context.mocks.s3.send.mockImplementation((command: unknown) => {
-        if (command instanceof GetObjectCommand) {
-          const bytes =
-            command.input.Key === CONNECTOR_CATALOG_ACTIVE_KEY
-              ? pointer
-              : command.input.Key === key
-                ? raw
-                : command.input.Key === receiptKey
-                  ? receipt
-                  : undefined;
-          if (bytes) {
-            return Promise.resolve({
-              ContentLength: bytes.length,
-              Body: {
-                async *[Symbol.asyncIterator]() {
-                  yield bytes;
-                },
-              },
-            });
-          }
-        }
-        return send(command);
-      });
-      const published = await accept(
-        publisher.sync({
-          headers: { authorization: "Bearer test-cron-secret" },
-        }),
-        [200],
-      );
-      expect(published.body).toStrictEqual({
-        outcome: "accepted",
-        failureCode: null,
-      });
+      await publish(artifact);
       const { claim, sandboxHeaders } = await claimChatRun(
         runnerGroup,
         queued.runId,
       );
       expect(claim.networkPolicies?.figma).toStrictEqual({
         allow: [],
-        deny: ["file_content:read"],
+        deny: ["file_comments:read", "file_content:read"],
         ask: [],
         unknownPolicy: "ask",
       });
       expect(claim.networkPolicyRefreshes?.figma).toBeUndefined();
       await cancelChatRun(actor, queued.runId, sandboxHeaders);
+
+      const rollbackQueued = await sendChatRun(actor, {
+        agentId,
+        prompt: "use the previous catalog after rollback",
+      });
+      await publish(original);
+      const restored = await claimChatRun(runnerGroup, rollbackQueued.runId);
+      expect(restored.claim.networkPolicies?.figma).toStrictEqual({
+        allow: ["file_content:read"],
+        deny: [],
+        ask: [],
+        unknownPolicy: "allow",
+      });
+      expect(restored.claim.networkPolicyRefreshes?.figma).toBeUndefined();
+      await cancelChatRun(actor, rollbackQueued.runId, restored.sandboxHeaders);
+
+      const removed = connectorCatalogArtifactSchema.parse(
+        structuredClone(original),
+      );
+      removed.catalogVersion = `2099-11-06.${randomUUID()}`;
+      removed.connectors = removed.connectors.filter((connector) => {
+        return connector.slug !== "figma";
+      });
+      await publish(removed);
+      const withoutFigma = await claimAndCancel(actor, agentId, runnerGroup);
+      expect(withoutFigma.connectorRuntimeTargets).not.toContainEqual(
+        expect.objectContaining({ kind: "builtin", connectorSlug: "figma" }),
+      );
+      expect(withoutFigma.networkPolicies?.figma).toBeUndefined();
     });
 
     it.each(["add", "revoke"] as const)(
@@ -235,6 +308,7 @@ describe.each([false, true])(
         await connectors.updateFeatureSwitches(actor, {
           connectorChatAccountAccess: chatAccounts,
         });
+        await claimAndCancel(actor, agentId, runnerGroup);
         const queued = await sendChatRun(actor, {
           agentId,
           prompt: "use the current GitHub permissions at claim",
@@ -342,6 +416,7 @@ describe.each([false, true])(
         await connectors.updateFeatureSwitches(actor, {
           connectorChatAccountAccess: chatAccounts,
         });
+        await claimAndCancel(actor, agentId, runnerGroup);
         const queued = await sendChatRun(actor, {
           agentId,
           prompt: "use the current Slack write grant and its original expiry",
