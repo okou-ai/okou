@@ -572,7 +572,8 @@ final class WorkspaceStoreTests: XCTestCase {
       case "/api/user-preferences":
         return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[\"\(otherAgentID)\"]}")
       case "/api/feature-switches":
-        return ChatHTTPResponse(body: "{\"effectiveSwitches\":{\"chatThreadArchiving\":true}}")
+        return ChatHTTPResponse(
+          body: #"{"effectiveSwitches":{"chatThreadArchiving":true,"singleAgent":true}}"#)
       case "/api/chat-threads/snapshot": return threadSnapshot(title: "Existing chat")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")

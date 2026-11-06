@@ -12,27 +12,42 @@ func enclosingCell(_ view: UIView) -> UICollectionViewCell? {
 }
 
 @MainActor
-func hostingPresentationFrame() async {
+func hostingPresentationFrame(
+  timeout: Duration = .seconds(3), file: StaticString = #filePath, line: UInt = #line
+) async throws {
   // Display-link callbacks prepare upcoming frames. Span a complete presented frame
-  // before interacting with native controls on CI.
-  await withCheckedContinuation { continuation in
-    let target = HostingDisplayFrame(continuation)
-    let link = CADisplayLink(target: target, selector: #selector(HostingDisplayFrame.display(_:)))
-    link.add(to: .main, forMode: .common)
+  // before interacting with native controls, but let XCTest own the deadline.
+  try Task.checkCancellation()
+  let presented = XCTestExpectation(description: "The native host presented a frame")
+  let target = HostingDisplayFrame(presented)
+  let link = CADisplayLink(target: target, selector: #selector(HostingDisplayFrame.display(_:)))
+  defer { link.invalidate() }
+  link.add(to: .main, forMode: .common)
+  let duration = timeout.components
+  let seconds = Double(duration.seconds) + Double(duration.attoseconds) / 1e18
+  let result: XCTWaiter.Result
+  if timeout > .zero {
+    result = await XCTWaiter.fulfillment(of: [presented], timeout: seconds)
+  } else {
+    result = .timedOut
   }
+  try Task.checkCancellation()
+  _ = try XCTUnwrap(
+    result == .completed ? true : nil, "The native host did not present a frame",
+    file: file, line: line)
 }
 
 @MainActor
 private final class HostingDisplayFrame: NSObject {
-  private let continuation: CheckedContinuation<Void, Never>
+  private let presented: XCTestExpectation
   private var remainingCallbacks = 2
-  init(_ continuation: CheckedContinuation<Void, Never>) { self.continuation = continuation }
+  init(_ presented: XCTestExpectation) { self.presented = presented }
   @objc func display(_ link: CADisplayLink) {
     remainingCallbacks -= 1
     guard remainingCallbacks == 0 else { return }
     link.invalidate()
-    let continuation = continuation
-    DispatchQueue.main.async { continuation.resume() }
+    let presented = presented
+    DispatchQueue.main.async { presented.fulfill() }
   }
 }
 
@@ -52,8 +67,11 @@ func eventually(
   async throws
 {
   let deadline = ContinuousClock.now + timeout
-  while !predicate() && ContinuousClock.now < deadline {
-    await hostingPresentationFrame()
+  while !predicate() {
+    try Task.checkCancellation()
+    let remaining = ContinuousClock.now.duration(to: deadline)
+    guard remaining > .zero else { break }
+    try await hostingPresentationFrame(timeout: remaining, file: file, line: line)
   }
   _ = try XCTUnwrap(predicate() ? true : nil, message(), file: file, line: line)
 }

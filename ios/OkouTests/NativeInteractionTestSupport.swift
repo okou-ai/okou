@@ -20,8 +20,8 @@ func mountNativeHost<V: View>(
   window.makeKeyAndVisible()
   host.view.backgroundColor = .systemBackground
   host.view.layoutIfNeeded()
-  await hostingPresentationFrame()
   do {
+    try await hostingPresentationFrame()
     try await eventually(timeout: timeout, message: "The native host did not become ready") {
       ready(window)
     }

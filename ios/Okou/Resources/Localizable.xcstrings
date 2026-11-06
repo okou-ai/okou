@@ -7719,13 +7719,39 @@
       }
     },
     "Discard": {
-      "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Discard"
-          }
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Verwerfen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Descartar" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ignorer" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "खारिज करें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Buang" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Scarta" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "破棄" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "버리기" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Descartar" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "放弃" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "放棄" }
         }
       }
     },
@@ -17279,13 +17305,39 @@
       }
     },
     "Retry": {
-      "extractionState": "manual",
       "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Retry"
-          }
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Erneut versuchen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Reintentar" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Réessayer" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "फिर कोशिश करें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Coba lagi" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Riprova" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "再試行" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "다시 시도" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Tentar novamente" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "重试" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "重試" }
         }
       }
     },
@@ -25061,326 +25113,6 @@
         }
       }
     },
-    "My Okou": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "My Okou" }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Mein Okou" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Mi Okou" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Mon Okou" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "मेरा Okou" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Okou saya" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Il mio Okou" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "マイ Okou" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "내 Okou" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Meu Okou" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "我的 Okou" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "我的 Okou" }
-        }
-      }
-    },
-    "Your instructions for Okou in this workspace": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Your instructions for Okou in this workspace" }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Deine Anweisungen für Okou in diesem Arbeitsbereich" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Tus instrucciones para Okou en este espacio de trabajo" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Vos instructions pour Okou dans cet espace de travail" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस कार्यक्षेत्र में Okou के लिए आपके निर्देश" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Instruksi Anda untuk Okou di ruang kerja ini" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Le tue istruzioni per Okou in questo spazio di lavoro" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "このワークスペースでのあなた専用の Okou への指示" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이 워크스페이스에서 Okou에게 전달할 나만의 지침" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Suas instruções para o Okou neste espaço de trabalho" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "在此工作区中，专属于你的 Okou 指令" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "在此工作區中，專屬於你的 Okou 指令" }
-        }
-      }
-    },
-    "Instructions": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Instructions" }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Anweisungen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Instrucciones" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Instructions" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "निर्देश" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Instruksi" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Istruzioni" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "指示" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "지침" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Instruções" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "指令" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "指令" }
-        }
-      }
-    },
-    "Loading instructions…": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Loading instructions…"
-          }
-        }
-      }
-    },
-    "Write in plain text or use Markdown": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Write in plain text or use Markdown" }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Schreibe in Klartext oder Markdown" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Escribe en texto sin formato o Markdown" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Écrivez en texte brut ou en Markdown" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "सादे टेक्स्ट या Markdown में लिखें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tulis dengan teks biasa atau Markdown" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Scrivi in testo semplice o Markdown" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "プレーンテキストまたは Markdown で記入" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "일반 텍스트 또는 Markdown으로 작성" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Escreva em texto simples ou Markdown" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "支持纯文本和 Markdown" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "支援純文字和 Markdown" }
-        }
-      }
-    },
-    "Used the next time Okou starts working. Work in progress won’t change.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Used the next time Okou starts working. Work in progress won’t change." }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Wird verwendet, wenn Okou das nächste Mal mit der Arbeit beginnt. Laufende Arbeit bleibt unverändert." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Se usarán la próxima vez que Okou empiece a trabajar. El trabajo en curso no cambia." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Utilisées la prochaine fois qu’Okou commence à travailler. Le travail en cours ne change pas." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "Okou जब अगला काम शुरू करेगा तब उपयोग होगा। चल रहे काम में बदलाव नहीं होगा।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Digunakan saat Okou memulai pekerjaan berikutnya. Pekerjaan yang sedang berjalan tidak berubah." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Saranno usate la prossima volta che Okou inizia a lavorare. Il lavoro in corso non cambia." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "Okou が次に仕事を始めるときに使われます。進行中の仕事は変わりません。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "Okou가 다음 작업을 시작할 때 사용됩니다. 진행 중인 작업은 바뀌지 않습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Serão usadas quando o Okou começar o próximo trabalho. O trabalho em andamento não muda." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "Okou 下次开始工作时使用，进行中的工作不会改变。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "Okou 下次開始工作時使用，進行中的工作不會改變。" }
-        }
-      }
-    },
-    "Reload saved instructions": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Reload saved instructions" }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Gespeicherte Anweisungen neu laden" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Recargar instrucciones guardadas" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Recharger les instructions enregistrées" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "सहेजे गए निर्देश फिर लोड करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Muat ulang instruksi tersimpan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Ricarica le istruzioni salvate" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "保存済みの指示を再読み込み" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "저장된 지침 다시 불러오기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Recarregar instruções salvas" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "重新加载已保存的指令" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "重新載入已儲存的指令" }
-        }
-      }
-    },
-    "Your saved instructions changed elsewhere. Your draft is kept. Review or copy it before reloading.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your saved instructions changed elsewhere. Your draft is kept. Review or copy it before reloading."
-          }
-        }
-      }
-    },
-    "Your draft is kept on this device when you close this page or switch workspaces.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Your draft is kept on this device when you close this page or switch workspaces."
-          }
-        }
-      }
-    },
-    "Unsaved changes": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Unsaved changes" }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Ungespeicherte Änderungen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Cambios sin guardar" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Modifications non enregistrées" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "बिना सहेजे बदलाव" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Perubahan belum disimpan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Modifiche non salvate" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "未保存の変更" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "저장하지 않은 변경 사항" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Alterações não salvas" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "有未保存的更改" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "有未儲存的變更" }
-        }
-      }
-    },
     "Save": {
       "extractionState": "manual",
       "localizations": {
@@ -25388,153 +25120,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Save"
-          }
-        }
-      }
-    },
-    "Authorize access": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Authorize access"
-          }
-        }
-      }
-    },
-    "Instructions saved": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Instructions saved" }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Anweisungen gespeichert" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Instrucciones guardadas" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Instructions enregistrées" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "निर्देश सहेजे गए" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Instruksi disimpan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Istruzioni salvate" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "指示を保存しました" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "지침이 저장되었습니다" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Instruções salvas" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "指令已保存" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "指令已儲存" }
-        }
-      }
-    },
-    "Allow %@ for Okou in this workspace": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Allow %@ for Okou in this workspace" }
-        }
-      }
-    },
-    "Allow Okou to use this account across chats in this workspace.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Allow Okou to use this account across chats in this workspace." }
-        }
-      }
-    },
-    "Authorization applies to Okou across chats in this workspace.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Authorization applies to Okou across chats in this workspace." }
-        }
-      }
-    },
-    "Connect a service to make it available to Okou in this workspace.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Connect a service to make it available to Okou in this workspace." }
-        }
-      }
-    },
-    "Connect an account for Okou in this workspace": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Connect an account for Okou in this workspace" }
-        }
-      }
-    },
-    "Connected and authorized for Okou in this workspace.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Connected and authorized for Okou in this workspace." }
-        }
-      }
-    },
-    "Connected and authorized.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Connected and authorized." }
-        }
-      }
-    },
-    "Reset this connector's permissions for Okou in this workspace?": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Reset this connector's permissions for Okou in this workspace?" }
-        }
-      }
-    },
-    "These permissions apply to your account for Okou across chats in this workspace.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": { "state": "translated", "value": "These permissions apply to your account for Okou across chats in this workspace." }
-        }
-      }
-    },
-    "Switches apply to Okou across chats in this workspace. Account choices apply to this chat.": {
-      "extractionState": "manual",
-      "localizations": {
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Switches apply to Okou across chats in this workspace. Account choices apply to this chat."
-          }
-        },
-        "zh-Hans": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "开关应用于此工作区内 Okou 的所有聊天。账号选择仅应用于当前聊天。"
-          }
-        },
-        "zh-Hant": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "開關套用於此工作區內 Okou 的所有聊天。帳號選擇僅套用於目前聊天。"
           }
         }
       }

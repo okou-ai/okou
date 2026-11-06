@@ -9,10 +9,8 @@ struct ChatAgentAvatar: View {
 
   var body: some View {
     let agent = agents?.agents.first(where: { $0.agentId == agentID })
-    let personal = agents?.singleAgentEnabled == true && agent?.isDefaultAgent == true
     OkouAgentAvatar(
-      avatarURL: personal ? nil : agent?.avatarUrl,
-      name: personal ? "Okou" : agent?.displayName ?? "Agent",
+      avatarURL: agent?.avatarUrl, name: agent?.displayName ?? "Agent",
       isDefault: agent?.isDefaultAgent ?? false, size: size)
   }
 }

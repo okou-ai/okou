@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.70](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.69...runner-lifecycle-v0.17.70) (2026-11-06)
+
+
+### Refactoring
+
+* **test-support:** share borrowed tracing event lookup ([#45595](https://github.com/okou-ai/okou/issues/45595)) ([762d9f0](https://github.com/okou-ai/okou/commit/762d9f09b639963f58a5af7188fbdf3c6c0746f9))
+
 ## [0.17.69](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.68...runner-lifecycle-v0.17.69) (2026-11-06)
 
 ## [0.17.68](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.67...runner-lifecycle-v0.17.68) (2026-11-05)

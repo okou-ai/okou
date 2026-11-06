@@ -6,27 +6,6 @@ import tseslint from "typescript-eslint";
 
 const CHECKER = "turbo/scripts/check-storage-dependencies.mjs";
 const BASELINE = "turbo/storage-dependency-baseline.json";
-// One reviewed, retained migration operator may register these exact sites.
-// Once this checker reaches base/main, normal reduction-only ratcheting resumes.
-// Retiring the operator also removes this registration code.
-const CONNECTOR_SKILL_BACKFILL_EXCEPTION = [
-  {
-    file: "turbo/packages/db/scripts/migrations/029-connector-skill-bundles/backfill.ts",
-    dependency:
-      "module:turbo/packages/db/scripts/migrations/029-connector-skill-bundles/source",
-    uses: 16,
-  },
-  {
-    file: "turbo/packages/db/scripts/migrations/029-connector-skill-bundles/source.ts",
-    dependency: "sql:storage_versions",
-    uses: 2,
-  },
-  {
-    file: "turbo/packages/db/scripts/migrations/029-connector-skill-bundles/source.ts",
-    dependency: "sql:storages",
-    uses: 2,
-  },
-];
 const TABLES = new Set([
   "storages",
   "storage_versions",
@@ -462,24 +441,7 @@ if (base === "--inventory") {
       ),
     );
   }
-  // Registration is available only while upgrading from the preceding checker.
-  // A later base already containing it cannot resurrect a retired operator.
-  const registration =
-    existsAt(base, BASELINE) &&
-    existsAt(base, CHECKER) &&
-    !git(["show", base + ":" + CHECKER]).includes(
-      "const CONNECTOR_SKILL_BACKFILL_EXCEPTION =",
-    )
-      ? CONNECTOR_SKILL_BACKFILL_EXCEPTION.filter((site) => {
-          return !allowed.some((previous) => {
-            return (
-              previous.file === site.file &&
-              previous.dependency === site.dependency
-            );
-          });
-        })
-      : [];
-  compare(current, [...allowed, ...registration], false);
+  compare(current, allowed, false);
   compare(inventory(currentSources()), current, true);
   console.log(
     "Storage dependency policy passed: " +

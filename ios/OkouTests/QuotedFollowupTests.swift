@@ -78,7 +78,7 @@ final class QuotedFollowupTests: XCTestCase {
       selection.position(from: selection.beginningOfDocument, offset: range.location))
     let end = try XCTUnwrap(selection.position(from: start, offset: range.length))
     selection.selectedTextRange = selection.textRange(from: start, to: end)
-    await hostingPresentationFrame()
+    try await hostingPresentationFrame()
     let cell = try XCTUnwrap(enclosingCell(selection) as? MessageSelectionCell)
     let quote = try XCTUnwrap(cell.quoteAction())
     let control = UIControl()

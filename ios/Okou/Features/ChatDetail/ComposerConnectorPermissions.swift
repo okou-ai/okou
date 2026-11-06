@@ -2,7 +2,6 @@ import ChatData
 import SwiftUI
 
 struct ComposerConnectorPermissions: View {
-  @Environment(\.singleAgentExperience) private var singleAgent
   let store: ComposerConnectorStore
   let slug: String
   let label: String
@@ -61,9 +60,7 @@ struct ComposerConnectorPermissions: View {
           Text(
             state.connectorScoped
               ? "These permissions apply to this connector across your chats and accounts."
-              : (singleAgent
-                ? "These permissions apply to your account for Okou across chats in this workspace."
-                : "These permissions apply to this Agent across its chats.")
+              : "These permissions apply to this Agent across its chats."
           )
           .okouSectionNote()
         }
@@ -110,9 +107,7 @@ struct ComposerConnectorPermissions: View {
     .confirmationDialog(
       state?.connectorScoped == true
         ? "Reset this connector's permissions?"
-        : (singleAgent
-          ? "Reset this connector's permissions for Okou in this workspace?"
-          : "Reset this connector's permissions for this Agent?"), isPresented: $confirmsReset
+        : "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
     ) {
       Button("Reset to defaults", role: .destructive) { Task { await save([], reset: true) } }
         .disabled(store.isSaving || store.uncertain)

@@ -3,7 +3,6 @@ import SafariServices
 import SwiftUI
 
 struct ConnectorActionCard: View {
-  @Environment(\.singleAgentExperience) private var singleAgent
   let action: ChatConnectorAction
   let store: ConnectorActionStore
   let loadsState: Bool
@@ -78,9 +77,7 @@ struct ConnectorActionCard: View {
           status.account?.label
             ?? (status.chatAccountAccess
               ? String(localized: "Connect an account")
-              : (singleAgent
-                ? String(localized: "Connect an account for Okou in this workspace")
-                : String(localized: "Connect an account for this Agent")))
+              : String(localized: "Connect an account for this Agent"))
         )
         .lineLimit(1, reservesSpace: true).textSelection(.enabled)
         (store.notices[action.id].map { Text($0) } ?? Text(reason(status)))
@@ -101,10 +98,7 @@ struct ConnectorActionCard: View {
     case .select: return "Use this account"
     case .reconnect: return "Reconnect"
     default:
-      if status.connected {
-        return status.chatAccountAccess
-          ? "Connected" : (singleAgent ? "Authorize access" : "Authorize Agent")
-      }
+      if status.connected { return status.chatAccountAccess ? "Connected" : "Authorize Agent" }
       return status.account == nil ? "Connect" : "Reconnect"
     }
   }
@@ -115,16 +109,9 @@ struct ConnectorActionCard: View {
     default:
       if status.complete {
         return status.chatAccountAccess
-          ? "Account connected."
-          : (singleAgent
-            ? "Connected and authorized for Okou in this workspace."
-            : "Connected and authorized for this Agent.")
+          ? "Account connected." : "Connected and authorized for this Agent."
       }
-      if status.connected {
-        return singleAgent
-          ? "Allow Okou to use this account across chats in this workspace."
-          : "Allow this Agent to use the connected account."
-      }
+      if status.connected { return "Allow this Agent to use the connected account." }
       if let reconnectReason = status.account?.reconnectReason {
         if reconnectReason == "configuration_incomplete"
           || reconnectReason == "configuration_invalid"
@@ -141,7 +128,6 @@ struct ConnectorActionCard: View {
 }
 
 struct ConnectorAuthorizationSheet: View {
-  @Environment(\.singleAgentExperience) private var singleAgent
   @Bindable var flow: ConnectorAuthorizationFlow
   let store: ConnectorActionStore
 
@@ -162,9 +148,7 @@ struct ConnectorAuthorizationSheet: View {
           Text(
             flow.status.chatAccountAccess
               ? "Connect this account to make it available in your account settings."
-              : (singleAgent
-                ? "Authorization applies to Okou across chats in this workspace."
-                : "Authorization applies to the Agent in this chat.")
+              : "Authorization applies to the Agent in this chat."
           )
           .okouSectionNote()
         }

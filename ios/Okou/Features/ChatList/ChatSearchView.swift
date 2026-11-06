@@ -126,12 +126,7 @@ struct ChatSearchView: View {
   }
 
   private func agentName(_ id: String) -> String {
-    if workspace.list.singleAgentEnabled
-      && workspace.list.agents.first(where: { $0.agentId == id })?.isDefaultAgent == true
-    {
-      return "Okou"
-    }
-    return workspace.list.agents.first { $0.agentId == id }?.displayName ?? id
+    workspace.list.agents.first { $0.agentId == id }?.displayName ?? id
   }
 
   private func resultButton<Content: View>(threadID: String, @ViewBuilder label: () -> Content)

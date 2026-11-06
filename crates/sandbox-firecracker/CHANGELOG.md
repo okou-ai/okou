@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.73](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.72...sandbox-firecracker-v0.53.73) (2026-11-06)
+
+
+### Refactoring
+
+* **test-support:** share borrowed tracing event lookup ([#45595](https://github.com/okou-ai/okou/issues/45595)) ([762d9f0](https://github.com/okou-ai/okou/commit/762d9f09b639963f58a5af7188fbdf3c6c0746f9))
+
 ## [0.53.72](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.71...sandbox-firecracker-v0.53.72) (2026-11-06)
 
 

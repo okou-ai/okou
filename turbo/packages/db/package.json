@@ -76,7 +76,6 @@
     "test:workflow-storage-retirement": "node --import tsx scripts/migrations/026-retire-workflow-storage/test-cleanup.ts",
     "test:registry-resource-inventory": "node --import tsx scripts/migrations/028-registry-resource-bundles/test-inventory.ts",
     "test:registry-resource-backfill": "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
-    "test:connector-skill-backfill": "node --import tsx --test scripts/migrations/029-connector-skill-bundles/test-backfill.ts scripts/migrations/029-connector-skill-bundles/test-production-plan.ts",
     "test:registry-resource-publication": "node scripts/test-registry-publication.mjs"
   },
   "dependencies": {
