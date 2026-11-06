@@ -102,7 +102,8 @@ owning surface.
 - [Styles](app/styles.md): shared tokens, semantic HTML, component composition,
   and [Clerk customization](app/styles.md#clerk-customization).
 - [UI layering](app/layering.md): scenario choices, implementation links, and checks.
-- [ResizeObserver](app/resize-observer.md): CSS layout and measurement ownership.
+- [ResizeObserver](app/resize-observer.md): the lint ban, orchestrating layout
+  follow-ups in the causing command, and CSS layout and measurement ownership.
 - [onRejection](app/signals/onRejection.md): error-callback misuse, loadable-owned
   request state, and reviewed infrastructure exceptions.
 - [withCleanup](app/signals/withCleanup.md): cleanup anti-patterns, derived request
