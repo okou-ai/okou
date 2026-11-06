@@ -149,6 +149,52 @@ describe("Marketing content handoff", () => {
     await enableActor();
   });
 
+  it("keeps session enrollment independent from the upload request budget", async () => {
+    const client = api();
+    const extraHeaders = {
+      origin,
+      "x-vercel-forwarded-for": `2001:db8:${taskId.slice(0, 4)}:${taskId.slice(4, 8)}::1`,
+    };
+    for (let index = 0; index < 120; index++) {
+      await accept(
+        client.session({ body: {}, headers: auth, extraHeaders }),
+        [200],
+      );
+    }
+
+    const upload = {
+      body: {
+        filename: "feedback.txt",
+        contentType: "text/plain",
+        data: Buffer.from("Feedback").toString("base64"),
+      },
+      headers: auth,
+      extraHeaders,
+    };
+    let uploaded = await accept(client.upload(upload), [200, 429]);
+    expect(uploaded.status).toBe(200);
+    for (let index = 0; index < 120 && uploaded.status === 200; index++) {
+      uploaded = await accept(client.upload(upload), [200, 429]);
+    }
+    expect(uploaded.status).toBe(429);
+    expect(uploaded.body).toMatchObject({ error: { code: "RATE_LIMITED" } });
+
+    const session = await accept(
+      client.session({ body: {}, headers: auth, extraHeaders }),
+      [200],
+    );
+    expect(session.body).toStrictEqual({ ready: true });
+    expect(session.headers.get("set-cookie")).toContain(
+      "__Host-okou-marketing-handoff=",
+    );
+
+    const limitedCreate = await accept(
+      client.create({ body: manifest(), headers: auth, extraHeaders }),
+      [429],
+    );
+    expect(limitedCreate.body.error.code).toBe("RATE_LIMITED");
+  });
+
   it.each([".", ".."])(
     'rejects the special filename "%s" before storing content',
     async (filename) => {

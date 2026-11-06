@@ -221,10 +221,6 @@ const session$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ("status" in context) {
     return context;
   }
-  const limit = await set(uploadBudget$, 0, signal);
-  if (limit) {
-    return limit;
-  }
   const body = await get(bodyResultOf(marketingHandoffsContract.session));
   signal.throwIfAborted();
   if (!body.ok) {

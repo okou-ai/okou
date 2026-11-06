@@ -78,13 +78,14 @@ export const marketingHandoff$ = computed((get) => {
 /** Enroll an enabled App session so Marketing can resolve staff rollout without loading Clerk. */
 export const enrollMarketingHandoffSession$ = command(
   async ({ get }, signal: AbortSignal) => {
-    // Disabled or unprovisioned Marketing does not require session enrollment.
+    // A preceding or rollback API can still rate limit optional enrollment.
+    // Remove 429 after those APIs are neither serving nor retained for rollback (#45568).
     const response = await accept(
       get(apiClient$)(marketingHandoffsContract).session({
         body: {},
         fetchOptions: { signal, credentials: "include" },
       }),
-      [200, 403, 503],
+      [200, 403, 429, 503],
     );
     signal.throwIfAborted();
     return response.status === 200;
