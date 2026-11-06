@@ -16,6 +16,7 @@ import {
   type BrowserSession,
   type BrowserExtension,
   type BrowserViewerConnection,
+  type BrowserViewerAcquisition,
 } from "@okouai/api-contracts/contracts/browser";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -75,6 +76,8 @@ import {
 import { reconcileSharedBrowsers$ } from "./browser-shared-reconcile.service";
 
 interface SharedBrowserInput {
+  readonly viewer?: boolean;
+  readonly operationId?: string;
   readonly initialDisplay?: BrowserDisplaySize;
   readonly orgId: string;
   readonly userId: string;
@@ -515,6 +518,9 @@ const publishSharedMetadata$ = command(
     }
     await publishBrowserSessionChangedSafely(owner.userId, {
       threadId: owner.chatThreadId,
+      ...(input.viewer && input.operationId
+        ? { operationId: input.operationId }
+        : {}),
     });
     signal.throwIfAborted();
     return { kind: "ok", value: meta };
@@ -696,8 +702,9 @@ function sharedBrowserPresent(
   return command(
     async (
       { get, set },
+      includeViewer: boolean,
       signal: AbortSignal,
-    ): Promise<Result<BrowserSession> | null> => {
+    ): Promise<Result<BrowserViewerAcquisition> | null> => {
       const ctx = await get(context$);
       signal.throwIfAborted();
       if (!ctx || ctx.kind === "error") {
@@ -710,7 +717,7 @@ function sharedBrowserPresent(
       }
       const browser = view.browser;
       const operation = await settleIncludingAbort(
-        (async (): Promise<Result<BrowserSession> | null> => {
+        (async (): Promise<Result<BrowserViewerAcquisition>> => {
           const session =
             view.profile.status === "active" && view.profile.providerSessionId
               ? await provider(
@@ -723,15 +730,42 @@ function sharedBrowserPresent(
             ctx.owner,
             signal,
           );
+          const currentBrowser = presentation(
+            browser,
+            view.profile,
+            view.window,
+            session,
+            screenshotUrl,
+          );
+          if (includeViewer && currentBrowser.status === "active") {
+            if (!session?.cdpUrl) {
+              return unavailable();
+            }
+            const viewer = await set(
+              confirmSharedBrowserViewer$,
+              ctx.owner,
+              {
+                browser: currentBrowser,
+                ...browserUseNativeConnection(session),
+              },
+              signal,
+            );
+            return viewer.kind === "error"
+              ? viewer
+              : {
+                  kind: "ok",
+                  value: {
+                    browser: viewer.value.browser,
+                    viewer: viewer.value,
+                  },
+                };
+          }
           return {
             kind: "ok",
-            value: presentation(
-              browser,
-              view.profile,
-              view.window,
-              session,
-              screenshotUrl,
-            ),
+            value: {
+              browser: currentBrowser,
+              ...(includeViewer ? { viewer: null } : {}),
+            },
           };
         })(),
       );
@@ -906,7 +940,16 @@ function sharedBrowserOpen(
         }
       }
       // Reclaim expired lifetimes before the graph captures its current rows.
-      await set(reconcileSharedBrowsers$, ctx.owner, signal);
+      await set(
+        reconcileSharedBrowsers$,
+        {
+          ...ctx.owner,
+          operationId: ctx.mode.input.viewer
+            ? ctx.mode.input.operationId
+            : undefined,
+        },
+        signal,
+      );
       signal.throwIfAborted();
       const view = await get(reconciledView$);
       signal.throwIfAborted();
@@ -1120,13 +1163,81 @@ function sharedBrowserResize(
   );
 }
 
+// One finite acquisition owns remote address resolution and final publication.
+// No provider URL is accepted after its instance/window or authority has changed.
+const confirmSharedBrowserViewer$ = command(
+  async (
+    { get },
+    owner: BrowserPublicAuthority,
+    connection: Connection,
+    signal: AbortSignal,
+  ): Promise<Result<BrowserViewerConnection>> => {
+    const identity = connection.browser.window;
+    if (!identity || connection.browser.status !== "active") {
+      return unavailable();
+    }
+    const cdpUrl = await provider(
+      resolveBrowserUseViewerConnection(
+        connection.cdpUrl,
+        connection.browser.liveUrl,
+        signal,
+      ),
+      signal,
+    );
+    const [binding] = await get(db$)
+      .select({ expiresAt: windows.expiresAt, timeoutAt: profiles.timeoutAt })
+      .from(windows)
+      .innerJoin(
+        profiles,
+        and(
+          eq(profiles.instanceId, windows.instanceId),
+          eq(profiles.orgId, owner.orgId),
+          eq(profiles.userId, owner.userId),
+          eq(profiles.status, "active"),
+          isNotNull(profiles.providerSessionId),
+          gt(profiles.timeoutAt, nowDate()),
+        ),
+      )
+      .where(
+        and(
+          eq(windows.chatThreadId, owner.chatThreadId),
+          eq(windows.orgId, owner.orgId),
+          eq(windows.userId, owner.userId),
+          eq(windows.instanceId, identity.instanceId),
+          eq(windows.primaryWindowId, identity.primaryWindowId),
+          eq(windows.state, "active"),
+          gt(windows.expiresAt, nowDate()),
+          authorityStillCurrent(owner),
+        ),
+      )
+      .limit(1);
+    signal.throwIfAborted();
+    return binding &&
+      binding.expiresAt !== null &&
+      binding.expiresAt > nowDate() &&
+      binding.timeoutAt > nowDate()
+      ? {
+          kind: "ok",
+          value: {
+            ...connection,
+            browser: {
+              ...connection.browser,
+              idleExpiresAt: binding.expiresAt.toISOString(),
+            },
+            cdpUrl,
+          },
+        }
+      : unavailable();
+  },
+);
+
 function sharedBrowserViewer(
   context$: ReturnType<typeof sharedBrowserContext>,
   view$: ReturnType<typeof sharedBrowserView>,
 ) {
   return command(
     async (
-      { get },
+      { get, set },
       signal: AbortSignal,
     ): Promise<Result<BrowserViewerConnection> | null> => {
       const ctx = await get(context$);
@@ -1158,14 +1269,6 @@ function sharedBrowserViewer(
           if (!session || session.status !== "active" || !session.cdpUrl) {
             return unavailable();
           }
-          const cdpUrl = await provider(
-            resolveBrowserUseViewerConnection(
-              session.cdpUrl,
-              session.liveUrl,
-              signal,
-            ),
-            signal,
-          );
           const currentBrowser = presentation(
             browser,
             view.profile,
@@ -1173,19 +1276,15 @@ function sharedBrowserViewer(
             session,
             null,
           );
-          // Expiry during provider lookup must never turn a scoped connection
-          // into an unscoped viewer response.
-          if (currentBrowser.status !== "active") {
-            return unavailable();
-          }
-          return {
-            kind: "ok",
-            value: {
+          return await set(
+            confirmSharedBrowserViewer$,
+            ctx.owner,
+            {
               browser: currentBrowser,
-              extension: browserUseNativeConnection(session).extension,
-              cdpUrl,
+              ...browserUseNativeConnection(session),
             },
-          };
+            signal,
+          );
         })(),
       );
       signal.throwIfAborted();
@@ -1260,9 +1359,30 @@ export function createSharedBrowserGraph(input$: SharedBrowserInputNode) {
   const mode$ = sharedBrowserMode(input$);
   const context$ = sharedBrowserContext(mode$);
   const view$ = sharedBrowserView(context$);
+  const openNative$ = sharedBrowserOpen(context$, view$);
+  const open$ = command(async ({ get, set }, signal: AbortSignal) => {
+    const result = await set(openNative$, signal);
+    signal.throwIfAborted();
+    const ctx = await get(context$);
+    signal.throwIfAborted();
+    if (
+      !result ||
+      result.kind === "error" ||
+      !ctx ||
+      ctx.kind === "error" ||
+      !ctx.mode.input.viewer
+    ) {
+      return result;
+    }
+    const viewer = await settleIncludingAbort(
+      set(confirmSharedBrowserViewer$, ctx.owner, result.value, signal),
+    );
+    signal.throwIfAborted();
+    return viewer.ok ? viewer.value : errorResult(viewer.error);
+  });
   return {
     present$: sharedBrowserPresent(context$, view$),
-    open$: sharedBrowserOpen(context$, view$),
+    open$,
     lease$: sharedBrowserLease(context$, view$),
     resize$: sharedBrowserResize(context$, view$),
     viewer$: sharedBrowserViewer(context$, view$),

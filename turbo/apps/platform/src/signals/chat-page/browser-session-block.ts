@@ -3,7 +3,9 @@ import { browserContract } from "@okouai/api-contracts/client/browser";
 import type {
   BrowserSession,
   BrowserViewerConnection,
+  BrowserViewerAcquisition,
 } from "@okouai/api-contracts/contracts/browser";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
 import {
   command,
@@ -34,6 +36,8 @@ import {
 } from "../image-load.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 import { threadComputerAccessVersion } from "./chat-thread-event-sourcing.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { authenticatedSessionKey$ } from "../auth.ts";
 
 // One heartbeat per minute keeps an open browser panel comfortably inside its
 // ten-minute idle lease without making the lease itself stackable.
@@ -51,6 +55,13 @@ interface BrowserAuthorizationRequired {
 const UNAUTHORIZED = { status: "unauthorized" } as const;
 type BrowserSessionResult =
   BrowserSession | BrowserAuthorizationRequired | null;
+type BrowserAcquisitionResult =
+  BrowserViewerAcquisition | BrowserAuthorizationRequired | null;
+type BrowserAcquisitionMode = "legacy" | "summary" | "viewer";
+interface BrowserAcquisitionScope {
+  readonly authorizationScope: string;
+  readonly mode: BrowserAcquisitionMode;
+}
 
 export function isBrowserUnauthorized(
   value: unknown,
@@ -85,7 +96,11 @@ async function browserAuthorizationResult<T>(
 }
 
 interface BrowserSessionLifetime {
-  readonly sessionOverride$: State<BrowserSessionResult | undefined>;
+  readonly scope: BrowserAcquisitionScope;
+  // The initiating viewer can consume its own open result instead of its echo.
+  // Any independent invalidation creates another owner and retires this ID.
+  readonly openOperationId$: State<string | null>;
+  readonly acquisitionOverride$: State<BrowserAcquisitionResult | undefined>;
   readonly leaseOverride$: State<BrowserSession | undefined>;
 }
 
@@ -154,14 +169,16 @@ export function parseBrowserSessionUrl(
   };
 }
 
-async function fetchBrowserSession(
+async function fetchBrowserAcquisition(
   createClient: ApiClientFactory,
   threadId: string,
-): Promise<BrowserSessionResult> {
+  nativeViewer: boolean,
+): Promise<BrowserAcquisitionResult> {
   const response = await browserAuthorizationResult(
     accept(
       createClient(browserContract).get({
         params: { threadId },
+        ...(nativeViewer ? { query: { viewer: "native" as const } } : {}),
       }),
       [200, 404],
       undefined,
@@ -171,7 +188,7 @@ async function fetchBrowserSession(
   if (isBrowserUnauthorized(response)) {
     return response;
   }
-  return response.status === 200 ? response.body.browser : null;
+  return response.status === 200 ? response.body : null;
 }
 
 async function requestBrowserSessionLease(
@@ -223,18 +240,16 @@ interface BrowserMutationSignalContext {
   readonly descriptor: BrowserSessionDescriptor;
   readonly lifetime$: Computed<BrowserSessionLifetime>;
   readonly reload$: Command<void, []>;
-  readonly connectionChanged$: BrowserSignals["connectionChanged$"];
 }
 
 function createStartBrowserSignals(
-  {
-    descriptor,
-    lifetime$,
-    reload$,
-    connectionChanged$,
-  }: BrowserMutationSignalContext,
+  { descriptor, lifetime$, reload$ }: BrowserMutationSignalContext,
   measureInitialDisplay$: BrowserSignals["measureInitialDisplay$"],
   session$: Computed<Promise<BrowserSessionResult>>,
+  replaceAcquisition$: Command<
+    void,
+    [BrowserAcquisitionResult | undefined, string | null]
+  >,
 ): Pick<BrowserSessionSignals, "start$"> {
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
     const lifetime = get(lifetime$);
@@ -245,12 +260,25 @@ function createStartBrowserSignals(
     }
     const initialDisplay =
       current?.status === "active" ? null : set(measureInitialDisplay$);
+    const operationId =
+      lifetime.scope.mode === "viewer" ? crypto.randomUUID() : null;
+    set(lifetime.openOperationId$, operationId);
+    const retirePendingOpen = () => {
+      set(lifetime.openOperationId$, null);
+    };
+    signal.addEventListener("abort", retirePendingOpen, { once: true });
     const [started] = await Promise.allSettled([
       browserAuthorizationResult(
         accept(
           get(apiClient$)(browserContract).open({
             params: { threadId: descriptor.threadId },
-            body: initialDisplay ? { initialDisplay } : {},
+            ...(lifetime.scope.mode === "viewer"
+              ? { query: { viewer: "native" as const } }
+              : {}),
+            body: {
+              ...(initialDisplay ? { initialDisplay } : {}),
+              ...(operationId ? { operationId } : {}),
+            },
             fetchOptions: { signal },
           }),
           [200],
@@ -260,6 +288,8 @@ function createStartBrowserSignals(
       ),
     ]);
     signal.throwIfAborted();
+    signal.removeEventListener("abort", retirePendingOpen);
+    set(lifetime.openOperationId$, null);
     if (started.status === "rejected") {
       if (get(lifetime$) === lifetime) {
         set(reload$);
@@ -269,14 +299,11 @@ function createStartBrowserSignals(
     if (get(lifetime$) !== lifetime) {
       return;
     }
-    set(reload$);
     set(
-      get(lifetime$).sessionOverride$,
-      isBrowserUnauthorized(started.value)
-        ? UNAUTHORIZED
-        : started.value.body.browser,
+      replaceAcquisition$,
+      isBrowserUnauthorized(started.value) ? UNAUTHORIZED : started.value.body,
+      operationId,
     );
-    set(connectionChanged$);
   });
   return { start$: openBrowser$ };
 }
@@ -312,6 +339,7 @@ function createCloseBrowserSignals({
 function createBrowserSessionSubscriptionSignals(
   descriptor: BrowserSessionDescriptor,
   session$: BrowserSessionSignals["session$"],
+  lifetime$: Computed<BrowserSessionLifetime>,
   reload$: BrowserSessionSignals["reload$"],
 ): Pick<BrowserSessionSignals, "subscribe$"> {
   const reloadBrowserSession$ = command(
@@ -324,12 +352,18 @@ function createBrowserSessionSubscriptionSignals(
   );
   const onBrowserSessionChanged$ = command(
     (
-      { set },
+      { get, set },
       payload: unknown,
       signal: AbortSignal,
     ): Promise<boolean> | boolean => {
       const parsed = browserSessionChangedPayloadSchema.safeParse(payload);
       if (parsed.success && parsed.data.threadId === descriptor.threadId) {
+        if (
+          parsed.data.operationId &&
+          parsed.data.operationId === get(get(lifetime$).openOperationId$)
+        ) {
+          return false;
+        }
         return set(reloadBrowserSession$, signal);
       }
       return false;
@@ -369,7 +403,7 @@ function createBrowserSessionKeepAliveSignals(
     ): Promise<boolean> => {
       if (isBrowserUnauthorized(response)) {
         set(lifetime.leaseOverride$, undefined);
-        set(lifetime.sessionOverride$, UNAUTHORIZED);
+        set(lifetime.acquisitionOverride$, UNAUTHORIZED);
         set(connectionChanged$);
         return true;
       }
@@ -466,30 +500,90 @@ function createBrowserSessionKeepAliveSignals(
   return { keepAliveRef$ };
 }
 
-function createBrowserSessionReadSignals(descriptor: BrowserSessionDescriptor) {
-  const reloadVersion$ = state(0);
+function createBrowserSessionAcquisitionSignals(
+  descriptor: BrowserSessionDescriptor,
+  viewerRequested$: Computed<boolean>,
+) {
+  const reloadRequest$ = state<{
+    readonly acquisition: BrowserAcquisitionResult | undefined;
+    readonly scope: BrowserAcquisitionScope | null;
+    readonly operationId: string | null;
+  }>({ acquisition: undefined, scope: null, operationId: null });
   const accessVersion$ = threadComputerAccessVersion(descriptor.threadId);
   const authorizationScope$ = computed((get) => {
-    return get(accessVersion$) ?? "initial";
+    return JSON.stringify([
+      get(authenticatedSessionKey$),
+      get(accessVersion$) ?? "initial",
+    ]);
+  });
+  const mode$ = computed((get): BrowserAcquisitionMode => {
+    if (!get(featureSwitch$)[FeatureSwitchKey.BrowserSharedOwner]) {
+      return "legacy";
+    }
+    return get(viewerRequested$) ? "viewer" : "summary";
+  });
+  const acquisitionScope$ = computed((get): BrowserAcquisitionScope => {
+    return {
+      authorizationScope: get(authorizationScope$),
+      mode: get(mode$),
+    };
   });
   const lifetime$ = computed((get) => {
-    get(reloadVersion$);
-    get(authorizationScope$);
+    const request = get(reloadRequest$);
+    const scope = get(acquisitionScope$);
     // These are lifetime-local resource outcomes, not independent UI flags.
     return {
-      sessionOverride$: state<BrowserSessionResult | undefined>(undefined),
+      scope,
+      openOperationId$: state(
+        request.scope === scope ? request.operationId : null,
+      ),
+      acquisitionOverride$: state<BrowserAcquisitionResult | undefined>(
+        request.scope === scope ? request.acquisition : undefined,
+      ),
       leaseOverride$: state<BrowserSession | undefined>(undefined),
     };
   });
-  const lifecycleSession$ = computed(
-    async (get): Promise<BrowserSessionResult> => {
+  const lifecycleAcquisition$ = computed(
+    async (get): Promise<BrowserAcquisitionResult> => {
       const lifetime = get(lifetime$);
-      const override = get(lifetime.sessionOverride$);
+      const override = get(lifetime.acquisitionOverride$);
       return override === undefined
-        ? await fetchBrowserSession(get(apiClient$), descriptor.threadId)
+        ? await fetchBrowserAcquisition(
+            get(apiClient$),
+            descriptor.threadId,
+            lifetime.scope.mode === "viewer",
+          )
         : override;
     },
   );
+  const lifecycleSession$ = computed(
+    async (get): Promise<BrowserSessionResult> => {
+      const acquisition = await get(lifecycleAcquisition$);
+      return acquisition && !isBrowserUnauthorized(acquisition)
+        ? acquisition.browser
+        : acquisition;
+    },
+  );
+  return {
+    reloadRequest$,
+    authorizationScope$,
+    lifetime$,
+    lifecycleAcquisition$,
+    lifecycleSession$,
+  };
+}
+
+function createBrowserSessionReadSignals(
+  descriptor: BrowserSessionDescriptor,
+  viewerRequested$: Computed<boolean>,
+) {
+  const {
+    reloadRequest$,
+    authorizationScope$,
+    lifetime$,
+    lifecycleAcquisition$,
+    lifecycleSession$,
+  } = createBrowserSessionAcquisitionSignals(descriptor, viewerRequested$);
   const session$ = computed(async (get): Promise<BrowserSessionResult> => {
     const lifetime = get(lifetime$);
     const session = await get(lifecycleSession$);
@@ -531,7 +625,27 @@ function createBrowserSessionReadSignals(descriptor: BrowserSessionDescriptor) {
   // Lifecycle reloads (including open/close) can replace the connection. Lease
   // responses only refresh presentation and must not interrupt live input.
   const viewerConnection$ = computed(async (get) => {
-    const lifecycleSession = await get(lifecycleSession$);
+    const lifetime = get(lifetime$);
+    if (lifetime.scope.mode === "summary") {
+      return null;
+    }
+    const acquisition = await get(lifecycleAcquisition$);
+    if (!acquisition || isBrowserUnauthorized(acquisition)) {
+      return acquisition;
+    }
+    const lifecycleSession = acquisition.browser;
+    if (lifetime.scope.mode === "viewer") {
+      // Shared acquisition is a single operation, never a summary-authorized
+      // second credential lookup. An old non-GA API cannot satisfy this mode.
+      if (acquisition.viewer === undefined) {
+        throw new Error(
+          "Shared Browser viewer acquisition is not supported by this API",
+        );
+      }
+      return acquisition.viewer
+        ? { ...acquisition.viewer, requestedSession: lifecycleSession }
+        : null;
+    }
     if (lifecycleSession?.status !== "active") {
       return null;
     }
@@ -570,7 +684,7 @@ function createBrowserSessionReadSignals(descriptor: BrowserSessionDescriptor) {
     },
   );
   return {
-    reloadVersion$,
+    reloadRequest$,
     authorizationScope$,
     lifetime$,
     lifecycleSession$,
@@ -586,12 +700,13 @@ function createBrowserSessionReadSignals(descriptor: BrowserSessionDescriptor) {
 
 export function createBrowserSessionSignals(
   threadId: string,
+  viewerRequested$: Computed<boolean>,
   onPageInput$?: Command<void, []>,
 ): BrowserSessionSignals {
   const descriptor = { threadId, href: `/browsers/${threadId}` };
   const screenshotImageLoad = createImageLoadSignals();
   const {
-    reloadVersion$,
+    reloadRequest$,
     authorizationScope$,
     lifetime$,
     lifecycleSession$,
@@ -602,12 +717,26 @@ export function createBrowserSessionSignals(
     panelWindowId$,
     viewerConnection$,
     browserConnection$,
-  } = createBrowserSessionReadSignals(descriptor);
+  } = createBrowserSessionReadSignals(descriptor, viewerRequested$);
+  const replaceAcquisition$ = command(
+    (
+      { get, set },
+      acquisition: BrowserAcquisitionResult | undefined,
+      operationId: string | null,
+    ) => {
+      // Publish a seeded lifetime in one state update. A successful explicit
+      // open must never expose an empty reload that starts a redundant GET.
+      const lifetime = get(lifetime$);
+      set(reloadRequest$, {
+        acquisition,
+        scope: lifetime.scope,
+        operationId,
+      });
+      set(browser.connectionChanged$);
+    },
+  );
   const reload$ = command(({ set }) => {
-    set(reloadVersion$, (version) => {
-      return version + 1;
-    });
-    set(browser.connectionChanged$);
+    set(replaceAcquisition$, undefined, null);
   });
   const browser = createBrowserSignals(
     browserConnection$,
@@ -618,17 +747,18 @@ export function createBrowserSessionSignals(
     descriptor,
     lifetime$,
     reload$,
-    connectionChanged$: browser.connectionChanged$,
   };
   const startSignals = createStartBrowserSignals(
     mutationContext,
     browser.measureInitialDisplay$,
     lifecycleSession$,
+    replaceAcquisition$,
   );
   const closeSignals = createCloseBrowserSignals(mutationContext);
   const subscriptionSignals = createBrowserSessionSubscriptionSignals(
     descriptor,
     session$,
+    lifetime$,
     reload$,
   );
 
