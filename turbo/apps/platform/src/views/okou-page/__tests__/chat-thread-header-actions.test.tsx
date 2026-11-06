@@ -11,6 +11,7 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -26,7 +27,10 @@ const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000951";
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
-async function setupHeaderPage(threadEvents: readonly ChatThreadEvent[] = []) {
+async function setupHeaderPage(
+  threadEvents: readonly ChatThreadEvent[] = [],
+  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
+) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "😀 Header planning",
@@ -66,6 +70,7 @@ async function setupHeaderPage(threadEvents: readonly ChatThreadEvent[] = []) {
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
+    featureSwitches,
   });
   await screen.findByText("Review the header layout");
   await waitFor(() => {
@@ -259,45 +264,57 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   );
 });
 
-test("Archive from the mobile header and return to the thread's agent before saving", async () => {
-  context.mocks.browser.matchMedia(false);
-  const archiveResponse = context.mocks.deferred<void>();
-  const events: ChatThreadEvent[] = [];
-  let archiveRequestAborted = false;
-  context.mocks.api(
-    chatThreadArchiveContract.archive,
-    async ({ params, query, request, respond }) => {
-      request.signal.addEventListener("abort", () => {
-        archiveRequestAborted = true;
-      });
-      await archiveResponse.promise;
-      events.push(
-        chatListEvent(951, 1, "archived", params.id, {
-          id: query?.eventId,
-          agentId: AGENT_ID,
-        }),
-      );
-      changeChatThreadList();
-      return respond(204);
-    },
-  );
-  await setupHeaderPage(events);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Archive chat"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
-  });
-  expect(
-    screen.queryByText("Review the header layout"),
-  ).not.toBeInTheDocument();
+test.each([
+  {
+    name: "the thread's agent",
+    singleAgent: false,
+    leavesTo: `/agents/${AGENT_ID}/chat`,
+  },
+  { name: "My Okou's chat page", singleAgent: true, leavesTo: "/" },
+])(
+  "Archive from the mobile header and return to $name before saving",
+  async ({ singleAgent, leavesTo }) => {
+    context.mocks.browser.matchMedia(false);
+    const archiveResponse = context.mocks.deferred<void>();
+    const events: ChatThreadEvent[] = [];
+    let archiveRequestAborted = false;
+    context.mocks.api(
+      chatThreadArchiveContract.archive,
+      async ({ params, query, request, respond }) => {
+        request.signal.addEventListener("abort", () => {
+          archiveRequestAborted = true;
+        });
+        await archiveResponse.promise;
+        events.push(
+          chatListEvent(951, 1, "archived", params.id, {
+            id: query?.eventId,
+            agentId: AGENT_ID,
+          }),
+        );
+        changeChatThreadList();
+        return respond(204);
+      },
+    );
+    await setupHeaderPage(events, {
+      [FeatureSwitchKey.SingleAgent]: singleAgent,
+    });
+    click(buttonNamed("More actions"));
+    await screen.findByRole("menu");
+    click(menuItemNamed("Archive chat"));
+    await waitFor(() => {
+      expect(pathname()).toBe(leavesTo);
+    });
+    expect(
+      screen.queryByText("Review the header layout"),
+    ).not.toBeInTheDocument();
 
-  archiveResponse.resolve();
-  await waitFor(() => {
-    expect(events).toHaveLength(1);
-  });
-  expect(archiveRequestAborted).toBeFalsy();
-});
+    archiveResponse.resolve();
+    await waitFor(() => {
+      expect(events).toHaveLength(1);
+    });
+    expect(archiveRequestAborted).toBeFalsy();
+  },
+);
 
 test("Undo a header archive from its toast and return to the thread", async () => {
   context.mocks.browser.matchMedia(false);

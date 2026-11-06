@@ -510,6 +510,70 @@ test("Slide conversations in from the mobile chat list and out back to the tabs"
   ]);
 });
 
+test("My Okou's chats tab is its chat list at / and composes a new chat there", async () => {
+  mockDisplayMode({ standalone: true, desktop: false });
+  const viewTransition = context.mocks.browser.viewTransition();
+  const thread = continuityThread(84, 1, "Draft the brief");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 84,
+    threads: [thread],
+  });
+  context.mocks.data.onboardingStatus({ defaultAgentId: CHAT_LIST_AGENT_ID });
+  context.mocks.api(chatThreadByIdContract.get, ({ respond }) => {
+    return respond(200, {
+      lastReadAt: null,
+      cancellationRecoveryPending: false,
+    });
+  });
+
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      [FeatureSwitchKey.PwaNavigation]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+    ...workspace.pageOptions,
+  });
+
+  const navigation = await screen.findByRole("navigation", {
+    name: "Main navigation",
+  });
+  await screen.findByText("Draft the brief");
+  expect(linkTo("/", navigation)).toHaveAttribute("aria-current", "page");
+  expect(screen.queryByLabelText("Back to chats")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("textbox", { name: "Message" }),
+  ).not.toBeInTheDocument();
+
+  click(linkTo(`/chats/${thread.id}`));
+
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
+
+  click(screen.getByLabelText("Back to chats"));
+
+  await screen.findByText("Draft the brief");
+  expect(window.location.pathname).toBe("/");
+  expect(viewTransition.startedTypes).toStrictEqual([["push"], ["pop"]]);
+
+  click(screen.getByLabelText("New chat"));
+
+  await expect(
+    screen.findByRole("textbox", { name: "Message" }),
+  ).resolves.toBeInTheDocument();
+  expect(window.location.pathname).toBe("/");
+  expect(new URLSearchParams(window.location.search).get("compose")).toBe("1");
+  expect(screen.getByLabelText("Back to chats")).toHaveAttribute("href", "/");
+  expect(viewTransition.startedTypes).toStrictEqual([
+    ["push"],
+    ["pop"],
+    ["push"],
+  ]);
+});
+
 test("Leave the slide to the browser after an edge swipe back", async () => {
   mockDisplayMode({ standalone: false, desktop: false });
   const viewTransition = context.mocks.browser.viewTransition();
