@@ -2077,6 +2077,11 @@
       "sourcePartsHeading_one": "{{count}} bagian dikutip dari {{description}}",
       "sourcePartsHeading_other": "{{count}} bagian dikutip dari {{description}}"
     },
+    "fork": {
+      "action": "Fork",
+      "description": "Mulai obrolan baru dengan pilihan ini",
+      "sent": "Obrolan baru dibuat"
+    },
     "forward": {
       "action": "Teruskan",
       "agents": "Agen",
@@ -4232,7 +4237,6 @@
     "instructions": "Instruksi",
     "loadError": "Instruksi tidak dapat dimuat. Coba lagi.",
     "markdown": "Tulis dengan teks biasa atau Markdown",
-    "newChat": "Chat baru",
     "placeholder": "Beri tahu Okou cara kerja yang Anda sukai…",
     "reload": "Muat ulang instruksi tersimpan",
     "retry": "Coba lagi",

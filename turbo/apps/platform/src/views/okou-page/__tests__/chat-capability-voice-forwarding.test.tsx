@@ -45,7 +45,7 @@ const { installCapabilityChat } = createChatCapabilityHelpers(context);
 const refreshedContext = createTestRuntime(context);
 const FORWARD_TARGET_NAME = "Okou";
 
-test("Personal forwarding opens a new chat without an Agent picker or changing the source draft", async () => {
+test("Fork opens a quoted personal chat composer and preserves the source draft on dismissal", async () => {
   installVoiceBoundaries();
   await setupPage({
     context,
@@ -56,17 +56,16 @@ test("Personal forwarding opens a new chat without an Agent picker or changing t
     name: "Message",
   });
   await selectPassage("launch plan has three careful stages");
-  click(await findEnabledButton("Forward"));
-  const dialog = await screen.findByRole("dialog");
-  const newChat = await within(dialog).findByRole("option", {
-    name: "New chat",
-  });
-  expect(within(dialog).queryByRole("option", { name: "Okou" })).toBeNull();
-  expect(within(dialog).queryByText("Agents")).toBeNull();
-  click(newChat);
+  const fork = await findEnabledButton("Fork");
+  expect(fork).toHaveAttribute("aria-keyshortcuts", "f");
+  click(fork);
+  const dialog = await screen.findByRole("dialog", { name: "Okou" });
   const editor = await within(dialog).findByRole("textbox", {
     name: "Message",
   });
+  expect(
+    within(dialog).getByText("launch plan has three careful stages"),
+  ).toBeInTheDocument();
   await fill(editor, "Follow up on this passage");
   expect(originalComposer).toHaveTextContent("Keep the existing notes.");
   expect(editor).toHaveTextContent("Follow up on this passage");

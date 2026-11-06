@@ -2118,6 +2118,11 @@
       "sourcePartsHeading_many": "{{count}} partes citadas de {{description}}",
       "sourcePartsHeading_other": "{{count}} partes citadas de {{description}}"
     },
+    "fork": {
+      "action": "Fork",
+      "description": "Iniciar um novo chat com esta seleção",
+      "sent": "Novo chat criado"
+    },
     "forward": {
       "action": "Encaminhar",
       "agents": "Agentes",
@@ -4303,7 +4308,6 @@
     "instructions": "Instruções",
     "loadError": "Não foi possível carregar suas instruções. Tente novamente.",
     "markdown": "Escreva em texto simples ou Markdown",
-    "newChat": "Nova conversa",
     "placeholder": "Diga ao Okou como você gosta de trabalhar…",
     "reload": "Recarregar instruções salvas",
     "retry": "Tentar novamente",

@@ -2077,6 +2077,11 @@
       "sourcePartsHeading_one": "{{description}}から {{count}} 件を引用",
       "sourcePartsHeading_other": "{{description}}から {{count}} 件を引用"
     },
+    "fork": {
+      "action": "Fork",
+      "description": "選択した内容で新しいチャットを開始",
+      "sent": "新しいチャットを作成しました"
+    },
     "forward": {
       "action": "転送",
       "agents": "エージェント",
@@ -4232,7 +4237,6 @@
     "instructions": "指示",
     "loadError": "指示を読み込めませんでした。もう一度お試しください。",
     "markdown": "プレーンテキストまたは Markdown で記入",
-    "newChat": "新しいチャット",
     "placeholder": "好みの仕事の進め方を Okou に伝えてください…",
     "reload": "保存済みの指示を再読み込み",
     "retry": "再試行",
