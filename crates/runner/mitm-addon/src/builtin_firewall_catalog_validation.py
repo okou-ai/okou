@@ -12,6 +12,7 @@ from urllib.parse import unquote_to_bytes
 
 import builtin_base_url_template
 import builtin_host_policy
+import firewall_auth_config
 import matching
 from authority_utils import percent_decode_host
 from generated.builtin_firewall_cache import BUILTIN_FIREWALL_CATALOG_CACHE_SCHEMA_VERSION
@@ -152,7 +153,7 @@ def _validate_api_entry(firewall_name: str, api: dict, validated_rules: set[str]
             f'catalog cache firewall "{firewall_name}" api base is invalid'
         )
 
-    if not matching.firewall_api_auth_config_is_valid(api):
+    if not firewall_auth_config.firewall_api_auth_config_is_valid(api):
         raise BuiltinFirewallCatalogCacheError(
             f'catalog cache firewall "{firewall_name}" api auth is invalid'
         )
