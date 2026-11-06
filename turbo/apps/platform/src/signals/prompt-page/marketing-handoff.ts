@@ -11,6 +11,9 @@ import { featureSwitch$ } from "../external/feature-switch.ts";
 import { searchParams$ } from "../route.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import { createDraftSignals } from "../okou-page/chat-draft.ts";
+import { logger } from "../log.ts";
+
+const L = logger("MarketingHandoff");
 
 // A new user may receive a task before their organization has been provisioned.
 const settledHandoffUser$ = state<{
@@ -88,6 +91,9 @@ export const enrollMarketingHandoffSession$ = command(
       [200, 403, 429, 503],
     );
     signal.throwIfAborted();
+    if (response.status === 429) {
+      L.warn("Session enrollment was rate limited; continuing App startup");
+    }
     return response.status === 200;
   },
 );
