@@ -36,10 +36,10 @@ const second = Object.freeze<UserNotificationSummary>({
   readAt: null,
 });
 const detail = Object.freeze<UserNotification>({
-  id: first.id,
-  title: first.title,
-  summary: first.summary,
-  createdAt: first.createdAt,
+  id: "11111111-1111-4111-8111-111111111111",
+  title: "Organize your work",
+  summary: "Keep your work together.",
+  createdAt: "2026-11-06T03:00:00.000Z",
   readAt: null,
   payload: {
     type: "rich_text",
