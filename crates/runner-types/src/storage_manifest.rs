@@ -31,7 +31,7 @@ pub fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
     .iter()
     .find_map(|prefix| mount_path.strip_prefix(prefix))
     .ok_or("Workflow skill path is outside a framework skill directory")?;
-    if name.len() < 2
+    if name.is_empty()
         || name.len() > 64
         || !name
             .bytes()
