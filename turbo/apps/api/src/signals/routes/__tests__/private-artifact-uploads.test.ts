@@ -590,6 +590,61 @@ describe("private artifact uploads", () => {
     expect(missing.body.error.code).toBe("NOT_FOUND");
   });
 
+  it.each([
+    { name: "NoSuchUpload", providerStatus: 404, expectedStatus: 404 },
+    { name: "ProviderNotFound", providerStatus: 404, expectedStatus: 404 },
+    { name: "ServiceUnavailable", providerStatus: 503, expectedStatus: 500 },
+  ] as const)(
+    "keeps private multipart completion unavailable for $name without publishing it",
+    async ({ name, providerStatus, expectedStatus }) => {
+      const storage = context.mocks.s3.send.getMockImplementation()!;
+      context.mocks.s3.send.mockImplementation((command) => {
+        if (command instanceof CreateMultipartUploadCommand) {
+          return Promise.resolve({ UploadId: "unavailable-upload" });
+        }
+        return storage(command);
+      });
+      const prepared = await accept(
+        api()(uploadsContract).prepare({
+          headers,
+          body: {
+            ...body,
+            size: 6 * 1024 * 1024,
+            multipart: true,
+            purpose: "artifact",
+          },
+        }),
+        [200],
+      );
+      context.mocks.s3.send.mockImplementation((command) => {
+        if (command instanceof ListPartsCommand) {
+          return Promise.reject(
+            Object.assign(new Error("Multipart storage unavailable"), {
+              name,
+              $metadata: { httpStatusCode: providerStatus, attempts: 1 },
+            }),
+          );
+        }
+        return storage(command);
+      });
+      const failed = await api()(uploadsContract).completeMultipart({
+        headers,
+        body: {
+          id: prepared.body.id,
+          filename: prepared.body.filename,
+          uploadId: "unavailable-upload",
+          partCount: 2,
+        },
+      });
+      expect(failed.status).toBe(expectedStatus);
+      const catalog = await accept(
+        api()(artifactCatalogContract).list({ headers }),
+        [200],
+      );
+      expect(catalog.body.artifacts).toStrictEqual([]);
+    },
+  );
+
   it.each(["complete", "abort"] as const)(
     "%s multipart uploads in their recorded bucket",
     async (action) => {
