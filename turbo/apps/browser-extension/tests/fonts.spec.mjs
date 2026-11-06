@@ -10,6 +10,7 @@ const styles = `<style>
   @font-face { font-family: 'Arial Unicode MS'; src: local('Liberation Serif'), local('Times New Roman'); }
   @font-face { font-family: 'Owned Site Face'; src: local('Liberation Mono'), local('Courier New'); }
   body { font: 24px var(--page-font, 'Owned Latin'); }
+  #opaque-container { --opaque-font: italic 700 24px 'Owned Latin'; }
   #sample, #variable-sample { font-weight: 700; font-style: italic; }
   .alternate { font-family: 'Owned Site Face' !important; }
   [data-site-font=alternate] #container { font-family: 'Owned Site Face' !important; }
@@ -32,6 +33,7 @@ test.beforeAll(async () => {
       <p id="variable-sample" style="--text-font: 'Owned Latin'; font-family: var(--text-font)">Αλφάβητο ABC</p>
       <p id="shorthand-sample" style="--inline-font: italic 700 24px 'Owned Site Face'; font: var(--inline-font); font-weight: 700">Αλφάβητο ABC</p>
       <p id="inline-caption" style="font: caption; font-weight: 700; font-style: italic">Αλφάβητο ABC</p>
+      <div id="opaque-container" style="font: var(--opaque-font); font-weight: 700; font-style: italic"><span id="opaque-child">Αλφάβητο ABC</span></div>
       <span id="latin">Latin ABC 123</span><span id="latin-reference">Latin ABC 123</span>
       <p id="symbols">★ 😀</p><code id="code">const value = 123;</code>
       <label>Search<input id="search" placeholder="Αναζήτηση"></label>
@@ -44,6 +46,8 @@ test.beforeAll(async () => {
       <button id="attribute-theme">Change attribute theme</button>
       <button id="shorthand-variable">Change shorthand variable</button>
       <button id="caption-class">Update caption class</button>
+      <button id="opaque-theme">Change ancestor shorthand</button>
+      <button id="opaque-clear">Clear ancestor shorthand</button>
       <div id="dynamic"></div><div id="shadow-host"></div>
       <iframe title="Languages" src="/frame"></iframe>
       <script>
@@ -59,6 +63,8 @@ test.beforeAll(async () => {
         document.querySelector('#attribute-theme').onclick=()=>{document.documentElement.dataset.siteFont='alternate';};
         document.querySelector('#shorthand-variable').onclick=()=>{document.querySelector('#shorthand-sample').style.setProperty('--inline-font', 'italic 700 28px "Owned Site Face"');};
         document.querySelector('#caption-class').onclick=()=>{document.querySelector('#inline-caption').classList.toggle('updated-caption');};
+        document.querySelector('#opaque-theme').onclick=()=>{document.querySelector('#opaque-container').style.cssText='font: caption; font-weight: 700; font-style: italic';};
+        document.querySelector('#opaque-clear').onclick=()=>{document.querySelector('#opaque-container').style.cssText='';};
       </script>
     </body></html>`);
   });
@@ -351,6 +357,47 @@ test("preserves inline font shorthands through site typography updates", async (
         return await f.fonts("inline-caption");
       })
       .toEqual(await f.fonts("caption-control"));
+  } finally {
+    await f.close();
+  }
+});
+
+test("follows effective ancestor fonts when inline shorthand values are opaque", async () => {
+  const f = await fixture();
+  try {
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("opaque-child"));
+      })
+      .toBe(true);
+    await f.page
+      .getByRole("button", { name: "Change ancestor shorthand" })
+      .click();
+    await expect
+      .poll(async () => {
+        return await f.fonts("opaque-child");
+      })
+      .toEqual(await f.fonts("caption-control"));
+    await f.page
+      .getByRole("button", { name: "Clear ancestor shorthand" })
+      .click();
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("opaque-child"));
+      })
+      .toBe(true);
+    await expect(f.page.locator("#opaque-child")).toHaveCSS(
+      "font-size",
+      "24px",
+    );
+    await expect(f.page.locator("#opaque-child")).toHaveCSS(
+      "font-weight",
+      "400",
+    );
+    await expect(f.page.locator("#opaque-child")).toHaveCSS(
+      "font-style",
+      "normal",
+    );
   } finally {
     await f.close();
   }

@@ -14,10 +14,17 @@ const overrides = new WeakMap<
     appliedPriority: string;
   }
 >();
+// These declarations stay authored, so their effective family can be observed
+// without relying on CSSOM's lossy shorthand serialization.
+const opaqueFamilies = new WeakMap<HTMLElement, string>();
 const observed = new WeakSet<Node>();
 const pending = new Map<Node, boolean>();
 const previousStyle = document.createElement("span").style;
 let scheduled = false;
+
+function hasOpaqueFamily(style: CSSStyleDeclaration): boolean {
+  return style.fontFamily === "" && Array.from(style).includes("font-family");
+}
 
 function ownsFont(element: HTMLElement): boolean {
   const owned = overrides.get(element);
@@ -48,14 +55,19 @@ function inlineFontChanged(
     );
   });
   if (variableChanged) return true;
+  const opaque = hasOpaqueFamily(element.style);
+  if (opaque || opaqueFamilies.has(element)) {
+    const family = getComputedStyle(element).fontFamily;
+    const changed = opaqueFamilies.get(element) !== family;
+    if (opaque) opaqueFamilies.set(element, family);
+    else opaqueFamilies.delete(element);
+    return changed;
+  }
   if (ownsFont(element)) return false;
-  // System shorthands such as `font: caption` expose an empty fontFamily.
   return (
     previousStyle.fontFamily !== element.style.fontFamily ||
     previousStyle.getPropertyPriority("font-family") !==
-      element.style.getPropertyPriority("font-family") ||
-    (previousStyle.fontFamily === "" &&
-      previousStyle.font !== element.style.font)
+      element.style.getPropertyPriority("font-family")
   );
 }
 
@@ -190,15 +202,16 @@ function flush(): void {
 
   // Separate reads from writes to avoid recascading after each element.
   const additions = [];
+  const opaque = [];
   for (const element of elements) {
-    if (!needsFont(element)) continue;
     // Pending/system inline shorthands can own font-family while exposing no
     // serializable value. Overwriting it would make restoration destructive.
-    if (
-      element.style.fontFamily === "" &&
-      Array.from(element.style).includes("font-family")
-    )
+    if (hasOpaqueFamily(element.style)) {
+      opaque.push(element);
       continue;
+    }
+    opaqueFamilies.delete(element);
+    if (!needsFont(element)) continue;
     const family = getComputedStyle(element).fontFamily;
     if (supplementalPattern.test(family)) continue;
     additions.push({
@@ -231,6 +244,10 @@ function flush(): void {
     if (!owned) continue;
     element.style.setProperty("font-family", owned.applied, "important");
     owned.appliedPriority = "important";
+  }
+  // Include any inherited tails applied above in the observed effective family.
+  for (const element of opaque) {
+    opaqueFamilies.set(element, getComputedStyle(element).fontFamily);
   }
 }
 
