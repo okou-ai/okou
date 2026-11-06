@@ -12,6 +12,7 @@ import { and, asc, eq, gte, lt, lte, or, sql } from "drizzle-orm";
 import { randomUUID } from "node:crypto";
 import { resolveEnqueuedChatInputModel$ } from "./chat-input-model.service";
 import { enqueueIntegrationChatInput$ } from "./integration-chat-queue.service";
+import { THREAD_CONTEXT_PRIORITY } from "../../lib/conversation-guidance";
 
 import {
   CHANNEL_CONTEXT_MESSAGE_LIMIT,
@@ -611,6 +612,7 @@ const readIngressConversationContext$ = command(
       }
     }
     return [
+      isThread || referencedMessageId ? THREAD_CONTEXT_PRIORITY : "",
       discordConversationContext({
         messages: parentMessages,
         contextType: "channel",

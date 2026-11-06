@@ -50,7 +50,7 @@ final class ChatComposerMentionTests: XCTestCase {
     try await eventually { mentionTable(in: host.view)?.visibleCells.first != nil }
     let first = try XCTUnwrap(mentionTable(in: host.view)?.visibleCells.first)
     XCTAssertTrue(first.accessibilityActivate())
-    try await eventually {
+    try await waitForBusinessResult {
       workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" }
     }
     XCTAssertEqual(input.selectedRange, NSRange(location: 9, length: 0))
@@ -61,7 +61,7 @@ final class ChatComposerMentionTests: XCTestCase {
       mentionTable(in: host.view)?.visibleCells.first?.accessibilityLabel == "Chat: Project 30"
     }
     input.insertText("\n")
-    try await eventually {
+    try await waitForBusinessResult {
       workspace.newComposer.document.parts.filter { $0["type"]?.string == "chat_thread" }.count == 1
     }
     let expected = workspace.newComposer.document
@@ -73,42 +73,42 @@ final class ChatComposerMentionTests: XCTestCase {
 
     input.selectedRange = NSRange(location: 7, length: 1)
     input.deleteBackward()
-    try await eventually {
+    try await waitForBusinessResult {
       !workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" }
     }
     try await hostingPresentationFrame()
     input.undoManager?.undo()
-    try await eventually(
+    try await waitForBusinessResult(
       message:
         "After deletion undo: \(workspace.newComposer.document); text: \(String(describing: input.text))"
     ) { workspace.newComposer.document == expected }
     input.undoManager?.redo()
-    try await eventually {
+    try await waitForBusinessResult {
       !workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" }
     }
     input.undoManager?.undo()
-    try await eventually { workspace.newComposer.document == expected }
+    try await waitForBusinessResult { workspace.newComposer.document == expected }
 
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.copy(nil)
     XCTAssertTrue(UIPasteboard.general.string?.contains("/agents/") == true)
     XCTAssertTrue(UIPasteboard.general.string?.contains("/chats/") == true)
     input.cut(nil)
-    try await eventually { !workspace.newComposer.hasContent }
+    try await waitForBusinessResult { !workspace.newComposer.hasContent }
     input.paste(nil)
-    try await eventually { workspace.newComposer.document == expected }
+    try await waitForBusinessResult { workspace.newComposer.document == expected }
     input.undoManager?.undo()
-    try await eventually { !workspace.newComposer.hasContent }
+    try await waitForBusinessResult { !workspace.newComposer.hasContent }
     input.undoManager?.redo()
-    try await eventually { workspace.newComposer.document == expected }
+    try await waitForBusinessResult { workspace.newComposer.document == expected }
 
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.insertText("Replacement 中文")
-    try await eventually {
+    try await waitForBusinessResult {
       workspace.newComposer.document.parts.count == 1 && workspace.newChatDraft == "Replacement 中文"
     }
     input.undoManager?.undo()
-    try await eventually { workspace.newComposer.document == expected }
+    try await waitForBusinessResult { workspace.newComposer.document == expected }
   }
 
   func testNativeMarkedTextConfirmationDoesNotInsertAMentionAndKeyboardNavigatesGroups()

@@ -739,7 +739,7 @@ function closeS3Body(body: unknown): void {
   }
 }
 
-function s3DownloadErrorMetadata(error: unknown): {
+function s3ErrorMetadata(error: unknown): {
   readonly providerStatus: number | undefined;
   readonly providerAttempts: number | undefined;
 } {
@@ -784,7 +784,7 @@ function downloadS3BufferWithClient(
     );
     if (!downloaded.ok) {
       options.onFailure?.({
-        ...s3DownloadErrorMetadata(downloaded.error),
+        ...s3ErrorMetadata(downloaded.error),
         stage: "get_object",
         stageDurationMs: Math.round(performance.now() - startedAt),
         receivedBytes: 0,
@@ -1022,12 +1022,22 @@ export function uploadMultipartS3Part(
   });
 }
 
+type MultipartS3PartsResult =
+  | { readonly parts: readonly MultipartS3Part[] }
+  | {
+      readonly parts: null;
+      readonly providerError:
+        "NotFound" | "NoSuchKey" | "NoSuchUpload" | "other";
+      readonly providerStatus: number | undefined;
+      readonly providerAttempts: number | undefined;
+    };
+
 export function tryListMultipartS3Parts(
   bucket: string,
   key: string,
   uploadId: string,
-): Computed<Promise<readonly MultipartS3Part[] | null>> {
-  return computed(async (get): Promise<readonly MultipartS3Part[] | null> => {
+): Computed<Promise<MultipartS3PartsResult>> {
+  return computed(async (get): Promise<MultipartS3PartsResult> => {
     const client = get(s3ClientForBucket(bucket));
     const result = await settle(
       client.send(
@@ -1041,16 +1051,33 @@ export function tryListMultipartS3Parts(
     );
     if (!result.ok) {
       if (isS3NotFoundError(result.error)) {
-        return null;
+        const name =
+          typeof result.error === "object" &&
+          result.error !== null &&
+          "name" in result.error
+            ? result.error.name
+            : undefined;
+        return {
+          parts: null,
+          providerError:
+            name === "NotFound" ||
+            name === "NoSuchKey" ||
+            name === "NoSuchUpload"
+              ? name
+              : "other",
+          ...s3ErrorMetadata(result.error),
+        };
       }
       throw result.error;
     }
-    return (result.value.Parts ?? []).map((part) => {
-      if (part.PartNumber === undefined || part.ETag === undefined) {
-        throw new Error("R2 returned incomplete multipart part metadata");
-      }
-      return { partNumber: part.PartNumber, etag: part.ETag };
-    });
+    return {
+      parts: (result.value.Parts ?? []).map((part) => {
+        if (part.PartNumber === undefined || part.ETag === undefined) {
+          throw new Error("R2 returned incomplete multipart part metadata");
+        }
+        return { partNumber: part.PartNumber, etag: part.ETag };
+      }),
+    };
   });
 }
 

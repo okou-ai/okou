@@ -424,8 +424,7 @@ single floating line, and colour is a small accent for status only.
 - **Placeholders** (the composer's "Message Okou", the sidebar's "Search chats" and its glyph)
   use `OkouColor.placeholder` (gray-600), lighter than supporting text.
 - **Sidebar order**: the Pinned Agents rail, always at the top so the avatars never move;
-  **Active** (running and unread chats from every agent, at most six), shown only while
-  there are some; the chat filter (the
+  the chat filter (the
   web's Inbox — All chats without archiving — / Unread / Archived / Muted, then Mark
   all read); the selected agent's chats grouped Pinned / Today / Yesterday / Previous
   7 days / Earlier. Everything starts on the `pageInset` edge.
@@ -433,10 +432,7 @@ single floating line, and colour is a small accent for status only.
   state. The status column holds the web's title status emoji (✅ Done, ⏳ Waiting, …);
   it appears in a section only when one of that section's chats has a status, and
   rows without one show a quiet `message-circle` glyph so titles stay on one edge.
-  The emoji stays in the title so web and iOS agree; archive is a separate flag. An
-  Active row is one line like the rest: its agent's 28 pt avatar (`OkouAvatarSize.row`)
-  takes the status column, overhanging it so the mark lines up with an emoji, in place of
-  a second line with the agent's name.
+  The emoji stays in the title so web and iOS agree; archive is a separate flag.
 - **Trailing state** is the running indicator, an unread dot (8 pt `running` sky blue, as on
   the web; amber is kept for a primary commit), or nothing. Status is
   never a system spinner.
@@ -582,7 +578,7 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouProfileAvatar`                                                           | The signed-in person's photo in a circle with a hairline; account glyph without a photo (sidebar Settings, Settings profile row)                                                     |
 | `OkouActionTile` / `OkouMediaThumbnail` / `OkouSelectionMark`                 | An 88 pt media-strip tile (Camera), a photo thumbnail with a hairline, and its pick mark (open ring, then amber with an ink check)                                                   |
 | `OkouCloseToolbarItem`                                                        | The close button in its one place: the toolbar's trailing end                                                                                                                        |
-| `OkouChatRowLabel` / `OkouChatStatusMark`                                     | A sidebar chat: status column (emoji, quiet glyph, or an Active chat's agent avatar), one body line, trailing running / unread / pinned                                              |
+| `OkouChatRowLabel` / `OkouChatStatusMark`                                     | A sidebar chat: status column (emoji or quiet glyph), one body line, trailing running / unread / pinned                                                                              |
 | `OkouActionRow`                                                               | A plain sheet's action row (Add to chat): row label in body, 48 pt, page edge, destructive red, optional trailing note                                                               |
 | `OkouAccountRowLabel`                                                         | The Settings account: 40 pt mark, name in body medium, email in footnote supporting text                                                                                             |
 | `OkouAgentTile`                                                               | An agent in a sideways avatar rail: 56 pt avatar, one 11 pt line of name ending in "…", selected tile, unread dot                                                                    |

@@ -45,6 +45,7 @@ const completeMultipartInner$ = command(
         id,
         filename,
         uploadId,
+        operation: "complete",
       },
       signal,
     );
@@ -126,6 +127,7 @@ const abortMultipartInner$ = command(
         id,
         filename,
         uploadId,
+        operation: "abort",
       },
       signal,
     );
