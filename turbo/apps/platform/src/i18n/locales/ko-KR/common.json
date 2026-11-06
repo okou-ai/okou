@@ -2077,6 +2077,11 @@
       "sourcePartsHeading_one": "{{description}}에서 {{count}}개 부분 인용",
       "sourcePartsHeading_other": "{{description}}에서 {{count}}개 부분 인용"
     },
+    "fork": {
+      "action": "Fork",
+      "description": "선택한 내용으로 새 채팅 시작",
+      "sent": "새 채팅이 생성되었습니다"
+    },
     "forward": {
       "action": "전달",
       "agents": "에이전트",
@@ -4231,7 +4236,6 @@
     "instructions": "지침",
     "loadError": "지침을 불러오지 못했습니다. 다시 시도하세요.",
     "markdown": "일반 텍스트 또는 Markdown으로 작성",
-    "newChat": "새 채팅",
     "placeholder": "선호하는 업무 방식을 Okou에게 알려주세요…",
     "reload": "저장된 지침 다시 불러오기",
     "retry": "다시 시도",

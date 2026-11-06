@@ -1,4 +1,4 @@
-import { Copy, Forward, MessageCircle } from "lucide-react";
+import { Copy, Forward, GitFork, MessageCircle } from "lucide-react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -10,6 +10,9 @@ import {
   PopoverContent,
 } from "@okouai/ui";
 import { rootSignal$ } from "../../signals/root-signal.ts";
+import { pageSignal$ } from "../../signals/page-signal.ts";
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
+import { createChatForwardComposerSignals } from "../../signals/chat-page/chat-forward-composer.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type {
   ChatThreadFeedbackSelection,
@@ -48,6 +51,7 @@ function FeedbackToolbar({
   onForward?: () => void;
 }) {
   const { t } = useTranslation();
+  const singleAgent = useGet(singleAgentEnabled$);
   return (
     <div className="flex items-center gap-0.5">
       <Button
@@ -88,11 +92,18 @@ function FeedbackToolbar({
             size="xs"
             onClick={onForward}
             aria-keyshortcuts="f"
+            title={
+              singleAgent
+                ? t(($) => {
+                    return $.chat.fork.description;
+                  })
+                : undefined
+            }
             className="text-foreground"
           >
-            <Forward />
+            {singleAgent ? <GitFork /> : <Forward />}
             {t(($) => {
-              return $.chat.forward.action;
+              return singleAgent ? $.chat.fork.action : $.chat.forward.action;
             })}
             <ShortcutHint shortcut="f" />
           </Button>
@@ -102,7 +113,7 @@ function FeedbackToolbar({
   );
 }
 
-// Mounts the selection listeners and the floating Copy / Quote / Forward
+// Mounts the selection listeners and the floating Copy / Quote / Fork or Forward
 // toolbar anchored to the selected passage. Picking "Quote"
 // drops the quoted passage straight into the composer (see the feedback rows in
 // chat-composer.tsx) — there is no separate feedback panel.
@@ -118,6 +129,7 @@ export function ChatFeedbackSelection({
   const selection = useGet(feedback.selection$);
   const forwardSelection = useGet(feedback.forwardSelection$);
   const rootSignal = useGet(rootSignal$);
+  const pageSignal = useGet(pageSignal$);
   const setFeedbackSelectionListenersRef = useSet(feedback.setListenersRef$);
   const setFeedbackSelectionToolbarRef = useSet(feedback.setToolbarRef$);
   const startFeedback = useSet(feedback.start$);
@@ -151,8 +163,8 @@ export function ChatFeedbackSelection({
             closeSelectionToolbar();
           }}
         >
-          <span ref={setFeedbackSelectionToolbarRef} hidden />
           <PopoverContent
+            ref={setFeedbackSelectionToolbarRef}
             anchor={selectionAnchor(selection)}
             data-chat-selection-interaction
             side="top"
@@ -168,7 +180,17 @@ export function ChatFeedbackSelection({
               }}
               onProvideFeedback={startFeedback}
               onForward={
-                selection.threadId && selection.runId ? startForward : undefined
+                selection.threadId && selection.runId
+                  ? () => {
+                      detach(
+                        startForward(
+                          createChatForwardComposerSignals,
+                          pageSignal,
+                        ),
+                        Reason.DomCallback,
+                      );
+                    }
+                  : undefined
               }
             />
           </PopoverContent>

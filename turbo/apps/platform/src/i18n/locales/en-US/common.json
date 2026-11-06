@@ -2084,6 +2084,11 @@
       "sourcePartsHeading_one": "Quoted {{count}} part from {{description}}",
       "sourcePartsHeading_other": "Quoted {{count}} parts from {{description}}"
     },
+    "fork": {
+      "action": "Fork",
+      "description": "Start a new chat with this selection",
+      "sent": "New chat created"
+    },
     "forward": {
       "action": "Forward",
       "agents": "Agents",
@@ -4245,7 +4250,6 @@
     "instructions": "Instructions",
     "loadError": "Couldn’t load your instructions. Try again.",
     "markdown": "Write in plain text or use Markdown",
-    "newChat": "New chat",
     "placeholder": "Tell Okou how you like to work…",
     "reload": "Reload saved instructions",
     "retry": "Retry",
