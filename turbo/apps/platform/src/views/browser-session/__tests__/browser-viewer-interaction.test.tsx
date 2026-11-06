@@ -3046,7 +3046,10 @@ test("A late session-detachment receipt resolves capture-only retirement uncerta
   const proof = browser.holdNextDetach("example-page-session");
   browser.failNext("Page.stopScreencast", "Capture stop unconfirmed");
   act(() => {
-    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+    browser.nativeEvent("tab-replaced", undefined, {
+      tabId: 12,
+      removedTabId: 11,
+    });
   });
   await screen.findByText("Browser view unavailable");
   await act(async () => {
@@ -3068,6 +3071,141 @@ async function setupScopedPair() {
   return browser;
 }
 
+test("A retained selection releases held input and accepts fresh composition after a background change", async () => {
+  const browser = await setupScopedPair();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.dispatchKeyEvent",
+      params: { type: "rawKeyDown", key: "Shift" },
+    });
+  });
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+  });
+  await proof.received;
+  expect(input).toBeDisabled();
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.dispatchKeyEvent",
+      params: { type: "keyUp", key: "Shift", modifiers: 0 },
+    });
+  });
+  await act(proof.release);
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+  });
+  await userEvent.click(input);
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "ni" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.imeSetComposition",
+      params: { text: "ni" },
+    });
+  });
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "你",
+    }),
+  );
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "你" },
+    });
+  });
+});
+
+test.each(["confirmed", "failed"])(
+  "A retained selection waits for its original %s input release before readmission",
+  async (outcome) => {
+    const browser = await setupScopedPair();
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.dispatchKeyEvent",
+        params: { type: "rawKeyDown", key: "Shift" },
+      });
+    });
+    if (outcome === "failed") {
+      browser.failNext("Input.dispatchKeyEvent", "Original key release failed");
+    }
+    const release = browser.holdNext("Input.dispatchKeyEvent");
+    const proof = browser.holdNextNative("getWindow");
+    act(() => {
+      browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+    });
+    await release.received;
+    await proof.received;
+    await act(proof.release);
+    expect(input).toBeDisabled();
+    await act(release.release);
+    if (outcome === "failed") {
+      await screen.findByText("Browser view unavailable");
+    }
+    await waitFor(() => {
+      expect(input).toHaveProperty("disabled", outcome === "failed");
+    });
+    if (outcome === "failed") {
+      click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    }
+    await waitFor(() => {
+      expect(input).toBeEnabled();
+      expect(screen.getByLabelText("Address")).toHaveValue(
+        outcome === "failed"
+          ? "https://other.example.com"
+          : "https://example.com",
+      );
+    });
+  },
+);
+
+test("An old retained input release failure cannot revoke the newly selected tab", async () => {
+  const browser = await setupScopedPair();
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft" });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.dispatchKeyEvent",
+      params: { type: "rawKeyDown", key: "Shift" },
+    });
+  });
+  browser.failNext("Input.dispatchKeyEvent", "Original key release failed");
+  const release = browser.holdNext("Input.dispatchKeyEvent");
+  const proof = browser.holdNextNative("getWindow");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+  });
+  await release.received;
+  await proof.received;
+  await act(proof.release);
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  await act(release.release);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://other.example.com",
+    );
+    expect(input).toBeEnabled();
+  });
+});
+
 async function chooseHealthyTabAfterRetirementFailure(
   browser: ReturnType<typeof mockViewer>,
   method: string,
@@ -3075,7 +3213,7 @@ async function chooseHealthyTabAfterRetirementFailure(
   const proof = browser.holdNextDetach("example-page-session");
   browser.failNext(method, "Original cleanup unconfirmed");
   act(() => {
-    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+    browser.nativeEvent("tab-attached", undefined, { tabId: 12, windowId: 0 });
   });
   await screen.findByText("Browser view unavailable");
   click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));

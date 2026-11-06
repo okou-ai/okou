@@ -6,7 +6,6 @@
 export enum FeatureSwitchKey {
   SingleAgent = "singleAgent",
   FriendReferrals = "friendReferrals",
-  MarketingContentHandoff = "marketingContentHandoff",
   Projects = "projects",
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
   ConnectorSkillBundleDelivery = "_connectorSkillBundleDelivery",
@@ -39,7 +38,6 @@ export enum FeatureSwitchKey {
   AutoContinueBusyChats = "_autoContinueBusyChats",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
-  MarkdownCjkEmphasis = "markdownCjkEmphasis",
   ChatMessagePdf = "chatMessagePdf",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",

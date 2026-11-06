@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { enrollMarketingHandoffSession$ } from "./prompt-page/marketing-handoff.ts";
 import {
   captureFriendReferral$,
@@ -651,9 +650,7 @@ const completeBootstrap$ = command(
     signal.throwIfAborted();
 
     await Promise.all([
-      ...(featureSwitches[FeatureSwitchKey.MarketingContentHandoff]
-        ? [set(enrollMarketingHandoffSession$, signal)]
-        : []),
+      set(enrollMarketingHandoffSession$, signal),
       set(setupAuthenticatedBootstrapData$, signal),
       set(setupRoutes$, signal),
       set(bootstrapOnboardingGuard$, signal),

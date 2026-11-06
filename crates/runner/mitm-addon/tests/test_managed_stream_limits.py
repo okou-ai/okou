@@ -1,6 +1,7 @@
 """Each removed threshold is exercised without retaining fixture upload bodies."""
 
 import hashlib
+from functools import cache
 from unittest.mock import patch
 
 import pytest
@@ -13,6 +14,18 @@ import request_streaming
 from tests.managed_openrouter_helpers import PRESET, sandbox
 from tests.managed_wire_helpers import WireSession
 from tests.request_handler_helpers import _write_registry
+
+
+@cache
+def _expected_body_digest(prefix: bytes, size: int, tail: bytes) -> bytes:
+    # Protocol and capture parameters share only this immutable reference, never
+    # provider observations or a retained request body.
+    expected = hashlib.sha256(prefix)
+    slab = b"x" * 16_384
+    for offset in range(0, size, len(slab)):
+        expected.update(slab[: min(len(slab), size - offset)])
+    expected.update(tail)
+    return expected.digest()
 
 
 @pytest.mark.parametrize("dialect", ["openai-completions", "openai-responses"])
@@ -37,7 +50,7 @@ async def test_independent_removed_limits_over_native_wire(
     tail = "🙂".encode() + b'"}]}'
     length = len(prefix) + size + len(tail)
     slab = b"x" * 16_384
-    expected = hashlib.sha256(prefix)
+    expected = _expected_body_digest(prefix, size, tail)
     with (
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
         taddons.context(Proxyserver(), mitm_addon) as context,
@@ -55,17 +68,15 @@ async def test_independent_removed_limits_over_native_wire(
                 await peer.write(prefix)
             for offset in range(0, size, len(slab)):
                 piece = slab[: min(len(slab), size - offset)]
-                expected.update(piece)
                 for peer in sessions:
                     await peer.write(piece)
                     assert peer.flow.request.raw_content is None
-            expected.update(tail)
             for peer in sessions:
                 await peer.write(tail[:1])
                 await peer.write(tail[1:], final=True)
                 assert peer.upstream_ended
                 assert peer.received == length
-                assert peer.digest.digest() == expected.digest()
+                assert peer.digest.digest() == expected
                 assert request_streaming.streamed_request_size(peer.flow) == length
                 await peer.respond()
             assert all(peer.flow.live and peer.flow.error is None for peer in sessions)

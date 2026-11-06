@@ -101,29 +101,10 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    // The workspace title sits directly over chat titles: soft let them read through it, and
-    // the system's hard edge draws a white band on the warm sidebar. The header instead takes
-    // the sidebar's own colour, with a short fade where rows pass under it.
-    .scrollEdgeEffectHidden(true, for: .top)
-    .scrollEdgeEffectStyle(.soft, for: .bottom)
+    .scrollEdgeEffectStyle(.soft, for: .top)
+    .scrollEdgeEffectHidden(true, for: .bottom)
     .safeAreaBar(edge: .top, spacing: 0) {
-      VStack(spacing: 0) {
-        // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
-        header.padding(.horizontal, rowInset)
-      }
-      .background {
-        OkouColor.sidebar
-          .ignoresSafeArea(edges: .top)
-          .overlay(alignment: .bottom) {
-            LinearGradient(
-              colors: [OkouColor.sidebar, OkouColor.sidebar.opacity(0)], startPoint: .top,
-              endPoint: .bottom
-            )
-            .frame(height: OkouSpace.lg)
-            .offset(y: OkouSpace.lg)
-            .allowsHitTesting(false)
-          }
-      }
+      header.padding(.horizontal, rowInset)
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(OkouColor.sidebar)
@@ -472,7 +453,9 @@ struct ChatSidebarView: View {
         let profile = authentication.profile
         OkouProfileAvatar(
           imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-          size: OkouControl.minimumTarget)
+          size: OkouControl.minimumTarget
+        )
+        .modifier(OkouGlassControl(shape: .circle))
       }
       .accessibilityLabel("Settings")
       .accessibilityIdentifier("settings")
