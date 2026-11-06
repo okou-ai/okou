@@ -36,6 +36,7 @@ import { createViewerSignals } from "./viewer/model.ts";
 import {
   createViewerRecovery,
   sameRecoveryBinding,
+  type RecoveryIntent,
   type RecoveryTarget,
   type RecoveryView,
 } from "./recovery.ts";
@@ -170,12 +171,7 @@ function createRuntimeState(
   const resetAutomatic$ = resetSignal();
   const recoveryTarget$ = state<RecoveryTarget | null>(null);
   // Bootstrap's own selections must not renew a spent recovery episode.
-  const recoveryIntent$ = state<object>({});
-  const cancelAutomatic$ = command(({ set }) => {
-    set(resetAutomatic$, AbortSignal.abort(cancelled()));
-    set(recoveryTarget$, null);
-    set(recoveryIntent$, {});
-  });
+  const recoveryIntent$ = state<RecoveryIntent>({ retiredFailure: null });
   const remoteNavigation$ = computed((get) => {
     const lease = get(installed$);
     return lease ? get(lease.controller.navigation$) : null;
@@ -199,6 +195,15 @@ function createRuntimeState(
     connectedSource$,
     recoveryChanged$,
   );
+  const cancelAutomatic$ = command(({ get, set }) => {
+    // Intent replacement and old-fault retirement are one publication.
+    set(recoveryIntent$, {
+      retiredFailure:
+        get(model.imageRecovery$)?.owner ?? get(model.snapshot$).error,
+    });
+    set(resetAutomatic$, AbortSignal.abort(cancelled()));
+    set(recoveryTarget$, null);
+  });
   const confirmedRequest$ = state<
     Promise<BrowserConnection | null> | undefined
   >(undefined);
@@ -1034,6 +1039,7 @@ function createPauseObservation(
     | "connectionChanged$"
     | "installed$"
     | "cancelAutomatic$"
+    | "recoveryIntent$"
   >,
 ) {
   return command(
@@ -1056,6 +1062,9 @@ function createPauseObservation(
       }
       if (paused) {
         set(context.cancelAutomatic$);
+      } else {
+        // Resuming explicitly permits retrying the retained failure.
+        set(context.recoveryIntent$, { retiredFailure: null });
       }
       // Suspend the request observation, not the native owner or the caller's
       // recovery receipt. Resume rejoins that same root's readiness work.

@@ -962,6 +962,7 @@ type DiscoveryContext = ControllerContext<
   | "nativeHost"
   | "preferredTargetId"
   | "readinessFailure$"
+  | "selectionChanged$"
   | "selectedOwner$"
   | "wake$"
 >;
@@ -1112,15 +1113,12 @@ function createDiscoveryGraph(
         }) &&
         !get(closingTargets$).has(selected)
       ) {
+        set(context.selectionChanged$);
         set(get(links$).retireCurrent$, "target-replaced", false, true);
+        // Successor selection or discovery owns any final failure after this loss.
         set(model.transition$, {
           type: "target-lost",
-          error: diagnostic(
-            new CdpFault(
-              "target-unavailable",
-              "The selected target is no longer available in this scope.",
-            ),
-          ),
+          error: null,
         });
         // Resume the existing initial-selection path after losing this selection.
         set(chosenOnce$, false);
@@ -1992,6 +1990,7 @@ function createReadinessGraph(
     // Native focus sees the completed image-recovery transition, not its prior phase.
     set(nativeHost.synchronize$);
     set(wake$);
+    set(model.readinessChanged$);
     if (!get(selected.readiness.usable$)) {
       return;
     }
@@ -4431,7 +4430,8 @@ function createImageRetryGraph(
       const operation = set(selected.presentation.replace$, signal);
       const abort = () => {
         if (get(selectedOwner$) === selected.attached.owner) {
-          set(get(links$).retireCurrent$, "target-replaced", false);
+          // Image cancellation cannot supersede an independent tab creation.
+          set(get(links$).retireCurrent$, "target-replaced", false, true);
         }
       };
       signal.addEventListener("abort", abort, { once: true });
