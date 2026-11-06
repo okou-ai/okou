@@ -39,7 +39,6 @@ export enum FeatureSwitchKey {
   AutoContinueBusyChats = "_autoContinueBusyChats",
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
-  ChatThreadInlineRename = "chatThreadInlineRename",
   MarkdownCjkEmphasis = "markdownCjkEmphasis",
   ChatMessagePdf = "chatMessagePdf",
   PresentationConvert = "presentationConvert",

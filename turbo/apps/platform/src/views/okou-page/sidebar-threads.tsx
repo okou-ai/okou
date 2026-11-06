@@ -623,8 +623,6 @@ function ChatThreadItemLink({
   const isHighlighted = useGet(signals.highlighted$);
   const isUnread = useLastResolved(signals.unread$) ?? false;
   const select = useSet(signals.select$);
-  const inlineRenameEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadInlineRename] === true;
   const renaming = useGet(signals.inlineRenaming$);
   const startInlineRename = useSet(signals.startInlineRename$);
   const projectsEnabled = useGet(projectsEnabled$);
@@ -662,18 +660,14 @@ function ChatThreadItemLink({
           e.preventDefault();
         }
       }}
-      onDoubleClick={
-        inlineRenameEnabled
-          ? (e) => {
-              // Modified clicks open tabs or the side pane; renaming on top
-              // of them would act twice for one gesture.
-              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
-                return;
-              }
-              startInlineRename();
-            }
-          : undefined
-      }
+      onDoubleClick={(e) => {
+        // Modified clicks open tabs or the side pane; renaming on top
+        // of them would act twice for one gesture.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+          return;
+        }
+        startInlineRename();
+      }}
       className={`col-span-2 col-start-1 row-start-1 grid grid-cols-subgrid items-center rounded-lg text-left leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${touch ? "h-14 pl-3 text-base" : "h-8 pl-2 text-sm"} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${draggingThread?.id === signals.threadId ? "opacity-40" : ""} ${
         isHighlighted
           ? "bg-state-selected text-sidebar-foreground font-medium"

@@ -215,13 +215,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatThreadInlineRename]: {
-    maintainer: "tongx@okou.ai",
-    displayName: "Inline chat rename",
-    description: "Double-click a chat in the sidebar to rename it in place.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.ChatHomeCompliance]: {
     maintainer: "tongx@okou.ai",
     displayName: "Chat home compliance",

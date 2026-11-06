@@ -56,7 +56,6 @@ async function prepare(main: number | null = 1, side = false) {
     featureSwitches: {
       [FeatureSwitchKey.ChatThreadArchiving]: true,
       [FeatureSwitchKey.ChatThreadMuting]: true,
-      [FeatureSwitchKey.ChatThreadInlineRename]: true,
     },
   });
   await expectOrder(INITIAL_ORDER);
