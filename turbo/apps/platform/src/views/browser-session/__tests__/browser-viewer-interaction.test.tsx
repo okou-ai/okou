@@ -2775,7 +2775,11 @@ test("A hidden page pauses input and resumes the selected tab when visible", asy
   });
   expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
   expect(screen.queryByText("Connecting to browser…")).toBeNull();
-  expect(screen.getByText("Updating view…")).toBeInTheDocument();
+  const updating = screen.getByText("Updating view…");
+  expect(updating).toHaveAttribute("role", "status");
+  expect(updating.parentElement).toHaveTextContent(
+    "Kept while open; reclaimed after 10 idle minutes.",
+  );
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   await act(async () => {
     browser.event(
@@ -2815,6 +2819,7 @@ test("A hidden page pauses input and resumes the selected tab when visible", asy
   expect(screen.getByLabelText("Address")).toHaveValue(
     "https://other.example.com",
   );
+  expect(screen.queryByText("Updating view…")).not.toBeInTheDocument();
 });
 
 test("Rapid visibility changes retain the preview until original capture cleanup and a new image finish", async () => {

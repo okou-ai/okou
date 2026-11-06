@@ -943,7 +943,7 @@ function useBrowserRecovery(signals: BrowserSignals) {
   };
 }
 
-export function BrowserRecoveryStatus({
+export function BrowserLoadingStatus({
   signals,
   className,
 }: {
@@ -951,8 +951,10 @@ export function BrowserRecoveryStatus({
   readonly className?: string;
 }) {
   const recovery = useLoadable(signals.recoveryOperation$);
+  const presentation = useGet(signals.presentation$);
   const { t } = useTranslation();
-  return recovery.state === "loading" ? (
+  const recovering = recovery.state === "loading";
+  return recovering || presentation.loadingPreview ? (
     <span
       role="status"
       className={cn(
@@ -962,7 +964,9 @@ export function BrowserRecoveryStatus({
     >
       <Loader2 size={12} aria-hidden className="animate-spin" />
       {t(($) => {
-        return $.browserViewer.reconnecting;
+        return recovering
+          ? $.browserViewer.reconnecting
+          : $.browserViewer.updatingView;
       })}
     </span>
   ) : null;
@@ -1074,27 +1078,6 @@ function useBrowserStatusText(signals: BrowserSignals, recovering: boolean) {
             });
 }
 
-function BrowserUpdatingView({
-  loading,
-  recovering,
-}: {
-  readonly loading: boolean;
-  readonly recovering: boolean;
-}) {
-  const { t } = useTranslation();
-  return loading && !recovering ? (
-    <span
-      role="status"
-      className="pointer-events-none absolute bottom-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-md bg-popover px-2 py-1 text-xs text-muted-foreground shadow-sm"
-    >
-      <Loader2 size={12} aria-hidden className="animate-spin" />
-      {t(($) => {
-        return $.browserViewer.updatingView;
-      })}
-    </span>
-  ) : null;
-}
-
 function BrowserStatus({
   signals,
   creating,
@@ -1128,10 +1111,6 @@ function BrowserStatus({
         <Loader2 size={20} className="animate-spin" />
       )}
       {showStatus && <p>{text}</p>}
-      <BrowserUpdatingView
-        loading={presentation.loadingPreview}
-        recovering={recovering}
-      />
       {showStatus && !recovering && error && error.message !== text && (
         <p role="alert" className="max-w-md break-words">
           {error.message}

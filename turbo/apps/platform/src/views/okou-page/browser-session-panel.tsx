@@ -14,7 +14,7 @@ import {
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { Browser, BrowserRecoveryStatus } from "../browser/browser.tsx";
+import { Browser, BrowserLoadingStatus } from "../browser/browser.tsx";
 
 interface BrowserSessionPanelProps {
   readonly signals: BrowserSessionSignals;
@@ -230,7 +230,7 @@ function BrowserCdpViewer({
             presence={overlay}
           />
           {refined && (
-            <BrowserRecoveryStatus
+            <BrowserLoadingStatus
               signals={signals.browser}
               className="pointer-events-none absolute bottom-2 right-3 rounded border border-divider bg-popover px-2 py-1 text-[11px] leading-4 text-muted-foreground shadow-sm"
             />
@@ -409,7 +409,7 @@ function BrowserSessionPanelContent({
           <p className="min-w-0 flex-1 truncate">
             {browserSessionReclaimHint({ status: status.data })}
           </p>
-          <BrowserRecoveryStatus signals={signals.browser} />
+          <BrowserLoadingStatus signals={signals.browser} />
         </div>
       )}
     </PanelFrame>
