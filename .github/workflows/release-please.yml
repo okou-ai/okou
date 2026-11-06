@@ -2261,6 +2261,7 @@ jobs:
       # IMPORTANT: production runner releases use the release profile. The
       # shared R2 template cache intentionally ignores guest binaries. See #9192.
       - name: Cross-compile guest binaries for ${{ matrix.target }}
+        id: build-guests
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
         run: |
@@ -2271,9 +2272,23 @@ jobs:
             guest_cargo_args+=("-p" "$package")
           done
           cd crates
-          cargo build --release --target "$TARGET_TRIPLE" "${guest_cargo_args[@]}"
+          rm -f target/cargo-timings/cargo-timing.html
+          echo "timings-started=true" >> "$GITHUB_OUTPUT"
+          cargo build --release --target "$TARGET_TRIPLE" "${guest_cargo_args[@]}" --timings
+
+      - name: Upload guest release build timings
+        if: (success() || failure()) && steps.build-guests.outputs.timings-started == 'true'
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runner-release-guest-build-timings-${{ matrix.target }}-${{ github.run_attempt }}
+          path: crates/target/cargo-timings/cargo-timing.html
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}
+        id: build-runner
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
           GUEST_CLI_PATH: ${{ github.workspace }}/runner-cli-intermediate/package.tgz
@@ -2287,7 +2302,20 @@ jobs:
           for index in "${!RUNNER_GUEST_BINARIES[@]}"; do
             guest_env+=("${RUNNER_GUEST_PATH_ENVS[$index]}=${TARGET_DIR}/${RUNNER_GUEST_BINARIES[$index]}")
           done
-          env "${guest_env[@]}" cargo build --release --target "$TARGET_TRIPLE" -p runner
+          rm -f target/cargo-timings/cargo-timing.html
+          echo "timings-started=true" >> "$GITHUB_OUTPUT"
+          env "${guest_env[@]}" cargo build --release --target "$TARGET_TRIPLE" -p runner --timings
+
+      - name: Upload runner release build timings
+        if: (success() || failure()) && steps.build-runner.outputs.timings-started == 'true'
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runner-release-build-timings-${{ matrix.target }}-${{ github.run_attempt }}
+          path: crates/target/cargo-timings/cargo-timing.html
+          if-no-files-found: warn
+          retention-days: 7
 
       # Release always builds both targets; CI Runner compilers restore only.
       - name: Save pinned Runner Kerberos dependencies
