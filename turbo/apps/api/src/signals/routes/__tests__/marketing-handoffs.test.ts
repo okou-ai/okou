@@ -436,14 +436,108 @@ describe("Marketing content handoff", () => {
     expect(short.body).toStrictEqual(added);
   });
 
-  it("repairs a full-only public receipt before inventory accepts its short address", async () => {
+  it("reuses verified publications while storage is unavailable and still reports new presets as missing", async () => {
+    const existing = manifest(`Verified preset ${taskId}`);
+    const published = await accept(
+      api().publish({ headers: publisher, body: existing }),
+      [200],
+    );
+    const edited = manifest(`Edited preset ${taskId}`);
+    const editedHash = createHash("sha256")
+      .update(serializeMarketingHandoff(edited))
+      .digest("hex");
+    const privateHandoff = await create();
+    context.mocks.s3.send.mockRejectedValue(new Error("Storage unavailable"));
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const inventory = await accept(
+        api().publishStatus({
+          headers: publisher,
+          body: {
+            hashes: [published.body.hash, editedHash, privateHandoff.body.hash],
+          },
+        }),
+        [200],
+      );
+      expect(inventory.body).toStrictEqual({
+        missing: [editedHash, privateHandoff.body.hash],
+        shortAddressesVerified: true,
+      });
+    }
+    const unchanged = await accept(
+      api().publishBatch({
+        headers: publisher,
+        body: { manifests: [existing] },
+      }),
+      [200],
+    );
+    expect(unchanged.body.hashes).toStrictEqual([published.body.hash]);
+    const failed = await api().publishBatch({
+      headers: publisher,
+      body: { manifests: [edited] },
+    });
+    expect(failed.status).toBe(500);
+    const inventory = await accept(
+      api().publishStatus({
+        headers: publisher,
+        body: { hashes: [published.body.hash, editedHash] },
+      }),
+      [200],
+    );
+    expect(inventory.body.missing).toStrictEqual([editedHash]);
+  });
+
+  it("checks a full inventory batch without storage reads and identifies a single edited preset", async () => {
+    const manifests = Array.from({ length: 500 }, (_, index) => {
+      return manifest(`Inventory preset ${taskId} ${index}`);
+    });
+    const hashes: string[] = [];
+    for (let offset = 0; offset < manifests.length; offset += 100) {
+      const published = await accept(
+        api().publishBatch({
+          headers: publisher,
+          body: { manifests: manifests.slice(offset, offset + 100) },
+        }),
+        [200],
+      );
+      hashes.push(...published.body.hashes);
+    }
+    context.mocks.s3.send.mockRejectedValue(new Error("Storage unavailable"));
+    const unchanged = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes } }),
+      [200],
+    );
+    expect(unchanged.body.missing).toStrictEqual([]);
+    const editedHash = createHash("sha256")
+      .update(serializeMarketingHandoff(manifest(`Edited inventory ${taskId}`)))
+      .digest("hex");
+    const edited = await accept(
+      api().publishStatus({
+        headers: publisher,
+        body: { hashes: [...hashes.slice(1), editedHash] },
+      }),
+      [200],
+    );
+    expect(edited.body.missing).toStrictEqual([editedHash]);
+  });
+
+  it("repairs a full-only publication in a new bucket before inventory accepts its short address", async () => {
     const body = manifest(`Legacy public preset ${taskId}`);
     const published = await accept(
       api().publish({ headers: publisher, body }),
       [200],
     );
-    objects.delete(
-      `test-marketing-handoffs/manifest/${published.body.shortHash}.json`,
+    mockEnv(
+      "R2_MARKETING_HANDOFF_BUCKET_NAME",
+      "replacement-marketing-handoffs",
+    );
+    objects.set(
+      `replacement-marketing-handoffs/manifest/${published.body.hash}.json`,
+      {
+        bytes: Buffer.from(serializeMarketingHandoff(body)),
+        type: "application/json",
+        metadata: {},
+      },
     );
     const inventory = () => {
       return accept(
@@ -474,6 +568,61 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(resolved.body).toStrictEqual(body);
+  });
+
+  it("does not reuse a publication proof after the R2 account changes", async () => {
+    const published = await accept(
+      api().publish({ headers: publisher, body: manifest() }),
+      [200],
+    );
+    mockEnv("R2_ACCOUNT_ID", "replacement-account");
+    context.mocks.s3.send.mockRejectedValue(new Error("Storage unavailable"));
+    const inventory = await api().publishStatus({
+      headers: publisher,
+      body: { hashes: [published.body.hash] },
+    });
+    expect(inventory.status).toBe(500);
+  });
+
+  it("verifies an unrecorded bucket once and reuses the complete immutable binding", async () => {
+    const body = manifest(`Moved public preset ${taskId}`);
+    const published = await accept(
+      api().publish({ headers: publisher, body }),
+      [200],
+    );
+    mockEnv(
+      "R2_MARKETING_HANDOFF_BUCKET_NAME",
+      "replacement-marketing-handoffs",
+    );
+    const object = {
+      bytes: Buffer.from(serializeMarketingHandoff(body)),
+      type: "application/json",
+      metadata: {},
+    };
+    objects.set(
+      `replacement-marketing-handoffs/manifest/${published.body.shortHash}.json`,
+      object,
+    );
+    const inventory = () => {
+      return accept(
+        api().publishStatus({
+          headers: publisher,
+          body: { hashes: [published.body.hash] },
+        }),
+        [200],
+      );
+    };
+    // An alias alone must not certify a missing full-digest manifest.
+    expect((await inventory()).body.missing).toStrictEqual([
+      published.body.hash,
+    ]);
+    objects.set(
+      `replacement-marketing-handoffs/manifest/${published.body.hash}.json`,
+      object,
+    );
+    expect((await inventory()).body.missing).toStrictEqual([]);
+    context.mocks.s3.send.mockRejectedValue(new Error("Storage unavailable"));
+    expect((await inventory()).body.missing).toStrictEqual([]);
   });
 
   it("rejects a colliding batch without granting access to any unpublished manifest", async () => {
