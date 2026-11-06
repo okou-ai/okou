@@ -9,7 +9,10 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { command } from "ccstate";
 import { and, eq, isNull, or } from "drizzle-orm";
-import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
+import {
+  CONVERSATION_GUIDANCE,
+  THREAD_CONTEXT_PRIORITY,
+} from "../../lib/conversation-guidance";
 import {
   buildFeishuHelpMessage,
   buildFeishuLoginMessage,
@@ -489,6 +492,7 @@ export function buildFeishuSystemPrompt(args: {
     CONVERSATION_GUIDANCE,
     currentIntegration,
     args.integrationNote,
+    args.threadId !== args.messageId ? THREAD_CONTEXT_PRIORITY : "",
     args.history,
   ]
     .filter(Boolean)

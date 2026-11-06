@@ -1,5 +1,8 @@
 import type { ChatTeamsMessageFile } from "@okouai/db/jsonb-contracts/chat-teams-context";
-import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
+import {
+  CONVERSATION_GUIDANCE,
+  THREAD_CONTEXT_PRIORITY,
+} from "../../lib/conversation-guidance";
 
 type TeamsPromptFile = Pick<
   ChatTeamsMessageFile,
@@ -84,6 +87,9 @@ export function buildTeamsPrompt(args: {
     CONVERSATION_GUIDANCE,
     currentIntegration,
     args.integrationNote,
+    args.activityId && args.threadId !== args.activityId
+      ? THREAD_CONTEXT_PRIORITY
+      : "",
     args.threadContext,
   ]
     .filter((part): part is string => {

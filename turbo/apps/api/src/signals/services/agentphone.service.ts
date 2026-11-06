@@ -23,6 +23,7 @@ import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { env } from "../../lib/env";
+import { THREAD_CONTEXT_PRIORITY } from "../../lib/conversation-guidance";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { inferMimetype } from "../../lib/mimetype";
 import { now } from "../../lib/time";
@@ -1447,7 +1448,9 @@ const persistAgentPhoneChatMessage$ = command(
       runId: null,
       agentphoneContext: {
         messageText: prompt,
-        threadContext: args.threadContext,
+        threadContext: args.event.replyToMessageId
+          ? `${THREAD_CONTEXT_PRIORITY}\nReply to message ID: ${args.event.replyToMessageId}\n\n${args.threadContext}`
+          : args.threadContext,
         messageId: args.event.messageId,
         rootMessageId: args.rootMessageId,
         conversationId: args.event.conversationId,
