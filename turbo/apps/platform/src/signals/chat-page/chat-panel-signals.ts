@@ -36,6 +36,7 @@ import type { ChatForwardContext } from "./chat-forward.ts";
 import type { ChatConversationLocatorSignals } from "./chat-conversation-locator.ts";
 import type { ChatResourceSignals } from "./chat-resources.ts";
 import type { ThreadMailSignals } from "./thread-mail.ts";
+import type { ChatThreadRowSignals } from "./chat-thread-rows.ts";
 
 type RecommendedFollowup = ChatRecommendedFollowup;
 
@@ -82,7 +83,7 @@ export interface MessageListSignals {
   readonly latestRunFinishCreatedAt$: Computed<Promise<string | undefined>>;
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
-  readonly visibleRenderedChatGroupsReady$: Computed<Promise<boolean>>;
+  readonly visibleRows$: Computed<readonly ChatThreadRowSignals[]>;
   readonly visibleRunUsageSignals$: Computed<readonly ChatRunUsageSignals[]>;
   readonly readyScrollAfterRenderRequest$: Computed<
     Promise<ReadyScrollAfterRenderRequest | null>
@@ -113,7 +114,6 @@ export interface MessageListSignals {
     Promise<boolean>,
     [AbortSignal]
   >;
-  readonly resetRenderedChatGroupsIfAtBottom$: Command<void, []>;
   readonly artifacts$: Computed<Promise<ChatThreadArtifactRun[]>>;
 }
 
@@ -219,7 +219,7 @@ export interface ChatPanelSignals {
   readonly latestAssistantTextCreatedAt$: Computed<Promise<string | undefined>>;
   readonly initialEventsReady$: Computed<boolean>;
   readonly visibleRenderedChatGroups$: Computed<Promise<ChatEventGroup[]>>;
-  readonly visibleRenderedChatGroupsReady$: Computed<Promise<boolean>>;
+  readonly visibleRows$: Computed<readonly ChatThreadRowSignals[]>;
   readonly visibleRunUsageSignals$: Computed<readonly ChatRunUsageSignals[]>;
   readonly imageNavigation: ThreadImageNavigationSignals;
   readonly browserSessionSignals: BrowserSessionSignals;
@@ -236,7 +236,6 @@ export interface ChatPanelSignals {
     Promise<boolean>,
     [AbortSignal]
   >;
-  readonly resetRenderedChatGroupsIfAtBottom$: Command<void, []>;
   readonly subscribeChatThread$: Command<Promise<void>, [AbortSignal]>;
   // -- Thinking indicator ---------------------------------------------------
   readonly thinkingPhrase$: Computed<string>;

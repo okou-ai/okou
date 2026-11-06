@@ -65,6 +65,7 @@ import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
 import { setupProjectPage$ } from "./projects/project-page-setup.ts";
 import { hydrateProjects$ } from "./projects/projects.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
+import { clearChatThreadPanes$ } from "./chat-page/chat-thread-panes.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
 import {
   setupOnboardingEntryPage$,
@@ -576,8 +577,25 @@ const ROUTE_CONFIG = [
   },
 ] as const;
 
+// Thread panes belong to the chat page, which keeps, replaces or clears each
+// pane itself. Every other page starts without them.
+function withoutChatThreadPanes(
+  setupPage: Command<Promise<void> | void, [AbortSignal]>,
+) {
+  return command(async ({ set }, signal: AbortSignal) => {
+    set(clearChatThreadPanes$);
+    await set(setupPage, signal);
+  });
+}
+
+const PAGE_ROUTES = ROUTE_CONFIG.map((route) => {
+  return route.path === ROUTES.chat
+    ? route
+    : { ...route, setup: withoutChatThreadPanes(route.setup) };
+});
+
 const setupRoutes$ = command(async ({ set }, signal: AbortSignal) => {
-  await set(initRoutes$, ROUTE_CONFIG, signal);
+  await set(initRoutes$, PAGE_ROUTES, signal);
 });
 
 const syncInitialPreferences$ = command(

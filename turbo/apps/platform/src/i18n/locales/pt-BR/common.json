@@ -2040,7 +2040,6 @@
     "documentTitle": "Conversa",
     "errors": {
       "genericTitle": "Não foi possível concluir esta execução",
-      "loadMessages": "Falha ao carregar mensagens",
       "noModelProviderAction": "Gerenciar assinaturas",
       "noModelProviderPrefix": "Nenhum provedor de modelos está disponível para esta execução. Conecte uma assinatura pessoal.",
       "providerIncompatibleAction": "Iniciar uma nova sessão",
