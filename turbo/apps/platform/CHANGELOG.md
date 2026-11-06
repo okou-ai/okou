@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1097.1](https://github.com/okou-ai/okou/compare/app-v0.1097.0...app-v0.1097.1) (2026-11-06)
+
+
+### Refactoring
+
+* **app:** stop passing view callbacks into platform commands ([#45452](https://github.com/okou-ai/okou/issues/45452)) ([8725c3b](https://github.com/okou-ai/okou/commit/8725c3b15d76e1bdf76b1421d22e7803a6c405cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.1
+    * @okouai/core bumped to 8.819.1
+
 ## [0.1097.0](https://github.com/okou-ai/okou/compare/app-v0.1096.1...app-v0.1097.0) (2026-11-05)
 
 

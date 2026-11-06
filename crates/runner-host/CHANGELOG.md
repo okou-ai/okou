@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.30](https://github.com/okou-ai/okou/compare/runner-host-v0.10.29...runner-host-v0.10.30) (2026-11-06)
+
+
+### Refactoring
+
+* **test-support:** share occupied blocking-worker setup ([#45526](https://github.com/okou-ai/okou/issues/45526)) ([efc1d94](https://github.com/okou-ai/okou/commit/efc1d945f5514f4e095f1edef81a273fb1892e5e))
+
 ## [0.10.29](https://github.com/okou-ai/okou/compare/runner-host-v0.10.28...runner-host-v0.10.29) (2026-11-05)
 
 ## [0.10.28](https://github.com/okou-ai/okou/compare/runner-host-v0.10.27...runner-host-v0.10.28) (2026-11-05)

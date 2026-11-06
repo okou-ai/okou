@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.244.23](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.22...runner-rs-v0.244.23) (2026-11-06)
+
+
+### Refactoring
+
+* **python:** centralize native status destination validation ([#45546](https://github.com/okou-ai/okou/issues/45546)) ([cf59117](https://github.com/okou-ai/okou/commit/cf59117ea8f979decf0f6ae55907ed1faa69dc8a))
+* **python:** centralize native witness collection ownership ([#45524](https://github.com/okou-ai/okou/issues/45524)) ([09a87ab](https://github.com/okou-ai/okou/commit/09a87abf461fd929bb8455ee5abc8835824e6514))
+* **python:** share native caller policy foundation generation ([#45554](https://github.com/okou-ai/okou/issues/45554)) ([75b4c98](https://github.com/okou-ai/okou/commit/75b4c9802745ce2dfe76709fde75233887a65760))
+* **test-support:** share occupied blocking-worker setup ([#45526](https://github.com/okou-ai/okou/issues/45526)) ([efc1d94](https://github.com/okou-ai/okou/commit/efc1d945f5514f4e095f1edef81a273fb1892e5e))
+* **test-support:** share r2 multipart success fixtures ([#45548](https://github.com/okou-ai/okou/issues/45548)) ([0a1e96e](https://github.com/okou-ai/okou/commit/0a1e96ef1a37e190a58e4cc1803c2086a163c240))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.22](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.21...runner-rs-v0.244.22) (2026-11-05)
 
 

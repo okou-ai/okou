@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.14](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.13...runner-provider-v0.16.14) (2026-11-06)
+
+
+### Refactoring
+
+* **test-support:** share occupied blocking-worker setup ([#45526](https://github.com/okou-ai/okou/issues/45526)) ([efc1d94](https://github.com/okou-ai/okou/commit/efc1d945f5514f4e095f1edef81a273fb1892e5e))
+
 ## [0.16.13](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.12...runner-provider-v0.16.13) (2026-11-05)
 
 ## [0.16.12](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.11...runner-provider-v0.16.12) (2026-11-05)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.72](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.71...sandbox-firecracker-v0.53.72) (2026-11-06)
+
+
+### Refactoring
+
+* **sandbox:** share snapshot artifact test construction ([#45556](https://github.com/okou-ai/okou/issues/45556)) ([47e967f](https://github.com/okou-ai/okou/commit/47e967fc9ae1111f4d278f9739a579709101af44))
+
 ## [0.53.71](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.70...sandbox-firecracker-v0.53.71) (2026-11-05)
 
 
