@@ -63,6 +63,7 @@ final class ConversationWindowStoreTests: XCTestCase {
     _ = await (first, overlapping)
     let expanded = conversation.visibleMessages.map(\.id)
     XCTAssertGreaterThan(expanded.count, initial.count)
+    XCTAssertEqual(expanded, Array(expected.suffix(expanded.count)))
     XCTAssertEqual(Array(expanded.suffix(initial.count)), initial)
     fixture.appendMessage()
     await conversation.refresh()
