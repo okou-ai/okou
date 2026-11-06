@@ -1,6 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { userTemplatesContract } from "@okouai/api-contracts/contracts/user-templates";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -72,8 +71,7 @@ async function openPicker({
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
   });
   const dialog = await openTemplatePicker(user);
   return { user, dialog };

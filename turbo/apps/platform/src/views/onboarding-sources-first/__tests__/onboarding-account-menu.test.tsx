@@ -2,17 +2,15 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { ROUTES } from "../../../signals/route-paths.ts";
 import {
-  AGENT_ID,
   connectedPersonalClaudeCodeProvider,
   connectedPersonalCodexProvider,
   createSidebarAccountHelpers,
-  openAccountMenu,
-} from "./sidebar-account-test-helpers.ts";
+} from "../../okou-page/__tests__/sidebar-account-test-helpers.ts";
+import { mockOnboardingConnectorCatalog } from "./onboarding-catalog-test-helpers.ts";
 
 const context = testContext();
 const { mockAdminAccountSidebar } = createSidebarAccountHelpers(context);
@@ -22,19 +20,24 @@ test.each([
   { provider: "Claude", activation: "Enter" },
   { provider: "ChatGPT", activation: "Space" },
 ])(
-  "Open Model settings from $provider in the account menu using $activation",
+  "Open Model settings from $provider usage in the onboarding account menu using $activation",
   async ({ provider, activation }) => {
     const user = userEvent.setup();
-    context.mocks.browser.matchMedia(false);
     mockAdminAccountSidebar();
     context.mocks.data.personalModelProviders([
       connectedPersonalCodexProvider(),
       connectedPersonalClaudeCodeProvider(),
     ]);
+    context.mocks.data.onboardingStatus({
+      needsOnboarding: true,
+      onboardingComplete: false,
+    });
+    mockOnboardingConnectorCatalog(context, []);
 
     await setupPage({
       context,
-      path: `/agents/${AGENT_ID}/chat`,
+      locale: "en-US",
+      path: ROUTES.onboarding,
       auth: {
         user: {
           id: "test-user-123",
@@ -42,15 +45,13 @@ test.each([
           email: "alex.rivera@example.test",
         },
       },
-      featureSwitches: {
-        [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
-        [FeatureSwitchKey.PwaNavigation]: false,
-      },
     });
 
-    click(screen.getByLabelText("Open menu"));
-    await screen.findByRole("dialog", { name: "Sidebar" });
-    const menu = await openAccountMenu();
+    await screen.findByRole("heading", {
+      name: "What kind of work do you do?",
+    });
+    click(await screen.findByLabelText("Alex Rivera"));
+    const menu = await screen.findByRole("menu");
     const section = await within(menu).findByRole("region", {
       name: `${provider} usage`,
     });
@@ -74,8 +75,6 @@ test.each([
       expect(new URLSearchParams(window.location.search).get("settings")).toBe(
         "model",
       );
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-      expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
       expect(settings).toContainElement(document.activeElement as HTMLElement);
     });
   },

@@ -392,13 +392,10 @@
     "sidebar": {
       "ariaLabel": "साइड बार",
       "chat": "चैट",
-      "collapse": "साइडबार को संक्षिप्त करें",
       "hideChatList": "चैट सूची छिपाएं",
-      "manage": "प्रबंधित करें",
       "mobile": {
         "invite": "आमंत्रित करें",
-        "openAutomations": "मोबाइल ऑटोमेशन खोलें",
-        "openMenu": "मेनू खोलें"
+        "openAutomations": "मोबाइल ऑटोमेशन खोलें"
       },
       "navigation": {
         "agents": "एजेंटों",

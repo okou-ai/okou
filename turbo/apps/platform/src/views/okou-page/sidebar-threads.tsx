@@ -34,7 +34,6 @@ import {
   Plus,
   Check,
   CheckCheck,
-  ChevronRight,
   Trash,
   Pencil,
   Ellipsis,
@@ -107,7 +106,6 @@ import {
   currentChatThreadId$,
   hasCurrentChatThread$,
 } from "../../signals/agent-chat.ts";
-import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
@@ -126,8 +124,6 @@ import {
   renameDialogThreadId$,
   renameDialogInput$,
   setRenameDialogInput$,
-  sessionListCollapsed$,
-  setSessionListCollapsed$,
   CHAT_THREAD_VIRTUAL_ROW_HEIGHT,
   threeColumnSearchOpen$,
 } from "../../signals/okou-page/sidebar-state.ts";
@@ -146,7 +142,6 @@ import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.t
 const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
 // One spatial cycle spans 12 rows: 200ms per row at the existing 2.4s cadence.
 const RUNNING_INDICATOR_WAVE_ROWS = 12;
-const CHAT_THREADS_CONTENT_ID = "sidebar-chat-threads-content";
 
 // Labels never wrap: the menu grows past its minimum when a label shares its
 // row with a long shortcut such as Ctrl+Shift+X.
@@ -1222,7 +1217,6 @@ function ChatThreadsListMenuTooltip() {
 function useNewChatAction() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
   const createNewChat = useSet(createNewChatThread$);
-  const setExpanded = useSet(setSidebarExpanded$);
   const rootSignal = useGet(rootSignal$);
   const newChatDisabled = useGet(newChatThreadDisabled$);
 
@@ -1234,7 +1228,6 @@ function useNewChatAction() {
       createNewChat({ agentId: currentChatAgentId }, pane, rootSignal),
       Reason.DomCallback,
     );
-    setExpanded(false);
   }
 
   return {
@@ -1549,45 +1542,14 @@ export function ChatThreadsNewMenu() {
   );
 }
 
-function ChatThreadsTitle({
-  showMarkAllRead,
-  contentId,
-  collapsible,
-}: {
-  showMarkAllRead: boolean;
-  contentId: string;
-  collapsible: boolean;
-}) {
+function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
   const titleLabel = useChatThreadsFilteredTitleLabel();
-  const setCollapsed = useSet(setSessionListCollapsed$);
-  const collapsed = useGet(sessionListCollapsed$);
 
   return (
     <div className="group flex h-8 shrink-0 items-center justify-between rounded-lg pr-0 hover:bg-state-hover transition-colors">
-      {collapsible ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          aria-expanded={!collapsed}
-          aria-controls={contentId}
-          onClick={() => {
-            setCollapsed(!collapsed);
-          }}
-          className="h-8 min-w-0 flex-1 justify-start gap-1 px-2 text-[13px] leading-4 text-nav-copy-muted hover:bg-transparent hover:text-nav-copy active:bg-transparent group-hover:text-nav-copy [&_svg]:size-3"
-        >
-          <span className="min-w-0 truncate">{titleLabel}</span>
-          <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
-            <ChevronRight
-              className={`opacity-35 ${collapsed ? "" : "rotate-90"}`}
-            />
-          </span>
-        </Button>
-      ) : (
-        <span className="min-w-0 flex-1 truncate px-2 text-[13px] font-medium leading-4 text-nav-copy-muted">
-          {titleLabel}
-        </span>
-      )}
+      <span className="min-w-0 flex-1 truncate px-2 text-[13px] font-medium leading-4 text-nav-copy-muted">
+        {titleLabel}
+      </span>
       <div className="flex items-center gap-0.5">
         <ProjectCreateButton />
         <NewChatThreadButton />
@@ -1618,30 +1580,15 @@ function ChatThreadsSkeleton() {
 function ChatThreadsContent({
   scrollSignals,
   contentClassName,
-  contentId,
   stylesheetLoaded,
-  collapsible,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
-  contentId: string;
   stylesheetLoaded: boolean;
-  collapsible: boolean;
 }) {
-  const savedCollapsed = useGet(sessionListCollapsed$);
-  const collapsed = collapsible && savedCollapsed;
-
-  // The region stays mounted so the title's `aria-controls` always resolves.
-  // The attribute carries the collapsed state to assistive technology; the
-  // display utility owns the cascade, because an author `display: flex` would
-  // otherwise beat the user-agent `[hidden]` rule while expanded.
   return (
-    <div
-      id={contentId}
-      hidden={collapsed}
-      className={cn("min-h-0 flex-1 flex-col", collapsed ? "hidden" : "flex")}
-    >
-      {!collapsed && stylesheetLoaded ? (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {stylesheetLoaded ? (
         <ExpandedChatThreadsContent
           scrollSignals={scrollSignals}
           contentClassName={contentClassName}
@@ -1876,13 +1823,11 @@ export function ChatThreadsSection({
   scrollSignals,
   contentClassName,
   showMarkAllRead = false,
-  collapsible = true,
   showTitle = true,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
   showMarkAllRead?: boolean;
-  collapsible?: boolean;
   /** False when the surrounding header already carries the title actions. */
   showTitle?: boolean;
 }) {
@@ -1896,17 +1841,13 @@ export function ChatThreadsSection({
           <ChatThreadsTitle
             key={agentScope ?? "no-agent"}
             showMarkAllRead={showMarkAllRead}
-            contentId={CHAT_THREADS_CONTENT_ID}
-            collapsible={collapsible}
           />
         </div>
       ) : null}
       <ChatThreadsContent
         scrollSignals={scrollSignals}
         contentClassName={contentClassName}
-        contentId={CHAT_THREADS_CONTENT_ID}
         stylesheetLoaded={mainStylesheetLoaded === true}
-        collapsible={collapsible}
       />
     </div>
   );

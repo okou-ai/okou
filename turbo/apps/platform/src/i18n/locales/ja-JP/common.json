@@ -392,13 +392,10 @@
     "sidebar": {
       "ariaLabel": "サイドバー",
       "chat": "チャット",
-      "collapse": "サイドバーを折りたたむ",
       "hideChatList": "チャットリストを非表示",
-      "manage": "管理",
       "mobile": {
         "invite": "招待する",
-        "openAutomations": "モバイルでオートメーションを開く",
-        "openMenu": "メニューを開く"
+        "openAutomations": "モバイルでオートメーションを開く"
       },
       "navigation": {
         "agents": "エージェント",

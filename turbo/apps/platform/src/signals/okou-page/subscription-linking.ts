@@ -5,7 +5,6 @@ import { captureSubscriptionLinkingEvent } from "../../lib/posthog.ts";
 import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { thirdPartySubscriptions$ } from "../external/third-party-subscriptions.ts";
-import { setSidebarExpanded$ } from "./nav.ts";
 import { openSettingsDialogAt$ } from "./settings/settings-dialog.ts";
 import { openClaudeCodeDeviceAuthDialogPersonal$ } from "./settings/claude-code-device-auth.ts";
 import { openCodexDeviceAuthDialogPersonal$ } from "./settings/codex-device-auth.ts";
@@ -72,7 +71,6 @@ export const connectSubscriptionLinkingProvider$ = command(
     if (!get(subscriptionLinkingEnabled$)) {
       return;
     }
-    set(setSidebarExpanded$, false);
     captureSubscriptionLinkingEvent("provider_selected", source, provider);
     const args = { mode: "connect" as const };
     if (provider === "codex-oauth-token") {
@@ -86,7 +84,6 @@ export const connectSubscriptionLinkingProvider$ = command(
 /** The model panel's Manage plans opens Models, which lists both. */
 export const openSubscriptionLinkingSettings$ = command(
   async ({ set }, source: "composer_model_panel", signal: AbortSignal) => {
-    set(setSidebarExpanded$, false);
     captureSubscriptionLinkingEvent("entry_clicked", source);
     await set(openSettingsDialogAt$, "model", signal);
   },

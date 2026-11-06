@@ -8336,7 +8336,6 @@ function PagedGroupActions({
   const copiedMessageEventId = useGet(thread.sharing.copiedMessageEventId$);
   const sharingPhase = useGet(thread.sharing.phase$);
   const switches = useGet(featureSwitch$);
-  const pdfEnabled = switches[FeatureSwitchKey.ChatMessagePdf];
   if (sharingPhase !== "idle") {
     return null;
   }
@@ -8388,7 +8387,6 @@ function PagedGroupActions({
         onShare={handleShare}
         shareCopied={copiedMessageEventId === shareEventIds[0]}
         pdfAction={
-          pdfEnabled &&
           hasContent &&
           handleShare &&
           persistedMessages.every((event) => {

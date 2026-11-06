@@ -4,7 +4,6 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -61,8 +60,7 @@ test("The greeting shows its complete sentence, one box per word", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
   });
 
   const { tagline, fullLine, text } = await greeting();
@@ -85,8 +83,7 @@ test("The avatar leads the sentence", async () => {
 
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
   });
 
   const row = await screen.findByTestId("chat-greeting");

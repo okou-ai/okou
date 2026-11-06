@@ -392,13 +392,10 @@
     "sidebar": {
       "ariaLabel": "사이드바",
       "chat": "채팅",
-      "collapse": "사이드바 접기",
       "hideChatList": "채팅 목록 숨기기",
-      "manage": "관리",
       "mobile": {
         "invite": "초대",
-        "openAutomations": "모바일 자동화 열기",
-        "openMenu": "메뉴 열기"
+        "openAutomations": "모바일 자동화 열기"
       },
       "navigation": {
         "agents": "에이전트",

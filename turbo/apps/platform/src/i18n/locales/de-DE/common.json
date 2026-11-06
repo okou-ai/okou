@@ -392,13 +392,10 @@
     "sidebar": {
       "ariaLabel": "Seitenleiste",
       "chat": "Chat",
-      "collapse": "Seitenleiste einklappen",
       "hideChatList": "Chatliste ausblenden",
-      "manage": "Verwalten",
       "mobile": {
         "invite": "Einladen",
-        "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen",
-        "openMenu": "Menü öffnen"
+        "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen"
       },
       "navigation": {
         "agents": "Agenten",

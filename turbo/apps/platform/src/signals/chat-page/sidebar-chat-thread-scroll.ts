@@ -440,8 +440,6 @@ export function createSidebarChatThreadScrollSignals({
   };
 }
 
-export const responsiveSidebarChatThreadScrollSignals =
-  createSidebarChatThreadScrollSignals({ restoreScrollPosition: true });
 export const threeColumnSidebarChatThreadScrollSignals =
   createSidebarChatThreadScrollSignals();
 
@@ -451,21 +449,12 @@ export const scrollToChatListRow$ = command(
     request: ScrollToRowRequest,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const responsiveScroll = set(
-      responsiveSidebarChatThreadScrollSignals.scrollToRow$,
-      request,
-      signal,
-    );
-    const threeColumnScroll = set(
+    const scrolled = await set(
       threeColumnSidebarChatThreadScrollSignals.scrollToRow$,
       request,
       signal,
     );
-    const [responsiveScrolled, threeColumnScrolled] = await Promise.all([
-      responsiveScroll,
-      threeColumnScroll,
-    ]);
     signal.throwIfAborted();
-    return responsiveScrolled || threeColumnScrolled;
+    return scrolled;
   },
 );

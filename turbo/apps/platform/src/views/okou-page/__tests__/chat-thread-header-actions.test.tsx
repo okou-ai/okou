@@ -30,7 +30,6 @@ const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 async function setupHeaderPage(
   threadEvents: readonly ChatThreadEvent[] = [],
   options: {
-    readonly pwaNavigation?: boolean;
     readonly singleAgent?: boolean;
   } = {},
 ) {
@@ -73,14 +72,10 @@ async function setupHeaderPage(
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: {
-      ...(options.pwaNavigation === undefined
+    featureSwitches:
+      options.singleAgent === undefined
         ? {}
-        : { [FeatureSwitchKey.PwaNavigation]: options.pwaNavigation }),
-      ...(options.singleAgent === undefined
-        ? {}
-        : { [FeatureSwitchKey.SingleAgent]: options.singleAgent }),
-    },
+        : { [FeatureSwitchKey.SingleAgent]: options.singleAgent },
   });
   await screen.findByText("Review the header layout");
   await waitFor(() => {
@@ -117,25 +112,6 @@ function menuItemNamed(name: string) {
 function menuItemNames() {
   return queryAllByRoleFast("menuitem").map((item) => {
     return item.textContent?.trim();
-  });
-}
-
-async function openMobileSidebarPin(pinned: boolean): Promise<HTMLElement> {
-  click(buttonNamed("Open menu"));
-  const drawer = await screen.findByRole("dialog", { name: "Sidebar" });
-  await waitFor(() => {
-    expect(
-      within(drawer).getByTestId("chat-thread-menu-trigger"),
-    ).toHaveAttribute("data-pinned", String(pinned));
-  });
-  return drawer;
-}
-
-async function expectMobileSidebarPin(pinned: boolean) {
-  const drawer = await openMobileSidebarPin(pinned);
-  click(within(drawer).getByLabelText("Collapse sidebar"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
   });
 }
 
@@ -177,11 +153,10 @@ test("Keep menu pin changes responsive across resize and save", async () => {
       return respond(204);
     },
   );
-  await setupHeaderPage(events, { pwaNavigation: false });
+  await setupHeaderPage(events);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));
-  await expectMobileSidebarPin(true);
   act(() => {
     viewport.setMatches(true);
   });
@@ -202,23 +177,17 @@ test("Keep menu pin changes responsive across resize and save", async () => {
     expect(menuItemNamed("Unpin chat")).toBeEnabled();
   });
   click(menuItemNamed("Unpin chat"));
-  const drawer = await openMobileSidebarPin(false);
 
   pinResponse.resolve();
   await waitFor(() => {
-    expect(drawer).toBeInTheDocument();
-    expect(drawer).toHaveTextContent("Pin changes saved");
+    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
+      "Pin changes saved",
+    );
   });
-  expect(
-    within(drawer).getByTestId("chat-thread-menu-trigger"),
-  ).toHaveAttribute("data-pinned", "false");
-  click(within(drawer).getByLabelText("Collapse sidebar"));
+  click(buttonNamed("More actions"));
   await waitFor(() => {
-    expect(drawer).not.toBeInTheDocument();
+    expect(menuItemNamed("Pin chat")).toBeEnabled();
   });
-  expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-    "Pin changes saved",
-  );
 });
 
 test("Keep Share and More in the header and match the sidebar menu order", async () => {
@@ -236,7 +205,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
       ],
     });
   });
-  await setupHeaderPage([], { pwaNavigation: false });
+  await setupHeaderPage();
   await waitFor(() => {
     expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
   });
@@ -255,7 +224,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
     "Artifacts and chats",
     "More actions",
   ]);
-  expect(buttonNamed("Open menu")).toBeInTheDocument();
+  expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
 
   click(more);
   await screen.findByRole("menu");
@@ -628,17 +597,15 @@ test("Continue saving the next pin change after an earlier request fails", async
   context.mocks.api(chatThreadUnpinContract.unpin, ({ respond }) => {
     return respond(500, { error: { message: "Unpin request failed" } });
   });
-  await setupHeaderPage([], { pwaNavigation: false });
+  await setupHeaderPage();
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));
-  await expectMobileSidebarPin(true);
   click(buttonNamed("More actions"));
   await waitFor(() => {
     expect(menuItemNamed("Unpin chat")).toBeEnabled();
   });
   click(menuItemNamed("Unpin chat"));
-  await expectMobileSidebarPin(false);
 
   pinResponse.resolve();
   await screen.findByText("Unpin request failed");

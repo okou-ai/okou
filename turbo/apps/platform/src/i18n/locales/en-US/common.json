@@ -392,13 +392,10 @@
     "sidebar": {
       "ariaLabel": "Sidebar",
       "chat": "Chat",
-      "collapse": "Collapse sidebar",
       "hideChatList": "Hide chat list",
-      "manage": "Manage",
       "mobile": {
         "invite": "Invite",
-        "openAutomations": "Open mobile automations",
-        "openMenu": "Open menu"
+        "openAutomations": "Open mobile automations"
       },
       "navigation": {
         "agents": "Agents",

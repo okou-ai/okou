@@ -129,13 +129,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
     enabled: false,
   },
-  [FeatureSwitchKey.UnifiedChatWorkspace]: {
-    maintainer: "tongx@okou.ai",
-    displayName: "Unified chat workspace",
-    description:
-      "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
-    enabled: true,
-  },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
     displayName: "Cloud browser panel",
@@ -187,13 +180,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // fidelity is being evaluated.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.ChatMessagePdf]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Message PDF export",
-    description:
-      "Generate a PDF of an assistant response, then download it with rendered diagrams, formulas, images, and clickable links.",
-    enabled: true,
   },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
@@ -283,18 +269,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
-  },
-  [FeatureSwitchKey.SidebarSubscriptionUsage]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show personal subscription usage in the account menu and on Me, and provider credit balances on connected accounts.",
-    enabled: true,
-  },
-  [FeatureSwitchKey.PwaNavigation]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser.",
-    enabled: true,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",

@@ -1,20 +1,14 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
 import { commitLayoutUpdate } from "@okouai/ui";
 
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { localStorageSignals } from "../external/local-storage.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { onRef, resetSignal } from "../utils.ts";
 
 // ---------------------------------------------------------------------------
-// Unified chat workspace (Lab). The chat list, the chat and its side panel
-// share one sheet, and the dividers between them remember their widths.
+// Unified chat workspace. The chat list, the chat and its side panel share one
+// sheet, and the dividers between them remember their widths.
 // ---------------------------------------------------------------------------
-
-export const unifiedChatWorkspace$ = computed((get) => {
-  return get(featureSwitch$)[FeatureSwitchKey.UnifiedChatWorkspace];
-});
 
 const CHAT_LIST_DEFAULT_WIDTH = 300;
 export const CHAT_LIST_MIN_WIDTH = 240;
