@@ -85,14 +85,14 @@ function createNavigationReads(graph: NavigationState) {
 }
 
 function createNavigationObservation(graph: NavigationState) {
-  const { current$, document$, attachment$, historyVersion$ } = graph;
+  const { document$, attachment$, historyVersion$ } = graph;
   const invalidateHistory$ = command(({ set }) => {
     set(historyVersion$, (value) => {
       return value + 1;
     });
   });
   const observe$ = command(({ get, set }, frame: Protocol.Page.Frame) => {
-    if (!get(current$) || !get(attachment$) || get(document$) !== null) {
+    if (!get(attachment$) || get(document$) !== null) {
       return;
     }
     set(
@@ -105,7 +105,8 @@ function createNavigationObservation(graph: NavigationState) {
     );
   });
   const event$ = command(({ get, set }, event: CdpEvent) => {
-    if (event.sessionId !== graph.sessionId || !get(current$)) {
+    // Retained attachments still receive document facts while admission is gated.
+    if (event.sessionId !== graph.sessionId || !get(attachment$)) {
       return;
     }
     const { method, params } = event;

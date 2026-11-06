@@ -18,7 +18,9 @@ interface ScreencastOwner {
   readonly client: CdpClient;
   readonly sessionId: string;
   readonly sink: FrameSink;
+  /** Resource ownership survives a temporary input/presentation admission gate. */
   readonly current$: Computed<boolean>;
+  readonly waitForAdmission$: Command<Promise<void>, [AbortSignal]>;
   /** starting$ invalidates the previous capture's accepted-paint proof. */
   readonly painted$: Computed<boolean>;
   readonly failed$: Command<unknown, [unknown, AbortSignal]>;
@@ -376,6 +378,7 @@ function createCaptureBegin(
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
+      await set(owner.waitForAdmission$, signal);
       if (!get(current$)) {
         return;
       }

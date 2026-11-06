@@ -263,6 +263,199 @@ test("Background removal readmits the selected page without disturbing navigatio
   expect(browser.targets[0]?.url).toBe("http://after-removal.example/ready");
 });
 
+test.each(["document", "same-document"] as const)(
+  "A retained selection observes %s navigation while membership is gated",
+  async (kind) => {
+    const { browser, start } = viewer();
+    await start();
+    await screen.findByLabelText("Later own tab");
+    await ready();
+
+    const proof = browser.holdNextMembership("own-first");
+    act(() => {
+      browser.nativeEvent("tab-created", undefined, {
+        tabId: 100,
+        windowId: 101,
+      });
+    });
+    await proof.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    const target = browser.targets[0]!;
+    const sessionId = browser.pageSession(target.targetId);
+    const url =
+      kind === "document"
+        ? "https://navigated.example.com/after-proof"
+        : "https://first.example.com/#during-proof";
+    act(() => {
+      target.url = url;
+      if (kind === "document") {
+        browser.event(
+          "Page.frameNavigated",
+          { frame: { id: "example-frame", loaderId: "new-loader", url } },
+          sessionId,
+        );
+      } else {
+        browser.event(
+          "Page.navigatedWithinDocument",
+          { frameId: "example-frame", url },
+          sessionId,
+        );
+      }
+      browser.event("Target.targetInfoChanged", {
+        targetInfo: { ...target, type: "page" },
+      });
+    });
+    await act(proof.release);
+    await ready(url);
+  },
+);
+
+test("An initial document receipt is retained until membership is readmitted", async () => {
+  const { browser, start } = viewer();
+  const document = browser.holdNext("Page.getFrameTree");
+  await start();
+  await document.received;
+  await screen.findByLabelText("Later own tab");
+  const proof = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, {
+      tabId: 100,
+      windowId: 101,
+    });
+  });
+  await proof.received;
+  await act(document.release);
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(proof.release);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://first.example.com",
+    );
+  });
+  act(() => {
+    browser.frame("AAAA", browser.pageSession("own-first"));
+  });
+  await ready();
+});
+
+test("A capture change finishes when background membership is revalidated", async () => {
+  const { browser, start } = viewer();
+  await start();
+  await screen.findByLabelText("Later own tab");
+  await ready();
+
+  const stop = browser.holdNext("Page.stopScreencast");
+  click(screen.getByLabelText("Browser settings"));
+  const quality = await screen.findByRole("spinbutton", {
+    name: "Image quality",
+  });
+  fireEvent.change(quality, { target: { value: "60" } });
+  await stop.received;
+  const proof = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, {
+      tabId: 100,
+      windowId: 101,
+    });
+  });
+  await proof.received;
+  await act(stop.release);
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(proof.release);
+  await ready();
+});
+
+test("Capture preferences chosen during membership validation are applied after admission", async () => {
+  const { browser, start } = viewer();
+  await start();
+  await screen.findByLabelText("Later own tab");
+  await ready();
+  const proof = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, {
+      tabId: 100,
+      windowId: 101,
+    });
+  });
+  await proof.received;
+  click(screen.getByLabelText("Browser settings"));
+  const quality = await screen.findByRole("spinbutton", {
+    name: "Image quality",
+  });
+  expect(quality).toBeEnabled();
+  fireEvent.change(quality, { target: { value: "60" } });
+  await act(proof.release);
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 60 });
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test("Automatic capture recovery survives membership validation", async () => {
+  const { browser, start, advance } = viewer();
+  await start();
+  await screen.findByLabelText("Later own tab");
+  await ready();
+  browser.failNext("Page.startScreencast", "The capture could not be started");
+  const capture = browser.holdNext("Page.startScreencast");
+  click(screen.getByLabelText("Browser settings"));
+  const quality = await screen.findByRole("spinbutton", {
+    name: "Image quality",
+  });
+  fireEvent.change(quality, { target: { value: "60" } });
+  await capture.received;
+  await userEvent.keyboard("{Escape}");
+  const proof = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, {
+      tabId: 100,
+      windowId: 101,
+    });
+  });
+  await proof.received;
+  await act(capture.release);
+  const restarted = browser.holdNext("Page.startScreencast");
+  advance(1000);
+  await act(proof.release);
+  await restarted.received;
+  const revalidation = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, {
+      tabId: 101,
+      windowId: 101,
+    });
+  });
+  await revalidation.received;
+  await act(restarted.release);
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(revalidation.release);
+  await ready();
+  expect(browser.captures.at(-1)).toMatchObject({ quality: 60 });
+});
+
+test("Moving a tab retires its capture change before selecting a scoped survivor", async () => {
+  const { browser, start } = viewer();
+  await start();
+  await screen.findByLabelText("Later own tab");
+  await ready();
+  const stop = browser.holdNext("Page.stopScreencast");
+  click(screen.getByLabelText("Browser settings"));
+  const quality = await screen.findByRole("spinbutton", {
+    name: "Image quality",
+  });
+  fireEvent.change(quality, { target: { value: "60" } });
+  await stop.received;
+  const proof = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.move("own-first", 202);
+  });
+  await proof.received;
+  await act(stop.release);
+  await act(proof.release);
+  await ready("https://later.example.com");
+  expect(screen.queryByLabelText("First own tab")).not.toBeInTheDocument();
+});
+
 test("A move supersedes a held narrow refresh and cannot be downgraded by another creation", async () => {
   const { browser, start } = viewer();
   await start();
