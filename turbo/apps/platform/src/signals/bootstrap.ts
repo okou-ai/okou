@@ -1,4 +1,3 @@
-import { enrollMarketingHandoffSession$ } from "./prompt-page/marketing-handoff.ts";
 import {
   captureFriendReferral$,
   registerFriendReferral$,
@@ -650,7 +649,6 @@ const completeBootstrap$ = command(
     signal.throwIfAborted();
 
     await Promise.all([
-      set(enrollMarketingHandoffSession$, signal),
       set(setupAuthenticatedBootstrapData$, signal),
       set(setupRoutes$, signal),
       set(bootstrapOnboardingGuard$, signal),
