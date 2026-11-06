@@ -18,10 +18,9 @@ fn evict(file: &File) {
     );
 }
 
-fn resident(file: &File, envelope: &Envelope) -> usize {
+fn resident(file: &File, ranges: &[Range<usize>]) -> usize {
     let map = Residency::new(file).unwrap();
-    envelope
-        .ranges
+    ranges
         .iter()
         .map(|range| {
             let mut pages = vec![0u8; range.len().div_ceil(map.page_size)];
@@ -54,11 +53,11 @@ fn learned_sparse_ranges_warm_missing_pages_and_skip_hot_reads() {
     );
 
     evict(file.as_file());
-    assert_eq!(resident(file.as_file(), &envelope), 0);
+    assert_eq!(resident(file.as_file(), &envelope.ranges), 0);
     let cold = prefetch(file.path(), &envelope, &stop).unwrap();
     assert!(cold.requested_bytes > 0);
     assert!(cold.requested_bytes <= envelope.bytes());
-    assert_eq!(resident(file.as_file(), &envelope), envelope.bytes());
+    assert_eq!(resident(file.as_file(), &envelope.ranges), envelope.bytes());
     let hot = prefetch(file.path(), &envelope, &stop).unwrap();
     assert_eq!(hot.requested_bytes, 0);
     assert_eq!(hot.resident_bytes, envelope.bytes());
@@ -67,6 +66,43 @@ fn learned_sparse_ranges_warm_missing_pages_and_skip_hot_reads() {
     let mut actual = vec![0; expected.len()];
     file.as_file().read_exact_at(&mut actual, 0).unwrap();
     assert_eq!(actual, expected);
+}
+
+#[tokio::test]
+async fn shared_requests_learn_and_retain_ranges_for_later_restores() {
+    let file = fixture();
+    let range = 0..usize::try_from(file.as_file().metadata().unwrap().len()).unwrap();
+    let ranges = std::slice::from_ref(&range);
+    // This small fixture is entirely resident and below the production budget.
+    // Train only through the capability used after successful Agent readiness.
+    assert_eq!(resident(file.as_file(), ranges), range.len());
+    let mut owner = super::super::SnapshotMemoryPrefetch::new(file.path().to_path_buf());
+    let handle = owner.handle();
+    handle.learn();
+    tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        handle.control.completed.notified(),
+    )
+    .await
+    .unwrap();
+
+    // Both restores must consume the retained envelope. Dropping one request
+    // capability cannot retire work that belongs to the shared factory owner.
+    for _ in 0..2 {
+        evict(file.as_file());
+        assert_eq!(resident(file.as_file(), ranges), 0);
+        let restoring = handle.clone();
+        restoring.prefetch();
+        drop(restoring);
+        tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            handle.control.completed.notified(),
+        )
+        .await
+        .unwrap();
+        assert_eq!(resident(file.as_file(), ranges), range.len());
+    }
+    owner.shutdown().await;
 }
 
 #[test]

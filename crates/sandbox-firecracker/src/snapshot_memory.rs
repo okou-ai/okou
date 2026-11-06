@@ -27,6 +27,8 @@ struct Control {
     phase: AtomicU8,
     busy: AtomicBool,
     stop: CancellationToken,
+    #[cfg(test)]
+    completed: tokio::sync::Notify,
 }
 
 struct Reservation(Arc<Control>);
@@ -106,6 +108,8 @@ impl SnapshotMemoryPrefetch {
             phase: AtomicU8::new(UNTRAINED),
             busy: AtomicBool::new(false),
             stop: CancellationToken::new(),
+            #[cfg(test)]
+            completed: tokio::sync::Notify::new(),
         });
         let (tx, mut rx) = mpsc::channel::<Request>(1);
         let handle = SnapshotMemoryHandle {
@@ -186,6 +190,10 @@ impl SnapshotMemoryPrefetch {
                     },
                     Ordering::Release,
                 );
+                // Observe physical return and published admission state without
+                // making tests poll either the reservation or the phase.
+                #[cfg(test)]
+                control.completed.notify_one();
             }
             control.phase.store(STOPPED, Ordering::Release);
         });
