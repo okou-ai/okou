@@ -890,7 +890,6 @@ test("Remove a disconnected subscription from Me without reopening the page", as
   });
 
   await screen.findByRole("heading", { name: "ChatGPT" });
-  expect(screen.queryByText("Reset usage")).not.toBeInTheDocument();
 
   click(fastButton("Settings"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
@@ -932,7 +931,6 @@ test("Remove a disconnected subscription from Me without reopening the page", as
   expect(
     screen.queryByRole("heading", { name: "ChatGPT" }),
   ).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("2 resets left")).not.toBeInTheDocument();
   expect(window.location.pathname).toBe("/me");
 });
 

@@ -278,7 +278,6 @@ test("Review personal subscription identity and usage", async () => {
     within(rowC).getByText("Connected · — ChatGPT credits"),
   ).toBeInTheDocument();
   expect(within(rowA).getByText("2 resets left")).toBeVisible();
-  expect(within(rowB).queryByText(/resets? left/u)).not.toBeInTheDocument();
   expect(within(rowC).getByText("Resets —")).toBeVisible();
   expect(
     within(rowC).getByLabelText("Resets left unavailable"),

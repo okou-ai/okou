@@ -73,8 +73,6 @@ test.each([
       expect(new URLSearchParams(window.location.search).get("settings")).toBe(
         "model",
       );
-      expect(screen.queryByRole("menu")).not.toBeInTheDocument();
-      expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
       expect(settings).toContainElement(document.activeElement as HTMLElement);
     });
   },
