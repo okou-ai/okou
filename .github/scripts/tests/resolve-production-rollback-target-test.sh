@@ -32,7 +32,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "f00df00df00df00df00df00df00df00df00df00d" ]; then
+    if [ "${3:-}" = "deadc0dedeadc0dedeadc0dedeadc0dedeadc0de" ]; then
+      [ "${MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "f00df00df00df00df00df00df00df00df00df00d" ]; then
       [ "${MOCK_SINGLE_CHARACTER_SKILL_API_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -305,6 +307,10 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *rollback-floors/single-character-skill-capability-free-api* ]]; then
+      printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT-deadc0dedeadc0dedeadc0dedeadc0dedeadc0de}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/single-character-skill-bundle-reader* ]]; then
       printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_API_COMMIT-f00df00df00df00df00df00df00df00df00df00d}"
       exit 0
@@ -2274,6 +2280,18 @@ assert_failure "predates single-character Skill bundle support" \
 if grep -Eq '^ssh ' "${tmp_dir}/boundaries.log"; then
   fail "invalid Skill Runner floors must fail before host access"
 fi
+
+for expectation in \
+  "MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT=|Cannot resolve the merged capability-free single-character Skill API on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT=invalid|Cannot resolve the merged capability-free single-character Skill API on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_VALID=0|Rollback target predates capability-free single-character Skill claims"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" run_resolver "${tmp_dir}/single-character-capability-free-api.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/single-character-capability-free-api.output" ] || fail "incompatible Skill claim API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "capability-free Skill claim floor must fail before artifact or host access"
+  fi
+done
 
 for expectation in \
   "MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT=|Cannot resolve the merged Teams identity preparation on main" \

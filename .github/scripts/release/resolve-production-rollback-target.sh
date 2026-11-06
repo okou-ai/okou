@@ -123,6 +123,7 @@ readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
 readonly CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH=.github/rollback-floors/connector-skill-bundle-claims
 readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-character-skill-bundle-reader
+readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors/single-character-skill-capability-free-api
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly REGISTRY_ARCHIVE_READER_PATH=.github/rollback-floors/registry-archive-reader
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
@@ -942,6 +943,17 @@ if [[ ! "$single_character_skill_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$single_character_skill_api_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the single-character Skill API reader: ${single_character_skill_api_commit}."
+fi
+
+# Current Runners omit the temporary claim query. Earlier APIs leave their
+# single-character Skill jobs pending forever, even with a compatible Runner.
+single_character_skill_capability_free_api_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH" | sed -n '1p')
+if [[ ! "$single_character_skill_capability_free_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged capability-free single-character Skill API on main."
+fi
+if ! git merge-base --is-ancestor "$single_character_skill_capability_free_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates capability-free single-character Skill claims: ${single_character_skill_capability_free_api_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_COMMIT"; then
