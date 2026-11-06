@@ -107,12 +107,18 @@ struct ChatSidebarView: View {
       } else if !store.list.hasLoadedThreads && store.list.syncError != nil {
         Text("Your chats could not be loaded. Try updating again.")
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+          .listRowInsets(.horizontal, rowInset)
+          .listRowSeparator(.hidden)
+          .listRowBackground(Color.clear)
       } else {
         threadSection
         if visibleThreads.isEmpty && store.list.error == nil && store.error == nil {
           Text("Your chats will appear here.")
             .font(.okou(.subheadline))
             .foregroundStyle(OkouColor.mutedForeground)
+            .listRowInsets(.horizontal, rowInset)
+            .listRowSeparator(.hidden)
+            .listRowBackground(Color.clear)
         }
       }
     }
