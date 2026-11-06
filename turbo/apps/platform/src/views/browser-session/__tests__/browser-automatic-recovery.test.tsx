@@ -288,6 +288,78 @@ test.each(["healthy", "recovering"] as const)(
   },
 );
 
+test.each([false, true])(
+  "Closing a target after exhausted image recovery preserves its original report (pending inventory: %s)",
+  async (pendingInventory) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    act(() => {
+      viewer.browser.frame("!");
+    });
+    await pendingRecovery();
+    await failImageAttempts(viewer, 3);
+    const retry = await screen.findByText("Retry live image", {
+      selector: "button",
+    });
+    await waitFor(() => {
+      expect(retry).toBeEnabled();
+    });
+    const reports = [...viewer.sentry.reports];
+    expect(reports).toHaveLength(1);
+    expect(reports).toContainEqual(
+      expect.objectContaining({
+        error: expect.objectContaining({ kind: "frame" }),
+        context: expect.objectContaining({
+          contexts: expect.objectContaining({
+            browser_recovery: { outcome: "exhausted" },
+          }),
+        }),
+      }),
+    );
+    const membership = pendingInventory
+      ? viewer.browser.holdNextMembership("new-sibling")
+      : null;
+    if (membership) {
+      act(() => {
+        const target = {
+          targetId: "new-sibling",
+          title: "New sibling",
+          url: "https://new-sibling.example",
+          windowId: 202,
+        };
+        viewer.browser.targets.push(target);
+        viewer.browser.event("Target.targetCreated", {
+          targetInfo: { ...target, type: "page" },
+        });
+      });
+      await membership.received;
+    }
+    act(() => {
+      viewer.browser.event("Target.targetDestroyed", { targetId: "other" });
+      viewer.browser.event("Target.targetDestroyed", {
+        targetId: "example-page",
+      });
+    });
+    await screen.findByText(
+      pendingInventory ? "Connecting to browser…" : "No tabs open",
+    );
+    await waitFor(() => {
+      expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    });
+    expect(viewer.sentry.reports).toStrictEqual(reports);
+    viewer.advance(1000);
+    if (membership) {
+      await act(membership.release);
+    }
+    await screen.findByText("No tabs open");
+    expect(viewer.sentry.reports).toStrictEqual(reports);
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    await ready("");
+    expect(viewer.sentry.reports).toStrictEqual(reports);
+  },
+);
+
 test("A failed successor reports its own terminal initialization error after target loss", async () => {
   const viewer = mockViewer();
   await viewer.start();
