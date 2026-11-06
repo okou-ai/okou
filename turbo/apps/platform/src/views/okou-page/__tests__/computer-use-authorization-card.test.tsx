@@ -2,6 +2,7 @@ import {
   computerUseAuthorizationRequestsContract as contract,
   type ComputerUseHost,
 } from "@okouai/api-contracts/contracts/computer-use";
+import { initContract } from "@okouai/api-contracts/contracts/base";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -213,18 +214,24 @@ test("A request from another chat cannot authorize a computer from this card", a
 });
 
 test("An older API response without chat scope cannot offer inline authorization", async () => {
-  context.mocks.http.get(
-    "*/api/computer-use/authorization-requests/:requestToken",
-    () => {
-      return Response.json({
-        source: "chat",
-        expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
-        completedAt: null,
-        computerUseHostId: null,
-        hosts: [onlineComputerUseHost(HOST_ID)],
-      });
+  const oldGetContract = initContract().router({
+    get: {
+      ...contract.get,
+      responses: {
+        ...contract.get.responses,
+        200: contract.get.responses[200].omit({ chatThreadId: true }),
+      },
     },
-  );
+  }).get;
+  context.mocks.api(oldGetContract, ({ respond }) => {
+    return respond(200, {
+      source: "chat",
+      expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
+      completedAt: null,
+      computerUseHostId: null,
+      hosts: [onlineComputerUseHost(HOST_ID)],
+    });
+  });
   const card = await setupChat();
   await within(card).findByText(
     "This Computer Use authorization link is invalid, expired, or not available for this workspace.",

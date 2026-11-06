@@ -58,7 +58,8 @@ function createComputerUseAuthorizationSignals(
     );
     return result.status === 200 &&
       result.body.source === "chat" &&
-      chatActionIdMatches(result.body.chatThreadId ?? "", threadId) &&
+      result.body.chatThreadId !== null &&
+      chatActionIdMatches(result.body.chatThreadId, threadId) &&
       Date.parse(result.body.expiresAt) > now()
       ? result.body
       : null;
@@ -80,9 +81,7 @@ function createComputerUseAuthorizationSignals(
     return (
       hosts.find((host) => {
         return host.id === request?.computerUseHostId;
-      }) ??
-      (hosts.length === 1 ? hosts[0] : null) ??
-      null
+      }) ?? (hosts.length === 1 ? hosts[0] : null)
     );
   });
   const selectHost$ = command(({ set }, id: string | null) => {

@@ -3,6 +3,7 @@ import {
   type DesktopShellAuthorization,
 } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { act, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
   click,
@@ -166,7 +167,12 @@ test("The complete authorization reason is readable directly in the card", async
   });
   await setupChat(URL);
   const card = await screen.findByTestId("desktop-shell-authorization-card");
-  await within(card).findByText(reason.trim());
+  const reasonRegion = await within(card).findByRole("region", {
+    name: "Reason for access",
+  });
+  expect(within(reasonRegion).getByText(reason.trim())).toBeInTheDocument();
+  await userEvent.click(reasonRegion);
+  expect(reasonRegion).toHaveFocus();
   expect(button(card, "Allow for 1 hour")).toBeEnabled();
 });
 

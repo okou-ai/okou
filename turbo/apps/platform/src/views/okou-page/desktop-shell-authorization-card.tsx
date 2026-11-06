@@ -342,7 +342,7 @@ function AuthorizationSummary({
     <ChatCard
       data-testid="desktop-shell-authorization-card"
       aria-busy={loading || busy}
-      className="flex min-h-[224px] w-full flex-col justify-between gap-3 px-4 py-3 @[320px]:min-h-[200px] @[640px]:min-h-[144px] @[640px]:flex-row @[640px]:items-center"
+      className="flex h-[224px] w-full flex-col justify-between gap-3 px-4 py-3 @[320px]:h-[200px] @[640px]:h-[144px] @[640px]:flex-row @[640px]:items-center"
     >
       <div className="flex min-w-0 flex-1 items-center gap-3">
         <AuthorizationIcon data={data} loading={loading} />
@@ -363,17 +363,24 @@ function AuthorizationSummary({
             {summary}
           </p>
           {data && (
-            <p className="mt-1 break-words whitespace-pre-wrap text-sm leading-5 text-muted-foreground">
-              {data.reason}
-            </p>
-          )}
-          {blocker && (
-            <p
-              className="mt-1 break-words text-sm leading-5 text-amber-700 dark:text-amber-400"
-              aria-live="polite"
+            <div
+              role="region"
+              aria-label={t(($) => {
+                return $.desktopShellAuthorization.reasonTitle;
+              })}
+              tabIndex={0}
+              className="mt-1 h-15 overflow-y-auto overscroll-contain text-sm leading-5 text-muted-foreground @[640px]:h-12"
             >
-              {blocker}
-            </p>
+              {blocker && (
+                <p
+                  className="mb-1 break-words text-amber-700 dark:text-amber-400"
+                  aria-live="polite"
+                >
+                  {blocker}
+                </p>
+              )}
+              <p className="break-words whitespace-pre-wrap">{data.reason}</p>
+            </div>
           )}
         </div>
       </div>
