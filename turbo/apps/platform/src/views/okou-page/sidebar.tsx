@@ -60,7 +60,12 @@ import { OrgSwitcher, OrgSwitcherCompact } from "./org-switcher.tsx";
 import { Link } from "../router/link.tsx";
 import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
 import { AccountDropdown } from "./sidebar-account.tsx";
-import { ChatThreadDialogs, ChatThreadsSection } from "./sidebar-threads.tsx";
+import {
+  ChatThreadDialogs,
+  ChatThreadsActions,
+  ChatThreadsSection,
+  useFilteredChatThreadsTitle,
+} from "./sidebar-threads.tsx";
 import {
   responsiveSidebarChatThreadScrollSignals,
   threeColumnSidebarChatThreadScrollSignals,
@@ -875,6 +880,10 @@ function ChatListHeader() {
   const navigate = useSet(detachedNavigateTo$);
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
+  // My Okou has a single chat list, so the header names it and carries the
+  // list title's actions; any active filter still shows in the title.
+  const assistantName = useGet(assistantName$);
+  const singleAgentTitle = useFilteredChatThreadsTitle(assistantName);
   const searchLabel = t(($) => {
     return $.appShell.sidebar.searchWorkspace;
   });
@@ -888,6 +897,26 @@ function ChatListHeader() {
     navigate(ROUTES.agentChat, {
       pathParams: { agentId: currentChatAgentId },
     });
+  };
+  const searchItem = {
+    shortcut: GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.binding,
+    trigger: (
+      <Button
+        type="button"
+        onClick={() => {
+          openThreeColumnSearch();
+        }}
+        aria-label={searchLabel}
+        aria-keyshortcuts={
+          GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.ariaKeyShortcuts
+        }
+        variant="quiet"
+        size="icon-sm"
+        iconSize="md"
+      >
+        <Search size={18} />
+      </Button>
+    ),
   };
   const newChatItem = {
     shortcut: GLOBAL_KEYBOARD_SHORTCUTS.newChat.binding,
@@ -906,6 +935,17 @@ function ChatListHeader() {
       </Button>
     ),
   };
+  const toggleItem = {
+    shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
+    trigger: (
+      <ThreeColumnChatListToggle
+        hidden={false}
+        aria-label={t(($) => {
+          return $.appShell.sidebar.hideChatList;
+        })}
+      />
+    ),
+  };
   return (
     <div
       className={cn(
@@ -913,48 +953,22 @@ function ChatListHeader() {
         CHAT_LIST_INSET,
       )}
     >
-      <span className="flex-1 pl-2 text-[15px] font-semibold text-nav-copy">
-        {t(($) => {
-          return $.appShell.sidebar.chat;
-        })}
+      <span className="min-w-0 flex-1 truncate pl-2 text-[15px] font-semibold text-nav-copy">
+        {singleAgent
+          ? singleAgentTitle
+          : t(($) => {
+              return $.appShell.sidebar.chat;
+            })}
       </span>
-      <ShortcutTooltipGroup
-        items={[
-          {
-            shortcut: GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.binding,
-            trigger: (
-              <Button
-                type="button"
-                onClick={() => {
-                  openThreeColumnSearch();
-                }}
-                aria-label={searchLabel}
-                aria-keyshortcuts={
-                  GLOBAL_KEYBOARD_SHORTCUTS.searchWorkspace.ariaKeyShortcuts
-                }
-                variant="quiet"
-                size="icon-sm"
-                iconSize="md"
-              >
-                <Search size={18} />
-              </Button>
-            ),
-          },
-          // My Okou starts chats from the chat list title's New chat button.
-          ...(singleAgent ? [] : [newChatItem]),
-          {
-            shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
-            trigger: (
-              <ThreeColumnChatListToggle
-                hidden={false}
-                aria-label={t(($) => {
-                  return $.appShell.sidebar.hideChatList;
-                })}
-              />
-            ),
-          },
-        ]}
-      />
+      {singleAgent ? (
+        <>
+          <ShortcutTooltipGroup items={[searchItem]} />
+          <ChatThreadsActions showMarkAllRead />
+          <ShortcutTooltipGroup items={[toggleItem]} />
+        </>
+      ) : (
+        <ShortcutTooltipGroup items={[searchItem, newChatItem, toggleItem]} />
+      )}
     </div>
   );
 }
@@ -986,6 +1000,7 @@ function ChatListResizeSeam() {
 
 function ChatListColumn() {
   const unified = useGet(unifiedChatWorkspace$);
+  const singleAgent = useGet(singleAgentEnabled$);
   const width = useGet(chatListWidth$);
   return (
     <aside
@@ -1011,6 +1026,7 @@ function ChatListColumn() {
           contentClassName={CHAT_LIST_INSET}
           collapsible={false}
           showMarkAllRead
+          showTitle={!singleAgent}
         />
       </div>
       {/* Collapses to nothing when SidebarUpgradeCard renders null, so the

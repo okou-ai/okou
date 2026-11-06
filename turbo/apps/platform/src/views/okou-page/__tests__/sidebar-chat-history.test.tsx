@@ -1172,13 +1172,9 @@ test("Route New chat to the current agent and Chat to the default agent", async 
   });
 });
 
-test("My Okou starts new chats with Okou from the chat list title only", async () => {
-  prepareAgents();
-  mockSidebarThreadStory([
-    createThread(RESEARCH_THREAD_ID, "Research conversation", {
-      agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
-    }),
-  ]);
+test("My Okou names the chat list Okou and moves its actions into the header", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
   const createdAgentIds: string[] = [];
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     createdAgentIds.push(body.agentId);
@@ -1193,29 +1189,40 @@ test("My Okou starts new chats with Okou from the chat list title only", async (
 
   await setupSidebarPage({
     context,
-    path: `/chats/${RESEARCH_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.Projects]: true,
+      [FeatureSwitchKey.ChatThreadArchiving]: true,
+    },
   });
 
   const list = await screen.findByTestId("chat-list-column");
-  await within(list).findByText("Research conversation");
-  const searchButton = within(list).getByLabelText("Search workspace");
-  if (!searchButton.parentElement) {
-    throw new Error("Chat header not found");
+  await within(list).findByText("Release plan");
+  const header = within(list).getByText("Okou").parentElement;
+  if (!header) {
+    throw new Error("Chat list header not found");
   }
   expect(
-    within(searchButton.parentElement).getByLabelText("Hide chat list"),
-  ).toBeInTheDocument();
-  expect(
-    within(searchButton.parentElement).queryByLabelText("New chat"),
-  ).not.toBeInTheDocument();
+    queryAllByRoleFast("button", header).map((button) => {
+      return button.getAttribute("aria-label");
+    }),
+  ).toStrictEqual([
+    "Search workspace",
+    "Create Project",
+    "New chat",
+    "Open chat list menu",
+    "Hide chat list",
+  ]);
+  expect(within(list).queryByText(/^Chats with/)).not.toBeInTheDocument();
 
-  const newChat = within(list).getByLabelText("New chat");
-  expect(
-    within(list).getByText("Chats with Research Agent").parentElement,
-  ).toContainElement(newChat);
-  click(newChat);
+  click(within(header).getByLabelText("Open chat list menu"));
+  click(menuItemByText("Archived"));
+  await expect(
+    within(list).findByText("Archived · Okou"),
+  ).resolves.toBeInTheDocument();
 
+  click(within(header).getByLabelText("New chat"));
   await waitFor(() => {
     expect(createdAgentIds).toStrictEqual([AGENT_ID]);
   });

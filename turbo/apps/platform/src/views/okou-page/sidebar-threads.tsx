@@ -103,7 +103,6 @@ import {
   currentChatAgentId$,
   currentChatThreadId$,
   hasCurrentChatThread$,
-  newChatAgentId$,
 } from "../../signals/agent-chat.ts";
 import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
@@ -1240,25 +1239,25 @@ function ChatThreadsListMenuTooltip() {
 }
 
 function useNewChatAction() {
-  const newChatAgentId = useLastResolved(newChatAgentId$) ?? null;
+  const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
   const createNewChat = useSet(createNewChatThread$);
   const setExpanded = useSet(setSidebarExpanded$);
   const rootSignal = useGet(rootSignal$);
   const newChatDisabled = useGet(newChatThreadDisabled$);
 
   function onSelect(pane: NewChatThreadPane) {
-    if (!newChatAgentId) {
+    if (!currentChatAgentId) {
       return;
     }
     detach(
-      createNewChat({ agentId: newChatAgentId }, pane, rootSignal),
+      createNewChat({ agentId: currentChatAgentId }, pane, rootSignal),
       Reason.DomCallback,
     );
     setExpanded(false);
   }
 
   return {
-    disabled: !newChatAgentId || newChatDisabled,
+    disabled: !currentChatAgentId || newChatDisabled,
     onSelect,
   };
 }
@@ -1434,9 +1433,8 @@ export function ChatThreadsListMenu({
 
 // With archiving on, a non-default filter names itself in the title so the list
 // never looks like the inbox while it shows archived, unread, or muted chats.
-function useChatThreadsFilteredTitleLabel() {
+export function useFilteredChatThreadsTitle(titleLabel: string) {
   const { t } = useTranslation();
-  const { titleLabel } = useChatThreadsTitleLabels();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
@@ -1502,6 +1500,21 @@ function NewChatThreadButton() {
   );
 }
 
+/** Project, New chat and list-menu buttons; the caller owns their layout. */
+export function ChatThreadsActions({
+  showMarkAllRead,
+}: {
+  showMarkAllRead: boolean;
+}) {
+  return (
+    <>
+      <ProjectCreateButton />
+      <NewChatThreadButton />
+      <ChatThreadsListMenu showMarkAllRead={showMarkAllRead} />
+    </>
+  );
+}
+
 function ChatThreadsTitle({
   showMarkAllRead,
   contentId,
@@ -1511,7 +1524,8 @@ function ChatThreadsTitle({
   contentId: string;
   collapsible: boolean;
 }) {
-  const titleLabel = useChatThreadsFilteredTitleLabel();
+  const { titleLabel: agentTitleLabel } = useChatThreadsTitleLabels();
+  const titleLabel = useFilteredChatThreadsTitle(agentTitleLabel);
   const setCollapsed = useSet(setSessionListCollapsed$);
   const collapsed = useGet(sessionListCollapsed$);
 
@@ -1542,9 +1556,7 @@ function ChatThreadsTitle({
         </span>
       )}
       <div className="flex items-center gap-0.5">
-        <ProjectCreateButton />
-        <NewChatThreadButton />
-        <ChatThreadsListMenu showMarkAllRead={showMarkAllRead} />
+        <ChatThreadsActions showMarkAllRead={showMarkAllRead} />
       </div>
     </div>
   );
@@ -1811,25 +1823,30 @@ export function ChatThreadsSection({
   contentClassName,
   showMarkAllRead = false,
   collapsible = true,
+  showTitle = true,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
   showMarkAllRead?: boolean;
   collapsible?: boolean;
+  /** False when the surrounding header already carries the title actions. */
+  showTitle?: boolean;
 }) {
   const agentScope = useGet(currentChatAgentScope$);
   const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
 
   return (
-    <div className="mt-4 flex min-h-0 flex-1 flex-col">
-      <div className={contentClassName}>
-        <ChatThreadsTitle
-          key={agentScope ?? "no-agent"}
-          showMarkAllRead={showMarkAllRead}
-          contentId={CHAT_THREADS_CONTENT_ID}
-          collapsible={collapsible}
-        />
-      </div>
+    <div className={cn("flex min-h-0 flex-1 flex-col", showTitle && "mt-4")}>
+      {showTitle ? (
+        <div className={contentClassName}>
+          <ChatThreadsTitle
+            key={agentScope ?? "no-agent"}
+            showMarkAllRead={showMarkAllRead}
+            contentId={CHAT_THREADS_CONTENT_ID}
+            collapsible={collapsible}
+          />
+        </div>
+      ) : null}
       <ChatThreadsContent
         scrollSignals={scrollSignals}
         contentClassName={contentClassName}
