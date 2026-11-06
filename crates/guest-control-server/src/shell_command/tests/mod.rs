@@ -1,30 +1,8 @@
 use super::*;
-use std::path::PathBuf;
 use std::sync::{Arc, Barrier};
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime};
 
-struct TempDirGuard(PathBuf);
-
-impl Drop for TempDirGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-fn temp_dir(label: &str) -> (PathBuf, TempDirGuard) {
-    let dir = std::env::temp_dir().join(format!(
-        "guest-control-server-{label}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let guard = TempDirGuard(dir.clone());
-    (dir, guard)
-}
+use crate::test_support::temp_dir;
 
 #[test]
 fn env_script_content_attempts_self_removal_before_exports() {
