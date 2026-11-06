@@ -1,4 +1,3 @@
-import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
 import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
 import { commitMemoryVersion } from "./helpers/memory";
 import { captureSessionStorageMocks } from "./helpers/prepared-session-history";
@@ -7010,7 +7009,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const fw = createFirewallApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
-        await enableConnectorSkillBundles(context, actor);
         const mcpDefinition = manualMcpRuntimeConnectorBody({
           displayName: "BDD MCP Runtime",
           endpoint:
@@ -7797,7 +7795,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const fixture = await publicChatActor(context);
         const { actor, agentId, runnerGroup } = fixture;
         await fixture.run(async () => {
-          await enableConnectorSkillBundles(context, actor);
           const slug = `_bdd-permission-skill-${randomUUID().slice(0, 8)}`;
           const custom = await connectors.createCustomConnector(actor, {
             slug,

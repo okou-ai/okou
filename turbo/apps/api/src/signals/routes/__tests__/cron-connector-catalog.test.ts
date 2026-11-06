@@ -1,4 +1,3 @@
-import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
@@ -566,9 +565,6 @@ describe("connector catalog valid lifecycle", () => {
 
   it("mounts all 17 normally published connector skill versions", async () => {
     const owned = await publicChatActor(context, { clockTime: now() });
-    await owned.run(() => {
-      return enableConnectorSkillBundles(context, owned.actor);
-    });
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       await fixture.api.createPersonalModelProvider(owned.actor, {
@@ -662,9 +658,6 @@ describe("connector catalog valid lifecycle", () => {
 
   it("pins a published connector skill before a normal update", async () => {
     const owned = await publicChatActor(context, { clockTime: now() });
-    await owned.run(() => {
-      return enableConnectorSkillBundles(context, owned.actor);
-    });
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       await fixture.api.createPersonalModelProvider(owned.actor, {
@@ -1018,7 +1011,7 @@ describe("connector catalog valid lifecycle", () => {
 
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "agora"));
-    await enableConnectorSkillBundles(context, actor);
+
     await connectorsApi.connectManualGrant(actor, "agora", "api-token", {
       credential: "bundled-skill-token",
     });

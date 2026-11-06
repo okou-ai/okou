@@ -1,4 +1,3 @@
-import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
@@ -125,7 +124,7 @@ describe("workflow skill storage presigned URL cache", () => {
     context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
     // Skill availability is independent of a connected runtime account.
     const connectors = createConnectorBddApi(context);
-    await enableConnectorSkillBundles(context, actor);
+
     const custom = await connectors.createCustomConnector(actor, {
       displayName: "Readonly cache connector",
       prefixTemplates: [
