@@ -5,12 +5,10 @@ use crate::common;
 use api_contracts::generated::constants::paid_tools::{
     ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR,
 };
-use guest_agent::active_input::ActiveInputRuntime;
 use guest_agent::masker::SecretMasker;
 use guest_agent::run_context::GuestRuntime;
 use std::collections::HashMap;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
@@ -60,7 +58,7 @@ async fn assert_native_tool_policy(
         ));
         std::fs::create_dir_all(&case_root)?;
         let args_path = case_root.join("args.txt");
-        let wrapper_path = write_recording_wrapper(&case_root)?;
+        let wrapper_path = common::native_cli::write_recording_wrapper(&case_root)?;
         let runtime = build_runtime(
             &case_root,
             framework,
@@ -71,10 +69,15 @@ async fn assert_native_tool_policy(
             framework_image_generation,
         )?;
 
-        let result = execute(&runtime).await?;
+        let result = common::execute_cli_for_runtime(
+            &runtime,
+            &SecretMasker::from_raw(""),
+            common::spawn_dummy_heartbeat(),
+        )
+        .await?;
         assert_eq!(result.exit_code, common::CLEAN_EXIT);
 
-        let args = read_args(&args_path)?;
+        let args = common::native_cli::read_args(&args_path)?;
         if framework == "claude-code" {
             let disallowed_tools_index = args
                 .iter()
@@ -163,7 +166,7 @@ fn build_runtime(
     if let Some(value) = framework_image_generation {
         user_env.insert(ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR, value);
     }
-    let user_env_file = write_user_env_file(&runtime_dir, &user_env)?;
+    let user_env_file = common::native_cli::write_user_env_file(&runtime_dir, &user_env)?;
     let is_claude = framework == "claude-code";
     let mut config = guest_agent::env::GuestConfig::from_raw(guest_agent::env::GuestConfigRaw {
         run_id,
@@ -192,45 +195,4 @@ fn build_runtime(
         workload_containment: None,
         process_control_endpoint: None,
     })
-}
-
-fn write_user_env_file(runtime_dir: &Path, user_env: &HashMap<&str, &str>) -> TestResult<PathBuf> {
-    let dir = runtime_dir.join(guest_contracts::env::USER_ENV_PRIVATE_DIR_NAME);
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join(guest_contracts::env::USER_ENV_FILENAME);
-    std::fs::write(&path, serde_json::to_vec(user_env)?)?;
-    Ok(path)
-}
-
-fn write_recording_wrapper(root: &Path) -> TestResult<PathBuf> {
-    let path = root.join("record-args");
-    std::fs::write(
-        &path,
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$TEST_ARGS_PATH\"\nexec \"$TEST_REAL_MOCK\" \"$@\"\n",
-    )?;
-    let mut permissions = std::fs::metadata(&path)?.permissions();
-    permissions.set_mode(0o700);
-    std::fs::set_permissions(&path, permissions)?;
-    Ok(path)
-}
-
-fn read_args(path: &Path) -> TestResult<Vec<String>> {
-    Ok(std::fs::read_to_string(path)?
-        .lines()
-        .map(str::to_string)
-        .collect())
-}
-
-async fn execute(runtime: &GuestRuntime) -> TestResult<guest_agent::cli::CliExecutionResult> {
-    let active_input =
-        ActiveInputRuntime::new_disabled(&runtime.config.run_id, &runtime.config.prompt);
-    Ok(guest_agent::cli::execute_cli_with_active_input_for_config(
-        &SecretMasker::from_raw(""),
-        common::spawn_dummy_heartbeat(),
-        runtime.http.clone(),
-        active_input.into_writer(),
-        &runtime.config,
-        &runtime.paths,
-    )
-    .await?)
 }

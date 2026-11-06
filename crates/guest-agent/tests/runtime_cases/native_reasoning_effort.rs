@@ -2,12 +2,10 @@
 
 use crate::common;
 
-use guest_agent::active_input::ActiveInputRuntime;
 use guest_agent::masker::SecretMasker;
 use guest_agent::run_context::GuestRuntime;
 use std::collections::HashMap;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error>>;
 
@@ -177,7 +175,7 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
                 ));
                 std::fs::create_dir_all(&case_root)?;
                 let args_path = case_root.join("args.txt");
-                let wrapper = write_recording_wrapper(&case_root)?;
+                let wrapper = common::native_cli::write_recording_wrapper(&case_root)?;
                 let mut runtime =
                     build_runtime(&case_root, framework, &wrapper, real_mock, &args_path)?;
                 let model_key = if framework == "codex" {
@@ -205,13 +203,18 @@ async fn selected_effort_reaches_new_and_resumed_native_runs() -> TestResult {
                     runtime.config.resume_session_id =
                         "0193abcd-ef01-7234-89ab-cdef01234567".to_string();
                 }
-                let result = execute(&runtime).await?;
+                let result = common::execute_cli_for_runtime(
+                    &runtime,
+                    &SecretMasker::from_raw(""),
+                    common::spawn_dummy_heartbeat(),
+                )
+                .await?;
                 assert_eq!(
                     result.exit_code,
                     common::CLEAN_EXIT,
                     "{framework} {model} {effort:?}"
                 );
-                let args = read_args(&args_path)?;
+                let args = common::native_cli::read_args(&args_path)?;
                 if framework == "codex" {
                     let events = common::read_codex_session_history_events_for_runtime(&runtime)?;
                     let input = events
@@ -261,7 +264,7 @@ fn build_runtime(
             ..guest_contracts::env::RunPayload::default()
         },
     )?;
-    let user_env_file = write_user_env_file(
+    let user_env_file = common::native_cli::write_user_env_file(
         &runtime_dir,
         &HashMap::from([
             (
@@ -302,45 +305,4 @@ fn build_runtime(
         workload_containment: None,
         process_control_endpoint: None,
     })
-}
-
-fn write_user_env_file(runtime_dir: &Path, user_env: &HashMap<&str, &str>) -> TestResult<PathBuf> {
-    let dir = runtime_dir.join(guest_contracts::env::USER_ENV_PRIVATE_DIR_NAME);
-    std::fs::create_dir_all(&dir)?;
-    let path = dir.join(guest_contracts::env::USER_ENV_FILENAME);
-    std::fs::write(&path, serde_json::to_vec(user_env)?)?;
-    Ok(path)
-}
-
-fn write_recording_wrapper(root: &Path) -> TestResult<PathBuf> {
-    let path = root.join("record-args");
-    std::fs::write(
-        &path,
-        "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$TEST_ARGS_PATH\"\nexec \"$TEST_REAL_MOCK\" \"$@\"\n",
-    )?;
-    let mut permissions = std::fs::metadata(&path)?.permissions();
-    permissions.set_mode(0o700);
-    std::fs::set_permissions(&path, permissions)?;
-    Ok(path)
-}
-
-fn read_args(path: &Path) -> TestResult<Vec<String>> {
-    Ok(std::fs::read_to_string(path)?
-        .lines()
-        .map(str::to_string)
-        .collect())
-}
-
-async fn execute(runtime: &GuestRuntime) -> TestResult<guest_agent::cli::CliExecutionResult> {
-    let active_input =
-        ActiveInputRuntime::new_disabled(&runtime.config.run_id, &runtime.config.prompt);
-    Ok(guest_agent::cli::execute_cli_with_active_input_for_config(
-        &SecretMasker::from_raw(""),
-        common::spawn_dummy_heartbeat(),
-        runtime.http.clone(),
-        active_input.into_writer(),
-        &runtime.config,
-        &runtime.paths,
-    )
-    .await?)
 }
