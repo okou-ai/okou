@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.26.3](https://github.com/okou-ai/okou/compare/ios-v0.26.2...ios-v0.26.3) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ios:** align unread and running chat indicators ([#45619](https://github.com/okou-ai/okou/issues/45619)) ([ed8745e](https://github.com/okou-ai/okou/commit/ed8745e46b3419de58b0eb19f02a4ea805c96515))
+* **ios:** center the scroll-to-bottom button ([#45585](https://github.com/okou-ai/okou/issues/45585)) ([b7953fe](https://github.com/okou-ai/okou/commit/b7953fe66db41196fc81724cdec165094b743628))
+* **ios:** remove open on web from chat menu ([#45600](https://github.com/okou-ai/okou/issues/45600)) ([e461c73](https://github.com/okou-ai/okou/commit/e461c7358bbffcc58bbdec33a236d383c5076749))
+* **ios:** remove the active chats section ([#45599](https://github.com/okou-ai/okou/issues/45599)) ([3b57ddb](https://github.com/okou-ai/okou/commit/3b57ddbcfe1d87f27996a456f14fb11224134902))
+* **ios:** reuse downloaded originals when opening attachments ([#45623](https://github.com/okou-ai/okou/issues/45623)) ([1347e46](https://github.com/okou-ai/okou/commit/1347e46d422c01491481d16e2ccef53a881f4652))
+* **ios:** vertically center chat feedback icons ([#45596](https://github.com/okou-ai/okou/issues/45596)) ([30371e5](https://github.com/okou-ai/okou/commit/30371e5186c358deae9bba97e0fec878605c4c76))
+
+
+### Refactoring
+
+* **ios:** remove experimental single-agent support ([#45601](https://github.com/okou-ai/okou/issues/45601)) ([69c431b](https://github.com/okou-ai/okou/commit/69c431b9e6b0347371608402686a861a310256d0))
+* **ios:** remove unused voice and labeled-value code ([#45597](https://github.com/okou-ai/okou/issues/45597)) ([5f0c461](https://github.com/okou-ai/okou/commit/5f0c461cee8515e80fd0c57c544bfd72dabaf9e7))
+
 ## [0.26.2](https://github.com/okou-ai/okou/compare/ios-v0.26.1...ios-v0.26.2) (2026-11-06)
 
 
