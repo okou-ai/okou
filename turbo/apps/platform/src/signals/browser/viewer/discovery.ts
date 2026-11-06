@@ -565,6 +565,12 @@ function createCompleteInventoryRead(
       await set(waitForDrain$, signal);
     }
     signal.throwIfAborted();
+    if (get(model.intent$).paused) {
+      throw new DOMException(
+        "The browser operation was cancelled.",
+        "AbortError",
+      );
+    }
     const snapshot = get(model.snapshot$);
     const inventory = snapshot.inventory;
     if (!get(nodes.admitted$) || inventory.status !== "complete") {

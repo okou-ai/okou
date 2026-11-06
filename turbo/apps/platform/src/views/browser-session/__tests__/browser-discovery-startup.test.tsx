@@ -1264,6 +1264,32 @@ test("Unmounting cancels discovery and a close waiting for its inventory", async
   expect(errors).toHaveLength(0);
 });
 
+test("Pausing cancels a close waiting for discovery without reporting a failed operation", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const { browser, start } = viewer();
+  const scan = browser.holdNextMembership("sibling-3");
+  await start();
+  await scan.received;
+  await ready();
+  click(screen.getByLabelText("Close First own tab"));
+  expect(screen.getByLabelText("Close First own tab")).toBeDisabled();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  await act(scan.release);
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await ready();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Close First own tab")).toBeEnabled();
+  });
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  click(screen.getByLabelText("Close First own tab"));
+  await ready("https://later.example.com");
+});
+
 test.each([1, 5])(
   "A paused viewer resumes its selected page before the inventory from %s hidden creations finishes",
   async (count) => {
