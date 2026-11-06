@@ -1432,43 +1432,6 @@
         }
       }
     },
-    "Active · %lld": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Aktiv · %lld" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Activos · %lld" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Actives · %lld" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "सक्रिय · %lld" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Aktif · %lld" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Attive · %lld" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "進行中 · %lld" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "진행 중 · %lld" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Ativas · %lld" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "进行中 · %lld" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "進行中 · %lld" }
-        }
-      }
-    },
     "Add %lld": {
       "localizations": {
         "de": {
