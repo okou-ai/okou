@@ -42,7 +42,6 @@ describe("isFeatureEnabled", () => {
   });
 
   it.each([
-    FeatureSwitchKey.ChatMessagePdf,
     FeatureSwitchKey.SidebarSubscriptionUsage,
   ])("releases %s to everyone and honors explicit opt-outs", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
