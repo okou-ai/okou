@@ -191,10 +191,10 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
   const query = useGet(manager.query$);
   const setQuery = useSet(manager.setQuery$);
   const close = useSet(manager.close$);
-  // Search, filters and the count only describe emails. Until the list shows
-  // the chat has one, the header matches the empty state so loading never
-  // promises controls that then disappear.
-  const count = mails.state === "hasData" ? mails.data.length : 0;
+  // The first list stands in as a skeleton; later reloads keep the last list.
+  const loading = mails.state === "loading";
+  // Search and filters have nothing to act on until the chat has an email.
+  const empty = mails.state === "hasData" && mails.data.length === 0;
   return (
     <div className="shrink-0 space-y-3 border-b border-border/60 p-4">
       <div className="flex items-center gap-2">
@@ -203,8 +203,10 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
           {t(($) => {
             return $.chat.mail.manager.title;
           })}
-          {count > 0 && (
-            <span className="ml-2 text-xs text-muted-foreground">{count}</span>
+          {mails.state === "hasData" && (
+            <span className="ml-2 text-xs text-muted-foreground">
+              {mails.data.length}
+            </span>
           )}
         </h2>
         <Button
@@ -219,7 +221,8 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
           <X size={16} />
         </Button>
       </div>
-      {count > 0 && (
+      {loading && <ThreadMailHeaderSkeleton />}
+      {!loading && !empty && (
         <>
           <div className="relative">
             <Search
@@ -243,6 +246,20 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
           <ThreadMailFilters thread={thread} />
         </>
       )}
+    </div>
+  );
+}
+
+/** Search and filter placeholders until the first list answers. */
+function ThreadMailHeaderSkeleton() {
+  return (
+    <div aria-hidden="true" className="space-y-3">
+      <Skeleton className="h-9 w-full rounded-md" />
+      <div className="flex gap-1">
+        {[0, 1, 2].map((filter) => {
+          return <Skeleton key={filter} className="h-7 w-14 rounded-md" />;
+        })}
+      </div>
     </div>
   );
 }
