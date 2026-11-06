@@ -62,7 +62,8 @@ import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
 import { AccountDropdown } from "./sidebar-account.tsx";
 import {
   ChatThreadDialogs,
-  ChatThreadsActions,
+  ChatThreadsListMenu,
+  ChatThreadsNewMenu,
   ChatThreadsSection,
   useChatThreadsFilterLabel,
 } from "./sidebar-threads.tsx";
@@ -881,8 +882,8 @@ function ChatListHeader() {
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
   // My Okou has a single chat list, so the header names it and carries the
-  // list title's actions. An active filter takes the name's place so a
-  // filtered list never looks like the inbox and still fits beside them.
+  // list's actions. An active filter takes the name's place so a filtered
+  // list never looks like the inbox.
   const assistantName = useGet(assistantName$);
   const filterLabel = useChatThreadsFilterLabel();
   const searchLabel = t(($) => {
@@ -963,9 +964,9 @@ function ChatListHeader() {
       </span>
       {singleAgent ? (
         <>
-          <ShortcutTooltipGroup items={[searchItem]} />
-          <ChatThreadsActions showMarkAllRead />
-          <ShortcutTooltipGroup items={[toggleItem]} />
+          <ShortcutTooltipGroup items={[toggleItem, searchItem]} />
+          <ChatThreadsNewMenu />
+          <ChatThreadsListMenu showMarkAllRead />
         </>
       ) : (
         <ShortcutTooltipGroup items={[searchItem, newChatItem, toggleItem]} />
