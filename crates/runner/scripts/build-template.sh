@@ -120,6 +120,9 @@ GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.39.4-vm0.1"
 PNPM_VERSION="12.18.0"
+# Python follows the interpreter embedded in the pinned standalone mitmproxy.
+# The addon tests enforce these pins against .python-version and pyproject.toml.
+PYTHON_VERSION="3.15.1"
 UV_VERSION="0.13.7"
 CHROMIUM_VERSION="156.0.8078.79-1~deb12u1"
 CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261103T160100Z"
@@ -458,6 +461,7 @@ install_runtimes() {
 
   # uv (official standalone release)
   sudo chroot "$ROOTFS_DIR" bash -c "
+    set -e
     ARCH=\$(dpkg --print-architecture)
     case \"\$ARCH\" in
       amd64)
@@ -479,6 +483,31 @@ install_runtimes() {
     test \"\$(/usr/local/bin/uv --version)\" = \"uv ${UV_VERSION} (\${TARGET})\"
     test \"\$(/usr/local/bin/uvx --version)\" = \"uvx ${UV_VERSION} (\${TARGET})\"
   "
+
+  # Match the addon's interpreter without replacing Ubuntu's /usr/bin/python3.
+  # Keep managed files outside root's home so both user and root can use them.
+  sudo chroot "$ROOTFS_DIR" env \
+    PYTHON_VERSION="$PYTHON_VERSION" UV_PYTHON_INSTALL_DIR=/opt/python bash -se <<'PYTHON_SETUP'
+uv python install --no-bin "$PYTHON_VERSION"
+python_path=$(uv python find --managed-python --no-python-downloads "$PYTHON_VERSION")
+python_bin=${python_path%/*}
+for command in python python3 pip pip3; do
+  ln -s "$python_bin/$command" "/usr/local/bin/$command"
+done
+test "$(python3 --version)" = "Python $PYTHON_VERSION"
+test "$(python --version)" = "Python $PYTHON_VERSION"
+python3 -m pip --version
+pip --version
+pip3 --version
+su -s /bin/bash user <<'PYTHON_USER'
+set -e
+test "$(python3 --version)" = "Python $PYTHON_VERSION"
+venv_dir=$(mktemp -d)
+trap 'rm -rf "$venv_dir"' EXIT
+python3 -m venv "$venv_dir"
+"$venv_dir/bin/python" -m pip --version
+PYTHON_USER
+PYTHON_SETUP
 
   # Rust (stable toolchain via rustup)
   sudo chroot "$ROOTFS_DIR" bash -c '

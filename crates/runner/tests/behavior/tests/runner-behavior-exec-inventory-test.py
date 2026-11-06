@@ -38,9 +38,12 @@ if case.get("transport_failure") == probe:
 
 env = os.environ.copy()
 fake_bin = Path(os.environ["INVENTORY_TEST_BIN"])
+env["INVENTORY_TEST_PYTHON_VERSION"] = case.get("python_version", {}).get(probe, "3.15.1")
+env["INVENTORY_TEST_UV_VERSION"] = case.get("uv_version", {}).get(probe, "0.13.7")
+env["INVENTORY_TEST_WRONG_PIP"] = case.get("wrong_pip", {}).get(probe, "")
 if probe == "runtime":
     env["INVENTORY_TEST_FAILED_COMMAND"] = case.get("failed_command", "")
-    for name in args[4::2]:
+    for name in [*args[4::2], "pip"]:
         if case.get("unavailable") == name:
             continue
         version = fake_bin / name
@@ -53,7 +56,7 @@ if probe == "runtime":
         env["PATH"] = str(fake_bin)
 else:
     assert args[3] == "environment-inventory" and args[4] == probe, args
-    env.update(dict(zip(args[6::2], args[7::2])))
+    env.update(dict(zip(args[8::2], args[9::2])))
     env["PATH"] = str(fake_bin) + ":" + args[5] + ":/extra/bin"
     for name, value in case.get(probe, {}).items():
         if value is None:
@@ -67,11 +70,26 @@ VERSION_FIXTURE = r'''#!/bin/sh
 set -eu
 name=${0##*/}
 printf '%s\n' "$name" >> "$INVENTORY_TEST_VERSIONS"
-if [ "$name" = "$INVENTORY_TEST_FAILED_COMMAND" ]; then
+if [ "$name" = "${INVENTORY_TEST_FAILED_COMMAND:-}" ]; then
     printf 'version-looking stdout from failed command\n'
     printf 'required version failure\n' >&2
     exit 42
 fi
+case "$name:$*" in
+    python:--version|python3:--version)
+        printf 'Python %s\n' "$INVENTORY_TEST_PYTHON_VERSION"; exit ;;
+    uv:--version|uvx:--version)
+        printf '%s %s (fixture)\n' "$name" "$INVENTORY_TEST_UV_VERSION"; exit ;;
+    'python3:-m pip --version')
+        printf 'pip fixture from default Python\n'; exit ;;
+    pip:--version|pip3:--version)
+        if [ "$name" = "$INVENTORY_TEST_WRONG_PIP" ]; then
+            printf 'pip fixture from another Python\n'
+        else
+            printf 'pip fixture from default Python\n'
+        fi
+        exit ;;
+esac
 if [ "$name" = javac ]; then
     printf 'fixture %s version\n' "$name" >&2
 else
@@ -107,7 +125,7 @@ class InventoryTest(unittest.TestCase):
             "INVENTORY_TEST_VERSION_SOURCE": VERSION_FIXTURE,
         })
         result = subprocess.run(
-            ["bash", str(INVENTORY), "/fake/bin", "inventory-sandbox"],
+            ["bash", str(INVENTORY), "/fake/bin", "inventory-sandbox", "3.15.1", "0.13.7"],
             env=env, capture_output=True, text=True, timeout=15,
         )
         invocations = [json.loads(line) for line in invocation_log.read_text().splitlines()]
@@ -122,13 +140,31 @@ class InventoryTest(unittest.TestCase):
     def test_three_privilege_probes_preserve_all_observations(self):
         result, invocations, versions = self.run_case({})
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertEqual(len(versions), 21)
-        self.assertEqual(len(set(versions)), 21)
+        self.assertEqual(len(versions), 38)
+        self.assertEqual(len(set(versions)), 25)
         self.assertEqual([item["root"] for item in invocations], [False, False, True])
         self.assertEqual([item["probe"] for item in invocations], ["runtime", "user", "root"])
         for label in ["user", "root"]:
             self.assertIn(f"{label} environment inventory: 9 checks in 1 runner-exec probe", result.stdout)
             self.assertIn(f"{label} AGENT_BROWSER_USE_SYSTEM_CA=1", result.stdout)
+            self.assertIn(f"{label} Python 3.15.1 and uv/uvx 0.13.7 match addon development", result.stdout)
+
+    def test_toolchain_version_mismatches_fail_at_both_privileges(self):
+        for label in ["user", "root"]:
+            for key, version, diagnostic in [
+                ("python_version", "3.12.3", "python=Python 3.12.3, expected Python 3.15.1"),
+                ("uv_version", "0.12.17", "uv=uv 0.12.17 (fixture), expected uv 0.13.7"),
+            ]:
+                with self.subTest(label=label, key=key):
+                    result, _, _ = self.run_case({key: {label: version}})
+                    self.assert_failure(result, f"{label}: {diagnostic}")
+
+    def test_pip_must_belong_to_default_python(self):
+        for label in ["user", "root"]:
+            for command in ["pip", "pip3"]:
+                with self.subTest(label=label, command=command):
+                    result, _, _ = self.run_case({"wrong_pip": {label: command}})
+                    self.assert_failure(result, f"{label}: {command} does not belong to the default Python")
 
     def test_runtime_failures_are_not_hidden_by_version_output(self):
         for command in ["node", "javac", "redis-server"]:

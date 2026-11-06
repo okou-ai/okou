@@ -149,6 +149,7 @@ if [ "$#" -eq 2 ] && { [[ "$2" == *"worker.XXXXXX"* ]] || [[ "$2" == *"bundle.XX
   cat > "$FAKE_REMOTE_WORKER" <<'FAKE_REMOTE_WORKER_SCRIPT'
 #!/usr/bin/env bash
 printf '%s\n' "${3:-}" > "$FAKE_WORKER_ARGUMENT_FILE"
+printf '%s\n' "${4:-}" > "${FAKE_WORKER_ARGUMENT_FILE}.second"
 while [ ! -f "$FAKE_WORKER_RELEASE" ]; do
   /bin/sleep 0.01
 done
@@ -173,7 +174,7 @@ if [ "$#" -eq 2 ] && [[ "$2" == "cat -- "* ]]; then
   exit 0
 fi
 
-if [ "$#" -ge 11 ] && [ "$#" -le 12 ] \
+if [ "$#" -ge 11 ] && [ "$#" -le 13 ] \
   && [ "$2" = "bash" ] && [ "$3" = "-s" ]; then
   cat > "$FAKE_SSH_STATE_DIR/launch-script"
   launch_attempt=$(increment launch-attempt-count)
@@ -415,7 +416,17 @@ run_driver_case balloon "$BALLOON_DRIVER" "$BALLOON_REMOTE_WORKER"
 run_driver_case drain-resume "$DRAIN_DRIVER" "$DRAIN_REMOTE_WORKER"
 run_driver_case home-cache-promotion "$HOME_DRIVER" "$HOME_REMOTE_WORKER"
 run_driver_case cancel "$CANCEL_DRIVER" "$CANCEL_REMOTE_WORKER"
-run_driver_case exec "$EXEC_DRIVER" "$EXEC_REMOTE_WORKER"
+run_driver_case exec "$EXEC_DRIVER" "$EXEC_REMOTE_WORKER" \
+  "$(<"$REPO_ROOT/crates/runner/mitm-addon/.python-version")"
+assert_value "$LAST_CASE_DIR/worker-argument.second" "$(
+  python3 - "$REPO_ROOT/crates/runner/mitm-addon/pyproject.toml" <<'PY'
+import sys
+import tomllib
+
+with open(sys.argv[1], "rb") as file:
+    print(tomllib.load(file)["tool"]["uv"]["required-version"].removeprefix("=="))
+PY
+)"
 run_driver_case keep-alive "$KEEP_ALIVE_DRIVER" "$KEEP_ALIVE_REMOTE_WORKER"
 run_driver_case process-containment \
   "$PROCESS_CONTAINMENT_DRIVER" "$PROCESS_CONTAINMENT_REMOTE_WORKER" \

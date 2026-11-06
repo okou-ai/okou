@@ -44,6 +44,30 @@ prepare_setup_workspace() {
     "$workspace/crates/runner/mitm-addon"
   printf '[tool.uv]\nrequired-version = "==%s"\n' "$REQUIRED_UV_VERSION" \
     > "$workspace/crates/runner/mitm-addon/pyproject.toml"
+  cp "$REPO_ROOT/crates/runner/mitm-addon/.python-version" \
+    "$workspace/crates/runner/mitm-addon/.python-version"
+
+  cat > "$workspace/fake-uv" <<'SCRIPT'
+#!/usr/bin/env bash
+set -euo pipefail
+case "$*" in
+  --version)
+    printf 'uv %s (test)\n' "$FAKE_UV_EFFECTIVE_VERSION"
+    ;;
+  'python install --no-bin '*)
+    printf '%s\n' "$*" >> "$PYTHON_INSTALL_LOG"
+    exit "${FAKE_PYTHON_INSTALL_STATUS:-0}"
+    ;;
+  *) echo "unexpected uv arguments: $*" >&2; exit 1 ;;
+esac
+SCRIPT
+  chmod +x "$workspace/fake-uv"
+  cat > "$fake_bin/uv" <<'SCRIPT'
+#!/usr/bin/env bash
+export FAKE_UV_EFFECTIVE_VERSION=0.0.0
+exec "$FAKE_UV_SOURCE" "$@"
+SCRIPT
+  chmod +x "$fake_bin/uv"
 
   cat > "$fake_bin/sudo" <<'SCRIPT'
 #!/usr/bin/env bash
@@ -76,7 +100,8 @@ cat <<INSTALLER
 mkdir -p "\${UV_UNMANAGED_INSTALL}"
 cat > "\${UV_UNMANAGED_INSTALL}/uv" <<'UV'
 #!/usr/bin/env bash
-printf '%s\n' 'uv ${install_version} (test)'
+export FAKE_UV_EFFECTIVE_VERSION='${install_version}'
+exec "\$FAKE_UV_SOURCE" "\$@"
 UV
 chmod +x "\${UV_UNMANAGED_INSTALL}/uv"
 INSTALLER
@@ -89,11 +114,15 @@ run_setup() {
 
   DATABASE_URL="postgresql://postgres:postgres@localhost:5432/postgres" \
     HOME="$workspace/home" \
-    PATH="$workspace/fake-bin:$workspace/home/.local/bin:/usr/local/bin:/usr/bin:/bin" \
+    PATH="$workspace/home/.local/bin:$workspace/fake-bin:/usr/local/bin:/usr/bin:/bin" \
     PSQL_CALLS_LOG="$workspace/psql.log" \
     SUDO_CALLS_LOG="$workspace/sudo.log" \
     CURL_CALLS_LOG="$workspace/curl.log" \
     FAKE_UV_INSTALL_VERSION="${FAKE_UV_INSTALL_VERSION:-}" \
+    FAKE_UV_EFFECTIVE_VERSION="$REQUIRED_UV_VERSION" \
+    FAKE_UV_SOURCE="$workspace/fake-uv" \
+    PYTHON_INSTALL_LOG="$workspace/python-install.log" \
+    FAKE_PYTHON_INSTALL_STATUS="${FAKE_PYTHON_INSTALL_STATUS:-0}" \
     bash "$workspace/.devcontainer/setup.sh"
 }
 
@@ -169,11 +198,7 @@ test_postgresql_setup() {
   local sudo_log="$workspace/sudo.log"
 
   prepare_setup_workspace "$workspace"
-  printf '%s\n' \
-    '#!/usr/bin/env bash' \
-    "printf '%s\\n' 'uv $REQUIRED_UV_VERSION (test)'" \
-    > "$fake_bin/uv"
-  chmod +x "$fake_bin/uv"
+  cp "$workspace/fake-uv" "$fake_bin/uv"
 
   run_setup "$workspace" > /dev/null
 
@@ -192,11 +217,7 @@ test_uv_setup_skips_installed_version() {
   local fake_bin="$workspace/fake-bin"
 
   prepare_setup_workspace "$workspace"
-  printf '%s\n' \
-    '#!/usr/bin/env bash' \
-    "printf '%s\\n' 'uv $REQUIRED_UV_VERSION (test)'" \
-    > "$fake_bin/uv"
-  chmod +x "$fake_bin/uv"
+  cp "$workspace/fake-uv" "$fake_bin/uv"
 
   run_setup "$workspace" > /dev/null
 
@@ -212,8 +233,20 @@ test_uv_setup_installs_required_version() {
 
   grep -Fq "https://astral.sh/uv/$REQUIRED_UV_VERSION/install.sh" "$workspace/curl.log" \
     || fail "uv installer URL did not use the project-required version"
-  test "$("$workspace/home/.local/bin/uv" --version | awk '{ print $2 }')" = "$REQUIRED_UV_VERSION" \
+  test "$(FAKE_UV_SOURCE="$workspace/fake-uv" "$workspace/home/.local/bin/uv" --version | awk '{ print $2 }')" = "$REQUIRED_UV_VERSION" \
     || fail "uv installer did not create the required version"
+  grep -Fxq "python install --no-bin $(<"$workspace/crates/runner/mitm-addon/.python-version")" \
+    "$workspace/python-install.log" \
+    || fail "Python installation did not use the addon interpreter pin"
+}
+
+test_python_setup_propagates_install_failure() {
+  local workspace="$TEST_ROOT/python-install-failure"
+  local status=0
+
+  prepare_setup_workspace "$workspace"
+  FAKE_PYTHON_INSTALL_STATUS=42 run_setup "$workspace" > /dev/null 2>&1 || status=$?
+  test "$status" -eq 42 || fail "Python installation failure was not propagated"
 }
 
 test_uv_setup_rejects_invalid_requirement() {
@@ -361,6 +394,7 @@ test_skill_link_directory_conflict
 test_postgresql_setup
 test_uv_setup_skips_installed_version
 test_uv_setup_installs_required_version
+test_python_setup_propagates_install_failure
 test_uv_setup_rejects_invalid_requirement
 test_uv_setup_rejects_installed_version_mismatch
 test_devcontainer_postgresql_config

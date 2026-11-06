@@ -3,6 +3,8 @@ set -euo pipefail
 
 BIN_DIR=$1
 SANDBOX_ID=$2
+PYTHON_VERSION=$3
+UV_VERSION=$4
 fail() { echo "FAIL: $1"; exit 1; }
 
 # Test 7: verify pre-installed language runtimes and databases
@@ -26,8 +28,11 @@ sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" -- sh -c '
 ' runtime-inventory \
   node --version \
   npm --version \
+  python --version \
   python3 --version \
   pip3 --version \
+  uv --version \
+  uvx --version \
   ruby --version \
   bundler --version \
   php --version \
@@ -66,7 +71,7 @@ check_env() {
   local label=$1 sudo_flag=$2
   local var
   local -a sudo_args=()
-  local -a env_args=("$label" "$EXPECTED_PATH")
+  local -a env_args=("$label" "$EXPECTED_PATH" "$PYTHON_VERSION" "$UV_VERSION")
   if [ -n "$sudo_flag" ]; then
     sudo_args=("$sudo_flag")
   fi
@@ -76,8 +81,8 @@ check_env() {
   sudo "$BIN_DIR/runner" exec --sandbox "$SANDBOX_ID" \
     "${sudo_args[@]}" -- sh -c '
     fail() { printf "FAIL: %s\n" "$1" >&2; exit 1; }
-    label=$1 expected_path=$2
-    shift 2
+    label=$1 expected_path=$2 python_version=$3 uv_version=$4
+    shift 4
     echo "  $label environment inventory: $(($# / 2 + 1)) checks in 1 runner-exec probe"
     while [ "$#" -gt 0 ]; do
       var=$1 expected=$2
@@ -93,6 +98,25 @@ check_env() {
     printf "%s\n" "$val" | grep -qF "$expected_path" \
       || fail "$label: PATH missing $expected_path in: $val"
     echo "  $label PATH=$val"
+    for command in python python3; do
+      actual=$("$command" --version) || fail "$label: $command failed"
+      [ "$actual" = "Python $python_version" ] \
+        || fail "$label: $command=$actual, expected Python $python_version"
+    done
+    for command in uv uvx; do
+      actual=$("$command" --version) || fail "$label: $command failed"
+      case "$actual" in
+        "$command $uv_version"|"$command $uv_version "*) ;;
+        *) fail "$label: $command=$actual, expected $command $uv_version" ;;
+      esac
+    done
+    expected_pip=$(python3 -m pip --version) || fail "$label: Python pip failed"
+    for command in pip pip3; do
+      actual=$("$command" --version) || fail "$label: $command failed"
+      [ "$actual" = "$expected_pip" ] \
+        || fail "$label: $command does not belong to the default Python"
+    done
+    echo "  $label Python $python_version and uv/uvx $uv_version match addon development"
   ' environment-inventory "${env_args[@]}" \
     || fail "$label: environment inventory probe"
 }
