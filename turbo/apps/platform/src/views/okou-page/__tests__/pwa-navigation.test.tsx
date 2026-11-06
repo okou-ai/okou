@@ -738,9 +738,6 @@ test("Remove a disconnected subscription from Me without reopening the page", as
   await setupPage({
     context,
     path: "/me",
-    featureSwitches: {
-      [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
-    },
     ...workspace.pageOptions,
   });
 

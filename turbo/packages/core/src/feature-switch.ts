@@ -277,12 +277,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
-  [FeatureSwitchKey.SidebarSubscriptionUsage]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show personal subscription usage in the account menu and on Me, and provider credit balances on connected accounts.",
-    enabled: true,
-  },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",

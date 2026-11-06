@@ -180,11 +180,9 @@ function MeSubscriptions({ reset }: { readonly reset: AccountReset }) {
 }
 
 function MeUsage({
-  profile,
   actions,
   reset,
 }: {
-  readonly profile: AccountProfile;
   readonly actions: AccountActions;
   readonly reset: AccountReset;
 }) {
@@ -205,7 +203,7 @@ function MeUsage({
       <MeAction icon={Coins} onClick={actions.handleOpenCreditBalance}>
         {loading ? usageLabel : (creditLabel ?? usageLabel)}
       </MeAction>
-      {profile.subscriptionsEnabled && <MeSubscriptions reset={reset} />}
+      <MeSubscriptions reset={reset} />
     </section>
   );
 }
@@ -385,7 +383,7 @@ export function PwaMePage() {
               <OrgSwitcher />
             </div>
           </section>
-          <MeUsage profile={profile} actions={actions} reset={reset} />
+          <MeUsage actions={actions} reset={reset} />
           <SidebarUpgradeCard placement="page" />
           <MeNavigation profile={profile} actions={actions} />
           <MeAccounts profile={profile} actions={actions} />

@@ -27,8 +27,6 @@ export const initializePwaMePage$ = command(
     ]);
     signal.throwIfAborted();
     const cacheKey = clerk.session?.id ?? user?.id ?? null;
-    const subscriptionsEnabled =
-      get(featureSwitch$)[FeatureSwitchKey.SidebarSubscriptionUsage] ?? false;
 
     if (get(featureSwitch$)[FeatureSwitchKey.SubscriptionLinkingEntry]) {
       set(refreshThirdPartySubscriptionsIfStale$);
@@ -36,9 +34,7 @@ export const initializePwaMePage$ = command(
 
     await Promise.all([
       set(reloadAccountMenuCreditBalances$, signal),
-      subscriptionsEnabled
-        ? set(reloadAccountMenuSubscriptionUsageRows$, cacheKey, signal)
-        : Promise.resolve(),
+      set(reloadAccountMenuSubscriptionUsageRows$, cacheKey, signal),
     ]);
   },
 );
