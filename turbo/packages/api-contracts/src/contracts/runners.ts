@@ -1190,7 +1190,6 @@ export const runnersJobClaimContract = c.router({
     }),
     query: object({
       workflowSkills: literal("2"),
-      singleCharacterSkills: literal("1").optional(),
     }),
     body: object({
       runnerIdentity: runnerProcessIdentitySchema.optional(),

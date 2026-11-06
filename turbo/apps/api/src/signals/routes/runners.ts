@@ -81,7 +81,7 @@ import { authRoute } from "../auth/auth-route";
 import { runnerAuth$, type RunnerAuthContext } from "../auth/runner-auth";
 import { generateSandboxToken } from "../auth/tokens";
 import { authorization$, request$ } from "../context/hono";
-import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
+import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
@@ -2248,7 +2248,6 @@ const resolveStoredExecutionContextForClaim$ = command(
       readonly orgId: string;
       readonly executionContext: unknown;
       readonly capabilities: RunnerClaimCapabilities;
-      readonly supportsSingleCharacterSkills: boolean;
       readonly timing: ClaimRouteTimingCollector;
     },
     signal: AbortSignal,
@@ -2277,21 +2276,6 @@ const resolveStoredExecutionContextForClaim$ = command(
           args,
           signal,
         ),
-      };
-    }
-    if (
-      !args.supportsSingleCharacterSkills &&
-      storedContextResult.data.seedSkillBundles.some((bundle) => {
-        return (
-          bundle.mountPath.slice(bundle.mountPath.lastIndexOf("/") + 1)
-            .length === 1
-        );
-      })
-    ) {
-      return {
-        compatible: false as const,
-        unavailableReason: "capability_unsupported" as const,
-        response: notFound("Job not found in queue"),
       };
     }
     const piModelConfigResolution = resolvePiModelConfigForClaim({
@@ -2339,7 +2323,6 @@ const claimAuthorizedJob$ = command(
       readonly authType: RunnerAuthContext["type"];
       readonly runnerAttribution: RunnerClaimAttribution | undefined;
       readonly capabilities: RunnerClaimCapabilities;
-      readonly supportsSingleCharacterSkills: boolean;
       readonly jobWithRun: ClaimableJob;
       readonly telemetry: ClaimTimingTelemetry | undefined;
       readonly claimRequestStartedAtMs: number;
@@ -2357,7 +2340,6 @@ const claimAuthorizedJob$ = command(
         orgId: run.orgId,
         executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
-        supportsSingleCharacterSkills: args.supportsSingleCharacterSkills,
         timing: claimRouteTiming,
       },
       signal,
@@ -2555,9 +2537,6 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
       authType: auth.type,
       runnerAttribution,
       capabilities: body.data.capabilities,
-      supportsSingleCharacterSkills:
-        get(queryOf(runnersJobClaimContract.claim)).singleCharacterSkills ===
-        "1",
       jobWithRun,
       telemetry: body.data.telemetry
         ? { ...body.data.telemetry, runnerPreference }
