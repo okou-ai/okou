@@ -206,16 +206,13 @@ import {
   type CustomConnectorAccountMutationOptions,
 } from "../../signals/okou-page/settings/connector-account-dialogs.ts";
 import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
-import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/permission-grant-save.ts";
 import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { locale$ } from "../../signals/locale.ts";
-import { applyUserPermissionGrants$ } from "../../signals/permission-allow/permission-allow-signals.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { sendMode$ } from "../../signals/send-mode.ts";
 import { openSkillImportDialog$ } from "../../signals/skill-import/skill-import-dialog.ts";
-import { activeUserPermissionGrantSnapshot } from "../../signals/user-permission-grants.ts";
 import { Reason, detach, onDomEventFn } from "../../signals/utils.ts";
 import {
   audioInputAvailable$,
@@ -4230,61 +4227,19 @@ function ComposerConnectorPermissionDialog({
   agentId,
   agentDisplayName,
   connector,
-  onClose,
 }: {
   signals: ComposerSignals;
   agentId: string;
   agentDisplayName: string;
   connector: ComposerConnectorItem;
-  onClose: () => void;
 }) {
-  const { t } = useTranslation();
-  const grantsLoadable = useLastLoadable(
-    signals.connector.connectorPermissionGrants$,
-  );
-  const pageSignal = useGet(pageSignal$);
-  const [, applyGrantPolicies] = useLoadableSet(applyUserPermissionGrants$);
-
-  const grants =
-    grantsLoadable.state === "hasData" ? grantsLoadable.data : undefined;
-
-  if (grants === undefined) {
-    return null;
-  }
-
-  const activeSnapshot = activeUserPermissionGrantSnapshot(grants);
-  const initialPolicies = activeSnapshot.policies ?? {};
-
   return (
     <PermissionsDialog
       agentId={agentId}
       connectorSlug={connector.slug}
       connectorLabel={connector.label}
-      metadata$={signals.connector.connectorPermissionMetadata$}
       displayName={agentDisplayName}
-      initialPolicies={initialPolicies}
-      initialGrants={activeSnapshot.grants}
-      readOnly={false}
-      onApply={async (intent, { metadata: appliedMetadata }) => {
-        await savePermissionDraftPolicies(
-          {
-            scope: { agentId },
-            connectorSlug: connector.slug,
-            metadata: appliedMetadata,
-            initialPolicies,
-            initialGrants: activeSnapshot.grants,
-            intent,
-            applyGrantPolicies,
-          },
-          pageSignal,
-        );
-        toast.success(
-          t(($) => {
-            return $.chat.permissions.updated;
-          }),
-        );
-      }}
-      onClose={onClose}
+      session={signals.connector.permissionDrawer}
     />
   );
 }
@@ -5355,7 +5310,6 @@ function ComposerConnectorPermissionDialogSlot({
   connectorSlug: ConnectorSlug;
 }) {
   const agentId = signals.agentId;
-  const updateConnectorUi = useSet(signals.connector.updateConnectorUiState$);
   const connectorUi = useGet(signals.connector.connectorUiState$);
   const agents = useLastResolved(agents$) ?? [];
   const permissionConnector = connectorUi.permissionConnector;
@@ -5372,12 +5326,6 @@ function ComposerConnectorPermissionDialogSlot({
         })?.displayName ?? ""
       }
       connector={{ ...permissionConnector, authorized: true }}
-      onClose={() => {
-        updateConnectorUi({
-          permissionConnectorSlug: null,
-          permissionConnector: null,
-        });
-      }}
     />
   );
 }
@@ -6693,7 +6641,6 @@ function ComposerConnectorsSlot({
   const permissionSignals = useGet(
     signals.connector.chatAccess.permissionSignals$,
   );
-  const setPermissions = useSet(signals.connector.chatAccess.setPermissions$);
   const openAddConnectorsDialog = useSet(
     signals.connector.openAddConnectorsDialog$,
   );
@@ -6714,9 +6661,6 @@ function ComposerConnectorsSlot({
           finalFocus={triggerElement}
           entry={permissions}
           signals={permissionSignals}
-          onClose={() => {
-            return setPermissions(null);
-          }}
         />
       )}
       {connectorUi.permissionConnectorSlug !== null && (

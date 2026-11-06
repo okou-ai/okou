@@ -5,6 +5,7 @@ import {
 import { builtinConnectorOauthStartContract } from "@okouai/api-contracts/contracts/connectors";
 import { userBuiltinConnectorsContract } from "@okouai/api-contracts/contracts/user-connectors";
 import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
+import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { chatConnectorAccessContract } from "@okouai/api-contracts/contracts/chat-connector-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
@@ -1477,4 +1478,90 @@ test("Read accounts only inside the manager and refresh them each time it opens"
   });
   await within(reopened).findByText("Updated elsewhere");
   expect(within(reopened).queryByText("Work")).not.toBeInTheDocument();
+});
+
+test("Apply one agent's GitHub permissions from connector access", async () => {
+  const researchId = "c0000000-0000-4000-a000-000000000001";
+  mockConnectors(context, [
+    { connectorSlug: "github", externalUsername: "octocat" },
+  ]);
+  context.mocks.data.agents([listAgent(researchId, "Research Agent")]);
+  context.mocks.api(userBuiltinConnectorsContract.get, ({ respond }) => {
+    return respond(200, { enabledConnectorSlugs: ["github"] });
+  });
+  mockConnectorAgentAccess(context, () => {
+    return { enabledConnectorSlugs: ["github"] };
+  });
+  context.mocks.api(connectorCatalogContract.permissions, ({ respond }) => {
+    return respond(200, {
+      permissions: {
+        connectorSlug: "github",
+        label: "GitHub",
+        icon: {
+          url: "https://icons.example.test/github.svg",
+          invertInDarkMode: false,
+        },
+        permissionCount: 1,
+        permissions: [
+          { name: "issues|read", description: "issues|read permission" },
+        ],
+        categories: null,
+        defaultPolicy: { permissionDefault: "allow", unknownPolicy: "deny" },
+      },
+    });
+  });
+  context.mocks.api(userPermissionGrantsContract.list, ({ respond }) => {
+    return respond(200, []);
+  });
+  const applied: unknown[] = [];
+  context.mocks.api(userPermissionGrantsContract.apply, ({ body, respond }) => {
+    applied.push(body);
+    return respond(200, []);
+  });
+  await setupPage({ context, path: "/connectors" });
+  const card = await waitFor(() => {
+    return getConnectorCard("GitHub");
+  });
+  click(getConnectorAction("button", "Manage GitHub access", card));
+  const access = await screen.findByRole("dialog", {
+    name: "Manage GitHub access",
+  });
+  click(
+    await waitFor(() => {
+      return getConnectorAction(
+        "button",
+        "Manage GitHub permissions for Research Agent",
+        access,
+      );
+    }),
+  );
+  const permissions = await screen.findByRole("dialog", {
+    name: /GitHub permissions/u,
+  });
+  const row = within(permissions)
+    .getByText("issues|read")
+    .closest(".flex.items-center");
+  if (!(row instanceof HTMLElement)) {
+    throw new Error("Permission row not found");
+  }
+  click(getConnectorAction("button", "Deny", row));
+  click(getConnectorAction("button", "Apply", permissions));
+
+  await screen.findByText("Permissions updated");
+  expect(applied).toStrictEqual([
+    {
+      agentId: researchId,
+      connectorSlug: "github",
+      mode: "patch",
+      grants: [{ permission: "issues|read", action: "deny" }],
+    },
+  ]);
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: /GitHub permissions/u }),
+    ).not.toBeInTheDocument();
+  });
+  expect(
+    screen.getByRole("dialog", { name: "Manage GitHub access" }),
+  ).toBeInTheDocument();
 });

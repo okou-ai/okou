@@ -13,6 +13,11 @@ import { createConnectorPermissionsSignals } from "./connector-permissions.ts";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { pageSignal$ } from "../../page-signal.ts";
+import { i18n } from "../../../i18n/index.ts";
+import {
+  createAgentPermissionDrawerSave,
+  type PermissionDrawerSession,
+} from "./permission-drawer-session.ts";
 
 export interface ConnectorAgentAccessRow {
   readonly agent: AgentResponse;
@@ -142,6 +147,19 @@ function createManagedConnectorAccessSignals(connectorSlug: ConnectorSlug) {
   const setPermissionAgentId$ = command(({ set }, agentId: string | null) => {
     set(permissionAgentIdState$, agentId);
   });
+  // The legacy dialog edits one listed agent's grants at a time.
+  const permissionDrawer: PermissionDrawerSession = {
+    grants$: permissionGrants$,
+    metadata$,
+    save$: createAgentPermissionDrawerSave(permissionAgentId$, () => {
+      return i18n.t(($) => {
+        return $.connectors.access.permissionsUpdated;
+      });
+    }),
+    close$: command(({ set }) => {
+      set(permissionAgentIdState$, null);
+    }),
+  };
   const setAuthorization$ = command(
     async (
       { get },
@@ -164,13 +182,17 @@ function createManagedConnectorAccessSignals(connectorSlug: ConnectorSlug) {
     },
   );
   return {
-    memberPermissions: createConnectorPermissionsSignals({
-      target: { kind: "builtin", connectorSlug },
-      label: connectorSlug,
-    }),
+    memberPermissions: createConnectorPermissionsSignals(
+      {
+        target: { kind: "builtin", connectorSlug },
+        label: connectorSlug,
+      },
+      closeConnectorAccessManagement$,
+    ),
     rows$,
     metadata$,
     permissionGrants$,
+    permissionDrawer,
     search$,
     permissionAgentId$,
     setSearch$,
