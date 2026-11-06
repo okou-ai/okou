@@ -1693,6 +1693,13 @@ export function createBrowserRuntime(
   );
   const tabActions = createTabActions(context, graph);
   const navigationActions = createNavigationActions(context, graph);
+  const addressRef$ = onRef(
+    command(({ set }, node: HTMLInputElement, signal: AbortSignal) => {
+      // A remounted field must not replay feedback from an earlier interaction.
+      set(navigationActions.notifyAddressSubmit$, null);
+      set(graph.address.mount$, node, signal);
+    }),
+  );
   const configurationActions = createConfigurationActions(
     context,
     graph,
@@ -1754,7 +1761,7 @@ export function createBrowserRuntime(
       input$: graph.inputNode.ref$,
       toolbar$: graph.toolbar.ref$,
       tabs$: graph.tabs.ref$,
-      address$: graph.address.ref$,
+      address$: addressRef$,
       surface$,
     },
   };
