@@ -46,12 +46,6 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.ConnectorSkillBundleDelivery]: {
-    maintainer: "lancy@okou.ai",
-    description:
-      "Deliver Connector Skills through prepared immutable bundles after compatible API claims have drained.",
-    enabled: false,
-  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",
@@ -112,6 +106,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
+  },
+  [FeatureSwitchKey.ArtifactPreviewToolbar]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact preview toolbar",
+    description:
+      "Keep sharing and view controls visible while grouping downloads, Google Drive, and deletion in a stable More menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",

@@ -1,6 +1,5 @@
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
-import { createChatForwardComposerSignals } from "../../signals/chat-page/chat-forward-composer.ts";
 import type { ChatThreadFeedbackSignals } from "../../signals/chat-page/chat-thread-feedback.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
@@ -21,7 +20,6 @@ import {
 } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
-  ChatForwardContext,
   ChatForwardSelection,
   ChatForwardTarget,
 } from "../../signals/chat-page/chat-forward.ts";
@@ -209,18 +207,6 @@ function ForwardTargetPicker({
   );
 }
 
-function createForwardContext(
-  selection: ChatForwardSelection,
-  sourceAgentId: string,
-  sourceThreadTitle: string,
-): ChatForwardContext {
-  return {
-    ...selection,
-    agentId: sourceAgentId,
-    titleSnapshot: sourceThreadTitle,
-  };
-}
-
 function ForwardComposerSurface({
   composer,
 }: {
@@ -236,14 +222,10 @@ function ForwardComposerSurface({
 export function ChatForwardDialog({
   selection,
   feedback,
-  sourceAgentId,
-  sourceThreadTitle,
   onDismiss,
 }: {
   readonly selection: ChatForwardSelection;
   readonly feedback: ChatThreadFeedbackSignals;
-  readonly sourceAgentId: string;
-  readonly sourceThreadTitle: string;
   readonly onDismiss: () => void;
 }) {
   const { t } = useTranslation();
@@ -254,19 +236,7 @@ export function ChatForwardDialog({
   const resetTarget = useSet(feedback.resetForwardTarget$);
   const signal = useGet(pageSignal$);
   const handleTargetSelect = (nextTarget: ChatForwardTarget) => {
-    const forward = createForwardContext(
-      selection,
-      sourceAgentId,
-      sourceThreadTitle,
-    );
-    detach(
-      prepare(
-        createChatForwardComposerSignals,
-        { target: nextTarget, forward },
-        signal,
-      ),
-      Reason.DomCallback,
-    );
+    detach(prepare(nextTarget, signal), Reason.DomCallback);
   };
   return (
     <Dialog

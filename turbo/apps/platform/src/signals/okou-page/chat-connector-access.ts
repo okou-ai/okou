@@ -328,7 +328,25 @@ export function createChatConnectorAccessSignals(threadId?: string) {
   const permissions$ = state<ConnectorPermissionsTarget | null>(null);
   const permissionSignals$ = computed((get) => {
     const entry = get(permissions$);
-    return entry ? createConnectorPermissionsSignals(entry) : null;
+    return entry
+      ? createConnectorPermissionsSignals(entry, closePermissions$)
+      : null;
+  });
+  const setPermissions$ = command(
+    ({ get, set }, target: ConnectorPermissionsTarget | null) => {
+      const current = get(permissionSignals$);
+      if (current) {
+        set(current.close$);
+      }
+      set(permissions$, target);
+      const next = get(permissionSignals$);
+      if (next) {
+        set(next.open$, get(pageSignal$));
+      }
+    },
+  );
+  const closePermissions$ = command(({ set }) => {
+    set(setPermissions$, null);
   });
   const list = createConnectorAccountListSignals();
   const cache = createChatConnectorOverviewSignals(threadId);
@@ -410,19 +428,7 @@ export function createChatConnectorAccessSignals(threadId?: string) {
       return get(permissions$);
     }),
     permissionSignals$,
-    setPermissions$: command(
-      ({ get, set }, target: ConnectorPermissionsTarget | null) => {
-        const current = get(permissionSignals$);
-        if (current) {
-          set(current.close$);
-        }
-        set(permissions$, target);
-        const next = get(permissionSignals$);
-        if (next) {
-          set(next.open$, get(pageSignal$));
-        }
-      },
-    ),
+    setPermissions$,
     pending$: computed((get) => {
       return get(pending$);
     }),

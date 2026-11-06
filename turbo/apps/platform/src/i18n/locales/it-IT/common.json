@@ -478,8 +478,10 @@
       "nextImage": "Artefatto dell'immagine successiva",
       "openNewTab": "Apri in una nuova scheda",
       "openSplitView": "Apri in vista divisa",
+      "partiallyUnavailable": "Alcune azioni non sono disponibili",
       "previousImage": "Artefatto dell'immagine precedente",
       "resetZoom": "Reimposta lo zoom",
+      "retry": "Riprova",
       "share": "Condividi",
       "shareArtifact": "Condividi artefatto",
       "zoomIn": "Ingrandisci",
@@ -2306,6 +2308,7 @@
       "unavailableSsh": "host SSH non disponibile"
     },
     "resources": {
+      "close": "Chiudi artefatti e chat",
       "collapse": "Comprimi",
       "copyLink": "Copia link",
       "emptyDescription": "File, siti web e altri artefatti creati in questa chat compariranno qui.",
@@ -5474,6 +5477,7 @@
         "credits": "Crediti",
         "fiveHourLimit": "Limite di 5 ore",
         "label": "Utilizzo degli abbonamenti",
+        "limitReached": "Limite raggiunto",
         "lowUsage": "Utilizzo degli abbonamenti: meno del 20% rimanente",
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",

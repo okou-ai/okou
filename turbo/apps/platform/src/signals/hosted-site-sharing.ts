@@ -30,12 +30,16 @@ type SiteUrl = zInfer<typeof hostedSiteUrlSchema>;
 type Validation = "unchanged" | "invalid" | "available" | "taken";
 type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 
-function createSiteVisibilitySignals(sourceUrl: string) {
+function createSiteVisibilitySignals(
+  sourceUrl: string,
+  retryRevision$: State<number>,
+) {
+  const reload$ = state(0);
   const currentSource$ = computed((get) => {
     return currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$));
   });
-  const reload$ = state(0);
   const details$ = computed(async (get) => {
+    get(retryRevision$);
     const url = new URL(get(currentSource$));
     if (!url.hostname.endsWith(`.${resolveEditableHostedSiteDomain()}`)) {
       return null;
@@ -235,7 +239,7 @@ function createSiteUrlEditorSignals(
   };
 }
 
-function createSiteUrlSignals(sourceUrl: string) {
+function createSiteUrlSignals(sourceUrl: string, reload$: State<number>) {
   const saved$ = state<SiteUrl | null>(null);
   const currentUrl$ = computed((get) => {
     return currentHostedSiteUrl(
@@ -253,6 +257,7 @@ function createSiteUrlSignals(sourceUrl: string) {
         publicSlug: new URL(currentUrl).hostname.split(".")[0]!,
       };
     }
+    get(reload$);
     const url = new URL(currentUrl);
     const result = await accept(
       get(apiClient$)(hostContract).siteUrl({
@@ -275,10 +280,14 @@ function createSiteUrlSignals(sourceUrl: string) {
 
 function createHostedSiteShareSession(sourceUrl: string) {
   const signal$ = state<AbortSignal | null>(null);
-  const { saved$, details$, copyUrl$ } = createSiteUrlSignals(sourceUrl);
+  const reload$ = state(0);
+  const { saved$, details$, copyUrl$ } = createSiteUrlSignals(
+    sourceUrl,
+    reload$,
+  );
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
-  const visibility = createSiteVisibilitySignals(sourceUrl);
+  const visibility = createSiteVisibilitySignals(sourceUrl, reload$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const hasSettings$ = computed(async (get) => {
     const [details, permissions] = await Promise.all([
@@ -336,7 +345,13 @@ function createHostedSiteShareSession(sourceUrl: string) {
     0,
   );
   return {
+    sourceUrl,
     signal$,
+    retry$: command(({ set }) => {
+      set(reload$, (revision) => {
+        return revision + 1;
+      });
+    }),
     details$,
     copyUrl$,
     hasSettings$,
@@ -390,7 +405,27 @@ function createHostedSiteShareScope() {
       },
     ),
   );
-  return { session$, mountRef$ };
+  return {
+    session$,
+    mountRef$,
+    settings$: computed(async (get) => {
+      const session = get(session$);
+      if (!session) {
+        return null;
+      }
+      const [settings] = await Promise.all([
+        get(session.hasSettings$),
+        get(session.banner$),
+      ]);
+      return settings;
+    }),
+    retry$: command(({ get, set }) => {
+      const session = get(session$);
+      if (session) {
+        set(session.retry$);
+      }
+    }),
+  };
 }
 
 const scopes = Object.freeze({

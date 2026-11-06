@@ -20,7 +20,10 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { installResourceGeometry } from "./chat-resources-test-helpers.ts";
+import {
+  resourceButton,
+  resourcePanel,
+} from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
 
@@ -40,7 +43,6 @@ async function setupHostedSite(
   context.mocks.data.userPreferences({
     timezone: "Etc/UTC",
     locale: "en-US",
-    chatResourcesEnabledByDefault: true,
   });
   const summary = {
     ...artifactSummary(artifactId, "hosted-site", siteTitle),
@@ -185,7 +187,12 @@ async function setupHostedSite(
 }
 
 async function copyFromResources() {
-  const resources = await screen.findByRole("region", {
+  // Working in the artifact preview dismisses the resource panel like any
+  // outside press, so reopen it from the header.
+  if (!resourcePanel()) {
+    click(resourceButton());
+  }
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const title = await within(resources).findByText(siteTitle);
@@ -232,7 +239,6 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
 test.each([false, true])(
   "consecutive site renames preserve the title, link and Share/Resources copy addresses (sidebar=%s)",
   async (sidebar) => {
-    installResourceGeometry(480);
     const preview = await setupHostedSite(sidebar);
     const title = await within(preview).findByTestId("artifact-title-link");
     expect(title).toHaveTextContent(siteTitle);
@@ -273,7 +279,6 @@ test.each([false, true])(
 );
 
 test("a reopened chat shows the catalog title and copies the current site address", async () => {
-  installResourceGeometry(480);
   const clipboard = context.mocks.browser.clipboardWriteText();
   const preview = await setupHostedSite(true, "already-renamed");
   const title = await within(preview).findByTestId("artifact-title-link");

@@ -312,6 +312,6 @@ export function ChatThreadSidebarShell({
       {frame}
     </RequestCommit>
   ) : (
-    withChatScrollLayout(frame, { measureWidth: true })
+    withChatScrollLayout(frame)
   );
 }

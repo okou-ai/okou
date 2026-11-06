@@ -564,7 +564,7 @@ test("Review personal subscriptions through account switching", async () => {
   ).findByLabelText(/^Subscription usage/);
   click(usageEntry);
   const panel = await screen.findByTestId("account-menu-subscriptions");
-  expect(within(panel).getByText("0% left")).toBeInTheDocument();
+  expect(within(panel).getByText("Limit reached")).toBeInTheDocument();
   expect(within(panel).getByText("Credits")).toBeInTheDocument();
   expect(within(panel).getByText("0")).toBeInTheDocument();
 });

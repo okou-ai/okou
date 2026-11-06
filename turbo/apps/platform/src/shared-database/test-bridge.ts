@@ -59,6 +59,7 @@ import {
   initializeSharedDatabaseWorker$,
   querySharedDatabaseWorker$,
   refreshWorkerComputed$,
+  startChatThreadIndicatorsRefreshFromRealtime$,
   startSharedDatabaseWorkerDaemons$,
 } from "./worker-signals.ts";
 
@@ -214,8 +215,16 @@ class DirectSharedDatabaseBridge implements SharedDatabaseBridge {
         subscription.listener(message);
       }
     }
+    // Run-state indicator changes use the production Worker loop command,
+    // including its shared refresh throttle.
+    if (message.name === "chatIndicatorsChanged") {
+      this.workerStore.set(
+        startChatThreadIndicatorsRefreshFromRealtime$,
+        this.workerSignal,
+      );
+      return;
+    }
     const computedKey: ComputedKey | null =
-      message.name === "threadListChanged" ||
       message.name === "chatThreadReadCursorUpdated"
         ? "chat-thread-indicators"
         : message.name === "computerUseHostsChanged"

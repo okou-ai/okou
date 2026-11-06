@@ -38,6 +38,7 @@ import { now, nowDate } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
+  publishChatIndicatorsChangedSafely,
   publishChatThreadDetailChangedSafely,
   publishChatThreadMessageCreatedSafely,
   publishThreadListChangedSafely,
@@ -848,12 +849,38 @@ async function publishAssistantErrorEventSignals(args: {
     userId: args.userId,
     orgId: args.orgId,
   });
+  // The Run's terminal status committed before its callback wrote this marker.
+  await publishChatIndicatorsChangedSafely({
+    userId: args.userId,
+    orgId: args.orgId,
+  });
   if (
     args.lifecycleEvent === "cancelled" &&
     args.hasCancellationRecoveryState
   ) {
     await publishChatThreadDetailChangedSafely(args.userId, args.threadId);
   }
+}
+
+async function publishRunLifecycleMarkerSignals(args: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly threadId: string;
+}): Promise<void> {
+  await publishChatThreadMessageCreatedSafely({
+    userId: args.userId,
+    orgId: args.orgId,
+    threadId: args.threadId,
+  });
+  await publishThreadListChangedSafely({
+    userId: args.userId,
+    orgId: args.orgId,
+  });
+  // The Run's terminal status committed before its callback wrote this marker.
+  await publishChatIndicatorsChangedSafely({
+    userId: args.userId,
+    orgId: args.orgId,
+  });
 }
 
 interface AssistantErrorEventArgs {
@@ -1373,16 +1400,7 @@ const insertRunLifecycleMarker$ = command(
       runLifecycleMarkerTouchOptions(args, markerCreatedAt),
       signal,
     );
-    await publishChatThreadMessageCreatedSafely({
-      userId: args.userId,
-      orgId: args.orgId,
-      threadId: args.threadId,
-    });
-    signal.throwIfAborted();
-    await publishThreadListChangedSafely({
-      userId: args.userId,
-      orgId: args.orgId,
-    });
+    await publishRunLifecycleMarkerSignals(args);
     signal.throwIfAborted();
     return runLifecycleMarkerResult(inserted);
   },

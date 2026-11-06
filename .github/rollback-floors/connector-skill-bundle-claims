@@ -1,5 +1,4 @@
 The first-parent main commit adding this marker is the minimum API rollback
 version for Connector Skill bundles in captured Run contexts. Earlier claim
-readers can emit conflicting Workflow and Connector mounts. Deploy this reader
-and verify outgoing API request drain before enabling _connectorSkillBundleDelivery.
-Disabling the switch does not remove bundle references from already captured Runs.
+readers can emit conflicting Workflow and Connector mounts. Captured bundle
+references require this reader even when rolling back the creation path.

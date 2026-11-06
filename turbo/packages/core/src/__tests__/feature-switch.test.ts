@@ -60,24 +60,24 @@ describe("isFeatureEnabled", () => {
     expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
   });
 
-  it.each([FeatureSwitchKey.ConnectorChatAccountAccess])(
-    "defaults %s to staff and honors Lab overrides",
-    (key) => {
-      const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-      for (const [context, enabled] of [
-        [{}, false],
-        [{ userId: "external-user" }, false],
-        [{ orgId: "external-org" }, false],
-        [{ userId: "external-user", orgId: "external-org" }, false],
-        [{ orgId: "external-org", overrides: { [key]: true } }, true],
-        [staff, true],
-        [{ ...staff, overrides: { [key]: false } }, false],
-      ] as const) {
-        expect(isFeatureEnabled(key, context)).toBe(enabled);
-        expect(getAllFeatureStates(context)[key]).toBe(enabled);
-      }
-    },
-  );
+  it.each([
+    FeatureSwitchKey.ConnectorChatAccountAccess,
+    FeatureSwitchKey.ArtifactPreviewToolbar,
+  ])("defaults %s to staff and honors Lab overrides", (key) => {
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ userId: "external-user" }, false],
+      [{ orgId: "external-org" }, false],
+      [{ userId: "external-user", orgId: "external-org" }, false],
+      [{ orgId: "external-org", overrides: { [key]: true } }, true],
+      [staff, true],
+      [{ ...staff, overrides: { [key]: false } }, false],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
 
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;

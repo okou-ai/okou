@@ -1,5 +1,6 @@
 import { command, computed, state } from "ccstate";
-import type { PlatformConnectorPermissionMetadata } from "../../connector-domain.ts";
+import { activeUserPermissionGrantSnapshot } from "../../user-permission-grants.ts";
+import type { PermissionDrawerSession } from "./permission-drawer-session.ts";
 
 import {
   clearPermissionDraftInheritedExpiration,
@@ -28,22 +29,6 @@ interface PermissionDrawerUiState {
 interface InitialPermissionDrawerUiState {
   readonly draft?: PermissionDraftIntent;
   readonly search?: string;
-}
-
-interface PermissionDrawerApplyOptions {
-  readonly metadata: PlatformConnectorPermissionMetadata;
-}
-
-type PermissionDrawerApply = (
-  intent: PermissionDraftIntent,
-  options: PermissionDrawerApplyOptions,
-) => Promise<void>;
-
-interface ApplyPermissionDrawerParams {
-  readonly intent: PermissionDraftIntent;
-  readonly metadata: PlatformConnectorPermissionMetadata;
-  readonly onApply: PermissionDrawerApply;
-  readonly onClose: () => void;
 }
 
 function emptyPermissionDrawerUiState(
@@ -274,15 +259,49 @@ export const resetPermissionDrawerState$ = command(({ set }) => {
   set(internalPermissionDrawerUiState$, emptyPermissionDrawerUiState(null));
 });
 
+/** Leaves the drawer: its edits are discarded with its owner's surface. */
+export const dismissPermissionDrawer$ = command(
+  ({ set }, session: PermissionDrawerSession) => {
+    set(resetPermissionDrawerState$);
+    set(session.close$);
+  },
+);
+
+/**
+ * Saves the drawer's draft against the owner's current grants, then leaves
+ * the drawer. `key` names the draft the member edited.
+ */
 export const applyPermissionDrawer$ = command(
   async (
-    _ctx,
-    params: ApplyPermissionDrawerParams,
+    { get, set },
+    session: PermissionDrawerSession,
+    key: string,
     signal: AbortSignal,
   ): Promise<void> => {
+    const intent = stateForKey(
+      get(internalPermissionDrawerUiState$),
+      key,
+    ).draft;
+    const [grants, metadata] = await Promise.all([
+      get(session.grants$),
+      get(session.metadata$),
+    ]);
     signal.throwIfAborted();
-    await params.onApply(params.intent, { metadata: params.metadata });
+    if (!grants || !metadata) {
+      throw new Error("Permission drawer has no grants to save against");
+    }
+    const snapshot = activeUserPermissionGrantSnapshot(grants);
+    await set(
+      session.save$,
+      {
+        metadata,
+        initialPolicies: snapshot.policies ?? {},
+        initialGrants: snapshot.grants,
+        intent,
+      },
+      signal,
+    );
     signal.throwIfAborted();
-    params.onClose();
+    set(dismissPermissionDrawer$, session);
   },
 );

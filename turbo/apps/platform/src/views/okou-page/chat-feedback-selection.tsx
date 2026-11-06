@@ -12,7 +12,6 @@ import {
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import { createChatForwardComposerSignals } from "../../signals/chat-page/chat-forward-composer.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import type {
   ChatThreadFeedbackSelection,
@@ -119,12 +118,8 @@ function FeedbackToolbar({
 // chat-composer.tsx) — there is no separate feedback panel.
 export function ChatFeedbackSelection({
   feedback,
-  sourceAgentId,
-  sourceThreadTitle,
 }: {
   readonly feedback: ChatThreadFeedbackSignals;
-  readonly sourceAgentId: string;
-  readonly sourceThreadTitle: string;
 }) {
   const selection = useGet(feedback.selection$);
   const forwardSelection = useGet(feedback.forwardSelection$);
@@ -182,13 +177,7 @@ export function ChatFeedbackSelection({
               onForward={
                 selection.threadId && selection.runId
                   ? () => {
-                      detach(
-                        startForward(
-                          createChatForwardComposerSignals,
-                          pageSignal,
-                        ),
-                        Reason.DomCallback,
-                      );
+                      detach(startForward(pageSignal), Reason.DomCallback);
                     }
                   : undefined
               }
@@ -200,8 +189,6 @@ export function ChatFeedbackSelection({
         <ChatForwardDialog
           selection={forwardSelection}
           feedback={feedback}
-          sourceAgentId={sourceAgentId}
-          sourceThreadTitle={sourceThreadTitle}
           onDismiss={() => {
             closeForward();
           }}

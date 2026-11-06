@@ -464,8 +464,10 @@
       "nextImage": "次の画像アーティファクト",
       "openNewTab": "新しいタブで開く",
       "openSplitView": "分割ビューで開く",
+      "partiallyUnavailable": "一部の操作は現在利用できません",
       "previousImage": "前の画像アーティファクト",
       "resetZoom": "ズームをリセットする",
+      "retry": "再試行",
       "share": "シェアする",
       "shareArtifact": "アーティファクトを共有する",
       "zoomIn": "Zoom 内",
@@ -2259,6 +2261,7 @@
       "unavailableSsh": "利用できない SSH ホスト"
     },
     "resources": {
+      "close": "アーティファクトとチャットを閉じる",
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
       "emptyDescription": "このチャットで作成されたファイルやウェブサイトなどのアーティファクトがここに表示されます。",
@@ -5396,6 +5399,7 @@
         "credits": "クレジット",
         "fiveHourLimit": "5時間の上限",
         "label": "サブスクリプションの使用状況",
+        "limitReached": "上限に達しました",
         "lowUsage": "サブスクリプションの使用状況：残り20%未満",
         "resetTimeUnavailable": "リセット時間は利用不可",
         "usage": "{{provider}}の使用量",

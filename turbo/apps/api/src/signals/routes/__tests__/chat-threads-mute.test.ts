@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 
@@ -69,6 +70,27 @@ describe("chat thread muting", () => {
           muted: false,
         }),
       ]),
+    );
+  });
+
+  it("signals indicator changes after muting, unmuting and deleting", async () => {
+    const { actor, thread } = await fixture();
+    for (const muted of [true, false]) {
+      await flushWaitUntilForTest();
+      context.mocks.ably.publish.mockClear();
+      await chat.requestSetThreadMuted(actor, thread.id, muted, [204]);
+      await flushWaitUntilForTest();
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "chatIndicatorsChanged",
+        null,
+      );
+    }
+    context.mocks.ably.publish.mockClear();
+    await chat.deleteThread(actor, thread.id);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "chatIndicatorsChanged",
+      null,
     );
   });
 

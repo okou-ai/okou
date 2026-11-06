@@ -464,8 +464,10 @@
       "nextImage": "下一张图片成果",
       "openNewTab": "在新标签页打开",
       "openSplitView": "在分屏中打开",
+      "partiallyUnavailable": "部分操作暂不可用",
       "previousImage": "上一张图片成果",
       "resetZoom": "重置缩放",
+      "retry": "重试",
       "share": "分享",
       "shareArtifact": "分享成果",
       "zoomIn": "放大",
@@ -2259,6 +2261,7 @@
       "unavailableSsh": "不可用的 SSH 主机"
     },
     "resources": {
+      "close": "关闭成果和聊天",
       "collapse": "收起",
       "copyLink": "复制链接",
       "emptyDescription": "这个对话里生成的文件、网站等成果会显示在这里。",
@@ -5396,6 +5399,7 @@
         "credits": "积分",
         "fiveHourLimit": "5 小时额度",
         "label": "订阅用量",
+        "limitReached": "额度已用尽",
         "lowUsage": "订阅用量：剩余额度低于 20%",
         "resetTimeUnavailable": "重置时间不可用",
         "usage": "{{provider}}用量",

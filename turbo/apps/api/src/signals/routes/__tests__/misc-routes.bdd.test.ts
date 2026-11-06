@@ -26,49 +26,25 @@ function unsubscribeToken(userId: string): string {
 }
 
 describe("MISC-02: preferences, push subscription, user export, and empty logs", () => {
-  it("persists the chat resources preference without changing another member or unrelated settings", async () => {
-    const { api, admin, member } = testActors();
-    const defaults = await api.updatePreferences(
-      admin,
-      { timezone: "UTC", locale: "en-US" },
-      [200],
-    );
-    expect(defaults.body).toMatchObject({
-      chatResourcesEnabledByDefault: true,
-    });
-
+  it("accepts and ignores the retired chat resources preference from cached Apps", async () => {
+    const { api, admin } = testActors();
     await api.updatePreferences(
       admin,
-      { chatResourcesEnabledByDefault: false },
+      { timezone: "UTC", locale: "en-US", theme: "dark" },
       [200],
     );
-    const afterUnrelatedUpdate = await api.updatePreferences(
-      admin,
-      { theme: "dark" },
-      [200],
-    );
-    expect(afterUnrelatedUpdate.body).toMatchObject({
-      chatResourcesEnabledByDefault: false,
-    });
-    expect((await api.readPreferences(admin)).body).toMatchObject({
-      chatResourcesEnabledByDefault: false,
-    });
 
-    const otherMember = await api.updatePreferences(
-      member,
-      { timezone: "UTC", locale: "en-US" },
-      [200],
-    );
-    expect(otherMember.body).toMatchObject({
-      chatResourcesEnabledByDefault: true,
-    });
-    const reopened = await api.updatePreferences(
+    const written = await api.updatePreferences(
       admin,
       { chatResourcesEnabledByDefault: true },
       [200],
     );
-    expect(reopened.body).toMatchObject({
-      chatResourcesEnabledByDefault: true,
+    expect(written.body).toMatchObject({
+      chatResourcesEnabledByDefault: false,
+      theme: "dark",
+    });
+    expect((await api.readPreferences(admin)).body).toMatchObject({
+      chatResourcesEnabledByDefault: false,
       theme: "dark",
     });
   });

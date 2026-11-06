@@ -464,8 +464,10 @@
       "nextImage": "Next image artifact",
       "openNewTab": "Open in new tab",
       "openSplitView": "Open in split view",
+      "partiallyUnavailable": "Some actions are unavailable",
       "previousImage": "Previous image artifact",
       "resetZoom": "Reset zoom",
+      "retry": "Retry",
       "share": "Share",
       "shareArtifact": "Share artifact",
       "zoomIn": "Zoom in",
@@ -2267,6 +2269,7 @@
       "unavailableSsh": "unavailable SSH host"
     },
     "resources": {
+      "close": "Close artifacts and chats",
       "collapse": "Collapse",
       "copyLink": "Copy link",
       "emptyDescription": "Files, websites, and other artifacts made in this chat will show up here.",
@@ -5411,6 +5414,7 @@
         "credits": "Credits",
         "fiveHourLimit": "5-hour limit",
         "label": "Subscription usage",
+        "limitReached": "Limit reached",
         "lowUsage": "Subscription usage: less than 20% remaining",
         "resetTimeUnavailable": "Reset time unavailable",
         "usage": "{{provider}} usage",

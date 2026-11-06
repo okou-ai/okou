@@ -22,7 +22,7 @@ import {
   userBuiltinConnectorsContract,
   type UserBuiltinConnectorUpdate,
 } from "@okouai/api-contracts/contracts/user-connectors";
-import { screen, waitFor } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, describe, it } from "vitest";
@@ -199,7 +199,10 @@ function installDriveMocks(
       return detail ? { ...detail, ...driveMetadata() } : null;
     },
     onDetailQuery: (chatThreadId) => {
-      expect(chatThreadId).toBe(NAVIGATION_ARTIFACT_THREAD_ID);
+      // Ownership checks read the catalog without a chat scope.
+      expect([undefined, NAVIGATION_ARTIFACT_THREAD_ID]).toContain(
+        chatThreadId,
+      );
     },
     chatEvents: [
       {
@@ -428,19 +431,21 @@ function artifactPreview(): HTMLElement {
 
 async function openDriveArtifactDownloadMenu(
   filename = "Drive report.pdf",
+  triggerLabel = "Download artifact",
 ): Promise<void> {
   await openResourceArtifact(filename);
   await waitFor(() => {
-    expect(buttonNamed("Download artifact", artifactPreview())).toBeEnabled();
+    expect(buttonNamed(triggerLabel, artifactPreview())).toBeEnabled();
   });
-  click(buttonNamed("Download artifact", artifactPreview()));
+  click(buttonNamed(triggerLabel, artifactPreview()));
 }
 
 async function openDriveArtifactMenu(
   actionName = "Connect Google Drive",
   filename = "Drive report.pdf",
+  triggerLabel = "Download artifact",
 ): Promise<void> {
-  await openDriveArtifactDownloadMenu(filename);
+  await openDriveArtifactDownloadMenu(filename, triggerLabel);
   await waitFor(() => {
     expect(roleItemNamed("menuitem", actionName)).not.toHaveAttribute(
       "aria-disabled",
@@ -506,14 +511,26 @@ test.each([
   {
     action: "Upload to Google Drive",
     url: "https://drive.google.test/file/d/original-report/view?usp=drivesdk",
+    refined: false,
   },
   {
     action: "Upload to Google Docs",
     url: "https://docs.google.test/document/d/converted-report/edit",
+    refined: false,
+  },
+  {
+    action: "Upload to Google Drive",
+    url: "https://drive.google.test/file/d/original-report/view?usp=drivesdk",
+    refined: true,
+  },
+  {
+    action: "Upload to Google Docs",
+    url: "https://docs.google.test/document/d/converted-report/edit",
+    refined: true,
   },
 ])(
-  "Offer a link to the uploaded file after $action",
-  async ({ action, url }) => {
+  "Offer a link to the uploaded file after $action with refined toolbar $refined",
+  async ({ action, url, refined }) => {
     mockWideScreen();
     installDriveMocks(context, "connected", {
       filename: "report.txt",
@@ -525,9 +542,14 @@ test.each([
       context,
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
       host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.ArtifactPreviewToolbar]: refined },
     });
 
-    await openDriveArtifactMenu(action, "report.txt");
+    await openDriveArtifactMenu(
+      action,
+      "report.txt",
+      refined ? "More artifact actions" : "Download artifact",
+    );
     click(roleItemNamed("menuitem", action));
 
     const link = await findNamedLink("View it");
@@ -536,6 +558,149 @@ test.each([
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
   },
 );
+
+test("An initial Drive catalog failure and Retry update More on its next opening", async () => {
+  mockWideScreen();
+  const user = userEvent.setup({ delay: null });
+  // Connecting an artifact's missing account requires the catalog's OAuth method.
+  installDriveMocks(context, "not-connected");
+  const response = context.mocks.deferred<void>();
+  const retryRequested = context.mocks.deferred<void>();
+  const recovery = context.mocks.deferred<void>();
+  let unavailable = true;
+  context.mocks.api(
+    connectorCatalogContract.get,
+    async ({ params, respond }) => {
+      if (params.connectorSlug !== "google-drive") {
+        return respond(404, {
+          error: { code: "NOT_FOUND", message: "Connector not found" },
+        });
+      }
+      if (unavailable) {
+        await response.promise;
+        return respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Drive catalog unavailable",
+          },
+        });
+      }
+      if (!retryRequested.settled()) {
+        retryRequested.resolve();
+      }
+      await recovery.promise;
+      return respond(200, {
+        connector: googleDriveCatalogItem("not-connected"),
+      });
+    },
+  );
+  // Keep the static status route ahead of the overridden slug route.
+  context.mocks.api(connectorCatalogContract.status, ({ respond }) => {
+    return respond(200, {
+      connectors: [googleDriveCatalogItem("not-connected")],
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.ArtifactPreviewToolbar]: true },
+  });
+
+  await openDriveArtifactDownloadMenu(
+    "Drive report.pdf",
+    "More artifact actions",
+  );
+  const pendingMenu = await screen.findByRole("menu");
+  expect(
+    roleItemNamed("menuitem", "Download", pendingMenu),
+  ).not.toHaveAttribute("aria-disabled", "true");
+  expect(
+    within(pendingMenu).queryByText("Connect Google Drive"),
+  ).not.toBeInTheDocument();
+
+  response.resolve();
+  await expect(
+    screen.findByText("Drive catalog unavailable"),
+  ).resolves.toBeInTheDocument();
+  await user.keyboard("{Home}");
+  expect(roleItemNamed("menuitem", "Download", pendingMenu)).toHaveFocus();
+  expect(
+    within(pendingMenu).queryByText("Connect Google Drive"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(pendingMenu).queryByText("Some actions are unavailable"),
+  ).not.toBeInTheDocument();
+  expect(within(pendingMenu).queryByText("Retry")).not.toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(pendingMenu).not.toBeInTheDocument();
+  });
+  click(buttonNamed("More artifact actions", artifactPreview()));
+  const failedMenu = await screen.findByRole("menu");
+  await expect(
+    within(failedMenu).findByText("Some actions are unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(roleItemNamed("menuitem", "Retry", failedMenu)).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(roleItemNamed("menuitem", "Download", failedMenu)).not.toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
+  expect(
+    within(failedMenu).queryByText("Connect Google Drive"),
+  ).not.toBeInTheDocument();
+
+  unavailable = false;
+  await user.click(roleItemNamed("menuitem", "Retry", failedMenu));
+  await retryRequested.promise;
+  await waitFor(() => {
+    expect(failedMenu).not.toBeInTheDocument();
+  });
+  click(buttonNamed("More artifact actions", artifactPreview()));
+  const recoveringMenu = await screen.findByRole("menu");
+  expect(
+    roleItemNamed("menuitem", "Download", recoveringMenu),
+  ).not.toHaveAttribute("aria-disabled", "true");
+  expect(
+    within(recoveringMenu).queryByText("Connect Google Drive"),
+  ).not.toBeInTheDocument();
+
+  await act(() => {
+    recovery.resolve();
+  });
+  await user.keyboard("{Home}");
+  expect(roleItemNamed("menuitem", "Download", recoveringMenu)).toHaveFocus();
+  expect(
+    within(recoveringMenu).queryByText("Connect Google Drive"),
+  ).not.toBeInTheDocument();
+  expect(
+    within(recoveringMenu).queryByText("Some actions are unavailable"),
+  ).not.toBeInTheDocument();
+  expect(within(recoveringMenu).queryByText("Retry")).not.toBeInTheDocument();
+
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(recoveringMenu).not.toBeInTheDocument();
+  });
+  click(buttonNamed("More artifact actions", artifactPreview()));
+  const recoveredMenu = await screen.findByRole("menu");
+  await waitFor(() => {
+    expect(
+      roleItemNamed("menuitem", "Connect Google Drive", recoveredMenu),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+  expect(
+    roleItemNamed("menuitem", "Download", recoveredMenu),
+  ).not.toHaveAttribute("aria-disabled", "true");
+  expect(
+    within(recoveredMenu).queryByText("Some actions are unavailable"),
+  ).not.toBeInTheDocument();
+  expect(within(recoveredMenu).queryByText("Retry")).not.toBeInTheDocument();
+});
 
 test("Confirm a Drive upload without a link when Drive returns no view URL", async () => {
   mockWideScreen();

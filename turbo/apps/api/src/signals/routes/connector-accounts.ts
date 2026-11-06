@@ -6,6 +6,7 @@ import {
 } from "@okouai/api-contracts/contracts/connector-accounts";
 
 import { badRequestMessage, notFound } from "../../lib/error";
+import { isForeignKeyViolation } from "../../lib/pg-errors";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
@@ -468,6 +469,17 @@ const deleteInner$ = command(
           );
     signal.throwIfAborted();
     if (!deletion.ok) {
+      if (
+        body.data.target.kind === "custom" &&
+        isForeignKeyViolation(
+          deletion.error,
+          "fk_chat_thread_connector_selections_custom_connector",
+        )
+      ) {
+        return badRequestMessage(
+          "Connector account selection changed during deletion; refresh and try again",
+        );
+      }
       if (isConnectorAccountDefaultConflict(deletion.error)) {
         return badRequestMessage(
           "Another default change won; please delete again",

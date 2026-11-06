@@ -464,8 +464,10 @@
       "nextImage": "Artefak gambar berikutnya",
       "openNewTab": "Buka di tab baru",
       "openSplitView": "Buka dalam tampilan terbagi",
+      "partiallyUnavailable": "Beberapa tindakan tidak tersedia",
       "previousImage": "Artefak gambar sebelumnya",
       "resetZoom": "Atur ulang zoom",
+      "retry": "Coba lagi",
       "share": "Bagikan",
       "shareArtifact": "Bagikan artefak",
       "zoomIn": "Perbesar",
@@ -2259,6 +2261,7 @@
       "unavailableSsh": "host SSH tidak tersedia"
     },
     "resources": {
+      "close": "Tutup artefak dan obrolan",
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
       "emptyDescription": "File, situs web, dan artefak lain yang dibuat di chat ini akan muncul di sini.",
@@ -5396,6 +5399,7 @@
         "credits": "Kredit",
         "fiveHourLimit": "Batas 5 jam",
         "label": "Penggunaan langganan",
+        "limitReached": "Batas tercapai",
         "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",

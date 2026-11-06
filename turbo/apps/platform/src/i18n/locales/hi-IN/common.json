@@ -464,8 +464,10 @@
       "nextImage": "अगली छवि आर्टिफ़ैक्ट",
       "openNewTab": "नए टैब में खोलें",
       "openSplitView": "विभाजित दृश्य में खोलें",
+      "partiallyUnavailable": "कुछ कार्रवाइयाँ अभी उपलब्ध नहीं हैं",
       "previousImage": "पिछली छवि आर्टिफ़ैक्ट",
       "resetZoom": "ज़ूम रीसेट करें",
+      "retry": "फिर से कोशिश करें",
       "share": "शेयर करें",
       "shareArtifact": "आर्टिफ़ैक्ट शेयर करें",
       "zoomIn": "ज़ूम इन",
@@ -2267,6 +2269,7 @@
       "unavailableSsh": "अनुपलब्ध SSH होस्ट"
     },
     "resources": {
+      "close": "आर्टिफ़ैक्ट और चैट बंद करें",
       "collapse": "समेटें",
       "copyLink": "लिंक कॉपी करें",
       "emptyDescription": "इस चैट में बनी फ़ाइलें, वेबसाइटें और दूसरे आर्टिफ़ैक्ट यहाँ दिखाई देंगे।",
@@ -5413,6 +5416,7 @@
         "credits": "क्रेडिट",
         "fiveHourLimit": "5 घंटे की सीमा",
         "label": "सदस्यता का उपयोग",
+        "limitReached": "सीमा पूरी हो गई",
         "lowUsage": "सदस्यता का उपयोग: 20% से कम शेष",
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",

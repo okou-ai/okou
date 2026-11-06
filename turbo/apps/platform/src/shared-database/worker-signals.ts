@@ -275,15 +275,12 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
         : topic === "threadListChanged"
           ? { kind: "chat-thread-event" }
           : null;
-    if (
-      dataKey?.kind === "chat-event" ||
-      dataKey?.kind === "chat-thread-event"
-    ) {
-      // Metadata changes (including mute) also affect unread aggregation.
-      // Coalesce indicator refreshes without delaying the thread invalidation.
-      set(startChatThreadIndicatorsRefresh$);
-    }
     if (topic === "threadListChanged") {
+      // Rollout fallback (#45719): APIs before #45712 never publish
+      // chatIndicatorsChanged, but publish this topic at every Run start, Run
+      // terminal marker, mute and delete. Remove it once an enforced API
+      // rollback floor excludes those APIs.
+      set(startChatThreadIndicatorsRefresh$);
       set(broadcastSharedDatabaseWorkerMessage$, {
         type: "invalidate",
         dataKey: { kind: "project-event" },
@@ -368,6 +365,20 @@ const startChatThreadIndicatorsRefresh$ = command(({ get, set }): void => {
   detach(refresh, Reason.Daemon, "chat thread indicators refresh");
 });
 
+/**
+ * Indicators change only on the server's explicit signals: Run start, Run
+ * terminal markers, mute or delete (`chatIndicatorsChanged`), and read cursors.
+ * Run output does not refetch them. Run-state signals share the throttle; a
+ * user's own read-cursor change refreshes immediately.
+ */
+export const startChatThreadIndicatorsRefreshFromRealtime$ = command(
+  ({ set }, signal: AbortSignal): boolean => {
+    signal.throwIfAborted();
+    set(startChatThreadIndicatorsRefresh$);
+    return false;
+  },
+);
+
 const reloadWorkerChatIndicatorsFromReadCursor$ = command(
   async ({ set }, payload: unknown, signal: AbortSignal): Promise<boolean> => {
     await set(refreshWorkerChatIndicators$, signal);
@@ -443,8 +454,8 @@ const runSharedDatabaseWorkerDaemons$ = command(
       setAblyLoop$,
       {
         scope: "credential",
-        topic: "threadListChanged",
-        loopCommand$: reloadWorkerChatIndicatorsFromRealtime$,
+        topic: "chatIndicatorsChanged",
+        loopCommand$: startChatThreadIndicatorsRefreshFromRealtime$,
         // Indicators load lazily on the first tab read, so subscribing must not
         // fetch them again. Continuity gaps still reload through onResync.
         options: { onError },

@@ -184,8 +184,14 @@ function createArtifactShareSession(source: ShareSource) {
     0,
   );
   return {
+    source,
     signal$,
     details$,
+    retry$: command(({ set }) => {
+      set(reload$, (revision) => {
+        return revision + 1;
+      });
+    }),
     open$,
     close$,
     show$,
@@ -247,7 +253,20 @@ function createArtifactShareScope() {
       },
     ),
   );
-  return { session$, mountRef$ };
+  return {
+    session$,
+    mountRef$,
+    details$: computed((get) => {
+      const session = get(session$);
+      return session ? get(session.details$) : null;
+    }),
+    retry$: command(({ get, set }) => {
+      const session = get(session$);
+      if (session) {
+        set(session.retry$);
+      }
+    }),
+  };
 }
 
 // These are the three existing singleton preview surfaces, not a URL cache.

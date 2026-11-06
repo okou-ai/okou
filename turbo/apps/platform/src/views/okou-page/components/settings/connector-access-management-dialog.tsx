@@ -35,14 +35,8 @@ import type {
   CustomConnectorPermissionBundleResponse,
   CustomConnectorResponse,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import type {
-  PlatformConnectorPermissionMetadata,
-  PlatformUserPermissionGrant,
-} from "../../../../signals/connector-domain.ts";
 import type { AgentResponse } from "@okouai/api-contracts/contracts/agents";
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
-import { applyUserPermissionGrants$ } from "../../../../signals/permission-allow/permission-allow-signals.ts";
-import { activeUserPermissionGrantSnapshot } from "../../../../signals/user-permission-grants.ts";
 import {
   managedConnectorAccessSignals$,
   connectorAccessManagementSearch$,
@@ -62,10 +56,6 @@ import {
   openCustomConnectorPermissions$,
   type CustomConnectorPermissionDraft,
 } from "../../../../signals/okou-page/settings/custom-connector-permissions.ts";
-import {
-  savePermissionDraftPolicies,
-  type ApplyUserPermissionGrants,
-} from "../../../../signals/okou-page/settings/permission-grant-save.ts";
 import { detach, Reason } from "../../../../signals/utils.ts";
 import { LoadingSwitch } from "../../../components/loading-switch.tsx";
 import { toast } from "@okouai/ui/components/ui/sonner";
@@ -486,62 +476,26 @@ function ConnectorAccessDialog({
 
 function AgentPermissionDialog({
   row,
-  grants,
-  metadata,
-  metadata$,
+  session,
   connectorSlug,
   connectorLabel,
-  applyGrantPolicies,
-  onClose,
 }: {
   readonly row: ConnectorAgentAccessRow | undefined;
-  readonly grants: readonly PlatformUserPermissionGrant[] | null;
-  readonly metadata: PlatformConnectorPermissionMetadata | null;
-  readonly metadata$: ManagedConnectorAccessSignals["metadata$"];
+  readonly session: ManagedConnectorAccessSignals["permissionDrawer"];
   readonly connectorSlug: ConnectorSlug;
   readonly connectorLabel: string;
-  readonly applyGrantPolicies: ApplyUserPermissionGrants;
-  readonly onClose: () => void;
 }) {
   const singleAgent = useGet(singleAgentEnabled$);
-  const { t } = useTranslation();
-  const pageSignal = useGet(pageSignal$);
-  if (!row || !metadata || !grants) {
+  if (!row) {
     return null;
   }
-  const activeSnapshot = activeUserPermissionGrantSnapshot(grants);
-  const initialPolicies = activeSnapshot.policies ?? {};
-
   return (
     <PermissionsDialog
       agentId={row.agent.agentId}
       connectorSlug={connectorSlug}
       connectorLabel={connectorLabel}
-      metadata$={metadata$}
       displayName={singleAgent ? "Okou" : agentName(row.agent)}
-      initialPolicies={initialPolicies}
-      initialGrants={activeSnapshot.grants}
-      readOnly={false}
-      onApply={async (intent, { metadata: appliedMetadata }) => {
-        await savePermissionDraftPolicies(
-          {
-            scope: { agentId: row.agent.agentId },
-            connectorSlug,
-            metadata: appliedMetadata,
-            initialPolicies,
-            initialGrants: activeSnapshot.grants,
-            intent,
-            applyGrantPolicies,
-          },
-          pageSignal,
-        );
-        toast.success(
-          t(($) => {
-            return $.connectors.access.permissionsUpdated;
-          }),
-        );
-      }}
-      onClose={onClose}
+      session={session}
     />
   );
 }
@@ -561,7 +515,6 @@ export function ConnectorAccessManagementDialog(
       <ConnectorPermissionsDialog
         entry={entry}
         signals={signals.memberPermissions}
-        onClose={props.onClose}
       />
     )
   ) : (
@@ -579,13 +532,11 @@ function LegacyConnectorAccessManagementDialog({
     managedConnectorAccessSignals$,
   ) as ManagedConnectorAccessSignals;
   const rowsLoadable = useLastLoadable(signals.rows$);
-  const grantsLoadable = useLoadable(signals.permissionGrants$);
   const metadataLoadable = useLastLoadable(signals.metadata$);
   const search = useGet(signals.search$);
   const permissionAgentId = useGet(signals.permissionAgentId$);
   const setSearch = useSet(signals.setSearch$);
   const setPermissionAgentId = useSet(signals.setPermissionAgentId$);
-  const [, applyGrantPolicies] = useLoadableSet(applyUserPermissionGrants$);
   const rows = rowsLoadable.state === "hasData" ? rowsLoadable.data : [];
   const metadata =
     metadataLoadable.state === "hasData" ? metadataLoadable.data : null;
@@ -628,15 +579,9 @@ function LegacyConnectorAccessManagementDialog({
       />
       <AgentPermissionDialog
         row={selectedPermissionRow}
-        grants={grantsLoadable.state === "hasData" ? grantsLoadable.data : null}
-        metadata={metadata}
-        metadata$={signals.metadata$}
+        session={signals.permissionDrawer}
         connectorSlug={connectorSlug}
         connectorLabel={connectorLabel}
-        applyGrantPolicies={applyGrantPolicies}
-        onClose={() => {
-          setPermissionAgentId(null);
-        }}
       />
     </>
   );

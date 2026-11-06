@@ -54,7 +54,7 @@ import { sendChatEvent } from "./chat-event-api.ts";
 import { withOptimisticAgentRunSource } from "./chat-event-signals.ts";
 import type { ChatForwardContext } from "./chat-forward.ts";
 import { registerOptimisticChatThreadEvent$ } from "./chat-thread-event-sourcing.ts";
-import { loadRightThread$ } from "./chat-thread-panes.ts";
+import { loadRightThread$ } from "./chat-thread-pane-navigation.ts";
 import {
   apiServiceTierFromSelection,
   runOptionsFromModelProviderSelection,

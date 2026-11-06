@@ -9,6 +9,7 @@ import {
 } from "./composer-voice-input.ts";
 import type {
   GenerationTemplateRequest,
+  ImageAnnotation,
   UserMessageDocument,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import {
@@ -65,6 +66,10 @@ import {
   createImageAnnotationSignals,
   type ImageAnnotationSignals,
 } from "./image-annotation.ts";
+import {
+  openImageLightbox$,
+  type AnnotationImage,
+} from "./attachment-chips.ts";
 
 type ComposerEditorSignals = Pick<
   WorkflowComposerSignals,
@@ -275,6 +280,11 @@ export interface ComposerSignals {
   readonly queue: ComposerQueueSignals;
   readonly template: ComposerTemplateSignals;
   readonly imageAnnotation: ImageAnnotationSignals;
+  /** Previews a draft image in the lightbox, where it can be marked up. */
+  readonly openAttachmentPreview$: Command<
+    void,
+    [ChatAttachment, AnnotationImage]
+  >;
   readonly setImageAnnotationLifecycleRef$: Command<
     (() => void) | undefined,
     [HTMLElement | null]
@@ -571,7 +581,9 @@ export function createComposerSignals(
   const connector =
     options.connector ??
     createComposerConnectorSignals(options.agentId, options.threadId);
-  const imageAnnotation = createImageAnnotationSignals();
+  const draftSignals = composerDraftSignals(options.draft, fileInput);
+  const { imageAnnotation, openAttachmentPreview$ } =
+    createComposerAttachmentAnnotation(draft, draftSignals);
   /**
    * Teardown owner for the annotation session and its in-flight derivative
    * uploads. The element itself is not part of the work, but its committed
@@ -622,7 +634,7 @@ export function createComposerSignals(
     suggestion: composerSuggestionSignals(workflowComposer),
     connector,
     connectorCompletion,
-    draft: composerDraftSignals(options.draft, fileInput),
+    draft: draftSignals,
     model: {
       ...ui.model,
       temporaryModelNoticeEnabled: options.threadId === undefined,
@@ -666,8 +678,71 @@ export function createComposerSignals(
       setGenerationTemplate$: draft.setGenerationTemplate$,
     },
     imageAnnotation,
+    openAttachmentPreview$,
     setImageAnnotationLifecycleRef$,
   };
+}
+
+/**
+ * Draft images are previewed in the shared lightbox and marked up in this
+ * composer's editor. The marks are committed back to the attachment that is
+ * still in the draft under the editor's key.
+ */
+function createComposerAttachmentAnnotation(
+  draft: DraftSignals,
+  actions: Pick<ComposerDraftSignals, "confirmAttachmentAnnotations$">,
+) {
+  const commitAttachmentAnnotations$ = command(
+    async (
+      { get, set },
+      key: string,
+      annotations: ImageAnnotation | null,
+      signal: AbortSignal,
+    ): Promise<void> => {
+      const attachment = get(draft.attachments$).find((candidate) => {
+        return candidate.key === key;
+      });
+      if (!attachment) {
+        throw new Error("The annotated image is no longer attached");
+      }
+      await set(
+        actions.confirmAttachmentAnnotations$,
+        attachment,
+        annotations,
+        signal,
+      );
+    },
+  );
+  const imageAnnotation = createImageAnnotationSignals(
+    commitAttachmentAnnotations$,
+  );
+  const annotateAttachment$ = command(
+    ({ get, set }, attachment: ChatAttachment, image: AnnotationImage) => {
+      set(imageAnnotation.openAnnotationEditor$, {
+        key: attachment.key,
+        filename: attachment.filename,
+        url: image.url,
+        ...(image.preview ? { preview: image.preview } : {}),
+        annotations: get(attachment.annotations$),
+      });
+    },
+  );
+  const openAttachmentPreview$ = command(
+    ({ set }, attachment: ChatAttachment, image: AnnotationImage) => {
+      // A pending upload is not an artifact yet, so checking it must not take
+      // over an open artifact sidebar. An attachment is the user's own input,
+      // not a published artifact, so it carries no sharing controls.
+      set(openImageLightbox$, {
+        url: image.url,
+        filename: attachment.filename,
+        ...(image.preview ? { preview: image.preview } : {}),
+        shareAvailable: false,
+        splitViewAvailable: false,
+        annotationTarget: { attachment, annotate$: annotateAttachment$ },
+      });
+    },
+  );
+  return { imageAnnotation, openAttachmentPreview$ };
 }
 
 /**

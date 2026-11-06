@@ -3,7 +3,6 @@ import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import type { Computed } from "ccstate";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import {
@@ -62,15 +61,17 @@ import {
 import { permissionGrantExpiryText } from "../../../../signals/permission-allow/permission-grant-expiration.ts";
 import {
   applyPermissionDrawer$,
+  dismissPermissionDrawer$,
   permissionDrawerUiState$,
   permissionDrawerUiStateForKey,
-  resetPermissionDrawerState$,
   setPermissionDrawerScrolled$,
   setPermissionDrawerSearch$,
   showMorePermissionDrawerRows$,
   togglePermissionDrawerGroup$,
   editPermissionDrawerDraft$,
 } from "../../../../signals/okou-page/settings/permissions-dialog.ts";
+import type { PermissionDrawerSession } from "../../../../signals/okou-page/settings/permission-drawer-session.ts";
+import { activeUserPermissionGrantSnapshot } from "../../../../signals/user-permission-grants.ts";
 import type { PermissionPolicy } from "../../../../signals/okou-page/settings/permissions.ts";
 import {
   Check,
@@ -104,20 +105,9 @@ interface PermissionsDrawerProps {
   connectorScope?: boolean;
   connectorSlug: ConnectorSlug;
   connectorLabel: string;
-  metadata$: Computed<Promise<PlatformConnectorPermissionMetadata | null>>;
   displayName: string;
-  initialPolicies: FirewallPolicies;
-  initialGrants: readonly PlatformUserPermissionGrant[];
-  readOnly?: boolean;
-  onApply: (
-    intent: PermissionDraftIntent,
-    options: PermissionDrawerApplyOptions,
-  ) => Promise<void>;
-  onClose: () => void;
-}
-
-interface PermissionDrawerApplyOptions {
-  readonly metadata: PlatformConnectorPermissionMetadata;
+  /** Owns the grants the drawer edits, their save, and the drawer's close. */
+  session: PermissionDrawerSession;
 }
 
 type PermissionsSurface = "sheet" | "dialog";
@@ -138,14 +128,14 @@ interface InitialPermissionDrawerState {
   readonly initialPolicyKey: string;
 }
 
-type LoadedPermissionsDrawerContentProps = Pick<
-  PermissionsDrawerProps,
-  "initialPolicies" | "readOnly" | "onApply" | "onClose"
-> & {
+interface LoadedPermissionsDrawerContentProps {
+  readonly session: PermissionDrawerSession;
+  readonly initialPolicies: FirewallPolicies;
+  readonly readOnly: boolean;
   readonly surface: PermissionsSurface;
   readonly metadata: PlatformConnectorPermissionMetadata;
   readonly initialState: InitialPermissionDrawerState;
-};
+}
 
 function buildInitialPermissionDrawerState({
   agentId,
@@ -154,11 +144,10 @@ function buildInitialPermissionDrawerState({
   metadata,
   initialPolicies,
   initialGrants,
-}: Pick<
-  PermissionsDrawerProps,
-  "agentId" | "scopeKey" | "connectorSlug" | "initialPolicies" | "initialGrants"
-> & {
+}: Pick<PermissionsDrawerProps, "agentId" | "scopeKey" | "connectorSlug"> & {
   readonly metadata: PlatformConnectorPermissionMetadata;
+  readonly initialPolicies: FirewallPolicies;
+  readonly initialGrants: readonly PlatformUserPermissionGrant[];
 }): InitialPermissionDrawerState {
   const explicitGrants = buildExplicitGrantMap(connectorSlug, initialGrants);
   const grantStateKey = explicitGrantStateKey(explicitGrants);
@@ -1117,10 +1106,9 @@ function PermissionsDrawerFooter({
 }
 
 function LoadedPermissionsDrawerContent({
+  session,
   initialPolicies,
   readOnly,
-  onApply,
-  onClose,
   surface,
   metadata,
   initialState,
@@ -1136,7 +1124,7 @@ function LoadedPermissionsDrawerContent({
   const showMore = useSet(showMorePermissionDrawerRows$);
   const setSearch = useSet(setPermissionDrawerSearch$);
   const setScrolled = useSet(setPermissionDrawerScrolled$);
-  const resetPermissionDrawerState = useSet(resetPermissionDrawerState$);
+  const dismissDrawer = useSet(dismissPermissionDrawer$);
   const [applyLoadable, applyDrawer] = useLoadableSet(applyPermissionDrawer$);
   const pageSignal = useGet(pageSignal$);
   const context = createPermissionDraftContext({ metadata, initialPolicies });
@@ -1258,8 +1246,7 @@ function LoadedPermissionsDrawerContent({
   };
 
   const handleClose = () => {
-    resetPermissionDrawerState();
-    onClose();
+    dismissDrawer(session);
   };
 
   const handleToggleGroup = (category: string) => {
@@ -1302,18 +1289,7 @@ function LoadedPermissionsDrawerContent({
     if (saving) {
       return;
     }
-    detach(
-      applyDrawer(
-        {
-          intent: draft,
-          metadata,
-          onApply,
-          onClose: handleClose,
-        },
-        pageSignal,
-      ),
-      Reason.DomCallback,
-    );
+    detach(applyDrawer(session, stateKey, pageSignal), Reason.DomCallback);
   };
 
   return (
@@ -1484,22 +1460,35 @@ function PermissionsContent({
   readonly onClose: () => void;
 }) {
   const { t } = useTranslation();
-  const metadataLoadable = useLoadable(props.metadata$);
+  const metadataLoadable = useLoadable(props.session.metadata$);
+  // The drawer edits the grants it shows, so it opens only on loaded ones.
+  const grantsLoadable = useLoadable(props.session.grants$);
   const loadedMetadata =
     metadataLoadable.state === "hasData" ? metadataLoadable.data : null;
-  const loadedInitialState = loadedMetadata
-    ? buildInitialPermissionDrawerState({
-        agentId: props.agentId,
-        scopeKey: props.scopeKey,
-        connectorSlug: props.connectorSlug,
-        metadata: loadedMetadata,
-        initialPolicies: props.initialPolicies,
-        initialGrants: props.initialGrants,
-      })
-    : null;
-  const loading = metadataLoadable.state === "loading";
+  const loadedGrants =
+    grantsLoadable.state === "hasData" ? grantsLoadable.data : undefined;
+  // `null` grants: the owner has nothing to edit, so the rules are read-only.
+  const snapshot =
+    loadedGrants === undefined
+      ? null
+      : activeUserPermissionGrantSnapshot(loadedGrants ?? []);
+  const readOnly = loadedGrants === null;
+  const initialPolicies = snapshot?.policies ?? {};
+  const loadedInitialState =
+    loadedMetadata && snapshot
+      ? buildInitialPermissionDrawerState({
+          agentId: props.agentId,
+          scopeKey: props.scopeKey,
+          connectorSlug: props.connectorSlug,
+          metadata: loadedMetadata,
+          initialPolicies,
+          initialGrants: snapshot.grants,
+        })
+      : null;
+  const loading =
+    metadataLoadable.state === "loading" || grantsLoadable.state === "loading";
   const message =
-    metadataLoadable.state === "hasError"
+    metadataLoadable.state === "hasError" || grantsLoadable.state === "hasError"
       ? t(($) => {
           return $.connectors.permissions.loadError;
         })
@@ -1523,11 +1512,12 @@ function PermissionsContent({
       {loadedMetadata && loadedInitialState ? (
         <LoadedPermissionsDrawerContent
           key={loadedInitialState.initialPolicyKey}
-          {...props}
+          session={props.session}
+          initialPolicies={initialPolicies}
+          readOnly={readOnly}
           surface={surface}
           metadata={loadedMetadata}
           initialState={loadedInitialState}
-          onClose={onClose}
         />
       ) : (
         <>
@@ -1546,7 +1536,7 @@ function PermissionsContent({
 
           <PermissionsFooterShell surface={surface}>
             <Button variant="outline" onClick={onClose}>
-              {props.readOnly
+              {readOnly
                 ? t(($) => {
                     return $.connectors.actions.close;
                   })
@@ -1562,10 +1552,9 @@ function PermissionsContent({
 }
 
 export function PermissionsDrawer(props: PermissionsDrawerProps) {
-  const resetPermissionDrawerState = useSet(resetPermissionDrawerState$);
+  const dismissDrawer = useSet(dismissPermissionDrawer$);
   const handleClose = () => {
-    resetPermissionDrawerState();
-    props.onClose();
+    dismissDrawer(props.session);
   };
 
   return (
@@ -1587,10 +1576,9 @@ export function PermissionsDrawer(props: PermissionsDrawerProps) {
 }
 
 export function PermissionsDialog(props: PermissionsDrawerProps) {
-  const resetPermissionDrawerState = useSet(resetPermissionDrawerState$);
+  const dismissDrawer = useSet(dismissPermissionDrawer$);
   const handleClose = () => {
-    resetPermissionDrawerState();
-    props.onClose();
+    dismissDrawer(props.session);
   };
 
   return (

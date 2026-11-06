@@ -70,8 +70,8 @@ import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { WorkspaceInset } from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
+import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
-import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import {
   pwaChatListVisible$,
   pwaNavigationEnabled$,
@@ -174,33 +174,28 @@ function MobileShareButtonInner({
   const phase = useGet(thread.sharing.phase$);
   const start = useSet(thread.sharing.start$);
   const pageSignal = useGet(pageSignal$);
-  const transitioning = useChatHeaderTransitioning(thread);
   if (phase !== "idle") {
     return null;
   }
   return (
-    <Button
-      showTooltip
-      type="button"
-      disabled={transitioning}
-      focusableWhenDisabled
-      onClick={() => {
-        detach(
-          start(pageSignal),
-          Reason.DomCallback,
-          "start shared thread selection",
-        );
-      }}
-      variant="quiet"
-      size="icon-sm"
-      iconSize={largeTarget ? "md" : "sm"}
-      className={cn("shrink-0", largeTarget && "size-11")}
-      aria-label={t(($) => {
+    <ChatHeaderIconButton
+      thread={thread}
+      icon={<Share2 size={18} />}
+      label={t(($) => {
         return $.chat.sharing.start;
       })}
-    >
-      <Share2 size={16} />
-    </Button>
+      largeTarget={largeTarget}
+      usage={{
+        kind: "action",
+        onClick: () => {
+          detach(
+            start(pageSignal),
+            Reason.DomCallback,
+            "start shared thread selection",
+          );
+        },
+      }}
+    />
   );
 }
 
@@ -260,7 +255,7 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       <MobileShareButtonInner thread={thread} largeTarget />
-      <ThreadMailButton thread={thread} />
+      <ThreadMailButton thread={thread} largeTarget />
       <ChatResourcesButton thread={thread} largeTarget />
       <MobileChatThreadMoreMenu thread={thread} />
     </div>
@@ -578,7 +573,6 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
         {children}
       </SidebarWorkspace>
     </div>,
-    { measureWidth: true },
   );
 }
 
