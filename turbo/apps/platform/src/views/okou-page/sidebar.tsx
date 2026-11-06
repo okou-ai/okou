@@ -84,7 +84,6 @@ import {
   chatListResizeHandleRef$,
   chatListResizing$,
   chatListWidth$,
-  unifiedChatWorkspace$,
 } from "../../signals/okou-page/unified-chat-workspace.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
@@ -570,7 +569,6 @@ function ExpandedFooter() {
    the corner they sit in as from the edge beside them. */
 const RAIL_FRAME =
   "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center py-[18px]";
-const RAIL_CHROME = "border-r border-nav-border bg-nav-rail";
 
 function LabeledRailLink({
   id,
@@ -784,14 +782,13 @@ function LabeledNavRailFrame({
   readonly accountMenu: ReactNode;
 }) {
   const chatListHidden = useGet(sidebarOff$);
-  const unified = useGet(unifiedChatWorkspace$);
   const { t } = useTranslation();
   return (
     <aside
       data-testid="labeled-nav-rail"
-      // In the unified workspace the rail is part of the page ground the
-      // sheet floats on, so it takes no fill or edge of its own.
-      className={cn(RAIL_FRAME, !unified && RAIL_CHROME)}
+      // The rail is part of the page ground the sheet floats on, so it takes
+      // no fill or edge of its own.
+      className={RAIL_FRAME}
     >
       <div className="mb-3 shrink-0">{workspaceSwitcher}</div>
       {chatListHidden && (
@@ -1007,7 +1004,6 @@ function ChatListResizeSeam() {
 }
 
 function ChatListColumn() {
-  const unified = useGet(unifiedChatWorkspace$);
   const singleAgent = useGet(singleAgentEnabled$);
   const width = useGet(chatListWidth$);
   return (
@@ -1015,14 +1011,12 @@ function ChatListColumn() {
       data-testid="chat-list-column"
       className={cn(
         "hidden md:flex shrink-0 flex-col",
-        // Unified: the list is the left part of the workspace sheet, which
-        // continues it from the divider rightwards. It sits half a step toward
-        // the ground, so it reads below the content without leaving the sheet.
-        unified
-          ? "relative my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas-recessed"
-          : "h-full w-[300px] bg-sidebar",
+        // The list is the left part of the workspace sheet, which continues it
+        // from the divider rightwards. It sits half a step toward the ground,
+        // so it reads below the content without leaving the sheet.
+        "relative my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas-recessed",
       )}
-      style={unified ? { width } : undefined}
+      style={{ width }}
     >
       <ChatListHeader />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
@@ -1051,7 +1045,6 @@ function ThreeColumnNav() {
   const hidden = useGet(sidebarOff$);
   const syncLayout = useSet(commitWorkspaceLayout$);
   const workspaceThreads = useGet(workspaceLayoutThreads$);
-  const unified = useGet(unifiedChatWorkspace$);
   const width = useGet(chatListWidth$);
   const resizing = useGet(workspaceResizing$);
   return (
@@ -1066,8 +1059,7 @@ function ThreeColumnNav() {
             const layoutKey = JSON.stringify([
               state.open,
               state.transitionStatus,
-              unified,
-              unified ? width : 300,
+              width,
               resizing,
             ]);
             return (
@@ -1097,13 +1089,13 @@ function ThreeColumnNav() {
           )}
           style={
             {
-              "--chat-list-width": `${String(unified ? width : 300)}px`,
+              "--chat-list-width": `${String(width)}px`,
             } as CSSProperties
           }
         >
           <ChatListColumn />
         </Collapsible.Panel>
-        {unified && <ChatListResizeSeam />}
+        <ChatListResizeSeam />
       </Collapsible.Root>
     </>
   );

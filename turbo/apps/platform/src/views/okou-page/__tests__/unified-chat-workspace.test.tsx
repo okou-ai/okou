@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -45,7 +44,6 @@ function releasePageDom(): void {
 
 async function openUnifiedWorkspace(
   options: {
-    readonly unified?: boolean;
     readonly containerWidth?: number;
     readonly pageContext?: Parameters<typeof setupPage>[0]["context"];
   } = {},
@@ -68,9 +66,6 @@ async function openUnifiedWorkspace(
     context: options.pageContext ?? context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.UnifiedChatWorkspace]: options.unified ?? true,
-    },
   });
   await openResourceArtifact("Unified report.txt");
   const unavailable = await screen.findByTestId(
@@ -323,12 +318,4 @@ test("A folded chat list can be dragged open from its persistent divider", async
   fireEvent.pointerUp(seam, { ...POINTER, buttons: 0, clientX: 400 });
   expect(seam).toHaveAttribute("aria-valuenow", "320");
   expect(document.querySelector("[data-chat-list-resize-mask]")).toBeNull();
-});
-
-test("Without the switch the chat list keeps its fixed width", async () => {
-  const { shell } = await openUnifiedWorkspace({ unified: false });
-  expect(
-    screen.queryByRole("separator", { name: "Resize chat list" }),
-  ).toBeNull();
-  expect(sidebarWidth(shell)).toBe("min(760px, 48vw)");
 });

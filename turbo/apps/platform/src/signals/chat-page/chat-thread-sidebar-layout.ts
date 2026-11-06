@@ -12,37 +12,25 @@ import {
   setLiveChatListWidth$,
   setStoredChatListHidden$,
   storedChatListHidden$,
-  unifiedChatWorkspace$,
 } from "../okou-page/unified-chat-workspace.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { isNonArrayRecord, jsonParseOr, onRef, resetSignal } from "../utils.ts";
 
 // Smallest the sidebar may shrink to before its content stops being usable.
 export const CHAT_THREAD_SIDEBAR_MIN_WIDTH = 400;
-// Width the chat thread keeps so its composer never collapses.
-export const CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH = 600;
-// The unified workspace gives the side panel more room: a 1440px browser
-// screen is scaled to the panel, so its width is what keeps pages legible.
-export const UNIFIED_CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH = 420;
+// Width the chat thread keeps so its composer never collapses. The side panel
+// gets the rest: a 1440px browser screen is scaled to the panel, so its width
+// is what keeps pages legible.
+export const CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH = 420;
 // Share of the space beside the chat list a panel opens at before resizing.
-export const UNIFIED_CHAT_THREAD_SIDEBAR_DEFAULT_SHARE = 0.55;
+export const CHAT_THREAD_SIDEBAR_DEFAULT_SHARE = 0.55;
 // The frame margin the sheet gains when the chat list folds away.
 const WORKSPACE_FRAME_GAP = 8;
 const KEYBOARD_STEP = 16;
 const KEYBOARD_LARGE_STEP = 64;
 
-const internalChatThreadSidebarWidth$ = state<number | null>(null);
-
-export const chatThreadSidebarWidth$ = computed<number | null>((get) => {
-  return get(internalChatThreadSidebarWidth$);
-});
-
-const setChatThreadSidebarWidth$ = command(({ set }, width: number) => {
-  set(internalChatThreadSidebarWidth$, Math.round(width));
-});
-
-// Unified workspace: each panel kind keeps its own width, because a browser
-// wants room while a resource list reads best narrow.
+// Each panel kind keeps its own width, because a browser wants room while a
+// resource list reads best narrow.
 const sidebarWidthsStorage = localStorageSignals("thread-sidebar-widths");
 const internalLiveSidebarWidth$ = state<{
   readonly key: string;
@@ -67,7 +55,7 @@ const storedSidebarWidths$ = computed((get) => {
   return parseSidebarWidths(get(sidebarWidthsStorage.get$));
 });
 
-export const unifiedChatThreadSidebarWidths$ = computed((get) => {
+export const chatThreadSidebarWidths$ = computed((get) => {
   const stored = get(storedSidebarWidths$);
   const live = get(internalLiveSidebarWidth$);
   return live ? { ...stored, [live.key]: live.width } : stored;
@@ -93,14 +81,14 @@ const commitLiveSidebarWidth$ = command(({ get, set }) => {
   }
 });
 
-interface UnifiedDragGeometry {
+interface SidebarDragGeometry {
   readonly containerRight: number;
   readonly containerWidth: number;
   readonly listWidth: number;
   readonly listHidden: boolean;
 }
 
-interface UnifiedDragResult {
+interface SidebarDragResult {
   readonly width: number;
   readonly listWidth: number;
   readonly listHidden: boolean;
@@ -113,14 +101,14 @@ interface UnifiedDragResult {
  * list, then folds the list away. Every step is computed from the gesture's
  * starting geometry, so dragging back within one gesture restores the list.
  */
-function unifiedDragLayout(
-  geometry: UnifiedDragGeometry,
+function sidebarDragLayout(
+  geometry: SidebarDragGeometry,
   pointerX: number,
   listFolded: boolean,
-): UnifiedDragResult {
+): SidebarDragResult {
   const desired = geometry.containerRight - pointerX;
   const maxWithList =
-    geometry.containerWidth - UNIFIED_CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH;
+    geometry.containerWidth - CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH;
   const foldedMax = geometry.listHidden
     ? maxWithList
     : maxWithList + geometry.listWidth - WORKSPACE_FRAME_GAP;
@@ -128,7 +116,7 @@ function unifiedDragLayout(
     width: number,
     listWidth: number,
     listHidden: boolean,
-  ): UnifiedDragResult => {
+  ): SidebarDragResult => {
     return {
       width,
       listWidth,
@@ -160,11 +148,11 @@ function unifiedDragLayout(
   return result(desired, geometry.listWidth - (desired - maxWithList), false);
 }
 
-const resizeUnifiedSidebar$ = command(
+const resizeSidebar$ = command(
   (
     { get, set },
     key: string,
-    next: UnifiedDragResult,
+    next: SidebarDragResult,
     initialListWidth: number,
   ) => {
     set(setStoredChatListHidden$, next.listHidden);
@@ -181,12 +169,12 @@ const resizeUnifiedSidebar$ = command(
 );
 
 /** Width the panel renders at before any resize, as the shell's CSS does. */
-function unifiedDefaultWidth(containerWidth: number): number {
+function defaultSidebarWidth(containerWidth: number): number {
   return Math.max(
     CHAT_THREAD_SIDEBAR_MIN_WIDTH,
     Math.min(
-      containerWidth * UNIFIED_CHAT_THREAD_SIDEBAR_DEFAULT_SHARE,
-      containerWidth - UNIFIED_CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH,
+      containerWidth * CHAT_THREAD_SIDEBAR_DEFAULT_SHARE,
+      containerWidth - CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH,
     ),
   );
 }
@@ -198,13 +186,11 @@ export const chatThreadSidebarResizing$ = computed((get) => {
 
 const resetChatThreadSidebarResize$ = resetSignal();
 
-const finishChatThreadSidebarResize$ = command(({ set }, unified: boolean) => {
+const finishChatThreadSidebarResize$ = command(({ set }) => {
   // The final coordinate is already live; release before persisting it.
   set(resetChatThreadSidebarResize$);
-  if (unified) {
-    set(commitLiveSidebarWidth$);
-    set(commitChatListWidth$);
-  }
+  set(commitLiveSidebarWidth$);
+  set(commitChatListWidth$);
 });
 
 const chatThreadSidebarDragMaskEl$ = computed(() => {
@@ -225,25 +211,19 @@ const startChatThreadSidebarResize$ = command(
     ownerSignal.throwIfAborted();
 
     const rect = container.getBoundingClientRect();
-    const maxWidth = Math.max(
-      CHAT_THREAD_SIDEBAR_MIN_WIDTH,
-      rect.width - CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH,
-    );
-    const unifiedKey = get(unifiedChatWorkspace$)
-      ? (handle.dataset.widthKey ?? "")
-      : null;
-    const unifiedGeometry: UnifiedDragGeometry = {
+    const widthKey = handle.dataset.widthKey ?? "";
+    const geometry: SidebarDragGeometry = {
       containerRight: rect.right,
       containerWidth: rect.width,
       listWidth: get(chatListWidth$),
       listHidden: get(storedChatListHidden$),
     };
-    let listFolded = unifiedGeometry.listHidden;
+    let listFolded = geometry.listHidden;
     const handleRect = handle.getBoundingClientRect();
     // Keep the distance from the seam's centre instead of snapping a wide hit
     // target to the pointer. Non-rendered synthetic handles have no geometry.
     const grabOffset =
-      unifiedKey !== null && handleRect.width > 0
+      handleRect.width > 0
         ? startX - (handleRect.left + handleRect.width / 2)
         : 0;
     const dragSignal = set(resetChatThreadSidebarResize$, ownerSignal);
@@ -254,7 +234,7 @@ const startChatThreadSidebarResize$ = command(
 
     function resetResize(): void {
       if (!dragSignal.aborted) {
-        set(finishChatThreadSidebarResize$, unifiedKey !== null);
+        set(finishChatThreadSidebarResize$);
       }
     }
 
@@ -262,18 +242,8 @@ const startChatThreadSidebarResize$ = command(
       if (dragSignal.aborted || !Number.isFinite(pointerX)) {
         return;
       }
-      if (unifiedKey === null) {
-        set(
-          setChatThreadSidebarWidth$,
-          Math.min(
-            Math.max(rect.right - pointerX, CHAT_THREAD_SIDEBAR_MIN_WIDTH),
-            maxWidth,
-          ),
-        );
-        return;
-      }
-      const next = unifiedDragLayout(
-        unifiedGeometry,
+      const next = sidebarDragLayout(
+        geometry,
         pointerX - grabOffset,
         listFolded,
       );
@@ -284,7 +254,7 @@ const startChatThreadSidebarResize$ = command(
         : next.atMin
           ? "w-resize"
           : "col-resize";
-      set(resizeUnifiedSidebar$, unifiedKey, next, unifiedGeometry.listWidth);
+      set(resizeSidebar$, widthKey, next, geometry.listWidth);
     }
 
     function endPointerResize(event: PointerEvent): void {
@@ -342,7 +312,7 @@ const startChatThreadSidebarResize$ = command(
     document.body.append(dragMaskEl);
     set(internalChatThreadSidebarResizing$, true);
     // Freeze a measurable seam before cancelling an in-flight width animation.
-    if (unifiedKey !== null && handleRect.width > 0) {
+    if (handleRect.width > 0) {
       moveResize(startX);
     }
   },
@@ -379,9 +349,7 @@ export const chatThreadSidebarResizeHandleRef$ = onRef(
     handle.addEventListener(
       "dblclick",
       () => {
-        if (get(unifiedChatWorkspace$)) {
-          set(writeSidebarWidth$, handle.dataset.widthKey ?? "", null);
-        }
+        set(writeSidebarWidth$, handle.dataset.widthKey ?? "", null);
       },
       { signal: mountSignal },
     );
@@ -389,18 +357,18 @@ export const chatThreadSidebarResizeHandleRef$ = onRef(
       "keydown",
       (event) => {
         const container = handle.parentElement;
-        if (!get(unifiedChatWorkspace$) || !container) {
+        if (!container) {
           return;
         }
         const key = handle.dataset.widthKey ?? "";
         const containerWidth = container.getBoundingClientRect().width;
         const maxWidth = Math.max(
           CHAT_THREAD_SIDEBAR_MIN_WIDTH,
-          containerWidth - UNIFIED_CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH,
+          containerWidth - CHAT_THREAD_SIDEBAR_MIN_THREAD_WIDTH,
         );
         const width = Math.min(
-          get(unifiedChatThreadSidebarWidths$)[key] ??
-            unifiedDefaultWidth(containerWidth),
+          get(chatThreadSidebarWidths$)[key] ??
+            defaultSidebarWidth(containerWidth),
           maxWidth,
         );
         const step = event.shiftKey ? KEYBOARD_LARGE_STEP : KEYBOARD_STEP;

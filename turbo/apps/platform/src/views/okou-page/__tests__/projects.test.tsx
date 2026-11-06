@@ -2136,7 +2136,6 @@ test("A Project mention reveals a folded chat sidebar and keeps the current conv
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.Projects]: true,
-      [FeatureSwitchKey.UnifiedChatWorkspace]: true,
     },
   });
   const user = userEvent.setup({ delay: null });

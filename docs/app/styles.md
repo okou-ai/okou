@@ -1345,29 +1345,27 @@ token that falls back to what it already had:
 :root[data-gradient-color-themes][data-color-theme] {
   --nav-copy: hsl(var(--okou-color-theme-hue) 10% 14.2%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 5% 30.6%);
-  --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
   --nav-border: hsl(var(--border) / 0.5);
 }
 ```
 
 A dark counterpart under
 `:root:is(.dark,[data-theme="dark"])[data-gradient-color-themes][data-color-theme]`
-carries the same four names at their dark values. Consumers read the registered
+carries the same three names at their dark values. Consumers read the registered
 token rather than either raw block:
 
 ```css
 --color-nav-copy: var(--nav-copy, var(--color-sidebar-foreground));
 --color-nav-copy-muted: var(--nav-copy-muted, var(--color-muted-foreground));
 --color-nav-border: var(--nav-border, var(--color-sidebar-border));
---color-nav-rail: var(--nav-rail, var(--color-sidebar-rail));
 ```
 
 When the gradient themes are on, the raw values exist and every consumer
 resolves to them. Everywhere else they are unset and each consumer falls back to
 the foreground or surface it already had, so both sides keep their appearance
 without a conditional selector. Consumers whose value matches a registered
-fallback use `text-nav-copy`, `text-nav-copy-muted`, `border-nav-border` or
-`bg-nav-rail`; the rest carry their own fallback in the utility, including
+fallback use `text-nav-copy`, `text-nav-copy-muted` or `border-nav-border`; the
+rest carry their own fallback in the utility, including
 `var(--nav-copy, inherit)` where the consumer inherits its color from an
 ancestor `Link` or `button` and must keep inheriting that ancestor's hover.
 
