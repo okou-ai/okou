@@ -1313,11 +1313,11 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
       if (!scope) {
         throw cancelled();
       }
-      const submission = set(model.prepareAddress$, scope);
-      const url = navigationAddress(submission.value);
+      const url = navigationAddress(get(model.address$));
       if (!url) {
         throw new CdpFault("input", "Enter a valid page address.");
       }
+      const submission = set(model.prepareAddress$, scope);
       const receipt = await set(lease.controller.navigate$, { url }, signal);
       set(model.acceptAddress$, submission, receipt);
       return receipt;

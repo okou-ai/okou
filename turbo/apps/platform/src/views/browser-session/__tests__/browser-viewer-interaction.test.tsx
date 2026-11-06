@@ -148,6 +148,28 @@ test("A selected membership refresh preserves local address text, focus and care
   expect(browser.targets[0]?.url).toBe("http://drxaft.example/path");
 });
 
+test("An invalid local address remains a draft across membership reattachment", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText("Address");
+  await fill(address, "two words");
+  await userEvent.keyboard("{Enter}");
+  await screen.findByRole("alert");
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.duplicate("example-page");
+  });
+  await proof.received;
+  await act(async () => {
+    await proof.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("two words");
+  expect(address).toHaveFocus();
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+});
+
 test("A failed creation retains its typed address without navigating the restored page", async () => {
   const browser = await setupViewer(0);
   const receipt = browser.holdNextNative("createTab");
