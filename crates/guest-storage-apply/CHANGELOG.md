@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.7](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.6...guest-storage-apply-v0.29.7) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** share mixed tar archive fixtures ([#45710](https://github.com/okou-ai/okou/issues/45710)) ([26daf82](https://github.com/okou-ai/okou/commit/26daf82d8ea6b055ed951fd3653e59da5a8d2dc8))
+
 ## [0.29.6](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.5...guest-storage-apply-v0.29.6) (2026-11-06)
 
 ## [0.29.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.4...guest-storage-apply-v0.29.5) (2026-11-06)

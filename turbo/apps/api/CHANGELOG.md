@@ -10,6 +10,35 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.52.1](https://github.com/okou-ai/okou/compare/api-v2.52.0...api-v2.52.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **api:** return a bad request for custom account selection races ([#45721](https://github.com/okou-ai/okou/issues/45721)) ([ae350f6](https://github.com/okou-ai/okou/commit/ae350f6de0bd2076e6f03b18ec674b1ad1fb5174))
+* **app:** make chat header panels consistent and retire artifacts auto-open ([#45669](https://github.com/okou-ai/okou/issues/45669)) ([11b6837](https://github.com/okou-ai/okou/commit/11b6837e854dcd643e31ca309b450b7a15a5de37))
+* **browser:** attribute native window health failures ([#45698](https://github.com/okou-ai/okou/issues/45698)) ([37ee564](https://github.com/okou-ai/okou/commit/37ee564ebb06f50a8906ab2159b1769e539c1e94))
+
+
+### Refactoring
+
+* **api:** make connector skill bundle delivery unconditional ([#45697](https://github.com/okou-ai/okou/issues/45697)) ([767c72c](https://github.com/okou-ai/okou/commit/767c72c2e73de6a774581bcb9fd4b01ecfc46f19))
+
+
+### Performance Improvements
+
+* refresh chat indicators only on run state changes ([#45712](https://github.com/okou-ai/okou/issues/45712)) ([ac06095](https://github.com/okou-ai/okou/commit/ac0609591b2a0a5f159afb50b7561df46a23f6a4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.0
+    * @okouai/core bumped to 8.822.0
+    * @okouai/db bumped to 2.23.6
+    * @okouai/pi-agent-runtime bumped to 1.51.78
+
 ## [2.52.0](https://github.com/okou-ai/okou/compare/api-v2.51.1...api-v2.52.0) (2026-11-06)
 
 

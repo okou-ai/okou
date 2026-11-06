@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.28.0](https://github.com/okou-ai/okou/compare/ios-v0.27.3...ios-v0.28.0) (2026-11-06)
+
+
+### Features
+
+* **ios:** full-page search, one-step sign-in and the earlier chat edges ([#45700](https://github.com/okou-ai/okou/issues/45700)) ([1959dee](https://github.com/okou-ai/okou/commit/1959dee6558ad067b4ac89e9c616bcaf93b46444))
+
+
+### CI
+
+* **ios:** enforce pinned swiftlint checks ([#45699](https://github.com/okou-ai/okou/issues/45699)) ([bea40bc](https://github.com/okou-ai/okou/commit/bea40bc14488ae1c657a6cc46ccebef516ba352f))
+
+
+### Performance Improvements
+
+* **ios:** reuse sidebar status column decision ([#45709](https://github.com/okou-ai/okou/issues/45709)) ([44eaf98](https://github.com/okou-ai/okou/commit/44eaf98300233f4db3f8638be446261cb1a53657))
+
 ## [0.27.3](https://github.com/okou-ai/okou/compare/ios-v0.27.2...ios-v0.27.3) (2026-11-06)
 
 
