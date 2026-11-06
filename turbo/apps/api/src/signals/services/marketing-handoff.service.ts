@@ -3,10 +3,7 @@ import { command } from "ccstate";
 import { object, boolean } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
-import {
-  marketingContentGrants,
-  marketingHandoffLimits,
-} from "@okouai/db/schema/marketing-content-grant";
+import { marketingContentGrants } from "@okouai/db/schema/marketing-content-grant";
 import {
   MARKETING_HANDOFF_MAX_FILE_BYTES,
   marketingHandoffManifestSchema,
@@ -48,40 +45,6 @@ export function marketingHandoffBucket(): string | undefined {
   }
   return bucket;
 }
-
-export const consumeMarketingHandoffBudget$ = command(
-  async (
-    { set },
-    args: { subject: string; bytes: number },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    const current = nowDate();
-    const cutoff = new Date(current.getTime() - 60 * 60 * 1000);
-    const table = marketingHandoffLimits;
-    const expired = sql`${table.windowStart} <= ${cutoff}`;
-    const [reserved] = await db
-      .insert(table)
-      .values({
-        subject: args.subject,
-        windowStart: current,
-        requests: 1,
-        bytes: args.bytes,
-      })
-      .onConflictDoUpdate({
-        target: table.subject,
-        set: {
-          windowStart: sql`CASE WHEN ${expired} THEN ${current} ELSE ${table.windowStart} END`,
-          requests: sql`CASE WHEN ${expired} THEN 1 ELSE ${table.requests} + 1 END`,
-          bytes: sql`CASE WHEN ${expired} THEN ${args.bytes} ELSE ${table.bytes} + ${args.bytes} END`,
-        },
-        setWhere: sql`${expired} OR (${table.requests} < 120 AND ${table.bytes} + ${args.bytes} <= ${100 * 1024 * 1024})`,
-      })
-      .returning({ subject: table.subject });
-    signal.throwIfAborted();
-    return reserved !== undefined;
-  },
-);
 
 export const grantMarketingContent$ = command(
   async (
