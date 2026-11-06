@@ -109,6 +109,10 @@ const observer = new MutationObserver((records) => {
     const stylesheetChange =
       element?.closest("style") ||
       element?.matches(stylesheetSelector) ||
+      // A link that loses its stylesheet role no longer matches the selector.
+      (record.type === "attributes" &&
+        record.attributeName === "rel" &&
+        element instanceof HTMLLinkElement) ||
       (record.type === "childList" &&
         [...record.addedNodes, ...record.removedNodes].some((node) => {
           return (

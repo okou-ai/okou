@@ -11,7 +11,7 @@ const styles = `<style>
   @font-face { font-family: 'Owned Site Face'; src: local('Liberation Mono'), local('Courier New'); }
   body { font: 24px var(--page-font, 'Owned Latin'); }
   #opaque-container { --opaque-font: italic 700 24px 'Owned Latin'; }
-  #sample, #variable-sample { font-weight: 700; font-style: italic; }
+  #sample, #variable-sample, #linked-sample { font-weight: 700; font-style: italic; }
   .alternate { font-family: 'Owned Site Face' !important; }
   [data-site-font=alternate] #container { font-family: 'Owned Site Face' !important; }
   #site-control { font-family: 'Owned Site Face'; font-weight: 700; font-style: italic; }
@@ -21,13 +21,19 @@ const styles = `<style>
 
 test.beforeAll(async () => {
   server = createServer((request, response) => {
+    if (request.url === "/theme.css") {
+      response.setHeader("Content-Type", "text/css; charset=utf-8");
+      response.end('#linked-sample { font-family: "Owned Site Face"; }');
+      return;
+    }
     response.setHeader("Content-Type", "text/html; charset=utf-8");
     if (request.url === "/frame") {
       response.end(`<!doctype html>${styles}<p id="frame-text">Αλφάβητο</p>`);
       return;
     }
-    response.end(`<!doctype html><html lang="en"><head>${styles}</head><body>
+    response.end(`<!doctype html><html lang="en"><head>${styles}<link id="theme-link" rel="stylesheet" href="/theme.css"></head><body>
       <div id="container"><span id="sample">Αλφάβητο ABC</span></div>
+      <p id="linked-sample">Αλφάβητο ABC</p>
       <p id="site-control">Αλφάβητο ABC</p>
       <p id="caption-control">Αλφάβητο ABC</p>
       <p id="variable-sample" style="--text-font: 'Owned Latin'; font-family: var(--text-font)">Αλφάβητο ABC</p>
@@ -43,6 +49,7 @@ test.beforeAll(async () => {
       <button id="variable">Change inherited font variable</button>
       <button id="own-variable">Change local font variable</button>
       <button id="nested-style">Toggle nested stylesheet</button>
+      <button id="link-role">Toggle stylesheet link role</button>
       <button id="attribute-theme">Change attribute theme</button>
       <button id="shorthand-variable">Change shorthand variable</button>
       <button id="caption-class">Update caption class</button>
@@ -60,6 +67,7 @@ test.beforeAll(async () => {
         document.querySelector('#variable').onclick=()=>{document.documentElement.style.setProperty('--page-font', '"Owned Site Face"');};
         document.querySelector('#own-variable').onclick=()=>{document.querySelector('#variable-sample').style.setProperty('--text-font', '"Owned Site Face"');};
         document.querySelector('#nested-style').onclick=()=>{const current=document.querySelector('#nested-styles');if(current){current.remove();return;}const wrapper=document.createElement('div');wrapper.id='nested-styles';wrapper.innerHTML='<style>#container { font-family: "Owned Site Face" !important; }</style>';document.body.append(wrapper);};
+        document.querySelector('#link-role').onclick=()=>{const link=document.querySelector('#theme-link');link.rel=link.rel==='stylesheet'?'alternate':'stylesheet';};
         document.querySelector('#attribute-theme').onclick=()=>{document.documentElement.dataset.siteFont='alternate';};
         document.querySelector('#shorthand-variable').onclick=()=>{document.querySelector('#shorthand-sample').style.setProperty('--inline-font', 'italic 700 28px "Owned Site Face"');};
         document.querySelector('#caption-class').onclick=()=>{document.querySelector('#inline-caption').classList.toggle('updated-caption');};
@@ -297,6 +305,40 @@ test("follows nested stylesheets added to and removed from another subtree", asy
         return suppliedGreek(await f.fonts("sample"));
       })
       .toBe(true);
+  } finally {
+    await f.close();
+  }
+});
+
+test("follows stylesheet links losing and regaining their stylesheet role", async () => {
+  const f = await fixture();
+  try {
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("sample"));
+      })
+      .toBe(true);
+    await expect
+      .poll(async () => {
+        return await f.fonts("linked-sample");
+      })
+      .toEqual(await f.fonts("site-control"));
+    await f.page
+      .getByRole("button", { name: "Toggle stylesheet link role" })
+      .click();
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("linked-sample"));
+      })
+      .toBe(true);
+    await f.page
+      .getByRole("button", { name: "Toggle stylesheet link role" })
+      .click();
+    await expect
+      .poll(async () => {
+        return await f.fonts("linked-sample");
+      })
+      .toEqual(await f.fonts("site-control"));
   } finally {
     await f.close();
   }
