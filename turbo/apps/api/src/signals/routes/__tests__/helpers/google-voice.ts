@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
 import { stubTestVercelRuntimeToken } from "../../../../__tests__/env-stub";
 
@@ -49,9 +48,9 @@ export function vertexVoiceResponse(text: string) {
   });
 }
 
-/** Synthetic HTTP identity, isolated per test without resetting production caches. */
+/** Synthetic HTTP identity; centralized env overrides own cache isolation. */
 export function mockGoogleLlm(prefix = "voice") {
-  const project = `${prefix}-${randomUUID().slice(0, 18)}`;
+  const project = `${prefix}-api-test`;
   const serviceAccount = `llm-dev@${project}.iam.gserviceaccount.com`;
   mockOptionalEnv("GCP_LLM_PROJECT_ID", project);
   mockOptionalEnv("GCP_LLM_WORKLOAD_IDENTITY_PROVIDER", GOOGLE_VOICE_PROVIDER);

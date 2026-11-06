@@ -43,7 +43,8 @@ function unpackWorkerEnv(): Readonly<Record<string, string>> {
 }
 
 const packedEnv = Object.freeze(unpackWorkerEnv());
-const runtimeEnv = Object.freeze({ ...packedEnv, ...process.env });
+const processEnv = Object.freeze({ ...process.env });
+const runtimeEnv = Object.freeze({ ...packedEnv, ...processEnv });
 
 // Deployments validate their environment before release and publish the
 // decoded result; their runtimes never construct the schema. Processes started
@@ -55,24 +56,17 @@ const baseEnv: ApiEnv = validatedEnv
 
 type EnvName = keyof ApiEnv;
 
-const {
-  get: getOverrideEnv,
-  set: setOverrideEnv,
-  clear: clearOverrideEnv,
-} = testOverride<Partial<ApiEnv>>(() => {
-  return {};
-});
+interface EnvironmentScope {
+  readonly overrides: Partial<ApiEnv>;
+  readonly optionalOverrides: Readonly<Record<string, string | undefined>>;
+}
 
-const {
-  get: getOptionalOverrideEnv,
-  set: setOptionalOverrideEnv,
-  clear: clearOptionalOverrideEnv,
-} = testOverride<Readonly<Record<string, string | undefined>>>(() => {
-  return {};
+const environmentScope = testOverride<EnvironmentScope>(() => {
+  return { overrides: {}, optionalOverrides: {} };
 });
 
 export function env<K extends EnvName>(name: K): ApiEnv[K] {
-  const overrideEnv = getOverrideEnv();
+  const overrideEnv = environmentScope.get().overrides;
   if (Object.prototype.hasOwnProperty.call(overrideEnv, name)) {
     return overrideEnv[name] as ApiEnv[K];
   }
@@ -80,11 +74,25 @@ export function env<K extends EnvName>(name: K): ApiEnv[K] {
 }
 
 export function optionalEnv(name: string): string | undefined {
-  const overrideEnv = getOptionalOverrideEnv();
+  const overrideEnv = environmentScope.get().optionalOverrides;
   if (Object.prototype.hasOwnProperty.call(overrideEnv, name)) {
     return overrideEnv[name];
   }
-  return process.env[name] || packedEnv[name] || undefined;
+  return processEnv[name] || packedEnv[name] || undefined;
+}
+
+/** Lazily derive synchronous values from fixed instance configuration. */
+export function envSingleton<T>(factory: () => T): () => T {
+  const instances = new WeakMap<EnvironmentScope, { readonly value: T }>();
+  return () => {
+    const scope = environmentScope.get();
+    let instance = instances.get(scope);
+    if (!instance) {
+      instance = { value: factory() };
+      instances.set(scope, instance);
+    }
+    return instance.value;
+  };
 }
 
 export function mockEnv<K extends EnvName>(
@@ -92,20 +100,22 @@ export function mockEnv<K extends EnvName>(
   value: input<ApiEnvSchema[K]>,
 ): void {
   const schema = apiEnvSchema()[name] as ZodType;
-  setOverrideEnv({
-    ...getOverrideEnv(),
-    [name]: schema.parse(value) as ApiEnv[K],
+  const parsed = schema.parse(value) as ApiEnv[K];
+  const current = environmentScope.get();
+  environmentScope.set({
+    ...current,
+    overrides: { ...current.overrides, [name]: parsed },
   });
 }
 
 export function mockOptionalEnv(name: string, value: string | undefined): void {
-  setOptionalOverrideEnv({
-    ...getOptionalOverrideEnv(),
-    [name]: value,
+  const current = environmentScope.get();
+  environmentScope.set({
+    ...current,
+    optionalOverrides: { ...current.optionalOverrides, [name]: value },
   });
 }
 
 export function clearMockedEnv(): void {
-  clearOverrideEnv();
-  clearOptionalOverrideEnv();
+  environmentScope.clear();
 }

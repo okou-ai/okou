@@ -4939,6 +4939,39 @@ describe("CHAT-02: thread deletion while a run is active", () => {
 });
 
 describe("CHAT-02: push notification gating", () => {
+  it("reuses the native signing token until its fifty-minute lifetime ends", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const provider = await createApnsFixture(context);
+    await registerIosPush(context, { ...actor, orgId: actor.orgId! });
+    const startedAt = Math.floor(now() / 1000) * 1000;
+
+    for (const minutes of [0, 49, 50]) {
+      mockNow(startedAt + minutes * 60_000);
+      const run = await startChatRun(actor, {
+        agentId,
+        prompt: `Native signing token at minute ${minutes}`,
+      });
+      chatCallbacks.mockChatOutputEvents([]);
+      const received = provider.nextRequest();
+      await completeChatRunOk(
+        run.runId,
+        await claimChatRun(runnerGroup, run.runId),
+      );
+      await received;
+      await flushWaitUntilForTest();
+    }
+
+    expect(provider.requests).toHaveLength(3);
+    const tokens = provider.requests.map((request) => {
+      return String(request.headers.authorization).slice("bearer ".length);
+    });
+    expect(tokens[1]).toBe(tokens[0]);
+    expect(tokens[2]).not.toBe(tokens[1]);
+    for (const token of tokens) {
+      await jwtVerify(token, provider.publicKey, { issuer: "TESTTEAM01" });
+    }
+  }, 60_000);
+
   it("delivers native completion without VAPID, uses a versioned envelope, and retires only invalid tokens", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);

@@ -173,6 +173,16 @@ Use centralized `env()` configuration for environment-specific values and
 service origins. Do not invent fallback URLs or credentials. Server code should
 not read `NEXT_PUBLIC_` variables as its configuration contract.
 
+API application environment is fixed for a running instance. Changing its
+configuration requires a replacement instance; do not add environment polling,
+credential-change comparisons, or configuration-keyed in-memory caches to
+support hot reload. Read fixed values through the centralized env snapshot and
+use `envSingleton()` for lazily derived configuration or credential data. Keep
+request identities, bindings, I/O ownership and expiring-token refresh with
+their actual lifecycle. Never cache request bindings or in-flight requests in
+an env singleton. Persistent caches can span deployments with different
+configuration, so their credential/endpoint fingerprints remain meaningful.
+
 ## 7. Fallback Patterns
 
 The default is no fallback for a state that the owning contract already rules

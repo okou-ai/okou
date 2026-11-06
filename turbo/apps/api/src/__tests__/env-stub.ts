@@ -21,6 +21,34 @@ export function stubTestWebUrlEnvironment(webUrl: string | undefined): void {
   vi.stubEnv("OKOU_WEB_URL", webUrl);
 }
 
+/** Raw startup inputs for the env library's replacement-instance tests. */
+export function stubTestEnvSnapshotInputs(inputs: {
+  readonly debug?: string;
+  readonly optional?: string;
+  readonly packed?: string;
+}): () => void {
+  const values = {
+    OKOU_DEBUG: inputs.debug,
+    OPTIONAL_ENV_SNAPSHOT: inputs.optional,
+    API_ENV_JSON_PARTS: inputs.packed === undefined ? undefined : "1",
+    API_ENV_JSON_0:
+      inputs.packed === undefined
+        ? undefined
+        : JSON.stringify({ OPTIONAL_ENV_SNAPSHOT: inputs.packed }),
+  };
+  const previous = Object.keys(values).map((name) => {
+    return [name, process.env[name]] as const;
+  });
+  for (const [name, value] of Object.entries(values)) {
+    vi.stubEnv(name, value);
+  }
+  return () => {
+    for (const [name, value] of previous) {
+      vi.stubEnv(name, value);
+    }
+  };
+}
+
 /** AWS SDK runtime inputs are scoped separately from the application's env. */
 export function stubTestAwsKmsEnvironment(
   configSource: "process" | "application" = "process",

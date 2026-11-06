@@ -2,19 +2,15 @@ import http2 from "node:http2";
 import { once } from "node:events";
 import { SignJWT, importPKCS8 } from "jose";
 import { v5 as uuidv5 } from "uuid";
-import { env } from "../../lib/env";
+import { env, envSingleton } from "../../lib/env";
 import { now } from "../../lib/time";
 import { safeJsonParse, settleIncludingAbort } from "../utils";
-import { singleton } from "../../lib/singleton";
 
 type ApnsEnvironment = "production" | "sandbox";
-const tokens = singleton(() => {
+const tokens = envSingleton(() => {
   return new Map<
     ApnsEnvironment,
     {
-      keyId: string;
-      teamId: string;
-      privateKey: string;
       jwt: string;
       expires: number;
     }
@@ -52,14 +48,9 @@ async function providerToken(environment: ApnsEnvironment): Promise<string> {
   if (!config) {
     throw new Error(`Missing APNs ${environment} configuration`);
   }
-  const cached = tokens().get(environment);
-  if (
-    cached &&
-    cached.expires > now() &&
-    cached.privateKey === config.privateKey &&
-    cached.keyId === config.keyId &&
-    cached.teamId === config.teamId
-  ) {
+  const cache = tokens();
+  const cached = cache.get(environment);
+  if (cached && cached.expires > now()) {
     return cached.jwt;
   }
   const key = await importPKCS8(
@@ -71,7 +62,7 @@ async function providerToken(environment: ApnsEnvironment): Promise<string> {
     .setIssuer(config.teamId)
     .setIssuedAt(Math.floor(now() / 1000))
     .sign(key);
-  tokens().set(environment, { ...config, jwt, expires: now() + 50 * 60_000 });
+  cache.set(environment, { jwt, expires: now() + 50 * 60_000 });
   return jwt;
 }
 

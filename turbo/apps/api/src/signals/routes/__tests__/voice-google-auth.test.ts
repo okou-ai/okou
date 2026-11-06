@@ -350,8 +350,8 @@ describe("Google voice workload identity through the public API", () => {
     },
   );
 
-  it("refreshes within the five-minute expiry margin and isolates the production account", async () => {
-    const google = mockGoogleVoice();
+  it("reuses credentials until the five-minute expiry margin", async () => {
+    mockGoogleVoice();
     const start = now();
     mockNow(start);
     const accounts: string[] = [];
@@ -371,10 +371,5 @@ describe("Google voice workload identity through the public API", () => {
     mockNow(start + 3_301_000);
     await accept(polish(), [200]);
     expect(accounts).toHaveLength(2);
-    const productionAccount = `llm-prod@${google.project}.iam.gserviceaccount.com`;
-    mockOptionalEnv("GCP_LLM_SERVICE_ACCOUNT_EMAIL", productionAccount);
-    await accept(polish(), [200]);
-    expect(accounts).toHaveLength(3);
-    expect(accounts[2]).toContain(productionAccount);
   });
 });

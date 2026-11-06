@@ -39,11 +39,21 @@ function registerSecretKmsHttp(configSource: "process" | "application"): void {
   const previousClient = getSecretKmsClient();
   const previousHandlers = server.listHandlers();
   const restoreEnvironment = stubTestAwsKmsEnvironment(configSource);
-  if (configSource === "application") {
-    mockOptionalEnv("AWS_REGION", "us-west-2");
-    mockOptionalEnv("AWS_ACCESS_KEY_ID", "kms-http-test-access-key");
-    mockOptionalEnv("AWS_SECRET_ACCESS_KEY", "kms-http-test-secret-key");
-  }
+  // The SDK-chain case has no application credentials; only the SDK observes
+  // stubbed process input. Application env itself is fixed at module load.
+  mockOptionalEnv(
+    "AWS_REGION",
+    configSource === "application" ? "us-west-2" : undefined,
+  );
+  mockOptionalEnv(
+    "AWS_ACCESS_KEY_ID",
+    configSource === "application" ? "kms-http-test-access-key" : undefined,
+  );
+  mockOptionalEnv(
+    "AWS_SECRET_ACCESS_KEY",
+    configSource === "application" ? "kms-http-test-secret-key" : undefined,
+  );
+  mockOptionalEnv("AWS_SESSION_TOKEN", undefined);
   const dataKeys = new Map<string, string>();
   onTestFinished(() => {
     server.resetHandlers(...previousHandlers);
