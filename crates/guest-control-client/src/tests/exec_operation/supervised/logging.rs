@@ -3,7 +3,7 @@ use std::time::Duration;
 use guest_control_proto::{ExecOutputStream, ExecProcessRole, ExecTermination};
 use tracing::Level;
 use tracing_subscriber::prelude::*;
-use tracing_test_support::CapturedEvents;
+use tracing_test_support::{CapturedEvents, find_captured_event};
 
 use super::super::super::support::{
     send_discarded_exec_result, send_exec_output, send_exec_result,
@@ -49,13 +49,7 @@ async fn expected_timeout_keeps_output_overflow_warning() {
     assert_eq!(output.recv().await.unwrap().bytes, b"first");
     assert!(output.recv().await.is_none());
     let events = captured.entries();
-    let terminal = events
-        .iter()
-        .find(|event| {
-            event.fields.get("message").map(String::as_str)
-                == Some("exec operation terminal result")
-        })
-        .unwrap();
+    let terminal = find_captured_event(&events, "exec operation terminal result").unwrap();
     assert_eq!(terminal.level, Level::WARN);
     assert_eq!(
         terminal.fields.get("process_class").map(String::as_str),
@@ -99,13 +93,7 @@ async fn expected_workload_timeout_setting_does_not_demote_agent_timeout() {
     let result = started.handle.wait(Duration::from_secs(5)).await.unwrap();
     assert_eq!(result.termination, ExecTermination::TimedOut);
     let events = captured.entries();
-    let terminal = events
-        .iter()
-        .find(|event| {
-            event.fields.get("message").map(String::as_str)
-                == Some("exec operation terminal result")
-        })
-        .unwrap();
+    let terminal = find_captured_event(&events, "exec operation terminal result").unwrap();
     assert_eq!(terminal.level, Level::WARN);
     assert_eq!(
         terminal.fields.get("terminal_reason").map(String::as_str),

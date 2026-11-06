@@ -9,8 +9,8 @@ use runner_lifecycle::idle_pool::{
 };
 use runner_types::types::{HomeCacheCapability, ReusableSandboxState};
 use sandbox::SandboxId;
-use tracing_test_support::CapturedEvent;
 use tracing_test_support::capture_current_thread_events as capture_heartbeat_events;
+use tracing_test_support::{CapturedEvent, find_captured_event};
 
 #[derive(Default)]
 struct RecordingProvider {
@@ -258,14 +258,7 @@ async fn seed_home_cache_state(
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|actual| actual == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event {message:?}; captured={events:#?}"))
 }
 

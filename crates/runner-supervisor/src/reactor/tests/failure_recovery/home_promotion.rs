@@ -9,7 +9,7 @@ use sandbox::{ExecResult, SandboxError, SandboxOperation, SandboxOperationReason
 use sandbox_mock::{MockLifecycleGate, MockSandboxOverrides};
 use tracing::Level;
 use tracing_subscriber::prelude::*;
-use tracing_test_support::CapturedEvents;
+use tracing_test_support::{CapturedEvents, find_captured_event};
 
 #[tokio::test]
 async fn startup_finalization_classifies_cache_failures_and_preserves_healthy_cancelled_cache() {
@@ -147,10 +147,10 @@ async fn startup_finalization_classifies_cache_failures_and_preserves_healthy_ca
         assert_eq!(states.len(), usize::from(failure.is_none()));
 
         let events = captured.entries();
-        let promotion_failure = events.iter().find(|event| {
-            event.fields.get("message").map(String::as_str)
-                == Some("home image publication rejected because guest preparation failed")
-        });
+        let promotion_failure = find_captured_event(
+            &events,
+            "home image publication rejected because guest preparation failed",
+        );
         assert_eq!(promotion_failure.map(|event| event.level), expected_level);
         if let Some(event) = promotion_failure {
             assert_eq!(event.fields.get("run_id"), Some(&run_id.to_string()));
