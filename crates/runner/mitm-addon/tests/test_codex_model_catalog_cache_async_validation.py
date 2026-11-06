@@ -81,10 +81,12 @@ def _dense_catalog_body(label: str) -> bytes:
     ).encode()
     prefix = b'{"models":['
     suffix = b"]}"
-    item_count = (catalog_cache.MAX_ENTRY_BYTES - len(prefix) - len(suffix) + 1) // (len(item) + 1)
+    item_count = (catalog_validation.MAX_ENTRY_BYTES - len(prefix) - len(suffix) + 1) // (
+        len(item) + 1
+    )
     body = prefix + b",".join([item] * item_count) + suffix
-    assert len(body) <= catalog_cache.MAX_ENTRY_BYTES
-    assert len(body) >= catalog_cache.MAX_ENTRY_BYTES * 9 // 10
+    assert len(body) <= catalog_validation.MAX_ENTRY_BYTES
+    assert len(body) >= catalog_validation.MAX_ENTRY_BYTES * 9 // 10
     return body
 
 
@@ -359,7 +361,11 @@ async def test_worker_start_failures_release_queued_snapshots_and_recover(
                 for index in range(catalog_cache.MAX_IN_FLIGHT_REQUESTS + 4):
                     version = f"start-failure-{index}"
                     prefix = b'{"models":[],"padding":"' + version.encode()
-                    body = prefix + b"x" * (catalog_cache.MAX_ENTRY_BYTES - len(prefix) - 2) + b'"}'
+                    body = (
+                        prefix
+                        + b"x" * (catalog_validation.MAX_ENTRY_BYTES - len(prefix) - 2)
+                        + b'"}'
+                    )
                     flow, continuation = await _start_catalog_response(
                         real_flow, version=version, body=body
                     )

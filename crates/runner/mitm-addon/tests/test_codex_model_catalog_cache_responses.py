@@ -8,6 +8,7 @@ from mitmproxy import http
 from mitmproxy.test import tutils
 
 import codex_model_catalog_cache as catalog_cache
+import codex_model_catalog_validation as catalog_validation
 import mitm_addon
 import response_streaming
 from tests.codex_model_catalog_cache_helpers import (
@@ -276,7 +277,9 @@ async def test_set_cookie_is_not_replayed_from_cached_brotli_response(real_flow)
             id="length-mismatch",
         ),
         pytest.param(
-            catalog_response(headers={"Content-Length": str(catalog_cache.MAX_ENTRY_BYTES + 1)}),
+            catalog_response(
+                headers={"Content-Length": str(catalog_validation.MAX_ENTRY_BYTES + 1)}
+            ),
             "response_size",
             id="oversized-declaration",
         ),
@@ -354,7 +357,7 @@ async def test_json_nesting_bound_ignores_structural_characters_inside_strings(r
         ),
         pytest.param(
             brotli.compress(
-                b'{"models":[],"padding":"' + b"x" * catalog_cache.MAX_ENTRY_BYTES + b'"}'
+                b'{"models":[],"padding":"' + b"x" * catalog_validation.MAX_ENTRY_BYTES + b'"}'
             ),
             None,
             "response_size",
@@ -509,7 +512,7 @@ async def test_catalog_response_accepts_long_leading_zero_content_length(real_fl
         ),
         pytest.param(
             "br",
-            {"Content-Length": str(catalog_cache.MAX_ENTRY_BYTES + 1)},
+            {"Content-Length": str(catalog_validation.MAX_ENTRY_BYTES + 1)},
             "response_size",
             "br",
             id="encoded-overflow",
@@ -595,7 +598,7 @@ async def test_complete_decoded_body_bound_is_cached(real_flow):
     prefix = b'{"models":[],"padding":"'
     suffix = b'"}'
     exact_body = (
-        prefix + b"x" * (catalog_cache.MAX_ENTRY_BYTES - len(prefix) - len(suffix)) + suffix
+        prefix + b"x" * (catalog_validation.MAX_ENTRY_BYTES - len(prefix) - len(suffix)) + suffix
     )
     exact = catalog_flow(real_flow, version="exact-cap")
     assert (await install_catalog(exact, body=exact_body, encoding="br"))[

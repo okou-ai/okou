@@ -98,14 +98,13 @@ import codex_model_catalog_validation as catalog_validation
 import content_encoding
 import flow_metadata
 import http_header_syntax
-from codex_model_catalog_validation import MAX_ENTRY_BYTES
 from runtime_url_parsing import split_runtime_url
 from thread_pool import start_thread_pool
 
 FRESH_SECONDS = 60.0
 MAX_ENTRIES = 32
 MAX_TOTAL_BYTES = 16 * 1024 * 1024
-MAX_IN_FLIGHT_REQUESTS = MAX_TOTAL_BYTES // MAX_ENTRY_BYTES
+MAX_IN_FLIGHT_REQUESTS = MAX_TOTAL_BYTES // catalog_validation.MAX_ENTRY_BYTES
 MAX_WAITERS_PER_KEY = MAX_IN_FLIGHT_REQUESTS
 MAX_TOTAL_WAITERS = MAX_IN_FLIGHT_REQUESTS * 2
 MAX_IN_FLIGHT_WAIT_SECONDS = 10.0
@@ -781,7 +780,7 @@ def wrap_response_stream(flow: http.HTTPFlow) -> None:
 
     def capture_and_stream(chunk: bytes) -> bytes | Iterable[bytes]:
         if state.capture is not None and not state.capture_overflow:
-            remaining = MAX_ENTRY_BYTES - len(state.capture)
+            remaining = catalog_validation.MAX_ENTRY_BYTES - len(state.capture)
             if len(chunk) <= remaining:
                 state.capture.extend(chunk)
             else:
