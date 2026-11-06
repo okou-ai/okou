@@ -4429,7 +4429,8 @@ function createImageRetryGraph(
       const operation = set(selected.presentation.replace$, signal);
       const abort = () => {
         if (get(selectedOwner$) === selected.attached.owner) {
-          set(get(links$).retireCurrent$, "target-replaced", false);
+          // Image cancellation cannot supersede an independent tab creation.
+          set(get(links$).retireCurrent$, "target-replaced", false, true);
         }
       };
       signal.addEventListener("abort", abort, { once: true });

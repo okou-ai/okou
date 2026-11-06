@@ -487,6 +487,94 @@ test("Recovery waits for a pending descriptor and selection without reporting it
   expect(viewer.sentry.reports).toHaveLength(0);
 });
 
+async function createDuringImageRecovery(
+  viewer: ReturnType<typeof mockViewer>,
+) {
+  const creation = viewer.browser.holdNextNative("createTab");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await creation.received;
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  const image = viewer.browser.holdTargetFrames("example-page");
+  viewer.advance(1000);
+  await act(async () => {
+    await image.received;
+  });
+  return { creation, image };
+}
+
+test.each(["removed", "moved"] as const)(
+  "A %s image-recovery target preserves an independent pending creation",
+  async (loss) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    const { creation, image } = await createDuringImageRecovery(viewer);
+    act(() => {
+      if (loss === "removed") {
+        viewer.browser.event("Target.targetDestroyed", {
+          targetId: "example-page",
+        });
+      } else {
+        viewer.browser.move("example-page", 202);
+      }
+    });
+    await act(creation.release);
+    act(image.release);
+    await ready("");
+    expect(viewer.browser.targets).toContainEqual(
+      expect.objectContaining({
+        targetId: "created-1",
+        windowId: 101,
+        url: "about:blank",
+      }),
+    );
+    await insertText("independent creation survives");
+    await waitFor(() => {
+      expect(viewer.browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        sessionId: viewer.browser.pageSession("created-1"),
+        params: { text: "independent creation survives" },
+      });
+    });
+    expect(viewer.sentry.reports).toHaveLength(0);
+  },
+);
+
+test("An explicit selection supersedes pending creation during image recovery", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  const { creation, image } = await createDuringImageRecovery(viewer);
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await ready("https://other.example");
+  await act(creation.release);
+  act(image.release);
+  await waitFor(() => {
+    expect(viewer.browser.targets).toHaveLength(3);
+  });
+  await insertText("explicit choice survives");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      sessionId: viewer.browser.pageSession("other"),
+      params: { text: "explicit choice survives" },
+    });
+  });
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await ready("");
+  expect(viewer.browser.targets).toContainEqual(
+    expect.objectContaining({
+      targetId: "created-2",
+      windowId: 101,
+      url: "about:blank",
+    }),
+  );
+  expect(viewer.sentry.reports).toHaveLength(0);
+});
+
 test("Manual retry of a retired failure permits a later independent automatic recovery", async () => {
   const viewer = mockViewer();
   await viewer.start();
