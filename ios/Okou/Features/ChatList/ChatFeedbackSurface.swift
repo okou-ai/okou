@@ -46,7 +46,7 @@ struct ChatFeedbackSurface: View {
   }
 
   private var messageLabel: some View {
-    HStack(alignment: .firstTextBaseline, spacing: OkouSpace.sm) {
+    HStack(alignment: .center, spacing: OkouSpace.sm) {
       Group {
         if isWorking {
           ProgressView().controlSize(.mini).tint(OkouColor.mutedForeground)
