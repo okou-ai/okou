@@ -13,6 +13,7 @@ import { env } from "../../lib/env";
 import { writeDb$ } from "../external/db";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
 import { prepareImmutableCatalogEntries$ } from "./connector-catalog-immutable.service";
+import { prepareConnectorCatalogSkillBundles$ } from "./connector-catalog-skill-bundles.service";
 import {
   connectorCatalogSource,
   type ConnectorCatalogSource,
@@ -68,6 +69,7 @@ const publishPreviewCatalogPointer$ = command(
 // Preview initialization of the complete validated official publication, not
 // a new publication. Entry preparation is the production synchronizer's: it
 // registers bundled skills for, then writes, every entry missing at this hash.
+// Bundle references are prepared before this generation can serve new Runs.
 // The pointer switches only after that whole generation exists. The response
 // describes the validated publication; nothing beyond the pointer hash is
 // stored for it.
@@ -87,6 +89,8 @@ export const seedPreviewConnectorCatalog$ = command(
       { artifact: candidate.artifact, hash },
       signal,
     );
+    signal.throwIfAborted();
+    await set(prepareConnectorCatalogSkillBundles$, hash, signal);
     signal.throwIfAborted();
     await set(
       publishPreviewCatalogPointer$,
