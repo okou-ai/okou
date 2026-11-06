@@ -1,3 +1,6 @@
+#[cfg(unix)]
+mod direct_wait;
+
 use super::KillAndWaitChild;
 use nix::errno::Errno;
 use nix::sys::wait::{WaitPidFlag, waitpid};
