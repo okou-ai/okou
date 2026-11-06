@@ -139,6 +139,9 @@ export async function setupOverflowResources(
     readonly paginated?: boolean;
     readonly withLinks?: boolean;
     readonly mock?: (catalog: readonly ArtifactSummary[]) => void;
+    readonly featureSwitches?: Parameters<
+      typeof setupPage
+    >[0]["featureSwitches"];
   } = {},
 ) {
   const media = context.mocks.browser.matchMedia(true);
@@ -222,6 +225,7 @@ export async function setupOverflowResources(
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: options.featureSwitches,
   });
   const panel = await openResources();
   await within(panel).findByText("report-1.pdf");

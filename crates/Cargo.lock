@@ -7,6 +7,7 @@ name = "ably-subscriber"
 version = "2.0.6"
 dependencies = [
  "base64 0.23.1",
+ "cli-test-support",
  "futures-util",
  "hmac 0.13.0",
  "httpmock",
@@ -1066,6 +1067,7 @@ name = "claude-mock"
 version = "0.22.89"
 dependencies = [
  "api-contracts",
+ "cli-test-support",
  "guest-contracts",
  "libc",
  "serde_json",
@@ -2186,7 +2188,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.29.4"
+version = "0.29.5"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -2220,6 +2222,7 @@ name = "guest-telemetry"
 version = "0.3.187"
 dependencies = [
  "chrono",
+ "cli-test-support",
  "guest-contracts",
  "libc",
  "serde",
@@ -4047,7 +4050,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.28"
+version = "0.244.29"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4121,7 +4124,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.19.21"
+version = "0.19.22"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4169,7 +4172,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.10.31"
+version = "0.10.32"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -4194,7 +4197,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.70"
+version = "0.17.71"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4225,7 +4228,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.4.12"
+version = "0.4.13"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4257,7 +4260,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.16.16"
+version = "0.16.17"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4301,7 +4304,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.19"
+version = "0.31.20"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4402,7 +4405,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.8.34"
+version = "0.8.35"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4446,11 +4449,12 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.21.43"
+version = "0.21.44"
 dependencies = [
  "api-contracts",
  "async-trait",
  "chrono",
+ "cli-test-support",
  "flate2",
  "futures-util",
  "guest-contracts",

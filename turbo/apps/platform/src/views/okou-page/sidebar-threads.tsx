@@ -136,8 +136,6 @@ import { ThreadPinMoveMenuItems } from "./sidebar-thread-reorder.tsx";
 import { ChatThreadMenuShortcut } from "./chat-thread-menu-shortcut.tsx";
 import { equalArrays } from "../../lib/equality.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 
 // The row glyphs draw at 17px, which the shared button base (`[&_svg]:size-4`)
 // would otherwise clamp to 16px. Dimming stays on the individual glyphs so the
@@ -279,13 +277,6 @@ function ChatThreadMuteMenuItem({
   const muted = useGet(signals.muted$);
   const toggleMuted = useSet(signals.toggleMuted$);
   const pageSignal = useGet(pageSignal$);
-  const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
-  // The API keeps suppressing a chat muted before the switch went off, so
-  // unmuting stays available for as long as one exists.
-  if (!enabled && !muted) {
-    return null;
-  }
   const label = muted
     ? t(($) => {
         return $.chat.sidebar.unmute;
@@ -315,11 +306,6 @@ function ChatThreadArchiveMenuSection({
 }: {
   signals: SidebarChatThreadItemSignals;
 }) {
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
-  if (!archiveEnabled) {
-    return null;
-  }
   return (
     <>
       <ChatThreadArchiveMenuItem signals={signals} />
@@ -623,8 +609,6 @@ function ChatThreadItemLink({
   const isHighlighted = useGet(signals.highlighted$);
   const isUnread = useLastResolved(signals.unread$) ?? false;
   const select = useSet(signals.select$);
-  const inlineRenameEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadInlineRename] === true;
   const renaming = useGet(signals.inlineRenaming$);
   const startInlineRename = useSet(signals.startInlineRename$);
   const projectsEnabled = useGet(projectsEnabled$);
@@ -662,18 +646,14 @@ function ChatThreadItemLink({
           e.preventDefault();
         }
       }}
-      onDoubleClick={
-        inlineRenameEnabled
-          ? (e) => {
-              // Modified clicks open tabs or the side pane; renaming on top
-              // of them would act twice for one gesture.
-              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
-                return;
-              }
-              startInlineRename();
-            }
-          : undefined
-      }
+      onDoubleClick={(e) => {
+        // Modified clicks open tabs or the side pane; renaming on top
+        // of them would act twice for one gesture.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+          return;
+        }
+        startInlineRename();
+      }}
       className={`col-span-2 col-start-1 row-start-1 grid grid-cols-subgrid items-center rounded-lg text-left leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${touch ? "h-14 pl-3 text-base" : "h-8 pl-2 text-sm"} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${draggingThread?.id === signals.threadId ? "opacity-40" : ""} ${
         isHighlighted
           ? "bg-state-selected text-sidebar-foreground font-medium"
@@ -1154,8 +1134,6 @@ function ChatThreads({
   listSignals: SidebarChatThreadListSignals;
 }) {
   const { t } = useTranslation();
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
   const rowCount = useGet(listSignals.count$);
@@ -1180,7 +1158,7 @@ function ChatThreads({
         />
       );
     }
-    if (archiveEnabled && archivedOnly) {
+    if (archivedOnly) {
       return (
         <ChatThreadListEmptyState
           message={t(($) => {
@@ -1314,11 +1292,7 @@ function ChatThreadFilterMenuItems() {
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const muteEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
   const selectFilter = useSelectChatThreadFilter();
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
 
   return (
     <>
@@ -1331,13 +1305,9 @@ function ChatThreadFilterMenuItems() {
           size={16}
           className={`mr-2 ${unreadOnly || archivedOnly || mutedOnly ? "invisible" : ""}`}
         />
-        {archiveEnabled
-          ? t(($) => {
-              return $.chat.sidebar.inbox;
-            })
-          : t(($) => {
-              return $.chat.sidebar.allChats;
-            })}
+        {t(($) => {
+          return $.chat.sidebar.inbox;
+        })}
       </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
@@ -1355,33 +1325,29 @@ function ChatThreadFilterMenuItems() {
           shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
         />
       </DropdownMenuItem>
-      {archiveEnabled ? (
-        <DropdownMenuItem
-          onClick={() => {
-            selectFilter("archived");
-          }}
-        >
-          <Check
-            size={16}
-            className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
-          />
-          {t(($) => {
-            return $.chat.sidebar.archived;
-          })}
-        </DropdownMenuItem>
-      ) : null}
-      {muteEnabled ? (
-        <DropdownMenuItem
-          onClick={() => {
-            selectFilter("muted");
-          }}
-        >
-          <Check size={16} className={`mr-2 ${mutedOnly ? "" : "invisible"}`} />
-          {t(($) => {
-            return $.chat.sidebar.muted;
-          })}
-        </DropdownMenuItem>
-      ) : null}
+      <DropdownMenuItem
+        onClick={() => {
+          selectFilter("archived");
+        }}
+      >
+        <Check
+          size={16}
+          className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
+        />
+        {t(($) => {
+          return $.chat.sidebar.archived;
+        })}
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        onClick={() => {
+          selectFilter("muted");
+        }}
+      >
+        <Check size={16} className={`mr-2 ${mutedOnly ? "" : "invisible"}`} />
+        {t(($) => {
+          return $.chat.sidebar.muted;
+        })}
+      </DropdownMenuItem>
     </>
   );
 }
@@ -1431,7 +1397,7 @@ export function ChatThreadsListMenu({
   );
 }
 
-// With archiving on, a non-default filter names itself in the title so the list
+// A non-default filter names itself in the title so the list
 // never looks like the inbox while it shows archived, unread, or muted chats.
 function useChatThreadsFilteredTitleLabel() {
   const { t } = useTranslation();
@@ -1439,8 +1405,6 @@ function useChatThreadsFilteredTitleLabel() {
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const filterLabel = unreadOnly
     ? t(($) => {
         return $.chat.sidebar.unreadOnly;
@@ -1454,7 +1418,7 @@ function useChatThreadsFilteredTitleLabel() {
             return $.chat.sidebar.muted;
           })
         : null;
-  if (!archiveEnabled || filterLabel === null) {
+  if (filterLabel === null) {
     return titleLabel;
   }
   return t(

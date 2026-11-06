@@ -3,6 +3,7 @@
 //! This test lives in its own binary to isolate process env, working directory,
 //! and guest runtime path overrides used during setup.
 
+use cli_test_support::json_fixture::parse_json_lines;
 use guest_agent_tests as common;
 
 use guest_agent::active_input::ActiveInputControlOutcome;
@@ -104,8 +105,5 @@ async fn codex_app_server_backend_ignores_secondary_thread_notifications()
 }
 
 fn read_jsonl(path: &str) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    std::fs::read_to_string(path)?
-        .lines()
-        .map(|line| serde_json::from_str(line).map_err(Into::into))
-        .collect()
+    parse_json_lines(&std::fs::read_to_string(path)?).map_err(Into::into)
 }

@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "Address",
+    "addressOpening": "A page is still opening. Try again shortly.",
+    "addressPreparing": "The browser is not ready. Try again shortly.",
     "allTabs": "All tabs",
     "automatic": "Automatic",
     "back": "Back",
@@ -2007,7 +2009,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "This run couldn't finish",
-      "loadMessages": "Failed to load messages",
       "noModelProviderAction": "Manage subscriptions",
       "noModelProviderPrefix": "No model provider is available for this run. Connect a personal subscription.",
       "providerIncompatibleAction": "Start a new session",
@@ -2083,6 +2084,11 @@
       "sourcePartHeading": "Quoted from {{description}}",
       "sourcePartsHeading_one": "Quoted {{count}} part from {{description}}",
       "sourcePartsHeading_other": "Quoted {{count}} parts from {{description}}"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Start a new chat with this selection",
+      "sent": "New chat created"
     },
     "forward": {
       "action": "Forward",
@@ -2341,7 +2347,6 @@
       "number": "number"
     },
     "sidebar": {
-      "allChats": "All chats",
       "archive": "Archive chat",
       "archived": "Archived",
       "chatsWith": "Chats with {{agentName}}",
@@ -4247,7 +4252,6 @@
     "instructions": "Instructions",
     "loadError": "Couldn’t load your instructions. Try again.",
     "markdown": "Write in plain text or use Markdown",
-    "newChat": "New chat",
     "placeholder": "Tell Okou how you like to work…",
     "reload": "Reload saved instructions",
     "retry": "Retry",

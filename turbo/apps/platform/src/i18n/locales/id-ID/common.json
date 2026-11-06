@@ -1430,6 +1430,8 @@
   },
   "browserViewer": {
     "address": "Alamat",
+    "addressOpening": "Halaman masih dibuka. Coba lagi sebentar lagi.",
+    "addressPreparing": "Browser belum siap. Coba lagi sebentar lagi.",
     "allTabs": "Semua tab",
     "automatic": "Otomatis",
     "back": "Kembali",
@@ -2000,7 +2002,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Proses ini tidak dapat diselesaikan",
-      "loadMessages": "Gagal memuat pesan",
       "noModelProviderAction": "Kelola langganan",
       "noModelProviderPrefix": "Tidak ada penyedia model yang tersedia untuk eksekusi ini. Hubungkan langganan pribadi.",
       "providerIncompatibleAction": "Mulai sesi baru",
@@ -2076,6 +2077,11 @@
       "sourcePartHeading": "Dikutip dari {{description}}",
       "sourcePartsHeading_one": "{{count}} bagian dikutip dari {{description}}",
       "sourcePartsHeading_other": "{{count}} bagian dikutip dari {{description}}"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Mulai obrolan baru dengan pilihan ini",
+      "sent": "Obrolan baru dibuat"
     },
     "forward": {
       "action": "Teruskan",
@@ -2332,7 +2338,6 @@
       "number": "nomor"
     },
     "sidebar": {
-      "allChats": "Semua chat",
       "archive": "Arsipkan chat",
       "archived": "Diarsipkan",
       "chatsWith": "Chat dengan {{agentName}}",
@@ -4233,7 +4238,6 @@
     "instructions": "Instruksi",
     "loadError": "Instruksi tidak dapat dimuat. Coba lagi.",
     "markdown": "Tulis dengan teks biasa atau Markdown",
-    "newChat": "Chat baru",
     "placeholder": "Beri tahu Okou cara kerja yang Anda sukai…",
     "reload": "Muat ulang instruksi tersimpan",
     "retry": "Coba lagi",

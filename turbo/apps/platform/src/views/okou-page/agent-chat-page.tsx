@@ -27,10 +27,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
-import {
-  ChatHomeCompliance,
-  useChatHomeComplianceVisible,
-} from "./chat-home-compliance.tsx";
+import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
 import { SCROLL_FADE_Y_END_SM } from "./scroll-fade.ts";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import {
@@ -481,7 +478,6 @@ export function AgentComposerPage({
   const animateGreeting = useGet(chatGreetingShouldAnimate$);
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
-  const complianceVisible = useChatHomeComplianceVisible();
 
   return (
     <div className="relative flex flex-1 flex-col min-h-0">
@@ -508,7 +504,7 @@ export function AgentComposerPage({
           // On a short window the column scrolls above the compliance row;
           // fade it rather than slicing it flat on the row's edge. Desktop
           // only, because the row is: below `sm` the composer owns that edge.
-          complianceVisible && SCROLL_FADE_Y_END_SM,
+          SCROLL_FADE_Y_END_SM,
         )}
       >
         {/* Below `sm` the composer is the page's footer. Every text tool a

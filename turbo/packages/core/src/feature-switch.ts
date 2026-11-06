@@ -77,13 +77,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.MarketingContentHandoff]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Marketing content handoff",
-    description:
-      "Receive content-addressed Marketing prompts and attachments with server-side access grants.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ConnectorChatAccountAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Chat connector accounts",
@@ -91,13 +84,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Configure Chat connector accounts and shared member connector permissions.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThinkingBrandMotion]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Chat thinking brand motion",
-    description:
-      "Use a textured, breathing brand mark with subtle scaling, sheen, and cycling brand colors in chat thinking states.",
-    enabled: false,
   },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
@@ -200,35 +186,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
-  [FeatureSwitchKey.MarkdownCjkEmphasis]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "CJK Markdown emphasis",
-    description:
-      "Render paired bold and italic markers next to Chinese, Japanese, and Korean punctuation without showing literal asterisks.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatMessagePdf]: {
     maintainer: "ethan@okou.ai",
     displayName: "Message PDF export",
     description:
       "Generate a PDF of an assistant response, then download it with rendered diagrams, formulas, images, and clickable links.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadInlineRename]: {
-    maintainer: "tongx@okou.ai",
-    displayName: "Inline chat rename",
-    description: "Double-click a chat in the sidebar to rename it in place.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatHomeCompliance]: {
-    maintainer: "tongx@okou.ai",
-    displayName: "Chat home compliance",
-    description:
-      "Show the compliance status badges at the bottom of the chat home.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
@@ -323,15 +286,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Show personal subscription usage in the account menu and on Me, and provider credit balances on connected accounts.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.PwaNavigation]: {
     maintainer: "ethan@okou.ai",
     description:
       "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",
@@ -372,20 +333,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Private cross-agent Projects. Enable only after supported readers and API/Runner drain gates.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadArchiving]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Let users archive chats and hide archived chats from the sidebar unless they are unread or explicitly shown.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadMuting]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Mute chats to suppress unread indicators, push notifications and automatic unarchiving.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

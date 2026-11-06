@@ -2,6 +2,7 @@ import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { chatThreadMarkAgentReadContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { click } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
@@ -26,7 +27,11 @@ async function openSidebar() {
   context.mocks.data.userPreferences({
     pinnedAgentIds: [RESEARCH_AGENT_ID],
   });
-  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
   click(screen.getByLabelText("Open menu"));
   await waitFor(() => {
     expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");

@@ -82,21 +82,8 @@ async function connectedAccounts() {
   return { actor, first, second };
 }
 
-test("lists account-owned live credits within the subscription rollout", async () => {
+test("lists account-owned live credits unless the member opts out of the subscription rollout", async () => {
   const { actor, first, second } = await connectedAccounts();
-  const disabled = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers }),
-    [200],
-  );
-  expect(disabled.body.subscriptions).toHaveLength(2);
-  for (const account of disabled.body.subscriptions) {
-    expect(account.planType).toBe("pro");
-    expect(account).not.toHaveProperty("subscriptionCredits");
-  }
-
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
-  });
   const listed = await accept(
     app()(thirdPartySubscriptionsMainContract).list({ headers }),
     [200],
@@ -131,6 +118,19 @@ test("lists account-owned live credits within the subscription rollout", async (
     isActive: true,
     subscriptionCredits: { balance: 0, unlimited: false },
   });
+
+  await updateFeatureSwitchesForUser(context, actor, {
+    [FeatureSwitchKey.SidebarSubscriptionUsage]: false,
+  });
+  const optedOut = await accept(
+    app()(thirdPartySubscriptionsMainContract).list({ headers }),
+    [200],
+  );
+  expect(optedOut.body.subscriptions).toHaveLength(2);
+  for (const account of optedOut.body.subscriptions) {
+    expect(account.planType).toBe("pro");
+    expect(account).not.toHaveProperty("subscriptionCredits");
+  }
 });
 
 test.each([
@@ -146,10 +146,7 @@ test.each([
   },
   { name: "unavailable status", credits: null, expected: null },
 ])("preserves quotas with $name", async ({ credits, expected }) => {
-  const { actor } = await connectedAccounts();
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
-  });
+  await connectedAccounts();
   server.use(
     http.get("https://chatgpt.com/backend-api/wham/usage", () => {
       return HttpResponse.json({

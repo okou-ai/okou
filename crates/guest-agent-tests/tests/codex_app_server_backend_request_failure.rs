@@ -1,5 +1,6 @@
 //! Direct Codex native failure evidence through the real app-server backend.
 
+use cli_test_support::json_fixture::parse_json_lines;
 use guest_agent::masker::SecretMasker;
 use guest_agent_tests as common;
 use guest_contracts::codex_failure::{
@@ -197,10 +198,7 @@ async fn native_request_failure_retains_evidence_and_progress_without_claiming_r
                 };
             assert_eq!(failure.message, expected_message);
             let log = std::fs::read_to_string(runtime.paths.agent_log_file())?;
-            let events = log
-                .lines()
-                .map(serde_json::from_str::<Value>)
-                .collect::<Result<Vec<_>, _>>()?;
+            let events = parse_json_lines(&log)?;
             assert_eq!(
                 events
                     .iter()

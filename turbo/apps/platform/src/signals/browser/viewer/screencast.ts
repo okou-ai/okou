@@ -13,12 +13,17 @@ import { CdpFault } from "../cdp/errors.ts";
 import type { FrameSink } from "../render/canvas.ts";
 import type { Viewport } from "../display/geometry.ts";
 import { sameCaptureSettings, type CaptureSettings } from "./capture.ts";
+import { maximumEncodedFrameLength } from "../display/limits.ts";
 
 interface ScreencastOwner {
   readonly client: CdpClient;
   readonly sessionId: string;
   readonly sink: FrameSink;
-  readonly current$: Computed<boolean>;
+  /** Resource ownership survives a temporary input/presentation admission gate. */
+  readonly alive$: Computed<boolean>;
+  /** Native pictures remain private until current selected membership is proved. */
+  readonly admitted$: Computed<boolean>;
+  readonly waitForAdmission$: Command<Promise<void>, [AbortSignal]>;
   /** starting$ invalidates the previous capture's accepted-paint proof. */
   readonly painted$: Computed<boolean>;
   readonly failed$: Command<unknown, [unknown, AbortSignal]>;
@@ -28,6 +33,13 @@ interface ScreencastOwner {
 type NativeCapture =
   | { readonly kind: "stopped" }
   | { readonly kind: "possible"; readonly epoch: object };
+
+interface CaptureFrame {
+  readonly revision: number;
+  readonly data: string;
+  readonly painted: (raster: Viewport) => void;
+  readonly accept: ((raster: Viewport) => boolean) | undefined;
+}
 
 type CaptureLane = {
   readonly owner: object;
@@ -56,6 +68,13 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
   const halted$ = state(false);
   const accepting$ = state(false);
   const revision$ = state(0);
+  const pendingFrame$ = state<CaptureFrame | null>(null);
+  const presentingFrame$ = state<CaptureFrame | null>(null);
+  const invalidateFrames$ = command(({ get, set }) => {
+    set(revision$, get(revision$) + 1);
+    set(pendingFrame$, null);
+    set(presentingFrame$, null);
+  });
   const desired$ = state(settings);
   const applied$ = state<CaptureSettings | null>(null);
   const native$ = state<NativeCapture>({ kind: "stopped" });
@@ -70,16 +89,16 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
     new Set(),
   );
 
-  const current$ = computed((get) => {
+  const alive$ = computed((get) => {
     return (
       get(ownerActive$) &&
       !get(disposed$) &&
       !get(detachedState$) &&
-      get(owner.current$)
+      get(owner.alive$)
     );
   });
   const acceptingFrames$ = computed((get) => {
-    return get(current$) && !get(halted$) && get(accepting$);
+    return get(alive$) && !get(halted$) && get(accepting$);
   });
   const stopped$ = computed((get) => {
     return get(native$).kind === "stopped";
@@ -92,6 +111,9 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
     halted$,
     accepting$,
     revision$,
+    pendingFrame$,
+    presentingFrame$,
+    invalidateFrames$,
     desired$,
     applied$,
     native$,
@@ -103,7 +125,7 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
     navigationRevision$,
     navigating$,
     navigationListeners$,
-    current$,
+    alive$,
     acceptingFrames$,
     stopped$,
   };
@@ -182,8 +204,8 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
     halted$,
     disposed$,
     accepting$,
-    revision$,
-    current$,
+    invalidateFrames$,
+    alive$,
     native$,
     detachedState$,
     resetFirstFrame$,
@@ -202,7 +224,7 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
     set(halted$, true);
     set(resetFirstFrame$, AbortSignal.abort());
     set(accepting$, false);
-    set(revision$, get(revision$) + 1);
+    set(invalidateFrames$);
     owner.sink.invalidate();
     set(navigationSettled$, false);
   });
@@ -213,7 +235,7 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      if (!get(current$) || get(halted$)) {
+      if (!get(alive$) || get(halted$)) {
         return;
       }
       set(suspend$);
@@ -238,8 +260,13 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
 }
 
 function createCaptureStop(owner: ScreencastOwner, graph: CaptureState) {
-  const { native$, accepting$, revision$, detachedState$, resetFirstFrame$ } =
-    graph;
+  const {
+    native$,
+    accepting$,
+    invalidateFrames$,
+    detachedState$,
+    resetFirstFrame$,
+  } = graph;
   const stopConfirmed$ = command(({ get, set }, native: NativeCapture) => {
     const latest = get(native$);
     if (
@@ -259,7 +286,7 @@ function createCaptureStop(owner: ScreencastOwner, graph: CaptureState) {
       const native = get(native$);
       set(resetFirstFrame$, AbortSignal.abort());
       set(accepting$, false);
-      set(revision$, get(revision$) + 1);
+      set(invalidateFrames$);
       owner.sink.invalidate();
       const [result] = await Promise.allSettled([
         owner.client.request(
@@ -293,14 +320,14 @@ function createCaptureReadiness(
   graph: CaptureState,
   core: CaptureCore,
 ) {
-  const { current$, native$, halted$, resetFirstFrame$ } = graph;
+  const { alive$, native$, halted$, resetFirstFrame$ } = graph;
   return command(({ get, set }, native: NativeCapture) => {
     const signal = set(resetFirstFrame$, owner.client.signal);
     const deadline = monotonicNow() + 30_000;
     setLoop(
       async () => {
         if (
-          !get(current$) ||
+          !get(alive$) ||
           get(native$) !== native ||
           get(halted$) ||
           get(owner.painted$)
@@ -337,7 +364,7 @@ function createCaptureBegin(
 ) {
   const {
     native$,
-    current$,
+    alive$,
     halted$,
     accepting$,
     applied$,
@@ -355,7 +382,7 @@ function createCaptureBegin(
       const identity = {};
       await set(acquireLane$, identity, "cleanup", signal);
       const [result] = await Promise.allSettled(
-        get(native$) === native || !get(current$) || get(halted$)
+        get(native$) === native || !get(alive$) || get(halted$)
           ? [set(stop$, signal)]
           : [],
       );
@@ -376,7 +403,8 @@ function createCaptureBegin(
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      if (!get(current$)) {
+      await set(owner.waitForAdmission$, signal);
+      if (!get(alive$)) {
         return;
       }
       if (get(halted$)) {
@@ -388,7 +416,7 @@ function createCaptureBegin(
       set(native$, native);
       set(owner.starting$, next, signal);
       signal.throwIfAborted();
-      if (!get(current$) || get(halted$)) {
+      if (!get(alive$) || get(halted$)) {
         return;
       }
       const { quality, ...image } = next;
@@ -408,7 +436,7 @@ function createCaptureBegin(
         signal,
       );
       signal.throwIfAborted();
-      if (!get(current$) || get(native$) !== native || get(halted$)) {
+      if (!get(alive$) || get(native$) !== native || get(halted$)) {
         return;
       }
       set(applied$, next);
@@ -417,7 +445,7 @@ function createCaptureBegin(
   );
   const resume$ = command(({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    if (!get(current$) || get(halted$) || get(stopped$)) {
+    if (!get(alive$) || get(halted$) || get(stopped$)) {
       return;
     }
     set(accepting$, true);
@@ -431,7 +459,7 @@ function createCaptureBegin(
 function createCaptureNavigation(graph: CaptureState, core: CaptureCore) {
   const {
     navigating$,
-    current$,
+    alive$,
     navigationListeners$,
     halted$,
     navigationRevision$,
@@ -440,7 +468,7 @@ function createCaptureNavigation(graph: CaptureState, core: CaptureCore) {
   const waitForNavigation$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
       signal.throwIfAborted();
-      if (!get(navigating$).size || !get(current$)) {
+      if (!get(navigating$).size || !get(alive$)) {
         return true;
       }
       const event = createDeferredPromise<boolean>(signal);
@@ -463,7 +491,7 @@ function createCaptureNavigation(graph: CaptureState, core: CaptureCore) {
       if (result.status === "rejected") {
         throw result.reason;
       }
-      return result.value && get(current$) && !get(halted$);
+      return result.value && get(alive$) && !get(halted$);
     },
   );
 
@@ -492,7 +520,7 @@ function createCaptureConfiguration(
     CaptureNavigation,
 ) {
   const {
-    current$,
+    alive$,
     halted$,
     reservation$,
     applied$,
@@ -501,7 +529,7 @@ function createCaptureConfiguration(
     navigationRevision$,
     navigating$,
     accepting$,
-    revision$,
+    invalidateFrames$,
   } = graph;
   const {
     stop$,
@@ -515,7 +543,7 @@ function createCaptureConfiguration(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       signal.throwIfAborted();
       let recoveredNavigation = false;
-      while (get(current$) && !get(halted$) && !get(reservation$)) {
+      while (get(alive$) && !get(halted$) && !get(reservation$)) {
         const previous = get(applied$);
         if (previous && sameCaptureSettings(previous, get(desired$))) {
           return;
@@ -523,7 +551,7 @@ function createCaptureConfiguration(
         if (!get(stopped$)) {
           await set(stop$, signal);
           signal.throwIfAborted();
-          if (!get(current$) || get(halted$)) {
+          if (!get(alive$) || get(halted$)) {
             return;
           }
         }
@@ -545,7 +573,7 @@ function createCaptureConfiguration(
           }
           recoveredNavigation = true;
           set(accepting$, false);
-          set(revision$, get(revision$) + 1);
+          set(invalidateFrames$);
           owner.sink.invalidate();
           if (!(await set(waitForNavigation$, signal))) {
             throw error;
@@ -564,7 +592,7 @@ function createCaptureConfiguration(
         set(releaseLane$, identity);
         signal.throwIfAborted();
       }
-      if (!get(current$) || get(halted$) || get(reservation$)) {
+      if (!get(alive$) || get(halted$) || get(reservation$)) {
         set(releaseLane$, identity);
         return;
       }
@@ -593,17 +621,17 @@ function createCaptureLifecycle(
   const {
     ownerActive$,
     accepting$,
-    revision$,
+    invalidateFrames$,
     disposed$,
     started$,
     desired$,
     navigating$,
   } = graph;
   const { navigationSettled$, reconcile$, quiesce$ } = ports;
-  const abort$ = command(({ get, set }) => {
+  const abort$ = command(({ set }) => {
     set(ownerActive$, false);
     set(accepting$, false);
-    set(revision$, get(revision$) + 1);
+    set(invalidateFrames$);
     set(navigationSettled$, false);
     owner.sink.invalidate();
   });
@@ -653,7 +681,7 @@ function createCaptureLifecycle(
         set(disposed$, true);
         set(ownerActive$, false);
         set(accepting$, false);
-        set(revision$, get(revision$) + 1);
+        set(invalidateFrames$);
         set(navigationSettled$, false);
         set(navigating$, new Set());
         owner.sink.invalidate();
@@ -670,7 +698,7 @@ function createCaptureExclusive(
   graph: CaptureState,
   ports: CaptureLaneCommands & CaptureConfiguration,
 ) {
-  const { current$, halted$, reservation$ } = graph;
+  const { alive$, halted$, reservation$ } = graph;
   const { releaseLane$, acquireLane$, reconcile$ } = ports;
   const runExclusive$ = command(
     async (
@@ -679,7 +707,7 @@ function createCaptureExclusive(
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      if (get(current$) && !get(halted$)) {
+      if (get(alive$) && !get(halted$)) {
         await set(operation$, signal);
         signal.throwIfAborted();
       }
@@ -788,7 +816,7 @@ function createCaptureRetry(
     CaptureExclusive &
     CaptureCleanup,
 ) {
-  const { current$, halted$, applied$, desired$, reservation$ } = graph;
+  const { alive$, halted$, applied$, desired$, reservation$ } = graph;
   const {
     begin$,
     quiesce$,
@@ -807,11 +835,11 @@ function createCaptureRetry(
       signal.throwIfAborted();
       await set(prepare$, signal);
       signal.throwIfAborted();
-      if (!get(current$)) {
+      if (!get(alive$)) {
         return;
       }
       set(starting$);
-      if (!get(current$)) {
+      if (!get(alive$)) {
         return;
       }
       set(halted$, false);
@@ -829,7 +857,7 @@ function createCaptureRetry(
       signal.throwIfAborted();
       await set(quiesce$, signal);
       signal.throwIfAborted();
-      if (!get(current$)) {
+      if (!get(alive$)) {
         return;
       }
       if (get(reservation$)) {
@@ -876,83 +904,128 @@ function createCaptureFrames(
   graph: CaptureState,
   core: CaptureCore,
 ) {
-  const { acceptingFrames$, revision$ } = graph;
+  const { acceptingFrames$, revision$, pendingFrame$, presentingFrame$ } =
+    graph;
   const { fail$ } = core;
+  const owns$ = command(({ get }, revision: number) => {
+    return get(acceptingFrames$) && get(revision$) === revision;
+  });
+  const release$ = command(
+    ({ get, set }, frame: CaptureFrame, discard: boolean) => {
+      if (discard && get(pendingFrame$) === frame) {
+        set(pendingFrame$, null);
+      }
+      if (get(presentingFrame$) === frame) {
+        set(presentingFrame$, null);
+      }
+    },
+  );
   const acceptPaint$ = command(
-    (
-      { get },
-      revision: number,
-      raster: Viewport,
-      accept: ((raster: Viewport) => boolean) | undefined,
-    ) => {
-      return (
-        get(acceptingFrames$) &&
-        get(revision$) === revision &&
-        (accept?.(raster) ?? true)
-      );
+    ({ get, set }, frame: CaptureFrame, raster: Viewport) => {
+      if (!set(owns$, frame.revision)) {
+        return false;
+      }
+      if (!get(owner.admitted$)) {
+        // Keep the original observation, not a decoded image or an authority grant.
+        set(release$, frame, false);
+        return false;
+      }
+      const accepted = frame.accept?.(raster) ?? true;
+      if (!accepted) {
+        set(release$, frame, true);
+      }
+      return accepted;
     },
   );
   const framePainted$ = command(
-    (
-      { get },
-      revision: number,
-      raster: Viewport,
-      painted: (raster: Viewport) => void,
-    ) => {
-      if (!get(acceptingFrames$) || get(revision$) !== revision) {
+    ({ set }, frame: CaptureFrame, raster: Viewport) => {
+      if (!set(owns$, frame.revision)) {
         return;
       }
-      painted(raster);
+      set(release$, frame, true);
+      frame.painted(raster);
     },
   );
   const frameFailed$ = command(
     async (
-      { get, set },
+      { set },
       revision: number,
       error: unknown,
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      if (get(acceptingFrames$) && get(revision$) === revision) {
+      if (set(owns$, revision)) {
         await set(fail$, error, signal);
       }
     },
   );
+  const present$ = command(({ get, set }) => {
+    if (owner.client.signal.aborted || !get(owner.admitted$)) {
+      return;
+    }
+    const frame = get(pendingFrame$);
+    if (!frame || !set(owns$, frame.revision)) {
+      return;
+    }
+    if (get(presentingFrame$) === frame) {
+      return;
+    }
+    set(presentingFrame$, frame);
+    owner.sink.push(
+      frame.data,
+      (raster) => {
+        if (!owner.client.signal.aborted) {
+          set(framePainted$, frame, raster);
+        }
+      },
+      (error) => {
+        detach(
+          set(frameFailed$, frame.revision, error, owner.client.signal),
+          Reason.DomCallback,
+          "browser raster event",
+        );
+      },
+      (raster) => {
+        return !owner.client.signal.aborted && set(acceptPaint$, frame, raster);
+      },
+    );
+  });
   const push$ = command(
     (
       { get, set },
       data: string,
       painted: (raster: Viewport) => void,
       accept: ((raster: Viewport) => boolean) | undefined,
-      signal: AbortSignal,
     ) => {
-      signal.throwIfAborted();
+      owner.client.signal.throwIfAborted();
       if (!get(acceptingFrames$)) {
         return;
       }
-      const revision = get(revision$);
-      owner.sink.push(
+      const frame: CaptureFrame = {
+        revision: get(revision$),
         data,
-        (raster) => {
-          if (!signal.aborted) {
-            set(framePainted$, revision, raster, painted);
-          }
-        },
-        (error) => {
-          detach(
-            set(frameFailed$, revision, error, signal),
-            Reason.DomCallback,
-            "browser raster event",
-          );
-        },
-        (raster) => {
-          return !signal.aborted && set(acceptPaint$, revision, raster, accept);
-        },
-      );
+        painted,
+        accept,
+      };
+      if (data.length > maximumEncodedFrameLength) {
+        detach(
+          set(
+            frameFailed$,
+            frame.revision,
+            new CdpFault("frame", "The browser sent an oversized frame."),
+            owner.client.signal,
+          ),
+          Reason.DomCallback,
+          "browser encoded frame validation",
+        );
+        return;
+      }
+      // One latest resource-owned observation; only present$ may expose it.
+      set(pendingFrame$, frame);
+      set(present$);
     },
   );
-
-  return { push$ };
+  return { push$, present$ };
 }
 
 /** One selected native session; every private graph is composed before execution. */

@@ -19,7 +19,6 @@ import { mockEnv } from "../../../lib/env";
 import { marketingHandoffsRoutes } from "../marketing-handoffs";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 describe("Marketing content handoff", () => {
   const context = testContext();
@@ -41,11 +40,9 @@ describe("Marketing content handoff", () => {
     { bytes: Buffer; type: string; metadata: Record<string, string> }
   >();
 
-  async function enableActor() {
+  function authenticateActor() {
     actor = { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
-    await updateFeatureSwitchesForUser(context, actor, {
-      marketingContentHandoff: true,
-    });
+    mocks.clerk.session(actor.userId, actor.orgId);
     return actor;
   }
 
@@ -85,7 +82,7 @@ describe("Marketing content handoff", () => {
     return cookie.split(";")[0]!;
   }
 
-  beforeEach(async () => {
+  beforeEach(() => {
     taskId = randomUUID();
     intentId = randomUUID();
     mockEnv("APP_URL", "https://app.okou.ai");
@@ -146,7 +143,7 @@ describe("Marketing content handoff", () => {
       }
       throw new Error("Unexpected storage operation");
     });
-    await enableActor();
+    authenticateActor();
   });
 
   it.each([".", ".."])(
@@ -199,7 +196,7 @@ describe("Marketing content handoff", () => {
     const firstManifest = manifest("Short handoff collision 12975700");
     const first = await create(firstManifest);
     const colliding = manifest("Short handoff collision 15460718");
-    await enableActor();
+    authenticateActor();
     const rejected = await api().create({
       body: colliding,
       headers: auth,
@@ -281,7 +278,7 @@ describe("Marketing content handoff", () => {
 
   it("does not grant another user access merely because they know the hash", async () => {
     const created = await create();
-    await enableActor();
+    authenticateActor();
     const result = await api().resolve({
       params: { hash: created.body.shortHash },
       body: {},
@@ -294,7 +291,7 @@ describe("Marketing content handoff", () => {
   it("gives independent grants to two users who submit identical content", async () => {
     const firstActor = actor;
     const first = await create();
-    await enableActor();
+    authenticateActor();
     const second = await create();
     expect(second.body.hash).toBe(first.body.hash);
     mocks.clerk.session(firstActor.userId, firstActor.orgId);
@@ -416,7 +413,7 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(status.body.missing).toStrictEqual([]);
-    await enableActor();
+    authenticateActor();
     const resolved = await accept(
       api().resolve({
         headers: auth,
@@ -439,14 +436,108 @@ describe("Marketing content handoff", () => {
     expect(short.body).toStrictEqual(added);
   });
 
-  it("repairs a full-only public receipt before inventory accepts its short address", async () => {
+  it("reuses verified publications while storage is unavailable and still reports new presets as missing", async () => {
+    const existing = manifest(`Verified preset ${taskId}`);
+    const published = await accept(
+      api().publish({ headers: publisher, body: existing }),
+      [200],
+    );
+    const edited = manifest(`Edited preset ${taskId}`);
+    const editedHash = createHash("sha256")
+      .update(serializeMarketingHandoff(edited))
+      .digest("hex");
+    const privateHandoff = await create();
+    context.mocks.s3.send.mockRejectedValue(new Error("Storage unavailable"));
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const inventory = await accept(
+        api().publishStatus({
+          headers: publisher,
+          body: {
+            hashes: [published.body.hash, editedHash, privateHandoff.body.hash],
+          },
+        }),
+        [200],
+      );
+      expect(inventory.body).toStrictEqual({
+        missing: [editedHash, privateHandoff.body.hash],
+        shortAddressesVerified: true,
+      });
+    }
+    const unchanged = await accept(
+      api().publishBatch({
+        headers: publisher,
+        body: { manifests: [existing] },
+      }),
+      [200],
+    );
+    expect(unchanged.body.hashes).toStrictEqual([published.body.hash]);
+    const failed = await api().publishBatch({
+      headers: publisher,
+      body: { manifests: [edited] },
+    });
+    expect(failed.status).toBe(500);
+    const inventory = await accept(
+      api().publishStatus({
+        headers: publisher,
+        body: { hashes: [published.body.hash, editedHash] },
+      }),
+      [200],
+    );
+    expect(inventory.body.missing).toStrictEqual([editedHash]);
+  });
+
+  it("checks a full inventory batch without storage reads and identifies a single edited preset", async () => {
+    const manifests = Array.from({ length: 500 }, (_, index) => {
+      return manifest(`Inventory preset ${taskId} ${index}`);
+    });
+    const hashes: string[] = [];
+    for (let offset = 0; offset < manifests.length; offset += 100) {
+      const published = await accept(
+        api().publishBatch({
+          headers: publisher,
+          body: { manifests: manifests.slice(offset, offset + 100) },
+        }),
+        [200],
+      );
+      hashes.push(...published.body.hashes);
+    }
+    context.mocks.s3.send.mockRejectedValue(new Error("Storage unavailable"));
+    const unchanged = await accept(
+      api().publishStatus({ headers: publisher, body: { hashes } }),
+      [200],
+    );
+    expect(unchanged.body.missing).toStrictEqual([]);
+    const editedHash = createHash("sha256")
+      .update(serializeMarketingHandoff(manifest(`Edited inventory ${taskId}`)))
+      .digest("hex");
+    const edited = await accept(
+      api().publishStatus({
+        headers: publisher,
+        body: { hashes: [...hashes.slice(1), editedHash] },
+      }),
+      [200],
+    );
+    expect(edited.body.missing).toStrictEqual([editedHash]);
+  });
+
+  it("repairs a full-only publication in a new bucket before inventory accepts its short address", async () => {
     const body = manifest(`Legacy public preset ${taskId}`);
     const published = await accept(
       api().publish({ headers: publisher, body }),
       [200],
     );
-    objects.delete(
-      `test-marketing-handoffs/manifest/${published.body.shortHash}.json`,
+    mockEnv(
+      "R2_MARKETING_HANDOFF_BUCKET_NAME",
+      "replacement-marketing-handoffs",
+    );
+    objects.set(
+      `replacement-marketing-handoffs/manifest/${published.body.hash}.json`,
+      {
+        bytes: Buffer.from(serializeMarketingHandoff(body)),
+        type: "application/json",
+        metadata: {},
+      },
     );
     const inventory = () => {
       return accept(
@@ -466,7 +557,7 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect((await inventory()).body.missing).toStrictEqual([]);
-    await enableActor();
+    authenticateActor();
     const resolved = await accept(
       api().resolve({
         headers: auth,
@@ -477,6 +568,61 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(resolved.body).toStrictEqual(body);
+  });
+
+  it("does not reuse a publication proof after the R2 account changes", async () => {
+    const published = await accept(
+      api().publish({ headers: publisher, body: manifest() }),
+      [200],
+    );
+    mockEnv("R2_ACCOUNT_ID", "replacement-account");
+    context.mocks.s3.send.mockRejectedValue(new Error("Storage unavailable"));
+    const inventory = await api().publishStatus({
+      headers: publisher,
+      body: { hashes: [published.body.hash] },
+    });
+    expect(inventory.status).toBe(500);
+  });
+
+  it("verifies an unrecorded bucket once and reuses the complete immutable binding", async () => {
+    const body = manifest(`Moved public preset ${taskId}`);
+    const published = await accept(
+      api().publish({ headers: publisher, body }),
+      [200],
+    );
+    mockEnv(
+      "R2_MARKETING_HANDOFF_BUCKET_NAME",
+      "replacement-marketing-handoffs",
+    );
+    const object = {
+      bytes: Buffer.from(serializeMarketingHandoff(body)),
+      type: "application/json",
+      metadata: {},
+    };
+    objects.set(
+      `replacement-marketing-handoffs/manifest/${published.body.shortHash}.json`,
+      object,
+    );
+    const inventory = () => {
+      return accept(
+        api().publishStatus({
+          headers: publisher,
+          body: { hashes: [published.body.hash] },
+        }),
+        [200],
+      );
+    };
+    // An alias alone must not certify a missing full-digest manifest.
+    expect((await inventory()).body.missing).toStrictEqual([
+      published.body.hash,
+    ]);
+    objects.set(
+      `replacement-marketing-handoffs/manifest/${published.body.hash}.json`,
+      object,
+    );
+    expect((await inventory()).body.missing).toStrictEqual([]);
+    context.mocks.s3.send.mockRejectedValue(new Error("Storage unavailable"));
+    expect((await inventory()).body.missing).toStrictEqual([]);
   });
 
   it("rejects a colliding batch without granting access to any unpublished manifest", async () => {
@@ -500,7 +646,7 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(inventory.body.missing).toStrictEqual(hashes);
-    await enableActor();
+    authenticateActor();
     for (const hash of [...hashes, hashes[0]!.slice(0, 12)]) {
       expect(
         (
@@ -542,7 +688,7 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(status.body.missing).toStrictEqual([hash]);
-    await enableActor();
+    authenticateActor();
     expect(
       (
         await api().resolve({
@@ -607,7 +753,7 @@ describe("Marketing content handoff", () => {
       api().publishBatch({ headers: publisher, body: { manifests: [body] } }),
       [200],
     );
-    await enableActor();
+    authenticateActor();
     const resolved = await accept(
       api().resolve({
         headers: auth,
@@ -697,7 +843,7 @@ describe("Marketing content handoff", () => {
         })
       ).status,
     ).toBe(200);
-    await enableActor();
+    authenticateActor();
     expect(
       (
         await api().resolve({
@@ -735,7 +881,7 @@ describe("Marketing content handoff", () => {
         })
       ).status,
     ).toBe(200);
-    await enableActor();
+    authenticateActor();
     expect(
       (
         await api().resolve({
@@ -768,7 +914,7 @@ describe("Marketing content handoff", () => {
     const firstActor = actor;
     const cookie = await guestCookie();
     const created = await create(manifest(), cookie, false);
-    const secondActor = await enableActor();
+    const secondActor = authenticateActor();
     context.mocks.clerk.authenticateRequest.mockImplementation(
       (request: unknown) => {
         if (!(request instanceof Request)) {
@@ -862,7 +1008,7 @@ describe("Marketing content handoff", () => {
       }),
       [200],
     );
-    await enableActor();
+    authenticateActor();
     expect(
       (
         await api().create({
@@ -925,7 +1071,7 @@ describe("Marketing content handoff", () => {
       (await fileClient.fileUrl({ query: { file_id: file.id }, headers: auth }))
         .status,
     ).toBe(200);
-    await enableActor();
+    authenticateActor();
     expect(
       (await fileClient.fileUrl({ query: { file_id: file.id }, headers: auth }))
         .status,
@@ -956,41 +1102,7 @@ describe("Marketing content handoff", () => {
     ).toBe(400);
   });
 
-  it("honors the server switch on reads and writes", async () => {
-    const created = await create();
-    await updateFeatureSwitchesForUser(context, actor, {
-      marketingContentHandoff: false,
-    });
-    expect(
-      (
-        await accept(
-          api().config({ headers: auth, extraHeaders: { origin } }),
-          [200],
-        )
-      ).body.enabled,
-    ).toBeFalsy();
-    expect(
-      (
-        await api().create({
-          body: manifest(),
-          headers: auth,
-          extraHeaders: { origin },
-        })
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await api().resolve({
-          params: created.body,
-          body: {},
-          headers: auth,
-          extraHeaders: { origin },
-        })
-      ).status,
-    ).toBe(403);
-  });
-
-  it("rejects requests from another origin even when the user is enabled", async () => {
+  it("rejects requests from another origin even when the user is authenticated", async () => {
     expect(
       (
         await api().create({

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.4...guest-storage-apply-v0.29.5) (2026-11-06)
+
+
+### Bug Fixes
+
+* **guest-storage-apply:** redact manifest parse diagnostics ([#45673](https://github.com/okou-ai/okou/issues/45673)) ([33ff6b2](https://github.com/okou-ai/okou/commit/33ff6b28fc344e42a6c055c73801e047225b9493))
+
 ## [0.29.4](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.3...guest-storage-apply-v0.29.4) (2026-11-05)
 
 

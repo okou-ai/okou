@@ -29,6 +29,7 @@ import {
   chatThreadsContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click, fill } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import { emptySearchImg } from "../platform-assets.ts";
@@ -200,6 +201,7 @@ test("Show unread agents and contextual actions in the pinned section", async ()
     context,
     path: `/agents/${AGENT_ID}/chat`,
     sharedWorkerTestTransport: "message-port",
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
   click(screen.getByLabelText("Open menu"));
 

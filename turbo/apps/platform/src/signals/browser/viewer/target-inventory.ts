@@ -7,7 +7,8 @@ const inventoryBudgetBytes = 16 * 1024 * 1024;
 
 interface Membership {
   readonly order: number;
-  readonly member: boolean;
+  /** A failed background read is unavailable, not proof of foreign membership. */
+  readonly member: boolean | null;
 }
 
 interface InventoryEntry {
@@ -63,7 +64,7 @@ export type InventoryEvent =
   | {
       readonly type: "membership";
       readonly observation: TargetObservation;
-      readonly member: boolean;
+      readonly member: boolean | null;
     }
   | {
       readonly type: "created";

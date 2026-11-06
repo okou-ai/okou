@@ -3,7 +3,6 @@ import {
   marketingHandoffsContract,
   type MarketingHandoffManifest,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
-import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { onboardingCompleteContract } from "@okouai/api-contracts/contracts/onboarding";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import {
@@ -38,18 +37,6 @@ const context = testContext();
 
 const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const DESIGN_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
-
-function enableMarketingHandoff() {
-  context.mocks.api(marketingHandoffsContract.session, ({ respond }) => {
-    return respond(200, { ready: true });
-  });
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, {
-      switches: { marketingContentHandoff: true },
-      effectiveSwitches: { marketingContentHandoff: true },
-    });
-  });
-}
 
 interface PromptLaunchCapture {
   readonly createdThreads: {
@@ -477,7 +464,6 @@ test("An unavailable model leaves a prompt link recoverable", async () => {
 test.each([12, 64])(
   "An onboarded visitor starts the received task using a %i-character hash",
   async (length) => {
-    enableMarketingHandoff();
     const received: MarketingHandoffManifest = {
       version: 1,
       prompt: "Summarize the customer feedback",
@@ -504,7 +490,6 @@ test.each([12, 64])(
 test.each([true, false])(
   "A received task can be edited during onboarding without putting its text back in a URL (admin: %s)",
   async (isAdmin) => {
-    enableMarketingHandoff();
     context.mocks.data.onboardingStatus({
       needsOnboarding: true,
       onboardingComplete: !isAdmin,
@@ -558,7 +543,6 @@ test.each([true, false])(
 );
 
 test("A file-only hash handoff sends its imported private attachment", async () => {
-  enableMarketingHandoff();
   const file = {
     id: "bc3125d1-dc3f-4422-955c-f69f1d077608",
     filename: "notes.txt",
@@ -600,7 +584,6 @@ test("A file-only hash handoff sends its imported private attachment", async () 
 });
 
 test("An edited hash is retained while onboarding completion is still pending", async () => {
-  enableMarketingHandoff();
   context.mocks.data.onboardingStatus({
     needsOnboarding: true,
     onboardingComplete: false,

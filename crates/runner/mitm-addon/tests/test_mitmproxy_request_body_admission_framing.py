@@ -278,6 +278,7 @@ async def test_http1_rejected_content_length_skips_addon_body_work(
         flow = request_headers_hook.flow
         assert flow.error is not None
         original_error = flow.error
+        original_error_msg = original_error.msg
 
         previous_profile = sys.getprofile()
         sys.setprofile(observe_header_work)
@@ -332,12 +333,19 @@ async def test_http1_rejected_content_length_skips_addon_body_work(
     assert flow.metadata[metadata_keys.SANDBOX_RUN_ID] == "run-conn-1"
     [network_entry] = read_jsonl_entries_after_flush(tmp_path / "net.jsonl")
     assert network_entry["status"] == 0
-    assert network_entry["error"] == original_error.msg
+    assert flow.error.msg == original_error_msg
+    expected_log_error = (
+        f"[connection error omitted: {len(original_error_msg)} characters]"
+        if len(original_error_msg) > 4096
+        else original_error_msg
+    )
+    assert network_entry["error"] == expected_log_error
     assert network_entry["url"] == f"https://{host}/"
     assert network_entry["host"] == host
     [proxy_entry] = read_jsonl_entries_after_flush(tmp_path / "proxy.jsonl")
     assert proxy_entry["type"] == "connection_error"
-    assert proxy_entry["error"] == original_error.msg
+    assert proxy_entry["error"] == expected_log_error
+    assert proxy_entry["message"] == f"Error: {expected_log_error}: https://{host}/"
 
 
 @pytest.mark.parametrize("action_rule", [False, True], ids=["path-rule", "action-rule"])

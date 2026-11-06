@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "पता",
+    "addressOpening": "एक पेज अभी खुल रहा है। थोड़ी देर बाद फिर कोशिश करें।",
+    "addressPreparing": "ब्राउज़र अभी तैयार नहीं है। थोड़ी देर बाद फिर कोशिश करें।",
     "allTabs": "सभी टैब",
     "automatic": "अपने आप",
     "back": "पीछे",
@@ -2007,7 +2009,6 @@
     "documentTitle": "चैट",
     "errors": {
       "genericTitle": "यह रन पूरा नहीं हो सका",
-      "loadMessages": "संदेश लोड करने में विफल",
       "noModelProviderAction": "सब्सक्रिप्शन प्रबंधित करें",
       "noModelProviderPrefix": "इस रन के लिए कोई मॉडल प्रोवाइडर उपलब्ध नहीं है। कोई व्यक्तिगत सब्सक्रिप्शन कनेक्ट करें।",
       "providerIncompatibleAction": "नया सत्र प्रारंभ करें",
@@ -2083,6 +2084,11 @@
       "sourcePartHeading": "{{description}} से उद्धृत",
       "sourcePartsHeading_one": "{{description}} से {{count}} भाग उद्धृत",
       "sourcePartsHeading_other": "{{description}} से {{count}} भाग उद्धृत"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "चुने गए हिस्से से नई चैट शुरू करें",
+      "sent": "नई चैट बनाई गई"
     },
     "forward": {
       "action": "फ़ॉरवर्ड करें",
@@ -2341,7 +2347,6 @@
       "number": "संख्या"
     },
     "sidebar": {
-      "allChats": "सभी चैट",
       "archive": "चैट आर्काइव करें",
       "archived": "आर्काइव की गई",
       "chatsWith": "{{agentName}} के साथ चैट",
@@ -4249,7 +4254,6 @@
     "instructions": "निर्देश",
     "loadError": "आपके निर्देश लोड नहीं हो सके। फिर कोशिश करें।",
     "markdown": "सादे टेक्स्ट या Markdown में लिखें",
-    "newChat": "नई चैट",
     "placeholder": "Okou को बताएँ कि आप कैसे काम करना पसंद करते हैं…",
     "reload": "सहेजे गए निर्देश फिर लोड करें",
     "retry": "फिर कोशिश करें",

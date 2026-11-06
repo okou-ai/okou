@@ -1430,6 +1430,8 @@
   },
   "browserViewer": {
     "address": "地址",
+    "addressOpening": "页面仍在打开，请稍后重试。",
+    "addressPreparing": "浏览器尚未就绪，请稍后重试。",
     "allTabs": "所有标签页",
     "automatic": "自动",
     "back": "后退",
@@ -2000,7 +2002,6 @@
     "documentTitle": "聊天",
     "errors": {
       "genericTitle": "这次运行没能完成",
-      "loadMessages": "消息加载失败",
       "noModelProviderAction": "管理订阅",
       "noModelProviderPrefix": "此次运行没有可用的模型提供方。请连接个人订阅。",
       "providerIncompatibleAction": "开始新会话",
@@ -2076,6 +2077,11 @@
       "sourcePartHeading": "引用自{{description}}",
       "sourcePartsHeading_one": "从{{description}}引用了 {{count}} 段内容",
       "sourcePartsHeading_other": "从{{description}}引用了 {{count}} 段内容"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "以选中内容创建新聊天",
+      "sent": "已创建新聊天"
     },
     "forward": {
       "action": "转发",
@@ -2332,7 +2338,6 @@
       "number": "数字"
     },
     "sidebar": {
-      "allChats": "全部聊天",
       "archive": "归档聊天",
       "archived": "已归档",
       "chatsWith": "与{{agentName}}的聊天",
@@ -4233,7 +4238,6 @@
     "instructions": "指令",
     "loadError": "无法加载指令，请重试。",
     "markdown": "支持纯文本和 Markdown",
-    "newChat": "新聊天",
     "placeholder": "告诉 Okou 你喜欢怎样工作…",
     "reload": "重新加载已保存的指令",
     "retry": "重试",

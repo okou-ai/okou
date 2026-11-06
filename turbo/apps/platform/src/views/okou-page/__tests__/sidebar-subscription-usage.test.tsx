@@ -48,6 +48,7 @@ test("Hide subscription usage when the account-menu feature is off", async () =>
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: false },
     auth: {
       user: {
         id: "test-user-123",

@@ -1455,6 +1455,8 @@
   },
   "browserViewer": {
     "address": "Indirizzo",
+    "addressOpening": "Una pagina è ancora in apertura. Riprova tra poco.",
+    "addressPreparing": "Il browser non è ancora pronto. Riprova tra poco.",
     "allTabs": "Tutte le schede",
     "automatic": "Automatica",
     "back": "Indietro",
@@ -2038,7 +2040,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Non è stato possibile completare questa esecuzione",
-      "loadMessages": "Impossibile caricare i messaggi",
       "noModelProviderAction": "Gestisci abbonamenti",
       "noModelProviderPrefix": "Nessun provider di modelli è disponibile per questa esecuzione. Collega un abbonamento personale.",
       "providerIncompatibleAction": "Inizia una nuova sessione",
@@ -2117,6 +2118,11 @@
       "sourcePartsHeading_one": "{{count}} parte citata da {{description}}",
       "sourcePartsHeading_many": "{{count}} parti citate da {{description}}",
       "sourcePartsHeading_other": "{{count}} parti citate da {{description}}"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Avvia una nuova chat con questa selezione",
+      "sent": "Nuova chat creata"
     },
     "forward": {
       "action": "Inoltra",
@@ -2385,7 +2391,6 @@
       "number": "numero"
     },
     "sidebar": {
-      "allChats": "Tutte le chat",
       "archive": "Archivia chat",
       "archived": "Archiviate",
       "chatsWith": "Chatta con {{agentName}}",
@@ -4304,7 +4309,6 @@
     "instructions": "Istruzioni",
     "loadError": "Impossibile caricare le istruzioni. Riprova.",
     "markdown": "Scrivi in testo semplice o Markdown",
-    "newChat": "Nuova chat",
     "placeholder": "Spiega a Okou come preferisci lavorare…",
     "reload": "Ricarica le istruzioni salvate",
     "retry": "Riprova",

@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { buttonNamed } from "./chat-navigation-artifact-test-helpers.ts";
 
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -98,7 +99,9 @@ test("Return focus to the resource trigger when Escape dismisses its content", a
 });
 
 test("Preserve category expansion controls after switching to mobile", async () => {
-  const { panel, media } = await setupOverflowResources(4);
+  const { panel, media } = await setupOverflowResources(4, {
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
   await userEvent.click(
     buttonNamed(
       "Show more",

@@ -120,6 +120,7 @@ from logging_utils import (
     elapsed_ms,
     log_http_network_entry,
     log_proxy_entry,
+    project_connection_error_for_log,
     project_url_for_proxy_log,
     shutdown_log_writer,
 )
@@ -2516,7 +2517,7 @@ def _finish_error_handling(flow: http.HTTPFlow, *, latency_ms: int) -> None:
     original_url = flow.metadata[metadata_keys.ORIGINAL_URL]
     firewall_action = flow_metadata.firewall_action(flow.metadata)
     request_size = _request_size(flow)
-    error_msg = flow.error.msg if flow.error else "unknown error"
+    error_msg = project_connection_error_for_log(flow.error.msg if flow.error else "unknown error")
 
     if network_log_path:
         # [NETWORK_LOG_FIELDS] — HTTP error fields; api-contracts is the shared schema boundary.

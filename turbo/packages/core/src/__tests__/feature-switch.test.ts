@@ -20,7 +20,6 @@ describe("FeatureSwitchKey", () => {
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.CodexExecution).toBe("_codexExecution");
-    expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
     expect(FeatureSwitchKey.BrowserNativeInput).toBe("browserNativeInput");
   });
 });
@@ -42,22 +41,23 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it("defaults CJK emphasis on for everyone and honors explicit overrides", () => {
-    const key = FeatureSwitchKey.MarkdownCjkEmphasis;
+  it.each([
+    FeatureSwitchKey.ChatMessagePdf,
+    FeatureSwitchKey.PwaNavigation,
+    FeatureSwitchKey.SidebarSubscriptionUsage,
+  ])("releases %s to everyone and honors explicit opt-outs", (key) => {
     const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
     for (const [context, enabled] of [
       [{}, true],
-      [{ userId: "external-user" }, true],
-      [{ orgId: "external-org" }, true],
       [{ userId: "external-user", orgId: "external-org" }, true],
       [staff, true],
-      [{ ...staff, overrides: { [key]: false } }, false],
       [{ orgId: "external-org", overrides: { [key]: false } }, false],
-      [{ orgId: "external-org", overrides: { [key]: true } }, true],
+      [{ ...staff, overrides: { [key]: false } }, false],
     ] as const) {
       expect(isFeatureEnabled(key, context)).toBe(enabled);
       expect(getAllFeatureStates(context)[key]).toBe(enabled);
     }
+    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
   });
 
   it.each([FeatureSwitchKey.ConnectorChatAccountAccess])(
@@ -170,30 +170,6 @@ describe("isFeatureEnabled", () => {
     });
   });
 
-  it("enables chat thread archiving for staff and honors explicit overrides", () => {
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, context),
-      ).toBe(false);
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-          ...context,
-          overrides: { [FeatureSwitchKey.ChatThreadArchiving]: true },
-        }),
-      ).toBe(true);
-    }
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, staffContext),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: false },
-      }),
-    ).toBe(false);
-  });
-
   it("should return true for globally enabled switch", () => {
     expect(isFeatureEnabled(FeatureSwitchKey.Dummy, {})).toBe(true);
   });
@@ -301,7 +277,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
@@ -403,7 +378,7 @@ describe("getFeatureSwitchMetadata", () => {
       "alpha",
     );
     expect(
-      metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
+      metadata[FeatureSwitchKey.ConnectorChatAccountAccess].rolloutStage,
     ).toBe("beta");
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
   });

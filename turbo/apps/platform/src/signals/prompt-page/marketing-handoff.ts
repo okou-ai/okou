@@ -1,19 +1,14 @@
 import { command, computed, state } from "ccstate";
 import { marketingHandoffsContract } from "@okouai/api-contracts/client/marketing-handoffs";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { MarketingHandoffManifest } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$, clerkUser$ } from "../auth.ts";
 import { object, string, uuid } from "zod";
 import { jsonParseOr } from "../utils.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { searchParams$ } from "../route.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import { createDraftSignals } from "../okou-page/chat-draft.ts";
-import { logger } from "../log.ts";
-
-const L = logger("MarketingHandoff");
 
 // A new user may receive a task before their organization has been provisioned.
 const settledHandoffUser$ = state<{
@@ -78,26 +73,6 @@ export const marketingHandoff$ = computed((get) => {
     : null;
 });
 
-/** Enroll an enabled App session so Marketing can resolve staff rollout without loading Clerk. */
-export const enrollMarketingHandoffSession$ = command(
-  async ({ get }, signal: AbortSignal) => {
-    // A preceding or rollback API can still rate limit optional enrollment.
-    // Remove 429 after those APIs are neither serving nor retained for rollback (#45568).
-    const response = await accept(
-      get(apiClient$)(marketingHandoffsContract).session({
-        body: {},
-        fetchOptions: { signal, credentials: "include" },
-      }),
-      [200, 403, 429, 503],
-    );
-    signal.throwIfAborted();
-    if (response.status === 429) {
-      L.warn("Session enrollment was rate limited; continuing App startup");
-    }
-    return response.status === 200;
-  },
-);
-
 /** Resolve only after auth bootstrap; credentials carry the API's host-only guest cookie. */
 export const loadMarketingHandoff$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -114,11 +89,6 @@ export const loadMarketingHandoff$ = command(
     }
     set(settledHandoffUser$, { snapshot, userId: user.id });
     const owner = get(handoffOwner$);
-    const features = await get(featureSwitch$);
-    signal.throwIfAborted();
-    if (!features[FeatureSwitchKey.MarketingContentHandoff]) {
-      throw new Error("Marketing content handoff is not enabled");
-    }
     const client = get(apiClient$)(marketingHandoffsContract);
     const resolved = await accept(
       client.resolve({

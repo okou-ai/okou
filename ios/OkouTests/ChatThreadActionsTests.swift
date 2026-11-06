@@ -153,18 +153,14 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(store.selectedConversation?.thread.title, "Confirmed elsewhere")
   }
 
-  func testUnmuteMarksReadBeforeExposingPastRepliesAndAllowsSwitchOffRecovery() async throws {
+  func testUnmuteMarksReadBeforeExposingPastRepliesAndRetriesFailures() async throws {
     let fixture = ThreadActionsFixture(muted: true)
     let store = fixture.workspace()
     defer { store.close() }
     await store.refreshNavigation()
     await store.refresh()
     XCTAssertFalse(try XCTUnwrap(store.list.threads.first).isUnread)
-    fixture.state.value.withLock {
-      $0.mutingEnabled = false
-      $0.failNext["mark-read"] = 503
-    }
-    await store.refreshNavigation()
+    fixture.state.value.withLock { $0.failNext["mark-read"] = 503 }
     XCTAssertTrue(store.list.canMute(ThreadActionsFixture.thread))
     await store.setMuted(ThreadActionsFixture.thread, muted: false)
     XCTAssertEqual(fixture.writes.map(\.action), ["mark-read"])
@@ -177,8 +173,7 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertFalse(thread.isMuted)
     XCTAssertFalse(thread.isUnread)
     XCTAssertFalse(store.list.unreadAgentIDs.contains(ThreadActionsFixture.agent))
-    XCTAssertNil(store.threadFeedback?.actionTitle)
-    XCTAssertFalse(store.list.canMute(ThreadActionsFixture.thread))
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Undo")
 
     // A new reply after unmuting can become unread normally.
     fixture.state.value.withLock { $0.unread = true }
@@ -387,7 +382,6 @@ private final class ThreadActionsFixture: Sendable {
     var muted = false
     var unread = true
     var title = "Planning a useful week"
-    var mutingEnabled = true
     var failNext: [String: Int] = [:]
     var nextGate: ThreadActionGate?
     var nextWriteRequested: (@Sendable () -> Void)?
@@ -537,10 +531,7 @@ private final class ThreadActionsFixture: Sendable {
         )
       case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
       case "/api/feature-switches":
-        return ChatHTTPResponse(
-          body:
-            "{\"effectiveSwitches\":{\"chatThreadArchiving\":true,\"chatThreadMuting\":\(state.value.withLock { $0.mutingEnabled })}}"
-        )
+        return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot":
         return ChatHTTPResponse(
           body:

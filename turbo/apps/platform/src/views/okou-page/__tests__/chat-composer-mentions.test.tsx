@@ -224,7 +224,6 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
     context,
     path: `/chats/${current.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   await waitFor(() => {
@@ -285,6 +284,7 @@ async function openAgentMentionWorkspace(newChat = false, singleAgent = false) {
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.SingleAgent]: singleAgent,
+      [FeatureSwitchKey.PwaNavigation]: false,
     },
   });
   return { current, savedMentionThread, workspace };

@@ -1,0 +1,2 @@
+ALTER TABLE "marketing_content_grants" ADD COLUMN "verified_manifest_bucket" text;--> statement-breakpoint
+ALTER TABLE "marketing_content_grants" ADD CONSTRAINT "marketing_content_grant_manifest_bucket" CHECK ("marketing_content_grants"."verified_manifest_bucket" IS NULL OR ("marketing_content_grants"."resource_type" = 'manifest' AND length("marketing_content_grants"."verified_manifest_bucket") > 0));

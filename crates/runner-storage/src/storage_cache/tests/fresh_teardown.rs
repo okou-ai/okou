@@ -27,6 +27,7 @@ async fn dropped_delivery_keeps_publication_joined_by_runner_shutdown() {
         phase_records: FreshArchivePhaseRecords::default(),
         classification: JoinSet::new(),
         groups: None,
+        owned_keys: HashSet::new(),
         apply: Vec::new(),
         fetches: JoinSet::new(),
         publications: JoinSet::new(),

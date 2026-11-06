@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadArchiveContract,
   chatThreadMuteContract,
@@ -11,7 +12,6 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -29,8 +29,7 @@ const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 async function setupHeaderPage(
   threadEvents: readonly ChatThreadEvent[] = [],
-  archiveEnabled = true,
-  mutingEnabled = false,
+  options: { readonly pwaNavigation?: boolean } = {},
 ) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -71,10 +70,10 @@ async function setupHeaderPage(
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled,
-      [FeatureSwitchKey.ChatThreadMuting]: mutingEnabled,
-    },
+    featureSwitches:
+      options.pwaNavigation === undefined
+        ? undefined
+        : { [FeatureSwitchKey.PwaNavigation]: options.pwaNavigation },
   });
   await screen.findByText("Review the header layout");
   await waitFor(() => {
@@ -171,7 +170,7 @@ test("Keep menu pin changes responsive across resize and save", async () => {
       return respond(204);
     },
   );
-  await setupHeaderPage(events);
+  await setupHeaderPage(events, { pwaNavigation: false });
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));
@@ -230,7 +229,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
       ],
     });
   });
-  await setupHeaderPage();
+  await setupHeaderPage([], { pwaNavigation: false });
   await waitFor(() => {
     expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
   });
@@ -256,6 +255,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   expect(menuItemNames()).toStrictEqual([
     "Pin chat",
     "Rename chat",
+    "Mute chat",
     "Archive chat",
     "Automations",
     "Open browser",
@@ -420,7 +420,7 @@ test("Mute from the mobile header and unmute from the desktop header", async () 
   const viewport = context.mocks.browser.matchMedia(false);
   const events: ChatThreadEvent[] = [];
   mockMuteRequests(events);
-  await setupHeaderPage(events, true, true);
+  await setupHeaderPage(events);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
@@ -472,19 +472,6 @@ test("Show the archive API error after leaving the thread", async () => {
   expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
 });
 
-test("Hide header archiving when the archive switch is off", async () => {
-  context.mocks.browser.matchMedia(false);
-  await setupHeaderPage([], false);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  expect(menuItemNames()).toStrictEqual([
-    "Pin chat",
-    "Rename chat",
-    "Automations",
-    "Open browser",
-  ]);
-});
-
 test("Unarchive from the mobile header and stay in the current thread", async () => {
   context.mocks.browser.matchMedia(false);
   const unarchiveResponse = context.mocks.deferred<void>();
@@ -511,6 +498,7 @@ test("Unarchive from the mobile header and stay in the current thread", async ()
   expect(menuItemNames()).toStrictEqual([
     "Pin chat",
     "Rename chat",
+    "Mute chat",
     "Unarchive chat",
     "Automations",
     "Open browser",
@@ -587,6 +575,7 @@ test("Open linked automations from the mobile menu", async () => {
     expect(menuItemNames()).toStrictEqual([
       "Pin chat",
       "Rename chat",
+      "Mute chat",
       "Archive chat",
       "Automations",
       "Open browser",
@@ -644,7 +633,7 @@ test("Continue saving the next pin change after an earlier request fails", async
   context.mocks.api(chatThreadUnpinContract.unpin, ({ respond }) => {
     return respond(500, { error: { message: "Unpin request failed" } });
   });
-  await setupHeaderPage();
+  await setupHeaderPage([], { pwaNavigation: false });
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));

@@ -120,7 +120,7 @@ final class ChatCacheTests: XCTestCase {
     let navigation = try JSONDecoder().decode(
       SidebarNavigationSnapshot.self,
       from: Data(
-        #"{"agents":[{"agentId":"agent-a","isDefaultAgent":true,"displayName":"Assistant"}],"preferences":{"pinnedAgentIds":["agent-a"]},"featureSwitches":{"effectiveSwitches":{"chatThreadArchiving":true}}}"#
+        #"{"agents":[{"agentId":"agent-a","isDefaultAgent":true,"displayName":"Assistant"}],"preferences":{"pinnedAgentIds":["agent-a"]},"featureSwitches":{"effectiveSwitches":{"singleAgent":true}}}"#
           .utf8))
     try await reopened.saveNavigation(navigation)
     let persistedNavigation = try await directory.cache(scope: scope)
@@ -128,7 +128,7 @@ final class ChatCacheTests: XCTestCase {
     XCTAssertEqual(persistedNavigation?.agents.first?.displayName, "Assistant")
     XCTAssertEqual(persistedNavigation?.preferences.pinnedAgentIds, ["agent-a"])
     XCTAssertEqual(
-      persistedNavigation?.featureSwitches.effectiveSwitches["chatThreadArchiving"], true)
+      persistedNavigation?.featureSwitches.effectiveSwitches["singleAgent"], true)
     let loaded = try await reopened.loadThreadList()
     let stored = try XCTUnwrap(loaded)
     XCTAssertEqual(stored.snapshot, snapshot)

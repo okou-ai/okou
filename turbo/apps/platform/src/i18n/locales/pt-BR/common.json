@@ -1455,6 +1455,8 @@
   },
   "browserViewer": {
     "address": "Endereço",
+    "addressOpening": "Uma página ainda está sendo aberta. Tente novamente em instantes.",
+    "addressPreparing": "O navegador ainda não está pronto. Tente novamente em instantes.",
     "allTabs": "Todas as abas",
     "automatic": "Automática",
     "back": "Voltar",
@@ -2038,7 +2040,6 @@
     "documentTitle": "Conversa",
     "errors": {
       "genericTitle": "Não foi possível concluir esta execução",
-      "loadMessages": "Falha ao carregar mensagens",
       "noModelProviderAction": "Gerenciar assinaturas",
       "noModelProviderPrefix": "Nenhum provedor de modelos está disponível para esta execução. Conecte uma assinatura pessoal.",
       "providerIncompatibleAction": "Iniciar uma nova sessão",
@@ -2117,6 +2118,11 @@
       "sourcePartsHeading_one": "{{count}} parte citada de {{description}}",
       "sourcePartsHeading_many": "{{count}} partes citadas de {{description}}",
       "sourcePartsHeading_other": "{{count}} partes citadas de {{description}}"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Iniciar um novo chat com esta seleção",
+      "sent": "Novo chat criado"
     },
     "forward": {
       "action": "Encaminhar",
@@ -2385,7 +2391,6 @@
       "number": "número"
     },
     "sidebar": {
-      "allChats": "Todas as conversas",
       "archive": "Arquivar conversa",
       "archived": "Arquivadas",
       "chatsWith": "Conversas com {{agentName}}",
@@ -4304,7 +4309,6 @@
     "instructions": "Instruções",
     "loadError": "Não foi possível carregar suas instruções. Tente novamente.",
     "markdown": "Escreva em texto simples ou Markdown",
-    "newChat": "Nova conversa",
     "placeholder": "Diga ao Okou como você gosta de trabalhar…",
     "reload": "Recarregar instruções salvas",
     "retry": "Tentar novamente",

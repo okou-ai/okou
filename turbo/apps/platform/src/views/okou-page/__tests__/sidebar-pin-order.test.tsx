@@ -1,7 +1,6 @@
 import { act, screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 import userEvent from "@testing-library/user-event";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadPinOrderContract,
   chatThreadPinContract,
@@ -193,7 +192,6 @@ test.each([
     path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
     auth: chatListAuth(caseId),
     cachedChatThreadEvents: cachedChatListEvents(caseId, snapshot),
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
   await screen.findByText("First pin");
   expect(sidebarThreadTitles()).toStrictEqual([

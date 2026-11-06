@@ -71,6 +71,7 @@ async function openLoadingConnectors(chatAccounts: boolean) {
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
+      [FeatureSwitchKey.PwaNavigation]: false,
     },
   });
   const trigger = await findFastControl("button", "Connectors");

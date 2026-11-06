@@ -108,6 +108,7 @@ test.each([false, true])(
     await setupSidebarPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
     });
 
     click(screen.getByLabelText("Open menu"));
@@ -161,6 +162,7 @@ test("Toggle the mobile chat list from its title with pointer and keyboard", asy
   await setupSidebarPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
 
   click(screen.getByLabelText("Open menu"));
@@ -411,56 +413,6 @@ test("Filter unread conversations using indicator timestamps", async () => {
   });
 });
 
-test("Keep check-mark chats and archive controls unchanged when archiving is disabled", async () => {
-  prepareDefaultAgent();
-  const completedThread = createThread(
-    EXISTING_THREAD_ID,
-    "✅ Completed release",
-  );
-  mockSidebarThreadStory([completedThread]);
-
-  await setupSidebarPage({
-    context,
-    path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: false },
-  });
-
-  await waitFor(() => {
-    expect(
-      within(sidebar()).getByText("✅ Completed release"),
-    ).toBeInTheDocument();
-  });
-
-  openChatListMenu();
-  expect(menuItemByText("All chats")).toBeInTheDocument();
-  expect(queryMenuItemByText("Inbox")).not.toBeInTheDocument();
-  expect(queryMenuItemByText("Archived")).not.toBeInTheDocument();
-  click(menuItemByText("Unread"));
-  await expect(
-    within(sidebar()).findByText("No unread chats"),
-  ).resolves.toBeInTheDocument();
-  // Without archiving, the filter keeps the plain agent title.
-  expect(within(sidebar()).getByText("Chats with Okou")).toBeInTheDocument();
-  click(buttonByText("Show all chats", sidebar()));
-  await expect(
-    within(sidebar()).findByText("✅ Completed release"),
-  ).resolves.toBeInTheDocument();
-
-  openThreadMenu("✅ Completed release");
-  expect(menuItemByText("Rename chat")).toBeInTheDocument();
-  expect(queryMenuItemByText("Archive chat")).not.toBeInTheDocument();
-  expect(queryMenuItemByText("Unarchive chat")).not.toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
-
-  pressArchiveShortcut();
-  await expect(
-    within(sidebar()).findByText("✅ Completed release"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(sidebar()).queryByText("Your inbox is empty"),
-  ).not.toBeInTheDocument();
-});
-
 test("Filter chats by Inbox, Unread, or Archived", async () => {
   prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
@@ -493,7 +445,6 @@ test("Filter chats by Inbox, Unread, or Archived", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   const titles = [
@@ -511,7 +462,6 @@ test("Filter chats by Inbox, Unread, or Archived", async () => {
 
   openChatListMenu();
   expect(menuItemByText("Inbox")).toBeInTheDocument();
-  expect(queryMenuItemByText("All chats")).not.toBeInTheDocument();
   expect(menuItemByText("Archived")).toBeInTheDocument();
   expect(
     screen
@@ -568,7 +518,6 @@ test("Selecting a filter skips the chat open in the right pane", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}?sidebar=${ARCHIVED_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
   await waitFor(() => {
     expect(visibleThreadTitles(["Release plan"])).toStrictEqual([
@@ -593,7 +542,6 @@ test("Mute and unmute a chat without hiding or reordering it", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
   });
   await within(sidebar()).findByText("Quiet task");
   openThreadMenu("Quiet task");
@@ -640,7 +588,6 @@ test("Mute an unread chat with feedback and undo it from the toast", async () =>
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
   });
   await waitFor(() => {
     expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName(
@@ -680,7 +627,6 @@ test("Unmute a chat without resurfacing replies that arrived while it was muted"
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
   });
   await waitFor(() => {
     expect(threadLinkByTitle("Incident notes")).toHaveAccessibleName(
@@ -701,36 +647,6 @@ test("Unmute a chat without resurfacing replies that arrived while it was muted"
   );
 });
 
-test("Hide muting when the switch is off but keep Unmute for chats already muted", async () => {
-  prepareDefaultAgent();
-  mockSidebarThreadStory([
-    createThread(EXISTING_THREAD_ID, "Release plan"),
-    createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
-  ]);
-  await setupSidebarPage({
-    context,
-    path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: false },
-  });
-  await within(sidebar()).findByText("Quiet task");
-  openChatListMenu();
-  expect(queryMenuItemByText("Muted")).not.toBeInTheDocument();
-  expect(menuItemByText("All chats")).toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
-
-  openThreadMenu("Release plan");
-  expect(menuItemByText("Rename chat")).toBeInTheDocument();
-  expect(queryMenuItemByText("Mute chat")).not.toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
-
-  openThreadMenu("Quiet task");
-  click(menuItemByText("Unmute chat"));
-  await expect(screen.findByText("Chat unmuted")).resolves.toBeInTheDocument();
-  expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName("Quiet task");
-  // Muting is off, so the toast offers no Undo that would fail.
-  expect(screen.queryByText("Undo")).not.toBeInTheDocument();
-});
-
 async function prepareMutedChatFilter() {
   prepareDefaultAgent();
   mockSidebarThreadStory([
@@ -745,10 +661,6 @@ async function prepareMutedChatFilter() {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadMuting]: true,
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
-    },
   });
   const titles = [
     "Release plan",
@@ -828,7 +740,7 @@ test("Switch from muted chats to Inbox without losing filter state", async () =>
   ).not.toBeInTheDocument();
 });
 
-test("The muted filter works without archiving and shows an empty state after unmuting", async () => {
+test("Show an empty muted filter after unmuting its last chat", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -837,10 +749,6 @@ test("The muted filter works without archiving and shows an empty state after un
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadMuting]: true,
-      [FeatureSwitchKey.ChatThreadArchiving]: false,
-    },
   });
   await within(sidebar()).findByText("Quiet task");
   openChatListMenu();
@@ -877,7 +785,6 @@ test("Running indicators take precedence over the muted icon", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
   });
   await within(sidebar()).findByText("Running muted task");
   await waitFor(() => {
@@ -897,7 +804,6 @@ test("Hide the current chat after archiving it without changing its title", asyn
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   await waitFor(() => {
@@ -950,7 +856,6 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   await waitFor(() => {
@@ -1002,10 +907,6 @@ test("Undo an archive from its toast and explain the muted exception", async () 
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
-      [FeatureSwitchKey.ChatThreadMuting]: true,
-    },
   });
 
   await within(sidebar()).findByText("Quiet task");
@@ -1034,7 +935,6 @@ test("Find archived chats in All and Chats workspace search results", async () =
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   await waitFor(() => {
@@ -1228,8 +1128,10 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       }),
     ).toStrictEqual([
       "Mark all read",
-      "All chats",
+      "Inbox",
       expect.stringMatching(/^Unread/u),
+      "Archived",
+      "Muted",
     ]);
   });
   expect(menuItemByText("Mark all read")).not.toHaveAttribute(
@@ -1273,8 +1175,10 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       }),
     ).toStrictEqual([
       "Mark all read",
-      "All chats",
+      "Inbox",
       expect.stringMatching(/^Unread/u),
+      "Archived",
+      "Muted",
     ]);
     const menuWithDisabledMarkAllRead =
       document.querySelector<HTMLElement>('[role="menu"]');
@@ -1314,6 +1218,7 @@ test("Mark all of an agent’s chats read", async () => {
   await setupSidebarPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
 
   click(screen.getByLabelText("Open menu"));

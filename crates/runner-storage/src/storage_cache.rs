@@ -84,6 +84,7 @@ use runner_host::lock;
 use runner_host::paths::{HomePaths, short_digest, touch_mtime};
 
 pub mod decoded;
+mod population;
 
 /// Archive sizes strictly larger than this are passthrough.
 const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
@@ -1335,6 +1336,7 @@ pub struct FreshArchiveDelivery {
     phase_records: FreshArchivePhaseRecords,
     classification: JoinSet<FreshArchiveClassification>,
     groups: Option<Vec<CacheTargetGroup>>,
+    owned_keys: HashSet<(String, String)>,
     apply: Vec<oneshot::Sender<()>>,
     fetches: JoinSet<FreshArchiveFetchTaskResult>,
     publications: JoinSet<FreshArchivePublicationTaskResult>,
@@ -1342,6 +1344,7 @@ pub struct FreshArchiveDelivery {
 
 struct FreshArchiveClassification {
     groups: Vec<CacheTargetGroup>,
+    owned_keys: HashSet<(String, String)>,
     apply: Vec<oneshot::Sender<()>>,
     fetches: JoinSet<FreshArchiveFetchTaskResult>,
     metrics: CacheProcessMetrics,
@@ -1387,6 +1390,7 @@ impl FreshArchiveDelivery {
             .summary
             .record(telemetry, classified.result.is_ok());
         self.groups = Some(classified.groups);
+        self.owned_keys = classified.owned_keys;
         self.apply = classified.apply;
         self.fetches = classified.fetches;
         classified.result
@@ -1458,7 +1462,12 @@ impl FreshArchiveDelivery {
         home: &HomePaths,
         telemetry: &mut JobTelemetry,
     ) -> RunnerResult<Vec<FreshArchiveResolved>> {
-        let result = self.resolve_inner(home, telemetry).await;
+        let mut metrics = CacheProcessMetrics::default();
+        let result = match self.finish_classification(telemetry).await {
+            Ok(()) => self.resolve_inner(home, &mut metrics).await,
+            Err(error) => Err(error),
+        };
+        metrics.record_to(telemetry);
         if result.is_err() {
             self.cancel_and_drain(telemetry).await;
         }
@@ -1469,9 +1478,8 @@ impl FreshArchiveDelivery {
     async fn resolve_inner(
         &mut self,
         home: &HomePaths,
-        telemetry: &mut JobTelemetry,
+        telemetry: &mut CacheProcessMetrics,
     ) -> RunnerResult<Vec<FreshArchiveResolved>> {
-        self.finish_classification(telemetry).await?;
         for apply in self.apply.drain(..) {
             let _ = apply.send(());
         }
@@ -2231,19 +2239,10 @@ async fn flush_fresh_guest_stage_batch(
 
 async fn stage_fresh_archives(
     resolved: Vec<FreshArchiveResolved>,
-    sandbox: &dyn Sandbox,
-    telemetry: &mut JobTelemetry,
-    guest_writes: &GuestWriteLocks,
-    stage_metrics: &mut StorageCacheStageMetrics,
+    stage: &mut GuestStageRecorder<'_>,
 ) -> RunnerResult<Vec<(CacheTargetGroup, TargetOutcome)>> {
     let mut outcomes = Vec::with_capacity(resolved.len());
     let mut batch = FreshGuestStageBatch::default();
-    let mut stage = GuestStageRecorder {
-        sandbox,
-        guest_writes,
-        telemetry,
-        metrics: stage_metrics,
-    };
     for FreshArchiveResolved { group, archive } in resolved {
         let FreshArchivePublished { bytes, permit } = archive;
         let target = &group.representative;
@@ -2252,7 +2251,7 @@ async fn stage_fresh_archives(
             bytes,
         };
         if batch.should_flush_before(&write) {
-            flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
+            flush_fresh_guest_stage_batch(&mut batch, stage, &mut outcomes).await?;
         }
         batch.push(FreshGuestStageEntry {
             group,
@@ -2260,10 +2259,10 @@ async fn stage_fresh_archives(
             permit,
         });
         if batch.should_flush_after_push() {
-            flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
+            flush_fresh_guest_stage_batch(&mut batch, stage, &mut outcomes).await?;
         }
     }
-    flush_fresh_guest_stage_batch(&mut batch, &mut stage, &mut outcomes).await?;
+    flush_fresh_guest_stage_batch(&mut batch, stage, &mut outcomes).await?;
     Ok(outcomes)
 }
 
@@ -2390,29 +2389,17 @@ pub async fn populate_cache_with_fresh_delivery(
 
     let guest_writes = GuestWriteLocks::default();
     let mut stage_metrics = StorageCacheStageMetrics::start();
-    let mut outcomes = if let Some(delivery) = fresh_delivery {
-        let resolved = delivery.resolve(home, telemetry).await?;
-        stage_fresh_archives(
-            resolved,
-            sandbox,
-            telemetry,
-            &guest_writes,
-            &mut stage_metrics,
-        )
-        .await?
-    } else {
-        Vec::new()
-    };
-    let owned_keys = outcomes
-        .iter()
-        .map(|(group, _)| group.key())
-        .collect::<HashSet<_>>();
+    let owned_keys = fresh_delivery
+        .as_ref()
+        .map(|delivery| delivery.owned_keys.clone())
+        .unwrap_or_default();
+    let mut decoded_outcomes = Vec::new();
     let target_groups = target_groups
         .into_iter()
         .filter(|group| !owned_keys.contains(&group.key()))
         .filter_map(|group| {
             if group_has_decoded(&group, plan) {
-                outcomes.push((group, TargetOutcome::Decoded));
+                decoded_outcomes.push((group, TargetOutcome::Decoded));
                 None
             } else {
                 Some(group)
@@ -2420,13 +2407,7 @@ pub async fn populate_cache_with_fresh_delivery(
         })
         .collect::<Vec<_>>();
 
-    // Cache population runs in owned tasks so a slow guest staging write does
-    // not stop already-started workers from releasing host cache flocks. Failure
-    // paths explicitly abort and drain pending workers so locks are not left for
-    // the runtime to clean up later.
-    let mut groups = JoinSet::new();
     let stage_result: RunnerResult<Vec<(CacheTargetGroup, TargetOutcome)>> = async {
-        let mut stage_batch = GuestStageBatch::default();
         let mut stage = GuestStageRecorder {
             sandbox,
             guest_writes: &guest_writes,
@@ -2434,57 +2415,47 @@ pub async fn populate_cache_with_fresh_delivery(
             metrics: &mut stage_metrics,
         };
 
-        for group in target_groups {
-            while groups.len() >= CONCURRENCY {
-                let Some(task) = join_next_processed_group(&mut groups).await? else {
-                    break;
-                };
-                stage_joined_processed_group(
-                    &mut groups,
-                    task,
-                    &mut outcomes,
-                    &mut stage_batch,
+        let mut outcomes = if let Some(delivery) = fresh_delivery.as_deref_mut() {
+            // Keep the existing four-body envelope: cold bodies retain their
+            // admission until staging, including bodies already downloaded.
+            let ordinary_concurrency = CONCURRENCY.saturating_sub(owned_keys.len());
+            if !owned_keys.is_empty() && ordinary_concurrency > 0 && !target_groups.is_empty() {
+                let (resolved, ordinary) = population::prepare_mixed(
+                    delivery,
+                    home,
+                    target_groups,
+                    ordinary_concurrency,
                     &mut stage,
                 )
                 .await?;
+                let mut outcomes = stage_fresh_archives(resolved, &mut stage).await?;
+                outcomes.extend(decoded_outcomes);
+                outcomes.extend(ordinary);
+                return Ok(outcomes);
             }
-
-            let home = home.clone();
-            groups.spawn(async move {
-                let mut metrics = CacheProcessMetrics::default();
-                let started_at = Instant::now();
-                let processed = process_group_hit_or_passthrough(&group, &home, &mut metrics).await;
-                let success = processed.is_ok();
-                metrics.record(
-                    STORAGE_CACHE_PROCESS_GROUP,
-                    started_at.elapsed(),
-                    success,
-                    (!success).then_some(STORAGE_CACHE_PROCESS_GROUP_FAILED),
-                );
-                ProcessedGroupTask {
-                    group,
-                    metrics,
-                    processed,
-                }
-            });
-        }
-
-        while let Some(task) = join_next_processed_group(&mut groups).await? {
-            stage_joined_processed_group(
-                &mut groups,
-                task,
-                &mut outcomes,
-                &mut stage_batch,
-                &mut stage,
-            )
-            .await?;
-        }
-        flush_guest_stage_batch(&mut stage_batch, &mut stage).await?;
+            let resolved = delivery.resolve(home, stage.telemetry).await?;
+            stage_fresh_archives(resolved, &mut stage).await?
+        } else {
+            Vec::new()
+        };
+        outcomes.extend(decoded_outcomes);
+        outcomes.extend(
+            population::prepare_ordinary(target_groups, home, CONCURRENCY, None, &mut stage)
+                .await?,
+        );
         Ok(outcomes)
     }
     .await;
     stage_metrics.record_total(telemetry);
-    let outcomes = stage_result?;
+    let outcomes = match stage_result {
+        Ok(outcomes) => outcomes,
+        Err(error) => {
+            if let Some(delivery) = fresh_delivery {
+                delivery.cancel_and_drain(telemetry).await;
+            }
+            return Err(error);
+        }
+    };
 
     record_passthrough_summary(&outcomes, plan, telemetry);
     let deferred =
@@ -2750,6 +2721,7 @@ pub async fn prepare_fresh_archive_delivery(
         phase_records,
         classification,
         groups: None,
+        owned_keys: HashSet::new(),
         apply: Vec::new(),
         fetches: JoinSet::new(),
         publications: JoinSet::new(),
@@ -2775,6 +2747,7 @@ async fn classify_fresh_archives(
     );
     let mut metrics = CacheProcessMetrics::default();
     let mut requests = FreshArchiveRequests {
+        owned_keys: HashSet::new(),
         apply: Vec::new(),
         fetches: JoinSet::new(),
         phase_records,
@@ -2972,6 +2945,7 @@ async fn classify_fresh_archives(
     );
     FreshArchiveClassification {
         groups,
+        owned_keys: requests.owned_keys,
         apply: requests.apply,
         fetches: requests.fetches,
         metrics,
@@ -3033,6 +3007,7 @@ async fn claim_fresh_archive(
 }
 
 struct FreshArchiveRequests {
+    owned_keys: HashSet<(String, String)>,
     apply: Vec<oneshot::Sender<()>>,
     fetches: JoinSet<FreshArchiveFetchTaskResult>,
     phase_records: FreshArchivePhaseRecords,
@@ -3056,6 +3031,7 @@ impl FreshArchiveRequests {
         let cancel = cancel.clone();
         let phase_records = self.phase_records.clone();
         let (apply_tx, apply_rx) = oneshot::channel();
+        self.owned_keys.insert(group.key());
         self.apply.push(apply_tx);
         self.fetches.spawn(async move {
             let fetch = tokio::select! {

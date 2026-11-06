@@ -1430,6 +1430,8 @@
   },
   "browserViewer": {
     "address": "網址",
+    "addressOpening": "頁面仍在開啟，請稍後再試。",
+    "addressPreparing": "瀏覽器尚未就緒，請稍後再試。",
     "allTabs": "所有分頁",
     "automatic": "自動",
     "back": "上一頁",
@@ -2000,7 +2002,6 @@
     "documentTitle": "聊天",
     "errors": {
       "genericTitle": "這次執行沒能完成",
-      "loadMessages": "訊息載入失敗",
       "noModelProviderAction": "管理訂閱",
       "noModelProviderPrefix": "此次執行沒有可用的模型提供者。請連結個人訂閱。",
       "providerIncompatibleAction": "開始新會話",
@@ -2076,6 +2077,11 @@
       "sourcePartHeading": "引用自{{description}}",
       "sourcePartsHeading_one": "從{{description}}引用了 {{count}} 段內容",
       "sourcePartsHeading_other": "從{{description}}引用了 {{count}} 段內容"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "以選取內容建立新聊天",
+      "sent": "已建立新聊天"
     },
     "forward": {
       "action": "轉發",
@@ -2332,7 +2338,6 @@
       "number": "數字"
     },
     "sidebar": {
-      "allChats": "全部聊天",
       "archive": "歸檔聊天",
       "archived": "已歸檔",
       "chatsWith": "與{{agentName}}的聊天",
@@ -4233,7 +4238,6 @@
     "instructions": "指令",
     "loadError": "無法載入指令，請重試。",
     "markdown": "支援純文字和 Markdown",
-    "newChat": "新聊天",
     "placeholder": "告訴 Okou 你喜歡怎樣工作…",
     "reload": "重新載入已儲存的指令",
     "retry": "重試",

@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "Adresse",
+    "addressOpening": "Eine Seite wird noch geöffnet. Versuche es gleich noch einmal.",
+    "addressPreparing": "Der Browser ist noch nicht bereit. Versuche es gleich noch einmal.",
     "allTabs": "Alle Tabs",
     "automatic": "Automatisch",
     "back": "Zurück",
@@ -2007,7 +2009,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Dieser Lauf konnte nicht abgeschlossen werden",
-      "loadMessages": "Nachrichten konnten nicht geladen werden",
       "noModelProviderAction": "Abonnements verwalten",
       "noModelProviderPrefix": "Für diese Ausführung ist kein Modellanbieter verfügbar. Verbinde ein persönliches Abonnement.",
       "providerIncompatibleAction": "Starten Sie eine neue Sitzung",
@@ -2083,6 +2084,11 @@
       "sourcePartHeading": "Aus {{description}} zitiert",
       "sourcePartsHeading_one": "{{count}} Teil aus {{description}} zitiert",
       "sourcePartsHeading_other": "{{count}} Teile aus {{description}} zitiert"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Mit dieser Auswahl einen neuen Chat starten",
+      "sent": "Neuer Chat erstellt"
     },
     "forward": {
       "action": "Weiterleiten",
@@ -2341,7 +2347,6 @@
       "number": "Nummer"
     },
     "sidebar": {
-      "allChats": "Alle Chats",
       "archive": "Chat archivieren",
       "archived": "Archiviert",
       "chatsWith": "Chats mit {{agentName}}",
@@ -4249,7 +4254,6 @@
     "instructions": "Anweisungen",
     "loadError": "Deine Anweisungen konnten nicht geladen werden. Versuche es erneut.",
     "markdown": "Schreibe in Klartext oder Markdown",
-    "newChat": "Neuer Chat",
     "placeholder": "Sag Okou, wie du gerne arbeitest…",
     "reload": "Gespeicherte Anweisungen neu laden",
     "retry": "Erneut versuchen",
