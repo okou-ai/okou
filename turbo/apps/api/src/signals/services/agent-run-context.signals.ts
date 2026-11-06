@@ -1093,7 +1093,6 @@ function createConnectorContextGroups(
     );
   });
   const authorizedConnectors$ = createAuthorizedConnectors(
-    orgId,
     connectorSelection$,
     catalog$,
     bundleDelivery$,

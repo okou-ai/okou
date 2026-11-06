@@ -21,94 +21,102 @@ import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 const context = testContext();
 
 describe("Connector Skill bundle delivery", () => {
-  it("keeps delivery off by default and captures each Run's selected mode across flag changes", async () => {
-    const owner = await publicChatActor(context);
-    owner.ownsFeatureSwitches();
-    const fixture = createChatEventsFixture(context);
-    const api = createConnectorBddApi(context);
-    const selected = await owner.run(async () => {
-      installWorkflowVolumeS3Fixture(context);
-      const selected = await api.createCustomConnector(
-        owner.actor,
-        manualHttpCustomConnectorCreateBody({
+  it.each([false, true])(
+    "keeps delivery off by default and captures each Run's selected mode across flag changes (Chat accounts: %s)",
+    async (chatAccounts) => {
+      const owner = await publicChatActor(context);
+      owner.ownsFeatureSwitches();
+      const fixture = createChatEventsFixture(context);
+      const api = createConnectorBddApi(context);
+      const selected = await owner.run(async () => {
+        installWorkflowVolumeS3Fixture(context);
+        const selected = await api.createCustomConnector(owner.actor, {
           displayName: "Staged delivery",
           prefixTemplates: ["https://staged-skill.example.test/api/"],
+          fields: [],
+          headerInjections: [],
+          queryInjections: [],
+          authMode: "none",
           skillMarkdown: "Staged Skill instructions.",
+        });
+        await api.setCustomConnectorValues(owner.actor, selected.id, []);
+        await api.updateAgentCustomConnectors(owner.actor, owner.agentId, [
+          selected.id,
+        ]);
+        await api.updateFeatureSwitches(owner.actor, {
+          [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
+        });
+        return selected;
+      });
+      const setDelivery = (enabled: boolean) => {
+        return owner.run(() => {
+          if (!owner.actor.orgId) {
+            throw new Error("Expected a workspace");
+          }
+          return updateFeatureSwitchesForUser(
+            context,
+            { ...owner.actor, orgId: owner.actor.orgId },
+            {
+              [FeatureSwitchKey.ConnectorSkillBundleDelivery]: enabled,
+            },
+          );
+        });
+      };
+      const createRun = () => {
+        return owner.sendChatRun(owner.actor, {
+          agentId: owner.agentId,
+          model: "claude-fable-5-1",
+          prompt: "Inspect the captured delivery mode",
+        });
+      };
+      const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
+      const legacy = await createRun();
+      await setDelivery(true);
+      const legacyClaim = await owner.claimChatRun(
+        owner.runnerGroup,
+        legacy.runId,
+      );
+      expect(legacyClaim.claim.storageManifest?.storageMounts).toContainEqual(
+        expect.objectContaining({
+          name: getCustomConnectorSkillStorageName(selected.id),
+          mountPath,
         }),
       );
-      await api.updateAgentCustomConnectors(owner.actor, owner.agentId, [
-        selected.id,
-      ]);
-      return selected;
-    });
-    const setDelivery = (enabled: boolean) => {
-      return owner.run(() => {
-        if (!owner.actor.orgId) {
-          throw new Error("Expected a workspace");
-        }
-        return updateFeatureSwitchesForUser(
-          context,
-          { ...owner.actor, orgId: owner.actor.orgId },
-          {
-            [FeatureSwitchKey.ConnectorSkillBundleDelivery]: enabled,
-          },
+      expect(
+        legacyClaim.claim.contentBundles.skills.some((bundle) => {
+          return bundle.mountPath === mountPath;
+        }),
+      ).toBeFalsy();
+      await owner.run(() => {
+        return fixture.failChatRun(
+          legacy.runId,
+          legacyClaim.sandboxHeaders,
+          "Legacy capture inspected",
         );
       });
-    };
-    const createRun = () => {
-      return owner.sendChatRun(owner.actor, {
-        agentId: owner.agentId,
-        model: "claude-fable-5-1",
-        prompt: "Inspect the captured delivery mode",
-      });
-    };
-    const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
-    const legacy = await createRun();
-    await setDelivery(true);
-    const legacyClaim = await owner.claimChatRun(
-      owner.runnerGroup,
-      legacy.runId,
-    );
-    expect(legacyClaim.claim.storageManifest?.storageMounts).toContainEqual(
-      expect.objectContaining({
-        name: getCustomConnectorSkillStorageName(selected.id),
-        mountPath,
-      }),
-    );
-    expect(
-      legacyClaim.claim.contentBundles.skills.some((bundle) => {
-        return bundle.mountPath === mountPath;
-      }),
-    ).toBeFalsy();
-    await owner.run(() => {
-      return fixture.failChatRun(
-        legacy.runId,
-        legacyClaim.sandboxHeaders,
-        "Legacy capture inspected",
-      );
-    });
-    const bundled = await createRun();
-    await setDelivery(false);
-    const bundleClaim = await owner.claimChatRun(
-      owner.runnerGroup,
-      bundled.runId,
-    );
-    expect(bundleClaim.claim.contentBundles.skills).toContainEqual(
-      expect.objectContaining({ mountPath }),
-    );
-    expect(
-      bundleClaim.claim.storageManifest?.storageMounts.some((mount) => {
-        return mount.mountPath === mountPath;
-      }),
-    ).toBeFalsy();
-    await owner.run(() => {
-      return fixture.failChatRun(
+      const bundled = await createRun();
+      await setDelivery(false);
+      const bundleClaim = await owner.claimChatRun(
+        owner.runnerGroup,
         bundled.runId,
-        bundleClaim.sandboxHeaders,
-        "Bundle capture inspected",
       );
-    });
-  });
+      expect(bundleClaim.claim.contentBundles.skills).toContainEqual(
+        expect.objectContaining({ mountPath }),
+      );
+      expect(
+        bundleClaim.claim.storageManifest?.storageMounts.some((mount) => {
+          return mount.mountPath === mountPath;
+        }),
+      ).toBeFalsy();
+      await owner.run(() => {
+        return fixture.failChatRun(
+          bundled.runId,
+          bundleClaim.sandboxHeaders,
+          "Bundle capture inspected",
+        );
+      });
+    },
+  );
 
   it.each([
     {

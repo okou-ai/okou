@@ -12,7 +12,6 @@ import {
   getCustomConnectorSkillStorageName,
 } from "@okouai/core/storage-names";
 import { connectorCatalogEntries } from "@okouai/db/runtime/connector-catalog";
-import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
 import { computed, type Computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { db$ } from "../external/db";
@@ -66,7 +65,6 @@ export type AuthorizedConnectors = readonly AuthorizedConnector[];
 
 /** Agent authorization and catalog capability, independent of connected accounts. */
 export function createAuthorizedConnectors(
-  orgId: string,
   selection$: Computed<
     Promise<
       Pick<
@@ -112,25 +110,18 @@ export function createAuthorizedConnectors(
       scope,
       catalog,
     ).allowedConnectorSlugs;
-    const customIds = scope.customConnectorDefinitions
-      .filter((connector) => {
-        return connector.skillStorageVersionId !== null;
-      })
-      .map((connector) => {
-        return connector.customConnectorId;
-      });
     const bundledSlugs = builtinSlugs.filter((slug) => {
       return (
         getConnectorRuntimeConnector(catalog, slug)?.skill.kind === "bundled"
       );
     });
     const db = get(db$);
-    // Preparation metadata has its own projection. Bind it to the authorized
-    // owner and captured catalog generation, never a mutable catalog pointer.
-    const [builtinRows, customRows] = await Promise.all([
+    // Built-in generations are immutable. Custom references already belong to
+    // the same authorized row snapshot as their selected source version.
+    const builtinRows =
       bundledSlugs.length === 0
         ? []
-        : db
+        : await db
             .select({
               slug: connectorCatalogEntries.slug,
               bundle: connectorCatalogEntries.skillContentBundle,
@@ -146,32 +137,21 @@ export function createAuthorizedConnectors(
                 ),
                 inArray(connectorCatalogEntries.slug, bundledSlugs),
               ),
-            ),
-      customIds.length === 0
-        ? []
-        : db
-            .select({
-              id: orgCustomConnectorSkillBundles.id,
-              bundle: orgCustomConnectorSkillBundles.skillContentBundle,
-              sourceVersionId:
-                orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId,
-            })
-            .from(orgCustomConnectorSkillBundles)
-            .where(
-              and(
-                eq(orgCustomConnectorSkillBundles.orgId, orgId),
-                inArray(orgCustomConnectorSkillBundles.id, customIds),
-              ),
-            ),
-    ]);
+            );
     const builtinBundles = new Map(
       builtinRows.map((row) => {
         return [row.slug, row];
       }),
     );
     const customBundles = new Map(
-      customRows.map((row) => {
-        return [row.id, row];
+      selection.customConnectors.map((row) => {
+        return [
+          row.customConnectorId,
+          {
+            bundle: row.skillContentBundle,
+            sourceVersionId: row.skillContentBundleSourceVersionId,
+          },
+        ];
       }),
     );
     return authorizedConnectorsFromBundles({
