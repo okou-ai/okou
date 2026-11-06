@@ -379,19 +379,9 @@ export function buildSlackSystemPrompt(args: {
     `Channel type: ${typeLabel}`,
     `Thread ID: ${args.threadTs}`,
   ].join("\n");
-  const conversationPriority = [
-    "# Slack Conversation Priority",
-    "- The current user message defines the active request.",
-    "- When the current message is a reply inside a Slack thread, interpret it using that thread's root message and replies before considering recent channel messages.",
-    '- Resolve brief references such as "⬆️", "this", "above", or a mention-only reply within the current thread first. Recent channel messages are supporting background unless the current user explicitly refers outside the thread.',
-    "- Do not replace the thread's task with an unrelated request from the channel merely because that request is newer, longer, or more explicit.",
-    "- RELATIVE_INDEX values describe recency within each context section only; they do not establish priority between channel and thread sections.",
-    "- If the intended reference remains unclear after reading the thread, ask a focused clarification instead of choosing an unrelated channel task.",
-  ].join("\n");
   return [
     CONVERSATION_GUIDANCE,
     currentIntegration,
-    conversationPriority,
     args.integrationNote,
     args.executionContext,
   ]
@@ -538,9 +528,15 @@ export async function fetchConversationContexts(
     },
   );
   return {
-    executionContext: channelContextPrefix
-      ? `${channelContextPrefix}\n\n${threadExecContext}`
-      : threadExecContext,
+    executionContext: [
+      threadTs
+        ? "When responding in this Slack thread, prioritize its root message and replies over recent channel messages."
+        : "",
+      channelContextPrefix,
+      threadExecContext,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
   };
 }
 
