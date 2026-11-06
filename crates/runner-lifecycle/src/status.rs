@@ -9,8 +9,9 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use sandbox::SandboxId;
 use serde::Serialize;
-use tokio::sync::{Mutex, OwnedMutexGuard};
-use tracing::warn;
+use tokio::sync::{Mutex, Notify, OwnedMutexGuard};
+use tokio::time::Instant;
+use tracing::{info, warn};
 
 use crate::error::{LifecycleError, LifecycleResult};
 use crate::idle_pool::IdlePoolSnapshot;
@@ -35,11 +36,13 @@ pub enum StatusPersistenceError {
         source: LifecycleError,
     },
     /// Publication of this snapshot was not confirmed within the foreground
-    /// budget, or it was immediately deferred behind a retained in-flight write.
+    /// budget, or a caller's policy immediately reported deferral behind a
+    /// retained in-flight write. Initial publication, active registration, phase
+    /// advancement and sandbox replacement wait for confirmation within the budget.
     ///
     /// A write can be retained after its caller is cancelled, even if no deadline
     /// elapsed. `timeout` is the configured foreground publication budget, not
-    /// the measured elapsed time for this call.
+    /// the measured elapsed time for this call. It starts after the state lock.
     ///
     /// The write may not have started, may still finish after this error, or
     /// may be superseded by a newer coalesced snapshot. A started write is not
@@ -141,14 +144,28 @@ struct SerializedStatusSnapshot {
     json: String,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RetainedWritePolicy {
+    Confirm,
+    ReportUnconfirmed,
+}
+
+#[derive(Clone, Copy)]
+struct RetainedStatusWrite {
+    generation: u64,
+    /// Observer lifetime, not proof of physical I/O or a particular syscall.
+    started_at: Instant,
+}
+
 struct DelayedPersistenceState {
-    active: bool,
+    active: Option<RetainedStatusWrite>,
     pending: Option<SerializedStatusSnapshot>,
 }
 
 struct PersistenceCoordinator {
     ordering: Arc<Mutex<()>>,
     published_generation: AtomicU64,
+    published: Notify,
     delayed: std::sync::Mutex<DelayedPersistenceState>,
     #[cfg(any(test, feature = "test-support"))]
     settled: tokio::sync::Notify,
@@ -173,6 +190,7 @@ struct InFlightStatusWrite {
     persistence: Arc<PersistenceCoordinator>,
     path: PathBuf,
     generation: u64,
+    started_at: Instant,
 }
 
 impl PersistenceCoordinator {
@@ -180,8 +198,9 @@ impl PersistenceCoordinator {
         Self {
             ordering: Arc::new(Mutex::new(())),
             published_generation: AtomicU64::new(0),
+            published: Notify::new(),
             delayed: std::sync::Mutex::new(DelayedPersistenceState {
-                active: false,
+                active: None,
                 pending: None,
             }),
             #[cfg(any(test, feature = "test-support"))]
@@ -197,7 +216,7 @@ impl PersistenceCoordinator {
             .delayed
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        if !delayed.active {
+        if delayed.active.is_none() {
             return Some(snapshot);
         }
         let replace = delayed
@@ -210,12 +229,35 @@ impl PersistenceCoordinator {
         None
     }
 
-    fn begin_delayed_write(&self) {
+    fn begin_delayed_write(&self, generation: u64, started_at: Instant) {
         let mut delayed = self
             .delayed
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
-        delayed.active = true;
+        delayed.active = Some(RetainedStatusWrite {
+            generation,
+            started_at,
+        });
+    }
+
+    fn mark_published(&self, generation: u64) {
+        self.published_generation
+            .store(generation, Ordering::Release);
+        self.published.notify_waiters();
+    }
+
+    async fn wait_for_publication(&self, generation: u64) {
+        loop {
+            let published = self.published.notified();
+            tokio::pin!(published);
+            // Subscribe before checking the counter: a completed replacement
+            // must not be lost between the check and the await.
+            published.as_mut().enable();
+            if self.published_generation.load(Ordering::Acquire) >= generation {
+                return;
+            }
+            published.await;
+        }
     }
 
     fn take_pending_or_finish(&self) -> Option<SerializedStatusSnapshot> {
@@ -224,9 +266,15 @@ impl PersistenceCoordinator {
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner());
         match delayed.pending.take() {
-            Some(snapshot) => Some(snapshot),
+            Some(snapshot) => {
+                delayed.active = Some(RetainedStatusWrite {
+                    generation: snapshot.generation,
+                    started_at: Instant::now(),
+                });
+                Some(snapshot)
+            }
             None => {
-                delayed.active = false;
+                delayed.active = None;
                 #[cfg(any(test, feature = "test-support"))]
                 self.settled.notify_waiters();
                 None
@@ -248,6 +296,7 @@ impl InFlightStatusWrite {
             persistence,
             path,
             generation,
+            started_at: Instant::now(),
         }
     }
 
@@ -266,9 +315,7 @@ impl InFlightStatusWrite {
             InFlightStatusWriteState::Complete => return Ok(()),
         };
         if result.is_ok() {
-            self.persistence
-                .published_generation
-                .store(self.generation, Ordering::Release);
+            self.persistence.mark_published(self.generation);
         }
         self.state = InFlightStatusWriteState::Complete;
         result
@@ -291,13 +338,14 @@ impl Drop for InFlightStatusWrite {
         // The caller can disappear independently of the five-second timeout.
         // Keep any polled atomic replacement and its ordering guard alive so
         // an older generation cannot finish after a recovery write.
-        persistence.begin_delayed_write();
+        persistence.begin_delayed_write(generation, self.started_at);
         drop(tokio::spawn(continue_in_flight_status_write(
             write,
             ordering,
             persistence,
             path,
             generation,
+            self.started_at,
         )));
     }
 }
@@ -308,19 +356,29 @@ async fn continue_in_flight_status_write(
     persistence: Arc<PersistenceCoordinator>,
     path: PathBuf,
     generation: u64,
+    started_at: Instant,
 ) {
     if let Err(error) = write.await {
-        warn!(generation, %error, "in-flight status persistence later failed");
+        warn!(
+            generation,
+            elapsed_ms = started_at.elapsed().as_millis() as u64,
+            %error,
+            "in-flight status persistence later failed"
+        );
     } else {
-        persistence
-            .published_generation
-            .store(generation, Ordering::Release);
+        persistence.mark_published(generation);
+        info!(
+            generation,
+            elapsed_ms = started_at.elapsed().as_millis() as u64,
+            "retained runner status publication confirmed"
+        );
     }
     while let Some(pending) = persistence.take_pending_or_finish() {
         let pending_generation = pending.generation;
         if persistence.published_generation.load(Ordering::Acquire) >= pending_generation {
             continue;
         }
+        let started_at = Instant::now();
         if let Err(source) =
             runner_host::private_fs::write_private_file(&path, pending.json.as_bytes()).await
         {
@@ -330,13 +388,17 @@ async fn continue_in_flight_status_write(
             };
             warn!(
                 generation = pending_generation,
+                elapsed_ms = started_at.elapsed().as_millis() as u64,
                 %error,
                 "deferred status persistence failed"
             );
         } else {
-            persistence
-                .published_generation
-                .store(pending_generation, Ordering::Release);
+            persistence.mark_published(pending_generation);
+            info!(
+                generation = pending_generation,
+                elapsed_ms = started_at.elapsed().as_millis() as u64,
+                "coalesced runner status publication confirmed"
+            );
         }
     }
 }
@@ -384,6 +446,8 @@ pub struct StatusTracker {
     idle_info_update_requests: AtomicU64,
     #[cfg(any(test, feature = "test-support"))]
     idle_snapshot_waits: tokio::sync::watch::Sender<u64>,
+    #[cfg(any(test, feature = "test-support"))]
+    required_publication_waits: tokio::sync::watch::Sender<u64>,
 }
 
 struct MutableState {
@@ -439,6 +503,8 @@ impl StatusTracker {
             idle_info_update_requests: AtomicU64::new(0),
             #[cfg(any(test, feature = "test-support"))]
             idle_snapshot_waits: tokio::sync::watch::channel(0).0,
+            #[cfg(any(test, feature = "test-support"))]
+            required_publication_waits: tokio::sync::watch::channel(0).0,
         }
     }
 
@@ -492,6 +558,12 @@ impl StatusTracker {
         self.idle_snapshot_waits.subscribe()
     }
 
+    /// Observe a positively polled required-publication wait behind a retained writer.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn required_publication_waits_for_test(&self) -> tokio::sync::watch::Receiver<u64> {
+        self.required_publication_waits.subscribe()
+    }
+
     #[cfg(any(test, feature = "test-support"))]
     async fn lock_idle_snapshot_for_test(&self) -> tokio::sync::MutexGuard<'_, MutableState> {
         let lock = self.state.lock();
@@ -510,7 +582,8 @@ impl StatusTracker {
             state.mode = mode;
             self.capture_changed_snapshot(&mut state)
         };
-        self.persist_snapshot(snapshot).await
+        self.persist_snapshot(snapshot, RetainedWritePolicy::ReportUnconfirmed)
+            .await
     }
 
     /// Register an active run as running and flush the status file.
@@ -558,7 +631,8 @@ impl StatusTracker {
             );
             self.capture_changed_snapshot(&mut state)
         };
-        self.persist_snapshot(snapshot).await
+        self.persist_snapshot(snapshot, RetainedWritePolicy::Confirm)
+            .await
     }
 
     /// Register a running active run and replace both parked inventories in the same
@@ -611,7 +685,8 @@ impl StatusTracker {
             let snapshot = self.capture_changed_snapshot(&mut state);
             (applied, snapshot)
         };
-        self.persist_snapshot(snapshot).await?;
+        self.persist_snapshot(snapshot, RetainedWritePolicy::Confirm)
+            .await?;
         Ok(applied)
     }
 
@@ -634,7 +709,8 @@ impl StatusTracker {
             current.phase_started_at = Utc::now();
             self.capture_changed_snapshot(&mut state)
         };
-        self.persist_snapshot(snapshot).await?;
+        self.persist_snapshot(snapshot, RetainedWritePolicy::Confirm)
+            .await?;
         Ok(true)
     }
 
@@ -661,7 +737,8 @@ impl StatusTracker {
             apply_idle_snapshot(&mut state, idle_snapshot);
             self.capture_changed_snapshot(&mut state)
         };
-        self.persist_snapshot(snapshot).await?;
+        self.persist_snapshot(snapshot, RetainedWritePolicy::Confirm)
+            .await?;
         Ok(true)
     }
 
@@ -688,7 +765,8 @@ impl StatusTracker {
             self.retry_unpublished_snapshot().await?;
             return Ok(false);
         };
-        self.persist_snapshot(snapshot).await?;
+        self.persist_snapshot(snapshot, RetainedWritePolicy::ReportUnconfirmed)
+            .await?;
         Ok(true)
     }
 
@@ -712,7 +790,8 @@ impl StatusTracker {
             }
             self.capture_changed_snapshot(&mut state)
         };
-        self.persist_snapshot(snapshot).await
+        self.persist_snapshot(snapshot, RetainedWritePolicy::ReportUnconfirmed)
+            .await
     }
 
     /// Replace both parked inventories only if the snapshot is at least as new as the
@@ -735,7 +814,8 @@ impl StatusTracker {
             }
             self.capture_changed_snapshot(&mut state)
         };
-        self.persist_snapshot(snapshot).await?;
+        self.persist_snapshot(snapshot, RetainedWritePolicy::ReportUnconfirmed)
+            .await?;
         Ok(true)
     }
 
@@ -745,7 +825,8 @@ impl StatusTracker {
             let mut state = self.state.lock().await;
             self.capture_changed_snapshot(&mut state)
         };
-        self.persist_snapshot(snapshot).await
+        self.persist_snapshot(snapshot, RetainedWritePolicy::Confirm)
+            .await
     }
 
     fn capture_changed_snapshot(&self, state: &mut MutableState) -> StatusSnapshot {
@@ -780,20 +861,23 @@ impl StatusTracker {
     }
 
     /// Publish an owned snapshot through same-directory atomic replacement.
-    async fn persist_snapshot(&self, snapshot: StatusSnapshot) -> StatusResult<()> {
+    async fn persist_snapshot(
+        &self,
+        snapshot: StatusSnapshot,
+        policy: RetainedWritePolicy,
+    ) -> StatusResult<()> {
         let path = self.path.clone();
-        let deadline = tokio::time::Instant::now() + STATUS_PERSISTENCE_TIMEOUT;
+        let started_at = Instant::now();
+        let deadline = started_at + STATUS_PERSISTENCE_TIMEOUT;
+        let generation = snapshot.generation;
         let json = serde_json::to_string_pretty(&snapshot.status).map_err(|source| {
             StatusPersistenceError::Serialize {
                 path: path.clone(),
                 source,
             }
         })?;
-        if tokio::time::Instant::now() >= deadline {
-            return Err(StatusPersistenceError::Timeout {
-                path,
-                timeout: STATUS_PERSISTENCE_TIMEOUT,
-            });
+        if Instant::now() >= deadline {
+            return Err(self.unconfirmed_publication(generation, started_at, "serialization"));
         }
 
         let persistence = Arc::clone(&self.persistence);
@@ -802,10 +886,9 @@ impl StatusTracker {
             json,
         };
         let Some(ready) = persistence.defer_if_delayed(serialized) else {
-            return Err(StatusPersistenceError::Timeout {
-                path,
-                timeout: STATUS_PERSISTENCE_TIMEOUT,
-            });
+            return self
+                .confirm_deferred_publication(generation, policy, started_at, deadline)
+                .await;
         };
         serialized = ready;
 
@@ -827,18 +910,14 @@ impl StatusTracker {
                 .await
                 .is_err()
             {
-                return Err(StatusPersistenceError::Timeout {
-                    path,
-                    timeout: STATUS_PERSISTENCE_TIMEOUT,
-                });
+                return Err(self.unconfirmed_publication(generation, started_at, "before_write"));
             }
         }
 
         let Some(ready) = persistence.defer_if_delayed(serialized) else {
-            return Err(StatusPersistenceError::Timeout {
-                path,
-                timeout: STATUS_PERSISTENCE_TIMEOUT,
-            });
+            return self
+                .confirm_deferred_publication(generation, policy, started_at, deadline)
+                .await;
         };
         serialized = ready;
         let ordering = Arc::clone(&persistence.ordering);
@@ -846,10 +925,7 @@ impl StatusTracker {
             Ok(ordering) => ordering,
             Err(_) => {
                 drop(persistence.defer_if_delayed(serialized));
-                return Err(StatusPersistenceError::Timeout {
-                    path,
-                    timeout: STATUS_PERSISTENCE_TIMEOUT,
-                });
+                return Err(self.unconfirmed_publication(generation, started_at, "ordering"));
             }
         };
         if persistence.published_generation.load(Ordering::Acquire) >= serialized.generation {
@@ -886,10 +962,69 @@ impl StatusTracker {
             InFlightStatusWrite::new(write, ordering, persistence, path, generation);
         match tokio::time::timeout_at(deadline, in_flight.finish()).await {
             Ok(result) => result,
-            Err(_) => Err(StatusPersistenceError::Timeout {
-                path: self.path.clone(),
-                timeout: STATUS_PERSISTENCE_TIMEOUT,
-            }),
+            Err(_) => {
+                // Transfer custody before capturing retained-writer diagnostics.
+                drop(in_flight);
+                Err(self.unconfirmed_publication(generation, started_at, "atomic_write"))
+            }
+        }
+    }
+
+    async fn confirm_deferred_publication(
+        &self,
+        generation: u64,
+        policy: RetainedWritePolicy,
+        started_at: Instant,
+        deadline: Instant,
+    ) -> StatusResult<()> {
+        if policy == RetainedWritePolicy::ReportUnconfirmed {
+            return Err(self.unconfirmed_publication(generation, started_at, "immediate_deferral"));
+        }
+        let confirmation = self.persistence.wait_for_publication(generation);
+        tokio::pin!(confirmation);
+        #[cfg(any(test, feature = "test-support"))]
+        match futures_util::poll!(&mut confirmation) {
+            std::task::Poll::Ready(()) => return Ok(()),
+            std::task::Poll::Pending => self
+                .required_publication_waits
+                .send_modify(|count| *count += 1),
+        }
+        match tokio::time::timeout_at(deadline, confirmation).await {
+            Ok(()) => Ok(()),
+            Err(_) => {
+                Err(self.unconfirmed_publication(generation, started_at, "retained_publication"))
+            }
+        }
+    }
+
+    fn unconfirmed_publication(
+        &self,
+        generation: u64,
+        started_at: Instant,
+        phase: &'static str,
+    ) -> StatusPersistenceError {
+        let retained = self
+            .persistence
+            .delayed
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .active;
+        warn!(
+            publication_phase = phase,
+            elapsed_ms = started_at.elapsed().as_millis() as u64,
+            requested_generation = generation,
+            published_generation = self
+                .persistence
+                .published_generation
+                .load(Ordering::Acquire),
+            retained_generation = retained.map(|writer| writer.generation),
+            retained_elapsed_ms =
+                retained.map(|writer| writer.started_at.elapsed().as_millis() as u64),
+            "runner status publication unconfirmed"
+        );
+        StatusPersistenceError::Timeout {
+            path: self.path.clone(),
+            timeout: STATUS_PERSISTENCE_TIMEOUT,
         }
     }
 }

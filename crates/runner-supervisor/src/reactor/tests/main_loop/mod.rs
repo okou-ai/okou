@@ -12,6 +12,7 @@ mod job_flow;
 mod maintenance_lifecycle;
 mod memory_reclamation;
 mod parallel_claim;
+mod retained_status_publication;
 mod shared_resource_progress;
 mod shutdown;
 mod startup;
