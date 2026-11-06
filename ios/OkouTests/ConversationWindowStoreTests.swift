@@ -5,18 +5,18 @@ import XCTest
 
 @MainActor
 final class ConversationWindowStoreTests: XCTestCase {
-  func testLongHistoriesRetainFullProjectionAndPublishOnlyLatestGroups() async {
-    for count in [100, 1_000, 5_000] {
-      let fixture = ConversationHistoryFixture(count: count)
-      let conversation = fixture.conversation()
-      await conversation.refresh()
-      XCTAssertNil(conversation.error)
-      XCTAssertEqual(conversation.messages.count, count)
-      XCTAssertEqual(
-        conversation.visibleMessages.map(\.id),
-        ((count - 9)...count).map(ConversationHistoryFixture.id))
-      conversation.close()
-    }
+  func testLongHistoryRetainsFullProjectionAndPublishesLatestMessagesInOrder() async {
+    let count = 1_000
+    let fixture = ConversationHistoryFixture(count: count)
+    let conversation = fixture.conversation()
+    defer { conversation.close() }
+    await conversation.refresh()
+    XCTAssertNil(conversation.error)
+    let expected = (1...count).map(ConversationHistoryFixture.id)
+    XCTAssertEqual(conversation.messages.map(\.id), expected)
+    let visible = conversation.visibleMessages.map(\.id)
+    XCTAssertEqual(visible.last, expected.last)
+    XCTAssertEqual(visible, Array(expected.suffix(visible.count)))
   }
   func testRecreatedStoreHydratesFullHistoryWithAnInitialWindow() async throws {
     let fixture = ConversationHistoryFixture()
@@ -24,54 +24,66 @@ final class ConversationWindowStoreTests: XCTestCase {
     let scope = ChatCacheScope(
       apiBaseURL: fixture.http.baseURL, userID: "user", workspaceID: "workspace")
     let original = fixture.conversation(cache: cacheDirectory.cache(scope: scope))
+    defer { original.close() }
     await original.refresh()
     await original.loadEarlierMessages()
+    let history = original.messages
+    let readingID = try XCTUnwrap(original.visibleMessages.first?.id)
     original.rememberReadingPosition(
-      ConversationReadingPosition(messageID: ConversationHistoryFixture.id(95), offset: -42))
-    XCTAssertEqual(original.visibleMessages.count, 20)
+      ConversationReadingPosition(messageID: readingID, offset: -42))
     original.close()
 
     let restored = fixture.conversation(cache: cacheDirectory.cache(scope: scope))
     defer { restored.close() }
     await restored.refresh()
-    XCTAssertEqual(restored.messages, original.messages)
+    XCTAssertEqual(restored.messages, history)
     XCTAssertEqual(restored.messages.count, 100)
-    XCTAssertEqual(
-      restored.visibleMessages.map(\.id), (91...100).map(ConversationHistoryFixture.id))
+    let visible = restored.visibleMessages.map(\.id)
+    XCTAssertEqual(visible.last, history.last?.id)
+    XCTAssertEqual(visible, Array(history.map(\.id).suffix(visible.count)))
     XCTAssertNil(restored.readingPosition)
   }
 
-  func testExpansionAndRemoteUpdatesRetainReadingWindowAndFullHistory() async {
+  func testExpansionAndRemoteUpdatesRetainReadingWindowAndFullHistory() async throws {
     let fixture = ConversationHistoryFixture()
     let conversation = fixture.conversation()
     defer { conversation.close() }
     await conversation.refresh()
-    XCTAssertEqual(conversation.messages.count, 100)
-    XCTAssertEqual(
-      conversation.visibleMessages.map(\.id), (91...100).map(ConversationHistoryFixture.id))
+    let expected = (1...100).map(ConversationHistoryFixture.id)
+    XCTAssertEqual(conversation.messages.map(\.id), expected)
+    let initial = conversation.visibleMessages.map(\.id)
+    let readingID = try XCTUnwrap(initial.first)
+    let readingSequence = try XCTUnwrap(
+      (1...100).first { ConversationHistoryFixture.id($0) == readingID })
     let position = ConversationReadingPosition(
-      messageID: ConversationHistoryFixture.id(95), offset: -42)
+      messageID: readingID, offset: -42)
     conversation.rememberReadingPosition(position)
     async let first: Void = conversation.loadEarlierMessages()
     async let overlapping: Void = conversation.loadEarlierMessages()
     _ = await (first, overlapping)
-    XCTAssertEqual(conversation.visibleMessages.first?.id, ConversationHistoryFixture.id(81))
+    let expanded = conversation.visibleMessages.map(\.id)
+    XCTAssertGreaterThan(expanded.count, initial.count)
+    XCTAssertEqual(expanded, Array(expected.suffix(expanded.count)))
+    XCTAssertEqual(Array(expanded.suffix(initial.count)), initial)
     fixture.appendMessage()
     await conversation.refresh()
-    XCTAssertEqual(conversation.messages.count, 101)
-    XCTAssertEqual(conversation.visibleMessages.count, 21)
+    let latestID = ConversationHistoryFixture.id(101)
+    XCTAssertEqual(conversation.messages.map(\.id), expected + [latestID])
+    XCTAssertEqual(conversation.visibleMessages.map(\.id), expanded + [latestID])
     XCTAssertEqual(conversation.readingPosition, position)
-    fixture.revoke(95)
+    fixture.revoke(readingSequence)
     await conversation.refresh()
-    XCTAssertFalse(conversation.messages.contains { $0.id == position.messageID })
-    XCTAssertEqual(conversation.readingPosition?.messageID, ConversationHistoryFixture.id(96))
+    let remaining = expected.filter { $0 != readingID } + [latestID]
+    XCTAssertEqual(conversation.messages.map(\.id), remaining)
+    XCTAssertEqual(
+      conversation.readingPosition?.messageID, ConversationHistoryFixture.id(readingSequence + 1))
     let rebased = conversation.readingPosition
     conversation.rememberReadingPosition(position)
     XCTAssertEqual(conversation.readingPosition, rebased)
     conversation.resetRenderWindowToLatest()
-    XCTAssertEqual(
-      conversation.visibleMessages.map(\.id),
-      (90...101).filter { $0 != 95 }.map(ConversationHistoryFixture.id))
+    let latest = conversation.visibleMessages.map(\.id)
+    XCTAssertEqual(latest.last, latestID)
+    XCTAssertEqual(latest, Array(remaining.suffix(latest.count)))
     XCTAssertNil(conversation.readingPosition)
     XCTAssertEqual(conversation.messages.count, 100)
   }

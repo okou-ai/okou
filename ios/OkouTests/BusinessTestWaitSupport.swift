@@ -7,6 +7,7 @@ import XCTest
 extension XCTestCase {
   func waitForBusinessResult(
     timeout: TimeInterval = 3, file: StaticString = #filePath, line: UInt = #line,
+    message: @autoclosure () -> String = "",
     _ predicate: @escaping @MainActor () -> Bool
   ) async throws {
     let ready = expectation(description: "The production business result became available")
@@ -21,7 +22,7 @@ extension XCTestCase {
     await fulfillment(of: [ready], timeout: timeout)
     observation.cancel()
     await observation.value
-    _ = try XCTUnwrap(predicate() ? true : nil, file: file, line: line)
+    _ = try XCTUnwrap(predicate() ? true : nil, message(), file: file, line: line)
   }
 
   func waitForFileRemoval(

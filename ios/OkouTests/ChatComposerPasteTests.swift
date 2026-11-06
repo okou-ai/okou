@@ -29,7 +29,7 @@ final class ChatComposerPasteTests: XCTestCase {
         [UTType.png.identifier: png],
       ], options: [.localOnly: true])
     input.paste(nil)
-    try await eventually(
+    try await waitForBusinessResult(
       message: "Mixed paste not ready: draft=\(conversation.draft), "
         + "items=\(conversation.attachmentDraft.items.count), "
         + "importing=\(conversation.attachmentDraft.importingCount), "
@@ -69,7 +69,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let input = try XCTUnwrap(textView(in: host.view))
     let provider = try XCTUnwrap(NSItemProvider(contentsOf: file))
     input.paste(itemProviders: [provider, provider])
-    try await eventually {
+    try await waitForBusinessResult {
       conversation.attachmentDraft.items.contains {
         if case .failed = $0.state { true } else { false }
       }
@@ -77,9 +77,9 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertEqual(fixture.state.value.withLock { $0.preparations.count }, 1)
     let item = try XCTUnwrap(conversation.attachmentDraft.items.first)
     conversation.attachmentDraft.retry(item.id)
-    try await eventually { conversation.attachmentDraft.isReady }
+    try await waitForBusinessResult { conversation.attachmentDraft.isReady }
     input.paste(itemProviders: [provider])
-    try await eventually {
+    try await waitForBusinessResult {
       conversation.attachmentDraft.items.count == 2 && conversation.attachmentDraft.isReady
     }
     XCTAssertEqual(fixture.state.value.withLock { $0.preparations.count }, 3)
@@ -201,7 +201,7 @@ final class ChatComposerPasteTests: XCTestCase {
     next.draft = "Next conversation"
     await next.send()
     delivery.release()
-    try await eventually {
+    try await waitForBusinessResult {
       original.attachmentDraft.hasAttachments && original.attachmentDraft.isReady
     }
     XCTAssertFalse(next.attachmentDraft.hasAttachments)
@@ -331,10 +331,10 @@ final class ChatComposerPasteTests: XCTestCase {
     readGate.yield()
     await synchronization.value
     delivery.release()
-    try await eventually {
+    try await waitForBusinessResult {
       conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
-        && fixture.state.value.withLock { $0.preparations.count == 1 }
     }
+    XCTAssertEqual(fixture.state.value.withLock { $0.preparations.count }, 1)
     let unchanged = try await repository.load(.thread(AttachmentFlowFixture.threadID))
     XCTAssertEqual(unchanged, remote)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })

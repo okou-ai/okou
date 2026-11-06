@@ -80,16 +80,16 @@ final class ChatComposerWorkflowTests: XCTestCase {
     input.selectedRange = NSRange(location: "🌷 Keep /rel".utf16.count, length: 0)
     let workflow = try await workflowCell("release", in: host.view)
     XCTAssertTrue(workflow.accessibilityActivate())
-    try await eventually { conversation.draft == "🌷 Keep /release tail" }
+    try await waitForBusinessResult { conversation.draft == "🌷 Keep /release tail" }
     XCTAssertEqual(input.selectedRange, NSRange(location: "🌷 Keep /release".utf16.count, length: 0))
     XCTAssertTrue(input.isFirstResponder)
     XCTAssertTrue(source.recentIDs().isEmpty)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
     try await hostingPresentationFrame()
     input.undoManager?.undo()
-    try await eventually { conversation.draft == "🌷 Keep /rel tail" }
+    try await waitForBusinessResult { conversation.draft == "🌷 Keep /rel tail" }
     input.undoManager?.redo()
-    try await eventually { conversation.draft == "🌷 Keep /release tail" }
+    try await waitForBusinessResult { conversation.draft == "🌷 Keep /release tail" }
     input.insertText(" edited")
     XCTAssertTrue(conversation.draft.contains("edited"))
   }
@@ -166,7 +166,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let confirm = try XCTUnwrap(input.keyCommands?.first { $0.input == "\r" })
     XCTAssertEqual(confirm.modifierFlags, [])
     _ = input.perform(confirm.action, with: confirm)
-    try await eventually { conversation.draft == "/release " }
+    try await waitForBusinessResult { conversation.draft == "/release " }
     XCTAssertTrue(input.isFirstResponder)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
   }
@@ -410,8 +410,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
   {
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.insertText(text)
-    try await eventually { conversation.draft == text }
-    try await hostingPresentationFrame()
+    try await waitForBusinessResult { conversation.draft == text }
   }
   private func attachmentFile() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(
