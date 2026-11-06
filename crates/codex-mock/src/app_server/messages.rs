@@ -130,12 +130,14 @@ pub(super) fn server_notification_with_index(index: usize) -> Value {
 }
 
 pub(super) fn large_server_notification() -> Value {
-    json!({
-        "method": "experimental/server-notification",
-        "params": {
-            "message": "x".repeat(LARGE_NOTIFICATION_MESSAGE_BYTES),
-        }
-    })
+    let params = Value::Object(serde_json::Map::from_iter([(
+        "message".into(),
+        "x".repeat(LARGE_NOTIFICATION_MESSAGE_BYTES).into(),
+    )]));
+    Value::Object(serde_json::Map::from_iter([
+        ("method".into(), "experimental/server-notification".into()),
+        ("params".into(), params),
+    ]))
 }
 
 // Regression payload above the former 64 MiB Okou framing cap. Stream the
@@ -819,13 +821,17 @@ pub(super) fn large_warning_notification(
     index: usize,
     message_bytes: usize,
 ) -> Value {
-    json!({
-        "method": "warning",
-        "params": {
-            "threadId": thread_id,
-            "message": format!("{index}:{}", "x".repeat(message_bytes)),
-        }
-    })
+    let params = Value::Object(serde_json::Map::from_iter([
+        ("threadId".into(), thread_id.into()),
+        (
+            "message".into(),
+            format!("{index}:{}", "x".repeat(message_bytes)).into(),
+        ),
+    ]));
+    Value::Object(serde_json::Map::from_iter([
+        ("method".into(), "warning".into()),
+        ("params".into(), params),
+    ]))
 }
 
 pub(super) fn write_turn_notifications<W: Write>(
