@@ -1,24 +1,11 @@
 import { sql } from "drizzle-orm";
-import { boolean, check, pgTable, primaryKey } from "drizzle-orm/pg-core";
+import { check, pgTable, primaryKey } from "drizzle-orm/pg-core";
 import { orgMembersMetadataColumns } from "../columns/org-members-metadata";
 
 /** Per-member preferences and their database constraints. */
 export const orgMembersMetadata = pgTable(
   "org_members_metadata",
-  {
-    ...orgMembersMetadataColumns(),
-    // Migration-owned history; shared outgoing API readers still select this column.
-    retiredProactiveActionEnabled: boolean("proactive_action_enabled"),
-    // Retired chat artifacts auto-open preference. The outgoing API still
-    // selects and writes it. Window: until the release that stops naming it is
-    // serving, the outgoing API has drained and rollback floors exclude it;
-    // then a later migration drops it after checking catalog dependencies.
-    retiredChatResourcesEnabledByDefault: boolean(
-      "chat_resources_enabled_by_default",
-    )
-      .notNull()
-      .default(true),
-  },
+  orgMembersMetadataColumns(),
   (table) => {
     return [
       primaryKey({ columns: [table.orgId, table.userId] }),
