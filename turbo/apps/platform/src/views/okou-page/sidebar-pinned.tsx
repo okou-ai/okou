@@ -45,7 +45,6 @@ import {
   type AgentRowMenuAction,
 } from "./sidebar-agent-row-actions.tsx";
 
-
 // Four 66px tiles across the 276px column, with a 4px inline inset, leave each
 // name 58px — room for most first words and a five-character Chinese name.
 // Keep in step with the grid's `grid-cols-4`.
@@ -501,4 +500,3 @@ function HorizontalPinnedAgentSection() {
     </div>
   );
 }
-

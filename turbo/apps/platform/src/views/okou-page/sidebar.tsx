@@ -15,12 +15,7 @@ import {
   Plug,
   Search,
 } from "lucide-react";
-import {
-  Button,
-  RequestCommit,
-  ShortcutTooltipGroup,
-  cn,
-} from "@okouai/ui";
+import { Button, RequestCommit, ShortcutTooltipGroup, cn } from "@okouai/ui";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import {
   sidebarOff$,
