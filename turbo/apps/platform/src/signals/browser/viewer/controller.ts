@@ -4678,6 +4678,18 @@ function createVisibilitySettingsGraph(
   restoreSelection$: ControllerLinks["restoreSelection$"],
 ) {
   const { model, authority$, disposedState$ } = context;
+  const resumeDiscovery$ = command(({ get, set }) => {
+    const client = get(context.clientState$);
+    const discovery = get(get(links$).discovery$);
+    if (client && discovery) {
+      // Presentation rejoins selected proof without waiting for the full scan.
+      detachBrowser(
+        set(discovery.resume$, client.signal),
+        Reason.DomCallback,
+        "browser resumed target discovery",
+      );
+    }
+  });
   return command(
     async (
       { get, set },
@@ -4706,6 +4718,9 @@ function createVisibilitySettingsGraph(
         preview: !!retained,
       });
       set(context.nativeHost.synchronize$);
+      if (!paused) {
+        set(resumeDiscovery$);
+      }
       set(get(links$).cancelCapture$);
       const display = get(get(links$).displayGraph$);
       if (display) {

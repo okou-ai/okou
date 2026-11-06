@@ -1263,3 +1263,139 @@ test("Unmounting cancels discovery and a close waiting for its inventory", async
   ).toMatchObject([{ targetId: "own-first" }, { targetId: "own-later" }]);
   expect(errors).toHaveLength(0);
 });
+
+test.each([1, 5])(
+  "A paused viewer resumes its selected page before the inventory from %s hidden creations finishes",
+  async (count) => {
+    const visibility = context.mocks.browser.visibilityState("visible");
+    const { browser, start } = viewer();
+    await start();
+    await ready();
+    await screen.findByLabelText("Later own tab", { selector: '[role="tab"]' });
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await screen.findByText("Viewing paused");
+    const selected = browser.holdNextMembership("own-first");
+    const background = browser.holdNextMembership("own-later");
+    act(() => {
+      for (let index = 0; index < count; index++) {
+        browser.duplicate("own-first");
+      }
+      visibility.changeTo("visible");
+    });
+    await selected.received;
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByRole("img", { name: "Live browser view" }),
+    ).toBeVisible();
+    await act(selected.release);
+    await background.received;
+    await ready();
+    const address = screen.getByLabelText("Address");
+    await fill(address, "resumed-discovery.example/ready");
+    await userEvent.keyboard("{Enter}");
+    await ready("http://resumed-discovery.example/ready");
+    await act(background.release);
+  },
+);
+
+test("A paused partial scan resumes with the surviving scoped page after the original selection moves away", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const { browser, start } = viewer();
+  const scan = browser.holdNextMembership("sibling-3");
+  await start();
+  await scan.received;
+  await ready();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  await act(scan.release);
+  const survivor = browser.holdNextMembership("own-later");
+  act(() => {
+    browser.move("own-first", 202);
+    visibility.changeTo("visible");
+    visibility.changeTo("hidden");
+    visibility.changeTo("visible");
+  });
+  await survivor.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(survivor.release);
+  await ready("https://later.example.com");
+  expect(
+    screen.getByLabelText("Later own tab", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+  expect(
+    screen.queryByLabelText("First own tab", { selector: '[role="tab"]' }),
+  ).not.toBeInTheDocument();
+});
+
+test("Window loss while paused cannot resume a viewer with pending discovery", async () => {
+  recordBrowserStartupErrors();
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const { browser, start } = viewer();
+  await start();
+  await ready();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    browser.duplicate("own-first");
+    browser.nativeEvent("window-removed", undefined, { windowId: 101 });
+  });
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await screen.findByText("The assigned browser window is unavailable.");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  ).toBeDisabled();
+});
+
+test("An already dispatched discovery failure survives a visibility pause", async () => {
+  recordBrowserStartupErrors();
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const { browser, start } = viewer();
+  const scan = browser.holdNextMembership("sibling-3");
+  await start();
+  await scan.received;
+  await ready();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  await act(async () => {
+    await scan.releaseFailure("Method not found", -32_601);
+  });
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await screen.findByText("The browser does not support this operation.");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+});
+
+test("A new viewer owns hidden changes after the paused surface unmounts", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const { browser, start } = viewer();
+  await start();
+  await ready();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    browser.move("own-first", 202);
+  });
+  cleanup();
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await start();
+  await ready("https://later.example.com");
+  expect(
+    screen.getByLabelText("Later own tab", { selector: '[role="tab"]' }),
+  ).toHaveAttribute("aria-selected", "true");
+});
