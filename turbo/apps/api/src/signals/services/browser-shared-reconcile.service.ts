@@ -24,6 +24,7 @@ import {
   or,
 } from "drizzle-orm";
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
+import { ZodError } from "zod";
 import { isForeignKeyViolation, safeSqlStateCode } from "../../lib/pg-errors";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
@@ -33,6 +34,7 @@ import { joinAll, settleIncludingAbort } from "../utils";
 import {
   BrowserUseCdpCommandError,
   BrowserUseProviderError,
+  BrowserUseWindowHealthError,
   browserUseWindowExists,
   browserUseNativeConnection,
   tryCloseBrowserUseWindow,
@@ -83,10 +85,38 @@ const RETIREMENT_PROVIDER_ERROR_CODES = Object.freeze([
   "BROWSER_USE_ERROR",
   "BROWSER_USE_INVALID_RESPONSE",
   "BROWSER_USE_OUTPUT_TOO_LARGE",
+  "BROWSER_USE_TIMEOUT",
 ]);
+
+/** Class names are fixed labels, never arbitrary provider-controlled names. */
+function nativeHealthErrorClass(error: unknown) {
+  if (error instanceof ZodError) {
+    return "ZodError";
+  }
+  if (error instanceof DOMException) {
+    return "DOMException";
+  }
+  if (error instanceof TypeError) {
+    return "TypeError";
+  }
+  if (error instanceof SyntaxError) {
+    return "SyntaxError";
+  }
+  if (error instanceof RangeError) {
+    return "RangeError";
+  }
+  return error instanceof Error ? "Error" : "unknown";
+}
 
 /** Never pass provider messages, validation input or SQL to the logger. */
 function sharedWindowFailure(error: unknown) {
+  if (error instanceof BrowserUseWindowHealthError) {
+    return {
+      errorKind: error.phase === "validation" ? "validation" : "transport",
+      nativePhase: error.phase,
+      errorClass: nativeHealthErrorClass(error.cause),
+    };
+  }
   const sqlState = safeSqlStateCode(error);
   if (sqlState) {
     return { errorKind: "database", errorCode: sqlState };
