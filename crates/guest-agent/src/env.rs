@@ -729,7 +729,7 @@ fn load_run_payload_from_path(path: &Path) -> Result<guest_contracts::env::RunPa
     let raw = read_and_remove_private_runtime_file(path, RUN_PAYLOAD_PRIVATE_FILE)?;
 
     let payload: guest_contracts::env::RunPayload = serde_json::from_str(&raw)
-        .map_err(|e| format!("parse {RUN_PAYLOAD_FILE_ENV_KEY} JSON: {e}"))?;
+        .map_err(|error| private_json_parse_error(RUN_PAYLOAD_FILE_ENV_KEY, &error))?;
     validate_run_payload(&payload)?;
 
     Ok(payload)
@@ -767,10 +767,21 @@ fn load_user_env_from_path(path: &Path) -> Result<HashMap<String, String>, Strin
     let raw = read_and_remove_private_runtime_file(path, USER_ENV_PRIVATE_FILE)?;
 
     let user_env: HashMap<String, String> = serde_json::from_str(&raw)
-        .map_err(|e| format!("parse {USER_ENV_FILE_ENV_KEY} JSON: {e}"))?;
+        .map_err(|error| private_json_parse_error(USER_ENV_FILE_ENV_KEY, &error))?;
     validate_user_env(&user_env)?;
 
     Ok(user_env)
+}
+
+fn private_json_parse_error(env_key: &str, error: &serde_json::Error) -> String {
+    // Serde's error text can quote private values before the SecretMasker exists.
+    // Keep only bounded metadata so returned errors are safe for startup logging.
+    format!(
+        "parse {env_key} JSON: category={:?} line={} column={}",
+        error.classify(),
+        error.line(),
+        error.column()
+    )
 }
 
 fn read_and_remove_private_runtime_file(
