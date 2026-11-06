@@ -3,14 +3,15 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
-use super::{NetworkPolicy, RunnerResult, capacity};
+use super::{NetworkPolicy as OwnedNetworkPolicy, RunnerResult, capacity};
 
 /// A registration-local view with the same four serialized policy fields.
 /// Serde borrows unescaped names and owns decoded escaped names. Other registry
 /// fields keep their existing types and validation, including model JSON numbers.
+/// Keep the owned type's name so Serde's invalid-type/length diagnostics agree.
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-pub(super) struct Policy<'a> {
+pub(super) struct NetworkPolicy<'a> {
     #[serde(borrow)]
     allow: Vec<Permission<'a>>,
     #[serde(borrow)]
@@ -30,19 +31,21 @@ impl AsRef<str> for Permission<'_> {
     }
 }
 
-impl capacity::PolicyCapacity for Policy<'_> {
+impl capacity::PolicyCapacity for NetworkPolicy<'_> {
     fn capacity_growth(&self) -> RunnerResult<u64> {
         capacity::arrays_growth([&self.allow, &self.deny, &self.ask], &self.unknown_policy)
     }
 }
 
-pub(super) fn policies(values: &HashMap<String, NetworkPolicy>) -> HashMap<String, Policy<'_>> {
+pub(super) fn policies(
+    values: &HashMap<String, OwnedNetworkPolicy>,
+) -> HashMap<String, NetworkPolicy<'_>> {
     values
         .iter()
         .map(|(name, policy)| {
             (
                 name.clone(),
-                Policy {
+                NetworkPolicy {
                     allow: permissions(&policy.allow),
                     deny: permissions(&policy.deny),
                     ask: permissions(&policy.ask),

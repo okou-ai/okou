@@ -37,7 +37,7 @@ async fn registration_decoder_preserves_owned_writer_values() {
         .await
         .unwrap();
     let owned: ProxyRegistry = parse_registry(&content, &mut UnobservedRegistration).unwrap();
-    let borrowed: ProxyRegistry<borrowed::Policy<'_>> =
+    let borrowed: ProxyRegistry<borrowed::NetworkPolicy<'_>> =
         parse_registry(&content, &mut UnobservedRegistration).unwrap();
     assert_eq!(decoded_output(&owned), decoded_output(&borrowed));
     assert_eq!(
@@ -77,6 +77,8 @@ async fn registration_decoder_retains_typed_rejections() {
     )
     .unwrap();
     let invalid_policies = [
+        r#"null"#,
+        r#"[]"#,
         r#"{"allow":[],"deny":[],"ask":[],"unknownPolicy":null}"#,
         r#"{"allow":[1],"deny":[],"ask":[],"unknownPolicy":"deny"}"#,
         r#"{"allow":[],"ask":[],"unknownPolicy":"deny"}"#,
@@ -89,7 +91,7 @@ async fn registration_decoder_retains_typed_rejections() {
         let content = registry.to_string().replace("\"POLICY\"", policy);
         let owned = parse_registry::<NetworkPolicy>(&content, &mut UnobservedRegistration);
         let borrowed =
-            parse_registry::<borrowed::Policy<'_>>(&content, &mut UnobservedRegistration);
+            parse_registry::<borrowed::NetworkPolicy<'_>>(&content, &mut UnobservedRegistration);
         assert!(owned.is_err(), "owned decoder accepted {policy}");
         assert!(borrowed.is_err(), "borrowing decoder accepted {policy}");
         assert_eq!(
@@ -104,5 +106,8 @@ async fn registration_decoder_retains_typed_rejections() {
         &format!("{}0{}", "[".repeat(128), "]".repeat(128)),
     );
     assert!(parse_registry::<NetworkPolicy>(&content, &mut UnobservedRegistration).is_err());
-    assert!(parse_registry::<borrowed::Policy<'_>>(&content, &mut UnobservedRegistration).is_err());
+    assert!(
+        parse_registry::<borrowed::NetworkPolicy<'_>>(&content, &mut UnobservedRegistration)
+            .is_err()
+    );
 }

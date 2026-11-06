@@ -861,7 +861,8 @@ impl ProxyRegistryHandle {
         // The buffer and incoming registration remain alive until complete
         // serialization. Only owned bytes enter the publication worker.
         let content = read_registry_content(&self.registry_path, observer).await?;
-        let mut registry: ProxyRegistry<borrowed::Policy<'_>> = parse_registry(&content, observer)?;
+        let mut registry: ProxyRegistry<borrowed::NetworkPolicy<'_>> =
+            parse_registry(&content, observer)?;
         let started = Instant::now();
         let now = chrono::Utc::now().timestamp_millis();
         // Preserve original observation provenance for a same-run refresh and
