@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.1](https://github.com/okou-ai/okou/compare/ios-v0.28.0...ios-v0.28.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ios:** share attachment previews and cache sent files ([#45737](https://github.com/okou-ai/okou/issues/45737)) ([ca4a103](https://github.com/okou-ai/okou/commit/ca4a103b83e02d854800cd5ce5ee9557b3eeb08a))
+
 ## [0.28.0](https://github.com/okou-ai/okou/compare/ios-v0.27.3...ios-v0.28.0) (2026-11-06)
 
 

@@ -1,3 +1,5 @@
+use guest_contracts::guest_timezone::is_safe_timezone_name;
+
 use crate::ProtocolError;
 use crate::frame::encode_into;
 use crate::read::{
@@ -343,12 +345,6 @@ fn decode_timezone(mode: u8, name: &str) -> Result<GuestStateRestoreTimezone<'_>
             "guest_state_restore timezone mode is invalid",
         )),
     }
-}
-
-fn is_safe_timezone_name(timezone: &str) -> bool {
-    timezone.bytes().all(|byte| {
-        byte.is_ascii_alphanumeric() || byte == b'/' || byte == b'_' || byte == b'-' || byte == b'+'
-    })
 }
 
 fn validate_stderr(stderr: ExecCapturedOutput<'_>) -> Result<(), ProtocolError> {

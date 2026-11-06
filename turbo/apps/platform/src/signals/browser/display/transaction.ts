@@ -152,9 +152,12 @@ function createCapturePreparation(context: TransactionContext) {
       if (!set(current$, signal)) {
         return;
       }
-      const boundary = await captureBoundary(client, target.sessionId, () => {
-        return !signal.aborted && target.current();
-      });
+      const boundary = await captureBoundary(
+        client,
+        target.sessionId,
+        target.current,
+        signal,
+      );
       signal.throwIfAborted();
       if (boundary === null || !set(current$, signal)) {
         return;

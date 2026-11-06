@@ -57,11 +57,14 @@ interface Owner {
   readonly orgId: string;
   readonly userId: string;
   readonly chatThreadId?: string;
+  // Open can retire its previous window before publishing the new one.
+  readonly operationId?: string;
 }
 interface Candidate {
   readonly profile: Profile;
   readonly window: Window;
   readonly threadId: string | null;
+  readonly operationId?: string;
 }
 
 interface RetirementProgress {
@@ -485,6 +488,7 @@ const retireSharedWindow$ = command(
       progress.phase = "publish-window-change";
       await publishBrowserSessionChangedSafely(profile.userId, {
         threadId: current.chatThreadId,
+        ...(target.operationId ? { operationId: target.operationId } : {}),
       });
       signal.throwIfAborted();
     }
@@ -738,7 +742,11 @@ const reconcileSharedWindows$ = command(
       if (!binding) {
         throw new Error("A bound Browser chat has no live window");
       }
-      const row = { ...raw, window: binding };
+      const row = {
+        ...raw,
+        window: binding,
+        operationId: owner?.operationId,
+      };
       // Each candidate owns its diagnostic progress, including concurrent sweeps.
       const progress: RetirementProgress = { phase: "read-window" };
       const result = await settleIncludingAbort(

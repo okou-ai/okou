@@ -33,12 +33,6 @@ final class MessageAttachmentStore {
     cache.countLimit = 64
     return cache
   }()
-  private let originalFiles: NSCache<NSString, ChatAttachmentFile> = {
-    let cache = NSCache<NSString, ChatAttachmentFile>()
-    cache.totalCostLimit = 64 * 1024 * 1024
-    cache.countLimit = 16
-    return cache
-  }()
   private var thumbnailTasks: [String: Task<Thumbnail, Error>] = [:]
   private var previewTask: Task<Void, Never>?
   private var generation = UUID()
@@ -94,8 +88,14 @@ final class MessageAttachmentStore {
   func open(_ attachment: ChatMessageAttachment) {
     guard !closed else { return }
     previewTask?.cancel()
-    let item = Preview(attachment: attachment, thumbnail: cachedThumbnail(attachment))
+    let artifact = ChatArtifact(
+      source: .file(attachment.downloadID), filename: attachment.filename,
+      contentType: attachment.contentType, size: attachment.size)
+    let item = Preview(
+      attachment: attachment, thumbnail: cachedThumbnail(attachment),
+      file: commands.artifacts.uploadedFile(artifact))
     preview = item
+    if item.file != nil { return }
     previewTask = Task { [weak self] in
       guard let self else { return }
       do {
@@ -122,7 +122,6 @@ final class MessageAttachmentStore {
     for task in thumbnailTasks.values { task.cancel() }
     thumbnailTasks.removeAll()
     thumbnails.removeAllObjects()
-    originalFiles.removeAllObjects()
     for task in downloads.values { task.cancel() }
     downloads.removeAll()
   }
@@ -138,13 +137,8 @@ final class MessageAttachmentStore {
     guard !closed else { throw CancellationError() }
     let scope = generation
     let id = UUID()
-    let cached = originalFiles.object(forKey: attachment.downloadID as NSString)
     let task = Task<ChatAttachmentFile?, Error> {
-      if let cached {
-        try await commands.validateAttachment(attachment.downloadID)
-        return cached
-      }
-      return try await commands.downloadAttachment(attachment, thumbnail: thumbnail)
+      try await commands.downloadAttachment(attachment, thumbnail: thumbnail)
     }
     downloads[id] = task
     defer { downloads[id] = nil }
@@ -156,11 +150,6 @@ final class MessageAttachmentStore {
       }
       try Task.checkCancellation()
       guard !closed, generation == scope else { throw CancellationError() }
-      if let file, file.originalAttachmentID == attachment.downloadID,
-        file.size <= originalFiles.totalCostLimit
-      {
-        originalFiles.setObject(file, forKey: attachment.downloadID as NSString, cost: file.size)
-      }
       return file
     } catch {
       if !closed, generation == scope, !Task.isCancelled,

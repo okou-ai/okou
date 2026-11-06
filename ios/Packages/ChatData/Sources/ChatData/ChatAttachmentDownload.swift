@@ -1,7 +1,7 @@
 import ChatDomain
 import Foundation
 
-/// Owned by the active detail or presented preview, never by durable history.
+/// Retained by the workspace's bounded file cache and any active preview/share consumer.
 public final class ChatAttachmentFile: Sendable {
   public let url: URL
   public let size: Int
@@ -38,52 +38,19 @@ public final class ChatAttachmentFile: Sendable {
     }
   }
 
-  deinit { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
-}
-
-struct ChatAttachmentDownload {
-  let client: APIClient
-
-  func download(_ attachment: ChatMessageAttachment, thumbnail: Bool) async throws
-    -> ChatAttachmentFile?
+  static func retaining(_ source: URL, filename: String, attachmentID: String) throws
+    -> ChatAttachmentFile
   {
-    // A rejected/expired storage signature gets one fresh authorization lookup, never a stored URL.
-    for attempt in 0...1 {
-      let resolved: FileURL = try await client.request(
-        "/api/web/file-url", query: [URLQueryItem(name: "file_id", value: attachment.downloadID)])
-      let url: URL
-      if thumbnail {
-        if let preview = resolved.previewImageUrl {
-          url = preview
-        } else if attachment.contentType.hasPrefix("image/") {
-          url = resolved.url
-        } else {
-          return nil
-        }
-      } else {
-        url = resolved.downloadUrl
-      }
-      do {
-        let temporary = try await client.downloadAttachmentBytes(
-          url, maximumSize: thumbnail ? 20 * 1024 * 1024 : ChatAttachment.maximumSize)
-        defer { try? FileManager.default.removeItem(at: temporary) }
-        // Snapshot filenames are display data, never filesystem paths.
-        return try ChatAttachmentFile.adopt(
-          temporary, filename: attachment.filename,
-          originalAttachmentID: !thumbnail || resolved.previewImageUrl == nil
-            ? attachment.downloadID : nil)
-      } catch APIClientError.downloadFailed(let status)
-        where attempt == 0 && [401, 403].contains(status)
-      {
-        continue
-      }
+    let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: temporary) }
+    // A separate link keeps draft cleanup from deleting the sent file without duplicating bytes.
+    do {
+      try FileManager.default.linkItem(at: source, to: temporary)
+    } catch {
+      try FileManager.default.copyItem(at: source, to: temporary)
     }
-    throw APIClientError.invalidResponse
+    return try adopt(temporary, filename: filename, originalAttachmentID: attachmentID)
   }
 
-  private struct FileURL: Decodable, Sendable {
-    let url: URL
-    let downloadUrl: URL
-    let previewImageUrl: URL?
-  }
+  deinit { try? FileManager.default.removeItem(at: url.deletingLastPathComponent()) }
 }

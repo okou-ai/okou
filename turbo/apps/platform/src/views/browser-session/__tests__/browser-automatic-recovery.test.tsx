@@ -91,7 +91,14 @@ function mockViewer() {
     };
   }
   context.mocks.api(browserContract.get, ({ params, respond }) => {
-    return respond(200, { browser: session(params.threadId) });
+    return respond(200, {
+      browser: session(params.threadId),
+      viewer: {
+        browser: session(params.threadId),
+        cdpUrl: endpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      },
+    });
   });
   context.mocks.api(browserContract.viewerConnection, ({ params, respond }) => {
     return respond(200, {
@@ -384,7 +391,7 @@ test("Automatic connection recovery survives transient descriptors and restores 
   const replies = Array.from({ length: 3 }, () => {
     return context.mocks.deferred<void>();
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+  context.mocks.api(browserContract.get, ({ respond }) => {
     replies[reads++]?.resolve();
     return reads < 3
       ? respond(500, {
@@ -395,8 +402,11 @@ test("Automatic connection recovery survives transient descriptors and restores 
         })
       : respond(200, {
           browser: viewer.session(),
-          cdpUrl: endpoint,
-          extension: TEST_BROWSER_EXTENSION,
+          viewer: {
+            browser: viewer.session(),
+            cdpUrl: endpoint,
+            extension: TEST_BROWSER_EXTENSION,
+          },
         });
   });
   act(() => {
@@ -470,7 +480,7 @@ test.each(["shared", "split"] as const)(
       return context.mocks.deferred<void>();
     });
     const fresh = viewer.browser.holdTargetFrames("example-page");
-    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    context.mocks.api(browserContract.get, ({ respond }) => {
       replies[reads++]!.resolve();
       return reads < 3
         ? respond(500, {
@@ -481,8 +491,11 @@ test.each(["shared", "split"] as const)(
           })
         : respond(200, {
             browser: viewer.session(),
-            cdpUrl: endpoint,
-            extension: TEST_BROWSER_EXTENSION,
+            viewer: {
+              browser: viewer.session(),
+              cdpUrl: endpoint,
+              extension: TEST_BROWSER_EXTENSION,
+            },
           });
     });
     act(() => {
@@ -594,7 +607,7 @@ test.each(["attempt", "pacing"] as const)(
       screen.getByLabelText<HTMLCanvasElement>("Live browser view");
     const clear = vi.spyOn(canvas.getContext("2d")!, "clearRect");
     const denied = context.mocks.deferred<void>();
-    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    context.mocks.api(browserContract.get, ({ respond }) => {
       denied.resolve();
       return respond(403, { error: { code: "FORBIDDEN", message: "Revoked" } });
     });
@@ -683,7 +696,7 @@ test("Exhausted automatic recovery stops after three attempts and permits a fres
   const replies = Array.from({ length: 3 }, () => {
     return context.mocks.deferred<void>();
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+  context.mocks.api(browserContract.get, ({ respond }) => {
     replies[reads++]?.resolve();
     return unavailable
       ? respond(500, {
@@ -694,8 +707,11 @@ test("Exhausted automatic recovery stops after three attempts and permits a fres
         })
       : respond(200, {
           browser: viewer.session(),
-          cdpUrl: endpoint,
-          extension: TEST_BROWSER_EXTENSION,
+          viewer: {
+            browser: viewer.session(),
+            cdpUrl: endpoint,
+            extension: TEST_BROWSER_EXTENSION,
+          },
         });
   });
   act(() => {
@@ -743,7 +759,7 @@ test.each([403, 409] as const)(
     const viewer = mockViewer();
     let denied = true;
     let reads = 0;
-    context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    context.mocks.api(browserContract.get, ({ respond }) => {
       reads++;
       return denied
         ? respond(status, {
@@ -754,8 +770,11 @@ test.each([403, 409] as const)(
           })
         : respond(200, {
             browser: viewer.session(),
-            cdpUrl: endpoint,
-            extension: TEST_BROWSER_EXTENSION,
+            viewer: {
+              browser: viewer.session(),
+              cdpUrl: endpoint,
+              extension: TEST_BROWSER_EXTENSION,
+            },
           });
     });
     await viewer.start();
@@ -805,7 +824,7 @@ test("The episode ceiling ends a stalled descriptor and late work cannot start a
   const received = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   let reads = 0;
-  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+  context.mocks.api(browserContract.get, async ({ respond }) => {
     reads++;
     if (reads === 1) {
       received.resolve();
@@ -813,8 +832,11 @@ test("The episode ceiling ends a stalled descriptor and late work cannot start a
     }
     return respond(200, {
       browser: viewer.session(),
-      cdpUrl: endpoint,
-      extension: TEST_BROWSER_EXTENSION,
+      viewer: {
+        browser: viewer.session(),
+        cdpUrl: endpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   act(() => {
@@ -1012,7 +1034,7 @@ test("Manual recovery serializes its transient failures with automatic policy", 
   let phase: "denied" | "temporary" | "ready" = "denied";
   let reads = 0;
   const temporary = context.mocks.deferred<void>();
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+  context.mocks.api(browserContract.get, ({ respond }) => {
     reads++;
     if (phase === "denied") {
       return respond(403, { error: { code: "FORBIDDEN", message: "Denied" } });
@@ -1029,8 +1051,11 @@ test("Manual recovery serializes its transient failures with automatic policy", 
     }
     return respond(200, {
       browser: viewer.session(),
-      cdpUrl: endpoint,
-      extension: TEST_BROWSER_EXTENSION,
+      viewer: {
+        browser: viewer.session(),
+        cdpUrl: endpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   await viewer.start();
@@ -1387,19 +1412,16 @@ test.each(["network", "http-503"] as const)(
     const failed = context.mocks.deferred<void>();
     let unavailable = true;
     if (kind === "network") {
-      context.mocks.http.get(
-        `*/api/chat-threads/${threadId}/browser/viewer-connection`,
-        () => {
-          if (!unavailable) {
-            return;
-          }
-          unavailable = false;
-          failed.resolve();
-          return HttpResponse.error();
-        },
-      );
+      context.mocks.http.get(`*/api/chat-threads/${threadId}/browser`, () => {
+        if (!unavailable) {
+          return;
+        }
+        unavailable = false;
+        failed.resolve();
+        return HttpResponse.error();
+      });
     } else {
-      context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+      context.mocks.api(browserContract.get, ({ respond }) => {
         if (unavailable) {
           unavailable = false;
           failed.resolve();
@@ -1412,8 +1434,11 @@ test.each(["network", "http-503"] as const)(
         }
         return respond(200, {
           browser: viewer.session(),
-          cdpUrl: endpoint,
-          extension: TEST_BROWSER_EXTENSION,
+          viewer: {
+            browser: viewer.session(),
+            cdpUrl: endpoint,
+            extension: TEST_BROWSER_EXTENSION,
+          },
         });
       });
     }
@@ -1682,7 +1707,7 @@ test("Control loss after image retry leaves only two connection attempts before 
   const responses = Array.from({ length: 2 }, () => {
     return context.mocks.deferred<void>();
   });
-  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+  context.mocks.api(browserContract.get, ({ respond }) => {
     responses[reads++]?.resolve();
     return unavailable
       ? respond(503, {
@@ -1693,8 +1718,11 @@ test("Control loss after image retry leaves only two connection attempts before 
         })
       : respond(200, {
           browser: viewer.session(),
-          cdpUrl: endpoint,
-          extension: TEST_BROWSER_EXTENSION,
+          viewer: {
+            browser: viewer.session(),
+            cdpUrl: endpoint,
+            extension: TEST_BROWSER_EXTENSION,
+          },
         });
   });
   await loseControlDuringImageRetry(viewer);

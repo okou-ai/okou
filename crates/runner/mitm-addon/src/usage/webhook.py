@@ -15,7 +15,6 @@ import time
 import urllib.error
 import urllib.parse
 from collections.abc import Callable
-from concurrent.futures import Executor
 from datetime import UTC, datetime, timedelta
 from functools import partial
 
@@ -446,43 +445,19 @@ def enqueue_webhook_delivery(
     Returns whether the payload was admitted to delivery.  ``False`` means
     delivery was saturated and the caller still owns retry handling.
     """
-    return _enqueue_webhook_delivery(
-        url=url,
-        bearer_credential=sandbox_token,
-        payload=payload,
-        proxy_log_path=proxy_log_path,
-        log_type=log_type,
-        delivery_outcome_callback=delivery_outcome_callback,
-        executor=usage_executor,
-        try_acquire_capacity=_try_acquire_delivery_capacity,
-        release_capacity=_release_delivery_capacity,
-        pending_delivery_count=_pending_delivery_payload_count,
-        saturation_label="usage delivery",
-        fallback_message="Webhook submission failed, falling back to synchronous delivery",
+    # Keep one dependency snapshot through admission, queued work and fallback.
+    executor, try_acquire_capacity, release_capacity, pending_delivery_count = (
+        usage_executor,
+        _try_acquire_delivery_capacity,
+        _release_delivery_capacity,
+        _pending_delivery_payload_count,
     )
-
-
-def _enqueue_webhook_delivery(
-    *,
-    url: str,
-    bearer_credential: str,
-    payload: dict,
-    proxy_log_path: str,
-    log_type: str,
-    delivery_outcome_callback: _DeliveryOutcomeCallback | None,
-    executor: Executor,
-    try_acquire_capacity: Callable[[], int | None],
-    release_capacity: Callable[[], None],
-    pending_delivery_count: Callable[[], int],
-    saturation_label: str,
-    fallback_message: str,
-) -> bool:
     admitted_count = try_acquire_capacity()
     if admitted_count is None:
         _log_webhook_entry(
             proxy_log_path,
             "info",
-            f"was not admitted because {saturation_label} is saturated",
+            "was not admitted because usage delivery is saturated",
             url,
             log_type,
             payload,
@@ -526,7 +501,7 @@ def _enqueue_webhook_delivery(
     deliver = partial(
         _post_admitted_webhook_with_retry,
         url,
-        bearer_credential,
+        sandbox_token,
         payload,
         proxy_log_path,
         log_type,
@@ -540,7 +515,7 @@ def _enqueue_webhook_delivery(
     except RuntimeError:
         # submit() can queue work before Thread.start() raises. Only one
         # invocation may own delivery, its callback, and counter cleanup.
-        deliver(fallback_message=fallback_message)
+        deliver(fallback_message="Webhook submission failed, falling back to synchronous delivery")
     except Exception:
         if try_claim_delivery():
             try:

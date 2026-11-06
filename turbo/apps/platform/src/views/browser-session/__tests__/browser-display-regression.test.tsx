@@ -56,7 +56,10 @@ function mockViewer(
   const cdpUrl = "wss://browser.example/display-regressions";
   const browser = mockBrowserCdp(context, cdpUrl);
   context.mocks.api(browserContract.get, ({ respond }) => {
-    return respond(200, { browser: session });
+    return respond(200, {
+      browser: session,
+      viewer: { browser: session, cdpUrl, extension: TEST_BROWSER_EXTENSION },
+    });
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(200, {

@@ -943,7 +943,7 @@ function useBrowserRecovery(signals: BrowserSignals) {
   };
 }
 
-export function BrowserRecoveryStatus({
+export function BrowserLoadingStatus({
   signals,
   className,
 }: {
@@ -951,8 +951,10 @@ export function BrowserRecoveryStatus({
   readonly className?: string;
 }) {
   const recovery = useLoadable(signals.recoveryOperation$);
+  const presentation = useGet(signals.presentation$);
   const { t } = useTranslation();
-  return recovery.state === "loading" ? (
+  const recovering = recovery.state === "loading";
+  return recovering || presentation.loadingPreview ? (
     <span
       role="status"
       className={cn(
@@ -962,7 +964,9 @@ export function BrowserRecoveryStatus({
     >
       <Loader2 size={12} aria-hidden className="animate-spin" />
       {t(($) => {
-        return $.browserViewer.reconnecting;
+        return recovering
+          ? $.browserViewer.reconnecting
+          : $.browserViewer.updatingView;
       })}
     </span>
   ) : null;
@@ -1329,7 +1333,9 @@ export function Browser({
               return $.browserViewer.liveView;
             })}
             aria-hidden={
-              presentation.status !== "streaming" && !presentation.retainedFrame
+              presentation.status !== "streaming" &&
+              !presentation.retainedFrame &&
+              !presentation.loadingPreview
             }
             className="block h-full w-full object-contain"
           />

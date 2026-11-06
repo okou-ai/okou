@@ -193,7 +193,11 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     XCTAssertEqual(try Data(contentsOf: reopened), bytes)
     XCTAssertEqual(lookups.withLock { $0 }, 3)
     XCTAssertEqual(transfers.withLock { $0 }, 1)
-    try await waitForFileRemoval(at: url) { viewer.deactivate() }
+    viewer.deactivate()
+    XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    let thumbnailAfterReentry = try await viewer.thumbnail(image)
+    XCTAssertNotNil(thumbnailAfterReentry)
+    XCTAssertEqual(transfers.withLock { $0 }, 1)
   }
 
   func testSeparateThumbnailStaysAvailableWhileOpeningTheFullOriginal() async throws {
@@ -254,9 +258,9 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
   }
 
   private func makeViewer(_ fixture: ChatHTTPFixture) -> MessageAttachmentStore {
-    MessageAttachmentStore(
-      commands: ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client)),
-      didFail: { _ in })
+    let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
+    addTeardownBlock { commands.closeFileCache() }
+    return MessageAttachmentStore(commands: commands, didFail: { _ in })
   }
 
   private func imageData(color: UIColor = .systemTeal) -> Data {

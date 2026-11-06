@@ -30,7 +30,7 @@ export type ViewerTransition =
   | { type: "discovery-failed"; error: ViewerError }
   | { type: "streaming" }
   | { type: "stopped"; retainFrame?: boolean }
-  | { type: "pause"; paused: boolean }
+  | { type: "pause"; paused: boolean; preview?: boolean }
   | { type: "closed" }
   | { type: "failed"; error: ViewerError }
   | ImageEvent
@@ -461,7 +461,9 @@ function createModelTransitions(
         ? !!event.retainFrame &&
             (get(lifecycleState$).status === "streaming" ||
               get(loadingPreviewState$))
-        : event.type === "select" && !!event.preview && !event.paused,
+        : (event.type === "select" || event.type === "pause") &&
+            !!event.preview &&
+            !event.paused,
     );
     if (event.type === "select") {
       set(observeAddressTarget$, event.targetId);

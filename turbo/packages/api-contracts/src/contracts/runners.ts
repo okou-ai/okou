@@ -928,7 +928,7 @@ function requireCompletePiFields(
 const storedSkillBundleSchema = contentBundleSchema
   .extend({
     mountPath: string().regex(
-      /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/u,
+      /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u,
     ),
   })
   .strict();
@@ -1188,7 +1188,10 @@ export const runnersJobClaimContract = c.router({
     pathParams: object({
       id: uuid(),
     }),
-    query: object({ workflowSkills: literal("2") }),
+    query: object({
+      workflowSkills: literal("2"),
+      singleCharacterSkills: literal("1").optional(),
+    }),
     body: object({
       runnerIdentity: runnerProcessIdentitySchema.optional(),
       runnerHostname: runnerHostnameSchema.optional(),

@@ -527,6 +527,7 @@ export async function publishBrowserSessionChangedSafely(
   userId: string,
   browser: {
     readonly threadId: string;
+    readonly operationId?: string;
   },
 ): Promise<void> {
   const payload: BrowserSessionChangedPayload = browser;

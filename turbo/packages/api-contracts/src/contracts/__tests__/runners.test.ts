@@ -66,6 +66,20 @@ describe("cancellation recovery timing contract", () => {
 const claimCapabilities = { piModelConfigGenerations: [1, 2, 3] };
 
 describe("runner claim attribution contract", () => {
+  it("allows previous claims and explicit single-character Skill support", () => {
+    const query = runnersJobClaimContract.claim.query;
+    expect(query.parse({ workflowSkills: "2" })).toStrictEqual({
+      workflowSkills: "2",
+    });
+    expect(
+      query.parse({ workflowSkills: "2", singleCharacterSkills: "1" }),
+    ).toStrictEqual({ workflowSkills: "2", singleCharacterSkills: "1" });
+    expect(
+      query.safeParse({ workflowSkills: "2", singleCharacterSkills: "2" })
+        .success,
+    ).toBe(false);
+  });
+
   it("accepts an optional bounded runner hostname", () => {
     const previousRequest = runnersJobClaimContract.claim.body.parse({
       capabilities: claimCapabilities,
@@ -150,6 +164,22 @@ function loadRunnerClaimResponseFixture(): unknown {
 }
 
 describe("runner claim response contract", () => {
+  it.each([".claude", ".codex", ".pi/agent"])(
+    "accepts the X Connector Skill in the %s claim response",
+    (root) => {
+      const context = executionContextSchema.parse(
+        loadRunnerClaimResponseFixture(),
+      );
+      const mountPath = `/home/user/${root}/skills/x`;
+      const bundle = { ...context.contentBundles.skills[0]!, mountPath };
+      const claimed = executionContextSchema.parse({
+        ...context,
+        contentBundles: { ...context.contentBundles, skills: [bundle] },
+      });
+      expect(claimed.contentBundles.skills).toStrictEqual([bundle]);
+    },
+  );
+
   it("accepts the shared current response fixture", () => {
     const context = executionContextSchema.parse(
       loadRunnerClaimResponseFixture(),
@@ -225,36 +255,51 @@ describe("stored Seed Skill bundle contract", () => {
     cliAgentType: "claude-code",
   };
 
-  it("preserves captured Seed references for all supported skill roots", () => {
-    for (const root of [".claude", ".codex", ".pi/agent"]) {
-      const bundle = {
-        sha256: "a".repeat(64),
-        archiveBytes: 200,
-        mountPath: `/home/user/${root}/skills/workflow-setup`,
-      };
-      const captured = { ...context, seedSkillBundles: [bundle] };
-      for (const schema of [
-        storedExecutionContextSchema,
-        claimCompatibleStoredExecutionContextSchema,
-      ]) {
-        expect(schema.parse(captured).seedSkillBundles).toStrictEqual([bundle]);
+  it.each(["x", "workflow-setup", "x".repeat(64)])(
+    "preserves captured Skill %s for all supported roots and readers",
+    (skillName) => {
+      for (const root of [".claude", ".codex", ".pi/agent"]) {
+        const bundle = {
+          sha256: "a".repeat(64),
+          archiveBytes: 200,
+          mountPath: `/home/user/${root}/skills/${skillName}`,
+        };
+        const captured = { ...context, seedSkillBundles: [bundle] };
+        for (const schema of [
+          storedExecutionContextSchema,
+          claimCompatibleStoredExecutionContextSchema,
+        ]) {
+          expect(schema.parse(captured).seedSkillBundles).toStrictEqual([
+            bundle,
+          ]);
+        }
       }
-    }
-  });
+    },
+  );
 
   it("requires immutable references within a supported skill directory", () => {
     for (const mountPath of [
       "/etc/workflow-setup",
       "/home/user/.codex/skills/../workflow-setup",
+      "/home/user/.codex/skills/",
+      "/home/user/.codex/skills/-x",
+      "/home/user/.codex/skills/x-",
+      "/home/user/.codex/skills/x_y",
+      `/home/user/.codex/skills/${"x".repeat(65)}`,
     ]) {
-      expect(
-        storedExecutionContextSchema.safeParse({
-          ...context,
-          seedSkillBundles: [
-            { sha256: "a".repeat(64), archiveBytes: 200, mountPath },
-          ],
-        }).success,
-      ).toBe(false);
+      for (const schema of [
+        storedExecutionContextSchema,
+        claimCompatibleStoredExecutionContextSchema,
+      ]) {
+        expect(
+          schema.safeParse({
+            ...context,
+            seedSkillBundles: [
+              { sha256: "a".repeat(64), archiveBytes: 200, mountPath },
+            ],
+          }).success,
+        ).toBe(false);
+      }
     }
   });
 });

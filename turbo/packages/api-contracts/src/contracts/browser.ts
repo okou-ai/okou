@@ -161,6 +161,19 @@ export type BrowserViewerConnection = zInfer<
   typeof browserViewerConnectionSchema
 >;
 
+const browserViewerAcquisitionSchema = browserResponseSchema.extend({
+  // Present only for signed-in callers explicitly acquiring the shared viewer.
+  viewer: browserViewerConnectionSchema.nullable().optional(),
+});
+
+export type BrowserViewerAcquisition = zInfer<
+  typeof browserViewerAcquisitionSchema
+>;
+
+const browserViewerQuerySchema = object({
+  viewer: literal("native").optional(),
+}).optional();
+
 const browserConnectionResponseSchema = browserResponseSchema.extend({
   cdpUrl: url(),
   // Actual installed metadata accompanies shared connections and their live window.
@@ -230,9 +243,14 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/open",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: object({ initialDisplay: browserInitialDisplaySchema.optional() }),
+    query: browserViewerQuerySchema,
+    body: object({
+      initialDisplay: browserInitialDisplaySchema.optional(),
+      // Correlates a native viewer's open response with its realtime echo.
+      operationId: uuid().optional(),
+    }),
     responses: {
-      200: browserResponseSchema,
+      200: browserViewerAcquisitionSchema,
       ...commonErrorResponses,
     },
     summary: "Open a chat thread's managed browser",
@@ -276,8 +294,9 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
+    query: browserViewerQuerySchema,
     responses: {
-      200: browserResponseSchema,
+      200: browserViewerAcquisitionSchema,
       ...commonErrorResponses,
     } as const,
     summary: "Get a chat thread's managed browser",

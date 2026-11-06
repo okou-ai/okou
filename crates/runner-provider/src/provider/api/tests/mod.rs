@@ -4176,6 +4176,50 @@ async fn api_claim_normalization_ignores_forged_runner_application_metadata() {
 }
 
 #[tokio::test]
+async fn api_provider_claim_accepts_single_character_connector_skill() {
+    let server = MockServer::start_async().await;
+    let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+    let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+    body["contentBundles"]["skills"][0]["mountPath"] =
+        serde_json::json!("/home/user/.codex/skills/x");
+    let claim_path = format!("/api/runners/jobs/{run_id}/claim");
+    let request = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path(claim_path.as_str())
+                .query_param("workflowSkills", "2")
+                .query_param("singleCharacterSkills", "1");
+            then.status(200).json_body(body);
+        })
+        .await;
+    let provider = api_provider_for_test(
+        server.base_url(),
+        CancellationToken::new(),
+        Arc::new(PollWakeups::new(false)),
+    );
+    let claimed = provider
+        .claim(JobCandidate::new(
+            run_id,
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        ))
+        .await
+        .expect("a valid one-character Connector Skill must be claimable");
+    let skills = &claimed
+        .context()
+        .storage_manifest
+        .as_ref()
+        .unwrap()
+        .storages;
+    let skill = skills
+        .iter()
+        .find(|entry| entry.mount_path == "/home/user/.codex/skills/x")
+        .expect("the claimed X Skill must reach the execution storage plan");
+    assert_eq!(skill.vas_version_id, "b".repeat(64));
+    assert_eq!(skill.archive_size, Some(256));
+    request.assert_calls_async(1).await;
+}
+
+#[tokio::test]
 async fn api_provider_claim_accepts_shared_current_response_fixture() {
     let server = MockServer::start_async().await;
     let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
@@ -4865,7 +4909,7 @@ async fn cancellation_reconciliation_starts_only_after_valid_claim_without_activ
         });
         let request = server.next_request("claim before eligibility").await;
         assert!(request.starts_with(&format!(
-            "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2 "
+            "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2&singleCharacterSkills=1 "
         )));
         assert!(!registration.is_cancelled());
         release.send(()).unwrap();

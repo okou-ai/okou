@@ -4,7 +4,7 @@ import { constrainBrowserDisplay } from "@okouai/core/browser-display";
 
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
-import { bodyResultOf, pathParamsOf } from "../context/request";
+import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import type { RouteEntry } from "../route-entry";
 import {
@@ -32,6 +32,26 @@ function errorResponse(error: BrowserServiceError) {
       },
     },
   };
+}
+
+function viewerModeError(tokenType: string, includeViewer: boolean) {
+  return includeViewer && tokenType !== "session"
+    ? errorResponse({
+        kind: "error",
+        status: 403,
+        code: "BROWSER_VIEWER_SESSION_REQUIRED",
+        message: "Browser viewer connections require a signed-in session",
+      })
+    : null;
+}
+
+function viewerModeUnavailable() {
+  return errorResponse({
+    kind: "error",
+    status: 409,
+    code: "BROWSER_VIEWER_ACQUISITION_UNAVAILABLE",
+    message: "Shared Browser viewer acquisition is not enabled",
+  });
 }
 
 const createBody$ = bodyResultOf(browserContract.create);
@@ -189,6 +209,7 @@ const leaseBrowserByThreadInner$ = command(
 
 const openParams$ = pathParamsOf(browserContract.open);
 const openBody$ = bodyResultOf(browserContract.open);
+const openQuery$ = queryOf(browserContract.open);
 const sharedOpenInput$ = computed(async (get) => {
   const body = await get(openBody$);
   if (!body.ok) {
@@ -201,7 +222,12 @@ const sharedOpenInput$ = computed(async (get) => {
   if (initialDisplay === null) {
     throw new Error("Validated Browser display cannot fit the raster budget");
   }
-  return { ...(await get(sharedThreadInput$)), initialDisplay };
+  return {
+    ...(await get(sharedThreadInput$)),
+    initialDisplay,
+    viewer: get(openQuery$)?.viewer === "native",
+    operationId: body.data.operationId,
+  };
 });
 const sharedOpen = createSharedBrowserGraph(sharedOpenInput$);
 const openBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -211,11 +237,28 @@ const openBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const auth = get(organizationAuthContext$);
+  const includeViewer = get(openQuery$)?.viewer === "native";
+  if (includeViewer) {
+    set(setResHeader$, "Cache-Control", "no-store");
+  }
+  const denied = viewerModeError(auth.tokenType, includeViewer);
+  if (denied) {
+    return denied;
+  }
   const shared = await set(sharedOpen.open$, signal);
   if (shared) {
     return shared.kind === "error"
       ? errorResponse(shared)
-      : { status: 200 as const, body: { browser: shared.value.browser } };
+      : {
+          status: 200 as const,
+          body: {
+            browser: shared.value.browser,
+            ...(includeViewer ? { viewer: shared.value } : {}),
+          },
+        };
+  }
+  if (includeViewer) {
+    return viewerModeUnavailable();
   }
   const result = await set(
     openBrowserForThread$,
@@ -300,11 +343,11 @@ const resizeBrowserByThreadInner$ = command(
 const currentBrowserInner$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const auth = get(organizationAuthContext$);
-    const shared = await set(sharedRun.present$, signal);
+    const shared = await set(sharedRun.present$, false, signal);
     if (shared) {
       return shared.kind === "error"
         ? errorResponse(shared)
-        : { status: 200 as const, body: { browser: shared.value } };
+        : { status: 200 as const, body: shared.value };
     }
     const result = await set(
       getCurrentBrowser$,
@@ -322,13 +365,25 @@ const currentBrowserInner$ = command(
 );
 
 const getParams$ = pathParamsOf(browserContract.get);
+const getQuery$ = queryOf(browserContract.get);
 const getBrowserInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  const shared = await set(sharedThread.present$, signal);
+  const includeViewer = get(getQuery$)?.viewer === "native";
+  if (includeViewer) {
+    set(setResHeader$, "Cache-Control", "no-store");
+  }
+  const denied = viewerModeError(auth.tokenType, includeViewer);
+  if (denied) {
+    return denied;
+  }
+  const shared = await set(sharedThread.present$, includeViewer, signal);
   if (shared) {
     return shared.kind === "error"
       ? errorResponse(shared)
-      : { status: 200 as const, body: { browser: shared.value } };
+      : { status: 200 as const, body: shared.value };
+  }
+  if (includeViewer) {
+    return viewerModeUnavailable();
   }
   const result = await set(
     getBrowser$,

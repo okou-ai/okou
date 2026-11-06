@@ -1477,6 +1477,7 @@
     "unavailable": "Browser view unavailable",
     "unsupportedCapability": "The browser does not support this operation.",
     "untitledTab": "Untitled tab",
+    "updatingView": "Updating view…",
     "windowSize": "Window size"
   },
   "chat": {

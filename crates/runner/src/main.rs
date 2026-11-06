@@ -42,7 +42,7 @@ include!(concat!(env!("OUT_DIR"), "/addon_files.rs"));
 mod addon_inventory_tests;
 
 // Source-observation API shared by the current-assignment usage composer.
-// (no-op Runner release marker refreshed for production delivery at 2026-11-04T19:07:10+08:00)
+// (no-op Runner release marker refreshed for production delivery at 2026-11-06T21:06:45+08:00)
 pub use proxy::{
     CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,
     TokenTotals,
