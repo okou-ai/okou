@@ -1,5 +1,5 @@
 {
-  "id": "f0c1a2e0-c60c-44a7-aa5a-e37e32c7fe5d",
+  "id": "7bdc2895-e428-49f0-bcbc-43e09f6273a4",
   "prevId": "d38d6503-3f80-4130-bce5-f9fb124cb413",
   "version": "7",
   "dialect": "postgresql",
@@ -34422,7 +34422,7 @@
         },
         "chk_user_notification_payload": {
           "name": "chk_user_notification_payload",
-          "value": "(\n    jsonb_typeof(\"user_notifications\".\"payload\") = 'object'\n    AND \"user_notifications\".\"payload\"->>'type' = 'rich_text'\n    AND jsonb_typeof(\"user_notifications\".\"payload\"->'markdown') = 'string'\n    AND length(\"user_notifications\".\"payload\"->>'markdown') BETWEEN 1 AND 50000\n    AND (NOT (\"user_notifications\".\"payload\" ? 'action') OR (\n      jsonb_typeof(\"user_notifications\".\"payload\"->'action') = 'object'\n      AND jsonb_typeof(\"user_notifications\".\"payload\"->'action'->'label') = 'string'\n      AND length(trim(\"user_notifications\".\"payload\"->'action'->>'label')) BETWEEN 1 AND 80\n      AND jsonb_typeof(\"user_notifications\".\"payload\"->'action'->'url') = 'string'\n      AND \"user_notifications\".\"payload\"->'action'->>'url' ~ '^https://'\n      AND length(\"user_notifications\".\"payload\"->'action'->>'url') <= 2048\n    ))\n  ) IS TRUE"
+          "value": "(\n    jsonb_typeof(\"user_notifications\".\"payload\") = 'object'\n    AND \"user_notifications\".\"payload\"->>'type' = 'rich_text'\n    AND jsonb_typeof(\"user_notifications\".\"payload\"->'markdown') = 'string'\n    AND length(\"user_notifications\".\"payload\"->>'markdown') BETWEEN 1 AND 50000\n  ) IS TRUE"
         }
       },
       "isRLSEnabled": false

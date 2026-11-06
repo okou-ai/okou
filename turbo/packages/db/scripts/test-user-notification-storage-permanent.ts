@@ -11,7 +11,6 @@ export async function validateUserNotificationStorage(databaseUrl: string) {
   const payload = {
     type: "rich_text",
     markdown: "Hello\n\n![Overview](https://example.com/overview.png)",
-    action: { label: "Learn more", url: "https://example.com/update" },
   };
   try {
     const delivered = await client.query(
@@ -42,17 +41,6 @@ export async function validateUserNotificationStorage(databaseUrl: string) {
       { type: "approval", markdown: "Approve this" },
       { type: "rich_text", markdown: "" },
       { type: "rich_text", markdown: null },
-      { type: "rich_text", markdown: "Body", action: null },
-      {
-        type: "rich_text",
-        markdown: "Body",
-        action: { label: "Open", url: "javascript:alert(1)" },
-      },
-      {
-        type: "rich_text",
-        markdown: "Body",
-        action: { url: "https://example.com/" },
-      },
     ]) {
       await assert.rejects(
         client.query(

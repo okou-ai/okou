@@ -3,7 +3,6 @@ import {
   literal,
   object,
   string,
-  url,
   type infer as Infer,
 } from "zod";
 
@@ -12,10 +11,6 @@ export const userNotificationPayloadSchema = discriminatedUnion("type", [
   object({
     type: literal("rich_text"),
     markdown: string().min(1).max(50_000),
-    action: object({
-      label: string().trim().min(1).max(80),
-      url: url({ protocol: /^https$/u }).max(2048),
-    }).optional(),
   }),
 ]);
 

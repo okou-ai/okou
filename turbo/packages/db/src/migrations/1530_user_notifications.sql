@@ -14,14 +14,6 @@ CREATE TABLE "user_notifications" (
     AND "user_notifications"."payload"->>'type' = 'rich_text'
     AND jsonb_typeof("user_notifications"."payload"->'markdown') = 'string'
     AND length("user_notifications"."payload"->>'markdown') BETWEEN 1 AND 50000
-    AND (NOT ("user_notifications"."payload" ? 'action') OR (
-      jsonb_typeof("user_notifications"."payload"->'action') = 'object'
-      AND jsonb_typeof("user_notifications"."payload"->'action'->'label') = 'string'
-      AND length(trim("user_notifications"."payload"->'action'->>'label')) BETWEEN 1 AND 80
-      AND jsonb_typeof("user_notifications"."payload"->'action'->'url') = 'string'
-      AND "user_notifications"."payload"->'action'->>'url' ~ '^https://'
-      AND length("user_notifications"."payload"->'action'->>'url') <= 2048
-    ))
   ) IS TRUE)
 );
 --> statement-breakpoint

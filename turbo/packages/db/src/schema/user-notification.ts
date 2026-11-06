@@ -55,14 +55,6 @@ export const userNotifications = pgTable(
     AND ${table.payload}->>'type' = 'rich_text'
     AND jsonb_typeof(${table.payload}->'markdown') = 'string'
     AND length(${table.payload}->>'markdown') BETWEEN 1 AND 50000
-    AND (NOT (${table.payload} ? 'action') OR (
-      jsonb_typeof(${table.payload}->'action') = 'object'
-      AND jsonb_typeof(${table.payload}->'action'->'label') = 'string'
-      AND length(trim(${table.payload}->'action'->>'label')) BETWEEN 1 AND 80
-      AND jsonb_typeof(${table.payload}->'action'->'url') = 'string'
-      AND ${table.payload}->'action'->>'url' ~ '^https://'
-      AND length(${table.payload}->'action'->>'url') <= 2048
-    ))
   ) IS TRUE`,
       ),
     ];

@@ -8,7 +8,6 @@ import {
   Dialog,
   DialogContent,
   DialogDescription,
-  DialogFooter,
   DialogHeader,
   DialogTitle,
   IconButton,
@@ -100,7 +99,6 @@ function RichTextNotification({
 }) {
   const { t } = useTranslation();
   const mounted = useSet(inbox.detailRef$);
-  const close = useSet(inbox.closeDetail$);
   return (
     <>
       <div ref={mounted} className="min-w-0 space-y-5">
@@ -128,30 +126,6 @@ function RichTextNotification({
         />
       </div>
       <ReadError inbox={inbox} />
-      <DialogFooter>
-        <Button
-          variant={item.payload.action ? "outline" : "default"}
-          onClick={close}
-        >
-          {t(($) => {
-            return $.userNotifications.close;
-          })}
-        </Button>
-        {item.payload.action && (
-          <Button
-            nativeButton={false}
-            render={
-              <a
-                href={item.payload.action.url}
-                target="_blank"
-                rel="noopener noreferrer"
-              />
-            }
-          >
-            {item.payload.action.label}
-          </Button>
-        )}
-      </DialogFooter>
     </>
   );
 }
@@ -159,7 +133,6 @@ function RichTextNotification({
 function NotificationDetail({ inbox }: { readonly inbox: NotificationInbox }) {
   const { t } = useTranslation();
   const detail = useLoadable(inbox.detail$);
-  const close = useSet(inbox.closeDetail$);
   const retry = useSet(inbox.retryDetail$);
   if (detail.state === "loading") {
     return (
@@ -224,13 +197,6 @@ function NotificationDetail({ inbox }: { readonly inbox: NotificationInbox }) {
               return $.userNotifications.detailFailed;
             })}
           </DialogDescription>
-          <DialogFooter>
-            <Button onClick={close}>
-              {t(($) => {
-                return $.userNotifications.close;
-              })}
-            </Button>
-          </DialogFooter>
         </>
       );
     }

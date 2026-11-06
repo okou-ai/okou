@@ -45,7 +45,6 @@ const detail = Object.freeze<UserNotification>({
     type: "rich_text",
     markdown:
       "## Everything in context\n\nBring your work together.\n\n![Projects overview](https://static.okou.io/notification-preview.png)\n\n<script>alert('unsafe')</script>",
-    action: { label: "Explore projects", url: "https://app.okou.ai/" },
   },
 });
 function button(
@@ -138,10 +137,6 @@ test("Opening the list preserves unread messages; displaying rich text records o
     "src",
     "https://static.okou.io/notification-preview.png",
   );
-  const action = queryAllByRoleFast("link", dialog).find((link) => {
-    return link.textContent === "Explore projects";
-  });
-  expect(action).toHaveAttribute("href", "https://app.okou.ai/");
   expect(dialog.querySelector("script")).toBeNull();
   await screen.findByText("1 unread notification");
   click(button("Close", dialog));
