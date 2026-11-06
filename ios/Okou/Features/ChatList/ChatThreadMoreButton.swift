@@ -80,13 +80,7 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
     let status = UIMenu(
       title: String(localized: "Status"), image: OkouIcon.uiImage("circle-check"),
       children: statusActions)
-    let openWeb = UIAction(
-      title: String(localized: "Open on web"), image: OkouIcon.uiImage("arrow-up-right"),
-      identifier: UIAction.Identifier("chat-open-web")
-    ) { _ in
-      UIApplication.shared.open(store.webURL.appending(path: "chats/\(threadID)"))
-    }
-    var actions: [UIMenuElement] = [pin, rename, status, openWeb]
+    var actions: [UIMenuElement] = [pin, rename, status]
     if list.canMuteChats || thread.isMuted {
       actions.append(
         UIAction(
