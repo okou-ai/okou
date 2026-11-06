@@ -17,6 +17,7 @@ import { and, desc, eq } from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 import { env } from "../../lib/env";
+import { THREAD_CONTEXT_PRIORITY } from "../../lib/conversation-guidance";
 import { INTEGRATION_DM_SESSION_KEY } from "../../lib/integration-dm-session";
 import { logger } from "../../lib/log";
 import { escapeHtml } from "../../lib/telegram-format";
@@ -1046,7 +1047,15 @@ function telegramLaunchContext(args: {
     messageId: String(args.source.message.message_id),
     messageThreadId: args.source.message.message_thread_id ?? null,
     messageText: args.prompt,
-    threadContext: args.context,
+    threadContext: [
+      args.source.message.reply_to_message ||
+      args.source.message.message_thread_id
+        ? THREAD_CONTEXT_PRIORITY
+        : "",
+      args.context,
+    ]
+      .filter(Boolean)
+      .join("\n\n"),
     rootMessageId: args.rootMessageId ?? null,
     thinkingMessageId: null,
     userLinkId: args.source.userLink.id,

@@ -2,7 +2,10 @@ import type {
   ChatSlackMessageAssets,
   ChatSlackMessageFile,
 } from "@okouai/db/jsonb-contracts/chat-slack-context";
-import { CONVERSATION_GUIDANCE } from "./conversation-guidance";
+import {
+  CONVERSATION_GUIDANCE,
+  THREAD_CONTEXT_PRIORITY,
+} from "./conversation-guidance";
 import {
   CHANNEL_CONTEXT_MESSAGE_LIMIT,
   formatConversationContext,
@@ -529,9 +532,7 @@ export async function fetchConversationContexts(
   );
   return {
     executionContext: [
-      threadTs
-        ? "When responding in this Slack thread, prioritize its root message and replies over recent channel messages."
-        : "",
+      threadTs ? THREAD_CONTEXT_PRIORITY : "",
       channelContextPrefix,
       threadExecContext,
     ]
