@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.5](https://github.com/okou-ai/okou/compare/process-launch-v0.1.4...process-launch-v0.1.5) (2026-11-06)
+
+
+### Performance Improvements
+
+* **sandbox:** prepare snapshot mounts before native exec ([#45523](https://github.com/okou-ai/okou/issues/45523)) ([1d8f092](https://github.com/okou-ai/okou/commit/1d8f092366e802638db3402cd9e21d4d261d78ee))
+
 ## [0.1.4](https://github.com/okou-ai/okou/compare/process-launch-v0.1.3...process-launch-v0.1.4) (2026-11-02)
 
 

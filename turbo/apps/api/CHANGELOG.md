@@ -10,6 +10,34 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.50.0](https://github.com/okou-ai/okou/compare/api-v2.49.2...api-v2.50.0) (2026-11-06)
+
+
+### Features
+
+* **api:** force app.vm0.ai clients to upgrade to v0.1095.2 ([#45617](https://github.com/okou-ai/okou/issues/45617)) ([dc460f6](https://github.com/okou-ai/okou/commit/dc460f627471a01d44f8d0c4fd3c40a8dfc61a08))
+
+
+### Bug Fixes
+
+* **api:** log private multipart upload rejection reasons ([#45625](https://github.com/okou-ai/okou/issues/45625)) ([d95bb8e](https://github.com/okou-ai/okou/commit/d95bb8e390d5acdc1273607f8f2d79c039ed7638))
+* **integrations:** prioritize thread context for short replies ([#45622](https://github.com/okou-ai/okou/issues/45622)) ([15ae7e2](https://github.com/okou-ai/okou/commit/15ae7e2be7d8aac6a18f074140af2a6883ec1c36))
+
+
+### Refactoring
+
+* retire halloween campaign and restore the greeting avatar ([#45618](https://github.com/okou-ai/okou/issues/45618)) ([60127c6](https://github.com/okou-ai/okou/commit/60127c60e299ae35549f889340859cd758f78db5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.2
+    * @okouai/core bumped to 8.819.2
+    * @okouai/db bumped to 2.23.2
+    * @okouai/pi-agent-runtime bumped to 1.51.74
+
 ## [2.49.2](https://github.com/okou-ai/okou/compare/api-v2.49.1...api-v2.49.2) (2026-11-06)
 
 
