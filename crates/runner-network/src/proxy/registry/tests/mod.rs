@@ -1,4 +1,5 @@
 mod account_binding;
+mod decoding;
 mod publication;
 mod registration_observation;
 
