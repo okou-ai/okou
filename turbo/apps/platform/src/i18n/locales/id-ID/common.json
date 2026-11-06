@@ -5394,6 +5394,7 @@
         "credits": "Kredit",
         "fiveHourLimit": "Batas 5 jam",
         "label": "Penggunaan langganan",
+        "limitReached": "Batas tercapai",
         "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",

@@ -5411,6 +5411,7 @@
         "credits": "Credits",
         "fiveHourLimit": "5-Stunden-Limit",
         "label": "Abonnementnutzung",
+        "limitReached": "Limit erreicht",
         "lowUsage": "Abonnementnutzung: weniger als 20 % verbleibend",
         "resetTimeUnavailable": "Rücksetzzeit nicht verfügbar",
         "usage": "{{provider}} Nutzung",

@@ -5394,6 +5394,7 @@
         "credits": "クレジット",
         "fiveHourLimit": "5時間の上限",
         "label": "サブスクリプションの使用状況",
+        "limitReached": "上限に達しました",
         "lowUsage": "サブスクリプションの使用状況：残り20%未満",
         "resetTimeUnavailable": "リセット時間は利用不可",
         "usage": "{{provider}}の使用量",

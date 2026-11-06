@@ -23,7 +23,6 @@ import {
   subscriptionUsageWindowRemainingPercent,
   subscriptionUsageWindows,
 } from "../../lib/subscription-usage-windows.ts";
-import { now } from "../../lib/time.ts";
 import { ProviderIcon } from "./components/settings/provider-icons.tsx";
 import { formatSubscriptionUsageReset } from "./subscription-usage-format.ts";
 import { formatSubscriptionCredits } from "./subscription-credits-format.ts";
@@ -31,10 +30,8 @@ import { formatLocalizedNumber } from "../../i18n/format.ts";
 
 type SubscriptionUsageWindow = AccountMenuSubscriptionUsageWindow;
 
-/** Below this much left, a window turns coral and breathes. */
+/** Below this much left, a window uses the low-usage color. */
 const LOW_REMAINING_PERCENT = 20;
-/** At or below this much left, the breathing doubles its rate. */
-const CRITICAL_REMAINING_PERCENT = 5;
 
 export function useSubscriptionUsageRows({
   cacheKey,
@@ -169,9 +166,6 @@ function AccountMenuSubscriptionProviderSection({
         subscriptionCredits: row.credits,
       })
     : null;
-  const weeklyReset = exhausted
-    ? formatSubscriptionUsageReset(weekly.window.resetAt)
-    : null;
   const windowLabel = (kind: "fiveHour" | "week") => {
     return kind === "fiveHour"
       ? t(($) => {
@@ -231,13 +225,6 @@ function AccountMenuSubscriptionProviderSection({
                 {creditBalance.value}
               </span>
             </div>
-          )}
-          {exhausted && !canReset && weeklyReset !== null && (
-            <p className="text-muted-foreground">
-              {"fallbackText" in weeklyReset
-                ? weeklyReset.fallbackText
-                : weeklyReset.tooltipTitle}
-            </p>
           )}
         </TooltipTrigger>
         <SubscriptionResetTimes windows={windows} windowLabel={windowLabel} />
@@ -418,19 +405,27 @@ function AccountMenuSubscriptionUsageBar({
   const remainingPercent = subscriptionUsageWindowRemainingPercent(window);
   const displayPercent = formatUsagePercent(remainingPercent);
   const tone = usageTone(remainingPercent);
+  const reset =
+    remainingPercent === 0
+      ? formatSubscriptionUsageReset(window.resetAt)
+      : null;
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between gap-2">
         <span className="text-muted-foreground">{windowLabel}</span>
         <span className={cn("shrink-0 tabular-nums", tone.textClassName)}>
-          {displayPercent === null
-            ? "—"
-            : t(
-                ($) => {
-                  return $.settings.models.personal.status.left;
-                },
-                { percent: displayPercent },
-              )}
+          {remainingPercent === 0
+            ? t(($) => {
+                return $.settings.accountMenu.subscriptions.limitReached;
+              })
+            : displayPercent === null
+              ? "—"
+              : t(
+                  ($) => {
+                    return $.settings.models.personal.status.left;
+                  },
+                  { percent: displayPercent },
+                )}
         </span>
       </div>
       <span
@@ -448,69 +443,49 @@ function AccountMenuSubscriptionUsageBar({
       >
         <UsageMeterFill
           remainingPercent={remainingPercent}
-          window={window}
           fillClassName={tone.fillClassName}
         />
       </span>
+      {remainingPercent === 0 && (
+        <span className="text-xs text-muted-foreground">
+          {reset === null
+            ? t(($) => {
+                return $.settings.accountMenu.subscriptions
+                  .resetTimeUnavailable;
+              })
+            : "fallbackText" in reset
+              ? reset.fallbackText
+              : reset.tooltipTitle}
+        </span>
+      )}
     </div>
   );
 }
 
-/**
- * The fill and what is left are two pieces with a 2px gap between them. The
- * healthy gradient spans the whole track rather than the fill, so its
- * background is sized to the track: a fuller bar reveals the warmer end, and
- * using some of the plan takes that colour away with it. An exhausted window
- * keeps no fill; instead the time already waited drifts in as a stripe, so the
- * meter shows the plan coming back rather than only that it ran out.
- */
+/** Filled usage is blue or amber; exhausted and unknown usage have an empty track. */
 function UsageMeterFill({
   remainingPercent,
-  window,
   fillClassName,
 }: {
   readonly remainingPercent: number | null;
-  readonly window: SubscriptionUsageWindow;
   readonly fillClassName: string;
 }) {
-  if (remainingPercent === null) {
+  if (remainingPercent === null || remainingPercent <= 0) {
     return (
       <span className="block h-full flex-1 rounded-full bg-segment-track" />
-    );
-  }
-  if (remainingPercent <= 0) {
-    return (
-      <span className="flex h-full flex-1 overflow-hidden rounded-full bg-segment-track">
-        <span
-          className="block h-full rounded-full bg-usage-meter-recharge bg-size-[8.485px_8.485px] motion-safe:animate-usage-meter-recharge"
-          style={{ width: `${String(elapsedWindowPercent(window))}%` }}
-        />
-      </span>
     );
   }
   return (
     <>
       <span
         className={cn("block h-full rounded-full", fillClassName)}
-        style={{
-          width: `${String(remainingPercent)}%`,
-          backgroundSize: `${String(10_000 / remainingPercent)}% 100%`,
-        }}
+        style={{ width: `${String(remainingPercent)}%` }}
       />
       {remainingPercent < 100 && (
         <span className="block h-full min-w-1 flex-1 rounded-full bg-segment-track" />
       )}
     </>
   );
-}
-
-function elapsedWindowPercent(window: SubscriptionUsageWindow): number {
-  const resetAt = window.resetAt ? Date.parse(window.resetAt) : Number.NaN;
-  if (!window.windowSeconds || Number.isNaN(resetAt)) {
-    return 0;
-  }
-  const left = (resetAt - now()) / (window.windowSeconds * 1000);
-  return Math.round(Math.min(1, Math.max(0, 1 - left)) * 100);
 }
 
 function formatUsagePercent(value: number | null): string | null {
@@ -524,12 +499,7 @@ function formatUsagePercent(value: number | null): string | null {
   });
 }
 
-/**
- * A healthy window carries the brand: amber warming to orange along the track,
- * interpolated in OKLCH so it never passes through grey. Running low switches
- * to the deeper destructive coral and breathes; running out keeps only the
- * destructive number beside the recharge stripe.
- */
+/** Status uses restrained color with no persistent animation. */
 function usageTone(remainingPercent: number | null): {
   readonly fillClassName: string;
   readonly textClassName: string;
@@ -538,19 +508,13 @@ function usageTone(remainingPercent: number | null): {
     return { fillClassName: "", textClassName: "text-muted-foreground" };
   }
   if (remainingPercent <= 0) {
-    return { fillClassName: "", textClassName: "text-destructive" };
-  }
-  if (remainingPercent < LOW_REMAINING_PERCENT) {
-    return {
-      fillClassName:
-        remainingPercent <= CRITICAL_REMAINING_PERCENT
-          ? "bg-destructive motion-safe:animate-usage-meter-breathe-fast"
-          : "bg-destructive motion-safe:animate-usage-meter-breathe",
-      textClassName: "text-destructive",
-    };
+    return { fillClassName: "", textClassName: "text-foreground" };
   }
   return {
-    fillClassName: "bg-usage-meter-fill",
+    fillClassName:
+      remainingPercent < LOW_REMAINING_PERCENT
+        ? "bg-usage-meter-low"
+        : "bg-chart-blue-400",
     textClassName: "text-foreground",
   };
 }

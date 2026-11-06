@@ -5472,6 +5472,7 @@
         "credits": "Créditos",
         "fiveHourLimit": "Límite de 5 horas",
         "label": "Uso de suscripciones",
+        "limitReached": "Límite alcanzado",
         "lowUsage": "Uso de suscripciones: queda menos del 20 %",
         "resetTimeUnavailable": "Hora de reinicio no disponible",
         "usage": "Uso de {{provider}}",

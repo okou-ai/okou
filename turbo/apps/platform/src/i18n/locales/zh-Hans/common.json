@@ -5394,6 +5394,7 @@
         "credits": "积分",
         "fiveHourLimit": "5 小时额度",
         "label": "订阅用量",
+        "limitReached": "额度已用尽",
         "lowUsage": "订阅用量：剩余额度低于 20%",
         "resetTimeUnavailable": "重置时间不可用",
         "usage": "{{provider}}用量",

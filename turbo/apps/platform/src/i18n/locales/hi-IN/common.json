@@ -5411,6 +5411,7 @@
         "credits": "क्रेडिट",
         "fiveHourLimit": "5 घंटे की सीमा",
         "label": "सदस्यता का उपयोग",
+        "limitReached": "सीमा पूरी हो गई",
         "lowUsage": "सदस्यता का उपयोग: 20% से कम शेष",
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",
