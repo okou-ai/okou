@@ -338,6 +338,102 @@ test("An initial document receipt is retained until membership is readmitted", a
   await ready();
 });
 
+test.each(["Page.getFrameTree", "Page.getLayoutMetrics"] as const)(
+  "Initial document setup retains a same-document change while %s is held",
+  async (method) => {
+    const { browser, start } = viewer();
+    const initial = browser.holdNext(method);
+    await start();
+    await initial.received;
+    await screen.findByLabelText("Later own tab");
+    const proof = browser.holdNextMembership("own-first");
+    act(() => {
+      browser.nativeEvent("tab-created", undefined, {
+        tabId: 100,
+        windowId: 101,
+      });
+    });
+    await proof.received;
+    const target = browser.targets[0]!;
+    const sessionId = browser.pageSession(target.targetId);
+    const url = "https://first.example.com/#before-document-receipt";
+    act(() => {
+      target.url = url;
+      browser.event(
+        "Page.navigatedWithinDocument",
+        { frameId: "example-frame", url },
+        sessionId,
+      );
+      browser.event(
+        "Page.navigatedWithinDocument",
+        { frameId: "child-frame", url: "https://child.example.com/#child" },
+        sessionId,
+      );
+      browser.event("Target.targetInfoChanged", {
+        targetInfo: { ...target, type: "page" },
+      });
+    });
+    await act(initial.release);
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await act(proof.release);
+    act(() => {
+      browser.frame("AAAA", sessionId);
+    });
+    await ready(url);
+  },
+);
+
+test("Changing selection cancels a revalidated initial document read", async () => {
+  const { browser, start } = viewer();
+  const initial = browser.holdNext("Page.getFrameTree");
+  await start();
+  await initial.received;
+  await screen.findByLabelText("Later own tab");
+  const proof = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, {
+      tabId: 100,
+      windowId: 101,
+    });
+  });
+  await proof.received;
+  const target = browser.targets[0]!;
+  act(() => {
+    target.url = "https://first.example.com/#during-startup";
+    browser.event(
+      "Page.navigatedWithinDocument",
+      { frameId: "example-frame", url: target.url },
+      browser.pageSession(target.targetId),
+    );
+  });
+  const revalidated = browser.holdNext("Page.getFrameTree");
+  await act(initial.release);
+  await revalidated.received;
+  await userEvent.click(
+    screen.getByLabelText("Later own tab", { selector: '[role="tab"]' }),
+  );
+  await act(proof.release);
+  await ready("https://later.example.com");
+  await act(revalidated.release);
+  await ready("https://later.example.com");
+
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "after initial document cancellation" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.insertText",
+        sessionId: browser.pageSession("own-later"),
+        params: { text: "after initial document cancellation" },
+      }),
+    );
+  });
+});
+
 test("A capture change finishes when background membership is revalidated", async () => {
   const { browser, start } = viewer();
   await start();

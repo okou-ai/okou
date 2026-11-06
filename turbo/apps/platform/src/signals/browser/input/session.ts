@@ -108,7 +108,6 @@ function createSessionState(
     reason: InputTransition;
   } | null>(null);
   const clipboardVersion$ = state(0);
-  const frameId$ = state<string | null>(null);
   const contextId$ = state<number | null>(null);
   const preeditSupported$ = state(true);
   const caretJob$ = state<InputJob | null>(null);
@@ -163,7 +162,7 @@ function createSessionState(
     internalEditing$,
     internalTransition$,
     clipboardVersion$,
-    frameId$,
+    frameId$: navigation.frameId$,
     contextId$,
     preeditSupported$,
     caretJob$,
@@ -517,7 +516,6 @@ function createSessionReadiness(
     available$,
     client,
     dispose$,
-    frameId$,
     geometry,
     navigation,
     nativeHost,
@@ -542,7 +540,6 @@ function createSessionReadiness(
       const scope = set(resetScope$, signal);
       const lifetime = Object.freeze({});
       set(lifetime$, lifetime);
-      set(navigation.start$, scope);
       set(nativeHost.synchronize$);
       scope.addEventListener(
         "abort",
@@ -552,14 +549,8 @@ function createSessionReadiness(
         { once: true },
       );
       const revision = get(geometry.revision$);
-      const [tree, metrics] = await Promise.all([
-        client.request(
-          "Page.getFrameTree",
-          undefined,
-          sessionId,
-          undefined,
-          scope,
-        ),
+      const [, metrics] = await Promise.all([
+        set(navigation.start$, scope),
         client.request(
           "Page.getLayoutMetrics",
           undefined,
@@ -573,8 +564,6 @@ function createSessionReadiness(
       if (!get(available$)) {
         return;
       }
-      set(frameId$, tree.frameTree.frame.id);
-      set(navigation.observe$, tree.frameTree.frame);
       set(geometry.read$, metrics, revision);
       await client.request(
         "Runtime.enable",
@@ -645,13 +634,6 @@ function createSessionFrameObservation(graph: SessionActions) {
       method === "Page.frameNavigated" &&
       isRecord(params.frame) &&
       !params.frame.parentId;
-    if (
-      mainNavigation &&
-      isRecord(params.frame) &&
-      typeof params.frame.id === "string"
-    ) {
-      set(frameId$, params.frame.id);
-    }
     return mainNavigation;
   });
 }

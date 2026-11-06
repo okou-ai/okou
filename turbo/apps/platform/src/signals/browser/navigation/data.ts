@@ -23,6 +23,7 @@ function createNavigationState(
     current$,
     scope: Object.freeze({}),
     document$: state<ViewerNavigation | null>(null),
+    initialRevision$: state(0),
     attachment$: state<{ readonly ended: DeferredPromise<never> } | null>(null),
     historyVersion$: state(0),
   };
@@ -132,11 +133,19 @@ function createNavigationObservation(graph: NavigationState) {
       );
     } else if (
       method === "Page.navigatedWithinDocument" &&
-      params.frameId === get(document$)?.frameId &&
+      typeof params.frameId === "string" &&
       typeof params.url === "string"
     ) {
-      const document = get(document$)!;
-      set(document$, Object.freeze({ ...document, url: params.url }));
+      const document = get(document$);
+      if (!document) {
+        // The first tree may precede this event. Re-read its native snapshot
+        // instead of guessing whether this unknown frame is the main frame.
+        set(graph.initialRevision$, (value) => {
+          return value + 1;
+        });
+      } else if (params.frameId === document.frameId) {
+        set(document$, Object.freeze({ ...document, url: params.url }));
+      }
     } else if (
       method === "Page.loadEventFired" ||
       (method === "Page.frameStoppedLoading" &&
@@ -155,10 +164,39 @@ export function createNavigationData(
   current$: Computed<boolean>,
 ) {
   const graph = createNavigationState(client, sessionId, current$);
-  const start$ = command(({ set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    set(graph.attachment$, { ended: createDeferredPromise<never>(signal) });
+  const { observe$, ...observation } = createNavigationObservation(graph);
+  const frameId$ = computed((get) => {
+    return get(graph.document$)?.frameId ?? null;
   });
+  const start$ = command(
+    async ({ get, set }, signal: AbortSignal): Promise<void> => {
+      signal.throwIfAborted();
+      const attachment = { ended: createDeferredPromise<never>(signal) };
+      set(graph.attachment$, attachment);
+      while (true) {
+        const revision = get(graph.initialRevision$);
+        const tree = await client.request(
+          "Page.getFrameTree",
+          undefined,
+          sessionId,
+          undefined,
+          signal,
+        );
+        signal.throwIfAborted();
+        if (get(graph.attachment$) !== attachment) {
+          throw cancelled();
+        }
+        if (get(graph.document$)) {
+          return;
+        }
+        if (revision !== get(graph.initialRevision$)) {
+          continue;
+        }
+        set(observe$, tree.frameTree.frame);
+        return;
+      }
+    },
+  );
   const dispose$ = command(({ get, set }) => {
     const attachment = get(graph.attachment$);
     if (attachment && !attachment.ended.settled()) {
@@ -169,10 +207,11 @@ export function createNavigationData(
   });
   return {
     scope: graph.scope,
+    frameId$,
     start$,
     dispose$,
     ...createNavigationReads(graph),
-    ...createNavigationObservation(graph),
+    ...observation,
   };
 }
 export type NavigationData = ReturnType<typeof createNavigationData>;
