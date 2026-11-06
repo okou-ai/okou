@@ -205,18 +205,16 @@ incremental = false
 [profile.local.package."*"]
 debug = 0
 
+# Production releases and CI/native acceptance share these optimization settings.
 [profile.release]
-lto = true
+# Retain thin local LTO without cross-crate LTO.
+lto = false
 strip = true
-codegen-units = 1
+codegen-units = 4
 
-# Faster runner image build profile for CI and local dev-runner deploys.
-# Production runner releases still use the release profile.
+# Keep the CI output directory while inheriting the production optimization policy.
 [profile.ci]
 inherits = "release"
-# Retain thin local LTO while avoiding cross-crate LTO in these rebuilds.
-lto = false
-codegen-units = 4
 
 [workspace.lints.rust]
 warnings = "deny"

@@ -295,6 +295,15 @@ fails when its R2 configuration is missing instead of silently falling back.
 
 ### Production release compilation
 
+Production `--release` builds and CI/native acceptance `--profile ci` builds
+share the optimization settings owned by `profile.release` in `crates/Cargo.toml`:
+Cargo `lto=false` (retaining thin local LTO), four codegen units and stripping.
+The `ci` profile inherits without overrides. This applies to all workspace
+release builds, including Guests and release-profile native checks. The existing
+profile-specific output directories and cache identities remain separate;
+matching settings do not imply identical built artifacts. Manifest changes
+naturally invalidate canonical binary-input keys for both targets.
+
 `build-runner-release-assets` uses the same shared action before its existing
 release rust-cache. The release matrix resolves its Rust target through
 `runner_image_sccache_architecture`, then passes the repo-level R2 secrets and
