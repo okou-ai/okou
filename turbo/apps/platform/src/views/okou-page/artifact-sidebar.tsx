@@ -1,5 +1,10 @@
 import type { ArtifactDeletionOrigin } from "../../signals/artifact-deletion-origin.ts";
-import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
+import {
+  ArtifactDeleteButton,
+  ArtifactPreviewMoreMenu,
+} from "./artifact-deletion.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { ArtifactDiagramLightbox } from "../components/artifact-diagram-lightbox.tsx";
 import { HostedSiteAccessCard } from "../hosted-site-authorization/hosted-site-access-page.tsx";
 import {
@@ -226,6 +231,8 @@ export function ArtifactSidebarContent({
   const resource = useLastLoadable(artifactRef.resourceUrl$);
   const resourceUrl = resource.state === "hasData" ? resource.data : null;
   const shareUrl = useLastResolved(artifactRef.shareUrl$);
+  const refinedToolbar =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
   const resolvedDisplay = resolveArtifactDisplay(artifactRef, item);
   const display = {
     ...resolvedDisplay,
@@ -250,11 +257,23 @@ export function ArtifactSidebarContent({
 
   return (
     <ArtifactSidebarResolvedContent
-      deleteAction={
-        <ArtifactDeleteButton
-          artifactId={artifactId ?? syncTarget?.artifactId}
-          origin={deletionOrigin}
-        />
+      managementAction={
+        refinedToolbar ? (
+          <ArtifactPreviewMoreMenu
+            key={display.url}
+            artifactId={artifactId ?? syncTarget?.artifactId}
+            origin={deletionOrigin}
+            artifactKind={display.artifactKind}
+            filename={display.filename}
+            syncTarget={syncTarget}
+            url={display.url}
+          />
+        ) : (
+          <ArtifactDeleteButton
+            artifactId={artifactId ?? syncTarget?.artifactId}
+            origin={deletionOrigin}
+          />
+        )
       }
       recovery={recovery}
       resourceUrl={resourceUrl}
@@ -274,7 +293,7 @@ export function ArtifactSidebarContent({
 }
 
 type ArtifactSidebarResolvedContentProps = {
-  readonly deleteAction: ReactNode;
+  readonly managementAction: ReactNode;
   readonly recovery: ReactNode;
   readonly resourceUrl: string | null;
   readonly shareUrl: string | null | undefined;
@@ -291,7 +310,7 @@ type ArtifactSidebarResolvedContentProps = {
 };
 
 function ArtifactSidebarResolvedContent({
-  deleteAction,
+  managementAction,
   recovery,
   resourceUrl,
   shareUrl,
@@ -323,7 +342,7 @@ function ArtifactSidebarResolvedContent({
       }
     >
       <ArtifactSidebarHeader
-        deleteAction={deleteAction}
+        managementAction={managementAction}
         shareUrl={shareUrl}
         title={display.title}
         filename={display.filename}
@@ -471,7 +490,7 @@ function resolveArtifactDisplay(
 }
 
 function ArtifactSidebarHeader({
-  deleteAction,
+  managementAction,
   shareUrl,
   title,
   filename,
@@ -487,7 +506,7 @@ function ArtifactSidebarHeader({
   onToggleFullscreen,
   onClose,
 }: {
-  deleteAction: ReactNode;
+  managementAction: ReactNode;
   shareUrl?: string | null;
   title: string;
   filename: string;
@@ -539,7 +558,7 @@ function ArtifactSidebarHeader({
         )}
       </div>
       <ArtifactSidebarActions
-        deleteAction={deleteAction}
+        managementAction={managementAction}
         shareUrl={shareUrl}
         compactActions={compactActions}
         artifactKind={artifactKind}
@@ -557,7 +576,7 @@ function ArtifactSidebarHeader({
 }
 
 function ArtifactSidebarActions({
-  deleteAction,
+  managementAction,
   shareUrl,
   artifactKind,
   compactActions,
@@ -570,7 +589,7 @@ function ArtifactSidebarActions({
   filename,
   url,
 }: {
-  deleteAction: ReactNode;
+  managementAction: ReactNode;
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   compactActions: boolean;
@@ -583,11 +602,13 @@ function ArtifactSidebarActions({
   filename: string;
   url?: string;
 }) {
+  const refinedToolbar =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
   return (
     <div className="flex shrink-0 items-center gap-1">
       {url && (
         <ArtifactSidebarPreviewActions
-          deleteAction={deleteAction}
+          managementAction={managementAction}
           shareUrl={shareUrl}
           artifactKind={artifactKind}
           kind={kind}
@@ -601,7 +622,7 @@ function ArtifactSidebarActions({
         fullscreen={fullscreen}
         onToggleFullscreen={onToggleFullscreen}
       />
-      {compactActions ? (
+      {compactActions && !refinedToolbar ? (
         <ArtifactMoreActions onClose={onClose} />
       ) : (
         <ArtifactCloseAction onClose={onClose} />
@@ -611,7 +632,7 @@ function ArtifactSidebarActions({
 }
 
 function ArtifactSidebarPreviewActions({
-  deleteAction,
+  managementAction,
   shareUrl,
   artifactKind,
   kind,
@@ -620,7 +641,7 @@ function ArtifactSidebarPreviewActions({
   filename,
   url,
 }: {
-  deleteAction: ReactNode;
+  managementAction: ReactNode;
   shareUrl?: string | null;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   kind?: ArtifactKindForBody;
@@ -630,6 +651,8 @@ function ArtifactSidebarPreviewActions({
   url: string;
 }) {
   const { t } = useTranslation();
+  const refinedToolbar =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
   return (
     <>
       {kind === "html" && <ArtifactOpenExternalAction url={url} />}
@@ -643,17 +666,19 @@ function ArtifactSidebarPreviewActions({
           url={url}
         />
       )}
-      <ArtifactDownloadMenu
-        key={`${url}:${filename}`}
-        ariaLabel={t(($) => {
-          return $.artifacts.actions.downloadArtifact;
-        })}
-        artifactKind={artifactKind}
-        filename={filename}
-        syncTarget={syncTarget}
-        url={url}
-      />
-      {deleteAction}
+      {!refinedToolbar && (
+        <ArtifactDownloadMenu
+          key={`${url}:${filename}`}
+          ariaLabel={t(($) => {
+            return $.artifacts.actions.downloadArtifact;
+          })}
+          artifactKind={artifactKind}
+          filename={filename}
+          syncTarget={syncTarget}
+          url={url}
+        />
+      )}
+      {managementAction}
       <ArtifactActionSeparator />
     </>
   );
