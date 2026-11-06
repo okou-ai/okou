@@ -1,5 +1,5 @@
 import { singleAgentEnabled$ } from "../single-agent.ts";
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import { detachedNavigateTo$, pathParams$ } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
 import { ROUTES, type RouteKey } from "../route-paths.ts";
@@ -22,7 +22,6 @@ import { navigateToAgentChat$ } from "./agent-chat-navigation.ts";
 import {
   setStoredChatListHidden$,
   storedChatListHidden$,
-  unifiedChatWorkspace$,
 } from "./unified-chat-workspace.ts";
 
 type PinnedAgentShortcutDirection = "prev" | "next";
@@ -128,22 +127,13 @@ export const selectPinnedAgent$ = command(
   },
 );
 
-const internalSidebarOff$ = state(false);
-
-// The unified workspace remembers a folded chat list across reloads.
+// The workspace remembers a folded chat list across reloads.
 export const sidebarOff$ = computed((get) => {
-  return get(unifiedChatWorkspace$)
-    ? get(storedChatListHidden$)
-    : get(internalSidebarOff$);
+  return get(storedChatListHidden$);
 });
 
 export const toggleSidebarOff$ = command(({ get, set }) => {
-  const off = !get(sidebarOff$);
-  if (get(unifiedChatWorkspace$)) {
-    set(setStoredChatListHidden$, off);
-    return;
-  }
-  set(internalSidebarOff$, off);
+  set(setStoredChatListHidden$, !get(sidebarOff$));
 });
 
 export function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
@@ -213,12 +203,8 @@ export const setupGlobalKeyboardShortcuts$ = command(
   },
 );
 
-export const showChatSidebar$ = command(({ get, set }) => {
-  if (get(unifiedChatWorkspace$)) {
-    set(setStoredChatListHidden$, false);
-  } else {
-    set(internalSidebarOff$, false);
-  }
+export const showChatSidebar$ = command(({ set }) => {
+  set(setStoredChatListHidden$, false);
 });
 
 export function isChatRoute(key: RouteKey | null): boolean {

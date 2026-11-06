@@ -77,7 +77,6 @@ import {
 } from "./pwa-navigation.tsx";
 import { ChatThreadDialogs } from "./sidebar-threads.tsx";
 import { NotFoundPage } from "../not-found-page.tsx";
-import { unifiedChatWorkspace$ } from "../../signals/okou-page/unified-chat-workspace.ts";
 
 function AgentAvatarInTopBar() {
   const agent = useLastResolved(currentChatAgent$);
@@ -359,8 +358,7 @@ function ChatWorkspace({
   const active = useGet(activeThreadSidebar$);
   const fullscreen = useGet(activeThreadSidebarFullscreen$);
   const syncSidebarLayout = useSet(commitWorkspaceLayout$);
-  const joinedToChatList =
-    useGet(unifiedChatWorkspace$) && beside === "chat-list";
+  const joinedToChatList = beside === "chat-list";
   return (
     <ChatThreadSidebarShell
       layout={chatLayout}
@@ -406,7 +404,6 @@ function SidebarWorkspaceFrame({
 }) {
   const chatListHidden = useGet(sidebarOff$);
   const activeRoute = useGet(activeRoute$);
-  const unified = useGet(unifiedChatWorkspace$);
   const beside = chatListHidden ? "nav-rail" : "chat-list";
 
   return activeRoute === "chat" ? (
@@ -419,7 +416,7 @@ function SidebarWorkspaceFrame({
       {children}
     </ChatWorkspace>
   ) : (
-    <WorkspaceInset beside={beside} joined={unified}>
+    <WorkspaceInset beside={beside}>
       {header}
       {children}
       {footer}
@@ -470,7 +467,6 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const paletteColorTheme = useGet(paletteColorTheme$);
   const shellRef = useSet(threadSidebarLayoutRootRef$);
   const pwaNavigation = useGet(mobileChatViewport$);
-  const unified = useGet(unifiedChatWorkspace$);
 
   return withChatScrollLayout(
     <div
@@ -478,10 +474,9 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       data-slot="app-shell"
       className={cn(
         "box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0",
-        // The unified workspace's ground is the whole rail, not a thin frame,
-        // so it sits one stop below the sheet in either theme rather than at
-        // the sidebar fill.
-        unified ? "md:bg-workspace-ground" : "md:bg-sidebar",
+        // The workspace's ground is the whole rail, not a thin frame, so it
+        // sits one stop below the sheet in either theme.
+        "md:bg-workspace-ground",
       )}
       data-gradient-color-themes={
         paletteColorTheme === undefined ? undefined : true
