@@ -1430,6 +1430,8 @@
   },
   "browserViewer": {
     "address": "주소",
+    "addressOpening": "페이지를 여는 중입니다. 주소를 계속 수정할 수 있습니다.",
+    "addressPreparing": "브라우저가 아직 준비되지 않았습니다. 계속 입력한 뒤 준비되면 Enter 키를 누르세요.",
     "allTabs": "모든 탭",
     "automatic": "자동",
     "back": "뒤로",

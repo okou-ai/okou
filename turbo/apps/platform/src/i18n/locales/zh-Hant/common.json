@@ -1430,6 +1430,8 @@
   },
   "browserViewer": {
     "address": "網址",
+    "addressOpening": "正在開啟頁面，你可以繼續編輯網址。",
+    "addressPreparing": "瀏覽器尚未就緒，你可以繼續輸入，待就緒後按 Enter 開啟。",
     "allTabs": "所有分頁",
     "automatic": "自動",
     "back": "上一頁",

@@ -1455,6 +1455,8 @@
   },
   "browserViewer": {
     "address": "Endereço",
+    "addressOpening": "Abrindo a página. Você pode continuar editando o endereço.",
+    "addressPreparing": "O navegador ainda não está pronto. Continue digitando e pressione Enter quando estiver pronto.",
     "allTabs": "Todas as abas",
     "automatic": "Automática",
     "back": "Voltar",

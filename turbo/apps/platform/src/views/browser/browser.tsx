@@ -446,37 +446,28 @@ function isCurrentNavigationFailure(error: unknown, scope: object | null) {
 
 function BrowserAddress({
   signals,
-  disabled,
+  canSubmit,
   navigating,
   onSubmit,
 }: {
   readonly signals: BrowserSignals;
-  readonly disabled: boolean;
+  readonly canSubmit: boolean;
   readonly navigating: boolean;
   readonly onSubmit: () => void;
 }) {
   const { t } = useTranslation();
   const address = useGet(signals.address$);
-  const selectedTargetId = useGet(signals.selectedTabId$);
-  const pendingHandoff = useGet(signals.focusHandoff$);
-  const handoff = pendingHandoff?.kind === "address" ? pendingHandoff : null;
-  const acknowledge = useSet(signals.acknowledgeFocusCommit$);
   const addressRef = useSet(signals.refs.address$);
   const focus = useSet(signals.focusAddress$);
   const edit = useSet(signals.editAddress$);
-  const blur = useSet(signals.blurAddress$);
   const reset = useSet(signals.resetAddress$);
   return (
-    <RequestCommit
-      request={handoff}
-      commitKey={JSON.stringify([selectedTargetId, disabled])}
-      onCommit={acknowledge}
-    >
+    <>
       <form
         className="flex min-w-0 flex-1"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!disabled) {
+          if (canSubmit && !navigating) {
             onSubmit();
           }
         }}
@@ -497,13 +488,9 @@ function BrowserAddress({
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          disabled={disabled}
           aria-busy={navigating}
           onFocus={() => {
             return focus();
-          }}
-          onBlur={() => {
-            return blur();
           }}
           onChange={(event) => {
             return edit(event.currentTarget.value);
@@ -523,7 +510,19 @@ function BrowserAddress({
           }}
         />
       </form>
-    </RequestCommit>
+      {(!canSubmit || navigating) && (
+        <span
+          role="status"
+          className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover px-3 py-2 text-xs text-muted-foreground"
+        >
+          {t(($) => {
+            return navigating
+              ? $.browserViewer.addressOpening
+              : $.browserViewer.addressPreparing;
+          })}
+        </span>
+      )}
+    </>
   );
 }
 
@@ -535,6 +534,7 @@ function BrowserNavigation({
   const history = useLoadable(signals.history$);
   const scope = useGet(signals.navigationScope$);
   const controls = useGet(signals.controls$);
+  const canSubmitAddress = useGet(signals.canSubmitAddress$);
   const pageSignal = useGet(pageSignal$);
   const [operation, navigate] = useLoadableSet(signals.navigate$);
   const navigating = operation.state === "loading";
@@ -590,7 +590,7 @@ function BrowserNavigation({
       </IconButton>
       <BrowserAddress
         signals={signals}
-        disabled={!controls.streaming || navigating}
+        canSubmit={canSubmitAddress}
         navigating={navigating}
         onSubmit={() => {
           detach(navigate("submit-address", pageSignal), Reason.DomCallback);

@@ -1430,6 +1430,8 @@
   },
   "browserViewer": {
     "address": "Alamat",
+    "addressOpening": "Membuka halaman. Anda dapat terus mengedit alamat.",
+    "addressPreparing": "Browser belum siap. Lanjutkan mengetik, lalu tekan Enter setelah siap.",
     "allTabs": "Semua tab",
     "automatic": "Otomatis",
     "back": "Kembali",

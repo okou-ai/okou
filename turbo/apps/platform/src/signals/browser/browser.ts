@@ -92,7 +92,6 @@ export type BrowserFocusHandoff = {
   readonly selection: object;
 } & (
   | { readonly kind: "tab"; readonly targetId: string }
-  | { readonly kind: "address"; readonly targetId: string }
   | {
       readonly kind: "toolbar";
       readonly destination: "picker" | "new-tab";
@@ -110,6 +109,7 @@ export interface BrowserSignals {
   readonly history$: Computed<Promise<ViewerHistory | null>>;
   readonly navigationScope$: Computed<object | null>;
   readonly address$: Computed<string>;
+  readonly canSubmitAddress$: Computed<boolean>;
   readonly presentation$: Computed<BrowserPresentation>;
   readonly imageRecovery$: Computed<ImageRecovery | null>;
   readonly controls$: Computed<BrowserControls>;
@@ -134,7 +134,6 @@ export interface BrowserSignals {
   readonly editAddress$: Command<void, [string]>;
   readonly resetAddress$: Command<void, []>;
   readonly focusAddress$: Command<void, []>;
-  readonly blurAddress$: Command<void, []>;
   readonly reconnect$: Command<Promise<void>, [AbortSignal]>;
   readonly retryImage$: Command<Promise<void>, [AbortSignal]>;
   readonly changeCapture$: Command<

@@ -112,6 +112,76 @@ function reportedCleanupError(
   return report.error;
 }
 
+test("A selected membership refresh preserves local address text, focus and caret", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "Address",
+  });
+  await fill(address, "draft.example/path");
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.duplicate("example-page");
+  });
+  await proof.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(address).toBeEnabled();
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(2);
+  await userEvent.keyboard("x{Enter}");
+  expect(address).toHaveValue("drxaft.example/path");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await act(async () => {
+    await proof.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(3);
+  expect(address).toHaveValue("drxaft.example/path");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://drxaft.example/path");
+  });
+  expect(browser.targets[0]?.url).toBe("http://drxaft.example/path");
+});
+
+test("A failed creation retains its typed address without navigating the restored page", async () => {
+  const browser = await setupViewer(0);
+  const receipt = browser.holdNextNative("createTab");
+  await userEvent.click(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  );
+  await receipt.received;
+  const address = screen.getByLabelText("Address");
+  await fill(address, "retained.example/path");
+  act(() => {
+    browser.move("created-1", 1);
+  });
+  await act(async () => {
+    await receipt.release();
+  });
+  await screen.findByRole("alert");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("retained.example/path");
+  expect(address).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  expect(address).toHaveValue("retained.example/path");
+  await userEvent.keyboard("{Escape}");
+  expect(address).toHaveValue("https://example.com");
+  await fill(address, "chosen.example/path");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://chosen.example/path");
+  });
+  expect(browser.targets[0]?.url).toBe("http://chosen.example/path");
+});
+
 test.each([undefined, 0])(
   "New tabs stay blank through creation and can be closed in window %s",
   async (windowId) => {
@@ -126,7 +196,15 @@ test.each([undefined, 0])(
     await screen.findByText("Nothing open yet");
     expect(screen.queryByText("Browser view unavailable")).toBeNull();
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(screen.getByLabelText("Address")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveFocus();
+    await fill(screen.getByLabelText("Address"), "draft.example/path");
+    await userEvent.keyboard("{Enter}");
+    expect(
+      screen.getByText(
+        "Browser not ready. Keep typing, then press Enter when it is ready.",
+      ),
+    ).toBeInTheDocument();
     await act(async () => {
       await created.release();
       await image.received;
@@ -136,15 +214,16 @@ test.each([undefined, 0])(
         screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
       ).toHaveAttribute("aria-selected", "true");
     });
-    expect(screen.getByLabelText("Address")).toHaveValue("");
+    expect(screen.getByLabelText("Address")).toHaveValue("draft.example/path");
     expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
     expect(screen.queryByText("Browser view unavailable")).toBeNull();
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(screen.getByLabelText("Address")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeEnabled();
     act(() => {
       image.release();
     });
     await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
       expect(screen.getByLabelText("Address")).toHaveFocus();
     });
     expect(
@@ -152,6 +231,7 @@ test.each([undefined, 0])(
         return target.targetId === "created-1";
       }),
     ).toMatchObject({ url: "about:blank", windowId: 0 });
+    expect(screen.getByLabelText("Address")).toHaveValue("draft.example/path");
     await userEvent.click(screen.getByLabelText("Close New tab"));
     const successor = windowId === undefined ? "Other" : "Example";
     await waitFor(() => {
@@ -373,6 +453,7 @@ test("Selecting another tab clears a delayed creation's blank presentation", asy
     "https://other.example.com",
   );
   expect(screen.queryByText("Nothing open yet")).toBeNull();
+  await fill(screen.getByLabelText("Address"), "later-choice.example/draft");
   await act(async () => {
     await created.release();
   });
@@ -386,9 +467,10 @@ test("Selecting another tab clears a delayed creation's blank presentation", asy
   ).toHaveAttribute("aria-selected", "true");
   expect(screen.queryByText("Nothing open yet")).toBeNull();
   expect(screen.queryByText("Browser view unavailable")).toBeNull();
-  expect(
-    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
-  ).toHaveFocus();
+  expect(screen.getByLabelText("Address")).toHaveFocus();
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "later-choice.example/draft",
+  );
 });
 
 test("A pending creation preserves a later toolbar-control focus choice", async () => {
@@ -409,7 +491,7 @@ test("A pending creation preserves a later toolbar-control focus choice", async 
     await created.release();
   });
   await image.received;
-  expect(screen.getByLabelText("Address")).toBeDisabled();
+  expect(screen.getByLabelText("Address")).toBeEnabled();
   act(() => {
     image.release();
   });
@@ -500,7 +582,7 @@ test.each(["first image", "input initialization"] as const)(
       ).toHaveAttribute("aria-selected", "true");
     });
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(screen.getByLabelText("Address")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeEnabled();
     expect(
       screen.getByLabelText("New tab", { selector: "button" }),
     ).toBeDisabled();
@@ -611,16 +693,21 @@ test("An address submission waits for its navigation receipt across its own docu
       screen.getByLabelText("first.example", { selector: '[role="tab"]' }),
     ).toHaveAttribute("aria-selected", "true");
   });
-  expect(address).toBeDisabled();
-
+  expect(address).toBeEnabled();
+  await fill(address, "second.example/ready");
+  await userEvent.keyboard("{Enter}");
+  expect(browser.targets[0]?.url).toBe("http://first.example/path");
   await act(async () => {
     await navigation.release();
   });
   await waitFor(() => {
-    expect(address).toBeEnabled();
+    expect(
+      screen.queryByText("Opening page. You can keep editing the address."),
+    ).toBeNull();
   });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  await fill(address, "second.example/ready");
+  expect(address).toHaveValue("second.example/ready");
+  expect(address).toHaveFocus();
   await userEvent.keyboard("{Enter}");
   await waitFor(() => {
     expect(address).toHaveValue("http://second.example/ready");

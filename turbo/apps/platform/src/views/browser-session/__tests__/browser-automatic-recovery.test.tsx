@@ -195,6 +195,54 @@ test("The refined panel shows a non-blocking recovery status without a reclaim f
   expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
 });
 
+test.each([false, true])(
+  "Local address editing survives recovery (binding replaced=%s)",
+  async (replace) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    const address = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Address",
+    });
+    await fill(address, "kept.example/path");
+    await userEvent.keyboard("{Home}{ArrowRight}");
+    act(() => {
+      viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    await pendingRecovery();
+    expect(address).toBeEnabled();
+    expect(address).toHaveFocus();
+    await userEvent.keyboard("x{Enter}");
+    expect(address).toHaveValue("kxept.example/path");
+    if (replace) {
+      viewer.replaceBinding();
+    }
+    viewer.advance(1000);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(address).toHaveFocus();
+    expect(address.selectionStart).toBe(2);
+    expect(address).toHaveValue("kxept.example/path");
+    expect(viewer.browser.targets[0]?.url).toBe("https://original.example");
+    expect(viewer.browser.targets[2]?.url).toBe("https://sibling.example");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue(
+        replace ? "kxept.example/path" : "http://kxept.example/path",
+      );
+    });
+    expect(viewer.browser.targets[0]?.url).toBe(
+      replace ? "https://original.example" : "http://kxept.example/path",
+    );
+    expect(viewer.browser.targets[2]?.url).toBe("https://sibling.example");
+    await userEvent.keyboard("{Escape}");
+    expect(address).toHaveValue(
+      replace ? "https://sibling.example" : "http://kxept.example/path",
+    );
+  },
+);
+
 test("Automatic connection recovery survives transient descriptors and restores the selected scoped tab", async () => {
   const viewer = mockViewer();
   await viewer.start();

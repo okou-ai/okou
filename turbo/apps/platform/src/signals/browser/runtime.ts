@@ -156,6 +156,7 @@ function createRuntimeState(
   connection$: Computed<Promise<BrowserConnection | null>>,
 ) {
   const installed$ = state<NativeLease | null>(null);
+  const addressConnection$ = state<BrowserConnection | null>(null);
   const presentedFrame$ = state<PresentedFrame | null>(null);
   const retiring$ = state<ReadonlySet<NativeLease>>(new Set());
   const recoveryNotification$ = state<(() => void) | null>(null);
@@ -244,6 +245,7 @@ function createRuntimeState(
     recoveryIntent$,
     cancelAutomatic$,
     installed$,
+    addressConnection$,
     presentedFrame$,
     retiring$,
     inViewport$,
@@ -603,6 +605,14 @@ function createNativeMount(context: RuntimeState, graph: RuntimeGraph) {
       );
       const [setup] = await Promise.allSettled([
         (async () => {
+          const addressConnection = get(context.addressConnection$);
+          if (
+            addressConnection &&
+            !sameRecoveryBinding(addressConnection, lease.identity.connection)
+          ) {
+            set(model.detachAddress$);
+          }
+          set(context.addressConnection$, lease.identity.connection);
           set(model.transition$, { type: "reset" });
           set(model.configure$, lease.identity.connection.windowId !== null);
           set(
@@ -1217,6 +1227,7 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
       const lease = set(requireController$, signal);
       set(context.cancelAutomatic$);
       const token = set(focus.beginSelect$, targetId, lease, signal);
+      set(context.model.selectAddress$, targetId);
       const [selected] = await Promise.allSettled([
         (async () => {
           await set(lease.controller.selectTab$, targetId, signal);
@@ -1235,20 +1246,19 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
     async ({ set }, signal: AbortSignal): Promise<string> => {
       const lease = set(requireController$, signal);
       set(context.cancelAutomatic$);
-      const token = set(focus.beginCreate$, lease, signal);
       const [created] = await Promise.allSettled([
         (async () => {
-          const targetId = await set(lease.controller.createTab$, signal);
+          const creation = set(lease.controller.createTab$, signal);
+          set(focus.newAddress$);
+          const targetId = await creation;
           set(confirmLease$, lease, signal);
           return targetId;
         })(),
       ]);
       signal.throwIfAborted();
       if (created.status === "rejected") {
-        set(focus.cancel$, token);
         throw created.reason;
       }
-      set(focus.created$, token, created.value);
       return created.value;
     },
   );
@@ -1278,6 +1288,17 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
 function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
   const { model } = context;
   const { requireController$ } = graph;
+  const canSubmitAddress$ = computed((get) => {
+    const lease = get(context.installed$);
+    return (
+      get(context.authority$) &&
+      lease !== null &&
+      !get(lease.controller.creatingTab$) &&
+      get(graph.selectedInput$) !== null &&
+      get(model.controls$).streaming &&
+      get(model.addressTargetMatches$)
+    );
+  });
   const execute$ = command(
     async (
       { get, set },
@@ -1309,6 +1330,9 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
       signal: AbortSignal,
     ): Promise<NavigationReceipt> => {
       const lease = set(requireController$, signal);
+      if (action === "submit-address" && !get(canSubmitAddress$)) {
+        return { kind: "unavailable" };
+      }
       const scope = get(lease.controller.navigationScope$);
       const [result] = await Promise.allSettled([
         set(execute$, lease, action, signal),
@@ -1323,7 +1347,7 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
       return result.value;
     },
   );
-  return { navigate$ };
+  return { navigate$, canSubmitAddress$ };
 }
 
 function createConfigurationActions(
@@ -1693,7 +1717,6 @@ export function createBrowserRuntime(
     editAddress$: model.editAddress$,
     resetAddress$: model.resetAddress$,
     focusAddress$: model.focusAddress$,
-    blurAddress$: model.blurAddress$,
     dismissClipboardRecovery$: graph.native.dismissClipboard$,
     ...tabActions,
     ...navigationActions,
