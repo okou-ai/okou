@@ -493,12 +493,6 @@ struct ChatDetailView: View {
   ) -> some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
       if message.role == .assistant && showsAvatar { assistantAvatar }
-      if isWorkHistory {
-        Text(message.createdAt, format: .dateTime.hour().minute())
-          .font(.okou(.caption).monospacedDigit())
-          .foregroundStyle(OkouColor.mutedForeground)
-          .padding(.leading, 6)
-      }
       if message.role == .system {
         Label(message.text, okouSymbol: message.isError ? "circle-alert" : "circle-stop")
           .font(.okou(.subheadline))
