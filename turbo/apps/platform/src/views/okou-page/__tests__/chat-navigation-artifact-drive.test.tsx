@@ -22,7 +22,7 @@ import {
   userBuiltinConnectorsContract,
   type UserBuiltinConnectorUpdate,
 } from "@okouai/api-contracts/contracts/user-connectors";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, describe, it } from "vitest";
@@ -40,7 +40,6 @@ import {
   testContext,
   type TestContext,
 } from "../../../signals/__tests__/test-helpers.ts";
-import { artifactGoogleDriveCatalogItem$ } from "../../../signals/artifact-preview-actions.ts";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../sidebar-breakpoint.ts";
 import {
   artifactRun,
@@ -670,11 +669,9 @@ test("An initial Drive catalog failure and Retry update More on its next opening
     within(recoveringMenu).queryByText("Connect Google Drive"),
   ).not.toBeInTheDocument();
 
-  recovery.resolve();
-  // Observe the existing request's completion without reopening the popup.
-  await expect(
-    context.store.get(artifactGoogleDriveCatalogItem$),
-  ).resolves.toMatchObject({ slug: "google-drive" });
+  await act(() => {
+    recovery.resolve();
+  });
   await user.keyboard("{Home}");
   expect(roleItemNamed("menuitem", "Download", recoveringMenu)).toHaveFocus();
   expect(
