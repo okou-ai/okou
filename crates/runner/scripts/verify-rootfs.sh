@@ -426,10 +426,6 @@ check_bin "/usr/share/fonts/truetype/noto/NotoColorEmoji.ttf" "Noto Color Emoji"
 check_required_executable "/usr/local/bin/agent-browser" "agent-browser CLI"
 
 # Check CLIs
-check_required_executable "/usr/local/bin/python" "addon-compatible Python"
-check_required_executable "/usr/local/bin/python3" "addon-compatible Python 3"
-check_required_executable "/usr/local/bin/pip" "addon-compatible pip"
-check_required_executable "/usr/local/bin/pip3" "addon-compatible pip3"
 check_required_executable "/usr/local/bin/uv" "uv"
 check_required_executable "/usr/local/bin/uvx" "uvx"
 check_required_executable "$CLAUDE_CLI_DEST" "Claude Code CLI"

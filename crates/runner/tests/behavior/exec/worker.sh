@@ -5,7 +5,6 @@ SCENARIO_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # shellcheck source=network.sh
 source "$SCENARIO_DIR/network.sh"
 BIN_DIR=$1; JOB_REF=$2
-PYTHON_VERSION=$3; UV_VERSION=$4
 RUNNER_DIR="/var/lib/vm0-runner/runners/${JOB_REF}-exec"
 SVC="${JOB_REF}-exec"
 UNIT="vm0-runner-${SVC}.service"
@@ -195,9 +194,7 @@ done
 echo "Found sandbox: $SANDBOX_ID"
 
 # Independent scenarios share the captured binary and the same live sandbox.
-"$SCENARIO_DIR/commands.sh" "$BIN_DIR" "$SANDBOX_ID"
-"$SCENARIO_DIR/inventory.sh" "$BIN_DIR" "$SANDBOX_ID" "$PYTHON_VERSION" "$UV_VERSION"
-for scenario in postgres clients https; do
+for scenario in commands inventory postgres clients https; do
   "$SCENARIO_DIR/$scenario.sh" "$BIN_DIR" "$SANDBOX_ID"
 done
 

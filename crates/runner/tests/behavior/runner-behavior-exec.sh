@@ -5,16 +5,6 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REMOTE_WORKER="${SCRIPT_DIR}/exec"
 DURABLE_RUNNER="${SCRIPT_DIR}/runner-behavior-durable.sh"
 REMOTE="${METAL_USER}@${HOST}"
-ADDON_DIR="$SCRIPT_DIR/../../mitm-addon"
-PYTHON_VERSION="$(<"$ADDON_DIR/.python-version")"
-UV_VERSION=$(python3 - "$ADDON_DIR/pyproject.toml" <<'PY'
-import sys
-import tomllib
-
-with open(sys.argv[1], "rb") as file:
-    print(tomllib.load(file)["tool"]["uv"]["required-version"].removeprefix("=="))
-PY
-)
 
 echo "=== Generating config ==="
 # shellcheck disable=SC2029
@@ -29,4 +19,4 @@ ssh "$REMOTE" "sudo ${BIN_DIR}/runner config \
   --api-url https://not-a-real-server.test \
   --token vm0_official_${OFFICIAL_RUNNER_SECRET}"
 
-exec "$DURABLE_RUNNER" exec "$REMOTE_WORKER" "$PYTHON_VERSION" "$UV_VERSION"
+exec "$DURABLE_RUNNER" exec "$REMOTE_WORKER"
