@@ -47,7 +47,6 @@ function requiredExtraFonts(tree: Root) {
 export async function generateMessagePdfBlob(
   contents: readonly string[],
   imageUrls: ReadonlyMap<string, string>,
-  cjkEmphasis: boolean,
   signal: AbortSignal,
 ): Promise<Blob> {
   signal.throwIfAborted();
@@ -55,7 +54,7 @@ export async function generateMessagePdfBlob(
   const tree: Root = {
     type: "root",
     children: contents.flatMap((content) => {
-      return parseMessagePdfTree(content, cjkEmphasis).children;
+      return parseMessagePdfTree(content).children;
     }),
   };
   const needed = requiredExtraFonts(tree);

@@ -40,7 +40,6 @@ export enum FeatureSwitchKey {
   ChatThreadArchiving = "chatThreadArchiving",
   ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",
-  MarkdownCjkEmphasis = "markdownCjkEmphasis",
   ChatMessagePdf = "chatMessagePdf",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",

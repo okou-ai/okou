@@ -200,13 +200,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
-  [FeatureSwitchKey.MarkdownCjkEmphasis]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "CJK Markdown emphasis",
-    description:
-      "Render paired bold and italic markers next to Chinese, Japanese, and Korean punctuation without showing literal asterisks.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ChatMessagePdf]: {
     maintainer: "ethan@okou.ai",
     displayName: "Message PDF export",
