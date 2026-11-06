@@ -15,6 +15,7 @@ fn task_at(path: &str) -> DownloadTask {
 
 fn prepared_task_at(path: &str) -> PreparedDownloadTask {
     PreparedDownloadTask {
+        source_ready: None,
         task: task_at(path),
         effective_mount_path: normalized_path(path),
     }
@@ -22,6 +23,36 @@ fn prepared_task_at(path: &str) -> PreparedDownloadTask {
 
 fn pending_at(id: usize, path: &str) -> PendingDownload {
     PendingDownload::new(id, prepared_task_at(path))
+}
+
+#[test]
+fn unpublished_predecessor_blocks_conflicting_ready_work_but_not_independent_work() {
+    for physical_alias in [false, true] {
+        let gate = Arc::new(AtomicBool::new(false));
+        let mut first = pending_at(0, "/data/parent");
+        first.task.source_ready = Some(gate.clone());
+        let mut child = pending_at(
+            1,
+            if physical_alias {
+                "/alias"
+            } else {
+                "/data/parent/child"
+            },
+        );
+        if physical_alias {
+            child.task.effective_mount_path = normalized_path("/data/parent/child");
+        }
+        let pending = VecDeque::from([first, child, pending_at(2, "/independent")]);
+        assert_eq!(
+            find_startable_download(&pending, &[], &mut |_, _, _, _| {}),
+            Some((2, 2))
+        );
+        gate.store(true, Ordering::Release);
+        assert_eq!(
+            find_startable_download(&pending, &[], &mut |_, _, _, _| {}),
+            Some((0, 0))
+        );
+    }
 }
 
 #[test]
@@ -87,6 +118,7 @@ fn task_panic_releases_reservation_and_pending_tasks_finish() {
     // any of the more-than-four remaining tasks can produce their files.
     let tasks = (0..10)
         .map(|index| PreparedDownloadTask {
+            source_ready: None,
             task: DownloadTask::storage(
                 format!("task-{index}"),
                 if index == 0 {
@@ -180,6 +212,7 @@ fn download_task_failure_detail_includes_entry_metadata() {
     let error = DownloadError::new("Failed to read archive entries: invalid gzip header");
 
     let detail = PreparedDownloadTask {
+        source_ready: None,
         task,
         effective_mount_path: PathBuf::from("/workspace"),
     }

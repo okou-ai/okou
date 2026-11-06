@@ -488,6 +488,7 @@ impl StoragePlan {
                     return Ok(false);
                 }
                 wire::Manifest {
+                    archive_readiness: None,
                     storages: vec![entry.clone().into_guest_entry()],
                     artifacts: Vec::new(),
                     cleanup_paths: Vec::new(),
@@ -502,6 +503,7 @@ impl StoragePlan {
                     return Ok(false);
                 }
                 wire::Manifest {
+                    archive_readiness: None,
                     storages: Vec::new(),
                     artifacts: vec![entry.clone().into_guest_entry()],
                     cleanup_paths: Vec::new(),
@@ -764,6 +766,7 @@ impl StoragePlan {
     /// planning representation.
     pub fn into_guest_manifest(self) -> wire::Manifest {
         wire::Manifest {
+            archive_readiness: None,
             storages: self
                 .storages
                 .into_iter()
