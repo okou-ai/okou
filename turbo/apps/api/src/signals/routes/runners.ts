@@ -1254,6 +1254,11 @@ const withClaimedContentBundles$ = command(
     }
     // One wall interval for the concurrent group, not a sum of per-URL timers.
     const skillsStartedAt = monotonicNow();
+    const workflowMountPaths = new Set(
+      args.claim.workflows.map((workflow) => {
+        return `${args.workflowInput.skillRoot}/${workflow.name}`;
+      }),
+    );
     const skills = await Promise.all(
       [
         ...args.claim.workflows.map((workflow) => {
@@ -1264,7 +1269,11 @@ const withClaimedContentBundles$ = command(
         }),
         ...[
           ...(args.officialWorkflowBundles ?? []),
-          ...args.seedSkillBundles,
+          // Workflow claims previously replaced Connector Storage mounts at
+          // the same path. Preserve that precedence for captured bundles too.
+          ...args.seedSkillBundles.filter((bundle) => {
+            return !workflowMountPaths.has(bundle.mountPath);
+          }),
         ].map((bundle) => {
           return {
             contentBundle: bundle,

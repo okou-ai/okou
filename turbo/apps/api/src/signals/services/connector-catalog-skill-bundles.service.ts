@@ -18,11 +18,7 @@ import { ConnectorCatalogSkillError } from "./connector-catalog-skill-error";
 
 const BATCH_SIZE = 100;
 
-/**
- * Prepare only this pinned generation. Missing receipts cover producer/API
- * rollout and retained catalog rollback targets. Remove that bridge after the
- * supported producer floor and pinned-generation preparation gates in #45309.
- */
+/** Prepare every bundled Skill before this pinned generation can serve Runs. */
 export const prepareConnectorCatalogSkillBundles$ = command(
   async ({ get, set }, hash: string, signal: AbortSignal): Promise<void> => {
     const [unprepared] = await get(db$)
@@ -66,7 +62,10 @@ export const prepareConnectorCatalogSkillBundles$ = command(
     signal.throwIfAborted();
     if (!downloaded.ok) {
       if (isS3NotFoundError(downloaded.error)) {
-        return;
+        throw new ConnectorCatalogSkillError({
+          code: "invalid-reference",
+          cacheable: false,
+        });
       }
       throw downloaded.error;
     }

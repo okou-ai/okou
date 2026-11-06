@@ -1,10 +1,11 @@
+import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { mockEnv } from "../../../lib/env";
 import { mockNow, now, withMockNowForTest } from "../../../lib/time";
 import { createDeferredPromise } from "../../utils";
 import { closeS3Clients } from "../../../lib/s3-client";
 import { randomUUID } from "node:crypto";
-import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
+import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { testContext } from "../../../__tests__/test-context";
@@ -12,10 +13,7 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createMiscRoutesApi } from "./helpers/api-bdd-misc";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 
 describe("workflow skill storage presigned URL cache", () => {
@@ -118,16 +116,16 @@ describe("workflow skill storage presigned URL cache", () => {
     };
   }
 
-  it("issues and reuses two-day URLs for ordinary read-only Storage mounts", async () => {
+  it("issues and reuses two-day URLs for Connector Skill bundles", async () => {
     const { actor, agentId, runnerGroup } = await entitledWorkflowActor();
     if (!actor.orgId) {
       throw new Error("Expected readonly cache test actor to have an org");
     }
     const api = createRunsApi(context);
     context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
-    // A custom connector's skill Storage is an ordinary organization-owned
-    // read-only mount (readonly_storage scope) of the Agent's runs.
+    // Skill availability is independent of a connected runtime account.
     const connectors = createConnectorBddApi(context);
+    await enableConnectorSkillBundles(context, actor);
     const custom = await connectors.createCustomConnector(actor, {
       displayName: "Readonly cache connector",
       prefixTemplates: [
@@ -147,7 +145,7 @@ describe("workflow skill storage presigned URL cache", () => {
       await connectors.deleteCustomConnector(actor, custom.id);
     });
     await connectors.updateAgentCustomConnectors(actor, agentId, [custom.id]);
-    const volumeName = getCustomConnectorSkillStorageName(custom.id);
+    const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(custom.slug, custom.id)}`;
     mockUniquePresignedUrls();
     const createAndClaim = async (prompt: string) => {
       const run = await api.createThreadRun(actor, {
@@ -156,13 +154,11 @@ describe("workflow skill storage presigned URL cache", () => {
       });
       await api.heartbeatRunner(runnerGroup);
       const claim = await api.claimRunnerJob(run.runId);
-      const mount = expectCanonicalStorageManifest(
-        claim.storageManifest,
-      )?.storageMounts.find((entry) => {
-        return entry.name === volumeName;
+      const mount = claim.contentBundles.skills.find((entry) => {
+        return entry.mountPath === mountPath;
       });
-      if (!mount?.archiveUrl) {
-        throw new Error("Missing ordinary readonly Storage archive URL");
+      if (!mount?.downloadUrl) {
+        throw new Error("Missing Connector Skill bundle download URL");
       }
       expect(mount.mountPath).toBe(
         `/home/user/.claude/skills/custom-${custom.slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
@@ -173,7 +169,7 @@ describe("workflow skill storage presigned URL cache", () => {
           customConnectorId: custom.id,
         }),
       );
-      return { runId: run.runId, archiveUrl: mount.archiveUrl };
+      return { runId: run.runId, archiveUrl: mount.downloadUrl };
     };
 
     const first = await createAndClaim("request the readonly skill archive");

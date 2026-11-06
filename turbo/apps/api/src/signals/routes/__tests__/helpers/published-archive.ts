@@ -9,7 +9,7 @@ export function readPublishedArchive(context: TestContext, start: number) {
     .flatMap(([command]) => {
       if (
         !(command instanceof PutObjectCommand) ||
-        !command.input.Key?.endsWith("/archive.tar.gz")
+        !command.input.Key?.startsWith("bundles/v1/")
       ) {
         return [];
       }
@@ -20,10 +20,14 @@ export function readPublishedArchive(context: TestContext, start: number) {
   if (!archive?.Key || !(archive.Body instanceof Uint8Array)) {
     throw new Error("Expected one uploaded publication archive");
   }
-  const versionId = archive.Key.split("/").at(-2);
-  expect(versionId).toMatch(/^[a-f0-9]{64}$/);
-  if (!versionId) {
-    throw new Error("Expected a published storage version");
+  const sha256 = /^bundles\/v1\/([a-f0-9]{64})\.tar\.gz$/u.exec(
+    archive.Key,
+  )?.[1];
+  if (!sha256) {
+    throw new Error("Expected a published content bundle");
   }
-  return { versionId, archiveSize: archive.Body.byteLength };
+  return {
+    sha256,
+    archiveBytes: archive.Body.byteLength,
+  };
 }

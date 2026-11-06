@@ -1,5 +1,9 @@
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import {
+  contentBundleSchema,
+  type ContentBundle,
+} from "@okouai/api-contracts/contracts/content-bundle";
+import {
   customConnectorSlugSchema,
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
@@ -7,8 +11,15 @@ import {
   getCustomConnectorSkillName,
   getCustomConnectorSkillStorageName,
 } from "@okouai/core/storage-names";
+import { connectorCatalogEntries } from "@okouai/db/runtime/connector-catalog";
+import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
 import { computed, type Computed } from "ccstate";
-import { agentConnectorScopeFromRows } from "./agent-connector-scope.service";
+import { and, eq, inArray } from "drizzle-orm";
+import { db$ } from "../external/db";
+import {
+  agentConnectorScopeFromRows,
+  type AgentConnectorScopeSnapshot,
+} from "./agent-connector-scope.service";
 import {
   connectorScopeForRuntimeSnapshot,
   getConnectorRuntimeConnector,
@@ -16,10 +27,24 @@ import {
 } from "./connector-catalog-runtime.service";
 import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
 
-interface AuthorizedConnectorSkill {
-  readonly storageName: string;
-  readonly versionId: string;
-  readonly skillName: string;
+type AuthorizedConnectorSkill = { readonly skillName: string } & (
+  | { readonly contentBundle: ContentBundle }
+  | { readonly storageName: string; readonly versionId: string }
+);
+
+function requiredSkillBundle(
+  row:
+    | {
+        readonly bundle: ContentBundle | null;
+        readonly sourceVersionId: string | null;
+      }
+    | undefined,
+  versionId: string,
+): ContentBundle {
+  if (!row?.bundle || row.sourceVersionId !== versionId) {
+    throw new Error("Authorized connector Skill bundle is unavailable");
+  }
+  return contentBundleSchema.parse(row.bundle);
 }
 
 type AuthorizedConnector =
@@ -41,6 +66,7 @@ export type AuthorizedConnectors = readonly AuthorizedConnector[];
 
 /** Agent authorization and catalog capability, independent of connected accounts. */
 export function createAuthorizedConnectors(
+  orgId: string,
   selection$: Computed<
     Promise<
       Pick<
@@ -50,11 +76,13 @@ export function createAuthorizedConnectors(
     >
   >,
   catalog$: Computed<Promise<ConnectorRuntimeSelection | null>>,
+  bundleDelivery$: Computed<Promise<boolean>>,
 ): Computed<Promise<AuthorizedConnectors>> {
   return computed(async (get) => {
-    const [selection, catalog] = await Promise.all([
+    const [selection, catalog, bundleDelivery] = await Promise.all([
       get(selection$),
       get(catalog$),
+      get(bundleDelivery$),
     ]);
     const scope = agentConnectorScopeFromRows({
       connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
@@ -71,54 +99,179 @@ export function createAuthorizedConnectors(
     if (!catalog) {
       throw new Error("Scoped connector catalog is missing from bootstrap");
     }
-    const authorized: AuthorizedConnector[] = connectorScopeForRuntimeSnapshot(
+    if (!bundleDelivery) {
+      return authorizedConnectorsFromBundles({
+        scope,
+        catalog,
+        bundleDelivery,
+        builtinBundles: new Map(),
+        customBundles: new Map(),
+      });
+    }
+    const builtinSlugs = connectorScopeForRuntimeSnapshot(
       scope,
       catalog,
-    ).allowedConnectorSlugs.map((connectorSlug) => {
-      const connector = getConnectorRuntimeConnector(catalog, connectorSlug);
-      if (!connector) {
-        throw new Error(
-          "Authorized connector is missing from captured catalog",
-        );
-      }
-      return {
-        kind: "builtin",
-        connectorSlug,
-        isMcp: connector.catalogConnector.mcp !== undefined,
+    ).allowedConnectorSlugs;
+    const customIds = scope.customConnectorDefinitions
+      .filter((connector) => {
+        return connector.skillStorageVersionId !== null;
+      })
+      .map((connector) => {
+        return connector.customConnectorId;
+      });
+    const bundledSlugs = builtinSlugs.filter((slug) => {
+      return (
+        getConnectorRuntimeConnector(catalog, slug)?.skill.kind === "bundled"
+      );
+    });
+    const db = get(db$);
+    // Preparation metadata has its own projection. Bind it to the authorized
+    // owner and captured catalog generation, never a mutable catalog pointer.
+    const [builtinRows, customRows] = await Promise.all([
+      bundledSlugs.length === 0
+        ? []
+        : db
+            .select({
+              slug: connectorCatalogEntries.slug,
+              bundle: connectorCatalogEntries.skillContentBundle,
+              sourceVersionId:
+                connectorCatalogEntries.skillContentBundleSourceVersionId,
+            })
+            .from(connectorCatalogEntries)
+            .where(
+              and(
+                eq(
+                  connectorCatalogEntries.hash,
+                  catalog.catalogIdentity.catalogDigest,
+                ),
+                inArray(connectorCatalogEntries.slug, bundledSlugs),
+              ),
+            ),
+      customIds.length === 0
+        ? []
+        : db
+            .select({
+              id: orgCustomConnectorSkillBundles.id,
+              bundle: orgCustomConnectorSkillBundles.skillContentBundle,
+              sourceVersionId:
+                orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId,
+            })
+            .from(orgCustomConnectorSkillBundles)
+            .where(
+              and(
+                eq(orgCustomConnectorSkillBundles.orgId, orgId),
+                inArray(orgCustomConnectorSkillBundles.id, customIds),
+              ),
+            ),
+    ]);
+    const builtinBundles = new Map(
+      builtinRows.map((row) => {
+        return [row.slug, row];
+      }),
+    );
+    const customBundles = new Map(
+      customRows.map((row) => {
+        return [row.id, row];
+      }),
+    );
+    return authorizedConnectorsFromBundles({
+      scope,
+      catalog,
+      bundleDelivery,
+      builtinBundles,
+      customBundles,
+    });
+  });
+}
+
+function authorizedConnectorsFromBundles({
+  scope,
+  catalog,
+  bundleDelivery,
+  builtinBundles,
+  customBundles,
+}: {
+  readonly scope: AgentConnectorScopeSnapshot;
+  readonly catalog: ConnectorRuntimeSelection;
+  readonly bundleDelivery: boolean;
+  readonly builtinBundles: ReadonlyMap<
+    string,
+    {
+      readonly bundle: ContentBundle | null;
+      readonly sourceVersionId: string | null;
+    }
+  >;
+  readonly customBundles: ReadonlyMap<
+    string,
+    {
+      readonly bundle: ContentBundle | null;
+      readonly sourceVersionId: string | null;
+    }
+  >;
+}): AuthorizedConnectors {
+  const authorized: AuthorizedConnector[] = connectorScopeForRuntimeSnapshot(
+    scope,
+    catalog,
+  ).allowedConnectorSlugs.map((connectorSlug) => {
+    const connector = getConnectorRuntimeConnector(catalog, connectorSlug);
+    if (!connector) {
+      throw new Error("Authorized connector is missing from captured catalog");
+    }
+    return {
+      kind: "builtin",
+      connectorSlug,
+      isMcp: connector.catalogConnector.mcp !== undefined,
+      skill:
+        connector.skill.kind === "none"
+          ? null
+          : {
+              ...(bundleDelivery
+                ? {
+                    contentBundle: requiredSkillBundle(
+                      builtinBundles.get(connectorSlug),
+                      connector.skill.versionId,
+                    ),
+                  }
+                : {
+                    storageName: connector.skill.storageName,
+                    versionId: connector.skill.versionId,
+                  }),
+              skillName: connectorSlug,
+            },
+    };
+  });
+  for (const connector of scope.customConnectorDefinitions) {
+    const slug = customConnectorSlugSchema.safeParse(connector.connectorSlug);
+    if (slug.success) {
+      authorized.push({
+        kind: "custom",
+        customConnectorId: connector.customConnectorId,
+        connectorSlug: slug.data,
+        isMcp: connector.isMcp,
         skill:
-          connector.skill.kind === "none"
+          connector.skillStorageVersionId === null
             ? null
             : {
-                storageName: connector.skill.storageName,
-                versionId: connector.skill.versionId,
-                skillName: connectorSlug,
+                ...(bundleDelivery
+                  ? {
+                      contentBundle: requiredSkillBundle(
+                        customBundles.get(connector.customConnectorId),
+                        connector.skillStorageVersionId,
+                      ),
+                    }
+                  : {
+                      storageName: getCustomConnectorSkillStorageName(
+                        connector.customConnectorId,
+                      ),
+                      versionId: connector.skillStorageVersionId,
+                    }),
+                skillName: getCustomConnectorSkillName(
+                  slug.data,
+                  connector.customConnectorId,
+                ),
               },
-      };
-    });
-    for (const connector of scope.customConnectorDefinitions) {
-      const slug = customConnectorSlugSchema.safeParse(connector.connectorSlug);
-      if (slug.success) {
-        authorized.push({
-          kind: "custom",
-          customConnectorId: connector.customConnectorId,
-          connectorSlug: slug.data,
-          isMcp: connector.isMcp,
-          skill:
-            connector.skillStorageVersionId === null
-              ? null
-              : {
-                  storageName: getCustomConnectorSkillStorageName(
-                    connector.customConnectorId,
-                  ),
-                  versionId: connector.skillStorageVersionId,
-                  skillName: getCustomConnectorSkillName(
-                    slug.data,
-                    connector.customConnectorId,
-                  ),
-                },
-        });
-      }
+      });
     }
-    return authorized;
-  });
+  }
+  return authorized;
 }
