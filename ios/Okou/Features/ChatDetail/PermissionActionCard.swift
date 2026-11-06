@@ -2,8 +2,6 @@ import ChatData
 import SwiftUI
 
 struct PermissionActionCard: View {
-  @Environment(\.singleAgentExperience) private var singleAgent
-
   @Bindable var store: PermissionActionStore
   let loadsState: Bool
   @State private var showsDetails = false
@@ -55,8 +53,7 @@ struct PermissionActionCard: View {
             ? status
             : String(
               localized:
-                "For \(singleAgent ? "Okou" : (store.snapshot?.agentName ?? String(localized: "this Agent"))) · \(status)"
-            )
+                "For \(store.snapshot?.agentName ?? String(localized: "this Agent")) · \(status)")
         )
         .lineLimit(1, reservesSpace: true)
       }
@@ -102,8 +99,6 @@ struct PermissionActionCard: View {
 }
 
 struct PermissionActionDetails: View {
-  @Environment(\.singleAgentExperience) private var singleAgent
-
   @Bindable var store: PermissionActionStore
   @Environment(\.dismiss) private var dismiss
   @State private var confirmingContinuation = false
@@ -142,10 +137,8 @@ struct PermissionActionDetails: View {
         VStack(alignment: .leading, spacing: OkouSpace.xs) {
           Text(store.metadata?.label ?? store.action.connectorSlug)
             .font(.okou(.headline)).foregroundStyle(OkouColor.foreground)
-          Text(
-            "Requested by \(singleAgent ? "Okou" : (store.snapshot?.agentName ?? String(localized: "this Agent")))"
-          )
-          .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
+          Text("Requested by \(store.snapshot?.agentName ?? String(localized: "this Agent"))")
+            .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
         }
       }
       Divider()
@@ -164,9 +157,7 @@ struct PermissionActionDetails: View {
         Text(
           store.snapshot?.connectorScoped == true
             ? "These permissions apply to this connector across your chats and accounts."
-            : (singleAgent
-              ? "These permissions apply to your account for Okou across chats in this workspace."
-              : "These permissions apply to your account for this Agent.")
+            : "These permissions apply to your account for this Agent."
         )
         .okouSectionNote()
       }

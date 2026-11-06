@@ -7,7 +7,6 @@ struct ComposerMentionSource: Equatable {
   let agentID: String?
   let agents: [AgentRecord]
   let threads: [ChatThread]
-  var includesAgents = true
 
   func suggestions(for query: String) -> [ComposerMentionSuggestion] {
     guard let agentID else { return [] }
@@ -33,7 +32,7 @@ struct ComposerMentionSource: Equatable {
           return agent?.isDefaultAgent == true ? OkouAgentAvatar.defaultURL : agent?.avatarUrl
         }())
     }
-    return (includesAgents ? agentSuggestions : []) + chats
+    return agentSuggestions + chats
   }
 }
 
