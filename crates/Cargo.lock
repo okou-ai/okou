@@ -2183,6 +2183,7 @@ dependencies = [
 name = "guest-state-restore"
 version = "0.4.1"
 dependencies = [
+ "guest-contracts",
  "libc",
  "tempfile",
 ]

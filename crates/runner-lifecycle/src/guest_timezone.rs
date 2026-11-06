@@ -1,3 +1,4 @@
+pub use guest_contracts::guest_timezone::is_safe_timezone_name as is_shell_safe_name;
 use runner_types::types::ExecutionContext;
 
 pub const DEFAULT_GUEST_TIMEZONE: &str = "UTC";
@@ -50,15 +51,4 @@ impl GuestTimezoneIntent {
             GuestTimezoneAssumption::Mismatch
         }
     }
-}
-
-pub fn is_shell_safe_name(timezone: &str) -> bool {
-    !timezone.is_empty()
-        && timezone.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric()
-                || byte == b'/'
-                || byte == b'_'
-                || byte == b'-'
-                || byte == b'+'
-        })
 }
