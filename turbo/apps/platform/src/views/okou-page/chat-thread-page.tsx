@@ -10,9 +10,9 @@ import type { SharedThreadAudience } from "@okouai/api-contracts/contracts/share
 import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
-import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
+import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -458,55 +458,6 @@ function eventNonContentPart(
   );
 }
 
-function ChatThreadHeaderIconButton({
-  icon,
-  label,
-  tooltip = label,
-  open,
-  onClick,
-  disabled = false,
-  busy = false,
-}: {
-  icon: ReactNode;
-  label: string;
-  tooltip?: string;
-  open: boolean;
-  onClick: () => void;
-  disabled?: boolean;
-  busy?: boolean;
-}) {
-  return (
-    <TooltipProvider delay={300}>
-      <Tooltip>
-        <TooltipTrigger
-          render={
-            <Button
-              type="button"
-              disabled={disabled}
-              focusableWhenDisabled
-              aria-busy={busy}
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className={cn(
-                "shrink-0 duration-150",
-                open &&
-                  "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
-              )}
-              aria-label={label}
-              aria-pressed={open}
-              onClick={onClick}
-            >
-              {icon}
-            </Button>
-          }
-        />
-        <TooltipContent side="bottom">{tooltip}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
-  );
-}
-
 export function AutomationMenuButton({
   thread,
   ariaLabel,
@@ -518,11 +469,10 @@ export function AutomationMenuButton({
   const reloadAutomations = useSet(thread.headerAutomations.reloadAutomations$);
   const openAutomationSidebar = useSet(openThreadAutomations$);
   const sidebarTarget = useGet(thread.sidebar.target$);
-  const open = sidebarTarget?.type === "automations";
-  const transitioning = useChatHeaderTransitioning(thread);
 
   return (
-    <ChatThreadHeaderIconButton
+    <ChatHeaderIconButton
+      thread={thread}
       icon={<Clock size={18} />}
       label={
         ariaLabel ??
@@ -533,12 +483,13 @@ export function AutomationMenuButton({
       tooltip={t(($) => {
         return $.chat.automations.open;
       })}
-      open={open}
-      disabled={transitioning}
-      busy={transitioning}
-      onClick={() => {
-        reloadAutomations();
-        openAutomationSidebar(thread);
+      usage={{
+        kind: "sidebar",
+        pressed: sidebarTarget?.type === "automations",
+        onClick: () => {
+          reloadAutomations();
+          openAutomationSidebar(thread);
+        },
       }}
     />
   );
@@ -548,17 +499,19 @@ function BrowserMenuButton({ thread }: { thread: ChatPanelSignals }) {
   const { t } = useTranslation();
   const sidebarTarget = useGet(thread.sidebar.target$);
   const openBrowserSidebar = useSet(openThreadBrowserSession$);
-  const transitioning = useChatHeaderTransitioning(thread);
   return (
-    <ChatThreadHeaderIconButton
+    <ChatHeaderIconButton
+      thread={thread}
       icon={<Globe size={18} />}
       label={t(($) => {
         return $.chat.thread.openBrowser;
       })}
-      open={sidebarTarget?.type === "browser"}
-      disabled={transitioning}
-      onClick={() => {
-        openBrowserSidebar(thread.threadId);
+      usage={{
+        kind: "sidebar",
+        pressed: sidebarTarget?.type === "browser",
+        onClick: () => {
+          openBrowserSidebar(thread.threadId);
+        },
       }}
     />
   );
@@ -636,7 +589,6 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const selectedCount = useGet(thread.sharing.selectedCount$);
   const startSharing = useSet(thread.sharing.start$);
   const closeSharing = useSet(thread.sharing.close$);
-  const transitioning = useChatHeaderTransitioning(thread);
   if (sharingPhase !== "idle") {
     return (
       <header className={CHAT_THREAD_HEADER_CLASS}>
@@ -677,40 +629,23 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
       </div>
       <SettledChatThreadActions thread={thread}>
         <div className="flex shrink-0 items-center gap-0.5">
-          <TooltipProvider>
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    disabled={transitioning}
-                    focusableWhenDisabled
-                    onClick={() => {
-                      detach(
-                        startSharing(pageSignal),
-                        Reason.DomCallback,
-                        "start shared thread selection",
-                      );
-                    }}
-                    variant="quiet"
-                    size="icon-sm"
-                    iconSize="md"
-                    className="shrink-0 duration-150"
-                    aria-label={t(($) => {
-                      return $.chat.sharing.start;
-                    })}
-                  >
-                    <Share2 size={18} />
-                  </Button>
-                }
-              />
-              <TooltipContent side="bottom">
-                {t(($) => {
-                  return $.chat.sharing.start;
-                })}
-              </TooltipContent>
-            </Tooltip>
-          </TooltipProvider>
+          <ChatHeaderIconButton
+            thread={thread}
+            icon={<Share2 size={18} />}
+            label={t(($) => {
+              return $.chat.sharing.start;
+            })}
+            usage={{
+              kind: "action",
+              onClick: () => {
+                detach(
+                  startSharing(pageSignal),
+                  Reason.DomCallback,
+                  "start shared thread selection",
+                );
+              },
+            }}
+          />
           <AutomationMenuButton thread={thread} />
           <ThreadMailButton thread={thread} />
           <BrowserMenuButton thread={thread} />
@@ -3600,21 +3535,6 @@ function ChatThreadFeedbackSlot({ thread }: { thread: ChatPanelSignals }) {
   return <ChatFeedbackSelection feedback={thread.feedback} />;
 }
 
-function ChatThreadResourceLayout({
-  thread,
-  children,
-}: {
-  thread: ChatPanelSignals;
-  children: ReactNode;
-}) {
-  const resourceLayoutRef = useSet(thread.resources.layoutOnRef$);
-  return (
-    <div className="relative min-h-0 flex-1" ref={resourceLayoutRef}>
-      {children}
-    </div>
-  );
-}
-
 function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
   const exists = useGet(thread.threadExists$);
   if (!exists) {
@@ -3632,12 +3552,12 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
 function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
   return (
     <>
-      <ChatThreadResourceLayout thread={thread}>
+      <div className="relative min-h-0 flex-1">
         <div className="flex h-full min-w-0 flex-col">
           <ChatThreadEventsPane thread={thread} />
           <ChatThreadBottomBar thread={thread} />
         </div>
-      </ChatThreadResourceLayout>
+      </div>
       <ChatThreadFeedbackSlot thread={thread} />
     </>
   );

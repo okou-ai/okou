@@ -9,6 +9,15 @@ export const orgMembersMetadata = pgTable(
     ...orgMembersMetadataColumns(),
     // Migration-owned history; shared outgoing API readers still select this column.
     retiredProactiveActionEnabled: boolean("proactive_action_enabled"),
+    // Retired chat artifacts auto-open preference. The outgoing API still
+    // selects and writes it. Window: until the release that stops naming it is
+    // serving, the outgoing API has drained and rollback floors exclude it;
+    // then a later migration drops it after checking catalog dependencies.
+    retiredChatResourcesEnabledByDefault: boolean(
+      "chat_resources_enabled_by_default",
+    )
+      .notNull()
+      .default(true),
   },
   (table) => {
     return [

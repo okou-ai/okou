@@ -267,6 +267,21 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   );
 });
 
+test("Report sidebar toggles as pressed and popup triggers as expanded in the desktop header", async () => {
+  context.mocks.browser.matchMedia(true);
+  await setupHeaderPage();
+  await waitFor(() => {
+    expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
+  });
+  expect(buttonNamed("Automations")).toHaveAttribute("aria-pressed", "false");
+  expect(buttonNamed("Open browser")).toHaveAttribute("aria-pressed", "false");
+  const mail = buttonNamed("Manage emails");
+  expect(mail).toHaveAttribute("aria-expanded", "false");
+  click(mail);
+  await screen.findByRole("dialog", { name: "Emails" });
+  expect(mail).toHaveAttribute("aria-expanded", "true");
+});
+
 test("Archive from the mobile header and return to the thread's agent before saving", async () => {
   context.mocks.browser.matchMedia(false);
   const archiveResponse = context.mocks.deferred<void>();

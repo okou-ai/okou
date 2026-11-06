@@ -10,13 +10,10 @@ import { detach, Reason } from "../../signals/utils.ts";
 
 function ChatScrollCommitMarker({
   thread,
-  measureWidth,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly measureWidth: boolean;
 }) {
   const restore = useSet(thread.restoreScrollPosition$);
-  const measure = useSet(thread.resources.measure$);
   const signal = useGet(pageSignal$);
   return (
     <span
@@ -27,9 +24,6 @@ function ChatScrollCommitMarker({
       // the content. Lifecycle refs continue to use stable onRef commands.
       ref={(element) => {
         if (element) {
-          if (measureWidth) {
-            measure();
-          }
           detach(restore(signal), Reason.DomCallback);
         }
       }}
@@ -37,34 +31,19 @@ function ChatScrollCommitMarker({
   );
 }
 
-function ChatScrollLayout({
-  children,
-  measureWidth,
-}: {
-  readonly children: ReactNode;
-  readonly measureWidth: boolean;
-}) {
+function ChatScrollLayout({ children }: { readonly children: ReactNode }) {
   const left = useGet(currentLeftThread$);
   const right = useGet(currentRightThread$);
   return (
     <>
       {children}
-      {left && (
-        <ChatScrollCommitMarker thread={left} measureWidth={measureWidth} />
-      )}
-      {right && right !== left && (
-        <ChatScrollCommitMarker thread={right} measureWidth={measureWidth} />
-      )}
+      {left && <ChatScrollCommitMarker thread={left} />}
+      {right && right !== left && <ChatScrollCommitMarker thread={right} />}
     </>
   );
 }
 
 /** Wrap a layout owner's output to acknowledge its committed geometry. */
-export function withChatScrollLayout(
-  children: ReactNode,
-  { measureWidth = false }: { readonly measureWidth?: boolean } = {},
-) {
-  return (
-    <ChatScrollLayout measureWidth={measureWidth}>{children}</ChatScrollLayout>
-  );
+export function withChatScrollLayout(children: ReactNode) {
+  return <ChatScrollLayout>{children}</ChatScrollLayout>;
 }

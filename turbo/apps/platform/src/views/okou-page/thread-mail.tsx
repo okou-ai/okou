@@ -13,7 +13,6 @@ import {
   Input,
   Popover,
   PopoverContent,
-  PopoverTrigger,
   Skeleton,
   Toggle,
   ToggleGroup,
@@ -21,15 +20,7 @@ import {
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type { ComponentProps } from "react";
-import {
-  ChevronRight,
-  Loader2,
-  Mail,
-  Search,
-  Send,
-  Trash,
-  X,
-} from "lucide-react";
+import { ChevronRight, Loader2, Mail, Search, Send, Trash } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
@@ -46,8 +37,12 @@ import { hash$, pathname$, searchParams$ } from "../../signals/route.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
-import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
+import {
+  CHAT_HEADER_PANEL_CLASS,
+  ChatHeaderPanelHeader,
+} from "./chat-header-panel.tsx";
+import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { emptyArtifactImg } from "./platform-assets.ts";
 
 export function ThreadMailLink({
@@ -94,17 +89,23 @@ export function ThreadMailLink({
 
 export function ThreadMailButton({
   thread,
+  largeTarget = false,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly largeTarget?: boolean;
 }) {
   const exists = useGet(thread.threadExists$);
-  return exists ? <ThreadMailButtonInner thread={thread} /> : null;
+  return exists ? (
+    <ThreadMailButtonInner thread={thread} largeTarget={largeTarget} />
+  ) : null;
 }
 
 function ThreadMailButtonInner({
   thread,
+  largeTarget,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly largeTarget: boolean;
 }) {
   const { t } = useTranslation();
   const open = useGet(thread.mail.open$);
@@ -112,16 +113,11 @@ function ThreadMailButtonInner({
   const close = useSet(thread.mail.close$);
   const target = useGet(thread.sidebar.target$);
   const pending = useGet(thread.mail.pending$);
-  const transitioning = useChatHeaderTransitioning(thread);
   return (
     <>
       <Popover
         open={open}
         onOpenChange={(next, details) => {
-          if (next && transitioning) {
-            details.cancel();
-            return;
-          }
           if (!next && pending !== null) {
             details.cancel();
             return;
@@ -133,25 +129,15 @@ function ThreadMailButtonInner({
           }
         }}
       >
-        <PopoverTrigger
-          render={
-            <Button
-              showTooltip
-              type="button"
-              aria-disabled={(transitioning && !open) || undefined}
-              aria-busy={transitioning}
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className="shrink-0"
-              aria-label={t(($) => {
-                return $.chat.mail.manager.open;
-              })}
-            />
-          }
-        >
-          <Mail size={18} />
-        </PopoverTrigger>
+        <ChatHeaderIconButton
+          thread={thread}
+          icon={<Mail size={18} />}
+          label={t(($) => {
+            return $.chat.mail.manager.open;
+          })}
+          largeTarget={largeTarget}
+          usage={{ kind: "popup", popup: "popover" }}
+        />
         <PopoverContent
           align="end"
           sideOffset={8}
@@ -163,7 +149,7 @@ function ThreadMailButtonInner({
               ? false
               : undefined
           }
-          className="flex max-h-[min(600px,var(--available-height))] w-[min(440px,calc(100vw-2rem))] flex-col overflow-hidden p-0"
+          className={CHAT_HEADER_PANEL_CLASS}
         >
           <ThreadMailList thread={thread} />
         </PopoverContent>
@@ -190,34 +176,23 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
   const mails = useLastLoadable(manager.mails$);
   const query = useGet(manager.query$);
   const setQuery = useSet(manager.setQuery$);
-  const close = useSet(manager.close$);
+  // The first list stands in as a skeleton; later reloads keep the last list.
+  const loading = mails.state === "loading";
   // Search and filters have nothing to act on until the chat has an email.
   const empty = mails.state === "hasData" && mails.data.length === 0;
   return (
-    <div className="shrink-0 space-y-3 border-b border-border/60 p-4">
-      <div className="flex items-center gap-2">
-        <Mail size={18} className="text-muted-foreground" />
-        <h2 className="flex-1 text-sm font-medium">
-          {t(($) => {
-            return $.chat.mail.manager.title;
-          })}
-          <span className="ml-2 text-xs text-muted-foreground">
-            {mails.state === "hasData" ? mails.data.length : 0}
-          </span>
-        </h2>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          onClick={close}
-          aria-label={t(($) => {
-            return $.chat.mail.manager.close;
-          })}
-        >
-          <X size={16} />
-        </Button>
-      </div>
-      {!empty && (
+    <ChatHeaderPanelHeader
+      icon={<Mail size={18} />}
+      title={t(($) => {
+        return $.chat.mail.manager.title;
+      })}
+      count={mails.state === "hasData" ? mails.data.length : undefined}
+      closeLabel={t(($) => {
+        return $.chat.mail.manager.close;
+      })}
+    >
+      {loading && <ThreadMailHeaderSkeleton />}
+      {!loading && !empty && (
         <>
           <div className="relative">
             <Search
@@ -241,6 +216,20 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
           <ThreadMailFilters thread={thread} />
         </>
       )}
+    </ChatHeaderPanelHeader>
+  );
+}
+
+/** Search and filter placeholders until the first list answers. */
+function ThreadMailHeaderSkeleton() {
+  return (
+    <div aria-hidden="true" className="space-y-3">
+      <Skeleton className="h-9 w-full rounded-md" />
+      <div className="flex gap-1">
+        {[0, 1, 2].map((filter) => {
+          return <Skeleton key={filter} className="h-7 w-14 rounded-md" />;
+        })}
+      </div>
     </div>
   );
 }

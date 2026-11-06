@@ -2308,6 +2308,7 @@
       "unavailableSsh": "hôte SSH indisponible"
     },
     "resources": {
+      "close": "Fermer les artéfacts et discussions",
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
       "emptyDescription": "Les fichiers, sites Web et autres artéfacts créés dans ce chat apparaîtront ici.",

@@ -2261,6 +2261,7 @@
       "unavailableSsh": "사용할 수 없는 SSH 호스트"
     },
     "resources": {
+      "close": "아티팩트 및 채팅 닫기",
       "collapse": "접기",
       "copyLink": "링크 복사",
       "emptyDescription": "이 채팅에서 만든 파일, 웹사이트 등의 아티팩트가 여기에 표시됩니다.",

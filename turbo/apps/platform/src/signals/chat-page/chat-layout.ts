@@ -18,7 +18,6 @@ export const restoreChatLayoutScroll$ = command(
     await Promise.all(
       Array.from(threads, async (thread) => {
         if (thread) {
-          set(thread.resources.measure$);
           await set(thread.restoreScrollPosition$, signal);
         }
       }),

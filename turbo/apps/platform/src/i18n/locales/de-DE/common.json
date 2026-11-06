@@ -2269,6 +2269,7 @@
       "unavailableSsh": "nicht verfügbarer SSH-Host"
     },
     "resources": {
+      "close": "Artefakte und Chats schließen",
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
       "emptyDescription": "Dateien, Websites und andere Artefakte aus diesem Chat werden hier angezeigt.",

@@ -1,6 +1,6 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import {
   chatRelationsContract,
   type ChatCommunication,
@@ -15,6 +15,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { openResources } from "./chat-resources-test-helpers.ts";
 import { hash, pathname } from "../../../signals/location.ts";
 import { createDeferredPromise } from "../../../signals/utils.ts";
 import {
@@ -129,7 +130,7 @@ function messagesCaret(container: HTMLElement, title: string) {
   });
 }
 async function openMessages(title: string) {
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await within(panel).findByText(title);
@@ -141,30 +142,13 @@ async function openMessages(title: string) {
   return { panel, row };
 }
 
-function installRelationsGeometry(narrow = false) {
-  const original = HTMLElement.prototype.getBoundingClientRect;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-    function (this: HTMLElement) {
-      if (Object.hasOwn(this.dataset, "scrollContainer")) {
-        return new DOMRect(0, 80, 1800, 700);
-      }
-      if (Object.hasOwn(this.dataset, "messageContainer")) {
-        return new DOMRect(narrow ? 800 : 420, 80, 900, 700);
-      }
-      return original.call(this);
-    },
-  );
-  context.mocks.browser.matchMedia(true);
-}
-
 async function setupRelations(
   options: {
     readonly events?: MockChatEventInput[];
-    readonly narrow?: boolean;
     readonly mock?: () => void;
   } = {},
 ) {
-  installRelationsGeometry(options.narrow);
+  context.mocks.browser.matchMedia(true);
   mockArtifactConversation(context, {
     catalog: [],
     chatEvents: options.events ?? [prompt()],
@@ -180,6 +164,7 @@ async function setupRelations(
     context,
     path: `/chats/${THREAD}`,
   });
+  return await openResources();
 }
 
 test.each(["children", "communications"] as const)(
@@ -187,7 +172,7 @@ test.each(["children", "communications"] as const)(
   async (pending) => {
     const requested = createDeferredPromise<void>(context.signal);
     const response = createDeferredPromise<void>(context.signal);
-    await setupRelations({
+    const panel = await setupRelations({
       events: [prompt({ type: "source", kind: "slack", href: SLACK })],
       mock: () => {
         context.mocks.api(
@@ -220,13 +205,11 @@ test.each(["children", "communications"] as const)(
     await screen.findByText("Plan the launch");
     // The source alone would draw a half-filled panel that then grows.
     expect(
-      screen.queryByRole("region", { name: "Artifacts and chats" }),
-    ).not.toBeInTheDocument();
+      within(panel).getByRole("status", { name: "Loading artifacts" }),
+    ).toBeInTheDocument();
+    expect(within(panel).queryByText("Slack")).not.toBeInTheDocument();
 
     response.resolve();
-    const panel = await screen.findByRole("region", {
-      name: "Artifacts and chats",
-    });
     await within(panel).findByText("Research child");
     expect(within(panel).getByText("Slack")).toBeInTheDocument();
     expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
@@ -254,7 +237,7 @@ test("Keep loaded relationships visible when another source fails", async () => 
       });
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(
@@ -262,10 +245,11 @@ test("Keep loaded relationships visible when another source fails", async () => 
   ).resolves.toBeInTheDocument();
 });
 
-test("Draw the next chat's panel only once its relationships answer", async () => {
-  installRelationsGeometry();
+test("Start the next chat closed and draw its panel once its relationships answer", async () => {
+  context.mocks.browser.matchMedia(true);
   const first = continuityThread(96, 1, "First related chat");
   const second = continuityThread(96, 2, "Next related chat");
+  const requested = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<void>(context.signal);
   const workspace = installContinuityWorkspace(context, {
     caseId: 96,
@@ -284,6 +268,9 @@ test("Draw the next chat's panel only once its relationships answer", async () =
     chatRelationsContract.communications,
     async ({ params, respond }) => {
       if (params.id === second.id) {
+        if (!requested.settled()) {
+          requested.resolve();
+        }
         await response.promise;
       }
       return respond(200, { items: [] });
@@ -294,29 +281,23 @@ test("Draw the next chat's panel only once its relationships answer", async () =
     ...workspace.pageOptions,
     path: `/chats/${first.id}`,
   });
-  const previous = await screen.findByRole("region", {
-    name: "Artifacts and chats",
-  });
+  const previous = await openResources();
   click((await within(previous).findByText("Next related chat")).closest("a")!);
   await waitFor(() => {
     expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
       "Next related chat",
     );
   });
-  // No placeholder and nothing from the previous chat while this one loads.
-  await waitFor(() => {
-    expect(buttonNamed("Artifacts and chats")).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
-  });
   expect(
-    screen.queryByRole("region", { name: "Artifacts and chats" }),
+    screen.queryByRole("dialog", { name: "Artifacts and chats" }),
   ).not.toBeInTheDocument();
+  // Nothing from the previous chat while this one loads.
+  const panel = await openResources();
+  await requested.promise;
+  expect(
+    within(panel).getByRole("status", { name: "Loading artifacts" }),
+  ).toBeInTheDocument();
   response.resolve();
-  const panel = await screen.findByRole("region", {
-    name: "Artifacts and chats",
-  });
   await within(panel).findByText("Research child");
   expect(
     within(panel).queryByText("Next related chat"),
@@ -339,7 +320,7 @@ test("Show the first source and created chats with their status", async () => {
       mockCommunications();
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(within(panel).findByText("Slack")).resolves.toBeInTheDocument();
@@ -398,7 +379,7 @@ test("Keep an unknown first-run origin when a later run has a Slack source", asy
       mockCommunications();
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(
@@ -426,7 +407,7 @@ test("Link the first-run agent source directly to its parent run", async () => {
       }),
     ],
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const row = (await within(panel).findByText("Parent planning chat")).closest(
@@ -488,7 +469,7 @@ test("List an agent origin once when it is also a related chat", async () => {
       mockCommunications();
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const chats = await within(panel).findByRole("region", { name: "Chats" });
@@ -665,7 +646,7 @@ test("Show empty chats and unavailable relationship targets without inventing an
       });
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
 
@@ -694,7 +675,7 @@ test("Keep other sections visible when a relationship list fails", async () => {
       mockCommunications();
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(
@@ -717,7 +698,7 @@ test("Show artifacts without an empty related chats section", async () => {
       });
     },
   });
-  const popup = await screen.findByRole("region", {
+  const popup = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await within(popup).findByText("report.pdf");
@@ -732,7 +713,7 @@ test("Show a queued related chat's status as text", async () => {
       mockCommunications(21, { status: "queued", receivedCount: 0 });
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const row = (
@@ -742,24 +723,15 @@ test("Show a queued related chat's status as text", async () => {
   expect(row).not.toHaveTextContent("Running");
 });
 
-test("Open and dismiss the relations-only floating panel on a narrow chat", async () => {
-  await setupRelations({
+test("Dismiss the relations-only panel with Escape", async () => {
+  const panel = await setupRelations({
     events: [],
-    narrow: true,
     mock: () => {
       mockCommunications();
     },
   });
-  await waitFor(() => {
-    expect(buttonNamed("Artifacts and chats")).toBeEnabled();
-  });
-  const trigger = buttonNamed("Artifacts and chats");
-  expect(trigger).toHaveAttribute("aria-expanded", "false");
-  click(trigger);
-  const panel = await screen.findByRole("region", {
-    name: "Artifacts and chats",
-  });
   await within(panel).findByText("Existing planning chat");
+  const trigger = buttonNamed("Artifacts and chats");
   expect(trigger).toHaveAttribute("aria-expanded", "true");
   await userEvent.keyboard("{Escape}");
   await waitFor(() => {
@@ -791,7 +763,7 @@ test("Preview three unique chats and expand the complete list", async () => {
       });
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const chats = await within(panel).findByRole("region", { name: "Chats" });
@@ -834,7 +806,7 @@ test("Close an open message history when the Chats section collapses", async () 
       mockMessages([message()]);
     },
   });
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const chats = await within(panel).findByRole("region", { name: "Chats" });
