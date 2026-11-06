@@ -2331,7 +2331,6 @@
       "number": "数字"
     },
     "sidebar": {
-      "allChats": "全部聊天",
       "archive": "归档聊天",
       "archived": "已归档",
       "chatsWith": "与{{agentName}}的聊天",

@@ -62,7 +62,6 @@ import {
   docsImportFixture,
   uploadedDocsText,
 } from "./helpers/docs-import-fixture";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createPublicComputerUseHosts } from "./helpers/public-computer-use-hosts";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
@@ -1369,14 +1368,6 @@ describe("CHAT-01 chat thread read state", () => {
   it("does not let a muted thread hide another unread thread under the same agent", async () => {
     const { actor, agentId, runnerGroup } =
       await entitledChatActor("Mixed mute states");
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.ChatThreadMuting]: true },
-    );
     const muted = await completeChatRunInThread(actor, runnerGroup, {
       agentId,
       prompt: "Muted unread task",

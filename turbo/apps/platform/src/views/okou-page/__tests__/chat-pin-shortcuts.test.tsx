@@ -1,7 +1,6 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadPinOrderContract } from "@okouai/api-contracts/contracts/chat-threads";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -53,10 +52,6 @@ async function prepare(main: number | null = 1, side = false) {
     context,
     path,
     ...workspace.pageOptions,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
-      [FeatureSwitchKey.ChatThreadMuting]: true,
-    },
   });
   await expectOrder(INITIAL_ORDER);
   await screen.findAllByRole("textbox", { name: "Message" });

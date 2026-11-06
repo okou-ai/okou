@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.29](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.28...runner-rs-v0.244.29) (2026-11-06)
+
+
+### Performance Improvements
+
+* **runner:** bound connection-error text before log serialization ([#45662](https://github.com/okou-ai/okou/issues/45662)) ([051e670](https://github.com/okou-ai/okou/commit/051e670b650f3b346733de72cc1dc68097a5ed1a))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.28](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.27...runner-rs-v0.244.28) (2026-11-06)
 
 

@@ -244,89 +244,84 @@ final class WorkspaceStoreTests: XCTestCase {
 
   func testStartupShowsCachedRecentChatsBeforeNavigationAndPreservesArchiveVisibility() async throws
   {
-    for archivingEnabled in [true, false] {
-      let cacheDirectory = CacheTestDirectory(owner: self)
-      let archivedID = "40000000-0000-4000-8000-000000000004"
-      let snapshot = ChatHTTPResponse(
-        body: """
-          {"chatThreads":[
-            {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","title":"Recent cached chat",\
-          "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":false},
-            {"id":"\(archivedID)","agentId":"\(storeAgentID)","title":"Archived cached chat",\
-          "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
-          ],"latestEventId":null,"latestSeqId":null}
-          """)
-      let switchesStarted = expectation(description: "Archive visibility is being loaded")
-      let releaseSwitches = HTTPResponseGate()
-      defer { releaseSwitches.open() }
-      let catchUpStarted = expectation(
-        description: "Cached chats are shown before network catch-up")
-      let releaseCatchUp = HTTPResponseGate()
-      defer { releaseCatchUp.open() }
-      let holdCatchUp = Mutex(false)
-      let fixture = ChatHTTPFixture { request in
-        switch request.url?.path {
-        case "/api/agents":
-          return ChatHTTPResponse(
-            body: """
-              [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
-              """)
-        case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
-        case "/api/feature-switches":
-          switchesStarted.fulfill()
-          await releaseSwitches.wait()
-          return ChatHTTPResponse(
-            body: "{\"effectiveSwitches\":{\"chatThreadArchiving\":\(archivingEnabled)}}")
-        case "/api/chat-threads/snapshot": return snapshot
-        case "/api/chat-threads/events":
-          if holdCatchUp.withLock({ $0 }) {
-            catchUpStarted.fulfill()
-            await releaseCatchUp.wait()
-          }
-          return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-        case "/api/indicators":
-          return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
-        case "/api/realtime/token":
-          return ChatHTTPResponse(
-            status: 403, body: "{\"error\":{\"message\":\"No live updates\"}}")
-        default: throw URLError(.unsupportedURL)
+    let cacheDirectory = CacheTestDirectory(owner: self)
+    let archivedID = "40000000-0000-4000-8000-000000000004"
+    let snapshot = ChatHTTPResponse(
+      body: """
+        {"chatThreads":[
+          {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","title":"Recent cached chat",\
+        "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":false},
+          {"id":"\(archivedID)","agentId":"\(storeAgentID)","title":"Archived cached chat",\
+        "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
+        ],"latestEventId":null,"latestSeqId":null}
+        """)
+    let switchesStarted = expectation(description: "Archive visibility is being loaded")
+    let releaseSwitches = HTTPResponseGate()
+    defer { releaseSwitches.open() }
+    let catchUpStarted = expectation(
+      description: "Cached chats are shown before network catch-up")
+    let releaseCatchUp = HTTPResponseGate()
+    defer { releaseCatchUp.open() }
+    let holdCatchUp = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/agents":
+        return ChatHTTPResponse(
+          body: """
+            [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
+            """)
+      case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
+      case "/api/feature-switches":
+        switchesStarted.fulfill()
+        await releaseSwitches.wait()
+        return ChatHTTPResponse(
+          body: "{\"effectiveSwitches\":{}}")
+      case "/api/chat-threads/snapshot": return snapshot
+      case "/api/chat-threads/events":
+        if holdCatchUp.withLock({ $0 }) {
+          catchUpStarted.fulfill()
+          await releaseCatchUp.wait()
         }
+        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
+      case "/api/indicators":
+        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
+      case "/api/realtime/token":
+        return ChatHTTPResponse(
+          status: 403, body: "{\"error\":{\"message\":\"No live updates\"}}")
+      default: throw URLError(.unsupportedURL)
       }
-      let cache = cacheDirectory.cache(
-        scope: ChatCacheScope(
-          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"))
-      let previous = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
-      await previous.list.refresh()
-      XCTAssertNil(previous.list.error)
-      previous.close()
-
-      holdCatchUp.withLock { $0 = true }
-      let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
-      defer { store.close() }
-      store.startNewChat(agentID: storeAgentID)
-      let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
-      await fulfillment(of: [switchesStarted], timeout: 2)
-      XCTAssertEqual(
-        store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
-        ["Recent cached chat"])
-
-      releaseSwitches.open()
-      await fulfillment(of: [catchUpStarted], timeout: 2)
-      let expected =
-        archivingEnabled ? ["Recent cached chat"] : ["Archived cached chat", "Recent cached chat"]
-      XCTAssertEqual(
-        store.list.threads(agentID: storeAgentID, archived: false).map(\.title), expected)
-      releaseCatchUp.open()
-      await startup.value
-      XCTAssertEqual(
-        store.list.threads(agentID: storeAgentID, archived: false).map(\.title), expected)
-      if archivingEnabled {
-        XCTAssertEqual(
-          store.list.threads(agentID: storeAgentID, archived: true).map(\.title),
-          ["Archived cached chat"])
-      }
-      XCTAssertNil(store.list.error)
     }
+    let cache = cacheDirectory.cache(
+      scope: ChatCacheScope(
+        apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"))
+    let previous = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
+    await previous.list.refresh()
+    XCTAssertNil(previous.list.error)
+    previous.close()
+
+    holdCatchUp.withLock { $0 = true }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
+    defer { store.close() }
+    store.startNewChat(agentID: storeAgentID)
+    let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
+    await fulfillment(of: [switchesStarted], timeout: 2)
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
+      ["Recent cached chat"])
+
+    releaseSwitches.open()
+    await fulfillment(of: [catchUpStarted], timeout: 2)
+    let expected = ["Recent cached chat"]
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), expected)
+    releaseCatchUp.open()
+    await startup.value
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), expected)
+    XCTAssertEqual(
+      store.list.threads(agentID: storeAgentID, archived: true).map(\.title),
+      ["Archived cached chat"])
+    XCTAssertNil(store.list.error)
   }
 
   func testRepeatedListRestoreFindsASeparateWritersNewerCommittedCacheWhileOffline() async throws {
@@ -396,7 +391,7 @@ final class WorkspaceStoreTests: XCTestCase {
           body: "{\"pinnedAgentIds\":\(fresh ? "[]" : "[\"\(otherAgent)\"]")}")
       case "/api/feature-switches":
         return ChatHTTPResponse(
-          body: "{\"effectiveSwitches\":{\"chatThreadArchiving\":\(!fresh)}}")
+          body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
@@ -430,12 +425,10 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [storeAgentID, otherAgent])
     XCTAssertEqual(
       store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Cached chat"])
-    XCTAssertTrue(store.list.canArchiveChats)
     gate.open()
     await startup.value
     XCTAssertEqual(store.currentAgentName, "Fresh assistant")
     XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [storeAgentID])
-    XCTAssertFalse(store.list.canArchiveChats)
     store.close()
 
     let reopened = WorkspaceStore(
@@ -445,63 +438,6 @@ final class WorkspaceStoreTests: XCTestCase {
     await reopened.list.restoreCached()
     XCTAssertEqual(reopened.list.agents.first?.displayName, "Fresh assistant")
     XCTAssertEqual(reopened.list.visiblePinnedAgents.map(\.agentId), [storeAgentID])
-    XCTAssertFalse(reopened.list.canArchiveChats)
-  }
-
-  func testNavigationFailureKeepsArchiveVisibilityUntilFeaturesRefreshSuccessfully() async {
-    let featureResponse = Mutex<Result<Bool, URLError>>(.success(true))
-    let archivedID = "40000000-0000-4000-8000-000000000004"
-    let fixture = ChatHTTPFixture { request in
-      switch request.url?.path {
-      case "/api/agents":
-        return ChatHTTPResponse(
-          body: """
-            [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
-            """)
-      case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
-      case "/api/feature-switches":
-        let enabled = try featureResponse.withLock { $0 }.get()
-        return ChatHTTPResponse(
-          body: "{\"effectiveSwitches\":{\"chatThreadArchiving\":\(enabled)}}")
-      case "/api/chat-threads/snapshot":
-        return ChatHTTPResponse(
-          body: """
-            {"chatThreads":[
-              {"id":"\(storeThreadID)","agentId":"\(storeAgentID)","title":"Recent chat",\
-            "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":false},
-              {"id":"\(archivedID)","agentId":"\(storeAgentID)","title":"Archived chat",\
-            "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
-            ],"latestEventId":null,"latestSeqId":null}
-            """)
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
-      case "/api/indicators":
-        return ChatHTTPResponse(body: "{\"agents\":{},\"unreadAt\":{},\"threads\":{}}")
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
-    await store.refreshNavigation()
-    await store.refresh([.threadList])
-    XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Recent chat"])
-
-    featureResponse.withLock { $0 = .failure(URLError(.networkConnectionLost)) }
-    await store.refreshNavigation()
-    XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Recent chat"])
-
-    featureResponse.withLock { $0 = .success(false) }
-    await store.refreshNavigation()
-    XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
-      ["Archived chat", "Recent chat"])
-
-    featureResponse.withLock { $0 = .success(true) }
-    await store.refreshNavigation()
-    XCTAssertEqual(
-      store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Recent chat"])
   }
 
   func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationReads() async throws {
@@ -573,7 +509,7 @@ final class WorkspaceStoreTests: XCTestCase {
         return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[\"\(otherAgentID)\"]}")
       case "/api/feature-switches":
         return ChatHTTPResponse(
-          body: #"{"effectiveSwitches":{"chatThreadArchiving":true,"singleAgent":true}}"#)
+          body: #"{"effectiveSwitches":{"singleAgent":true}}"#)
       case "/api/chat-threads/snapshot": return threadSnapshot(title: "Existing chat")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
@@ -588,7 +524,6 @@ final class WorkspaceStoreTests: XCTestCase {
     await store.refresh()
     XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [storeAgentID, otherAgentID])
     XCTAssertEqual(store.currentAgentName, "Okou")
-    XCTAssertTrue(store.list.canArchiveChats)
 
     store.startNewChat(agentID: otherAgentID)
     XCTAssertEqual(store.currentAgentName, "Second")

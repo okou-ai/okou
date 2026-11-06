@@ -2384,7 +2384,6 @@
       "number": "numero"
     },
     "sidebar": {
-      "allChats": "Tutte le chat",
       "archive": "Archivia chat",
       "archived": "Archiviate",
       "chatsWith": "Chatta con {{agentName}}",
