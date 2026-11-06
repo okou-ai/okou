@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.30.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.3...guest-contracts-v0.30.4) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** centralize the guest timezone name contract ([#45757](https://github.com/okou-ai/okou/issues/45757)) ([42118c3](https://github.com/okou-ai/okou/commit/42118c395c62650600d4eb3e41e841876510eb75))
+
 ## [0.30.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.2...guest-contracts-v0.30.3) (2026-11-04)
 
 

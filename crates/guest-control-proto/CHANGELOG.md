@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.61](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.60...guest-control-proto-v0.22.61) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** centralize the guest timezone name contract ([#45757](https://github.com/okou-ai/okou/issues/45757)) ([42118c3](https://github.com/okou-ai/okou/commit/42118c395c62650600d4eb3e41e841876510eb75))
+
 ## [0.22.60](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.59...guest-control-proto-v0.22.60) (2026-11-05)
 
 

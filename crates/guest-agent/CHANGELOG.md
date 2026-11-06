@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.109.50](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.49...guest-agent-v0.109.50) (2026-11-06)
+
+
+### Bug Fixes
+
+* **guest-agent:** keep private startup json values out of diagnostics ([#45763](https://github.com/okou-ai/okou/issues/45763)) ([ecba1ad](https://github.com/okou-ai/okou/commit/ecba1ad710f627dcc0a4a8abbd7e0ec5e2990e87))
+
 ## [0.109.49](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.48...guest-agent-v0.109.49) (2026-11-06)
 
 ## [0.109.48](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.47...guest-agent-v0.109.48) (2026-11-06)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.75](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.74...runner-lifecycle-v0.17.75) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** centralize the guest timezone name contract ([#45757](https://github.com/okou-ai/okou/issues/45757)) ([42118c3](https://github.com/okou-ai/okou/commit/42118c395c62650600d4eb3e41e841876510eb75))
+
 ## [0.17.74](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.73...runner-lifecycle-v0.17.74) (2026-11-06)
 
 ## [0.17.73](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.72...runner-lifecycle-v0.17.73) (2026-11-06)
