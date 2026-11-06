@@ -233,6 +233,49 @@ final class ChatArtifactTests: XCTestCase {
     }
   }
 
+  func testImageCardAndBothPreviewPathsShareOriginalBytesAfterAuthorization() async throws {
+    let bytes = Data("complete-image-bytes".utf8)
+    let transfers = Mutex(0)
+    let server = try ChatFileHTTPServer { _ in
+      transfers.withLock { $0 += 1 }
+      return .init(body: bytes)
+    }
+    addTeardownBlock { await server.stop() }
+    let origin = try await server.start()
+    let denied = Mutex(false)
+    let fileID = "52000000-0000-4000-8000-000000000001"
+    let fixture = ChatHTTPFixture { _ in
+      if denied.withLock({ $0 }) {
+        return ChatHTTPResponse(status: 403, body: #"{"error":{"message":"Forbidden"}}"#)
+      }
+      return ChatHTTPResponse(
+        body: """
+          {"url":"\(origin)/image","downloadUrl":"\(origin)/download",\
+          "filename":"Image.png","contentType":"image/png",\
+          "target":{"kind":"file","id":"\(fileID)"}}
+          """)
+    }
+    let commands = commands(fixture)
+    defer { commands.closeFileCache() }
+    let artifact = ChatArtifact(
+      source: .reference("image00001.png", fragment: ""), filename: "Image.png",
+      contentType: "image/png")
+    let (_, thumbnail) = try await commands.artifacts.thumbnail(artifact, webURL: webURL)
+    let (_, original) = try await commands.artifacts.download(artifact)
+    let attachment = try await commands.downloadAttachment(
+      ChatMessageAttachment(id: fileID, filename: "Image.png", contentType: "image/png"))
+    XCTAssertEqual(try Data(contentsOf: original.url), bytes)
+    XCTAssertEqual(original.url, thumbnail?.url)
+    XCTAssertEqual(original.url, attachment?.url)
+    XCTAssertEqual(original.url.lastPathComponent, "Image.png")
+    XCTAssertEqual(transfers.withLock { $0 }, 1)
+    denied.withLock { $0 = true }
+    do {
+      _ = try await commands.artifacts.download(artifact)
+      XCTFail("Cached remote bytes must not grant access after authorization is revoked")
+    } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
+  }
+
   private func commands(_ fixture: ChatHTTPFixture) -> ChatCommands {
     let client = APIClient(
       baseURL: fixture.baseURL, clientVersion: fixture.clientVersion, session: fixture.session

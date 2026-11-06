@@ -1,7 +1,5 @@
-import AVKit
 import ChatData
 import ChatDomain
-import QuickLook
 import SwiftUI
 
 struct MessageArtifactPreview: View {
@@ -11,8 +9,8 @@ struct MessageArtifactPreview: View {
   @State private var webLoading = true
 
   var body: some View {
-    NavigationStack {
-      if let preview = viewer.preview {
+    if let preview = viewer.preview {
+      MessagePreviewSheet(title: preview.artifact.filename, dismiss: viewer.dismiss) {
         VStack(spacing: 0) {
           content(preview).frame(maxWidth: .infinity, maxHeight: .infinity)
           if let error = preview.downloadError {
@@ -26,57 +24,50 @@ struct MessageArtifactPreview: View {
             }.font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(OkouSpace.md)
           }
         }
-        .navigationTitle(preview.artifact.filename)
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-          ToolbarItemGroup(placement: .topBarTrailing) {
-            if preview.artifact.kind == .image {
-              Button {
-                viewer.navigateImage(-1)
-              } label: {
-                OkouToolbarIcon("chevron-left")
-              }
-              .disabled(!viewer.canNavigateImage(-1)).accessibilityLabel("Previous image")
-              Button {
-                viewer.navigateImage(1)
-              } label: {
-                OkouToolbarIcon("chevron-right")
-              }
-              .disabled(!viewer.canNavigateImage(1)).accessibilityLabel("Next image")
-            }
-            if let text = preview.text {
-              Button {
-                UIPasteboard.general.string = text.text
-              } label: {
-                OkouToolbarIcon("copy")
-              }
-              .accessibilityLabel("Copy content")
-            }
-            if preview.file != nil {
-              Button {
-                viewer.share()
-              } label: {
-                OkouToolbarIcon("share")
-              }
-              .accessibilityLabel("Share or save to Files")
-            } else if preview.isDownloading {
-              ProgressView().accessibilityLabel("Downloading file")
-            } else {
-              Button {
-                viewer.downloadForSharing()
-              } label: {
-                OkouToolbarIcon("download")
-              }
-              .accessibilityLabel("Download file to share or save")
-            }
+      } actions: {
+        if preview.artifact.kind == .image {
+          Button {
+            viewer.navigateImage(-1)
+          } label: {
+            OkouToolbarIcon("chevron-left")
           }
-          ToolbarSpacer(.fixed, placement: .topBarTrailing)
-          OkouCloseToolbarItem { viewer.dismiss() }
+          .disabled(!viewer.canNavigateImage(-1)).accessibilityLabel("Previous image")
+          Button {
+            viewer.navigateImage(1)
+          } label: {
+            OkouToolbarIcon("chevron-right")
+          }
+          .disabled(!viewer.canNavigateImage(1)).accessibilityLabel("Next image")
         }
-        .onChange(of: preview.id) { _, _ in
-          webError = nil
-          webLoading = true
+        if let text = preview.text {
+          Button {
+            UIPasteboard.general.string = text.text
+          } label: {
+            OkouToolbarIcon("copy")
+          }
+          .accessibilityLabel("Copy content")
         }
+        if preview.file != nil {
+          Button {
+            viewer.share()
+          } label: {
+            OkouToolbarIcon("share")
+          }
+          .accessibilityLabel("Share or save to Files")
+        } else if preview.isDownloading {
+          ProgressView().accessibilityLabel("Downloading file")
+        } else {
+          Button {
+            viewer.downloadForSharing()
+          } label: {
+            OkouToolbarIcon("download")
+          }
+          .accessibilityLabel("Download file to share or save")
+        }
+      }
+      .onChange(of: preview.id) { _, _ in
+        webError = nil
+        webLoading = true
       }
     }
     .sheet(
@@ -131,74 +122,14 @@ struct MessageArtifactPreview: View {
     } else if let text = preview.text {
       ArtifactTextView(
         content: text, kind: preview.artifact.kind, markdown: markdown, baseURL: viewer.webURL)
-    } else if let file = preview.file {
-      switch preview.artifact.kind {
-      case .image:
-        if QLPreviewController.canPreview(file.url as NSURL) {
-          ArtifactQuickLook(file: file)
-        } else {
-          unsupported(preview)
-        }
-      case .video, .audio:
-        ArtifactMediaPlayer(file: file)
-      default:
-        if QLPreviewController.canPreview(file.url as NSURL) {
-          ArtifactQuickLook(file: file)
-        } else {
-          unsupported(preview)
-        }
-      }
     } else {
-      OkouLoadingRow("Loading result…")
-        .fixedSize()
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
+      MessageFilePreview(
+        kind: preview.artifact.kind, symbol: preview.artifact.symbol, file: preview.file,
+        thumbnail: preview.thumbnail.flatMap(UIImage.init(data:)), error: nil,
+        canRetry: preview.canRetry, retry: viewer.retry)
     }
   }
 
-  private func unsupported(_ preview: MessageArtifactStore.Preview) -> some View {
-    OkouEmptyState(
-      "Preview unavailable", icon: preview.artifact.symbol,
-      description: Text("Share this file or save it to Files to open it in another app."))
-  }
-}
-
-struct ArtifactQuickLook: UIViewControllerRepresentable {
-  let file: ChatAttachmentFile
-
-  func makeCoordinator() -> Coordinator { Coordinator(file) }
-  func makeUIViewController(context: Context) -> QLPreviewController {
-    let controller = QLPreviewController()
-    controller.dataSource = context.coordinator
-    return controller
-  }
-  func updateUIViewController(_ controller: QLPreviewController, context: Context) {
-    guard context.coordinator.file.url != file.url else { return }
-    context.coordinator.file = file
-    controller.reloadData()
-  }
-  final class Coordinator: NSObject, QLPreviewControllerDataSource {
-    var file: ChatAttachmentFile
-    init(_ file: ChatAttachmentFile) { self.file = file }
-    func numberOfPreviewItems(in controller: QLPreviewController) -> Int { 1 }
-    func previewController(_ controller: QLPreviewController, previewItemAt index: Int)
-      -> any QLPreviewItem
-    {
-      file.url as NSURL
-    }
-  }
-}
-
-private struct ArtifactMediaPlayer: View {
-  let file: ChatAttachmentFile
-  @State private var player: AVPlayer?
-  var body: some View {
-    VideoPlayer(player: player)
-      .task(id: file.url) { player = AVPlayer(url: file.url) }
-      .onDisappear {
-        player?.pause()
-        player = nil
-      }
-  }
 }
 
 private struct ArtifactTextView: View {

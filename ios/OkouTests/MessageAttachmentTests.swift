@@ -44,9 +44,9 @@ final class MessageAttachmentTests: XCTestCase {
       return ChatHTTPResponse(
         body: "{\"url\":\"\(origin)/file\",\"downloadUrl\":\"\(origin)/file\"}")
     }
-    let viewer = MessageAttachmentStore(
-      commands: ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client)),
-      didFail: { _ in })
+    let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
+    defer { commands.closeFileCache() }
+    let viewer = MessageAttachmentStore(commands: commands, didFail: { _ in })
     defer { viewer.close() }
     let file = ChatMessageAttachment(id: "file", filename: "notes.txt", contentType: "text/plain")
     viewer.open(file)
@@ -67,6 +67,8 @@ final class MessageAttachmentTests: XCTestCase {
     let second = try XCTUnwrap(viewer.preview?.file?.url)
     viewer.close()
     XCTAssertNil(viewer.preview)
+    XCTAssertTrue(FileManager.default.fileExists(atPath: second.path))
+    commands.closeFileCache()
     XCTAssertFalse(FileManager.default.fileExists(atPath: second.path))
     viewer.open(file)
     XCTAssertNil(viewer.preview)
@@ -93,9 +95,9 @@ final class MessageAttachmentTests: XCTestCase {
       return ChatHTTPResponse(
         body: "{\"url\":\"\(origin)/file\",\"downloadUrl\":\"\(origin)/file\"}")
     }
-    let viewer = MessageAttachmentStore(
-      commands: ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client)),
-      didFail: { _ in })
+    let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
+    defer { commands.closeFileCache() }
+    let viewer = MessageAttachmentStore(commands: commands, didFail: { _ in })
     defer { viewer.close() }
     viewer.open(.init(id: "old", filename: "old.txt", contentType: "text/plain"))
     await fulfillment(of: [entered], timeout: 3)
@@ -128,7 +130,7 @@ final class MessageAttachmentTests: XCTestCase {
     XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     conversation.setDetailVisible(false, owner: currentOwner)
     XCTAssertNil(conversation.attachmentViewer.preview)
-    XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
   }
 
 }

@@ -11,6 +11,7 @@ final class MessageArtifactStore {
     var artifact: ChatArtifact
     var images: [ChatArtifact]
     var file: ChatAttachmentFile?
+    var thumbnail: Data?
     var contentURL: URL?
     var htmlExpiresAt: Date?
     var text: ArtifactTextContent?
@@ -123,9 +124,12 @@ final class MessageArtifactStore {
     guard !closed else { return }
     dismiss()
     var item = Preview(artifact: metadata(resource), images: images)
+    item.thumbnail = cards[resource.id]?.thumbnail
+    item.file = service.uploadedFile(resource)
     item.renewedHTMLSignature = renewedHTMLSignature
     let previewID = item.id
     preview = item
+    if item.file != nil, item.artifact.kind == .image { return }
     previewTask = Task { [weak self] in
       guard let self else { return }
       do {
@@ -155,7 +159,7 @@ final class MessageArtifactStore {
           let isText = [.markdown, .text, .json, .csv].contains(kind)
           let (downloaded, file) = try await perform {
             try await service.download(
-              resolved.artifact, maximumSize: isText ? 2 * 1024 * 1024 : ChatAttachment.maximumSize)
+              resolved, maximumSize: isText ? 2 * 1024 * 1024 : ChatAttachment.maximumSize)
           }
           let text = isText ? try await ArtifactTextReader.shared.read(file, kind: kind) : nil
           guard !Task.isCancelled, preview?.id == previewID else { return }
