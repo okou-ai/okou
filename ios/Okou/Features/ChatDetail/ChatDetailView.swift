@@ -311,7 +311,7 @@ struct ChatDetailView: View {
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await conversation.connectorActions.refreshKnown() } }
     }
-    .safeAreaBar(edge: .bottom, spacing: 0) {
+    .safeAreaInset(edge: .bottom, spacing: 0) {
       VStack(alignment: .leading, spacing: 0) {
         if let issue = conversation.stopIssue {
           OkouBanner(Text(issue), icon: "circle-stop") {
