@@ -6,8 +6,11 @@ use super::{ArtifactEntry, InstructionCleanupEntry, Manifest, StorageEntry};
 fn explicit_archive_readiness_round_trips_and_rejects_invalid_bindings() {
     let id = uuid::Uuid::new_v4();
     let input = json!({
-        "storageMounts":[{"mountPath":"/input","archiveUrl":"file:///tmp/source.tar.gz"}],
-        "archiveReadiness":{"id":id,"sources":["file:///tmp/source.tar.gz"]}
+        "storageMounts":[
+            {"mountPath":"/input","archiveUrl":"file:///tmp/source.tar.gz"},
+            {"mountPath":"/artifact","writeback":true,"archiveUrl":"file:///tmp/artifact.tar.gz"}
+        ],
+        "archiveReadiness":{"id":id,"sources":["file:///tmp/source.tar.gz","file:///tmp/artifact.tar.gz"]}
     });
     let manifest: Manifest = serde_json::from_value(input.clone()).unwrap();
     assert_eq!(
@@ -16,12 +19,23 @@ fn explicit_archive_readiness_round_trips_and_rejects_invalid_bindings() {
     );
     for sources in [
         json!([]),
-        json!(["https://example.com/source"]),
         json!(["file:///tmp/unknown"]),
         json!(["file:///tmp/source.tar.gz", "file:///tmp/source.tar.gz"]),
     ] {
         let mut invalid = input.clone();
         invalid["archiveReadiness"]["sources"] = sources;
+        assert!(serde_json::from_value::<Manifest>(invalid).is_err());
+    }
+    // Bind each malformed URL so membership cannot hide a missing path guard.
+    for url in [
+        "https://example.com/source",
+        "file://relative",
+        "file:///tmp/../source.tar.gz",
+        "file:///tmp/source\0.tar.gz",
+    ] {
+        let mut invalid = input.clone();
+        invalid["storageMounts"][0]["archiveUrl"] = json!(url);
+        invalid["archiveReadiness"]["sources"] = json!([url]);
         assert!(serde_json::from_value::<Manifest>(invalid).is_err());
     }
     let mut invalid = input;
