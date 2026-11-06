@@ -89,13 +89,18 @@ export interface RecoveryTarget {
   readonly targetId: string;
 }
 
+export interface RecoveryIntent {
+  /** Retained image owner or lifecycle error superseded by this user intent. */
+  readonly retiredFailure: object | null;
+}
+
 export interface RecoveryView {
   readonly enabled: boolean;
   readonly paused: boolean;
   readonly pending: boolean;
   readonly nodes: object | null;
   readonly binding: BrowserConnection | null;
-  readonly intent: object;
+  readonly intent: RecoveryIntent;
   readonly targetId: string | null;
   readonly authorized: boolean;
   readonly connected: boolean;
@@ -117,13 +122,14 @@ interface RecoveryPorts {
 type RecoveryMode = "connection" | "image";
 interface Failure {
   readonly view: RecoveryView;
+  readonly owner: object;
   readonly error: ViewerError;
   readonly mode: RecoveryMode | null;
 }
 type RecoveryFence = Pick<RecoveryView, "nodes" | "intent" | "binding">;
 interface RecoveryOperation {
   readonly lifetime: object;
-  readonly intent: object;
+  readonly intent: RecoveryIntent;
   readonly nodes: object;
   readonly binding: BrowserConnection | null;
   readonly completion: DeferredPromise<BrowserRecoveryResult>;
@@ -173,6 +179,7 @@ function failure(view: RecoveryView): Failure | null {
   }
   return {
     view,
+    owner: image?.owner ?? error,
     error,
     mode: !error.transient
       ? null
@@ -182,6 +189,38 @@ function failure(view: RecoveryView): Failure | null {
           : null
         : "connection",
   };
+}
+
+type RecoveryProgress =
+  | { readonly status: "ready" }
+  | { readonly status: "pending" }
+  | { readonly status: "failed"; readonly failure: Failure };
+
+function recoveryProgress(view: RecoveryView): RecoveryProgress {
+  if (view.usable) {
+    return { status: "ready" };
+  }
+  const current = failure(view);
+  return current
+    ? { status: "failed", failure: current }
+    : { status: "pending" };
+}
+
+function manualRecoveryMode(
+  mode: RecoveryMode,
+  automatic: boolean,
+  index: number,
+): RecoveryMode | null {
+  return !automatic && index === 0 ? mode : null;
+}
+
+function recoveryMode(
+  progress: RecoveryProgress,
+  manualMode: RecoveryMode | null,
+): RecoveryMode | null {
+  return (
+    manualMode ?? (progress.status === "failed" ? progress.failure.mode : null)
+  );
 }
 
 function attemptError(error: unknown, view: RecoveryView): ViewerError {
@@ -213,7 +252,8 @@ function createRecoveryState() {
   const active$ = state<RecoveryOperation | null>(null);
   const stopped$ = state<RecoveryFence | null>(null);
   const result$ = state<Promise<BrowserRecoveryResult> | null>(null);
-  return { lifetime$, active$, stopped$, result$ };
+  const progress$ = state<DeferredPromise<void> | null>(null);
+  return { lifetime$, active$, stopped$, result$, progress$ };
 }
 type RecoveryState = ReturnType<typeof createRecoveryState>;
 
@@ -249,8 +289,36 @@ function createRecoveryAssertion(ports: RecoveryPorts, graph: RecoveryState) {
   );
 }
 
+function createRecoveryProgressWait(
+  ports: RecoveryPorts,
+  graph: RecoveryState,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const notification = createDeferredPromise<void>(
+      { rejection: "owner" },
+      signal,
+    );
+    set(graph.progress$, notification);
+    using _notification = {
+      [Symbol.dispose]: () => {
+        if (get(graph.progress$) === notification) {
+          set(graph.progress$, null);
+        }
+      },
+    };
+    // Registration precedes the read; the caller rechecks after every wake.
+    if (recoveryProgress(get(ports.view$)).status !== "pending") {
+      notification.resolve();
+    }
+    await notification.promise;
+    signal.throwIfAborted();
+  });
+}
+
 function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
   const assertCurrent$ = createRecoveryAssertion(ports, graph);
+  const waitForProgress$ = createRecoveryProgressWait(ports, graph);
   return command(
     async (
       { get, set },
@@ -322,15 +390,21 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
           await waitForRetry(interval, signal);
         }
         set(assertCurrent$, operation, signal);
-        if (get(ports.view$).usable) {
+        const manualMode = manualRecoveryMode(initialMode, automatic, index);
+        let progress = recoveryProgress(get(ports.view$));
+        while (progress.status === "pending" && manualMode === null) {
+          await set(waitForProgress$, signal);
+          set(assertCurrent$, operation, signal);
+          progress = recoveryProgress(get(ports.view$));
+        }
+        if (progress.status === "ready") {
           finishRecovery(completion, { status: "restored" });
           return;
         }
-        const current = failure(get(ports.view$));
-        if (current) {
-          lastError = current.error;
+        if (progress.status === "failed") {
+          lastError = progress.failure.error;
         }
-        const mode = !automatic && index === 0 ? initialMode : current?.mode;
+        const mode = recoveryMode(progress, manualMode);
         if (!mode) {
           finishRecovery(completion, { status: "terminal", error: lastError });
           return;
@@ -517,6 +591,7 @@ function createRecoveryObservation(
         view.enabled &&
         !view.paused &&
         current &&
+        current.owner !== view.intent.retiredFailure &&
         !sameFailureOwner(get(graph.stopped$), current.view)
       ) {
         if (current.mode) {
@@ -569,6 +644,10 @@ function createRecoveryWatch(
         // Publish the operation in the failure's own event, before React can
         // show a final error. The existing watch still owns cancellation.
         paused = set(observe$, paused, signal);
+        const progress = get(graph.progress$);
+        if (progress && !progress.settled()) {
+          progress.resolve();
+        }
         if (!notification.settled()) {
           notification.resolve();
         }

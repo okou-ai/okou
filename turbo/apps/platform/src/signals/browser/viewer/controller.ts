@@ -1113,14 +1113,13 @@ function createDiscoveryGraph(
         }) &&
         !get(closingTargets$).has(selected)
       ) {
+        set(context.selectionChanged$);
         set(get(links$).retireCurrent$, "target-replaced", false, true);
         // Successor selection or discovery owns any final failure after this loss.
         set(model.transition$, {
           type: "target-lost",
           error: null,
         });
-        // Clear the retired failure before advancing its recovery intent.
-        set(context.selectionChanged$);
         // Resume the existing initial-selection path after losing this selection.
         set(chosenOnce$, false);
         selected = null;

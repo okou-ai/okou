@@ -298,13 +298,7 @@ test.each([false, true])(
       viewer.browser.frame("!");
     });
     await pendingRecovery();
-    await failImageAttempts(viewer, 3);
-    const retry = await screen.findByText("Retry live image", {
-      selector: "button",
-    });
-    await waitFor(() => {
-      expect(retry).toBeEnabled();
-    });
+    await exhaustImageRecovery(viewer);
     const reports = [...viewer.sentry.reports];
     expect(reports).toHaveLength(1);
     expect(reports).toContainEqual(
@@ -359,6 +353,168 @@ test.each([false, true])(
     expect(viewer.sentry.reports).toStrictEqual(reports);
   },
 );
+
+test.each(["recovering", "exhausted"] as const)(
+  "Manual selection from %s image recovery does not revive the retired failure",
+  async (phase) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    act(() => {
+      viewer.browser.frame("!");
+    });
+    await pendingRecovery();
+    if (phase === "exhausted") {
+      await exhaustImageRecovery(viewer);
+    }
+    const original = [...viewer.sentry.reports];
+    expect(original).toHaveLength(phase === "exhausted" ? 1 : 0);
+    const initialization = viewer.browser.holdNext("Page.enable");
+    const picture = viewer.browser.holdTargetFrames("other");
+    click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+    await act(async () => {
+      await initialization.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(viewer.sentry.reports).toStrictEqual(original);
+    viewer.advance(1000);
+    await waitFor(() => {
+      expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    });
+    expect(viewer.sentry.reports).toStrictEqual(original);
+    await act(initialization.release);
+    await act(async () => {
+      await picture.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(viewer.sentry.reports).toStrictEqual(original);
+    act(picture.release);
+    await ready("https://other.example");
+    await insertText("manual successor input");
+    await waitFor(() => {
+      expect(viewer.browser.input.at(-1)).toMatchObject({
+        sessionId: viewer.browser.pageSession("other"),
+        params: { text: "manual successor input" },
+      });
+    });
+    expect(viewer.sentry.reports).toStrictEqual(original);
+  },
+);
+
+test("A new successor failure is reported after superseding an exhausted image failure", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  await exhaustImageRecovery(viewer);
+  const original = [...viewer.sentry.reports];
+  expect(original).toHaveLength(1);
+  viewer.browser.failNext("Page.enable", "Unavailable method", -32_601);
+  click(screen.getByLabelText("Other", { selector: '[role="tab"]' }));
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(reconnect()).toBeEnabled();
+  });
+  expect(viewer.sentry.reports).toHaveLength(3);
+  expect(viewer.sentry.reports[0]).toStrictEqual(original[0]);
+  expect(viewer.sentry.reports.slice(original.length)).toMatchObject([
+    {
+      error: {
+        kind: "unsupported-capability",
+        request: { method: "Page.enable", code: -32_601 },
+      },
+      context: { contexts: { browser_recovery: { outcome: "terminal" } } },
+    },
+    {
+      error: {
+        kind: "protocol",
+        request: { method: "Page.enable", code: -32_601 },
+      },
+      context: { tags: { logger: "Promise" } },
+    },
+  ]);
+  click(reconnect());
+  await ready("https://other.example");
+  expect(viewer.sentry.reports).toHaveLength(3);
+});
+
+test("Recovery waits for a pending descriptor and selection without reporting its remembered failure", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  const received = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  let reads = 0;
+  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+    reads++;
+    received.resolve();
+    await release.promise;
+    return respond(200, {
+      browser: viewer.session(),
+      cdpUrl: endpoint,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await received.promise;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  const initialization = viewer.browser.holdNext("Page.enable");
+  viewer.advance(1000);
+  await act(() => {
+    release.resolve();
+  });
+  await act(async () => {
+    await initialization.received;
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  viewer.advance(2000);
+  await act(initialization.release);
+  await ready();
+  await waitFor(() => {
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  });
+  expect(reads).toBe(1);
+  expect(viewer.browser.connections()).toBe(1);
+  expect(viewer.sentry.reports).toHaveLength(0);
+});
+
+test("Manual retry of a retired failure permits a later independent automatic recovery", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  await exhaustImageRecovery(viewer);
+  const original = [...viewer.sentry.reports];
+  expect(original).toHaveLength(1);
+  click(screen.getByLabelText("Close Other"));
+  await waitFor(() => {
+    expect(
+      screen.queryByLabelText("Other", { selector: '[role="tab"]' }),
+    ).not.toBeInTheDocument();
+  });
+  click(screen.getByText("Retry live image", { selector: "button" }));
+  await ready();
+  expect(viewer.sentry.reports).toStrictEqual(original);
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  viewer.advance(1000);
+  await ready();
+  expect(viewer.sentry.reports).toStrictEqual(original);
+});
 
 test("A failed successor reports its own terminal initialization error after target loss", async () => {
   const viewer = mockViewer();
@@ -1776,6 +1932,16 @@ async function failImageAttempts(
       image.release();
     });
   }
+}
+
+async function exhaustImageRecovery(viewer: ReturnType<typeof mockViewer>) {
+  await failImageAttempts(viewer, 3);
+  const retry = await screen.findByText("Retry live image", {
+    selector: "button",
+  });
+  await waitFor(() => {
+    expect(retry).toBeEnabled();
+  });
 }
 
 test("Repeated missing retry images recover locally within the original budget", async () => {
