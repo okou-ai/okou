@@ -243,6 +243,33 @@ test.each([false, true])(
   },
 );
 
+test("An address first edited during recovery stays bound to the restored tab", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await pendingRecovery();
+  const membership = viewer.browser.holdNextMembership("example-page");
+  viewer.advance(1000);
+  await membership.received;
+  const address = screen.getByLabelText("Address");
+  await fill(address, "during-recovery.example/path");
+  await userEvent.keyboard("{Enter}");
+  await act(async () => {
+    await membership.release();
+  });
+  await ready("during-recovery.example/path");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://during-recovery.example/path");
+  });
+  expect(viewer.browser.targets[0]?.url).toBe(
+    "http://during-recovery.example/path",
+  );
+});
+
 test("Automatic connection recovery survives transient descriptors and restores the selected scoped tab", async () => {
   const viewer = mockViewer();
   await viewer.start();

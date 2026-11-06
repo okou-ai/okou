@@ -425,6 +425,7 @@ function createModelTransitions(
   atoms: ModelAtoms,
   publication: ModelPublication,
   changed$: Command<void, []>,
+  observeAddressTarget$: Command<void, [string]>,
 ) {
   const { intentState$, imageState$, loadingPreviewState$, lifecycleState$ } =
     atoms;
@@ -462,6 +463,9 @@ function createModelTransitions(
               get(loadingPreviewState$))
         : event.type === "select" && !!event.preview && !event.paused,
     );
+    if (event.type === "select") {
+      set(observeAddressTarget$, event.targetId);
+    }
     set(snapshotTransition$, event);
     set(changed$);
     return undefined;
@@ -554,8 +558,13 @@ export function createViewerSignals(
     creationReadySource$,
   );
   const publication = createModelPublication(atoms, values);
-  const transitions = createModelTransitions(atoms, publication, changed$);
   const address = createAddressSignals(values);
+  const transitions = createModelTransitions(
+    atoms,
+    publication,
+    changed$,
+    address.observeAddressTarget$,
+  );
   const favicon = createFaviconActions(atoms);
   const configuration = createConfigurationActions(atoms);
   return {

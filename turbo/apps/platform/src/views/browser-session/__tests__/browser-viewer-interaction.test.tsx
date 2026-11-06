@@ -182,6 +182,40 @@ test("A failed creation retains its typed address without navigating the restore
   expect(browser.targets[0]?.url).toBe("http://chosen.example/path");
 });
 
+test("A failed creation in an empty window cannot bind its draft to an arriving tab", async () => {
+  const browser = mockViewer(0);
+  browser.targets.splice(0, 1);
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await screen.findByText("No tabs open");
+  const receipt = browser.holdNextNative("createTab");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await receipt.received;
+  const address = screen.getByLabelText("Address");
+  await fill(address, "failed-intent.example/path");
+  act(() => {
+    browser.move("created-1", 1);
+  });
+  await act(async () => {
+    await receipt.release();
+  });
+  await screen.findByRole("alert");
+  act(() => {
+    browser.move("other-page", 0);
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("failed-intent.example/path");
+  await userEvent.keyboard("{Enter}");
+  expect(browser.targets[0]?.url).toBe("https://other.example.com");
+  expect(address).toHaveValue("failed-intent.example/path");
+  await userEvent.keyboard("{Escape}");
+  expect(address).toHaveValue("https://other.example.com");
+});
+
 test.each([undefined, 0])(
   "New tabs stay blank through creation and can be closed in window %s",
   async (windowId) => {

@@ -43,9 +43,18 @@ interface AddressSources {
   readonly navigationScope$: Computed<object | null>;
 }
 
+type AddressTarget =
+  | { readonly kind: "target"; readonly id: string }
+  | { readonly kind: "unselected" | "detached" };
+
 function createAddressState(sources: AddressSources) {
   const { selectedTabId$, navigation$, navigationScope$ } = sources;
   const draftState$ = state<AddressDraft | null>(null);
+  const targetState$ = state<AddressTarget>({ kind: "unselected" });
+  const editTargetId$ = computed((get) => {
+    const target = get(targetState$);
+    return target.kind === "target" ? target.id : null;
+  });
   const address$ = computed((get) => {
     const draft = get(draftState$);
     const document = get(navigation$);
@@ -79,19 +88,50 @@ function createAddressState(sources: AddressSources) {
       (!draft || (!draft.creation && draft.targetId === target))
     );
   });
-  return { ...sources, draftState$, address$, addressTargetMatches$ };
+  return {
+    ...sources,
+    draftState$,
+    targetState$,
+    editTargetId$,
+    address$,
+    addressTargetMatches$,
+  };
 }
 type AddressGraph = ReturnType<typeof createAddressState>;
 
 function createDraftActions(graph: AddressGraph) {
-  const { draftState$, selectedTabId$, navigation$, address$ } = graph;
+  const {
+    draftState$,
+    targetState$,
+    editTargetId$,
+    selectedTabId$,
+    navigation$,
+    address$,
+  } = graph;
+  const observeAddressTarget$ = command(({ get, set }, targetId: string) => {
+    const previous = get(targetState$);
+    const draft = get(draftState$);
+    // Only the initial default selection may adopt an edit made before discovery.
+    // Detached bindings and failed creations retain text without target authority.
+    if (
+      previous.kind === "unselected" &&
+      draft &&
+      !draft.creation &&
+      draft.targetId === null
+    ) {
+      set(draftState$, { ...draft, targetId });
+    }
+    set(targetState$, { kind: "target", id: targetId });
+  });
   const selectAddress$ = command(({ get, set }, targetId: string) => {
+    set(targetState$, { kind: "target", id: targetId });
     const draft = get(draftState$);
     if (draft && (draft.creation || draft.targetId !== targetId)) {
       set(draftState$, null);
     }
   });
   const detachAddress$ = command(({ get, set }) => {
+    set(targetState$, { kind: "detached" });
     const draft = get(draftState$);
     if (draft) {
       set(draftState$, {
@@ -124,7 +164,11 @@ function createDraftActions(graph: AddressGraph) {
   const cancelAddressCreation$ = command(({ get, set }, creation: object) => {
     const draft = get(draftState$);
     if (draft?.creation === creation) {
-      set(draftState$, draft.dirty ? { ...draft, creation: null } : null);
+      if (draft.dirty) {
+        set(detachAddress$);
+      } else {
+        set(draftState$, null);
+      }
     }
   });
   const resetAddress$ = command(({ get, set }) => {
@@ -133,12 +177,17 @@ function createDraftActions(graph: AddressGraph) {
       set(beginAddressCreation$, draft.creation);
     } else {
       set(draftState$, null);
+      const target = get(selectedTabId$);
+      set(
+        targetState$,
+        target ? { kind: "target", id: target } : { kind: "unselected" },
+      );
     }
   });
   const editAddress$ = command(({ get, set }, value: string) => {
     const draft = get(draftState$);
     set(draftState$, {
-      targetId: draft ? draft.targetId : get(selectedTabId$),
+      targetId: draft ? draft.targetId : get(editTargetId$),
       creation: draft?.creation ?? null,
       version: {},
       value,
@@ -152,7 +201,7 @@ function createDraftActions(graph: AddressGraph) {
       return;
     }
     set(draftState$, {
-      targetId: get(selectedTabId$),
+      targetId: get(editTargetId$),
       creation: null,
       version: {},
       value: get(address$),
@@ -161,6 +210,7 @@ function createDraftActions(graph: AddressGraph) {
     });
   });
   return {
+    observeAddressTarget$,
     selectAddress$,
     detachAddress$,
     beginAddressCreation$,
