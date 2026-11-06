@@ -10,6 +10,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.51.1](https://github.com/okou-ai/okou/compare/api-v2.51.0...api-v2.51.1) (2026-11-06)
+
+
+### Refactoring
+
+* remove marketing content handoff feature switch ([#45651](https://github.com/okou-ai/okou/issues/45651)) ([75493dc](https://github.com/okou-ai/okou/commit/75493dc2e0b68047d72fe961678f549c94ba9be5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.820.1
+    * @okouai/db bumped to 2.23.4
+    * @okouai/pi-agent-runtime bumped to 1.51.76
+
 ## [2.51.0](https://github.com/okou-ai/okou/compare/api-v2.50.0...api-v2.51.0) (2026-11-06)
 
 
