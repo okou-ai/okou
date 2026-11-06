@@ -330,6 +330,7 @@ function createSelectedSession(
       sessionId: attached.frameSessionId,
       sink: frameLease.sink,
       alive$,
+      admitted$,
       waitForAdmission$,
       painted$: readiness.painted$,
       failed$: captureFailed$,
@@ -1016,6 +1017,7 @@ function createDiscoveryReadmission(links$: DiscoveryDependencies) {
       return;
     }
     set(retained.readiness.transition$, "admission-changed");
+    set(retained.stream.present$);
     if (get(retained.admitted$) && get(retained.readiness.initialized$)) {
       set(get(links$).scheduleCapture$);
     }
@@ -2774,7 +2776,6 @@ function createScreencastEvent(
       !selected ||
       source !== selected.attached.frames ||
       id !== selected.attached.frameSessionId ||
-      !get(selected.admitted$) ||
       !get(selected.stream.acceptingFrames$) ||
       typeof params.data !== "string"
     ) {
@@ -2801,7 +2802,6 @@ function createScreencastEvent(
           set(selected.geometry.acceptFrame$, receipt, raster)
         );
       },
-      selected.attached.frames.signal,
     );
   });
 }

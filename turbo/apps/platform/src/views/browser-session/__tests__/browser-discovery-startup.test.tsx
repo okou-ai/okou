@@ -11,7 +11,7 @@ import {
   waitFor,
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   mockBrowserCdp,
@@ -367,7 +367,6 @@ test.each([
     });
     await proof.received;
     const completed = new Set<string>();
-    let acceptedFrame = false;
     for (const step of [first, second, third]) {
       if (step === "input") {
         await act(layout.release);
@@ -377,22 +376,16 @@ test.each([
         await act(() => {
           frame.release();
         });
-        acceptedFrame = completed.has("proof");
       }
       completed.add(step);
       await waitFor(() => {
         expect(screen.getByLabelText("Remote browser input")).toHaveProperty(
           "disabled",
-          !(completed.size === 3 && acceptedFrame),
+          completed.size !== 3,
         );
       });
     }
-    if (!acceptedFrame) {
-      // A picture received without current membership cannot become proof later.
-      await act(() => {
-        browser.frame("AAAA", browser.pageSession("own-first"));
-      });
-    }
+    // Native observation stays private until positive proof permits presentation.
     await ready();
     const input = screen.getByLabelText("Remote browser input");
     await userEvent.click(input);
@@ -439,6 +432,172 @@ test.each(["input", "proof"] as const)(
     await act(first === "input" ? proof.release : layout.release);
     // No replacement frame: whichever prerequisite finishes last publishes ready.
     await ready();
+  },
+);
+
+test.each(["input", "proof"] as const)(
+  "A static first picture delivered during membership validation survives %s completion first",
+  async (first) => {
+    const { browser, start } = viewer();
+    const layout = browser.holdNext("Page.getLayoutMetrics");
+    const frame = browser.holdTargetFrames("own-first");
+    await start();
+    await layout.received;
+    await frame.received;
+    await screen.findByLabelText("Later own tab");
+    const proof = browser.holdNextMembership("own-first");
+    act(() => {
+      browser.nativeEvent("tab-created", undefined, {
+        tabId: 100,
+        windowId: 101,
+      });
+    });
+    await proof.received;
+    await act(() => {
+      frame.release();
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await act(first === "input" ? layout.release : proof.release);
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await act(first === "input" ? proof.release : layout.release);
+    // Static native pages need not emit another frame after this initial picture.
+    await ready();
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    fireEvent.input(input, {
+      target: { value: "static retained picture" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.insertText",
+          sessionId: browser.pageSession("own-first"),
+          params: { text: "static retained picture" },
+        }),
+      );
+    });
+  },
+);
+
+test("Only the latest private picture is presented after membership proof", async () => {
+  const { browser, start } = viewer();
+  const layout = browser.holdNext("Page.getLayoutMetrics");
+  const frame = browser.holdTargetFrames("own-first");
+  await start();
+  await layout.received;
+  await frame.received;
+  await screen.findByLabelText("Later own tab");
+  const proof = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, {
+      tabId: 100,
+      windowId: 101,
+    });
+  });
+  await proof.received;
+  await act(() => {
+    frame.release("!");
+    browser.frame("AAAA", browser.pageSession("own-first"));
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(layout.release);
+  await act(proof.release);
+  await ready();
+  expect(
+    screen.queryByText("Browser view unavailable"),
+  ).not.toBeInTheDocument();
+});
+
+test("A picture whose decode crosses a membership gate resumes without native damage", async () => {
+  const { browser, start } = viewer();
+  const layout = browser.holdNext("Page.getLayoutMetrics");
+  const frame = browser.holdTargetFrames("own-first");
+  const bitmap = await createImageBitmap(new Blob());
+  const decoding = context.mocks.deferred<ImageBitmap>();
+  const received = context.mocks.deferred<void>();
+  vi.spyOn(globalThis, "createImageBitmap").mockImplementationOnce(() => {
+    received.resolve();
+    return decoding.promise;
+  });
+  await start();
+  await layout.received;
+  await frame.received;
+  await screen.findByLabelText("Later own tab");
+  act(() => {
+    frame.release();
+  });
+  await received.promise;
+  const proof = browser.holdNextMembership("own-first");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, {
+      tabId: 100,
+      windowId: 101,
+    });
+  });
+  await proof.received;
+  await act(() => {
+    decoding.resolve(bitmap);
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(layout.release);
+  await act(proof.release);
+  await ready();
+});
+
+test.each(["move", "selection"] as const)(
+  "A private picture cannot survive stronger %s retirement",
+  async (action) => {
+    const { browser, start } = viewer();
+    const layout = browser.holdNext("Page.getLayoutMetrics");
+    const frame = browser.holdTargetFrames("own-first");
+    await start();
+    await layout.received;
+    await frame.received;
+    await screen.findByLabelText("Later own tab");
+    const proof = browser.holdNextMembership("own-first");
+    act(() => {
+      browser.nativeEvent("tab-created", undefined, {
+        tabId: 100,
+        windowId: 101,
+      });
+    });
+    await proof.received;
+    await act(() => {
+      frame.release("!");
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    if (action === "move") {
+      act(() => {
+        browser.move("own-first", 202);
+      });
+    } else {
+      await userEvent.click(
+        screen.getByLabelText("Later own tab", { selector: '[role="tab"]' }),
+      );
+    }
+    await act(proof.release);
+    await ready("https://later.example.com");
+    await act(layout.release);
+    await ready("https://later.example.com");
+    expect(
+      screen.queryByText("Browser view unavailable"),
+    ).not.toBeInTheDocument();
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    fireEvent.input(input, {
+      target: { value: "new owner after private picture" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.insertText",
+          sessionId: browser.pageSession("own-later"),
+          params: { text: "new owner after private picture" },
+        }),
+      );
+    });
   },
 );
 
