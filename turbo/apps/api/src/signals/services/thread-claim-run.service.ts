@@ -83,6 +83,7 @@ import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
 import {
+  publishChatIndicatorsChangedSafely,
   publishChatThreadMessageCreatedSafely,
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChangedSafely,
@@ -4109,6 +4110,12 @@ export function createThreadClaimRunObjects(
       await publishDesktopShellAuthorizationChangedSafely(
         pending.context.head.userId,
       );
+      signal.throwIfAborted();
+      // The committed pending Run is the active indicator's only start edge.
+      await publishChatIndicatorsChangedSafely({
+        userId: pending.context.head.userId,
+        orgId: pending.context.head.orgId,
+      });
       signal.throwIfAborted();
       recordThreadRunActivationMarkers(
         pending.activation.runnerNotification,

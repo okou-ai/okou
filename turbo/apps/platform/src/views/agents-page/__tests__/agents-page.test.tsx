@@ -88,7 +88,7 @@ async function creatorPopup(creatorName: string): Promise<HTMLElement> {
   return popup;
 }
 
-test("Unread indicators update after a thread-list event", async () => {
+test("Unread indicators update after an indicator change", async () => {
   let showUnread = false;
   const refreshed = context.mocks.deferred<void>();
   context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
@@ -128,7 +128,7 @@ test("Unread indicators update after a thread-list event", async () => {
   ).not.toBeInTheDocument();
 
   showUnread = true;
-  context.mocks.ably.trigger("threadListChanged");
+  context.mocks.ably.trigger("chatIndicatorsChanged");
   await refreshed.promise;
 
   await waitFor(() => {

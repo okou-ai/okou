@@ -334,8 +334,8 @@ export function publishRunQueueChangedForOrgSafely(
 /**
  * Fire the per-user-org "thread list shape changed" signal. The SharedWorker
  * consumes this topic to invalidate its local thread-event view; the App then
- * reloads derived thread and indicator state. The payload is intentionally
- * empty because the server is authoritative.
+ * reloads derived thread state. The payload is intentionally empty because the
+ * server is authoritative.
  */
 export async function publishThreadListChanged(target: {
   readonly userId: string;
@@ -349,6 +349,21 @@ export async function publishThreadListChangedSafely(target: {
   readonly orgId: string;
 }): Promise<void> {
   await publishThreadListChanged(target);
+}
+
+/**
+ * Fire the per-user-org signal that an input of `GET /api/indicators` changed:
+ * a Run became pending, a Run terminal marker committed, or a thread was muted,
+ * unmuted or deleted. Read-cursor changes use `chatThreadReadCursorUpdated`.
+ * The SharedWorker refreshes indicators only on these two topics, so Run output
+ * does not refetch them. Publish only after the change commits; the payload is
+ * empty because the server is authoritative.
+ */
+export async function publishChatIndicatorsChangedSafely(target: {
+  readonly userId: string;
+  readonly orgId: string;
+}): Promise<void> {
+  await publishChatDatabaseSignal(target, "chatIndicatorsChanged");
 }
 
 type ChatThreadReadCursorUpdatedPayload =

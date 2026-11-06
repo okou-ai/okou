@@ -2002,8 +2002,10 @@ test("A delayed handback cannot clear a newer run's page-input takeover", async 
         handBackStarted.resolve();
       }
     },
+    cloudBrowserEnabled: true,
   };
-  mockChatLifecycle(context, { ...lifecycle, cloudBrowserEnabled: true });
+  // The mock reads this object per request, so later gate changes apply.
+  mockChatLifecycle(context, lifecycle);
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,

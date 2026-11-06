@@ -58,7 +58,7 @@ test.each(["pending", "unauthorized"] as const)(
     const composer = await screen.findByRole("textbox", { name: "Message" });
 
     refreshing = true;
-    context.mocks.ably.trigger("threadListChanged");
+    context.mocks.ably.trigger("chatIndicatorsChanged");
     await indicatorsRequested.promise;
     await fill(composer, "Continue the release review");
     click(await findEnabledButton("Send"));
@@ -129,7 +129,7 @@ test("Unread refresh failure ends submission without cancelling the pending POST
   });
   const composer = await screen.findByRole("textbox", { name: "Message" });
   refreshing = true;
-  context.mocks.ably.trigger("threadListChanged");
+  context.mocks.ably.trigger("chatIndicatorsChanged");
   await indicatorsRequested.promise;
   await fill(composer, "Review the release while read status refreshes");
   click(await findEnabledButton("Send"));
@@ -209,7 +209,7 @@ test("Forwarding dismisses its composer before unread refresh or POST completes"
   await fill(forwardComposer, "Review these stages with the team");
 
   refreshing = true;
-  context.mocks.ably.trigger("threadListChanged");
+  context.mocks.ably.trigger("chatIndicatorsChanged");
   await indicatorsRequested.promise;
   click(await findEnabledButton("Send", dialog));
 
