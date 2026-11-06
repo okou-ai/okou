@@ -94,13 +94,29 @@ function needsFont(element: HTMLElement): boolean {
 }
 
 function enqueue(node: Node, subtree: boolean): void {
+  if (!node.isConnected) return;
   pending.set(node, subtree || pending.get(node) === true);
   if (scheduled) return;
   scheduled = true;
   requestAnimationFrame(flush);
 }
 
+function discardDetachedNodes(): void {
+  for (const node of pending.keys()) {
+    if (!node.isConnected) pending.delete(node);
+  }
+}
+
 const observer = new MutationObserver((records) => {
+  // Hidden frames can pause flushing while their DOM continues changing. Let
+  // removed nodes be collected without waiting for the next animation frame.
+  if (
+    records.some((record) => {
+      return record.type === "childList" && record.removedNodes.length > 0;
+    })
+  ) {
+    discardDetachedNodes();
+  }
   for (const record of records) {
     const element =
       record.target instanceof Element

@@ -28,7 +28,9 @@ test.beforeAll(async () => {
     }
     response.setHeader("Content-Type", "text/html; charset=utf-8");
     if (request.url === "/frame") {
-      response.end(`<!doctype html>${styles}<p id="frame-text">Αλφάβητο</p>`);
+      response.end(
+        `<!doctype html>${styles}<p id="frame-text">Αλφάβητο</p><div id="churn"></div>`,
+      );
       return;
     }
     response.end(`<!doctype html><html lang="en"><head>${styles}<link id="theme-link" rel="stylesheet" href="/theme.css"></head><body>
@@ -108,15 +110,20 @@ async function fixture() {
         `--disable-extensions-except=${extension}`,
         `--load-extension=${extension}`,
       ],
-      ignoreDefaultArgs: ["--disable-extensions"],
+      ignoreDefaultArgs: [
+        "--disable-extensions",
+        "--disable-background-timer-throttling",
+        "--disable-backgrounding-occluded-windows",
+        "--disable-renderer-backgrounding",
+      ],
     });
     const page = await context.newPage();
     await page.goto(origin);
     const cdp = await context.newCDPSession(page);
     await cdp.send("DOM.enable");
     await cdp.send("CSS.enable");
-    async function fonts(id) {
-      const { root } = await cdp.send("DOM.getDocument", {
+    async function fonts(id, session = cdp) {
+      const { root } = await session.send("DOM.getDocument", {
         depth: -1,
         pierce: true,
       });
@@ -143,7 +150,7 @@ async function fixture() {
       }
       const nodeId = find(root);
       return nodeId
-        ? (await cdp.send("CSS.getPlatformFontsForNode", { nodeId })).fonts
+        ? (await session.send("CSS.getPlatformFontsForNode", { nodeId })).fonts
         : [];
     }
     return {
@@ -442,5 +449,104 @@ test("follows effective ancestor fonts when inline shorthand values are opaque",
     );
   } finally {
     await f.close();
+  }
+});
+
+test("releases removed nodes while a cross-site frame is hidden and resumes font repair", async () => {
+  const f = await fixture();
+  let session;
+  try {
+    const navigation = f.page.waitForEvent("framenavigated", {
+      predicate(candidate) {
+        return new URL(candidate.url()).hostname === "localhost";
+      },
+    });
+    await f.page.evaluate(() => {
+      const frame = document.createElement("iframe");
+      frame.id = "background-frame";
+      frame.title = "Background languages";
+      const url = new URL("/frame", location.href);
+      url.hostname = "localhost";
+      frame.src = url.href;
+      document.body.append(frame);
+    });
+    const frame = await navigation;
+    await expect(frame.locator("#frame-text")).toHaveCSS(
+      "font-family",
+      /Arial Unicode MS/,
+    );
+    session = await f.page.context().newCDPSession(frame);
+    async function nodes() {
+      await session.send("HeapProfiler.collectGarbage");
+      return (await session.send("Memory.getDOMCounters")).nodes;
+    }
+    await f.page.locator("#background-frame").evaluate((element) => {
+      element.style.display = "none";
+    });
+    await frame.evaluate(() => {
+      document.documentElement.dataset.framePending = "true";
+      requestAnimationFrame(() => {
+        delete document.documentElement.dataset.framePending;
+      });
+    });
+    await f.page.evaluate(async () => {
+      for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+    });
+    await expect(frame.locator("html")).toHaveAttribute(
+      "data-frame-pending",
+      "true",
+    );
+    const before = await nodes();
+    await frame.evaluate(async () => {
+      const nextTask = () => {
+        return new Promise((resolve) => {
+          const channel = new MessageChannel();
+          channel.port1.onmessage = () => {
+            channel.port1.close();
+            channel.port2.close();
+            resolve();
+          };
+          channel.port2.postMessage(null);
+        });
+      };
+      const container = document.querySelector("#churn");
+      for (let batch = 0; batch < 25; batch++) {
+        for (let i = 0; i < 200; i++) {
+          const element = document.createElement("span");
+          element.textContent = "Αλφάβητο";
+          container.append(element);
+        }
+        await nextTask();
+        container.replaceChildren();
+        await nextTask();
+      }
+    });
+    await expect(frame.locator("html")).toHaveAttribute(
+      "data-frame-pending",
+      "true",
+    );
+    expect(await nodes()).toBe(before);
+    await frame.evaluate(() => {
+      const element = document.createElement("p");
+      element.id = "resumed-text";
+      element.textContent = "Αλφάβητο";
+      document.body.append(element);
+    });
+    await f.page.locator("#background-frame").evaluate((element) => {
+      element.style.display = "";
+    });
+    await session.send("DOM.enable");
+    await session.send("CSS.enable");
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("resumed-text", session));
+      })
+      .toBe(true);
+  } finally {
+    try {
+      await session?.detach();
+    } finally {
+      await f.close();
+    }
   }
 });
