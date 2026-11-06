@@ -1,6 +1,6 @@
 import { useGet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { FolderInput } from "lucide-react";
+import { FolderInput, FolderOutput } from "lucide-react";
 import { Tooltip, TooltipContent } from "@okouai/ui";
 import { projectThreadDragHint$ } from "../../signals/projects/project-thread-drag.ts";
 
@@ -25,14 +25,22 @@ export function ProjectThreadDragHint() {
         alignOffset={12}
         className="pointer-events-none flex items-center gap-1.5 transition-none"
       >
-        <FolderInput size={14} className="shrink-0" />
+        {hint.projectId === null ? (
+          <FolderOutput size={14} className="shrink-0" />
+        ) : (
+          <FolderInput size={14} className="shrink-0" />
+        )}
         <span className="truncate">
-          {t(
-            ($) => {
-              return $.projects.moveTo;
-            },
-            { name: hint.name },
-          )}
+          {hint.projectId === null
+            ? t(($) => {
+                return $.projects.remove;
+              })
+            : t(
+                ($) => {
+                  return $.projects.moveTo;
+                },
+                { name: hint.name },
+              )}
         </span>
       </TooltipContent>
     </Tooltip>

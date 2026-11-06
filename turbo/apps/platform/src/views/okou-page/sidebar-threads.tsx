@@ -1724,26 +1724,45 @@ function ChatThreadsViewport({
   const { t } = useTranslation();
   const isScrolled = useGet(scrollSignals.isScrolled$);
   const hasCurrentChatThread = useGet(hasCurrentChatThread$);
+  const [moving, move] = useLoadableSet(moveDraggedProjectThread$);
+  const signal = useGet(rootSignal$);
+  const drop = useProjectThreadDropTarget({
+    projectId: null,
+    touch: false,
+    moving: moving.state === "loading",
+    moveHere(projectId) {
+      detach(move(projectId, signal), Reason.DomCallback);
+    },
+  });
 
   return (
-    <OverlayScrollArea
-      scrollSignals={scrollSignals}
-      className="mt-1 min-h-0 flex-1"
-      // Keep the viewport's previous shadow precedence when it receives focus.
-      viewportClassName={
-        isScrolled
-          ? "[box-shadow:0_-1px_0_0_hsl(var(--border)/0.4)]!"
-          : "[box-shadow:none]!"
-      }
-      contentClassName={contentClassName}
-      aria-label={t(($) => {
-        return $.chat.sidebar.chatThreads;
-      })}
-      data-testid="sidebar-scroll-area"
-      tabIndex={hasCurrentChatThread ? 0 : undefined}
-    >
-      {children}
-    </OverlayScrollArea>
+    <div {...drop.props} className="mt-1 flex min-h-0 flex-1 flex-col">
+      <OverlayScrollArea
+        scrollSignals={scrollSignals}
+        className="min-h-0 flex-1"
+        // Keep the viewport's previous shadow precedence when it receives focus.
+        viewportClassName={
+          isScrolled
+            ? "[box-shadow:0_-1px_0_0_hsl(var(--border)/0.4)]!"
+            : "[box-shadow:none]!"
+        }
+        contentClassName={contentClassName}
+        aria-label={t(($) => {
+          return $.chat.sidebar.chatThreads;
+        })}
+        data-testid="sidebar-scroll-area"
+        tabIndex={hasCurrentChatThread ? 0 : undefined}
+      >
+        {children}
+      </OverlayScrollArea>
+      {moving.state === "hasError" && (
+        <p role="alert" className="px-3 py-1 text-xs text-destructive">
+          {t(($) => {
+            return $.projects.moveError;
+          })}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1893,7 +1912,7 @@ function ChatThreadListRowFrame({
   rowHeight: number | null;
   touch: boolean;
   moving: boolean;
-  moveHere: (projectId: string) => void;
+  moveHere: (projectId: string | null) => void;
   children: ReactNode;
 }) {
   const drop = useProjectThreadDropTarget({
@@ -1916,6 +1935,7 @@ function ChatThreadListRowFrame({
         rowHeight !== null && "absolute left-0 top-0",
         row.projectId !== null && row.kind !== "project" && "pl-6",
         drop.targeted && "bg-state-hover",
+        drop.targeted && row.projectId === null && "rounded-lg",
         drop.targeted && row.kind === "project" && "rounded-t-lg",
         drop.targeted && row.projectEnd && "rounded-b-lg",
       )}
@@ -1960,7 +1980,7 @@ function ChatThreadListRowsView({
   const [moving, move] = useLoadableSet(moveDraggedProjectThread$);
   const signal = useGet(rootSignal$);
   const dragEventsRef = useSet(projectThreadDragEventsRef$);
-  function moveHere(projectId: string) {
+  function moveHere(projectId: string | null) {
     detach(move(projectId, signal), Reason.DomCallback);
   }
 

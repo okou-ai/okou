@@ -7,7 +7,7 @@ export const PROJECT_THREAD_DRAG_TYPE = "application/x-okou-chat-thread";
 
 const draggingThreadId$ = state<string | null>(null);
 const dropTarget$ = state<{
-  readonly projectId: string;
+  readonly projectId: string | null;
   readonly x: number;
   readonly y: number;
 } | null>(null);
@@ -22,18 +22,22 @@ export const draggingProjectThread$ = computed((get) => {
 });
 
 export const projectThreadDropTargetId$ = computed((get) => {
-  return get(dropTarget$)?.projectId ?? null;
+  return get(dropTarget$)?.projectId;
 });
 
 export const projectThreadDragHint$ = computed((get) => {
   const target = get(dropTarget$);
   const thread = get(draggingProjectThread$);
+  if (!target || !thread || thread.projectId === target.projectId) {
+    return null;
+  }
+  if (target.projectId === null) {
+    return { ...target, name: null };
+  }
   const project = get(projects$).find((item) => {
-    return item.id === target?.projectId;
+    return item.id === target.projectId;
   });
-  return target && thread && project && thread.projectId !== project.id
-    ? { ...target, name: project.name }
-    : null;
+  return project ? { ...target, name: project.name } : null;
 });
 
 export const startProjectThreadDrag$ = command(
@@ -55,7 +59,7 @@ export const startProjectThreadDrag$ = command(
 export const hoverProjectThreadDrop$ = command(
   (
     { set },
-    projectId: string,
+    projectId: string | null,
     position: { readonly x: number; readonly y: number },
   ) => {
     set(dropTarget$, { projectId, ...position });
@@ -63,7 +67,7 @@ export const hoverProjectThreadDrop$ = command(
 );
 
 export const leaveProjectThreadDrop$ = command(
-  ({ get, set }, projectId: string) => {
+  ({ get, set }, projectId: string | null) => {
     if (get(dropTarget$)?.projectId === projectId) {
       set(dropTarget$, null);
     }
@@ -76,15 +80,16 @@ export const endProjectThreadDrag$ = command(({ set }) => {
 });
 
 export const moveDraggedProjectThread$ = command(
-  async ({ get, set }, projectId: string, signal: AbortSignal) => {
+  async ({ get, set }, projectId: string | null, signal: AbortSignal) => {
     const thread = get(draggingProjectThread$);
     set(endProjectThreadDrag$);
     if (
       !thread ||
       thread.projectId === projectId ||
-      !get(projects$).some((project) => {
-        return project.id === projectId;
-      })
+      (projectId !== null &&
+        !get(projects$).some((project) => {
+          return project.id === projectId;
+        }))
     ) {
       return;
     }
