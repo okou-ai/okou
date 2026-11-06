@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 
@@ -13,6 +14,7 @@ import {
 import { authContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
+import { logger } from "../../lib/log";
 import {
   abortMultipartS3Upload,
   createMultipartS3Upload,
@@ -26,6 +28,7 @@ import type { RouteEntry } from "../route-entry";
 import { onRejection, tapError } from "../utils";
 
 const MULTIPART_PART_SIZE_BYTES = 5 * 1024 * 1024;
+const log = logger("uploads-prepare");
 
 const allocatePreparedUpload$ = command(
   async (
@@ -134,6 +137,11 @@ const prepareUploadInner$ = command(
             signal.throwIfAborted();
             signedParts.push({ partNumber, uploadUrl });
           }
+          log.debug("Multipart upload prepared", {
+            uploadCorrelation: createHash("sha256")
+              .update(uploadId)
+              .digest("hex"),
+          });
           return {
             status: 200 as const,
             body: {

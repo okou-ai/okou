@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { command } from "ccstate";
 import { and, desc, eq, inArray, isNotNull, isNull, or } from "drizzle-orm";
 import { uuid } from "zod";
@@ -8,6 +9,7 @@ import {
 } from "@okouai/db/schema/run-uploaded-file";
 
 import { env } from "../../lib/env";
+import { logger } from "../../lib/log";
 import { s3ObjectHead, tryListMultipartS3Parts } from "../external/s3";
 import { nowDate } from "../../lib/time";
 import { db$ } from "../external/db";
@@ -23,6 +25,8 @@ import {
   privateArtifactUrl,
 } from "./private-artifact-storage.service";
 import { resolveArtifactPreviewUrl$ } from "./artifact-preview-url.service";
+
+const log = logger("uploaded-artifact");
 
 export const allocateUploadedArtifact$ = command(
   async (
@@ -182,6 +186,7 @@ export const resolveUploadedMultipart$ = command(
     args: UploadedArtifactIdentity & {
       readonly filename: string;
       readonly uploadId: string;
+      readonly operation: "complete" | "abort";
     },
     signal: AbortSignal,
   ) => {
@@ -193,15 +198,40 @@ export const resolveUploadedMultipart$ = command(
         record.orgId !== args.orgId ||
         record.filename !== args.filename
       ) {
+        log.warn("Multipart upload resolution failed", {
+          operation: args.operation,
+          stage: "ownership",
+          reason: "identity_mismatch",
+          userMatches: record.userId === args.userId,
+          orgMatches: record.orgId === args.orgId,
+          filenameMatches: record.filename === args.filename,
+          uploadCorrelation: createHash("sha256")
+            .update(args.uploadId)
+            .digest("hex"),
+          allocationAgeMs: nowDate().getTime() - record.createdAt.getTime(),
+        });
         return null;
       }
-      const parts = await get(
+      const result = await get(
         tryListMultipartS3Parts(record.bucket, record.key, args.uploadId),
       );
       signal.throwIfAborted();
-      return parts === null
-        ? null
-        : { key: record.key, bucket: record.bucket, parts };
+      if (result.parts === null) {
+        log.warn("Multipart upload resolution failed", {
+          operation: args.operation,
+          stage: "list_parts",
+          reason: "storage_not_found",
+          uploadCorrelation: createHash("sha256")
+            .update(args.uploadId)
+            .digest("hex"),
+          allocationAgeMs: nowDate().getTime() - record.createdAt.getTime(),
+          providerError: result.providerError,
+          providerStatus: result.providerStatus,
+          providerAttempts: result.providerAttempts,
+        });
+        return null;
+      }
+      return { key: record.key, bucket: record.bucket, parts: result.parts };
     }
     const upload = await set(resolveArtifactMultipartUpload$, args, signal);
     if (!upload) {

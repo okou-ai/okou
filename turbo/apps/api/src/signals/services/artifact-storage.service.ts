@@ -537,7 +537,7 @@ export const resolveArtifactMultipartUpload$ = command(
     signal: AbortSignal,
   ): Promise<ResolvedArtifactMultipartUpload | null> => {
     const key = buildArtifactKeyV2(args.id, args.filename);
-    const parts = await get(
+    const { parts } = await get(
       tryListMultipartS3Parts(
         env("R2_USER_ARTIFACTS_BUCKET_NAME"),
         key,
