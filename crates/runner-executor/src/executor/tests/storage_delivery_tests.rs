@@ -563,6 +563,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
         vas_version_id: Some("v1".into()),
     };
     let decoded_manifest = |storage: StorageEntry| Manifest {
+        archive_readiness: None,
         storages: vec![storage],
         artifacts: manifest.artifacts.clone(),
         cleanup_paths: Vec::new(),

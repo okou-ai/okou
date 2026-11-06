@@ -60,6 +60,7 @@ fn artifact(mount: &str) -> ArtifactEntry {
 
 fn manifest(storages: Vec<StorageEntry>, artifacts: Vec<ArtifactEntry>) -> Manifest {
     Manifest {
+        archive_readiness: None,
         storages,
         artifacts,
         cleanup_paths: Vec::new(),

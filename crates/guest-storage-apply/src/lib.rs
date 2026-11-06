@@ -69,6 +69,7 @@ mod instructions;
 mod manifest;
 mod plan;
 mod quarantine;
+mod readiness;
 mod source;
 mod tar_metadata;
 mod telemetry;
@@ -196,6 +197,15 @@ fn run_manifest_with_files_in_runtime(
     files: Vec<guest_contracts::storage_files::StorageFiles>,
     runtime_dir: Option<&Path>,
 ) -> bool {
+    // Validate and arm source publication before any input cleanup. Runtime
+    // control files are private to this operation, never part of an input tree.
+    let readiness = match readiness::Readiness::prepare(&manifest, runtime_dir) {
+        Ok(readiness) => readiness,
+        Err(error) => {
+            log_error!(LOG_TAG, "Archive readiness preparation failed: {error}");
+            return false;
+        }
+    };
     let plan_start = Instant::now();
     let mut plan = RunPlan::from_manifest(&manifest);
     for group in files {
@@ -310,7 +320,7 @@ fn run_manifest_with_files_in_runtime(
     }
 
     let scheduler_start = Instant::now();
-    let success = download::download_all_parallel(download_tasks);
+    let success = download::download_all_parallel(download_tasks, readiness);
     record_sandbox_op(
         "guest_storage_apply_archive_scheduler",
         scheduler_start.elapsed(),

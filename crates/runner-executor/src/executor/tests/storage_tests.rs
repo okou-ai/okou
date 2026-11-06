@@ -12,6 +12,7 @@ use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 
 fn empty_manifest() -> Manifest {
     Manifest {
+        archive_readiness: None,
         storages: Vec::new(),
         artifacts: Vec::new(),
         cleanup_paths: Vec::new(),

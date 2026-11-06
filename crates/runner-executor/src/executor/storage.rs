@@ -358,6 +358,7 @@ fn files_input<'a>(
 
 fn empty_storage_manifest() -> Manifest {
     Manifest {
+        archive_readiness: None,
         storages: Vec::new(),
         artifacts: Vec::new(),
         cleanup_paths: Vec::new(),
