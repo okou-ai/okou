@@ -55,7 +55,7 @@ const unreadCount$ = computed(async (get) => {
 const listRows$ = computed(async (get) => {
   const { userId } = get(organizationAuthContext$);
   const query = get(listQuery$);
-  return get(db$)
+  return await get(db$)
     .select({
       id: userNotifications.id,
       type: sql`${userNotifications.payload}->>'type'`.mapWith(pgTextDecoder),
@@ -97,8 +97,9 @@ const detailRow$ = computed(async (get) => {
 
 const summary$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
-  if (!(await get(enabled$)))
+  if (!(await get(enabled$))) {
     return resourceUnavailable("Notifications are not available");
+  }
   signal.throwIfAborted();
   const unreadCount = await get(unreadCount$);
   signal.throwIfAborted();
@@ -107,8 +108,9 @@ const summary$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const list$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
-  if (!(await get(enabled$)))
+  if (!(await get(enabled$))) {
     return resourceUnavailable("Notifications are not available");
+  }
   signal.throwIfAborted();
   const query = get(listQuery$);
   if (Boolean(query?.beforeAt) !== Boolean(query?.beforeId)) {
@@ -138,12 +140,15 @@ const list$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const detail$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
-  if (!(await get(enabled$)))
+  if (!(await get(enabled$))) {
     return resourceUnavailable("Notifications are not available");
+  }
   signal.throwIfAborted();
   const row = await get(detailRow$);
   signal.throwIfAborted();
-  if (!row) return notFound("Notification not found");
+  if (!row) {
+    return notFound("Notification not found");
+  }
   return {
     status: 200 as const,
     body: userNotificationSchema.parse({
@@ -156,8 +161,9 @@ const detail$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const markRead$ = command(async ({ get, set }, signal: AbortSignal) => {
   set(setResHeader$, "Cache-Control", "private, no-store");
-  if (!(await get(enabled$)))
+  if (!(await get(enabled$))) {
     return resourceUnavailable("Notifications are not available");
+  }
   signal.throwIfAborted();
   const { userId } = get(organizationAuthContext$);
   const { id } = get(readParams$);
@@ -172,7 +178,9 @@ const markRead$ = command(async ({ get, set }, signal: AbortSignal) => {
     )
     .returning({ readAt: userNotifications.readAt });
   signal.throwIfAborted();
-  if (!row) return notFound("Notification not found");
+  if (!row) {
+    return notFound("Notification not found");
+  }
   if (!row.readAt) {
     throw new Error("Notification read receipt was not persisted");
   }
@@ -184,8 +192,9 @@ const markAllRead$ = command(async ({ get, set }, signal: AbortSignal) => {
   // Capture the request boundary before any awaited work. Later deliveries
   // remain unread, including those outside the currently loaded list page.
   const at = nowDate();
-  if (!(await get(enabled$)))
+  if (!(await get(enabled$))) {
     return resourceUnavailable("Notifications are not available");
+  }
   signal.throwIfAborted();
   const { userId } = get(organizationAuthContext$);
   await set(writeDb$)

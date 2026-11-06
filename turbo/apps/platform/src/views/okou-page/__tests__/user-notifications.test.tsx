@@ -58,12 +58,16 @@ function button(
       node.textContent?.trim() === name
     );
   });
-  if (!result) throw new Error(`Missing button: ${name}`);
+  if (!result) {
+    throw new Error(`Missing button: ${name}`);
+  }
   return result;
 }
 function row(title: string): HTMLElement {
   const result = screen.getByText(title).closest("button");
-  if (!result) throw new Error(`Missing notification: ${title}`);
+  if (!result) {
+    throw new Error(`Missing notification: ${title}`);
+  }
   return result;
 }
 function mockInbox(items: UserNotificationSummary[] = [first, second]) {
@@ -127,9 +131,9 @@ test("Opening the list preserves unread messages; displaying rich text records o
   expect(within(row(second.title)).getByText("Unread")).toBeInTheDocument();
   click(row(first.title));
   const dialog = await screen.findByRole("dialog", { name: first.title });
-  expect(
-    await within(dialog).findByText("Everything in context"),
-  ).toBeInTheDocument();
+  await expect(
+    within(dialog).findByText("Everything in context"),
+  ).resolves.toBeInTheDocument();
   expect(within(dialog).getByAltText("Projects overview")).toHaveAttribute(
     "src",
     "https://static.okou.io/notification-preview.png",
@@ -180,10 +184,11 @@ test("A failed read receipt keeps the message unread and can be retried in the d
   mockInbox();
   let fail = true;
   context.mocks.api(userNotificationsContract.markRead, ({ respond }) => {
-    if (fail)
+    if (fail) {
       return respond(500, {
         error: { code: "INTERNAL_ERROR", message: "Write failed" },
       });
+    }
     return respond(200, { readAt });
   });
   await openInbox();
@@ -211,10 +216,11 @@ test("A failed bulk receipt keeps the rows unread and the original action retrie
   mockInbox();
   let fail = true;
   context.mocks.api(userNotificationsContract.markAllRead, ({ respond }) => {
-    if (fail)
+    if (fail) {
       return respond(500, {
         error: { code: "INTERNAL_ERROR", message: "Write failed" },
       });
+    }
     return respond(200, { readThrough: readAt });
   });
   await openInbox();
@@ -302,7 +308,7 @@ test("The notification entry is absent when its switch is off", async () => {
     queryAllByRoleFast("button").some((node) => {
       return node.getAttribute("aria-label") === "Notifications";
     }),
-  ).toBe(false);
+  ).toBeFalsy();
 });
 
 test("A notification delivered after the bulk snapshot stays unread", async () => {

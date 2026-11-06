@@ -16,7 +16,7 @@ function client() {
   );
 }
 
-test("A staff user can read an empty personal inbox and safely mark all as read", async () => {
+test("a staff user can read an empty personal inbox and safely mark all as read", async () => {
   mocks.clerk.session(`user_${randomUUID()}`, STAFF_ORG_ID);
   const api = client();
   expect((await accept(api.summary({ headers }), [200])).body).toStrictEqual({
@@ -27,13 +27,13 @@ test("A staff user can read an empty personal inbox and safely mark all as read"
     nextCursor: null,
   });
   const marked = await accept(api.markAllRead({ headers }), [200]);
-  expect(Number.isNaN(Date.parse(marked.body.readThrough))).toBe(false);
+  expect(Number.isNaN(Date.parse(marked.body.readThrough))).toBeFalsy();
   expect((await accept(api.summary({ headers }), [200])).body.unreadCount).toBe(
     0,
   );
 });
 
-test("Missing notification details and receipts return the same scoped not-found result", async () => {
+test("missing notification details and receipts return the same scoped not-found result", async () => {
   mocks.clerk.session(`user_${randomUUID()}`, STAFF_ORG_ID);
   const api = client();
   const id = randomUUID();
@@ -41,7 +41,7 @@ test("Missing notification details and receipts return the same scoped not-found
   expect((await api.markRead({ headers, params: { id } })).status).toBe(404);
 });
 
-test("A partial paging cursor is rejected", async () => {
+test("a partial paging cursor is rejected", async () => {
   mocks.clerk.session(`user_${randomUUID()}`, STAFF_ORG_ID);
   expect(
     (await client().list({ headers, query: { beforeId: randomUUID() } }))
@@ -49,7 +49,7 @@ test("A partial paging cursor is rejected", async () => {
   ).toBe(400);
 });
 
-test("The rollout gate rejects every notification operation for an external workspace", async () => {
+test("the rollout gate rejects every notification operation for an external workspace", async () => {
   mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
   const api = client();
   expect((await api.summary({ headers })).status).toBe(403);
@@ -63,7 +63,7 @@ test("The rollout gate rejects every notification operation for an external work
   expect((await api.markAllRead({ headers })).status).toBe(403);
 });
 
-test("Requests without authentication cannot read notifications", async () => {
+test("requests without authentication cannot read notifications", async () => {
   const api = client();
   expect((await api.summary({ headers: {} })).status).toBe(401);
   expect((await api.list({ headers: {} })).status).toBe(401);

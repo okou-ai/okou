@@ -7,7 +7,7 @@ import { authenticatedSessionKey$ } from "../auth.ts";
 import { pageVersion$ } from "../page-signal.ts";
 import { onRef } from "../utils.ts";
 
-function createNotificationInbox() {
+function createInboxState() {
   const revision$ = state(0);
   const detailRevision$ = state(0);
   const summaryRevision$ = state(0);
@@ -23,6 +23,36 @@ function createNotificationInbox() {
   const readRequest$ = state<Promise<void> | undefined>(undefined);
   const scrollTop$ = state(0);
 
+  const descriptionId = crypto.randomUUID();
+  return {
+    revision$,
+    detailRevision$,
+    summaryRevision$,
+    open$,
+    selectedId$,
+    lastSelectedId$,
+    olderPages$,
+    nextOlderCursor$,
+    readReceipts$,
+    readThrough$,
+    readRequest$,
+    scrollTop$,
+    descriptionId,
+  };
+}
+type InboxState = ReturnType<typeof createInboxState>;
+
+function createInboxQueries(inbox: InboxState) {
+  const {
+    revision$,
+    summaryRevision$,
+    detailRevision$,
+    selectedId$,
+    olderPages$,
+    nextOlderCursor$,
+    readReceipts$,
+    readThrough$,
+  } = inbox;
   const summary$ = computed(async (get) => {
     get(summaryRevision$);
     const response = await accept(
@@ -65,7 +95,9 @@ function createNotificationInbox() {
   const detail$ = computed(async (get) => {
     get(detailRevision$);
     const id = get(selectedId$);
-    if (!id) return null;
+    if (!id) {
+      return null;
+    }
     const response = await accept(
       get(apiClient$)(userNotificationsContract).get({ params: { id } }),
       [200],
@@ -74,6 +106,29 @@ function createNotificationInbox() {
     );
     return response.body;
   });
+  return {
+    summary$,
+    items$,
+    nextCursor$,
+    detail$,
+  };
+}
+type InboxQueries = ReturnType<typeof createInboxQueries>;
+
+function createInboxNavigation(inbox: InboxState, queries: InboxQueries) {
+  const {
+    revision$,
+    detailRevision$,
+    summaryRevision$,
+    open$,
+    selectedId$,
+    lastSelectedId$,
+    olderPages$,
+    nextOlderCursor$,
+    readRequest$,
+    scrollTop$,
+  } = inbox;
+  const { nextCursor$ } = queries;
   const retryDetail$ = command(({ set }) => {
     set(detailRevision$, (n) => {
       return n + 1;
@@ -97,7 +152,9 @@ function createNotificationInbox() {
   const setOpen$ = command(({ get, set }, value: boolean) => {
     // A detail dialog temporarily hides the dropdown. Its dismissal returns
     // to the same list rather than treating that handoff as closing the inbox.
-    if (get(selectedId$)) return;
+    if (get(selectedId$)) {
+      return;
+    }
     set(open$, value);
     if (value) {
       set(scrollTop$, 0);
@@ -119,7 +176,9 @@ function createNotificationInbox() {
     const revision = get(revision$);
     const cursor = await get(nextCursor$);
     signal.throwIfAborted();
-    if (!cursor) return;
+    if (!cursor) {
+      return;
+    }
     const response = await accept(
       get(apiClient$)(userNotificationsContract).list({
         query: { beforeAt: cursor.createdAt, beforeId: cursor.id },
@@ -130,12 +189,55 @@ function createNotificationInbox() {
       { showErrorToast: false },
     );
     signal.throwIfAborted();
-    if (revision !== get(revision$)) return;
+    if (revision !== get(revision$)) {
+      return;
+    }
     set(olderPages$, (items) => {
       return [...items, ...response.body.items];
     });
     set(nextOlderCursor$, response.body.nextCursor);
   });
+  const listRef$ = onRef(
+    command(({ get, set }, element: HTMLDivElement, signal: AbortSignal) => {
+      element.scrollTop = get(scrollTop$);
+      const lastSelectedId = get(lastSelectedId$);
+      if (lastSelectedId) {
+        const target =
+          element.querySelector<HTMLElement>(
+            `[data-notification-id="${lastSelectedId}"]`,
+          ) ?? element.querySelector<HTMLElement>("button");
+        target?.focus({ preventScroll: true });
+      }
+      element.addEventListener(
+        "scroll",
+        () => {
+          set(scrollTop$, element.scrollTop);
+        },
+        { signal },
+      );
+    }),
+  );
+  return {
+    retryDetail$,
+    refresh$,
+    refreshSummary$,
+    setOpen$,
+    select$,
+    closeDetail$,
+    loadMore$,
+    listRef$,
+  };
+}
+type InboxNavigation = ReturnType<typeof createInboxNavigation>;
+
+function createInboxReceipts(
+  inbox: InboxState,
+  queries: InboxQueries,
+  navigation: InboxNavigation,
+) {
+  const { readReceipts$, readThrough$, readRequest$ } = inbox;
+  const { detail$ } = queries;
+  const { refreshSummary$ } = navigation;
   const persistRead$ = command(async ({ get, set }, signal: AbortSignal) => {
     const detail = await get(detail$);
     signal.throwIfAborted();
@@ -144,8 +246,9 @@ function createNotificationInbox() {
       detail.readAt ||
       get(readReceipts$).has(detail.id) ||
       (get(readThrough$) ?? "") >= detail.createdAt
-    )
+    ) {
       return;
+    }
     const response = await accept(
       get(apiClient$)(userNotificationsContract).markRead({
         params: { id: detail.id },
@@ -172,26 +275,6 @@ function createNotificationInbox() {
       await set(markRead$, signal);
     }),
   );
-  const listRef$ = onRef(
-    command(({ get, set }, element: HTMLDivElement, signal: AbortSignal) => {
-      element.scrollTop = get(scrollTop$);
-      const lastSelectedId = get(lastSelectedId$);
-      if (lastSelectedId) {
-        const target =
-          element.querySelector<HTMLElement>(
-            `[data-notification-id="${lastSelectedId}"]`,
-          ) ?? element.querySelector<HTMLElement>("button");
-        target?.focus({ preventScroll: true });
-      }
-      element.addEventListener(
-        "scroll",
-        () => {
-          set(scrollTop$, element.scrollTop);
-        },
-        { signal },
-      );
-    }),
-  );
   const markAllRead$ = command(async ({ get, set }, signal: AbortSignal) => {
     const response = await accept(
       get(apiClient$)(userNotificationsContract).markAllRead({
@@ -206,25 +289,26 @@ function createNotificationInbox() {
     set(refreshSummary$);
   });
   return {
-    summary$,
-    items$,
-    nextCursor$,
-    detail$,
-    open$,
-    selectedId$,
-    lastSelectedId$,
-    readRequest$,
-    refresh$,
-    refreshSummary$,
-    retryDetail$,
-    setOpen$,
-    select$,
-    closeDetail$,
-    loadMore$,
     markRead$,
     markAllRead$,
     detailRef$,
-    listRef$,
+  };
+}
+
+function createNotificationInbox() {
+  const inbox = createInboxState();
+  const queries = createInboxQueries(inbox);
+  const navigation = createInboxNavigation(inbox, queries);
+  const receipts = createInboxReceipts(inbox, queries, navigation);
+  return {
+    ...queries,
+    ...navigation,
+    ...receipts,
+    open$: inbox.open$,
+    selectedId$: inbox.selectedId$,
+    lastSelectedId$: inbox.lastSelectedId$,
+    readRequest$: inbox.readRequest$,
+    descriptionId: inbox.descriptionId,
   };
 }
 
@@ -241,7 +325,9 @@ export const watchUserNotifications$ = command(
   ({ get, set }, signal: AbortSignal) => {
     const inbox = get(notificationInbox$);
     const refresh = () => {
-      if (!document.hidden) set(inbox.refreshSummary$);
+      if (!document.hidden) {
+        set(inbox.refreshSummary$);
+      }
     };
     window.addEventListener("focus", refresh, { signal });
     document.addEventListener("visibilitychange", refresh, { signal });
