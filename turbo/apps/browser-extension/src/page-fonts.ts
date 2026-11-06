@@ -4,6 +4,10 @@ const supplementalFamily = '"Arial Unicode MS"';
 const supplementalPattern = /(?:^|,)\s*["']?Arial Unicode MS["']?\s*(?:,|$)/i;
 // Letters, rather than whole Unicode blocks, leave icon PUA and emoji alone.
 const nonLatinLetter = /(?=\p{Letter})\P{Script_Extensions=Latin}/u;
+// Script-specific marks, numbers and punctuation can be separate text nodes.
+// Common/Inherited decoration (including emoji selectors) stays authored.
+const otherScriptText =
+  /(?=[\p{Mark}\p{Number}\p{Punctuation}])[^\p{Script_Extensions=Latin}\p{Script_Extensions=Common}\p{Script_Extensions=Inherited}]/u;
 const stylesheetSelector = 'style, link[rel~="stylesheet"]';
 const overrides = new WeakMap<
   HTMLElement,
@@ -89,7 +93,10 @@ function needsFont(element: HTMLElement): boolean {
   }
   if (element.matches("textarea, select")) return true;
   return Array.from(element.childNodes).some((node) => {
-    return node instanceof Text && nonLatinLetter.test(node.data);
+    return (
+      node instanceof Text &&
+      (nonLatinLetter.test(node.data) || otherScriptText.test(node.data))
+    );
   });
 }
 

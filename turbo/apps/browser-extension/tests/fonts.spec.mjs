@@ -8,6 +8,7 @@ let origin;
 const styles = `<style>
   @font-face { font-family: 'Owned Latin'; src: local('Liberation Sans'), local('Arial'); unicode-range: U+0000-007F; }
   @font-face { font-family: 'Arial Unicode MS'; src: local('Liberation Serif'), local('Times New Roman'); }
+  @font-face { font-family: 'Arial Unicode MS'; src: local('Liberation Mono'), local('Courier New'); unicode-range: U+0345; }
   @font-face { font-family: 'Owned Site Face'; src: local('Liberation Mono'), local('Courier New'); }
   body { font: 24px var(--page-font, 'Owned Latin'); }
   #opaque-container { --opaque-font: italic 700 24px 'Owned Latin'; }
@@ -36,6 +37,9 @@ test.beforeAll(async () => {
     response.end(`<!doctype html><html lang="en"><head>${styles}<link id="theme-link" rel="stylesheet" href="/theme.css"></head><body>
       <div id="container"><span id="sample">Αλφάβητο ABC</span></div>
       <p id="linked-sample">Αλφάβητο ABC</p>
+      <p id="script-mark">&#x345;</p><p id="script-punctuation">・148</p>
+      <p id="script-number">१२३</p>
+      <p id="common-mark">A&#x301;</p>
       <p id="site-control">Αλφάβητο ABC</p>
       <p id="caption-control">Αλφάβητο ABC</p>
       <p id="variable-sample" style="--text-font: 'Owned Latin'; font-family: var(--text-font)">Αλφάβητο ABC</p>
@@ -43,7 +47,7 @@ test.beforeAll(async () => {
       <p id="inline-caption" style="font: caption; font-weight: 700; font-style: italic">Αλφάβητο ABC</p>
       <div id="opaque-container" style="font: var(--opaque-font); font-weight: 700; font-style: italic"><span id="opaque-child">Αλφάβητο ABC</span></div>
       <span id="latin">Latin ABC 123</span><span id="latin-reference">Latin ABC 123</span>
-      <p id="symbols">★ 😀</p><code id="code">const value = 123;</code>
+      <p id="symbols">★ 😀 ☀️</p><code id="code">const value = 123;</code>
       <label>Search<input id="search" placeholder="Αναζήτηση"></label>
       <button id="add">Add text</button><button id="theme">Change site font</button>
       <button id="system">Use system font</button>
@@ -216,6 +220,45 @@ test("supplements non-Latin glyphs while preserving named fonts, formatting and 
         return suppliedGreek(await f.fonts("shadow-text"));
       })
       .toBe(true);
+  } finally {
+    await f.close();
+  }
+});
+
+test("supplies script-specific marks, numbers and punctuation while preserving common typography", async () => {
+  const f = await fixture();
+  try {
+    await expect
+      .poll(async () => {
+        return (await f.fonts("script-mark"))
+          .filter((font) => {
+            return font.glyphCount > 0;
+          })
+          .map((font) => {
+            return font.postScriptName;
+          });
+      })
+      .toEqual(
+        expect.arrayContaining([
+          expect.stringMatching(/LiberationMono|CourierNew/),
+        ]),
+      );
+    await expect(f.page.locator("#script-punctuation")).toHaveCSS(
+      "font-family",
+      /Arial Unicode MS/,
+    );
+    await expect(f.page.locator("#script-number")).toHaveCSS(
+      "font-family",
+      /Arial Unicode MS/,
+    );
+    await expect(f.page.locator("#common-mark")).toHaveCSS(
+      "font-family",
+      '"Owned Latin"',
+    );
+    await expect(f.page.locator("#symbols")).toHaveCSS(
+      "font-family",
+      '"Owned Latin"',
+    );
   } finally {
     await f.close();
   }
@@ -465,12 +508,14 @@ test("releases removed nodes while a cross-site frame is hidden and resumes font
       const frame = document.createElement("iframe");
       frame.id = "background-frame";
       frame.title = "Background languages";
+      frame.style.cssText = "position: fixed; top: 0; left: 0";
       const url = new URL("/frame", location.href);
       url.hostname = "localhost";
       frame.src = url.href;
       document.body.append(frame);
     });
     const frame = await navigation;
+    await expect(f.page.locator("#background-frame")).toBeInViewport();
     await expect(frame.locator("#frame-text")).toHaveCSS(
       "font-family",
       /Arial Unicode MS/,
@@ -538,6 +583,7 @@ test("releases removed nodes while a cross-site frame is hidden and resumes font
     await f.page.locator("#background-frame").evaluate((element) => {
       element.style.display = "";
     });
+    await expect(f.page.locator("#background-frame")).toBeInViewport();
     await session.send("DOM.enable");
     await session.send("CSS.enable");
     await expect
