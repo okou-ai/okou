@@ -255,6 +255,7 @@ private struct WorkspaceRootView: View {
             .id(conversation.thread.id)
           } else {
             newChatHome
+              .frame(minHeight: 0, maxHeight: .infinity)
               .safeAreaInset(edge: .bottom, spacing: 0) {
                 @Bindable var composer = store.newComposer
                 ChatComposerView(
