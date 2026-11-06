@@ -346,8 +346,9 @@ function BrowserSessionPanelContent({
   actions,
   overlay,
 }: BrowserSessionPanelProps) {
-  // All four read the same session; the panel waits for every value so the
-  // viewer never mounts with a partial identity.
+  // Legacy viewing waits for these presentation projections. Shared recovery
+  // stays mounted while they resolve; native admission uses the authoritative
+  // connection rather than partial presentation.
   const status = useLastLoadable(signals.panelStatus$);
   const liveUrl = useLastLoadable(signals.panelLiveUrl$);
   const instanceId = useLastLoadable(signals.panelInstanceId$);
