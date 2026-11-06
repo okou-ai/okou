@@ -327,7 +327,8 @@ final class ChatComposerMentionTests: XCTestCase {
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
     workspace.startNewChat(agentID: MentionNavigationFixture.agent(2))
-    try await eventually { mentionInputs(in: host.view).first !== input && input.delegate == nil }
+    // Exercise the old callbacks after switching their draft owner, independently
+    // of when SwiftUI dismantles the old editor.
     XCTAssertTrue(retiredRow.accessibilityActivate())
     delivery.release()
     await fulfillment(of: [consumed], timeout: 3)

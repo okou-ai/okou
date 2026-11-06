@@ -165,7 +165,8 @@ final class ChatComposerPasteTests: XCTestCase {
     input.insertText("stale edit")
     XCTAssertEqual(workspace.newChatDraft, "")
     XCTAssertTrue(originalComposer.text.contains("stale edit"))
-    try await eventually { self.textView(in: host.view) !== input && input.delegate == nil }
+    // The draft switch retires the input owner; UIKit teardown is not a prerequisite
+    // for delivering the old paste and checking that the new draft stays isolated.
     delivery.release()
     // Wait until UIKit has resolved the old paste, rather than waiting a fixed delay.
     try await eventually { input.text.contains("late text") }

@@ -119,6 +119,27 @@ jobs:
           python3 ios/scripts/sample-xcode-startup.test.py
           python3 ios/scripts/build-cache.test.py
           python3 ios/scripts/reset-oversized-compilation-cache.test.py
+          python3 ios/scripts/install-swiftlint.test.py
+
+  swiftlint:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    container:
+      # SwiftLint 0.65.1; keep ios/.swiftlint-version on this release.
+      image: ghcr.io/realm/swiftlint@sha256:f47e083201e47a136cda5ae847595bfe00226c444ca226fa74fa5dc648a9b057
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify SwiftLint scope and failure handling
+        run: bash ios/scripts/test-lint.sh
+      - name: Lint owned Swift sources
+        run: bash ios/scripts/lint.sh
 
   test-packages:
     needs: detect
@@ -322,7 +343,15 @@ jobs:
           retention-days: 7
 
   publish-archive:
-    needs: [detect, script-checks, test-packages, build-test, build-archive]
+    needs:
+      [
+        detect,
+        script-checks,
+        swiftlint,
+        test-packages,
+        build-test,
+        build-archive,
+      ]
     if: github.event_name == 'merge_group' && needs.detect.outputs.needed == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -363,6 +392,7 @@ jobs:
       [
         detect,
         script-checks,
+        swiftlint,
         test-packages,
         build-test,
         build-archive,
@@ -382,6 +412,7 @@ jobs:
           EVENT_NAME: ${{ github.event_name }}
           DETECT_RESULT: ${{ needs.detect.result }}
           SCRIPT_CHECKS_RESULT: ${{ needs.script-checks.result }}
+          LINT_RESULT: ${{ needs.swiftlint.result }}
           IOS_NEEDED: ${{ needs.detect.outputs.needed }}
           PACKAGES_RESULT: ${{ needs.test-packages.result }}
           BUILD_RESULT: ${{ needs.build-test.result }}

@@ -90,6 +90,7 @@ assert ios['jobs']['ci-gate-ios']['if'] == 'always()'
 for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
     for needed in ['true', 'false']:
         for name, expected in [
+            ('swiftlint', needed == 'true'),
             ('prepare-package-sources', needed == 'true' and event != 'push'),
             ('test-packages', needed == 'true' and event != 'push'),
             ('build-test', needed == 'true' and event != 'push'),
@@ -100,7 +101,7 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
             expression = (condition.replace('needs.detect.outputs.needed', repr(needed))
                 .replace('github.event_name', repr(event)).replace('&&', 'and'))
             assert eval(expression, {'__builtins__': {}}, {}) is expected
-for name in ['prepare-package-sources', 'test-packages', 'build-test', 'build-archive', 'publish-archive']:
+for name in ['swiftlint', 'prepare-package-sources', 'test-packages', 'build-test', 'build-archive', 'publish-archive']:
     assert 'environment' not in ios['jobs'][name]
     assert 'IOS_DISTRIBUTION' not in json.dumps(ios['jobs'][name])
     assert 'APP_STORE_CONNECT_API' not in json.dumps(ios['jobs'][name])
@@ -155,12 +156,14 @@ for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
         expected = event == 'workflow_dispatch' and enabled
         assert evaluate(sampling) == ('true' if expected else 'false')
         assert evaluate(upload['if']) is expected
-assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'test-packages', 'build-test', 'build-archive']
+assert ios['jobs']['publish-archive']['needs'] == ['detect', 'script-checks', 'swiftlint', 'test-packages', 'build-test', 'build-archive']
 assert 'script-checks' in ios['jobs']['ci-gate-ios']['needs']
+assert 'swiftlint' in ios['jobs']['ci-gate-ios']['needs']
 assert 'test-packages' in ios['jobs']['ci-gate-ios']['needs']
 gate = ios['jobs']['ci-gate-ios']['steps'][-1]
 assert gate['env']['PACKAGES_RESULT'] == '${{ needs.test-packages.result }}'
 assert gate['env']['SCRIPT_CHECKS_RESULT'] == '${{ needs.script-checks.result }}'
+assert gate['env']['LINT_RESULT'] == '${{ needs.swiftlint.result }}'
 assert 'build-archive' in ios['jobs']['ci-gate-ios']['needs']
 archive = next(step for step in archive_job['steps'] if 'build-archive.sh' in step.get('run', ''))
 assert 'build-archive.sh' in archive['run']
