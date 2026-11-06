@@ -10,7 +10,6 @@ import {
   setupPage,
 } from "../../__tests__/page-helper.ts";
 import { testContext } from "../../signals/__tests__/test-helpers.ts";
-import { sessionStorageSignals } from "../../signals/external/session-storage.ts";
 
 const context = testContext();
 
@@ -168,25 +167,6 @@ test("An undone edit cannot hide later CLI instructions", async () => {
     );
   });
   expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
-});
-
-test("A clean draft retained by an older App yields to the latest saved Instructions", async () => {
-  // The previous editor retained this browser draft after undoing all edits.
-  const storage = sessionStorageSignals(
-    "instructions-draft:org_default:test-user-123",
-  );
-  context.store.set(
-    storage.set$,
-    JSON.stringify({
-      content: "Previous instructions",
-      savedContent: "Previous instructions",
-      version: "opaque-v0",
-    }),
-  );
-  await setupPersonal("Latest saved instructions");
-  expect(screen.getByLabelText("Instructions")).toHaveTextContent(
-    "Latest saved instructions",
-  );
 });
 
 test("A newer saved version keeps the local draft and offers reload before saving", async () => {

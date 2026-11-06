@@ -51,7 +51,11 @@ async function instructionFixture(visibility: "public" | "private" = "public") {
     agents: app(agentsByIdContract),
     async content() {
       const result = await accept(instructions.get({ headers, params }), [200]);
-      return result.body.content;
+      const content = result.body.content;
+      if (content === null) {
+        throw new Error("Expected saved instructions for the test Agent");
+      }
+      return content;
     },
     async update(content: string) {
       return await accept(
