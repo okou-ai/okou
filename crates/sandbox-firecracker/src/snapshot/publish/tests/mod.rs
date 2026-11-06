@@ -1,34 +1,13 @@
-use std::path::Path;
-
 use nbd_cow::KeptCow;
 use sandbox::{PendingSnapshotPublish, SnapshotProvider};
 
 use crate::paths::SnapshotOutputPaths;
 use crate::snapshot::cow::snapshot_attempt_cow_file;
 use crate::snapshot::provider::FirecrackerSnapshotProvider;
-use crate::snapshot::tests::write_snapshot_artifacts;
+use crate::snapshot::tests::{write_kept_cow_for_test, write_snapshot_artifacts};
 use crate::snapshot::{SNAPSHOT_COMPLETE_MARKER_CONTENT, SnapshotError};
 
 use super::*;
-
-async fn write_kept_cow_for_test(work: &Path, token: &str) -> KeptCow {
-    let cow_file = snapshot_attempt_cow_file(work, token);
-    let bitmap_file = cow_file.with_file_name("cow.img.bitmap");
-    let attempt_dir = cow_file.parent().expect("attempt dir");
-    tokio::fs::create_dir_all(attempt_dir)
-        .await
-        .expect("create attempt dir");
-    tokio::fs::write(&cow_file, b"cow")
-        .await
-        .expect("write cow");
-    tokio::fs::write(&bitmap_file, b"bitmap")
-        .await
-        .expect("write bitmap");
-    KeptCow {
-        cow_file,
-        bitmap_file,
-    }
-}
 
 #[tokio::test]
 async fn snapshot_publish_commit_moves_cow_and_writes_complete_marker() {
