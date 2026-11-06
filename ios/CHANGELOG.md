@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.1](https://github.com/okou-ai/okou/compare/ios-v0.27.0...ios-v0.27.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ios:** keep multiline text inside the composer ([#45583](https://github.com/okou-ai/okou/issues/45583)) ([adb42f9](https://github.com/okou-ai/okou/commit/adb42f944934a8ba2160f3a0dbc2a4d8882c345b))
+
 ## [0.27.0](https://github.com/okou-ai/okou/compare/ios-v0.26.3...ios-v0.27.0) (2026-11-06)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.80](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.79...guest-control-server-v0.24.80) (2026-11-06)
+
+
+### Refactoring
+
+* **guest-control:** share test helper program configuration ([#45640](https://github.com/okou-ai/okou/issues/45640)) ([2708a5e](https://github.com/okou-ai/okou/commit/2708a5e8339e0fef6e4eebb0307af578c388732e))
+
 ## [0.24.79](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.78...guest-control-server-v0.24.79) (2026-11-06)
 
 ## [0.24.78](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.77...guest-control-server-v0.24.78) (2026-11-05)

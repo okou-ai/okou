@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.820.0](https://github.com/okou-ai/okou/compare/core-v8.819.2...core-v8.820.0) (2026-11-06)
+
+
+### Features
+
+* **api:** stage connector skill bundle delivery ([#45631](https://github.com/okou-ai/okou/issues/45631)) ([885c5cf](https://github.com/okou-ai/okou/commit/885c5cf9e2e261bb969a025529b98e8848583ad8))
+
 ## [8.819.2](https://github.com/okou-ai/okou/compare/core-v8.819.1...core-v8.819.2) (2026-11-06)
 
 

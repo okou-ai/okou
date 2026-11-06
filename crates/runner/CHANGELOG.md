@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.28](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.27...runner-rs-v0.244.28) (2026-11-06)
+
+
+### Bug Fixes
+
+* **runner:** update rootfs tools and prefer security mirror ([#45624](https://github.com/okou-ai/okou/issues/45624)) ([5bfab58](https://github.com/okou-ai/okou/commit/5bfab585be3c52a87a0be3aa34622674c66f056c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.27](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.26...runner-rs-v0.244.27) (2026-11-06)
 
 ## [0.244.26](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.25...runner-rs-v0.244.26) (2026-11-06)
