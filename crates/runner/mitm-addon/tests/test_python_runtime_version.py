@@ -1,5 +1,6 @@
-"""Keep the default sandbox suitable for developing the production addon."""
+"""Keep addon tests and tools aligned with the frozen mitmproxy interpreter."""
 
+import platform
 import re
 import tomllib
 from pathlib import Path
@@ -16,9 +17,10 @@ def template_version(name: str) -> str:
     return versions[0]
 
 
-def test_sandbox_python_matches_addon_interpreter():
+def test_python_runtime_and_tool_targets_match_the_frozen_interpreter_pin():
     # The packaged suite independently checks this pin against frozen mitmproxy.
     expected = (ADDON_ROOT / ".python-version").read_text().strip()
+    assert platform.python_version() == expected
     assert template_version("PYTHON_VERSION") == expected
     major, minor, _patch = expected.split(".")
     project = tomllib.loads((ADDON_ROOT / "pyproject.toml").read_text())

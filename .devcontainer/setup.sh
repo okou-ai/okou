@@ -121,11 +121,6 @@ else
   echo "✓ uv $UV_VERSION installed"
 fi
 
-# Provision the interpreter selected by the addon's frozen mitmproxy runtime.
-# uv discovers this managed installation when syncing the addon environment.
-PYTHON_VERSION="$(<"$WORKSPACE_DIR/crates/runner/mitm-addon/.python-version")"
-uv python install --no-bin "$PYTHON_VERSION"
-
 # Create ~/.claude symlink to ~/.config/claude for Claude Code IDE integration
 # The VS Code extension uses ~/.claude/ide/ while CLI respects CLAUDE_CONFIG_DIR
 if [ ! -L "$HOME/.claude" ]; then

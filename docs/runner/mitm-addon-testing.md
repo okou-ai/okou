@@ -29,26 +29,28 @@ export PATH="$HOME/.local/bin:$PATH"
 uv --version
 ```
 
-Install the exact interpreter selected by the pinned standalone mitmproxy:
+The pinned uv release can provision the interpreter declared in `.python-version`
+when syncing. To install it explicitly before syncing:
 
 ```bash
 uv python install "$(cat .python-version)"
 ```
 
-The devcontainer setup provisions this interpreter automatically. New sandbox
-images provide the same Python 3.15.1 through `python` and `python3`, with matching
-`pip` and `pip3`. Ubuntu's `/usr/bin/python3` remains available for distribution
-tools. CI provisions the declared interpreter with `actions/setup-python`.
+CI provisions the declared interpreter with `actions/setup-python` and executes
+tests through the locked uv environment. Ordinary addon tests verify the actual
+test interpreter and Python tool targets against `.python-version`; the packaged
+suite independently compares that pin with the real frozen mitmproxy runtime.
+Python upgrades must follow that embedded interpreter, including its patch
+version. uv is pinned by `[tool.uv].required-version`, currently 0.13.7; upgrading
+it does not require upgrading the locked runtime dependencies.
 
-Keep the template's `PYTHON_VERSION` equal to `.python-version`; Python upgrades
-must follow the actual frozen mitmproxy interpreter, including its patch version.
-Keep template uv/uvx equal to the exact `[tool.uv].required-version`, currently
-0.13.7. When upgrading uv, select the latest stable release and update both pins
-together without upgrading the locked runtime dependencies. Ordinary addon tests
-reject configuration drift; native sandbox exec checks both user and root
-versions and pip association. Existing sandbox images retain their previous
-toolchain until rebuilt and rolled out, and user-created virtual environments
-may need recreation after an interpreter upgrade.
+New sandbox images provide the same pinned Python 3.15.1 through `python` and
+`python3`, with matching `pip` and `pip3`. Ubuntu's `/usr/bin/python3` remains
+available for distribution tools. Keep the template Python and uv pins aligned
+with the addon configuration; ordinary tests reject drift, and native sandbox
+exec verifies user/root versions and pip association. Existing instances retain
+their image until rollout; user-created virtual environments may need recreation
+after an interpreter upgrade.
 
 Create or update the local environment from the committed lockfile:
 
