@@ -40,21 +40,13 @@ async function save(content: string, ifVersion?: string) {
 }
 
 describe("Personal Instructions", () => {
-  it("seeds independent member/workspace values once, including concurrent first use", async () => {
+  it("reads the default until each member/workspace saves its own value", async () => {
     installWorkflowVolumeS3Fixture(context);
     const alice = actor();
     const bob = actor(alice.orgId);
     const elsewhere = actor(undefined, alice.userId);
     await enable(alice);
-    const seeded = await Promise.all([read(), read(), read()]);
-    expect(
-      new Set(
-        seeded.map((row) => {
-          return row.version;
-        }),
-      ).size,
-    ).toBe(1);
-    expect(seeded[0]).toMatchObject({
+    await expect(read()).resolves.toMatchObject({
       ...alice,
       content: SINGLE_AGENT_SEED_INSTRUCTIONS,
     });
@@ -118,14 +110,13 @@ describe("Personal Instructions", () => {
     const alice = actor();
     const admin = actor(alice.orgId);
     await enable(alice);
-    const original = await read();
-    await save("Alice private");
+    const { body: aliceSaved } = await save("Alice private");
     await enable(admin);
     mocks.clerk.session(admin.userId, admin.orgId, "org:admin");
     await accept(
       client().update({
         headers,
-        body: { content: "Targeted edit", ifVersion: original.version },
+        body: { content: "Targeted edit", ifVersion: aliceSaved.version },
       }),
       [409],
     );

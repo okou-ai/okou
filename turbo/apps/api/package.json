@@ -14,6 +14,7 @@
     "start": "tsx src/server.ts",
     "db:dev-seed": "dotenv -e .env.local -- tsx src/scripts/dev-seed.ts",
     "db:dev-bench-seed": "dotenv -e .env.local -- tsx src/scripts/dev-bench-seed.ts",
+    "instructions:publish-default": "tsx src/scripts/publish-default-instructions.ts",
     "discord:register": "node scripts/register-discord-commands.mjs",
     "test": "vitest run",
     "test:native-competing-claims": "node scripts/native-competing-claims.mjs",

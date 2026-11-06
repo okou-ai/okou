@@ -1,3 +1,5 @@
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
+
 /**
  * Default instructions (AGENTS.md) for agent onboarding.
  *
@@ -76,3 +78,13 @@ export const SEED_INSTRUCTIONS = seedInstructions(
 export const SINGLE_AGENT_SEED_INSTRUCTIONS = seedInstructions(
   "- **Okou**: Read your personal Instructions with `okou instructions view` and update them with `okou instructions edit --file <path>`. These Instructions apply only to you in this workspace. Your name, avatar, product role, and default tone are fixed. Share reusable team procedures through workspace Workflows.",
 );
+
+/**
+ * Content bundle of SINGLE_AGENT_SEED_INSTRUCTIONS, used by members until their
+ * first save. API deployments publish these bytes before serving; update this
+ * reference together with the text.
+ */
+export const SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE: ContentBundle = {
+  sha256: "d8cd66677c12e9b3d523e65f24ef346f33e8264df7cf3d8e00a09fe56ced1823",
+  archiveBytes: 2413,
+};
