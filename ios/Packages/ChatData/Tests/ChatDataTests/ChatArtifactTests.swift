@@ -276,6 +276,30 @@ final class ChatArtifactTests: XCTestCase {
     } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
   }
 
+  func testHostedSiteDownloadsUseTheCurrentPublishedContent() async throws {
+    let content = Mutex("Version one")
+    let server = try ChatFileHTTPServer { _ in
+      .init(body: Data(content.withLock { $0 }.utf8))
+    }
+    addTeardownBlock { await server.stop() }
+    let origin = try await server.start()
+    let fixture = ChatHTTPFixture { _ in
+      ChatHTTPResponse(
+        body: """
+          {"url":"\(origin)/","expiresAt":"2099-01-01T00:00:00Z"}
+          """)
+    }
+    let service = commands(fixture).artifacts
+    let site = ChatArtifact(
+      source: .hostedSite(URL(string: "https://demo.okou.app/")!), filename: "Page.html",
+      contentType: "text/html")
+    let (_, first) = try await service.download(site)
+    XCTAssertEqual(try String(contentsOf: first.url, encoding: .utf8), "Version one")
+    content.withLock { $0 = "Version two" }
+    let (_, updated) = try await service.download(site)
+    XCTAssertEqual(try String(contentsOf: updated.url, encoding: .utf8), "Version two")
+  }
+
   private func commands(_ fixture: ChatHTTPFixture) -> ChatCommands {
     let client = APIClient(
       baseURL: fixture.baseURL, clientVersion: fixture.clientVersion, session: fixture.session

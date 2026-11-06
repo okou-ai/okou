@@ -96,8 +96,12 @@ public struct ChatArtifacts: Sendable {
     var resolved = resolution
     for attempt in 0...1 {
       try Task.checkCancellation()
-      let key = resolved.fileID.map(ChatArtifact.Source.file) ?? resolved.artifact.id
-      if let cached = files.file(for: key) {
+      let key: ChatArtifact.Source?
+      switch resolved.artifact.source {
+      case .hostedSite: key = nil  // A website can be republished at the same address.
+      default: key = resolved.fileID.map(ChatArtifact.Source.file) ?? resolved.artifact.id
+      }
+      if let key, let cached = files.file(for: key) {
         try checkSize(cached, maximumSize: maximumSize)
         return (resolved.artifact, cached)
       }
@@ -106,7 +110,7 @@ public struct ChatArtifacts: Sendable {
           resolved.downloadURL, filename: resolved.artifact.filename, maximumSize: maximumSize,
           attachmentID: resolved.fileID)
         try Task.checkCancellation()
-        files.insert(file, for: key)
+        if let key { files.insert(file, for: key) }
         return (resolved.artifact, file)
       } catch APIClientError.downloadFailed(let status)
         where attempt == 0 && [401, 403].contains(status)
