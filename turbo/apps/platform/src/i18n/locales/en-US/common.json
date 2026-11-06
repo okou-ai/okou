@@ -1432,8 +1432,8 @@
   },
   "browserViewer": {
     "address": "Address",
-    "addressOpening": "Opening page. You can keep editing the address.",
-    "addressPreparing": "Browser not ready. Keep typing, then press Enter when it is ready.",
+    "addressOpening": "A page is still opening. Try again shortly.",
+    "addressPreparing": "The browser is not ready. Try again shortly.",
     "allTabs": "All tabs",
     "automatic": "Automatic",
     "back": "Back",

@@ -13,7 +13,11 @@ import { detachBrowser } from "./reporting.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { logger } from "../log.ts";
-import type { BrowserConnection, BrowserSignals } from "./browser.ts";
+import type {
+  AddressSubmitNotice,
+  BrowserConnection,
+  BrowserSignals,
+} from "./browser.ts";
 import { CdpFault } from "./cdp/errors.ts";
 import { monotonicNow } from "../../lib/time.ts";
 import { measureDisplay, observeDisplay } from "./display.ts";
@@ -1288,6 +1292,15 @@ function createTabActions(context: RuntimeState, graph: RuntimeGraph) {
 function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
   const { model } = context;
   const { requireController$ } = graph;
+  const noticeState$ = state<AddressSubmitNotice | null>(null);
+  const addressSubmitNotice$ = computed((get) => {
+    return get(noticeState$);
+  });
+  const notifyAddressSubmit$ = command(
+    ({ set }, kind: AddressSubmitNotice["kind"] | null) => {
+      set(noticeState$, kind ? { kind } : null);
+    },
+  );
   const canSubmitAddress$ = computed((get) => {
     const lease = get(context.installed$);
     return (
@@ -1331,6 +1344,7 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
     ): Promise<NavigationReceipt> => {
       const lease = set(requireController$, signal);
       if (action === "submit-address" && !get(canSubmitAddress$)) {
+        set(notifyAddressSubmit$, "preparing");
         return { kind: "unavailable" };
       }
       const scope = get(lease.controller.navigationScope$);
@@ -1347,7 +1361,12 @@ function createNavigationActions(context: RuntimeState, graph: RuntimeGraph) {
       return result.value;
     },
   );
-  return { navigate$, canSubmitAddress$ };
+  return {
+    navigate$,
+    canSubmitAddress$,
+    addressSubmitNotice$,
+    notifyAddressSubmit$,
+  };
 }
 
 function createConfigurationActions(

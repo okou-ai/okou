@@ -1455,8 +1455,8 @@
   },
   "browserViewer": {
     "address": "Dirección",
-    "addressOpening": "Abriendo la página. Puedes seguir editando la dirección.",
-    "addressPreparing": "El navegador aún no está listo. Sigue escribiendo y pulsa Intro cuando esté listo.",
+    "addressOpening": "Todavía se está abriendo una página. Inténtalo de nuevo en un momento.",
+    "addressPreparing": "El navegador aún no está listo. Inténtalo de nuevo en un momento.",
     "allTabs": "Todas las pestañas",
     "automatic": "Automática",
     "back": "Atrás",

@@ -100,6 +100,10 @@ export type BrowserFocusHandoff = {
 
 type Ref<E extends HTMLElement> = Command<(() => void) | undefined, [E | null]>;
 
+export interface AddressSubmitNotice {
+  readonly kind: "opening" | "preparing";
+}
+
 /** Read-only observations and finite domain actions; resource plumbing is private. */
 export interface BrowserSignals {
   readonly recoveryOperation$: Computed<Promise<BrowserRecoveryResult> | null>;
@@ -110,6 +114,11 @@ export interface BrowserSignals {
   readonly navigationScope$: Computed<object | null>;
   readonly address$: Computed<string>;
   readonly canSubmitAddress$: Computed<boolean>;
+  readonly addressSubmitNotice$: Computed<AddressSubmitNotice | null>;
+  readonly notifyAddressSubmit$: Command<
+    void,
+    [AddressSubmitNotice["kind"] | null]
+  >;
   readonly presentation$: Computed<BrowserPresentation>;
   readonly imageRecovery$: Computed<ImageRecovery | null>;
   readonly controls$: Computed<BrowserControls>;

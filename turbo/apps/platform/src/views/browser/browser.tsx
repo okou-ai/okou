@@ -463,6 +463,8 @@ function BrowserAddress({
   const blur = useSet(signals.blurAddress$);
   const edit = useSet(signals.editAddress$);
   const reset = useSet(signals.resetAddress$);
+  const blockedSubmission = useGet(signals.addressSubmitNotice$);
+  const notifySubmission = useSet(signals.notifyAddressSubmit$);
   return (
     <>
       <form
@@ -470,7 +472,10 @@ function BrowserAddress({
         onSubmit={(event) => {
           event.preventDefault();
           if (canSubmit && !navigating) {
+            notifySubmission(null);
             onSubmit();
+          } else {
+            notifySubmission(navigating ? "opening" : "preparing");
           }
         }}
       >
@@ -507,6 +512,7 @@ function BrowserAddress({
             return blur();
           }}
           onChange={(event) => {
+            notifySubmission(null);
             return edit(event.currentTarget.value);
           }}
           onKeyDown={(event) => {
@@ -531,18 +537,20 @@ function BrowserAddress({
           }}
         />
       </form>
-      {(!canSubmit || navigating) && (
-        <span
-          role="status"
-          className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover px-3 py-2 text-xs text-muted-foreground"
-        >
-          {t(($) => {
-            return navigating
-              ? $.browserViewer.addressOpening
-              : $.browserViewer.addressPreparing;
-          })}
-        </span>
-      )}
+      <TransientAlert
+        occurrences={
+          blockedSubmission && (!canSubmit || navigating)
+            ? [blockedSubmission]
+            : []
+        }
+        className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover px-3 py-2 text-xs text-muted-foreground"
+      >
+        {t(($) => {
+          return blockedSubmission?.kind === "opening"
+            ? $.browserViewer.addressOpening
+            : $.browserViewer.addressPreparing;
+        })}
+      </TransientAlert>
     </>
   );
 }

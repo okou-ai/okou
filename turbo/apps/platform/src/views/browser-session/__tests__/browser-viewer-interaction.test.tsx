@@ -179,6 +179,42 @@ test("A selected membership refresh preserves local address text, focus and care
   expect(browser.targets[0]?.url).toBe("http://drxaft.example/path");
 });
 
+test("A submission blocked by native readiness explains why it did not navigate", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText("Address");
+  await fill(address, "native-admission.example/path");
+  const form = address.closest("form");
+  if (!form) {
+    throw new Error("Address form missing");
+  }
+  const proof = browser.holdNextMembership("example-page");
+  await act(async () => {
+    browser.duplicate("example-page");
+    await proof.received;
+    fireEvent.submit(form);
+  });
+  const notice = await screen.findByText(
+    "The browser is not ready. Try again shortly.",
+  );
+  expect(notice).toBeInTheDocument();
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("native-admission.example/path");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await act(async () => {
+    await proof.release();
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Reload", { selector: "button" }),
+    ).toBeEnabled();
+  });
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://native-admission.example/path");
+  });
+});
+
 test("Address blur releases an unchanged baseline but retains an unsent edit", async () => {
   const browser = await setupViewer(0);
   const address = screen.getByLabelText("Address");
@@ -417,13 +453,16 @@ test.each([undefined, 0])(
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
     expect(screen.getByLabelText("Address")).toBeEnabled();
     expect(screen.getByLabelText("Address")).toHaveFocus();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await fill(screen.getByLabelText("Address"), "draft.example/path");
     await userEvent.keyboard("{Enter}");
     expect(
-      screen.getByText(
-        "Browser not ready. Keep typing, then press Enter when it is ready.",
-      ),
+      screen.getByText("The browser is not ready. Try again shortly."),
     ).toBeInTheDocument();
+    expect(screen.getByLabelText("Address")).toHaveFocus();
+    await userEvent.keyboard("x{Backspace}");
+    expect(screen.getByLabelText("Address")).toHaveValue("draft.example/path");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await act(async () => {
       await created.release();
       await image.received;
@@ -954,6 +993,7 @@ test.each(["keyboard", "pointer", "composition"] as const)(
     await fill(address, "submitted.example/path");
     await userEvent.keyboard("{Enter}");
     await navigation.received;
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     expect(address).toHaveFocus();
     if (interaction === "keyboard") {
       await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
@@ -973,8 +1013,8 @@ test.each(["keyboard", "pointer", "composition"] as const)(
     });
     await waitFor(() => {
       expect(
-        screen.queryByText("Opening page. You can keep editing the address."),
-      ).not.toBeInTheDocument();
+        screen.getByLabelText("Reload", { selector: "button" }),
+      ).toBeEnabled();
     });
     expect(address).toBeEnabled();
     expect(address).toHaveFocus();
@@ -1007,8 +1047,8 @@ test("Refocusing a submitted address protects selection until the user leaves it
   });
   await waitFor(() => {
     expect(
-      screen.queryByText("Opening page. You can keep editing the address."),
-    ).not.toBeInTheDocument();
+      screen.getByLabelText("Reload", { selector: "button" }),
+    ).toBeEnabled();
   });
   expect(address).toHaveValue("submitted.example/path");
   expect(address).toHaveFocus();
@@ -1041,8 +1081,8 @@ test("Leaving a clean refocus retains the pending navigation until its own recei
   });
   await waitFor(() => {
     expect(
-      screen.queryByText("Opening page. You can keep editing the address."),
-    ).not.toBeInTheDocument();
+      screen.getByLabelText("Reload", { selector: "button" }),
+    ).toBeEnabled();
   });
   expect(address).toHaveValue("http://submitted.example/path");
 });
@@ -1062,14 +1102,17 @@ test("An address submission waits for its navigation receipt across its own docu
   expect(address).toBeEnabled();
   await fill(address, "second.example/ready");
   await userEvent.keyboard("{Enter}");
+  expect(
+    screen.getByText("A page is still opening. Try again shortly."),
+  ).toBeInTheDocument();
   expect(browser.targets[0]?.url).toBe("http://first.example/path");
   await act(async () => {
     await navigation.release();
   });
   await waitFor(() => {
     expect(
-      screen.queryByText("Opening page. You can keep editing the address."),
-    ).toBeNull();
+      screen.getByLabelText("Reload", { selector: "button" }),
+    ).toBeEnabled();
   });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   expect(address).toHaveValue("second.example/ready");

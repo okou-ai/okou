@@ -1430,8 +1430,8 @@
   },
   "browserViewer": {
     "address": "アドレス",
-    "addressOpening": "ページを開いています。アドレスは引き続き編集できます。",
-    "addressPreparing": "ブラウザーの準備中です。入力を続け、準備ができたら Enter キーを押してください。",
+    "addressOpening": "ページを開いています。少し待ってからもう一度お試しください。",
+    "addressPreparing": "ブラウザーの準備ができていません。少し待ってからもう一度お試しください。",
     "allTabs": "すべてのタブ",
     "automatic": "自動",
     "back": "戻る",
