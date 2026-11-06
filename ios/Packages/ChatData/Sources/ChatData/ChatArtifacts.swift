@@ -8,11 +8,14 @@ public struct ChatArtifactResolution: Sendable {
   public let downloadURL: URL
   public let previewImageURL: URL?
   public let expiresAt: Date?
+  /// Canonical identity supplied by the authority, including files reached through a reference.
+  public var fileID: String? = nil
 }
 
 /// Read-only artifact access through the existing API and credential-free storage transport.
 public struct ChatArtifacts: Sendable {
   private let client: APIClient
+  private let files = ChatFileCache()
   public var apiURL: URL { client.baseURL }
   init(client: APIClient) { self.client = client }
 
@@ -40,13 +43,14 @@ public struct ChatArtifacts: Sendable {
           source: artifact.source, filename: response.filename, contentType: response.contentType,
           size: artifact.size, artifactKind: artifact.artifactKind),
         contentURL: contentURL, downloadURL: response.downloadUrl,
-        previewImageURL: response.previewImageUrl, expiresAt: response.expiresAt)
+        previewImageURL: response.previewImageUrl, expiresAt: response.expiresAt,
+        fileID: response.target?.kind == "file" ? response.target?.id : nil)
     case .file(let id):
       let response: FileResponse = try await client.request(
         "/api/web/file-url", query: [URLQueryItem(name: "file_id", value: id)])
       return ChatArtifactResolution(
         artifact: artifact, contentURL: response.url, downloadURL: response.downloadUrl,
-        previewImageURL: response.previewImageUrl, expiresAt: response.expiresAt)
+        previewImageURL: response.previewImageUrl, expiresAt: response.expiresAt, fileID: id)
     case .hostedSite(let url):
       guard let hostname = url.host, let slug = hostname.split(separator: ".").first,
         let source = URLComponents(url: url, resolvingAgainstBaseURL: false)
@@ -76,17 +80,44 @@ public struct ChatArtifacts: Sendable {
   public func download(_ artifact: ChatArtifact, maximumSize: Int = ChatAttachment.maximumSize)
     async throws -> (ChatArtifact, ChatAttachmentFile)
   {
+    try Task.checkCancellation()
+    if let file = files.file(for: artifact.id, uploadedOnly: true) {
+      try checkSize(file, maximumSize: maximumSize)
+      return (artifact, file)
+    }
+    let resolved = try await resolve(artifact)
+    return try await download(resolved, maximumSize: maximumSize)
+  }
+
+  /// Consume the authorization already obtained by the preview; renew only on a rejected signature.
+  public func download(
+    _ resolution: ChatArtifactResolution, maximumSize: Int = ChatAttachment.maximumSize
+  ) async throws -> (ChatArtifact, ChatAttachmentFile) {
+    var resolved = resolution
     for attempt in 0...1 {
-      let resolved = try await resolve(artifact)
+      try Task.checkCancellation()
+      let key: ChatArtifact.Source?
+      switch resolved.artifact.source {
+      case .hostedSite: key = nil  // A website can be republished at the same address.
+      default: key = resolved.fileID.map(ChatArtifact.Source.file) ?? resolved.artifact.id
+      }
+      if let key, let cached = files.file(for: key) {
+        try checkSize(cached, maximumSize: maximumSize)
+        return (resolved.artifact, cached)
+      }
       do {
         let file = try await download(
-          resolved.downloadURL, filename: resolved.artifact.filename, maximumSize: maximumSize)
+          resolved.downloadURL, filename: resolved.artifact.filename, maximumSize: maximumSize,
+          attachmentID: resolved.fileID)
+        try Task.checkCancellation()
+        if let key { files.insert(file, for: key) }
         return (resolved.artifact, file)
       } catch APIClientError.downloadFailed(let status)
-        where attempt == 0 && [401, 403].contains(status) && artifact.source.requiresAuthorization
+        where attempt == 0 && [401, 403].contains(status)
+        && resolved.artifact.source.requiresAuthorization
       {
         // Renew once through the authority, rather than reusing an expired storage signature.
-        continue
+        resolved = try await resolve(resolved.artifact)
       }
     }
     throw APIClientError.invalidResponse
@@ -95,8 +126,14 @@ public struct ChatArtifacts: Sendable {
   public func thumbnail(_ artifact: ChatArtifact, webURL: URL) async throws -> (
     ChatArtifact, ChatAttachmentFile?
   ) {
+    try Task.checkCancellation()
+    if let file = files.file(for: artifact.id, uploadedOnly: true) { return (artifact, file) }
     for attempt in 0...1 {
       let resolved = try await resolve(artifact)
+      let key = resolved.fileID.map(ChatArtifact.Source.file) ?? resolved.artifact.id
+      if let cached = files.file(for: key), resolved.artifact.kind == .image {
+        return (resolved.artifact, cached)
+      }
       let url: URL
       if let preview = resolved.previewImageURL {
         if let source = ChatArtifactReference.parse(
@@ -113,7 +150,12 @@ public struct ChatArtifacts: Sendable {
         return (resolved.artifact, nil)
       }
       do {
-        let file = try await download(url, filename: "thumbnail", maximumSize: 20 * 1024 * 1024)
+        let isOriginal = resolved.previewImageURL == nil && resolved.artifact.kind == .image
+        let file = try await download(
+          url, filename: isOriginal ? resolved.artifact.filename : "thumbnail",
+          maximumSize: 20 * 1024 * 1024, attachmentID: isOriginal ? resolved.fileID : nil)
+        try Task.checkCancellation()
+        if isOriginal { files.insert(file, for: key) }
         return (resolved.artifact, file)
       } catch APIClientError.downloadFailed(let status)
         where attempt == 0 && [401, 403].contains(status) && artifact.source.requiresAuthorization
@@ -122,12 +164,30 @@ public struct ChatArtifacts: Sendable {
     throw APIClientError.invalidResponse
   }
 
-  private func download(_ url: URL, filename: String, maximumSize: Int) async throws
+  /// Only bytes selected on this device may open without another remote authorization lookup.
+  public func uploadedFile(_ artifact: ChatArtifact) -> ChatAttachmentFile? {
+    files.file(for: artifact.id, uploadedOnly: true)
+  }
+
+  func retainUpload(_ file: ChatAttachmentFile, id: String) {
+    files.insert(file, for: .file(id), uploaded: true)
+  }
+
+  public func closeFileCache() { files.close() }
+
+  private func checkSize(_ file: ChatAttachmentFile, maximumSize: Int) throws {
+    if file.size > maximumSize { throw URLError(.dataLengthExceedsMaximum) }
+  }
+
+  private func download(
+    _ url: URL, filename: String, maximumSize: Int, attachmentID: String? = nil
+  ) async throws
     -> ChatAttachmentFile
   {
     let temporary = try await client.downloadAttachmentBytes(url, maximumSize: maximumSize)
     defer { try? FileManager.default.removeItem(at: temporary) }
-    return try ChatAttachmentFile.adopt(temporary, filename: filename)
+    return try ChatAttachmentFile.adopt(
+      temporary, filename: filename, originalAttachmentID: attachmentID)
   }
 
   private struct ReferenceResponse: Decodable, Sendable {
@@ -137,6 +197,12 @@ public struct ChatArtifacts: Sendable {
     let contentType: String
     let previewImageUrl: URL?
     let expiresAt: Date?
+    let target: Target?
+
+    struct Target: Decodable, Sendable {
+      let kind: String
+      let id: String
+    }
   }
   private struct FileResponse: Decodable, Sendable {
     let url: URL

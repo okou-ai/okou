@@ -10,6 +10,77 @@ import XCTest
 
 @MainActor
 final class AttachmentDraftTests: XCTestCase {
+  func testLocalImageSurvivesNewChatHandoffAndSubsequentSends() async throws {
+    let creating = expectation(description: "New conversation is being created")
+    let (responses, release) = AsyncStream<Void>.makeStream()
+    defer { release.finish() }
+    let bytes = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 60)).pngData { context in
+      UIColor.systemTeal.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 80, height: 60))
+    }
+    let fixture = AttachmentFlowFixture(
+      creation: {
+        creating.fulfill()
+        for await _ in responses { break }
+        return true
+      },
+      attachment: ChatAttachment(
+        id: AttachmentFlowFixture.fileID, filename: "Screenshot.png", contentType: "image/png",
+        size: bytes.count, url: "artifact://\(AttachmentFlowFixture.fileID)"))
+    let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { store.close() }
+    let source = try makeFile(filename: "Screenshot.png", content: bytes)
+    defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+    store.newAttachmentDraft.importFiles([source])
+    try await waitForBusinessResult {
+      store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
+    }
+    let draftURL = try XCTUnwrap(store.newAttachmentDraft.items.first?.file.url)
+    let sending = Task { await store.sendNewChat() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      sending.cancel()
+      release.finish()
+      await sending.value
+    }
+    await fulfillment(of: [creating], timeout: 3)
+    let submission = try XCTUnwrap(store.newChatSubmission)
+    let attachment = try XCTUnwrap(submission.message.message.attachments.first)
+    let thumbnail = try await submission.viewer.thumbnail(attachment)
+    XCTAssertNotNil(thumbnail)
+    submission.viewer.open(attachment)
+    let cachedURL = try XCTUnwrap(submission.viewer.preview?.file?.url)
+    XCTAssertEqual(try Data(contentsOf: cachedURL), bytes)
+    submission.viewer.dismiss()
+    release.yield(())
+    await sending.value
+    XCTAssertFalse(FileManager.default.fileExists(atPath: draftURL.path))
+
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    conversation.attachmentViewer.open(attachment)
+    XCTAssertEqual(conversation.attachmentViewer.preview?.file?.url, cachedURL)
+    let artifact = ChatArtifact(
+      source: .file(attachment.id), filename: attachment.filename,
+      contentType: attachment.contentType)
+    conversation.artifacts.open(artifact)
+    XCTAssertEqual(conversation.artifacts.preview?.file?.url, cachedURL)
+    conversation.attachmentViewer.dismiss()
+    conversation.artifacts.dismiss()
+
+    conversation.attachmentDraft.importFiles([source])
+    try await waitForBusinessResult {
+      conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
+    }
+    await conversation.send()
+    XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 2)
+    conversation.attachmentViewer.open(attachment)
+    let nextURL = try XCTUnwrap(conversation.attachmentViewer.preview?.file?.url)
+    XCTAssertEqual(try Data(contentsOf: nextURL), bytes)
+    conversation.attachmentViewer.dismiss()
+    store.close()
+    XCTAssertFalse(FileManager.default.fileExists(atPath: nextURL.path))
+  }
+
   func testUploadRetryAndUncertainMessageRetryPreserveFileAndMessageIdentity() async throws {
     let fixture = AttachmentFlowFixture(failUpload: true, failSend: true)
     let conversation = fixture.conversation()

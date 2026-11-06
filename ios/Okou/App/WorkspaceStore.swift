@@ -247,6 +247,7 @@ final class WorkspaceStore {
     agentDraftTask?.cancel()
     newComposer.close()
     for composer in agentDrafts.values { composer.close() }
+    commands.closeFileCache()
   }
 
   func setForeground(_ active: Bool) {

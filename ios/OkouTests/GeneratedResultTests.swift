@@ -105,12 +105,14 @@ final class GeneratedResultTests: XCTestCase {
     viewer.retry()
     try await waitForBusinessResult { viewer.preview?.file != nil }
     let url = try XCTUnwrap(viewer.preview?.file?.url)
-    try await waitForFileRemoval(at: url) { viewer.deactivate() }
+    viewer.deactivate()
+    XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     XCTAssertNil(viewer.preview)
     viewer.open(source)
     try await waitForBusinessResult { viewer.preview?.file != nil }
     let current = try XCTUnwrap(viewer.preview?.file?.url)
-    try await waitForFileRemoval(at: current) { viewer.close() }
+    viewer.close()
+    XCTAssertTrue(FileManager.default.fileExists(atPath: current.path))
     XCTAssertNil(viewer.preview)
     viewer.open(source)
     XCTAssertNil(viewer.preview)
@@ -155,7 +157,10 @@ final class GeneratedResultTests: XCTestCase {
         try String(contentsOf: url, encoding: .utf8),
         "Synthetic generated text\nRead, copy, share, or save to Files.")
     }
-    try await waitForFileRemoval(at: url) { consumer = nil }
+    consumer = nil
+    viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
+    try await waitForBusinessResult { viewer.preview?.file != nil }
+    XCTAssertEqual(viewer.preview?.file?.url, url)
   }
 
   func testLeavingDetailCancelsPendingAuthorizationAndCannotPublishIntoReentry() async throws {
@@ -200,7 +205,8 @@ final class GeneratedResultTests: XCTestCase {
     try await waitForBusinessResult { viewer.preview?.file != nil }
     XCTAssertEqual(viewer.preview?.text?.text, "New detail scope")
     let url = try XCTUnwrap(viewer.preview?.file?.url)
-    try await waitForFileRemoval(at: url) { viewer.dismiss() }
+    viewer.dismiss()
+    XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
   }
 
 }
