@@ -16,6 +16,8 @@ struct LocalEvent<'a> {
     message: Option<String>,
     #[serde(borrow)]
     item: Option<LocalItem<'a>>,
+    #[serde(flatten)]
+    _remaining: serde::de::IgnoredAny,
 }
 
 #[tokio::test]
