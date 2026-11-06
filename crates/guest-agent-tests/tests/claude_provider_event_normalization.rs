@@ -1,6 +1,7 @@
 //! Claude content blocks receive independent canonical sequences while the
 //! original JSONL record remains the unit of local logging and metadata capture.
 
+use cli_test_support::json_fixture::parse_json_lines;
 use guest_agent_tests as common;
 
 use base64::Engine as _;
@@ -249,8 +250,5 @@ async fn claude_content_blocks_are_masked_and_sequenced_in_source_order()
 }
 
 fn read_jsonl(path: &str) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    std::fs::read_to_string(path)?
-        .lines()
-        .map(|line| serde_json::from_str(line).map_err(Into::into))
-        .collect()
+    parse_json_lines(&std::fs::read_to_string(path)?).map_err(Into::into)
 }

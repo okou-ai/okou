@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "주소",
+    "addressOpening": "아직 페이지를 여는 중입니다. 잠시 후 다시 시도하세요.",
+    "addressPreparing": "브라우저가 아직 준비되지 않았습니다. 잠시 후 다시 시도하세요.",
     "allTabs": "모든 탭",
     "automatic": "자동",
     "back": "뒤로",

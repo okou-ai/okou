@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/agents";
 import { screen } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -58,7 +59,11 @@ test("The greeting shows its complete sentence, one box per word", async () => {
   mountedAgent([AGENT_ID]);
   context.mocks.browser.matchMedia(false);
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
 
   const { tagline, fullLine, text } = await greeting();
   // The sentence is complete from the first frame. Each word arrives on its
@@ -78,7 +83,11 @@ test("The avatar leads the sentence", async () => {
   mountedAgent([AGENT_ID]);
   context.mocks.browser.matchMedia(false);
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
 
   const row = await screen.findByTestId("chat-greeting");
   const avatarBox = row.querySelector('[data-slot="chat-greeting-avatar"]');

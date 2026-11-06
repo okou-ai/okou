@@ -92,7 +92,6 @@ export type BrowserFocusHandoff = {
   readonly selection: object;
 } & (
   | { readonly kind: "tab"; readonly targetId: string }
-  | { readonly kind: "address"; readonly targetId: string }
   | {
       readonly kind: "toolbar";
       readonly destination: "picker" | "new-tab";
@@ -100,6 +99,10 @@ export type BrowserFocusHandoff = {
 );
 
 type Ref<E extends HTMLElement> = Command<(() => void) | undefined, [E | null]>;
+
+export interface AddressSubmitNotice {
+  readonly kind: "opening" | "preparing";
+}
 
 /** Read-only observations and finite domain actions; resource plumbing is private. */
 export interface BrowserSignals {
@@ -110,6 +113,12 @@ export interface BrowserSignals {
   readonly history$: Computed<Promise<ViewerHistory | null>>;
   readonly navigationScope$: Computed<object | null>;
   readonly address$: Computed<string>;
+  readonly canSubmitAddress$: Computed<boolean>;
+  readonly addressSubmitNotice$: Computed<AddressSubmitNotice | null>;
+  readonly notifyAddressSubmit$: Command<
+    void,
+    [AddressSubmitNotice["kind"] | null]
+  >;
   readonly presentation$: Computed<BrowserPresentation>;
   readonly imageRecovery$: Computed<ImageRecovery | null>;
   readonly controls$: Computed<BrowserControls>;
@@ -133,7 +142,7 @@ export interface BrowserSignals {
   >;
   readonly editAddress$: Command<void, [string]>;
   readonly resetAddress$: Command<void, []>;
-  readonly focusAddress$: Command<void, []>;
+  readonly beginAddressEdit$: Command<void, ["focus" | "interaction"]>;
   readonly blurAddress$: Command<void, []>;
   readonly reconnect$: Command<Promise<void>, [AbortSignal]>;
   readonly retryImage$: Command<Promise<void>, [AbortSignal]>;

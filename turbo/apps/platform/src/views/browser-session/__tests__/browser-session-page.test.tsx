@@ -789,6 +789,58 @@ function mockSharedViewer(liveUrl: string | null = null) {
   return { session, cdpUrl, browser };
 }
 
+test("A renewed viewer does not replay an earlier blocked address hint", async () => {
+  const { authorize, cachedChatThreadEvents } = mockChatAuthorization(true);
+  const { session, browser } = mockSharedViewer();
+  mockBrowserSession(session);
+  const lease = context.mocks.deferred<void>();
+  context.mocks.api(browserContract.leaseByThread, async ({ respond }) => {
+    await lease.promise;
+    return respond(200, { browser: session });
+  });
+  await setupPage({
+    context,
+    path: `/browsers/${THREAD_ID}`,
+    cachedChatThreadEvents,
+  });
+  await expectStreamingViewer();
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.duplicate("example-page");
+  });
+  await proof.received;
+  await fill(screen.getByLabelText("Address"), "blocked.example/path");
+  await userEvent.keyboard("{Enter}");
+  await screen.findByText("The browser is not ready. Try again shortly.");
+  await act(proof.release);
+  await expectStreamingViewer();
+  expect(
+    screen.queryByText("The browser is not ready. Try again shortly."),
+  ).not.toBeInTheDocument();
+
+  const revalidation = browser.holdNextMembership("example-page");
+  authorize(false);
+  authorize(true);
+  await revalidation.received;
+  try {
+    await screen.findByLabelText("Address");
+    expect(
+      screen.queryByText("The browser is not ready. Try again shortly."),
+    ).not.toBeInTheDocument();
+    await fill(screen.getByLabelText("Address"), "renewed.example/path");
+    await userEvent.keyboard("{Enter}");
+    await screen.findByText("The browser is not ready. Try again shortly.");
+    expect(browser.targets[0]?.url).toBe("https://example.com");
+  } finally {
+    await act(revalidation.release);
+    await expectStreamingViewer();
+  }
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  expect(
+    screen.queryByText("The browser is not ready. Try again shortly."),
+  ).not.toBeInTheDocument();
+});
+
 test.each(["session", "connection"] as const)(
   "An authorization denial from the %s keeps the panel with a distinct placeholder",
   async (source) => {

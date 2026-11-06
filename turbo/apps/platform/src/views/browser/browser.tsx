@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -446,38 +447,35 @@ function isCurrentNavigationFailure(error: unknown, scope: object | null) {
 
 function BrowserAddress({
   signals,
-  disabled,
+  canSubmit,
   navigating,
   onSubmit,
 }: {
   readonly signals: BrowserSignals;
-  readonly disabled: boolean;
+  readonly canSubmit: boolean;
   readonly navigating: boolean;
   readonly onSubmit: () => void;
 }) {
   const { t } = useTranslation();
   const address = useGet(signals.address$);
-  const selectedTargetId = useGet(signals.selectedTabId$);
-  const pendingHandoff = useGet(signals.focusHandoff$);
-  const handoff = pendingHandoff?.kind === "address" ? pendingHandoff : null;
-  const acknowledge = useSet(signals.acknowledgeFocusCommit$);
   const addressRef = useSet(signals.refs.address$);
-  const focus = useSet(signals.focusAddress$);
-  const edit = useSet(signals.editAddress$);
+  const beginEdit = useSet(signals.beginAddressEdit$);
   const blur = useSet(signals.blurAddress$);
+  const edit = useSet(signals.editAddress$);
   const reset = useSet(signals.resetAddress$);
+  const blockedSubmission = useGet(signals.addressSubmitNotice$);
+  const notifySubmission = useSet(signals.notifyAddressSubmit$);
   return (
-    <RequestCommit
-      request={handoff}
-      commitKey={JSON.stringify([selectedTargetId, disabled])}
-      onCommit={acknowledge}
-    >
+    <>
       <form
         className="flex min-w-0 flex-1"
         onSubmit={(event) => {
           event.preventDefault();
-          if (!disabled) {
+          if (canSubmit && !navigating) {
+            notifySubmission(null);
             onSubmit();
+          } else {
+            notifySubmission(navigating ? "opening" : "preparing");
           }
         }}
       >
@@ -497,15 +495,24 @@ function BrowserAddress({
           autoCapitalize="none"
           autoCorrect="off"
           spellCheck={false}
-          disabled={disabled}
           aria-busy={navigating}
           onFocus={() => {
-            return focus();
+            return beginEdit("focus");
+          }}
+          onPointerDown={() => {
+            return beginEdit("interaction");
+          }}
+          onBeforeInput={() => {
+            return beginEdit("interaction");
+          }}
+          onCompositionStart={() => {
+            return beginEdit("interaction");
           }}
           onBlur={() => {
             return blur();
           }}
           onChange={(event) => {
+            notifySubmission(null);
             return edit(event.currentTarget.value);
           }}
           onKeyDown={(event) => {
@@ -513,17 +520,38 @@ function BrowserAddress({
               event.nativeEvent.isComposing ||
               event.nativeEvent.keyCode === 229
             ) {
+              beginEdit("interaction");
               return;
             }
             if (event.key === "Escape") {
               event.preventDefault();
-              reset();
+              // Select the reset value after React commits the controlled input.
+              flushSync(() => {
+                reset();
+                beginEdit("interaction");
+              });
               event.currentTarget.select();
+            } else if (event.key !== "Enter") {
+              beginEdit("interaction");
             }
           }}
         />
       </form>
-    </RequestCommit>
+      <TransientAlert
+        occurrences={
+          blockedSubmission && (!canSubmit || navigating)
+            ? [blockedSubmission]
+            : []
+        }
+        className="absolute inset-x-2 top-full z-20 mt-1 rounded-lg border border-surface-border bg-popover px-3 py-2 text-xs text-muted-foreground"
+      >
+        {t(($) => {
+          return blockedSubmission?.kind === "opening"
+            ? $.browserViewer.addressOpening
+            : $.browserViewer.addressPreparing;
+        })}
+      </TransientAlert>
+    </>
   );
 }
 
@@ -535,6 +563,7 @@ function BrowserNavigation({
   const history = useLoadable(signals.history$);
   const scope = useGet(signals.navigationScope$);
   const controls = useGet(signals.controls$);
+  const canSubmitAddress = useGet(signals.canSubmitAddress$);
   const pageSignal = useGet(pageSignal$);
   const [operation, navigate] = useLoadableSet(signals.navigate$);
   const navigating = operation.state === "loading";
@@ -590,7 +619,7 @@ function BrowserNavigation({
       </IconButton>
       <BrowserAddress
         signals={signals}
-        disabled={!controls.streaming || navigating}
+        canSubmit={canSubmitAddress}
         navigating={navigating}
         onSubmit={() => {
           detach(navigate("submit-address", pageSignal), Reason.DomCallback);

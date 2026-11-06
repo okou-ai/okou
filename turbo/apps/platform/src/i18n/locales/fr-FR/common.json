@@ -1457,6 +1457,8 @@
   },
   "browserViewer": {
     "address": "Adresse",
+    "addressOpening": "Une page est encore en cours d’ouverture. Réessayez dans un instant.",
+    "addressPreparing": "Le navigateur n’est pas encore prêt. Réessayez dans un instant.",
     "allTabs": "Tous les onglets",
     "automatic": "Automatique",
     "back": "Retour",

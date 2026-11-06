@@ -1434,6 +1434,8 @@
   },
   "browserViewer": {
     "address": "Adresse",
+    "addressOpening": "Eine Seite wird noch geöffnet. Versuche es gleich noch einmal.",
+    "addressPreparing": "Der Browser ist noch nicht bereit. Versuche es gleich noch einmal.",
     "allTabs": "Alle Tabs",
     "automatic": "Automatisch",
     "back": "Zurück",

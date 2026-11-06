@@ -2,6 +2,7 @@ import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { chatThreadsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { click } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -44,7 +45,11 @@ async function preparePinnedNavigation(layout: "horizontal" | "vertical") {
       unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });
   });
-  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
   if (layout === "vertical") {
     click(screen.getByLabelText("Open menu"));
   }
@@ -198,7 +203,11 @@ test.each(["horizontal", "vertical"] as const)(
     });
     context.mocks.data.agents(agents);
     context.mocks.data.userPreferences({ pinnedAgentIds: [RESEARCH_AGENT_ID] });
-    await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    await setupSidebarPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+    });
     if (layout === "vertical") {
       click(screen.getByLabelText("Open menu"));
     }

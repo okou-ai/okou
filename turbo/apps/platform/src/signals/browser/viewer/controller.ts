@@ -3792,7 +3792,7 @@ function createTabPublication(
       set(targetRevision$, (value) => {
         return value + 1;
       });
-      set(model.resetAddress$);
+      set(model.adoptAddressCreation$, creation, createdId);
       await set(get(links$).selectTab$, createdId, signal);
       return createdId;
     },
@@ -3887,8 +3887,10 @@ function createTabCreationGraph(
       const operation = set(resetCreate$, client.signal, signal);
       const creation = {};
       set(creationOwner$, creation);
+      set(model.beginAddressCreation$, creation);
       using _creation = {
         [Symbol.dispose]: () => {
+          set(model.cancelAddressCreation$, creation);
           if (get(creationOwner$) === creation) {
             set(creationOwner$, null);
           }

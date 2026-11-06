@@ -27,7 +27,6 @@ type ProjectionOrigin =
   | { readonly kind: "tab"; readonly targetId: string }
   | { readonly kind: "picker" };
 type FocusAction =
-  | { readonly kind: "create"; readonly ready: SelectedFocus | null }
   | {
       readonly kind: "select";
       readonly targetId: string;
@@ -91,9 +90,6 @@ function usable(element: HTMLElement): boolean {
   );
 }
 function requestedTarget(action: FocusAction): string | null {
-  if (action.kind === "create") {
-    return action.ready?.targetId ?? null;
-  }
   if (action.kind === "projection") {
     return action.origin.kind === "tab" ? action.origin.targetId : null;
   }
@@ -109,7 +105,7 @@ function ownsFocusRequest(
 }
 
 function selectedCandidate(
-  action: Extract<FocusAction, { kind: "create" | "select" }>,
+  action: Extract<FocusAction, { kind: "select" }>,
   selected: string | null,
   selection: object,
   present: boolean,
@@ -178,7 +174,7 @@ function createFocusState(
       mount: request.mount,
       selection,
     };
-    if (action.kind === "create" || action.kind === "select") {
+    if (action.kind === "select") {
       const candidate = selectedCandidate(
         action,
         selected,
@@ -187,9 +183,6 @@ function createFocusState(
       );
       if (!candidate) {
         return null;
-      }
-      if (action.kind === "create") {
-        return { ...identity, kind: "address", targetId: candidate.targetId };
       }
     } else if (action.kind === "close") {
       if (!action.ready || get(requestedPresent$)) {
@@ -297,11 +290,6 @@ function createFocusActions(
       return token;
     },
   );
-  const beginCreate$ = command(
-    ({ set }, authority: object, signal: AbortSignal) => {
-      return set(begin$, { kind: "create", ready: null }, authority, signal);
-    },
-  );
   const beginClose$ = command(
     ({ set }, targetId: string, authority: object, signal: AbortSignal) => {
       return set(
@@ -322,7 +310,7 @@ function createFocusActions(
       );
     },
   );
-  return { beginCreate$, beginClose$, beginSelect$ };
+  return { beginClose$, beginSelect$ };
 }
 
 function createFocusAuthorization(
@@ -334,8 +322,7 @@ function createFocusAuthorization(
     (
       { get, set },
       token: ToolbarFocusToken | null,
-      kind: "create" | "select" | "close",
-      createdTargetId?: string,
+      kind: "select" | "close",
     ) => {
       const request = get(request$);
       if (!request || request.token !== token || request.action.kind !== kind) {
@@ -348,9 +335,8 @@ function createFocusAuthorization(
       const action = request.action;
       if (action.kind === "close") {
         set(request$, { ...request, action: { ...action, ready: true } });
-      } else if (action.kind === "create" || action.kind === "select") {
-        const targetId =
-          action.kind === "create" ? createdTargetId : action.targetId;
+      } else if (action.kind === "select") {
+        const targetId = action.targetId;
         if (!targetId || targetId !== get(sources.selectedTabId$)) {
           set(cancellation.cancel$, token);
           return;
@@ -365,18 +351,13 @@ function createFocusAuthorization(
       }
     },
   );
-  const created$ = command(
-    ({ set }, token: ToolbarFocusToken | null, targetId: string) => {
-      set(authorize$, token, "create", targetId);
-    },
-  );
   const closed$ = command(({ set }, token: ToolbarFocusToken | null) => {
     set(authorize$, token, "close");
   });
   const selected$ = command(({ set }, token: ToolbarFocusToken | null) => {
     set(authorize$, token, "select");
   });
-  return { created$, closed$, selected$ };
+  return { closed$, selected$ };
 }
 
 function createFocusRequests(graph: FocusGraph) {
@@ -457,9 +438,6 @@ function committedDestination(
   }
   if (handoff.targetId !== selectedTargetId) {
     return null;
-  }
-  if (handoff.kind === "address") {
-    return nodes.address;
   }
   const tab = findTab(nodes, handoff.targetId);
   return tab?.getAttribute("aria-selected") === "true" ? tab : null;
@@ -601,6 +579,14 @@ export function createToolbarFocus(
 ) {
   const graph = createFocusState(nodes$, sources);
   const requests = createFocusRequests(graph);
+  const newAddress$ = command(({ get, set }) => {
+    set(requests.discard$);
+    const address = get(nodes$)?.address;
+    if (address && usable(address)) {
+      // Local editing starts in the trusted New tab gesture, not a remote receipt.
+      address.focus({ preventScroll: true });
+    }
+  });
   const release$ = command(({ get }) => {
     const nodes = get(nodes$);
     if (!nodes) {
@@ -617,10 +603,9 @@ export function createToolbarFocus(
   });
   return {
     release$,
-    beginCreate$: requests.beginCreate$,
+    newAddress$,
     beginClose$: requests.beginClose$,
     beginSelect$: requests.beginSelect$,
-    created$: requests.created$,
     closed$: requests.closed$,
     selected$: requests.selected$,
     cancel$: requests.cancel$,

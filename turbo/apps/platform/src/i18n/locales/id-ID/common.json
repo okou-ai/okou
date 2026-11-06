@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "Alamat",
+    "addressOpening": "Halaman masih dibuka. Coba lagi sebentar lagi.",
+    "addressPreparing": "Browser belum siap. Coba lagi sebentar lagi.",
     "allTabs": "Semua tab",
     "automatic": "Otomatis",
     "back": "Kembali",

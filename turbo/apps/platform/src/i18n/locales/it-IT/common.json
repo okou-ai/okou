@@ -1457,6 +1457,8 @@
   },
   "browserViewer": {
     "address": "Indirizzo",
+    "addressOpening": "Una pagina è ancora in apertura. Riprova tra poco.",
+    "addressPreparing": "Il browser non è ancora pronto. Riprova tra poco.",
     "allTabs": "Tutte le schede",
     "automatic": "Automatica",
     "back": "Indietro",

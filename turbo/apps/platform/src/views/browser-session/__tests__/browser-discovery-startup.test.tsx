@@ -12,7 +12,7 @@ import {
 } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
 import {
   mockBrowserCdp,
   recordBrowserStartupErrors,
@@ -116,6 +116,29 @@ async function ready(url = "https://first.example.com") {
     ).toBeVisible();
   });
 }
+
+test("An address edited before initial discovery adopts the first admitted tab", async () => {
+  const fixture = viewer();
+  const proof = fixture.browser.holdNextMembership("own-first");
+  await fixture.start();
+  await proof.received;
+  const address = screen.getByLabelText("Address");
+  await fill(address, "initial-draft.example/path");
+  await userEvent.keyboard("{Enter}");
+  expect(fixture.browser.targets[0]?.url).toBe("https://first.example.com");
+  await act(async () => {
+    await proof.release();
+  });
+  await ready("initial-draft.example/path");
+  expect(address).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://initial-draft.example/path");
+  });
+  expect(fixture.browser.targets[0]?.url).toBe(
+    "http://initial-draft.example/path",
+  );
+});
 
 test("A proven page accepts input before later sibling discovery settles", async () => {
   const { browser, start } = viewer();

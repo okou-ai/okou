@@ -3,6 +3,7 @@ import { workflowsCollectionContract } from "@okouai/api-contracts";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   act,
   fireEvent,
@@ -76,6 +77,7 @@ async function openSlashMenu(
   await setupPage({
     context,
     path,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
   const editor = await findComposerEditor();
   await fill(editor, `Draft /${query}`);

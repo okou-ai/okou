@@ -42,7 +42,10 @@ test.each([
           email: "alex.rivera@example.test",
         },
       },
-      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+      featureSwitches: {
+        [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
+        [FeatureSwitchKey.PwaNavigation]: false,
+      },
     });
 
     click(screen.getByLabelText("Open menu"));

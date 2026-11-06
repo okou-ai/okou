@@ -1,5 +1,6 @@
 #![cfg(test)]
 
+use cli_test_support::json_fixture::parse_json_lines;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -267,10 +268,8 @@ async fn subscribe_example_reports_terminal_failures_and_preserves_recovery() {
             assert!(stderr.contains("[disconnected]"), "{stderr}");
             assert_eq!(stderr.matches("[connected]").count(), 2, "{stderr}");
         }
-        let messages: Vec<serde_json::Value> = stdout
-            .lines()
-            .map(|line| serde_json::from_str(line).expect("stdout contains only message JSON"))
-            .collect();
+        let messages: Vec<serde_json::Value> =
+            parse_json_lines(&stdout).expect("stdout contains only message JSON");
         let expected = if matches!(
             scenario,
             Scenario::ChannelErrorAfterMessage | Scenario::ReconnectAndClose

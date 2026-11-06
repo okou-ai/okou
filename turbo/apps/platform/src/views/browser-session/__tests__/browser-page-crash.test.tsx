@@ -87,7 +87,7 @@ async function openViewer() {
 async function unavailable() {
   await screen.findByText("Browser view unavailable");
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(screen.getByLabelText("Address")).toBeDisabled();
+  expect(screen.getByLabelText("Address")).toBeEnabled();
   expect(screen.getByText("Reload", { selector: "button" })).toBeEnabled();
   expect(screen.getByText("Reconnect", { selector: "button" })).toBeEnabled();
 }

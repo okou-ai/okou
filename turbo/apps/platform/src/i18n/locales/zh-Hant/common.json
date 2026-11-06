@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "網址",
+    "addressOpening": "頁面仍在開啟，請稍後再試。",
+    "addressPreparing": "瀏覽器尚未就緒，請稍後再試。",
     "allTabs": "所有分頁",
     "automatic": "自動",
     "back": "上一頁",

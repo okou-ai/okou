@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "地址",
+    "addressOpening": "页面仍在打开，请稍后重试。",
+    "addressPreparing": "浏览器尚未就绪，请稍后重试。",
     "allTabs": "所有标签页",
     "automatic": "自动",
     "back": "后退",

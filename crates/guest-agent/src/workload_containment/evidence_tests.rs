@@ -1,4 +1,5 @@
 use super::*;
+use cli_test_support::json_fixture::parse_json_lines;
 use guest_contracts::oom_evidence::{
     CaptureReason, EVIDENCE_IO_TIMEOUT, MAX_EVIDENCE_BYTES, MAX_INCIDENTS, MAX_KERNEL_EVENTS,
     OomEvidence,
@@ -332,10 +333,7 @@ async fn metrics_records_evidence_and_cancels_an_outstanding_capture() {
     tokio::time::advance(Duration::from_secs(5)).await;
     expect_request(metrics.as_mut(), &mut peer, 1).await;
     let contents = fs::read_to_string(paths.metrics_log_file()).unwrap();
-    let entries: Vec<serde_json::Value> = contents
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
+    let entries: Vec<serde_json::Value> = parse_json_lines(&contents).unwrap();
     assert_eq!(entries.len(), 1);
     let mut snapshot = evidence.clone();
     snapshot.incidents.clear();
