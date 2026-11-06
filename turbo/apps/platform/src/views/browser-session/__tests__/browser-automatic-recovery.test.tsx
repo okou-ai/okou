@@ -517,7 +517,9 @@ test("Retained input readmission completes recovery after toolbar interaction", 
   });
   await selected.received;
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(screen.getByLabelText("Address")).toBeDisabled();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toBeDisabled();
+  });
   click(screen.getByLabelText("Browser settings"));
   await screen.findByRole("menu", { name: "Browser settings" });
   await userEvent.keyboard("{Escape}");
