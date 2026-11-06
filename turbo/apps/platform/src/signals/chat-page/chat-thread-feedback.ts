@@ -1,4 +1,3 @@
-import type { createChatForwardComposerSignals } from "./chat-forward-composer.ts";
 import {
   command,
   computed,
@@ -21,7 +20,10 @@ import { clearChatListQuery$ } from "../okou-page/sidebar-state.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { ASSISTANT_NAME } from "../branding.ts";
 import { singleAgentEnabled$ } from "../single-agent.ts";
-import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
+import {
+  chatThreadMetaMap$,
+  type ThreadMeta,
+} from "./chat-thread-event-sourcing.ts";
 import { onDomEventFn, onRef, resetSignal, withCleanup } from "../utils.ts";
 import type {
   ChatForwardTarget,
@@ -116,10 +118,7 @@ export interface ChatThreadFeedbackSignals {
     typeof createForwardState
   >["prepareForwardComposer$"];
   readonly resetForwardTarget$: Command<void, []>;
-  readonly startForward$: Command<
-    Promise<boolean>,
-    [typeof createChatForwardComposerSignals, AbortSignal]
-  >;
+  readonly startForward$: Command<Promise<boolean>, [AbortSignal]>;
   readonly closeForward$: Command<void, []>;
   readonly setListenersRef$: Command<
     (() => void) | undefined,
@@ -478,10 +477,41 @@ function createStartFeedback(
   });
 }
 
+/**
+ * Builds the composer a forward is written in. The thread graph supplies it at
+ * construction because that composer is itself built from the thread graph.
+ */
+export type ChatForwardComposerFactory = (
+  target: ChatForwardTarget,
+  forward: ChatForwardContext,
+  onOptimisticSend: () => void,
+) => {
+  readonly prepare$: Command<
+    ChatForwardComposerState | Promise<ChatForwardComposerState>,
+    [AbortSignal]
+  >;
+};
+
 interface ForwardComposerRequest {
   readonly target: ChatForwardTarget;
   readonly forward: ChatForwardContext;
   readonly fork?: boolean;
+}
+
+/** The passage quotes its own thread, so its title travels with it. */
+function forwardContextFrom(
+  selection: ChatForwardSelection,
+  source: ThreadMeta,
+): ChatForwardContext {
+  return {
+    ...selection,
+    agentId: source.agentId,
+    titleSnapshot:
+      source.title ??
+      i18n.t(($) => {
+        return $.chat.newChat;
+      }),
+  };
 }
 
 function showForwardSent(fork: boolean): void {
@@ -492,14 +522,16 @@ function showForwardSent(fork: boolean): void {
   );
 }
 
-function createForwardState(closeSelection$: Command<void, []>) {
+function createForwardState(
+  closeSelection$: Command<void, []>,
+  createComposer: ChatForwardComposerFactory,
+) {
   const internalForwardSelection$ = state<ChatForwardSelection | null>(null);
   const preparationResult$ = state<Promise<ChatForwardComposerState> | null>(
     null,
   );
   const request$ = state<
     | (ForwardComposerRequest & {
-        readonly createComposer: typeof createChatForwardComposerSignals;
         /** Ends the forward once the target composer's send is accepted. */
         readonly onOptimisticSend: () => void;
       })
@@ -508,7 +540,7 @@ function createForwardState(closeSelection$: Command<void, []>) {
   const preparation$ = computed((get) => {
     const request = get(request$);
     return request
-      ? request.createComposer(
+      ? createComposer(
           request.target,
           request.forward,
           request.onOptimisticSend,
@@ -549,10 +581,9 @@ function createForwardState(closeSelection$: Command<void, []>) {
     set(closeForward$);
     showForwardSent(fork);
   });
-  const prepareForwardComposer$ = command(
+  const prepareRequest$ = command(
     async (
       { get, set },
-      createComposer: typeof createChatForwardComposerSignals,
       request: ForwardComposerRequest,
       parentSignal: AbortSignal,
     ) => {
@@ -560,7 +591,6 @@ function createForwardState(closeSelection$: Command<void, []>) {
       const signal = set(resetTarget$, parentSignal);
       set(request$, {
         ...request,
-        createComposer,
         onOptimisticSend: () => {
           set(finishForward$);
         },
@@ -574,11 +604,33 @@ function createForwardState(closeSelection$: Command<void, []>) {
       return await result;
     },
   );
+  /** Writes the open forward's passage into the composer of `target`. */
+  const prepareForwardComposer$ = command(
+    async (
+      { get, set },
+      target: ChatForwardTarget,
+      signal: AbortSignal,
+    ): Promise<ChatForwardComposerState> => {
+      const selection = get(internalForwardSelection$);
+      const source = selection
+        ? get(chatThreadMetaMap$).get(selection.threadId)
+        : undefined;
+      if (!selection || !source) {
+        throw new Error("Forward source is unavailable");
+      }
+      return await set(
+        prepareRequest$,
+        { target, forward: forwardContextFrom(selection, source) },
+        signal,
+      );
+    },
+  );
   return {
     forwardSelection$,
     forwardTarget$,
     forwardComposer$,
     prepareForwardComposer$,
+    prepareRequest$,
     resetForwardTarget$,
     openForward$,
     closeForward$,
@@ -590,11 +642,7 @@ function createStartForward(
   forward: ReturnType<typeof createForwardState>,
 ) {
   return command(
-    async (
-      { get, set },
-      createComposer: typeof createChatForwardComposerSignals,
-      signal: AbortSignal,
-    ): Promise<boolean> => {
+    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
       const selection = get(selection$);
       if (!selection?.threadId || !selection.runId) {
         return false;
@@ -617,19 +665,10 @@ function createStartForward(
         }
         set(forward.openForward$, captured);
         await set(
-          forward.prepareForwardComposer$,
-          createComposer,
+          forward.prepareRequest$,
           {
             target: { kind: "agent", id: agentId, title: ASSISTANT_NAME },
-            forward: {
-              ...captured,
-              agentId: source.agentId,
-              titleSnapshot:
-                source.title ??
-                i18n.t(($) => {
-                  return $.chat.newChat;
-                }),
-            },
+            forward: forwardContextFrom(captured, source),
             fork: true,
           },
           signal,
@@ -874,9 +913,10 @@ export function createChatThreadFeedbackSignals(
   threadId: string,
   feedback: ComposerFeedbackSignals,
   isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>,
+  createForwardComposer: ChatForwardComposerFactory,
 ): ChatThreadFeedbackSignals {
   const selection = createSelectionState(threadId);
-  const forward = createForwardState(selection.close$);
+  const forward = createForwardState(selection.close$, createForwardComposer);
   const start$ = createStartFeedback(
     selection.internalSelection$,
     selection.close$,

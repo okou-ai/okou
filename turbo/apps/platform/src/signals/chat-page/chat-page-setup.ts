@@ -5,13 +5,13 @@ import { updatePage$ } from "../react-router.ts";
 import { currentChatThreadId$ } from "../agent-chat.ts";
 import { hash$, searchParams$ } from "../route.ts";
 import {
-  SIDEBAR_PARAM,
   setupLeftThread$,
   setupLeftThreadNotFound$,
   setupRightThread$,
   setupRightThreadNotFound$,
   unloadRightThread$,
 } from "./chat-thread-panes.ts";
+import { SIDEBAR_PARAM } from "./chat-thread-pane-navigation.ts";
 import { createThreadMetaLookup } from "./chat-thread-event-sourcing.ts";
 import { recordBootstrapThreadMetadataTiming$ } from "../../lib/posthog.ts";
 

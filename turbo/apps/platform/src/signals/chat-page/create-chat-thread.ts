@@ -169,7 +169,11 @@ import type {
   UserMessageRenderDocument,
   UserMessageRenderPart,
 } from "./chat-event.ts";
-import type { ChatForwardContext } from "./chat-forward.ts";
+import type {
+  ChatForwardComposerState,
+  ChatForwardContext,
+  ChatForwardTarget,
+} from "./chat-forward.ts";
 import type {
   ChatPanelSignals,
   EventImageGroupProjection,
@@ -186,7 +190,11 @@ import {
   threadMeta,
   type ThreadMeta,
 } from "./chat-thread-event-sourcing.ts";
-import { createChatThreadFeedbackSignals } from "./chat-thread-feedback.ts";
+import {
+  createChatThreadFeedbackSignals,
+  type ChatForwardComposerFactory,
+} from "./chat-thread-feedback.ts";
+import { createForwardAgentComposerSignals } from "../okou-page/agent-composer-signals.ts";
 import { markChatThreadRead$ } from "./chat-thread-mark-read.ts";
 import { createChatThreadPinSignals } from "./chat-thread-pin.ts";
 import {
@@ -3812,6 +3820,52 @@ export function createThreadComposerSignals(
 }
 
 /**
+ * Builds the composer a forward is written in: a new agent chat, or an
+ * existing thread whose events it catches up before the member writes.
+ */
+const createChatForwardComposerSignals: ChatForwardComposerFactory = (
+  target: ChatForwardTarget,
+  forward: ChatForwardContext,
+  onOptimisticSend: () => void,
+) => {
+  if (target.kind === "agent") {
+    const composer = createForwardAgentComposerSignals(
+      target.id,
+      forward,
+      onOptimisticSend,
+    );
+    const prepare$ = command(
+      ({ set }, signal: AbortSignal): ChatForwardComposerState => {
+        signal.throwIfAborted();
+        set(composer.setup$, signal);
+        set(composer.feedback.add$, forward);
+        return { target, composer };
+      },
+    );
+    return { prepare$ };
+  }
+  const chatEvents = createChatEventSignals(target.id);
+  const composer = createThreadComposerSignals(
+    target.id,
+    target.agentId,
+    chatEvents,
+    { forward, onOptimisticSend },
+  );
+  const prepare$ = command(
+    async ({ set }, signal: AbortSignal): Promise<ChatForwardComposerState> => {
+      signal.throwIfAborted();
+      set(composer.setup$, signal);
+      set(composer.feedback.add$, forward);
+      await set(chatEvents.setup$, signal);
+      await set(chatEvents.catchUp$, signal);
+      signal.throwIfAborted();
+      return { target, composer };
+    },
+  );
+  return { prepare$ };
+};
+
+/**
  * Creates the complete signal graph of one chat panel. The graph carries no
  * AbortSignal, so a pane can derive it from the thread it shows.
  */
@@ -3870,6 +3924,7 @@ export function createChatPanelSignals(
     threadId,
     composer.feedback,
     messages.scroll.isProgrammaticScrollEvent$,
+    createChatForwardComposerSignals,
   );
   const sharing = createChatThreadSharingSignals(
     threadId,
