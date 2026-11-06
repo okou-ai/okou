@@ -2139,7 +2139,7 @@ test("A Project mention reveals a folded chat sidebar and keeps the current conv
   const user = userEvent.setup({ delay: null });
   await user.click(button("Hide chat list"));
   await waitFor(() => {
-    expect(screen.queryByTestId("chat-list-column")).not.toBeInTheDocument();
+    expect(button("Show chat list")).toBeInTheDocument();
   });
   const mention = await waitFor(() => {
     const message = document.querySelector<HTMLElement>(
