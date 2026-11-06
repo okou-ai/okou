@@ -199,6 +199,17 @@ final class ComposerVoiceInputTests: XCTestCase {
     FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
   }
 
+  private func temporaryRootWithTeardown() -> URL {
+    let root = temporaryRoot()
+    // XCTest runs this after the async teardown blocks registered by the caller.
+    addTeardownBlock {
+      if FileManager.default.fileExists(atPath: root.path) {
+        try FileManager.default.removeItem(at: root)
+      }
+    }
+    return root
+  }
+
   func testVoiceQuotaUpgradeResponseReachesTheOwningCaller() async throws {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
@@ -227,8 +238,7 @@ final class ComposerVoiceInputTests: XCTestCase {
 
   func testSlowQuotaAllowsLocalCaptureAndTranscribesBufferedAudioAfterApproval() async throws {
     let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
+    let root = temporaryRootWithTeardown()
     let capture = VoiceCaptureFixture()
     let composer = fixture.composer(root: root, capture: capture)
     defer { composer.close() }
@@ -245,7 +255,8 @@ final class ComposerVoiceInputTests: XCTestCase {
     let starting = Task { await voice.start() }
     addTeardownBlock { @MainActor in
       gate.release()
-      composer.close()
+      starting.cancel()
+      await voice.discard()
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
@@ -263,8 +274,7 @@ final class ComposerVoiceInputTests: XCTestCase {
 
   func testDeniedQuotaStopsAndDrainsCaptureWithoutLosingTheRecording() async throws {
     let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
+    let root = temporaryRootWithTeardown()
     let capture = VoiceCaptureFixture()
     capture.finalSeconds = 1
     let composer = fixture.composer(root: root, capture: capture)
@@ -281,7 +291,8 @@ final class ComposerVoiceInputTests: XCTestCase {
     let starting = Task { await voice.start() }
     addTeardownBlock { @MainActor in
       gate.release()
-      composer.close()
+      starting.cancel()
+      await voice.discard()
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
@@ -306,8 +317,7 @@ final class ComposerVoiceInputTests: XCTestCase {
 
   func testFinishingWhileOfflineRetainsAudioForAnExplicitRetryAfterReopening() async throws {
     let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
+    let root = temporaryRootWithTeardown()
     let capture = VoiceCaptureFixture()
     let composer = fixture.composer(root: root, capture: capture)
     defer { composer.close() }
@@ -324,7 +334,8 @@ final class ComposerVoiceInputTests: XCTestCase {
     let starting = Task { await voice.start() }
     addTeardownBlock { @MainActor in
       gate.release()
-      composer.close()
+      starting.cancel()
+      await voice.discard()
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
@@ -334,6 +345,8 @@ final class ComposerVoiceInputTests: XCTestCase {
     let finish = Task { await voice.finish() }
     addTeardownBlock { @MainActor in
       gate.release()
+      finish.cancel()
+      await voice.discard()
       await finish.value
     }
     try await waitForBusinessResult { voice.phase == .processing }
@@ -354,6 +367,7 @@ final class ComposerVoiceInputTests: XCTestCase {
     }
     let restored = fixture.composer(root: root, capture: VoiceCaptureFixture())
     defer { restored.close() }
+    addTeardownBlock { @MainActor in await restored.voice?.discard() }
     let restoredHost = UIHostingController(rootView: MentionComposerHarness(state: restored))
     let restoredWindow = try await mountMentionHost(restoredHost)
     defer { unmount(restoredWindow) }
@@ -366,8 +380,7 @@ final class ComposerVoiceInputTests: XCTestCase {
 
   func testDiscardingBeforeQuotaReturnsCannotUploadAudioIntoTheNextRecording() async throws {
     let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
+    let root = temporaryRootWithTeardown()
     let capture = VoiceCaptureFixture()
     let composer = fixture.composer(root: root, capture: capture)
     defer { composer.close() }
@@ -380,7 +393,8 @@ final class ComposerVoiceInputTests: XCTestCase {
     let starting = Task { await voice.start() }
     addTeardownBlock { @MainActor in
       gate.release()
-      composer.close()
+      starting.cancel()
+      await voice.discard()
       await starting.value
     }
     await fulfillment(of: [gate.started], timeout: 3)
