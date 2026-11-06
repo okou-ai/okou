@@ -12,10 +12,18 @@ export interface CdpConnectionObservation {
   readonly cancelled_awaiting_response: number;
 }
 
+/** Non-secret binding identity for private lifecycle joins, never authority. */
+export interface CdpWindowObservation {
+  readonly source: "native-window-removed";
+  readonly instanceId: string | null;
+  readonly primaryWindowId: number;
+}
+
 export class CdpFault extends Error {
   /** Capture ownership follows this fault through wrappers retaining its cause. */
   reported = false;
   readonly connection: CdpConnectionObservation | undefined;
+  readonly window: CdpWindowObservation | undefined;
   readonly readOnly: boolean;
 
   constructor(
@@ -25,12 +33,14 @@ export class CdpFault extends Error {
     readonly request?: ViewerError["request"],
     options?: ErrorOptions & {
       readonly connection?: CdpConnectionObservation;
+      readonly window?: CdpWindowObservation;
       readonly readOnly?: boolean;
     },
   ) {
     super(message, options);
     this.name = "CdpFault";
     this.connection = options?.connection;
+    this.window = options?.window;
     this.readOnly = options?.readOnly === true;
   }
 }

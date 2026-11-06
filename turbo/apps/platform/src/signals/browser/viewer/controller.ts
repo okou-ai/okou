@@ -3317,6 +3317,7 @@ function createDisconnectionHandling(
             ...(fault.connection
               ? { browser_connection: { ...fault.connection } }
               : {}),
+            ...(fault.window ? { browser_window: { ...fault.window } } : {}),
           },
         }),
       ]);
@@ -3419,7 +3420,19 @@ function createEventsGraph(
     ) {
       set(
         disconnected$,
-        new CdpFault("scope", "The assigned browser window is unavailable."),
+        new CdpFault(
+          "scope",
+          "The assigned browser window is unavailable.",
+          undefined,
+          undefined,
+          {
+            window: {
+              source: "native-window-removed",
+              instanceId: context.connection.instanceId,
+              primaryWindowId: windowId,
+            },
+          },
+        ),
         client,
       );
       return;

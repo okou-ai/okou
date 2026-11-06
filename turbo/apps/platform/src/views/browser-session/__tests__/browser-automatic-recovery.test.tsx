@@ -1322,6 +1322,23 @@ test("A reclaimed window cannot recover by using the sibling window", async () =
   await waitFor(() => {
     expect(reconnect()).toBeEnabled();
   });
+  await waitFor(() => {
+    expect(viewer.sentry.reports).toHaveLength(1);
+  });
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    error: { kind: "scope" },
+    context: {
+      contexts: {
+        browser_recovery: { outcome: "terminal" },
+        browser_window: {
+          source: "native-window-removed",
+          instanceId: "22222222-2222-4222-8222-222222222222",
+          primaryWindowId: 101,
+        },
+      },
+    },
+  });
+  expect(JSON.stringify(viewer.sentry.reports)).not.toContain("private");
   viewer.advance(180_000);
   act(() => {
     window.history.pushState(null, "", `/browsers/${nextThreadId}`);
