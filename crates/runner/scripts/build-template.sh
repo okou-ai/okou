@@ -639,9 +639,10 @@ create_ext4() {
 check_dependencies
 debootstrap_build
 install_packages
-install_runtimes
-# mktemp -d creates 0700; the root must be traversable by the sandbox user.
+# Runtime installation includes an unprivileged Python/venv check. Make the
+# mktemp-created root traversable before any runtime enters the sandbox user.
 sudo chmod 755 "$ROOTFS_DIR"
+install_runtimes
 verify_chromium_pdf
 
 # Remove build-time host resolver state before producing the reusable rootfs
