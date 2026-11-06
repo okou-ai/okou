@@ -6354,6 +6354,24 @@
       "thread_other": "{{value}} Threads"
     }
   },
+  "userNotifications": {
+    "close": "Schließen",
+    "countUnavailable": "Anzahl ungelesener Benachrichtigungen nicht verfügbar",
+    "detailFailed": "Diese Benachrichtigung konnte nicht geladen werden",
+    "empty": "Noch keine Benachrichtigungen",
+    "emptyDescription": "Neuigkeiten von Okou erscheinen hier.",
+    "loadFailed": "Benachrichtigungen konnten nicht geladen werden",
+    "loading": "Benachrichtigungen werden geladen",
+    "loadMore": "Ältere anzeigen",
+    "readAll": "Alle als gelesen markieren",
+    "readFailed": "Konnte nicht als gelesen markiert werden",
+    "retry": "Erneut versuchen",
+    "sender": "Okou-Team",
+    "title": "Benachrichtigungen",
+    "unread": "Ungelesen",
+    "unreadCount_one": "{{count}} ungelesene Benachrichtigung",
+    "unreadCount_other": "{{count}} ungelesene Benachrichtigungen"
+  },
   "vnc": {
     "add": "Host hinzufügen",
     "cancel": "Abbrechen",

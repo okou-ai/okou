@@ -6422,6 +6422,25 @@
       "thread_other": "{{value}} fils"
     }
   },
+  "userNotifications": {
+    "close": "Fermer",
+    "countUnavailable": "Nombre de notifications non lues indisponible",
+    "detailFailed": "Impossible de charger cette notification",
+    "empty": "Aucune notification pour le moment",
+    "emptyDescription": "Les nouveautés d’Okou apparaîtront ici.",
+    "loadFailed": "Impossible de charger les notifications",
+    "loading": "Chargement des notifications",
+    "loadMore": "Afficher les précédentes",
+    "readAll": "Tout marquer comme lu",
+    "readFailed": "Impossible de marquer comme lu",
+    "retry": "Réessayer",
+    "sender": "L’équipe Okou",
+    "title": "Notifications",
+    "unread": "Non lu",
+    "unreadCount_one": "{{count}} notification non lue",
+    "unreadCount_many": "{{count}} notifications non lues",
+    "unreadCount_other": "{{count}} notifications non lues"
+  },
   "vnc": {
     "add": "Ajouter un hôte",
     "cancel": "Annuler",

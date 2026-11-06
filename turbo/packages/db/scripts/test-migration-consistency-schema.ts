@@ -1,5 +1,7 @@
 #!/usr/bin/env tsx
 
+import { validateUserNotificationStorage } from "./test-user-notification-storage-permanent";
+
 import { validatePermanentProjectStorage } from "./test-project-storage-permanent";
 
 import { validatePiMemoryStage1Cost } from "./test-pi-memory-stage1-cost";
@@ -3201,6 +3203,7 @@ async function main(): Promise<void> {
     await validatePermanentConnectorCatalogColumns(dbUrl1);
     await validatePermanentChatThreadStorage(dbUrl1);
     await validatePermanentProjectStorage(dbUrl1);
+    await validateUserNotificationStorage(dbUrl1);
     await validatePermanentStorageLineage(dbUrl1);
     await validatePermanentAgentInstructions(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
@@ -3250,6 +3253,7 @@ async function main(): Promise<void> {
     await validatePermanentConnectorCatalogColumns(dbUrl2);
     await validatePermanentChatThreadStorage(dbUrl2);
     await validatePermanentProjectStorage(dbUrl2);
+    await validateUserNotificationStorage(dbUrl2);
     await validatePermanentStorageLineage(dbUrl2);
     await validatePermanentAgentInstructions(dbUrl2);
     await validateBillingRunLifecycle(dbUrl2);

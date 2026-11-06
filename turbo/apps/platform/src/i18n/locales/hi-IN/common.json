@@ -6354,6 +6354,25 @@
       "thread_other": "{{value}} थ्रेड"
     }
   },
+  "userNotifications": {
+    "close": "बंद करें",
+    "countUnavailable": "अपठित सूचनाओं की संख्या उपलब्ध नहीं",
+    "detailFailed": "यह सूचना लोड नहीं हो सकी",
+    "empty": "अभी कोई सूचना नहीं",
+    "emptyDescription": "Okou के अपडेट यहाँ दिखाई देंगे।",
+    "loadFailed": "सूचनाएँ लोड नहीं हो सकीं",
+    "loading": "सूचनाएँ लोड हो रही हैं",
+    "loadMore": "पुरानी सूचनाएँ दिखाएँ",
+    "readAll": "सभी को पढ़ा हुआ चिह्नित करें",
+    "readFailed": "पढ़ा हुआ चिह्नित नहीं हो सका",
+    "retry": "फिर कोशिश करें",
+    "sender": "Okou टीम",
+    "title": "सूचनाएँ",
+    "unread": "अपठित",
+    "unreadCount_one": "{{count}} अपठित सूचना",
+    "unreadCount_many": "{{count}} अपठित सूचनाएँ",
+    "unreadCount_other": "{{count}} अपठित सूचनाएँ"
+  },
   "vnc": {
     "add": "होस्ट जोड़ें",
     "cancel": "रद्द करें",

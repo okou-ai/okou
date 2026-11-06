@@ -46,6 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.UserNotifications]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "In-app notifications",
+    description: "Receive personal rich-text announcements from the Okou team.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.ConnectorSkillBundleDelivery]: {
     maintainer: "lancy@okou.ai",
     description:

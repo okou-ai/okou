@@ -6422,6 +6422,25 @@
       "thread_other": "{{value}} hilos"
     }
   },
+  "userNotifications": {
+    "close": "Cerrar",
+    "countUnavailable": "Recuento de notificaciones sin leer no disponible",
+    "detailFailed": "No se pudo cargar esta notificación",
+    "empty": "Aún no hay notificaciones",
+    "emptyDescription": "Las novedades de Okou aparecerán aquí.",
+    "loadFailed": "No se pudieron cargar las notificaciones",
+    "loading": "Cargando notificaciones",
+    "loadMore": "Mostrar anteriores",
+    "readAll": "Marcar todas como leídas",
+    "readFailed": "No se pudo marcar como leído",
+    "retry": "Reintentar",
+    "sender": "Equipo de Okou",
+    "title": "Notificaciones",
+    "unread": "Sin leer",
+    "unreadCount_one": "{{count}} notificación sin leer",
+    "unreadCount_many": "",
+    "unreadCount_other": "{{count}} notificaciones sin leer"
+  },
   "vnc": {
     "add": "Añadir host",
     "cancel": "Cancelar",

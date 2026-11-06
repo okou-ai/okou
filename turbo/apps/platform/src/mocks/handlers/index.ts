@@ -23,6 +23,7 @@ import {
 } from "./api-email-subscription.ts";
 import { apiFeatureSwitchesHandlers } from "./api-feature-switches.ts";
 import { apiFeatureGuidesHandlers } from "./api-feature-guides.ts";
+import { apiUserNotificationsHandlers } from "./api-user-notifications.ts";
 import { apiGetStartedHandlers } from "./api-get-started.ts";
 import { apiHostHandlers } from "./api-host.ts";
 import {
@@ -157,6 +158,7 @@ export const handlers = [
   ...apiFeatureSwitchesHandlers,
   ...apiGetStartedHandlers,
   ...apiFeatureGuidesHandlers,
+  ...apiUserNotificationsHandlers,
   ...apiRealtimeHandlers,
   ...apiUserPermissionGrantsHandlers,
   ...apiVoiceIoHandlers,

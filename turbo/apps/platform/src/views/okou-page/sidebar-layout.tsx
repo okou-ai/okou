@@ -1,3 +1,4 @@
+import { UserNotificationsEntry } from "./user-notifications.tsx";
 import { ProjectDialogs } from "../projects/project-dialogs.tsx";
 import { PersonalSubscriptionDialogs } from "./subscription-linking.tsx";
 import { withChatScrollLayout } from "../components/chat-scroll-layout.tsx";
@@ -266,6 +267,7 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
 
 function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
   const thread = useCurrentThread();
+  const pwaChatListVisible = useGet(pwaChatListVisible$);
   if (activeId === "chat" && thread) {
     return (
       <SettledChatThreadActions thread={thread}>
@@ -285,6 +287,7 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
         </SettledChatThreadActions>
       )}
       {showInviteFallback && <InviteButtonLeaf />}
+      {showInviteFallback && !pwaChatListVisible && <UserNotificationsEntry />}
     </>
   );
 }

@@ -6422,6 +6422,25 @@
       "thread_other": "{{value}} conversas"
     }
   },
+  "userNotifications": {
+    "close": "Fechar",
+    "countUnavailable": "Contagem de notificações não lidas indisponível",
+    "detailFailed": "Não foi possível carregar esta notificação",
+    "empty": "Nenhuma notificação ainda",
+    "emptyDescription": "As novidades do Okou aparecerão aqui.",
+    "loadFailed": "Não foi possível carregar as notificações",
+    "loading": "Carregando notificações",
+    "loadMore": "Mostrar anteriores",
+    "readAll": "Marcar todas como lidas",
+    "readFailed": "Não foi possível marcar como lida",
+    "retry": "Tentar novamente",
+    "sender": "Equipe Okou",
+    "title": "Notificações",
+    "unread": "Não lida",
+    "unreadCount_one": "{{count}} notificação não lida",
+    "unreadCount_many": "{{count}} notificações não lidas",
+    "unreadCount_other": "{{count}} notificações não lidas"
+  },
   "vnc": {
     "add": "Adicionar host",
     "cancel": "Cancelar",
