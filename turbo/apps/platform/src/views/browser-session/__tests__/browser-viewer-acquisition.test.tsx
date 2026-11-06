@@ -63,6 +63,7 @@ function authorization() {
 function fixture(
   initial: "active" | "suspended",
   access?: ReturnType<typeof authorization>,
+  onOpen?: (operationId: string | undefined) => void,
 ) {
   let elapsed = 0;
   mockMonotonicNow(() => {
@@ -106,6 +107,7 @@ function fixture(
     ],
   });
   const requests = { get: 0, open: 0, viewer: 0 };
+  const operationIds: string[] = [];
   let active = initial === "active";
   context.mocks.api(browserContract.get, ({ query, respond }) => {
     requests.get++;
@@ -134,10 +136,14 @@ function fixture(
           },
     );
   });
-  context.mocks.api(browserContract.open, ({ query, respond }) => {
+  context.mocks.api(browserContract.open, ({ query, body, respond }) => {
     requests.open++;
     expect(query).toStrictEqual({ viewer: "native" });
     active = true;
+    if (body.operationId) {
+      operationIds.push(body.operationId);
+    }
+    onOpen?.(body.operationId);
     return respond(200, { browser: session, viewer });
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
@@ -150,6 +156,7 @@ function fixture(
   return {
     browser,
     requests,
+    operationIds,
     advance(ms: number) {
       act(() => {
         elapsed += ms;
@@ -180,15 +187,27 @@ async function inputWorks(browser: ReturnType<typeof mockBrowserCdp>) {
   });
   const input = screen.getByLabelText("Remote browser input");
   await userEvent.click(input);
+  const text = `after acquisition ${browser.input.length + 1}`;
   fireEvent.input(input, {
-    target: { value: "after acquisition" },
+    target: { value: text },
     inputType: "insertText",
   });
   await waitFor(() => {
     expect(browser.input.at(-1)?.params).toStrictEqual({
-      text: "after acquisition",
+      text,
     });
   });
+}
+
+function clickStartBrowser() {
+  const start = queryAllByRoleFast("button").find((b) => {
+    return b.textContent?.trim() === "Start browser";
+  });
+  expect(start).toBeDefined();
+  if (!start) {
+    throw new Error("Expected explicit Start");
+  }
+  click(start);
 }
 
 test("An active shared mount acquires presentation and usable input in one App request", async () => {
@@ -201,16 +220,80 @@ test("An active shared mount acquires presentation and usable input in one App r
 test("Explicit Start consumes its own connection without another acquisition or user-effect replay", async () => {
   const f = fixture("suspended");
   await f.start();
-  const start = queryAllByRoleFast("button").find((b) => {
-    return b.textContent?.trim() === "Start browser";
-  });
-  expect(start).toBeDefined();
-  if (!start) {
-    throw new Error("Expected explicit Start");
-  }
-  click(start);
+  clickStartBrowser();
   await inputWorks(f.browser);
   expect(f.requests).toStrictEqual({ get: 1, open: 1, viewer: 0 });
+});
+
+test.each([1, 2])(
+  "Start's %s lifecycle notifications do not add another acquisition",
+  async (notifications) => {
+    const f = fixture("suspended", undefined, (operationId) => {
+      for (let index = 0; index < notifications; index++) {
+        context.mocks.ably.trigger("browserSessionChanged", {
+          threadId,
+          ...(operationId ? { operationId } : {}),
+        });
+      }
+    });
+    await f.start();
+    clickStartBrowser();
+    await inputWorks(f.browser);
+    expect(f.requests).toStrictEqual({ get: 1, open: 1, viewer: 0 });
+  },
+);
+
+test("A late open echo is ignored while another operation still refreshes the viewer", async () => {
+  const f = fixture("suspended");
+  await f.start();
+  clickStartBrowser();
+  await inputWorks(f.browser);
+  expect(f.operationIds).toHaveLength(1);
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId,
+      operationId: f.operationIds[0],
+    });
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId,
+      operationId: "55555555-5555-4555-8555-555555555555",
+    });
+  });
+  await waitFor(() => {
+    expect(f.requests.get).toBe(2);
+  });
+  await inputWorks(f.browser);
+  expect(f.requests).toStrictEqual({ get: 2, open: 1, viewer: 0 });
+});
+
+test("An uncorrelated notification during Start still invalidates the acquisition", async () => {
+  const f = fixture("suspended", undefined, () => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await f.start();
+  clickStartBrowser();
+  await waitFor(() => {
+    expect(f.requests.get).toBe(2);
+  });
+  await inputWorks(f.browser);
+  expect(f.requests).toStrictEqual({ get: 2, open: 1, viewer: 0 });
+});
+
+test("A notification that invalidates Start also retires that operation's echo ID", async () => {
+  const f = fixture("suspended", undefined, (operationId) => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId,
+      ...(operationId ? { operationId } : {}),
+    });
+  });
+  await f.start();
+  clickStartBrowser();
+  await waitFor(() => {
+    expect(f.requests.get).toBe(3);
+  });
+  await inputWorks(f.browser);
+  expect(f.requests).toStrictEqual({ get: 3, open: 1, viewer: 0 });
 });
 
 test("Reconnect acquires a fresh read-only connection without reopening the Browser", async () => {
@@ -230,13 +313,7 @@ test("A renewed grant cannot reuse the previous grant's explicit-open result", a
   const access = authorization();
   const f = fixture("suspended", access);
   await f.start();
-  const start = queryAllByRoleFast("button").find((b) => {
-    return b.textContent?.trim() === "Start browser";
-  });
-  if (!start) {
-    throw new Error("Expected explicit Start");
-  }
-  click(start);
+  clickStartBrowser();
   await inputWorks(f.browser);
   const readsAfterOpen = f.requests.get;
   expect(f.requests.open).toBe(1);

@@ -90,6 +90,75 @@ test("read acquisition does not create a missing Browser and preserves stopped p
   });
 });
 
+test.each(["native", "ordinary"] as const)(
+  "%s open publishes the appropriate lifecycle notification",
+  async (mode) => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const a = await f.start();
+      await open(a);
+      const operationId = "44444444-4444-4444-8444-444444444444";
+      const earlier = context.mocks.ably.publish.mock.calls.length;
+      await accept(
+        client().open({
+          headers,
+          params: { threadId: a.threadId },
+          ...(mode === "native" ? { query } : {}),
+          body: { operationId },
+        }),
+        [200],
+      );
+      const notifications = context.mocks.ably.publish.mock.calls
+        .slice(earlier)
+        .filter(([topic]) => {
+          return topic === "browserSessionChanged";
+        });
+      expect(notifications).toStrictEqual([
+        [
+          "browserSessionChanged",
+          {
+            threadId: a.threadId,
+            ...(mode === "native" ? { operationId } : {}),
+          },
+        ],
+      ]);
+    });
+  },
+);
+
+test("native open correlates its expired-window retirement and final publication", async () => {
+  const f = await fixture();
+  await f.owned.run(async () => {
+    installBrowserWindowContentCommands(f.provider.native);
+    const a = await f.start();
+    const first = await open(a);
+    mockNow(START + 11 * MINUTE);
+    const operationId = "44444444-4444-4444-8444-444444444444";
+    const earlier = context.mocks.ably.publish.mock.calls.length;
+    const opened = await accept(
+      client().open({
+        headers,
+        params: { threadId: a.threadId },
+        query,
+        body: { operationId },
+      }),
+      [200],
+    );
+    expect(opened.body.viewer?.browser.window?.instanceId).not.toBe(
+      first.window?.instanceId,
+    );
+    const notifications = context.mocks.ably.publish.mock.calls
+      .slice(earlier)
+      .filter(([topic]) => {
+        return topic === "browserSessionChanged";
+      });
+    expect(notifications).toStrictEqual([
+      ["browserSessionChanged", { threadId: a.threadId, operationId }],
+      ["browserSessionChanged", { threadId: a.threadId, operationId }],
+    ]);
+  });
+});
+
 test("only signed-in shared callers can opt into viewer credentials", async () => {
   const f = await fixture();
   await f.owned.run(async () => {

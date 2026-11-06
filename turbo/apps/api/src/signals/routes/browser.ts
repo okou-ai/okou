@@ -226,6 +226,7 @@ const sharedOpenInput$ = computed(async (get) => {
     ...(await get(sharedThreadInput$)),
     initialDisplay,
     viewer: get(openQuery$)?.viewer === "native",
+    operationId: body.data.operationId,
   };
 });
 const sharedOpen = createSharedBrowserGraph(sharedOpenInput$);

@@ -77,6 +77,7 @@ import { reconcileSharedBrowsers$ } from "./browser-shared-reconcile.service";
 
 interface SharedBrowserInput {
   readonly viewer?: boolean;
+  readonly operationId?: string;
   readonly initialDisplay?: BrowserDisplaySize;
   readonly orgId: string;
   readonly userId: string;
@@ -517,6 +518,9 @@ const publishSharedMetadata$ = command(
     }
     await publishBrowserSessionChangedSafely(owner.userId, {
       threadId: owner.chatThreadId,
+      ...(input.viewer && input.operationId
+        ? { operationId: input.operationId }
+        : {}),
     });
     signal.throwIfAborted();
     return { kind: "ok", value: meta };
@@ -936,7 +940,16 @@ function sharedBrowserOpen(
         }
       }
       // Reclaim expired lifetimes before the graph captures its current rows.
-      await set(reconcileSharedBrowsers$, ctx.owner, signal);
+      await set(
+        reconcileSharedBrowsers$,
+        {
+          ...ctx.owner,
+          operationId: ctx.mode.input.viewer
+            ? ctx.mode.input.operationId
+            : undefined,
+        },
+        signal,
+      );
       signal.throwIfAborted();
       const view = await get(reconciledView$);
       signal.throwIfAborted();

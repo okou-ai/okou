@@ -244,7 +244,11 @@ export const browserContract = c.router({
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
     query: browserViewerQuerySchema,
-    body: object({ initialDisplay: browserInitialDisplaySchema.optional() }),
+    body: object({
+      initialDisplay: browserInitialDisplaySchema.optional(),
+      // Correlates a native viewer's open response with its realtime echo.
+      operationId: uuid().optional(),
+    }),
     responses: {
       200: browserViewerAcquisitionSchema,
       ...commonErrorResponses,

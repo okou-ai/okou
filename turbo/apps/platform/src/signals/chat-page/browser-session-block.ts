@@ -97,6 +97,9 @@ async function browserAuthorizationResult<T>(
 
 interface BrowserSessionLifetime {
   readonly scope: BrowserAcquisitionScope;
+  // The initiating viewer can consume its own open result instead of its echo.
+  // Any independent invalidation creates another owner and retires this ID.
+  readonly openOperationId$: State<string | null>;
   readonly acquisitionOverride$: State<BrowserAcquisitionResult | undefined>;
   readonly leaseOverride$: State<BrowserSession | undefined>;
 }
@@ -243,7 +246,10 @@ function createStartBrowserSignals(
   { descriptor, lifetime$, reload$ }: BrowserMutationSignalContext,
   measureInitialDisplay$: BrowserSignals["measureInitialDisplay$"],
   session$: Computed<Promise<BrowserSessionResult>>,
-  replaceAcquisition$: Command<void, [BrowserAcquisitionResult | undefined]>,
+  replaceAcquisition$: Command<
+    void,
+    [BrowserAcquisitionResult | undefined, string | null]
+  >,
 ): Pick<BrowserSessionSignals, "start$"> {
   const openBrowser$ = command(async ({ get, set }, signal: AbortSignal) => {
     const lifetime = get(lifetime$);
@@ -254,6 +260,13 @@ function createStartBrowserSignals(
     }
     const initialDisplay =
       current?.status === "active" ? null : set(measureInitialDisplay$);
+    const operationId =
+      lifetime.scope.mode === "viewer" ? crypto.randomUUID() : null;
+    set(lifetime.openOperationId$, operationId);
+    const retirePendingOpen = () => {
+      set(lifetime.openOperationId$, null);
+    };
+    signal.addEventListener("abort", retirePendingOpen, { once: true });
     const [started] = await Promise.allSettled([
       browserAuthorizationResult(
         accept(
@@ -262,7 +275,10 @@ function createStartBrowserSignals(
             ...(lifetime.scope.mode === "viewer"
               ? { query: { viewer: "native" as const } }
               : {}),
-            body: initialDisplay ? { initialDisplay } : {},
+            body: {
+              ...(initialDisplay ? { initialDisplay } : {}),
+              ...(operationId ? { operationId } : {}),
+            },
             fetchOptions: { signal },
           }),
           [200],
@@ -272,6 +288,8 @@ function createStartBrowserSignals(
       ),
     ]);
     signal.throwIfAborted();
+    signal.removeEventListener("abort", retirePendingOpen);
+    set(lifetime.openOperationId$, null);
     if (started.status === "rejected") {
       if (get(lifetime$) === lifetime) {
         set(reload$);
@@ -284,6 +302,7 @@ function createStartBrowserSignals(
     set(
       replaceAcquisition$,
       isBrowserUnauthorized(started.value) ? UNAUTHORIZED : started.value.body,
+      operationId,
     );
   });
   return { start$: openBrowser$ };
@@ -320,6 +339,7 @@ function createCloseBrowserSignals({
 function createBrowserSessionSubscriptionSignals(
   descriptor: BrowserSessionDescriptor,
   session$: BrowserSessionSignals["session$"],
+  lifetime$: Computed<BrowserSessionLifetime>,
   reload$: BrowserSessionSignals["reload$"],
 ): Pick<BrowserSessionSignals, "subscribe$"> {
   const reloadBrowserSession$ = command(
@@ -332,12 +352,18 @@ function createBrowserSessionSubscriptionSignals(
   );
   const onBrowserSessionChanged$ = command(
     (
-      { set },
+      { get, set },
       payload: unknown,
       signal: AbortSignal,
     ): Promise<boolean> | boolean => {
       const parsed = browserSessionChangedPayloadSchema.safeParse(payload);
       if (parsed.success && parsed.data.threadId === descriptor.threadId) {
+        if (
+          parsed.data.operationId &&
+          parsed.data.operationId === get(get(lifetime$).openOperationId$)
+        ) {
+          return false;
+        }
         return set(reloadBrowserSession$, signal);
       }
       return false;
@@ -481,7 +507,8 @@ function createBrowserSessionAcquisitionSignals(
   const reloadRequest$ = state<{
     readonly acquisition: BrowserAcquisitionResult | undefined;
     readonly scope: BrowserAcquisitionScope | null;
-  }>({ acquisition: undefined, scope: null });
+    readonly operationId: string | null;
+  }>({ acquisition: undefined, scope: null, operationId: null });
   const accessVersion$ = threadComputerAccessVersion(descriptor.threadId);
   const authorizationScope$ = computed((get) => {
     return JSON.stringify([
@@ -507,6 +534,9 @@ function createBrowserSessionAcquisitionSignals(
     // These are lifetime-local resource outcomes, not independent UI flags.
     return {
       scope,
+      openOperationId$: state(
+        request.scope === scope ? request.operationId : null,
+      ),
       acquisitionOverride$: state<BrowserAcquisitionResult | undefined>(
         request.scope === scope ? request.acquisition : undefined,
       ),
@@ -689,19 +719,24 @@ export function createBrowserSessionSignals(
     browserConnection$,
   } = createBrowserSessionReadSignals(descriptor, viewerRequested$);
   const replaceAcquisition$ = command(
-    ({ get, set }, acquisition: BrowserAcquisitionResult | undefined) => {
+    (
+      { get, set },
+      acquisition: BrowserAcquisitionResult | undefined,
+      operationId: string | null,
+    ) => {
       // Publish a seeded lifetime in one state update. A successful explicit
       // open must never expose an empty reload that starts a redundant GET.
       const lifetime = get(lifetime$);
       set(reloadRequest$, {
         acquisition,
         scope: lifetime.scope,
+        operationId,
       });
       set(browser.connectionChanged$);
     },
   );
   const reload$ = command(({ set }) => {
-    set(replaceAcquisition$, undefined);
+    set(replaceAcquisition$, undefined, null);
   });
   const browser = createBrowserSignals(
     browserConnection$,
@@ -723,6 +758,7 @@ export function createBrowserSessionSignals(
   const subscriptionSignals = createBrowserSessionSubscriptionSignals(
     descriptor,
     session$,
+    lifetime$,
     reload$,
   );
 
