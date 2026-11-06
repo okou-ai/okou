@@ -1,5 +1,14 @@
 # Changelog
 
+## [8.820.1](https://github.com/okou-ai/okou/compare/core-v8.820.0...core-v8.820.1) (2026-11-06)
+
+
+### Refactoring
+
+* remove ChatHomeCompliance feature switch ([#45672](https://github.com/okou-ai/okou/issues/45672)) ([07785aa](https://github.com/okou-ai/okou/commit/07785aac2d8046b313af2e29f8fcd2104f1604ac))
+* remove markdown cjk emphasis feature switch ([#45663](https://github.com/okou-ai/okou/issues/45663)) ([9b7dcae](https://github.com/okou-ai/okou/commit/9b7dcaeff9e1241b2b67d7499c65818a86080ded))
+* remove marketing content handoff feature switch ([#45651](https://github.com/okou-ai/okou/issues/45651)) ([75493dc](https://github.com/okou-ai/okou/commit/75493dc2e0b68047d72fe961678f549c94ba9be5))
+
 ## [8.820.0](https://github.com/okou-ai/okou/compare/core-v8.819.2...core-v8.820.0) (2026-11-06)
 
 

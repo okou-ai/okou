@@ -2331,7 +2331,6 @@
       "number": "番号"
     },
     "sidebar": {
-      "allChats": "すべてのチャット",
       "archive": "チャットをアーカイブ",
       "archived": "アーカイブ済み",
       "chatsWith": "{{agentName}} とのチャット",

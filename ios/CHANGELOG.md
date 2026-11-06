@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.2](https://github.com/okou-ai/okou/compare/ios-v0.27.1...ios-v0.27.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ios:** restore translucent headers and clear bottom scroll edges ([#45633](https://github.com/okou-ai/okou/issues/45633)) ([29ba128](https://github.com/okou-ai/okou/commit/29ba128b48bf00d1f7c7637c1b8fc8bd50e2ab43))
+
 ## [0.27.1](https://github.com/okou-ai/okou/compare/ios-v0.27.0...ios-v0.27.1) (2026-11-06)
 
 

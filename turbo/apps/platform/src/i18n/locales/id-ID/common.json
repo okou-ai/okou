@@ -2331,7 +2331,6 @@
       "number": "nomor"
     },
     "sidebar": {
-      "allChats": "Semua chat",
       "archive": "Arsipkan chat",
       "archived": "Diarsipkan",
       "chatsWith": "Chat dengan {{agentName}}",

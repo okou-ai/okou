@@ -2,7 +2,6 @@ import {
   chatThreadArchiveContract,
   chatThreadMetadataContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { createStore } from "ccstate";
 import { randomUUID } from "node:crypto";
 import { describe, expect, it } from "vitest";
@@ -13,7 +12,6 @@ import { chatThreadGetRoutes } from "../chat-threads-get";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createClaimedRunCredentials } from "./helpers/claimed-run-credentials";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { seedOrgMembership$ } from "./helpers/org-membership";
 
 const context = testContext();
@@ -22,7 +20,7 @@ const store = createStore();
 const bdd = createBddApi(context);
 const chat = createChatFilesBddApi(context);
 
-async function seedChatThread(title: string, archivingEnabled = true) {
+async function seedChatThread(title: string) {
   const actor = bdd.user();
   bdd.acceptAgentStorageWrites();
   const agent = await bdd.createAgent(actor, {
@@ -41,13 +39,6 @@ async function seedChatThread(title: string, archivingEnabled = true) {
     { orgId: actor.orgId, userId: actor.userId },
     context.signal,
   );
-  if (archivingEnabled) {
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.ChatThreadArchiving]: true },
-    );
-  }
   return { actor, orgId: actor.orgId, threadId: thread.id };
 }
 
@@ -146,32 +137,6 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
     );
   });
 
-  it("is unavailable while chat thread archiving is switched off", async () => {
-    const fixture = await seedChatThread("Launch plan", false);
-    const headers = {
-      authorization: `Bearer ${await claimedToken({ userId: fixture.actor.userId, orgId: fixture.orgId })}`,
-    };
-    for (const request of [
-      archiveClient().archive({ headers, params: { id: fixture.threadId } }),
-      archiveClient().unarchive({ headers, params: { id: fixture.threadId } }),
-    ]) {
-      const response = await accept(request, [404]);
-      expect(response.body).toStrictEqual({
-        error: {
-          code: "NOT_FOUND",
-          message: "Chat thread archiving is not available",
-        },
-      });
-    }
-    await expect(
-      readMetadata({
-        userId: fixture.actor.userId,
-        orgId: fixture.orgId,
-        threadId: fixture.threadId,
-      }),
-    ).resolves.toMatchObject({ archived: false });
-  });
-
   it("does not archive a same-user thread from another org", async () => {
     const fixture = await seedChatThread("Launch plan");
     const otherOrgId = `org_${randomUUID()}`;
@@ -179,15 +144,6 @@ describe("POST /api/chat-threads/:id/archive and /unarchive", () => {
       seedOrgMembership$,
       { orgId: otherOrgId, userId: fixture.actor.userId },
       context.signal,
-    );
-    await updateFeatureSwitchesForUser(
-      context,
-      {
-        userId: fixture.actor.userId,
-        orgId: otherOrgId,
-        orgRole: fixture.actor.orgRole,
-      },
-      { [FeatureSwitchKey.ChatThreadArchiving]: true },
     );
 
     const response = await accept(

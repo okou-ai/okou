@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -20,10 +19,7 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000001";
 
-function setupEmojiPage(
-  threadTitle = "Emoji planning",
-  archiveEnabled?: boolean,
-): Promise<void> {
+function setupEmojiPage(threadTitle = "Emoji planning"): Promise<void> {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle,
@@ -31,10 +27,6 @@ function setupEmojiPage(
   return setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches:
-      archiveEnabled === undefined
-        ? undefined
-        : { [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled },
   });
 }
 
@@ -112,8 +104,8 @@ function nextAnimationFrame(): Promise<void> {
   return frame.promise;
 }
 
-test("Keep the check-mark thread icon Done when archiving is enabled", async () => {
-  await setupEmojiPage("Emoji planning", true);
+test("Keep the check-mark thread icon Done", async () => {
+  await setupEmojiPage();
   await waitFor(() => {
     expect(buttonByLabel("Change icon")).toBeInTheDocument();
   });

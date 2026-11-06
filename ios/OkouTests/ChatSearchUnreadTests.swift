@@ -598,10 +598,7 @@ private final class SearchUnreadFixture: Sendable {
             """)
       case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
       case "/api/feature-switches":
-        return ChatHTTPResponse(
-          body:
-            "{\"effectiveSwitches\":{\"chatThreadArchiving\":true}}"
-        )
+        return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat/search":
         return searchResponse(content: "A matching needle in another agent's conversation")
       case "/api/chat-threads/snapshot":

@@ -238,19 +238,47 @@ fn active_input_ready_smoke_replays_first_followup_after_readiness()
 #[test]
 fn active_input_ready_smoke_rejects_early_eof() -> Result<(), Box<dyn std::error::Error>> {
     let home = tempfile::tempdir()?;
-    let mut stream = spawn_stream_json_child(home.path(), false)?;
+    let mut command = mock_claude();
+    command
+        .env("HOME", home.path())
+        .args([
+            "--input-format",
+            "stream-json",
+            "--output-format",
+            "stream-json",
+        ])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped());
+    let mut child = spawn_managed_mock_child(&mut command)?;
 
-    stream.stdin_mut()?.write_all(
+    let Some(mut stdin) = child.take_stdin() else {
+        child.terminate();
+        return Err("missing stdin".into());
+    };
+    let write_result = stdin.write_all(
         stream_json_user_frame_with_uuid("@active-input-smoke-ready:2", "active-initial")
             .as_bytes(),
-    )?;
-    stream.close_stdin();
+    );
+    drop(stdin);
+    if let Err(error) = write_result {
+        child.terminate();
+        return Err(error.into());
+    }
 
-    let (status, stderr) = stream.wait()?;
-    assert!(!status.success());
+    let output = wait_child_output(child)?;
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
     assert!(
         stderr.contains("active-input stdin closed after 0 of 2 follow-up user messages"),
         "unexpected stderr: {stderr}"
+    );
+
+    // Observe complete stdout through exit so a premature READY cannot go unnoticed.
+    let events = parse_jsonl(&output.stdout)?;
+    assert_eq!(
+        events.iter().map(event_kind).collect::<Vec<_>>(),
+        ["system/init"]
     );
     Ok(())
 }

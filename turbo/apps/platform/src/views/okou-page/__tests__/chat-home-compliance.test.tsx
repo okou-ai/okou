@@ -2,7 +2,6 @@ import {
   agentsByIdContract,
   type AgentResponse,
 } from "@okouai/api-contracts/contracts/agents";
-import { FeatureSwitchKey } from "@okouai/core";
 import { screen, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -38,7 +37,6 @@ test("The chat home lists the compliance statuses", async () => {
     context,
     locale: "en-US",
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.ChatHomeCompliance]: true },
   });
 
   const region = await screen.findByRole("region", { name: COMPLIANCE_TITLE });
@@ -55,19 +53,4 @@ test("The chat home lists the compliance statuses", async () => {
     "HIPAAAligned",
     "ISO/IEC 27001Aligned",
   ]);
-});
-
-test("The chat home shows no compliance row while the switch is off", async () => {
-  mountedAgent();
-
-  await setupPage({
-    context,
-    locale: "en-US",
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  await screen.findByTestId("chat-tagline");
-  expect(
-    screen.queryByRole("region", { name: COMPLIANCE_TITLE }),
-  ).not.toBeInTheDocument();
 });

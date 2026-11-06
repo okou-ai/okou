@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.32](https://github.com/okou-ai/okou/compare/runner-host-v0.10.31...runner-host-v0.10.32) (2026-11-06)
+
+
+### Performance Improvements
+
+* **runner:** attribute proxy registration stages ([#45643](https://github.com/okou-ai/okou/issues/45643)) ([955305f](https://github.com/okou-ai/okou/commit/955305f6facb4ad91e711141847bef87b63e2660))
+
 ## [0.10.31](https://github.com/okou-ai/okou/compare/runner-host-v0.10.30...runner-host-v0.10.31) (2026-11-06)
 
 ## [0.10.30](https://github.com/okou-ai/okou/compare/runner-host-v0.10.29...runner-host-v0.10.30) (2026-11-06)

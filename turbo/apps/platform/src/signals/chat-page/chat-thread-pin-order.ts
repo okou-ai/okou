@@ -1,11 +1,9 @@
 import { command, computed } from "ccstate";
 import { chatThreadPinOrderContract } from "@okouai/api-contracts/client/chat-threads";
 import { moveChatThreadPinOrder } from "@okouai/core/chat-thread-pin-order";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { apiClient$ } from "../api-client.ts";
 import { chatThreads$ } from "../agent-chat.ts";
 import { accept } from "../../lib/accept.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { chatThreadOnlyArchived$ } from "./chat-thread-only-archived.ts";
 import { chatThreadOnlyUnread$ } from "./chat-thread-only-unread.ts";
 import { chatThreadOnlyMuted$ } from "./chat-thread-only-muted.ts";
@@ -15,11 +13,10 @@ import {
 } from "./chat-thread-event-sourcing.ts";
 
 export const pinnedThreadReorderEnabled$ = computed((get) => {
-  const archivedOnly =
-    get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true &&
-    get(chatThreadOnlyArchived$);
   return (
-    !get(chatThreadOnlyUnread$) && !archivedOnly && !get(chatThreadOnlyMuted$)
+    !get(chatThreadOnlyUnread$) &&
+    !get(chatThreadOnlyArchived$) &&
+    !get(chatThreadOnlyMuted$)
   );
 });
 

@@ -85,13 +85,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatThinkingBrandMotion]: {
-    maintainer: "ming@okou.ai",
-    displayName: "Chat thinking brand motion",
-    description:
-      "Use a textured, breathing brand mark with subtle scaling, sheen, and cycling brand colors in chat thinking states.",
-    enabled: false,
-  },
   [FeatureSwitchKey.FeatureGuides]: {
     maintainer: "yuma@okou.ai",
     displayName: "Feature guides",
@@ -205,14 +198,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "tongx@okou.ai",
     displayName: "Inline chat rename",
     description: "Double-click a chat in the sidebar to rename it in place.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatHomeCompliance]: {
-    maintainer: "tongx@okou.ai",
-    displayName: "Chat home compliance",
-    description:
-      "Show the compliance status badges at the bottom of the chat home.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
@@ -358,20 +343,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Private cross-agent Projects. Enable only after supported readers and API/Runner drain gates.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadArchiving]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Let users archive chats and hide archived chats from the sidebar unless they are unread or explicitly shown.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadMuting]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Mute chats to suppress unread indicators, push notifications and automatic unarchiving.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

@@ -2,19 +2,23 @@ import type { AgentInstructions } from "../../signals/okou-page/agent-types.ts";
 import { useTranslation } from "react-i18next";
 import { UnsavedBar } from "./unsaved-bar.tsx";
 import { TiptapInstructionsEditor } from "./tiptap-instructions-editor.tsx";
+import { InstructionsConflict } from "./instructions-conflict.tsx";
 
 interface InstructionsTabProps {
   instructions: AgentInstructions | null;
   loading: boolean;
   fetchError: string | null;
   editedContent: string | null;
+  editorBaseline: string | null;
   editorRevision: number;
   isDirty: boolean;
   isBuilding: boolean;
+  isConflict: boolean;
   buildError: string | null;
   onEdit: (value: string) => void;
   onDiscard: () => void;
   onBuild: () => void;
+  onReload: () => void;
 }
 
 export function InstructionsTab({
@@ -22,13 +26,16 @@ export function InstructionsTab({
   loading,
   fetchError,
   editedContent,
+  editorBaseline,
   editorRevision,
   isDirty,
   isBuilding,
+  isConflict,
   buildError,
   onEdit,
   onDiscard,
   onBuild,
+  onReload,
 }: InstructionsTabProps) {
   const { t } = useTranslation("agents");
   const rawContent = instructions?.content ?? "";
@@ -36,7 +43,7 @@ export function InstructionsTab({
 
   // Discard must reset the document, undo history, and focus even though the
   // saved content has not changed. Keep the key stable while the user types.
-  const editorKey = `${editorRevision}:${rawContent}`;
+  const editorKey = `${editorRevision}:${editorBaseline ?? rawContent}`;
 
   return (
     <div className="mx-auto max-w-[900px]">
@@ -101,6 +108,9 @@ export function InstructionsTab({
               {buildError}
             </p>
           )}
+          {isConflict && (
+            <InstructionsConflict loading={isBuilding} onReload={onReload} />
+          )}
         </>
       )}
 
@@ -109,6 +119,7 @@ export function InstructionsTab({
           onDiscard={onDiscard}
           onSave={onBuild}
           saving={isBuilding}
+          saveDisabled={isConflict}
           message={t(($) => {
             return $.unsaved.message;
           })}

@@ -14,7 +14,12 @@ import { conflict, notFound } from "../../lib/error";
 import { requireAgentPermission } from "../../lib/require-agent-permission";
 import { nowDate } from "../../lib/time";
 import { agentResponse } from "../services/agent-data.service";
-import { agentInstructions } from "../services/agent-instructions.service";
+import {
+  agentInstructions,
+  agentInstructionsContent,
+} from "../services/agent-instructions.service";
+import { publishOrgSignal } from "../external/realtime";
+import { waitUntil } from "../context/wait-until";
 import type { RouteEntry } from "../route-entry";
 
 const agentReadAuth = {
@@ -75,6 +80,7 @@ const updateAgentInstructionsInner$ = command(
         version: sql`${agents}.xmin::text`.mapWith(pgTextDecoder),
         owner: agents.owner,
         visibility: agents.visibility,
+        instructions: agents.instructions,
       })
       .from(agents)
       .where(and(eq(agents.id, params.id), eq(agents.orgId, auth.orgId)))
@@ -91,6 +97,14 @@ const updateAgentInstructionsInner$ = command(
     );
     if (denied) {
       return denied;
+    }
+    if (
+      body.data.ifContent !== undefined &&
+      body.data.ifContent !== agentInstructionsContent(observed.instructions)
+    ) {
+      return conflict(
+        "Instructions changed; reload the saved version before saving",
+      );
     }
     const instructionsBundle = await set(
       publishContentBundle$,
@@ -129,6 +143,8 @@ const updateAgentInstructionsInner$ = command(
       });
     signal.throwIfAborted();
     if (updated) {
+      // Invalidate without publishing private Agent identities or instruction text.
+      waitUntil(publishOrgSignal(auth.orgId, "agentInstructionsChanged"));
       return { status: 200 as const, body: agentResponse(updated) };
     }
     const [current] = await db

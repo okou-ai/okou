@@ -2384,7 +2384,6 @@
       "number": "Número"
     },
     "sidebar": {
-      "allChats": "Todas las conversaciones",
       "archive": "Archivar chat",
       "archived": "Archivados",
       "chatsWith": "Conversaciones con {{agentName}}",

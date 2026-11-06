@@ -11,6 +11,7 @@ import { setActiveAgent$ } from "../okou-page/job-detail";
 import { setChatAgentId$ } from "../agent-chat.ts";
 import { i18n } from "../../i18n/index.ts";
 import { refreshSsh$ } from "../ssh.ts";
+import { watchAgentInstructions$ } from "../okou-page/job-detail/instructions.ts";
 
 export const setupAgentDetailPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -32,7 +33,6 @@ export const setupAgentDetailPage$ = command(
       return;
     }
     set(refreshSsh$);
-    set(updatePage$, createElement(JobDetailPage), "sidebar");
     const agents = await get(agents$);
     signal.throwIfAborted();
 
@@ -57,6 +57,8 @@ export const setupAgentDetailPage$ = command(
 
     // Activate the agent to trigger dependent signals (detail, automation, etc.)
     set(setActiveAgent$, agentId);
+    set(watchAgentInstructions$, signal);
+    set(updatePage$, createElement(JobDetailPage, { key: agentId }), "sidebar");
     set(setChatAgentId$, agentId);
     const displayName =
       agent.displayName ??

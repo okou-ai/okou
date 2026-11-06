@@ -2340,7 +2340,6 @@
       "number": "संख्या"
     },
     "sidebar": {
-      "allChats": "सभी चैट",
       "archive": "चैट आर्काइव करें",
       "archived": "आर्काइव की गई",
       "chatsWith": "{{agentName}} के साथ चैट",

@@ -31,13 +31,14 @@ run_auto_steer() {
     local after_complete_prompt="$2"
     local initial_prompt steer_prompt successor_prompt
     initial_prompt=$(cat <<'EOF'
-We are testing whether a follow-up user message can update an active run.
+We are testing whether a follow-up user message can update a task already in progress.
+The command and reply instructions below apply only to this task and end with its final reply.
 First, use Bash to run `sleep 10` exactly once in the foreground and wait for it to finish. Do not background or replace this command.
-After the command finishes, follow the follow-up instruction delivered during this run. If no follow-up instruction was delivered, reply exactly MISSING_STEER.
+After the command finishes, follow the follow-up instruction delivered during this task. If no follow-up instruction was delivered, reply exactly MISSING_STEER.
 EOF
 )
-    steer_prompt="This is the follow-up instruction for the active-run test. After the previously requested command finishes, reply exactly $expected_output and nothing else."
-    successor_prompt="This is a new turn after the previous run completed. Do not repeat the earlier command. Reply exactly $after_complete_prompt and nothing else."
+    steer_prompt="This follow-up updates only the task currently in progress. After the previously requested command finishes, reply exactly $expected_output and nothing else. This reply instruction applies only to that one final reply and ends when this task is complete."
+    successor_prompt="The previous task is complete, and its command and reply instructions no longer apply. This is a separate task. Do not use tools or repeat the earlier command. For this task only, reply exactly $after_complete_prompt and nothing else."
     local steer_result run_id thread_id steer_output successor_result
     local successor_run_id successor_output
 

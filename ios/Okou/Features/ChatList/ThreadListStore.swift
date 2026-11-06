@@ -10,9 +10,6 @@ final class ThreadListStore {
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
-  private var archivingEnabled: Bool?
-  var canArchiveChats: Bool { archivingEnabled == true }
-  private(set) var canMuteChats = false
   var onlyUnread = false
   private(set) var markingAgentRead = false
   private var readRevision = 0
@@ -82,7 +79,6 @@ final class ThreadListStore {
       if let cached, !restoredNavigation, navigationRevision == revision {
         agents = cached.agents
         pinnedAgentIDs = cached.preferences.pinnedAgentIds
-        applySwitches(cached.featureSwitches)
       }
       restoredNavigation = true
     }
@@ -158,19 +154,12 @@ final class ThreadListStore {
       return
     }
     guard !closed, !Task.isCancelled else { return }
-    // Keep this workspace's last successful flags until a new response replaces them.
-    applySwitches(switches)
     if navigationError == nil {
       await sync.persistNavigation(
         SidebarNavigationSnapshot(
           agents: agents, preferences: SidebarPreferences(pinnedAgentIds: pinnedAgentIDs),
           featureSwitches: switches))
     }
-  }
-
-  private func applySwitches(_ switches: SidebarFeatureSwitches) {
-    archivingEnabled = switches.effectiveSwitches["chatThreadArchiving"] == true
-    canMuteChats = switches.effectiveSwitches["chatThreadMuting"] == true
   }
 
   var visiblePinnedAgents: [AgentRecord] {
@@ -317,9 +306,7 @@ final class ThreadListStore {
         // PWA's unread list includes archived chats and retains active-indicator precedence.
         return !$0.isMuted && $0.indicator == .unread
       }
-      // Cached recent chats can render before switches arrive. Keep archived
-      // chats in their own section until the server resolves that visibility.
-      return archivingEnabled == false || $0.isArchived == archived
+      return $0.isArchived == archived
     }
   }
 
@@ -453,7 +440,7 @@ final class ThreadListStore {
   }
 
   func canMute(_ id: String) -> Bool {
-    canUpdate(id) && (canMuteChats || threads.first(where: { $0.id == id })?.isMuted == true)
+    canUpdate(id)
   }
 
   @discardableResult
@@ -462,7 +449,7 @@ final class ThreadListStore {
     onFailure: (@MainActor (String) -> Void)? = nil,
     didBegin: @MainActor () -> Void = {}
   ) async -> Bool {
-    guard canArchiveChats, canUpdate(thread.id), !Task.isCancelled else { return false }
+    guard canUpdate(thread.id), !Task.isCancelled else { return false }
     if !optimisticChanges.contains(where: { $0.id == eventID }) {
       optimisticChanges.append(
         (

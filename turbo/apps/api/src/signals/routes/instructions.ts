@@ -20,6 +20,7 @@ import { authRoute } from "../auth/auth-route";
 import { bodyResultOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import { db$, writeDb$ } from "../external/db";
+import { publishUserSignal } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import { publishContentBundle$ } from "../services/content-bundle.service";
@@ -198,6 +199,8 @@ const updateInstructions$ = command(
     if (!updated) {
       return conflict(STALE_VERSION);
     }
+    await publishUserSignal([auth.userId], "personalInstructionsChanged");
+    signal.throwIfAborted();
     return { status: 200 as const, body: response(updated) };
   },
 );
