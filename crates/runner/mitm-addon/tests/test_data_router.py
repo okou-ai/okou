@@ -458,6 +458,107 @@ def _body_wire(protocol: str, body: bytes) -> bytes:
     return bytes(wire)
 
 
+class _DiscardedRequestId(bytes):
+    def decode(self, encoding: str = "utf-8", errors: str = "strict") -> str:
+        raise AssertionError("discarded request ID must not be decoded")
+
+    def __bytes__(self) -> bytes:
+        raise AssertionError("discarded request ID must not be copied")
+
+    def __str__(self) -> str:
+        raise AssertionError("discarded request ID must not be converted")
+
+
+@pytest.mark.parametrize(
+    ("layout", "guarded"),
+    [
+        ("single", False),
+        ("single", True),
+        ("duplicates", False),
+        ("duplicates", True),
+        ("empty", True),
+        ("absent", False),
+    ],
+)
+async def test_native_http1_discards_request_ids_without_value_conversion(
+    tmp_path: Path, fake_firewall_headers, layout: str, guarded: bool
+) -> None:
+    registry_path = router_registry(tmp_path)
+    discarded = ()
+    if layout == "single":
+        discarded = ((b"X-Okou-Data-Request-Id", b"x" * (1024 * 1024)),)
+    elif layout in {"duplicates", "empty"}:
+        value = b"x" * (512 * 1024) if layout == "duplicates" else b""
+        discarded = (
+            (b"x-okou-data-request-id", value),
+            (b"X-OKOU-DATA-REQUEST-ID", b""),
+            (b"x-Okou-Data-Request-Id", value),
+        )
+    body = b"opaque\x00body\xff" if layout in {"duplicates", "absent"} else b""
+    headers = (
+        (b"X-Keep", b"first\xff"),
+        *discarded[:1],
+        (b"Content-Length", str(len(body)).encode()),
+        (b"X-Okou-Data-Request-Ids", b"near match"),
+        *discarded[1:],
+        (b"x-keep", b"second"),
+    )
+    expected_fields = (
+        (b"Host", b"data.okou.ai"),
+        (b"X-Keep", b"first\xff"),
+        (b"Content-Length", str(len(body)).encode()),
+        (b"X-Okou-Data-Request-Ids", b"near match"),
+        (b"x-keep", b"second"),
+        (b"Authorization", b"Bearer service-token"),
+    )
+    registration = AsyncMock()
+    with (
+        patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),
+        taddons.context(Proxyserver(), mitm_addon) as addon_context,
+        fake_firewall_headers(headers={"Authorization": "Bearer service-token"}) as auth_fetch,
+        patch.object(firewall_auth_client, "post_platform_json", registration),
+    ):
+        addon_context.options.update(
+            okou_api_url="https://api.okou.ai", okou_proxy_registry_path=str(registry_path)
+        )
+        layer, headers_hook = _start_router_request(
+            addon_context, protocol="http1", headers=headers
+        )
+        flow = headers_hook.flow
+        assert flow.request.headers.fields == ((b"Host", b"data.okou.ai"), *headers)
+        # Instrument only after real parsing; ordinary-byte cases keep the native values.
+        if guarded:
+            flow.request.headers.fields = tuple(
+                (name, _DiscardedRequestId(value))
+                if name.lower() == b"x-okou-data-request-id"
+                else (name, value)
+                for name, value in flow.request.headers.fields
+            )
+        await addon_context.master.addons.invoke_addon(mitm_addon, headers_hook)
+        pending = list(layer.handle_event(events.HookCompleted(headers_hook, None)))
+        if body:
+            pending.extend(layer.handle_event(events.DataReceived(flow.client_conn, body)))
+        request_hook = next(cmd for cmd in pending if isinstance(cmd, HttpRequestHook))
+        mark_connected_tls_upstream(
+            flow,
+            sni="data.okou.ai",
+            server_address=("data.okou.ai", 443),
+            peername=("93.184.216.34", 443),
+        )
+        await addon_context.master.addons.invoke_addon(mitm_addon, request_hook)
+        assert flow.error is None
+        assert flow.response is None
+        assert flow.request.headers.fields == expected_fields
+        assert flow.request.raw_content == body
+        auth_fetch.assert_awaited_once()
+        flow.response = http.Response.make(200, b"router result")
+        completion = mitm_addon.response(flow)
+        assert completion is not None
+        await completion
+        registration.assert_not_awaited()
+        assert_pending(tmp_path / "delivery-control", flows=0, buffered=0, reports=0)
+
+
 @pytest.mark.parametrize(
     ("protocol", "framing"),
     [
