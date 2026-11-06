@@ -1172,7 +1172,7 @@ test("Route New chat to the current agent and Chat to the default agent", async 
   });
 });
 
-test("My Okou names the chat list Okou and puts one New menu in its header", async () => {
+test("My Okou drops the chat list title for a toggle and one New menu", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
   const createdAgentIds: string[] = [];
@@ -1199,7 +1199,7 @@ test("My Okou names the chat list Okou and puts one New menu in its header", asy
 
   const list = await screen.findByTestId("chat-list-column");
   await within(list).findByText("Release plan");
-  const header = within(list).getByText("Okou").parentElement;
+  const header = within(list).getByLabelText("Hide chat list").closest("div");
   if (!header) {
     throw new Error("Chat list header not found");
   }
@@ -1213,6 +1213,7 @@ test("My Okou names the chat list Okou and puts one New menu in its header", asy
     "New",
     "Open chat list menu",
   ]);
+  expect(header).toHaveTextContent(/^$/);
   expect(within(list).queryByText(/^Chats with/)).not.toBeInTheDocument();
 
   click(within(header).getByLabelText("New"));
@@ -1232,7 +1233,6 @@ test("My Okou names the chat list Okou and puts one New menu in its header", asy
   click(within(header).getByLabelText("Open chat list menu"));
   click(menuItemByText("Archived"));
   await expect(within(header).findByText("Archived")).resolves.toBeVisible();
-  expect(within(header).queryByText("Okou")).not.toBeInTheDocument();
 
   click(within(header).getByLabelText("New"));
   click(menuItemByText("New chat"));
@@ -1264,7 +1264,7 @@ test("My Okou without Projects starts a chat straight from the header +", async 
 
   const list = await screen.findByTestId("chat-list-column");
   await within(list).findByText("Release plan");
-  const header = within(list).getByText("Okou").parentElement;
+  const header = within(list).getByLabelText("Hide chat list").closest("div");
   if (!header) {
     throw new Error("Chat list header not found");
   }

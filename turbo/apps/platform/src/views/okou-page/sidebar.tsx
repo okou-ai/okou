@@ -881,10 +881,9 @@ function ChatListHeader() {
   const navigate = useSet(detachedNavigateTo$);
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
-  // My Okou has a single chat list, so the header names it and carries the
-  // list's actions. An active filter takes the name's place so a filtered
-  // list never looks like the inbox.
-  const assistantName = useGet(assistantName$);
+  // My Okou has a single chat list, so the header carries the list's actions
+  // instead of a title. An active filter still names itself beside the toggle
+  // so a filtered list never looks like the inbox.
   const filterLabel = useChatThreadsFilterLabel();
   const searchLabel = t(($) => {
     return $.appShell.sidebar.searchWorkspace;
@@ -955,21 +954,25 @@ function ChatListHeader() {
         CHAT_LIST_INSET,
       )}
     >
-      <span className="min-w-0 flex-1 truncate pl-2 text-[15px] font-semibold text-nav-copy">
-        {singleAgent
-          ? (filterLabel ?? assistantName)
-          : t(($) => {
-              return $.appShell.sidebar.chat;
-            })}
-      </span>
       {singleAgent ? (
         <>
-          <ShortcutTooltipGroup items={[toggleItem, searchItem]} />
+          <ShortcutTooltipGroup items={[toggleItem]} />
+          <span className="min-w-0 flex-1 truncate pl-1 text-[15px] font-semibold text-nav-copy">
+            {filterLabel}
+          </span>
+          <ShortcutTooltipGroup items={[searchItem]} />
           <ChatThreadsNewMenu />
           <ChatThreadsListMenu showMarkAllRead />
         </>
       ) : (
-        <ShortcutTooltipGroup items={[searchItem, newChatItem, toggleItem]} />
+        <>
+          <span className="min-w-0 flex-1 truncate pl-2 text-[15px] font-semibold text-nav-copy">
+            {t(($) => {
+              return $.appShell.sidebar.chat;
+            })}
+          </span>
+          <ShortcutTooltipGroup items={[searchItem, newChatItem, toggleItem]} />
+        </>
       )}
     </div>
   );
