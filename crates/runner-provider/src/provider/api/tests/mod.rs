@@ -3976,20 +3976,47 @@ async fn api_client_complete_non_success_includes_status_and_body() {
         })
         .await;
     let api = api_client_for_server(&server);
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let request = CompleteRequest {
+        run_id: RunId::from(uuid::Uuid::nil()),
+        exit_code: 1,
+        failure_reason: None,
+        error: Some("boom".to_string()),
+        sandbox_id: None,
+    };
+    let completion = api
+        .complete("sandbox-token", &request)
+        .with_subscriber(subscriber);
+    tokio::pin!(completion);
 
-    let err = api
-        .complete(
-            "sandbox-token",
-            &CompleteRequest {
-                run_id: RunId::from(uuid::Uuid::nil()),
-                exit_code: 1,
-                failure_reason: None,
-                error: Some("boom".to_string()),
-                sandbox_id: None,
-            },
+    for attempt in 1..=2 {
+        // Drive the real HTTP response until this attempt has armed its retry timer.
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            std::future::poll_fn(|cx| {
+                assert!(
+                    completion.as_mut().poll(cx).is_pending(),
+                    "completion returned before retry {attempt}"
+                );
+                if captured.entries().iter().any(|event| {
+                    event.fields.get("attempt") == Some(&attempt.to_string())
+                        && event.fields.get("message").map(String::as_str)
+                            == Some("API request recovery waiting")
+                }) {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            }),
         )
         .await
-        .unwrap_err();
+        .expect("completion must register each retry wait before advancing time");
+        // Resume before any awakened task or the next HTTP poll can run.
+        raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(2)).await;
+    }
+
+    let err = completion.await.unwrap_err();
 
     assert_api_status_error(
         err,
