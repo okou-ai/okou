@@ -6,6 +6,7 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -102,6 +103,26 @@ function mockViewportHeight(height: () => number, threadCount = 120): void {
     function (this: HTMLElement) {
       return this.dataset.testid === "sidebar-scroll-area"
         ? threadCount * ROW_HEIGHT
+        : 0;
+    },
+  );
+}
+
+const PWA_ROW_HEIGHT = 60;
+
+function mockPwaViewportHeight(
+  height: () => number,
+  threadCount: number,
+): void {
+  vi.spyOn(HTMLElement.prototype, "clientHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.dataset.slot === "scroll-area-viewport" ? height() : 0;
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "scrollHeight", "get").mockImplementation(
+    function (this: HTMLElement) {
+      return this.dataset.slot === "scroll-area-viewport"
+        ? threadCount * PWA_ROW_HEIGHT
         : 0;
     },
   );
@@ -490,5 +511,73 @@ test("Measure the mobile chat list only after the main stylesheet bounds it", as
     expect(
       screen.getAllByTestId("sidebar-chat-thread-virtual-row"),
     ).toHaveLength(13);
+  });
+});
+
+test("Restore the mobile chat-list scroll position after returning from a conversation", async () => {
+  const threadCount = 32;
+  context.mocks.browser.matchMedia(false);
+  mockThreads(threadCount);
+  mockPwaViewportHeight(() => {
+    return 5 * PWA_ROW_HEIGHT;
+  }, threadCount);
+  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  const list = await screen.findByRole("region", { name: "Chat threads" });
+  await within(list).findByText("History 1");
+  fireEvent.scroll(list, { target: { scrollTop: 16 * PWA_ROW_HEIGHT } });
+  click(await within(list).findByText("History 17"));
+  await screen.findByRole("textbox", { name: "Message" });
+
+  click(screen.getByLabelText("Back to chats"));
+  const restored = await screen.findByRole("region", { name: "Chat threads" });
+  await within(restored).findByText("History 17");
+  expect(restored.scrollTop).toBe(16 * PWA_ROW_HEIGHT);
+});
+
+test("Remeasure the mobile chat list when a service notice arrives and is dismissed", async () => {
+  const threadCount = 120;
+  context.mocks.browser.matchMedia(false);
+  mockThreads(threadCount);
+  const incident = createDeferredPromise<void>(context.signal);
+  context.mocks.http.get("https://api.instatus.com/issues", async () => {
+    await incident.promise;
+    return HttpResponse.json({
+      activeIncidents: [
+        {
+          id: "incident-api-latency",
+          name: "API requests are delayed",
+          status: "INVESTIGATING",
+        },
+      ],
+    });
+  });
+  mockPwaViewportHeight(() => {
+    const notice = document.querySelector(
+      '[role="region"][aria-label="Service status updates"]',
+    );
+    return notice ? 5 * PWA_ROW_HEIGHT : 12 * PWA_ROW_HEIGHT;
+  }, threadCount);
+  await setupPage({
+    context,
+    host: "app.okou.ai",
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+  const list = await screen.findByRole("region", { name: "Chat threads" });
+  const rows = () => {
+    return within(list).getAllByTestId("sidebar-chat-thread-virtual-row");
+  };
+  await waitFor(() => {
+    expect(rows()).toHaveLength(20);
+  });
+
+  incident.resolve();
+  await screen.findByRole("region", { name: "Service status updates" });
+  await waitFor(() => {
+    expect(rows()).toHaveLength(13);
+  });
+
+  click(screen.getByLabelText("Dismiss service update"));
+  await waitFor(() => {
+    expect(rows()).toHaveLength(20);
   });
 });
