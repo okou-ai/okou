@@ -27,8 +27,6 @@ import {
 } from "../../lib/setup-global-shortcut.ts";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 
 type ChatThreadPane = "main" | "side";
 
@@ -339,10 +337,7 @@ const setupChatPageShortcutActions$ = command(
             }
           },
           toggleThreadArchive: async (event) => {
-            if (
-              event.repeat ||
-              get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] !== true
-            ) {
+            if (event.repeat) {
               return;
             }
             const thread = focusedThread();

@@ -16,7 +16,6 @@ import {
   reconcileIosNotifications,
   registerIosPush,
 } from "./helpers/ios-push";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -216,14 +215,6 @@ describe("iOS notification read-state reconciliation", () => {
       unreadCount: 1,
       removeIdentifiers: ["read", "foreign", "missing"],
     });
-    await updateFeatureSwitchesForUser(
-      context,
-      {
-        ...otherWorkspace,
-        orgId: otherWorkspace.orgId!,
-      },
-      { chatThreadMuting: true },
-    );
     await chat.requestSetThreadMuted(
       otherWorkspace,
       unread.threadId,

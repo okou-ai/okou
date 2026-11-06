@@ -2340,7 +2340,6 @@
       "number": "Nummer"
     },
     "sidebar": {
-      "allChats": "Alle Chats",
       "archive": "Chat archivieren",
       "archived": "Archiviert",
       "chatsWith": "Chats mit {{agentName}}",

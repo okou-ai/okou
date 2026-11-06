@@ -346,20 +346,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.ChatThreadArchiving]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Let users archive chats and hide archived chats from the sidebar unless they are unread or explicitly shown.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadMuting]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Mute chats to suppress unread indicators, push notifications and automatic unarchiving.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.GoogleSlidesConversion]: {
     maintainer: "bingjie@okou.ai",
     description:

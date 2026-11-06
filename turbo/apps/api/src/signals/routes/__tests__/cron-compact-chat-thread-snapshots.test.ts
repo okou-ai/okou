@@ -7,7 +7,6 @@ import {
 } from "@aws-sdk/client-s3";
 import { chatThreadSnapshotArchiveSchema } from "@okouai/api-contracts/contracts/chat-threads";
 import { cronCompactChatThreadSnapshotsContract } from "@okouai/api-contracts/contracts/cron";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { expect, test } from "vitest";
 
@@ -20,7 +19,6 @@ import { cronCompactChatThreadSnapshotsRoutes } from "../cron-compact-chat-threa
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
 import { createRunsApi } from "./helpers/api-bdd-runs";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 
@@ -63,14 +61,6 @@ test("publishes scoped sidebars with pinned and archived threads", async () => {
     title: "Other organization thread",
   });
   await chat.pinThread(actor, pinned.id);
-  if (!actor.orgId) {
-    throw new Error("Expected the sidebar actor to belong to an organization");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-    { [FeatureSwitchKey.ChatThreadArchiving]: true },
-  );
   await chat.requestSetThreadArchived(actor, archived.id, true, [204]);
 
   const objects = new Map<string, Buffer>();
