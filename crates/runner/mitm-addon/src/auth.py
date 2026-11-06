@@ -20,6 +20,7 @@ import aws_sigv4_body_admission
 import aws_sigv4_hash_executor
 import flow_metadata
 import flow_metadata_keys as metadata_keys
+import http_header_syntax
 import http_local_responses
 import matching
 from auth_base_forwarder import (
@@ -734,14 +735,13 @@ def _bounded_aws_sigv4_request_input(flow: http.HTTPFlow) -> _AwsSigV4RequestInp
         raise AwsSigV4SigningError("AWS request target is too large")
 
     raw_header_fields = flow.request.headers.fields
-    if len(raw_header_fields) > MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS:
+    if not http_header_syntax.raw_header_list_within_budget(
+        raw_header_fields,
+        max_fields=MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS,
+        max_bytes=MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES,
+        field_overhead_bytes=AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES,
+    ):
         raise AwsSigV4SigningError("AWS request headers are too large")
-
-    header_list_size = 0
-    for name, value in raw_header_fields:
-        header_list_size += len(name) + len(value) + AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
-        if header_list_size > MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES:
-            raise AwsSigV4SigningError("AWS request headers are too large")
 
     return _AwsSigV4RequestInput(
         url=_trusted_aws_sigv4_url(flow),
