@@ -128,3 +128,37 @@ fn fifo_marker_is_rejected_without_blocking_the_real_helper() {
     assert!(!output.status.success());
     assert!(!dir.path().join("ready/value").exists());
 }
+
+#[test]
+fn runtime_alias_with_parent_component_is_rejected_before_any_input_changes() {
+    for missing_leaf in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = dir.path().join("runtime");
+        let anchor = runtime.join("anchor");
+        let outside = dir.path().join("outside");
+        fs::create_dir_all(&anchor).unwrap();
+        fs::create_dir(&outside).unwrap();
+        std::os::unix::fs::symlink(&anchor, outside.join("alias")).unwrap();
+
+        let mut mount = outside.join("alias/..");
+        if missing_leaf {
+            mount.push("not-created");
+        }
+        let (mut manifest, descriptor) = manifest(dir.path()).unwrap();
+        manifest.storages[0].mount_path = mount.to_string_lossy().into_owned();
+        let stale = dir.path().join("stale");
+        fs::create_dir(&stale).unwrap();
+        fs::write(stale.join("keep"), b"original").unwrap();
+        manifest
+            .cleanup_paths
+            .push(stale.to_string_lossy().into_owned());
+        runtime_paths::write_private_new(descriptor.ready_path(&runtime, 0), []).unwrap();
+
+        let output = spawn(&manifest, &runtime).unwrap().wait().unwrap();
+        assert!(!output.status.success(), "missing leaf: {missing_leaf}");
+        assert_eq!(fs::read(stale.join("keep")).unwrap(), b"original");
+        assert!(!runtime.join("value").exists());
+        assert!(!runtime.join("not-created/value").exists());
+        assert!(!dir.path().join("pending/value").exists());
+    }
+}

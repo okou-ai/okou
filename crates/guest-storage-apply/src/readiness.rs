@@ -113,9 +113,11 @@ impl Readiness {
                     .map(|name| Path::new(&entry.mount_path).join(name))
             }))
         {
-            let target = normalize_path(&target);
-            if !target.is_absolute()
-                || overlaps(&target, runtime)
+            let logical_target = normalize_path(&target);
+            // Canonicalize the original path: collapsing symlink/.. first can
+            // hide its actual destination inside the private runtime.
+            if !logical_target.is_absolute()
+                || overlaps(&logical_target, runtime)
                 || overlaps(&physical_path(&target)?, &physical_runtime)
             {
                 return Err(invalid("pending archive runtime overlaps an input"));
