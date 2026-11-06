@@ -11,7 +11,6 @@ struct ChatDetailView: View {
   let mentionSource: ComposerMentionSource?
   let onFirstMessagePresented: (@MainActor (String) -> Void)?
   private var thread: ChatThread { conversation.thread }
-  @Environment(\.singleAgentExperience) private var singleAgent
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
   @Environment(\.openURL) private var openURL
@@ -42,8 +41,7 @@ struct ChatDetailView: View {
 
   private var history: ChatHistory { conversation.history ?? .empty }
   private var agentName: String? {
-    if singleAgent { return "Okou" }
-    return agents?.agents.first(where: { $0.agentId == thread.agentID })?.displayName
+    agents?.agents.first(where: { $0.agentId == thread.agentID })?.displayName
   }
   private var rows: [ConversationCollectionRow] {
     let items = conversation.visibleItems
@@ -207,7 +205,6 @@ struct ChatDetailView: View {
       }
     ) { row, anchor in
       rowContent(row, anchor: anchor).environment(\.openURL, openURL)
-        .environment(\.singleAgentExperience, singleAgent)
         .environment(\.openChatSource, openChatSource)
     }
     .ignoresSafeArea(.container, edges: .vertical)

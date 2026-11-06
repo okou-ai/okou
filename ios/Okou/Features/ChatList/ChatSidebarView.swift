@@ -25,7 +25,6 @@ struct ChatSidebarView: View {
     }
   }
 
-  @State private var showsMyOkou = false
   @State private var showArchived = false
   @State private var showMuted = false
   @State private var showsSettings = false
@@ -49,10 +48,8 @@ struct ChatSidebarView: View {
   /// The agent doing an active chat's work, drawn in the row's status column.
   private func agentAvatar(_ id: String) -> some View {
     let agent = store.list.agents.first(where: { $0.agentId == id })
-    let personal = store.list.singleAgentEnabled && agent?.isDefaultAgent == true
     return OkouAgentAvatar(
-      avatarURL: personal ? nil : agent?.avatarUrl,
-      name: personal ? "Okou" : agent?.displayName ?? "Okou",
+      avatarURL: agent?.avatarUrl, name: agent?.displayName ?? "Okou",
       isDefault: agent?.isDefaultAgent ?? false, size: rowAvatar)
   }
 
@@ -80,21 +77,7 @@ struct ChatSidebarView: View {
 
   var body: some View {
     List {
-      if store.list.singleAgentEnabled {
-        Button {
-          showsMyOkou = true
-        } label: {
-          OkouRowLabel("My Okou", okouSymbol: "bot")
-            .font(.okou(.body)).frame(minHeight: OkouControl.agentRow)
-        }
-        .buttonStyle(.plain)
-        .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-        .accessibilityIdentifier("my-okou")
-      } else {
-        pinnedAgentsSection
-      }
+      pinnedAgentsSection
       if threadFilter.wrappedValue == .recent && !activeThreads.isEmpty {
         activeSection
       }
@@ -155,9 +138,6 @@ struct ChatSidebarView: View {
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(OkouColor.sidebar)
-    .sheet(isPresented: $showsMyOkou) {
-      MyOkouView(store: store.personalInstructions, workspaceName: workspaceName)
-    }
     .sheet(
       isPresented: Binding(
         get: { store.search.isPresented },
