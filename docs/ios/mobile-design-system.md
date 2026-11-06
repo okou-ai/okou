@@ -240,7 +240,7 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Message actions** under the last answer of a turn are the web's: copy and share
   (`copy`, `share-2`), 16 pt glyphs in `gray-600` (the web's muted-foreground at 60 %), 32 pt
   apart (`messageActionPitch`), the first glyph on the answer's text edge. Copy turns into a
-  check in place. Opening the chat on the web is in the header's "…" menu, not in this row.
+  check in place.
 - **Compact buttons** carry `OkouCompactButtonLabel` (16 pt glyph, 6 pt gap) so two
   side-by-side actions keep their whole titles. A full-size `OkouButtonStyle` is for a page's
   one main action (sign-in); inside sheets and cards actions are compact.

@@ -4,8 +4,7 @@ import UIKit
 
 /// Quiet actions under the last answer of a turn, as the web draws them: copy and share
 /// (`Copy`, `Share2`), 16 pt glyphs in the web's muted-foreground at 60 % (gray-600), 32 pt
-/// apart, the first glyph on the answer's text edge. Opening the chat on the web lives in the
-/// header's "…" menu, as on the web, where this row has no such action.
+/// apart, the first glyph on the answer's text edge.
 struct MessageActionBar: View {
   let text: String
   let chatURL: URL
