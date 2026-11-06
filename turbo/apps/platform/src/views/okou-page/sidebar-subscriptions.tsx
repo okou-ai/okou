@@ -513,7 +513,7 @@ function usageTone(remainingPercent: number | null): {
   return {
     fillClassName:
       remainingPercent < LOW_REMAINING_PERCENT
-        ? "bg-primary-400"
+        ? "bg-usage-meter-low"
         : "bg-chart-blue-400",
     textClassName: "text-foreground",
   };

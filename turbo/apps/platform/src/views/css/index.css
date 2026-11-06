@@ -90,6 +90,8 @@
   --color-chart-blue-500: #2a78d6;
   --color-chart-blue-600: #1c5cab;
   --color-chart-orange: #eb6834;
+  /* Brand Amber 400, kept stable for usage status across accent palettes. */
+  --color-usage-meter-low: #e19100;
   /* The paper a brand illustration is printed on.
 
      Taken from the Brand assets file's own artboard background, which is a

@@ -109,7 +109,7 @@ function UsageArc({
           pathLength={100}
           strokeDasharray={`${String(remaining)} 100`}
           className={
-            remaining < 20 ? "stroke-primary-400" : "stroke-chart-blue-400"
+            remaining < 20 ? "stroke-usage-meter-low" : "stroke-chart-blue-400"
           }
         />
       )}
