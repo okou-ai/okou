@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.244.32](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.31...runner-rs-v0.244.32) (2026-11-06)
+
+
+### Bug Fixes
+
+* refresh runner platform api and cli release markers ([#45745](https://github.com/okou-ai/okou/issues/45745)) ([47693c2](https://github.com/okou-ai/okou/commit/47693c2ed37fd90fa108346a36158d28c5c1c9ca))
+* restore x connector skill claims across rolling deployments ([#45749](https://github.com/okou-ai/okou/issues/45749)) ([1f7157d](https://github.com/okou-ai/okou/commit/1f7157da70b987ac0d98274a333003a61fd75c91))
+
+
+### Refactoring
+
+* **python:** separate catalog validation from cache lifecycle ([#45733](https://github.com/okou-ai/okou/issues/45733)) ([dc6aaa5](https://github.com/okou-ai/okou/commit/dc6aaa56150c459191ac161bfed9a0910b4c403b))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.31](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.30...runner-rs-v0.244.31) (2026-11-06)
 
 
