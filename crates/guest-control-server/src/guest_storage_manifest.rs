@@ -17,6 +17,7 @@ use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::helper_input::FixedInputWriter;
 use crate::helper_output::{captured_or_empty, truncate_utf8};
+use crate::helper_program::TestHelperProgram;
 use crate::log::log;
 use crate::process::kill_and_reap_child;
 use crate::process_containment::{
@@ -40,15 +41,10 @@ const MAX_DIAGNOSTIC_BYTES: usize = u16::MAX as usize;
 #[derive(Clone)]
 pub(crate) enum GuestStorageManifestProgram {
     Production,
-    Test(PathBuf),
+    Test(TestHelperProgram),
     TestResources {
-        program: PathBuf,
+        program: TestHelperProgram,
         resource_path: PathBuf,
-    },
-    TestTimeout {
-        program: PathBuf,
-        resource_path: Option<PathBuf>,
-        timeout_gate: mpsc::SyncSender<u32>,
     },
 }
 
@@ -58,12 +54,12 @@ impl GuestStorageManifestProgram {
     }
 
     pub(crate) fn for_test(path: PathBuf) -> Self {
-        Self::Test(path)
+        Self::Test(TestHelperProgram::new(path))
     }
 
     pub(crate) fn for_test_resources(program: PathBuf, resource_path: PathBuf) -> Self {
         Self::TestResources {
-            program,
+            program: TestHelperProgram::new(program),
             resource_path,
         }
     }
@@ -73,26 +69,29 @@ impl GuestStorageManifestProgram {
         resource_path: Option<PathBuf>,
         timeout_gate: mpsc::SyncSender<u32>,
     ) -> Self {
-        Self::TestTimeout {
-            program,
-            resource_path,
-            timeout_gate,
+        let program = TestHelperProgram::with_timeout_gate(program, timeout_gate);
+        match resource_path {
+            Some(resource_path) => Self::TestResources {
+                program,
+                resource_path,
+            },
+            None => Self::Test(program),
         }
     }
 
     fn path(&self) -> &Path {
         match self {
             Self::Production => Path::new(guest_contracts::guest_binary::STORAGE_APPLY_PATH),
-            Self::Test(path) => path,
-            Self::TestResources { program, .. } | Self::TestTimeout { program, .. } => program,
+            Self::Test(program) | Self::TestResources { program, .. } => program.path(),
         }
     }
 
     fn await_test_timeout_gate(&self, child_id: u32) {
-        if let Self::TestTimeout { timeout_gate, .. } = self {
-            // The test receives on a zero-capacity channel after helper readiness.
-            // If it panics and drops the receiver, continue into normal cleanup.
-            let _ = timeout_gate.send(child_id);
+        match self {
+            Self::Production => {}
+            Self::Test(program) | Self::TestResources { program, .. } => {
+                program.await_timeout_gate(child_id);
+            }
         }
     }
 
@@ -103,12 +102,7 @@ impl GuestStorageManifestProgram {
         run_id: &str,
         collect_resources: bool,
     ) -> Result<ExecProcessContainment, ProcessContainmentError> {
-        if let Self::TestResources { resource_path, .. }
-        | Self::TestTimeout {
-            resource_path: Some(resource_path),
-            ..
-        } = self
-        {
+        if let Self::TestResources { resource_path, .. } = self {
             return Ok(ExecProcessContainment::for_test_storage_resources(
                 resource_path.clone(),
                 run_id,
