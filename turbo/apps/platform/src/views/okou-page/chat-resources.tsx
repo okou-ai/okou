@@ -15,6 +15,7 @@ import {
   PopoverContent,
   PopoverTrigger,
   RunningIndicator,
+  Skeleton,
   Tooltip,
   TooltipContent,
   TooltipProvider,
@@ -74,19 +75,13 @@ function ChatResourcesButtonInner({
   const chosen = useGet(resources.chosen$);
   const instantOpening = useGet(resources.instantOpening$);
   const finishOpening = useSet(resources.finishOpening$);
-  const [preference, press] = useLoadableSet(resources.press$);
+  const press = useSet(resources.press$);
   const requested = useLastResolved(resources.requested$) ?? false;
   const settled = useLastResolved(resources.settled$) ?? null;
-  // Only a current request waits for resources. A narrower layout releases the
-  // button while the underlying sources keep loading into their caches.
-  const resourceLoading =
-    (requested && settled === null) || preference.state === "loading";
-  const loading = transitioning || resourceLoading;
-  // An automatic opening waits for something to show; a press shows the panel
-  // even when it is empty.
-  const shown = settled !== null && requested && (settled || chosen !== null);
-  const pressed = shown || (resourceLoading && chosen === true);
-  const wide = useGet(resources.wide$);
+  // A press opens the panel at once and its body shows the loading state, like
+  // every other header panel. An automatic opening waits for something to show.
+  const shown =
+    chosen === true || (chosen === null && requested && settled === true);
   const anchor = useGet(resources.anchor$);
   const boundary = useGet(resources.boundary$);
   const collisionBoundary = useGet(resources.collisionBoundary$);
@@ -112,19 +107,19 @@ function ChatResourcesButtonInner({
       onOpenChange={(nextOpen, details) => {
         if (details.reason === "trigger-press") {
           // The preference outlives the page.
-          if (!loading) {
+          if (!transitioning) {
             detach(press(!shown, rootSignal), Reason.DomCallback);
           }
           return;
         }
         const outside =
           details.reason === "outside-press" || details.reason === "focus-out";
+        // The trigger's own press toggles above.
         if (
           !nextOpen &&
           outside &&
-          (wide ||
-            (details.event.target instanceof Node &&
-              anchor?.contains(details.event.target)))
+          details.event.target instanceof Node &&
+          anchor?.contains(details.event.target)
         ) {
           details.cancel();
           return;
@@ -134,9 +129,8 @@ function ChatResourcesButtonInner({
     >
       <ChatResourcesTrigger
         thread={thread}
-        pressed={pressed}
         open={shown}
-        loading={loading}
+        loading={transitioning}
         largeTarget={largeTarget}
       />
       <PopoverContent
@@ -167,28 +161,56 @@ function ChatResourcesButtonInner({
             "data-open:transition-none data-starting-style:opacity-100 data-starting-style:[transform:none]",
         )}
       >
-        {visible ? (
+        {!visible ? null : settled === null ? (
+          <ChatResourcesSkeleton />
+        ) : (
           <ChatResourcesBody
             thread={thread}
             copyLabel={copyLabel}
             copyGlyph={copyGlyph}
             copyTooltip={copyTooltip}
           />
-        ) : null}
+        )}
       </PopoverContent>
     </Popover>
   );
 }
 
+/** One section of rows in the panel's own geometry, shown until it draws complete. */
+function ChatResourcesSkeleton() {
+  const { t } = useTranslation();
+  return (
+    <div
+      role="status"
+      aria-label={t(($) => {
+        return $.chat.resources.loading;
+      })}
+      className="mt-1 min-h-0 flex-1 px-3 pb-3"
+    >
+      <div aria-hidden="true" className={RESOURCE_SECTION_CLASS}>
+        <div className="flex min-h-6 items-center px-2">
+          <Skeleton className="h-3 w-16" />
+        </div>
+        {[0, 1, 2].map((row) => {
+          return (
+            <div key={row} className="flex h-8.5 items-center gap-2 px-2">
+              <Skeleton className="size-5 shrink-0 rounded-md" />
+              <Skeleton className="h-3.5 w-3/5" />
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 function ChatResourcesTrigger({
   thread,
-  pressed,
   open,
   loading,
   largeTarget,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly pressed: boolean;
   readonly open: boolean;
   readonly loading: boolean;
   readonly largeTarget: boolean;
@@ -223,7 +245,7 @@ function ChatResourcesTrigger({
                   className={cn(
                     "shrink-0 duration-150",
                     largeTarget && "size-11",
-                    pressed &&
+                    open &&
                       "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
                   )}
                   aria-label={label}

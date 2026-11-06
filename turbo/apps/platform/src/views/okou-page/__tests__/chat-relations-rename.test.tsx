@@ -152,11 +152,41 @@ async function setupRelationships({
   if (!parentPane) {
     throw new Error("Expected the parent chat pane");
   }
+  const childPane = document.querySelector<HTMLElement>(
+    `[data-chat-thread-container-id="${child.id}"]`,
+  );
+  if (!childPane) {
+    throw new Error("Expected the child chat pane");
+  }
   return {
     parent,
     panel,
     chats,
     parentPane,
+    /** Reopen the child's panel after an outside press dismissed it. */
+    async reopenChildChats() {
+      const trigger = queryAllByRoleFast("button", childPane).find((button) => {
+        return button.getAttribute("aria-label") === "Artifacts and chats";
+      });
+      if (!trigger) {
+        throw new Error("Expected the child's resource button");
+      }
+      await userEvent.click(trigger);
+      const reopened = await waitFor(() => {
+        const found = screen
+          .getAllByRole("region", { name: "Artifacts and chats" })
+          .find((candidate) => {
+            return (
+              within(candidate).queryByText("From", { exact: true }) !== null
+            );
+          });
+        if (!found) {
+          throw new Error("Expected the reopened resource panel");
+        }
+        return found;
+      });
+      return within(reopened).getByRole("region", { name: "Chats" });
+    },
     saveResponse,
     relationshipResponse,
     delayRelationshipResponses() {
@@ -212,14 +242,8 @@ test("Show the current parent title when loading historical sources", async () =
 });
 
 test("Update relationship titles immediately and synchronize the saved browser title without a realtime notification", async () => {
-  const {
-    chats,
-    parent,
-    parentPane,
-    saveResponse,
-    relationshipResponse,
-    delayRelationshipResponses,
-  } = await setupRelationships();
+  const { chats, parent, parentPane, reopenChildChats, saveResponse } =
+    await setupRelationships();
   const user = userEvent.setup({ delay: null });
   const link = within(chats).getByText(ORIGINAL_TITLE).closest("a");
   const clip = link?.querySelector<HTMLElement>("[data-title-reveal]");
@@ -249,18 +273,22 @@ test("Update relationship titles immediately and synchronize the saved browser t
   );
   const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
   await fill(within(dialog).getByPlaceholderText("Chat title"), RENAMED_TITLE);
-  delayRelationshipResponses();
   await user.keyboard("{Enter}");
+  // Pressing outside the child's panel, on the parent's title and in the
+  // dialog, dismissed it like other header panels.
+  expect(chats).not.toBeInTheDocument();
+  // Reopened while the save is pending, it shows the new title even though
+  // the relationship lists were read before the rename committed.
+  const reopened = await reopenChildChats();
   await waitFor(() => {
-    expectRelationshipTitle(chats, RENAMED_TITLE, parent.id);
+    expectRelationshipTitle(reopened, RENAMED_TITLE, parent.id);
   });
   saveResponse.resolve();
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
     expect(document.title).toContain(RENAMED_TITLE);
   });
-  expectRelationshipTitle(chats, RENAMED_TITLE, parent.id);
-  relationshipResponse.resolve();
+  expectRelationshipTitle(reopened, RENAMED_TITLE, parent.id);
 });
 
 test("Update the parent chat row when another tab renames the parent", async () => {

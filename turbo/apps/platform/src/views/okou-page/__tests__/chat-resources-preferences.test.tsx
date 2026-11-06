@@ -59,24 +59,22 @@ test("Honor a previously saved off preference on entry", async () => {
   });
 });
 
-test("Keep the saved preference while its update is pending", async () => {
+test("Open the panel at once while the preference update is pending", async () => {
   const saving = createDeferredPromise<void>(context.signal);
   const updates = recordPreferenceUpdates(false, saving.promise);
   await setupResources();
   await screen.findByTestId("chat-thread-header-title");
   click(resourceButton());
   await waitFor(() => {
-    expect(updates).toContainEqual({ chatResourcesEnabledByDefault: true });
-    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
-  });
-  saving.resolve();
-  await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
-    expect(resourceButton()).not.toHaveAttribute("aria-disabled", "true");
+    expect(updates).toContainEqual({ chatResourcesEnabledByDefault: true });
   });
+  expect(resourceButton()).not.toHaveAttribute("aria-busy", "true");
+  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
+  saving.resolve();
 });
 
-test("Keep the saved preference and explain a failed update", async () => {
+test("Close this chat's panel at once and explain a failed preference update", async () => {
   context.mocks.api(userPreferencesContract.update, ({ respond }) => {
     return respond(500, {
       error: { code: "INTERNAL_ERROR", message: "Preference update failed" },
@@ -87,9 +85,10 @@ test("Keep the saved preference and explain a failed update", async () => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
   click(resourceButton());
-  await screen.findByText("Preference update failed");
   await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
+  await screen.findByText("Preference update failed");
+  expect(resourceState()).toStrictEqual({ open: false, visible: false });
   expect(screen.getAllByText("Preference update failed")).toHaveLength(1);
 });

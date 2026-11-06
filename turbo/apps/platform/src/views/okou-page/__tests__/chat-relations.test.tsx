@@ -266,6 +266,7 @@ test("Draw the next chat's panel only once its relationships answer", async () =
   installRelationsGeometry();
   const first = continuityThread(96, 1, "First related chat");
   const second = continuityThread(96, 2, "Next related chat");
+  const requested = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<void>(context.signal);
   const workspace = installContinuityWorkspace(context, {
     caseId: 96,
@@ -284,6 +285,9 @@ test("Draw the next chat's panel only once its relationships answer", async () =
     chatRelationsContract.communications,
     async ({ params, respond }) => {
       if (params.id === second.id) {
+        if (!requested.settled()) {
+          requested.resolve();
+        }
         await response.promise;
       }
       return respond(200, { items: [] });
@@ -304,12 +308,7 @@ test("Draw the next chat's panel only once its relationships answer", async () =
     );
   });
   // No placeholder and nothing from the previous chat while this one loads.
-  await waitFor(() => {
-    expect(buttonNamed("Artifacts and chats")).toHaveAttribute(
-      "aria-busy",
-      "true",
-    );
-  });
+  await requested.promise;
   expect(
     screen.queryByRole("region", { name: "Artifacts and chats" }),
   ).not.toBeInTheDocument();

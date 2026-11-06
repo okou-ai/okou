@@ -191,8 +191,10 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
   const query = useGet(manager.query$);
   const setQuery = useSet(manager.setQuery$);
   const close = useSet(manager.close$);
-  // Search and filters have nothing to act on until the chat has an email.
-  const empty = mails.state === "hasData" && mails.data.length === 0;
+  // Search, filters and the count only describe emails. Until the list shows
+  // the chat has one, the header matches the empty state so loading never
+  // promises controls that then disappear.
+  const count = mails.state === "hasData" ? mails.data.length : 0;
   return (
     <div className="shrink-0 space-y-3 border-b border-border/60 p-4">
       <div className="flex items-center gap-2">
@@ -201,9 +203,9 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
           {t(($) => {
             return $.chat.mail.manager.title;
           })}
-          <span className="ml-2 text-xs text-muted-foreground">
-            {mails.state === "hasData" ? mails.data.length : 0}
-          </span>
+          {count > 0 && (
+            <span className="ml-2 text-xs text-muted-foreground">{count}</span>
+          )}
         </h2>
         <Button
           type="button"
@@ -217,7 +219,7 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
           <X size={16} />
         </Button>
       </div>
-      {!empty && (
+      {count > 0 && (
         <>
           <div className="relative">
             <Search

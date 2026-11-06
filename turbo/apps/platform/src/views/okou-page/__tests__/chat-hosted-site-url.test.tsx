@@ -20,7 +20,11 @@ import {
   NAVIGATION_ARTIFACT_THREAD_ID,
 } from "./chat-navigation-artifact-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { installResourceGeometry } from "./chat-resources-test-helpers.ts";
+import {
+  installResourceGeometry,
+  resourceButton,
+  resourcePanel,
+} from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
 
@@ -185,6 +189,11 @@ async function setupHostedSite(
 }
 
 async function copyFromResources() {
+  // Working in the artifact preview dismisses the resource panel like any
+  // outside press, so reopen it from the header.
+  if (!resourcePanel()) {
+    click(resourceButton());
+  }
   const resources = await screen.findByRole("region", {
     name: "Artifacts and chats",
   });

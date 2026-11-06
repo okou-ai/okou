@@ -22,14 +22,10 @@ const chatResourcesEnabledByDefault$ = computed(async (get) => {
   return (await get(userPreferences$)).chatResourcesEnabledByDefault;
 });
 
+// Every press writes its value, even one the cache already holds: a quick
+// second press must not be skipped because the first is still being saved.
 const saveChatResourcesPreference$ = command(
   async ({ get, set }, open: boolean, signal: AbortSignal) => {
-    const preferred = await get(chatResourcesEnabledByDefault$);
-    signal.throwIfAborted();
-    // An empty chat can be hidden while its saved preference is already on.
-    if (preferred === open) {
-      return;
-    }
     await set(
       updateUserPreference$,
       { chatResourcesEnabledByDefault: open },
@@ -154,19 +150,18 @@ function createResourcePanelChoice(wide$: Computed<boolean>) {
     set(instantOpening$, false);
     set(choice$, { open, narrow: !get(wide$) });
   });
-  // With room beside the transcript a press is the preference, for every chat.
-  // Without it, a press only peeks in this chat and leaves the preference alone.
+  // A press acts on this chat at once, like every other header panel. With
+  // room beside the transcript it also becomes the preference for every chat;
+  // without it, a press only peeks in this chat and leaves the preference alone.
   const press$ = command(
     async ({ get, set }, open: boolean, signal: AbortSignal) => {
-      if (!get(wide$)) {
-        set(instantOpening$, open);
-        set(choice$, { open, narrow: true });
-        return;
-      }
-      await set(saveChatResourcesPreference$, open, signal);
+      const wide = get(wide$);
       set(instantOpening$, open);
       // An explicit open also shows a chat that has nothing to list yet.
-      set(choice$, open ? { open, narrow: false } : null);
+      set(choice$, { open, narrow: !wide });
+      if (wide) {
+        await set(saveChatResourcesPreference$, open, signal);
+      }
     },
   );
   return {
@@ -246,9 +241,6 @@ function createChatResourcePanelSignals() {
     }),
   );
   const blurControl$ = command(({ get, set }, target: EventTarget | null) => {
-    if (get(wide$)) {
-      return;
-    }
     if (
       target instanceof Node &&
       (get(anchor.element$)?.contains(target) ||
@@ -261,7 +253,6 @@ function createChatResourcePanelSignals() {
 
   return {
     ...choice,
-    wide$,
     measure$,
     layoutOnRef$,
     anchorOnRef$: anchor.onRef$,

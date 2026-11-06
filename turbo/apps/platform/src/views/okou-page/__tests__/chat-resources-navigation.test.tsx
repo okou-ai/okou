@@ -1,7 +1,7 @@
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { screen, waitFor, within } from "@testing-library/react";
+import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -34,6 +34,16 @@ import {
 
 const context = testContext();
 const { recordPreferenceUpdates } = createChatResourcesHelpers(context);
+
+/**
+ * Focus the composer as an automatically opened panel finds it after
+ * navigation. A click would dismiss the panel like any outside press.
+ */
+function focusComposer() {
+  act(() => {
+    composer().focus();
+  });
+}
 
 async function setupResourceNavigation() {
   installResourceGeometry(480);
@@ -340,7 +350,7 @@ test.each([
   "Navigate $name chats while resources stay open",
   async ({ previous, next }) => {
     const { current, newer, user } = await setupResourceNavigation();
-    await user.click(composer());
+    focusComposer();
     expect(resourcePanel()).toBeInTheDocument();
     await user.keyboard(previous);
     await waitFor(() => {
@@ -348,7 +358,7 @@ test.each([
       expect(document.title).toBe("Newer resources chat | Okou");
     });
     await screen.findByRole("region", { name: "Artifacts and chats" });
-    await user.click(composer());
+    focusComposer();
     await user.keyboard(next);
     await waitFor(() => {
       expect(pathname()).toBe(`/chats/${current.id}`);
@@ -360,7 +370,7 @@ test.each([
 test("Search and start a chat with resources open", async () => {
   const { current, user } = await setupResourceNavigation();
   const editor = composer();
-  await user.click(editor);
+  focusComposer();
   await user.keyboard("{Meta>}{Shift>}f{/Shift}{/Meta}");
   const dialog = await screen.findByRole("dialog", {
     name: "Search workspace...",
@@ -382,7 +392,7 @@ test("Search and start a chat with resources open", async () => {
 
 test("Keep chat shortcuts blocked by the rename dialog while resources are open", async () => {
   const { current, user } = await setupResourceNavigation();
-  await user.click(composer());
+  focusComposer();
   await user.keyboard("{F2}");
   const dialog = await screen.findByRole("dialog", { name: "Rename chat" });
   const title = within(dialog).getByPlaceholderText("Chat title");

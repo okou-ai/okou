@@ -125,12 +125,21 @@ test("Dismiss a manually opened narrow panel on composer click and keep it close
   });
 });
 
-test("Keep a wide panel open during composer focus and keep an Escape dismissal through layout changes", async () => {
+test("Dismiss a wide panel on composer click or Escape, like other header panels, and keep it closed through layout changes", async () => {
   const resize = await setupResources();
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
   await userEvent.click(composer());
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  resize(300);
+  resize(500);
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
+  await userEvent.click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: true, visible: true });
   });
@@ -138,10 +147,6 @@ test("Keep a wide panel open during composer focus and keep an Escape dismissal 
     resourcePanel()?.focus();
   });
   fireEvent.keyDown(resourcePanel()!, { key: "Escape" });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
-  resize(500);
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
   });
