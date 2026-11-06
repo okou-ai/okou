@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.46](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.45...runner-supervisor-v0.21.46) (2026-11-06)
+
+
+### Bug Fixes
+
+* **runner:** confirm required status behind retained writes ([#45717](https://github.com/okou-ai/okou/issues/45717)) ([8df8a63](https://github.com/okou-ai/okou/commit/8df8a6389a31a5b60c792e9e6625c8ffc091c3d8))
+
 ## [0.21.45](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.44...runner-supervisor-v0.21.45) (2026-11-06)
 
 

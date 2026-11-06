@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.4.15](https://github.com/okou-ai/okou/compare/runner-network-v0.4.14...runner-network-v0.4.15) (2026-11-06)
+
+
+### Bug Fixes
+
+* **runner-network:** observe pidfd exit during cleanup rechecks ([#45702](https://github.com/okou-ai/okou/issues/45702)) ([27adc76](https://github.com/okou-ai/okou/commit/27adc765ef29476585743d7cce349c36709ed791))
+
+
+### Performance Improvements
+
+* **runner:** reduce proxy registry policy processing ([#45724](https://github.com/okou-ai/okou/issues/45724)) ([84bdbf7](https://github.com/okou-ai/okou/commit/84bdbf783038f82f0a45765f797e07792664741c))
+
 ## [0.4.14](https://github.com/okou-ai/okou/compare/runner-network-v0.4.13...runner-network-v0.4.14) (2026-11-06)
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.31](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.30...runner-rs-v0.244.31) (2026-11-06)
+
+
+### Refactoring
+
+* **python:** unify catalog worker startup ownership ([#45714](https://github.com/okou-ai/okou/issues/45714)) ([2c0c4e5](https://github.com/okou-ai/okou/commit/2c0c4e5431c360a35f3234b9ae81db56b7697f19))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.30](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.29...runner-rs-v0.244.30) (2026-11-06)
 
 

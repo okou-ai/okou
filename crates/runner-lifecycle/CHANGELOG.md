@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.73](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.72...runner-lifecycle-v0.17.73) (2026-11-06)
+
+
+### Bug Fixes
+
+* **runner:** confirm required status behind retained writes ([#45717](https://github.com/okou-ai/okou/issues/45717)) ([8df8a63](https://github.com/okou-ai/okou/commit/8df8a6389a31a5b60c792e9e6625c8ffc091c3d8))
+
 ## [0.17.72](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.71...runner-lifecycle-v0.17.72) (2026-11-06)
 
 ## [0.17.71](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.70...runner-lifecycle-v0.17.71) (2026-11-06)

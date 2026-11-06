@@ -1,5 +1,24 @@
 # Changelog
 
+## [8.822.0](https://github.com/okou-ai/okou/compare/core-v8.821.0...core-v8.822.0) (2026-11-06)
+
+
+### Features
+
+* **app:** refine artifact preview toolbar behind a feature switch ([#45626](https://github.com/okou-ai/okou/issues/45626)) ([2e0cb82](https://github.com/okou-ai/okou/commit/2e0cb82cb278afaa08d03792e91dc70cc455acc1))
+
+
+### Refactoring
+
+* **api:** make connector skill bundle delivery unconditional ([#45697](https://github.com/okou-ai/okou/issues/45697)) ([767c72c](https://github.com/okou-ai/okou/commit/767c72c2e73de6a774581bcb9fd4b01ecfc46f19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.0
+
 ## [8.821.0](https://github.com/okou-ai/okou/compare/core-v8.820.1...core-v8.821.0) (2026-11-06)
 
 

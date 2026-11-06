@@ -13,6 +13,39 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1099.0](https://github.com/okou-ai/okou/compare/app-v0.1098.0...app-v0.1099.0) (2026-11-06)
+
+
+### Features
+
+* **app:** refine artifact preview toolbar behind a feature switch ([#45626](https://github.com/okou-ai/okou/issues/45626)) ([2e0cb82](https://github.com/okou-ai/okou/commit/2e0cb82cb278afaa08d03792e91dc70cc455acc1))
+* **app:** serve my okou chat at / with a single chat list header ([#45656](https://github.com/okou-ai/okou/issues/45656)) ([c8064eb](https://github.com/okou-ai/okou/commit/c8064ebb73d0ff098cbaaec73788db396792c0f3))
+
+
+### Bug Fixes
+
+* **app:** allow dragging chats out of projects ([#45707](https://github.com/okou-ai/okou/issues/45707)) ([796a995](https://github.com/okou-ai/okou/commit/796a9950d144e93db03348b17bf873922e900b73))
+* **app:** make chat header panels consistent and retire artifacts auto-open ([#45669](https://github.com/okou-ai/okou/issues/45669)) ([11b6837](https://github.com/okou-ai/okou/commit/11b6837e854dcd643e31ca309b450b7a15a5de37))
+* **app:** use calmer colors for subscription usage states ([#45711](https://github.com/okou-ai/okou/issues/45711)) ([b4f3a87](https://github.com/okou-ai/okou/commit/b4f3a87fbed5f76e33e49a4208bceeca6221246b))
+
+
+### Refactoring
+
+* **app:** let signals own forward, annotation and permission drawer flows ([#45713](https://github.com/okou-ai/okou/issues/45713)) ([0102f6a](https://github.com/okou-ai/okou/commit/0102f6ace4dc2cda5eb5d021cc8f9c8c21edafa9))
+
+
+### Performance Improvements
+
+* refresh chat indicators only on run state changes ([#45712](https://github.com/okou-ai/okou/issues/45712)) ([ac06095](https://github.com/okou-ai/okou/commit/ac0609591b2a0a5f159afb50b7561df46a23f6a4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.0
+    * @okouai/core bumped to 8.822.0
+
 ## [0.1098.0](https://github.com/okou-ai/okou/compare/app-v0.1097.5...app-v0.1098.0) (2026-11-06)
 
 
