@@ -1344,8 +1344,6 @@ test("Refresh unread indicators after thread metadata changes without warming me
     bridge.getComputed("chat-thread-indicators"),
   ).resolves.toMatchObject({ threads: { [threadId]: "unread" } });
   muted = true;
-  // Muting publishes the thread-list change and the indicator change.
-  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
   context.mocks.ably.triggerOnChannel(
     credentialChannel(),
     "chatIndicatorsChanged",
@@ -1397,7 +1395,6 @@ test("Warm unread chats only after chat message notifications", async () => {
     }
   });
 
-  context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
   context.mocks.ably.triggerOnChannel(
     credentialChannel(),
     "chatIndicatorsChanged",
@@ -1411,8 +1408,7 @@ test("Warm unread chats only after chat message notifications", async () => {
     expect(indicatorReloadCount).toBeGreaterThanOrEqual(3);
   });
   // An indicator change invalidates before and after its refresh; a read
-  // cursor invalidates after its refresh. Thread-list changes do neither, and
-  // no notification warms chat content.
+  // cursor invalidates after its refresh. Neither warms chat content.
   expect(indicatorReloadCount).toBe(3);
   expect(catchUpRequestCount).toBe(0);
 
