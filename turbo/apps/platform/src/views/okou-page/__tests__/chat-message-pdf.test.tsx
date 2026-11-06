@@ -9,7 +9,6 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core";
 import {
   artifactReferencePath,
   artifactReferencesContract,
@@ -90,9 +89,6 @@ async function setupPdfChat(
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ChatMessagePdf]: true,
-    },
   });
   await screen.findByText(ANSWER);
   await waitFor(() => {
