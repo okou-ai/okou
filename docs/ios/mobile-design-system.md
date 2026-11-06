@@ -124,7 +124,7 @@ with their owning input/controller.
 ## Brand expression and product navigation
 
 Okou is warm, clear, and capable. Preserve the Web's Amber/Ink action pair,
-Geist typography, Lucide artwork with native optical weight, wordmark, and illustrated agent family.
+Geist typography, Lucide artwork with native optical weight, wordmark, and default assistant artwork.
 Quiet neutral surfaces let work and agent identity lead; amber identifies a
 primary commitment, rather than decorating every control. Do not substitute a
 competitor's primary palette, typeface, illustrations, or brand motion.
@@ -489,26 +489,17 @@ grouped rows with the shared 28 pt glyph slot, a 17 pt name and two 15 pt muted 
 
 ### Agent artwork
 
-`OkouAgentAvatar` renders the agent's persisted identity everywhere: pinned rows,
-new-chat greeting, assistant messages, and mention suggestions. The default agent
-uses the canonical Okou avatar. Other agents use their chosen image or composition;
-an absent/unavailable custom image uses that agent's initial, never Okou's identity.
-Message/sidebar/greeting sizes are 28/32/56 pt via `OkouAvatarSize`.
+`OkouAgentAvatar` is shared by pinned rows, the new-chat greeting, assistant
+messages, and mention suggestions. The default agent uses the canonical Okou
+avatar. Other agents show an uploaded bitmap image or a neutral tile with their
+name's initial. Keep the existing typography, semantic colors, native sizing,
+and accessible name in the shared component.
 
-Web persists three image families: `preset:N`, legacy `svg:...`, and versioned
-composer URLs whose query selects face, hair, expression, skin, hair color, and
-sweater. Native composes the same bundled vectors, including Web's chin baseline,
-framing, compatible combinations, and inherited sweater rule for older records.
-Custom uploaded bitmap images load separately. The Web owner remains
-`turbo/packages/core/src/agent-avatar.ts` and
-`turbo/apps/platform/src/views/okou-page/avatar-svg-utils.ts`.
-
-Run `python3 ios/scripts/sync-agent-avatars.py` when that library changes. It pins
-the Web version and bundles its CDN layer files with SHA-256 provenance in
-`DesignSystem/agent-avatars.json`; `--check` verifies local configuration and
-asset integrity offline. Review framing changes against the Web owner too;
-configuration synchronization does not automatically translate layout formulas.
-No credentials or authenticated Web session are needed to render bundled avatars.
+Native has no avatar editor and does not bundle or compose avatar layers.
+Preset identifiers and SVG URLs use the initial tile. Keep persisted avatar
+values with their owning service; this presentation policy does not rewrite
+another client's avatar configuration. Unavailable custom images use the same
+initial tile.
 
 ### Workspace artwork
 
@@ -541,7 +532,7 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouBanner`                                                                  | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                        |
 | `ChatFeedbackSurface`                                                         | Chat feedback under the header: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕                                                                        |
 | `OkouChatSkeleton` / `OkouSkeletonBlock`                                      | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, breathing                                                                                     |
-| `OkouAgentAvatar`, `OkouWorkspaceLogo`                                        | Shared identity artwork with Web-compatible resolution and native sizing                                                                                                         |
+| `OkouAgentAvatar`, `OkouWorkspaceLogo`                                        | Shared avatar and workspace artwork with native sizing                                                                                                                           |
 | `OkouWordmark`                                                                | Approved aspect ratio and theme-aware foreground                                                                                                                                 |
 | `OkouCloseButton`, `OkouLabeledValue`                                         | Native toolbar dismissal and width-adaptive label/value information                                                                                                              |
 | `OkouProviderButtonStyle`                                                     | Full-width provider action with a branded icon and explicit provider name; neutral resting/pressed/disabled states                                                               |
@@ -611,7 +602,6 @@ python3 ios/scripts/sync-design-tokens.py
 python3 ios/scripts/sync-design-assets.py
 python3 ios/scripts/sync-design-tokens.py --check
 python3 ios/scripts/sync-design-assets.py --check
-python3 ios/scripts/sync-agent-avatars.py --check
 python3 ios/scripts/sync-workspace-assets.py --check
 xcrun swift-format lint --strict --recursive ios/Okou ios/OkouTests ios/Push
 ```

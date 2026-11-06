@@ -314,17 +314,8 @@
             HStack(spacing: OkouSpace.md) {
               OkouAgentAvatar(
                 avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.greeting)
-              ForEach(0..<5) { index in
-                OkouAgentAvatar(
-                  avatarURL: "preset:\(index)", name: "Legacy avatar \(index + 1)", size: 40)
-              }
-            }
-            HStack(spacing: OkouSpace.md) {
-              ForEach(["round", "square", "tall"], id: \.self) { face in
-                OkouAgentAvatar(
-                  avatarURL: OkouAvatarAssets.baseURL
-                    + "?face=\(face)&hair=high-bun&expression=happy&skin=gold&hairColor=blue&sweater=lime",
-                  name: face, size: OkouAvatarSize.greeting)
+              ForEach(["Research", "Design", "Finance"], id: \.self) { name in
+                OkouAgentAvatar(avatarURL: nil, name: name, size: OkouAvatarSize.greeting)
               }
             }
           }
