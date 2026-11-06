@@ -29,6 +29,23 @@ Status retry has the same dependency through the status-state mutex and ordered
 persistence. The state-lock case does not require an earlier failed file write.
 Persistence timeouts do not bound a wait that happens before persistence starts.
 
+Required whole-status publications, including initial status and active
+ownership, await confirmation when coalesced behind a retained writer. They
+share the original foreground publication deadline across serialization,
+ordering and confirmation; deferral does not start a new budget. Mode updates,
+active removal, idle inventory and periodic current-state retry retain their
+existing immediate-deferral policy. This does not suppress caller errors: a mode
+publication failure can terminate the reactor, while cleanup failures are warned.
+Keep confirmation-waiting work in its existing independently scheduled owners so
+it does not add a reactor dependency.
+
+Successful atomic replacement advances the published generation and wakes
+required observers. An enqueued snapshot, elapsed deadline or cancelled observer
+does not prove publication or authorize executor handoff/unpark. Retained writes
+keep ordering custody until completion and may publish newer coalesced state
+after their caller returns. Cancellation recovery must preserve that ordering.
+Publication is an atomic file replacement, not a file/directory fsync guarantee.
+
 ## Ownership and shutdown
 
 | Work                           | Owner and progress rule                                                                                                                                                                                                                    | Shutdown                                                                                                                                                                                                                                                                                                                                                                                            |
