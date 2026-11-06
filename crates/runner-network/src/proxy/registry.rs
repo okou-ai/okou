@@ -3,6 +3,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use nix::fcntl::Flock;
 use serde::{Deserialize, Serialize};
@@ -88,16 +89,85 @@ pub struct SandboxRegistration<'a> {
     pub pi_model_config: Option<&'a serde_json::Value>,
 }
 
+/// Completed required registration boundaries. Publication contains its queue
+/// and write children; these durations must not be summed with their parent.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProxyRegistrationStage {
+    Prepare,
+    /// Complete acquisition, including attempt workers, verification and retry sleeps.
+    Lock,
+    /// Bounded read and UTF-8 decoding, including filesystem worker scheduling.
+    Read,
+    Parse,
+    Mutate,
+    Capacity,
+    Serialize,
+    Digest,
+    PublishQueue,
+    PublishWrite,
+    Publish,
+}
+
+/// Content-free observations only. Callbacks must not block or perform I/O.
+/// Cancellation may leave a stage unobserved; it does not cancel an admitted
+/// physical publication or release that worker's lock.
+/// Queue/write durations arrive together after publication joins; their
+/// reporting timestamps do not mark individual worker-phase completion.
+pub trait ProxyRegistrationObserver: Send {
+    fn record_stage(&mut self, stage: ProxyRegistrationStage, duration: Duration, success: bool);
+
+    /// Size of the serialized candidate, after insertion and capacity checks.
+    /// Consumers must bucket these counts before exporting observations.
+    fn registry_size(&mut self, _bytes: usize, _entries: usize) {}
+}
+
+struct UnobservedRegistration;
+
+impl ProxyRegistrationObserver for UnobservedRegistration {
+    fn record_stage(&mut self, _: ProxyRegistrationStage, _: Duration, _: bool) {}
+}
+
+fn record_registration_result<T>(
+    observer: &mut dyn ProxyRegistrationObserver,
+    stage: ProxyRegistrationStage,
+    started: Instant,
+    result: RunnerResult<T>,
+) -> RunnerResult<T> {
+    observer.record_stage(stage, started.elapsed(), result.is_ok());
+    result
+}
+
 async fn read_registry(path: &std::path::Path) -> RunnerResult<ProxyRegistry> {
+    read_registry_observed(path, &mut UnobservedRegistration).await
+}
+
+async fn read_registry_observed(
+    path: &Path,
+    observer: &mut dyn ProxyRegistrationObserver,
+) -> RunnerResult<ProxyRegistry> {
+    let started = Instant::now();
     let content = runner_host::state_file::read_to_string(
         path,
         PROXY_REGISTRY_MAX_BYTES,
         runner_host::state_file::OwnerCheck::CurrentEuid,
     )
-    .await?
-    .ok_or_else(|| RunnerError::Internal(format!("read registry {}: not found", path.display())))?;
-    serde_json::from_str(&content)
-        .map_err(|e| RunnerError::Internal(format!("parse registry: {e}")))
+    .await
+    .map_err(RunnerError::from)
+    .and_then(|content| {
+        content.ok_or_else(|| {
+            RunnerError::Internal(format!("read registry {}: not found", path.display()))
+        })
+    });
+    let content =
+        record_registration_result(observer, ProxyRegistrationStage::Read, started, content)?;
+    let started = Instant::now();
+    record_registration_result(
+        observer,
+        ProxyRegistrationStage::Parse,
+        started,
+        serde_json::from_str(&content)
+            .map_err(|e| RunnerError::Internal(format!("parse registry: {e}"))),
+    )
 }
 
 /// Write the proxy registry while preserving capacity for every stored policy
@@ -121,8 +191,23 @@ async fn write_locked_registry(
     value: &ProxyRegistry,
     guard: Flock<File>,
 ) -> RunnerResult<RegistryDigest> {
-    let fail_closed_reserve = fail_closed_capacity_bytes(value)?;
-    write_registry_with_reserve(path, value, fail_closed_reserve, guard).await
+    write_locked_registry_observed(path, value, guard, &mut UnobservedRegistration).await
+}
+
+async fn write_locked_registry_observed(
+    path: &Path,
+    value: &ProxyRegistry,
+    guard: Flock<File>,
+    observer: &mut dyn ProxyRegistrationObserver,
+) -> RunnerResult<RegistryDigest> {
+    let started = Instant::now();
+    let fail_closed_reserve = record_registration_result(
+        observer,
+        ProxyRegistrationStage::Capacity,
+        started,
+        fail_closed_capacity_bytes(value),
+    )?;
+    write_registry_with_reserve_observed(path, value, fail_closed_reserve, guard, observer).await
 }
 
 async fn write_registry_with_reserve(
@@ -131,14 +216,57 @@ async fn write_registry_with_reserve(
     fail_closed_reserve: u64,
     guard: Flock<File>,
 ) -> RunnerResult<RegistryDigest> {
-    let content = serialize_registry(path, value, fail_closed_reserve)?;
+    write_registry_with_reserve_observed(
+        path,
+        value,
+        fail_closed_reserve,
+        guard,
+        &mut UnobservedRegistration,
+    )
+    .await
+}
+
+async fn write_registry_with_reserve_observed(
+    path: &Path,
+    value: &ProxyRegistry,
+    fail_closed_reserve: u64,
+    guard: Flock<File>,
+    observer: &mut dyn ProxyRegistrationObserver,
+) -> RunnerResult<RegistryDigest> {
+    let started = Instant::now();
+    let content = record_registration_result(
+        observer,
+        ProxyRegistrationStage::Serialize,
+        started,
+        serialize_registry(path, value, fail_closed_reserve),
+    )?;
+    observer.registry_size(content.len(), value.sandboxes.len());
+    let started = Instant::now();
     let digest = RegistryDigest::of(&content);
+    observer.record_stage(ProxyRegistrationStage::Digest, started.elapsed(), true);
     let path = path.to_path_buf();
-    runner_host::state_file::spawn_locked_private_atomic_write(path, content, guard)
+    let started = Instant::now();
+    let report = runner_host::state_file::spawn_locked_private_atomic_write(path, content, guard)
         .await
         .map_err(|error| {
             RunnerError::Internal(format!("proxy registry publication task failed: {error}"))
-        })??;
+        });
+    let elapsed = started.elapsed();
+    let result = report.and_then(|report| {
+        observer.record_stage(
+            ProxyRegistrationStage::PublishQueue,
+            report.queue_wait,
+            true,
+        );
+        observer.record_stage(
+            ProxyRegistrationStage::PublishWrite,
+            report.write_duration,
+            report.result.is_ok(),
+        );
+        report.result.map_err(RunnerError::from)
+    });
+    observer.record_stage(ProxyRegistrationStage::Publish, elapsed, result.is_ok());
+    result?;
     Ok(digest)
 }
 
@@ -686,11 +814,42 @@ impl ProxyRegistryHandle {
         source_ip: &str,
         registration: &SandboxRegistration<'_>,
     ) -> RunnerResult<RegistryPublication> {
-        validate_custom_connector_resource_ownership(registration.firewalls.unwrap_or_default())?;
-        let connector_routing_variables = initial_connector_routing_variables(registration)?;
-        let guard = lock::acquire(self.lock_path.clone()).await?;
+        self.register_sandbox_with_observer(source_ip, registration, &mut UnobservedRegistration)
+            .await
+    }
 
-        let mut registry = read_registry(&self.registry_path).await?;
+    /// Register with synchronous observations of completed required boundaries.
+    pub async fn register_sandbox_with_observer(
+        &self,
+        source_ip: &str,
+        registration: &SandboxRegistration<'_>,
+        observer: &mut dyn ProxyRegistrationObserver,
+    ) -> RunnerResult<RegistryPublication> {
+        let started = Instant::now();
+        let preparation = (|| {
+            validate_custom_connector_resource_ownership(
+                registration.firewalls.unwrap_or_default(),
+            )?;
+            initial_connector_routing_variables(registration)
+        })();
+        let connector_routing_variables = record_registration_result(
+            observer,
+            ProxyRegistrationStage::Prepare,
+            started,
+            preparation,
+        )?;
+        let started = Instant::now();
+        let guard = record_registration_result(
+            observer,
+            ProxyRegistrationStage::Lock,
+            started,
+            lock::acquire(self.lock_path.clone())
+                .await
+                .map_err(RunnerError::from),
+        )?;
+
+        let mut registry = read_registry_observed(&self.registry_path, observer).await?;
+        let started = Instant::now();
         let now = chrono::Utc::now().timestamp_millis();
         // Preserve original observation provenance for a same-run refresh and
         // across addon restarts. A new process cannot claim the old history.
@@ -737,7 +896,9 @@ impl ProxyRegistryHandle {
             },
         );
         registry.updated_at = now;
-        let digest = write_locked_registry(&self.registry_path, &registry, guard).await?;
+        observer.record_stage(ProxyRegistrationStage::Mutate, started.elapsed(), true);
+        let digest =
+            write_locked_registry_observed(&self.registry_path, &registry, guard, observer).await?;
         info!(
             source_ip,
             run_id = registration.run_id,

@@ -17,6 +17,26 @@ fn assert_event_field(event: &CapturedEvent, field: &str, expected: &str) {
         .unwrap_or_else(|| panic!("missing field {field}; event={event:#?}"));
     assert_eq!(actual, expected, "field {field} mismatch; event={event:#?}");
 }
+
+fn assert_registration_stops_at_read_failure(telemetry: &crate::telemetry::JobTelemetry) {
+    let details: Vec<_> = telemetry
+        .pending_ops_snapshot()
+        .into_iter()
+        .filter(|op| op.0.starts_with("runner_proxy_register_"))
+        .collect();
+    assert_eq!(
+        details,
+        vec![
+            ("runner_proxy_register_prepare".to_string(), true, None),
+            ("runner_proxy_register_lock".to_string(), true, None),
+            (
+                "runner_proxy_register_read".to_string(),
+                false,
+                Some("sandbox_proxy_register_failed".to_string())
+            ),
+        ]
+    );
+}
 #[test]
 fn proxy_register_fast_success_logs_info() {
     let events = capture_proxy_register_events(|| {
@@ -105,7 +125,8 @@ async fn proxy_registration_projects_captured_model_policy_without_reselection()
         "model": "@preset/custom-captured-preset"
     });
     context.pi_model_config = Some(captured.clone());
-    let _session = register_proxy(&config, &context, "10.200.0.3")
+    let mut telemetry = test_telemetry(&config, &context);
+    let _session = register_proxy(&config, &context, "10.200.0.3", &mut telemetry)
         .await
         .unwrap();
     let registry: serde_json::Value = serde_json::from_str(
@@ -118,6 +139,91 @@ async fn proxy_registration_projects_captured_model_policy_without_reselection()
         registry["sandboxes"]["10.200.0.3"]["piModelConfig"],
         captured
     );
+}
+
+#[tokio::test]
+async fn proxy_registration_exports_only_fixed_content_free_operations() {
+    use runner_provider::http::{HttpClient, HttpClientConfig};
+    let server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(http_response(
+        "200 OK",
+        br#"{"success":true}"#,
+    ))])
+    .await;
+    let dir = tempfile::tempdir().unwrap();
+    let mut config = test_executor_config(dir.path()).await;
+    config.http = HttpClient::new(HttpClientConfig {
+        api_url: server.url(),
+        vercel_bypass: None,
+        client_session_id: "registration-observation".into(),
+        runner_version: env!("CARGO_PKG_VERSION"),
+    })
+    .unwrap();
+    let mut context = minimal_context();
+    context.encrypted_secrets = Some("private-encrypted-payload".into());
+    context.vars = Some(HashMap::from([(
+        "PRIVATE_VAR".into(),
+        "private-variable-value".into(),
+    )]));
+    let mut telemetry = test_telemetry(&config, &context);
+    let _session = register_proxy(&config, &context, "10.200.0.3", &mut telemetry)
+        .await
+        .unwrap();
+    telemetry.flush().await;
+    let requests = server.assert_finished_with_requests().await;
+    assert_eq!(requests.len(), 1);
+    assert!(requests[0].starts_with("POST /api/webhooks/agent/telemetry "));
+    let payload: serde_json::Value =
+        serde_json::from_str(requests[0].split_once("\r\n\r\n").unwrap().1).unwrap();
+    assert_eq!(payload["runId"], context.run_id.to_string());
+    let operations = payload["sandboxOperations"].as_array().unwrap();
+    assert_eq!(
+        operations
+            .iter()
+            .map(|op| op["action_type"].as_str().unwrap())
+            .collect::<Vec<_>>(),
+        vec![
+            "runner_proxy_register_prepare",
+            "runner_proxy_register_lock",
+            "runner_proxy_register_read",
+            "runner_proxy_register_parse",
+            "runner_proxy_register_mutate",
+            "runner_proxy_register_capacity",
+            "runner_proxy_register_serialize",
+            "runner_proxy_register_registry_bytes",
+            "runner_proxy_register_registry_entries",
+            "runner_proxy_register_digest",
+            "runner_proxy_register_publish_queue",
+            "runner_proxy_register_publish_write",
+            "runner_proxy_register_publish",
+            "runner_proxy_register_network_log",
+        ]
+    );
+    for op in operations {
+        assert_eq!(op["success"], true);
+        assert!(op["duration_ms"].is_u64());
+        assert!(op.as_object().unwrap().keys().all(|key| matches!(
+            key.as_str(),
+            "ts" | "action_type" | "duration_ms" | "success" | "outcome"
+        )));
+    }
+    assert_eq!(operations[7]["outcome"], "le_64kib");
+    assert_eq!(operations[8]["outcome"], "le_1");
+    assert_eq!(operations[7]["duration_ms"], 0);
+    assert_eq!(operations[8]["duration_ms"], 0);
+    let body = payload["sandboxOperations"].to_string();
+    for private in [
+        "private-encrypted-payload",
+        "private-variable-value",
+        "PRIVATE_VAR",
+        "10.200.0.3",
+        context.sandbox_token.as_str(),
+        dir.path().to_str().unwrap(),
+    ] {
+        assert!(
+            !body.contains(private),
+            "registration operations exposed private data"
+        );
+    }
 }
 
 #[tokio::test]
@@ -145,9 +251,15 @@ async fn proxy_registration_accepts_canonical_targets() {
         "münich".to_string(),
     )]));
 
-    let _canonical_session = register_proxy(&canonical_config, &canonical_context, "10.200.0.3")
-        .await
-        .unwrap();
+    let mut telemetry = test_telemetry(&canonical_config, &canonical_context);
+    let _canonical_session = register_proxy(
+        &canonical_config,
+        &canonical_context,
+        "10.200.0.3",
+        &mut telemetry,
+    )
+    .await
+    .unwrap();
     let canonical_registry: serde_json::Value = serde_json::from_str(
         &tokio::fs::read_to_string(canonical_dir.path().join("proxy-registry.json"))
             .await
@@ -198,10 +310,10 @@ async fn proxy_registration_completes_and_attributes_logs_without_application_re
         .set_control_target_for_test(control_dir.path().to_path_buf(), "generation-1".into());
     let source_ip = "10.200.0.3";
     let registration_config = Arc::clone(&config);
-    let registration =
-        tokio::spawn(
-            async move { register_proxy(&registration_config, &context, source_ip).await },
-        );
+    let registration = tokio::spawn(async move {
+        let mut telemetry = test_telemetry(&registration_config, &context);
+        register_proxy(&registration_config, &context, source_ip, &mut telemetry).await
+    });
     let (mut peer, _) = tokio::time::timeout(RUN_IN_SANDBOX_TEST_TIMEOUT, listener.accept())
         .await
         .unwrap()
@@ -252,7 +364,7 @@ async fn execute_job_proxy_register_failure_destroys_fresh_sandbox_before_agent_
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let factory = MockSandboxFactory::with_overrides(Arc::clone(&overrides));
 
-    let (outcome, _telemetry) = execute_job(
+    let (outcome, telemetry) = execute_job(
         &factory,
         minimal_context(),
         NewSandboxDispatch {
@@ -266,6 +378,7 @@ async fn execute_job_proxy_register_failure_destroys_fresh_sandbox_before_agent_
     .await;
 
     assert_eq!(outcome.exit_code(), 1);
+    assert_registration_stops_at_read_failure(&telemetry);
     let error = outcome.error().unwrap();
     assert!(
         error.contains("register sandbox in proxy registry"),
@@ -354,6 +467,8 @@ async fn execute_reused_sandbox_proxy_register_failure_returns_sandbox_before_ag
         .expect("proxy failure should drain prepared storage")
         .expect("reused execution task should not panic");
 
+    assert_registration_stops_at_read_failure(&telemetry);
+
     assert_eq!(outcome.exit_code(), 1);
     let error = outcome.error().unwrap();
     assert!(
@@ -411,8 +526,10 @@ async fn execute_inner_proxy_unregister_failure_marks_successful_run_failed() {
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let source_ip = sandbox.source_ip().to_string();
-    let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
     let mut telemetry = test_telemetry(&config, &ctx);
+    let network_log_session = register_proxy(&config, &ctx, &source_ip, &mut telemetry)
+        .await
+        .unwrap();
 
     let run = execute_prepared_sandbox_run(
         PreparedSandboxRun {

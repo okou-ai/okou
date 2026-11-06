@@ -75,7 +75,6 @@ test("A rate-limited Marketing session does not block authenticated startup", as
   await setupPage({
     context,
     path: "/agents",
-    featureSwitches: { [FeatureSwitchKey.MarketingContentHandoff]: true },
   });
 
   await expect(

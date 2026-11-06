@@ -1,5 +1,6 @@
 mod account_binding;
 mod publication;
+mod registration_observation;
 
 use super::*;
 use runner_types::types::{Firewall, FirewallApi, FirewallAuth, FirewallEntry, FirewallPermission};
@@ -616,17 +617,23 @@ async fn registration_rejects_custom_firewall_name_owned_by_builtin() {
         custom_runtime_firewall(custom_connector_id, "slack"),
     ];
 
+    let mut observations = registration_observation::RegistrationObservations::default();
     let error = harness
         .handle
-        .register_sandbox(
+        .register_sandbox_with_observer(
             "10.200.0.2",
             &SandboxRegistration {
                 firewalls: Some(&firewalls),
                 ..base_registration()
             },
+            &mut observations,
         )
         .await
         .expect_err("custom firewall names must have exclusive owners");
+
+    assert_eq!(observations.stages.len(), 1);
+    assert_eq!(observations.stages[0].0, ProxyRegistrationStage::Prepare);
+    assert!(!observations.stages[0].2);
 
     assert!(
         error
@@ -1310,11 +1317,24 @@ async fn oversized_registration_preserves_readable_registry() {
         vars: Some(&oversized_vars),
         ..base_registration()
     };
+    let mut observations = registration_observation::RegistrationObservations::default();
     let error = harness
         .handle
-        .register_sandbox("10.200.0.3", &oversized)
+        .register_sandbox_with_observer("10.200.0.3", &oversized, &mut observations)
         .await
         .unwrap_err();
+
+    assert_eq!(
+        observations.stages.last().unwrap().0,
+        ProxyRegistrationStage::Serialize
+    );
+    assert!(!observations.stages.last().unwrap().2);
+    assert!(
+        !observations
+            .stages
+            .iter()
+            .any(|entry| entry.0 == ProxyRegistrationStage::Publish)
+    );
 
     assert!(
         error

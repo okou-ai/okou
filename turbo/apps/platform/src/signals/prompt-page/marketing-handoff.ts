@@ -1,13 +1,11 @@
 import { command, computed, state } from "ccstate";
 import { marketingHandoffsContract } from "@okouai/api-contracts/client/marketing-handoffs";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { MarketingHandoffManifest } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$, clerkUser$ } from "../auth.ts";
 import { object, string, uuid } from "zod";
 import { jsonParseOr } from "../utils.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 import { searchParams$ } from "../route.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import { createDraftSignals } from "../okou-page/chat-draft.ts";
@@ -78,7 +76,7 @@ export const marketingHandoff$ = computed((get) => {
     : null;
 });
 
-/** Enroll an enabled App session so Marketing can resolve staff rollout without loading Clerk. */
+/** Enroll the API-host guest cookie used to authorize Marketing content handoffs. */
 export const enrollMarketingHandoffSession$ = command(
   async ({ get }, signal: AbortSignal) => {
     // A preceding or rollback API can still rate limit optional enrollment.
@@ -114,11 +112,6 @@ export const loadMarketingHandoff$ = command(
     }
     set(settledHandoffUser$, { snapshot, userId: user.id });
     const owner = get(handoffOwner$);
-    const features = await get(featureSwitch$);
-    signal.throwIfAborted();
-    if (!features[FeatureSwitchKey.MarketingContentHandoff]) {
-      throw new Error("Marketing content handoff is not enabled");
-    }
     const client = get(apiClient$)(marketingHandoffsContract);
     const resolved = await accept(
       client.resolve({

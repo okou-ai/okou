@@ -82,7 +82,9 @@ pub use registry::{
     ConnectorRuntimeRegistryTransaction, ConnectorRuntimeRegistryUpdate,
     CustomConnectorRuntimeRegistryState,
 };
-pub use registry::{ProxyRegistryHandle, SandboxRegistration};
+pub use registry::{
+    ProxyRegistrationObserver, ProxyRegistrationStage, ProxyRegistryHandle, SandboxRegistration,
+};
 pub use registry_application::RegistryPublication;
 pub use run_usage::{
     CoverageReason, MitmRunUsage, MitmUsageHandle, RunUsageObservation, RunUsageSnapshot,

@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
@@ -94,7 +93,6 @@ test("Opening and closing punctuation boundaries work independently next to CJK 
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
   });
 
   const opening = await screen.findByText("（开括号", { selector: "strong" });
@@ -156,7 +154,6 @@ test("CJK boundary repair preserves code, escapes, link destinations, math sourc
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
   });
 
   const repaired = await screen.findByText("（只修正文案）", {
@@ -225,7 +222,6 @@ test("Closed emphasis does not use formula, code, or bare-link asterisks as its 
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
   });
 
   const code = await screen.findByText(String.raw`\(`, { selector: "code" });
@@ -268,7 +264,6 @@ test.each(["code", "kbd"])(
       context,
       path: chat.path,
       host: "app.okou.ai",
-      featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
     });
 
     const repaired = await screen.findByText("（验收）", {
@@ -304,7 +299,6 @@ test("Long literal-star paragraphs preserve text alongside repairable CJK emphas
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
   });
 
   const repaired = await screen.findByText("（修复）", { selector: "strong" });
@@ -334,7 +328,6 @@ test("Rendered text preserves authored zero-width spaces and Copy message keeps 
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
   });
 
   const bold = await screen.findByText("（无需空格）", { selector: "strong" });
@@ -383,7 +376,6 @@ test("Streaming leaves unclosed runs literal and repairs only a pair completed b
     context,
     path: chat.path,
     host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: true },
   });
 
   const streaming = await screen.findByText(partial);
@@ -425,38 +417,4 @@ test("Streaming leaves unclosed runs literal and repairs only a pair completed b
     "流式前文（尚未完成）后文",
   ]);
   expect(completedFrame.querySelectorAll("strong, em")).toHaveLength(1);
-});
-
-test("Disabling CJK emphasis retains legacy literals without changing ordinary Markdown", async () => {
-  const chat = createMarkdownChatFixture(context);
-  const literals = [
-    "前文**（加粗）**后文",
-    "前文*“斜体”*后文",
-    "前文***「粗斜体」***后文",
-  ];
-  const source = [...literals, "**Existing bold** and *existing italic*"].join(
-    "\n\n",
-  );
-  const rows = completedMessageRows(chat, source);
-  chat.install({
-    rows: () => {
-      return rows;
-    },
-  });
-
-  await setupPage({
-    context,
-    path: chat.path,
-    host: "app.okou.ai",
-    featureSwitches: { [FeatureSwitchKey.MarkdownCjkEmphasis]: false },
-  });
-
-  const bold = await screen.findByText("Existing bold", { selector: "strong" });
-  const frame = markdownFrameFor(bold);
-  expect(screen.getByText("existing italic").tagName).toBe("EM");
-  expect(paragraphTexts(frame)).toStrictEqual([
-    ...literals,
-    "Existing bold and existing italic",
-  ]);
-  expect(frame.querySelectorAll("strong, em")).toHaveLength(2);
 });

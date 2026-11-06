@@ -29,8 +29,6 @@ export const emptyUsageImg = pageAssetUrl(
 export const emptySearchImg = pageAssetUrl(
   "assets/empty-search-b4e60a8e07b8.webp",
 );
-export const thinkingSpinnerImg =
-  "https://static.okou.io/public/okou-thinking-mark-orange-6fda41f32ba4.svg";
 export const thinkingBrandMotionImg = pageAssetUrl(
   "assets/okou-thinking-mark-textured-dd139799c2a2.svg",
 );

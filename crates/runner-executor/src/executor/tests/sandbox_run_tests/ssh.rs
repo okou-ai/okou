@@ -288,8 +288,10 @@ async fn fresh_and_reused_runs_install_before_agent_work_and_cancel_before_clean
                 enabled: enabled && !failed,
             };
             let source_ip = sandbox.source_ip().to_owned();
-            let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
             let mut telemetry = test_telemetry(&config, &ctx);
+            let network_log_session = register_proxy(&config, &ctx, &source_ip, &mut telemetry)
+                .await
+                .unwrap();
             let outcome = tokio::time::timeout(
                 Duration::from_secs(10),
                 execute_prepared_sandbox_run(
