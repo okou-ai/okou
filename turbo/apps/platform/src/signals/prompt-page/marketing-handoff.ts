@@ -9,9 +9,6 @@ import { jsonParseOr } from "../utils.ts";
 import { searchParams$ } from "../route.ts";
 import { sessionStorageSignals } from "../external/session-storage.ts";
 import { createDraftSignals } from "../okou-page/chat-draft.ts";
-import { logger } from "../log.ts";
-
-const L = logger("MarketingHandoff");
 
 // A new user may receive a task before their organization has been provisioned.
 const settledHandoffUser$ = state<{
@@ -75,26 +72,6 @@ export const marketingHandoff$ = computed((get) => {
     ? value
     : null;
 });
-
-/** Enroll the API-host guest cookie used to authorize Marketing content handoffs. */
-export const enrollMarketingHandoffSession$ = command(
-  async ({ get }, signal: AbortSignal) => {
-    // A preceding or rollback API can still rate limit optional enrollment.
-    // Remove 429 after those APIs are neither serving nor retained for rollback (#45568).
-    const response = await accept(
-      get(apiClient$)(marketingHandoffsContract).session({
-        body: {},
-        fetchOptions: { signal, credentials: "include" },
-      }),
-      [200, 403, 429, 503],
-    );
-    signal.throwIfAborted();
-    if (response.status === 429) {
-      L.warn("Session enrollment was rate limited; continuing App startup");
-    }
-    return response.status === 200;
-  },
-);
 
 /** Resolve only after auth bootstrap; credentials carry the API's host-only guest cookie. */
 export const loadMarketingHandoff$ = command(
