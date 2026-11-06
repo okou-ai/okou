@@ -278,6 +278,83 @@ function liveBrowserSidebar(): HTMLElement {
   return screen.getByRole("complementary", { name: "Cloud browser" });
 }
 
+test("A live Browser card resumes a window reclaimed after its summary was read", async () => {
+  mockWideScreen();
+  const active: BrowserSession = {
+    ...liveBrowserSession(),
+    window: {
+      instanceId: "22222222-2222-4222-8222-222222222222",
+      primaryWindowId: 0,
+    },
+  };
+  const { native } = mockBrowserApi(active);
+  let current = active;
+  context.mocks.api(browserContract.get, ({ query, respond }) => {
+    return respond(200, browserReadResponse(current, query));
+  });
+  context.mocks.api(browserContract.open, ({ query, body, respond }) => {
+    current = {
+      ...active,
+      window: {
+        instanceId: "33333333-3333-4333-8333-333333333333",
+        primaryWindowId: 0,
+      },
+    };
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId: THREAD_ID,
+      ...(body.operationId ? { operationId: body.operationId } : {}),
+    });
+    return respond(200, browserReadResponse(current, query));
+  });
+  const events = completedConversationEvents().map((event) => {
+    return event.id === "navigation-browser-reply"
+      ? {
+          ...event,
+          content: `[Browser](https://app.okou.ai/browsers/${THREAD_ID})`,
+        }
+      : event;
+  });
+  await openConversation(events, false, false, true, true);
+  await expectConversationReady();
+  const card = await waitFor(() => {
+    const card = document.querySelector<HTMLElement>(
+      '[data-browser-session-card][data-browser-session-status="active"]',
+    );
+    if (!card) {
+      throw new Error("Expected the active Browser summary");
+    }
+    return card;
+  });
+  // Reclamation need not arrive as a notification before the user acts on the card.
+  current = {
+    ...active,
+    status: "suspended",
+    liveUrl: null,
+    window: undefined,
+    idleExpiresAt: null,
+  };
+  click(card);
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  await waitFor(() => {
+    expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  const input = within(sidebar).getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "resumed from the live card" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(native.input.at(-1)?.params).toStrictEqual({
+      text: "resumed from the live card",
+    });
+  });
+});
+
 test("A summary card and a previous Start cannot authorize a reopened shared viewer", async () => {
   mockWideScreen();
   const session: BrowserSession = {
