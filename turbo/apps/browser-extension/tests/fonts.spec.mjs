@@ -483,19 +483,22 @@ test("releases removed nodes while a cross-site frame is hidden and resumes font
     await f.page.locator("#background-frame").evaluate((element) => {
       element.style.display = "none";
     });
-    await frame.evaluate(() => {
-      document.documentElement.dataset.framePending = "true";
-      requestAnimationFrame(() => {
-        delete document.documentElement.dataset.framePending;
-      });
-    });
-    await f.page.evaluate(async () => {
-      for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
-    });
-    await expect(frame.locator("html")).toHaveAttribute(
-      "data-frame-pending",
-      "true",
-    );
+    // Hiding crosses renderer/compositor boundaries; observe the paused clock
+    // before measuring, rather than assuming the first callback is suspended.
+    await expect
+      .poll(async () => {
+        await frame.evaluate(() => {
+          document.documentElement.dataset.framePending = "true";
+          requestAnimationFrame(() => {
+            delete document.documentElement.dataset.framePending;
+          });
+        });
+        await f.page.evaluate(async () => {
+          for (let i = 0; i < 3; i++) await new Promise(requestAnimationFrame);
+        });
+        return frame.locator("html").getAttribute("data-frame-pending");
+      })
+      .toBe("true");
     const before = await nodes();
     await frame.evaluate(async () => {
       const nextTask = () => {
