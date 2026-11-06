@@ -68,8 +68,11 @@ export function mockBrowserCdp(
     readonly extensionAvailable?: boolean;
     readonly extensionRuntimeId?: string;
     readonly nativeBase64?: boolean;
+    readonly endpointAliases?: readonly string[];
   } = {},
 ) {
+  const endpoints = new Set([cdpUrl, ...(options.endpointAliases ?? [])]);
+  const connectionEndpoints = new Map<number, string>();
   context.mocks.browser.canvasRendering();
   context.mocks.browser.uint8ArrayFromBase64(options.nativeBase64 ?? true);
   const bitmap =
@@ -161,7 +164,9 @@ export function mockBrowserCdp(
         peer.receive(message);
       }
     } else {
-      socket.receive(cdpUrl, message);
+      for (const endpoint of endpoints) {
+        socket.receive(endpoint, message);
+      }
     }
     for (const sessionId of destroyed) {
       event("Target.detachedFromTarget", { sessionId });
@@ -725,9 +730,10 @@ export function mockBrowserCdp(
 
   const socketOptions = { autoOpen: options.autoOpen };
   const socket = context.mocks.browser.webSocket((data, url, peer) => {
-    if (url !== cdpUrl) {
+    if (!endpoints.has(url)) {
       throw new Error("Unexpected viewer endpoint");
     }
+    connectionEndpoints.set(peer.id, url);
     const request = {
       ...requestSchema.parse(JSON.parse(data)),
       connectionId: peer.id,
@@ -857,7 +863,13 @@ export function mockBrowserCdp(
         return { result: {} };
       });
     },
-    connections: socket.connections,
+    connections(endpoint?: string) {
+      return endpoint === undefined
+        ? socket.connections()
+        : [...connectionEndpoints.values()].filter((url) => {
+            return url === endpoint;
+          }).length;
+    },
     activeConnections: socket.activeConnections,
     setAutoOpen(autoOpen: boolean) {
       socketOptions.autoOpen = autoOpen;

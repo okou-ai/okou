@@ -223,17 +223,14 @@ function recoveryMode(
   );
 }
 
-function attemptError(error: unknown, view: RecoveryView): ViewerError {
-  if (!isAbortError(error)) {
-    return diagnostic(error);
-  }
-  // A retired wire can cancel its waiter without cancelling this episode.
-  // Only a current resource failure authorizes another recovery attempt.
-  const current = failure(view);
-  if (!current) {
-    throw error;
-  }
-  return current.error;
+function attemptError(
+  error: unknown,
+  current: Failure,
+  pending: boolean,
+): ViewerError {
+  return pending || isAbortError(error) || current.mode === null
+    ? current.error
+    : diagnostic(error);
 }
 
 function sameFailureOwner(
@@ -316,9 +313,45 @@ function createRecoveryProgressWait(
   });
 }
 
+function createRecoveryRelease(ports: RecoveryPorts, graph: RecoveryState) {
+  return command(({ get, set }, operation: RecoveryOperation) => {
+    if (!operation.completion.settled()) {
+      operation.completion.reject(cancelled());
+    }
+    if (get(graph.active$) !== operation) {
+      return;
+    }
+    set(graph.active$, null);
+    if (get(ports.restoration$)?.owner === operation) {
+      set(ports.restoration$, null);
+    }
+    const view = get(ports.view$);
+    if (
+      get(graph.lifetime$) === operation.lifetime &&
+      view.intent === operation.intent &&
+      view.nodes === operation.nodes &&
+      compatibleBinding(operation.binding, view.binding)
+    ) {
+      // A pending descriptor or late timeout is still this spent owner.
+      set(
+        graph.stopped$,
+        view.usable
+          ? null
+          : {
+              nodes: operation.nodes,
+              intent: operation.intent,
+              binding: operation.binding ?? view.binding,
+            },
+      );
+    }
+    set(ports.notify$);
+  });
+}
+
 function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
   const assertCurrent$ = createRecoveryAssertion(ports, graph);
   const waitForProgress$ = createRecoveryProgressWait(ports, graph);
+  const release$ = createRecoveryRelease(ports, graph);
   return command(
     async (
       { get, set },
@@ -335,36 +368,7 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
         );
       using _operation = {
         [Symbol.dispose]: () => {
-          if (!completion.settled()) {
-            completion.reject(cancelled());
-          }
-          if (get(graph.active$) !== operation) {
-            return;
-          }
-          set(graph.active$, null);
-          if (get(ports.restoration$)?.owner === operation) {
-            set(ports.restoration$, null);
-          }
-          const view = get(ports.view$);
-          if (
-            get(graph.lifetime$) === operation.lifetime &&
-            view.intent === operation.intent &&
-            view.nodes === operation.nodes &&
-            compatibleBinding(operation.binding, view.binding)
-          ) {
-            // A pending descriptor or late timeout is still this spent owner.
-            set(
-              graph.stopped$,
-              view.usable
-                ? null
-                : {
-                    nodes: operation.nodes,
-                    intent: operation.intent,
-                    binding: operation.binding ?? view.binding,
-                  },
-            );
-          }
-          set(ports.notify$);
+          set(release$, operation);
         },
       };
       const deadline = monotonicNow() + 180_000;
@@ -430,12 +434,22 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
           });
           return;
         }
-        lastError = attemptError(result.reason, get(ports.view$));
-        const stopped = failure(get(ports.view$));
-        if (stopped?.mode === null) {
-          lastError = stopped.error;
+        let afterAttempt = recoveryProgress(get(ports.view$));
+        const pendingAfterAttempt = afterAttempt.status === "pending";
+        // Retiring one native attempt does not spend its still-current logical
+        // episode while a compatible successor is becoming ready.
+        while (afterAttempt.status === "pending") {
+          await set(waitForProgress$, signal);
+          set(assertCurrent$, operation, signal);
+          afterAttempt = recoveryProgress(get(ports.view$));
         }
-        if (!lastError.transient || stopped?.mode === null) {
+        if (afterAttempt.status === "ready") {
+          finishRecovery(completion, { status: "restored" });
+          return;
+        }
+        const stopped = afterAttempt.failure;
+        lastError = attemptError(result.reason, stopped, pendingAfterAttempt);
+        if (!lastError.transient || stopped.mode === null) {
           finishRecovery(completion, { status: "terminal", error: lastError });
           return;
         }

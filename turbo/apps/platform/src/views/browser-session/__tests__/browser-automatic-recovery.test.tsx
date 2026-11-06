@@ -33,7 +33,7 @@ const threadId = "11111111-1111-4111-8111-111111111111";
 const nextThreadId = "44444444-4444-4444-8444-444444444444";
 const endpoint = "wss://browser.example/automatic?token=private";
 
-function mockViewer() {
+function mockViewer(endpointAliases: readonly string[] = []) {
   let elapsed = 0;
   const now = Date.parse("2026-09-01T10:00:00Z");
   mockMonotonicNow(() => {
@@ -47,6 +47,7 @@ function mockViewer() {
   const sentry = context.mocks.sentry();
   initSentry();
   const browser = mockBrowserCdp(context, endpoint, {
+    endpointAliases,
     targets: [
       {
         targetId: "example-page",
@@ -181,6 +182,157 @@ async function splitConnection() {
   click(within(mode).getByText("Separate image connection"));
   await ready();
 }
+
+async function replaceRecoveringEndpoint(attempts: 1 | 3, interval: number) {
+  const nextEndpoint = "wss://browser.example/replaced?token=private";
+  const viewer = mockViewer([nextEndpoint]);
+  const received = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  let reads = 0;
+  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+    reads++;
+    if (reads === 2) {
+      received.resolve();
+      await release.promise;
+    }
+    return respond(200, {
+      browser: viewer.session(),
+      cdpUrl: reads === 1 ? endpoint : nextEndpoint,
+      extension: TEST_BROWSER_EXTENSION,
+    });
+  });
+  await viewer.start();
+  await ready();
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  await failImageAttempts(viewer, attempts - 1);
+  const image = viewer.browser.holdTargetFrames("example-page");
+  viewer.advance(interval);
+  await image.received;
+  const replacement = viewer.browser;
+  const initialization = replacement.holdNext("Page.enable");
+  const nextImage = replacement.holdTargetFrames("example-page");
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await received.promise;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(() => {
+    release.resolve();
+  });
+  await initialization.received;
+  await pendingRecovery();
+  return {
+    viewer,
+    replacement,
+    nextEndpoint,
+    initialization,
+    nextImage,
+    image,
+    connectionReads: () => {
+      return reads;
+    },
+  };
+}
+
+test.each([1, 3] as const)(
+  "A same-window endpoint replacement preserves recovery attempt %i",
+  async (attempts) => {
+    const {
+      viewer,
+      replacement,
+      nextEndpoint,
+      initialization,
+      nextImage,
+      image,
+      connectionReads,
+    } = await replaceRecoveringEndpoint(attempts, attempts === 1 ? 1000 : 4000);
+    await act(initialization.release);
+    await nextImage.received;
+    expect(connectionReads()).toBe(2);
+    expect(replacement.connections(nextEndpoint)).toBe(1);
+    await pendingRecovery();
+    await act(() => {
+      nextImage.release(attempts === 3 ? "AAAA" : "!");
+    });
+    if (attempts === 1) {
+      await pendingRecovery();
+      viewer.advance(2000);
+    }
+    await ready();
+    await waitFor(() => {
+      expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    });
+    act(image.release);
+    await insertText("input after endpoint replacement");
+    await waitFor(() => {
+      expect(replacement.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        sessionId: replacement.pageSession("example-page"),
+        params: { text: "input after endpoint replacement" },
+      });
+    });
+    expect(viewer.browser.connections(endpoint)).toBe(1);
+    expect(viewer.sentry.reports).toHaveLength(0);
+  },
+);
+
+test("A same-window endpoint replacement keeps the original recovery deadline", async () => {
+  // The first two failed image attempts consume 65 seconds. Start the last at
+  // 179 seconds, leaving only the original episode's last second for new work.
+  const {
+    viewer,
+    replacement,
+    nextEndpoint,
+    initialization,
+    nextImage,
+    image,
+    connectionReads,
+  } = await replaceRecoveringEndpoint(3, 114_000);
+  viewer.advance(999);
+  await pendingRecovery();
+  expect(viewer.sentry.reports).toHaveLength(0);
+  viewer.advance(1);
+  await waitFor(() => {
+    expect(viewer.sentry.reports).toHaveLength(1);
+  });
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    context: { contexts: { browser_recovery: { outcome: "exhausted" } } },
+  });
+  await act(initialization.release);
+  await nextImage.received;
+  expect(connectionReads()).toBe(2);
+  expect(replacement.connections(nextEndpoint)).toBe(1);
+  await act(() => {
+    nextImage.release("!");
+  });
+  await waitFor(() => {
+    expect(reconnect()).toBeEnabled();
+  });
+  viewer.advance(4000);
+  expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(connectionReads()).toBe(2);
+  expect(replacement.connections(nextEndpoint)).toBe(1);
+  click(reconnect());
+  await ready();
+  await waitFor(() => {
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  });
+  act(image.release);
+  await insertText("manual input after expired handoff");
+  await waitFor(() => {
+    expect(replacement.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      sessionId: replacement.pageSession("example-page"),
+      params: { text: "manual input after expired handoff" },
+    });
+  });
+  expect(viewer.browser.connections(endpoint)).toBe(1);
+  expect(viewer.sentry.reports).toHaveLength(1);
+});
 
 test.each(["removed", "moved"] as const)(
   "A %s selected tab hands off to a scoped successor without a final recovery error",
