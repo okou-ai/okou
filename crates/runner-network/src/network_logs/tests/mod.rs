@@ -1,4 +1,5 @@
 use std::fmt::Write as _;
+use std::io::{Read as _, Write as _};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use tracing_test_support::{
@@ -292,6 +293,13 @@ fn network_log_content(logs: &[serde_json::Value]) -> String {
         content.push(b'\n');
     }
     String::from_utf8(content).unwrap()
+}
+
+fn append_repeated_bytes(file: &mut std::fs::File, byte: u8, count: u64) {
+    assert_eq!(
+        std::io::copy(&mut std::io::repeat(byte).take(count), file).unwrap(),
+        count
+    );
 }
 
 fn one_entry_per_batch_log(sequence: usize) -> serde_json::Value {
@@ -1101,9 +1109,13 @@ async fn upload_network_logs_preserves_exact_trimmed_record_admission() {
 async fn upload_network_logs_stops_at_source_byte_budget() {
     let dir = tempfile::tempdir().unwrap();
     let path = network_log_file(&dir);
-    let mut content = vec![b'x'; NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES as usize - 1];
-    content.extend_from_slice("€".as_bytes());
-    tokio::fs::write(&path, &content).await.unwrap();
+    let source_bytes = NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES + 2;
+    {
+        let mut file = std::fs::File::create(&path).unwrap();
+        append_repeated_bytes(&mut file, b'x', NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES - 1);
+        file.write_all("€".as_bytes()).unwrap();
+    }
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), source_bytes);
 
     let server = MockServer::start_async().await;
     let upload = server
@@ -1125,7 +1137,7 @@ async fn upload_network_logs_stops_at_source_byte_budget() {
     upload.assert_calls_async(0).await;
     let event = captured_event(&events, "network log upload truncated");
     assert_event_field(event, "reason", "source_bytes");
-    assert_event_field(event, "source_file_bytes", &content.len().to_string());
+    assert_event_field(event, "source_file_bytes", &source_bytes.to_string());
     assert_event_field(
         event,
         "source_bytes_examined",
@@ -1139,7 +1151,7 @@ async fn upload_network_logs_stops_at_source_byte_budget() {
     assert!(!has_captured_event(&events, "malformed network log line"));
     assert_eq!(
         tokio::fs::metadata(&path).await.unwrap().len(),
-        content.len() as u64
+        source_bytes
     );
 }
 
@@ -1149,9 +1161,16 @@ async fn upload_network_logs_allows_exact_source_byte_budget() {
     let path = network_log_file(&dir);
     let run_id = RunId::from(uuid::Uuid::nil());
     let log = json!({ "sequence": 1 });
-    let mut content = network_log_content(std::slice::from_ref(&log)).into_bytes();
-    content.resize(NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES as usize, b' ');
-    tokio::fs::write(&path, content).await.unwrap();
+    let prefix = network_log_content(std::slice::from_ref(&log));
+    {
+        let mut file = std::fs::File::create(&path).unwrap();
+        file.write_all(prefix.as_bytes()).unwrap();
+        append_repeated_bytes(
+            &mut file,
+            b' ',
+            NETWORK_LOG_UPLOAD_MAX_SOURCE_BYTES - prefix.len() as u64,
+        );
+    }
 
     let server = MockServer::start_async().await;
     let expected = json!({
