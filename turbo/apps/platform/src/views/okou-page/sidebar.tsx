@@ -64,7 +64,7 @@ import {
   ChatThreadDialogs,
   ChatThreadsActions,
   ChatThreadsSection,
-  useFilteredChatThreadsTitle,
+  useChatThreadsFilterLabel,
 } from "./sidebar-threads.tsx";
 import {
   responsiveSidebarChatThreadScrollSignals,
@@ -881,9 +881,10 @@ function ChatListHeader() {
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
   // My Okou has a single chat list, so the header names it and carries the
-  // list title's actions; any active filter still shows in the title.
+  // list title's actions. An active filter takes the name's place so a
+  // filtered list never looks like the inbox and still fits beside them.
   const assistantName = useGet(assistantName$);
-  const singleAgentTitle = useFilteredChatThreadsTitle(assistantName);
+  const filterLabel = useChatThreadsFilterLabel();
   const searchLabel = t(($) => {
     return $.appShell.sidebar.searchWorkspace;
   });
@@ -955,7 +956,7 @@ function ChatListHeader() {
     >
       <span className="min-w-0 flex-1 truncate pl-2 text-[15px] font-semibold text-nav-copy">
         {singleAgent
-          ? singleAgentTitle
+          ? (filterLabel ?? assistantName)
           : t(($) => {
               return $.appShell.sidebar.chat;
             })}

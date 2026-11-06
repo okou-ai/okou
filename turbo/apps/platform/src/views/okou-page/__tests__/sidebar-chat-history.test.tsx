@@ -1218,9 +1218,8 @@ test("My Okou names the chat list Okou and moves its actions into the header", a
 
   click(within(header).getByLabelText("Open chat list menu"));
   click(menuItemByText("Archived"));
-  await expect(
-    within(list).findByText("Archived · Okou"),
-  ).resolves.toBeInTheDocument();
+  await expect(within(header).findByText("Archived")).resolves.toBeVisible();
+  expect(within(header).queryByText("Okou")).not.toBeInTheDocument();
 
   click(within(header).getByLabelText("New chat"));
   await waitFor(() => {

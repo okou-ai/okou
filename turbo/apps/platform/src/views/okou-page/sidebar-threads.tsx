@@ -1431,16 +1431,18 @@ export function ChatThreadsListMenu({
   );
 }
 
-// With archiving on, a non-default filter names itself in the title so the list
-// never looks like the inbox while it shows archived, unread, or muted chats.
-export function useFilteredChatThreadsTitle(titleLabel: string) {
+/** The active unread, archived or muted filter's name; null for the inbox. */
+export function useChatThreadsFilterLabel(): string | null {
   const { t } = useTranslation();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
   const archiveEnabled =
     useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
-  const filterLabel = unreadOnly
+  if (!archiveEnabled) {
+    return null;
+  }
+  return unreadOnly
     ? t(($) => {
         return $.chat.sidebar.unreadOnly;
       })
@@ -1453,7 +1455,15 @@ export function useFilteredChatThreadsTitle(titleLabel: string) {
             return $.chat.sidebar.muted;
           })
         : null;
-  if (!archiveEnabled || filterLabel === null) {
+}
+
+// With archiving on, a non-default filter names itself in the title so the list
+// never looks like the inbox while it shows archived, unread, or muted chats.
+function useChatThreadsFilteredTitleLabel() {
+  const { t } = useTranslation();
+  const { titleLabel } = useChatThreadsTitleLabels();
+  const filterLabel = useChatThreadsFilterLabel();
+  if (filterLabel === null) {
     return titleLabel;
   }
   return t(
@@ -1524,8 +1534,7 @@ function ChatThreadsTitle({
   contentId: string;
   collapsible: boolean;
 }) {
-  const { titleLabel: agentTitleLabel } = useChatThreadsTitleLabels();
-  const titleLabel = useFilteredChatThreadsTitle(agentTitleLabel);
+  const titleLabel = useChatThreadsFilteredTitleLabel();
   const setCollapsed = useSet(setSessionListCollapsed$);
   const collapsed = useGet(sessionListCollapsed$);
 
