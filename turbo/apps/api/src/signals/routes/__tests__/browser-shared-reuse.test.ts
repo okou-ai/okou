@@ -1,6 +1,6 @@
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { HttpResponse, http } from "msw";
-import { expect, test } from "vitest";
+import { expect, onTestFinished, test } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { TEST_BROWSER_EXTENSION } from "../../../__tests__/browser-extension";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -239,16 +239,29 @@ test("rejects a late healthy result for a replaced native binding", async () => 
     await renew(b);
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
+    function releaseReply() {
+      if (!release.settled()) {
+        release.resolve();
+      }
+    }
+    // Release before the actor restores its environment and drains requests.
+    onTestFinished(releaseReply);
     let hold = true;
     f.provider.native.beforeNativeWindowReply = async (windowId) => {
       if (hold && windowId === first.window?.primaryWindowId) {
         hold = false;
-        entered.resolve();
+        if (!entered.settled()) {
+          entered.resolve();
+        }
         await release.promise;
       }
     };
-    const earlier = settleIncludingAbort(request(a));
-    const replacement = await settleIncludingAbort(async () => {
+    // Start in the scenario's shared clock scope, then register the lifetime.
+    const pending = settleIncludingAbort(request(a));
+    const earlier = f.owned.run(() => {
+      return pending;
+    });
+    const replacing = settleIncludingAbort(async () => {
       await Promise.race([
         entered.promise,
         earlier.then((result) => {
@@ -264,7 +277,10 @@ test("rejects a late healthy result for a replaced native binding", async () => 
       mockNow(START + 11 * MINUTE);
       return await open(a);
     });
-    release.resolve();
+    const replacement = await f.owned.run(() => {
+      return replacing;
+    });
+    releaseReply();
     const completed = await earlier;
     if (!replacement.ok) {
       throw replacement.error;
@@ -293,17 +309,30 @@ test("rejects an old instance's late health result when the replacement reuses i
     }
     const entered = createDeferredPromise<void>(context.signal);
     const release = createDeferredPromise<void>(context.signal);
+    function releaseReply() {
+      if (!release.settled()) {
+        release.resolve();
+      }
+    }
+    // Release before the actor restores its environment and drains requests.
+    onTestFinished(releaseReply);
     let hold = true;
     f.provider.native.beforeNativeWindowReply = async (windowId) => {
       if (hold && windowId === first.window?.primaryWindowId) {
         hold = false;
-        entered.resolve();
+        if (!entered.settled()) {
+          entered.resolve();
+        }
         await release.promise;
       }
     };
     mockNow(START + MINUTE);
-    const earlier = settleIncludingAbort(request(a));
-    const replacement = await settleIncludingAbort(async () => {
+    // Start in the scenario's shared clock scope, then register the lifetime.
+    const pending = settleIncludingAbort(request(a));
+    const earlier = f.owned.run(() => {
+      return pending;
+    });
+    const replacing = settleIncludingAbort(async () => {
       await Promise.race([
         entered.promise,
         earlier.then((result) => {
@@ -318,8 +347,11 @@ test("rejects an old instance's late health result when the replacement reuses i
       f.provider.native.targets.clear();
       return await open(a);
     });
+    const replacement = await f.owned.run(() => {
+      return replacing;
+    });
     mockNow(START + 2 * MINUTE);
-    release.resolve();
+    releaseReply();
     const completed = await earlier;
     if (!replacement.ok) {
       throw replacement.error;
