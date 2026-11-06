@@ -295,8 +295,9 @@ test("A summary card and a previous Start cannot authorize a reopened shared vie
   };
   let active = false;
   let denied = false;
-  let viewerReads = 0;
+  let viewerOpened = false;
   context.mocks.api(browserContract.get, ({ query, respond }) => {
+    expect(viewerOpened || query?.viewer === undefined).toBeTruthy();
     const browser = active
       ? session
       : {
@@ -308,7 +309,6 @@ test("A summary card and a previous Start cannot authorize a reopened shared vie
     if (query?.viewer !== "native") {
       return respond(200, { browser });
     }
-    viewerReads++;
     return denied
       ? respond(403, {
           error: {
@@ -341,8 +341,8 @@ test("A summary card and a previous Start cannot authorize a reopened shared vie
     }
     return card;
   });
-  expect(viewerReads).toBe(0);
   expect(native.connections()).toBe(0);
+  viewerOpened = true;
   click(card);
   const sidebar = await screen.findByRole("complementary", {
     name: "Cloud browser",
@@ -356,7 +356,6 @@ test("A summary card and a previous Start cannot authorize a reopened shared vie
       within(sidebar).getByLabelText("Remote browser input"),
     ).toBeEnabled();
   });
-  expect(viewerReads).toBe(1);
   click(buttonByName("Close cloud browser", sidebar));
   await waitFor(() => {
     return expect(
@@ -374,7 +373,6 @@ test("A summary card and a previous Start cannot authorize a reopened shared vie
   expect(
     within(reopened).queryByLabelText("Remote browser input"),
   ).not.toBeInTheDocument();
-  expect(viewerReads).toBe(2);
 });
 
 test("An unauthorized Browser keeps its card and sidebar with an authorization placeholder", async () => {

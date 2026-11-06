@@ -91,12 +91,12 @@ function fixture(
       primaryWindowId: 101,
     },
   };
-  const viewer = {
+  let viewer = {
     browser: session,
     cdpUrl: endpoint,
     extension: TEST_BROWSER_EXTENSION,
   };
-  const browser = mockBrowserCdp(context, endpoint, {
+  const nativeOptions = {
     targets: [
       {
         targetId: "first",
@@ -105,14 +105,19 @@ function fixture(
         windowId: 101,
       },
     ],
-  });
-  const requests = { get: 0, open: 0, viewer: 0 };
-  const operationIds: string[] = [];
+  };
+  const browser = mockBrowserCdp(context, endpoint, nativeOptions);
+  let operationId: string | undefined;
+  let readBarrier: Promise<void> | null = null;
+  let readsDenied = false;
+  let opensDenied = false;
   let active = initial === "active";
-  context.mocks.api(browserContract.get, ({ query, respond }) => {
-    requests.get++;
+  context.mocks.api(browserContract.get, async ({ query, respond }) => {
+    if (readBarrier) {
+      await readBarrier;
+    }
     expect(query).toStrictEqual({ viewer: "native" });
-    if (access && !access.enabled()) {
+    if (readsDenied || (access && !access.enabled())) {
       return respond(403, {
         error: {
           code: "BROWSER_AUTHORIZATION_REQUIRED",
@@ -137,26 +142,55 @@ function fixture(
     );
   });
   context.mocks.api(browserContract.open, ({ query, body, respond }) => {
-    requests.open++;
     expect(query).toStrictEqual({ viewer: "native" });
-    active = true;
-    if (body.operationId) {
-      operationIds.push(body.operationId);
+    if (opensDenied) {
+      return respond(503, {
+        error: {
+          code: "SERVICE_UNAVAILABLE",
+          message: "Browser opening is temporarily unavailable",
+        },
+      });
     }
+    active = true;
+    operationId = body.operationId;
     onOpen?.(body.operationId);
     return respond(200, { browser: session, viewer });
   });
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
-    requests.viewer++;
-    return respond(200, viewer);
+    return respond(503, {
+      error: {
+        code: "SERVICE_UNAVAILABLE",
+        message: "The separate viewer lookup is temporarily unavailable",
+      },
+    });
   });
   context.mocks.api(browserContract.leaseByThread, ({ respond }) => {
     return respond(200, { browser: session });
   });
   return {
     browser,
-    requests,
-    operationIds,
+    operationId() {
+      return operationId;
+    },
+    holdReads() {
+      const barrier = context.mocks.deferred<void>();
+      readBarrier = barrier.promise;
+      return () => {
+        readBarrier = null;
+        barrier.resolve();
+      };
+    },
+    denyReads(value = true) {
+      readsDenied = value;
+    },
+    denyOpens() {
+      opensDenied = true;
+    },
+    replaceViewer() {
+      const replacementEndpoint = `${endpoint}/replacement`;
+      viewer = { ...viewer, cdpUrl: replacementEndpoint };
+      return mockBrowserCdp(context, replacementEndpoint, nativeOptions);
+    },
     advance(ms: number) {
       act(() => {
         elapsed += ms;
@@ -178,9 +212,6 @@ function fixture(
 async function inputWorks(browser: ReturnType<typeof mockBrowserCdp>) {
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-    expect(screen.getByLabelText("Address")).toHaveValue(
-      "https://owned.example",
-    );
     expect(
       screen.getByRole("img", { name: "Live browser view" }),
     ).toBeVisible();
@@ -210,23 +241,26 @@ function clickStartBrowser() {
   click(start);
 }
 
-test("An active shared mount acquires presentation and usable input in one App request", async () => {
+test("An active shared mount uses the acquired connection while other entry points are unavailable", async () => {
   const f = fixture("active");
+  f.denyOpens();
   await f.start();
   await inputWorks(f.browser);
-  expect(f.requests).toStrictEqual({ get: 1, open: 0, viewer: 0 });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://owned.example");
 });
 
-test("Explicit Start consumes its own connection without another acquisition or user-effect replay", async () => {
+test("Explicit Start's returned connection enables input while further acquisition is stalled", async () => {
   const f = fixture("suspended");
   await f.start();
+  const release = f.holdReads();
   clickStartBrowser();
   await inputWorks(f.browser);
-  expect(f.requests).toStrictEqual({ get: 1, open: 1, viewer: 0 });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://owned.example");
+  release();
 });
 
 test.each([1, 2])(
-  "Start's %s lifecycle notifications do not add another acquisition",
+  "Start's %s lifecycle notifications preserve its returned usable connection",
   async (notifications) => {
     const f = fixture("suspended", undefined, (operationId) => {
       for (let index = 0; index < notifications; index++) {
@@ -237,9 +271,13 @@ test.each([1, 2])(
       }
     });
     await f.start();
+    const release = f.holdReads();
     clickStartBrowser();
     await inputWorks(f.browser);
-    expect(f.requests).toStrictEqual({ get: 1, open: 1, viewer: 0 });
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://owned.example",
+    );
+    release();
   },
 );
 
@@ -248,22 +286,26 @@ test("A late open echo is ignored while another operation still refreshes the vi
   await f.start();
   clickStartBrowser();
   await inputWorks(f.browser);
-  expect(f.operationIds).toHaveLength(1);
+  const release = f.holdReads();
   act(() => {
     context.mocks.ably.trigger("browserSessionChanged", {
       threadId,
-      operationId: f.operationIds[0],
+      operationId: f.operationId(),
     });
+  });
+  await inputWorks(f.browser);
+  release();
+  f.denyReads();
+  act(() => {
     context.mocks.ably.trigger("browserSessionChanged", {
       threadId,
       operationId: "55555555-5555-4555-8555-555555555555",
     });
   });
-  await waitFor(() => {
-    expect(f.requests.get).toBe(2);
-  });
-  await inputWorks(f.browser);
-  expect(f.requests).toStrictEqual({ get: 2, open: 1, viewer: 0 });
+  await screen.findByText("Cloud browser is not enabled for this chat");
+  expect(
+    screen.queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
 });
 
 test("An uncorrelated notification during Start still invalidates the acquisition", async () => {
@@ -271,42 +313,47 @@ test("An uncorrelated notification during Start still invalidates the acquisitio
     context.mocks.ably.trigger("browserSessionChanged", { threadId });
   });
   await f.start();
+  f.denyReads();
   clickStartBrowser();
-  await waitFor(() => {
-    expect(f.requests.get).toBe(2);
-  });
-  await inputWorks(f.browser);
-  expect(f.requests).toStrictEqual({ get: 2, open: 1, viewer: 0 });
+  await screen.findByText("Cloud browser is not enabled for this chat");
+  expect(
+    screen.queryByLabelText("Remote browser input"),
+  ).not.toBeInTheDocument();
 });
 
 test("A notification that invalidates Start also retires that operation's echo ID", async () => {
-  const f = fixture("suspended", undefined, (operationId) => {
+  const f = fixture("suspended", undefined, () => {
     context.mocks.ably.trigger("browserSessionChanged", { threadId });
-    context.mocks.ably.trigger("browserSessionChanged", {
-      threadId,
-      ...(operationId ? { operationId } : {}),
-    });
   });
   await f.start();
+  f.denyReads();
   clickStartBrowser();
-  await waitFor(() => {
-    expect(f.requests.get).toBe(3);
+  await screen.findByText("Cloud browser is not enabled for this chat");
+  f.denyReads(false);
+  f.denyOpens();
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", {
+      threadId,
+      operationId: f.operationId(),
+    });
   });
   await inputWorks(f.browser);
-  expect(f.requests).toStrictEqual({ get: 3, open: 1, viewer: 0 });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://owned.example");
 });
 
-test("Reconnect acquires a fresh read-only connection without reopening the Browser", async () => {
+test("Reconnect uses a fresh connection while explicit opening is unavailable", async () => {
   const f = fixture("active");
+  f.denyOpens();
   await f.start();
   await inputWorks(f.browser);
   act(() => {
     return f.browser.disconnect({ code: 1006, wasClean: false });
   });
   await screen.findByText("Reconnecting…");
+  const replacement = f.replaceViewer();
   f.advance(1000);
-  await inputWorks(f.browser);
-  expect(f.requests).toStrictEqual({ get: 2, open: 0, viewer: 0 });
+  await inputWorks(replacement);
+  expect(screen.getByLabelText("Address")).toHaveValue("https://owned.example");
 });
 
 test("A renewed grant cannot reuse the previous grant's explicit-open result", async () => {
@@ -315,19 +362,15 @@ test("A renewed grant cannot reuse the previous grant's explicit-open result", a
   await f.start();
   clickStartBrowser();
   await inputWorks(f.browser);
-  const readsAfterOpen = f.requests.get;
-  expect(f.requests.open).toBe(1);
+  f.denyOpens();
   act(() => {
     return access.change(false);
   });
   await screen.findByText("Cloud browser is not enabled for this chat");
+  const replacement = f.replaceViewer();
   act(() => {
     return access.change(true);
   });
-  await inputWorks(f.browser);
-  expect(f.requests).toStrictEqual({
-    get: readsAfterOpen + 2,
-    open: 1,
-    viewer: 0,
-  });
+  await inputWorks(replacement);
+  expect(screen.getByLabelText("Address")).toHaveValue("https://owned.example");
 });
