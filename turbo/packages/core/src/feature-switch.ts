@@ -77,13 +77,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     restrictOverridesToAudience: true,
   },
-  [FeatureSwitchKey.MarketingContentHandoff]: {
-    maintainer: "yuma@okou.ai",
-    displayName: "Marketing content handoff",
-    description:
-      "Receive content-addressed Marketing prompts and attachments with server-side access grants.",
-    enabled: true,
-  },
   [FeatureSwitchKey.ConnectorChatAccountAccess]: {
     maintainer: "liangyou@okou.ai",
     displayName: "Chat connector accounts",

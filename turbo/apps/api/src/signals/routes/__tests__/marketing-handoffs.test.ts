@@ -19,7 +19,6 @@ import { mockEnv } from "../../../lib/env";
 import { marketingHandoffsRoutes } from "../marketing-handoffs";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 describe("Marketing content handoff", () => {
   const context = testContext();
@@ -41,11 +40,9 @@ describe("Marketing content handoff", () => {
     { bytes: Buffer; type: string; metadata: Record<string, string> }
   >();
 
-  async function enableActor() {
+  function authenticateActor() {
     actor = { userId: `user_${randomUUID()}`, orgId: `org_${randomUUID()}` };
-    await updateFeatureSwitchesForUser(context, actor, {
-      marketingContentHandoff: true,
-    });
+    mocks.clerk.session(actor.userId, actor.orgId);
     return actor;
   }
 
@@ -85,7 +82,7 @@ describe("Marketing content handoff", () => {
     return cookie.split(";")[0]!;
   }
 
-  beforeEach(async () => {
+  beforeEach(() => {
     taskId = randomUUID();
     intentId = randomUUID();
     mockEnv("APP_URL", "https://app.okou.ai");
@@ -146,7 +143,7 @@ describe("Marketing content handoff", () => {
       }
       throw new Error("Unexpected storage operation");
     });
-    await enableActor();
+    authenticateActor();
   });
 
   it.each([".", ".."])(
@@ -199,7 +196,7 @@ describe("Marketing content handoff", () => {
     const firstManifest = manifest("Short handoff collision 12975700");
     const first = await create(firstManifest);
     const colliding = manifest("Short handoff collision 15460718");
-    await enableActor();
+    authenticateActor();
     const rejected = await api().create({
       body: colliding,
       headers: auth,
@@ -281,7 +278,7 @@ describe("Marketing content handoff", () => {
 
   it("does not grant another user access merely because they know the hash", async () => {
     const created = await create();
-    await enableActor();
+    authenticateActor();
     const result = await api().resolve({
       params: { hash: created.body.shortHash },
       body: {},
@@ -294,7 +291,7 @@ describe("Marketing content handoff", () => {
   it("gives independent grants to two users who submit identical content", async () => {
     const firstActor = actor;
     const first = await create();
-    await enableActor();
+    authenticateActor();
     const second = await create();
     expect(second.body.hash).toBe(first.body.hash);
     mocks.clerk.session(firstActor.userId, firstActor.orgId);
@@ -416,7 +413,7 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(status.body.missing).toStrictEqual([]);
-    await enableActor();
+    authenticateActor();
     const resolved = await accept(
       api().resolve({
         headers: auth,
@@ -466,7 +463,7 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect((await inventory()).body.missing).toStrictEqual([]);
-    await enableActor();
+    authenticateActor();
     const resolved = await accept(
       api().resolve({
         headers: auth,
@@ -500,7 +497,7 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(inventory.body.missing).toStrictEqual(hashes);
-    await enableActor();
+    authenticateActor();
     for (const hash of [...hashes, hashes[0]!.slice(0, 12)]) {
       expect(
         (
@@ -542,7 +539,7 @@ describe("Marketing content handoff", () => {
       [200],
     );
     expect(status.body.missing).toStrictEqual([hash]);
-    await enableActor();
+    authenticateActor();
     expect(
       (
         await api().resolve({
@@ -607,7 +604,7 @@ describe("Marketing content handoff", () => {
       api().publishBatch({ headers: publisher, body: { manifests: [body] } }),
       [200],
     );
-    await enableActor();
+    authenticateActor();
     const resolved = await accept(
       api().resolve({
         headers: auth,
@@ -697,7 +694,7 @@ describe("Marketing content handoff", () => {
         })
       ).status,
     ).toBe(200);
-    await enableActor();
+    authenticateActor();
     expect(
       (
         await api().resolve({
@@ -735,7 +732,7 @@ describe("Marketing content handoff", () => {
         })
       ).status,
     ).toBe(200);
-    await enableActor();
+    authenticateActor();
     expect(
       (
         await api().resolve({
@@ -768,7 +765,7 @@ describe("Marketing content handoff", () => {
     const firstActor = actor;
     const cookie = await guestCookie();
     const created = await create(manifest(), cookie, false);
-    const secondActor = await enableActor();
+    const secondActor = authenticateActor();
     context.mocks.clerk.authenticateRequest.mockImplementation(
       (request: unknown) => {
         if (!(request instanceof Request)) {
@@ -862,7 +859,7 @@ describe("Marketing content handoff", () => {
       }),
       [200],
     );
-    await enableActor();
+    authenticateActor();
     expect(
       (
         await api().create({
@@ -925,7 +922,7 @@ describe("Marketing content handoff", () => {
       (await fileClient.fileUrl({ query: { file_id: file.id }, headers: auth }))
         .status,
     ).toBe(200);
-    await enableActor();
+    authenticateActor();
     expect(
       (await fileClient.fileUrl({ query: { file_id: file.id }, headers: auth }))
         .status,
@@ -956,41 +953,7 @@ describe("Marketing content handoff", () => {
     ).toBe(400);
   });
 
-  it("honors the server switch on reads and writes", async () => {
-    const created = await create();
-    await updateFeatureSwitchesForUser(context, actor, {
-      marketingContentHandoff: false,
-    });
-    expect(
-      (
-        await accept(
-          api().config({ headers: auth, extraHeaders: { origin } }),
-          [200],
-        )
-      ).body.enabled,
-    ).toBeFalsy();
-    expect(
-      (
-        await api().create({
-          body: manifest(),
-          headers: auth,
-          extraHeaders: { origin },
-        })
-      ).status,
-    ).toBe(403);
-    expect(
-      (
-        await api().resolve({
-          params: created.body,
-          body: {},
-          headers: auth,
-          extraHeaders: { origin },
-        })
-      ).status,
-    ).toBe(403);
-  });
-
-  it("rejects requests from another origin even when the user is enabled", async () => {
+  it("rejects requests from another origin even when the user is authenticated", async () => {
     expect(
       (
         await api().create({

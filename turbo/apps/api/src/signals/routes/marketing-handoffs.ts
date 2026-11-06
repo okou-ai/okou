@@ -5,8 +5,6 @@ import {
   marketingHandoffsContract,
   serializeMarketingHandoff,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import {
   badRequestMessage,
   notConfigured,
@@ -20,7 +18,6 @@ import { requiredAuthContext$ } from "../auth/auth-context";
 import { request$, setResHeader$, authorization$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { putImmutableS3Object, s3ObjectHead } from "../external/s3";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   canReadMarketingContent$,
   claimMarketingManifest$,
@@ -53,8 +50,6 @@ function equalSecret(left: string, right: string): boolean {
 
 function anonymousSession(cookie: string | undefined): {
   subject: string;
-  rolloutUserId: string | undefined;
-  rolloutOrgId: string | undefined;
 } | null {
   const token = cookie
     ?.split(";")
@@ -90,8 +85,6 @@ function anonymousSession(cookie: string | undefined): {
   }
   return {
     subject: `session:${id}`,
-    rolloutUserId: userId || undefined,
-    rolloutOrgId: orgId || undefined,
   };
 }
 
@@ -142,20 +135,6 @@ const handoffContext$ = command(async ({ get, set }, signal: AbortSignal) => {
     orgId = auth.orgId;
   }
   const anonymous = anonymousSession(request.header("cookie"));
-  const rolloutUserId = userId ?? anonymous?.rolloutUserId;
-  const rolloutOrgId = orgId ?? anonymous?.rolloutOrgId;
-  const context =
-    rolloutUserId && rolloutOrgId
-      ? await set(
-          loadUserFeatureSwitchContext$,
-          rolloutOrgId,
-          rolloutUserId,
-          signal,
-        )
-      : { userId: rolloutUserId, orgId: rolloutOrgId };
-  if (!isFeatureEnabled(FeatureSwitchKey.MarketingContentHandoff, context)) {
-    return resourceUnavailable("Marketing content handoff is not enabled");
-  }
   const bucket = marketingHandoffBucket();
   if (
     !bucket ||
@@ -171,8 +150,6 @@ const handoffContext$ = command(async ({ get, set }, signal: AbortSignal) => {
     orgId,
     subject: userId ? `user:${userId}` : sessionSubject,
     sessionSubject,
-    rolloutUserId,
-    rolloutOrgId,
   };
 });
 
@@ -199,7 +176,8 @@ const session$ = command(async ({ get, set }, signal: AbortSignal) => {
   const id =
     context.sessionSubject?.slice("session:".length) ??
     randomBytes(32).toString("hex");
-  const payload = `${id}.${now() + SESSION_TTL_SECONDS * 1000}.${context.rolloutUserId ?? ""}.${context.rolloutOrgId ?? ""}`;
+  // Keep the signed v1 layout so existing cookies retain their content grants.
+  const payload = `${id}.${now() + SESSION_TTL_SECONDS * 1000}..`;
   set(
     setResHeader$,
     "Set-Cookie",
