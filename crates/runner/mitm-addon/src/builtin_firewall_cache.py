@@ -10,10 +10,12 @@ from typing import Literal, NamedTuple
 from mitmproxy import ctx
 
 import addon_process_logging
-import builtin_firewall_catalog_validation as catalog_validation
 import state_file
 from builtin_firewall_catalog_validation import (
     BuiltinFirewallCatalogCacheError as BuiltinFirewallCatalogCacheError,
+)
+from builtin_firewall_catalog_validation import (
+    validate_catalog,
 )
 from generated.builtin_firewall_cache import BUILTIN_FIREWALL_CATALOG_MAX_BYTES
 
@@ -283,7 +285,7 @@ def _read_catalog(
     key: CatalogFileKey,
 ) -> BuiltinFirewallCatalog:
     raw = json.loads(raw_bytes.decode("utf-8"))
-    validated = catalog_validation.validate_catalog(raw)
+    validated = validate_catalog(raw)
     return BuiltinFirewallCatalog(
         identity=CatalogIdentity(
             source="cache",
