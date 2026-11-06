@@ -111,7 +111,6 @@ async function setupLinking(options?: {
   readonly enabled?: boolean;
   readonly path?: string;
   readonly mobile?: boolean;
-  readonly usagePanel?: boolean;
 }) {
   mockTemplateChat({ tier: "limited-free-1" });
   const accounts = options?.accounts ?? [];
@@ -129,7 +128,6 @@ async function setupLinking(options?: {
     path: options?.path ?? `/agents/${AGENT_ID}/chat`,
     featureSwitches: {
       [FeatureSwitchKey.SubscriptionLinkingEntry]: options?.enabled ?? true,
-      [FeatureSwitchKey.SidebarSubscriptionUsage]: options?.usagePanel ?? false,
       [FeatureSwitchKey.PwaNavigation]: options?.mobile ?? false,
     },
   });
@@ -289,7 +287,6 @@ test.each([false, true])(
   async (needsReconnect) => {
     await setupLinking({
       accounts: [connectedCodex(needsReconnect)],
-      usagePanel: true,
     });
     await findComposerEditor();
     await waitFor(() => {
@@ -379,7 +376,6 @@ test("The mobile Me entry leaves once a subscription is linked", async () => {
     mobile: true,
     path: "/me",
     accounts: [connectedCodex()],
-    usagePanel: true,
   });
   await screen.findByRole("region", { name: "ChatGPT usage" });
   expect(screen.queryByText("Use more models")).not.toBeInTheDocument();

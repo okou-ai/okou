@@ -5,7 +5,6 @@ import { expect, test } from "vitest";
 import { personalModelProvidersByTypeContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import {
@@ -38,36 +37,6 @@ async function openSubscriptionUsage(): Promise<HTMLElement> {
   return screen.findByTestId("account-menu-subscriptions");
 }
 
-test("Hide subscription usage when the account-menu feature is off", async () => {
-  mockAdminAccountSidebar();
-  context.mocks.data.personalModelProviders([
-    connectedPersonalCodexProvider(),
-    connectedPersonalClaudeCodeProvider(),
-  ]);
-
-  await setupPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: false },
-    auth: {
-      user: {
-        id: "test-user-123",
-        fullName: "Alex Rivera",
-        email: "alex.rivera@example.test",
-      },
-    },
-  });
-
-  const menu = await openAccountMenu();
-
-  await waitFor(() => {
-    expect(within(menu).getByText("12,500 credits")).toBeInTheDocument();
-  });
-  expect(
-    screen.queryByLabelText(/^Subscription usage/),
-  ).not.toBeInTheDocument();
-});
-
 test("Open subscriptions by clicking the rail and open Models in Settings", async () => {
   const user = userEvent.setup();
   mockBrowserTimeZone("America/New_York");
@@ -91,7 +60,6 @@ test("Open subscriptions by clicking the rail and open Models in Settings", asyn
         email: "alex.rivera@example.test",
       },
     },
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
 
   const panel = await openSubscriptionUsage();
@@ -185,7 +153,6 @@ test.each(["Escape", "Close"])(
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
 
     const entry = await within(
@@ -272,7 +239,6 @@ test.each<{
       path: `/agents/${AGENT_ID}/chat`,
       locale: "zh-Hans",
       auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
-      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
     const panel = await openSubscriptionUsage();
     // Page tests use en-US copy through the shared locale-resource fixture.
@@ -314,7 +280,6 @@ test("Keep ChatGPT summary and actions tied to its weekly limit", async () => {
         email: "alex.rivera@example.test",
       },
     },
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
 
   const panel = await openSubscriptionUsage();
@@ -375,7 +340,6 @@ test("Show an exhausted week with its own reset time", async () => {
         email: "alex.rivera@example.test",
       },
     },
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
 
   const panel = await openSubscriptionUsage();
@@ -421,7 +385,6 @@ test.each(["Escape", "Cancel"])(
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
 
     const panel = await openSubscriptionUsage();
@@ -508,7 +471,6 @@ test("Keep Codex reset pending until refreshed sidebar usage is ready", async ()
         email: "alex.rivera@example.test",
       },
     },
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
 
   let panel = await openSubscriptionUsage();
@@ -588,7 +550,6 @@ test.each([0, null, undefined])(
       context,
       path: `/agents/${AGENT_ID}/chat`,
       auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
-      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
     const panel = await openSubscriptionUsage();
     expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
@@ -624,7 +585,6 @@ test.each([null] as const)(
           email: "alex.rivera@example.test",
         },
       },
-      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
 
     const workflows = await screen.findByRole("heading", { name: "Workflows" });
@@ -675,7 +635,6 @@ test.each([
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
     const entry = await screen.findByLabelText(
       "Subscription usage: less than 20% remaining",
@@ -717,7 +676,6 @@ test("Keep the account menu available without a subscription entry", async () =>
     context,
     path: `/agents/${AGENT_ID}/chat`,
     auth: { user: { id: "test-user-123", fullName: "Alex Rivera" } },
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
   const menu = await openAccountMenu();
   await expect(
@@ -746,7 +704,6 @@ test("Describe connected usage with an unknown percentage without treating it as
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
   const entry = await within(
     screen.getByTestId("labeled-nav-rail"),
@@ -782,7 +739,6 @@ test.each([
     await setupPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
     });
     const panel = await openSubscriptionUsage();
     expect(

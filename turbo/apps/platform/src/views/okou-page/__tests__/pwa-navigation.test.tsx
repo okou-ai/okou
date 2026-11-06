@@ -885,7 +885,6 @@ test("Remove a disconnected subscription from Me without reopening the page", as
     path: "/me",
     featureSwitches: {
       [FeatureSwitchKey.PwaNavigation]: true,
-      [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
     },
     ...workspace.pageOptions,
   });

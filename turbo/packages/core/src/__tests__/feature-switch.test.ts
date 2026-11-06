@@ -12,9 +12,6 @@ describe("FeatureSwitchKey", () => {
   it("uses the canonical switch names", () => {
     expect(FeatureSwitchKey.Dummy).toBe("_dummy");
     expect(FeatureSwitchKey.Lab).toBe("_lab");
-    expect(FeatureSwitchKey.SidebarSubscriptionUsage).toBe(
-      "sidebarSubscriptionUsage",
-    );
     expect(FeatureSwitchKey.FeishuIntegration).toBe("_feishuIntegration");
     expect(FeatureSwitchKey.OkouDebug).toBe("_debug");
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
@@ -41,24 +38,23 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it.each([
-    FeatureSwitchKey.ChatMessagePdf,
-    FeatureSwitchKey.PwaNavigation,
-    FeatureSwitchKey.SidebarSubscriptionUsage,
-  ])("releases %s to everyone and honors explicit opt-outs", (key) => {
-    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    for (const [context, enabled] of [
-      [{}, true],
-      [{ userId: "external-user", orgId: "external-org" }, true],
-      [staff, true],
-      [{ orgId: "external-org", overrides: { [key]: false } }, false],
-      [{ ...staff, overrides: { [key]: false } }, false],
-    ] as const) {
-      expect(isFeatureEnabled(key, context)).toBe(enabled);
-      expect(getAllFeatureStates(context)[key]).toBe(enabled);
-    }
-    expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
-  });
+  it.each([FeatureSwitchKey.ChatMessagePdf, FeatureSwitchKey.PwaNavigation])(
+    "releases %s to everyone and honors explicit opt-outs",
+    (key) => {
+      const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+      for (const [context, enabled] of [
+        [{}, true],
+        [{ userId: "external-user", orgId: "external-org" }, true],
+        [staff, true],
+        [{ orgId: "external-org", overrides: { [key]: false } }, false],
+        [{ ...staff, overrides: { [key]: false } }, false],
+      ] as const) {
+        expect(isFeatureEnabled(key, context)).toBe(enabled);
+        expect(getAllFeatureStates(context)[key]).toBe(enabled);
+      }
+      expect(getFeatureSwitchMetadata()[key].rolloutStage).toBe("released");
+    },
+  );
 
   it.each([
     FeatureSwitchKey.ConnectorChatAccountAccess,

@@ -263,20 +263,20 @@ function AccountUsageGroup({
   onResetCodexUsage,
   resetPending,
   subscriptionRowsCacheKey,
-  subscriptionsEnabled,
+  showSubscriptions,
 }: {
   onOpenCreditBalance: () => void;
   onOpenModel: () => void;
   onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
-  subscriptionsEnabled: boolean;
+  showSubscriptions: boolean;
 }) {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" && isAdminLoadable.data === true;
 
-  if (subscriptionsEnabled) {
+  if (showSubscriptions) {
     return (
       <AccountUsageGroupWithSubscriptions
         combinedCredit={isAdmin}
@@ -612,8 +612,6 @@ export function useAccountProfile() {
     userInfoLoadable.state === "hasData" ? userInfoLoadable.data : undefined;
   const features = useLastResolved(featureSwitch$);
   const labEnabled = features?.[FeatureSwitchKey.Lab] ?? false;
-  const subscriptionsEnabled =
-    features?.[FeatureSwitchKey.SidebarSubscriptionUsage] ?? false;
   const current = accounts.find((a) => {
     return a.isActive;
   });
@@ -639,7 +637,6 @@ export function useAccountProfile() {
     others,
     subscriptionRowsCacheKey,
     labEnabled,
-    subscriptionsEnabled,
   };
 }
 
@@ -803,7 +800,6 @@ export function AccountDropdown({
     others,
     subscriptionRowsCacheKey,
     labEnabled,
-    subscriptionsEnabled,
   } = profile;
   const {
     handleAccountAction,
@@ -843,7 +839,7 @@ export function AccountDropdown({
       Reason.DomCallback,
       "reload account menu credit balances",
     );
-    if (!subscriptionsEnabled || showSubscriptionEntry) {
+    if (showSubscriptionEntry) {
       return;
     }
 
@@ -856,7 +852,7 @@ export function AccountDropdown({
 
   return (
     <>
-      {!hidePreferences && showSubscriptionEntry && subscriptionsEnabled && (
+      {!hidePreferences && showSubscriptionEntry && (
         <SidebarSubscriptionUsage resetPending={resetAction.actionPending} />
       )}
       <DropdownMenu onOpenChange={handleMenuOpenChange}>
@@ -886,9 +882,7 @@ export function AccountDropdown({
               onResetCodexUsage={handleOpenCodexReset}
               resetPending={resetAction.actionPending}
               subscriptionRowsCacheKey={subscriptionRowsCacheKey}
-              subscriptionsEnabled={
-                subscriptionsEnabled && !showSubscriptionEntry
-              }
+              showSubscriptions={!showSubscriptionEntry}
             />
           )}
           {!hidePreferences && (

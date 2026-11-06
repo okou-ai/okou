@@ -1,7 +1,6 @@
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -256,7 +255,6 @@ async function setupPersonalSubscriptionIdentityReview() {
   await setupPage({
     context,
     path: "/?settings=model",
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
   return {
     accountA,

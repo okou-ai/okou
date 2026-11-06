@@ -43,7 +43,6 @@ test.each([
         },
       },
       featureSwitches: {
-        [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
         [FeatureSwitchKey.PwaNavigation]: false,
       },
     });
