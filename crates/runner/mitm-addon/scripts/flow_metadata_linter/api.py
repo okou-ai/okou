@@ -28,6 +28,9 @@ def metadata_key_violations(path: Path) -> list[str]:
     with tokenize.open(str(path)) as source_file:
         source = source_file.read()
     tree = ast.parse(source, filename=str(path))
+    # Non-ASCII attribute names can normalize to metadata during parsing.
+    if source.isascii() and "metadata" not in source:
+        return []
     # Diagnostics require a registered key expression. Check the parsed AST,
     # including concatenated strings, f-strings and keyword keys, before paying
     # for alias/control-flow analysis. Parsing still validates every source file.

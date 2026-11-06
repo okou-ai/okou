@@ -117,6 +117,17 @@ def test_metadata_key_scan_observes_new_registered_key_expressions(tmp_path, sta
     ) == ["changing.py:1: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access"]
 
 
+def test_metadata_key_scan_observes_normalized_attribute_names(tmp_path):
+    source_path = tmp_path / "normalized.py"
+    source_path.write_text(
+        'flow.\uff4d\uff45\uff54\uff41\uff44\uff41\uff54\uff41["sandbox_run_id"] = "run-1"\n',
+        encoding="utf-8",
+    )
+    assert _normalized_violations(
+        source_path, flow_metadata_key_linter.metadata_key_violations(source_path)
+    ) == ["normalized.py:1: use metadata_keys.SANDBOX_RUN_ID for flow.metadata access"]
+
+
 def test_metadata_key_scan_still_rejects_invalid_source_without_registered_keys(tmp_path):
     source_path = tmp_path / "invalid.py"
     source_path.write_text("def invalid(:\n")
