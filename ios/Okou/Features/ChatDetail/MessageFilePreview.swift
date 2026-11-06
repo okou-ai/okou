@@ -45,7 +45,9 @@ struct MessageFilePreview: View {
         }
       }
     } else if let file {
-      if kind == .video || kind == .audio {
+      if kind == .image {
+        MessageImagePreview(file: file, thumbnail: thumbnail)
+      } else if kind == .video || kind == .audio {
         MessageFileMediaPlayer(file: file)
       } else if QLPreviewController.canPreview(file.url as NSURL) {
         MessageFileQuickLook(file: file)
@@ -66,6 +68,41 @@ struct MessageFilePreview: View {
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
       }
+    }
+  }
+}
+
+private struct MessageImagePreview: View {
+  let file: ChatAttachmentFile
+  let thumbnail: UIImage?
+  private struct Prepared {
+    let url: URL
+    let image: UIImage?
+  }
+  @State private var prepared: Prepared?
+
+  var body: some View {
+    Group {
+      if let prepared, prepared.url == file.url {
+        if let image = prepared.image {
+          MessageZoomableImage(image: image).id(file.url)
+        } else if QLPreviewController.canPreview(file.url as NSURL) {
+          MessageFileQuickLook(file: file)
+        } else {
+          OkouEmptyState(
+            "Preview unavailable", icon: "image",
+            description: Text("Share this file or save it to Files to open it in another app."))
+        }
+      } else if let thumbnail {
+        Image(uiImage: thumbnail).resizable().scaledToFit()
+      } else {
+        OkouLoadingRow("Loading result…").fixedSize()
+      }
+    }
+    .task(id: file.url) {
+      let data = await AttachmentFileImporter.shared.previewImageData(file.url)
+      guard !Task.isCancelled else { return }
+      prepared = Prepared(url: file.url, image: data.flatMap(UIImage.init(data:)))
     }
   }
 }

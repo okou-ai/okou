@@ -180,6 +180,19 @@ actor AttachmentFileImporter {
     Self.makeThumbnail(url, maximumPixelSize: maximumPixelSize)
   }
 
+  /// Decode ordinary static images directly; keep animated, unsupported and very large images
+  /// with Quick Look rather than allocating an unbounded full-resolution bitmap.
+  func previewImageData(_ url: URL) -> Data? {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+      CGImageSourceGetCount(source) == 1,
+      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+      let width = properties[kCGImagePropertyPixelWidth] as? Int,
+      let height = properties[kCGImagePropertyPixelHeight] as? Int,
+      width > 0, height > 0, Double(width) * Double(height) <= 16_000_000
+    else { return nil }
+    return try? Data(contentsOf: url, options: .mappedIfSafe)
+  }
+
   /// The first page or slide of a document as Quick Look draws it, wide enough to fill a
   /// result card's cover from the top.
   func documentCover(_ url: URL) async -> Data? {

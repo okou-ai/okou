@@ -95,112 +95,41 @@ struct MessageMermaidView: View {
     .fullScreenCover(isPresented: $expanded) {
       if let image {
         NavigationStack {
-          MermaidZoomView(image: image, zoomStep: zoomStep)
-            .background(OkouColor.background)
-            .navigationTitle("Diagram")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-              ToolbarItem(placement: .topBarTrailing) {
-                HStack {
-                  Button {
-                    zoomStep -= 1
-                  } label: {
-                    OkouToolbarIcon("zoom-out")
-                  }
-                  .accessibilityLabel("Zoom out")
-                  Button {
-                    zoomStep += 1
-                  } label: {
-                    OkouToolbarIcon("zoom-in")
-                  }
-                  .accessibilityLabel("Zoom in")
-                  Button {
-                    UIPasteboard.general.string = code
-                  } label: {
-                    OkouToolbarIcon("copy")
-                  }
-                  .accessibilityLabel("Copy diagram source")
+          MessageZoomableImage(
+            image: image, zoomStep: zoomStep,
+            accessibilityLabel: String(localized: "Diagram. Pinch to zoom, or double tap.")
+          )
+          .background(OkouColor.background)
+          .navigationTitle("Diagram")
+          .navigationBarTitleDisplayMode(.inline)
+          .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+              HStack {
+                Button {
+                  zoomStep -= 1
+                } label: {
+                  OkouToolbarIcon("zoom-out")
                 }
+                .accessibilityLabel("Zoom out")
+                Button {
+                  zoomStep += 1
+                } label: {
+                  OkouToolbarIcon("zoom-in")
+                }
+                .accessibilityLabel("Zoom in")
+                Button {
+                  UIPasteboard.general.string = code
+                } label: {
+                  OkouToolbarIcon("copy")
+                }
+                .accessibilityLabel("Copy diagram source")
               }
-              ToolbarSpacer(.fixed, placement: .topBarTrailing)
-              OkouCloseToolbarItem { expanded = false }
             }
+            ToolbarSpacer(.fixed, placement: .topBarTrailing)
+            OkouCloseToolbarItem { expanded = false }
+          }
         }
       }
-    }
-  }
-}
-
-private struct MermaidZoomView: UIViewRepresentable {
-  let image: UIImage
-  let zoomStep: Int
-
-  func makeUIView(context: Context) -> MermaidScrollView { MermaidScrollView(image: image) }
-  func updateUIView(_ view: MermaidScrollView, context: Context) { view.adjustZoom(to: zoomStep) }
-}
-
-private final class MermaidScrollView: UIScrollView, UIScrollViewDelegate {
-  private let diagram: UIImageView
-  private let imageSize: CGSize
-  private var viewport: CGSize = .zero
-  private var zoomStep = 0
-
-  init(image: UIImage) {
-    diagram = UIImageView(image: image)
-    imageSize = image.size
-    super.init(frame: .zero)
-    delegate = self
-    contentInsetAdjustmentBehavior = .never
-    diagram.frame = CGRect(origin: .zero, size: image.size)
-    diagram.isAccessibilityElement = true
-    diagram.accessibilityLabel = String(localized: "Diagram. Pinch to zoom, or double tap.")
-    addSubview(diagram)
-    let doubleTap = UITapGestureRecognizer(target: self, action: #selector(toggleZoom(_:)))
-    doubleTap.numberOfTapsRequired = 2
-    addGestureRecognizer(doubleTap)
-  }
-
-  required init?(coder: NSCoder) { nil }
-
-  override func layoutSubviews() {
-    super.layoutSubviews()
-    guard bounds.size != viewport, bounds.width > 0, bounds.height > 0 else { return }
-    viewport = bounds.size
-    let fit = min(bounds.width / imageSize.width, bounds.height / imageSize.height)
-    minimumZoomScale = min(1, fit)
-    maximumZoomScale = max(4, fit * 8)
-    setZoomScale(minimumZoomScale, animated: false)
-    centerDiagram()
-  }
-
-  func viewForZooming(in scrollView: UIScrollView) -> UIView? { diagram }
-  func scrollViewDidZoom(_ scrollView: UIScrollView) { centerDiagram() }
-
-  func adjustZoom(to step: Int) {
-    guard step != zoomStep else { return }
-    let factor = pow(1.6, Double(step - zoomStep))
-    zoomStep = step
-    setZoomScale(min(maximumZoomScale, max(minimumZoomScale, zoomScale * factor)), animated: true)
-  }
-
-  private func centerDiagram() {
-    contentInset = UIEdgeInsets(
-      top: max(0, (bounds.height - contentSize.height) / 2),
-      left: max(0, (bounds.width - contentSize.width) / 2),
-      bottom: 0, right: 0)
-  }
-
-  @objc private func toggleZoom(_ gesture: UITapGestureRecognizer) {
-    if zoomScale > minimumZoomScale * 1.1 {
-      setZoomScale(minimumZoomScale, animated: true)
-    } else {
-      let scale = min(maximumZoomScale, minimumZoomScale * 3)
-      let point = gesture.location(in: diagram)
-      let size = CGSize(width: bounds.width / scale, height: bounds.height / scale)
-      zoom(
-        to: CGRect(
-          x: point.x - size.width / 2, y: point.y - size.height / 2, width: size.width,
-          height: size.height), animated: true)
     }
   }
 }
