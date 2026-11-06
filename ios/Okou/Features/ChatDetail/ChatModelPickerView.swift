@@ -76,6 +76,7 @@ struct ChatModelPickerButton: View {
       ChatModelPickerView(selection: selection)
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .okouSheetBackground()
     }
     // The composer loads model settings when it mounts (it needs them to send); this capsule
     // only shows the result and opens the sheet, so the settings are not requested twice.

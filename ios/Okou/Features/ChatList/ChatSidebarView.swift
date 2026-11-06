@@ -146,6 +146,7 @@ struct ChatSidebarView: View {
       )
     ) {
       ChatSearchView(workspace: store, showsArchived: showArchived, didOpen: close)
+        .okouSheetBackground()
     }
   }
 
@@ -514,7 +515,9 @@ struct ChatSidebarView: View {
       .sheet(isPresented: $showsSettings) {
         ChatSettingsView(
           store: store, authentication: authentication, notifications: notifications,
-          accountError: $accountError)
+          accountError: $accountError
+        )
+        .okouSheetBackground()
       }
       Button {
         store.search.present()

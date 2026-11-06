@@ -93,7 +93,9 @@ struct PermissionActionCard: View {
       }
     }
     .accessibilityIdentifier("permission-action-card")
-    .sheet(isPresented: $showsDetails) { PermissionActionDetails(store: store) }
+    .sheet(isPresented: $showsDetails) {
+      PermissionActionDetails(store: store).okouSheetBackground()
+    }
     .task(id: store.isActive) { if loadsState { await store.loadIfNeeded() } }
   }
 }

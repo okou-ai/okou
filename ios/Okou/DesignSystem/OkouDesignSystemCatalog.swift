@@ -452,7 +452,8 @@
               }
             }
           }
-          .scrollEdgeEffectStyle(.soft, for: .top)
+          // Every sheet's grouped ground, so this sheet presents as the product's do.
+          .okouGroupedBackground()
           .navigationTitle("Component reference")
           .navigationBarTitleDisplayMode(.inline)
           .toolbar {
@@ -463,6 +464,7 @@
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .okouSheetBackground()
       }
       .background(OkouColor.background)
       .navigationTitle("Design system")

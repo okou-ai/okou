@@ -66,18 +66,27 @@ extension View {
   /// scroll-edge style, so they get it here and cannot forget it. A page drawn as the web
   /// draws it (the connector directory, whose track and chips are web greys made for white)
   /// passes the white page ground instead.
+  ///
+  /// The sheet's own ground is not set here but at the sheet's root (`okouSheetBackground()`):
+  /// set from inside the sheet's navigation stack, it reaches the sheet after its slide has
+  /// begun, and the sheet then jumps into place while only its rows slide up.
   func okouGroupedBackground(_ ground: Color = OkouGroupedColor.background) -> some View {
     scrollContentBackground(.hidden)
       .background(ground)
       .scrollEdgeEffectStyle(.soft, for: .top)
       // The first card starts just under the title bar instead of a header's worth below.
       .contentMargins(.top, OkouSpace.sm, for: .scrollContent)
-      // At a partial detent an iOS 26 sheet is glass and the system turns grouped rows grey;
-      // full height it is opaque and rows are white. An opaque ground keeps one look.
-      .presentationBackground(OkouGroupedColor.background)
       // One row height for every grouped sheet, so single-row cards match and rows do not
       // set heights of their own.
       .environment(\.defaultMinListRowHeight, OkouControl.groupedRow)
+  }
+
+  /// A sheet's opaque ground, applied to the view the sheet presents, beside its detents. At a
+  /// partial detent an iOS 26 sheet is otherwise glass and the system turns grouped rows grey;
+  /// full height it is opaque and rows are white, so one opaque ground keeps one look. Only at
+  /// the root does the ground slide up with the sheet.
+  func okouSheetBackground(_ ground: Color = OkouGroupedColor.background) -> some View {
+    presentationBackground(ground)
   }
 }
 

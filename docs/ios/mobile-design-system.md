@@ -294,6 +294,12 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Section footers** use `okouSectionNote()`: 13 pt `muted-foreground`. A control's
   explanation (Fast mode cost, effort, scope of a switch) goes in the footer under its
   card, never as a row inside it — the system Settings pattern. One footer per card.
+- **A sheet's ground is set at its root.** Every sheet that shows grouped rows gets
+  `okouSheetBackground()` on the view it presents, next to `presentationDetents`, so a
+  partial detent stays opaque with white rows instead of glass with grey ones. Set from
+  inside the sheet's `NavigationStack` (as part of `okouGroupedBackground()` once was), the
+  ground reaches the sheet after its slide has begun: the sheet appears in place and only
+  its rows slide up.
 - **One text edge and one row height for the whole app.** Grouped rows never set
   their own height; `okouGroupedBackground()` sets the minimum to 52 pt
   (`OkouControl.groupedRow`), the height the system gives a row with a 28 pt icon
@@ -562,6 +568,7 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouGlassControl`                                                            | Clear glass icon (`.circle`) or labeled (`.capsule`) control on an exact 44 pt shape; pairs and bars read at one size                                                                |
 | `OkouFloatingPanelStyle`                                                      | Card surface plus the floating shadow for suggestion panels over the transcript                                                                                                      |
 | `okouGroupedBackground()`                                                     | The one ground for grouped List/Form sheets                                                                                                                                          |
+| `okouSheetBackground()`                                                       | A sheet's opaque ground, set on the view the sheet presents (beside its detents), never inside its navigation stack                                                                  |
 | `OkouRunningIndicator`                                                        | Web's breathing running dot; `phaseOffset` staggers list rows into a wave                                                                                                            |
 | `ChatCardHeader` / `ChatCardButtonStyle` (`.standard`, `.detail`, `.primary`) | Web card heading (16 pt brand-text glyph, callout medium title, one detail style) and card actions (outline, primary, text; destructive role in red)                                 |
 | `NewChatGreeting`                                                             | New-chat greeting with Web's word-by-word entrance                                                                                                                                   |
