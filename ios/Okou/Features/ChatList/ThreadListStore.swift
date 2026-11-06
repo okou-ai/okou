@@ -154,8 +154,6 @@ final class ThreadListStore {
       return
     }
     guard !closed, !Task.isCancelled else { return }
-    // Keep this workspace's last successful flags until a new response replaces them.
-    applySwitches(switches)
     if navigationError == nil {
       await sync.persistNavigation(
         SidebarNavigationSnapshot(
