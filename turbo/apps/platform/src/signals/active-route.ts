@@ -2,6 +2,7 @@ import { computed } from "ccstate";
 import { match } from "path-to-regexp";
 import { pathname$ } from "./route.ts";
 import { ROUTES, type RouteKey } from "./route-paths.ts";
+import { singleAgentEnabled$ } from "./single-agent.ts";
 
 export const activeRoute$ = computed((get): RouteKey | null => {
   const path = get(pathname$);
@@ -11,4 +12,12 @@ export const activeRoute$ = computed((get): RouteKey | null => {
     }
   }
   return null;
+});
+
+/** The agent chat page: `/agents/:agentId/chat`, or `/` under My Okou. */
+export const agentChatPageActive$ = computed((get): boolean => {
+  const route = get(activeRoute$);
+  return (
+    route === "agentChat" || (route === "home" && get(singleAgentEnabled$))
+  );
 });

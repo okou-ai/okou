@@ -18,6 +18,7 @@ import {
   toggleChatThreadUnreadFilter$,
 } from "./chat-thread-filter.ts";
 import { pwaNavigationEnabled$ } from "./pwa-navigation.ts";
+import { navigateToAgentChat$ } from "./agent-chat-navigation.ts";
 import {
   setStoredChatListHidden$,
   storedChatListHidden$,
@@ -32,7 +33,7 @@ export const navigateToChat$ = command(({ set }, chatThreadId: string) => {
   });
 });
 
-// With mobile navigation the bare agent chat URL is the chat list, so a new
+// With mobile navigation the bare chat page URL is the chat list, so a new
 // chat asks for the composer explicitly.
 export const navigateToNewChat$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -41,12 +42,13 @@ export const navigateToNewChat$ = command(
     if (!agentId) {
       return;
     }
-    set(detachedNavigateTo$, "/agents/:agentId/chat", {
-      pathParams: { agentId },
-      searchParams: get(pwaNavigationEnabled$)
-        ? new URLSearchParams({ compose: "1" })
-        : undefined,
-    });
+    set(
+      navigateToAgentChat$,
+      agentId,
+      get(pwaNavigationEnabled$)
+        ? { searchParams: new URLSearchParams({ compose: "1" }) }
+        : {},
+    );
   },
 );
 

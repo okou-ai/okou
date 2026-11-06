@@ -3,7 +3,8 @@ import { featureGuidesContract } from "@okouai/api-contracts/client/feature-guid
 import type { FeatureGuideEdition } from "@okouai/api-contracts/contracts/feature-guides";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { accept } from "../lib/accept.ts";
-import { searchParams$, pathname$ } from "./route.ts";
+import { searchParams$ } from "./route.ts";
+import { agentChatPageActive$ } from "./active-route.ts";
 import { appContentReady$ } from "./app-skeleton.ts";
 import { forceUpgradeDialogOpen$ } from "./force-upgrade.ts";
 import { settingsDialogOpen$ } from "./okou-page/settings/settings-dialog.ts";
@@ -109,7 +110,7 @@ export const featureGuideReady$ = computed((get) => {
   }
   const draft = get(talkDraft$);
   return (
-    /^\/agents\/[^/]+\/chat$/u.test(get(pathname$)) &&
+    get(agentChatPageActive$) &&
     !get(settingsDialogOpen$) &&
     !get(forceUpgradeDialogOpen$) &&
     !get(draft.input$).trim() &&

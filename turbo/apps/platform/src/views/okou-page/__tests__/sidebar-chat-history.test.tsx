@@ -1068,6 +1068,158 @@ test("Route New chat to the current agent and Chat to the default agent", async 
   });
 });
 
+test("My Okou drops the chat list title for a toggle and one New menu", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+  const createdAgentIds: string[] = [];
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    createdAgentIds.push(body.agentId);
+    return respond(201, {
+      id: body.clientThreadId ?? crypto.randomUUID(),
+      title: null,
+      createdAt: "2026-03-10T00:10:00Z",
+      selectedModel: body.model ?? null,
+      serviceTier: null,
+    });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.Projects]: true,
+    },
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  await within(list).findByText("Release plan");
+  const header = within(list).getByLabelText("Hide chat list").closest("div");
+  if (!header) {
+    throw new Error("Chat list header not found");
+  }
+  expect(
+    queryAllByRoleFast("button", header).map((button) => {
+      return button.getAttribute("aria-label");
+    }),
+  ).toStrictEqual([
+    "Hide chat list",
+    "Search workspace",
+    "New",
+    "Open chat list menu",
+  ]);
+  expect(header).toHaveTextContent(/^$/);
+  expect(within(list).queryByText(/^Chats with/)).not.toBeInTheDocument();
+
+  click(within(header).getByLabelText("New"));
+  click(menuItemByText("New Project"));
+  await expect(
+    screen.findByRole("textbox", { name: "Project name" }),
+  ).resolves.toBeInTheDocument();
+  fireEvent.keyDown(document.activeElement ?? document.body, {
+    key: "Escape",
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("textbox", { name: "Project name" }),
+    ).not.toBeInTheDocument();
+  });
+
+  click(within(header).getByLabelText("Open chat list menu"));
+  click(menuItemByText("Archived"));
+  await expect(within(header).findByText("Archived")).resolves.toBeVisible();
+
+  click(within(header).getByLabelText("New"));
+  click(menuItemByText("New chat"));
+  await waitFor(() => {
+    expect(createdAgentIds).toStrictEqual([AGENT_ID]);
+  });
+});
+
+test("My Okou without Projects starts a chat straight from the header +", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+  const createdAgentIds: string[] = [];
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    createdAgentIds.push(body.agentId);
+    return respond(201, {
+      id: body.clientThreadId ?? crypto.randomUUID(),
+      title: null,
+      createdAt: "2026-03-10T00:10:00Z",
+      selectedModel: body.model ?? null,
+      serviceTier: null,
+    });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: "/",
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  await within(list).findByText("Release plan");
+  const header = within(list).getByLabelText("Hide chat list").closest("div");
+  if (!header) {
+    throw new Error("Chat list header not found");
+  }
+  expect(
+    queryAllByRoleFast("button", header).map((button) => {
+      return button.getAttribute("aria-label");
+    }),
+  ).toStrictEqual([
+    "Hide chat list",
+    "Search workspace",
+    "New chat",
+    "Open chat list menu",
+  ]);
+
+  click(within(header).getByLabelText("New chat"));
+  await waitFor(() => {
+    expect(createdAgentIds).toStrictEqual([AGENT_ID]);
+  });
+});
+
+test("My Okou's Chat link and new chat shortcut open its chat page at /", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Existing conversation"),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  await screen.findByPlaceholderText(PLACEHOLDER);
+  const chatLink = within(rail).getByLabelText("Chat");
+  expect(chatLink).toHaveAttribute("href", "/");
+
+  fireEvent.keyDown(document, {
+    key: "O",
+    code: "KeyO",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  await expect(
+    screen.findByPlaceholderText(PLACEHOLDER),
+  ).resolves.toBeInTheDocument();
+
+  click(within(sidebar()).getByText("Existing conversation"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+  });
+  click(chatLink);
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+});
+
 test("Mark all current-agent chats read from the chat-list menu", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([

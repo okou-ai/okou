@@ -16,6 +16,7 @@ import {
 import { ProjectThreadDragHint } from "../projects/project-thread-drag-hint.tsx";
 import { useProjectThreadDropTarget } from "../projects/project-thread-drop-target.tsx";
 import {
+  openProjectEditor$,
   openProjectMembership$,
   projectDialog$,
   projectThreadMenuOpenChanged$,
@@ -45,6 +46,8 @@ import {
   BellOff,
   Bell,
   FolderInput,
+  FolderPlus,
+  SquarePen,
 } from "lucide-react";
 import {
   ChatThreadStateText,
@@ -1397,15 +1400,13 @@ export function ChatThreadsListMenu({
   );
 }
 
-// A non-default filter names itself in the title so the list
-// never looks like the inbox while it shows archived, unread, or muted chats.
-function useChatThreadsFilteredTitleLabel() {
+/** The active unread, archived or muted filter's name; null for the inbox. */
+export function useChatThreadsFilterLabel(): string | null {
   const { t } = useTranslation();
-  const { titleLabel } = useChatThreadsTitleLabels();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const filterLabel = unreadOnly
+  return unreadOnly
     ? t(($) => {
         return $.chat.sidebar.unreadOnly;
       })
@@ -1418,6 +1419,14 @@ function useChatThreadsFilteredTitleLabel() {
             return $.chat.sidebar.muted;
           })
         : null;
+}
+
+// A non-default filter names itself in the title so the list
+// never looks like the inbox while it shows archived, unread, or muted chats.
+function useChatThreadsFilteredTitleLabel() {
+  const { t } = useTranslation();
+  const { titleLabel } = useChatThreadsTitleLabels();
+  const filterLabel = useChatThreadsFilterLabel();
   if (filterLabel === null) {
     return titleLabel;
   }
@@ -1461,6 +1470,81 @@ function NewChatThreadButton() {
           <p className="text-xs">{newChatLabel}</p>
         </TooltipContent>
       </Tooltip>
+    </TooltipProvider>
+  );
+}
+
+/**
+ * One + for a chat or, with Projects on, a Project. Without Projects the menu
+ * would hold a single item, so the button starts the chat directly.
+ */
+export function ChatThreadsNewMenu() {
+  const { t } = useTranslation();
+  const projectsEnabled = useGet(projectsEnabled$);
+  const openProjectEditor = useSet(openProjectEditor$);
+  const newChatAction = useNewChatAction();
+  if (!projectsEnabled) {
+    return <NewChatThreadButton />;
+  }
+  const label = t(($) => {
+    return $.chat.sidebar.newMenu;
+  });
+
+  return (
+    <TooltipProvider delay={200}>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={label}
+            />
+          }
+        >
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span>
+                  <Plus size={18} />
+                </span>
+              }
+            />
+            <TooltipContent side="bottom">
+              <p className="text-xs">{label}</p>
+            </TooltipContent>
+          </Tooltip>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className={chatThreadMenuContentClassName(false)}
+        >
+          <DropdownMenuItem
+            disabled={newChatAction.disabled}
+            onClick={() => {
+              newChatAction.onSelect("main");
+            }}
+          >
+            <SquarePen size={16} className="mr-2" />
+            {t(($) => {
+              return $.chat.newChat;
+            })}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              openProjectEditor();
+            }}
+          >
+            <FolderPlus size={16} className="mr-2" />
+            {t(($) => {
+              return $.projects.new;
+            })}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
     </TooltipProvider>
   );
 }
@@ -1793,25 +1877,30 @@ export function ChatThreadsSection({
   contentClassName,
   showMarkAllRead = false,
   collapsible = true,
+  showTitle = true,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
   showMarkAllRead?: boolean;
   collapsible?: boolean;
+  /** False when the surrounding header already carries the title actions. */
+  showTitle?: boolean;
 }) {
   const agentScope = useGet(currentChatAgentScope$);
   const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
 
   return (
-    <div className="mt-4 flex min-h-0 flex-1 flex-col">
-      <div className={contentClassName}>
-        <ChatThreadsTitle
-          key={agentScope ?? "no-agent"}
-          showMarkAllRead={showMarkAllRead}
-          contentId={CHAT_THREADS_CONTENT_ID}
-          collapsible={collapsible}
-        />
-      </div>
+    <div className={cn("flex min-h-0 flex-1 flex-col", showTitle && "mt-4")}>
+      {showTitle ? (
+        <div className={contentClassName}>
+          <ChatThreadsTitle
+            key={agentScope ?? "no-agent"}
+            showMarkAllRead={showMarkAllRead}
+            contentId={CHAT_THREADS_CONTENT_ID}
+            collapsible={collapsible}
+          />
+        </div>
+      ) : null}
       <ChatThreadsContent
         scrollSignals={scrollSignals}
         contentClassName={contentClassName}
