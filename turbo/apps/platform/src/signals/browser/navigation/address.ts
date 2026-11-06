@@ -137,13 +137,14 @@ function createTargetActions(graph: AddressGraph) {
     }
   });
   const detachAddress$ = command(({ get, set }) => {
-    const retained = get(editorState$) || get(submissionState$);
+    const editor = get(editorState$);
+    const retained = editor || get(submissionState$);
     const value = get(address$);
     set(targetState$, { kind: "detached" });
     set(submissionState$, null);
     if (retained) {
       set(editorState$, {
-        kind: "input",
+        kind: editor?.kind === "focus" ? "focus" : "input",
         targetId: null,
         creation: null,
         value,
@@ -183,10 +184,10 @@ function createCreationActions(
   const cancelAddressCreation$ = command(({ get, set }, creation: object) => {
     const editor = get(editorState$);
     if (editor?.creation === creation) {
-      if (editor.kind === "input") {
-        set(detachAddress$);
-      } else {
+      if (editor.kind === "creation") {
         set(editorState$, null);
+      } else {
+        set(detachAddress$);
       }
     }
   });
@@ -230,11 +231,18 @@ function createEditorActions(
   );
   const blurAddress$ = command(({ get, set }) => {
     const editor = get(editorState$);
-    if (editor?.kind === "focus") {
-      set(
-        editorState$,
-        editor.creation ? { ...editor, kind: "creation" } : null,
-      );
+    if (editor?.kind !== "focus") {
+      return;
+    }
+    if (editor.creation) {
+      set(editorState$, { ...editor, kind: "creation" });
+      return;
+    }
+    set(editorState$, null);
+    // Ending a clean detached edit follows the currently displayed page.
+    const target = get(graph.selectedTabId$);
+    if (get(targetState$).kind === "detached" && target !== null) {
+      set(targetState$, { kind: "target", id: target });
     }
   });
   const editAddress$ = command(({ get, set }, value: string) => {

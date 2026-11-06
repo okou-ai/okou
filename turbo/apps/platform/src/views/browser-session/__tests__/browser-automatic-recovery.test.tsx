@@ -243,6 +243,36 @@ test.each([false, true])(
   },
 );
 
+test("A clean address selection survives binding replacement and releases on blur", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  const address = screen.getByLabelText<HTMLInputElement>("Address");
+  await userEvent.click(address);
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await pendingRecovery();
+  viewer.replaceBinding();
+  viewer.advance(1000);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("https://original.example");
+  expect(address.selectionStart).toBe(2);
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).toHaveValue("https://sibling.example");
+  await fill(address, "chosen.example/path");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://chosen.example/path");
+  });
+  expect(viewer.browser.targets[0]?.url).toBe("https://original.example");
+  expect(viewer.browser.targets[2]?.url).toBe("http://chosen.example/path");
+});
+
 test("A submitted address can start a fresh selection after connection recovery", async () => {
   const viewer = mockViewer();
   await viewer.start();

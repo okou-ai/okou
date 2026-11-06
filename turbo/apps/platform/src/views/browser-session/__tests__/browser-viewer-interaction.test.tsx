@@ -270,6 +270,69 @@ test("An invalid local address remains a draft across membership reattachment", 
   expect(browser.targets[0]?.url).toBe("https://example.com");
 });
 
+test.each(["untouched", "focused", "blurred", "edited-after-failure"] as const)(
+  "Creation failure preserves active editing and releases only clean interactions (editor=%s)",
+  async (editor) => {
+    const browser = await setupViewer(0);
+    const receipt = browser.holdNextNative("createTab");
+    await userEvent.click(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    );
+    await receipt.received;
+    const address = screen.getByLabelText<HTMLInputElement>("Address");
+    const settings = screen.getByLabelText("Browser settings");
+    if (editor !== "untouched") {
+      await userEvent.keyboard("{Home}");
+    }
+    if (editor === "blurred") {
+      await userEvent.click(settings);
+      await userEvent.keyboard("{Escape}");
+    }
+    act(() => {
+      browser.move("created-1", 1);
+    });
+    await act(async () => {
+      await receipt.release();
+    });
+    await screen.findByRole("alert");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(address).toBeEnabled();
+    const active = editor === "focused" || editor === "edited-after-failure";
+    expect(address).toHaveValue(active ? "" : "https://example.com");
+    const focused = editor === "blurred" ? settings : address;
+    expect(focused).toHaveFocus();
+    if (editor === "edited-after-failure") {
+      await userEvent.keyboard("retained.example/path{Enter}");
+    }
+    const retained = editor === "edited-after-failure";
+    expect(address).toHaveValue(
+      retained ? "retained.example/path" : active ? "" : "https://example.com",
+    );
+    expect(browser.targets[0]?.url).toBe("https://example.com");
+    await userEvent.click(settings);
+    await userEvent.keyboard("{Escape}");
+    expect(address).toHaveValue(
+      retained ? "retained.example/path" : "https://example.com",
+    );
+    expect(settings).toHaveFocus();
+    if (retained) {
+      await userEvent.click(address);
+      await userEvent.keyboard("{Escape}");
+    }
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    await fill(address, "after-failure.example/path");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://after-failure.example/path");
+    });
+    expect(browser.targets[0]?.url).toBe("http://after-failure.example/path");
+  },
+);
+
 test("A failed creation retains its typed address without navigating the restored page", async () => {
   const browser = await setupViewer(0);
   const receipt = browser.holdNextNative("createTab");
