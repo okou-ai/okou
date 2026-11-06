@@ -228,52 +228,65 @@ test.each(["removed", "moved"] as const)(
   },
 );
 
-test("Selected-target loss waits for complete empty inventory before offering a new tab", async () => {
-  const viewer = mockViewer();
-  viewer.browser.targets.push(
-    {
-      targetId: "known-sibling",
-      title: "Known sibling",
-      url: "https://known-sibling.example",
-      windowId: 202,
-    },
-    {
-      targetId: "pending-sibling",
-      title: "Pending sibling",
-      url: "https://pending-sibling.example",
-      windowId: 202,
-    },
-  );
-  const inventory = viewer.browser.holdNextMembership("pending-sibling");
-  await viewer.start();
-  await inventory.received;
-  await ready();
-  act(() => {
-    viewer.browser.event("Target.targetDestroyed", { targetId: "other" });
-    viewer.browser.event("Target.targetDestroyed", {
-      targetId: "example-page",
+test.each(["healthy", "recovering"] as const)(
+  "Selected-target loss from a %s viewer waits for complete empty inventory before offering a new tab",
+  async (phase) => {
+    const viewer = mockViewer();
+    viewer.browser.targets.push(
+      {
+        targetId: "known-sibling",
+        title: "Known sibling",
+        url: "https://known-sibling.example",
+        windowId: 202,
+      },
+      {
+        targetId: "pending-sibling",
+        title: "Pending sibling",
+        url: "https://pending-sibling.example",
+        windowId: 202,
+      },
+    );
+    const inventory = viewer.browser.holdNextMembership("pending-sibling");
+    await viewer.start();
+    await inventory.received;
+    await ready();
+    if (phase === "recovering") {
+      act(() => {
+        viewer.browser.frame("!");
+      });
+      await pendingRecovery();
+    }
+    act(() => {
+      viewer.browser.event("Target.targetDestroyed", { targetId: "other" });
+      viewer.browser.event("Target.targetDestroyed", {
+        targetId: "example-page",
+      });
     });
-  });
-  await screen.findByText("Connecting to browser…");
-  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-  expect(
-    screen.getByLabelText("New tab", { selector: "button" }),
-  ).toBeDisabled();
-  expect(screen.queryByText("No tabs open")).not.toBeInTheDocument();
-  expect(viewer.sentry.reports).toHaveLength(0);
-  await act(inventory.release);
-  await screen.findByText("No tabs open");
-  const create = screen.getByLabelText("New tab", { selector: "button" });
-  expect(create).toBeEnabled();
-  expect(viewer.sentry.reports).toHaveLength(0);
-  click(create);
-  await ready("");
-  expect(viewer.browser.targets).toContainEqual(
-    expect.objectContaining({ windowId: 101, url: "about:blank" }),
-  );
-  expect(viewer.sentry.reports).toHaveLength(0);
-  expect(viewer.startupErrors).toHaveLength(0);
-});
+    await screen.findByText("Connecting to browser…");
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    ).toBeDisabled();
+    expect(screen.queryByText("No tabs open")).not.toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    });
+    viewer.advance(1000);
+    expect(viewer.sentry.reports).toHaveLength(0);
+    await act(inventory.release);
+    await screen.findByText("No tabs open");
+    const create = screen.getByLabelText("New tab", { selector: "button" });
+    expect(create).toBeEnabled();
+    expect(viewer.sentry.reports).toHaveLength(0);
+    click(create);
+    await ready("");
+    expect(viewer.browser.targets).toContainEqual(
+      expect.objectContaining({ windowId: 101, url: "about:blank" }),
+    );
+    expect(viewer.sentry.reports).toHaveLength(0);
+    expect(viewer.startupErrors).toHaveLength(0);
+  },
+);
 
 test("A failed successor reports its own terminal initialization error after target loss", async () => {
   const viewer = mockViewer();

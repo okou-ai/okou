@@ -962,6 +962,7 @@ type DiscoveryContext = ControllerContext<
   | "nativeHost"
   | "preferredTargetId"
   | "readinessFailure$"
+  | "selectionChanged$"
   | "selectedOwner$"
   | "wake$"
 >;
@@ -1112,6 +1113,8 @@ function createDiscoveryGraph(
         }) &&
         !get(closingTargets$).has(selected)
       ) {
+        // The lost target's recovery cannot outlive pending or empty discovery.
+        set(context.selectionChanged$);
         set(get(links$).retireCurrent$, "target-replaced", false, true);
         // Successor selection or discovery owns any final failure after this loss.
         set(model.transition$, {
