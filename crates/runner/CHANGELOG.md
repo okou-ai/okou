@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.24](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.23...runner-rs-v0.244.24) (2026-11-06)
+
+
+### Refactoring
+
+* **python:** share original-file source attestation ([#45562](https://github.com/okou-ai/okou/issues/45562)) ([276ee34](https://github.com/okou-ai/okou/commit/276ee343caf26754d648ad1d03663d3520f04e45))
+
 ## [0.244.23](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.22...runner-rs-v0.244.23) (2026-11-06)
 
 
