@@ -6,7 +6,7 @@ import { unreadAgentIds$ } from "../chat-page/chat-thread-indicators-from-worker
 import { markAgentThreadsRead$ } from "../chat-page/sidebar-unread-threads.ts";
 import { pageSignal$ } from "../page-signal.ts";
 import { pathParams$ } from "../route.ts";
-import { isChatRoute, selectPinnedAgent$, setSidebarExpanded$ } from "./nav.ts";
+import { isChatRoute, selectPinnedAgent$ } from "./nav.ts";
 import {
   displayedPinnedAgents$,
   movePinnedAgent$,
@@ -42,11 +42,8 @@ function createSidebarPinnedAgentActions(agentId: string) {
       const signal = get(pageSignal$);
       return set(markAgentThreadsRead$, agentId, signal);
     }),
-    select$: command(({ set }, hasUnread: boolean, closeSidebar = false) => {
+    select$: command(({ set }, hasUnread: boolean) => {
       set(selectPinnedAgent$, { agentId, hasUnread });
-      if (closeSidebar) {
-        set(setSidebarExpanded$, false);
-      }
     }),
     startDrag$: command(({ set }) => {
       set(startPinnedAgentDrag$, agentId);
@@ -97,9 +94,6 @@ function createSidebarPinnedAgentSignals(agentId: string) {
         : await get(currentChatAgentId$);
     return selectedAgentId === agentId;
   });
-  const fromChat$ = computed(async (get) => {
-    return (await get(currentChatAgentId$)) === agentId;
-  });
   const unread$ = computed(async (get) => {
     return (await get(unreadAgentIds$)).has(agentId);
   });
@@ -113,11 +107,6 @@ function createSidebarPinnedAgentSignals(agentId: string) {
   });
   const reorderable$ = computed(async (get) => {
     return (await get(pinned$)) && !(await get(default$));
-  });
-  const hasSideActions$ = computed(async (get) => {
-    return (
-      (await get(unread$)) || ((await get(pinned$)) && !(await get(default$)))
-    );
   });
   const dragging$ = computed((get) => {
     return get(draggingPinnedAgentId$) === agentId;
@@ -150,12 +139,10 @@ function createSidebarPinnedAgentSignals(agentId: string) {
     agentId,
     displayName$,
     selected$,
-    fromChat$,
     unread$,
     pinned$,
     default$,
     reorderable$,
-    hasSideActions$,
     dragging$,
     hasDrag$,
     dropSide$,

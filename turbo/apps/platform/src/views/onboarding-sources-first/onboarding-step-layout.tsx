@@ -52,7 +52,7 @@ function OnboardingStepProgress({
 
 function OnboardingAccount() {
   const onAccountAction = useSet(handleAccountAction$);
-  return <AccountDropdown onAccountAction={onAccountAction} collapsed />;
+  return <AccountDropdown onAccountAction={onAccountAction} />;
 }
 
 function OnboardingTrustPoints({

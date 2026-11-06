@@ -41,20 +41,20 @@ Building something:
 Changing one of these surfaces — read its note first, because each one records a
 cascade or environment constraint that is not obvious from the markup:
 
-| Surface                                                   | Note                                                                                                                        |
-| --------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| Chat message bubble, or a Markdown frame inside one       | [Chat message bubbles](#chat-message-bubbles)                                                                               |
-| Chat thinking indicator, skeleton or shimmer              | [Chat thinking states](#chat-thinking-states)                                                                               |
-| Markdown card slot                                        | [Markdown card block spacing](#markdown-card-block-spacing)                                                                 |
-| Markdown code fence copy control                          | [The Markdown code-fence copy control](#the-markdown-code-fence-copy-control)                                               |
-| Mermaid diagram fallback                                  | [The Mermaid fallback fence](#the-mermaid-fallback-fence)                                                                   |
-| Toast                                                     | [Toast styling under an unlayered stylesheet](#toast-styling-under-an-unlayered-stylesheet)                                 |
-| Table header                                              | [Table header rules and the global scrollbar treatment](#table-header-rules-and-the-global-scrollbar-treatment)             |
-| Sidebar copy, nav rail or expanded drawer                 | [Sidebar copy and nav chrome under the gradient color themes](#sidebar-copy-and-nav-chrome-under-the-gradient-color-themes) |
-| Workspace pane background                                 | [The workspace canvas](#the-workspace-canvas)                                                                               |
-| Any card radius or shadow token                           | [Card geometry at the document root](#card-geometry-at-the-document-root)                                                   |
-| Mobile drawer, scrim or a fixed cover in a standalone PWA | [The standalone PWA fixed cover](#the-standalone-pwa-fixed-cover)                                                           |
-| Color-theme preview swatch                                | [App palette previews](#app-palette-previews)                                                                               |
+| Surface                                             | Note                                                                                                                        |
+| --------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
+| Chat message bubble, or a Markdown frame inside one | [Chat message bubbles](#chat-message-bubbles)                                                                               |
+| Chat thinking indicator, skeleton or shimmer        | [Chat thinking states](#chat-thinking-states)                                                                               |
+| Markdown card slot                                  | [Markdown card block spacing](#markdown-card-block-spacing)                                                                 |
+| Markdown code fence copy control                    | [The Markdown code-fence copy control](#the-markdown-code-fence-copy-control)                                               |
+| Mermaid diagram fallback                            | [The Mermaid fallback fence](#the-mermaid-fallback-fence)                                                                   |
+| Toast                                               | [Toast styling under an unlayered stylesheet](#toast-styling-under-an-unlayered-stylesheet)                                 |
+| Table header                                        | [Table header rules and the global scrollbar treatment](#table-header-rules-and-the-global-scrollbar-treatment)             |
+| Sidebar copy or nav rail                            | [Sidebar copy and nav chrome under the gradient color themes](#sidebar-copy-and-nav-chrome-under-the-gradient-color-themes) |
+| Workspace pane background                           | [The workspace canvas](#the-workspace-canvas)                                                                               |
+| Any card radius or shadow token                     | [Card geometry at the document root](#card-geometry-at-the-document-root)                                                   |
+| Scrim or a fixed cover in a standalone PWA          | [The standalone PWA fixed cover](#the-standalone-pwa-fixed-cover)                                                           |
+| Color-theme preview swatch                          | [App palette previews](#app-palette-previews)                                                                               |
 
 ## Final state
 
@@ -1376,9 +1376,6 @@ token on a whole subtree means any descendant spelling `border-sidebar-border`
 silently takes the gradient alpha; a named utility is opted into. A future nav
 descendant that wants the gradient stroke asks for `border-nav-border` by name.
 
-The expanded drawer carries `data-slot="sidebar-expanded"` so the account-menu
-test selects it through a documented slot.
-
 `group-hover` carries Tailwind's `@media (hover: hover)` guard, so the gradient
 themes do not paint the hover foreground onto a sticky tap state. Removing that
 guard would need either a first-party selector or a global `hover` variant
@@ -1684,10 +1681,9 @@ Geometry utilities keep their existing precedence and use Sonner's
 ### The standalone PWA fixed cover
 
 A `fixed inset-0` cover is clipped by the visual viewport, so in a standalone
-PWA it stops short of the bottom safe inset. The mobile drawer scrim and the
-artifact-preview dialog backdrop each write
-`[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]` to paint to the
-physical edge while their content keeps its safe-area padding.
+PWA it stops short of the bottom safe inset. The artifact-preview dialog
+backdrop writes `[@media(display-mode:standalone)]:bottom-[calc(-1*var(--sab))]`
+to paint to the physical edge while its content keeps its safe-area padding.
 
 Tailwind has no `display-mode` variant, and this is a genuine environment
 condition rather than a token decision, so it stays an arbitrary variant over an
@@ -1696,18 +1692,6 @@ use. The utility has to win against the `inset-0` on the same element, and it
 does: Tailwind emits the `inset` shorthand before the `bottom` longhand inside
 `@layer utilities`, and `cn()` keeps both, because a modifier-prefixed
 `bottom-*` never conflicts with an unprefixed `inset-0`.
-
-The mobile drawer's shared `SheetContent` carries the same utility, plus `p-safe`
-for its four-value padding. Its `::before` layer exists for one case: the popup
-already carries `bg-sidebar`, so that fill is invisible wherever the element's
-own box is, and the layer's only visible work is the standalone extension below,
-which paints the sidebar color into the home-indicator area. `isolate` keeps
-the `-z-1` layer inside this element instead of letting it fall behind the page.
-
-The shell mounts the Sheet only below the shared `48rem` desktop breakpoint
-and outside the PWA navigation path. Sheet owns the portal, backdrop, modal
-focus boundary, and trigger/close relationship. Closed drawers unmount; existing
-sidebar signals retain section state and restore the chat-list scroll position.
 
 ## Exception boundary
 

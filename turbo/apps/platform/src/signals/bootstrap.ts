@@ -130,7 +130,7 @@ import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog
 import { captureInvitationRedirect$ } from "./invitation-redirect.ts";
 import { captureDiscordApprovalFragment$ } from "./okou-page/discord-oauth-approval.ts";
 import {
-  pwaNavigationEnabled$,
+  mobileChatViewport$,
   setupPwaNavigation$,
 } from "./okou-page/pwa-navigation.ts";
 import { setupPwaMePage$ } from "./okou-page/pwa-me-page-setup.ts";
@@ -216,7 +216,7 @@ const setupHomeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   await set(
-    get(pwaNavigationEnabled$)
+    get(mobileChatViewport$)
       ? setupAuthenticatedPwaMePage$
       : setupNotFoundPage$,
     signal,

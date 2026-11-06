@@ -4,8 +4,7 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -126,7 +125,6 @@ async function prepareRemoteDefaults(
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -214,67 +212,6 @@ test("A chat can restore multiple SSH host defaults independently", async () => 
     expect(second).toHaveTextContent("On");
   });
   await expectReopenedRemoteAccessCount("2 enabled");
-});
-
-test("Remote host choices stay read-only across resize and reopen until a save completes", async () => {
-  const viewport = context.mocks.browser.matchMedia(true);
-  const saveResponse = context.mocks.deferred<void>();
-  const { first, second } = await prepareRemoteDefaults(
-    "override-first",
-    saveResponse.promise,
-  );
-
-  await chooseRemoteHost(first, "Off");
-  await waitFor(() => {
-    expect(first).toHaveAttribute("aria-readonly", "true");
-    expect(second).toHaveAttribute("aria-readonly", "true");
-  });
-
-  act(() => {
-    viewport.setMatches(false);
-  });
-  const dialog = await screen.findByRole("dialog", { name: "Remote access" });
-  expect(
-    within(dialog).getByRole("combobox", {
-      name: "SSH SSH host 1",
-    }),
-  ).toHaveAttribute("aria-readonly", "true");
-  const resizedSecond = within(dialog).getByRole("combobox", {
-    name: "SSH SSH host 2",
-  });
-  expect(resizedSecond).toHaveAttribute("aria-readonly", "true");
-  await closeRemoteAccess();
-  click(await findFastControl("button", "Connectors"));
-  click(await screen.findByText("Remote access"));
-  const reopenedFirst = await screen.findByRole("combobox", {
-    name: "SSH SSH host 1",
-  });
-  const reopenedSecond = screen.getByRole("combobox", {
-    name: "SSH SSH host 2",
-  });
-  expect(reopenedFirst).toHaveAttribute("aria-readonly", "true");
-  expect(reopenedSecond).toHaveAttribute("aria-readonly", "true");
-  const user = userEvent.setup({ delay: null });
-  reopenedSecond.focus();
-  await user.keyboard("{Enter}{ArrowDown}{Enter}");
-  click(reopenedFirst);
-  expect(screen.queryByRole("listbox")).toBeNull();
-  reopenedSecond.focus();
-
-  saveResponse.resolve();
-  await waitFor(() => {
-    expect(reopenedFirst).toHaveTextContent("Off");
-    expect(reopenedSecond).toHaveTextContent("Default (Off)");
-    expect(reopenedFirst).not.toHaveAttribute("aria-readonly", "true");
-    expect(reopenedSecond).not.toHaveAttribute("aria-readonly", "true");
-  });
-  expect(reopenedSecond).toHaveFocus();
-  await chooseRemoteHost(reopenedSecond, "On");
-  await waitFor(() => {
-    expect(reopenedFirst).toHaveTextContent("Off");
-    expect(reopenedSecond).toHaveTextContent("On");
-    expect(reopenedSecond).not.toHaveAttribute("aria-readonly", "true");
-  });
 });
 
 test("Remote access stays open while a changed chat host refreshes", async () => {
@@ -634,8 +571,7 @@ async function prepareDraftHostChoices() {
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+    path: `/agents/${SCOUT_AGENT_ID}/chat?compose=1`,
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);
@@ -651,57 +587,6 @@ async function prepareDraftHostChoices() {
   const user = userEvent.setup({ delay: null });
   return { trigger, first, user, fixture, second };
 }
-
-test.each([
-  { viewportName: "desktop", desktop: true },
-  { viewportName: "narrow", desktop: false },
-])(
-  "Pending SSH choices survive resize and reopen from a $viewportName viewport",
-  async ({ desktop }) => {
-    const viewport = context.mocks.browser.matchMedia(desktop);
-    const { trigger, first, user } = await prepareDraftHostChoices();
-    const dialog = screen.getByRole("dialog", { name: "Remote access" });
-    await waitFor(() => {
-      expect(dialog.contains(document.activeElement)).toBeTruthy();
-    });
-    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
-
-    first.focus();
-    await user.keyboard("{Enter}");
-    await screen.findByRole("option", {
-      name: "Default (On)",
-      selected: true,
-    });
-    await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
-    expect(first).toHaveTextContent("Off");
-
-    act(() => {
-      viewport.setMatches(!desktop);
-    });
-    const resizedDialog = await screen.findByRole("dialog", {
-      name: "Remote access",
-    });
-    expect(
-      within(resizedDialog).getByRole("combobox", { name: "SSH SSH host 1" }),
-    ).toHaveTextContent("Off");
-    await waitFor(() => {
-      expect(resizedDialog.contains(document.activeElement)).toBeTruthy();
-    });
-
-    await expectReopenedRemoteAccessCount("0 enabled");
-    click(await screen.findByText("Remote access"));
-    const restoredChoice = await screen.findByRole("combobox", {
-      name: "SSH SSH host 1",
-    });
-    expect(restoredChoice).toHaveTextContent("Off");
-    await chooseRemoteHost(restoredChoice, "Default (On)");
-    expect(restoredChoice).toHaveTextContent("Default (On)");
-    await closeRemoteAccess();
-    await waitFor(() => {
-      expect(trigger).toHaveFocus();
-    });
-  },
-);
 
 test("Apply SSH host choices during thread creation", async () => {
   const { fixture, first, second, user } = await prepareDraftHostChoices();

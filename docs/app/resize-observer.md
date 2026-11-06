@@ -83,17 +83,21 @@ export const refreshChatListLayout$ = command(
     );
     await frame.promise;
     signal.throwIfAborted();
-    set(responsiveSidebarChatThreadScrollSignals.measureViewport$);
     set(threeColumnSidebarChatThreadScrollSignals.measureViewport$);
     set(get(pwaChatThreadScrollSignals$).measureViewport$);
   },
 );
 
-// signals/okou-page/sidebar-manage-section.ts: the cause awaits it.
-export const setManageSectionCollapsed$ = command(
-  async ({ set }, collapsed: boolean, signal: AbortSignal) => {
-    set(manageSectionCollapsedStorage.set$, String(collapsed));
-    // The section sits above the mobile drawer's chat list.
+// signals/instatus-status.ts: the cause awaits it.
+export const dismissInstatusIssue$ = command(
+  async ({ get, set }, issueId: string, signal: AbortSignal) => {
+    const nextDismissedIssueIds = new Set(get(dismissedIssueIds$));
+    nextDismissedIssueIds.add(issueId);
+    set(
+      setDismissedIssueIdsRaw$,
+      JSON.stringify(Array.from(nextDismissedIssueIds)),
+    );
+    // Mobile notices sit above the chat list.
     await set(refreshChatListLayout$, signal);
   },
 );

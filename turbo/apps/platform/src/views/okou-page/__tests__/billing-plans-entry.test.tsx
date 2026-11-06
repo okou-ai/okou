@@ -7,8 +7,6 @@ import {
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import { search } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -121,7 +119,6 @@ test("An admin on mobile navigation opens the plans from Me", async () => {
   await setupPage({
     context,
     path: "/me",
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
   });
 
   await screen.findByRole("heading", { name: "Me" });

@@ -39,10 +39,7 @@ import {
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  setSidebarExpanded$,
-  type AccountAction,
-} from "../../signals/okou-page/nav.ts";
+import type { AccountAction } from "../../signals/okou-page/nav.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   openSettingsDialogAt$,
@@ -170,55 +167,29 @@ function accountDisplayFrom(
 function renderAccountTrigger(
   display: AccountDisplay,
   visible: boolean,
-  collapsed: boolean,
   avatarShape: "circle" | "square",
 ) {
-  if (collapsed) {
-    return (
-      <Button
-        showTooltip
-        type="button"
-        variant="quiet"
-        size="icon"
-        aria-label={display.name}
-        className="shrink-0 p-0"
-      >
-        {visible ? (
-          <UserAvatar
-            imageUrl={display.imageUrl}
-            name={display.name}
-            initial={display.initial}
-            size="md+"
-            shape={avatarShape}
-          />
-        ) : (
-          <ThumbnailPlaceholder size="md+" shape={avatarShape} />
-        )}
-      </Button>
-    );
-  }
-  // Geometry mirrors OrgSwitcher's trigger so the workspace row at the top
-  // of the sidebar and the account row at the bottom read as one pair.
   return (
-    <button
+    <Button
+      showTooltip
       type="button"
-      className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-state-hover text-sidebar-foreground transition-colors"
+      variant="quiet"
+      size="icon"
+      aria-label={display.name}
+      className="shrink-0 p-0"
     >
       {visible ? (
         <UserAvatar
           imageUrl={display.imageUrl}
           name={display.name}
           initial={display.initial}
-          size="sm"
+          size="md+"
           shape={avatarShape}
         />
       ) : (
-        <ThumbnailPlaceholder size="sm" shape={avatarShape} />
+        <ThumbnailPlaceholder size="md+" shape={avatarShape} />
       )}
-      <span className="min-w-0 flex-1 text-left text-sm font-medium leading-tight truncate">
-        {visible ? display.name : null}
-      </span>
-    </button>
+    </Button>
   );
 }
 
@@ -648,7 +619,6 @@ export function useAccountActions(
   onAccountAction?: (action: AccountAction) => void,
 ) {
   const openSettings = useSet(openSettingsDialogAt$);
-  const setSidebarExpanded = useSet(setSidebarExpanded$);
   const pageSignal = useGet(pageSignal$);
   const openClerkAddAccount = useSet(openClerkAddAccount$);
 
@@ -686,7 +656,6 @@ export function useAccountActions(
   };
 
   const openSettingsSection = (section: SettingsSection) => {
-    setSidebarExpanded(false);
     detach(openSettings(section, pageSignal), Reason.DomCallback);
   };
 
@@ -781,15 +750,11 @@ function AccountCodexResetDialog({
 
 export function AccountDropdown({
   onAccountAction,
-  collapsed = false,
   hidePreferences = false,
-  renderCodexResetDialog = true,
   showSubscriptionEntry = false,
 }: {
   onAccountAction?: (action: AccountAction) => void;
-  collapsed?: boolean;
   hidePreferences?: boolean;
-  renderCodexResetDialog?: boolean;
   showSubscriptionEntry?: boolean;
 }) {
   const profile = useAccountProfile();
@@ -864,7 +829,6 @@ export function AccountDropdown({
           render={renderAccountTrigger(
             accountDisplay,
             accountVisible,
-            collapsed,
             avatarShape,
           )}
         />
@@ -908,7 +872,7 @@ export function AccountDropdown({
           <SignOutItem onAccountAction={handleAccountAction} />
         </DropdownMenuContent>
       </DropdownMenu>
-      {renderCodexResetDialog && <AccountCodexResetDialog {...resetAction} />}
+      <AccountCodexResetDialog {...resetAction} />
     </>
   );
 }

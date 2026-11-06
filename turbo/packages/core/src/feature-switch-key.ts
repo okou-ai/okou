@@ -27,7 +27,6 @@ export enum FeatureSwitchKey {
   ArtifactSidebarPreview = "artifactSidebarPreview",
   ArtifactPreviewToolbar = "artifactPreviewToolbar",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
-  PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",
   LarkIntegration = "larkIntegration",
   WechatIntegration = "wechatIntegration",

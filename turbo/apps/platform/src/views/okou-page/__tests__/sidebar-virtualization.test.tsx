@@ -5,9 +5,7 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { computerUseHostsContract } from "@okouai/api-contracts/contracts/computer-use";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -123,43 +121,6 @@ function selectChatListFilter(sidebar: HTMLElement, filter: "Unread"): void {
   }
   click(item);
 }
-
-test("Restore the mobile chat-list scroll position after reopening the sidebar", async () => {
-  const threadCount = 32;
-  context.mocks.browser.matchMedia(false);
-  mockThreads(threadCount);
-  mockViewportHeight(() => {
-    return 5 * ROW_HEIGHT;
-  }, threadCount);
-  await setupPage({
-    context,
-    path: "/agents",
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
-  });
-  const agentCard = await screen.findByText("Nova");
-  expect(agentCard).toBeInTheDocument();
-  click(screen.getByLabelText("Open menu"));
-  const drawer = screen.getByRole("dialog", { name: "Sidebar" });
-  const viewport = await within(drawer).findByTestId("sidebar-scroll-area");
-  await within(viewport).findByText("History 1");
-  fireEvent.scroll(viewport, { target: { scrollTop: 16 * ROW_HEIGHT } });
-  await within(viewport).findByText("History 17");
-
-  click(within(drawer).getByLabelText("Collapse sidebar"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
-  });
-  click(screen.getByLabelText("Open menu"));
-  const reopened = screen.getByRole("dialog", { name: "Sidebar" });
-  const reopenedViewport = await within(reopened).findByTestId(
-    "sidebar-scroll-area",
-  );
-  await within(reopenedViewport).findByText("History 17");
-  expect(reopenedViewport.scrollTop).toBe(16 * ROW_HEIGHT);
-  expect(
-    within(reopenedViewport).queryByText("History 1"),
-  ).not.toBeInTheDocument();
-});
 
 test("Keep the chat viewport keyboard-focusable only while a conversation is open", async () => {
   const threadCount = 32;
@@ -469,108 +430,6 @@ test("Refresh virtualization after pinning adds a grid row and unpinning removes
   });
 });
 
-function openDrawerChatList(): HTMLElement {
-  click(screen.getByLabelText("Open menu"));
-  return screen.getByRole("dialog", { name: "Sidebar" });
-}
-
-function fastControl(container: HTMLElement, name: string): HTMLElement {
-  const control = queryAllByRoleFast("button", container).find((candidate) => {
-    return (
-      candidate.getAttribute("aria-label") === name ||
-      candidate.textContent?.trim() === name
-    );
-  });
-  if (!control) {
-    throw new Error(`${name} button is missing`);
-  }
-  return control;
-}
-
-test("Remeasure the drawer chat list when the Manage section collapses and expands", async () => {
-  context.mocks.browser.matchMedia(false);
-  mockThreads(120);
-  mockViewportHeight(() => {
-    const manage = document.getElementById("sidebar-manage-content");
-    return manage?.hidden ? 12 * ROW_HEIGHT : 5 * ROW_HEIGHT;
-  });
-  await setupPage({
-    context,
-    path: "/agents",
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
-  });
-  await screen.findByText("Nova");
-
-  const drawer = openDrawerChatList();
-  const rows = () => {
-    return within(drawer).getAllByTestId("sidebar-chat-thread-virtual-row");
-  };
-  await waitFor(() => {
-    expect(rows()).toHaveLength(13);
-  });
-
-  click(fastControl(drawer, "Manage"));
-  await waitFor(() => {
-    expect(rows()).toHaveLength(20);
-  });
-  click(fastControl(drawer, "Manage"));
-  await waitFor(() => {
-    expect(rows()).toHaveLength(13);
-  });
-});
-
-test("Remeasure the drawer chat list when a service notice arrives and is dismissed", async () => {
-  context.mocks.browser.matchMedia(false);
-  mockThreads(120);
-  const incident = createDeferredPromise<void>(context.signal);
-  context.mocks.http.get("https://api.instatus.com/issues", async () => {
-    await incident.promise;
-    return HttpResponse.json({
-      activeIncidents: [
-        {
-          id: "incident-api-latency",
-          name: "API requests are delayed",
-          status: "INVESTIGATING",
-        },
-      ],
-    });
-  });
-  mockViewportHeight(() => {
-    const notice = document.querySelector(
-      '[role="region"][aria-label="Service status updates"]',
-    );
-    return notice ? 5 * ROW_HEIGHT : 12 * ROW_HEIGHT;
-  });
-  await setupPage({
-    context,
-    host: "app.okou.ai",
-    path: "/agents",
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
-  });
-  await screen.findByText("Nova");
-
-  const drawer = openDrawerChatList();
-  const rows = () => {
-    return within(drawer).getAllByTestId("sidebar-chat-thread-virtual-row");
-  };
-  await waitFor(() => {
-    expect(rows()).toHaveLength(20);
-  });
-
-  incident.resolve();
-  await within(drawer).findByRole("region", {
-    name: "Service status updates",
-  });
-  await waitFor(() => {
-    expect(rows()).toHaveLength(13);
-  });
-
-  click(fastControl(drawer, "Dismiss service update"));
-  await waitFor(() => {
-    expect(rows()).toHaveLength(20);
-  });
-});
-
 test("Measure the mobile chat list only after the main stylesheet bounds it", async () => {
   const pwaRowHeight = 60;
   const threadCount = 120;
@@ -606,7 +465,6 @@ test("Measure the mobile chat list only after the main stylesheet bounds it", as
   const page = await startPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
   });
   await screen.findByRole("navigation", { name: "Main navigation" });
   // Workspace search lists the same chats outside the chat list, so finding

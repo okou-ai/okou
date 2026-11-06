@@ -290,12 +290,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Show personal subscription usage in the account menu and on Me, and provider credit balances on connected accounts.",
     enabled: true,
   },
-  [FeatureSwitchKey.PwaNavigation]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser.",
-    enabled: true,
-  },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",

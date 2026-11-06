@@ -1,6 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { pathParams$, searchParams$ } from "../route.ts";
-import { setSidebarExpanded$ } from "../okou-page/nav.ts";
 import { setPendingDeleteThreadId$ } from "../okou-page/sidebar-state.ts";
 import { threadMeta } from "./chat-thread-event-sourcing.ts";
 import { sidebarActiveThreadIds$ } from "./chat-thread-indicators-from-worker.ts";
@@ -147,7 +146,6 @@ function createThreadSelectionCommand(threadId: string) {
   return command(({ get, set }, pane: SidebarChatThreadTargetPane) => {
     const mainThreadId = get(pathParams$)?.threadId;
     if (typeof mainThreadId !== "string") {
-      set(setSidebarExpanded$, false);
       return false;
     }
 
@@ -166,7 +164,6 @@ function createThreadSelectionCommand(threadId: string) {
       set(loadLeftThread$, threadId);
     }
 
-    set(setSidebarExpanded$, false);
     return true;
   });
 }

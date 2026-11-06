@@ -1951,7 +1951,6 @@ test.each([
       ...workspace.pageOptions,
       featureSwitches: {
         [FeatureSwitchKey.Projects]: true,
-        [FeatureSwitchKey.PwaNavigation]: mobile,
       },
     });
     const row = await waitFor(() => {
@@ -2064,7 +2063,6 @@ test("PWA uses the same Projects and a bottom sheet for Thread membership", asyn
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.Projects]: true,
-      [FeatureSwitchKey.PwaNavigation]: true,
     },
   });
   const user = userEvent.setup({ delay: null });

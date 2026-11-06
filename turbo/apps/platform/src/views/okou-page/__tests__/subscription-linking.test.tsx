@@ -130,7 +130,6 @@ async function setupLinking(options?: {
     featureSwitches: {
       [FeatureSwitchKey.SubscriptionLinkingEntry]: options?.enabled ?? true,
       [FeatureSwitchKey.SidebarSubscriptionUsage]: options?.usagePanel ?? false,
-      [FeatureSwitchKey.PwaNavigation]: options?.mobile ?? false,
     },
   });
 }

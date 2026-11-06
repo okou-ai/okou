@@ -16,7 +16,7 @@ import { logger } from "./log.ts";
 import { capturePageView, markBootstrapRouteSetup$ } from "../lib/posthog.ts";
 import { redactProofUrl } from "../lib/redact-proof-url.ts";
 import { isIntegrationAuthContinuation } from "./integration-continuation.ts";
-import { pwaNavigationEnabled$ } from "./okou-page/pwa-navigation.ts";
+import { mobileChatViewport$ } from "./okou-page/pwa-navigation.ts";
 import {
   pwaPageTransitionDirection,
   type PwaPageTransitionDirection,
@@ -219,7 +219,7 @@ const pageTransitionDirectionTo$ = command(
     searchParams: URLSearchParams,
   ): PwaPageTransitionDirection => {
     if (
-      !get(pwaNavigationEnabled$) ||
+      !get(mobileChatViewport$) ||
       !("startViewTransition" in document) ||
       !CSS.supports("selector(:active-view-transition-type(a))")
     ) {

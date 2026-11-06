@@ -406,13 +406,10 @@
     "sidebar": {
       "ariaLabel": "Barre latérale",
       "chat": "Chat",
-      "collapse": "Réduire la barre latérale",
       "hideChatList": "Masquer la liste des chats",
-      "manage": "Gérer",
       "mobile": {
         "invite": "Inviter",
-        "openAutomations": "Ouvrir les automatisations mobiles",
-        "openMenu": "Ouvrir le menu"
+        "openAutomations": "Ouvrir les automatisations mobiles"
       },
       "navigation": {
         "agents": "Agents",

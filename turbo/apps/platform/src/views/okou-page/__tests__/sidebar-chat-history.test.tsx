@@ -1,6 +1,5 @@
 import {
   AGENT_ID,
-  agentRowByName,
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
@@ -9,7 +8,6 @@ import {
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   menuItemByText,
-  mobileSidebar,
   mockSidebarTitleLayout,
   mockSidebarViewport,
   openChatListMenu,
@@ -64,9 +62,7 @@ const context = testContext();
 const {
   mockChatThreadSnapshot,
   mockLongSidebarHistory,
-  mockMobileLayout,
   mockSidebarThreadStory,
-  mockUnreadAgents,
   prepareAgents,
   prepareDefaultAgent,
 } = createSidebarHelpers(context);
@@ -92,105 +88,6 @@ test("Browse a long sidebar chat history", async () => {
 
   const scrollArea = await scrollToArchivedContext();
   expect(scrollArea).toBeInTheDocument();
-});
-
-test.each([false, true])(
-  "Keep the three-column chat list expanded with saved collapsed state %s",
-  async (savedCollapsed) => {
-    const viewport = mockMobileLayout();
-    prepareDefaultAgent();
-    mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
-
-    await setupSidebarPage({
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-      featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
-    });
-
-    click(screen.getByLabelText("Open menu"));
-    const drawer = await waitFor(() => {
-      const current = mobileSidebar();
-      expect(within(current).getByText("Release plan")).toBeInTheDocument();
-      return current;
-    });
-    const mobileTitle = buttonByText("Chats with Okou", drawer);
-    if (savedCollapsed) {
-      click(mobileTitle);
-    }
-    expect(mobileTitle).toHaveAttribute(
-      "aria-expanded",
-      String(!savedCollapsed),
-    );
-    expect(within(drawer).queryByText("Release plan") !== null).toBe(
-      !savedCollapsed,
-    );
-    act(() => {
-      viewport.setMatches((query) => {
-        return query === "(min-width: 48rem)";
-      });
-    });
-
-    const list = await screen.findByTestId("chat-list-column");
-    const thread = await within(list).findByText("Release plan");
-    const title = within(list).getByText("Chats with Okou");
-    expect(
-      queryAllByRoleFast("button", list).some((button) => {
-        return button.textContent?.includes("Chats with Okou");
-      }),
-    ).toBeFalsy();
-    expect(thread).toBeVisible();
-
-    click(title);
-    expect(thread).toBeVisible();
-    for (const button of within(list).getAllByLabelText("New chat")) {
-      expect(button).toBeEnabled();
-    }
-    expect(within(list).getByLabelText("Open chat list menu")).toBeEnabled();
-  },
-);
-
-test("Toggle the mobile chat list from its title with pointer and keyboard", async () => {
-  mockMobileLayout();
-  const user = userEvent.setup({ delay: null });
-  prepareDefaultAgent();
-  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
-  });
-
-  click(screen.getByLabelText("Open menu"));
-  const list = await waitFor(() => {
-    const current = mobileSidebar();
-    expect(within(current).getByText("Release plan")).toBeInTheDocument();
-    return current;
-  });
-  const titleButton = buttonByText("Chats with Okou", list);
-  const contentId = titleButton.getAttribute("aria-controls");
-  if (!contentId) {
-    throw new Error("Chat list title does not control its content");
-  }
-  const content = document.getElementById(contentId);
-  if (!content) {
-    throw new Error("Controlled chat list content not found");
-  }
-
-  expect(titleButton).toHaveAttribute("aria-expanded", "true");
-  expect(content).toBeVisible();
-  titleButton.focus();
-  await user.keyboard("{Enter}");
-
-  expect(titleButton).toHaveFocus();
-  expect(titleButton).toHaveAttribute("aria-expanded", "false");
-  expect(content).not.toBeVisible();
-  expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
-
-  click(titleButton);
-  await within(list).findByText("Release plan");
-  expect(titleButton).toHaveAttribute("aria-expanded", "true");
-  expect(content).toBeVisible();
 });
 
 test("Delete a chat after reviewing the impact", async () => {
@@ -1337,75 +1234,6 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       menuWithDisabledMarkAllRead.querySelectorAll('[role="separator"]'),
     ).toHaveLength(1);
   });
-});
-
-test("Mark all of an agent’s chats read", async () => {
-  mockMobileLayout();
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID],
-  });
-
-  let unreadAgentIds = [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID];
-  const markedAgentIds: string[] = [];
-  mockUnreadAgents(() => {
-    return unreadAgentIds;
-  });
-  context.mocks.api(
-    chatThreadMarkAgentReadContract.markAgentRead,
-    ({ body, respond }) => {
-      markedAgentIds.push(body.agentId);
-      unreadAgentIds = unreadAgentIds.filter((id) => {
-        return id !== body.agentId;
-      });
-      changeChatThreadReadCursor();
-      return respond(204);
-    },
-  );
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
-  });
-
-  click(screen.getByLabelText("Open menu"));
-  const nav = await waitFor(() => {
-    const current = mobileSidebar();
-    expect(within(current).getByText("Research Agent")).toBeInTheDocument();
-    return current;
-  });
-  const researchSidebarRow = agentRowByName(nav, "Research Agent");
-  // Unpinned agents appear after the Worker finishes loading unread indicators,
-  // independently of the pinned-agent list above.
-  const supportSidebarRow = await waitFor(() => {
-    return agentRowByName(nav, "Support Agent");
-  });
-  await waitFor(() => {
-    expect(
-      within(researchSidebarRow).getByLabelText("Unread"),
-    ).toBeInTheDocument();
-    expect(
-      within(supportSidebarRow).getByLabelText("Unread"),
-    ).toBeInTheDocument();
-  });
-
-  click(within(researchSidebarRow).getByLabelText("Open agent menu"));
-  click(menuItemByText("Mark all read"));
-
-  await waitFor(() => {
-    expect(markedAgentIds).toStrictEqual([RESEARCH_AGENT_ID]);
-    expect(
-      within(researchSidebarRow).queryByLabelText("Unread"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(supportSidebarRow).getByLabelText("Unread"),
-    ).toBeInTheDocument();
-  });
-
-  click(within(researchSidebarRow).getByLabelText("Open agent menu"));
-  expect(queryMenuItemByText("Mark all read")).not.toBeInTheDocument();
-  expect(menuItemByText("Unpin")).toBeInTheDocument();
 });
 
 async function setupReadUnreadSidebar() {

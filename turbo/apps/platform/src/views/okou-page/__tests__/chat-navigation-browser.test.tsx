@@ -196,7 +196,6 @@ function mockWideScreen() {
 function openConversation(
   chatEvents: MockChatEventInput[],
   refined = false,
-  pwaNavigation = false,
   cloudBrowserEnabled = true,
 ): Promise<void> {
   mockChatLifecycle(context, {
@@ -211,7 +210,6 @@ function openConversation(
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.CloudBrowserPanel]: refined,
-      [FeatureSwitchKey.PwaNavigation]: pwaNavigation,
     },
   });
 }
@@ -273,7 +271,7 @@ test("An unauthorized Browser keeps its card and sidebar with an authorization p
         }
       : event;
   });
-  await openConversation(events, true, false, false);
+  await openConversation(events, true, false);
   await expectConversationReady();
   const card = await waitFor(() => {
     const element = document.querySelector<HTMLElement>(
@@ -1370,18 +1368,18 @@ test("The chat browser sidebar forwards a touch tap exactly once", async () => {
 });
 
 test.each([
-  { pwaNavigation: false, active: false },
-  { pwaNavigation: false, active: true },
-  { pwaNavigation: true, active: false },
-  { pwaNavigation: true, active: true },
+  { standalone: false, active: false },
+  { standalone: false, active: true },
+  { standalone: true, active: false },
+  { standalone: true, active: true },
 ])(
-  "Open the mobile chat browser and return to the conversation (PWA=$pwaNavigation, active=$active)",
-  async ({ pwaNavigation, active }) => {
+  "Open the mobile chat browser and return to the conversation (standalone=$standalone, active=$active)",
+  async ({ standalone, active }) => {
     context.mocks.browser.matchMedia((query) => {
-      return query === "(display-mode: standalone)" && pwaNavigation;
+      return query === "(display-mode: standalone)" && standalone;
     });
     mockBrowserApi(active ? liveBrowserSession() : null);
-    await openConversation(completedConversationEvents(), true, pwaNavigation);
+    await openConversation(completedConversationEvents(), true);
     await expectConversationReady();
 
     click(buttonByName("More actions"));

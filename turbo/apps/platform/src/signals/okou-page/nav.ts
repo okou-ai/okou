@@ -17,7 +17,7 @@ import {
   setChatThreadUnreadFilter$,
   toggleChatThreadUnreadFilter$,
 } from "./chat-thread-filter.ts";
-import { pwaNavigationEnabled$ } from "./pwa-navigation.ts";
+import { mobileChatViewport$ } from "./pwa-navigation.ts";
 import { navigateToAgentChat$ } from "./agent-chat-navigation.ts";
 import {
   setStoredChatListHidden$,
@@ -45,7 +45,7 @@ export const navigateToNewChat$ = command(
     set(
       navigateToAgentChat$,
       agentId,
-      get(pwaNavigationEnabled$)
+      get(mobileChatViewport$)
         ? { searchParams: new URLSearchParams({ compose: "1" }) }
         : {},
     );
@@ -213,23 +213,12 @@ export const setupGlobalKeyboardShortcuts$ = command(
   },
 );
 
-const internalSidebarExpanded$ = state(false);
-
-export const sidebarExpanded$ = computed((get) => {
-  return get(internalSidebarExpanded$);
-});
-
-export const setSidebarExpanded$ = command(({ set }, expanded: boolean) => {
-  set(internalSidebarExpanded$, expanded);
-});
-
 export const showChatSidebar$ = command(({ get, set }) => {
   if (get(unifiedChatWorkspace$)) {
     set(setStoredChatListHidden$, false);
   } else {
     set(internalSidebarOff$, false);
   }
-  set(internalSidebarExpanded$, true);
 });
 
 export function isChatRoute(key: RouteKey | null): boolean {
@@ -246,7 +235,6 @@ export type AccountAction = "lab" | "signout";
 
 export const handleAccountAction$ = command(
   ({ set }, action: AccountAction) => {
-    set(internalSidebarExpanded$, false);
     if (action === "lab") {
       set(detachedNavigateTo$, ROUTES.lab);
     }
