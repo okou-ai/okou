@@ -7,7 +7,7 @@ use sandbox_mock::MockLifecycleGate;
 use sha2::{Digest, Sha256};
 use tracing::Level;
 use tracing_subscriber::prelude::*;
-use tracing_test_support::CapturedEvents;
+use tracing_test_support::{CapturedEvents, find_captured_event};
 
 use super::support::{final_identity_metadata_bytes, final_identity_runtime_paths};
 use crate::executor::agent_run::{ProcessCancelTimeouts, RunControls, RunStart, run_in_sandbox};
@@ -149,10 +149,7 @@ async fn closed_cooperative_control_remains_warning_when_terminal_grace_expires(
         "timed out waiting for cancelled guest process",
         "failed to send cooperative user cancellation",
     ] {
-        let event = events
-            .iter()
-            .find(|event| event.fields.get("message").map(String::as_str) == Some(message))
-            .unwrap();
+        let event = find_captured_event(&events, message).unwrap();
         assert_eq!(event.level, Level::WARN);
     }
     let event = events

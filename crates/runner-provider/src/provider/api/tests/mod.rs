@@ -6,8 +6,10 @@ use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 use tracing::{Level, instrument::WithSubscriber};
 use tracing_subscriber::prelude::*;
-use tracing_test_support::capture_future_events as capture_api_provider_events;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
+use tracing_test_support::{
+    capture_future_events as capture_api_provider_events, find_captured_event,
+};
 use uuid::Uuid;
 
 use crate::axiom_layer::{init_with_base_url, with_ingest_filter};
@@ -600,14 +602,7 @@ async fn assert_completion_retry_delay<F>(
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|actual| actual == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event {message}; events={events:#?}"))
 }
 

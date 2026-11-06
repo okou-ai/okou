@@ -4,7 +4,7 @@ use guest_contracts::reuse_preparation::REUSE_PREPARATION_EXIT_SUCCESS;
 use sandbox::{Sandbox, SandboxError, SandboxOperation, SandboxOperationReason};
 use sandbox_mock::MockSandbox;
 use tracing::Level;
-use tracing_test_support::{CapturedEvent, capture_current_thread_events};
+use tracing_test_support::{CapturedEvent, capture_current_thread_events, find_captured_event};
 
 fn report(
     before_bytes: u64,
@@ -62,14 +62,7 @@ async fn execute_preparation(
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|actual| actual == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event {message:?}; captured={events:#?}"))
 }
 

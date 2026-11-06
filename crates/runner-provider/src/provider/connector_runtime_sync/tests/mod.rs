@@ -1,5 +1,5 @@
 use super::*;
-use tracing_test_support::capture_future_events as capture_sync_events;
+use tracing_test_support::{capture_future_events as capture_sync_events, find_captured_event};
 
 mod account_binding;
 
@@ -510,14 +510,7 @@ fn connector_runtime_sync_response(target: serde_json::Value) -> serde_json::Val
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|actual| actual == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event {message}; events={events:#?}"))
 }
 

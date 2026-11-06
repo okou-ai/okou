@@ -405,8 +405,7 @@ single floating line, and colour is a small accent for status only.
   never a system spinner.
 - **Chat header** has no title: the menu glass circle and the model capsule on the left, the
   chat's "…" menu on the right, over a soft blur. The selected row in the sidebar says which chat
-  is open. The "…" menu is titled with the chat and starts with the agent (its name,
-  "Agent profile"); on the new-chat screen the greeting's avatar opens the profile.
+  is open. The "…" menu is titled with the chat and starts with Pin chat.
 - Provider headings separate identity from allowance; do not
   shrink or truncate allowance text to fit beside a brand name.
 
@@ -432,14 +431,6 @@ single floating line, and colour is a small accent for status only.
   the web's chat timestamp ("Sep 8, 6:33 PM").
 - Streamed run text is published at most every 120 ms; a sync failure surfaces after
   300 ms; "Copied" confirmations last 1.5 s.
-
-### Agent profile
-
-The agent sheet is a profile card: a 64 pt avatar (`OkouAvatarSize.profile`), the name at
-22 pt semibold (not repeated in the navigation bar), who can use it as a quiet capsule
-(`users` / `lock`, nested fill), its description in 15 pt muted text, then two compact
-actions side by side, New chat (primary) and Edit on web (outline). Workflows follow as
-grouped rows with the shared 28 pt glyph slot, a 17 pt name and two 15 pt muted lines.
 
 ### Usage and subscriptions
 

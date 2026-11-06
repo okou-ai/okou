@@ -11,7 +11,7 @@ use std::time::Duration;
 use tokio::sync::oneshot;
 use tokio_tungstenite::tungstenite::{self, Message as WsMessage};
 use tracing_subscriber::prelude::*;
-use tracing_test_support::CapturedEvents;
+use tracing_test_support::{CapturedEvents, find_captured_event};
 
 struct VerifyNativeHandshake;
 
@@ -487,15 +487,8 @@ async fn undrained_reconnect(interruption: Interruption, consumer: ConsumerActio
         .await
         .unwrap();
     let events = captured.entries();
-    let reconnect = events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|m| m == "Ably reconnect attached")
-        })
-        .expect("reconnect diagnostic");
+    let reconnect =
+        find_captured_event(&events, "Ably reconnect attached").expect("reconnect diagnostic");
     assert_eq!(
         reconnect.fields.get("resumed").map(String::as_str),
         Some("true")

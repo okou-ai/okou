@@ -2,7 +2,7 @@ use super::super::tests::{Signal, wait_for_event};
 use super::*;
 use std::os::unix::net::UnixDatagram;
 use tracing_subscriber::prelude::*;
-use tracing_test_support::CapturedEvents;
+use tracing_test_support::{CapturedEvents, find_captured_event};
 
 fn frame(v6: bool, source: u16, destination: u16) -> Vec<u8> {
     let mut ip = if v6 { vec![0u8; 40] } else { vec![0u8; 24] };
@@ -270,9 +270,7 @@ async fn recorder_retains_packets_observed_between_failure_and_incident_admissio
     })
     .await;
     let entries = captured.entries();
-    let packet = entries
-        .iter()
-        .find(|e| e.fields.get("message").map(String::as_str) == Some("API TCP packet metadata"))
+    let packet = find_captured_event(&entries, "API TCP packet metadata")
         .expect("the RST read during handoff belongs to this incident");
     assert_eq!(packet.fields["client_request_id"], "handoff");
     assert_eq!(packet.fields["flags"], "20");
@@ -367,10 +365,7 @@ async fn recorder_bounds_fault_output_finishes_its_window_and_aborts_with_its_ow
             .count(),
         bulk_limit + 1
     );
-    let ended = entries
-        .iter()
-        .find(|e| e.fields.get("message").map(String::as_str) == Some("API TCP evidence ended"))
-        .unwrap();
+    let ended = find_captured_event(&entries, "API TCP evidence ended").unwrap();
     assert_eq!(ended.fields["after_truncated"], "true");
     assert_eq!(ended.fields["after_seen"], (bulk_limit + 2).to_string());
     owner

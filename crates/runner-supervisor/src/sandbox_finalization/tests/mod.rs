@@ -2,7 +2,9 @@ use super::*;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
-use tracing_test_support::capture_current_thread_events as capture_async_log_events;
+use tracing_test_support::{
+    capture_current_thread_events as capture_async_log_events, find_captured_event,
+};
 
 use api_contracts::generated::constants::runners::paths::CANONICAL_WORKING_DIR;
 use guest_contracts::reuse_preparation::{FilesystemCapacity, ReusePreparationReport};
@@ -101,14 +103,7 @@ fn test_budget_lease() -> (Arc<ResourceBudget>, BudgetLease) {
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|actual| actual == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event {message:?}; captured={events:#?}"))
 }
 

@@ -7,7 +7,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::oneshot;
 use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
-use tracing_test_support::CapturedEvents;
+use tracing_test_support::{CapturedEvents, find_captured_event};
 
 pub(super) struct Signal(pub(super) mpsc::Sender<()>);
 
@@ -248,12 +248,7 @@ async fn reset_case(tls: bool) {
             );
         }
         let events = captured.entries();
-        let diagnostic = events
-            .iter()
-            .find(|e| {
-                e.fields.get("message").map(String::as_str)
-                    == Some("API transport failure diagnostics")
-            })
+        let diagnostic = find_captured_event(&events, "API transport failure diagnostics")
             .unwrap();
         assert_eq!(diagnostic.level, tracing::Level::INFO);
         assert_eq!(diagnostic.fields["client_request_id"], request_id);
@@ -365,12 +360,7 @@ async fn latest_response_without_valid_ray_clears_the_prior_connection_ray() {
                 if e.failure_cause == crate::error::ApiTransportCause::ConnectionReset));
             join_raw_http_task(task, "reset after replacing response snapshot").await;
             let events = captured.entries();
-            let fault = events
-                .iter()
-                .find(|e| {
-                    e.fields.get("message").map(String::as_str)
-                        == Some("API transport failure diagnostics")
-                })
+            let fault = find_captured_event(&events, "API transport failure diagnostics")
                 .unwrap();
             assert_eq!(fault.fields["responses_observed"], "2");
             assert_eq!(fault.fields["last_response_http_version"], version);
@@ -402,13 +392,7 @@ async fn fresh_connection_reset_keeps_its_own_registration_and_typed_cause() {
             if e.failure_cause == crate::error::ApiTransportCause::ConnectionReset));
         server.assert_finished().await;
         let entries = captured.entries();
-        let summary = entries
-            .iter()
-            .find(|e| {
-                e.fields.get("message").map(String::as_str)
-                    == Some("API transport failure diagnostics")
-            })
-            .unwrap();
+        let summary = find_captured_event(&entries, "API transport failure diagnostics").unwrap();
         assert_eq!(summary.fields["client_request_id"], request_id);
         assert_eq!(summary.fields["socket_metadata_available"], "true");
         assert_eq!(summary.fields["connection_generation_status"], "registered");

@@ -51,6 +51,20 @@ pub struct CapturedEvent {
     pub field_kinds: BTreeMap<String, &'static str>,
 }
 
+/// Finds the first event whose `message` field exactly matches `message`.
+///
+/// Borrows the original entry from the supplied snapshot, such as one returned by
+/// [`CapturedEvents::entries`]. Events without a message do not match, and duplicate
+/// messages retain their capture order. Returns `None` when no event matches.
+pub fn find_captured_event<'a>(
+    events: &'a [CapturedEvent],
+    message: &str,
+) -> Option<&'a CapturedEvent> {
+    events
+        .iter()
+        .find(|event| event.fields.get("message").map(String::as_str) == Some(message))
+}
+
 /// A shared collector that captures tracing events as a [`Layer`].
 ///
 /// The default value starts with an empty event buffer. Cloning a collector creates another

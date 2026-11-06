@@ -4,7 +4,7 @@ use crate::http::{ApiRequestBuilder, ClientHeaders};
 use crate::test_fixtures::raw_http::{RawHttpAction, RawHttpTestServer};
 use tracing::instrument::WithSubscriber;
 use tracing_subscriber::prelude::*;
-use tracing_test_support::{CapturedEvent, CapturedEvents};
+use tracing_test_support::{CapturedEvent, CapturedEvents, find_captured_event};
 
 fn builder(client: reqwest::Client, url: String) -> ApiRequestBuilder {
     ApiRequestBuilder {
@@ -139,12 +139,7 @@ async fn observed_request_preserves_json_headers_query_and_timeout_override() {
     assert_eq!(event.fields["outcome"], "request_failed");
     assert_eq!(event.fields["connect_succeeded"], "1");
     let entries = captured.entries();
-    let diagnostic = entries
-        .iter()
-        .find(|e| {
-            e.fields.get("message").map(String::as_str) == Some("API transport failure diagnostics")
-        })
-        .unwrap();
+    let diagnostic = find_captured_event(&entries, "API transport failure diagnostics").unwrap();
     assert_eq!(diagnostic.fields["socket_metadata_available"], "false");
     assert!(!diagnostic.fields.contains_key("connection_id"));
     assert!(!format!("{:?}", captured.entries()).contains("private body"));
