@@ -30,6 +30,8 @@ test.beforeAll(async () => {
       <p id="site-control">Αλφάβητο ABC</p>
       <p id="caption-control">Αλφάβητο ABC</p>
       <p id="variable-sample" style="--text-font: 'Owned Latin'; font-family: var(--text-font)">Αλφάβητο ABC</p>
+      <p id="shorthand-sample" style="--inline-font: italic 700 24px 'Owned Site Face'; font: var(--inline-font); font-weight: 700">Αλφάβητο ABC</p>
+      <p id="inline-caption" style="font: caption; font-weight: 700; font-style: italic">Αλφάβητο ABC</p>
       <span id="latin">Latin ABC 123</span><span id="latin-reference">Latin ABC 123</span>
       <p id="symbols">★ 😀</p><code id="code">const value = 123;</code>
       <label>Search<input id="search" placeholder="Αναζήτηση"></label>
@@ -40,6 +42,8 @@ test.beforeAll(async () => {
       <button id="own-variable">Change local font variable</button>
       <button id="nested-style">Toggle nested stylesheet</button>
       <button id="attribute-theme">Change attribute theme</button>
+      <button id="shorthand-variable">Change shorthand variable</button>
+      <button id="caption-class">Update caption class</button>
       <div id="dynamic"></div><div id="shadow-host"></div>
       <iframe title="Languages" src="/frame"></iframe>
       <script>
@@ -53,6 +57,8 @@ test.beforeAll(async () => {
         document.querySelector('#own-variable').onclick=()=>{document.querySelector('#variable-sample').style.setProperty('--text-font', '"Owned Site Face"');};
         document.querySelector('#nested-style').onclick=()=>{const current=document.querySelector('#nested-styles');if(current){current.remove();return;}const wrapper=document.createElement('div');wrapper.id='nested-styles';wrapper.innerHTML='<style>#container { font-family: "Owned Site Face" !important; }</style>';document.body.append(wrapper);};
         document.querySelector('#attribute-theme').onclick=()=>{document.documentElement.dataset.siteFont='alternate';};
+        document.querySelector('#shorthand-variable').onclick=()=>{document.querySelector('#shorthand-sample').style.setProperty('--inline-font', 'italic 700 28px "Owned Site Face"');};
+        document.querySelector('#caption-class').onclick=()=>{document.querySelector('#inline-caption').classList.toggle('updated-caption');};
       </script>
     </body></html>`);
   });
@@ -306,6 +312,45 @@ test("follows site typography selected by ancestor attributes", async () => {
         return await f.fonts("sample");
       })
       .toEqual(await f.fonts("site-control"));
+  } finally {
+    await f.close();
+  }
+});
+
+test("preserves inline font shorthands through site typography updates", async () => {
+  const f = await fixture();
+  try {
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("sample"));
+      })
+      .toBe(true);
+    await f.page
+      .getByRole("button", { name: "Change shorthand variable" })
+      .click();
+    await expect
+      .poll(async () => {
+        return await f.fonts("shorthand-sample");
+      })
+      .toEqual(await f.fonts("site-control"));
+    await expect(f.page.locator("#shorthand-sample")).toHaveCSS(
+      "font-size",
+      "28px",
+    );
+    await expect(f.page.locator("#shorthand-sample")).toHaveCSS(
+      "font-weight",
+      "700",
+    );
+    await expect(f.page.locator("#shorthand-sample")).toHaveCSS(
+      "font-style",
+      "italic",
+    );
+    await f.page.getByRole("button", { name: "Update caption class" }).click();
+    await expect
+      .poll(async () => {
+        return await f.fonts("inline-caption");
+      })
+      .toEqual(await f.fonts("caption-control"));
   } finally {
     await f.close();
   }

@@ -192,6 +192,13 @@ function flush(): void {
   const additions = [];
   for (const element of elements) {
     if (!needsFont(element)) continue;
+    // Pending/system inline shorthands can own font-family while exposing no
+    // serializable value. Overwriting it would make restoration destructive.
+    if (
+      element.style.fontFamily === "" &&
+      Array.from(element.style).includes("font-family")
+    )
+      continue;
     const family = getComputedStyle(element).fontFamily;
     if (supplementalPattern.test(family)) continue;
     additions.push({
