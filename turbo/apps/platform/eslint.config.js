@@ -218,6 +218,17 @@ export default [
           message:
             "Use now() from src/lib/time instead of Date.now() so tests can control the platform clock.",
         },
+        // Oxlint's no-restricted-globals bans the bare global; this closes
+        // the property-access spellings. Oxlint cannot own this rule because
+        // its generated ESLint config would switch off the Date.now entry.
+        ...["window", "globalThis"].map((object) => {
+          return {
+            object,
+            property: "ResizeObserver",
+            message:
+              "ResizeObserver turns layout into a render side effect. Continue the orchestration in the command that causes the change; see docs/app/resize-observer.md.",
+          };
+        }),
       ],
     },
   },
