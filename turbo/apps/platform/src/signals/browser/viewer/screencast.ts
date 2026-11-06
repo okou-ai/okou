@@ -217,32 +217,29 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
       listener(done);
     }
   });
-  const suspend$ = command(({ get, set }) => {
-    if (get(halted$) || get(disposed$)) {
-      return;
-    }
-    set(halted$, true);
+  const pause$ = command(({ set }) => {
     set(resetFirstFrame$, AbortSignal.abort());
     set(accepting$, false);
     set(invalidateFrames$);
     owner.sink.invalidate();
     set(navigationSettled$, false);
   });
-  const fail$ = command(
-    async (
-      { get, set },
-      error: unknown,
-      signal: AbortSignal,
-    ): Promise<void> => {
-      signal.throwIfAborted();
-      if (!get(alive$) || get(halted$)) {
-        return;
-      }
-      set(suspend$);
-      await set(owner.failed$, error, signal);
-      signal.throwIfAborted();
-    },
-  );
+  const suspend$ = command(({ get, set }) => {
+    if (get(halted$) || get(disposed$)) {
+      return;
+    }
+    set(halted$, true);
+    set(pause$);
+  });
+  const fail$ = command(({ get, set }, error: unknown, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    if (!get(alive$) || get(halted$)) {
+      return;
+    }
+    set(suspend$);
+    // Failure invalidates foreground work; its original cleanup must still finish.
+    return set(owner.failed$, error, owner.client.signal);
+  });
 
   const detached$ = command(({ set }) => {
     // CDP session teardown disables Page and releases its native screencast.
@@ -253,6 +250,7 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
 
   return {
     navigationSettled$,
+    pause$,
     suspend$,
     fail$,
     detached$,
@@ -644,7 +642,7 @@ function createCaptureLifecycle(
       if (!get(started$)) {
         set(started$, true);
         set(ownerActive$, true);
-        signal.addEventListener(
+        owner.client.signal.addEventListener(
           "abort",
           () => {
             set(abort$);
@@ -652,9 +650,9 @@ function createCaptureLifecycle(
           { once: true },
         );
         // Publishing startup facts can synchronously retire the owner.
-        if (signal.aborted) {
+        if (owner.client.signal.aborted) {
           set(abort$);
-          signal.throwIfAborted();
+          owner.client.signal.throwIfAborted();
         }
       }
       await set(reconcile$, signal);
@@ -1079,6 +1077,7 @@ export function createScreencast(
     navigationFinished$: navigation.navigationFinished$,
     ...frames,
     exclusive$: exclusive.exclusive$,
+    pause$: core.pause$,
     suspend$: core.suspend$,
     detached$: core.detached$,
     ...cleanup,
