@@ -13,6 +13,41 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1098.0](https://github.com/okou-ai/okou/compare/app-v0.1097.5...app-v0.1098.0) (2026-11-06)
+
+
+### Features
+
+* **app:** fork selected content into personal chats ([#45682](https://github.com/okou-ai/okou/issues/45682)) ([e5b87ee](https://github.com/okou-ai/okou/commit/e5b87ee02c8c2fd14a491799a033b5b710f6a4d3))
+* roll out message pdf export, pwa navigation and subscription usage to all users ([#45649](https://github.com/okou-ai/okou/issues/45649)) ([7dfca6c](https://github.com/okou-ai/okou/commit/7dfca6cb087e0337b3519a8ae72d1fefd271ff69))
+
+
+### Bug Fixes
+
+* **app:** stop enrolling marketing sessions during startup ([#45695](https://github.com/okou-ai/okou/issues/45695)) ([4923b42](https://github.com/okou-ai/okou/commit/4923b42635d7a4cc68af5b095fd9f0673579b76b)) [#45568](https://github.com/okou-ai/okou/issues/45568)
+* **browser:** keep address editing independent of remote readiness ([#45592](https://github.com/okou-ai/okou/issues/45592)) ([f6c1f16](https://github.com/okou-ai/okou/commit/f6c1f16d432606645acc3d3d015f1034bdf8d656))
+* synchronize instruction editors with external saves ([#45677](https://github.com/okou-ai/okou/issues/45677)) ([edce7e5](https://github.com/okou-ai/okou/commit/edce7e52437c912359603b4672b50300605b4fff))
+
+
+### Refactoring
+
+* **platform:** bound the initial frame tree read by its observation ([#45693](https://github.com/okou-ai/okou/issues/45693)) ([f923c98](https://github.com/okou-ai/okou/commit/f923c98923133c1efa8109495f61f613ce068241))
+* remove chat thread archiving and muting feature switches ([#45680](https://github.com/okou-ai/okou/issues/45680)) ([4183b2f](https://github.com/okou-ai/okou/commit/4183b2f44fb472a38962c5ad3124939bb11b5cdc))
+* remove ChatThreadInlineRename feature switch ([#45667](https://github.com/okou-ai/okou/issues/45667)) ([9d43b51](https://github.com/okou-ai/okou/commit/9d43b517bffb15108c0c0a96e7df808f2dd58bfe))
+
+
+### Performance Improvements
+
+* **platform:** stable transcript rows and pane panels that follow the thread on screen ([#45483](https://github.com/okou-ai/okou/issues/45483)) ([5627b62](https://github.com/okou-ai/okou/commit/5627b625a72759b799429df776657ce3798b886a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.3
+    * @okouai/core bumped to 8.821.0
+
 ## [0.1097.5](https://github.com/okou-ai/okou/compare/app-v0.1097.4...app-v0.1097.5) (2026-11-06)
 
 

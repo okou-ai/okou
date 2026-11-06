@@ -10,6 +10,39 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.52.0](https://github.com/okou-ai/okou/compare/api-v2.51.1...api-v2.52.0) (2026-11-06)
+
+
+### Features
+
+* roll out message pdf export, pwa navigation and subscription usage to all users ([#45649](https://github.com/okou-ai/okou/issues/45649)) ([7dfca6c](https://github.com/okou-ai/okou/commit/7dfca6cb087e0337b3519a8ae72d1fefd271ff69))
+
+
+### Bug Fixes
+
+* synchronize instruction editors with external saves ([#45677](https://github.com/okou-ai/okou/issues/45677)) ([edce7e5](https://github.com/okou-ai/okou/commit/edce7e52437c912359603b4672b50300605b4fff))
+
+
+### Refactoring
+
+* remove chat thread archiving and muting feature switches ([#45680](https://github.com/okou-ai/okou/issues/45680)) ([4183b2f](https://github.com/okou-ai/okou/commit/4183b2f44fb472a38962c5ad3124939bb11b5cdc))
+
+
+### Performance Improvements
+
+* **api:** reference default personal instructions instead of initializing at dispatch ([#45686](https://github.com/okou-ai/okou/issues/45686)) ([22b2e6b](https://github.com/okou-ai/okou/commit/22b2e6b28a4eda306d61ba6a35e17a1d9831d74d))
+* **api:** reuse immutable connector permission indexes ([#45687](https://github.com/okou-ai/okou/issues/45687)) ([1e5e709](https://github.com/okou-ai/okou/commit/1e5e70969033c330b2e5c3bc6732cc70edb3cf4a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.3
+    * @okouai/core bumped to 8.821.0
+    * @okouai/db bumped to 2.23.5
+    * @okouai/pi-agent-runtime bumped to 1.51.77
+
 ## [2.51.1](https://github.com/okou-ai/okou/compare/api-v2.51.0...api-v2.51.1) (2026-11-06)
 
 
