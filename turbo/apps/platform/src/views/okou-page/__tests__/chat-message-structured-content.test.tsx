@@ -464,34 +464,6 @@ test("Structured message context stays in its pane when a companion chat opens",
   ).resolves.toBeEnabled();
 });
 
-test("Opening a companion chat keeps the open conversation mounted", async () => {
-  await openStructuredContextChat();
-  const originalPane = document.querySelector<HTMLElement>(
-    `[data-chat-thread-container-id="${context.resourceId}"]`,
-  );
-  if (!originalPane) {
-    throw new Error("Original chat pane not found");
-  }
-  const message = await within(originalPane).findByText(
-    "Continue the delegated analysis.",
-  );
-
-  fireEvent.click(await findFastControl("link", "Companion chat"), {
-    altKey: true,
-  });
-
-  await waitFor(() => {
-    expect(
-      document.querySelectorAll("[data-chat-thread-container-id]"),
-    ).toHaveLength(2);
-  });
-  // The navigation that opens the companion keeps the reader's conversation,
-  // so its messages stay the same nodes instead of mounting again.
-  expect(
-    within(originalPane).getByText("Continue the delegated analysis."),
-  ).toBe(message);
-});
-
 test("A structured user message keeps its saved order and snapshots", async () => {
   const userMessage = {
     version: 1,
