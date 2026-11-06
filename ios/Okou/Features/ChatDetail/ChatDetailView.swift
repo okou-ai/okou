@@ -224,8 +224,7 @@ struct ChatDetailView: View {
       conversation.setDetailVisible(true, owner: activityOwner)
     }
     .onChange(of: reduceMotion) { _, value in scrolling.setReduceMotion(value) }
-    // Trailing, above the composer: centred, it covered the line being read.
-    .overlay(alignment: .bottomTrailing) {
+    .overlay(alignment: .bottom) {
       ZStack {
         if scrolling.showsBottomButton {
           Button {
@@ -245,7 +244,6 @@ struct ChatDetailView: View {
       .animation(reduceMotion ? nil : OkouMotion.press, value: scrolling.showsBottomButton)
       .allowsHitTesting(scrolling.showsBottomButton)
       .padding(.bottom, OkouSpace.sm)
-      .padding(.trailing, OkouSpace.lg)
     }
     .task(id: displayedMessages.last) { await scrolling.latestMessageChanged() }
     .onChange(of: conversation.visibleItems) { _, _ in scrolling.messagesChanged() }
