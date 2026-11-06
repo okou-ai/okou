@@ -238,7 +238,6 @@ struct ChatComposerTextInput: UIViewRepresentable {
 }
 
 final class ComposerTextView: UITextView {
-  var intrinsicContentSizeDidChange: () -> Void = {}
   weak var workflowSuggestions: ComposerWorkflowSuggestions?
   var updateWorkflows: (Bool) -> Void = { _ in }
   var acceptsImages = false
@@ -276,11 +275,6 @@ final class ComposerTextView: UITextView {
   }
 
   required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
-
-  override func invalidateIntrinsicContentSize() {
-    super.invalidateIntrinsicContentSize()
-    intrinsicContentSizeDidChange()
-  }
 
   /// Programmatic rich edits join this text view's undo manager; UIKit continues
   /// to own ordinary typing, selection replacement, deletion and marked text.

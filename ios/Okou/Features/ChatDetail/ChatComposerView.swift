@@ -280,6 +280,7 @@ struct ChatComposerView: View {
     .padding(.horizontal, OkouSpace.lg)
     .padding(.top, OkouSpace.sm)
     .padding(.bottom, isFocused ? 8 : 0)
+    .fixedSize(horizontal: false, vertical: true)
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
     .sensoryFeedback(.error, trigger: error) { _, new in new != nil }

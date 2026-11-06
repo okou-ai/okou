@@ -12,10 +12,6 @@ final class ComposerInputContainer: UIView {
   init() {
     super.init(frame: .zero)
     addSubview(textView)
-    // SwiftUI measures this container, so native edits must invalidate it too.
-    textView.intrinsicContentSizeDidChange = { [weak self] in
-      self?.invalidateIntrinsicContentSize()
-    }
     // A sibling control owns the compact activation tap so UITextView cannot
     // subsequently replace the end selection with the original tap position.
     expansionButton.isHidden = true
