@@ -1,17 +1,22 @@
 import ChatDomain
 import Foundation
 
-/// Owned by a thumbnail operation or presented preview, never by durable history.
+/// Owned by the active detail or presented preview, never by durable history.
 public final class ChatAttachmentFile: Sendable {
   public let url: URL
   public let size: Int
+  /// Set only for complete attachment bytes, not a separate preview image.
+  public let originalAttachmentID: String?
 
-  init(url: URL, size: Int) {
+  init(url: URL, size: Int, originalAttachmentID: String?) {
     self.url = url
     self.size = size
+    self.originalAttachmentID = originalAttachmentID
   }
 
-  static func adopt(_ temporary: URL, filename: String) throws -> ChatAttachmentFile {
+  static func adopt(
+    _ temporary: URL, filename: String, originalAttachmentID: String? = nil
+  ) throws -> ChatAttachmentFile {
     try Task.checkCancellation()
     let directory = FileManager.default.temporaryDirectory
       .appending(path: "OkouMessageFiles/\(UUID().uuidString)", directoryHint: .isDirectory)
@@ -25,7 +30,8 @@ public final class ChatAttachmentFile: Sendable {
         throw APIClientError.invalidResponse
       }
       try Task.checkCancellation()
-      return ChatAttachmentFile(url: destination, size: size)
+      return ChatAttachmentFile(
+        url: destination, size: size, originalAttachmentID: originalAttachmentID)
     } catch {
       try? FileManager.default.removeItem(at: directory)
       throw error
@@ -62,7 +68,10 @@ struct ChatAttachmentDownload {
           url, maximumSize: thumbnail ? 20 * 1024 * 1024 : ChatAttachment.maximumSize)
         defer { try? FileManager.default.removeItem(at: temporary) }
         // Snapshot filenames are display data, never filesystem paths.
-        return try ChatAttachmentFile.adopt(temporary, filename: attachment.filename)
+        return try ChatAttachmentFile.adopt(
+          temporary, filename: attachment.filename,
+          originalAttachmentID: !thumbnail || resolved.previewImageUrl == nil
+            ? attachment.downloadID : nil)
       } catch APIClientError.downloadFailed(let status)
         where attempt == 0 && [401, 403].contains(status)
       {
