@@ -6,7 +6,6 @@
 export enum FeatureSwitchKey {
   SingleAgent = "singleAgent",
   FriendReferrals = "friendReferrals",
-  MarketingContentHandoff = "marketingContentHandoff",
   Projects = "projects",
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
   ConnectorSkillBundleDelivery = "_connectorSkillBundleDelivery",
