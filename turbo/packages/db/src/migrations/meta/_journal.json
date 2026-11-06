@@ -3158,6 +3158,13 @@
       "when": 1793948686106,
       "tag": "1529_verified-marketing-manifest-bucket",
       "breakpoints": true
+    },
+    {
+      "idx": 1530,
+      "version": "7",
+      "when": 1793999130080,
+      "tag": "1530_drop_retired_action_and_artifact_preferences",
+      "breakpoints": true
     }
   ]
 }

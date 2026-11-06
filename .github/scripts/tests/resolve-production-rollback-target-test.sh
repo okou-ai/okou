@@ -156,6 +156,10 @@ case "${1:-}" in
       [ "${MOCK_RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "94389e2203aaa62408b780156c2cf8f9a9cc5414" ]; then
       [ "${MOCK_MEMBER_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "222d8618346194b5af227c5e147a0076181ee3e0" ]; then
+      [ "${MOCK_PROACTIVE_ACTION_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "11b6837e854dcd643e31ca309b450b7a15a5de37" ]; then
+      [ "${MOCK_ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "c8de6212dc54a5aae0d4658acf1afa6a35f939ab" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_DAV_RUNNER_READER_VALID:-1}" = "1" ]
@@ -2139,6 +2143,20 @@ assert_failure "Rollback target predates the retired member preference mapping" 
 [ ! -s "${tmp_dir}/member-preference-floor.output" ] || fail "member-preference-dependent API must not publish rollback outputs"
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Retired member preference mapping must reject before artifact or host access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired proactive action preference mapping" \
+  run_resolver "${tmp_dir}/proactive-action-floor.output" MOCK_PROACTIVE_ACTION_PREFERENCE_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/proactive-action-floor.output" ] || fail "proactive-action-floor-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Retired proactive action preference mapping must reject before artifact or host access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired artifacts auto-open preference mapping" \
+  run_resolver "${tmp_dir}/artifact-auto-open-floor.output" MOCK_ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/artifact-auto-open-floor.output" ] || fail "artifact-auto-open-floor-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Retired artifacts auto-open preference mapping must reject before artifact or host access"
 fi
 
 assert_failure "Cannot resolve the merged direct Workflow attachment runtime" \
