@@ -182,6 +182,141 @@ async function splitConnection() {
   await ready();
 }
 
+test.each(["removed", "moved"] as const)(
+  "A %s selected tab hands off to a scoped successor without a final recovery error",
+  async (loss) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    const initialization = viewer.browser.holdNext("Page.enable");
+    const picture = viewer.browser.holdTargetFrames("other");
+    act(() => {
+      if (loss === "removed") {
+        viewer.browser.event("Target.targetDestroyed", {
+          targetId: "example-page",
+        });
+      } else {
+        viewer.browser.move("example-page", 202);
+      }
+    });
+    await act(async () => {
+      await initialization.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(viewer.sentry.reports).toHaveLength(0);
+    await act(initialization.release);
+    await act(async () => {
+      await picture.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    expect(viewer.sentry.reports).toHaveLength(0);
+    act(() => {
+      picture.release();
+    });
+    await ready("https://other.example");
+    await insertText("successor input");
+    await waitFor(() => {
+      expect(viewer.browser.input).toContainEqual({
+        method: "Input.insertText",
+        sessionId: viewer.browser.pageSession("other"),
+        params: { text: "successor input" },
+      });
+    });
+    expect(viewer.sentry.reports).toHaveLength(0);
+    expect(viewer.startupErrors).toHaveLength(0);
+    expect(viewer.errorLogs()).toHaveLength(0);
+  },
+);
+
+test("Selected-target loss waits for complete empty inventory before offering a new tab", async () => {
+  const viewer = mockViewer();
+  viewer.browser.targets.push(
+    {
+      targetId: "known-sibling",
+      title: "Known sibling",
+      url: "https://known-sibling.example",
+      windowId: 202,
+    },
+    {
+      targetId: "pending-sibling",
+      title: "Pending sibling",
+      url: "https://pending-sibling.example",
+      windowId: 202,
+    },
+  );
+  const inventory = viewer.browser.holdNextMembership("pending-sibling");
+  await viewer.start();
+  await inventory.received;
+  await ready();
+  act(() => {
+    viewer.browser.event("Target.targetDestroyed", { targetId: "other" });
+    viewer.browser.event("Target.targetDestroyed", {
+      targetId: "example-page",
+    });
+  });
+  await screen.findByText("Connecting to browser…");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  ).toBeDisabled();
+  expect(screen.queryByText("No tabs open")).not.toBeInTheDocument();
+  expect(viewer.sentry.reports).toHaveLength(0);
+  await act(inventory.release);
+  await screen.findByText("No tabs open");
+  const create = screen.getByLabelText("New tab", { selector: "button" });
+  expect(create).toBeEnabled();
+  expect(viewer.sentry.reports).toHaveLength(0);
+  click(create);
+  await ready("");
+  expect(viewer.browser.targets).toContainEqual(
+    expect.objectContaining({ windowId: 101, url: "about:blank" }),
+  );
+  expect(viewer.sentry.reports).toHaveLength(0);
+  expect(viewer.startupErrors).toHaveLength(0);
+});
+
+test("A failed successor reports its own terminal initialization error after target loss", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  viewer.browser.failNext("Page.enable", "Unavailable method", -32_601);
+  act(() => {
+    viewer.browser.move("example-page", 202);
+  });
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(reconnect()).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  const finalFailures = viewer.sentry.reports.filter((report) => {
+    const details = report.context;
+    return (
+      typeof details === "object" &&
+      details !== null &&
+      "tags" in details &&
+      details.tags?.browser_event === "recovery-stopped"
+    );
+  });
+  expect(finalFailures).toHaveLength(1);
+  expect(finalFailures[0]).toMatchObject({
+    error: {
+      name: "CdpFault",
+      kind: "unsupported-capability",
+      request: { method: "Page.enable", code: -32_601 },
+    },
+    context: { contexts: { browser_recovery: { outcome: "terminal" } } },
+  });
+  for (const report of viewer.sentry.reports) {
+    expect(report).toMatchObject({
+      error: { request: { method: "Page.enable", code: -32_601 } },
+    });
+  }
+  const reportCount = viewer.sentry.reports.length;
+  click(reconnect());
+  await ready("https://other.example");
+  expect(viewer.sentry.reports).toHaveLength(reportCount);
+});
+
 test("The refined panel shows a non-blocking recovery status without a reclaim footer", async () => {
   const viewer = mockViewer();
   await viewer.start(true, true);
