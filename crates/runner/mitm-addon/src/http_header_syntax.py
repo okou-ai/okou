@@ -108,6 +108,31 @@ def header_fields_contain_token(
     return False
 
 
+def raw_header_list_within_budget(
+    fields: Sequence[tuple[bytes, bytes]],
+    *,
+    max_fields: int,
+    max_bytes: int,
+    field_overhead_bytes: int,
+) -> bool:
+    """Check complete raw field count and aggregate bytes without value operations.
+
+    Count each raw name, raw value and caller-selected per-field overhead.
+    Reject excess count before traversal and stop at the first byte-budget
+    excess, without decoding, copying or normalizing fields. Exact limits fit.
+    Callers provide nonnegative limits and retain their own exhaustion policy.
+    """
+    if len(fields) > max_fields:
+        return False
+
+    header_bytes = 0
+    for raw_name, raw_value in fields:
+        header_bytes += len(raw_name) + len(raw_value) + field_overhead_bytes
+        if header_bytes > max_bytes:
+            return False
+    return True
+
+
 def header_value_budget_status(
     fields: Sequence[tuple[bytes, bytes]],
     name: bytes,
