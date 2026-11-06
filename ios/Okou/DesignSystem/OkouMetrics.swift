@@ -97,6 +97,8 @@ enum OkouControl {
 }
 
 enum OkouIconSize {
+  /// A sign-in provider's own mark (Google, Microsoft, Slack, Apple) in its button.
+  static let providerMark: CGFloat = 20
   static let inline: CGFloat = 16
   static let menu: CGFloat = 20
   static let standard: CGFloat = 20
@@ -134,6 +136,9 @@ enum OkouAvatarSize {
 enum OkouMotion {
   static let press = Animation.easeOut(duration: 0.15)
   static let transition = Animation.easeInOut(duration: 0.25)
+  /// The navigation bar changing height (the search field rising into it), as UIKit moves it;
+  /// a page under the bar follows in this time (`OkouUnderNavigationBar`).
+  static let barMove: TimeInterval = 0.35
 
   /// Web `chat-greeting-token`: each word fades in from an 8 pt blur and a 14 pt rise.
   static let greetingWord = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.72)
@@ -155,6 +160,10 @@ enum OkouMotion {
   /// The web's `okou-skeleton-pulse`, a skeleton's motion under Reduce Motion: one breath, and
   /// how far it dims.
   static let skeletonPulse: Double = 2
+  /// The transcript's extra edge blur (`OkouEdgeBlurView`): the length over which it fades to
+  /// clear inside its band, and how much of the page colour washes over the material.
+  static let edgeBlurFade: CGFloat = 16
+  static let edgeBlurWash: CGFloat = 0.3
   static let skeletonDim: Double = 0.7
   /// Web `--duration-running-indicator`; list rows trail by 1/12 of a cycle each.
   static let runningCycle: Double = 2.4

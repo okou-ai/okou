@@ -34,6 +34,7 @@ struct ChatSidebarView: View {
   }
 
   @State private var menuLogos = OkouWorkspaceMenuLogos()
+  @Namespace private var searchTransition
   /// One caption2 line of Geist under each pinned agent's avatar.
   @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
   /// One leading edge for the header, every heading, row content and the footer buttons.
@@ -101,21 +102,52 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    .scrollEdgeEffectStyle(.soft, for: .top)
-    .scrollEdgeEffectHidden(true, for: .bottom)
+    // The workspace title sits directly over chat titles: soft let them read through it, and
+    // the system's hard edge draws a white band on the warm sidebar. The header instead takes
+    // the sidebar's own colour, with a short fade where rows pass under it.
+    .scrollEdgeEffectHidden(true, for: .top)
+    .scrollEdgeEffectStyle(.soft, for: .bottom)
     .safeAreaBar(edge: .top, spacing: 0) {
-      header.padding(.horizontal, rowInset)
+      VStack(spacing: 0) {
+        // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
+        header.padding(.horizontal, rowInset)
+      }
+      .background {
+        OkouColor.sidebar
+          .ignoresSafeArea(edges: .top)
+          .overlay(alignment: .bottom) {
+            LinearGradient(
+              colors: [OkouColor.sidebar, OkouColor.sidebar.opacity(0)], startPoint: .top,
+              endPoint: .bottom
+            )
+            .frame(height: OkouSpace.lg)
+            .offset(y: OkouSpace.lg)
+            .allowsHitTesting(false)
+          }
+      }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(OkouColor.sidebar)
-    .sheet(
+    // Search is a page of its own: it grows out of the search capsule and fills the screen.
+    .fullScreenCover(
       isPresented: Binding(
         get: { store.search.isPresented },
         set: { if !$0 { store.search.dismiss() } }
       )
     ) {
-      ChatSearchView(workspace: store, showsArchived: showArchived, didOpen: close)
-        .okouSheetBackground()
+      ChatSearchView(
+        workspace: store, showsArchived: showArchived, didOpen: close,
+        openAgent: { agentID in
+          store.search.dismiss()
+          newChat(agentID)
+        },
+        openWorkflow: { workflow in
+          store.search.dismiss()
+          newChat(workflow.agentId)
+          store.useWorkflow(named: workflow.name)
+        }
+      )
+      .navigationTransition(.zoom(sourceID: "search", in: searchTransition))
     }
   }
 
@@ -446,9 +478,7 @@ struct ChatSidebarView: View {
         let profile = authentication.profile
         OkouProfileAvatar(
           imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-          size: OkouControl.minimumTarget
-        )
-        .modifier(OkouGlassControl(shape: .circle))
+          size: OkouControl.minimumTarget)
       }
       .accessibilityLabel("Settings")
       .accessibilityIdentifier("settings")
@@ -462,18 +492,10 @@ struct ChatSidebarView: View {
       Button {
         store.search.present()
       } label: {
-        HStack(spacing: OkouSpace.sm) {
-          OkouIcon("search", size: OkouIconSize.standard)
-          Text("Search chats").lineLimit(1)
-          Spacer(minLength: 0)
-        }
-        .font(.okou(.body))
-        // A search field's hint, the same colour as the composer's placeholder.
-        .foregroundStyle(OkouColor.placeholder)
-        .padding(.horizontal, OkouSpace.lg)
-        .frame(maxWidth: .infinity)
-        .modifier(OkouGlassControl(shape: .capsule))
+        OkouSearchBar(prompt: "Search chats")
       }
+      .buttonStyle(.plain)
+      .matchedTransitionSource(id: "search", in: searchTransition)
       .accessibilityLabel("Search chats")
       .accessibilityIdentifier("search-chats")
       Button {

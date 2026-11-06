@@ -37,7 +37,9 @@ final class MessageArtifactStore {
   private(set) var sharing: Share?
   private(set) var catalogWarning: String?
   private let service: ChatArtifacts
-  private let threadID: String
+  /// The chat whose artifact list supplies names and sizes; nil for a result opened from
+  /// workspace search, which arrives with its own title.
+  private let threadID: String?
   private let markdown: MessageMarkdownCache
   let webURL: URL
   var apiURL: URL { service.apiURL }
@@ -53,7 +55,7 @@ final class MessageArtifactStore {
   private var closed = false
 
   init(
-    service: ChatArtifacts, threadID: String, webURL: URL, markdown: MessageMarkdownCache,
+    service: ChatArtifacts, threadID: String?, webURL: URL, markdown: MessageMarkdownCache,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.service = service
@@ -282,6 +284,10 @@ final class MessageArtifactStore {
   private func loadCatalog() async throws {
     guard !closed else { throw CancellationError() }
     if catalog != nil { return }
+    guard let threadID else {
+      catalog = []
+      return
+    }
     let scope = generation
     let task: Task<[ChatArtifact], Error>
     if let existing = catalogTask {

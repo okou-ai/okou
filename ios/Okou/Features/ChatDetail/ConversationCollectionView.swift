@@ -139,6 +139,9 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   UICollectionViewDelegateFlowLayout, ConversationCollectionScrolling, SidebarScrollParticipant
 {
   private typealias Measurement = ConversationMeasurementCache.Measurement
+  private var keyboardTap: KeyboardDismissTap?
+  private let topBlur = OkouEdgeBlurView(edge: .top)
+  private let bottomBlur = OkouEdgeBlurView(edge: .bottom)
 
   private struct PreparedRows {
     let rows: [ConversationCollectionRow]
@@ -223,12 +226,14 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
-    // The header and composer insets are safe-area insets (see updateContentInsets). Blur
-    // content beneath the header, but let it show through beneath the composer's own glass.
-    collection.contentInsetAdjustmentBehavior = .always
+    // The header and composer heights are content insets (see updateContentInsets), so the
+    // soft top edge blurs only the status bar band — the edges as they were before the
+    // redesign moved those heights into the safe area. `OkouEdgeBlurView` adds a little more
+    // blur inside that band and behind the composer, without making either band taller.
     collection.topEdgeEffect.style = .soft
     collection.bottomEdgeEffect.isHidden = true
     collection.keyboardDismissMode = .interactive
+    keyboardTap = KeyboardDismissTap(on: collection)
     collection.selfSizingInvalidation = .disabled
     collection.register(MessageSelectionCell.self, forCellWithReuseIdentifier: "message")
     collection.delegate = self
@@ -265,6 +270,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     refresh.addTarget(self, action: #selector(refreshConversation), for: .valueChanged)
     collection.refreshControl = refresh
     view.addSubview(collection)
+    view.addSubview(topBlur)
+    view.addSubview(bottomBlur)
     dataSource = UICollectionViewDiffableDataSource<Int, String>(collectionView: collection) {
       [weak self] collection, index, id in
       guard let self else { return nil }
@@ -520,6 +527,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
+    layoutEdgeBlurs()
     let inset = ConversationCollectionRow.messageHorizontalInset
     loading.view.frame = CGRect(
       x: inset, y: collection.adjustedContentInset.top + OkouSpace.lg,
@@ -564,18 +572,25 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
   }
 
+  /// The top band is the status bar's, where the system soft edge already blurs; the bottom
+  /// band is the composer's own area, from its top edge to the screen's bottom.
+  private func layoutEdgeBlurs() {
+    let bounds = view.bounds
+    let safe = view.safeAreaInsets
+    topBlur.frame = CGRect(x: 0, y: 0, width: bounds.width, height: safe.top)
+    let composerTop = bounds.height - safe.bottom - source.contentInsets.bottom
+    bottomBlur.frame = CGRect(
+      x: 0, y: composerTop, width: bounds.width, height: max(0, bounds.height - composerTop))
+  }
+
   private func updateContentInsets() {
-    // Header and composer heights extend the safe area rather than the content inset:
-    // adjustedContentInset stays the same, and UIKit's scroll edge effects follow the
-    // safe area, so they now reach under both bars.
-    let bars = UIEdgeInsets(
-      top: source.contentInsets.top, left: 0, bottom: source.contentInsets.bottom, right: 0)
-    let horizontal = UIEdgeInsets(
-      top: 0, left: source.contentInsets.leading, bottom: 0, right: source.contentInsets.trailing)
-    guard additionalSafeAreaInsets != bars || collection.contentInset != horizontal else { return }
-    additionalSafeAreaInsets = bars
-    collection.contentInset = horizontal
-    view.layoutIfNeeded()
+    let insets = UIEdgeInsets(
+      top: source.contentInsets.top, left: source.contentInsets.leading,
+      bottom: source.contentInsets.bottom, right: source.contentInsets.trailing)
+    guard collection.contentInset != insets else { return }
+    collection.contentInset = insets
+    collection.verticalScrollIndicatorInsets = insets
+    layoutEdgeBlurs()
     source.sendTransition?.layoutDidChange()
     publishViewportChange()
     publishMetrics()
@@ -1347,4 +1362,27 @@ private final class ConversationAccessibilityCollection: UICollectionView {
     setContentOffset(CGPoint(x: contentOffset.x, y: target), animated: true)
     return true
   }
+}
+
+/// A tap anywhere in the transcript puts the keyboard away, so the composer folds back as in
+/// Messages and ChatGPT. It never takes the tap from what is under it: links, cards and text
+/// selection still get it.
+final class KeyboardDismissTap: NSObject, UIGestureRecognizerDelegate {
+  private weak var view: UIView?
+
+  init(on view: UIView) {
+    self.view = view
+    super.init()
+    let tap = UITapGestureRecognizer(target: self, action: #selector(dismiss))
+    tap.cancelsTouchesInView = false
+    tap.delegate = self
+    view.addGestureRecognizer(tap)
+  }
+
+  @objc private func dismiss() { view?.window?.endEditing(true) }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+  ) -> Bool { true }
 }

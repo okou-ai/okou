@@ -85,6 +85,10 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(models: modelStore)
   @ObservationIgnored lazy var search = ChatSearchStore(
     sync: sync, didFail: { [weak self] in self?.handle($0) })
+  /// Previews of results opened from workspace search, which belong to no chat.
+  @ObservationIgnored lazy var searchArtifacts = MessageArtifactStore(
+    service: commands.artifacts, threadID: nil, webURL: webURL, markdown: messageMarkdown,
+    didFail: { [weak self] in self?.handle($0) })
 
   @ObservationIgnored lazy var list = ThreadListStore(
     client: client, sync: sync, commands: commands,
@@ -235,6 +239,7 @@ final class WorkspaceStore {
     list.close()
     threadFeedback = nil
     search.close()
+    searchArtifacts.close()
     for conversation in conversations.values { conversation.close() }
     realtime?.stop()
     realtime = nil
@@ -606,6 +611,14 @@ final class WorkspaceStore {
         await self?.setMuted(id, muted: muted, markRead: markRead)
       }
     }
+  }
+
+  /// Puts `/name` at the start of the new chat's draft, as choosing the workflow from the
+  /// composer's `/` menu does; whatever the draft already held stays after it.
+  func useWorkflow(named name: String) {
+    let token = "/" + name + " "
+    guard !newChatDraft.hasPrefix(token) else { return }
+    newChatDraft = token + newChatDraft
   }
 
   func startNewChat(agentID: String? = nil) {

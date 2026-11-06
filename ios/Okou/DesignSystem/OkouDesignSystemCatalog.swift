@@ -31,6 +31,12 @@
       (id: "catalog", name: "Max & Zoe, Inc"), (id: "catalog-2", name: "Okou Labs"),
     ]
     @State private var catalogWorkspace = "catalog"
+    @State private var showsSearchPage = false
+    @State private var catalogQuery = ""
+    @State private var catalogFilter = "All"
+    static let sampleChats = [
+      "Trip to Kyoto", "Quarterly report", "Launch checklist", "Brand colours", "Weekly sync notes",
+    ]
     @State private var menuLogos = OkouWorkspaceMenuLogos()
 
     var body: some View {
@@ -311,6 +317,37 @@
               }
             }
           }
+          section("Search bar") {
+            // The sidebar's button; the search page's system field takes the same glyphs.
+            OkouSearchBar(prompt: "Search chats")
+          }
+          section("Search page") {
+            // `OkouSearchPage`: the system field (no clear button, the app's ✕), filters and
+            // results that move with the field, and an empty state centred above the keyboard.
+            Button("Open search page") { showsSearchPage = true }
+              .buttonStyle(.bordered)
+          }
+          section("Sign-in providers") {
+            // Each provider's own mark ships in the app; the title sits on one centre line.
+            VStack(spacing: OkouSpace.md) {
+              ForEach(
+                [
+                  ("apple", "Apple"), ("google", "Google"), ("microsoft", "Microsoft"),
+                  ("slack", "Slack"),
+                ],
+                id: \.0
+              ) { provider in
+                Button {
+                } label: {
+                  OkouProviderLabel(Text(verbatim: "Continue with \(provider.1)")) {
+                    Image("AuthProvider-\(provider.0)").resizable().scaledToFit()
+                      .foregroundStyle(OkouColor.foreground)
+                  }
+                }
+                .buttonStyle(OkouProviderButtonStyle())
+              }
+            }
+          }
           section("Results in the transcript") {
             // Every result style and state; also its own page with `--result-styles`.
             ResultStylesGallery()
@@ -442,6 +479,33 @@
         .frame(maxWidth: OkouControl.readableWidth, alignment: .leading)
         .padding(OkouControl.pageInset).frame(maxWidth: .infinity)
       }
+      .fullScreenCover(isPresented: $showsSearchPage) {
+        NavigationStack {
+          OkouSearchPage(
+            "Search", text: $catalogQuery, prompt: "Search",
+            close: {
+              showsSearchPage = false
+              catalogQuery = ""
+            }
+          ) {
+            OkouChipRail(inset: OkouSpace.lg) {
+              ForEach(["All", "Chats", "Agents"], id: \.self) { name in
+                OkouChip(title: Text(name), isSelected: catalogFilter == name) {
+                  catalogFilter = name
+                }
+              }
+            }
+          } results: {
+            ForEach(catalogMatches, id: \.self) { title in
+              Label(title, okouSymbol: "message-circle")
+            }
+          } empty: {
+            if catalogMatches.isEmpty {
+              OkouEmptyState("No results", icon: "search", description: Text("Try another search."))
+            }
+          }
+        }
+      }
       .sheet(isPresented: $showsSheet) {
         NavigationStack {
           List {
@@ -469,6 +533,11 @@
       .navigationTitle("Design system")
       .navigationBarTitleDisplayMode(.inline)
       .modifier(OkouAppearance())
+    }
+
+    private var catalogMatches: [String] {
+      let query = catalogQuery.lowercased()
+      return Self.sampleChats.filter { query.isEmpty || $0.lowercased().contains(query) }
     }
 
     private func section<Content: View>(_ title: String, @ViewBuilder content: () -> Content)

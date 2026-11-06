@@ -47,23 +47,15 @@ struct ChatFeedbackSurface: View {
 
   private var messageLabel: some View {
     HStack(alignment: .firstTextBaseline, spacing: OkouSpace.sm) {
-      // A glyph has no baseline, so on its own it would sit on the text's baseline and ride
-      // high. It centres in an empty line of the same type instead, whose baseline is the
-      // message's: the glyph sits mid-line at every text size and stays on the first line
-      // when the message wraps.
-      Text(verbatim: " ")
-        .font(.okou(.subheadline).weight(.medium))
-        .hidden()
-        .frame(width: OkouIconSize.inline)
-        .overlay {
-          if isWorking {
-            ProgressView().controlSize(.mini).tint(OkouColor.mutedForeground)
-          } else {
-            OkouIcon(icon, size: OkouIconSize.inline)
-              .foregroundStyle(OkouColor.mutedForeground)
-          }
+      // Centred on the message's first line (see `OkouLineIcon`).
+      OkouLineIcon(font: .okou(.subheadline).weight(.medium), width: OkouIconSize.inline) {
+        if isWorking {
+          ProgressView().controlSize(.mini).tint(OkouColor.mutedForeground)
+        } else {
+          OkouIcon(icon, size: OkouIconSize.inline)
+            .foregroundStyle(OkouColor.mutedForeground)
         }
-        .accessibilityHidden(true)
+      }
       Text(message)
         .font(.okou(.subheadline).weight(.medium))
         .foregroundStyle(OkouColor.foreground)
@@ -74,7 +66,7 @@ struct ChatFeedbackSurface: View {
 
   private func actionButton(title: String) -> some View {
     Button(title, action: action)
-      .font(.okou(.subheadline).weight(.semibold))
+      .font(.okou(.subheadline).weight(.medium))
       .foregroundStyle(OkouColor.brandText)
       .padding(.horizontal, OkouSpace.six)
       .frame(minWidth: OkouControl.minimumTarget, minHeight: OkouControl.minimumTarget)

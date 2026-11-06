@@ -29,6 +29,11 @@ extension OkouColor {
   /// Placeholder text and the hint glyph beside it (the composer's "Message Okou", the sidebar's
   /// "Search chats"): gray-600, lighter than supporting text, so a hint never reads as content.
   static let placeholder = gray600
+  /// A grouped row's current value at its trailing edge (a picker's value and chevron, a value
+  /// row's "On" or "English"): gray-700, a clear step lighter than the row's `foreground`
+  /// label and than supporting text, as Settings draws its secondary label, yet still AA
+  /// contrast on white — unlike gray-600, the placeholder grey, which a value must not look like.
+  static let trailingValue = gray700
 }
 
 /// Swipe-action fills. The system always draws a swipe action's icon and label in white, so a
