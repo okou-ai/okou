@@ -169,7 +169,6 @@ private struct WorkspaceRootView: View {
   @State private var store: WorkspaceStore
   @State private var sidebar = SidebarInteraction()
   @State private var topContentHeight: CGFloat = 0
-  @State private var showsAgent = false
   @State private var taglineIndex = Int.random(in: 0..<64)
   @Binding private var accountError: String?
   @Environment(\.scenePhase) private var scenePhase
@@ -286,14 +285,6 @@ private struct WorkspaceRootView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .allowsHitTesting(store.newChatSubmission?.isPresenting != true)
         .accessibilityHidden(store.newChatSubmission?.isPresenting == true)
-        // Owned by the container so the header can open it from a chat and from home.
-        .sheet(isPresented: $showsAgent) {
-          AgentProfileSheet(
-            store: store,
-            agentID: store.list.threads.first(where: { $0.id == store.selectedThreadID })?.agentID
-              ?? store.selectedAgentID ?? "",
-            newChat: { startNewChat($0) })
-        }
         .overlay {
           if let submission = store.newChatSubmission, submission.isPresenting {
             NewChatSubmissionView(submission: submission, webURL: store.webURL)
@@ -306,7 +297,6 @@ private struct WorkspaceRootView: View {
             // Sync problems float below the header with the rest of the chat feedback.
             ChatWorkspaceHeader(
               store: store, height: headerHeight, openSidebar: openSidebar,
-              openAgent: { showsAgent = true },
               modelSelection: store.selectedConversation.map { $0.modelSelection }
                 ?? store.newModelSelection)
           }
@@ -439,8 +429,7 @@ private struct WorkspaceRootView: View {
         avatarURL: store.usesPersonalOkou ? nil : agent?.avatarUrl,
         agentName: store.usesPersonalOkou ? "Okou" : (agent?.displayName ?? "Okou"),
         isDefaultAgent: store.usesPersonalOkou || (agent?.isDefaultAgent ?? true),
-        text: greetingText,
-        openAgent: store.usesPersonalOkou ? nil : { showsAgent = true }
+        text: greetingText
       )
       .id("\(store.selectedAgentID ?? "")-\(taglineIndex)")
       // A custom agent says what it is for under its greeting.

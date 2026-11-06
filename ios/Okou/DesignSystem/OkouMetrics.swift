@@ -115,8 +115,6 @@ enum OkouAvatarSize {
   static let rail: CGFloat = 56
   /// An agent in a chat row's status column (Active): its mark is the size of a status emoji.
   static let row: CGFloat = 28
-  /// The agent at the top of its profile sheet.
-  static let profile: CGFloat = 64
   /// The account and the workspace at the top of Settings: one size, the height of the
   /// account row's two lines.
   static let account: CGFloat = 40
