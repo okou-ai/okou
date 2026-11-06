@@ -36,10 +36,7 @@
           Text("Shared brand. Native controls. One source of truth.")
             .foregroundStyle(OkouColor.mutedForeground)
           OkouNativeIconComparison()
-          section("Adaptive information & sheets") {
-            OkouLabeledValue(
-              label: Text("Weekly window"), value: Text("85% remaining")
-            ).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+          section("Native sheets") {
             Button("Open native scrolling sheet") { showsSheet = true }
               .buttonStyle(.bordered)
           }
@@ -415,11 +412,6 @@
       .sheet(isPresented: $showsSheet) {
         NavigationStack {
           List {
-            Section("Adaptive information") {
-              OkouLabeledValue(
-                label: Text("Weekly subscription window"), value: Text("85% remaining")
-              )
-            }
             Section("Native scroll transition") {
               ForEach(1..<25) { index in
                 Label("Example row \(index)", okouSymbol: "message-circle")
