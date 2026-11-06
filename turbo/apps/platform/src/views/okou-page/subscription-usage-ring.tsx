@@ -1,5 +1,4 @@
 import { useTranslation } from "react-i18next";
-import { cn } from "@okouai/ui";
 import { limitingSubscriptionUsageWindow } from "../../lib/subscription-usage-windows.ts";
 import { formatLocalizedNumber } from "../../i18n/format.ts";
 import type { AccountMenuSubscriptionUsageRow } from "../../signals/okou-page/account-menu-subscriptions.ts";
@@ -40,22 +39,6 @@ export function SubscriptionUsageRing({
           fill="none"
           className="absolute inset-0 size-8!"
         >
-          <defs>
-            <linearGradient
-              id="sidebar-subscription-ring-fill"
-              x1="0"
-              y1="1"
-              x2="0"
-              y2="0"
-              gradientUnits="objectBoundingBox"
-            >
-              <stop className="[stop-color:var(--color-usage-meter-start)]" />
-              <stop
-                offset="1"
-                className="[stop-color:var(--color-usage-meter-end)]"
-              />
-            </linearGradient>
-          </defs>
           {rows.map((row) => {
             return (
               <UsageArc
@@ -85,19 +68,23 @@ export function SubscriptionUsageRing({
             const label =
               row.type === "codex-oauth-token" ? "ChatGPT" : "Claude";
             const value =
-              remaining === null
-                ? "—"
-                : t(
-                    ($) => {
-                      return $.settings.models.personal.status.left;
-                    },
-                    {
-                      percent: formatLocalizedNumber(remaining / 100, {
-                        style: "percent",
-                        maximumFractionDigits: 1,
-                      }),
-                    },
-                  );
+              remaining === 0
+                ? t(($) => {
+                    return $.settings.accountMenu.subscriptions.limitReached;
+                  })
+                : remaining === null
+                  ? "—"
+                  : t(
+                      ($) => {
+                        return $.settings.models.personal.status.left;
+                      },
+                      {
+                        percent: formatLocalizedNumber(remaining / 100, {
+                          style: "percent",
+                          maximumFractionDigits: 1,
+                        }),
+                      },
+                    );
             return `${label}: ${value}`;
           })
           .join("; ")}
@@ -115,21 +102,15 @@ function UsageArc({
 }) {
   return (
     <g strokeWidth={2.5} strokeLinecap="round">
-      <path
-        d={path}
-        className={
-          remaining === 0
-            ? "stroke-destructive/40"
-            : "stroke-muted-foreground/25"
-        }
-      />
+      <path d={path} className="stroke-muted-foreground/25" />
       {remaining !== null && remaining > 0 && (
         <path
           d={path}
           pathLength={100}
           strokeDasharray={`${String(remaining)} 100`}
-          stroke="url(#sidebar-subscription-ring-fill)"
-          className={cn(remaining < 20 && "stroke-destructive")}
+          className={
+            remaining < 20 ? "stroke-primary-400" : "stroke-chart-blue-400"
+          }
         />
       )}
     </g>

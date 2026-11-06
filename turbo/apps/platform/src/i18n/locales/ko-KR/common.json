@@ -5394,6 +5394,7 @@
         "credits": "크레딧",
         "fiveHourLimit": "5시간 한도",
         "label": "구독 사용량",
+        "limitReached": "한도에 도달했습니다",
         "lowUsage": "구독 사용량: 남은 한도 20% 미만",
         "resetTimeUnavailable": "재설정 시간 사용 불가",
         "usage": "{{provider}} 사용량",

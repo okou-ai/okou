@@ -384,12 +384,12 @@ test("Show an exhausted week with its own reset time", async () => {
   });
   expect(week).toHaveAttribute("aria-valuenow", "0");
   expect(within(panel).getAllByRole("meter")).toHaveLength(1);
-  expect(within(panel).getByText("0% left")).toBeInTheDocument();
+  expect(within(panel).getByText("Limit reached")).toBeInTheDocument();
   expect(
     within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
       /^Subscription usage/,
     ),
-  ).toHaveAccessibleDescription("ChatGPT: 0% left");
+  ).toHaveAccessibleDescription("ChatGPT: Limit reached");
   expect(within(panel).getByText("Resets in 5d 23h")).toBeInTheDocument();
   expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
   await userEvent.setup().hover(week);
@@ -754,4 +754,48 @@ test("Describe connected usage with an unknown percentage without treating it as
   expect(entry).toHaveAccessibleDescription("Claude: —");
   const panel = await openSubscriptionUsage();
   expect(within(panel).getByText("—")).toBeInTheDocument();
+  expect(within(panel).getByRole("meter")).not.toHaveAttribute("aria-valuenow");
+  expect(within(panel).queryByText("Limit reached")).not.toBeInTheDocument();
 });
+
+test.each([
+  { resetAt: "2030-01-01T05:00:00.000Z", expected: "Resets in 4h 12m" },
+  { resetAt: null, expected: "Reset time unavailable" },
+])(
+  "Show exhausted Claude usage with $expected",
+  async ({ resetAt, expected }) => {
+    mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
+    mockAdminAccountSidebar();
+    context.mocks.data.personalModelProviders([
+      connectedPersonalClaudeCodeProvider({
+        subscriptionUsage: {
+          fiveHour: {
+            usedPercent: 100,
+            remainingPercent: 0,
+            resetAt,
+            windowSeconds: 18_000,
+          },
+          weekly: null,
+        },
+      }),
+    ]);
+    await setupPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
+    });
+    const panel = await openSubscriptionUsage();
+    expect(
+      within(panel).getByRole("meter", {
+        name: "Claude 5-hour limit remaining",
+      }),
+    ).toHaveAttribute("aria-valuenow", "0");
+    expect(within(panel).getByText("Limit reached")).toBeInTheDocument();
+    expect(within(panel).getByText(expected)).toBeInTheDocument();
+    expect(
+      within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+        /^Subscription usage/,
+      ),
+    ).toHaveAccessibleDescription("Claude: Limit reached");
+  },
+);
