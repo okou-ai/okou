@@ -1,5 +1,12 @@
 import { publicRunOwner } from "./helpers/public-run-owner";
-import { SINGLE_AGENT_SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
+import {
+  contentBundleKey,
+  prepareContentBundle,
+} from "@okouai/core/content-bundle";
+import {
+  SINGLE_AGENT_SEED_INSTRUCTIONS,
+  SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE,
+} from "@okouai/core/seed-instructions";
 import { instructionsContract } from "@okouai/api-contracts/contracts/instructions";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -183,11 +190,26 @@ describe("Captured personal Instructions in Runner claims", () => {
       ).toBe("retained non-default");
     });
   });
-  it("initializes at admission and isolates two members on the same default executor", async () => {
+  it("uses the default until the first save and isolates two members on the same default executor", async () => {
     const owned = await publicChatActor(context);
     owned.ownsFeatureSwitches();
     await owned.run(async () => {
-      const s3 = installWorkflowVolumeS3Fixture(context);
+      // Deployments publish the default before serving.
+      const { archive } = await prepareContentBundle([
+        {
+          path: "instructions.md",
+          content: Buffer.from(SINGLE_AGENT_SEED_INSTRUCTIONS, "utf8"),
+        },
+      ]);
+      const s3 = installWorkflowVolumeS3Fixture(
+        context,
+        new Map([
+          [
+            contentBundleKey(SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE.sha256),
+            archive,
+          ],
+        ]),
+      );
       const { defaultAgentId } = await bdd.readOnboardingStatus(owned.actor);
       if (!defaultAgentId) {
         throw new Error("Expected default executor");

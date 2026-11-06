@@ -27,6 +27,7 @@ import { putS3Object$ } from "../signals/external/s3";
 import { immutableCatalogHash$ } from "../signals/services/connector-catalog-immutable.service";
 import { syncConnectorCatalog$ } from "../signals/services/connector-catalog-sync.service";
 import { seedPreviewConnectorCatalog$ } from "../signals/services/preview-connector-catalog.service";
+import { publishDefaultPersonalInstructions$ } from "../signals/services/personal-instructions.service";
 import { onRejection } from "../signals/utils";
 import { DEV_SEED_SENTINEL_MANAGED_MODEL_KEY } from "./dev-seed-managed-model-key";
 import rawDevSeedSkillVolumes from "./dev-seed-skill-volumes.json";
@@ -857,6 +858,9 @@ async function devSeed() {
     );
     writeLine(`Seeded ${insertedCount} prepared Seed Skill bundles`);
   }
+  // Preview/development buckets do not inherit production's default bundle.
+  await store.set(publishDefaultPersonalInstructions$, signal);
+  writeLine("Published default personal Instructions");
 
   // --- connector catalog (validated R2 publication -> pointer + entries) ---
   // The flag keeps its historical name because the CI preview workflow passes
