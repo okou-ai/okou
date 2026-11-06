@@ -37,6 +37,7 @@ struct ChatSettingsView: View {
   @AppStorage(OkouAppearancePreference.storageKey) private var appearance =
     OkouAppearancePreference.system.rawValue
   @State private var signingOut = false
+  @State private var confirmsSignOut = false
 
   private static let securityURL = URL(string: "https://www.okou.ai/en/security")!
   private static let supportEmail = "contact@okou.ai"
@@ -149,17 +150,7 @@ struct ChatSettingsView: View {
         #endif
         Section {
           Button(role: .destructive) {
-            signingOut = true
-            Task {
-              defer { signingOut = false }
-              do {
-                try await notifications.signOut(authentication: authentication)
-                dismiss()
-              } catch {
-                accountError = error.localizedDescription
-                dismiss()
-              }
-            }
+            confirmsSignOut = true
           } label: {
             HStack {
               settingsLabel("Sign out", icon: "log-out")
@@ -171,6 +162,7 @@ struct ChatSettingsView: View {
             .foregroundStyle(OkouColor.destructive)
           }
           .disabled(signingOut)
+          .signOutConfirmation(isPresented: $confirmsSignOut, signOut: signOut)
         } header: {
           Text("Account").okouSectionHeader()
         }
@@ -226,6 +218,20 @@ struct ChatSettingsView: View {
     let version = info?["CFBundleShortVersionString"] as? String ?? "–"
     let build = info?["CFBundleVersion"] as? String ?? "–"
     return "\(version) (\(build))"
+  }
+
+  private func signOut() {
+    signingOut = true
+    Task {
+      defer { signingOut = false }
+      do {
+        try await notifications.signOut(authentication: authentication)
+        dismiss()
+      } catch {
+        accountError = error.localizedDescription
+        dismiss()
+      }
+    }
   }
 
   private func settingsLabel(_ title: LocalizedStringKey, icon: String) -> some View {

@@ -311,6 +311,31 @@
               }
             }
           }
+          section("Search bar") {
+            // The sidebar's button; the search page's system field takes the same glyphs.
+            OkouSearchBar(prompt: "Search chats")
+          }
+          section("Sign-in providers") {
+            // Each provider's own mark ships in the app; the title sits on one centre line.
+            VStack(spacing: OkouSpace.md) {
+              ForEach(
+                [
+                  ("apple", "Apple"), ("google", "Google"), ("microsoft", "Microsoft"),
+                  ("slack", "Slack"),
+                ],
+                id: \.0
+              ) { provider in
+                Button {
+                } label: {
+                  OkouProviderLabel(Text(verbatim: "Continue with \(provider.1)")) {
+                    Image("AuthProvider-\(provider.0)").resizable().scaledToFit()
+                      .foregroundStyle(OkouColor.foreground)
+                  }
+                }
+                .buttonStyle(OkouProviderButtonStyle())
+              }
+            }
+          }
           section("Results in the transcript") {
             // Every result style and state; also its own page with `--result-styles`.
             ResultStylesGallery()

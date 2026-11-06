@@ -23,3 +23,28 @@ struct OkouProviderButtonStyle: ButtonStyle {
       .opacity(isEnabled ? 1 : 0.5)
   }
 }
+
+/// A provider button's content: the provider's own mark in a fixed 20 pt slot on the leading
+/// edge and the title centred across the button, balanced by an empty slot on the trailing
+/// edge, so every provider's title sits on the same centre line whatever its mark.
+struct OkouProviderLabel<Mark: View>: View {
+  let title: Text
+  @ViewBuilder let mark: () -> Mark
+
+  init(_ title: Text, @ViewBuilder mark: @escaping () -> Mark) {
+    self.title = title
+    self.mark = mark
+  }
+
+  var body: some View {
+    HStack {
+      mark()
+        .frame(width: OkouIconSize.providerMark, height: OkouIconSize.providerMark)
+        .accessibilityHidden(true)
+      Spacer(minLength: OkouSpace.sm)
+      title
+      Spacer(minLength: OkouSpace.sm)
+      Color.clear.frame(width: OkouIconSize.providerMark, height: OkouIconSize.providerMark)
+    }
+  }
+}

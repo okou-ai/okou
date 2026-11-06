@@ -38,8 +38,10 @@ struct NativeAuthView: View {
     .onChange(of: flow.step) { _, _ in focusedField = nil }
     .onDisappear { flow.cancel() }
     .sheet(isPresented: $showsAdditionalMethods) {
-      // Keep the complete SDK flow available for server-required methods beyond email/password.
-      AuthView(mode: flow.mode == .signIn ? .signIn : .signUp, isDismissible: true)
+      // Clerk's complete flow, for what the native steps do not cover: an extra verification
+      // the account requires ("Continue securely") and password help. Not offered up front:
+      // the first screen already has every method Okou enables.
+      AuthView(mode: .signInOrUp, isDismissible: true)
         .initialIdentifier(flow.email)
         .environment(flow.clerk)
         .environment(\.clerkTheme, OkouAuthTheme.makeTheme())
@@ -65,13 +67,6 @@ struct NativeAuthView: View {
           .buttonStyle(.plain).accessibilityLabel("Back").disabled(flow.isWorking)
         }
         Spacer(minLength: 0)
-        if flow.step == .options {
-          Button("More options") { showsAdditionalMethods = true }
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-            .frame(minHeight: OkouControl.minimumTarget)
-            .disabled(flow.isWorking)
-            .accessibilityLabel("More sign-in options")
-        }
       }
     }
     .frame(height: OkouControl.minimumTarget)
@@ -84,11 +79,11 @@ struct NativeAuthView: View {
         Image(OkouBrand.symbol).resizable().scaledToFit()
           .frame(width: 64, height: 64)
           .foregroundStyle(OkouColor.primary).accessibilityHidden(true)
-        Text(flow.mode == .signIn ? "Welcome to Okou" : "Create your account")
+        Text("Welcome to Okou")
           .font(.okou(.title).weight(.semibold))
           .foregroundStyle(OkouColor.foreground)
           .accessibilityAddTraits(.isHeader)
-        Text(flow.mode == .signIn ? "Log in to your Okou workspace." : "Meet your new AI coworker.")
+        Text("Log in or create your account.")
           .font(.okou(.subheadline)).foregroundStyle(OkouColor.mutedForeground)
       }
       .multilineTextAlignment(.center)
@@ -97,21 +92,11 @@ struct NativeAuthView: View {
       VStack(spacing: OkouSpace.md) {
         ForEach(flow.providers) { provider in
           Button {
+            focusedField = nil
             flow.startOAuth(provider)
           } label: {
-            HStack {
-              AsyncImage(url: provider.iconImageUrl) { image in
-                image.resizable().renderingMode(
-                  provider.supportsTintedIconMask ? .template : .original
-                ).scaledToFit().foregroundStyle(OkouColor.foreground)
-              } placeholder: {
-                Color.clear
-              }
-              .frame(width: 20, height: 20).accessibilityHidden(true)
-              Spacer(minLength: OkouSpace.sm)
-              Text("Continue with \(provider.name)")
-              Spacer(minLength: OkouSpace.sm)
-              Color.clear.frame(width: 20, height: 20)
+            OkouProviderLabel(Text("Continue with \(provider.name)")) {
+              AuthProviderMark(provider: provider)
             }
           }
           .buttonStyle(OkouProviderButtonStyle())
@@ -119,19 +104,14 @@ struct NativeAuthView: View {
           .accessibilityIdentifier("auth-provider-\(provider.id)")
         }
         if !flow.providers.isEmpty { separator.padding(.vertical, OkouSpace.xs) }
-        Button {
-          flow.chooseEmail()
-        } label: {
-          Label("Continue with email", okouSymbol: "mail")
-        }
-        .buttonStyle(OkouButtonStyle(isPrimary: true))
-        .disabled(flow.isWorking)
-        .accessibilityIdentifier("auth-continue-email")
+        // The email is on this screen, as on the web: one field and one Continue for
+        // logging in and for a new account alike.
+        emailField
+        primaryAction("Continue", disabled: !flow.canSubmitEmail) { submitEmail() }
+          .accessibilityIdentifier("auth-continue-email")
         errorMessage
-        if flow.isWorking { ProgressView("Connecting…").font(.okou(.footnote)) }
       }
-      modeSwitch.padding(.top, OkouSpace.lg)
-      legalLinks.padding(.top, OkouSpace.lg)
+      legalLinks.padding(.top, OkouSpace.xl)
     }
     .frame(minHeight: minimumHeight)
   }
@@ -145,8 +125,6 @@ struct NativeAuthView: View {
           .fixedSize(horizontal: false, vertical: true)
       }
       switch flow.step {
-      case .email:
-        emailForm
       case .code:
         codeForm
       case .password:
@@ -160,16 +138,11 @@ struct NativeAuthView: View {
         EmptyView()
       }
       errorMessage
-      if flow.step == .email {
-        modeSwitch.frame(maxWidth: .infinity).padding(.top, OkouSpace.sm)
-        legalLinks.frame(maxWidth: .infinity).padding(.top, OkouSpace.lg)
-      }
     }
   }
 
   private var title: String {
     switch flow.step {
-    case .email: flow.mode == .signIn ? "Log in with email" : "Create your account"
     case .code: "Check your email"
     case .password: "Enter your password"
     case .profile: "A little about you"
@@ -180,9 +153,6 @@ struct NativeAuthView: View {
 
   private var subtitle: String {
     switch flow.step {
-    case .email:
-      flow.mode == .signIn
-        ? "Enter your email to continue to Okou." : "Use your work email to get started."
     case .code: "Enter the verification code we sent to \(flow.email)."
     case .password: flow.email
     case .profile: "Complete your account details to continue."
@@ -192,23 +162,18 @@ struct NativeAuthView: View {
     }
   }
 
-  private var emailForm: some View {
-    VStack(alignment: .leading, spacing: OkouSpace.lg) {
-      Text("Email address").font(.okou(.subheadline).weight(.medium))
-      TextField(
-        "Email address", text: $flow.email,
-        prompt: Text("you@company.com").foregroundStyle(OkouColor.mutedForeground)
-      )
-      .keyboardType(.emailAddress).textContentType(.emailAddress)
-      .textInputAutocapitalization(.never).autocorrectionDisabled()
-      .textFieldStyle(OkouTextFieldStyle(isFocused: focusedField == .email)).focused(
-        $focusedField, equals: .email
-      )
-      .submitLabel(.continue).onSubmit { submitEmail() }
-      .disabled(flow.isWorking).accessibilityLabel("Email address").accessibilityIdentifier(
-        "auth-email")
-      primaryAction("Continue", disabled: !flow.canSubmitEmail) { submitEmail() }
-    }
+  private var emailField: some View {
+    TextField(
+      "Email address", text: $flow.email,
+      prompt: Text("Email address").foregroundStyle(OkouColor.mutedForeground)
+    )
+    .keyboardType(.emailAddress).textContentType(.emailAddress)
+    .textInputAutocapitalization(.never).autocorrectionDisabled()
+    .textFieldStyle(OkouTextFieldStyle(isFocused: focusedField == .email))
+    .focused($focusedField, equals: .email)
+    .submitLabel(.continue).onSubmit { submitEmail() }
+    .disabled(flow.isWorking).accessibilityLabel("Email address")
+    .accessibilityIdentifier("auth-email")
   }
 
   private var codeForm: some View {
@@ -306,18 +271,6 @@ struct NativeAuthView: View {
     guard flow.canSubmitEmail, !flow.isWorking else { return }
     focusedField = nil
     flow.startEmail()
-  }
-
-  private var modeSwitch: some View {
-    HStack(spacing: OkouSpace.xs) {
-      Text(flow.mode == .signIn ? "New to Okou?" : "Already have an account?")
-        .foregroundStyle(OkouColor.mutedForeground)
-      Button(flow.mode == .signIn ? "Create account" : "Log in") { flow.switchMode() }
-        .foregroundStyle(OkouColor.brandText).fontWeight(.semibold)
-        .disabled(flow.isWorking)
-        .accessibilityIdentifier(flow.mode == .signIn ? "auth-create-account" : "auth-log-in")
-    }
-    .font(.okou(.subheadline)).frame(minHeight: OkouControl.minimumTarget)
   }
 
   @ViewBuilder private var errorMessage: some View {

@@ -27,6 +27,8 @@ struct OkouApp: App {
 
   init() {
     if !Self.isDesignPreview { CrashReporting.start() }
+    OkouNavigationBar.applyBackIndicator()
+    OkouNavigationBar.applySearchField()
     // The XCTest host runs real services with isolated HTTP fixtures, never production auth.
     let isTestHost = NSClassFromString("XCTestCase") != nil
     let authentication = isTestHost || Self.isDesignPreview ? nil : AuthenticationService()
@@ -458,6 +460,13 @@ private struct WorkspaceRootView: View {
     .frame(maxWidth: 440)
     .padding(.horizontal, OkouSpace.xxl)
     .frame(maxWidth: .infinity)
+    .frame(maxHeight: .infinity)
+    // A tap anywhere on the empty page puts the keyboard away, as on the transcript.
+    .contentShape(Rectangle())
+    .onTapGesture {
+      UIApplication.shared.sendAction(
+        #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
     .onChange(of: store.selectedAgentID) { _, _ in taglineIndex = Int.random(in: 0..<64) }
     .onChange(of: store.selectedThreadID) { _, id in
       if id == nil { taglineIndex = Int.random(in: 0..<64) }

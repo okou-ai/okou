@@ -50,6 +50,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     defer { gate.open() }
     let requests = Mutex(0)
     let fixture = ChatHTTPFixture { request in
+      if let empty = emptySearchResources(request) { return empty }
       switch request.url?.path {
       case "/api/chat-threads/snapshot":
         let first = requests.withLock {
@@ -248,6 +249,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let count = Mutex(0)
     let read = Mutex(false)
     let fixture = ChatHTTPFixture { request in
+      if let empty = emptySearchResources(request) { return empty }
       switch request.url?.path {
       case "/api/chat-threads/snapshot":
         return ChatHTTPResponse(
@@ -339,6 +341,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     defer { gate.open() }
     let seen = Mutex<[String]>([])
     let fixture = ChatHTTPFixture { request in
+      if let empty = emptySearchResources(request) { return empty }
       XCTAssertNil(query(request, "agentId"))
       XCTAssertEqual(
         request.value(forHTTPHeaderField: "Authorization"), "Bearer local-test-session")
@@ -385,6 +388,7 @@ final class ChatSearchUnreadTests: XCTestCase {
     let gate = SearchResponseGate()
     defer { gate.open() }
     let fixture = ChatHTTPFixture { request in
+      if let empty = emptySearchResources(request) { return empty }
       switch request.url?.path {
       case "/api/chat-threads/snapshot":
         started.fulfill()
@@ -414,6 +418,7 @@ final class ChatSearchUnreadTests: XCTestCase {
   func testOpeningSearchResultKeepsRefreshFailuresDistinctFromMissingThreads() async {
     let failing = Mutex(true)
     let fixture = ChatHTTPFixture { request in
+      if let empty = emptySearchResources(request) { return empty }
       switch request.url?.path {
       case "/api/chat-threads/snapshot":
         if failing.withLock({ $0 }) {
@@ -450,9 +455,48 @@ final class ChatSearchUnreadTests: XCTestCase {
     XCTAssertNil(store.search.openingError)
   }
 
+  func testWorkflowsLoadOnceWithoutBuiltInsAndArtifactsFollowTheQuery() async throws {
+    let workflowLoads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/workflows":
+        workflowLoads.withLock { $0 += 1 }
+        return ChatHTTPResponse(
+          body: """
+            [{"id":"w1","agentId":"a","name":"brand-design","displayName":"Brand Design","description":"Posters","official":null},
+             {"id":"w2","agentId":"a","name":"built-in","displayName":null,"description":null,"official":{"readOnly":true}}]
+            """)
+      case "/api/artifacts/catalog":
+        XCTAssertEqual(query(request, "keyword"), "brand")
+        return ChatHTTPResponse(
+          body: """
+            {"artifacts":[{"id":"x","kind":"hosted-site","title":"Brand site","thumbnail":null,"aliasUrl":"https://brand.sites.vm0.io"},
+                          {"id":"y","kind":"shared-thread","title":"Shared chat","thumbnail":null,"sharedThreadId":"s"}],
+             "nextCursor":null}
+            """)
+      default:
+        return ChatHTTPResponse(body: "{\"results\":[]}")
+      }
+    }
+    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    defer { search.close() }
+    search.present()
+    try await waitForBusinessResult { !search.isLoadingWorkflows }
+    XCTAssertEqual(search.workflows.map(\.id), ["w1"])
+    search.updateQuery("brand")
+    try await waitForBusinessResult { !search.isLoadingArtifacts && !search.isLoading }
+    // A shared conversation is left out: the app cannot open it.
+    XCTAssertEqual(search.artifacts.map(\.title), ["Brand site"])
+    XCTAssertEqual(search.workflows.map(\.id), ["w1"])
+    search.updateQuery("nothing like it")
+    XCTAssertTrue(search.workflows.isEmpty)
+    XCTAssertEqual(workflowLoads.withLock { $0 }, 1)
+  }
+
   func testEmptyDeniedFailedAndRetriedMessageSearch() async throws {
     let attempt = Mutex(0)
     let fixture = ChatHTTPFixture { request in
+      if let empty = emptySearchResources(request) { return empty }
       switch query(request, "keyword") {
       case "empty": return ChatHTTPResponse(body: "{\"results\":[]}")
       case "denied":
@@ -539,6 +583,16 @@ private func query(_ request: URLRequest, _ name: String) -> String? {
     .queryItems?.first { $0.name == name }?.value
 }
 
+/// Search also lists workflows and asks the artifact catalog; the fixtures answer both with
+/// nothing, so each test exercises only the message search it is about.
+private func emptySearchResources(_ request: URLRequest) -> ChatHTTPResponse? {
+  switch request.url?.path {
+  case "/api/workflows": ChatHTTPResponse(body: "[]")
+  case "/api/artifacts/catalog": ChatHTTPResponse(body: "{\"artifacts\":[],\"nextCursor\":null}")
+  default: nil
+  }
+}
+
 private func searchResponse(content: String) -> ChatHTTPResponse {
   let range = (content as NSString).range(of: "needle")
   let start = range.location == NSNotFound ? 0 : range.location
@@ -589,6 +643,7 @@ private final class SearchUnreadFixture: Sendable {
     let state = LockedState()
     self.state = state
     http = ChatHTTPFixture { [state] request in
+      if let empty = emptySearchResources(request) { return empty }
       let path = request.url?.path ?? ""
       switch path {
       case "/api/agents":

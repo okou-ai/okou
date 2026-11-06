@@ -67,6 +67,7 @@ private struct WorkspaceSignInView: View {
   let authentication: AuthenticationService
   let webURL: URL
   @State private var actionError: String?
+  @State private var confirmsSignOut = false
 
   var body: some View {
     ViewThatFits(in: .vertical) {
@@ -135,16 +136,17 @@ private struct WorkspaceSignInView: View {
           await authentication.refresh()
         }
       }
-      Button("Sign out") {
-        Task {
-          do {
-            try await authentication.signOut()
-          } catch {
-            actionError = error.localizedDescription
+      Button("Sign out") { confirmsSignOut = true }
+        .buttonStyle(OkouButtonStyle(isPrimary: false))
+        .signOutConfirmation(isPresented: $confirmsSignOut) {
+          Task {
+            do {
+              try await authentication.signOut()
+            } catch {
+              actionError = error.localizedDescription
+            }
           }
         }
-      }
-      .buttonStyle(OkouButtonStyle(isPrimary: false))
     }
     .frame(maxWidth: .infinity, alignment: .leading)
   }
