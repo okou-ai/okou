@@ -3,6 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -27,6 +28,7 @@ function setupEmojiPage(threadTitle = "Emoji planning"): Promise<void> {
   return setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
 }
 

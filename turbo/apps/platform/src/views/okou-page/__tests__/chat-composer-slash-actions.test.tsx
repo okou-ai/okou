@@ -365,7 +365,9 @@ test("The keyboard enters an action's choices and leaves them again", async () =
 test("On a narrow screen an action's choices replace the first level", async () => {
   context.mocks.browser.matchMedia(false);
   const user = userEvent.setup();
-  await openSlashActions();
+  await openSlashActions({
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+  });
   await waitFor(() => {
     return menuButton("Effort");
   });

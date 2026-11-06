@@ -1,8 +1,15 @@
-//! Canonical JSON fixture bytes without repeated encoding of invariant fields.
+//! Strict JSON snapshots and canonical fixture bytes.
 
 use serde::Serialize;
 use serde_json::Value;
 use std::io::{self, Write};
+
+/// Parse a complete, ordered JSONL snapshot without skipping invalid records.
+/// Empty text yields an empty snapshot; blank or malformed lines return the
+/// first Serde error. Line endings follow [`str::lines`].
+pub fn parse_json_lines(text: &str) -> Result<Vec<Value>, serde_json::Error> {
+    text.lines().map(serde_json::from_str).collect()
+}
 
 pub struct JsonFieldTemplate {
     prefix: Vec<u8>,

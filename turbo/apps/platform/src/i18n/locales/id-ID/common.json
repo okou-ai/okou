@@ -1430,6 +1430,8 @@
   },
   "browserViewer": {
     "address": "Alamat",
+    "addressOpening": "Halaman masih dibuka. Coba lagi sebentar lagi.",
+    "addressPreparing": "Browser belum siap. Coba lagi sebentar lagi.",
     "allTabs": "Semua tab",
     "automatic": "Otomatis",
     "back": "Kembali",
@@ -2000,7 +2002,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Proses ini tidak dapat diselesaikan",
-      "loadMessages": "Gagal memuat pesan",
       "noModelProviderAction": "Kelola langganan",
       "noModelProviderPrefix": "Tidak ada penyedia model yang tersedia untuk eksekusi ini. Hubungkan langganan pribadi.",
       "providerIncompatibleAction": "Mulai sesi baru",

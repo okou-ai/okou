@@ -1,4 +1,5 @@
 use super::*;
+use cli_test_support::json_fixture::parse_json_lines;
 
 use std::sync::Mutex;
 
@@ -118,10 +119,7 @@ async fn close_for_upload_keeps_prequeued_row_when_drain_budget_is_exhausted() {
     assert_eq!(observation.drain_status("dns"), "acknowledged");
     assert!(!observation.writer_failed());
     let content = std::fs::read_to_string(&path).unwrap();
-    let rows: Vec<serde_json::Value> = content
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
+    let rows: Vec<serde_json::Value> = parse_json_lines(&content).unwrap();
     assert_eq!(rows, vec![row]);
     assert!(
         !manager
@@ -194,10 +192,7 @@ async fn close_for_upload_keeps_ready_row_when_drain_ends() {
             other => panic!("unexpected terminal drain: {other:?}"),
         }
         let content = std::fs::read_to_string(&path).unwrap();
-        let rows: Vec<serde_json::Value> = content
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect();
+        let rows: Vec<serde_json::Value> = parse_json_lines(&content).unwrap();
         assert_eq!(rows, vec![row]);
         assert!(
             !manager

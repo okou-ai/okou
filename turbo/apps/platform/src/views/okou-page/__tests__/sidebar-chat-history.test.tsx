@@ -108,6 +108,7 @@ test.each([false, true])(
     await setupSidebarPage({
       context,
       path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
     });
 
     click(screen.getByLabelText("Open menu"));
@@ -161,6 +162,7 @@ test("Toggle the mobile chat list from its title with pointer and keyboard", asy
   await setupSidebarPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
 
   click(screen.getByLabelText("Open menu"));
@@ -1368,6 +1370,7 @@ test("Mark all of an agent’s chats read", async () => {
   await setupSidebarPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
 
   click(screen.getByLabelText("Open menu"));

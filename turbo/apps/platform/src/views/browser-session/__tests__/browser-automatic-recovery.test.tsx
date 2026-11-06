@@ -195,6 +195,185 @@ test("The refined panel shows a non-blocking recovery status without a reclaim f
   expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
 });
 
+test.each([false, true])(
+  "Local address editing survives recovery (binding replaced=%s)",
+  async (replace) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    const address = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Address",
+    });
+    await fill(address, "kept.example/path");
+    await userEvent.keyboard("{Home}{ArrowRight}");
+    act(() => {
+      viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    await pendingRecovery();
+    expect(address).toBeEnabled();
+    expect(address).toHaveFocus();
+    await userEvent.keyboard("x{Enter}");
+    expect(address).toHaveValue("kxept.example/path");
+    if (replace) {
+      viewer.replaceBinding();
+    }
+    viewer.advance(1000);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(address).toHaveFocus();
+    expect(address.selectionStart).toBe(2);
+    expect(address).toHaveValue("kxept.example/path");
+    expect(viewer.browser.targets[0]?.url).toBe("https://original.example");
+    expect(viewer.browser.targets[2]?.url).toBe("https://sibling.example");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue(
+        replace ? "kxept.example/path" : "http://kxept.example/path",
+      );
+    });
+    expect(viewer.browser.targets[0]?.url).toBe(
+      replace ? "https://original.example" : "http://kxept.example/path",
+    );
+    expect(viewer.browser.targets[2]?.url).toBe("https://sibling.example");
+    await userEvent.keyboard("{Escape}");
+    expect(address).toHaveValue(
+      replace ? "https://sibling.example" : "http://kxept.example/path",
+    );
+  },
+);
+
+test("A clean address selection survives binding replacement and releases on blur", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  const address = screen.getByLabelText<HTMLInputElement>("Address");
+  await userEvent.click(address);
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await pendingRecovery();
+  viewer.replaceBinding();
+  viewer.advance(1000);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("https://original.example");
+  expect(address.selectionStart).toBe(2);
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).toHaveValue("https://sibling.example");
+  await fill(address, "chosen.example/path");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://chosen.example/path");
+  });
+  expect(viewer.browser.targets[0]?.url).toBe("https://original.example");
+  expect(viewer.browser.targets[2]?.url).toBe("http://chosen.example/path");
+});
+
+test("A submitted address can start a fresh selection after connection recovery", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  const navigation = viewer.browser.holdNext("Page.navigate");
+  const address = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "Address",
+  });
+  await fill(address, "submitted.example/path");
+  await userEvent.keyboard("{Enter}");
+  await navigation.received;
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await pendingRecovery();
+  viewer.advance(1000);
+  await ready("http://submitted.example/path");
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  await userEvent.click(address);
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  const proof = viewer.browser.holdNextMembership("example-page");
+  act(() => {
+    viewer.browser.duplicate("example-page");
+  });
+  await proof.received;
+  expect(address).toHaveValue("http://submitted.example/path");
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(2);
+  await act(async () => {
+    await proof.release();
+  });
+  await ready("http://submitted.example/path");
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(2);
+});
+
+test.each([false, true])(
+  "Interacting with a recovered submission cannot transfer it to an automatic successor (type=%s)",
+  async (type) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    const navigation = viewer.browser.holdNext("Page.navigate");
+    const address = screen.getByLabelText("Address");
+    await fill(address, "submitted.example/path");
+    await userEvent.keyboard("{Enter}");
+    await navigation.received;
+    act(() => {
+      viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    await pendingRecovery();
+    act(() => {
+      viewer.browser.move("example-page", 202);
+    });
+    viewer.advance(1000);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(
+        screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+    });
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    await userEvent.click(address);
+    if (type) {
+      await userEvent.keyboard("{Home}x");
+    }
+    await userEvent.keyboard("{Enter}");
+    expect(address).toHaveValue(
+      type ? "xsubmitted.example/path" : "submitted.example/path",
+    );
+    expect(viewer.browser.targets[1]?.url).toBe("https://other.example");
+  },
+);
+
+test("An address first edited during recovery stays bound to the restored tab", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  act(() => {
+    viewer.browser.disconnect({ code: 1006, wasClean: false });
+  });
+  await pendingRecovery();
+  const membership = viewer.browser.holdNextMembership("example-page");
+  viewer.advance(1000);
+  await membership.received;
+  const address = screen.getByLabelText("Address");
+  await fill(address, "during-recovery.example/path");
+  await userEvent.keyboard("{Enter}");
+  await act(async () => {
+    await membership.release();
+  });
+  await ready("during-recovery.example/path");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://during-recovery.example/path");
+  });
+  expect(viewer.browser.targets[0]?.url).toBe(
+    "http://during-recovery.example/path",
+  );
+});
+
 test("Automatic connection recovery survives transient descriptors and restores the selected scoped tab", async () => {
   const viewer = mockViewer();
   await viewer.start();

@@ -29,6 +29,9 @@ import {
   type ConnectorCatalogFirewallRouting,
 } from "@okouai/connectors/connector-catalog/artifacts/relationships";
 
+import { singleton } from "../../lib/singleton";
+import type { ExternalCatalogIdentity } from "./connector-catalog-view";
+
 const POLICY_VALUES = ["allow", "deny", "ask"] as const;
 const DEFAULT_FIREWALL_SECRET_PLACEHOLDER =
   "c0ffee5afe10ca1c0ffee5afe10ca1c0ffee5afe";
@@ -130,12 +133,42 @@ type ConnectorServerFirewallSource = Pick<
 interface AcceptedConnectorServerFirewallEntry {
   readonly connector: ConnectorServerFirewallSource;
   readonly runtimeMethods: () => readonly ConnectorAuthMethodRuntimeConfig[];
+  readonly permissionIndexes:
+    Map<ConnectorSlug, ConnectorServerFirewallPermissionIndex> | undefined;
   firewall: AcceptedServerFirewall | undefined;
   routing: ConnectorCatalogFirewallRouting | undefined;
   permissionIndex: ConnectorServerFirewallPermissionIndex | undefined;
   executionMetadata: ConnectorServerFirewallExecutionMetadata | undefined;
   routingIndexMetadata: ConnectorServerFirewallRoutingIndexMetadata | undefined;
   routingMetadata: ConnectorServerFirewallRoutingMetadata | undefined;
+}
+
+const permissionIndexCache = singleton(
+  (): {
+    key: string | undefined;
+    indexes: Map<ConnectorSlug, ConnectorServerFirewallPermissionIndex>;
+  } => {
+    return { key: undefined, indexes: new Map() };
+  },
+);
+
+function permissionIndexesForCatalog(
+  identity: ExternalCatalogIdentity,
+): Map<ConnectorSlug, ConnectorServerFirewallPermissionIndex> {
+  const key = JSON.stringify([
+    identity.sourceId,
+    identity.schemaVersion,
+    identity.catalogDigest,
+    identity.capabilityDigest,
+  ]);
+  const cache = permissionIndexCache();
+  if (cache.key !== key) {
+    cache.key = key;
+    // Keep one generation. In-flight selections retain their captured map and
+    // cannot publish an old index into a later generation.
+    cache.indexes = new Map();
+  }
+  return cache.indexes;
 }
 
 export interface FirewallRoutingRouteMetadata {
@@ -421,6 +454,7 @@ function acceptedRoutingMetadata(args: {
 
 function acceptedEntries(args: {
   readonly connectors: readonly ConnectorServerFirewallSource[];
+  readonly catalogIdentity: ExternalCatalogIdentity | undefined;
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];
@@ -429,6 +463,9 @@ function acceptedEntries(args: {
     ConnectorSlug,
     AcceptedConnectorServerFirewallEntry
   >();
+  const permissionIndexes = args.catalogIdentity
+    ? permissionIndexesForCatalog(args.catalogIdentity)
+    : undefined;
   for (const connector of args.connectors) {
     if (connector.firewall.kind === "none") {
       continue;
@@ -440,6 +477,7 @@ function acceptedEntries(args: {
     }
     entries.set(connector.slug, {
       connector,
+      permissionIndexes,
       runtimeMethods: () => {
         return args.runtimeMethodsForSlug(connector.slug);
       },
@@ -495,11 +533,15 @@ function acceptedEntryRouting(
 function acceptedEntryPermissionIndex(
   entry: AcceptedConnectorServerFirewallEntry,
 ): ConnectorServerFirewallPermissionIndex {
-  if (entry.permissionIndex !== undefined) {
-    return entry.permissionIndex;
+  const cached =
+    entry.permissionIndex ?? entry.permissionIndexes?.get(entry.connector.slug);
+  if (cached !== undefined) {
+    entry.permissionIndex = cached;
+    return cached;
   }
   const permissionIndex = acceptedPermissionIndex(acceptedEntryFirewall(entry));
   entry.permissionIndex = permissionIndex;
+  entry.permissionIndexes?.set(entry.connector.slug, permissionIndex);
   return permissionIndex;
 }
 
@@ -590,12 +632,14 @@ export function createAcceptedConnectorServerFirewallCatalog(args: {
 
 export function createAcceptedConnectorServerFirewallCatalogFromConnectors(args: {
   readonly connectors: readonly ConnectorServerFirewallSource[];
+  readonly catalogIdentity?: ExternalCatalogIdentity;
   readonly runtimeMethodsForSlug: (
     connectorSlug: ConnectorSlug,
   ) => readonly ConnectorAuthMethodRuntimeConfig[];
 }): ConnectorServerFirewallCatalog {
   const entries = acceptedEntries({
     connectors: args.connectors,
+    catalogIdentity: args.catalogIdentity,
     runtimeMethodsForSlug: args.runtimeMethodsForSlug,
   });
   const connectorSlugs = [...entries.keys()].sort(compareStrings);

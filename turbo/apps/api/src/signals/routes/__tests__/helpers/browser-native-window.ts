@@ -38,6 +38,8 @@ export function createNativeWindowProvider(context: TestContext) {
       readonly sessionId?: string;
     }[];
     connections: number;
+    disconnect?: "connection" | "window-bounds";
+    windowBoundsResult?: unknown;
     beforeNativeWindowReply?: (windowId: number) => Promise<void> | void;
     afterNativeWindowReply?: (windowId: number) => Promise<void> | void;
     beforeCloseWindowReply?: (windowId: number) => Promise<void> | void;
@@ -202,6 +204,10 @@ export function createNativeWindowProvider(context: TestContext) {
   });
   const handler = ws.link(url).addEventListener("connection", ({ client }) => {
     state.connections++;
+    if (state.disconnect === "connection") {
+      client.close(1011, "Private provider connection failure");
+      return;
+    }
     const sendResult = (
       id: number,
       result: unknown,
@@ -317,6 +323,10 @@ export function createNativeWindowProvider(context: TestContext) {
       const windowId = Number(command.params.windowId);
       await state.beforeNativeWindowReply?.(windowId);
       context.signal.throwIfAborted();
+      if (state.disconnect === "window-bounds") {
+        client.close(1011, "Private provider command failure");
+        return true;
+      }
       if (state.windowBoundsError) {
         client.send(
           JSON.stringify({ id: command.id, error: state.windowBoundsError }),
@@ -326,19 +336,21 @@ export function createNativeWindowProvider(context: TestContext) {
       const error = state.nativeWindowErrors.get(windowId) ?? state.windowError;
       sendResult(
         command.id,
-        error
-          ? new Error(error)
-          : windowInfo(windowId, false)
-            ? {
-                bounds: {
-                  left: 0,
-                  top: 0,
-                  width: 800,
-                  height: 600,
-                  windowState: "normal",
-                },
-              }
-            : new Error("Browser window not found"),
+        state.windowBoundsResult !== undefined
+          ? state.windowBoundsResult
+          : error
+            ? new Error(error)
+            : windowInfo(windowId, false)
+              ? {
+                  bounds: {
+                    left: 0,
+                    top: 0,
+                    width: 800,
+                    height: 600,
+                    windowState: "normal",
+                  },
+                }
+              : new Error("Browser window not found"),
       );
       return true;
     };

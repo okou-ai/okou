@@ -223,19 +223,20 @@ struct ChatSidebarView: View {
   }
 
   private var threadSection: some View {
-    Section {
+    let showsStatusColumn = usesStatusColumn(visibleThreads)
+    return Section {
       threadMenu
       if threadFilter.wrappedValue == .recent {
         ForEach(recentGroups) { group in
           groupHeading(group.title)
           ForEach(Array(group.threads.enumerated()), id: \.element.id) { index, thread in
             threadRow(
-              thread, waveIndex: index, showsStatusColumn: usesStatusColumn(visibleThreads))
+              thread, waveIndex: index, showsStatusColumn: showsStatusColumn)
           }
         }
       } else {
         ForEach(visibleThreads) { thread in
-          threadRow(thread, showsStatusColumn: usesStatusColumn(visibleThreads))
+          threadRow(thread, showsStatusColumn: showsStatusColumn)
         }
       }
     }

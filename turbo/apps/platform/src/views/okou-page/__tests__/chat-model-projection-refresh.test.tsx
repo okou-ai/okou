@@ -6,6 +6,7 @@ import type {
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
 import { runModelsMainContract } from "@okouai/api-contracts/contracts/run-models";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -67,6 +68,7 @@ async function openChat(
     context,
     path: NEW_CHAT_PATH,
     sharedWorkerTestTransport: transport,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
   await expect(
     composerModelTrigger("GPT 5.6 Sol"),

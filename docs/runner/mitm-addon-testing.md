@@ -29,9 +29,24 @@ export PATH="$HOME/.local/bin:$PATH"
 uv --version
 ```
 
-Ensure Python 3.15.1 is installed and discoverable before syncing. The pinned uv
-release predates its interpreter download metadata and cannot bootstrap it by
-itself; CI provisions the interpreter with `actions/setup-python`.
+The pinned uv release can provision the interpreter declared in `.python-version`
+when syncing. To install it explicitly before syncing:
+
+```bash
+uv python install "$(cat .python-version)"
+```
+
+CI provisions the declared interpreter with `actions/setup-python` and executes
+tests through the locked uv environment. Ordinary addon tests verify the actual
+test interpreter and Python tool targets against `.python-version`; the packaged
+suite independently compares that pin with the real frozen mitmproxy runtime.
+Python upgrades must follow that embedded interpreter, including its patch
+version. uv is pinned by `[tool.uv].required-version`, currently 0.13.7; upgrading
+it does not require upgrading the locked runtime dependencies.
+
+Keep the template uv pin aligned with the addon requirement; ordinary tests
+reject drift. Sandbox Python remains managed by Ubuntu packages independently
+of the addon's frozen mitmproxy runtime.
 
 Create or update the local environment from the committed lockfile:
 

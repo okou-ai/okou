@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.3](https://github.com/okou-ai/okou/compare/ios-v0.27.2...ios-v0.27.3) (2026-11-06)
+
+
+### Refactoring
+
+* remove chat thread archiving and muting feature switches ([#45680](https://github.com/okou-ai/okou/issues/45680)) ([4183b2f](https://github.com/okou-ai/okou/commit/4183b2f44fb472a38962c5ad3124939bb11b5cdc))
+
 ## [0.27.2](https://github.com/okou-ai/okou/compare/ios-v0.27.1...ios-v0.27.2) (2026-11-06)
 
 

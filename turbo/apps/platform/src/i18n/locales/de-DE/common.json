@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "Adresse",
+    "addressOpening": "Eine Seite wird noch geöffnet. Versuche es gleich noch einmal.",
+    "addressPreparing": "Der Browser ist noch nicht bereit. Versuche es gleich noch einmal.",
     "allTabs": "Alle Tabs",
     "automatic": "Automatisch",
     "back": "Zurück",
@@ -2007,7 +2009,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Dieser Lauf konnte nicht abgeschlossen werden",
-      "loadMessages": "Nachrichten konnten nicht geladen werden",
       "noModelProviderAction": "Abonnements verwalten",
       "noModelProviderPrefix": "Für diese Ausführung ist kein Modellanbieter verfügbar. Verbinde ein persönliches Abonnement.",
       "providerIncompatibleAction": "Starten Sie eine neue Sitzung",

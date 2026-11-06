@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "पता",
+    "addressOpening": "एक पेज अभी खुल रहा है। थोड़ी देर बाद फिर कोशिश करें।",
+    "addressPreparing": "ब्राउज़र अभी तैयार नहीं है। थोड़ी देर बाद फिर कोशिश करें।",
     "allTabs": "सभी टैब",
     "automatic": "अपने आप",
     "back": "पीछे",
@@ -2007,7 +2009,6 @@
     "documentTitle": "चैट",
     "errors": {
       "genericTitle": "यह रन पूरा नहीं हो सका",
-      "loadMessages": "संदेश लोड करने में विफल",
       "noModelProviderAction": "सब्सक्रिप्शन प्रबंधित करें",
       "noModelProviderPrefix": "इस रन के लिए कोई मॉडल प्रोवाइडर उपलब्ध नहीं है। कोई व्यक्तिगत सब्सक्रिप्शन कनेक्ट करें।",
       "providerIncompatibleAction": "नया सत्र प्रारंभ करें",

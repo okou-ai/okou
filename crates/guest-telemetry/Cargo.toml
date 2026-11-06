@@ -1,6 +1,6 @@
 [package]
 name = "guest-telemetry"
-version = "0.3.187"
+version = "0.3.188"
 edition.workspace = true
 
 [features]
@@ -14,6 +14,7 @@ serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
 tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]

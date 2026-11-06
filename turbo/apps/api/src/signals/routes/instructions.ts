@@ -5,9 +5,13 @@ import {
 } from "@okouai/api-contracts/contracts/instructions";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import {
+  SINGLE_AGENT_SEED_INSTRUCTIONS,
+  SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE,
+} from "@okouai/core/seed-instructions";
 import { instructions } from "@okouai/db/schema/instructions";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { conflict, resourceUnavailable } from "../../lib/error";
 import { nowDate } from "../../lib/time";
@@ -19,7 +23,6 @@ import { db$, writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
 import type { RouteEntry } from "../route-entry";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
-import { initializePersonalInstructions$ } from "../services/personal-instructions.service";
 import { publishContentBundle$ } from "../services/content-bundle.service";
 
 const personalModeAllowed$ = command(
@@ -56,6 +59,17 @@ const personalModeAllowed$ = command(
   },
 );
 
+// Members follow the default until their first save. A changed default is a
+// new version, so drafts based on the previous default become stale.
+const DEFAULT_VERSION = `default-${SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE.sha256}`;
+const STALE_VERSION =
+  "Instructions changed; reload the saved version before saving";
+
+interface PersonalScope {
+  readonly orgId: string;
+  readonly userId: string;
+}
+
 function response(row: typeof instructions.$inferSelect): InstructionsResponse {
   return {
     orgId: row.orgId,
@@ -66,6 +80,31 @@ function response(row: typeof instructions.$inferSelect): InstructionsResponse {
   };
 }
 
+function defaultResponse(scope: PersonalScope): InstructionsResponse {
+  return {
+    ...scope,
+    content: SINGLE_AGENT_SEED_INSTRUCTIONS,
+    // Never saved; the epoch keeps the existing response contract.
+    updatedAt: new Date(0).toISOString(),
+    version: DEFAULT_VERSION,
+  };
+}
+
+const savedInstructions$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const [row] = await get(db$)
+    .select()
+    .from(instructions)
+    .where(
+      and(
+        eq(instructions.orgId, auth.orgId),
+        eq(instructions.userId, auth.userId),
+      ),
+    )
+    .limit(1);
+  return row;
+});
+
 const readInstructions$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await set(personalModeAllowed$, signal))) {
     return resourceUnavailable(
@@ -73,12 +112,14 @@ const readInstructions$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   const auth = get(organizationAuthContext$);
-  const row = await set(
-    initializePersonalInstructions$,
-    { orgId: auth.orgId, userId: auth.userId },
-    signal,
-  );
-  return { status: 200 as const, body: response(row) };
+  const row = await get(savedInstructions$);
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: row
+      ? response(row)
+      : defaultResponse({ orgId: auth.orgId, userId: auth.userId }),
+  };
 });
 
 const updateBody$ = bodyResultOf(instructionsContract.update);
@@ -96,14 +137,14 @@ const updateInstructions$ = command(
       return body.response;
     }
     const scope = { orgId: auth.orgId, userId: auth.userId };
-    const current = await set(initializePersonalInstructions$, scope, signal);
+    const { ifVersion } = body.data;
+    const saved = await get(savedInstructions$);
+    signal.throwIfAborted();
     if (
-      body.data.ifVersion !== undefined &&
-      body.data.ifVersion !== current.version
+      ifVersion !== undefined &&
+      ifVersion !== (saved?.version ?? DEFAULT_VERSION)
     ) {
-      return conflict(
-        "Instructions changed; reload the saved version before saving",
-      );
+      return conflict(STALE_VERSION);
     }
     const bundle = await set(
       publishContentBundle$,
@@ -115,30 +156,48 @@ const updateInstructions$ = command(
       ],
       signal,
     );
-    // Omitted ifVersion explicitly means unconditional replacement.
-    const [updated] = await set(writeDb$)
-      .update(instructions)
-      .set({
-        content: body.data.content,
-        bundle,
-        version: randomUUID(),
-        updatedAt: nowDate(),
-      })
-      .where(
-        and(
-          eq(instructions.orgId, scope.orgId),
-          eq(instructions.userId, scope.userId),
-          body.data.ifVersion === undefined
-            ? undefined
-            : eq(instructions.version, body.data.ifVersion),
-        ),
-      )
-      .returning();
+    const values = {
+      content: body.data.content,
+      bundle,
+      version: randomUUID(),
+      updatedAt: nowDate(),
+    };
+    const database = set(writeDb$);
+    const owner = [instructions.orgId, instructions.userId];
+    let rows: (typeof instructions.$inferSelect)[];
+    if (saved) {
+      // Omitted ifVersion explicitly means unconditional replacement.
+      rows = await database
+        .update(instructions)
+        .set(values)
+        .where(
+          and(
+            eq(instructions.orgId, scope.orgId),
+            eq(instructions.userId, scope.userId),
+            ifVersion === undefined
+              ? undefined
+              : eq(instructions.version, ifVersion),
+          ),
+        )
+        .returning();
+    } else if (ifVersion === undefined) {
+      rows = await database
+        .insert(instructions)
+        .values({ ...scope, ...values })
+        .onConflictDoUpdate({ target: owner, set: values })
+        .returning();
+    } else {
+      // The first save forks from the default; a concurrent first save wins.
+      rows = await database
+        .insert(instructions)
+        .values({ ...scope, ...values })
+        .onConflictDoNothing({ target: owner })
+        .returning();
+    }
     signal.throwIfAborted();
+    const [updated] = rows;
     if (!updated) {
-      return conflict(
-        "Instructions changed; reload the saved version before saving",
-      );
+      return conflict(STALE_VERSION);
     }
     await publishUserSignal([auth.userId], "personalInstructionsChanged");
     signal.throwIfAborted();

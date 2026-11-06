@@ -1455,6 +1455,8 @@
   },
   "browserViewer": {
     "address": "Dirección",
+    "addressOpening": "Todavía se está abriendo una página. Inténtalo de nuevo en un momento.",
+    "addressPreparing": "El navegador aún no está listo. Inténtalo de nuevo en un momento.",
     "allTabs": "Todas las pestañas",
     "automatic": "Automática",
     "back": "Atrás",
@@ -2038,7 +2040,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "No se pudo completar esta ejecución",
-      "loadMessages": "No se pudieron cargar los mensajes",
       "noModelProviderAction": "Gestionar suscripciones",
       "noModelProviderPrefix": "No hay ningún proveedor de modelos disponible para esta ejecución. Conecta una suscripción personal.",
       "providerIncompatibleAction": "Empieza una nueva sesión",

@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadArchiveContract,
   chatThreadMuteContract,
@@ -11,7 +12,6 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -29,7 +29,10 @@ const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 async function setupHeaderPage(
   threadEvents: readonly ChatThreadEvent[] = [],
-  featureSwitches: Partial<Record<FeatureSwitchKey, boolean>> = {},
+  options: {
+    readonly pwaNavigation?: boolean;
+    readonly singleAgent?: boolean;
+  } = {},
 ) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -70,7 +73,14 @@ async function setupHeaderPage(
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches,
+    featureSwitches: {
+      ...(options.pwaNavigation === undefined
+        ? {}
+        : { [FeatureSwitchKey.PwaNavigation]: options.pwaNavigation }),
+      ...(options.singleAgent === undefined
+        ? {}
+        : { [FeatureSwitchKey.SingleAgent]: options.singleAgent }),
+    },
   });
   await screen.findByText("Review the header layout");
   await waitFor(() => {
@@ -167,7 +177,7 @@ test("Keep menu pin changes responsive across resize and save", async () => {
       return respond(204);
     },
   );
-  await setupHeaderPage(events);
+  await setupHeaderPage(events, { pwaNavigation: false });
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));
@@ -226,7 +236,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
       ],
     });
   });
-  await setupHeaderPage();
+  await setupHeaderPage([], { pwaNavigation: false });
   await waitFor(() => {
     expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
   });
@@ -295,9 +305,7 @@ test.each([
         return respond(204);
       },
     );
-    await setupHeaderPage(events, {
-      [FeatureSwitchKey.SingleAgent]: singleAgent,
-    });
+    await setupHeaderPage(events, { singleAgent });
     click(buttonNamed("More actions"));
     await screen.findByRole("menu");
     click(menuItemNamed("Archive chat"));
@@ -605,7 +613,7 @@ test("Continue saving the next pin change after an earlier request fails", async
   context.mocks.api(chatThreadUnpinContract.unpin, ({ respond }) => {
     return respond(500, { error: { message: "Unpin request failed" } });
   });
-  await setupHeaderPage();
+  await setupHeaderPage([], { pwaNavigation: false });
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));

@@ -1455,6 +1455,8 @@
   },
   "browserViewer": {
     "address": "Indirizzo",
+    "addressOpening": "Una pagina è ancora in apertura. Riprova tra poco.",
+    "addressPreparing": "Il browser non è ancora pronto. Riprova tra poco.",
     "allTabs": "Tutte le schede",
     "automatic": "Automatica",
     "back": "Indietro",
@@ -2038,7 +2040,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Non è stato possibile completare questa esecuzione",
-      "loadMessages": "Impossibile caricare i messaggi",
       "noModelProviderAction": "Gestisci abbonamenti",
       "noModelProviderPrefix": "Nessun provider di modelli è disponibile per questa esecuzione. Collega un abbonamento personale.",
       "providerIncompatibleAction": "Inizia una nuova sessione",

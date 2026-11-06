@@ -1,6 +1,7 @@
 //! Real subprocess coverage for initialization failure diagnostics and ownership.
 
 use crate::common;
+use cli_test_support::json_fixture::parse_json_lines;
 
 use std::collections::HashMap;
 use std::os::unix::fs::PermissionsExt;
@@ -191,10 +192,7 @@ async fn backend_retains_masked_bounded_initialize_stderr() -> TestResult {
         assert!(!stderr.contains(secret));
         assert!(!stderr.contains('\n'));
         let requests = std::fs::read_to_string(root.path().join("requests"))?;
-        let requests: Vec<serde_json::Value> = requests
-            .lines()
-            .map(serde_json::from_str)
-            .collect::<Result<_, _>>()?;
+        let requests: Vec<serde_json::Value> = parse_json_lines(&requests)?;
         assert_eq!(requests.len(), 1);
         assert_eq!(requests[0]["method"], "initialize");
     }

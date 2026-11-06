@@ -31,14 +31,10 @@ import {
   useSet,
   useLastLoadable,
   useLastResolved,
-  type Loadable,
 } from "ccstate-react";
 import type { TFunction } from "i18next";
 import { equalArrays } from "../../lib/equality.ts";
-import {
-  chatThreadDateDividers,
-  type ChatDateDivider,
-} from "../../lib/chat-thread-date-dividers.ts";
+import type { ChatDateDivider } from "../../lib/chat-thread-date-dividers.ts";
 import { useTranslation } from "react-i18next";
 import {
   formatAppNumber,
@@ -200,22 +196,28 @@ import {
   closeChatConnectorActionConnectDialog$,
 } from "../../signals/chat-page/connector-action-block.ts";
 import {
+  asInputChatEvent,
   chatEventDisplayError,
+  isInputChatEvent,
   isRenderableAssistantEvent,
+  isWorkflowUserMessage,
+  rendersUserBubble,
 } from "../../signals/chat-page/chat-event-display.ts";
 import {
-  buildRunWorkFolding,
-  runWorkExpandedKeys$,
-  runWorkExpandedKeysForScrollTarget,
-  runWorkSectionForGroup,
+  fastModeEnabled,
+  type RunModelChange,
+} from "../../signals/chat-page/run-model-changes.ts";
+import {
   toggleRunWorkExpanded$,
-  type RunWorkFolding,
   type RunWorkSection,
 } from "../../signals/chat-page/run-work-folding.ts";
 import {
-  chatEventGroupKeys,
-  chatEventRenderKey,
-} from "../../signals/chat-page/chat-event-group-keys.ts";
+  idleRunFinished$,
+  idleThinkingIndicatorsShown$,
+  splitQueuedEventsForThinkingIndicator,
+  type ChatThreadRowSignals,
+} from "../../signals/chat-page/chat-thread-rows.ts";
+import { chatEventRenderKey } from "../../signals/chat-page/chat-event-group-keys.ts";
 import { chatGroupForSharing } from "../../signals/chat-page/chat-thread-sharing.ts";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
 import { useConnectorAccountLabel } from "./components/settings/use-connector-account-label.ts";
@@ -276,10 +278,7 @@ import {
   type UserMessageRenderDocument,
   type UserMessageRenderPart,
 } from "../../signals/chat-page/chat-event.ts";
-import type {
-  ChatInputEvent,
-  ChatEvent,
-} from "../../signals/chat-page/chat-event-types.ts";
+import type { ChatInputEvent } from "../../signals/chat-page/chat-event-types.ts";
 import { optimisticEventIds$ } from "../../signals/chat-page/optimistic-chat-events.ts";
 import {
   AUTO_SELECTED_MODEL,
@@ -418,61 +417,6 @@ function isUserMessageHiddenPart(
   return isUserMessageNonContentPart(part) || part.type === "model";
 }
 
-function isInputChatEvent(event: ChatEvent): event is ChatInputEvent {
-  return (
-    event.eventType === "input.prompt" ||
-    event.eventType === "input.automation" ||
-    event.eventType === "input.rejected"
-  );
-}
-
-function asInputChatEvent(event: ChatEvent): ChatInputEvent | undefined {
-  return isInputChatEvent(event) ? event : undefined;
-}
-
-function modelSelectionFromUserMessage(
-  document: UserMessageDocument | undefined,
-): ChatRunModelSelection | undefined {
-  const modelPart = document?.parts.find((part) => {
-    return part.type === "model";
-  });
-  return modelPart?.type === "model"
-    ? {
-        selectedModel: modelPart.selectedModel,
-        ...(modelPart.serviceTier === undefined
-          ? {}
-          : { serviceTier: modelPart.serviceTier }),
-      }
-    : undefined;
-}
-
-function modelChangeRunKey(
-  inputEvent: ChatInputEvent,
-  modelSelection: ChatRunModelSelection | undefined,
-): string | undefined {
-  if (inputEvent.runId !== undefined) {
-    return `run:${inputEvent.runId}`;
-  }
-  if (modelSelection !== undefined) {
-    return `event:${inputEvent.id}`;
-  }
-  return undefined;
-}
-
-type RunModelChange =
-  | {
-      readonly kind: "model";
-      readonly selection: ChatRunModelSelection;
-    }
-  | {
-      readonly kind: "fast-mode";
-      readonly enabled: boolean;
-    };
-
-function fastModeEnabled(selection: ChatRunModelSelection): boolean {
-  return selection.serviceTier === "priority";
-}
-
 function runModelDisplayName(
   t: TFunction<"common">,
   selection: ChatRunModelSelection,
@@ -488,55 +432,6 @@ function runModelDisplayName(
         { model },
       )
     : model;
-}
-
-function modelChangesByEventId(
-  groups: readonly ChatEventGroup[],
-): ReadonlyMap<string, RunModelChange> {
-  const changes = new Map<string, RunModelChange>();
-  let previousRunKey: string | undefined;
-  let previousSelection: ChatRunModelSelection | undefined;
-  let hasPreviousRun = false;
-
-  for (const group of groups) {
-    for (const event of group.events) {
-      const inputEvent = asInputChatEvent(event);
-      if (inputEvent === undefined) {
-        continue;
-      }
-      const selection = modelSelectionFromUserMessage(inputEvent.userMessage);
-      const runKey = modelChangeRunKey(inputEvent, selection);
-      if (runKey === undefined || runKey === previousRunKey) {
-        continue;
-      }
-      if (
-        hasPreviousRun &&
-        previousSelection !== undefined &&
-        selection !== undefined
-      ) {
-        if (
-          !sameSelectedModel(
-            selection.selectedModel,
-            previousSelection.selectedModel,
-          )
-        ) {
-          changes.set(event.id, { kind: "model", selection });
-        } else if (
-          fastModeEnabled(selection) !== fastModeEnabled(previousSelection)
-        ) {
-          changes.set(event.id, {
-            kind: "fast-mode",
-            enabled: fastModeEnabled(selection),
-          });
-        }
-      }
-      previousRunKey = runKey;
-      previousSelection = selection;
-      hasPreviousRun = true;
-    }
-  }
-
-  return changes;
 }
 
 function userMessageNonContentPart(
@@ -3009,19 +2904,6 @@ export function ChatThreadPage() {
   );
 }
 
-function resolveSessionError(
-  renderedGroupsReadyLoadable: Loadable<boolean>,
-): string | null {
-  if (renderedGroupsReadyLoadable.state === "hasError") {
-    return renderedGroupsReadyLoadable.error instanceof Error
-      ? renderedGroupsReadyLoadable.error.message
-      : i18n.t(($) => {
-          return $.chat.errors.loadMessages;
-        });
-  }
-  return null;
-}
-
 function renderedChatEventKeys(
   groups: readonly ChatEventGroup[],
 ): readonly string[] {
@@ -3045,11 +2927,10 @@ function chatGroupsContainEvent(
 
 function ChatThreadScrollCommitMarker({
   thread,
-  renderedGroups,
 }: {
   thread: ChatPanelSignals;
-  renderedGroups: ChatEventGroup[] | undefined;
 }) {
+  const renderedGroups = useLastResolved(thread.visibleRenderedChatGroups$);
   const readyScrollRequestLoadable = useLoadable(
     thread.readyScrollAfterRenderRequest$,
   );
@@ -3115,40 +2996,16 @@ const DEFAULT_THINKING_INDICATORS: ThinkingIndicators = Object.freeze({
 
 type RunStatusRow = "thinking-indicators" | "finished";
 
-// A status tail event (such as a run error) replaces the status row.
+// Only the row holding the status row reads the run's status. A status tail
+// event (such as a run error) leaves no row holding it.
 function runStatusRow(
-  runWorkFolding: RunWorkFolding | null,
   thinkingIndicatorsShown: boolean,
   runFinished: boolean,
 ): RunStatusRow | undefined {
-  if (runWorkFolding?.statusTail?.events.length) {
-    return undefined;
-  }
   if (thinkingIndicatorsShown) {
     return "thinking-indicators";
   }
   return runFinished ? "finished" : undefined;
-}
-
-// The status row belongs to the run's work anchor group, otherwise to the
-// latest assistant turn.
-function statusRowAssistantGroupId(
-  groups: readonly ChatEventGroup[],
-  runWorkFolding: RunWorkFolding | null,
-): string | null {
-  const anchorEventId = runWorkFolding?.statusTail?.anchorEventId;
-  if (anchorEventId !== undefined) {
-    const anchorGroup = groups.find((group) => {
-      return group.events.some((event) => {
-        return event.id === anchorEventId;
-      });
-    });
-    if (anchorGroup !== undefined) {
-      return anchorGroup.beginEventId;
-    }
-  }
-  const lastGroup = groups.at(-1);
-  return lastGroup?.role === "assistant" ? lastGroup.beginEventId : null;
 }
 
 function ChatThreadRenderedEventGroups({
@@ -3156,74 +3013,20 @@ function ChatThreadRenderedEventGroups({
 }: {
   thread: ChatPanelSignals;
 }) {
-  const resolvedRenderedGroups = useLastResolved(
-    thread.visibleRenderedChatGroups$,
-  );
-  const renderedGroups = resolvedRenderedGroups ?? [];
-  const { activeGroups: renderedActiveGroups } =
-    splitQueuedEventsForThinkingIndicator(renderedGroups);
-  const modelChanges = modelChangesByEventId(renderedActiveGroups);
-  const scrollTargetEventId =
-    useGet(thread.threadScrollPosition$)?.targetEventId ?? null;
-  const runWorkFolding = buildRunWorkFolding(renderedActiveGroups);
-  const runWorkExpandedKeys = useGet(runWorkExpandedKeys$);
-  const effectiveRunWorkExpandedKeys = runWorkExpandedKeysForScrollTarget(
-    runWorkFolding,
-    runWorkExpandedKeys,
-    scrollTargetEventId,
-  );
-  const toggleRunWorkExpanded = useSet(toggleRunWorkExpanded$);
-  const visibleGroups = runWorkFolding?.visibleGroups ?? renderedActiveGroups;
-  // Before the first result, or when the summary request fails, show the
-  // default thinking row. A resolved false means the thread is idle.
-  const thinkingIndicatorsShown =
-    useLastResolved(thread.thinkingIndicatorsShown$) ?? true;
-  const runFinished = useLastResolved(thread.runFinished$) ?? false;
-  const statusRow = runStatusRow(
-    runWorkFolding,
-    thinkingIndicatorsShown,
-    runFinished,
-  );
-  const statusRowGroupId =
-    statusRow === undefined
-      ? null
-      : statusRowAssistantGroupId(visibleGroups, runWorkFolding);
-
+  const rows = useGet(thread.visibleRows$);
   return withChatScrollLayout(
     <>
-      <ChatThreadEventGroups
-        thread={thread}
-        groups={visibleGroups}
-        modelChanges={modelChanges}
-        runWorkFolding={runWorkFolding}
-        runWorkExpandedKeys={effectiveRunWorkExpandedKeys}
-        onToggleRunWork={toggleRunWorkExpanded}
-        statusRow={statusRow}
-        statusRowGroupId={statusRowGroupId}
-      />
-      <ChatThreadScrollCommitMarker
-        thread={thread}
-        renderedGroups={resolvedRenderedGroups}
-      />
+      {rows.map((row) => {
+        return (
+          <ChatThreadRow
+            key={row.model$.toString()}
+            row={row}
+            thread={thread}
+          />
+        );
+      })}
+      <ChatThreadScrollCommitMarker thread={thread} />
     </>,
-  );
-}
-
-function ChatThreadSessionError({ thread }: { thread: ChatPanelSignals }) {
-  const renderedGroupsReadyLoadable = useLastLoadable(
-    thread.visibleRenderedChatGroupsReady$,
-  );
-  const sessionError = resolveSessionError(renderedGroupsReadyLoadable);
-  if (!sessionError) {
-    return null;
-  }
-  return (
-    <div className="flex-1 flex items-center justify-center py-16">
-      <div className="flex items-center gap-2 text-destructive">
-        <AlertCircle size={16} />
-        <p className="text-sm">{sessionError}</p>
-      </div>
-    </div>
   );
 }
 
@@ -3253,15 +3056,7 @@ function ChatThreadEmptyState({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
-  const initialEventsReady = useGet(thread.initialEventsReady$);
-  const renderedGroupsReady = useLastLoadable(
-    thread.visibleRenderedChatGroupsReady$,
-  );
-  const showTranscript =
-    renderedGroupsReady.state === "hasError" ||
-    (initialEventsReady &&
-      renderedGroupsReady.state === "hasData" &&
-      renderedGroupsReady.data);
+  const showTranscript = useGet(thread.initialEventsReady$);
   const scrollContentOnRef = useSet(thread.scrollContentOnRef$);
 
   return withChatScrollLayout(
@@ -3275,7 +3070,6 @@ function ChatThreadEventsMain({ thread }: { thread: ChatPanelSignals }) {
           !showTranscript && "invisible",
         )}
       >
-        <ChatThreadSessionError thread={thread} />
         <ChatThreadEmptyState thread={thread} />
         <ChatThreadRenderedEventGroups thread={thread} />
         <ChatThreadNextRunModelNotice thread={thread} />
@@ -3342,38 +3136,15 @@ function ChatThreadNextRunModelNotice({
   return withChatScrollLayout(<RunSectionDividerRow label={label} announce />);
 }
 
-// An assistant group whose events are all bookkeeping — a run's terminal event,
-// usage — puts nothing on screen, so it must not break a stack of user
-// messages that visually sit right on top of each other.
-function groupRendersContent(
-  group: ChatEventGroup,
-  runWorkSection: RunWorkSection | null,
-): boolean {
-  if (runWorkSection !== null) {
-    return true;
-  }
-  if (group.role === "user") {
-    return group.events.some(rendersUserBubble);
-  }
-  return group.events.some(isRenderableAssistantEvent);
-}
-
-// A user group can be on screen for its fold alone, with every message in it
-// rendering as a card or as nothing, and there is no bubble to stack against.
-function groupHasUserBubble(group: ChatEventGroup): boolean {
-  return group.events.some(rendersUserBubble);
-}
-
 function createRunWorkSectionControl(
   section: RunWorkSection | null,
-  expandedKeys: ReadonlySet<string>,
+  expanded: boolean,
   onToggle: (key: string) => void,
 ): RunWorkSectionControl | undefined {
   if (section === null) {
     return undefined;
   }
   const { key, ...control } = section;
-  const expanded = expandedKeys.has(key);
   return {
     ...control,
     expanded,
@@ -3388,95 +3159,65 @@ function createRunWorkSectionControl(
   };
 }
 
-function ChatThreadEventGroups({
+// One transcript row. It renders again only when its own row model, folded
+// work state or run status changes; the list renders for added, removed or
+// reordered rows.
+function ChatThreadRow({
+  row,
   thread,
-  groups,
-  modelChanges,
-  runWorkFolding,
-  runWorkExpandedKeys,
-  onToggleRunWork,
-  statusRow,
-  statusRowGroupId,
 }: {
+  row: ChatThreadRowSignals;
   thread: ChatPanelSignals;
-  groups: readonly ChatEventGroup[];
-  modelChanges: ReadonlyMap<string, RunModelChange>;
-  runWorkFolding: RunWorkFolding | null;
-  runWorkExpandedKeys: ReadonlySet<string>;
-  onToggleRunWork: (key: string) => void;
-  statusRow: RunStatusRow | undefined;
-  statusRowGroupId: string | null;
 }) {
-  const { i18n: translation } = useTranslation();
-  const timelineEvents = groups.flatMap((group) => {
-    const section = runWorkSectionForGroup(runWorkFolding, group);
-    if (!groupRendersContent(group, section)) {
-      return [];
-    }
-    if (group.role === "user") {
-      return group.events;
-    }
-    const firstVisibleEvent =
-      group.events.find(isRenderableAssistantEvent) ?? group.events[0];
-    return firstVisibleEvent === undefined ? [] : [firstVisibleEvent];
-  });
-  const dateDividers = chatThreadDateDividers(
-    timelineEvents,
-    translation.resolvedLanguage ?? translation.language,
-  );
-  // A run that ends re-forms the groups around it, so the messages the user
-  // sent back to back can land in separate groups with nothing rendered in
-  // between. Tracking the last group that actually put something on screen
-  // keeps the stack from springing open the moment a run finishes.
-  let previousVisibleGroup: ChatEventGroup | undefined;
-  const groupKeys = chatEventGroupKeys(groups, runWorkFolding);
-
+  const {
+    group,
+    runWorkSection,
+    statusTailEvents,
+    stackFirstOnPrevious,
+    holdsStatusRow,
+    dateDividers,
+    modelChanges,
+  } = useGet(row.model$);
+  const runWorkExpanded = useGet(row.runWorkExpanded$);
+  const toggleRunWorkExpanded = useSet(toggleRunWorkExpanded$);
+  // Before the first result, or when the summary request fails, show the
+  // default thinking row. A resolved false means the thread is idle.
+  const thinkingIndicatorsShown =
+    useLastResolved(
+      holdsStatusRow
+        ? thread.thinkingIndicatorsShown$
+        : idleThinkingIndicatorsShown$,
+    ) ?? true;
+  const runFinished =
+    useLastResolved(holdsStatusRow ? thread.runFinished$ : idleRunFinished$) ??
+    false;
+  const statusRow = holdsStatusRow
+    ? runStatusRow(thinkingIndicatorsShown, runFinished)
+    : undefined;
+  const firstAssistantEvent =
+    group.events.find(isRenderableAssistantEvent) ?? group.events[0];
+  const assistantDate =
+    group.role === "assistant" && firstAssistantEvent !== undefined
+      ? dateDividers.get(firstAssistantEvent.id)
+      : undefined;
   return (
-    <>
-      {groups.map((group, index) => {
-        const runWorkSection = runWorkSectionForGroup(runWorkFolding, group);
-        const firstAssistantEvent =
-          group.events.find(isRenderableAssistantEvent) ?? group.events[0];
-        const assistantDate =
-          group.role === "assistant" && firstAssistantEvent !== undefined
-            ? dateDividers.get(firstAssistantEvent.id)
-            : undefined;
-        const stackFirstOnPrevious =
-          previousVisibleGroup !== undefined &&
-          previousVisibleGroup.role === "user" &&
-          groupHasUserBubble(previousVisibleGroup);
-        if (groupRendersContent(group, runWorkSection)) {
-          previousVisibleGroup = group;
-        }
-        const groupStatusRow =
-          group.beginEventId === statusRowGroupId ? statusRow : undefined;
-        return (
-          <div key={groupKeys[index]} className="contents">
-            {assistantDate ? (
-              <ChatThreadDateDivider divider={assistantDate} />
-            ) : null}
-            <SelectablePagedGroupRow
-              group={group}
-              thread={thread}
-              modelChanges={modelChanges}
-              stackFirstOnPrevious={stackFirstOnPrevious}
-              dateDividers={dateDividers}
-              runWorkSection={createRunWorkSectionControl(
-                runWorkSection,
-                runWorkExpandedKeys,
-                onToggleRunWork,
-              )}
-              statusRow={groupStatusRow}
-              statusTailEvents={runWorkFolding?.statusTail?.events.filter(
-                (event) => {
-                  return group.events.includes(event);
-                },
-              )}
-            />
-          </div>
-        );
-      })}
-    </>
+    <div className="contents">
+      {assistantDate ? <ChatThreadDateDivider divider={assistantDate} /> : null}
+      <SelectablePagedGroupRow
+        group={group}
+        thread={thread}
+        modelChanges={modelChanges}
+        stackFirstOnPrevious={stackFirstOnPrevious}
+        dateDividers={dateDividers}
+        runWorkSection={createRunWorkSectionControl(
+          runWorkSection,
+          runWorkExpanded,
+          toggleRunWorkExpanded,
+        )}
+        statusRow={statusRow}
+        statusTailEvents={statusTailEvents}
+      />
+    </div>
   );
 }
 
@@ -4047,13 +3788,8 @@ function ScrollToBottomButton({ thread }: { thread: ChatPanelSignals }) {
   const awayFromBottom = useGet(thread.awayFromBottom$);
   const scrollToBottom = useSet(thread.scrollToBottom$);
   const pageSignal = useGet(pageSignal$);
-  const renderedGroupsReadyLoadable = useLastLoadable(
-    thread.visibleRenderedChatGroupsReady$,
-  );
-  const sessionError = resolveSessionError(renderedGroupsReadyLoadable);
-  const skeletonVisible = renderedGroupsReadyLoadable.state === "loading";
 
-  if (!awayFromBottom || skeletonVisible || sessionError) {
+  if (!awayFromBottom) {
     return null;
   }
 
@@ -4247,52 +3983,6 @@ function RecommendedFollowupList({
       })}
     </div>
   );
-}
-
-function splitQueuedEventsForThinkingIndicator(groups: ChatEventGroup[]): {
-  activeGroups: ChatEventGroup[];
-  queuedGroups: ChatEventGroup[];
-} {
-  const activeGroups: ChatEventGroup[] = [];
-  const queuedEvents: EnrichedChatEvent[] = [];
-
-  for (const group of groups) {
-    if (group.role !== "user") {
-      activeGroups.push(group);
-      continue;
-    }
-
-    const activeEvents: EnrichedChatEvent[] = [];
-    for (const event of group.events) {
-      if (event.isQueued) {
-        queuedEvents.push(event);
-      } else {
-        activeEvents.push(event);
-      }
-    }
-
-    if (activeEvents.length > 0) {
-      activeGroups.push({
-        ...group,
-        beginEventId: activeEvents[0]!.id,
-        events: activeEvents,
-      });
-    }
-  }
-
-  return {
-    activeGroups,
-    queuedGroups:
-      queuedEvents.length > 0
-        ? [
-            {
-              beginEventId: queuedEvents[0]!.id,
-              role: "user",
-              events: queuedEvents,
-            },
-          ]
-        : [],
-  };
 }
 
 function ChatThreadComposer({ thread }: { thread: ChatPanelSignals }) {
@@ -6628,20 +6318,6 @@ function PagedUserGroup({
         );
       })}
     </>
-  );
-}
-
-// A user event does not always render as a bubble: a workflow run renders as
-// its own card.
-function rendersUserBubble(event: EnrichedChatEvent): boolean {
-  return !isWorkflowUserMessage(event);
-}
-
-function isWorkflowUserMessage(
-  event: EnrichedChatEvent,
-): event is EnrichedChatEvent & ChatInputEvent {
-  return (
-    isInputChatEvent(event) && eventNonContentPart(event)?.type === "automation"
   );
 }
 

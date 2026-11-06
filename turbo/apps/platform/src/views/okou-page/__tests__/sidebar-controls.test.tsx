@@ -36,6 +36,7 @@ import {
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   fill,
@@ -114,6 +115,7 @@ test("Navigate pinned agents from the mobile sidebar", async () => {
   await setupSidebarPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
   click(screen.getByLabelText("Open menu"));
 
@@ -159,7 +161,11 @@ test.each([
     mockMobileLayout();
     prepareDefaultAgent();
     context.mocks.browser.open();
-    await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
+    await setupSidebarPage({
+      context,
+      path: `/agents/${AGENT_ID}/chat`,
+      featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+    });
     click(screen.getByLabelText("Open menu"));
     await waitFor(() => {
       expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
@@ -536,6 +542,7 @@ test.each(["agent", "thread"] as const)(
       context,
       path: "/agents",
       sharedWorkerTestTransport: "message-port",
+      featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
     });
     click(screen.getByLabelText("Open menu"));
 
@@ -595,6 +602,7 @@ test.each(["thread list", "read cursor"] as const)(
       context,
       path: "/agents",
       sharedWorkerTestTransport: "message-port",
+      featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
     });
     click(screen.getByLabelText("Open menu"));
     const threadLink = () => {
@@ -669,7 +677,11 @@ test.each([false, true])(
 
     // The direct transport runs the production Worker handler synchronously,
     // so the entire burst is delivered before releasing the in-flight fetch.
-    await setupSidebarPage({ context, path: "/agents" });
+    await setupSidebarPage({
+      context,
+      path: "/agents",
+      featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
+    });
     click(screen.getByLabelText("Open menu"));
     const threadLink = () => {
       return threadLinkByTitle("Burst conversation", mobileSidebar());

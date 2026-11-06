@@ -187,31 +187,6 @@ export function runWorkSectionForGroup(
   );
 }
 
-export function runWorkExpandedKeysForScrollTarget(
-  folding: RunWorkFolding | null,
-  expandedKeys: ReadonlySet<string>,
-  targetEventId: string | null,
-): ReadonlySet<string> {
-  if (folding === null || targetEventId === null) {
-    return expandedKeys;
-  }
-  const targetSection = Array.from(
-    folding.sectionsByAnchorEventId.values(),
-  ).find((section) => {
-    return section.hiddenGroups.some((group) => {
-      return group.events.some((event) => {
-        return event.id === targetEventId;
-      });
-    });
-  });
-  if (!targetSection || expandedKeys.has(targetSection.key)) {
-    return expandedKeys;
-  }
-  const next = new Set(expandedKeys);
-  next.add(targetSection.key);
-  return next;
-}
-
 function groupEventsByRole(
   events: readonly EnrichedChatEvent[],
 ): ChatEventGroup[] {

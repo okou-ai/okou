@@ -1432,6 +1432,8 @@
   },
   "browserViewer": {
     "address": "Address",
+    "addressOpening": "A page is still opening. Try again shortly.",
+    "addressPreparing": "The browser is not ready. Try again shortly.",
     "allTabs": "All tabs",
     "automatic": "Automatic",
     "back": "Back",
@@ -2007,7 +2009,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "This run couldn't finish",
-      "loadMessages": "Failed to load messages",
       "noModelProviderAction": "Manage subscriptions",
       "noModelProviderPrefix": "No model provider is available for this run. Connect a personal subscription.",
       "providerIncompatibleAction": "Start a new session",
