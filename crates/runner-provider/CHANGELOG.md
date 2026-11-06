@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.16.20](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.19...runner-provider-v0.16.20) (2026-11-06)
+
+
+### Bug Fixes
+
+* restore x connector skill claims across rolling deployments ([#45749](https://github.com/okou-ai/okou/issues/45749)) ([1f7157d](https://github.com/okou-ai/okou/commit/1f7157da70b987ac0d98274a333003a61fd75c91))
+* **runner:** accept single-character skill bundle names ([#45746](https://github.com/okou-ai/okou/issues/45746)) ([28abc7b](https://github.com/okou-ai/okou/commit/28abc7bf886d180768dfd065bbef021b34c8993f))
+
 ## [0.16.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.18...runner-provider-v0.16.19) (2026-11-06)
 
 ## [0.16.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.17...runner-provider-v0.16.18) (2026-11-06)
