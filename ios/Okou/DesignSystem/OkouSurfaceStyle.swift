@@ -77,7 +77,7 @@ extension View {
       .presentationBackground(OkouGroupedColor.background)
       // One row height for every grouped sheet, so single-row cards match and rows do not
       // set heights of their own.
-      .environment(\.defaultMinListRowHeight, OkouControl.listRow)
+      .environment(\.defaultMinListRowHeight, OkouControl.groupedRow)
   }
 }
 

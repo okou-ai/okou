@@ -193,7 +193,7 @@ struct ComposerConnectorSheet: View {
       .labelsHidden().disabled(store.isSaving || store.uncertain)
       .accessibilityLabel("Allow \(connector.label) for this Agent")
     }
-    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+    .listRowInsets(.vertical, OkouSpace.xs)
   }
 
   private func rowAction(

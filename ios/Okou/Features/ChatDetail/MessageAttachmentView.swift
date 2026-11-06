@@ -2,7 +2,6 @@ import ChatData
 import ChatDomain
 import QuickLook
 import SwiftUI
-import UniformTypeIdentifiers
 
 struct MessageAttachmentView: View {
   let attachment: ChatMessageAttachment
@@ -34,65 +33,35 @@ struct MessageAttachmentView: View {
     attachment.contentType.hasPrefix("image/") || attachment.contentType.hasPrefix("video/")
   }
 
+  /// The attachment in a result's terms, so a file reads the same whether the user or the
+  /// agent added it ("Slides · PPTX · 2 MB").
+  private var result: ChatArtifact {
+    ChatArtifact(
+      source: .file(attachment.downloadID), filename: attachment.filename,
+      contentType: attachment.contentType, size: attachment.size)
+  }
+
+  private var preview: OkouPreviewState {
+    if let thumbnail { return .image(thumbnail) }
+    if thumbnailFailed { return .placeholder(icon: "circle-arrow-down") }
+    return .loading
+  }
+
   var body: some View {
+    // The same shapes as a result in the transcript: a picture is a fixed tile, a file is the
+    // result card's header.
     Button {
       viewer.open(attachment)
     } label: {
-      VStack(alignment: .leading, spacing: OkouSpace.md) {
-        if isMedia {
-          ZStack {
-            Rectangle().fill(OkouColor.stateHover)
-            if let thumbnail {
-              Image(uiImage: thumbnail).resizable().scaledToFit()
-            } else if thumbnailFailed {
-              if !attachment.contentType.hasPrefix("video/") {
-                OkouIcon("circle-arrow-down", size: OkouIconSize.mediaOverlay).foregroundStyle(
-                  OkouColor.mutedForeground)
-              }
-            } else {
-              ProgressView().accessibilityLabel("Loading thumbnail")
-            }
-            if attachment.contentType.hasPrefix("video/") {
-              OkouIcon("circle-play", size: OkouIconSize.mediaOverlay)
-                .foregroundStyle(OkouMediaColor.foreground)
-                .background(OkouMediaColor.scrim.opacity(0.5), in: Circle())
-            }
-            if let thumbnailMessage {
-              VStack {
-                Spacer()
-                Text(thumbnailMessage).font(.okou(.caption)).foregroundStyle(
-                  OkouColor.mutedForeground
-                )
-                .multilineTextAlignment(.center).lineLimit(3).padding(OkouSpace.md)
-              }
-            }
-          }
-          .frame(height: OkouControl.cardMediaHeight).clipped().clipShape(
-            RoundedRectangle(cornerRadius: OkouRadius.control))
-        }
-        // The same heading and trailing chevron as a result card: a file in the transcript
-        // reads the same whether the user or the agent added it.
-        HStack(spacing: OkouSpace.sm) {
-          ChatCardHeader(
-            title: attachment.filename, icon: isMedia ? "image" : "file", titleLineLimit: 2
-          ) {
-            Text(metadata).lineLimit(1)
-          }
-          OkouIcon("chevron-right", size: OkouIconSize.inline)
-            .foregroundStyle(OkouColor.mutedForeground)
-        }
+      if isMedia {
+        OkouResultTile(state: preview, isVideo: attachment.contentType.hasPrefix("video/"))
+      } else {
+        OkouResultCard(title: attachment.filename, detail: result.subtitle, icon: result.symbol)
       }
-      .padding(.horizontal, OkouSpace.lg)
-      .padding(.vertical, OkouSpace.md)
-      .frame(maxWidth: .infinity, alignment: .leading)
-      .modifier(ChatCardSurface())
-      .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityLabel("Preview \(attachment.filename)")
-    .accessibilityHint(
-      thumbnailMessage ?? metadata
-    )
+    .accessibilityHint(thumbnailMessage ?? result.subtitle)
     .accessibilityIdentifier("message-attachment-\(attachment.id)")
     .task(id: loadKey) {
       guard loadsThumbnail, isMedia else { return }
@@ -111,15 +80,6 @@ struct MessageAttachmentView: View {
             : MessageAttachmentStore.message(for: error))
       }
     }
-  }
-
-  private var metadata: String {
-    let type =
-      UTType(mimeType: attachment.contentType)?.localizedDescription ?? attachment.contentType
-    if let size = attachment.size {
-      return "\(type) · \(ByteCountFormatter.string(fromByteCount: Int64(size), countStyle: .file))"
-    }
-    return type
   }
 }
 

@@ -217,7 +217,7 @@ struct PermissionActionDetails: View {
           .accessibilityIdentifier("permission-duration")
         }
         .font(.okou(.body))
-        .frame(minHeight: OkouControl.listRow)
+        .frame(minHeight: OkouControl.groupedRow)
         .padding(.horizontal, OkouSpace.lg)
         .modifier(OkouSurfaceStyle())
       }

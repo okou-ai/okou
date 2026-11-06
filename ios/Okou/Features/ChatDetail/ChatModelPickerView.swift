@@ -389,11 +389,15 @@ struct ChatModelPickerView: View {
           OkouIcon("check")
         }
       }
-      .frame(minHeight: OkouControl.minimumTarget - OkouSpace.md)
+      // The whole row is the button: no system padding above or below, the label takes the
+      // grouped row's height itself, so a model row is as tall as Thinking effort under it;
+      // the system keeps its side insets, so the text starts on the same edge.
+      .padding(.vertical, OkouSpace.sm)
+      .frame(minHeight: OkouControl.groupedRow)
       .contentShape(Rectangle())
     }
     .buttonStyle(ModelChoiceButtonStyle())
-    .listRowInsets(EdgeInsets(top: 8, leading: 16, bottom: 8, trailing: 16))
+    .listRowInsets(.vertical, 0)
     .disabled(!row.isConfigurable || selection.isBusy || selection.uncertain)
     .accessibilityIdentifier("chat-model-\(row.id)")
     .accessibilityAddTraits(row.selectedModel == selection.selection.model ? [.isSelected] : [])

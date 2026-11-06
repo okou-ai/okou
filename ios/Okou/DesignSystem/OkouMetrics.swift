@@ -38,6 +38,9 @@ enum OkouControl {
   static let readableWidth: CGFloat = 440
   /// Chat rows in the sidebar; agent rows add room for their avatar.
   static let listRow: CGFloat = 48
+  /// A row in a grouped card (Settings and every sheet): the height the system gives a row
+  /// with a 28 pt icon slot or a switch, so a row of text alone is no shorter beside it.
+  static let groupedRow: CGFloat = 52
   static let agentRow: CGFloat = 50
   /// Quiet icon actions inside content (message actions, row shortcuts); still a 44 pt wide target.
   static let inlineActionHeight: CGFloat = 36
@@ -74,6 +77,12 @@ enum OkouControl {
   static let logoTileLarge: CGFloat = 64
   /// The image or video preview at the top of a file or result card in the transcript.
   static let cardMediaHeight: CGFloat = 180
+  /// A picture in the transcript is a fixed tile, as the web's Markdown image (200 × 180).
+  static let mediaTileWidth: CGFloat = 200
+  /// A result card (website, slides, document): at most the web's 400 pt, with one 16:9
+  /// cover under its heading for every kind, so results in a chat line up.
+  static let resultWidth: CGFloat = 400
+  static let coverAspect: CGFloat = 16.0 / 9.0
   /// The "+" or chevron on a catalog card, inside a 44 pt target.
   static let addControl: CGFloat = 32
   /// A tile in a sideways media strip (Camera, a recent photo), and the pick mark on a photo.
@@ -118,6 +127,8 @@ enum OkouAvatarSize {
   /// The account and the workspace at the top of Settings: one size, the height of the
   /// account row's two lines.
   static let account: CGFloat = 40
+  /// A workspace in the workspace menu, beside its name.
+  static let menu: CGFloat = 28
 }
 
 enum OkouMotion {
@@ -135,7 +146,14 @@ enum OkouMotion {
   static let sidebarParallax: CGFloat = 0.25
   /// How much of the screen each page's leading edge fades over while the sidebar moves.
   static let sidebarFeather: CGFloat = 0.35
-  /// The web's `okou-skeleton-pulse`: one breath of a loading placeholder, and how far it dims.
+  /// A skeleton's shimmer: one sweep of the light across the group, the band's width as a
+  /// share of the group's, how much it lifts the grey, and its slant.
+  static let shimmer: Double = 1.6
+  static let shimmerBand: CGFloat = 0.4
+  static let shimmerStrength: Double = 0.6
+  static let shimmerSlant: Double = 12
+  /// The web's `okou-skeleton-pulse`, a skeleton's motion under Reduce Motion: one breath, and
+  /// how far it dims.
   static let skeletonPulse: Double = 2
   static let skeletonDim: Double = 0.7
   /// Web `--duration-running-indicator`; list rows trail by 1/12 of a cycle each.

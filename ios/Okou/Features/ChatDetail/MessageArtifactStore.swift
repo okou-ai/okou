@@ -29,6 +29,8 @@ final class MessageArtifactStore {
   struct Card: Sendable {
     let artifact: ChatArtifact
     let thumbnail: Data?
+    /// A website's own title, read while drawing its cover.
+    var title: String? = nil
   }
 
   private(set) var preview: Preview?
@@ -41,6 +43,8 @@ final class MessageArtifactStore {
   var apiURL: URL { service.apiURL }
   private let didFail: @MainActor (Error) -> Void
   private var catalog: [ChatArtifact]?
+  /// Covers drawn this visit, so a row scrolled back into view does not fetch its file again.
+  private var cards: [ChatArtifact.Source: Card] = [:]
   private var catalogTask: Task<[ChatArtifact], Error>?
   private var operations: [UUID: @MainActor () -> Void] = [:]
   private var previewTask: Task<Void, Never>?
@@ -64,11 +68,12 @@ final class MessageArtifactStore {
   }
 
   func card(_ resource: ChatArtifact, thumbnail: Bool) async throws -> Card {
+    if thumbnail, let card = cards[resource.id] { return card }
     try await loadCatalog()
     let artifact = metadata(resource)
     let service = service
     let webURL = webURL
-    return try await perform {
+    let card = try await perform {
       if thumbnail {
         let (resolved, file) = try await service.thumbnail(artifact, webURL: webURL)
         var data: Data?
@@ -81,12 +86,33 @@ final class MessageArtifactStore {
           let playback = try await service.resolve(resolved)
           data = try await ArtifactVideoPoster.shared.thumbnail(playback.contentURL)
         }
+        if data == nil, resolved.kind == .html {
+          // No server preview: draw the page's first screen, as the web's card shows the live
+          // page scaled into its frame.
+          let page = try await service.resolve(resolved)
+          let snapshot = await SitePreviewSnapshotter.shared.snapshot(page.contentURL)
+          return Card(artifact: resolved, thumbnail: snapshot?.image, title: snapshot?.title)
+        }
+        if data == nil, resolved.hasCover {
+          // No server preview: draw the first page or slide from the file itself, as Files
+          // does. A cover is a nicety, so a file too large or unreadable keeps the glyph.
+          if let (_, document) = try? await service.download(
+            resolved, maximumSize: Self.coverDownloadLimit)
+          {
+            data = await AttachmentFileImporter.shared.documentCover(document.url)
+          }
+        }
         return Card(artifact: resolved, thumbnail: data)
       }
       let resolved = try await service.resolve(artifact)
       return Card(artifact: resolved.artifact, thumbnail: nil)
     }
+    if thumbnail, card.thumbnail != nil { cards[resource.id] = card }
+    return card
   }
+
+  /// The largest file the transcript downloads only to draw its cover.
+  private static let coverDownloadLimit = 25 * 1024 * 1024
 
   func open(
     _ resource: ChatArtifact, images: [ChatArtifact] = [], imageSources: [String] = [],
@@ -312,6 +338,20 @@ final class MessageArtifactStore {
         didFail(error)
       }
       throw error
+    }
+  }
+
+  /// A result that cannot be shown however often the card retries — deleted, or not this
+  /// person's to see — in the few words a card's detail line holds. Nil for anything else.
+  static func cardStatus(for error: Error) -> String? {
+    var status = (error as? APIClientError)?.statusCode
+    if let transport = error as? APIClientError, case .downloadFailed(let code) = transport {
+      status = code
+    }
+    switch status {
+    case 404, 410: return String(localized: "No longer available")
+    case 403: return String(localized: "No access")
+    default: return nil
     }
   }
 
