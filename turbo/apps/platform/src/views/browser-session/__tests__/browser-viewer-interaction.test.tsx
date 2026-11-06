@@ -2854,6 +2854,59 @@ test("Rapid visibility changes retain the preview until original capture cleanup
   });
 });
 
+test.each(["original stop", "resume preparation"] as const)(
+  "A resume after a failed %s requires explicit recovery before accepting input",
+  async (failure) => {
+    const visibility = context.mocks.browser.visibilityState("visible");
+    const browser = await setupViewer(0);
+    if (failure === "original stop") {
+      browser.failNext("Page.stopScreencast", "Original stop failed");
+    }
+    const stop = browser.holdNext("Page.stopScreencast");
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await stop.received;
+    await screen.findByText("Viewing paused");
+    if (failure === "resume preparation") {
+      browser.failNext("Page.createIsolatedWorld", "Resume preparation failed");
+    }
+    act(() => {
+      visibility.changeTo("visible");
+      if (failure === "original stop") {
+        visibility.changeTo("hidden");
+        visibility.changeTo("visible");
+      }
+    });
+    await act(stop.release);
+    await screen.findByText("Browser view unavailable");
+    const retry = await waitFor(() => {
+      const name =
+        failure === "original stop" ? "Retry live image" : "Reconnect";
+      const button = queryAllByRoleFast("button").find((candidate) => {
+        return candidate.textContent?.trim() === name;
+      });
+      expect(button).toBeEnabled();
+      return button!;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await userEvent.click(retry);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await screen.findByText("Viewing paused");
+    act(() => {
+      visibility.changeTo("visible");
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+  },
+);
+
 test("A visibility pause preserves local address editing without queuing an early submission", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
   const browser = await setupViewer(0);
