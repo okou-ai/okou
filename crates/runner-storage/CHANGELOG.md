@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.8.33](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.32...runner-storage-v0.8.33) (2026-11-06)
+
+
+### Refactoring
+
+* **test-support:** share r2 multipart success fixtures ([#45548](https://github.com/okou-ai/okou/issues/45548)) ([0a1e96e](https://github.com/okou-ai/okou/commit/0a1e96ef1a37e190a58e4cc1803c2086a163c240))
+
 ## [0.8.32](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.31...runner-storage-v0.8.32) (2026-11-05)
 
 ## [0.8.31](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.30...runner-storage-v0.8.31) (2026-11-05)

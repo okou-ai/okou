@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.26.1](https://github.com/okou-ai/okou/compare/ios-v0.26.0...ios-v0.26.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ios:** initialize transcript before the first inset layout ([#45530](https://github.com/okou-ai/okou/issues/45530)) ([8620c89](https://github.com/okou-ai/okou/commit/8620c89476abcdd3d6a887e32543d6987472c12f))
+* **ios:** match voice input to plain composer actions ([#45538](https://github.com/okou-ai/okou/issues/45538)) ([f6350b7](https://github.com/okou-ai/okou/commit/f6350b77c29530e134e51d548ae017bc286395ad))
+* **ios:** remove native account deletion ([#45532](https://github.com/okou-ai/okou/issues/45532)) ([6239e04](https://github.com/okou-ai/okou/commit/6239e04de25d73fbcc173d51b52ef4c5c86d2c27))
+* **ios:** remove run log link from chat work history ([#45537](https://github.com/okou-ai/okou/issues/45537)) ([c360a30](https://github.com/okou-ai/okou/commit/c360a3065b172b66fee97bdce7d9c24abcf15141))
+
 ## [0.26.0](https://github.com/okou-ai/okou/compare/ios-v0.25.5...ios-v0.26.0) (2026-11-05)
 
 

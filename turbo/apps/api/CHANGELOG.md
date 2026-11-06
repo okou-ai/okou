@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.49.1](https://github.com/okou-ai/okou/compare/api-v2.49.0...api-v2.49.1) (2026-11-06)
+
+
+### Refactoring
+
+* **app:** stop passing view callbacks into platform commands ([#45452](https://github.com/okou-ai/okou/issues/45452)) ([8725c3b](https://github.com/okou-ai/okou/commit/8725c3b15d76e1bdf76b1421d22e7803a6c405cb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.1
+    * @okouai/core bumped to 8.819.1
+    * @okouai/db bumped to 2.23.1
+    * @okouai/pi-agent-runtime bumped to 1.51.73
+
 ## [2.49.0](https://github.com/okou-ai/okou/compare/api-v2.48.10...api-v2.49.0) (2026-11-05)
 
 
