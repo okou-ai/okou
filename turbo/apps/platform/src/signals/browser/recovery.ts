@@ -47,6 +47,7 @@ function reportFailure(
       error.request,
       {
         connection: error.connection,
+        window: error.window,
       },
     ),
     sentryLogContext({
@@ -63,6 +64,7 @@ function reportFailure(
           : {}),
         ...(error.bridge ? { browser_bridge: { ...error.bridge } } : {}),
         ...(error.http ? { browser_http: { ...error.http } } : {}),
+        ...(error.window ? { browser_window: { ...error.window } } : {}),
       },
     }),
   ]);

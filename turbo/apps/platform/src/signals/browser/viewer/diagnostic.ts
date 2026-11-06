@@ -66,6 +66,7 @@ export function diagnostic(error: unknown): ViewerError {
           : error.message,
       ...(error.request ? { request: error.request } : {}),
       ...(error.connection ? { connection: error.connection } : {}),
+      ...(error.window ? { window: error.window } : {}),
       ...(error.cause instanceof BrowserBridgeError
         ? { bridge: error.cause.diagnostics }
         : {}),
