@@ -776,7 +776,9 @@ export function mockBrowserCdp(
     let receivedSession: string | null = null;
     heldFrames.set(key, (sessionId) => {
       receivedSession = sessionId;
-      requested.resolve();
+      if (!requested.settled()) {
+        requested.resolve();
+      }
     });
     return {
       received: requested.promise,

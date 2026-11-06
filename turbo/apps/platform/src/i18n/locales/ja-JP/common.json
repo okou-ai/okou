@@ -1472,6 +1472,7 @@
     "unavailable": "ブラウザー画面を表示できません",
     "unsupportedCapability": "この操作はブラウザーでサポートされていません。",
     "untitledTab": "無題のタブ",
+    "updatingView": "画面を更新中…",
     "windowSize": "ウィンドウサイズ"
   },
   "chat": {

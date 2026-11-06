@@ -1497,6 +1497,7 @@
     "unavailable": "Vue du navigateur indisponible",
     "unsupportedCapability": "Le navigateur ne prend pas en charge cette opération.",
     "untitledTab": "Onglet sans titre",
+    "updatingView": "Actualisation de la vue…",
     "windowSize": "Taille de la fenêtre"
   },
   "chat": {

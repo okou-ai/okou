@@ -94,6 +94,7 @@ import {
   type CaptureSettings,
 } from "./capture.ts";
 import { createScreencast } from "./screencast.ts";
+import { createSelectedVisibility } from "./visibility.ts";
 import { createTargetDiscovery } from "./discovery.ts";
 import { readFavicon } from "./favicon.ts";
 import {
@@ -254,37 +255,47 @@ function createSessionReadiness(
   return { initialized$, painted$, phase$, usable$, transition$ };
 }
 
+interface SelectedSessionHost {
+  readonly waitForAdmission$: Command<
+    Promise<void>,
+    [SelectionOwner, AbortSignal]
+  >;
+  readonly sink: FrameSink;
+  readonly intent$: Computed<ViewerIntent>;
+  readonly directory: TargetDirectory;
+  readonly nativeHost: NativeInputHost;
+  readonly settings$: Computed<CaptureSettings>;
+  readonly failed$: Command<
+    Promise<void>,
+    [SelectionOwner, unknown, AbortSignal]
+  >;
+  readonly started$: Command<
+    void,
+    [SelectionOwner, CaptureSettings, AbortSignal]
+  >;
+  readonly sessionChanged$: Command<void, [SelectionOwner]>;
+}
+
 /** Published attachment identity is stable even while initialization is pending. */
 function createSelectedSession(
   attached: AttachedSelection,
   authority: SessionAuthority,
-  host: {
-    readonly waitForAdmission$: Command<
-      Promise<void>,
-      [SelectionOwner, AbortSignal]
-    >;
-    readonly sink: FrameSink;
-    readonly directory: TargetDirectory;
-    readonly nativeHost: NativeInputHost;
-    readonly settings$: Computed<CaptureSettings>;
-    readonly failed$: Command<
-      Promise<void>,
-      [SelectionOwner, unknown, AbortSignal]
-    >;
-    readonly started$: Command<
-      void,
-      [SelectionOwner, CaptureSettings, AbortSignal]
-    >;
-    readonly sessionChanged$: Command<void, [SelectionOwner]>;
-  },
+  host: SelectedSessionHost,
 ) {
   const { sink, directory, nativeHost, settings$, failed$, started$ } = host;
   const { alive$, admitted$ } = authority;
+  const presenting$ = state(true);
+  const active$ = computed((get) => {
+    return get(admitted$) && !get(host.intent$).paused && get(presenting$);
+  });
   const readiness = createSessionReadiness(
     attached.owner,
-    authority,
+    { alive$, admitted$: active$ },
     host.sessionChanged$,
   );
+  const invalidatePicture$ = command(({ set }) => {
+    set(readiness.transition$, "capture-pending");
+  });
   const waitForAdmission$ = command(async ({ set }, signal: AbortSignal) => {
     await set(host.waitForAdmission$, attached.owner, signal);
   });
@@ -297,7 +308,7 @@ function createSelectedSession(
   );
   const input = createInputSession(
     attached,
-    admitted$,
+    active$,
     geometry,
     nativeHost,
     navigation,
@@ -330,7 +341,7 @@ function createSelectedSession(
       sessionId: attached.frameSessionId,
       sink: frameLease.sink,
       alive$,
-      admitted$,
+      admitted$: active$,
       waitForAdmission$,
       painted$: readiness.painted$,
       failed$: captureFailed$,
@@ -349,7 +360,7 @@ function createSelectedSession(
     stream,
     captureFailed$,
   });
-  return {
+  const session = {
     attached,
     alive$,
     admitted$,
@@ -364,6 +375,13 @@ function createSelectedSession(
     waitForAdmission$,
     prepareRetry$,
     refresh$,
+  };
+  return {
+    ...session,
+    visibility: createSelectedVisibility(
+      { ...session, presenting$, invalidatePicture$ },
+      host.intent$,
+    ),
   };
 }
 type SelectedSession = ReturnType<typeof createSelectedSession>;
@@ -1271,11 +1289,13 @@ function createCaptureRecoveryGraph(
 function createSelectedSessionsGraph(
   context: ControllerContext<
     | "attachedState$"
-    | "available$"
+    | "authority$"
+    | "connected$"
     | "captureStartedState$"
     | "captureUpdated$"
     | "directory$"
     | "nativeHost"
+    | "model"
     | "selectedOwner$"
     | "settings$"
     | "sink"
@@ -1294,7 +1314,8 @@ function createSelectedSessionsGraph(
     attachedState$,
     captureStartedState$,
     captureUpdated$,
-    available$,
+    authority$,
+    connected$,
     settings$,
     directory$,
     nativeHost,
@@ -1322,7 +1343,11 @@ function createSelectedSessionsGraph(
       return null;
     }
     const alive$ = computed((get) => {
-      return get(available$) && get(selectedOwner$) === attached.owner;
+      return (
+        get(connected$) &&
+        get(authority$) &&
+        get(selectedOwner$) === attached.owner
+      );
     });
     const admitted$ = computed((get) => {
       const discovery = get(get(links$).discovery$);
@@ -1339,6 +1364,7 @@ function createSelectedSessionsGraph(
       {
         waitForAdmission$: get(links$).waitForAdmission$,
         sink,
+        intent$: context.model.intent$,
         directory,
         nativeHost,
         settings$,
@@ -1462,6 +1488,7 @@ function createDisplayGraph(
 function createCaptureGraph(
   context: ControllerContext<
     | "assertAvailable$"
+    | "available$"
     | "captureChange$"
     | "capturePending$"
     | "captureScheduled$"
@@ -1526,6 +1553,7 @@ function createCaptureGraph(
     const selected = get(get(links$).selectedSession$);
     const size = get(displaySize$);
     if (
+      !get(context.available$) ||
       !selected ||
       !get(selected.admitted$) ||
       !size ||
@@ -1771,6 +1799,7 @@ function createRetirementsGraph(
     ) => {
       const selected = get(get(links$).selectedSession$);
       if (selected) {
+        set(selected.visibility.cancel$);
         const image = get(model.imageRecovery$);
         const fence: Retirement = {
           owner: image?.owner ?? {},
@@ -2753,7 +2782,7 @@ function createSessionEvent(
 }
 
 function createScreencastEvent(
-  context: ControllerContext<"framesState$" | "framePresented$">,
+  context: ControllerContext<"framesState$" | "framePresented$" | "model">,
   links$: ControllerDependencies<"selectedSession$">,
 ) {
   const { framesState$ } = context;
@@ -2773,9 +2802,11 @@ function createScreencastEvent(
       );
     }
     if (
+      get(context.model.intent$).paused ||
       !selected ||
       source !== selected.attached.frames ||
       id !== selected.attached.frameSessionId ||
+      !get(selected.visibility.presenting$) ||
       !get(selected.stream.acceptingFrames$) ||
       typeof params.data !== "string"
     ) {
@@ -4247,6 +4278,7 @@ function createCrashedPageReload(
 function createNavigationGraph(
   context: ControllerContext<
     | "assertAvailable$"
+    | "available$"
     | "clientState$"
     | "crashed$"
     | "directory$"
@@ -4269,7 +4301,7 @@ function createNavigationGraph(
   });
   const history$ = computed(async (get): Promise<ViewerHistory | null> => {
     const selected = get(get(links$).selectedSession$);
-    return selected && get(selected.admitted$)
+    return get(context.available$) && selected && get(selected.admitted$)
       ? await get(selected.navigation.history$)
       : null;
   });
@@ -4507,36 +4539,36 @@ function createDisplaySettingsGraph(
   return { changeCapture$, changeWindowSizeSync$, measure$, syncDisplay$ };
 }
 
+type SelectionSettingsContext = ControllerContext<
+  | "authority$"
+  | "available$"
+  | "bootstrapping$"
+  | "chosenOnce$"
+  | "clientState$"
+  | "crashed$"
+  | "disposedState$"
+  | "model"
+  | "nativeHost"
+  | "readinessFailure$"
+  | "selectedOwner$"
+>;
+type SelectionSettingsLinks = ControllerDependencies<
+  | "cancelCapture$"
+  | "captureFailed$"
+  | "discovery$"
+  | "displayGraph$"
+  | "retireCurrent$"
+  | "select$"
+  | "selectedSession$"
+  | "waitSelection$"
+>;
+
 function createSelectionSettingsGraph(
-  context: ControllerContext<
-    | "authority$"
-    | "available$"
-    | "bootstrapping$"
-    | "chosenOnce$"
-    | "clientState$"
-    | "crashed$"
-    | "disposedState$"
-    | "model"
-    | "readinessFailure$"
-    | "selectedOwner$"
-  >,
-  links$: ControllerDependencies<
-    | "discovery$"
-    | "displayGraph$"
-    | "retireCurrent$"
-    | "select$"
-    | "waitSelection$"
-  >,
+  context: SelectionSettingsContext,
+  links$: SelectionSettingsLinks,
 ) {
-  const {
-    model,
-    authority$,
-    disposedState$,
-    chosenOnce$,
-    selectedOwner$,
-    available$,
-    readinessFailure$,
-  } = context;
+  const { model, chosenOnce$, selectedOwner$, available$, readinessFailure$ } =
+    context;
   const restore$: ControllerLinks["reconcileSelection$"] = command(
     async ({ get, set }, signal: AbortSignal): Promise<SelectionOutcome> => {
       if (!get(available$)) {
@@ -4604,7 +4636,20 @@ function createSelectionSettingsGraph(
       }
     },
   );
-  const pause$ = command(
+  return {
+    reconcileSelection$,
+    restoreSelection$,
+    pause$: createVisibilitySettingsGraph(context, links$, restoreSelection$),
+  };
+}
+
+function createVisibilitySettingsGraph(
+  context: SelectionSettingsContext,
+  links$: SelectionSettingsLinks,
+  restoreSelection$: ControllerLinks["restoreSelection$"],
+) {
+  const { model, authority$, disposedState$ } = context;
+  return command(
     async (
       { get, set },
       paused: boolean,
@@ -4617,19 +4662,61 @@ function createSelectionSettingsGraph(
       if (get(model.intent$).paused === paused) {
         return;
       }
-      set(get(links$).retireCurrent$, "paused", false);
-      set(model.transition$, { type: "pause", paused });
+      const selected = get(get(links$).selectedSession$);
+      const retained =
+        selected &&
+        get(selected.alive$) &&
+        !get(model.imageRecovery$) &&
+        (get(selected.visibility.receipt$) !== null ||
+          get(selected.readiness.usable$));
+      if (!retained) {
+        set(get(links$).retireCurrent$, "paused", false);
+      }
+      set(model.transition$, {
+        type: "pause",
+        paused,
+        preview: !!retained,
+      });
+      set(context.nativeHost.synchronize$);
+      set(get(links$).cancelCapture$);
       const display = get(get(links$).displayGraph$);
       if (display) {
-        set(display.setSuspended$, paused || !get(authority$));
+        set(display.setSuspended$, !!retained || paused || !get(authority$));
       }
-      if (!paused && !get(context.bootstrapping$)) {
+      if (retained) {
+        const [result] = await Promise.allSettled([
+          paused
+            ? (async () => {
+                const receipt = await set(
+                  selected.visibility.pause$,
+                  display?.waitForIdle$ ?? null,
+                );
+                if (receipt.status === "rejected") {
+                  throw receipt.reason;
+                }
+              })()
+            : set(selected.visibility.resume$, signal),
+        ]);
+        signal.throwIfAborted();
+        if (
+          result.status === "rejected" &&
+          !isAbortError(result.reason) &&
+          get(selected.alive$) &&
+          !get(selected.failure$)
+        ) {
+          await set(
+            get(links$).captureFailed$,
+            selected.attached.owner,
+            result.reason,
+            selected.attached.client.signal,
+          );
+        }
+      } else if (!paused && !get(context.bootstrapping$)) {
         await set(restoreSelection$, signal);
       }
       signal.throwIfAborted();
     },
   );
-  return { reconcileSelection$, restoreSelection$, pause$ };
 }
 
 function createAuthoritySettingsGraph(
@@ -4704,12 +4791,14 @@ function createSettingsGraph(
     | "displaySize$"
     | "disposedState$"
     | "model"
+    | "nativeHost"
     | "readinessFailure$"
     | "selectedOwner$"
     | "wake$"
   >,
   links$: ControllerDependencies<
     | "cancelCapture$"
+    | "captureFailed$"
     | "configureCapture$"
     | "discovery$"
     | "displayGraph$"

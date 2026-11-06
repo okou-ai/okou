@@ -217,16 +217,19 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
       listener(done);
     }
   });
-  const suspend$ = command(({ get, set }) => {
-    if (get(halted$) || get(disposed$)) {
-      return;
-    }
-    set(halted$, true);
+  const pause$ = command(({ set }) => {
     set(resetFirstFrame$, AbortSignal.abort());
     set(accepting$, false);
     set(invalidateFrames$);
     owner.sink.invalidate();
     set(navigationSettled$, false);
+  });
+  const suspend$ = command(({ get, set }) => {
+    if (get(halted$) || get(disposed$)) {
+      return;
+    }
+    set(halted$, true);
+    set(pause$);
   });
   const fail$ = command(
     async (
@@ -253,6 +256,7 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
 
   return {
     navigationSettled$,
+    pause$,
     suspend$,
     fail$,
     detached$,
@@ -1079,6 +1083,7 @@ export function createScreencast(
     navigationFinished$: navigation.navigationFinished$,
     ...frames,
     exclusive$: exclusive.exclusive$,
+    pause$: core.pause$,
     suspend$: core.suspend$,
     detached$: core.detached$,
     ...cleanup,

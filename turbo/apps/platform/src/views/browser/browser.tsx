@@ -1074,6 +1074,27 @@ function useBrowserStatusText(signals: BrowserSignals, recovering: boolean) {
             });
 }
 
+function BrowserUpdatingView({
+  loading,
+  recovering,
+}: {
+  readonly loading: boolean;
+  readonly recovering: boolean;
+}) {
+  const { t } = useTranslation();
+  return loading && !recovering ? (
+    <span
+      role="status"
+      className="pointer-events-none absolute bottom-3 right-3 z-10 inline-flex items-center gap-1.5 rounded-md bg-popover px-2 py-1 text-xs text-muted-foreground shadow-sm"
+    >
+      <Loader2 size={12} aria-hidden className="animate-spin" />
+      {t(($) => {
+        return $.browserViewer.updatingView;
+      })}
+    </span>
+  ) : null;
+}
+
 function BrowserStatus({
   signals,
   creating,
@@ -1107,6 +1128,10 @@ function BrowserStatus({
         <Loader2 size={20} className="animate-spin" />
       )}
       {showStatus && <p>{text}</p>}
+      <BrowserUpdatingView
+        loading={presentation.loadingPreview}
+        recovering={recovering}
+      />
       {showStatus && !recovering && error && error.message !== text && (
         <p role="alert" className="max-w-md break-words">
           {error.message}
@@ -1329,7 +1354,9 @@ export function Browser({
               return $.browserViewer.liveView;
             })}
             aria-hidden={
-              presentation.status !== "streaming" && !presentation.retainedFrame
+              presentation.status !== "streaming" &&
+              !presentation.retainedFrame &&
+              !presentation.loadingPreview
             }
             className="block h-full w-full object-contain"
           />

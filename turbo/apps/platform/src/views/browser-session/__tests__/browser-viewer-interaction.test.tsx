@@ -2752,7 +2752,7 @@ test("A search-like address reports the failed action and retains the remote pag
 
 test("A hidden page pauses input and resumes the selected tab when visible", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
-  await setupViewer();
+  const browser = await setupViewer();
   await userEvent.click(
     screen.getByLabelText("Other", { selector: '[role="tab"]' }),
   );
@@ -2766,8 +2766,40 @@ test("A hidden page pauses input and resumes the selected tab when visible", asy
   });
   await screen.findByText("Viewing paused");
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  const image = browser.holdTargetFrames("other-page");
   act(() => {
     visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(screen.queryByText("Connecting to browser…")).toBeNull();
+  expect(screen.getByText("Updating view…")).toBeInTheDocument();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    browser.event(
+      "Page.screencastFrame",
+      {
+        data: "AAAA",
+        sessionId: 1,
+        metadata: {
+          timestamp: 0.5,
+          offsetTop: 0,
+          pageScaleFactor: 1,
+          deviceWidth: browser.viewport.width,
+          deviceHeight: browser.viewport.height,
+          scrollOffsetX: 0,
+          scrollOffsetY: 0,
+        },
+      },
+      browser.pageSession("other-page"),
+    );
+  });
+  expect(screen.getByText("Updating view…")).toBeInTheDocument();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
   });
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
@@ -2775,6 +2807,274 @@ test("A hidden page pauses input and resumes the selected tab when visible", asy
   expect(screen.getByLabelText("Address")).toHaveValue(
     "https://other.example.com",
   );
+});
+
+test("Rapid visibility changes retain the preview until original capture cleanup and a new image finish", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer();
+  const stop = browser.holdNext("Page.stopScreencast");
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await stop.received;
+  await screen.findByText("Viewing paused");
+  act(() => {
+    visibility.changeTo("visible");
+    visibility.changeTo("hidden");
+    visibility.changeTo("visible");
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(screen.queryByText("Connecting to browser…")).toBeNull();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  const image = browser.holdTargetFrames("example-page");
+  await act(async () => {
+    await stop.release();
+    await image.received;
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const address = screen.getByLabelText("Address");
+  await fill(address, "after-visibility.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://after-visibility.example/ready");
+  });
+});
+
+test("A document navigated while hidden is observed before the retained viewer accepts new input", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    browser.targets[0]!.url = "https://background.example/changed";
+    browser.event(
+      "Page.frameNavigated",
+      {
+        frame: {
+          id: "replacement-document-frame",
+          loaderId: "background-loader",
+          url: "https://background.example/changed",
+        },
+      },
+      browser.pageSession("example-page"),
+    );
+  });
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "https://background.example/changed",
+  );
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const address = screen.getByLabelText("Address");
+  await fill(address, "after-background-navigation.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue(
+      "http://after-background-navigation.example/ready",
+    );
+  });
+});
+
+test("A resumed viewer can pause again while its replacement picture is still pending", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  const capture = browser.holdNext("Page.startScreencast");
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await capture.received;
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(screen.queryByText("Connecting to browser…")).toBeNull();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(async () => {
+    await capture.release();
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test("A retained viewer waits for its original key release before accepting resumed input", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft", keyCode: 16 });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.dispatchKeyEvent",
+      params: { type: "rawKeyDown", key: "Shift" },
+    });
+  });
+  const release = browser.holdNext("Input.dispatchKeyEvent");
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await release.received;
+  await screen.findByText("Viewing paused");
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(input).toBeDisabled();
+  await act(async () => {
+    await release.release();
+    await image.received;
+  });
+  expect(input).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+  });
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "after original release" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "after original release" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.dispatchKeyEvent";
+    }),
+  ).toMatchObject([
+    { params: { type: "rawKeyDown", key: "Shift" } },
+    { params: { type: "keyUp", key: "Shift" } },
+  ]);
+});
+
+test("An initially hidden viewer establishes usable content after becoming visible", async () => {
+  const visibility = context.mocks.browser.visibilityState("hidden");
+  mockViewer(0);
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await screen.findByText("Viewing paused");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+test("Hiding during native page initialization restores only the current selection", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = mockViewer(0);
+  const initialization = browser.holdNext("Page.enable");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await initialization.received;
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await initialization.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+test("A visibility pause discards an unfinished composition before fresh text is accepted", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  const preedit = browser.holdNext("Input.imeSetComposition");
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "旧" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await preedit.received;
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  expect(input).toBeDisabled();
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  await act(async () => {
+    await preedit.release();
+  });
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+  });
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "旧",
+    }),
+  );
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "fresh text" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "fresh text" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.insertText";
+    }),
+  ).toMatchObject([{ params: { text: "fresh text" } }]);
 });
 
 test("An old image cleanup cannot replace a newly selected tab", async () => {
