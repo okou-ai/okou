@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.42](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.41...runner-supervisor-v0.21.42) (2026-11-06)
+
+
+### Refactoring
+
+* **test-support:** share borrowed tracing event lookup ([#45595](https://github.com/okou-ai/okou/issues/45595)) ([762d9f0](https://github.com/okou-ai/okou/commit/762d9f09b639963f58a5af7188fbdf3c6c0746f9))
+
 ## [0.21.41](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.40...runner-supervisor-v0.21.41) (2026-11-06)
 
 ## [0.21.40](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.39...runner-supervisor-v0.21.40) (2026-11-05)

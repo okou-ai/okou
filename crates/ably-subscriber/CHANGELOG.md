@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.6](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.5...ably-subscriber-v2.0.6) (2026-11-06)
+
+
+### Refactoring
+
+* **test-support:** share borrowed tracing event lookup ([#45595](https://github.com/okou-ai/okou/issues/45595)) ([762d9f0](https://github.com/okou-ai/okou/commit/762d9f09b639963f58a5af7188fbdf3c6c0746f9))
+
 ## [2.0.5](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.4...ably-subscriber-v2.0.5) (2026-11-05)
 
 ## [2.0.4](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.3...ably-subscriber-v2.0.4) (2026-11-01)

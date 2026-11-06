@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.26.2](https://github.com/okou-ai/okou/compare/ios-v0.26.1...ios-v0.26.2) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ios:** match sidebar placeholder row styling ([#45588](https://github.com/okou-ai/okou/issues/45588)) ([65429a6](https://github.com/okou-ai/okou/commit/65429a66fbd24f60c91efcbaa63ddcca12d73448))
+* **ios:** remove timestamps from expanded work history ([#45577](https://github.com/okou-ai/okou/issues/45577)) ([bc16ddc](https://github.com/okou-ai/okou/commit/bc16ddc00291b91329b79bec96670c54aac14364))
+
+
+### Refactoring
+
+* **ios:** remove agent profile views ([#45594](https://github.com/okou-ai/okou/issues/45594)) ([d58b7f6](https://github.com/okou-ai/okou/commit/d58b7f618ce1fde86e3614ba62bcce56d2fafca6))
+* **ios:** simplify agent avatars ([#45578](https://github.com/okou-ai/okou/issues/45578)) ([dd6f40e](https://github.com/okou-ai/okou/commit/dd6f40e04f8a31e425f53698bb33030bc8766131))
+
 ## [0.26.1](https://github.com/okou-ai/okou/compare/ios-v0.26.0...ios-v0.26.1) (2026-11-06)
 
 

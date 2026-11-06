@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.19.20](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.19...runner-executor-v0.19.20) (2026-11-06)
+
+
+### Refactoring
+
+* **test-support:** share borrowed tracing event lookup ([#45595](https://github.com/okou-ai/okou/issues/45595)) ([762d9f0](https://github.com/okou-ai/okou/commit/762d9f09b639963f58a5af7188fbdf3c6c0746f9))
+
 ## [0.19.19](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.18...runner-executor-v0.19.19) (2026-11-06)
 
 ## [0.19.18](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.17...runner-executor-v0.19.18) (2026-11-05)
