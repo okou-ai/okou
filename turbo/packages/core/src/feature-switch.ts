@@ -212,8 +212,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     displayName: "Message PDF export",
     description:
       "Generate a PDF of an assistant response, then download it with rendered diagrams, formulas, images, and clickable links.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.ChatThreadInlineRename]: {
     maintainer: "tongx@okou.ai",
@@ -323,15 +322,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "ethan@okou.ai",
     description:
       "Show personal subscription usage in the account menu and on Me, and provider credit balances on connected accounts.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.PwaNavigation]: {
     maintainer: "ethan@okou.ai",
     description:
       "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabled: true,
   },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",
