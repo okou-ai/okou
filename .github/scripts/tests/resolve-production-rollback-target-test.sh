@@ -32,7 +32,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "7373737373737373737373737373737373737373" ]; then
+    if [ "${3:-}" = "7474747474747474747474747474747474747474" ]; then
+      [ "${MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "7373737373737373737373737373737373737373" ]; then
       [ "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "$MOCK_REGISTRY_ARCHIVE_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -295,6 +297,10 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *rollback-floors/connector-skill-bundle-claims* ]]; then
+      printf '%s\n' "${MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_COMMIT-7474747474747474747474747474747474747474}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/teams-upload-v2-cli* ]]; then
       printf '%s\n' "${MOCK_TEAMS_UPLOAD_V2_CLI_COMMIT-6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e}"
       exit 0
@@ -2211,6 +2217,20 @@ for expectation in \
   [ ! -s "${tmp_dir}/seed-skill-bundle-only-api.output" ] || fail "incompatible Seed publisher must not publish rollback outputs"
   if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
     fail "Seed publisher floor must fail before artifact or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_COMMIT=|Cannot resolve the merged Connector Skill bundle claim reader on main" \
+  "MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_COMMIT=invalid|Cannot resolve the merged Connector Skill bundle claim reader on main" \
+  "MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_VALID=0|Rollback target predates Connector Skill bundle claim precedence"; do
+  : >"${tmp_dir}/boundaries.log"
+  setting=${expectation%%|*}
+  message=${expectation#*|}
+  assert_failure "$message" run_resolver "${tmp_dir}/connector-skill-bundle-claims.output" "$setting"
+  [ ! -s "${tmp_dir}/connector-skill-bundle-claims.output" ] || fail "incompatible Connector claim reader must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "Connector claim reader floor must fail before artifact or host access"
   fi
 done
 

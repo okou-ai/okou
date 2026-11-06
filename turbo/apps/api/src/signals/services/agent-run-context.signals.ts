@@ -544,12 +544,15 @@ function createIdentityContext(
     featureSwitchContext$,
   );
   const storage$ = computed(async (get): Promise<AgentStorageContext> => {
+    const [selection, catalog, bundleDelivery] = await Promise.all([
+      get(connectorContext.signals.connectorSelection$),
+      get(connectorContext.signals.catalog$),
+      get(connectorContext.signals.bundleDelivery$),
+    ]);
     const requests = agentStorageReadPlan(
       scope,
-      await Promise.all([
-        get(connectorContext.signals.connectorSelection$),
-        get(connectorContext.signals.catalog$),
-      ]),
+      [selection, catalog],
+      bundleDelivery,
     );
     const db = get(db$);
     return captureAgentStorageContext(
@@ -1083,9 +1086,16 @@ function createConnectorContextGroups(
     };
   });
   const catalog$ = createConnectorRuntimeSelection(requested$);
+  const bundleDelivery$ = computed(async (get) => {
+    return isFeatureEnabled(
+      FeatureSwitchKey.ConnectorSkillBundleDelivery,
+      await get(featureSwitches$),
+    );
+  });
   const authorizedConnectors$ = createAuthorizedConnectors(
     connectorSelection$,
     catalog$,
+    bundleDelivery$,
   );
   const connectors$ = computed(async (get): Promise<BootstrapConnectorData> => {
     const snapshot = await get(connectorSnapshot$);
@@ -1140,6 +1150,7 @@ function createConnectorContextGroups(
       workflows$,
       customConnectorDefinitions$,
       catalog$,
+      bundleDelivery$,
       connectors$,
       bodyEnvironment$,
       permissionPolicies$,

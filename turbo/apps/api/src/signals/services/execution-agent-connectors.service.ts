@@ -1,4 +1,5 @@
 import type { orgCustomConnectorOauthConfigs } from "@okouai/db/schema/org-custom-connector-oauth-config";
+import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import type {
   CustomConnectorDefinitionRow,
   CustomConnectorExecutionDefinition,
@@ -17,6 +18,8 @@ export interface SelectedCustomConnector {
   readonly permissionNames: readonly string[];
   readonly storageVersion: number;
   readonly skillStorageVersionId: string | null;
+  readonly skillContentBundle: ContentBundle | null;
+  readonly skillContentBundleSourceVersionId: string | null;
   readonly permissionBundleRef: string | null;
   readonly isMcp: boolean;
 }
@@ -41,6 +44,9 @@ export function agentConnectorSelectionFromRows(
         permissionNames: [...row.permissionNames].sort(),
         storageVersion: row.connector.storageVersion,
         skillStorageVersionId: row.connector.skillStorageVersionId,
+        skillContentBundle: row.connector.skillContentBundle,
+        skillContentBundleSourceVersionId:
+          row.connector.skillContentBundleSourceVersionId,
         permissionBundleRef: row.connector.permissionBundleRef,
         isMcp: row.connector.mcpEndpoint !== null,
       };
@@ -60,7 +66,11 @@ export function agentConnectorSelectionFromRows(
 }
 
 type SelectedDefinitionRow = {
-  readonly connector: CustomConnectorDefinitionRow;
+  readonly connector: CustomConnectorDefinitionRow &
+    Pick<
+      SelectedCustomConnector,
+      "skillContentBundle" | "skillContentBundleSourceVersionId"
+    >;
   readonly oauthConfig:
     typeof orgCustomConnectorOauthConfigs.$inferSelect | null;
 };

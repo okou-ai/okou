@@ -278,7 +278,7 @@ beforeEach(() => {
 });
 
 describe("connector catalog v4 preparation", () => {
-  it("prepares a receipt arriving after the catalog was accepted and reuses the prepared generation", async () => {
+  it("keeps the serving catalog until every Skill has a preparation receipt", async () => {
     const client = (
       await setupApp({
         context,
@@ -288,11 +288,17 @@ describe("connector catalog v4 preparation", () => {
     )(cronConnectorCatalogContract);
     const skill = bundledSkill();
     const candidate = release({ skill });
+    const serving = (await publicCatalog()).body;
     serveObjects(candidate.objects);
-    expect((await sync(client)).body.outcome).toBe("accepted");
+    expect((await sync(client)).body).toStrictEqual({
+      outcome: "rejected",
+      failureCode: "invalid-reference",
+    });
+    expect((await publicCatalog()).body).toStrictEqual(serving);
     const receipt = preparationReceipt(candidate.pointer.catalogDigest, skill);
     candidate.objects.set(receipt.key, receipt.bytes);
     serveObjects(candidate.objects);
+    expect((await sync(client)).body.outcome).toBe("accepted");
     expect((await sync(client)).body.outcome).toBe("unchanged");
     // Completed metadata preparation no longer depends on re-reading the
     // receipt; the serving catalog and its captured source remain available.

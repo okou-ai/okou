@@ -15,6 +15,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { API_TEST_CONNECTOR_CATALOG_ARTIFACT } from "../../../test-fixtures/connector-catalog-artifact";
+import baselineSkillBundle from "../../../test-fixtures/connector-skill-bundle.json";
 import { connectorPermissionsRoutes } from "../connector-permissions";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
 import type { ApiTestUser } from "./helpers/api-bdd";
@@ -97,12 +98,36 @@ describe.each([false, true])(
       figma.firewall.defaultAllowed = [];
       figma.firewall.defaultUnknownPolicy = "ask";
       const raw = Buffer.from(JSON.stringify(artifact));
+      const catalogDigest = `sha256:${createHash("sha256").update(raw).digest("hex")}`;
       const key = `connectors/v4/releases/${artifact.catalogVersion}/catalog.json`;
+      const bundledConnector = artifact.connectors.find((connector) => {
+        return connector.slug === "nintendo-store";
+      });
+      if (bundledConnector?.skill.kind !== "bundled") {
+        throw new Error("Expected the baseline Nintendo Skill bundle");
+      }
+      const receiptKey = `connectors/skill-bundles/v1/${catalogDigest.slice(7)}.json`;
+      const receipt = Buffer.from(
+        JSON.stringify({
+          version: 1,
+          catalogDigest,
+          skills: [
+            {
+              slug: bundledConnector.slug,
+              sourceVersionId: bundledConnector.skill.versionId,
+              bundle: {
+                sha256: baselineSkillBundle.sha256,
+                archiveBytes: baselineSkillBundle.archiveBytes,
+              },
+            },
+          ],
+        }),
+      );
       const pointer = Buffer.from(
         JSON.stringify({
           catalogVersion: artifact.catalogVersion,
           catalogKey: key,
-          catalogDigest: `sha256:${createHash("sha256").update(raw).digest("hex")}`,
+          catalogDigest,
         }),
       );
       const send = context.mocks.s3.send.getMockImplementation();
@@ -111,19 +136,14 @@ describe.each([false, true])(
       }
       context.mocks.s3.send.mockImplementation((command: unknown) => {
         if (command instanceof GetObjectCommand) {
-          if (command.input.Key?.startsWith("connectors/skill-bundles/v1/")) {
-            return Promise.reject(
-              Object.assign(new Error("Preparation receipt is absent"), {
-                name: "NoSuchKey",
-              }),
-            );
-          }
           const bytes =
             command.input.Key === CONNECTOR_CATALOG_ACTIVE_KEY
               ? pointer
               : command.input.Key === key
                 ? raw
-                : undefined;
+                : command.input.Key === receiptKey
+                  ? receipt
+                  : undefined;
           if (bytes) {
             return Promise.resolve({
               ContentLength: bytes.length,

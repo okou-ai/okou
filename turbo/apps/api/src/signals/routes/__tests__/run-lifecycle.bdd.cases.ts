@@ -1,4 +1,6 @@
+import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
 import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
+import { commitMemoryVersion } from "./helpers/memory";
 import { captureSessionStorageMocks } from "./helpers/prepared-session-history";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
@@ -52,7 +54,6 @@ import {
   type FirewallApi,
 } from "@okouai/connectors/firewall-types";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 import { HttpResponse, http } from "msw";
 import { v5 as uuidv5 } from "uuid";
 import { afterEach, describe, expect, it, onTestFinished } from "vitest";
@@ -635,14 +636,14 @@ function codexAuthJson(): string {
 const NATIVE_RUNNER_ROUTE = { model: "claude-fable-5-1" } as const;
 
 function customSkillMount(
-  storageManifest: Parameters<typeof expectCanonicalStorageManifest>[0],
+  contentBundles: ExecutionContext["contentBundles"],
   connectorId: string,
 ) {
-  return expectCanonicalStorageManifest(storageManifest)?.storageMounts.find(
-    (mount) => {
-      return mount.name === getCustomConnectorSkillStorageName(connectorId);
-    },
-  );
+  return contentBundles.skills.find((mount) => {
+    return mount.mountPath.endsWith(
+      `-${connectorId.replaceAll("-", "").slice(0, 8)}`,
+    );
+  });
 }
 const piClaimFixture = createChatEventsFixture(context);
 
@@ -1427,13 +1428,41 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
 
       it("rejects a launch when context encryption and storage presigning fail", async () => {
         const api = createRunsApi(context);
-        const { actor, agentId } = await entitledRunActor(
+        const { actor, agentId, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
-        await readonlyConnectorSkills(context, actor, agentId, [
-          "preparation overlap",
-        ]);
+        await api.heartbeatRunner(runnerGroup);
+        const initial = await api.createThreadRun(actor, {
+          agentId,
+          prompt: "publish memory for preparation overlap",
+        });
+        const initialClaim = await api.claimRunnerJob(initial.runId);
+        const sandboxHeaders = {
+          authorization: `Bearer ${initialClaim.sandboxToken}`,
+        };
+        await commitMemoryVersion(
+          context,
+          {
+            runId: initial.runId,
+            sandboxHeaders,
+            storageManifest: initialClaim.storageManifest,
+          },
+          [{ path: "MEMORY.md", content: "Preparation overlap memory" }],
+        );
+        await createWebhookCallbackApi(context).requestAgentComplete(
+          {
+            runId: initial.runId,
+            exitCode: 0,
+            completion: {
+              cliAgentType: "claude-code",
+              cliAgentSessionId: `preparation-overlap-${initial.runId}`,
+              cliAgentSessionHistoryDisposition: "native_only",
+            },
+          },
+          sandboxHeaders,
+          [200],
+        );
         const prompt = `storage and context preparation should overlap ${randomUUID()}`;
 
         const kmsStarted = createDeferredPromise<void>(context.signal);
@@ -1586,55 +1615,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           }),
         );
         const requestMounts = readonlySkills.map(
-          ({ name, mountPath, versionId }) => {
-            return { name, mountPath, versionId };
+          ({ mountPath, sha256, archiveBytes }) => {
+            return { mountPath, sha256, archiveBytes };
           },
         );
-        const requestArchiveKeys = new Set(
-          readonlySkills.map(({ archiveKey }) => {
-            return archiveKey;
-          }),
-        );
-
-        const requestPresignStarted = createDeferredPromise<void>(
-          context.signal,
-        );
-        const sessionPresignStarted = createDeferredPromise<void>(
-          context.signal,
-        );
-        const releaseRequestPresign = createDeferredPromise<void>(
-          context.signal,
-        );
-        const requestPresignFinished = createDeferredPromise<void>(
-          context.signal,
-        );
-        onTestFinished(() => {
-          if (!releaseRequestPresign.settled()) {
-            releaseRequestPresign.resolve(undefined);
-          }
-        });
-        const requestError = new Error("request storage presign failed");
         const sessionError = new Error("session storage presign failed");
         context.mocks.s3.getSignedUrl.mockImplementation(
-          async (_client: unknown, command: unknown) => {
-            const key = s3CommandKey(command);
-            if (key !== undefined && requestArchiveKeys.has(key)) {
-              if (!requestPresignStarted.settled()) {
-                requestPresignStarted.resolve(undefined);
-              }
-              await releaseRequestPresign.promise;
-              if (!requestPresignFinished.settled()) {
-                requestPresignFinished.resolve(undefined);
-              }
-              throw requestError;
+          (_client: unknown, command: unknown) => {
+            if (s3CommandKey(command) === sessionArchiveKey) {
+              return Promise.reject(sessionError);
             }
-            if (key === sessionArchiveKey) {
-              if (!sessionPresignStarted.settled()) {
-                sessionPresignStarted.resolve(undefined);
-              }
-              throw sessionError;
-            }
-            return "https://r2.example.com/storage/archive.tar.gz?sig=bdd";
+            return Promise.resolve(
+              "https://r2.example.com/storage/archive.tar.gz?sig=bdd",
+            );
           },
         );
 
@@ -1653,31 +1646,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             prompt,
           });
         };
-        const overlapPrompt = `overlap request and canonical session storage ${randomUUID()}`;
-        const overlapped = failedContinuation(overlapPrompt);
-        await Promise.all([
-          requestPresignStarted.promise,
-          sessionPresignStarted.promise,
-        ]);
-        releaseRequestPresign.resolve(undefined);
-        await expect(overlapped).resolves.toStrictEqual({
-          inputError: "internal_error",
-        });
-        await requestPresignFinished.promise;
-
-        context.mocks.s3.getSignedUrl.mockImplementation(
-          (_client: unknown, command: unknown) => {
-            if (s3CommandKey(command) === sessionArchiveKey) {
-              return Promise.reject(sessionError);
-            }
-            return Promise.resolve(
-              "https://r2.example.com/storage/archive.tar.gz?sig=bdd",
-            );
-          },
-        );
-        await expect(
-          failedContinuation("session storage alone fails"),
-        ).resolves.toStrictEqual({
+        const overlapPrompt = `failed canonical session storage ${randomUUID()}`;
+        await expect(failedContinuation(overlapPrompt)).resolves.toStrictEqual({
           inputError: "internal_error",
         });
         const runs = await createRunReadsApi(context).requestListLogs(
@@ -1703,11 +1673,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected a canonical large Storage manifest");
         }
         for (const mount of requestMounts) {
-          expect(largeManifest.storageMounts).toContainEqual(
-            expect.objectContaining({
-              ...mount,
-              storageId: expect.any(String),
-            }),
+          expect(largeClaim.contentBundles.skills).toContainEqual(
+            expect.objectContaining(mount),
           );
         }
         expect(largeManifest.storageMounts).toContainEqual(
@@ -1857,8 +1824,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         if (!readonlySkill) {
           throw new Error("Expected a readonly Connector skill");
         }
-        const workflowStorageName = readonlySkill.name;
-        const workflowStorage = readonlySkill;
         const api = createRunsApi(context);
         await api.heartbeatRunner(runnerGroup);
         const created = await api.createThreadRun(actor, {
@@ -1873,14 +1838,12 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected canonical Storage mounts");
         }
         const workflowMountPath = readonlySkill.mountPath;
-        expect(manifest.storageMounts).toStrictEqual(
-          expect.arrayContaining([
-            expect.objectContaining({
-              mountPath: workflowMountPath,
-              name: workflowStorageName,
-              versionId: workflowStorage.versionId,
-            }),
-          ]),
+        expect(claim.contentBundles.skills).toContainEqual(
+          expect.objectContaining({
+            mountPath: workflowMountPath,
+            sha256: readonlySkill.sha256,
+            archiveBytes: readonlySkill.archiveBytes,
+          }),
         );
         const memoryMount = manifest.storageMounts.find((mount) => {
           return mount.name === "memory";
@@ -1896,12 +1859,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         expect(runContext.body).toMatchObject({
           runId: created.runId,
           storageMounts: expect.arrayContaining([
-            {
-              name: workflowStorageName,
-              mountPath: workflowMountPath,
-              version: workflowStorage.versionId,
-              writeback: false,
-            },
             {
               mountPath: memoryMount.mountPath,
               name: memoryMount.name,
@@ -1961,12 +1918,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             "primary",
             "additional",
           ])
-        ).map(({ name, versionId, mountPath }) => {
-          return {
-            name,
-            versionId,
-            mountPath,
-          };
+        ).map(({ sha256, archiveBytes, mountPath }) => {
+          return { sha256, archiveBytes, mountPath };
         });
         await api.heartbeatRunner(runnerGroup);
 
@@ -1986,7 +1939,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           throw new Error("Expected the canonical memory mount");
         }
         for (const mount of workflowMounts) {
-          expect(initialManifest.storageMounts).toContainEqual(
+          expect(initialClaim.contentBundles.skills).toContainEqual(
             expect.objectContaining(mount),
           );
         }
@@ -2060,6 +2013,11 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const sessionClaim = await api.claimRunnerJob(sessionRun.runId);
 
+        for (const bundle of workflowMounts) {
+          expect(sessionClaim.contentBundles.skills).toContainEqual(
+            expect.objectContaining(bundle),
+          );
+        }
         const sessionManifest = sessionClaim.storageManifest;
         if (!sessionManifest || !("storageMounts" in sessionManifest)) {
           throw new Error("Expected canonical mounts from session persistence");
@@ -7052,6 +7010,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const fw = createFirewallApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor();
 
+        await enableConnectorSkillBundles(context, actor);
         const mcpDefinition = manualMcpRuntimeConnectorBody({
           displayName: "BDD MCP Runtime",
           endpoint:
@@ -7165,13 +7124,10 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           unknownPolicy: "allow",
         });
         expect(claim.secretValues).not.toContain("mcp-runtime-token");
-        expect(
-          expectCanonicalStorageManifest(claim.storageManifest)?.storageMounts,
-        ).toContainEqual(
-          expect.objectContaining({
-            name: getCustomConnectorSkillStorageName(mcp.id),
-          }),
-        );
+        expect(customSkillMount(claim.contentBundles, mcp.id)).toMatchObject({
+          sha256: expect.any(String),
+          archiveBytes: expect.any(Number),
+        });
 
         const target = mcpTarget;
         const [initialResult] = await api.syncConnectorRuntime(run.runId, {
@@ -7841,6 +7797,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         const fixture = await publicChatActor(context);
         const { actor, agentId, runnerGroup } = fixture;
         await fixture.run(async () => {
+          await enableConnectorSkillBundles(context, actor);
           const slug = `_bdd-permission-skill-${randomUUID().slice(0, 8)}`;
           const custom = await connectors.createCustomConnector(actor, {
             slug,
@@ -7894,7 +7851,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             initialRun.runId,
           );
           const initialSkill = customSkillMount(
-            initialClaim.claim.storageManifest,
+            initialClaim.claim.contentBundles,
             custom.id,
           );
           if (!initialSkill) {
@@ -7938,19 +7895,14 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               customConnectorId: custom.id,
             }),
           );
-          const disconnectedSkillMount = expectCanonicalStorageManifest(
-            disconnectedClaim.storageManifest,
-          )?.storageMounts.find((storage) => {
-            return (
-              storage.name === getCustomConnectorSkillStorageName(custom.id)
-            );
-          });
+          const disconnectedSkillMount = customSkillMount(
+            disconnectedClaim.contentBundles,
+            custom.id,
+          );
           expect(disconnectedSkillMount?.mountPath).toBe(
             `/home/user/.claude/skills/custom-${slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
           );
-          expect(disconnectedSkillMount?.versionId).toBe(
-            initialSkill.versionId,
-          );
+          expect(disconnectedSkillMount?.sha256).toBe(initialSkill.sha256);
 
           await connectors.setCustomConnectorValues(actor, custom.id, [
             { key: "workspace", kind: "variable", value: "restored" },
@@ -8005,22 +7957,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             baseUrlVars: { workspace: "restored" },
             sourceId: expect.any(String),
           });
-          const restoredSkillMount = expectCanonicalStorageManifest(
-            restoredClaim.storageManifest,
-          )?.storageMounts.find((storage) => {
-            return (
-              storage.name === getCustomConnectorSkillStorageName(custom.id)
-            );
-          });
+          const restoredSkillMount = customSkillMount(
+            restoredClaim.contentBundles,
+            custom.id,
+          );
           expect(restoredSkillMount?.mountPath).toBe(
             disconnectedSkillMount?.mountPath,
           );
-          expect(restoredSkillMount?.versionId).toStrictEqual(
-            expect.any(String),
-          );
-          expect(restoredSkillMount?.versionId).not.toBe(
-            initialSkill.versionId,
-          );
+          expect(restoredSkillMount?.sha256).toStrictEqual(expect.any(String));
+          expect(restoredSkillMount?.sha256).not.toBe(initialSkill.sha256);
 
           await createChatEventsFixture(context).cancelChatRun(
             actor,
@@ -12530,18 +12475,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         });
         const { actor, agentId, runnerGroup } = fixture;
         await fixture.run(async () => {
-          const [readonlySkill] = await readonlyConnectorSkills(
-            context,
-            actor,
-            agentId,
-            ["snapshot reporting"],
-          );
-          if (!readonlySkill) {
-            throw new Error("Expected a readonly Connector skill");
-          }
-          const cacheVolume = readonlySkill.name;
-          const cacheMountPath = readonlySkill.mountPath;
-
           const created = await fixture.sendChatRun(actor, {
             agentId,
             prompt: "report snapshots and telemetry",
@@ -12554,18 +12487,6 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           const storageMounts =
             expectCanonicalStorageManifest(claim.storageManifest)
               ?.storageMounts ?? [];
-          const cachePrepared = storageMounts.find((mount) => {
-            return mount.name === cacheVolume;
-          });
-          if (!cachePrepared) {
-            throw new Error(
-              "Expected the workflow version from the actual Runner claim",
-            );
-          }
-          const mountPaths = storageMounts.map((storage) => {
-            return storage.mountPath;
-          });
-          expect(mountPaths).toContain(cacheMountPath);
           const memoryArtifact = storageMounts.find((mount) => {
             return mount.name === "memory";
           });
@@ -12720,7 +12641,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 ...nativeMetadata,
                 storageOutputs,
                 volumeVersionsSnapshot: {
-                  versions: { [cacheVolume]: cachePrepared.versionId },
+                  versions: { [memoryArtifact.name]: outputVersion },
                 },
               },
             },
@@ -12757,7 +12678,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
                 ...nativeMetadata,
                 storageOutputs,
                 volumeVersionsSnapshot: {
-                  versions: { [cacheVolume]: cachePrepared.versionId },
+                  versions: { [memoryArtifact.name]: outputVersion },
                 },
               },
             },

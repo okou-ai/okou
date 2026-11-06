@@ -46,6 +46,12 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ConnectorSkillBundleDelivery]: {
+    maintainer: "lancy@okou.ai",
+    description:
+      "Deliver Connector Skills through prepared immutable bundles after compatible API claims have drained.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",

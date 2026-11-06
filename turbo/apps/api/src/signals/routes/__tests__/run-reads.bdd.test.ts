@@ -660,8 +660,6 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       if (!readonlySkill) {
         throw new Error("Expected a readonly Connector skill");
       }
-      const workflowStorageName = readonlySkill.name;
-      const workflowVersion = readonlySkill.versionId;
       context.mocks.s3.getSignedUrl.mockResolvedValue(
         "https://r2.example.com/storages/presigned?sig=bdd",
       );
@@ -695,31 +693,18 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
         context.mocks.s3.getSignedUrl.mock.calls.length;
       const r1 = await api.createThreadRun(actor, {
         agentId: agent.agentId,
-        prompt: "pin the Connector skill Storage version",
+        prompt: "pin the Connector Skill bundle",
       });
       fixture.registerRun(r1.runId);
       const claim1 = await api.claimRunnerJob(r1.runId);
       fixture.registerClaim(r1.runId, claim1.sandboxToken);
-      expect(
-        expectCanonicalStorageManifest(claim1.storageManifest)?.storageMounts,
-      ).toStrictEqual(
-        expect.arrayContaining([
-          expect.objectContaining({
-            name: workflowStorageName,
-            mountPath: readonlySkill.mountPath,
-            versionId: workflowVersion,
-            // The server packages the Connector skill, so its archive size is the one
-            // recorded for that version rather than a mocked object size.
-            archiveSize: expect.any(Number),
-          }),
-        ]),
-      );
-      const workflowMount = expectCanonicalStorageManifest(
-        claim1.storageManifest,
-      )?.storageMounts.find((mount) => {
-        return mount.name === workflowStorageName;
+      const workflowMount = claim1.contentBundles.skills.find((mount) => {
+        return mount.mountPath === readonlySkill.mountPath;
       });
-      expect(workflowMount?.archiveSize).toBeGreaterThan(0);
+      expect(workflowMount).toMatchObject({
+        sha256: readonlySkill.sha256,
+        archiveBytes: readonlySkill.archiveBytes,
+      });
       const memory1 = expectCanonicalStorageManifest(
         claim1.storageManifest,
       )?.storageMounts.find((mount) => {
@@ -838,7 +823,7 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
               },
             ],
             volumeVersionsSnapshot: {
-              versions: { [workflowStorageName]: workflowVersion },
+              versions: { [memory1.name]: memory1.versionId },
             },
           },
         },
@@ -856,6 +841,13 @@ describe("RUN-01/RUN-02: session continuation, memory policies, and volume pinni
       const continuedClaim = await api.claimRunnerJob(continued.runId);
       fixture.registerClaim(continued.runId, continuedClaim.sandboxToken);
       expect(continuedClaim.vars).toStrictEqual(claim1.vars);
+      expect(continuedClaim.contentBundles.skills).toContainEqual(
+        expect.objectContaining({
+          mountPath: readonlySkill.mountPath,
+          sha256: readonlySkill.sha256,
+          archiveBytes: readonlySkill.archiveBytes,
+        }),
+      );
 
       expect(continuedClaim.nativeContinuation).toMatchObject({
         sessionId: `bdd-cli-${r1.runId}`,

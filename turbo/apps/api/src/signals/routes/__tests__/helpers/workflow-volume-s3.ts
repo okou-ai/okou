@@ -33,10 +33,21 @@ function missingS3Object(key: string): Error {
   });
 }
 
+function isContentBundleS3Command(command: unknown): boolean {
+  return (
+    (command instanceof PutObjectCommand ||
+      command instanceof GetObjectCommand ||
+      command instanceof HeadObjectCommand) &&
+    command.input.Key?.startsWith("bundles/v1/") === true
+  );
+}
+
 export function installWorkflowVolumeS3Fixture(
   context: TestContext,
   objects = new Map<string, Buffer>(),
+  options: { readonly bundlesOnly?: boolean } = {},
 ) {
+  const previous = context.mocks.s3.send.getMockImplementation();
   const writes: { readonly key: string; readonly body: Buffer }[] = [];
   const uploads = new Map<
     string,
@@ -144,7 +155,7 @@ export function installWorkflowVolumeS3Fixture(
     return {};
   }
 
-  context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+  async function send(command: unknown) {
     const uploaded = await multipart(command);
     if (uploaded !== undefined) {
       return uploaded;
@@ -192,6 +203,18 @@ export function installWorkflowVolumeS3Fixture(
       return { Body: Readable.from([body]), ContentLength: body.length };
     }
     return {};
+  }
+
+  context.mocks.s3.send.mockImplementation((command: unknown) => {
+    if (options.bundlesOnly && !isContentBundleS3Command(command)) {
+      if (!previous) {
+        throw new Error(
+          "Scoped bundle fixture requires an existing S3 provider",
+        );
+      }
+      return previous(command);
+    }
+    return send(command);
   });
 
   return {

@@ -1,8 +1,12 @@
+import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { readPublishedArchive } from "./helpers/published-archive";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createHash, randomUUID } from "node:crypto";
+import { prepareContentBundle } from "@okouai/core/content-bundle";
+import { readClaimedContentBundle } from "./helpers/claimed-content-bundle";
 
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { cronConnectorCatalogContract } from "@okouai/api-contracts/contracts/cron";
@@ -12,10 +16,7 @@ import { builtinConnectorOpenIdStartContract } from "@okouai/api-contracts/contr
 import { connectorCatalogContract } from "@okouai/api-contracts/contracts/connector-catalog";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  getCustomConnectorSkillName,
-  getCustomConnectorSkillStorageName,
-} from "@okouai/core/storage-names";
+import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { HttpResponse, http } from "msw";
 import {
   afterEach,
@@ -53,7 +54,6 @@ import {
 import { secretTemplate } from "./helpers/api-bdd-firewall";
 import { withConnectorRuntime } from "./helpers/connector-runtime-consumer";
 import { makeCodexAuthJson } from "./helpers/api-bdd-auth-device";
-import { expectCanonicalStorageManifest } from "./helpers/api-bdd-runs";
 
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { cronConnectorCatalogRoutes } from "../cron-connector-catalog";
@@ -192,11 +192,27 @@ function buildCatalogConnector(args: {
   };
 }
 
-function buildBundledSkillFixture(connectorSlug: string) {
+async function buildBundledSkillFixture(connectorSlug: string) {
   const storageName = `connector-skill@${connectorSlug}-${randomUUID().replaceAll("-", "")}`;
   const versionId = createHash("sha256").update(randomUUID()).digest("hex");
-  const archiveSize = 321;
+  const files = [
+    {
+      path: "SKILL.md",
+      content: Buffer.from(`# ${connectorSlug}\n`),
+      mode: 0o644 as const,
+    },
+    {
+      path: "scripts/check.sh",
+      content: Buffer.from("#!/bin/sh\nexit 0\n"),
+      mode: 0o755 as const,
+    },
+  ];
+  const prepared = await prepareContentBundle(files);
+  const archiveSize = prepared.archive.length;
   return {
+    ...prepared.descriptor,
+    archive: prepared.archive,
+    files,
     storageName,
     versionId,
     archiveSize,
@@ -205,9 +221,11 @@ function buildBundledSkillFixture(connectorSlug: string) {
       storageName,
       versionId,
       storageVersionPrefix: `__system__/volume/${storageName}/${versionId}`,
-      size: Buffer.byteLength(`# ${connectorSlug}\n`),
+      size: files.reduce((total, file) => {
+        return total + file.content.length;
+      }, 0),
       archiveSize,
-      fileCount: 1,
+      fileCount: files.length,
     },
   };
 }
@@ -548,6 +566,9 @@ describe("connector catalog valid lifecycle", () => {
 
   it("mounts all 17 normally published connector skill versions", async () => {
     const owned = await publicChatActor(context, { clockTime: now() });
+    await owned.run(() => {
+      return enableConnectorSkillBundles(context, owned.actor);
+    });
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       await fixture.api.createPersonalModelProvider(owned.actor, {
@@ -556,6 +577,7 @@ describe("connector catalog valid lifecycle", () => {
         secrets: { CODEX_AUTH_JSON: makeCodexAuthJson() },
       });
       await fixture.api.updateUserModelPreference(owned.actor, "gpt-6-luna");
+      installWorkflowVolumeS3Fixture(context, new Map(), { bundlesOnly: true });
     });
     const skills: {
       connector: Awaited<
@@ -609,26 +631,21 @@ describe("connector catalog valid lifecycle", () => {
         owned.runnerGroup,
         run.runId,
       );
-      const mounts =
-        expectCanonicalStorageManifest(
-          claim.storageManifest,
-        )?.storageMounts.filter((mount) => {
-          return skills.some((skill) => {
-            return (
-              mount.name ===
-              getCustomConnectorSkillStorageName(skill.connector.id)
-            );
-          });
-        }) ?? [];
+      const mounts = claim.contentBundles.skills.filter((mount) => {
+        return skills.some(({ connector }) => {
+          return mount.mountPath.endsWith(
+            `/${getCustomConnectorSkillName(connector.slug, connector.id)}`,
+          );
+        });
+      });
       expect(mounts).toHaveLength(17);
       for (const { connector, published } of skills) {
         expect(mounts).toContainEqual(
           expect.objectContaining({
-            name: getCustomConnectorSkillStorageName(connector.id),
             mountPath: `/home/user/.pi/agent/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`,
-            versionId: published.versionId,
-            archiveSize: published.archiveSize,
-            archiveUrl: expect.any(String),
+            sha256: published.sha256,
+            archiveBytes: published.archiveBytes,
+            downloadUrl: expect.any(String),
           }),
         );
       }
@@ -645,6 +662,9 @@ describe("connector catalog valid lifecycle", () => {
 
   it("pins a published connector skill before a normal update", async () => {
     const owned = await publicChatActor(context, { clockTime: now() });
+    await owned.run(() => {
+      return enableConnectorSkillBundles(context, owned.actor);
+    });
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
       await fixture.api.createPersonalModelProvider(owned.actor, {
@@ -661,6 +681,7 @@ describe("connector catalog valid lifecycle", () => {
     });
     const start = context.mocks.s3.send.mock.calls.length;
     const connector = await owned.run(() => {
+      installWorkflowVolumeS3Fixture(context, new Map(), { bundlesOnly: true });
       return connectorsApi.createCustomConnector(owned.actor, body);
     });
     const published = readPublishedArchive(context, start);
@@ -683,27 +704,22 @@ describe("connector catalog valid lifecycle", () => {
       });
     });
     const updated = readPublishedArchive(context, updateStart);
-    expect(updated.versionId).not.toBe(published.versionId);
+    expect(updated.sha256).not.toBe(published.sha256);
     const check = async (runId: string, expected: typeof published) => {
       const { claim, sandboxHeaders } = await owned.claimChatRun(
         owned.runnerGroup,
         runId,
       );
-      const mounts =
-        expectCanonicalStorageManifest(
-          claim.storageManifest,
-        )?.storageMounts.filter((mount) => {
-          return (
-            mount.name === getCustomConnectorSkillStorageName(connector.id)
-          );
-        }) ?? [];
-      expect(mounts).toHaveLength(1);
-      expect(mounts[0]).toMatchObject({
-        name: getCustomConnectorSkillStorageName(connector.id),
-        mountPath: `/home/user/.pi/agent/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`,
-        versionId: expected.versionId,
-        archiveSize: expected.archiveSize,
-        archiveUrl: expect.any(String),
+      const mount = claim.contentBundles.skills.find((entry) => {
+        return (
+          entry.mountPath ===
+          `/home/user/.pi/agent/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`
+        );
+      });
+      expect(mount).toMatchObject({
+        sha256: expected.sha256,
+        archiveBytes: expected.archiveBytes,
+        downloadUrl: expect.any(String),
       });
       await owned.run(() => {
         return fixture.failChatRun(
@@ -945,13 +961,36 @@ describe("connector catalog valid lifecycle", () => {
       isolatePg: true,
     });
     configureSource();
-    const skill = buildBundledSkillFixture("agora");
+    const skill = await buildBundledSkillFixture("agora");
     const release = buildRelease({
       version: "2026-07-15.bundled-skill",
       connectorSlug: "agora",
       skill: skill.descriptor,
     });
-    serveObjects(catalogObjects([release], release));
+    const receiptFor = (digest: string) => {
+      return Buffer.from(
+        JSON.stringify({
+          version: 1,
+          catalogDigest: digest,
+          skills: [
+            {
+              slug: "agora",
+              sourceVersionId: skill.versionId,
+              bundle: {
+                sha256: skill.sha256,
+                archiveBytes: skill.archiveBytes,
+              },
+            },
+          ],
+        }),
+      );
+    };
+    const initialObjects = new Map(catalogObjects([release], release));
+    initialObjects.set(
+      `connectors/skill-bundles/v1/${release.digest.slice(7)}.json`,
+      receiptFor(release.digest),
+    );
+    serveObjects(initialObjects);
     expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
@@ -963,7 +1002,12 @@ describe("connector catalog valid lifecycle", () => {
       label: "Reused bundled skill",
       skill: skill.descriptor,
     });
-    serveObjects(catalogObjects([release, later], later));
+    const laterObjects = new Map(catalogObjects([release, later], later));
+    laterObjects.set(
+      `connectors/skill-bundles/v1/${later.digest.slice(7)}.json`,
+      receiptFor(later.digest),
+    );
+    serveObjects(laterObjects);
     expect((await syncCatalog(app)).body).toStrictEqual({
       outcome: "accepted",
       failureCode: null,
@@ -974,19 +1018,32 @@ describe("connector catalog valid lifecycle", () => {
 
     const actor = bdd.user();
     onTestFinished(createConnectorCleanup(actor, "agora"));
+    await enableConnectorSkillBundles(context, actor);
     await connectorsApi.connectManualGrant(actor, "agora", "api-token", {
       credential: "bundled-skill-token",
     });
     await withConnectorRuntime(context, actor, "agora", ({ claim }) => {
-      const mounts = expectCanonicalStorageManifest(
-        claim.storageManifest,
-      )?.storageMounts;
-      expect(mounts).toContainEqual(
-        expect.objectContaining({
-          name: skill.storageName,
-          versionId: skill.versionId,
-          archiveSize: skill.archiveSize,
-        }),
+      const bundle = claim.contentBundles.skills.find((entry) => {
+        return entry.mountPath.endsWith("/agora");
+      });
+      expect(bundle).toMatchObject({
+        sha256: skill.sha256,
+        archiveBytes: skill.archiveBytes,
+      });
+      if (!bundle) {
+        throw new Error("Expected the authorized built-in Skill bundle");
+      }
+      expect(
+        readClaimedContentBundle(
+          new Map([[`bundles/v1/${skill.sha256}.tar.gz`, skill.archive]]),
+          bundle,
+        ),
+      ).toStrictEqual(
+        new Map(
+          skill.files.map((file) => {
+            return [file.path, file.content];
+          }),
+        ),
       );
     });
   });

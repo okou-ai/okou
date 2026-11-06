@@ -27,6 +27,7 @@ import {
   type AgentConnectorSelectionScope,
 } from "./execution-agent-connectors.service";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
+import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
 import { activeUserPermissionGrantCondition } from "./user-permission-grants.service";
 import { workflowsForRunFromRows } from "./workflow-data.service";
 
@@ -34,7 +35,10 @@ import { workflowsForRunFromRows } from "./workflow-data.service";
 const builtinColumns = Object.freeze({
   connectorSlug: userBuiltinConnectors.connectorSlug,
 });
-const connectorColumns = customConnectorDefinitionSelection();
+const connectorColumns = Object.freeze({
+  ...customConnectorDefinitionSelection(),
+  ...customConnectorSkillBundleSelection(),
+});
 const oauthColumns = getTableColumns(orgCustomConnectorOauthConfigs);
 const permissionColumns = Object.freeze({
   connectorSlug: userPermissionGrants.connectorSlug,
