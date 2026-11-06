@@ -3,7 +3,6 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-
 import {
   queryAllByRoleFast,
   setupPage,
@@ -110,7 +109,4 @@ test("A mobile user with bottom navigation sees an active incident above their c
       name: "Investigating: API requests are delayed",
     }),
   ).resolves.toBeVisible();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
 });

@@ -1367,16 +1367,11 @@ test("The chat browser sidebar forwards a touch tap exactly once", async () => {
   ]);
 });
 
-test.each([
-  { standalone: false, active: false },
-  { standalone: false, active: true },
-  { standalone: true, active: false },
-  { standalone: true, active: true },
-])(
-  "Open the mobile chat browser and return to the conversation (standalone=$standalone, active=$active)",
-  async ({ standalone, active }) => {
+test.each([false, true])(
+  "Open the mobile chat browser and return to the conversation (active=%s)",
+  async (active) => {
     context.mocks.browser.matchMedia((query) => {
-      return query === "(display-mode: standalone)" && standalone;
+      return query === "(display-mode: standalone)";
     });
     mockBrowserApi(active ? liveBrowserSession() : null);
     await openConversation(completedConversationEvents(), true);

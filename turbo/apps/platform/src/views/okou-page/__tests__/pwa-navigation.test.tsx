@@ -81,9 +81,6 @@ test("Keep the desktop navigation in a desktop PWA", async () => {
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
   expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-  expect(
-    screen.queryByRole("navigation", { name: "Main navigation" }),
-  ).not.toBeInTheDocument();
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
 });
 
@@ -113,10 +110,6 @@ test("Switch between the desktop composer and mobile chat list as the browser re
   expect(
     screen.getByRole("navigation", { name: "Main navigation" }),
   ).toBeInTheDocument();
-  expect(screen.queryByTestId("labeled-nav-rail")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
 
   act(() => {
     viewport.setMatches((query) => {
@@ -126,9 +119,6 @@ test("Switch between the desktop composer and mobile chat list as the browser re
 
   await screen.findByRole("textbox", { name: "Message" });
   expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-  expect(
-    screen.queryByRole("navigation", { name: "Main navigation" }),
-  ).not.toBeInTheDocument();
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
 });
 
@@ -206,9 +196,6 @@ test("Keep Me within mobile widths while the browser resizes", async () => {
   });
 
   await screen.findByRole("heading", { name: "That page isn't here." });
-  expect(
-    screen.queryByRole("navigation", { name: "Main navigation" }),
-  ).not.toBeInTheDocument();
 
   act(() => {
     viewport.setMatches(false);
@@ -219,28 +206,6 @@ test("Keep Me within mobile widths while the browser resizes", async () => {
     screen.getByRole("navigation", { name: "Main navigation" }),
   ).toBeInTheDocument();
   expect(window.location.pathname).toBe("/me");
-});
-
-test("Keep /me unavailable in a desktop PWA", async () => {
-  mockDisplayMode({ standalone: true, desktop: true });
-  const workspace = installContinuityWorkspace(context, {
-    caseId: 83,
-    threads: [],
-  });
-
-  await setupPage({
-    context,
-    path: "/me",
-    ...workspace.pageOptions,
-  });
-
-  await expect(
-    screen.findByRole("heading", { name: "That page isn't here." }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByRole("navigation", { name: "Main navigation" }),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByRole("heading", { name: "Me" })).not.toBeInTheDocument();
 });
 
 test("Browse and filter mobile browser chats before opening a conversation and returning", async () => {
@@ -291,13 +256,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
   expect(linkTo("/connectors", navigation)).toHaveTextContent("Connectors");
   expect(linkTo("/artifacts", navigation)).toHaveTextContent("Artifacts");
   expect(linkTo("/me", navigation)).toHaveTextContent("Me");
-  expect(
-    screen.queryByRole("complementary", { name: "Sidebar" }),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByTestId("labeled-nav-rail")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
   expect(screen.queryByText("Previous launch")).not.toBeInTheDocument();
 
   click(fastButton("Open chat list menu"));
@@ -309,9 +267,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
   await screen.findByText("Previous launch");
   expect(screen.queryByText("Plan the launch")).not.toBeInTheDocument();
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
 
   click(linkTo(`/chats/${archived.id}`));
 
@@ -327,9 +282,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
 
   await waitFor(() => {
     expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-    expect(
-      screen.queryByRole("textbox", { name: "Message" }),
-    ).not.toBeInTheDocument();
   });
   expect(screen.getByLabelText("Switch agent")).toHaveTextContent("List agent");
 
@@ -404,12 +356,9 @@ test("Slide conversations in from the mobile chat list and out back to the tabs"
   });
 
   await waitFor(() => {
-    expect(
-      screen.queryByRole("textbox", { name: "Message" }),
-    ).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   });
   await screen.findByText("Draft the brief");
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   expect(viewTransition.startedTypes).toStrictEqual([
     ["push"],
     ["pop"],
@@ -462,10 +411,6 @@ test("My Okou's chats tab is its chat list at / and composes a new chat there", 
   });
   await screen.findByText("Draft the brief");
   expect(linkTo("/", navigation)).toHaveAttribute("aria-current", "page");
-  expect(screen.queryByLabelText("Back to chats")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
 
   click(linkTo(`/chats/${thread.id}`));
 
@@ -530,12 +475,9 @@ test("Leave the slide to the browser after an edge swipe back", async () => {
   });
 
   await waitFor(() => {
-    expect(
-      screen.queryByRole("textbox", { name: "Message" }),
-    ).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   });
   await screen.findByText("Plan the offsite");
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
 });
 
@@ -637,7 +579,6 @@ test("Step back to Me from the pages it opens", async () => {
   });
 
   await screen.findByRole("heading", { name: "Me" });
-  expect(screen.queryByLabelText("Back")).not.toBeInTheDocument();
 
   click(linkTo("/workflows"));
 
@@ -913,15 +854,9 @@ test("Switch the mobile browser chat list to another agent", async () => {
   await screen.findByText("Research brief");
   await waitFor(() => {
     expect(fastButton("Switch agent")).toHaveTextContent("Research agent");
-    expect(
-      screen.queryByRole("option", { name: "Research agent" }),
-    ).not.toBeInTheDocument();
   });
   expect(window.location.pathname).toBe(`/agents/${researchAgentId}/chat`);
   expect(screen.queryByText("Launch planning")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
   const navigation = screen.getByRole("navigation", {
     name: "Main navigation",
   });

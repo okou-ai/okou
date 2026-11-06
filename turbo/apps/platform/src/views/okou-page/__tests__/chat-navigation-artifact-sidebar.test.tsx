@@ -794,11 +794,11 @@ test("Keep PWA navigation and clean up an artifact when leaving the mobile pane"
     ).toBeVisible();
     expect(screen.getByLabelText("Back to chats")).toBeVisible();
   });
-  click(screen.getByLabelText("Back to chats"));
+  const backToChats = screen.getByLabelText("Back to chats");
+  const chatsPath = backToChats.getAttribute("href");
+  click(backToChats);
   await waitFor(() => {
-    expect(window.location.pathname).not.toBe(
-      `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    );
+    expect(window.location.pathname).toBe(chatsPath);
     expect(screen.queryByTitle("Launch site preview")).not.toBeInTheDocument();
     expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
     expect(
