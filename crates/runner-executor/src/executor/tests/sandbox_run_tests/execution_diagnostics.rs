@@ -4,7 +4,9 @@ use guest_contracts::diagnostics::{
     EventDeliveryDiagnostic, EventDeliveryFailedBatchDiagnostic, EventDeliveryResponseState,
     HttpAttemptFailureKind, HttpCompletedAttemptDiagnostic, WorkloadResourceLimitDiagnostic,
 };
-use tracing_test_support::capture_current_thread_events as capture_async_events;
+use tracing_test_support::{
+    capture_current_thread_events as capture_async_events, find_captured_event,
+};
 
 #[tokio::test]
 async fn execute_inner_appends_stream_overflow_marker() {
@@ -659,14 +661,7 @@ async fn execute_inner_preserves_incomplete_stdout_on_backend_crash() {
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|actual| actual == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event {message:?}; captured={events:#?}"))
 }
 

@@ -13,8 +13,10 @@ use tokio::net::UnixStream;
 use tokio::time::Instant;
 use tracing::Level;
 use tracing_subscriber::prelude::*;
-use tracing_test_support::capture_current_thread_events as capture_async_log_events;
 use tracing_test_support::{CapturedEvent, CapturedEvents};
+use tracing_test_support::{
+    capture_current_thread_events as capture_async_log_events, find_captured_event,
+};
 
 mod backing_process;
 mod guest_connection_timing;
@@ -4983,14 +4985,7 @@ async fn advance_balloon_wait_to_next_progress_grace<F>(
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|actual| actual == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event {message}; events={events:#?}"))
 }
 

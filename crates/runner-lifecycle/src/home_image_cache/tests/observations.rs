@@ -6,7 +6,7 @@ use runner_host::home_observation::{
 };
 use runner_storage::operation_test_support::RecordedHomeObservations;
 use tracing_subscriber::prelude::*;
-use tracing_test_support::CapturedEvents;
+use tracing_test_support::{CapturedEvents, find_captured_event};
 
 #[tokio::test]
 async fn publication_observations_follow_synced_commit_and_replaced_generation_removal() {
@@ -180,15 +180,7 @@ async fn gc_reports_the_removed_current_generation_and_dry_run_has_no_deletion_f
         local[0].fields["image_generation"],
         events[0].image_generation.as_deref().unwrap()
     );
-    let recovery = records
-        .iter()
-        .find(|record| {
-            record
-                .fields
-                .get("message")
-                .is_some_and(|message| message == "home cache reclaim turn completed")
-        })
-        .unwrap();
+    let recovery = find_captured_event(&records, "home cache reclaim turn completed").unwrap();
     assert_eq!(recovery.fields["available_before"], "1");
     assert_eq!(recovery.fields["available_after"], "1");
 }

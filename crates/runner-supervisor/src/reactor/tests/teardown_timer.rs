@@ -1,17 +1,10 @@
 use super::super::*;
 use tracing::info;
 use tracing_subscriber::prelude::*;
-use tracing_test_support::{CapturedEvent, CapturedEvents};
+use tracing_test_support::{CapturedEvent, CapturedEvents, find_captured_event};
 
 fn event_with_message<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|value| value == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event message {message:?}; captured={events:#?}"))
 }
 

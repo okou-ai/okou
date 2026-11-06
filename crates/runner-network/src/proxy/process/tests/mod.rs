@@ -6,8 +6,8 @@ use runner_types::ids::RunId;
 use std::os::unix::fs::PermissionsExt;
 use tokio::io::AsyncWriteExt;
 use tracing::Level;
-use tracing_test_support::CapturedEvent;
 use tracing_test_support::capture_future_events as capture_mitmdump_monitor_events;
+use tracing_test_support::{CapturedEvent, find_captured_event};
 
 mod ca_fixture;
 use ca_fixture::prepare_test_ca;
@@ -56,14 +56,7 @@ fn load_test_addon_files() -> Vec<(String, String)> {
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|actual| actual == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event {message}; events={events:#?}"))
 }
 

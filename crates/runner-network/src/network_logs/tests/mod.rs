@@ -1,7 +1,9 @@
 use std::fmt::Write as _;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
-use tracing_test_support::capture_current_thread_events as capture_async_log_events;
+use tracing_test_support::{
+    capture_current_thread_events as capture_async_log_events, find_captured_event,
+};
 
 use api_contracts::generated::constants::client::headers::CLIENT_REQUEST_ID_HEADER;
 use httpmock::prelude::*;
@@ -402,14 +404,7 @@ where
 }
 
 fn captured_event<'a>(events: &'a [CapturedEvent], message: &str) -> &'a CapturedEvent {
-    events
-        .iter()
-        .find(|event| {
-            event
-                .fields
-                .get("message")
-                .is_some_and(|actual| actual == message)
-        })
+    find_captured_event(events, message)
         .unwrap_or_else(|| panic!("missing event {message}; events={events:#?}"))
 }
 
