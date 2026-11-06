@@ -20,7 +20,6 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
-  DropdownMenuTrigger,
 } from "@okouai/ui";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/chat-thread-rename.ts";
@@ -29,6 +28,7 @@ import {
   openThreadBrowserSession$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
+import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat-thread-archive.ts";
 import { setChatThreadMutedWithFeedback$ } from "../../signals/chat-page/chat-thread-mute.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
@@ -157,23 +157,15 @@ export function MobileChatThreadMoreMenu({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        render={
-          <Button
-            showTooltip
-            type="button"
-            variant="quiet"
-            size="icon-sm"
-            iconSize="md"
-            className="size-11 shrink-0"
-            aria-label={t(($) => {
-              return $.chat.actions.more;
-            })}
-          />
-        }
-      >
-        <Ellipsis size={18} />
-      </DropdownMenuTrigger>
+      <ChatHeaderIconButton
+        thread={thread}
+        icon={<Ellipsis size={18} />}
+        label={t(($) => {
+          return $.chat.actions.more;
+        })}
+        largeTarget
+        usage={{ kind: "popup", popup: "menu" }}
+      />
       <DropdownMenuContent align="end" className="min-w-48">
         <DropdownMenuItem
           className="min-h-11"

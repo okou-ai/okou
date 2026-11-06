@@ -13,12 +13,10 @@ import {
   cn,
   Popover,
   PopoverContent,
-  PopoverTrigger,
   RunningIndicator,
   Skeleton,
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
@@ -38,6 +36,7 @@ import {
   CHAT_HEADER_PANEL_CLASS,
   ChatHeaderPanelHeader,
 } from "./chat-header-panel.tsx";
+import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -90,18 +89,18 @@ function ChatResourcesButtonInner({
   return (
     <Popover
       open={visible}
-      onOpenChange={(nextOpen, details) => {
-        if (nextOpen && transitioning) {
-          details.cancel();
-          return;
-        }
+      onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
       }}
     >
-      <ChatResourcesTrigger
-        open={visible}
-        loading={transitioning}
+      <ChatHeaderIconButton
+        thread={thread}
+        icon={<Package size={18} />}
+        label={t(($) => {
+          return $.chat.resources.title;
+        })}
         largeTarget={largeTarget}
+        usage={{ kind: "popup", popup: "popover" }}
       />
       <PopoverContent
         align="end"
@@ -186,58 +185,6 @@ function ChatResourcesSkeleton() {
         })}
       </div>
     </div>
-  );
-}
-
-function ChatResourcesTrigger({
-  open,
-  loading,
-  largeTarget,
-}: {
-  readonly open: boolean;
-  readonly loading: boolean;
-  readonly largeTarget: boolean;
-}) {
-  const { t } = useTranslation();
-  const label = t(($) => {
-    return $.chat.resources.title;
-  });
-  const loadingLabel = t(($) => {
-    return $.chat.resources.loading;
-  });
-  return (
-    <TooltipProvider delay={300}>
-      <Tooltip disabled={open}>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              render={
-                <Button
-                  type="button"
-                  variant="quiet"
-                  size="icon-sm"
-                  iconSize="md"
-                  className={cn(
-                    "shrink-0 duration-150",
-                    largeTarget && "size-11",
-                    open &&
-                      "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
-                  )}
-                  aria-label={label}
-                  aria-busy={loading}
-                  aria-disabled={loading || undefined}
-                  // Why presses do nothing must not depend on hover or motion.
-                  aria-description={loading ? loadingLabel : undefined}
-                />
-              }
-            />
-          }
-        >
-          <Package size={18} />
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{label}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
   );
 }
 

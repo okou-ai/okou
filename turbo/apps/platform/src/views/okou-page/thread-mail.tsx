@@ -13,7 +13,6 @@ import {
   Input,
   Popover,
   PopoverContent,
-  PopoverTrigger,
   Skeleton,
   Toggle,
   ToggleGroup,
@@ -38,12 +37,12 @@ import { hash$, pathname$, searchParams$ } from "../../signals/route.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
-import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import {
   CHAT_HEADER_PANEL_CLASS,
   ChatHeaderPanelHeader,
 } from "./chat-header-panel.tsx";
+import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { emptyArtifactImg } from "./platform-assets.ts";
 
 export function ThreadMailLink({
@@ -90,17 +89,23 @@ export function ThreadMailLink({
 
 export function ThreadMailButton({
   thread,
+  largeTarget = false,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly largeTarget?: boolean;
 }) {
   const exists = useGet(thread.threadExists$);
-  return exists ? <ThreadMailButtonInner thread={thread} /> : null;
+  return exists ? (
+    <ThreadMailButtonInner thread={thread} largeTarget={largeTarget} />
+  ) : null;
 }
 
 function ThreadMailButtonInner({
   thread,
+  largeTarget,
 }: {
   readonly thread: ChatPanelSignals;
+  readonly largeTarget: boolean;
 }) {
   const { t } = useTranslation();
   const open = useGet(thread.mail.open$);
@@ -108,16 +113,11 @@ function ThreadMailButtonInner({
   const close = useSet(thread.mail.close$);
   const target = useGet(thread.sidebar.target$);
   const pending = useGet(thread.mail.pending$);
-  const transitioning = useChatHeaderTransitioning(thread);
   return (
     <>
       <Popover
         open={open}
         onOpenChange={(next, details) => {
-          if (next && transitioning) {
-            details.cancel();
-            return;
-          }
           if (!next && pending !== null) {
             details.cancel();
             return;
@@ -129,25 +129,15 @@ function ThreadMailButtonInner({
           }
         }}
       >
-        <PopoverTrigger
-          render={
-            <Button
-              showTooltip
-              type="button"
-              aria-disabled={(transitioning && !open) || undefined}
-              aria-busy={transitioning}
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className="shrink-0"
-              aria-label={t(($) => {
-                return $.chat.mail.manager.open;
-              })}
-            />
-          }
-        >
-          <Mail size={18} />
-        </PopoverTrigger>
+        <ChatHeaderIconButton
+          thread={thread}
+          icon={<Mail size={18} />}
+          label={t(($) => {
+            return $.chat.mail.manager.open;
+          })}
+          largeTarget={largeTarget}
+          usage={{ kind: "popup", popup: "popover" }}
+        />
         <PopoverContent
           align="end"
           sideOffset={8}

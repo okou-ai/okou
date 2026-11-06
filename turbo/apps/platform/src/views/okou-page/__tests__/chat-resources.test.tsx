@@ -140,7 +140,7 @@ test("Open a pressed panel at once, draw its resources complete, and reuse them 
     within(panel).getByRole("status", { name: "Loading artifacts" }),
   ).toBeInTheDocument();
   expect(within(panel).queryByText("report.pdf")).not.toBeInTheDocument();
-  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
+  expect(resourceButton()).toHaveAttribute("aria-disabled", "false");
   response.resolve();
   await expect(
     within(panel).findByText("report.pdf"),
