@@ -4411,43 +4411,6 @@
         }
       }
     },
-    "Clear search": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Suche löschen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Borrar búsqueda" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Effacer la recherche" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "खोज साफ़ करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Hapus pencarian" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Cancella ricerca" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "検索をクリア" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "검색 지우기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Limpar busca" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "清除搜索" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "清除搜尋" }
-        }
-      }
-    },
     "Clear status": {
       "localizations": {
         "de": {
@@ -9222,6 +9185,80 @@
         }
       }
     },
+    "Find a file, site or deck by its name.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Finden Sie eine Datei, eine Website oder eine Präsentation über ihren Namen." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Encuentra un archivo, sitio o presentación por su nombre." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Trouvez un fichier, un site ou une présentation par son nom." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "किसी फ़ाइल, साइट या डेक को उसके नाम से ढूँढें।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Temukan file, situs, atau presentasi berdasarkan namanya." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Trova un file, un sito o una presentazione dal nome." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "ファイル、サイト、スライドを名前で探せます。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "파일, 사이트, 슬라이드를 이름으로 찾아보세요." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Encontre um arquivo, site ou apresentação pelo nome." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "按名称查找文件、网站或演示文稿。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "依名稱查找檔案、網站或簡報。" }
+        }
+      }
+    },
+    "Find a message by any word in it.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Finden Sie eine Nachricht über ein beliebiges Wort darin." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Encuentra un mensaje por cualquier palabra que contenga." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Trouvez un message grâce à n’importe quel mot qu’il contient." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "किसी भी शब्द से संदेश ढूँढें।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Temukan pesan dari kata apa pun di dalamnya." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Trova un messaggio da qualsiasi parola che contiene." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "含まれる言葉でメッセージを探せます。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "메시지에 들어 있는 단어로 찾아보세요." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Encontre uma mensagem por qualquer palavra que ela contenha." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "用消息里的任意词语查找。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "用訊息裡的任意詞語查找。" }
+        }
+      }
+    },
     "Find accounts": {
       "localizations": {
         "de": {
@@ -13055,191 +13092,6 @@
         }
       }
     },
-    "No matching agents.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Keine passenden Agents." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "No hay agentes que coincidan." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Aucun agent correspondant." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "कोई मिलता-जुलता एजेंट नहीं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tidak ada agen yang cocok." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nessun agente corrispondente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "一致するエージェントはありません。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "일치하는 에이전트가 없습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Nenhum agente correspondente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "没有匹配的智能体。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "沒有相符的智慧代理。" }
-        }
-      }
-    },
-    "No matching artifacts.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Keine passenden Artefakte." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "No hay artefactos que coincidan." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Aucun artefact correspondant." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "कोई मिलता-जुलता आर्टिफ़ैक्ट नहीं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tidak ada artefak yang cocok." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nessun artefatto corrispondente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "一致する成果物はありません。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "일치하는 결과물이 없습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Nenhum artefato correspondente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "没有匹配的成果。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "沒有相符的成果。" }
-        }
-      }
-    },
-    "No matching chats.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Keine passenden Chats." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "No hay chats que coincidan." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Aucune discussion correspondante." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "कोई मिलती-जुलती चैट नहीं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tidak ada chat yang cocok." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nessuna chat corrispondente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "一致するチャットはありません。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "일치하는 채팅이 없습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Nenhuma conversa correspondente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "没有匹配的聊天。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "沒有相符的聊天。" }
-        }
-      }
-    },
-    "No matching messages.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Keine passenden Nachrichten." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "No hay mensajes que coincidan." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Aucun message correspondant." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "कोई मिलता-जुलता संदेश नहीं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tidak ada pesan yang cocok." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nessun messaggio corrispondente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "一致するメッセージはありません。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "일치하는 메시지가 없습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Nenhuma mensagem encontrada." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "没有匹配的消息。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "沒有相符的訊息。" }
-        }
-      }
-    },
-    "No matching results.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Keine passenden Ergebnisse." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "No hay resultados que coincidan." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Aucun résultat correspondant." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "कोई मिलता-जुलता परिणाम नहीं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tidak ada hasil yang cocok." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nessun risultato corrispondente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "一致する結果はありません。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "일치하는 결과가 없습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Nenhum resultado correspondente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "没有匹配的结果。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "沒有相符的結果。" }
-        }
-      }
-    },
     "No matching Workflows": {
       "localizations": {
         "de": {
@@ -13274,43 +13126,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "沒有相符的工作流" }
-        }
-      }
-    },
-    "No matching workflows.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Keine passenden Workflows." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "No hay flujos de trabajo que coincidan." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Aucun workflow correspondant." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "कोई मिलता-जुलता वर्कफ़्लो नहीं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tidak ada alur kerja yang cocok." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nessun flusso di lavoro corrispondente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "一致するワークフローはありません。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "일치하는 워크플로가 없습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Nenhum fluxo de trabalho correspondente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "没有匹配的工作流。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "沒有相符的工作流。" }
         }
       }
     },
@@ -18653,6 +18468,43 @@
         }
       }
     },
+    "Search artifacts": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Artefakte durchsuchen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Buscar artefactos" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Rechercher des artefacts" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आर्टिफ़ैक्ट खोजें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Cari artefak" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Cerca artefatti" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "成果物を検索" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "결과물 검색" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Buscar artefatos" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "搜索成果" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "搜尋成果" }
+        }
+      }
+    },
     "Search chats": {
       "localizations": {
         "de": {
@@ -18687,6 +18539,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "搜尋聊天" }
+        }
+      }
+    },
+    "Search messages": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Nachrichten durchsuchen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Buscar mensajes" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Rechercher des messages" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "संदेश खोजें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Cari pesan" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Cerca messaggi" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "メッセージを検索" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "메시지 검색" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Buscar mensagens" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "搜索消息" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "搜尋訊息" }
         }
       }
     },
@@ -22162,80 +22051,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "開啟" }
-        }
-      }
-    },
-    "Type to search artifacts across this workspace.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Geben Sie etwas ein, um Artefakte in diesem Arbeitsbereich zu durchsuchen." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Escribe para buscar artefactos en este espacio de trabajo." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Saisissez du texte pour rechercher des artefacts dans cet espace de travail." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस वर्कस्पेस में आर्टिफ़ैक्ट खोजने के लिए टाइप करें।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Ketik untuk mencari artefak di ruang kerja ini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Digita per cercare gli artefatti in questa area di lavoro." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "入力すると、このワークスペースの成果物を検索します。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "입력하여 이 워크스페이스의 결과물을 검색하세요." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Digite para buscar artefatos neste espaço de trabalho." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "输入内容以搜索此工作区的成果。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "輸入內容以搜尋此工作區的成果。" }
-        }
-      }
-    },
-    "Type to search messages across this workspace.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Geben Sie etwas ein, um Nachrichten in diesem Arbeitsbereich zu durchsuchen." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Escribe para buscar mensajes en este espacio de trabajo." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Saisissez du texte pour rechercher des messages dans cet espace de travail." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस वर्कस्पेस में संदेश खोजने के लिए टाइप करें।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Ketik untuk mencari pesan di ruang kerja ini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Digita per cercare i messaggi in questa area di lavoro." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "入力すると、このワークスペースのメッセージを検索します。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "입력하여 이 워크스페이스의 메시지를 검색하세요." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Digite para buscar mensagens neste espaço de trabalho." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "输入内容以搜索此工作区的消息。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "輸入內容以搜尋此工作區的訊息。" }
         }
       }
     },

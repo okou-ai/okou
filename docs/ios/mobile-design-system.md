@@ -448,10 +448,21 @@ single floating line, and colour is a small accent for status only.
 - **Search is a page, not a sheet**, as ChatGPT, Claude and Perplexity open theirs: the
   sidebar's search capsule zooms into a full-screen page (`fullScreenCover` with the zoom
   transition from the capsule), white like a page, the field at the top, ✕ trailing.
-  The field is the system's (it rises into the bar while typing), drawn with the app's
-  glyphs: Lucide `search` and `circle-x` in placeholder grey (`OkouNavigationBar.applySearchField()`).
-  The ✕ that ends search while typing stays the system's own glass button; no public API
-  sizes or swaps its glyph, so it is a little larger than the app's Lucide ✕.
+  The page is `OkouSearchPage`; build any other full search page on it.
+  - The field is the system's (it rises into the bar while typing), drawn with the app's
+    glyph: Lucide `search` in placeholder grey (`OkouNavigationBar.applySearchField()`).
+  - It has no clear button (`okouSearchPageField()`): the ✕ that ends search sits right
+    beside it, and two ✕ read as the same action twice. That ✕ is the system's glass button
+    drawn with the app's Lucide `x` at the toolbar size, like every other close.
+  - The filter row and the results follow the field as it rises and drops back:
+    `OkouUnderNavigationBar` lays the page out under the bar with UIKit, so it moves in the
+    bar's own animation (or a spring of `OkouMotion.barMove`) instead of jumping with
+    SwiftUI's safe area.
+  - Nothing matched, and a scope that only searches once something is typed (Messages,
+    Artifacts), is one `OkouEmptyState` for the page, never a bare line of text. It sits
+    over the list, centred in what is left of the screen: under the filters and above the
+    keyboard, recentring as the keyboard goes down. A section shows only when it has rows,
+    so no title stands over an empty one.
   The field and the filter row sit on a solid page-coloured header (`.hard` top scroll
   edge, the filter row in a `safeAreaBar` with the page colour), so results end cleanly
   under it instead of blurring through, as ChatGPT, Claude and Perplexity draw search.
@@ -604,6 +615,8 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouIcon`, `OkouToolbarIcon`, `Label(okouSymbol:)`, `Button(okouSymbol:)`    | Shared product icon assets; preserve native labels, menu behavior, and button roles                                                                                                                                              |
 | `OkouLineIcon`                                                                | A glyph centred on the first line of the text beside it in a `.firstTextBaseline` row (feedback, search results); a bare glyph there rides high because it has no baseline                                                       |
 | `OkouSearchBar`                                                               | The sidebar's search button: 44 pt clear glass capsule, Lucide `search` glyph, placeholder grey. The search page keeps the system field and its interaction, drawn with the same glyphs (`OkouNavigationBar.applySearchField()`) |
+| `OkouSearchPage` | A full search page: the system field (rising into the bar while typing; no clear button, the app's ✕ via `okouSearchPageField()`), a filter row pinned on a solid header, results as a plain list, and one `OkouEmptyState` centred over what is left of the screen, above the keyboard. Built on `OkouUnderNavigationBar`, so filters and results move with the field. Catalog: Search page |
+| `OkouUnderNavigationBar` | A page laid out under the navigation bar by UIKit, so it moves with the bar when the bar changes height (the search field rising into it); takes `OkouAppearance` again in its own hosting controller |
 | `OkouEdgeBlurView`                                                            | A little more blur inside a band the transcript already has — the status bar band, the composer's own area — fading to clear over 16 pt; never a taller band                                                                     |
 | `OkouEmptyState`                                                              | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title                                                 |
 | `OkouLoadErrorRow` / `OkouLoadingRow`                                         | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                                                                 |

@@ -136,6 +136,9 @@ enum OkouAvatarSize {
 enum OkouMotion {
   static let press = Animation.easeOut(duration: 0.15)
   static let transition = Animation.easeInOut(duration: 0.25)
+  /// The navigation bar changing height (the search field rising into it), as UIKit moves it;
+  /// a page under the bar follows in this time (`OkouUnderNavigationBar`).
+  static let barMove: TimeInterval = 0.35
 
   /// Web `chat-greeting-token`: each word fades in from an 8 pt blur and a 14 pt rise.
   static let greetingWord = Animation.timingCurve(0.22, 1, 0.36, 1, duration: 0.72)

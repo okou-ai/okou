@@ -50,72 +50,22 @@ struct ChatSearchView: View {
   private func shows(_ section: Scope) -> Bool { scope == .all || scope == section }
 
   var body: some View {
+    let titles = search.titleResults(in: titleThreads)
     NavigationStack {
-      List {
-        if workspace.list.isLoading && workspace.list.threads.isEmpty {
-          OkouLoadingRow("Loading chats…")
-        } else if let error = workspace.list.error {
-          OkouLoadErrorRow(message: error, actionTitle: "Reload chats") {
-            await workspace.list.refresh()
-          }
-        }
-        if let error = search.openingError {
-          Text(error).foregroundStyle(OkouColor.mutedForeground)
-        }
-        let titles = search.titleResults(in: titleThreads)
-        if shows(.chats), !titles.isEmpty {
-          Section {
-            sectionTitle {
-              Text(search.keyword.isEmpty ? LocalizedStringKey("Recent chats") : "Chats")
-                .okouSectionHeader()
-            }
-            ForEach(titles) { thread in
-              resultButton(threadID: thread.id) {
-                VStack(alignment: .leading, spacing: OkouSpace.xs) {
-                  Text(thread.displayTitle).lineLimit(1)
-                  Text(agentName(thread.agentID)).font(.okou(.caption)).foregroundStyle(
-                    OkouColor.mutedForeground)
-                }
-              }
-            }
-          }
-        }
-        if shows(.messages), !search.keyword.isEmpty { messagesSection }
-        if shows(.agents), !agents.isEmpty, scope == .agents || !search.keyword.isEmpty {
-          agentsSection
-        }
-        if shows(.workflows) { workflowsSection }
-        if shows(.artifacts) { artifactsSection }
-        emptyState(hasTitles: !titles.isEmpty)
-      }
-      .listStyle(.plain)
-      .scrollContentBackground(.hidden)
-      .background(OkouColor.background)
-      // The field and the filters sit on a solid page-coloured header, as ChatGPT, Claude and
-      // Perplexity draw search: results end cleanly under it instead of blurring through.
-      .scrollEdgeEffectStyle(.hard, for: .top)
-      .scrollDismissesKeyboard(.immediately)
-      .safeAreaBar(edge: .top, spacing: 0) {
+      OkouSearchPage(
+        "Search", text: Binding(get: { search.query }, set: { search.updateQuery($0) }),
+        prompt: "Search", close: { search.dismiss() }
+      ) {
         // On the search field's and the rows' leading edge.
         OkouChipRail(inset: OkouSpace.lg) {
           ForEach(Scope.allCases, id: \.self) { item in
             OkouChip(title: Text(item.title), isSelected: scope == item) { scope = item }
           }
         }
-        .padding(.vertical, OkouSpace.sm)
-        .background(OkouColor.background)
-      }
-      .navigationTitle("Search")
-      .navigationBarTitleDisplayMode(.inline)
-      // The system search interaction (the field rises into the bar while typing) in the app's
-      // style: Lucide glyphs and placeholder grey (`OkouNavigationBar.applySearchField()`).
-      .searchable(
-        text: Binding(get: { search.query }, set: { search.updateQuery($0) }),
-        placement: .navigationBarDrawer(displayMode: .always),
-        prompt: "Search"
-      )
-      .toolbar {
-        OkouCloseToolbarItem { search.dismiss() }
+      } results: {
+        results(titles: titles)
+      } empty: {
+        emptyState(hasTitles: !titles.isEmpty)
       }
       .sheet(
         isPresented: Binding(
@@ -128,41 +78,80 @@ struct ChatSearchView: View {
     }
   }
 
-  private var messagesSection: some View {
-    Section {
-      sectionTitle { Text("Messages").okouSectionHeader() }
-      // One row per chat: several matches in the same chat are counted, not repeated.
-      ForEach(messageGroups, id: \.result.chatThreadId) { group in
-        resultButton(threadID: group.result.chatThreadId) {
-          VStack(alignment: .leading, spacing: OkouSpace.xs) {
-            Text(
-              workspace.list.threads.first { $0.id == group.result.chatThreadId }?
-                .displayTitle ?? group.result.agentName
-            )
-            .lineLimit(1)
-            Text(group.result.snippet).font(.okou(.subheadline)).foregroundStyle(
-              OkouColor.mutedForeground
-            ).lineLimit(2)
-            HStack(spacing: OkouSpace.xs) {
-              Text(group.result.matchedMessage.createdAt, style: .date)
-              if group.count > 1 {
-                Text(verbatim: "·")
-                Text("\(group.count) matches")
-              }
+  @ViewBuilder
+  private func results(titles: [ChatThread]) -> some View {
+    if workspace.list.isLoading && workspace.list.threads.isEmpty {
+      OkouLoadingRow("Loading chats…")
+    } else if let error = workspace.list.error {
+      OkouLoadErrorRow(message: error, actionTitle: "Reload chats") {
+        await workspace.list.refresh()
+      }
+    }
+    if let error = search.openingError {
+      Text(error).foregroundStyle(OkouColor.mutedForeground)
+    }
+    if shows(.chats), !titles.isEmpty {
+      Section {
+        sectionTitle {
+          Text(search.keyword.isEmpty ? LocalizedStringKey("Recent chats") : "Chats")
+            .okouSectionHeader()
+        }
+        ForEach(titles) { thread in
+          resultButton(threadID: thread.id) {
+            VStack(alignment: .leading, spacing: OkouSpace.xs) {
+              Text(thread.displayTitle).lineLimit(1)
+              Text(agentName(thread.agentID)).font(.okou(.caption)).foregroundStyle(
+                OkouColor.mutedForeground)
             }
-            .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
           }
         }
-        .accessibilityIdentifier("search-message-\(group.result.id)")
       }
-      if search.isLoading {
-        OkouLoadingRow("Searching messages…")
-      } else if let error = search.error {
-        OkouLoadErrorRow(message: error) { search.retry() }
-      } else if search.messages.isEmpty, scope == .messages {
-        Text("No matching messages.").foregroundStyle(OkouColor.mutedForeground)
+    }
+    if shows(.messages), !search.keyword.isEmpty { messagesSection }
+    if shows(.agents), !agents.isEmpty, scope == .agents || !search.keyword.isEmpty {
+      agentsSection
+    }
+    if shows(.workflows) { workflowsSection }
+    if shows(.artifacts) { artifactsSection }
+  }
+
+  /// Only when there is something to show: a match, the search running, or its error. No
+  /// matches anywhere is one empty state for the page (`emptyState`), not an empty section.
+  @ViewBuilder
+  private var messagesSection: some View {
+    if !search.messages.isEmpty || search.isLoading || search.error != nil {
+      Section {
+        sectionTitle { Text("Messages").okouSectionHeader() }
+        // One row per chat: several matches in the same chat are counted, not repeated.
+        ForEach(messageGroups, id: \.result.chatThreadId) { group in
+          resultButton(threadID: group.result.chatThreadId) {
+            VStack(alignment: .leading, spacing: OkouSpace.xs) {
+              Text(
+                workspace.list.threads.first { $0.id == group.result.chatThreadId }?
+                  .displayTitle ?? group.result.agentName
+              )
+              .lineLimit(1)
+              Text(group.result.snippet).font(.okou(.subheadline)).foregroundStyle(
+                OkouColor.mutedForeground
+              ).lineLimit(2)
+              HStack(spacing: OkouSpace.xs) {
+                Text(group.result.matchedMessage.createdAt, style: .date)
+                if group.count > 1 {
+                  Text(verbatim: "·")
+                  Text("\(group.count) matches")
+                }
+              }
+              .font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+            }
+          }
+          .accessibilityIdentifier("search-message-\(group.result.id)")
+        }
+        if search.isLoading {
+          OkouLoadingRow("Searching messages…")
+        } else if let error = search.error {
+          OkouLoadErrorRow(message: error) { search.retry() }
+        }
       }
-      sectionNote { Text("Recent messages may take time to appear in search.").okouSectionNote() }
     }
   }
 
@@ -298,29 +287,35 @@ struct ChatSearchView: View {
         artifactKind: item.kind == "presentation" ? "presentation-html" : nil))
   }
 
-  /// One quiet line where a scope has nothing to show yet.
+  /// The page's empty state where a scope has nothing to show yet.
   @ViewBuilder
   private func emptyState(hasTitles: Bool) -> some View {
     let keyword = search.keyword
     if keyword.isEmpty && scope == .messages {
-      note("Type to search messages across this workspace.")
+      pageState(
+        "Search messages", icon: "messages-square",
+        description: "Find a message by any word in it.")
     } else if keyword.isEmpty && scope == .artifacts {
-      note("Type to search artifacts across this workspace.")
+      pageState(
+        "Search artifacts", icon: "layers",
+        description: "Find a file, site or deck by its name.")
     } else if !keyword.isEmpty && !search.isLoading && search.error == nil {
       switch scope {
       case .all
       where !hasTitles && search.messages.isEmpty && agents.isEmpty && search.workflows.isEmpty
         && search.artifacts.isEmpty && !search.isLoadingArtifacts:
-        note("No matching results.")
+        noResults(messages: true)
+      case .messages where search.messages.isEmpty:
+        noResults(messages: true)
       case .chats where !hasTitles:
-        note("No matching chats.")
+        noResults(messages: false)
       case .agents where agents.isEmpty:
-        note("No matching agents.")
+        noResults(messages: false)
       case .workflows where search.workflows.isEmpty && !search.isLoadingWorkflows:
-        note("No matching workflows.")
+        noResults(messages: false)
       case .artifacts
       where search.artifacts.isEmpty && !search.isLoadingArtifacts && search.artifactsError == nil:
-        note("No matching artifacts.")
+        noResults(messages: false)
       default:
         EmptyView()
       }
@@ -336,16 +331,21 @@ struct ChatSearchView: View {
       .accessibilityAddTraits(.isHeader)
   }
 
-  /// A section's note as its last row, for the same reason.
-  private func sectionNote<Note: View>(@ViewBuilder _ note: () -> Note) -> some View {
-    note().listRowSeparator(.hidden)
+  /// Nothing matched. Where messages are searched it says why a recent one may be missing;
+  /// elsewhere it suggests another search.
+  private func noResults(messages: Bool) -> some View {
+    pageState(
+      "No results", icon: "search",
+      description: messages
+        ? "Recent messages may take time to appear in search." : "Try another search.")
   }
 
-  private func note(_ text: LocalizedStringKey) -> some View {
-    Text(text)
-      .font(.okou(.subheadline))
-      .foregroundStyle(OkouColor.mutedForeground)
-      .listRowSeparator(.hidden)
+  /// The page's one empty state, from the design system: a scope that only searches before
+  /// anything is typed, or nothing matched.
+  private func pageState(
+    _ title: LocalizedStringKey, icon: String, description: LocalizedStringKey
+  ) -> some View {
+    OkouEmptyState(title, icon: icon, description: Text(description))
   }
 
   private var messageGroups: [(result: ChatSearchResult, count: Int)] {
