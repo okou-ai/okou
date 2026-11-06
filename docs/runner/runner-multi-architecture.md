@@ -312,6 +312,15 @@ The production release job retains its separate guest and embedded Runner
 compilation phases together with the existing release creation, asset upload,
 Slack notification, and deployment behavior.
 
+Both Cargo builds use stable `--timings`. Each phase uploads its current HTML
+report immediately, before the next build can overwrite it. Download the
+`runner-release-guest-build-timings-<target>-<attempt>` and
+`runner-release-build-timings-<target>-<attempt>` artifacts from the release-please
+run; they are retained for seven days. Uploads are attempted after success or
+failure when that build ran, and missing reports or upload failures do not change
+the compilation or publication result. The reports show compilation-unit timing
+and concurrency, not a detailed LLVM or linker profile.
+
 The shared R2 compiler cache avoids GitHub's branch-scoped storage and quota.
 Cache backend statistics in the compile job report actual hits, misses, and
 write errors; binary and image validation remain required.
