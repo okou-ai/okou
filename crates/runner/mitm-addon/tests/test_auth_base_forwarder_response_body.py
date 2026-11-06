@@ -19,9 +19,14 @@ from tests.auth_base_forwarder_helpers import (
 
 def _response(payload: bytes, framing: str) -> bytes:
     if framing == "chunked":
-        body = f"{len(payload):x}\r\n".encode() + payload + b"\r\n" if payload else b""
+        # Join the terminal framing too, avoiding body-sized temporary copies.
+        body = (
+            b"".join((f"{len(payload):x}\r\n".encode(), payload, b"\r\n0\r\n\r\n"))
+            if payload
+            else b"0\r\n\r\n"
+        )
         return http_response(
-            body=body + b"0\r\n\r\n",
+            body=body,
             headers=[("Transfer-Encoding", "chunked")],
         )
     headers = [("Content-Length", str(len(payload)))] if framing == "fixed" else []
