@@ -1175,7 +1175,7 @@ async fn create_started_sandbox(
 
     let source_ip = sandbox.source_ip().to_string();
     let proxy_register_started = Instant::now();
-    let network_log_session = match register_proxy(config, context, &source_ip).await {
+    let network_log_session = match register_proxy(config, context, &source_ip, telemetry).await {
         Ok(session) => {
             let proxy_register_elapsed = proxy_register_started.elapsed();
             telemetry.record(
@@ -1936,11 +1936,77 @@ fn normalize_guest_cli_agent_session_id(
     }
 }
 
-/// Register a sandbox in the proxy registry and network log manager.
+struct ProxyRegistrationTelemetry<'a> {
+    telemetry: &'a mut JobTelemetry,
+}
+
+impl proxy::ProxyRegistrationObserver for ProxyRegistrationTelemetry<'_> {
+    fn record_stage(
+        &mut self,
+        stage: proxy::ProxyRegistrationStage,
+        duration: Duration,
+        success: bool,
+    ) {
+        use proxy::ProxyRegistrationStage;
+        let action = match stage {
+            ProxyRegistrationStage::Prepare => "runner_proxy_register_prepare",
+            ProxyRegistrationStage::Lock => "runner_proxy_register_lock",
+            ProxyRegistrationStage::Read => "runner_proxy_register_read",
+            ProxyRegistrationStage::Parse => "runner_proxy_register_parse",
+            ProxyRegistrationStage::Mutate => "runner_proxy_register_mutate",
+            ProxyRegistrationStage::Capacity => "runner_proxy_register_capacity",
+            ProxyRegistrationStage::Serialize => "runner_proxy_register_serialize",
+            ProxyRegistrationStage::Digest => "runner_proxy_register_digest",
+            ProxyRegistrationStage::PublishQueue => "runner_proxy_register_publish_queue",
+            ProxyRegistrationStage::PublishWrite => "runner_proxy_register_publish_write",
+            ProxyRegistrationStage::Publish => "runner_proxy_register_publish",
+        };
+        self.telemetry.record(
+            action,
+            duration,
+            success,
+            (!success).then_some(SANDBOX_PROXY_REGISTER_FAILED),
+        );
+    }
+
+    fn registry_size(&mut self, bytes: usize, entries: usize) {
+        // These are category observations, not elapsed work. They describe the
+        // serialized candidate after insertion and successful capacity checks.
+        let bytes = match bytes {
+            0..=65_536 => "le_64kib",
+            65_537..=1_048_576 => "le_1mib",
+            1_048_577..=4_194_304 => "le_4mib",
+            _ => "le_16mib",
+        };
+        let entries = match entries {
+            0..=1 => "le_1",
+            2..=16 => "le_16",
+            17..=64 => "le_64",
+            65..=256 => "le_256",
+            _ => "gt_256",
+        };
+        for (action, outcome) in [
+            ("runner_proxy_register_registry_bytes", bytes),
+            ("runner_proxy_register_registry_entries", entries),
+        ] {
+            self.telemetry
+                .record_with_outcome(action, Duration::ZERO, true, None, Some(outcome));
+        }
+    }
+}
+
+/// Register required ownership before traffic. Detail timings share the fresh
+/// and reused/Blank callers' existing cohort attributes. Publish contains its
+/// queue/write children; millisecond rounding can produce zero durations.
+/// Dropping an observer does not establish a publication failure or success.
+/// Optional addon receipt completion remains outside this wait.
+/// Runtime registration measures local ownership/scheduling, not completion of
+/// a provider refresh or acceptance by the addon.
 pub(super) async fn register_proxy(
     config: &ExecutorConfig,
     context: &ExecutionContext,
     source_ip: &str,
+    telemetry: &mut JobTelemetry,
 ) -> RunnerResult<NetworkLogSession> {
     let network_log_path = config.log_paths.network_log(context.run_id);
     let proxy_log_path = config.log_paths.proxy_log(context.run_id);
@@ -1968,14 +2034,26 @@ pub(super) async fn register_proxy(
     };
     let publication = config
         .registry
-        .register_sandbox(source_ip, &registration)
+        .register_sandbox_with_observer(
+            source_ip,
+            &registration,
+            &mut ProxyRegistrationTelemetry { telemetry },
+        )
         .await
         .map_err(|e| RunnerError::Internal(format!("register sandbox in proxy registry: {e}")))?;
+    let started = Instant::now();
     let network_log_session = config
         .network_log_manager
         .register_source_ip(source_ip, network_log_path)
         .await;
+    telemetry.record(
+        "runner_proxy_register_network_log",
+        started.elapsed(),
+        true,
+        None,
+    );
     if let Some(runtime_sync) = config.connector_runtime_sync.as_ref() {
+        let started = Instant::now();
         runtime_sync
             .register_run(ConnectorRuntimeSyncRegistration {
                 run_id: context.run_id,
@@ -1987,6 +2065,12 @@ pub(super) async fn register_proxy(
                 refreshes: context.network_policy_refreshes.as_ref(),
             })
             .await;
+        telemetry.record(
+            "runner_proxy_register_connector_runtime",
+            started.elapsed(),
+            true,
+            None,
+        );
     }
     config.registry.observe_registration(publication);
     Ok(network_log_session)

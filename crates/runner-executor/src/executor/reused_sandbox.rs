@@ -56,7 +56,7 @@ pub(super) async fn execute_reused_sandbox(
             // Time required registration separately from storage preparation;
             // addon receipt completion is not awaited.
             let proxy_register_started = Instant::now();
-            let registration = register_proxy(config, context, &run.source_ip).await;
+            let registration = register_proxy(config, context, &run.source_ip, telemetry).await;
             telemetry.record(
                 "runner_reused_sandbox_proxy_register",
                 proxy_register_started.elapsed(),
