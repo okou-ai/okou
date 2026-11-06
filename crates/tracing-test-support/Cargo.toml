@@ -1,6 +1,6 @@
 [package]
 name = "tracing-test-support"
-version = "0.2.2"
+version = "0.2.3"
 edition.workspace = true
 description = "Tracing capture helpers for Rust tests"
 

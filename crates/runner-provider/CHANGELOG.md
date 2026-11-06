@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.14...runner-provider-v0.16.15) (2026-11-06)
+
+
+### Refactoring
+
+* **test-support:** share borrowed tracing event lookup ([#45595](https://github.com/okou-ai/okou/issues/45595)) ([762d9f0](https://github.com/okou-ai/okou/commit/762d9f09b639963f58a5af7188fbdf3c6c0746f9))
+
 ## [0.16.14](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.13...runner-provider-v0.16.14) (2026-11-06)
 
 
