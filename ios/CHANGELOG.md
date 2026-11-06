@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.27.0](https://github.com/okou-ai/okou/compare/ios-v0.26.3...ios-v0.27.0) (2026-11-06)
+
+
+### Features
+
+* **ios:** result cards with covers, shimmer loading and a debug design system entry ([#45629](https://github.com/okou-ai/okou/issues/45629)) ([42c54e2](https://github.com/okou-ai/okou/commit/42c54e28f920e8e26c4251a423eeffac46c70684))
+
 ## [0.26.3](https://github.com/okou-ai/okou/compare/ios-v0.26.2...ios-v0.26.3) (2026-11-06)
 
 

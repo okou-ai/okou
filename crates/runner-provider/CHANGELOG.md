@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.16](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.15...runner-provider-v0.16.16) (2026-11-06)
+
+
+### Bug Fixes
+
+* **runner:** centralize api reset recovery ([#45632](https://github.com/okou-ai/okou/issues/45632)) ([a856e01](https://github.com/okou-ai/okou/commit/a856e017d31efccb16e76d8d6bfee1e90336f6f1))
+
 ## [0.16.15](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.14...runner-provider-v0.16.15) (2026-11-06)
 
 
