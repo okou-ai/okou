@@ -1,10 +1,21 @@
 //! A supported Codex notification above the former stdout cap must complete
 //! execution and retain full local output while bounding its webhook copy.
 
+mod codex_large_stdout;
+
+use codex_large_stdout::LocalItem;
 use guest_agent::masker::SecretMasker;
 use guest_agent_tests as common;
 use serde_json::Value;
 use std::time::Duration;
+
+#[derive(serde::Deserialize)]
+struct LocalEvent<'a> {
+    #[serde(rename = "type")]
+    kind: String,
+    #[serde(borrow)]
+    item: Option<LocalItem<'a>>,
+}
 
 #[tokio::test]
 async fn codex_app_server_delivers_notification_above_former_stdout_limit()
@@ -49,12 +60,11 @@ async fn codex_app_server_delivers_notification_above_former_stdout_limit()
     let mut saw_command = false;
     let mut saw_completion = false;
     for line in log.lines() {
-        let event: Value = serde_json::from_str(line)?;
-        if event.pointer("/item/id").and_then(Value::as_str) == Some("large-command") {
-            let output = event
-                .pointer("/item/aggregated_output")
-                .and_then(Value::as_str)
-                .ok_or("local command output missing")?;
+        let event: LocalEvent<'_> = serde_json::from_str(line)?;
+        if let Some(item) = event.item
+            && item.id == "large-command"
+        {
+            let output = item.aggregated_output;
             assert_eq!(output.len(), 65 * 1024 * 1024 + 22);
             assert!(output.starts_with("large-head-"));
             assert!(output.ends_with("-large-tail"));
@@ -66,7 +76,7 @@ async fn codex_app_server_delivers_notification_above_former_stdout_limit()
             );
             saw_command = true;
         }
-        saw_completion |= event["type"] == "turn.completed";
+        saw_completion |= event.kind == "turn.completed";
     }
     assert!(saw_command && saw_completion);
     drop(log);
