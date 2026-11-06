@@ -432,7 +432,8 @@ struct ChatSidebarView: View {
         let profile = authentication.profile
         OkouProfileAvatar(
           imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-          size: OkouControl.minimumTarget)
+          size: OkouControl.minimumTarget
+        )
         .modifier(OkouGlassControl(shape: .circle))
       }
       .accessibilityLabel("Settings")
