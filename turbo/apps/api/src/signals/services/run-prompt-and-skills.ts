@@ -49,10 +49,7 @@ export type SkillVolume =
   | (SkillVolumeStorage &
       (
         | {
-            readonly source: Exclude<
-              SkillVolumeSource,
-              "request_additional_volume" | "system_skill"
-            >;
+            readonly source: "workflow_skill";
             readonly skillName: string;
           }
         | {
@@ -116,7 +113,7 @@ export function mergeRunPromptAndSkills(
 
 type ResolvedSkillVolume =
   | (SkillVolumeStorage & {
-      readonly source: Exclude<SkillVolumeSource, "system_skill">;
+      readonly source: "workflow_skill" | "request_additional_volume";
       readonly mountPath: string;
     })
   | {

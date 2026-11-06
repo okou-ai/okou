@@ -20,12 +20,7 @@ export function createConnectorsContext(
         continue;
       }
       const volume = {
-        ...("contentBundle" in connector.skill
-          ? { contentBundle: connector.skill.contentBundle }
-          : {
-              name: connector.skill.storageName,
-              version: connector.skill.versionId,
-            }),
+        contentBundle: connector.skill.contentBundle,
         skillName: connector.skill.skillName,
       };
       if (connector.kind === "custom") {
@@ -33,7 +28,6 @@ export function createConnectorsContext(
       } else {
         builtinVolumes.push({
           ...volume,
-          system: true,
           source: "connector_skill",
         });
       }

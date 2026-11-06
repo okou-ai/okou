@@ -5,7 +5,6 @@ import type { ApiTestUser } from "./api-bdd";
 import { createConnectorBddApi } from "./api-bdd-connectors";
 import { readPublishedArchive } from "./published-archive";
 import { installWorkflowVolumeS3Fixture } from "./workflow-volume-s3";
-import { enableConnectorSkillBundles } from "./enable-connector-skill-bundles";
 
 /** Read-only bundles published through the ordinary Connector API. */
 export async function readonlyConnectorSkills(
@@ -14,7 +13,6 @@ export async function readonlyConnectorSkills(
   agentId: string,
   labels: readonly string[],
 ) {
-  await enableConnectorSkillBundles(context, actor);
   installWorkflowVolumeS3Fixture(context, new Map(), { bundlesOnly: true });
   const connectors = createConnectorBddApi(context);
   const ids: string[] = [];

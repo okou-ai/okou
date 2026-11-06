@@ -1233,7 +1233,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     await own(() => {
       return enableFeishuIntegration(platform, actor, {
         [FeatureSwitchKey.OkouDebug]: true,
-        [FeatureSwitchKey.ConnectorSkillBundleDelivery]: true,
       });
     });
     authOrgApi.acceptAgentStorageWrites();

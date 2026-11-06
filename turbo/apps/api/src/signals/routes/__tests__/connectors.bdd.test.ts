@@ -1,4 +1,3 @@
-import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -81,9 +80,6 @@ async function observeCustomSkill(
   fixture: Awaited<ReturnType<typeof publicChatActor>>,
   connectorId: string,
 ) {
-  await fixture.run(() => {
-    return enableConnectorSkillBundles(context, fixture.actor);
-  });
   const sent = await fixture.sendChatRun(fixture.actor, {
     agentId: fixture.agentId,
     prompt: "Read the current custom connector skill",

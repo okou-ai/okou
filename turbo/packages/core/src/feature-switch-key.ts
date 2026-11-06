@@ -8,7 +8,6 @@ export enum FeatureSwitchKey {
   FriendReferrals = "friendReferrals",
   Projects = "projects",
   ConnectorChatAccountAccess = "connectorChatAccountAccess",
-  ConnectorSkillBundleDelivery = "_connectorSkillBundleDelivery",
   FeatureGuides = "featureGuides",
   BatchConnectorPermissions = "batchConnectorPermissions",
   DesktopShell = "desktopShell",
