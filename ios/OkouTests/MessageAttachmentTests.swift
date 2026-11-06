@@ -32,7 +32,7 @@ final class MessageAttachmentTests: XCTestCase {
     XCTAssertEqual(reopened?.messages, expected)
   }
 
-  func testPreviewFailureRetryDismissAndWorkspaceCloseReleaseFiles() async throws {
+  func testPreviewRetryKeepsFileForReopeningUntilWorkspaceCloses() async throws {
     let denied = Mutex(true)
     let server = try ChatFileHTTPServer { _ in .init(body: Data("local-file".utf8)) }
     addTeardownBlock { await server.stop() }
@@ -61,7 +61,7 @@ final class MessageAttachmentTests: XCTestCase {
     let url = try XCTUnwrap(viewer.preview?.file?.url)
     XCTAssertEqual(try Data(contentsOf: url), Data("local-file".utf8))
     viewer.dismiss()
-    XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
+    XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     viewer.open(file)
     try await waitForBusinessResult { viewer.preview?.file != nil }
     let second = try XCTUnwrap(viewer.preview?.file?.url)
