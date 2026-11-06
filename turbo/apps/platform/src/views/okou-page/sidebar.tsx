@@ -871,6 +871,7 @@ const CHAT_LIST_INSET = "px-3";
 
 function ChatListHeader() {
   const currentChatAgentId = useLastResolved(newChatAgentId$) ?? null;
+  const singleAgent = useGet(singleAgentEnabled$);
   const navigate = useSet(detachedNavigateTo$);
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
@@ -887,6 +888,23 @@ function ChatListHeader() {
     navigate(ROUTES.agentChat, {
       pathParams: { agentId: currentChatAgentId },
     });
+  };
+  const newChatItem = {
+    shortcut: GLOBAL_KEYBOARD_SHORTCUTS.newChat.binding,
+    trigger: (
+      <Button
+        type="button"
+        onClick={onNewChat}
+        disabled={!currentChatAgentId}
+        aria-label={newChatLabel}
+        aria-keyshortcuts={GLOBAL_KEYBOARD_SHORTCUTS.newChat.ariaKeyShortcuts}
+        variant="quiet"
+        size="icon-sm"
+        iconSize="md"
+      >
+        <Edit size={18} />
+      </Button>
+    ),
   };
   return (
     <div
@@ -922,25 +940,8 @@ function ChatListHeader() {
               </Button>
             ),
           },
-          {
-            shortcut: GLOBAL_KEYBOARD_SHORTCUTS.newChat.binding,
-            trigger: (
-              <Button
-                type="button"
-                onClick={onNewChat}
-                disabled={!currentChatAgentId}
-                aria-label={newChatLabel}
-                aria-keyshortcuts={
-                  GLOBAL_KEYBOARD_SHORTCUTS.newChat.ariaKeyShortcuts
-                }
-                variant="quiet"
-                size="icon-sm"
-                iconSize="md"
-              >
-                <Edit size={18} />
-              </Button>
-            ),
-          },
+          // My Okou starts chats from the chat list title's New chat button.
+          ...(singleAgent ? [] : [newChatItem]),
           {
             shortcut: GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.binding,
             trigger: (

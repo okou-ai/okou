@@ -1172,6 +1172,55 @@ test("Route New chat to the current agent and Chat to the default agent", async 
   });
 });
 
+test("My Okou starts new chats with Okou from the chat list title only", async () => {
+  prepareAgents();
+  mockSidebarThreadStory([
+    createThread(RESEARCH_THREAD_ID, "Research conversation", {
+      agent: { id: RESEARCH_AGENT_ID, avatarUrl: null },
+    }),
+  ]);
+  const createdAgentIds: string[] = [];
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    createdAgentIds.push(body.agentId);
+    return respond(201, {
+      id: body.clientThreadId ?? crypto.randomUUID(),
+      title: null,
+      createdAt: "2026-03-10T00:10:00Z",
+      selectedModel: body.model ?? null,
+      serviceTier: null,
+    });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${RESEARCH_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  await within(list).findByText("Research conversation");
+  const searchButton = within(list).getByLabelText("Search workspace");
+  if (!searchButton.parentElement) {
+    throw new Error("Chat header not found");
+  }
+  expect(
+    within(searchButton.parentElement).getByLabelText("Hide chat list"),
+  ).toBeInTheDocument();
+  expect(
+    within(searchButton.parentElement).queryByLabelText("New chat"),
+  ).not.toBeInTheDocument();
+
+  const newChat = within(list).getByLabelText("New chat");
+  expect(
+    within(list).getByText("Chats with Research Agent").parentElement,
+  ).toContainElement(newChat);
+  click(newChat);
+
+  await waitFor(() => {
+    expect(createdAgentIds).toStrictEqual([AGENT_ID]);
+  });
+});
+
 test("Mark all current-agent chats read from the chat-list menu", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([

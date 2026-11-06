@@ -103,6 +103,7 @@ import {
   currentChatAgentId$,
   currentChatThreadId$,
   hasCurrentChatThread$,
+  newChatAgentId$,
 } from "../../signals/agent-chat.ts";
 import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
@@ -1239,25 +1240,25 @@ function ChatThreadsListMenuTooltip() {
 }
 
 function useNewChatAction() {
-  const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
+  const newChatAgentId = useLastResolved(newChatAgentId$) ?? null;
   const createNewChat = useSet(createNewChatThread$);
   const setExpanded = useSet(setSidebarExpanded$);
   const rootSignal = useGet(rootSignal$);
   const newChatDisabled = useGet(newChatThreadDisabled$);
 
   function onSelect(pane: NewChatThreadPane) {
-    if (!currentChatAgentId) {
+    if (!newChatAgentId) {
       return;
     }
     detach(
-      createNewChat({ agentId: currentChatAgentId }, pane, rootSignal),
+      createNewChat({ agentId: newChatAgentId }, pane, rootSignal),
       Reason.DomCallback,
     );
     setExpanded(false);
   }
 
   return {
-    disabled: !currentChatAgentId || newChatDisabled,
+    disabled: !newChatAgentId || newChatDisabled,
     onSelect,
   };
 }
