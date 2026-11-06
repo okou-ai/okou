@@ -999,8 +999,11 @@
       "unavailableTitle": "授權連結不可用"
     },
     "computerUse": {
+      "actionFailed": "未能授權這台電腦，請重新整理聊天後再試。",
       "authorize": "授權",
       "authorized": "已授權",
+      "authorizedDescription": "已為此聊天的後續執行啟用電腦存取。",
+      "cardDescription": "選擇此聊天使用的電腦。這會中斷雲端瀏覽器。",
       "checkingCompatibility": "正在檢查相容性",
       "description": "選擇一臺線上的電腦，供 {{assistantName}} 在{{source}}中使用。",
       "downloadMac": "下載 macOS 版",
@@ -1009,6 +1012,7 @@
       "macRequirement": "需要搭載 Apple 晶片、系統為 macOS 14 或更高版本的 Mac，不支援 Intel 版 Mac。",
       "noHostsDescription": "在 Mac 上開啟 {{desktopApplicationName}}，讓裝置上線。",
       "noHostsTitle": "沒有線上的電腦",
+      "selectComputer": "選擇電腦",
       "sources": {
         "chat": "這個聊天會話",
         "slack": "這個 Slack 會話",
@@ -1478,7 +1482,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "授權",
       "cancel": "取消",
       "confirm": "確認",
       "continue": "繼續",
@@ -1922,7 +1925,6 @@
     },
     "computerUse": {
       "authorization": "Computer Use 授權",
-      "authorizationDescription": "為這個會話之後的執行選擇一臺 Desktop 主機。",
       "checkingCompatibility": "正在檢查相容性",
       "cloudBrowser": "雲端瀏覽器",
       "connectMyComputer": "連線我的電腦",
@@ -4023,7 +4025,6 @@
     "deniedTitle": "Shell 存取已拒絕",
     "deny": "拒絕",
     "description": "Agent 需要取得在你的電腦上使用 Shell 的權限。",
-    "details": "詳細資訊",
     "duration": "核准後可存取 1 小時",
     "expired": "授權已到期",
     "expiredTitle": "Shell 存取已到期",
@@ -4031,7 +4032,6 @@
     "pendingSummary": "{{computer}} · 1 小時",
     "reasonTitle": "申請用途",
     "requestExpired": "申請已過期",
-    "review": "檢視授權",
     "revoke": "撤銷",
     "revoked": "已撤銷 Shell 授權",
     "scope": "目前聊天的一小時存取權限",

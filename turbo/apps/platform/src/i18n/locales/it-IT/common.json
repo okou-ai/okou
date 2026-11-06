@@ -1017,8 +1017,11 @@
       "unavailableTitle": "Collegamento di autorizzazione non disponibile"
     },
     "computerUse": {
+      "actionFailed": "Impossibile autorizzare questo computer. Aggiorna la chat per riprovare.",
       "authorize": "Autorizza",
       "authorized": "Autorizzato",
+      "authorizedDescription": "Accesso al computer abilitato per le prossime esecuzioni in questa chat.",
+      "cardDescription": "Scegli un computer per questa chat. Questo disconnette il browser cloud.",
       "checkingCompatibility": "Verifica compatibilità",
       "description": "Scegli un computer online per {{assistantName}} da utilizzare in {{source}}.",
       "downloadMac": "Scarica per macOS",
@@ -1027,6 +1030,7 @@
       "macRequirement": "Richiede un Mac Apple Silicon con macOS 14 o successivo. I Mac Intel non sono supportati.",
       "noHostsDescription": "Apri {{desktopApplicationName}} sul tuo Mac per connetterlo.",
       "noHostsTitle": "Nessun computer online",
+      "selectComputer": "Seleziona un computer",
       "sources": {
         "chat": "questo thread di chat",
         "slack": "questo Slack thread",
@@ -1503,7 +1507,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "Autorizza",
       "cancel": "Annulla",
       "confirm": "Conferma",
       "continue": "Continua",
@@ -1954,7 +1957,6 @@
     },
     "computerUse": {
       "authorization": "Autorizzazione di Computer Use",
-      "authorizationDescription": "Seleziona un host desktop per le esecuzioni future in questo thread.",
       "checkingCompatibility": "Verifica compatibilità",
       "cloudBrowser": "Browser cloud",
       "connectMyComputer": "Collega il mio computer",
@@ -4090,7 +4092,6 @@
     "deniedTitle": "Accesso a Shell negato",
     "deny": "Rifiuta",
     "description": "L’agente richiede il permesso di utilizzare Shell sul tuo computer.",
-    "details": "Dettagli",
     "duration": "L’accesso dura 1 ora dopo l’approvazione",
     "expired": "Autorizzazione scaduta",
     "expiredTitle": "Accesso a Shell scaduto",
@@ -4098,7 +4099,6 @@
     "pendingSummary": "{{computer}} · 1 ora",
     "reasonTitle": "Motivo dell’accesso",
     "requestExpired": "Richiesta scaduta",
-    "review": "Verifica accesso",
     "revoke": "Revoca",
     "revoked": "Accesso a Shell revocato",
     "scope": "Un’ora di accesso per questa chat",

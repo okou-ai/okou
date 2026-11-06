@@ -1017,8 +1017,11 @@
       "unavailableTitle": "Link de autorização indisponível"
     },
     "computerUse": {
+      "actionFailed": "Não foi possível autorizar este computador. Atualize o chat para tentar novamente.",
       "authorize": "Autorizar",
       "authorized": "Autorizado",
+      "authorizedDescription": "Acesso ao computador ativado para futuras execuções neste chat.",
+      "cardDescription": "Escolha um computador para este chat. Isso desconecta o navegador na nuvem.",
       "checkingCompatibility": "Verificando compatibilidade",
       "description": "Escolha um computador online para o {{assistantName}} usar {{source}}.",
       "downloadMac": "Baixar para macOS",
@@ -1027,6 +1030,7 @@
       "macRequirement": "Requer um Mac com Apple silicon e macOS 14 ou mais recente. Macs com Intel não são compatíveis.",
       "noHostsDescription": "Abra o {{desktopApplicationName}} no seu Mac para conectá-lo.",
       "noHostsTitle": "Nenhum computador online",
+      "selectComputer": "Selecionar um computador",
       "sources": {
         "chat": "nesta conversa",
         "slack": "nesta conversa do Slack",
@@ -1503,7 +1507,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "Autorizar",
       "cancel": "Cancelar",
       "confirm": "Confirmar",
       "continue": "Continuar",
@@ -1954,7 +1957,6 @@
     },
     "computerUse": {
       "authorization": "Autorização do Computer Use",
-      "authorizationDescription": "Selecione um host do Desktop para futuras execuções nesta conversa.",
       "checkingCompatibility": "Verificando compatibilidade",
       "cloudBrowser": "Navegador na nuvem",
       "connectMyComputer": "Conectar meu computador",
@@ -4090,7 +4092,6 @@
     "deniedTitle": "Acesso ao Shell negado",
     "deny": "Negar",
     "description": "O agente precisa de permissão para usar o Shell no seu computador.",
-    "details": "Detalhes",
     "duration": "O acesso dura 1 hora após a aprovação",
     "expired": "Autorização expirada",
     "expiredTitle": "Acesso ao Shell expirado",
@@ -4098,7 +4099,6 @@
     "pendingSummary": "{{computer}} · 1 hora",
     "reasonTitle": "Motivo do acesso",
     "requestExpired": "Solicitação expirada",
-    "review": "Revisar acesso",
     "revoke": "Revogar",
     "revoked": "Acesso ao Shell revogado",
     "scope": "Uma hora de acesso para esta conversa",

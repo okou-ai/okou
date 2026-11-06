@@ -999,8 +999,11 @@
       "unavailableTitle": "授权链接不可用"
     },
     "computerUse": {
+      "actionFailed": "未能授权这台电脑，请刷新聊天后重试。",
       "authorize": "授权",
       "authorized": "已授权",
+      "authorizedDescription": "已为此聊天的后续运行启用电脑访问。",
+      "cardDescription": "选择此聊天使用的电脑。这会断开云端浏览器。",
       "checkingCompatibility": "正在检查兼容性",
       "description": "选择一台在线的电脑，供 {{assistantName}} 在{{source}}中使用。",
       "downloadMac": "下载 macOS 版",
@@ -1009,6 +1012,7 @@
       "macRequirement": "需要搭载 Apple 芯片、系统为 macOS 14 或更高版本的 Mac，不支持 Intel 版 Mac。",
       "noHostsDescription": "在 Mac 上打开 {{desktopApplicationName}}，使设备上线。",
       "noHostsTitle": "没有在线的电脑",
+      "selectComputer": "选择电脑",
       "sources": {
         "chat": "这个聊天会话",
         "slack": "这个 Slack 会话",
@@ -1478,7 +1482,6 @@
   },
   "chat": {
     "actions": {
-      "authorize": "授权",
       "cancel": "取消",
       "confirm": "确认",
       "continue": "继续",
@@ -1922,7 +1925,6 @@
     },
     "computerUse": {
       "authorization": "Computer Use 授权",
-      "authorizationDescription": "为这个会话之后的运行选择一台 Desktop 主机。",
       "checkingCompatibility": "正在检查兼容性",
       "cloudBrowser": "云端浏览器",
       "connectMyComputer": "连接我的电脑",
@@ -4023,7 +4025,6 @@
     "deniedTitle": "Shell 访问已拒绝",
     "deny": "拒绝",
     "description": "Agent 需要获得在你的电脑上使用 Shell 的权限。",
-    "details": "详情",
     "duration": "批准后可访问 1 小时",
     "expired": "授权已到期",
     "expiredTitle": "Shell 访问已过期",
@@ -4031,7 +4032,6 @@
     "pendingSummary": "{{computer}} · 1 小时",
     "reasonTitle": "申请用途",
     "requestExpired": "申请已过期",
-    "review": "查看授权",
     "revoke": "撤销",
     "revoked": "已撤销 Shell 授权",
     "scope": "当前聊天的一小时访问权限",

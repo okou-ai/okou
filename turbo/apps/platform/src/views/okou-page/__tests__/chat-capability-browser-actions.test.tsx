@@ -1,3 +1,4 @@
+import { computerUseAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/computer-use";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   browserContract,
@@ -535,6 +536,14 @@ test("Keep foreign and untrusted browser URLs as ordinary links", async () => {
 });
 
 test("Recognize trusted assistant actions without trusting lookalikes", async () => {
+  context.mocks.api(
+    computerUseAuthorizationRequestsContract.get,
+    ({ respond }) => {
+      return respond(404, {
+        error: { code: "NOT_FOUND", message: "Request unavailable" },
+      });
+    },
+  );
   const trustedPlan = planActionUrl("https://app.okou.ai");
   const trustedComputer = computerAuthorizationUrl(
     "https://app.okou.ai",

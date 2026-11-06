@@ -242,6 +242,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         );
         expect(readable).toMatchObject({
           source: "chat",
+          chatThreadId: run.threadId,
           completedAt: null,
           computerUseHostId: null,
           hosts: [expect.objectContaining({ id: host.hostId })],

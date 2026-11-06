@@ -1949,6 +1949,7 @@ function createEventTreeSignals(registries: EventTreeRegistries) {
       set(registries.connectorCardSignals.subscribe$, signal);
       set(registries.bankingCardSignals.subscribe$, signal);
       set(registries.desktopShellAuthorizationCardSignals.subscribe$, signal);
+      set(registries.computerUseAuthorizationCardSignals.subscribe$, signal);
       set(registries.browserUserActionCardSignals.subscribe$, signal);
       set(registries.browserAuthorizationCardSignals.subscribe$, signal);
       set(registries.walletCardSignals.subscribe$, signal);
@@ -2001,7 +2002,7 @@ function createPagedEventResources({
   const browserUserActionCardSignals =
     createBrowserUserActionCardSignalsRegistry();
   const computerUseAuthorizationCardSignals =
-    createComputerUseAuthorizationCardSignalsRegistry();
+    createComputerUseAuthorizationCardSignalsRegistry(threadId);
   const browserAuthorizationCardSignals =
     createBrowserAuthorizationCardSignalsRegistry(chatActionContext);
   const desktopShellAuthorizationCardSignals =
