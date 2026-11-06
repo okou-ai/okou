@@ -518,8 +518,11 @@ test("Retained input readmission completes recovery after toolbar interaction", 
   await selected.received;
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
   await waitFor(() => {
-    expect(screen.getByLabelText("Address")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeEnabled();
   });
+  const draft = "https://retained-draft.example/path";
+  await fill(screen.getByLabelText("Address"), draft);
+  expect(screen.getByLabelText("Address")).toHaveValue(draft);
   click(screen.getByLabelText("Browser settings"));
   await screen.findByRole("menu", { name: "Browser settings" });
   await userEvent.keyboard("{Escape}");
@@ -528,7 +531,7 @@ test("Retained input readmission completes recovery after toolbar interaction", 
   ).not.toBeInTheDocument();
   expect(screen.getByText("Reconnecting…")).toBeInTheDocument();
   await act(selected.release);
-  await ready();
+  await ready(draft);
   await waitFor(() => {
     expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
   });
@@ -546,7 +549,7 @@ test("Retained input readmission completes recovery after toolbar interaction", 
   });
   await pendingRecovery();
   viewer.advance(1000);
-  await ready();
+  await ready(draft);
   await waitFor(() => {
     expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
   });
