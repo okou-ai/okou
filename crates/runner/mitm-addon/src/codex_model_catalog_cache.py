@@ -37,6 +37,9 @@ replacement owner. Publication and capacity release are idempotent, and an old o
 remove itself only while it is still current; terminal cleanup supplies the no-entry fallback
 for abandoned flows.
 
+Pure acceptance policy and immutable worker values are owned by
+``codex_model_catalog_validation``; this module retains worker admission and publication.
+
 Validation uses a cache-owned single-worker executor, fully started by the shared payload-free
 bootstrap before accepting snapshots. Failed submissions cancel its queued work before releasing
 admission; the next response can create a new executor. Once a future is returned, cancellation
@@ -81,8 +84,6 @@ modules:
 import asyncio
 import hashlib
 import hmac
-import json
-import math
 import secrets
 import time
 import urllib.parse
@@ -90,23 +91,20 @@ from collections import OrderedDict
 from collections.abc import Awaitable, Callable, Iterable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import NoReturn
 
 from mitmproxy import http
 
-import body_decoding
+import codex_model_catalog_validation as catalog_validation
 import content_encoding
-import content_length
 import flow_metadata
 import http_header_syntax
 from runtime_url_parsing import split_runtime_url
 from thread_pool import start_thread_pool
 
 FRESH_SECONDS = 60.0
-MAX_ENTRY_BYTES = 1024 * 1024
 MAX_ENTRIES = 32
 MAX_TOTAL_BYTES = 16 * 1024 * 1024
-MAX_IN_FLIGHT_REQUESTS = MAX_TOTAL_BYTES // MAX_ENTRY_BYTES
+MAX_IN_FLIGHT_REQUESTS = MAX_TOTAL_BYTES // catalog_validation.MAX_ENTRY_BYTES
 MAX_WAITERS_PER_KEY = MAX_IN_FLIGHT_REQUESTS
 MAX_TOTAL_WAITERS = MAX_IN_FLIGHT_REQUESTS * 2
 MAX_IN_FLIGHT_WAIT_SECONDS = 10.0
@@ -128,21 +126,9 @@ _RAW_ACCEPT_ENCODING = b"accept-encoding"
 # Match the normalizer's inclusive 64 KiB aggregate raw-value budget. Oversized
 # requests bypass this optional cache without decoding or rewriting their values.
 _MAX_ACCEPT_ENCODING_VALUE_BYTES = 64 * 1024
-_MAX_RESPONSE_CACHE_POLICY_FIELDS = 8 * 1024
-_MAX_RESPONSE_CACHE_POLICY_VALUE_BYTES = 8 * 1024
-_MAX_RESPONSE_ETAG_FIELDS = 8 * 1024
-_MAX_RESPONSE_ETAG_VALUE_BYTES = 8 * 1024
 _MAX_MODELS_ETAG_FIELDS = 8 * 1024
 _MAX_MODELS_ETAG_VALUE_BYTES = 8 * 1024
-_MAX_ETAG_BYTES = 512
-_RAW_CONTENT_TYPE = b"content-type"
-_MAX_CONTENT_TYPE_FIELDS = 8 * 1024
-_MAX_CONTENT_TYPE_BYTES = 256
-_MAX_JSON_NESTING = 128
 _MAX_TELEMETRY_MILLISECONDS = 2_147_483_647
-_MIN_QUOTED_ETAG_BYTES = 2
-_ASCII_CONTROL_BOUNDARY = 0x20
-_ASCII_DELETE = 0x7F
 _HTTP_STATUS_SWITCHING_PROTOCOLS = 101
 _HTTP_STATUS_OK = 200
 _HTTP_STATUS_BAD_GATEWAY = 502
@@ -151,8 +137,6 @@ _FLOW_TELEMETRY = "_codex_model_catalog_cache_telemetry"
 _PREFETCH_REQUEST = "_codex_model_catalog_prefetch_request"
 _PREFETCH_HEADER = "X-Okou-Codex-Model-Catalog-Prefetch"
 _RAW_PREFETCH_HEADER = b"x-okou-codex-model-catalog-prefetch"
-_BROTLI_ENCODING = "br"
-_IDENTITY_ENCODING = "identity"
 _RAW_REQUEST_CONDITIONAL_HEADERS = frozenset(
     (
         b"if-match",
@@ -161,17 +145,6 @@ _RAW_REQUEST_CONDITIONAL_HEADERS = frozenset(
         b"if-range",
         b"if-unmodified-since",
         b"range",
-    )
-)
-_UNSAFE_RESPONSE_CACHE_CONTROL = frozenset(
-    (
-        "must-revalidate",
-        "no-cache",
-        "no-store",
-        "proxy-revalidate",
-        "max-age",
-        "s-maxage",
-        "no-transform",
     )
 )
 
@@ -191,23 +164,6 @@ class _CacheEntry:
     etag: str = field(repr=False)
     validated_at: float
     prefetched: bool
-
-
-@dataclass(frozen=True)
-class _ResponseValidationSnapshot:
-    status_code: int
-    header_fields: tuple[tuple[bytes, bytes], ...] = field(repr=False)
-    has_trailers: bool
-    body: bytes = field(repr=False)
-    upstream_encoding: str | None
-    compressed_content_length: int | None
-
-
-@dataclass(frozen=True)
-class _ValidatedResponse:
-    body: bytes = field(repr=False)
-    content_type: str
-    etag: str = field(repr=False)
 
 
 @dataclass
@@ -393,7 +349,8 @@ def _catalog_url(original_url: str) -> str | None:
     except UnicodeEncodeError:
         return None
     if len(encoded_client_version) > _MAX_CLIENT_VERSION_BYTES or any(
-        ord(character) < _ASCII_CONTROL_BOUNDARY or ord(character) == _ASCII_DELETE
+        ord(character) < catalog_validation.ASCII_CONTROL_BOUNDARY
+        or ord(character) == catalog_validation.ASCII_DELETE
         for character in client_version
     ):
         return None
@@ -411,59 +368,6 @@ def _is_responses_path(original_url: str) -> bool:
     if parsed is None:
         return False
     return parsed.path == _RESPONSES_PATH or parsed.path.startswith(f"{_RESPONSES_PATH}/")
-
-
-def _strict_utf8_bytes(value: str) -> bytes | None:
-    try:
-        return value.encode()
-    except UnicodeEncodeError:
-        return None
-
-
-def _usable_etag_value(value: str) -> str | None:
-    value = value.strip()
-    if not value or value == "*":
-        return None
-    encoded = _strict_utf8_bytes(value)
-    if encoded is None or len(encoded) > _MAX_ETAG_BYTES:
-        return None
-    opaque = value[2:] if value.startswith("W/") else value
-    if (
-        len(opaque) < _MIN_QUOTED_ETAG_BYTES
-        or not opaque.startswith('"')
-        or not opaque.endswith('"')
-        or any(
-            character == '"'
-            or ord(character) <= _ASCII_CONTROL_BOUNDARY
-            or ord(character) == _ASCII_DELETE
-            for character in opaque[1:-1]
-        )
-    ):
-        return None
-    return value
-
-
-def _single_usable_etag(headers: http.Headers) -> str | None:
-    raw_value = http_header_syntax.single_header_value(
-        headers.fields,
-        b"etag",
-        max_fields=_MAX_RESPONSE_ETAG_FIELDS,
-        max_value_bytes=_MAX_RESPONSE_ETAG_VALUE_BYTES,
-    )
-    if raw_value is None:
-        return None
-    return _usable_etag_value(raw_value.decode("utf-8", "surrogateescape"))
-
-
-def _single_content_encoding(values: tuple[str, ...]) -> str | None:
-    if not values:
-        return _IDENTITY_ENCODING
-    tokens = [
-        token.strip().lower() for value in values for token in value.split(",") if token.strip()
-    ]
-    if len(tokens) != 1:
-        return None
-    return tokens[0]
 
 
 def _request_accepts_encoded_response(headers: http.Headers) -> bool:
@@ -492,117 +396,11 @@ def _request_accepts_encoded_response(headers: http.Headers) -> bool:
                 end = len(value)
             token = value[start:end].strip()
             if token:
-                if has_identity or token.lower() != _IDENTITY_ENCODING:
+                if has_identity or token.lower() != catalog_validation.IDENTITY_ENCODING:
                     return True
                 has_identity = True
             start = end + 1
     return not has_identity
-
-
-def _response_cache_control_is_unsafe(headers: http.Headers) -> bool:
-    """Decline optional storage before decoding any policy values on exhaustion."""
-    fields = headers.fields
-    if len(fields) > _MAX_RESPONSE_CACHE_POLICY_FIELDS:
-        return True
-
-    policy_fields: list[tuple[bytes, bytes]] = []
-    remaining_bytes = _MAX_RESPONSE_CACHE_POLICY_VALUE_BYTES
-    for raw_name, raw_value in fields:
-        if len(raw_name) not in (len(b"cache-control"), len(b"pragma"), len(b"expires")):
-            continue
-        name = raw_name.lower()
-        if name == b"expires":
-            return True
-        if name not in (b"cache-control", b"pragma"):
-            continue
-        if len(raw_value) > remaining_bytes:
-            return True
-        remaining_bytes -= len(raw_value)
-        policy_fields.append((name, raw_value))
-
-    # Values stay separate: only their raw bytes consume the aggregate budget.
-    # Preserve mitmproxy's decoding and the existing string whitespace rules.
-    for name, raw_value in policy_fields:
-        value = raw_value.decode("utf-8", "surrogateescape")
-        start = 0
-        while start < len(value):
-            end = value.find(",", start)
-            if end == -1:
-                end = len(value)
-            token = value[start:end]
-            if name == b"cache-control":
-                if token.partition("=")[0].strip().lower() in _UNSAFE_RESPONSE_CACHE_CONTROL:
-                    return True
-            elif token.strip().lower() == "no-cache":
-                return True
-            start = end + 1
-    return False
-
-
-def _bounded_content_type(headers: http.Headers) -> str | None:
-    """Preflight all raw values and folding separators before converting any value."""
-    values = http_header_syntax.bounded_header_values(
-        headers.fields,
-        _RAW_CONTENT_TYPE,
-        max_fields=_MAX_CONTENT_TYPE_FIELDS,
-        max_value_bytes=_MAX_CONTENT_TYPE_BYTES,
-        separator_bytes=len(", "),
-    )
-    if values is None:
-        return None
-    try:
-        return ", ".join(value.decode("utf-8") for value in values)
-    except UnicodeDecodeError:
-        return None
-
-
-def _content_type_is_json(content_type: str) -> bool:
-    media_type = content_type.partition(";")[0].strip().lower()
-    return media_type == "application/json" or (
-        media_type.startswith("application/") and media_type.endswith("+json")
-    )
-
-
-def _reject_non_json_constant(_value: str) -> NoReturn:
-    raise ValueError("non-standard JSON constant")
-
-
-def _parse_finite_json_float(value: str) -> float:
-    parsed = float(value)
-    if not math.isfinite(parsed):
-        raise ValueError("non-finite JSON number")
-    return parsed
-
-
-def _json_nesting_is_bounded(document: str) -> bool:
-    depth = 0
-    in_string = False
-    escaped = False
-    for character in document:
-        if in_string:
-            if escaped:
-                escaped = False
-            elif character == "\\":
-                escaped = True
-            elif character == '"':
-                in_string = False
-            continue
-        if character == '"':
-            in_string = True
-        elif character in "[{":
-            depth += 1
-            if depth > _MAX_JSON_NESTING:
-                return False
-        elif character in "]}":
-            depth -= 1
-    return True
-
-
-def _parse_content_length(headers: http.Headers) -> content_length.ContentLengthResult:
-    return content_length.parse(
-        headers.get_all("Content-Length"),
-        max_value=MAX_ENTRY_BYTES,
-    )
 
 
 def _set_telemetry(
@@ -670,7 +468,7 @@ def _request_bypass_reason(
         return "request_body"
     if flow.request.stream:
         return "request_streaming"
-    parsed_content_length = _parse_content_length(flow.request.headers)
+    parsed_content_length = catalog_validation.parse_content_length(flow.request.headers)
     # These gates depend only on presence, including empty or repeated fields.
     raw_header_names = {name.lower() for name, _value in flow.request.headers.fields}
     if (
@@ -849,40 +647,8 @@ async def prepare_request(flow: http.HTTPFlow, *, request_end_stream: bool) -> b
         )
         flow.metadata[_FLOW_STATE] = state
         if is_prefetch:
-            flow.request.headers["Accept-Encoding"] = _BROTLI_ENCODING
+            flow.request.headers["Accept-Encoding"] = catalog_validation.BROTLI_ENCODING
         return wait_deadline is not None
-
-
-def _response_headers_bypass_reason(
-    status_code: int,
-    headers: http.Headers,
-    *,
-    allow_brotli: bool = False,
-) -> str | None:
-    if status_code != _HTTP_STATUS_OK:
-        return "response_status"
-    encoding_values = content_encoding.read_values(headers)
-    if encoding_values is None:
-        return "response_encoding"
-    encoding = _single_content_encoding(encoding_values)
-    if encoding != _IDENTITY_ENCODING and not (allow_brotli and encoding == _BROTLI_ENCODING):
-        return "response_encoding"
-    content_type = _bounded_content_type(headers)
-    if content_type is None or not _content_type_is_json(content_type):
-        return "response_content_type"
-    if _response_cache_control_is_unsafe(headers):
-        return "response_cache_control"
-    for name, _ in headers.fields:
-        if len(name) == len(b"vary") and name.lower() == b"vary":
-            return "response_vary"
-    if _single_usable_etag(headers) is None:
-        return "response_etag"
-    parsed_content_length = _parse_content_length(headers)
-    if parsed_content_length.kind not in ("missing", "valid") or (
-        parsed_content_length.kind == "valid" and headers.get_all("Transfer-Encoding")
-    ):
-        return "response_size"
-    return None
 
 
 def _renew_entry(key: _CacheKey, entry: _CacheEntry, now: float) -> _CacheEntry:
@@ -953,10 +719,10 @@ def handle_response_headers(flow: http.HTTPFlow) -> bool:
         # followers before capture or validation without interpreting the values.
         _bypass_response(flow, state, "response_encoding")
         return True
-    encoding = _single_content_encoding(encoding_values)
-    if encoding == _IDENTITY_ENCODING:
-        state.upstream_encoding = _IDENTITY_ENCODING
-        bypass_reason = _response_headers_bypass_reason(
+    encoding = catalog_validation.single_content_encoding(encoding_values)
+    if encoding == catalog_validation.IDENTITY_ENCODING:
+        state.upstream_encoding = catalog_validation.IDENTITY_ENCODING
+        bypass_reason = catalog_validation.response_headers_bypass_reason(
             flow.response.status_code,
             flow.response.headers,
         )
@@ -964,16 +730,16 @@ def handle_response_headers(flow: http.HTTPFlow) -> bool:
             _bypass_response(flow, state, bypass_reason)
         return True
     if not state.prefetch_owner:
-        if encoding == _BROTLI_ENCODING:
-            state.upstream_encoding = _BROTLI_ENCODING
+        if encoding == catalog_validation.BROTLI_ENCODING:
+            state.upstream_encoding = catalog_validation.BROTLI_ENCODING
         _reject_encoded_response(flow, state)
         return False
-    if encoding != _BROTLI_ENCODING:
+    if encoding != catalog_validation.BROTLI_ENCODING:
         _bypass_response(flow, state, "response_encoding")
         return True
 
-    state.upstream_encoding = _BROTLI_ENCODING
-    bypass_reason = _response_headers_bypass_reason(
+    state.upstream_encoding = catalog_validation.BROTLI_ENCODING
+    bypass_reason = catalog_validation.response_headers_bypass_reason(
         flow.response.status_code,
         flow.response.headers,
         allow_brotli=True,
@@ -982,7 +748,7 @@ def handle_response_headers(flow: http.HTTPFlow) -> bool:
         _bypass_response(flow, state, bypass_reason)
         return True
 
-    compressed_content_length = _parse_content_length(flow.response.headers)
+    compressed_content_length = catalog_validation.parse_content_length(flow.response.headers)
     state.compressed_content_length = (
         compressed_content_length.value if compressed_content_length.kind == "valid" else None
     )
@@ -996,10 +762,10 @@ def wrap_response_stream(flow: http.HTTPFlow) -> None:
         not isinstance(state, _FlowState)
         or state.finalized
         or flow.response is None
-        or _response_headers_bypass_reason(
+        or catalog_validation.response_headers_bypass_reason(
             flow.response.status_code,
             flow.response.headers,
-            allow_brotli=state.upstream_encoding == _BROTLI_ENCODING,
+            allow_brotli=state.upstream_encoding == catalog_validation.BROTLI_ENCODING,
         )
         is not None
     ):
@@ -1014,7 +780,7 @@ def wrap_response_stream(flow: http.HTTPFlow) -> None:
 
     def capture_and_stream(chunk: bytes) -> bytes | Iterable[bytes]:
         if state.capture is not None and not state.capture_overflow:
-            remaining = MAX_ENTRY_BYTES - len(state.capture)
+            remaining = catalog_validation.MAX_ENTRY_BYTES - len(state.capture)
             if len(chunk) <= remaining:
                 state.capture.extend(chunk)
             else:
@@ -1039,67 +805,6 @@ def _unwrap_response_stream(flow: http.HTTPFlow, state: _FlowState) -> None:
     state.downstream_stream = None
 
 
-def _validate_response_snapshot(
-    snapshot: _ResponseValidationSnapshot,
-) -> _ValidatedResponse | str:
-    headers = http.Headers(snapshot.header_fields)
-    body = snapshot.body
-    if snapshot.upstream_encoding == _BROTLI_ENCODING:
-        if (
-            snapshot.compressed_content_length is not None
-            and len(body) != snapshot.compressed_content_length
-        ) or snapshot.has_trailers:
-            return "response_body"
-        body, decode_error = body_decoding.decompress_json_usage_body(
-            body,
-            headers,
-            max_output=MAX_ENTRY_BYTES,
-        )
-        if decode_error == body_decoding.DECODED_BODY_LIMIT_EXCEEDED:
-            return "response_size"
-        if decode_error is not None:
-            return "response_encoding"
-
-    bypass_reason = _response_headers_bypass_reason(
-        snapshot.status_code,
-        headers,
-        allow_brotli=snapshot.upstream_encoding == _BROTLI_ENCODING,
-    )
-    if bypass_reason is not None:
-        return bypass_reason
-    if snapshot.has_trailers:
-        return "response_body"
-
-    parsed_content_length = _parse_content_length(headers)
-    if (
-        snapshot.upstream_encoding == _IDENTITY_ENCODING
-        and parsed_content_length.kind == "valid"
-        and parsed_content_length.value != len(body)
-    ):
-        return "response_body"
-    try:
-        document = body.decode("utf-8")
-    except UnicodeDecodeError:
-        return "response_json"
-    if not _json_nesting_is_bounded(document):
-        return "response_json"
-    try:
-        payload = json.loads(
-            document,
-            parse_constant=_reject_non_json_constant,
-            parse_float=_parse_finite_json_float,
-        )
-    except ValueError, RecursionError:
-        return "response_json"
-    if not isinstance(payload, dict) or not isinstance(payload.get("models"), list):
-        return "response_shape"
-    content_type = headers.get("Content-Type", "")
-    etag = _single_usable_etag(headers)
-    if etag is None:
-        return "response_etag"
-    return _ValidatedResponse(body=body, content_type=content_type, etag=etag)
-
-
 def _validation_semaphore_for_running_loop() -> asyncio.Semaphore:
     global _validation_loop, _validation_semaphore
     loop = asyncio.get_running_loop()
@@ -1110,8 +815,8 @@ def _validation_semaphore_for_running_loop() -> asyncio.Semaphore:
 
 
 async def _validate_response_off_loop(
-    snapshot: _ResponseValidationSnapshot,
-) -> tuple[_ValidatedResponse | str, asyncio.CancelledError | None]:
+    snapshot: catalog_validation.ResponseValidationSnapshot,
+) -> tuple[catalog_validation.ValidatedResponse | str, asyncio.CancelledError | None]:
     global _validation_executor
     semaphore = _validation_semaphore_for_running_loop()
     async with semaphore:
@@ -1125,7 +830,9 @@ async def _validate_response_off_loop(
         executor = _validation_executor
         loop = asyncio.get_running_loop()
         try:
-            validation = loop.run_in_executor(executor, _validate_response_snapshot, snapshot)
+            validation = loop.run_in_executor(
+                executor, catalog_validation.validate_response_snapshot, snapshot
+            )
         except BaseException:
             # Retire failed submissions before releasing admission, even though
             # the shared bootstrap has already completed worker startup.
@@ -1145,7 +852,7 @@ async def _validate_response_off_loop(
 async def _finalize_response_snapshot(
     flow: http.HTTPFlow,
     state: _FlowState,
-    snapshot: _ResponseValidationSnapshot,
+    snapshot: catalog_validation.ResponseValidationSnapshot,
 ) -> None:
     try:
         validated, cancellation = await _validate_response_off_loop(snapshot)
@@ -1204,7 +911,7 @@ def finalize_response(flow: http.HTTPFlow) -> Awaitable[None] | None:
             return None
         body = bytes(state.capture)
         state.capture = None
-        snapshot = _ResponseValidationSnapshot(
+        snapshot = catalog_validation.ResponseValidationSnapshot(
             status_code=response.status_code,
             header_fields=tuple(response.headers.fields),
             has_trailers=bool(response.trailers),
@@ -1248,7 +955,7 @@ def observe_authenticated_models_etag(flow: http.HTTPFlow) -> None:
     )
     if raw_value is None:
         return
-    signal_etag = _usable_etag_value(raw_value.decode("utf-8", "surrogateescape"))
+    signal_etag = catalog_validation.usable_etag_value(raw_value.decode("utf-8", "surrogateescape"))
     if signal_etag is None:
         return
     credential_digest = _credential_digest(flow)
