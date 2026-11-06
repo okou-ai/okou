@@ -1289,7 +1289,7 @@ describe("POST /api/chat-threads", () => {
     { initial: "surviving", selected: "deleted" },
     { initial: "deleted", selected: "deleted" },
   ] as const)(
-    "resolves custom selection $initial to $selected while deleting the default",
+    "keeps custom selection $initial to $selected consistent with default deletion",
     async ({ initial, selected }) => {
       const fixture = await seedAgent();
       const definition = await connectorApi.createCustomConnector(
@@ -1367,9 +1367,47 @@ describe("POST /api/chat-threads", () => {
             params: { connectionId: accounts.deleted },
             body: { target },
           }),
-          [200],
+          initial === "surviving" && selected === "deleted"
+            ? [200, 400]
+            : [200],
         ),
       ]);
+      const selections = await accept(
+        connectorSelectionsClient().get({
+          headers: { authorization: `Bearer ${token}` },
+          params: { id: thread.body.id },
+        }),
+        [200],
+      );
+      const remainingAccounts = await accept(
+        connectorAccountsClient().connections({
+          headers: { authorization: "Bearer clerk-session" },
+          query: { ...target, limit: 100 },
+        }),
+        [200],
+      );
+      if (deletion.status === 400) {
+        expect(deletion.body.error).toStrictEqual({
+          code: "BAD_REQUEST",
+          message:
+            "Connector account selection changed during deletion; refresh and try again",
+        });
+        expect(selectionResult.status).toBe(200);
+        expect(selections.body.selections).toStrictEqual([
+          { connectionId: accounts.deleted, target },
+        ]);
+        expect(remainingAccounts.body.connections).toHaveLength(2);
+        expect(remainingAccounts.body.connections).toStrictEqual(
+          expect.arrayContaining([
+            expect.objectContaining({ id: accounts.deleted, isDefault: true }),
+            expect.objectContaining({
+              id: accounts.surviving,
+              isDefault: false,
+            }),
+          ]),
+        );
+        return;
+      }
       expect(deletion.body.promotedDefaultConnectionId).toBe(
         accounts.surviving,
       );
@@ -1383,22 +1421,8 @@ describe("POST /api/chat-threads", () => {
       const remainsSelected =
         selected === "surviving" ||
         (initial === "surviving" && selectionResult.status === 400);
-      const selections = await accept(
-        connectorSelectionsClient().get({
-          headers: { authorization: `Bearer ${token}` },
-          params: { id: thread.body.id },
-        }),
-        [200],
-      );
       expect(selections.body.selections).toStrictEqual(
         remainsSelected ? [{ connectionId: accounts.surviving, target }] : [],
-      );
-      const remainingAccounts = await accept(
-        connectorAccountsClient().connections({
-          headers: { authorization: "Bearer clerk-session" },
-          query: { ...target, limit: 100 },
-        }),
-        [200],
       );
       expect(remainingAccounts.body.connections).toMatchObject([
         { id: accounts.surviving, isDefault: true },
