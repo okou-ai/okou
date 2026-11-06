@@ -1914,7 +1914,8 @@ function createAttachmentAdmission(
   const waitForDiscovery$ = command(
     async ({ get, set }, owner: SelectionOwner, signal: AbortSignal) => {
       const discovery = get(get(links$).discovery$)!;
-      while (!get(discovery.admitted$)) {
+      // Admission for the previous selection cannot start this target's capture.
+      while (get(discovery.selectedTargetId$) !== owner.targetId) {
         set(assertCurrent$, owner, signal);
         await set(waitEvent$, signal);
       }

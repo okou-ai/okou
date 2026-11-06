@@ -191,6 +191,52 @@ test("A background creation readmits the selected page before the remaining tab 
   await ready();
 });
 
+test("A tab selected during background discovery becomes ready after its proof", async () => {
+  const { browser, start } = viewer();
+  await start();
+  await screen.findByLabelText("Later own tab");
+  await ready();
+
+  const proof = browser.holdNextMembership("own-later");
+  act(() => {
+    const target = {
+      targetId: "background",
+      title: "Background",
+      url: "https://background.example.com",
+      windowId: 101,
+    };
+    browser.targets.push(target);
+    browser.nativeEvent("tab-created", target);
+    browser.event("Target.targetCreated", {
+      targetInfo: { ...target, type: "page" },
+    });
+  });
+  await proof.received;
+  await ready();
+  await userEvent.click(
+    screen.getByLabelText("Later own tab", { selector: '[role="tab"]' }),
+  );
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(proof.release);
+  await ready("https://later.example.com");
+
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "new selection after proof" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input).toContainEqual(
+      expect.objectContaining({
+        method: "Input.insertText",
+        sessionId: browser.pageSession("own-later"),
+        params: { text: "new selection after proof" },
+      }),
+    );
+  });
+});
+
 test("Background removal readmits the selected page without disturbing navigation", async () => {
   const { browser, start } = viewer();
   await start();
