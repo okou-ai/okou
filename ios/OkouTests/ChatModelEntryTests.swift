@@ -39,7 +39,7 @@ final class ChatModelEntryTests: XCTestCase {
     try await waitForBusinessResult {
       workspace.modelStore.configuration?.defaultSelection.model == "codex-model"
     }
-    await hostingPresentationFrame()
+    try await hostingPresentationFrame()
     let current = try XCTUnwrap(textView(in: host.view))
     XCTAssertTrue(current.isFirstResponder)
     XCTAssertEqual(current.text, "Keep this draft while models load")

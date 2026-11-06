@@ -38,7 +38,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     XCTAssertTrue(input.isFirstResponder)
-    await hostingPresentationFrame()
+    try await hostingPresentationFrame()
     input.undoManager?.undo()
     try await eventually { input.text.contains("/rel after") }
     XCTAssertEqual(
@@ -85,7 +85,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(input.isFirstResponder)
     XCTAssertTrue(source.recentIDs().isEmpty)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
-    await hostingPresentationFrame()
+    try await hostingPresentationFrame()
     input.undoManager?.undo()
     try await eventually { conversation.draft == "🌷 Keep /rel tail" }
     input.undoManager?.redo()
@@ -411,7 +411,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.insertText(text)
     try await eventually { conversation.draft == text }
-    await hostingPresentationFrame()
+    try await hostingPresentationFrame()
   }
   private func attachmentFile() throws -> URL {
     let url = FileManager.default.temporaryDirectory.appendingPathComponent(

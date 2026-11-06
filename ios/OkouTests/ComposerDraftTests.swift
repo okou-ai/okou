@@ -58,7 +58,7 @@ final class ComposerDraftTests: XCTestCase {
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.cut(nil)
     try await waitForBusinessResult { composer.text.isEmpty }
-    await hostingPresentationFrame()
+    try await hostingPresentationFrame()
     input.undoManager?.undo()
     try await waitForBusinessResult { composer.value == saved }
   }
@@ -169,6 +169,7 @@ final class ComposerDraftTests: XCTestCase {
     let server = DraftServer(remote: remote)
     let storage = server.storage()
     let composer = server.composer(storage: storage)
+    defer { composer.close() }
     await composer.synchronize()
     let quote = try XCTUnwrap(composer.editorBlocks.first(where: \.isFeedback))
     composer.editBlock(quote.id, text: "First revised note")

@@ -69,14 +69,14 @@ final class ChatComposerMentionTests: XCTestCase {
       expected.parts.map { $0["type"]?.string }, ["text", "agent", "text", "chat_thread", "text"])
     XCTAssertEqual(expected.text, "Before  and  after 🌷")
     XCTAssertEqual(input.text, "Before \u{fffc} and \u{fffc} after 🌷")
-    await hostingPresentationFrame()
+    try await hostingPresentationFrame()
 
     input.selectedRange = NSRange(location: 7, length: 1)
     input.deleteBackward()
     try await eventually {
       !workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" }
     }
-    await hostingPresentationFrame()
+    try await hostingPresentationFrame()
     input.undoManager?.undo()
     try await eventually(
       message:
@@ -331,7 +331,7 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(retiredRow.accessibilityActivate())
     delivery.release()
     await fulfillment(of: [consumed], timeout: 3)
-    await hostingPresentationFrame()
+    try await hostingPresentationFrame()
     XCTAssertFalse(workspace.newComposer.hasContent)
     XCTAssertEqual(workspace.selectedAgentID, MentionNavigationFixture.agent(2))
     XCTAssertNil(mentionTable(in: host.view))

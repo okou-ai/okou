@@ -349,6 +349,7 @@ final class AttachmentDraftTests: XCTestCase {
           apiBaseURL: fixture.http.baseURL,
           userID: "user", workspaceID: "org"), directory: directory)
       let first = fixture.conversation(storage: storage)
+      defer { first.close() }
       await first.composer.synchronize()
       first.draft = "Keep this delivery identity"
       let source = try makeFile()
@@ -362,6 +363,7 @@ final class AttachmentDraftTests: XCTestCase {
       XCTAssertTrue(original.needsRetry)
       first.close()
       let reopened = fixture.conversation(storage: storage)
+      defer { reopened.close() }
       XCTAssertEqual(reopened.draft, "")
       XCTAssertEqual(reopened.pending.first?.id, original.id)
       await reopened.composer.synchronize()
@@ -398,6 +400,7 @@ final class AttachmentDraftTests: XCTestCase {
         userID: "user", workspaceID: "org"), directory: directory)
     let store = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
+    defer { store.close() }
     store.selectedAgentID = AttachmentFlowFixture.agentID
     store.newChatDraft = "Agent draft"
     let source = try makeFile()

@@ -230,7 +230,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let window = try await mount(host)
     defer { unmount(window) }
     let input = try XCTUnwrap(textView(in: host.view))
-    input.becomeFirstResponder()
+    try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 5, length: 8)
     let file = try makeImage()
     defer { try? FileManager.default.removeItem(at: file) }
@@ -245,7 +245,7 @@ final class ChatComposerPasteTests: XCTestCase {
       return Progress(totalUnitCount: 1)
     }
     input.paste(itemProviders: [provider])
-    try await eventually { conversation.attachmentDraft.error?.contains("1 GB") == true }
+    try await waitForBusinessResult { conversation.attachmentDraft.error?.contains("1 GB") == true }
     XCTAssertEqual(conversation.draft, "Keep selected text")
     XCTAssertEqual(input.selectedRange, NSRange(location: 5, length: 8))
     XCTAssertFalse(conversation.attachmentDraft.hasAttachments)
@@ -354,8 +354,13 @@ final class ChatComposerPasteTests: XCTestCase {
     }
     // SwiftUI can lay out the editor before presenting its initial unfocused state.
     // Native focus requests belong after that presentation, as with a user's first tap.
-    await hostingPresentationFrame()
-    return window
+    do {
+      try await hostingPresentationFrame()
+      return window
+    } catch {
+      unmount(window)
+      throw error
+    }
   }
 
   private func composer(_ conversation: ConversationStore)
