@@ -2854,6 +2854,44 @@ test("Rapid visibility changes retain the preview until original capture cleanup
   });
 });
 
+test("A visibility pause preserves local address editing without queuing an early submission", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText("Address");
+  await fill(address, "local-draft.example/path");
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  expect(address).toBeEnabled();
+  expect(address).toHaveValue("local-draft.example/path");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await userEvent.click(address);
+  await userEvent.keyboard("{Enter}");
+  expect(
+    screen.getByText("The browser is not ready. Try again shortly."),
+  ).toBeInTheDocument();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("local-draft.example/path");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://local-draft.example/path");
+  });
+});
+
 test("A visibility pause during membership revalidation retains the initialized preview until fresh proof and image", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
   const browser = await setupViewer(0);
