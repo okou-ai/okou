@@ -457,6 +457,107 @@ describe("connector catalog cron authentication", () => {
 });
 
 describe("connector catalog valid lifecycle", () => {
+  it.each([
+    { framework: "claude-code", root: ".claude", model: "claude-fable-5-1" },
+    { framework: "codex", root: ".codex", model: "gpt-6-luna" },
+    { framework: "pi", root: ".pi/agent", model: "gpt-6-luna" },
+  ] as const)(
+    "claims single-character Connector Skill bundles with $framework",
+    async ({ framework, root, model }) => {
+      const app = await setupApp({
+        context,
+        routes: cronConnectorCatalogRoutes,
+        isolatePg: true,
+      });
+      configureSource();
+      const skill = await buildBundledSkillFixture("x");
+      const release = buildRelease({
+        version: "2026-11-06.single-character-skill",
+        connectorSlug: "x",
+        skill: skill.descriptor,
+      });
+      const objects = new Map(catalogObjects([release], release));
+      objects.set(
+        `connectors/skill-bundles/v1/${release.digest.slice(7)}.json`,
+        Buffer.from(
+          JSON.stringify({
+            version: 1,
+            catalogDigest: release.digest,
+            skills: [
+              {
+                slug: "x",
+                sourceVersionId: skill.versionId,
+                bundle: {
+                  sha256: skill.sha256,
+                  archiveBytes: skill.archiveBytes,
+                },
+              },
+            ],
+          }),
+        ),
+      );
+      serveObjects(objects);
+      expect((await syncCatalog(app)).body.outcome).toBe("accepted");
+
+      clearMockNow();
+      const owner = await publicChatActor(context);
+      owner.ownsFeatureSwitches();
+      const fixture = createChatEventsFixture(context);
+      await owner.run(async () => {
+        await fixture.configureSubscriptionPiModel(owner.actor);
+        await connectorsApi.updateFeatureSwitches(owner.actor, {
+          [FeatureSwitchKey.CodexExecution]: framework === "codex",
+        });
+        installWorkflowVolumeS3Fixture(context, objects);
+        await fixture.api.enableAgentConnectors(owner.actor, owner.agentId, [
+          "x",
+        ]);
+      });
+      const run = await owner.sendChatRun(owner.actor, {
+        agentId: owner.agentId,
+        prompt: "Use the X Connector Skill",
+        model,
+      });
+      const { claim, sandboxHeaders } = await owner.claimChatRun(
+        owner.runnerGroup,
+        run.runId,
+      );
+      expect(claim.cliAgentType).toBe(framework);
+      const bundle = claim.contentBundles.skills.find((entry) => {
+        return entry.mountPath === `/home/user/${root}/skills/x`;
+      });
+      expect(bundle).toMatchObject({
+        sha256: skill.sha256,
+        archiveBytes: skill.archiveBytes,
+      });
+      if (!bundle) {
+        throw new Error("Expected the X Connector Skill bundle");
+      }
+      expect(
+        readClaimedContentBundle(
+          new Map([[`bundles/v1/${skill.sha256}.tar.gz`, skill.archive]]),
+          bundle,
+        ),
+      ).toStrictEqual(
+        new Map(
+          skill.files.map((file) => {
+            return [file.path, file.content];
+          }),
+        ),
+      );
+      await owner.run(async () => {
+        expect((await fixture.api.readRun(owner.actor, run.runId)).status).toBe(
+          "running",
+        );
+        await fixture.failChatRun(
+          run.runId,
+          sandboxHeaders,
+          "X Skill inspected",
+        );
+      });
+    },
+  );
+
   it("accepts, advances, rolls back, and serves the active database snapshot", async () => {
     const app = await setupApp({
       context,
