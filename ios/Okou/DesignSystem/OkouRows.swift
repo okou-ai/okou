@@ -38,6 +38,7 @@ struct OkouChatRowLabel<Status: View>: View {
         Circle()
           .fill(OkouStatusColor.running)
           .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
+          .frame(width: OkouIconSize.standard)
           .accessibilityLabel("Unread")
       case .pinned:
         OkouIcon("pin", size: OkouIconSize.inline)
