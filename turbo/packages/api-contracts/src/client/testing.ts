@@ -357,11 +357,6 @@ import { githubAppSetupCallbackContract as OriginalGithubAppSetupCallbackContrac
 import { githubAppSetupCallbackContract } from "./github-oauth-callback";
 import { githubOauthContract as OriginalGithubOauthContract } from "../contracts/github-oauth";
 import { githubOauthContract } from "./github-oauth";
-import {
-  halloweenContract as OriginalHalloweenContract,
-  halloweenOperationsContract as OriginalHalloweenOperationsContract,
-} from "../contracts/halloween";
-import { halloweenContract, halloweenOperationsContract } from "./halloween";
 import { healthContract as OriginalHealthContract } from "../contracts/health";
 import { healthContract } from "./health";
 import { hostContract as OriginalHostContract } from "../contracts/host";
@@ -1040,8 +1035,6 @@ export const clientDescriptorContracts: readonly (readonly [
   [getStartedContract, OriginalGetStartedContract],
   [githubAppSetupCallbackContract, OriginalGithubAppSetupCallbackContract],
   [githubOauthContract, OriginalGithubOauthContract],
-  [halloweenContract, OriginalHalloweenContract],
-  [halloweenOperationsContract, OriginalHalloweenOperationsContract],
   [healthContract, OriginalHealthContract],
   [hostContract, OriginalHostContract],
   [imageIoGenerateContract, OriginalImageIoGenerateContract],

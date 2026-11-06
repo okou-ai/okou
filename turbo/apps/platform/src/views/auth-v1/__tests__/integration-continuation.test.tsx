@@ -14,10 +14,6 @@ import { signupControl } from "./signup-test-helpers.ts";
 const context = testContext();
 const ENTRIES = [
   {
-    name: "Halloween email",
-    entry: "/?halloween=1",
-  },
-  {
     name: "AgentPhone",
     entry:
       "/settings/agentphone?handle=%2B15555550123&agent=agt_test&ts=1784880000&sig=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&channel=imessage&context=one&context=two",
