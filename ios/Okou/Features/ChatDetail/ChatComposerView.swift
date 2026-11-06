@@ -177,6 +177,7 @@ struct ChatComposerView: View {
         minHeight: expandsInput ? 116 : Self.compactHeight,
         alignment: expandsInput ? .topLeading : .leading
       )
+      .fixedSize(horizontal: false, vertical: true)
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
       .anchorPreference(key: ComposerWorkflowPresentation.self, value: .bounds) { bounds in
         guard let workflows = draftState?.editor.workflows, workflows.query != nil else {
