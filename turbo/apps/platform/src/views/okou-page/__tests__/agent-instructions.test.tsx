@@ -5,6 +5,7 @@ import {
   agentsByIdContract,
 } from "@okouai/api-contracts/contracts/agents";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -57,6 +58,7 @@ function setupInstructionsPage(
   return setupPage({
     context,
     path: `/agents/${AGENT_ID}?tab=${tab}`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
   });
 }
 
@@ -129,6 +131,117 @@ test("Discard restores saved instructions and exits editing", async () => {
   await waitFor(() => {
     expect(screen.getByLabelText("Instructions editor").textContent).toBe(
       "Review release notes",
+    );
+  });
+  expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+});
+
+test("Agent instructions receive external updates with SingleAgent disabled", async () => {
+  await setupInstructionsPage("Original instructions");
+  await instructionsEditor();
+  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
+    return respond(200, {
+      content: "Instructions saved elsewhere",
+      filename: "AGENTS.md",
+    });
+  });
+  context.mocks.ably.triggerOnChannel(
+    "org:org_default",
+    "agentInstructionsChanged",
+  );
+  await waitFor(() => {
+    expect(screen.getByLabelText("Instructions editor")).toHaveTextContent(
+      "Instructions saved elsewhere",
+    );
+  });
+});
+
+test("Agent drafts survive external changes and can reload the newer instructions", async () => {
+  await setupInstructionsPage("Original instructions");
+  const editor = await instructionsEditor();
+  await fill(editor, "Draft to keep");
+  await screen.findByTestId("unsaved-bar");
+  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
+    return respond(200, {
+      content: "Newer instructions",
+      filename: "AGENTS.md",
+    });
+  });
+  context.mocks.ably.triggerOnChannel(
+    "org:org_default",
+    "agentInstructionsChanged",
+  );
+  await screen.findByText(/Your saved instructions changed elsewhere/);
+  expect(screen.getByLabelText("Instructions editor")).toHaveTextContent(
+    "Draft to keep",
+  );
+  expect(
+    within(screen.getByTestId("unsaved-bar")).getByTestId("save-button"),
+  ).toBeDisabled();
+  const reload = queryAllByRoleFast("button").find((element) => {
+    return element.textContent?.trim() === "Reload saved instructions";
+  });
+  if (!reload) {
+    throw new Error("Expected reload instructions action");
+  }
+  click(reload);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Instructions editor")).toHaveTextContent(
+      "Newer instructions",
+    );
+  });
+  expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();
+});
+
+test("Returning to the tab refreshes legacy instructions without a notification", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  await setupInstructionsPage("Original instructions");
+  await instructionsEditor();
+  visibility.changeTo("hidden");
+  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
+    return respond(200, {
+      content: "Saved while away",
+      filename: "AGENTS.md",
+    });
+  });
+  visibility.changeTo("visible");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Instructions editor")).toHaveTextContent(
+      "Saved while away",
+    );
+  });
+});
+
+test("A legacy save conflict keeps the draft until discard reloads the latest instructions", async () => {
+  await setupInstructionsPage("Original instructions");
+  const editor = await instructionsEditor();
+  await fill(editor, "Local draft");
+  const bar = await screen.findByTestId("unsaved-bar");
+  context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
+    return respond(200, {
+      content: "Newer instructions",
+      filename: "AGENTS.md",
+    });
+  });
+  context.mocks.api(agentInstructionsContract.update, ({ body, respond }) => {
+    expect(body).toStrictEqual({
+      content: "Local draft",
+      ifContent: "Original instructions",
+    });
+    return respond(409, {
+      error: { code: "CONFLICT", message: "Instructions changed" },
+    });
+  });
+  click(within(bar).getByTestId("save-button"));
+  await screen.findByText(/Your saved instructions changed elsewhere/);
+  expect(screen.getByLabelText("Instructions editor")).toHaveTextContent(
+    "Local draft",
+  );
+  expect(within(bar).getByTestId("save-button")).toBeDisabled();
+  click(within(bar).getByTestId("discard-button"));
+  await waitFor(() => {
+    expect(screen.getByLabelText("Instructions editor")).toHaveTextContent(
+      "Newer instructions",
     );
   });
   expect(screen.queryByTestId("unsaved-bar")).not.toBeInTheDocument();

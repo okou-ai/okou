@@ -69,6 +69,8 @@ export const agentInstructionsRequestSchema = object({
   content: string().refine((content) => {
     return !content.includes("\0");
   }, "Instructions must not contain NUL characters"),
+  /** Last-read editor body; omit to deliberately replace the current body. */
+  ifContent: string().optional(),
 });
 
 /**
