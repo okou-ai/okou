@@ -14,6 +14,7 @@ from mitmproxy import http
 
 import codex_model_catalog_cache as catalog_cache
 import mitm_addon
+import thread_pool
 from tests.codex_model_catalog_cache_helpers import (
     catalog_flow,
     catalog_response,
@@ -137,7 +138,7 @@ async def test_dense_catalog_validations_are_serialized_off_event_loop(
     try:
         with (
             mitm_ctx(),
-            patch.object(catalog_cache, "ThreadPoolExecutor", return_value=executor),
+            patch.object(catalog_cache, "start_thread_pool", return_value=executor),
         ):
             try:
                 _, first_continuation = await _start_catalog_response(
@@ -200,7 +201,7 @@ async def test_catalog_validation_cancellation_preserves_atomic_ownership(
     try:
         with (
             mitm_ctx(),
-            patch.object(catalog_cache, "ThreadPoolExecutor", return_value=executor),
+            patch.object(catalog_cache, "start_thread_pool", return_value=executor),
         ):
             try:
                 admitted_flow, admitted_continuation = await _start_catalog_response(
@@ -297,7 +298,7 @@ async def test_executor_submission_failure_releases_catalog_owner(
 
     with (
         mitm_ctx(),
-        patch.object(catalog_cache, "ThreadPoolExecutor", return_value=failed_executor),
+        patch.object(catalog_cache, "start_thread_pool", return_value=failed_executor),
     ):
         flow, continuation = await _start_catalog_response(
             real_flow,
@@ -347,7 +348,7 @@ async def test_worker_start_failures_release_queued_snapshots_and_recover(
     try:
         with (
             mitm_ctx(),
-            patch.object(catalog_cache, "ThreadPoolExecutor", side_effect=create_executor),
+            patch.object(thread_pool, "ThreadPoolExecutor", side_effect=create_executor),
             patch.object(catalog_cache, "_validate_response_snapshot", observe_validation),
         ):
             with patch.object(threading.Thread, "start", fail_catalog_start):
@@ -425,7 +426,7 @@ async def test_done_joins_catalog_validation_and_closes_admission(
     try:
         with (
             mitm_ctx(),
-            patch.object(catalog_cache, "ThreadPoolExecutor", return_value=executor),
+            patch.object(catalog_cache, "start_thread_pool", return_value=executor),
         ):
             try:
                 _, continuation = await _start_catalog_response(

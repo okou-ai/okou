@@ -37,10 +37,11 @@ replacement owner. Publication and capacity release are idempotent, and an old o
 remove itself only while it is still current; terminal cleanup supplies the no-entry fallback
 for abandoned flows.
 
-Validation uses a cache-owned single-worker executor. Failed submissions cancel its queued
-work before releasing admission; the next response can create a new executor. Once a future
-is returned, cancellation waits for validation and publication to finish. Addon shutdown
-closes validation admission and joins the worker without cancelling accepted futures.
+Validation uses a cache-owned single-worker executor, fully started by the shared payload-free
+bootstrap before accepting snapshots. Failed submissions cancel its queued work before releasing
+admission; the next response can create a new executor. Once a future is returned, cancellation
+waits for validation and publication to finish. Addon shutdown closes validation admission and
+joins the worker without cancelling accepted futures.
 
 Response modes and authenticated ETags
 ---------------------------------------
@@ -99,6 +100,7 @@ import content_length
 import flow_metadata
 import http_header_syntax
 from runtime_url_parsing import split_runtime_url
+from thread_pool import start_thread_pool
 
 FRESH_SECONDS = 60.0
 MAX_ENTRY_BYTES = 1024 * 1024
@@ -1116,7 +1118,7 @@ async def _validate_response_off_loop(
         if _validation_shut_down:
             raise RuntimeError("Catalog validation is shut down")
         if _validation_executor is None:
-            _validation_executor = ThreadPoolExecutor(
+            _validation_executor = start_thread_pool(
                 max_workers=1,
                 thread_name_prefix="codex-catalog-validation",
             )
@@ -1125,8 +1127,8 @@ async def _validate_response_off_loop(
         try:
             validation = loop.run_in_executor(executor, _validate_response_snapshot, snapshot)
         except BaseException:
-            # submit() queues before starting a worker and may raise without returning
-            # its future. Own and drain that queue before the caller releases admission.
+            # Retire failed submissions before releasing admission, even though
+            # the shared bootstrap has already completed worker startup.
             _validation_executor = None
             executor.shutdown(wait=True, cancel_futures=True)
             raise
