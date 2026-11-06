@@ -244,7 +244,6 @@ type ClaimRouteTimingActionType =
   | "claim_route_lookup_application_remainder"
   | "claim_route_context_parse"
   | "claim_route_secret_materialization"
-  | "claim_route_response_assembly"
   | "claim_route_response_network_policy_refresh"
   | "claim_route_content_bundles"
   | "claim_route_content_bundle_instructions_sign"
@@ -1325,12 +1324,16 @@ type FailedClaimTransitionResult = Exclude<
   { readonly status: "claimed" }
 >;
 
-function claimTransitionErrorResponse(result: FailedClaimTransitionResult) {
-  if (result.status === "agent-unavailable") {
-    return notFound("Agent not found");
-  }
+function reportClaimTransitionRejection(
+  result: FailedClaimTransitionResult,
+  timing: UnavailableClaimTimingArgs,
+) {
   if (result.status === "bundle-unavailable") {
     throw new Error("Required content bundle is missing or invalid at claim");
+  }
+  scheduleUnavailableClaimTiming(timing, `transition_${result.status}`);
+  if (result.status === "agent-unavailable") {
+    return notFound("Agent not found");
   }
   if (result.status === "workflow-unavailable") {
     return notFound("Workflow is no longer available for this claim");
@@ -1665,7 +1668,6 @@ function claimResponseBody(args: {
   readonly run: ClaimedRun;
   readonly reuseKey: string | null;
   readonly storedContext: StoredExecutionContext;
-  readonly sandboxToken: string;
   readonly secretValues: ExecutionContext["secretValues"];
   readonly refreshedPolicies: Pick<
     StoredExecutionContext,
@@ -1699,7 +1701,11 @@ function claimResponseBody(args: {
         return mount;
       }),
     },
-    sandboxToken: args.sandboxToken,
+    sandboxToken: generateSandboxToken(
+      args.run.userId,
+      args.run.id,
+      args.run.orgId,
+    ),
     secretValues: args.secretValues,
     connectorRuntimeTargets: args.storedContext.connectorRuntimeTargets,
     networkPolicies: args.refreshedPolicies.networkPolicies,
@@ -1707,52 +1713,35 @@ function claimResponseBody(args: {
   };
 }
 
-const buildClaimResponseBodyForClaim$ = command(
+const prepareClaimResponse$ = command(
   async (
     { set },
     args: {
       readonly run: ClaimedRun;
-      readonly reuseKey: string | null;
       readonly storedContext: StoredExecutionContext;
       readonly timing: ClaimRouteTimingCollector;
     },
     signal: AbortSignal,
-  ): Promise<BaseClaimResponse> => {
+  ): Promise<{
+    readonly secretValues: ExecutionContext["secretValues"];
+    readonly refreshedPolicies: Pick<
+      StoredExecutionContext,
+      "networkPolicies" | "networkPolicyRefreshes"
+    >;
+  }> => {
+    // Fallible preparation must finish before durable claim ownership.
     const secretValues = await secretValuesForRunner(
       args.storedContext,
       args.timing,
     );
     signal.throwIfAborted();
-    const timing = args.timing;
-    const startedAt = now();
-    return await (async () => {
-      const refreshedPolicies = await set(readClaimNetworkPolicyRefreshes$, {
-        run: args.run,
-        storedContext: args.storedContext,
-        timing: args.timing,
-      });
-      signal.throwIfAborted();
-      const sandboxToken = generateSandboxToken(
-        args.run.userId,
-        args.run.id,
-        args.run.orgId,
-      );
-      signal.throwIfAborted();
-      return claimResponseBody({
-        run: args.run,
-        reuseKey: args.reuseKey,
-        storedContext: args.storedContext,
-        sandboxToken,
-        secretValues,
-        refreshedPolicies,
-      });
-    })().finally(() => {
-      timing.recordElapsed(
-        "claim_route_response_assembly",
-        "top_level",
-        startedAt,
-      );
+    const refreshedPolicies = await set(readClaimNetworkPolicyRefreshes$, {
+      run: args.run,
+      storedContext: args.storedContext,
+      timing: args.timing,
     });
+    signal.throwIfAborted();
+    return { secretValues, refreshedPolicies };
   },
 );
 
@@ -1811,6 +1800,73 @@ function successfulClaimPreferenceTelemetry(args: {
           args.runnerIdentity.heartbeatGeneration
       : undefined,
   };
+}
+
+type UnavailableClaimReason =
+  | "lookup_not_found"
+  | "capability_unsupported"
+  | "invalid_context_unavailable"
+  | `transition_${Exclude<
+      ClaimTransitionResult["status"],
+      "claimed" | "bundle-unavailable"
+    >}`;
+
+interface UnavailableClaimTimingArgs {
+  readonly runId: string;
+  readonly authType: RunnerAuthContext["type"];
+  readonly runnerAttribution: RunnerClaimAttribution | undefined;
+  readonly telemetry: ClaimTimingTelemetry | undefined;
+  readonly claimRequestStartedAtMs: number;
+  readonly jobWithRun?: ClaimableJob;
+}
+
+function scheduleUnavailableClaimTiming(
+  args: UnavailableClaimTimingArgs,
+  reason: UnavailableClaimReason,
+): void {
+  const finishedAt = now();
+  waitUntil(
+    tapError(
+      (async () => {
+        await Promise.resolve();
+        const apiCommitSha = normalizeBuildCommitSha(env("GIT_COMMIT_SHA"));
+        recordSandboxOperations([
+          {
+            sandboxType: "runner",
+            actionType: "claim_route_unavailable",
+            durationMs: Math.max(0, finishedAt - args.claimRequestStartedAtMs),
+            // A normal unavailable observation is not an operational failure.
+            success: true,
+            runId: args.runId,
+            timestamp: new Date(finishedAt).toISOString(),
+            dimensions: {
+              auth_type: args.authType,
+              unavailable_reason: reason,
+              ...runnerClaimAttributionDimensions(args.runnerAttribution),
+              ...(apiCommitSha ? { api_commit_sha: apiCommitSha } : {}),
+              ...(args.jobWithRun
+                ? {
+                    runner_group: args.jobWithRun.job.runnerGroup,
+                    profile: args.jobWithRun.job.profile,
+                  }
+                : {}),
+              ...(args.telemetry?.discoverySource
+                ? { discovery_source: args.telemetry.discoverySource }
+                : {}),
+              ...(args.telemetry?.pollReason
+                ? { poll_reason: args.telemetry.pollReason }
+                : {}),
+            },
+          },
+        ]);
+      })(),
+      () => {
+        L.warn("Unavailable claim timing recording failed", {
+          runId: args.runId,
+        });
+      },
+    ),
+  );
 }
 
 function scheduleSuccessfulClaimSideEffects(args: {
@@ -2205,6 +2261,7 @@ const resolveStoredExecutionContextForClaim$ = command(
       );
       return {
         compatible: false as const,
+        unavailableReason: "invalid_context_unavailable" as const,
         response: await set(
           failClaimForInvalidStoredExecutionContext$,
           args,
@@ -2220,6 +2277,7 @@ const resolveStoredExecutionContextForClaim$ = command(
     if (piModelConfigResolution.status === "unsupported") {
       return {
         compatible: false as const,
+        unavailableReason: "capability_unsupported" as const,
         response: notFound("Job not found in queue"),
       };
     }
@@ -2230,6 +2288,7 @@ const resolveStoredExecutionContextForClaim$ = command(
       );
       return {
         compatible: false as const,
+        unavailableReason: "invalid_context_unavailable" as const,
         response: await set(
           failClaimForInvalidStoredExecutionContext$,
           args,
@@ -2277,16 +2336,21 @@ const claimAuthorizedJob$ = command(
       signal,
     );
     if (!storedContextResult.compatible) {
+      if (storedContextResult.response.status === 404) {
+        scheduleUnavailableClaimTiming(
+          args,
+          storedContextResult.unavailableReason,
+        );
+      }
       return storedContextResult.response;
     }
     const storedContext = storedContextResult.value;
     const workflowInput = workflowClaimInput(storedContext);
 
-    const baseResponseBody = await set(
-      buildClaimResponseBodyForClaim$,
+    const preparedResponse = await set(
+      prepareClaimResponse$,
       {
         run,
-        reuseKey: jobWithRun.job.reuseKey,
         storedContext,
         timing: claimRouteTiming,
       },
@@ -2301,27 +2365,25 @@ const claimAuthorizedJob$ = command(
       args.claimRequestStartedAtMs,
     );
     const transitionStartedAt = now();
-    const claimResult = await (async () => {
-      return await set(
-        transitionClaimedJobToRunning$,
-        {
-          runId,
-          workflowInput,
-          runnerAttribution: args.runnerAttribution,
-          timing: claimRouteTiming,
-          bundleUrlCache: {
-            context: bundleUrlCache,
-            additionalHashes: [
-              ...(storedContext.officialWorkflowBundles ?? []),
-              ...storedContext.seedSkillBundles,
-            ].map((bundle) => {
-              return bundle.sha256;
-            }),
-          },
+    const claimResult = await set(
+      transitionClaimedJobToRunning$,
+      {
+        runId,
+        workflowInput,
+        runnerAttribution: args.runnerAttribution,
+        timing: claimRouteTiming,
+        bundleUrlCache: {
+          context: bundleUrlCache,
+          additionalHashes: [
+            ...(storedContext.officialWorkflowBundles ?? []),
+            ...storedContext.seedSkillBundles,
+          ].map((bundle) => {
+            return bundle.sha256;
+          }),
         },
-        signal,
-      );
-    })().finally(() => {
+      },
+      signal,
+    ).finally(() => {
       claimRouteTiming.recordElapsed(
         "claim_route_transition_running",
         "top_level",
@@ -2335,13 +2397,19 @@ const claimAuthorizedJob$ = command(
     }
     signal.throwIfAborted();
     if (claimResult.status !== "claimed") {
-      return claimTransitionErrorResponse(claimResult);
+      return reportClaimTransitionRejection(claimResult, args);
     }
 
     const { responseBody, cacheWrites } = await set(
       withClaimedContentBundles$,
       {
-        responseBody: baseResponseBody,
+        // Only the winner signs a token and constructs the local response.
+        responseBody: claimResponseBody({
+          run,
+          reuseKey: jobWithRun.job.reuseKey,
+          storedContext,
+          ...preparedResponse,
+        }),
         claim: claimResult,
         workflowInput,
         officialWorkflowBundles: storedContext.officialWorkflowBundles,
@@ -2352,10 +2420,6 @@ const claimAuthorizedJob$ = command(
       signal,
     );
 
-    const response = {
-      status: 200 as const,
-      body: responseBody,
-    };
     claimRouteTiming.recordElapsed(
       "claim_route_request_to_response_ready",
       "parent",
@@ -2373,7 +2437,7 @@ const claimAuthorizedJob$ = command(
       cachePublication: set(persistStoragePresignedUrls$, cacheWrites, signal),
     });
 
-    return response;
+    return { status: 200 as const, body: responseBody };
   },
 );
 
@@ -2426,6 +2490,16 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   });
   signal.throwIfAborted();
   if (!isClaimableJob(jobWithRun)) {
+    scheduleUnavailableClaimTiming(
+      {
+        runId,
+        authType: auth.type,
+        runnerAttribution,
+        telemetry: body.data.telemetry,
+        claimRequestStartedAtMs,
+      },
+      "lookup_not_found",
+    );
     return jobWithRun;
   }
   const authError = claimAuthorizationError(auth, jobWithRun);
