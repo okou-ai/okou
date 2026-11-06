@@ -27,6 +27,11 @@
     @FocusState private var emailFocused: Bool
     @State private var enabled = true
     @State private var showsSheet = false
+    static let sampleWorkspaces = [
+      (id: "catalog", name: "Max & Zoe, Inc"), (id: "catalog-2", name: "Okou Labs"),
+    ]
+    @State private var catalogWorkspace = "catalog"
+    @State private var menuLogos = OkouWorkspaceMenuLogos()
 
     var body: some View {
       ScrollView {
@@ -36,10 +41,7 @@
           Text("Shared brand. Native controls. One source of truth.")
             .foregroundStyle(OkouColor.mutedForeground)
           OkouNativeIconComparison()
-          section("Adaptive information & sheets") {
-            OkouLabeledValue(
-              label: Text("Weekly window"), value: Text("85% remaining")
-            ).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+          section("Native sheets") {
             Button("Open native scrolling sheet") { showsSheet = true }
               .buttonStyle(.bordered)
           }
@@ -112,12 +114,11 @@
               }
             }
             .background(OkouColor.sidebar)
-            // Chat rows, as the sidebar draws them: an Active chat with its agent's avatar,
-            // then status emoji, the quiet glyph, and the trailing states.
+            // Chat rows, as the sidebar draws them: status emoji, the quiet glyph,
+            // and the trailing states.
             VStack(spacing: 0) {
               OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
-                OkouAgentAvatar(
-                  avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.row)
+                OkouChatStatusMark(emoji: "✅")
               }
               OkouChatRowLabel("!36076 Share in two steps", trailing: .running(phase: 0)) {
                 OkouChatStatusMark(emoji: "✅")
@@ -310,6 +311,35 @@
               }
             }
           }
+          section("Results in the transcript") {
+            // Every result style and state; also its own page with `--result-styles`.
+            ResultStylesGallery()
+          }
+          section("Workspace menu") {
+            // The sidebar's switcher: each workspace's logo beside its name, a check on the
+            // current one.
+            Menu {
+              Picker("Workspace", selection: $catalogWorkspace) {
+                ForEach(Self.sampleWorkspaces, id: \.id) { workspace in
+                  Label {
+                    Text(verbatim: workspace.name)
+                  } icon: {
+                    menuLogos.image(workspaceID: workspace.id, imageURL: nil, hasImage: false)
+                  }
+                  .tag(workspace.id)
+                }
+              }
+              .pickerStyle(.inline)
+              .labelsHidden()
+            } label: {
+              Text(verbatim: "Open the workspace menu")
+            }
+            .task {
+              for workspace in Self.sampleWorkspaces {
+                await menuLogos.load(workspaceID: workspace.id, imageURL: nil, hasImage: false)
+              }
+            }
+          }
           section("Agent identities") {
             HStack(spacing: OkouSpace.md) {
               OkouAgentAvatar(
@@ -415,18 +445,14 @@
       .sheet(isPresented: $showsSheet) {
         NavigationStack {
           List {
-            Section("Adaptive information") {
-              OkouLabeledValue(
-                label: Text("Weekly subscription window"), value: Text("85% remaining")
-              )
-            }
             Section("Native scroll transition") {
               ForEach(1..<25) { index in
                 Label("Example row \(index)", okouSymbol: "message-circle")
               }
             }
           }
-          .scrollEdgeEffectStyle(.soft, for: .top)
+          // Every sheet's grouped ground, so this sheet presents as the product's do.
+          .okouGroupedBackground()
           .navigationTitle("Component reference")
           .navigationBarTitleDisplayMode(.inline)
           .toolbar {
@@ -437,6 +463,7 @@
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .okouSheetBackground()
       }
       .background(OkouColor.background)
       .navigationTitle("Design system")

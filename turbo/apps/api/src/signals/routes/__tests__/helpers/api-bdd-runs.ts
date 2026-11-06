@@ -1173,11 +1173,9 @@ export function createRunsApi(context: TestContext) {
         type: "claude-code-oauth-token",
         secret: "bdd-personal-claude-token",
       });
-      await this.updateUserModelPreference(
-        actor,
-        options.model ?? "claude-fable-5-1",
-      );
-      return { providerId };
+      const model = options.model ?? "claude-fable-5-1";
+      await this.updateUserModelPreference(actor, model);
+      return { providerId, model };
     },
 
     async readBillingStatus(actor: ApiTestUser) {

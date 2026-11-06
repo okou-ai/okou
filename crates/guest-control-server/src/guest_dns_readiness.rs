@@ -15,6 +15,7 @@ use guest_control_proto::{
 use crate::drain::{BoundedDrainHandle, DrainCancellation};
 use crate::error::to_io_error;
 use crate::helper_output::truncate_utf8;
+use crate::helper_program::TestHelperProgram;
 use crate::process::{extract_exit_code, kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::user::apply_command_identity;
@@ -36,10 +37,7 @@ const THREAD_STDERR: &str = "gctl-dns-stderr";
 #[derive(Clone)]
 pub(crate) enum GuestDnsReadinessProgram {
     Production,
-    Test {
-        path: PathBuf,
-        timeout_gate: Option<mpsc::SyncSender<u32>>,
-    },
+    Test(TestHelperProgram),
 }
 
 impl GuestDnsReadinessProgram {
@@ -48,35 +46,23 @@ impl GuestDnsReadinessProgram {
     }
 
     pub(crate) fn for_test(path: PathBuf) -> Self {
-        Self::Test {
-            path,
-            timeout_gate: None,
-        }
+        Self::Test(TestHelperProgram::new(path))
     }
 
     pub(crate) fn for_test_timeout(path: PathBuf, timeout_gate: mpsc::SyncSender<u32>) -> Self {
-        Self::Test {
-            path,
-            timeout_gate: Some(timeout_gate),
-        }
+        Self::Test(TestHelperProgram::with_timeout_gate(path, timeout_gate))
     }
 
     fn await_test_timeout_gate(&self, child_id: u32) {
-        if let Self::Test {
-            timeout_gate: Some(timeout_gate),
-            ..
-        } = self
-        {
-            // A zero-capacity channel lets the test establish helper readiness
-            // before the real timeout starts. A dropped receiver permits cleanup.
-            let _ = timeout_gate.send(child_id);
+        if let Self::Test(program) = self {
+            program.await_timeout_gate(child_id);
         }
     }
 
     fn path(&self) -> &Path {
         match self {
             Self::Production => Path::new(PRODUCTION_PROGRAM),
-            Self::Test { path, .. } => path,
+            Self::Test(program) => program.path(),
         }
     }
 }

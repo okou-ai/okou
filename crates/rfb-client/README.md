@@ -51,10 +51,9 @@ optional classic password/type-2 branch observed on macOS 26.6.2 Remote
 Management; it is not the X509Vnc profile. `authenticate_apple_srp` supports
 Apple Direct SRP security type 36, and `authenticate_apple_rsa_srp` supports
 Apple RSA/SRP security type 33. None of these raw-stream entry points supplies
-post-authentication encryption or an authorization decision. The Runner admits
-types 30, 33 and 36 as distinct saved profiles only through an independently
-authorized SSH host and literal Mac loopback VNC destination. There is no saved
-type-2 profile.
+post-authentication encryption or an authorization decision. Runner admits
+Apple DH, Direct SRP, RSA/SRP and optional classic password as distinct saved
+profiles under the [Apple product transport policy](#apple-product-transport-policy).
 
 RFB 3.8 / VeNCrypt 0.2 supports the caller-selected X509None (subtype 260),
 X509Vnc (261), X509Plain (262), or the separate **QEMU-specific** SCRAM profile
@@ -146,6 +145,33 @@ is fixed at authentication: verified TLS for X509, RSA-AES EAX for full RSA mode
 or the separately selected supplied raw stream for Apple and RSA `ne`.
 No fallback changes that variant.
 
+## Apple product transport policy
+
+All four Apple profiles require independent VNC authorization and a verified
+full-session protective transport ending on the Mac. The outer transport, not
+Apple authentication, protects subsequent RFB framebuffer/input traffic.
+
+| Route             | Required protection                                                                                                                                                                                                                             |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| SSH               | An independently authorized SSH host with verified host-key identity terminating on the controlled Mac, and a literal Mac loopback RFB destination (`127.0.0.1` or `::1`). SSH to an intermediate host does not protect a plaintext onward hop. |
+| Tailscale         | An authorized Tailscale configuration and an actual live, authenticated peer stream to the Mac. A saved configuration or destination address alone is not protection.                                                                           |
+| Cloudflare Access | An authorized Access carrier plus verified server-local origin TLS inside WSS, using the configured origin server name and certificate trust. Access/WSS alone does not protect the origin hop.                                                 |
+
+Raw direct routes and Cloudflare Access without origin TLS are rejected. The
+[API route validator](../../turbo/apps/api/src/signals/services/vnc-configuration.utils.ts)
+and [Runner admission](../runner-remote/src/vnc/authority.rs) enforce the route
+requirements. Admission metadata is not proof of a protected connection:
+[Runner session startup](../runner-remote/src/vnc/sessions.rs) also requires the
+[actual native stream](../runner-remote/src/vnc/native.rs) to be a live
+authenticated Tailscale peer stream or a verified origin-TLS stream before Apple
+RFB authentication.
+
+These admission rules and synthetic native-carrier tests do not establish
+exact-Mac interoperability, product rollout or production acceptance. The
+recorded Mac fixtures below retain their own versions, settings and
+SSH-loopback setup; they are not evidence of Mac interoperability on every
+admitted carrier.
+
 ## Optional classic password / type-2 engine boundary
 
 The Mac-scoped `authenticate_apple_vnc_password` entry point accepts exact
@@ -157,11 +183,10 @@ macOS 26.6.2 Remote Management classic-password configuration is independently
 verified, not every Mac version or standalone Screen Sharing mode. The eight-byte
 password limit is a protocol weakness even when a random password is used.
 **The Mac password option itself may expose the RFB listener to other clients**;
-requiring Okou's SSH route alone cannot restrict that listener. A future
-product admission must separately review host-side ingress isolation, keep SSH
-host-key verification ending on the controlled Mac and literal RFB loopback,
-and retain exact grants/capabilities. This engine PR does not add a saved profile
-or change Mac settings.
+requiring a protected Okou route cannot restrict that listener. Host-side ingress
+isolation and exact grants/capabilities remain independently required alongside
+the [Apple product transport policy](#apple-product-transport-policy). Engine
+support does not configure the Mac listener or grant VNC authority.
 
 ## Apple DH / ARD type 30 engine boundary
 
@@ -194,10 +219,10 @@ connection stage before converting it to the existing coarse RPC/observation
 reason. This diagnostic does not broaden the accepted authentication parameters.
 
 **Type 30 protects the credential exchange only.** It does not authenticate the
-server or encrypt later RFB framebuffer/input. Use a separately verified outer
-transport ending on the Mac for untrusted-network use; an SSH tunnel ending on
-an intermediate host cannot protect an onward plaintext hop. Engine support is
-not an owner permission, product rollout or production activation decision.
+server or encrypt later RFB framebuffer/input. Product callers must enforce the
+[Apple product transport policy](#apple-product-transport-policy). Engine
+support is not an owner permission, product rollout or production activation
+decision.
 
 ## Apple Direct SRP / type 36 engine boundary
 
@@ -227,22 +252,23 @@ and owned secret buffers are zeroized where supported. The crate makes no
 claim about compiler, kernel, socket, or external-library copies.
 
 **SRP authenticates the server and password holder, but it does not encrypt
-the post-authentication RFB session.** For product use, the protected channel
-must terminate on the Mac itself, with saved SSH host-key verification and VNC
-on literal Mac loopback. The ignored exact-Mac fixture runs on that Mac through
-host-key-verified SSH, uses literal loopback VNC and a one-time dedicated test
-password, and checks accepted credentials, a corrupted server proof, and
-rejected credentials. It does not initialize or read the desktop. An earlier
-direct-public-port authentication probe is not a product transport policy.
+the post-authentication RFB session.** Product callers must enforce the
+[Apple product transport policy](#apple-product-transport-policy). The ignored
+exact-Mac fixture runs on that Mac through host-key-verified SSH, uses literal
+loopback VNC and a one-time dedicated test password, and checks accepted
+credentials, a corrupted server proof, and rejected credentials. It does not
+initialize or read the desktop. An earlier direct-public-port authentication
+probe is not a product transport policy.
 
 ## Apple RSA/SRP / type 33 engine boundary
 
-`authenticate_apple_rsa_srp` is an **engine-only**, caller-selected entry point.
+`authenticate_apple_rsa_srp` is a caller-selected engine entry point.
 It selects type 33 on exact `RFB 003.889`, sending the selection and `RSA1`
 request in one write (required by the tested Mac parser). It accepts only the
 observed 301-byte RSA reply: canonical DER SPKI encoding of an RSA-2048 public
 key with exponent 65537 and zero trailing byte. This on-wire key is **not a
-trusted host identity** and must never substitute for a verified SSH host key.
+trusted host identity** and must never substitute for the verified outer
+transport required by the [Apple product transport policy](#apple-product-transport-policy).
 A randomized PKCS#1 v1.5 encrypted username is sent in the bounded RSA1
 entry. The separate `AppleRsaSrpCredentials` requires a 1–234-byte UTF-8
 username: the 2048-bit RSA block permits 245 plaintext bytes, of which Apple
@@ -257,10 +283,9 @@ lengths, group, proof or server result fail closed; no fallback to types 30,
 36 or weaker VNC security is attempted. The same absolute 30-second-or-earlier
 caller deadline applies. This establishes the observed Mac profile only, not
 all macOS versions or settings. The issued key does not encrypt post-auth RFB
-traffic. A future product admission requires its own policy review, verified
-SSH **terminating on the Mac** and literal Mac loopback; raw/direct internet
-connections are not authorized. This engine change does not change any saved
-Runner profile.
+traffic. The saved RSA/SRP profile follows the same Apple product transport
+policy; engine support does not establish product rollout or production
+acceptance.
 
 ## Shared deadlines and failure handling
 

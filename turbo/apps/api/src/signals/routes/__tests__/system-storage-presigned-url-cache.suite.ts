@@ -1,10 +1,12 @@
+import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
 import { readPublishedArchive } from "./helpers/published-archive";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { cronPruneStoragePresignedUrlsContract } from "@okouai/api-contracts/contracts/cron";
 
-import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
+import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
 
@@ -18,10 +20,7 @@ import { cronPruneStoragePresignedUrlsRoutes } from "../cron-prune-storage-presi
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createConnectorBddApi } from "./helpers/api-bdd-connectors";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 
 describe("system storage presigned URL cache", () => {
   const context = testContext();
@@ -53,7 +52,8 @@ describe("system storage presigned URL cache", () => {
   }
 
   async function readonlyCacheScenario() {
-    let clockTime = nowDate().getTime();
+    // Content Bundle signatures have whole-second issue times.
+    let clockTime = Math.floor(nowDate().getTime() / 1000) * 1000;
     const owned = await publicChatActor(context, {
       clockTime: () => {
         return clockTime;
@@ -65,8 +65,12 @@ describe("system storage presigned URL cache", () => {
     await owned.run(() => {
       return api.updateUserModelPreference(owned.actor, "claude-fable-5-1");
     });
+    await owned.run(() => {
+      return enableConnectorSkillBundles(context, owned.actor);
+    });
     const publicationStart = context.mocks.s3.send.mock.calls.length;
     const connector = await owned.run(() => {
+      installWorkflowVolumeS3Fixture(context, new Map(), { bundlesOnly: true });
       return connectors.createCustomConnector(owned.actor, {
         displayName: "Readonly lifetime cache connector",
         prefixTemplates: [`https://cache-${randomUUID()}.example.test/`],
@@ -89,7 +93,7 @@ describe("system storage presigned URL cache", () => {
         [connector.id],
       );
     });
-    const storageName = getCustomConnectorSkillStorageName(connector.id);
+    const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(connector.slug, connector.id)}`;
     const signedCount = mockUniquePresignedUrls();
     return {
       advance(milliseconds: number) {
@@ -102,18 +106,18 @@ describe("system storage presigned URL cache", () => {
           prompt,
         });
         const claimed = await owned.claimChatRun(owned.runnerGroup, run.runId);
-        const matchingMounts = expectCanonicalStorageManifest(
-          claimed.claim.storageManifest,
-        )?.storageMounts.filter((entry) => {
-          return entry.name === storageName;
-        });
+        const matchingMounts = claimed.claim.contentBundles.skills.filter(
+          (entry) => {
+            return entry.mountPath === mountPath;
+          },
+        );
         expect(matchingMounts).toHaveLength(1);
         const mount = matchingMounts?.[0];
-        if (!mount?.archiveUrl || mount.archiveSize === undefined) {
-          throw new Error("Expected a complete readonly connector mount");
+        if (!mount?.downloadUrl || mount.archiveBytes === undefined) {
+          throw new Error("Expected a complete Connector Skill bundle");
         }
-        expect(mount.archiveSize).toBe(published.archiveSize);
-        expect(mount.versionId).toBe(published.versionId);
+        expect(mount.archiveBytes).toBe(published.archiveBytes);
+        expect(mount.sha256).toBe(published.sha256);
         expect(mount.mountPath).toBe(
           `/home/user/.claude/skills/custom-${connector.slug.slice(1, 49)}-${connector.id.replaceAll("-", "").slice(0, 8)}`,
         );
@@ -139,11 +143,10 @@ describe("system storage presigned URL cache", () => {
           }),
         ).resolves.toMatchObject({ status: "failed" });
         return {
-          name: mount.name,
           mountPath: mount.mountPath,
-          versionId: mount.versionId,
-          archiveSize: mount.archiveSize,
-          archiveUrl: mount.archiveUrl,
+          sha256: mount.sha256,
+          archiveBytes: mount.archiveBytes,
+          downloadUrl: mount.downloadUrl,
         };
       },
     };
@@ -193,13 +196,13 @@ describe("system storage presigned URL cache", () => {
     },
   );
 
-  it("reuses one exact cached URL for an ordinary readonly connector storage", async () => {
+  it("reuses one exact cached URL for a Connector Skill bundle", async () => {
     const scenario = await readonlyCacheScenario();
     const first = await scenario.claim("issue the readonly storage URL");
     const second = await scenario.claim("reuse the readonly storage URL");
     expect(second).toStrictEqual(first);
     const objectKey = decodeURIComponent(
-      new URL(first.archiveUrl).pathname.slice(1),
+      new URL(first.downloadUrl).pathname.slice(1),
     );
     expect(scenario.signedCount(objectKey)).toBe(1);
   });
@@ -214,7 +217,7 @@ describe("system storage presigned URL cache", () => {
       const scenario = await readonlyCacheScenario();
       const first = await scenario.claim("issue the readonly archive URL");
       const objectKey = decodeURIComponent(
-        new URL(first.archiveUrl).pathname.slice(1),
+        new URL(first.downloadUrl).pathname.slice(1),
       );
       scenario.advance(CACHE_TTL_SECONDS * 1000 - remainingMs);
       const second = await scenario.claim(
@@ -222,9 +225,9 @@ describe("system storage presigned URL cache", () => {
       );
       expect(second).toStrictEqual({
         ...first,
-        archiveUrl: refresh
+        downloadUrl: refresh
           ? expectedPresignedUrl(objectKey, 2)
-          : first.archiveUrl,
+          : first.downloadUrl,
       });
       expect(scenario.signedCount(objectKey)).toBe(refresh ? 2 : 1);
       if (refresh) {
@@ -243,7 +246,7 @@ describe("system storage presigned URL cache", () => {
     },
   );
 
-  it("preserves 51 ordinary read-only Storage mounts across Runner claims", async () => {
+  it("delivers and caches 51 Connector Skill bundles across Runner claims", async () => {
     const runFixture = await entitledDirectRunActor();
     const { actor } = runFixture;
     context.mocks.s3.send.mockResolvedValue({ ContentLength: 2048 });
@@ -255,16 +258,13 @@ describe("system storage presigned URL cache", () => {
         return `cache batch ${String(index)}`;
       }),
     );
-    const expectedStorageNames = fixtures
-      .map((entry) => {
-        return entry.name;
+    const expectedMounts = fixtures
+      .map(({ mountPath, sha256, archiveBytes }) => {
+        return { mountPath, sha256, archiveBytes };
       })
-      .sort();
-    const workflowMountPaths = new Map(
-      fixtures.map((entry) => {
-        return [entry.name, entry.mountPath];
-      }),
-    );
+      .sort((left, right) => {
+        return left.mountPath.localeCompare(right.mountPath);
+      });
     const signedCount = mockUniquePresignedUrls();
     const api = createRunsApi(context);
     const createAndClaim = async (prompt: string) => {
@@ -279,69 +279,38 @@ describe("system storage presigned URL cache", () => {
       const claim = await api.claimRunnerJob(run.runId);
       // The post-commit cache write completes before the run is cancelled.
       await flushWaitUntilForTest();
-      const mounts =
-        expectCanonicalStorageManifest(
-          claim.storageManifest,
-        )?.storageMounts.filter((mount) => {
-          return expectedStorageNames.includes(mount.name);
-        }) ?? [];
-      await api.requestCancelRun(actor, run.runId, [200]);
-      return mounts
-        .map((mount) => {
-          return {
-            name: mount.name,
-            mountPath: mount.mountPath,
-            versionId: mount.versionId,
-            archiveUrl: mount.archiveUrl,
-          };
-        })
-        .sort((left, right) => {
-          return left.name.localeCompare(right.name);
+      const mounts = claim.contentBundles.skills.filter((mount) => {
+        return expectedMounts.some((expected) => {
+          return expected.mountPath === mount.mountPath;
         });
+      });
+      await api.requestCancelRun(actor, run.runId, [200]);
+      return [...mounts].sort((left, right) => {
+        return left.mountPath.localeCompare(right.mountPath);
+      });
     };
 
     const expected = await createAndClaim(
-      "request all workflow and connector skills",
+      "request all connector skill bundles",
     );
-    expect(expected).toHaveLength(51);
     expect(
-      expected.map((mount) => {
-        return mount.name;
+      expected.map(({ downloadUrl: _url, ...bundle }) => {
+        return bundle;
       }),
-    ).toStrictEqual(expectedStorageNames);
-    // Keys are observed in the provider URLs delivered to the Runner, not read
-    // from private Storage rows. Each returned archive was signed once.
+    ).toStrictEqual(expectedMounts);
+    // Object identities are observed in the URLs delivered to the Runner.
     const objectKeys = expected.map((mount) => {
-      if (!mount.archiveUrl) {
+      if (!mount.downloadUrl) {
         throw new Error("Expected a Runner archive URL");
       }
-      const url = new URL(mount.archiveUrl);
+      const url = new URL(mount.downloadUrl);
       expect(url.origin).toBe("https://r2.example.com");
       expect(url.searchParams.get("sig")).toBe("1");
       const objectKey = decodeURIComponent(url.pathname.slice(1));
-      expect(
-        objectKey.endsWith(`/${mount.versionId}/archive.tar.gz`),
-      ).toBeTruthy();
+      expect(objectKey === `bundles/v1/${mount.sha256}.tar.gz`).toBeTruthy();
       return objectKey;
     });
-    // All owner-specific Connector paths remain distinct.
-    expect(
-      expected
-        .filter((mount) => {
-          return workflowMountPaths.has(mount.name);
-        })
-        .map((mount) => {
-          return mount.mountPath;
-        }),
-    ).toStrictEqual(
-      expected
-        .filter((mount) => {
-          return workflowMountPaths.has(mount.name);
-        })
-        .map((mount) => {
-          return workflowMountPaths.get(mount.name);
-        }),
-    );
+    // Each authorized Connector retains its distinct mount path.
     expect(
       new Set(
         expected.map((mount) => {
@@ -386,7 +355,7 @@ describe("system storage presigned URL cache", () => {
     const scenario = await readonlyCacheScenario();
     const first = await scenario.claim("issue the readonly archive URL");
     const objectKey = decodeURIComponent(
-      new URL(first.archiveUrl).pathname.slice(1),
+      new URL(first.downloadUrl).pathname.slice(1),
     );
     scenario.advance(CACHE_TTL_SECONDS * 1000 + 60_000);
     const refreshed = await scenario.claim(
@@ -394,7 +363,7 @@ describe("system storage presigned URL cache", () => {
     );
     expect(refreshed).toStrictEqual({
       ...first,
-      archiveUrl: expectedPresignedUrl(objectKey, 2),
+      downloadUrl: expectedPresignedUrl(objectKey, 2),
     });
     expect(scenario.signedCount(objectKey)).toBe(2);
   });

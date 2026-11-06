@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { enrollMarketingHandoffSession$ } from "./prompt-page/marketing-handoff.ts";
 import {
   captureFriendReferral$,
@@ -6,7 +5,6 @@ import {
 } from "./friend-referrals.ts";
 import { activeRoute$ } from "./active-route.ts";
 import { resetProjectUi$ } from "./projects/project-ui.ts";
-import { setupHalloweenOperationsPage$ } from "./halloween/halloween-operations-page-setup.ts";
 import { command, type Command } from "ccstate";
 import { createElement } from "react";
 import { clerk$, setupClerkUser$, watchOrgSwitch$ } from "./auth.ts";
@@ -212,10 +210,6 @@ const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
 });
 
 const ROUTE_CONFIG = [
-  {
-    path: ROUTES.halloweenOperations,
-    setup: setupAuthPageWrapper(setupHalloweenOperationsPage$),
-  },
   {
     path: ROUTES.sharedArtifact,
     setup: setupPageWrapper(setupSharedArtifact$),
@@ -656,9 +650,7 @@ const completeBootstrap$ = command(
     signal.throwIfAborted();
 
     await Promise.all([
-      ...(featureSwitches[FeatureSwitchKey.MarketingContentHandoff]
-        ? [set(enrollMarketingHandoffSession$, signal)]
-        : []),
+      set(enrollMarketingHandoffSession$, signal),
       set(setupAuthenticatedBootstrapData$, signal),
       set(setupRoutes$, signal),
       set(bootstrapOnboardingGuard$, signal),

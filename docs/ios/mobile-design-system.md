@@ -100,20 +100,20 @@ Textual Markdown uses `OkouMarkdownStyle` for links, code surfaces, headings, qu
 All geometry is measured in points. Values are Mobile design choices; they are
 not copied from CSS and are not all mandated by Apple.
 
-| Foundation   | Rule                                                                                                                                                                                                                                                                                                           |
-| ------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Typeface     | Geist for UI, Geist Mono for code; system fallback covers unsupported scripts                                                                                                                                                                                                                                  |
-| Type scale   | Large title 34, title 28, title2 22, title3 20, body/headline 17, callout 16, subheadline 15, footnote 13, caption 12, caption2 11                                                                                                                                                                             |
-| Text scaling | Use `Font.okou(.body)` and corresponding named styles. A fixed `size:` is only for already scaled measurements or constrained artwork; ordinary body text uses Dynamic Type                                                                                                                                    |
-| Spacing      | Prefer 4, 8, 12, 16, 20, 24, 32, 40, 48 via `OkouSpace`; smaller named steps serve tight component internals                                                                                                                                                                                                   |
-| Radius       | Inline code 4, thumbnail 6, small 8, control 14, chat 16, card 20, sheet 28; circles/capsules remain native shapes                                                                                                                                                                                             |
-| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote/caption for supporting text. Never shrink a control label below callout to make it fit                                                                                              |
-| Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; list row 48 / agent row 50; inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
-| Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                      |
-| Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                    |
-| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 50 ms waveform sample, 25 % sidebar parallax)                                                                        |
-| Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                              |
-| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                            |
+| Foundation   | Rule                                                                                                                                                                                                                                                                                                                                             |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Typeface     | Geist for UI, Geist Mono for code; system fallback covers unsupported scripts                                                                                                                                                                                                                                                                    |
+| Type scale   | Large title 34, title 28, title2 22, title3 20, body/headline 17, callout 16, subheadline 15, footnote 13, caption 12, caption2 11                                                                                                                                                                                                               |
+| Text scaling | Use `Font.okou(.body)` and corresponding named styles. A fixed `size:` is only for already scaled measurements or constrained artwork; ordinary body text uses Dynamic Type                                                                                                                                                                      |
+| Spacing      | Prefer 4, 8, 12, 16, 20, 24, 32, 40, 48 via `OkouSpace`; smaller named steps serve tight component internals                                                                                                                                                                                                                                     |
+| Radius       | Inline code 4, thumbnail 6, small 8, control 14, chat 16, card 20, sheet 28; circles/capsules remain native shapes                                                                                                                                                                                                                               |
+| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote/caption for supporting text. Never shrink a control label below callout to make it fit                                                                                                                                |
+| Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48 / agent row 50; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
+| Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                                        |
+| Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                                      |
+| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 50 ms waveform sample, 25 % sidebar parallax)                                                                                                          |
+| Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                                |
+| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                                              |
 
 An icon inside a `Label` is decorative: its text names the action. Icon-only
 buttons require an explicit accessible label. Errors appear next to the owning
@@ -294,9 +294,19 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Section footers** use `okouSectionNote()`: 13 pt `muted-foreground`. A control's
   explanation (Fast mode cost, effort, scope of a switch) goes in the footer under its
   card, never as a row inside it — the system Settings pattern. One footer per card.
+- **A sheet's ground is set at its root.** Every sheet that shows grouped rows gets
+  `okouSheetBackground()` on the view it presents, next to `presentationDetents`, so a
+  partial detent stays opaque with white rows instead of glass with grey ones. Set from
+  inside the sheet's `NavigationStack` (as part of `okouGroupedBackground()` once was), the
+  ground reaches the sheet after its slide has begun: the sheet appears in place and only
+  its rows slide up.
 - **One text edge and one row height for the whole app.** Grouped rows never set
-  their own height; `okouGroupedBackground()` sets the minimum (48 pt) and the
-  system adds its padding. A row with a leading graphic (icon, partner logo, avatar,
+  their own height; `okouGroupedBackground()` sets the minimum to 52 pt
+  (`OkouControl.groupedRow`), the height the system gives a row with a 28 pt icon
+  slot or a switch, so a row of text alone (a model, a subscription) is exactly as
+  tall as Settings' rows and Thinking effort beside it. A row that is one whole
+  button (a model choice) drops the system's vertical padding and takes the 52 pt
+  itself, so the full row is the target; it never sets a smaller height. A row with a leading graphic (icon, partner logo, avatar,
   workspace mark) uses `OkouRowLabel`, which centres the graphic in the 28 pt
   `rowLeadingSlot`, so text starts on the same edge in every row and sheet. A sheet
   either gives every row a leading graphic (Settings, Connectors) or none (models,
@@ -309,8 +319,23 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   open with `ChatCardHeader`, as the web's `AssistantErrorCard`: a 16 pt glyph in
   `brand-text` on the title's first line (no tile behind it), the title in callout medium,
   every detail line in subheadline `muted-foreground`. Callers never restyle the details, so a
-  card uses at most three sizes. A file the user attached and a result the agent made use the
-  same card: media preview 180 pt (`cardMediaHeight`), heading, trailing chevron.
+  card uses at most three sizes.
+- **Results in the transcript** keep the web's shapes in the app's card style. A
+  picture or video is `OkouResultTile`, the web's Markdown image: one fixed 200 × 180 pt
+  frame (`mediaTileWidth`, `cardMediaHeight`) with the whole picture fitted inside on the
+  `state-hover` ground, nothing cropped, no caption. A website, slides or a document is
+  `OkouResultCard`, the web's `SitePreviewCard`: the transcript card heading
+  (`ChatCardHeader`: brand-text glyph, title, one detail line such as "Slides · PPTX ·
+  2.3 MB" or "Website · lumina.okou.app") over one 16:9 cover for every kind (a site or a page fills it from the top; a deck's first slide sits in it whole, so a 4:3 slide is centred on the neutral ground), at most
+  400 pt wide; any other file is the heading alone. Tiles and cards share the chat card
+  corner and hairline. The shape comes from the result as the message writes it, never
+  from what loads, so the row's height is fixed before the picture arrives. The cover is
+  the server's preview image; without one a website is drawn once off screen at
+  1280 × 720 (`SitePreviewSnapshotter`, which also gives the card the page's title, as the
+  web's card shows the live page) and a PDF or deck under 25 MB draws its first page with
+  Quick Look. A file the user attached uses the same tile and card. A link in the text to
+  a hosted site, published page or chat file gets its card after the passage that names
+  it, once per message; the text keeps the link.
 - **Fills on white are neutral.** The warm `muted` and `control-surface` read pink on `card`
   and `background`; tiles, placeholders, media backdrops, zebra rows and tracks use the
   `state-hover` or `nested-fill` layers instead.
@@ -318,12 +343,12 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   `OkouFloatingPanelStyle`: the same card, card radius, plus the floating shadow.
   Not `.regularMaterial` — a grey material block did not match the rest of the UI.
 - **Edges under bars**: scroll edges default to native `.soft` (`OkouAppearance`).
-  Where a custom bar's text sits over scrolling text the edge must hide it:
-  - The chat transcript is `.soft` at both edges: its header holds only glass controls
-    and no title. Its UIKit collection view gets the header and composer heights as
-    `additionalSafeAreaInsets`, not `contentInset`, so the edge effects cover both bars.
-  - The warm sidebar hides the system top edge and paints its header in `sidebar`
-    with a 16 pt fade; the system hard band is white and read as a separate block.
+  - The chat transcript and sidebar use the native `.soft` top edge so scrolling
+    content blurs beneath the header. Do not paint an opaque sidebar header or fade.
+  - Both hide the bottom scroll-edge effect: content shows through beneath the
+    composer and sidebar footer, while the controls retain their own Liquid Glass.
+  - The transcript's UIKit collection view gets the header and composer heights as
+    `additionalSafeAreaInsets`, not `contentInset`, preserving safe-area layout.
     Verify both themes with text scrolled under each bar after changing either.
 - Do not replace native Glass, Blur or safe-area bars with opaque cards, arbitrary
   opacity fills or custom outlines. Follow Reduce Transparency and Reduce Motion.
@@ -348,8 +373,17 @@ single floating line, and colour is a small accent for status only.
   is `ChatSettingsLoadingView`, the same spinner and line centred where the content will
   appear. A chat's first load is `OkouChatSkeleton`, the web's chat skeleton: two
   exchanges of a trailing user bubble and an answer under a small avatar in `skeleton`
-  grey, breathing 1 → 0.7 over two seconds (`OkouSkeletonBlock`), shown after 100 ms as
-  on the web — never a spinner in an empty page.
+  grey (`OkouSkeletonBlock`), shown after 100 ms as on the web — never a spinner in an
+  empty page.
+- **Skeletons shimmer as one.** Content with a known shape is drawn as its outline (a
+  chat's exchanges) in `skeleton` grey shapes that do not move on their own; a picture
+  whose content cannot be guessed (a cover, an image tile) is `OkouPictureLoading`: the
+  `state-hover` ground, plus a faint glyph of its kind in a tile, never a made-up outline of
+  a page. Either way the group carries one motion, `okouShimmer()`: a soft band of the
+  page's ground, slanted 12°, crosses every block together every 1.6 s
+  (`OkouMotion.shimmer`), lifting the grey a little without washing it out, as feeds and
+  media apps draw loading. Under Reduce Motion nothing travels: the group breathes
+  1 → 0.7 over two seconds, the web's `okou-skeleton-pulse`.
 - **A status line in a screen's flow** (a draft that could not be saved,
   a stop that did not confirm, a voice or attachment error above the composer) is
   `OkouBanner`: a hairline card at chat radius, a 16 pt glyph, one footnote sentence, its
@@ -374,7 +408,10 @@ single floating line, and colour is a small accent for status only.
   (`OkouMotion.sidebarFeather`). Neither page slides as a card, so no edge, corner or
   shadow ever crosses the screen.
 - **Sidebar layout**: the workspace switcher top left and "back to chat" (»,
-  `chevrons-right`) top right. A thumb-reach bottom bar: the account's own photo
+  `chevrons-right`) top right. The switcher opens the system menu with every workspace's
+  logo beside its name and the system check on the current one, as the web's switcher
+  lists them; a menu draws images, not views, so `OkouWorkspaceMenuLogos` draws each
+  tile once (28 pt, `OkouAvatarSize.menu`) with the logo's own rounded corners. A thumb-reach bottom bar: the account's own photo
   (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a search capsule fills the
   middle, and new chat is the prominent circle on the right.
 - **Pinned agents** are one sideways rail of `OkouAgentTile`s, proportioned on Instagram's
@@ -387,8 +424,7 @@ single floating line, and colour is a small accent for status only.
 - **Placeholders** (the composer's "Message Okou", the sidebar's "Search chats" and its glyph)
   use `OkouColor.placeholder` (gray-600), lighter than supporting text.
 - **Sidebar order**: the Pinned Agents rail, always at the top so the avatars never move;
-  **Active** (running and unread chats from every agent, at most six), shown only while
-  there are some; the chat filter (the
+  the chat filter (the
   web's Inbox — All chats without archiving — / Unread / Archived / Muted, then Mark
   all read); the selected agent's chats grouped Pinned / Today / Yesterday / Previous
   7 days / Earlier. Everything starts on the `pageInset` edge.
@@ -396,17 +432,14 @@ single floating line, and colour is a small accent for status only.
   state. The status column holds the web's title status emoji (✅ Done, ⏳ Waiting, …);
   it appears in a section only when one of that section's chats has a status, and
   rows without one show a quiet `message-circle` glyph so titles stay on one edge.
-  The emoji stays in the title so web and iOS agree; archive is a separate flag. An
-  Active row is one line like the rest: its agent's 28 pt avatar (`OkouAvatarSize.row`)
-  takes the status column, overhanging it so the mark lines up with an emoji, in place of
-  a second line with the agent's name.
+  The emoji stays in the title so web and iOS agree; archive is a separate flag.
 - **Trailing state** is the running indicator, an unread dot (8 pt `running` sky blue, as on
   the web; amber is kept for a primary commit), or nothing. Status is
   never a system spinner.
 - **Chat header** has no title: the menu glass circle and the model capsule on the left, the
   chat's "…" menu on the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.
-- Provider headings separate identity from allowance (`OkouLabeledValue`); do not
+- Provider headings separate identity from allowance; do not
   shrink or truncate allowance text to fit beside a brand name.
 
 ### Status and motion
@@ -512,54 +545,69 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 
 ## Components and composition
 
-| Component                                                                     | Use / states                                                                                                                                                                     |
-| ----------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `OkouButtonStyle`                                                             | Filled primary or the web outline button; `isCompact` for two actions side by side; a destructive role keeps the outline with a red label; default, pressed, disabled            |
-| `OkouTextFieldStyle`                                                          | First-party standalone native text fields; resting, focused, disabled; the caller supplies `isFocused` from the native field binding and owns labels/validation                  |
-| `OkouSurfaceStyle`                                                            | Noninteractive card shell; shared fill, border, native radius; add interaction only at the owning semantic control                                                               |
-| `OkouIcon`, `OkouToolbarIcon`, `Label(okouSymbol:)`, `Button(okouSymbol:)`    | Shared product icon assets; preserve native labels, menu behavior, and button roles                                                                                              |
-| `OkouEmptyState`                                                              | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title |
-| `OkouLoadErrorRow` / `OkouLoadingRow`                                         | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                 |
-| `OkouBanner`                                                                  | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                        |
-| `ChatFeedbackSurface`                                                         | Chat feedback under the header: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕                                                                        |
-| `OkouChatSkeleton` / `OkouSkeletonBlock`                                      | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, breathing                                                                                     |
-| `OkouAgentAvatar`, `OkouWorkspaceLogo`                                        | Shared avatar and workspace artwork with native sizing                                                                                                                           |
-| `OkouWordmark`                                                                | Approved aspect ratio and theme-aware foreground                                                                                                                                 |
-| `OkouCloseButton`, `OkouLabeledValue`                                         | Native toolbar dismissal and width-adaptive label/value information                                                                                                              |
-| `OkouProviderButtonStyle`                                                     | Full-width provider action with a branded icon and explicit provider name; neutral resting/pressed/disabled states                                                               |
-| `OkouAuthTheme`                                                               | Public Clerk integration; retains SDK-owned authentication behavior                                                                                                              |
-| `OkouGlassControl`                                                            | Clear glass icon (`.circle`) or labeled (`.capsule`) control on an exact 44 pt shape; pairs and bars read at one size                                                            |
-| `OkouFloatingPanelStyle`                                                      | Card surface plus the floating shadow for suggestion panels over the transcript                                                                                                  |
-| `okouGroupedBackground()`                                                     | The one ground for grouped List/Form sheets                                                                                                                                      |
-| `OkouRunningIndicator`                                                        | Web's breathing running dot; `phaseOffset` staggers list rows into a wave                                                                                                        |
-| `ChatCardHeader` / `ChatCardButtonStyle` (`.standard`, `.detail`, `.primary`) | Web card heading (16 pt brand-text glyph, callout medium title, one detail style) and card actions (outline, primary, text; destructive role in red)                             |
-| `NewChatGreeting`                                                             | New-chat greeting with Web's word-by-word entrance                                                                                                                               |
-| `ConnectorLogo`                                                               | Partner catalog logo (PNG/SVG) in a 24 pt slot with a glyph fallback                                                                                                             |
-| `OkouUsageMeter`                                                              | Allowance row: label, "% remaining", capacity bar (normal / low / exhausted), reset time                                                                                         |
-| `okouSectionHeader()`, `okouSectionNote()`                                    | Grouped-list section header (15 pt medium) and footer note (13 pt muted)                                                                                                         |
-| `okouValuePicker()`                                                           | Menu picker whose trailing value is supporting text                                                                                                                              |
-| `OkouRowLabel`                                                                | Row title with its leading graphic in the shared 28 pt slot                                                                                                                      |
-| `OkouValueRow`                                                                | A grouped row with a trailing value (system Settings style): the title keeps one line, the 17 pt muted value yields and truncates in the middle                                  |
-| `OkouInlineCodeChip`                                                          | Web-style inline code in Markdown: padding and a 4 pt corner, on the sentence's baseline without growing the line; short spans only, off under VoiceOver                         |
-| `OkouProfileAvatar`                                                           | The signed-in person's photo in a circle with a hairline; account glyph without a photo (sidebar Settings, Settings profile row)                                                 |
-| `OkouActionTile` / `OkouMediaThumbnail` / `OkouSelectionMark`                 | An 88 pt media-strip tile (Camera), a photo thumbnail with a hairline, and its pick mark (open ring, then amber with an ink check)                                               |
-| `OkouCloseToolbarItem`                                                        | The close button in its one place: the toolbar's trailing end                                                                                                                    |
-| `OkouChatRowLabel` / `OkouChatStatusMark`                                     | A sidebar chat: status column (emoji, quiet glyph, or an Active chat's agent avatar), one body line, trailing running / unread / pinned                                          |
-| `OkouActionRow`                                                               | A plain sheet's action row (Add to chat): row label in body, 48 pt, page edge, destructive red, optional trailing note                                                           |
-| `OkouAccountRowLabel`                                                         | The Settings account: 40 pt mark, name in body medium, email in footnote supporting text                                                                                         |
-| `OkouAgentTile`                                                               | An agent in a sideways avatar rail: 56 pt avatar, one 11 pt line of name ending in "…", selected tile, unread dot                                                                |
-| `OkouLiveWaveform`                                                            | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                |
-| `OkouChip` / `OkouChipRail`                                                   | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                                  |
-| `OkouLogoTile`                                                                | A partner logo or glyph on a quiet square tile (44 / 64 pt) so catalog marks line up                                                                                             |
-| `OkouAddIndicator`                                                            | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                                           |
-| `OkouSegmentControl`                                                          | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                                           |
-| Feature components                                                            | Compose the foundations for domain-specific information; promote only reusable visual/interaction patterns into DesignSystem                                                     |
+| Component                                                                     | Use / states                                                                                                                                                                         |
+| ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `OkouButtonStyle`                                                             | Filled primary or the web outline button; `isCompact` for two actions side by side; a destructive role keeps the outline with a red label; default, pressed, disabled                |
+| `OkouTextFieldStyle`                                                          | First-party standalone native text fields; resting, focused, disabled; the caller supplies `isFocused` from the native field binding and owns labels/validation                      |
+| `OkouSurfaceStyle`                                                            | Noninteractive card shell; shared fill, border, native radius; add interaction only at the owning semantic control                                                                   |
+| `OkouIcon`, `OkouToolbarIcon`, `Label(okouSymbol:)`, `Button(okouSymbol:)`    | Shared product icon assets; preserve native labels, menu behavior, and button roles                                                                                                  |
+| `OkouEmptyState`                                                              | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title     |
+| `OkouLoadErrorRow` / `OkouLoadingRow`                                         | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                     |
+| `OkouBanner`                                                                  | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                            |
+| `ChatFeedbackSurface`                                                         | Chat feedback under the header: glass, Lucide glyph or spinner, one 15 pt medium line, optional action, ✕                                                                            |
+| `OkouChatSkeleton` / `OkouSkeletonBlock`                                      | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, shimmering as one (`okouShimmer()`)                                                               |
+| `OkouAgentAvatar`, `OkouWorkspaceLogo`                                        | Shared avatar and workspace artwork with native sizing                                                                                                                               |
+| `OkouWordmark`                                                                | Approved aspect ratio and theme-aware foreground                                                                                                                                     |
+| `OkouCloseButton`                                                             | Native toolbar dismissal                                                                                                                                                             |
+| `OkouProviderButtonStyle`                                                     | Full-width provider action with a branded icon and explicit provider name; neutral resting/pressed/disabled states                                                                   |
+| `OkouAuthTheme`                                                               | Public Clerk integration; retains SDK-owned authentication behavior                                                                                                                  |
+| `OkouGlassControl`                                                            | Clear glass icon (`.circle`) or labeled (`.capsule`) control on an exact 44 pt shape; pairs and bars read at one size                                                                |
+| `OkouFloatingPanelStyle`                                                      | Card surface plus the floating shadow for suggestion panels over the transcript                                                                                                      |
+| `okouGroupedBackground()`                                                     | The one ground for grouped List/Form sheets                                                                                                                                          |
+| `okouSheetBackground()`                                                       | A sheet's opaque ground, set on the view the sheet presents (beside its detents), never inside its navigation stack                                                                  |
+| `OkouRunningIndicator`                                                        | Web's breathing running dot; `phaseOffset` staggers list rows into a wave                                                                                                            |
+| `ChatCardHeader` / `ChatCardButtonStyle` (`.standard`, `.detail`, `.primary`) | Web card heading (16 pt brand-text glyph, callout medium title, one detail style) and card actions (outline, primary, text; destructive role in red)                                 |
+| `NewChatGreeting`                                                             | New-chat greeting with Web's word-by-word entrance                                                                                                                                   |
+| `ConnectorLogo`                                                               | Partner catalog logo (PNG/SVG) in a 24 pt slot with a glyph fallback                                                                                                                 |
+| `OkouUsageMeter`                                                              | Allowance row: label, "% remaining", capacity bar (normal / low / exhausted), reset time                                                                                             |
+| `okouSectionHeader()`, `okouSectionNote()`                                    | Grouped-list section header (15 pt medium) and footer note (13 pt muted)                                                                                                             |
+| `okouValuePicker()`                                                           | Menu picker whose trailing value is supporting text                                                                                                                                  |
+| `OkouRowLabel`                                                                | Row title with its leading graphic in the shared 28 pt slot                                                                                                                          |
+| `OkouValueRow`                                                                | A grouped row with a trailing value (system Settings style): the title keeps one line, the 17 pt muted value yields and truncates in the middle                                      |
+| `OkouInlineCodeChip`                                                          | Web-style inline code in Markdown: padding and a 4 pt corner, on the sentence's baseline without growing the line; short spans only, off under VoiceOver                             |
+| `OkouProfileAvatar`                                                           | The signed-in person's photo in a circle with a hairline; account glyph without a photo (sidebar Settings, Settings profile row)                                                     |
+| `OkouActionTile` / `OkouMediaThumbnail` / `OkouSelectionMark`                 | An 88 pt media-strip tile (Camera), a photo thumbnail with a hairline, and its pick mark (open ring, then amber with an ink check)                                                   |
+| `OkouCloseToolbarItem`                                                        | The close button in its one place: the toolbar's trailing end                                                                                                                        |
+| `OkouChatRowLabel` / `OkouChatStatusMark`                                     | A sidebar chat: status column (emoji or quiet glyph), one body line, trailing running / unread / pinned                                                                              |
+| `OkouActionRow`                                                               | A plain sheet's action row (Add to chat): row label in body, 48 pt, page edge, destructive red, optional trailing note                                                               |
+| `OkouAccountRowLabel`                                                         | The Settings account: 40 pt mark, name in body medium, email in footnote supporting text                                                                                             |
+| `OkouAgentTile`                                                               | An agent in a sideways avatar rail: 56 pt avatar, one 11 pt line of name ending in "…", selected tile, unread dot                                                                    |
+| `OkouResultCard` / `OkouResultTile` / `OkouPreviewState`                      | A result in the transcript: card heading over a 16:9 cover (website, slides, document) or a fixed 200 × 180 tile with the whole picture; loading pulse, picture, or the kind's glyph |
+| `OkouWorkspaceMenuLogos`                                                      | Workspace logos for a system menu: each tile drawn once at 28 pt (`OkouAvatarSize.menu`) with the logo's own corners; a neutral tile until an upload loads                           |
+| `ResultStylesGallery`                                                         | Debug page of every result style and state in a chat, with covers from the real pipeline; in the catalog, or on its own with `--result-styles`                                       |
+| `OkouLiveWaveform`                                                            | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                    |
+| `OkouChip` / `OkouChipRail`                                                   | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                                      |
+| `OkouLogoTile`                                                                | A partner logo or glyph on a quiet square tile (44 / 64 pt) so catalog marks line up                                                                                                 |
+| `OkouAddIndicator`                                                            | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                                               |
+| `OkouSegmentControl`                                                          | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                                               |
+| Feature components                                                            | Compose the foundations for domain-specific information; promote only reusable visual/interaction patterns into DesignSystem                                                         |
 
 [`OkouDesignSystemCatalog.swift`](../../ios/Okou/DesignSystem/OkouDesignSystemCatalog.swift)
 is a live SwiftUI reference with light, dark, and large-text previews. It includes
 foundations, component states, and the complete registered icon set. In a Debug
 scheme, the `--mobile-design-system` launch argument opens this catalog without
-initializing authentication or product services. Release builds do not expose it.
+initializing authentication or product services. In a Debug build it is also
+in the app: **Settings ▸ Developer ▸ Design system** (and **Results in a chat**) pushes it
+inside Settings, so Back returns to Settings and ✕ closes Settings. Release builds do not
+expose any of it.
+`--result-styles` opens only the results page (`ResultStylesGallery`): every way a
+result looks in a chat, each state under a caption, with a live website snapshot and
+Quick Look covers of a generated deck and document.
+
+Reusable views live in `ios/Okou/DesignSystem` even when their names carry `Chat`
+(`ChatCardSurface`, `ChatCardHeader`, `ChatActionCard`, `ChatCardButtonStyle`,
+`ChatFeedbackSurface`); feature folders keep only views bound to a store, such as
+`ChatFeedbackBanner`.
 
 The catalog's **Native icon calibration** section includes native SF Symbol and
 Okou glass actions, list labels, and a real UIKit menu containing both image

@@ -2,12 +2,17 @@ use super::*;
 use std::fs;
 use std::os::unix::fs::MetadataExt;
 
-pub(super) fn fixture_files(count: usize, bytes: usize, long_paths: bool) -> Vec<StorageFile> {
+pub(super) fn fixture_files(
+    count: usize,
+    bytes: usize,
+    random_bytes: usize,
+    long_paths: bool,
+) -> Vec<StorageFile> {
     (0..count)
         .map(|index| {
             let mut content = vec![b'x'; bytes];
             let mut state = index as u64 + 1;
-            for byte in content.iter_mut().take(bytes / 2) {
+            for byte in content.iter_mut().take(random_bytes) {
                 state ^= state << 13;
                 state ^= state >> 7;
                 state ^= state << 17;
@@ -35,7 +40,6 @@ pub(super) fn archive_files(files: &[StorageFile]) -> Vec<u8> {
         header.set_size(file.content.len() as u64);
         header.set_mode(file.mode);
         header.set_mtime(file.mtime);
-        header.set_cksum();
         builder
             .append_data(&mut header, &file.path, &file.content[..])
             .unwrap();
@@ -54,10 +58,9 @@ pub(super) fn archive_files(files: &[StorageFile]) -> Vec<u8> {
 async fn production_warming_survives_restart_and_full_guest_delivery() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().join("host"));
-    let mut files = fixture_files(storage_files::MAX_FILES, 2048, true);
+    let mut files = fixture_files(storage_files::MAX_FILES, 2048, 512, true);
     for file in &mut files {
         file.mtime = 1;
-        file.content[512..].fill(b'x');
     }
     assert_eq!(
         files.iter().map(|f| f.content.len()).sum::<usize>(),
@@ -127,7 +130,7 @@ async fn retained_previous_policy_rejection_remains_an_optional_skip_after_activ
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     // This count exceeded the previous 1,024-file producer policy.
-    let files = fixture_files(1025, 64, false);
+    let files = fixture_files(1025, 64, 32, false);
     let archive = archive_files(&files);
     for name in ["retained", "fresh"] {
         let source = home.storage_cache_dir(name, "v1");
@@ -176,26 +179,24 @@ async fn retained_previous_policy_rejection_remains_an_optional_skip_after_activ
 #[test]
 fn count_and_content_boundaries_are_independent_of_gzip_size() {
     let cancel = CancellationToken::new();
-    let files = fixture_files(MAX_ADMITTED_FILES, 64, false);
+    let files = fixture_files(MAX_ADMITTED_FILES, 64, 32, false);
     assert_eq!(
         decode(&archive_files(&files), &cancel).unwrap().unwrap(),
         files
     );
-    let too_many = fixture_files(MAX_ADMITTED_FILES + 1, 64, false);
+    let too_many = fixture_files(MAX_ADMITTED_FILES + 1, 64, 32, false);
     assert!(
         decode(&archive_files(&too_many), &cancel)
             .unwrap()
             .is_none()
     );
 
-    let mut files = fixture_files(
+    let files = fixture_files(
         MAX_ADMITTED_STORAGE_BYTES / storage_files::MAX_FILE_BYTES,
         storage_files::MAX_FILE_BYTES,
+        storage_files::MAX_FILE_BYTES / 3,
         false,
     );
-    for file in &mut files {
-        file.content[storage_files::MAX_FILE_BYTES / 3..].fill(b'x');
-    }
     let gzip = archive_files(&files);
     assert!(gzip.len() <= MAX_COMPRESSED_BYTES);
     assert_eq!(decode(&gzip, &cancel).unwrap().unwrap(), files);
@@ -219,24 +220,20 @@ async fn production_warming_enforces_activated_count_content_and_longname_admiss
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     let cache = DecodedCache::new(home.clone());
-    for (name, count, bytes, long_paths, admitted) in [
-        ("small", MAX_ADMITTED_FILES, 64, false, true),
-        ("count", MAX_ADMITTED_FILES + 1, 64, false, false),
+    for (name, count, bytes, random_bytes, long_paths, admitted) in [
+        ("small", MAX_ADMITTED_FILES, 64, 32, false, true),
+        ("count", MAX_ADMITTED_FILES + 1, 64, 32, false, false),
         (
             "content",
             MAX_ADMITTED_STORAGE_BYTES / storage_files::MAX_FILE_BYTES + 1,
             storage_files::MAX_FILE_BYTES,
+            storage_files::MAX_FILE_BYTES / 3,
             false,
             false,
         ),
-        ("longnames", 1, 256, true, true),
+        ("longnames", 1, 256, 128, true, true),
     ] {
-        let mut files = fixture_files(count, bytes, long_paths);
-        if name == "content" {
-            for file in &mut files {
-                file.content[storage_files::MAX_FILE_BYTES / 3..].fill(b'x');
-            }
-        }
+        let files = fixture_files(count, bytes, random_bytes, long_paths);
         let gzip = archive_files(&files);
         assert!(gzip.len() <= MAX_ADMITTED_COMPRESSED_BYTES);
         let source = home.storage_cache_dir(name, "v1");
@@ -294,7 +291,12 @@ async fn large_ready_read_ahead_skips_a_body_that_does_not_fit_but_keeps_small_h
             name,
             "v1",
             MAX_COMPRESSED_BYTES,
-            Some(&fixture_files(count, storage_files::MAX_FILE_BYTES, false)),
+            Some(&fixture_files(
+                count,
+                storage_files::MAX_FILE_BYTES,
+                storage_files::MAX_FILE_BYTES / 2,
+                false,
+            )),
             &cancel,
         )
         .unwrap();
@@ -327,7 +329,7 @@ async fn empty_files_preserve_ready_file_read_ahead_and_allow_later_small_hits()
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     let cancel = CancellationToken::new();
-    let files = fixture_files(1024, 0, false);
+    let files = fixture_files(1024, 0, 0, false);
     for (name, count) in [
         ("wide", 1024),
         ("medium", 1000),
@@ -371,7 +373,7 @@ async fn exhausted_file_read_ahead_does_not_hide_later_invalid_metadata() {
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().to_owned());
     let cancel = CancellationToken::new();
-    let files = fixture_files(1024, 0, false);
+    let files = fixture_files(1024, 0, 0, false);
     for (name, count) in [
         ("first", 1024),
         ("second", 1024),
@@ -415,6 +417,7 @@ async fn retained_large_hits_exhaust_optional_budget_without_leaking_permits() {
     let files = fixture_files(
         storage_files::MAX_STORAGE_BYTES / storage_files::MAX_FILE_BYTES,
         storage_files::MAX_FILE_BYTES,
+        storage_files::MAX_FILE_BYTES / 2,
         false,
     );
     disk::publish(
@@ -431,7 +434,7 @@ async fn retained_large_hits_exhaust_optional_budget_without_leaking_permits() {
         "tiny",
         "v1",
         1024,
-        Some(&fixture_files(1, 64, false)),
+        Some(&fixture_files(1, 64, 32, false)),
         &cancel,
     )
     .unwrap();

@@ -1,9 +1,7 @@
+import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { publicChatActor } from "./helpers/public-chat-actor";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createFirewallApi } from "./helpers/api-bdd-firewall";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { readGetStartedStatus } from "./helpers/get-started";
@@ -30,7 +28,6 @@ import {
   type CreateCustomConnectorBody,
 } from "@okouai/api-contracts/contracts/custom-connectors";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
 import { describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -84,6 +81,9 @@ async function observeCustomSkill(
   fixture: Awaited<ReturnType<typeof publicChatActor>>,
   connectorId: string,
 ) {
+  await fixture.run(() => {
+    return enableConnectorSkillBundles(context, fixture.actor);
+  });
   const sent = await fixture.sendChatRun(fixture.actor, {
     agentId: fixture.agentId,
     prompt: "Read the current custom connector skill",
@@ -93,10 +93,10 @@ async function observeCustomSkill(
     fixture.runnerGroup,
     sent.runId,
   );
-  const mount = expectCanonicalStorageManifest(
-    claim.storageManifest,
-  )?.storageMounts.find((item) => {
-    return item.name === getCustomConnectorSkillStorageName(connectorId);
+  const mount = claim.contentBundles.skills.find((item) => {
+    return item.mountPath.endsWith(
+      `-${connectorId.replaceAll("-", "").slice(0, 8)}`,
+    );
   });
   await createChatEventsFixture(context).completeChatRunOk(
     sent.runId,
@@ -7122,7 +7122,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       });
       await expect(
         observeCustomSkill(fixture, created.id),
-      ).resolves.toMatchObject({ versionId: initialHead.versionId });
+      ).resolves.toMatchObject({ sha256: initialHead.sha256 });
 
       await connectorsApi.deleteCustomConnector(admin, created.id);
     });
@@ -7207,7 +7207,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       expect(staleResponse.body.error.message).toContain(
         "changed while the definition was being saved",
       );
-      expect(winningHead.versionId).not.toBe(initialHead.versionId);
+      expect(winningHead.sha256).not.toBe(initialHead.sha256);
       await expect(
         connectorsApi.readCustomConnector(admin, created.id),
       ).resolves.toMatchObject({
@@ -7216,7 +7216,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       });
       await expect(
         observeCustomSkill(fixture, created.id),
-      ).resolves.toMatchObject({ versionId: winningHead.versionId });
+      ).resolves.toMatchObject({ sha256: winningHead.sha256 });
 
       await connectorsApi.deleteCustomConnector(admin, created.id);
     });
@@ -7266,7 +7266,7 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       if (!updatedHead) {
         throw new Error("Expected a real connector skill mount");
       }
-      expect(updatedHead.versionId).not.toBe(createdHead.versionId);
+      expect(updatedHead.sha256).not.toBe(createdHead.sha256);
 
       const permissionBundleCleared = await connectorsApi.updateCustomConnector(
         admin,

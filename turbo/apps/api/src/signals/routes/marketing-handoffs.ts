@@ -5,8 +5,6 @@ import {
   marketingHandoffsContract,
   serializeMarketingHandoff,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import {
   badRequestMessage,
   notConfigured,
@@ -15,17 +13,14 @@ import {
 } from "../../lib/error";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
-import { currentRequestRuntime } from "../../lib/request-runtime";
 import { normalizeWebUploadContentType } from "../../lib/uploads-constants";
 import { requiredAuthContext$ } from "../auth/auth-context";
 import { request$, setResHeader$, authorization$ } from "../context/hono";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { putImmutableS3Object, s3ObjectHead } from "../external/s3";
-import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   canReadMarketingContent$,
   claimMarketingManifest$,
-  consumeMarketingHandoffBudget$,
   grantMarketingContent$,
   importMarketingFiles$,
   marketingContentHash,
@@ -55,8 +50,6 @@ function equalSecret(left: string, right: string): boolean {
 
 function anonymousSession(cookie: string | undefined): {
   subject: string;
-  rolloutUserId: string | undefined;
-  rolloutOrgId: string | undefined;
 } | null {
   const token = cookie
     ?.split(";")
@@ -92,8 +85,6 @@ function anonymousSession(cookie: string | undefined): {
   }
   return {
     subject: `session:${id}`,
-    rolloutUserId: userId || undefined,
-    rolloutOrgId: orgId || undefined,
   };
 }
 
@@ -144,20 +135,6 @@ const handoffContext$ = command(async ({ get, set }, signal: AbortSignal) => {
     orgId = auth.orgId;
   }
   const anonymous = anonymousSession(request.header("cookie"));
-  const rolloutUserId = userId ?? anonymous?.rolloutUserId;
-  const rolloutOrgId = orgId ?? anonymous?.rolloutOrgId;
-  const context =
-    rolloutUserId && rolloutOrgId
-      ? await set(
-          loadUserFeatureSwitchContext$,
-          rolloutOrgId,
-          rolloutUserId,
-          signal,
-        )
-      : { userId: rolloutUserId, orgId: rolloutOrgId };
-  if (!isFeatureEnabled(FeatureSwitchKey.MarketingContentHandoff, context)) {
-    return resourceUnavailable("Marketing content handoff is not enabled");
-  }
   const bucket = marketingHandoffBucket();
   if (
     !bucket ||
@@ -173,38 +150,8 @@ const handoffContext$ = command(async ({ get, set }, signal: AbortSignal) => {
     orgId,
     subject: userId ? `user:${userId}` : sessionSubject,
     sessionSubject,
-    rolloutUserId,
-    rolloutOrgId,
   };
 });
-
-const uploadBudget$ = command(
-  async ({ get, set }, bytes: number, signal: AbortSignal) => {
-    const request = get(request$);
-    // Managed ingress supplies this address. Hash it with a server key, never persist raw IPs.
-    const ip =
-      (currentRequestRuntime()
-        ? request.header("cf-connecting-ip")
-        : request.header("x-vercel-forwarded-for")) ?? "unknown";
-    const subject = signSession(`budget:${ip}`);
-    const allowed = await set(
-      consumeMarketingHandoffBudget$,
-      { subject, bytes },
-      signal,
-    );
-    return allowed
-      ? null
-      : {
-          status: 429 as const,
-          body: {
-            error: {
-              code: "RATE_LIMITED",
-              message: "Too many uploads. Try again later.",
-            },
-          },
-        };
-  },
-);
 
 const config$ = command(async ({ set }, signal: AbortSignal) => {
   const context = await set(handoffContext$, signal);
@@ -221,10 +168,6 @@ const session$ = command(async ({ get, set }, signal: AbortSignal) => {
   if ("status" in context) {
     return context;
   }
-  const limit = await set(uploadBudget$, 0, signal);
-  if (limit) {
-    return limit;
-  }
   const body = await get(bodyResultOf(marketingHandoffsContract.session));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -233,7 +176,8 @@ const session$ = command(async ({ get, set }, signal: AbortSignal) => {
   const id =
     context.sessionSubject?.slice("session:".length) ??
     randomBytes(32).toString("hex");
-  const payload = `${id}.${now() + SESSION_TTL_SECONDS * 1000}.${context.rolloutUserId ?? ""}.${context.rolloutOrgId ?? ""}`;
+  // Keep the signed v1 layout so existing cookies retain their content grants.
+  const payload = `${id}.${now() + SESSION_TTL_SECONDS * 1000}..`;
   set(
     setResHeader$,
     "Set-Cookie",
@@ -250,10 +194,6 @@ const upload$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!context.subject) {
     return resourceUnavailable("Start a handoff session first");
   }
-  const limit = await set(uploadBudget$, 0, signal);
-  if (limit) {
-    return limit;
-  }
   const body = await get(bodyResultOf(marketingHandoffsContract.upload));
   signal.throwIfAborted();
   if (!body.ok) {
@@ -266,10 +206,6 @@ const upload$ = command(async ({ get, set }, signal: AbortSignal) => {
     content.toString("base64") !== data
   ) {
     return badRequestMessage("Invalid file encoding or size");
-  }
-  const byteLimit = await set(uploadBudget$, content.length, signal);
-  if (byteLimit) {
-    return byteLimit;
   }
   const hash = marketingContentHash(content);
   const contentType = normalizeWebUploadContentType(body.data.contentType);
@@ -301,10 +237,6 @@ const create$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (!context.subject) {
     return resourceUnavailable("Start a handoff session first");
-  }
-  const limit = await set(uploadBudget$, 0, signal);
-  if (limit) {
-    return limit;
   }
   const body = await get(bodyResultOf(marketingHandoffsContract.create));
   signal.throwIfAborted();
@@ -423,29 +355,6 @@ const import$ = command(async ({ get, set }, signal: AbortSignal) => {
   const suspended = await set(rejectSuspendedOrg$, result.orgId, signal);
   if (suspended) {
     return suspended;
-  }
-  if (result.manifest.files.length > 0) {
-    const allowed = await set(
-      consumeMarketingHandoffBudget$,
-      {
-        subject: signSession(`import:${result.userId}:${result.orgId}`),
-        bytes: result.manifest.files.reduce((total, file) => {
-          return total + file.size;
-        }, 0),
-      },
-      signal,
-    );
-    if (!allowed) {
-      return {
-        status: 429 as const,
-        body: {
-          error: {
-            code: "RATE_LIMITED",
-            message: "Too many file imports. Try again later.",
-          },
-        },
-      };
-    }
   }
   const files = await set(
     importMarketingFiles$,

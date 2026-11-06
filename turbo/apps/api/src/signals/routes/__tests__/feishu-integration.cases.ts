@@ -1,4 +1,4 @@
-import { getCustomConnectorSkillStorageName } from "@okouai/core/storage-names";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { createFixtureOperationOwner } from "./helpers/fixture-operation-owner";
 import { captureConnectorExternalState } from "./helpers/public-connector-actor";
@@ -70,10 +70,7 @@ import {
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
 import { mockClerkMembership } from "./helpers/api-bdd-clerk";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import {
   captureIntegrationInputUploads,
@@ -327,13 +324,13 @@ function uploadedSkillMarkdown(): string {
   throw new Error("Expected an uploaded SKILL.md");
 }
 
-function uploadedSkillVersion(firstCall: number): string {
+function uploadedSkillDigest(firstCall: number): string {
   const archives = context.mocks.s3.send.mock.calls
     .slice(firstCall)
     .flatMap(([command]) => {
       const input = commandInput(command);
       return typeof input.Key === "string" &&
-        input.Key.endsWith("/archive.tar.gz") &&
+        input.Key.startsWith("bundles/v1/") &&
         Buffer.isBuffer(input.Body) &&
         extractFileFromTarGz(input.Body, "SKILL.md") !== null
         ? [input.Key]
@@ -341,8 +338,8 @@ function uploadedSkillVersion(firstCall: number): string {
     });
   expect(archives).toHaveLength(1);
   const version = requireValue(
-    archives[0]?.split("/").at(-2),
-    "Expected the actual published managed skill version",
+    /^bundles\/v1\/([a-f0-9]{64})\.tar\.gz$/u.exec(archives[0] ?? "")?.[1],
+    "Expected the actual published managed Skill bundle digest",
   );
   expect(version).toMatch(/^[0-9a-f]{64}$/u);
   return version;
@@ -1236,10 +1233,14 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     await own(() => {
       return enableFeishuIntegration(platform, actor, {
         [FeatureSwitchKey.OkouDebug]: true,
+        [FeatureSwitchKey.ConnectorSkillBundleDelivery]: true,
       });
     });
     authOrgApi.acceptAgentStorageWrites();
     runsApi.acceptStorageDownloads();
+    installWorkflowVolumeS3Fixture(context, new Map(), {
+      bundlesOnly: true,
+    });
     runsApi.acceptTelemetryIngest();
     const onboarding = await own(() => {
       return authOrgApi.readOnboardingStatus(actor);
@@ -5362,7 +5363,7 @@ export function registerFeishuIntegrationTests(
           builtinConnectorList.body.connectors[0],
           "Expected connected Feishu custom connector",
         );
-        const managedSkillVersion = uploadedSkillVersion(firstUploadCall);
+        const managedSkillDigest = uploadedSkillDigest(firstUploadCall);
         const customConnectorGrants = await own(() => {
           return accept(
             setupApp({ context, routes: agentsRoutes })(
@@ -5533,15 +5534,12 @@ export function registerFeishuIntegrationTests(
             permissionNames: ["messages:send-as-user"],
           },
         ]);
-        const managedSkillMount = expectCanonicalStorageManifest(
-          claim.storageManifest,
-        )?.storageMounts.find((storage) => {
-          return (
-            storage.name ===
-            getCustomConnectorSkillStorageName(managedConnector.id)
+        const managedSkillMount = claim.contentBundles.skills.find((bundle) => {
+          return bundle.mountPath.endsWith(
+            `-${managedConnector.id.replaceAll("-", "").slice(0, 8)}`,
           );
         });
-        expect(managedSkillMount?.versionId).toBe(managedSkillVersion);
+        expect(managedSkillMount?.sha256).toBe(managedSkillDigest);
         expect(claim.prompt).toContain(feishuFilePrompt);
         expect(claim.prompt).toContain("   [MESSAGE_ID] om_file_message");
         expect(claim.prompt).toContain("   [TYPE] file");

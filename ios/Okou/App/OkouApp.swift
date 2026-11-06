@@ -10,7 +10,16 @@ struct OkouApp: App {
 
   private static var isDesignPreview: Bool {
     #if DEBUG
-      ProcessInfo.processInfo.arguments.contains("--mobile-design-system")
+      ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
+    #else
+      false
+    #endif
+  }
+
+  /// The page of every result style in a chat (`ResultStylesGallery`), without signing in.
+  private static var isResultStyles: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.arguments.contains("--result-styles")
     #else
       false
     #endif
@@ -31,7 +40,9 @@ struct OkouApp: App {
     WindowGroup {
       Group {
         #if DEBUG
-          if Self.isDesignPreview {
+          if Self.isResultStyles {
+            NavigationStack { ResultStylesPage() }
+          } else if Self.isDesignPreview {
             NavigationStack { OkouDesignSystemCatalog() }
           } else {
             productRoot
@@ -254,7 +265,8 @@ private struct WorkspaceRootView: View {
             .id(conversation.thread.id)
           } else {
             newChatHome
-              .safeAreaBar(edge: .bottom, spacing: 0) {
+              .frame(minHeight: 0, maxHeight: .infinity)
+              .safeAreaInset(edge: .bottom, spacing: 0) {
                 @Bindable var composer = store.newComposer
                 ChatComposerView(
                   draft: $composer.text, isBusy: store.isCreating,

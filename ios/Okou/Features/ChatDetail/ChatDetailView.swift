@@ -224,8 +224,7 @@ struct ChatDetailView: View {
       conversation.setDetailVisible(true, owner: activityOwner)
     }
     .onChange(of: reduceMotion) { _, value in scrolling.setReduceMotion(value) }
-    // Trailing, above the composer: centred, it covered the line being read.
-    .overlay(alignment: .bottomTrailing) {
+    .overlay(alignment: .bottom) {
       ZStack {
         if scrolling.showsBottomButton {
           Button {
@@ -245,7 +244,6 @@ struct ChatDetailView: View {
       .animation(reduceMotion ? nil : OkouMotion.press, value: scrolling.showsBottomButton)
       .allowsHitTesting(scrolling.showsBottomButton)
       .padding(.bottom, OkouSpace.sm)
-      .padding(.trailing, OkouSpace.lg)
     }
     .task(id: displayedMessages.last) { await scrolling.latestMessageChanged() }
     .onChange(of: conversation.visibleItems) { _, _ in scrolling.messagesChanged() }
@@ -285,6 +283,7 @@ struct ChatDetailView: View {
       )
       .presentationDetents([.medium, .large])
       .presentationDragIndicator(.visible)
+      .okouSheetBackground()
       .task { await conversation.modelSelection?.models.loadUsageCatalog() }
     }
     .sheet(
@@ -294,6 +293,7 @@ struct ChatDetailView: View {
       )
     ) { flow in
       ConnectorAuthorizationSheet(flow: flow, store: conversation.connectorActions)
+        .okouSheetBackground()
     }
     .alert(
       "Unable to open connection",
@@ -308,7 +308,7 @@ struct ChatDetailView: View {
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await conversation.connectorActions.refreshKnown() } }
     }
-    .safeAreaBar(edge: .bottom, spacing: 0) {
+    .safeAreaInset(edge: .bottom, spacing: 0) {
       VStack(alignment: .leading, spacing: 0) {
         if let issue = conversation.stopIssue {
           OkouBanner(Text(issue), icon: "circle-stop") {

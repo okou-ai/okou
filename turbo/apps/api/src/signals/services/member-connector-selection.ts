@@ -23,6 +23,7 @@ import {
 } from "../../lib/db-structured-result";
 import { contextJsonProjection } from "./context-rowset";
 import { customConnectorDefinitionSelection } from "./custom-connector-definition-selection";
+import { customConnectorSkillBundleSelection } from "./custom-connector-skill-bundle-columns";
 
 /** The storage identity is a connector target, never an Agent or account. */
 export function memberConnectorPermissionColumns() {
@@ -73,7 +74,10 @@ export function memberConnectorSelectionQueries(
     })
     .from(connectors)
     .where(and(ownedAccount, isNotNull(connectors.connectorSlug)));
-  const connectorColumns = customConnectorDefinitionSelection();
+  const connectorColumns = {
+    ...customConnectorDefinitionSelection(),
+    ...customConnectorSkillBundleSelection(),
+  };
   const oauthColumns = getTableColumns(orgCustomConnectorOauthConfigs);
   const custom = builder
     .select({

@@ -115,11 +115,11 @@ CACHE_TMP_TAR=""
 NODE_VERSION="26.13.0"
 GO_VERSION="1.27.3"
 CLAUDE_CODE_VERSION="2.1.318"
-CODEX_CLI_VERSION="0.166.0"
+CODEX_CLI_VERSION="0.167.0"
 GWS_CLI_VERSION="0.22.5"
 XURL_VERSION="1.3.4"
 AGENT_BROWSER_VERSION="0.39.4-vm0.1"
-PNPM_VERSION="12.16.1"
+PNPM_VERSION="12.18.0"
 UV_VERSION="0.13.7"
 CHROMIUM_VERSION="156.0.8078.79-1~deb12u1"
 CHROMIUM_SECURITY_SNAPSHOT_URL="https://snapshot.debian.org/archive/debian-security/20261103T160100Z"
@@ -381,7 +381,7 @@ install_packages() {
 
   # Chromium from Debian Bookworm security (Ubuntu 24.04 snap stub does not work).
   # Keep HarfBuzz on Ubuntu: mixing its core and subset libraries crashes PDF printing.
-  # Pin to a Debian security snapshot for reproducible Chromium packages.
+  # Prefer the security mirror for pinned packages; retain the snapshot for historical versions.
   sudo chroot "$ROOTFS_DIR" env \
     CHROMIUM_VERSION="$CHROMIUM_VERSION" \
     CHROMIUM_SECURITY_SNAPSHOT_URL="$CHROMIUM_SECURITY_SNAPSHOT_URL" \
@@ -394,6 +394,7 @@ install_packages() {
       | gpg --dearmor -o /usr/share/keyrings/debian-bookworm.gpg
     cat > /etc/apt/sources.list.d/debian-bookworm.list <<EOF
 deb [signed-by=/usr/share/keyrings/debian-bookworm.gpg] http://deb.debian.org/debian bookworm main
+deb [signed-by=/usr/share/keyrings/debian-bookworm.gpg] https://security.debian.org/debian-security bookworm-security main
 deb [check-valid-until=no signed-by=/usr/share/keyrings/debian-bookworm.gpg] ${CHROMIUM_SECURITY_SNAPSHOT_URL}/ bookworm-security main
 EOF
     cat > /etc/apt/preferences.d/harfbuzz-ubuntu <<EOF

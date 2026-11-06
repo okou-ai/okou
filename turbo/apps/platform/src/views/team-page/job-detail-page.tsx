@@ -52,12 +52,13 @@ import { TONE_OPTIONS, type Tone } from "../okou-page/tone-constants.ts";
 import { agentDetail$ } from "../../signals/okou-page/job-detail/detail";
 import {
   agentInstructions$,
-  agentEditedContent$,
-  agentInstructionsDirty$,
+  agentInstructionsDraft$,
+  agentInstructionsConflict$,
   agentInstructionsEditorRevision$,
   setAgentEditedContent$,
   discardAgentEdit$,
   buildAgentInstructions$,
+  reloadLatestAgentInstructions$,
 } from "../../signals/okou-page/job-detail/instructions";
 import { updateAgentSettings$ } from "../../signals/okou-page/job-detail/settings";
 import { agentAuthorizedConnectors$ } from "../../signals/okou-page/job-detail/connectors";
@@ -842,11 +843,15 @@ function JobPermissionsTab({
 function JobInstructionsTab() {
   const { t } = useTranslation("agents");
   const pageSignal = useGet(pageSignal$);
-  const instructionsLoadable = useLoadable(agentInstructions$);
-  const editedLoadable = useLoadable(agentEditedContent$);
-  const dirtyLoadable = useLoadable(agentInstructionsDirty$);
+  const instructionsLoadable = useLastLoadable(agentInstructions$);
+  const draft = useGet(agentInstructionsDraft$);
+  const conflict = useLastLoadable(agentInstructionsConflict$);
+  const isConflict = conflict.state === "hasData" && conflict.data;
   const editorRevision = useGet(agentInstructionsEditorRevision$);
   const [buildLoadable, build] = useLoadableSet(buildAgentInstructions$);
+  const [reloadLoadable, reload] = useLoadableSet(
+    reloadLatestAgentInstructions$,
+  );
 
   const instructions =
     instructionsLoadable.state === "hasData" ? instructionsLoadable.data : null;
@@ -857,13 +862,14 @@ function JobInstructionsTab() {
       return $.errors.unknown;
     }),
   );
-  const edited =
-    editedLoadable.state === "hasData" ? editedLoadable.data : null;
-  const isDirty =
-    dirtyLoadable.state === "hasData" && dirtyLoadable.data === true;
-  const isBuilding = buildLoadable.state === "loading";
+  const isBuilding =
+    buildLoadable.state === "loading" || reloadLoadable.state === "loading";
+  const unknownError = t(($) => {
+    return $.errors.unknown;
+  });
   const buildError =
-    buildLoadable.state === "hasError" ? String(buildLoadable.error) : null;
+    loadableErrorMessage(buildLoadable, unknownError) ??
+    loadableErrorMessage(reloadLoadable, unknownError);
 
   const setEdited = useSet(setAgentEditedContent$);
   const discard = useSet(discardAgentEdit$);
@@ -873,22 +879,36 @@ function JobInstructionsTab() {
       instructions={instructions}
       loading={loading}
       fetchError={fetchError}
-      editedContent={edited}
+      editedContent={draft?.content ?? null}
+      editorBaseline={draft?.savedContent ?? null}
       editorRevision={editorRevision}
-      isDirty={isDirty}
+      isDirty={draft !== null}
       isBuilding={isBuilding}
+      isConflict={isConflict}
       buildError={buildError}
-      onEdit={setEdited}
-      onDiscard={discard}
+      onEdit={(value) => {
+        setEdited(value, instructions?.content ?? "");
+      }}
+      onDiscard={() => {
+        if (isConflict) {
+          detach(reload(pageSignal), Reason.DomCallback);
+        } else {
+          discard();
+        }
+      }}
+      onReload={() => {
+        detach(reload(pageSignal), Reason.DomCallback);
+      }}
       onBuild={() => {
         detach(
           (async () => {
-            await build(pageSignal);
-            toast.success(
-              t(($) => {
-                return $.instructions.saved;
-              }),
-            );
+            if (await build(pageSignal)) {
+              toast.success(
+                t(($) => {
+                  return $.instructions.saved;
+                }),
+              );
+            }
           })(),
           Reason.DomCallback,
         );

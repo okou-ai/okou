@@ -159,7 +159,7 @@ async fn startup_upload_failure_does_not_fail_the_run() {
                     assert!(futures_util::poll!(&mut finished).is_pending());
                     if captured.entries().iter().any(|event| {
                         event.fields.get("message").map(String::as_str)
-                            == Some("sandbox startup report failed, retrying")
+                            == Some("API request recovery waiting")
                             && event.fields.get("attempt") == Some(&attempt)
                             && event.fields.get("will_retry").map(String::as_str) == Some("true")
                     }) {

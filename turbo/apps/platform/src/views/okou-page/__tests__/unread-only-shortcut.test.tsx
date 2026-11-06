@@ -197,7 +197,7 @@ test("Keep the current chat when the selected filter lists it", async () => {
   ).resolves.toBeInTheDocument();
 
   openChatListMenu();
-  click(menuItemByText("All chats"));
+  click(menuItemByText("Inbox"));
   await expect(
     within(list).findByText("Release plan"),
   ).resolves.toBeInTheDocument();

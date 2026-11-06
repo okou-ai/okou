@@ -2086,6 +2086,11 @@
       "sourcePartsHeading_one": "{{count}} Teil aus {{description}} zitiert",
       "sourcePartsHeading_other": "{{count}} Teile aus {{description}} zitiert"
     },
+    "fork": {
+      "action": "Fork",
+      "description": "Mit dieser Auswahl einen neuen Chat starten",
+      "sent": "Neuer Chat erstellt"
+    },
     "forward": {
       "action": "Weiterleiten",
       "agents": "Agenten",
@@ -2342,7 +2347,6 @@
       "number": "Nummer"
     },
     "sidebar": {
-      "allChats": "Alle Chats",
       "archive": "Chat archivieren",
       "archived": "Archiviert",
       "chatsWith": "Chats mit {{agentName}}",
@@ -4250,7 +4254,6 @@
     "instructions": "Anweisungen",
     "loadError": "Deine Anweisungen konnten nicht geladen werden. Versuche es erneut.",
     "markdown": "Schreibe in Klartext oder Markdown",
-    "newChat": "Neuer Chat",
     "placeholder": "Sag Okou, wie du gerne arbeitest…",
     "reload": "Gespeicherte Anweisungen neu laden",
     "retry": "Erneut versuchen",

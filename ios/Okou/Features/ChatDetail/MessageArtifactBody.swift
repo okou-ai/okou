@@ -21,6 +21,33 @@ enum MessageArtifactBody {
     }
   }
 
+  /// Links in running text that point at a result (a hosted site, a file, a published page),
+  /// each once, with the link's own text, in reading order. The text keeps the link; the card
+  /// that follows the passage shows what it points at.
+  static func links(_ content: AttributedString, resolve: (String) -> ChatArtifact?)
+    -> [(resource: ChatArtifact, label: String)]
+  {
+    var links: [(resource: ChatArtifact, label: String)] = []
+    var seen = Set<ChatArtifact.Source>()
+    var previous: (url: URL, end: AttributedString.Index)?
+    for run in content.runs {
+      guard !isCode(run), run.imageURL == nil, let url = run.link,
+        let resource = resolve(url.absoluteString)
+      else { continue }
+      let text = String(content[run.range].characters)
+      if let previous, previous.url == url, previous.end == run.range.lowerBound,
+        links.last?.resource.id == resource.id
+      {
+        // Styling inside one link splits its text into adjacent runs.
+        links[links.count - 1].label += text
+      } else if seen.insert(resource.id).inserted {
+        links.append((resource, text))
+      }
+      previous = (url, run.range.upperBound)
+    }
+    return links
+  }
+
   static func blocks(_ content: AttributedString, resolve: (String) -> ChatArtifact?) -> [Block] {
     var blocks: [Block] = []
     var cursor = content.startIndex

@@ -121,6 +121,7 @@ readonly AGENT_INSTRUCTIONS_RUNNER_READER_COMMIT=da0dc9cd1b21ecdd91200fb1cad8600
 readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb2ae
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
+readonly CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH=.github/rollback-floors/connector-skill-bundle-claims
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly REGISTRY_ARCHIVE_READER_PATH=.github/rollback-floors/registry-archive-reader
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
@@ -909,6 +910,17 @@ if [[ ! "$seed_skill_bundle_only_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$seed_skill_bundle_only_api_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the Seed Skill bundle-only publisher: ${seed_skill_bundle_only_api_commit}."
+fi
+
+# Captured Connector bundles must retain Workflow precedence, even after the
+# rollout switch is disabled. Earlier claim readers emit duplicate mount paths.
+connector_skill_bundle_claims_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH" | sed -n '1p')
+if [[ ! "$connector_skill_bundle_claims_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Connector Skill bundle claim reader on main."
+fi
+if ! git merge-base --is-ancestor "$connector_skill_bundle_claims_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates Connector Skill bundle claim precedence: ${connector_skill_bundle_claims_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_COMMIT"; then

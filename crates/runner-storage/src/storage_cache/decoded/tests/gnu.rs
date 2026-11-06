@@ -94,7 +94,7 @@ fn gnu_longnames_are_bounded_and_do_not_admit_other_extensions() {
             .is_none()
     );
 
-    let mut many_paths = fixture_files(MAX_ADMITTED_FILES, 64, true);
+    let mut many_paths = fixture_files(MAX_ADMITTED_FILES, 64, 32, true);
     for file in &mut many_paths {
         file.path = file.path.replace(&"a".repeat(110), &"a".repeat(113));
     }
@@ -104,7 +104,7 @@ fn gnu_longnames_are_bounded_and_do_not_admit_other_extensions() {
             .unwrap()
             .is_none()
     );
-    let files = fixture_files(48, 256, true);
+    let files = fixture_files(48, 256, 128, true);
     let gzip = archive_files(&files);
     for offset in [gzip.len() - 8, gzip.len() - 4] {
         let mut corrupt = gzip.clone();
@@ -206,7 +206,7 @@ async fn activated_memory_shaped_archive_survives_restart_and_full_guest_deliver
 
     let root = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(root.path().join("host"));
-    let files = fixture_files(768, 3400, true);
+    let files = fixture_files(768, 3400, 1700, true);
     let gzip = archive_files(&files);
     assert!(gzip.len() > 1024 * 1024);
     assert!(gzip.len() <= MAX_ADMITTED_COMPRESSED_BYTES);

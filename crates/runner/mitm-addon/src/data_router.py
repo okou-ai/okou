@@ -11,12 +11,19 @@ import platform_api
 
 OWNER = "data-router"
 REQUEST_ID_HEADER = "X-Okou-Data-Request-Id"
+_REQUEST_ID_HEADER_NAME = REQUEST_ID_HEADER.lower().encode("ascii")
 _RESPONSE_REGISTRATION_ATTEMPTED = "_data_router_response_registration_attempted"
 
 
 def prepare_request(flow: http.HTTPFlow) -> None:
     """Only Router assigns billing identity; discard any sandbox-supplied header."""
-    flow.request.headers.pop(REQUEST_ID_HEADER, None)
+    # Mapping lookup and deletion decode values that we only need to discard.
+    flow.request.headers.fields = tuple(
+        field
+        for field in flow.request.headers.fields
+        if len(field[0]) != len(_REQUEST_ID_HEADER_NAME)
+        or field[0].lower() != _REQUEST_ID_HEADER_NAME
+    )
 
 
 async def register_response(flow: http.HTTPFlow) -> None:

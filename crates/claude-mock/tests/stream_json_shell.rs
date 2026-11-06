@@ -1,3 +1,4 @@
+mod concurrent_children;
 pub mod support;
 
 use std::collections::HashSet;
@@ -17,6 +18,7 @@ use std::time::{Duration, Instant};
 
 #[cfg(unix)]
 use claude_mock::process_group_child::observe_child_exit_without_reaping;
+use concurrent_children::BatchChild;
 use serde_json::Value;
 #[cfg(target_os = "linux")]
 use support::kill_pid_file;
@@ -29,7 +31,7 @@ use support::{
     LARGE_MOCK_OUTPUT_BYTES, MOCK_CAPTURE_LIMIT_BYTES, STDERR_TRUNCATION_MARKER,
     STDOUT_TRUNCATION_MARKER, event_kind, expected_history_path, init_session_id, mock_claude,
     mock_stream_json_shell_output, parse_jsonl, result_content, run_mock_output,
-    spawn_managed_mock_child, tool_result_content, wait_child_output,
+    spawn_managed_mock_child, tool_result_content,
 };
 
 #[test]
@@ -210,13 +212,13 @@ fn concurrent_stream_json_ids_are_unique() -> Result<(), Box<dyn std::error::Err
                 .args(["--output-format", "stream-json", "--", "true"])
                 .stdout(Stdio::piped())
                 .stderr(Stdio::piped());
-            spawn_managed_mock_child(&mut command)
+            BatchChild::spawn(&mut command)
         })
         .collect::<Result<Vec<_>, _>>()?;
     let mut session_ids = HashSet::new();
 
     for child in children {
-        let output = wait_child_output(child)?;
+        let output = child.wait_output()?;
         assert!(
             output.status.success(),
             "expected success, stderr: {}",

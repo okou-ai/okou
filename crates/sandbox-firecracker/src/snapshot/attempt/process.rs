@@ -19,8 +19,9 @@ use crate::snapshot_mount_namespace::{BindMount, SnapshotMountMode, build_comman
 use super::super::SnapshotError;
 
 /// Number of recent stderr lines retained from the spawn chain, used to
-/// surface the underlying cause when the chain (`unshare → bash → ip netns
-/// exec → firecracker`) exits before the API socket appears. 32 is enough
+/// surface the underlying cause when the chain (`ip netns exec → firecracker`)
+/// exits before the API socket appears. Namespace setup errors return from
+/// spawn directly. 32 is enough
 /// for a typical mount/unshare/netns error plus a few lines of bash/kernel
 /// noise, far less than the memory cost warrants worrying about.
 const STDERR_BUF_LINES: usize = 32;
@@ -92,12 +93,12 @@ impl SnapshotProcess {
             spawn.network_name,
             spawn.binary_path,
             spawn.api_sock,
-        );
+        )?;
         let mut child = spawn_firecracker(command, spawn.current_dir, None).await?;
 
         // Stream stdout/stderr lines to tracing (same pattern as sandbox.rs).
         // Stderr is also retained in a bounded ring buffer so that an early
-        // spawn-chain exit (mount failure inside unshare bash, etc.) can be
+        // spawn-chain exit (missing namespace or failed Firecracker exec) can be
         // reported with its real cause instead of just an API timeout.
         self.stdout_handle = spawn_stdout_forwarder(&mut child);
         // The stderr forwarder handle is retained so that, on detected early

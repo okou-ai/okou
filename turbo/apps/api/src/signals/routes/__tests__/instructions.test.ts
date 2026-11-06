@@ -40,6 +40,24 @@ async function save(content: string, ifVersion?: string) {
 }
 
 describe("Personal Instructions", () => {
+  it("notifies the owner after publishing new personal Instructions", async () => {
+    const owner = actor();
+    await enable(owner);
+    await save("Updated personal instructions");
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.channelGet).toHaveBeenCalledWith(
+      `user:${owner.userId}`,
+    );
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "personalInstructionsChanged",
+      null,
+    );
+    await expect(read()).resolves.toMatchObject({
+      ...owner,
+      content: "Updated personal instructions",
+    });
+  });
+
   it("seeds independent member/workspace values once, including concurrent first use", async () => {
     installWorkflowVolumeS3Fixture(context);
     const alice = actor();

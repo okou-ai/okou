@@ -1,9 +1,8 @@
 import SwiftUI
 
 /// A chat in the sidebar: its status column, one body line of title and its trailing state.
-/// The status column holds the chat's status emoji, a quiet chat glyph when it has none, or —
-/// for an Active chat from any agent — that agent's avatar; a section without any status
-/// leaves the column out so its titles sit flush.
+/// The status column holds the chat's status emoji or a quiet chat glyph when it has none;
+/// a section without any status leaves the column out so its titles sit flush.
 struct OkouChatRowLabel<Status: View>: View {
   let title: String
   var trailing: OkouChatTrailing = .none
@@ -38,6 +37,7 @@ struct OkouChatRowLabel<Status: View>: View {
         Circle()
           .fill(OkouStatusColor.running)
           .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
+          .frame(width: OkouIconSize.standard)
           .accessibilityLabel("Unread")
       case .pinned:
         OkouIcon("pin", size: OkouIconSize.inline)

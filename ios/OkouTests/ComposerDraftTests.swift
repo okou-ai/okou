@@ -150,11 +150,11 @@ final class ComposerDraftTests: XCTestCase {
     await reopened.synchronize()
     XCTAssertNotNil(reopened.conflictingRemote)
     reopened.useRemote()
+    try await waitForBusinessResult { reopened.value == remote }
     try await eventually {
-      reopened.value == remote
-        && mentionInputs(in: host.view).contains {
-          $0 !== restoredNote && $0.text == "Compare \u{fffc}now"
-        }
+      mentionInputs(in: host.view).contains {
+        $0 !== restoredNote && $0.text == "Compare \u{fffc}now"
+      }
     }
     XCTAssertEqual(
       reopened.document.parts.last?["source"], remote.draftUserMessage?.parts.last?["source"])
@@ -327,7 +327,7 @@ final class ComposerDraftTests: XCTestCase {
     let window = try await mountMentionHost(host)
     defer { unmount(window) }
     composer.editor.selectOrAppendText("Existing question")
-    try await eventually {
+    try await waitForBusinessResult {
       composer.editorBlocks.first(where: { $0.id == notes[1].id })?.content.text
         == "Existing question"
     }

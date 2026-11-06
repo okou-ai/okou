@@ -954,11 +954,6 @@ export const clientContractImportManifest = [
     bindings: [],
   },
   {
-    module: "halloween",
-    contracts: ["halloweenContract", "halloweenOperationsContract"],
-    bindings: [],
-  },
-  {
     module: "health",
     contracts: ["healthContract"],
     bindings: [],

@@ -79,7 +79,13 @@ function agentStorageRequests(
 export function agentStorageReadPlan(
   owner: { readonly orgId: string; readonly userId: string },
   facts: readonly [AgentConnectorSelection, ConnectorRuntimeSelection | null],
+  bundleDelivery: boolean,
 ) {
+  if (bundleDelivery) {
+    return [
+      { lookup: { ...owner, name: MEMORY_ARTIFACT_NAME }, version: undefined },
+    ];
+  }
   const [connectors, catalog] = facts;
   const requests = agentStorageRequests(owner, connectors, catalog);
   return requests;

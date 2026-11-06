@@ -12,6 +12,7 @@ use guest_control_proto::{ExecTermination, HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES};
 use crate::drain::{BoundedDrainHandle, BoundedDrainResult, DrainCancellation};
 use crate::error::to_io_error;
 use crate::helper_output::{captured_or_empty, truncate_utf8};
+use crate::helper_program::TestHelperProgram;
 use crate::process::{kill_and_reap_child, spawn_in_own_process_group};
 use crate::quiesce::OperationGuard;
 use crate::wait::{
@@ -30,9 +31,8 @@ const MAX_DIAGNOSTIC_BYTES: usize = u16::MAX as usize;
 pub(crate) enum HomeDriveMountProgram {
     Production,
     Test {
-        path: PathBuf,
+        program: TestHelperProgram,
         timeout_ms: u32,
-        timeout_gate: Option<mpsc::SyncSender<u32>>,
     },
 }
 
@@ -43,9 +43,8 @@ impl HomeDriveMountProgram {
 
     pub(crate) fn for_test(path: PathBuf, timeout_ms: u32) -> Self {
         Self::Test {
-            path,
+            program: TestHelperProgram::new(path),
             timeout_ms,
-            timeout_gate: None,
         }
     }
 
@@ -55,21 +54,14 @@ impl HomeDriveMountProgram {
         timeout_gate: mpsc::SyncSender<u32>,
     ) -> Self {
         Self::Test {
-            path,
+            program: TestHelperProgram::with_timeout_gate(path, timeout_gate),
             timeout_ms,
-            timeout_gate: Some(timeout_gate),
         }
     }
 
     fn await_test_timeout_gate(&self, child_id: u32) {
-        if let Self::Test {
-            timeout_gate: Some(timeout_gate),
-            ..
-        } = self
-        {
-            // A zero-capacity channel lets the test establish helper readiness
-            // before the real timeout starts. A dropped receiver permits cleanup.
-            let _ = timeout_gate.send(child_id);
+        if let Self::Test { program, .. } = self {
+            program.await_timeout_gate(child_id);
         }
     }
 
@@ -86,7 +78,7 @@ impl HomeDriveMountProgram {
         // cleanup without creating a generic workload cgroup for each mount.
         let mut command = match self {
             Self::Production => Command::new(HOME_MOUNT_PATH),
-            Self::Test { path, .. } => Command::new(path),
+            Self::Test { program, .. } => Command::new(program.path()),
         };
         command
             .stdin(Stdio::null())

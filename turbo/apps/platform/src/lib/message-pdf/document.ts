@@ -42,15 +42,8 @@ const INLINE_ELEMENTS: ReadonlySet<string> = new Set([
   "input",
 ]);
 
-export function parseMessagePdfTree(
-  source: string,
-  cjkEmphasis: boolean,
-): Root {
-  return parseMarkdownTree(source, {
-    math: true,
-    mermaid: true,
-    cjkEmphasis,
-  });
+export function parseMessagePdfTree(source: string): Root {
+  return parseMarkdownTree(source, { math: true, mermaid: true });
 }
 
 function textOf(node: RootContent): string {

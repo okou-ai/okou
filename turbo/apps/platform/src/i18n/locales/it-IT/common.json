@@ -2120,6 +2120,11 @@
       "sourcePartsHeading_many": "{{count}} parti citate da {{description}}",
       "sourcePartsHeading_other": "{{count}} parti citate da {{description}}"
     },
+    "fork": {
+      "action": "Fork",
+      "description": "Avvia una nuova chat con questa selezione",
+      "sent": "Nuova chat creata"
+    },
     "forward": {
       "action": "Inoltra",
       "agents": "Agenti",
@@ -2386,7 +2391,6 @@
       "number": "numero"
     },
     "sidebar": {
-      "allChats": "Tutte le chat",
       "archive": "Archivia chat",
       "archived": "Archiviate",
       "chatsWith": "Chatta con {{agentName}}",
@@ -4305,7 +4309,6 @@
     "instructions": "Istruzioni",
     "loadError": "Impossibile caricare le istruzioni. Riprova.",
     "markdown": "Scrivi in testo semplice o Markdown",
-    "newChat": "Nuova chat",
     "placeholder": "Spiega a Okou come preferisci lavorare…",
     "reload": "Ricarica le istruzioni salvate",
     "retry": "Riprova",

@@ -13,6 +13,51 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1097.5](https://github.com/okou-ai/okou/compare/app-v0.1097.4...app-v0.1097.5) (2026-11-06)
+
+
+### Refactoring
+
+* remove ChatHomeCompliance feature switch ([#45672](https://github.com/okou-ai/okou/issues/45672)) ([07785aa](https://github.com/okou-ai/okou/commit/07785aac2d8046b313af2e29f8fcd2104f1604ac))
+* remove markdown cjk emphasis feature switch ([#45663](https://github.com/okou-ai/okou/issues/45663)) ([9b7dcae](https://github.com/okou-ai/okou/commit/9b7dcaeff9e1241b2b67d7499c65818a86080ded))
+* remove marketing content handoff feature switch ([#45651](https://github.com/okou-ai/okou/issues/45651)) ([75493dc](https://github.com/okou-ai/okou/commit/75493dc2e0b68047d72fe961678f549c94ba9be5))
+
+
+### Performance Improvements
+
+* **browser:** preserve selected sessions across unrelated tab changes ([#45539](https://github.com/okou-ai/okou/issues/45539)) ([3c01d73](https://github.com/okou-ai/okou/commit/3c01d73360bb57dc073ee3ef6db3ec640c7d50fb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.820.1
+
+## [0.1097.4](https://github.com/okou-ai/okou/compare/app-v0.1097.3...app-v0.1097.4) (2026-11-06)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.820.0
+
+## [0.1097.3](https://github.com/okou-ai/okou/compare/app-v0.1097.2...app-v0.1097.3) (2026-11-06)
+
+
+### Refactoring
+
+* retire halloween campaign and restore the greeting avatar ([#45618](https://github.com/okou-ai/okou/issues/45618)) ([60127c6](https://github.com/okou-ai/okou/commit/60127c60e299ae35549f889340859cd758f78db5))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.2
+    * @okouai/core bumped to 8.819.2
+
 ## [0.1097.2](https://github.com/okou-ai/okou/compare/app-v0.1097.1...app-v0.1097.2) (2026-11-06)
 
 

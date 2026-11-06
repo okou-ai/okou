@@ -23,7 +23,10 @@ import {
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { CONVERSATION_GUIDANCE } from "../../lib/conversation-guidance";
+import {
+  CONVERSATION_GUIDANCE,
+  THREAD_CONTEXT_PRIORITY,
+} from "../../lib/conversation-guidance";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import type { WechatAttachments } from "@okouai/db/jsonb-contracts/wechat";
 import { wechatConversationContext } from "../../lib/wechat-conversation-context";
@@ -161,7 +164,10 @@ function launchMaterial(
         messages: [...history].reverse(),
       }),
       ...(row.quotedText
-        ? [`# Quoted message (untrusted)\n${row.quotedText}`]
+        ? [
+            THREAD_CONTEXT_PRIORITY,
+            `# Quoted message (untrusted)\n${row.quotedText}`,
+          ]
         : []),
     ].join("\n\n"),
     wechatDelivery: {

@@ -35,9 +35,14 @@ interface SkillVolumeStorage {
   readonly system?: boolean;
 }
 
+type BundleSkillSource = Extract<
+  SkillVolumeSource,
+  "system_skill" | "connector_skill" | "custom_connector_skill"
+>;
+
 export type SkillVolume =
   | {
-      readonly source: "system_skill";
+      readonly source: BundleSkillSource;
       readonly skillName: string;
       readonly contentBundle: ContentBundle;
     }
@@ -115,7 +120,7 @@ type ResolvedSkillVolume =
       readonly mountPath: string;
     })
   | {
-      readonly source: "system_skill";
+      readonly source: BundleSkillSource;
       readonly contentBundle: ContentBundle;
       readonly mountPath: string;
     };

@@ -11,6 +11,8 @@ use std::os::unix::process::CommandExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command as StandardCommand, Stdio as StandardStdio};
 
+use crate::mount_namespace::PrivateMountNamespace;
+
 pub enum Stdio {
     Inherit,
     Null,
@@ -39,6 +41,7 @@ pub struct Command {
     pub stdout: Stdio,
     pub stderr: Stdio,
     pub(crate) nofile_limit: Option<libc::rlim_t>,
+    pub(crate) mount_namespace: Option<PrivateMountNamespace>,
 }
 
 impl Command {
@@ -53,6 +56,7 @@ impl Command {
             stdout: Stdio::Inherit,
             stderr: Stdio::Inherit,
             nofile_limit: None,
+            mount_namespace: None,
         }
     }
 
@@ -74,6 +78,19 @@ impl Command {
     pub fn nofile_limit(&mut self, limit: libc::rlim_t) -> &mut Self {
         self.nofile_limit = Some(limit);
         self
+    }
+
+    /// Prepare a private mount namespace with best-effort stale unmounts and
+    /// ordered, nonrecursive bind mounts. All strings are validated and owned
+    /// before spawning; setup runs after the child's cwd and credentials.
+    /// Shared target paths are never created, removed or replaced here.
+    pub fn private_mount_namespace(
+        &mut self,
+        stale_targets: &[&Path],
+        binds: &[(&Path, &Path)],
+    ) -> io::Result<&mut Self> {
+        self.mount_namespace = Some(PrivateMountNamespace::prepare(stale_targets, binds)?);
+        Ok(self)
     }
 
     pub fn env(&mut self, key: impl AsRef<OsStr>, value: impl AsRef<OsStr>) -> &mut Self {
@@ -133,15 +150,25 @@ impl Command {
             .stdin(self.stdin)
             .stdout(self.stdout)
             .stderr(self.stderr);
-        if let Some(limit) = self.nofile_limit {
-            // SAFETY: the callback performs only one raw resource-limit syscall.
+        let limit = self.nofile_limit;
+        let mount_namespace = self.mount_namespace;
+        if limit.is_some() || mount_namespace.is_some() {
+            // SAFETY: all owned namespace inputs were prepared in the parent.
+            // The callback only reads them and performs raw syscalls, with no
+            // allocation, locking or parent-owned destruction in the child.
             unsafe {
                 command.pre_exec(move || {
-                    if set_nofile_limit(limit) == 0 {
-                        Ok(())
-                    } else {
-                        Err(io::Error::last_os_error())
+                    if let Some(limit) = limit
+                        && set_nofile_limit(limit) != 0
+                    {
+                        return Err(io::Error::last_os_error());
                     }
+                    if let Some(namespace) = &mount_namespace
+                        && namespace.apply() != 0
+                    {
+                        return Err(io::Error::last_os_error());
+                    }
+                    Ok(())
                 });
             }
         }

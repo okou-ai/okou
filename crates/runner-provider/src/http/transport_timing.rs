@@ -19,7 +19,7 @@ use tower_layer::Layer;
 use tower_service::Service;
 use tracing::{Dispatch, info};
 
-use super::{PreparedApiRequest, ProviderResult, Response};
+use super::{Response, response_cf_ray};
 use crate::error::ApiRequestContext;
 
 tokio::task_local! {
@@ -324,24 +324,61 @@ impl Drop for ClaimObservation {
     }
 }
 
-pub(super) async fn send_claim(
-    prepared: PreparedApiRequest,
+pub(super) async fn observe_claim_attempt<F>(
+    context: ApiRequestContext,
     run_id: RunId,
     execution_started_at: Instant,
-) -> ProviderResult<Response> {
-    let observer = Observer::new(execution_started_at, run_id, prepared.context().clone());
+    execution: F,
+) -> (Result<Response, reqwest::Error>, Instant)
+where
+    F: Future<Output = Result<Response, reqwest::Error>>,
+{
+    let observer = Observer::new(execution_started_at, run_id, context);
     // A dropped client future does not establish the server's claim outcome.
     let mut observation = ClaimObservation {
         observer: observer.clone(),
         outcome: "dropped",
     };
-    let result = observer.scope(prepared.send()).await;
+    let result = observer.scope(execution).await;
+    let finished = Instant::now();
     observation.outcome = if result.is_ok() {
         "response_headers"
     } else {
         "request_failed"
     };
-    result
+    drop(observation);
+    if let Ok(response) = &result {
+        let context = &observer.0.context;
+        info!(
+            run_id = %run_id,
+            client_request_id = %context.client_request_id,
+            client_session_id = %context.client_session_id,
+            http_status = response.status().as_u16(),
+            execution_to_response_headers_ms = millis(finished.duration_since(execution_started_at)),
+            http_version = ?response.version(),
+            response_cf_ray = response_cf_ray(response.headers()),
+            response_vercel_id = claim_vercel_id(response.headers()),
+            "claim response headers received"
+        );
+    }
+    (result, finished)
+}
+
+// Only bounded provider-issued identifiers, never arbitrary response headers.
+fn claim_vercel_id(headers: &reqwest::header::HeaderMap) -> Option<&str> {
+    let value = headers.get("x-vercel-id")?.to_str().ok()?;
+    let (region, request_id) = value.split_once("::")?;
+    (value.len() <= 128
+        && (4..=6).contains(&region.len())
+        && region
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit())
+        && region.bytes().any(|byte| byte.is_ascii_digit())
+        && !request_id.is_empty()
+        && request_id
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b':' | b'-')))
+    .then_some(value)
 }
 
 #[cfg(test)]

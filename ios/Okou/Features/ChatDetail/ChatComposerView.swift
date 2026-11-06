@@ -280,6 +280,7 @@ struct ChatComposerView: View {
     .padding(.horizontal, OkouSpace.lg)
     .padding(.top, OkouSpace.sm)
     .padding(.bottom, isFocused ? 8 : 0)
+    .fixedSize(horizontal: false, vertical: true)
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)
     .sensoryFeedback(.error, trigger: error) { _, new in new != nil }
@@ -301,6 +302,7 @@ struct ChatComposerView: View {
         ComposerConnectorSheet(store: connectorSelection)
           .presentationDetents([.medium, .large])
           .presentationDragIndicator(.visible)
+          .okouSheetBackground()
       }
     }
     // Model settings decide whether the draft can be sent, so a mounted composer loads them

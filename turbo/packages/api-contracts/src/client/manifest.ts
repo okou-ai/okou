@@ -359,10 +359,6 @@ export const clientDescriptorManifest = [
     contracts: ["githubOauthContract"],
   },
   {
-    module: "halloween",
-    contracts: ["halloweenContract", "halloweenOperationsContract"],
-  },
-  {
     module: "health",
     contracts: ["healthContract"],
   },

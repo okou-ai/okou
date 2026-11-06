@@ -2,7 +2,62 @@ use super::{
     BinaryLoggingFixture, assert_default_zero_task_attribution,
     assert_single_download_total_success, process,
 };
-use crate::support::{manifest_json, write_manifest};
+use crate::support::{assert_does_not_contain_any, manifest_json, write_manifest};
+
+const SIGNED_URL: &str = "https://example.invalid/archive?X-Amz-Signature=parse-secret-signature";
+
+fn type_invalid_manifest() -> serde_json::Result<Vec<u8>> {
+    let mounts = serde_json::to_string(&serde_json::json!([{
+        "mountPath": "/workspace",
+        "archiveUrl": SIGNED_URL,
+    }]))?;
+    serde_json::to_vec(&serde_json::json!({"storageMounts": mounts}))
+}
+
+fn assert_parse_failure(
+    fixture: &BinaryLoggingFixture,
+    output: &std::process::Output,
+    category: &str,
+) -> std::io::Result<()> {
+    assert_eq!(output.status.code(), Some(1));
+    let ops = fixture.ops_entries().map_err(std::io::Error::other)?;
+    assert_single_download_total_success(&ops, false);
+
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let system_log = fixture.read_system_log()?;
+    let ops_log = fixture.read_ops_log()?;
+    let forbidden = [
+        SIGNED_URL,
+        "X-Amz-Signature",
+        "parse-secret-signature",
+        "super-secret-body",
+    ];
+    for (name, content) in [
+        ("stderr", stderr.as_ref()),
+        ("system log", system_log.as_str()),
+        ("sandbox ops log", ops_log.as_str()),
+    ] {
+        assert_does_not_contain_any(name, content, &forbidden);
+    }
+    for content in [stderr.as_ref(), system_log.as_str()] {
+        let diagnostic = content
+            .lines()
+            .find_map(|line| {
+                line.split_once("[ERROR] [sandbox:guest-storage-apply] Failed to parse manifest: ")
+                    .map(|(_, diagnostic)| diagnostic)
+            })
+            .ok_or_else(|| std::io::Error::other(format!("missing parse diagnostic: {content}")))?;
+        let (line, column) = diagnostic
+            .strip_prefix(&format!("category={category} line="))
+            .and_then(|location| location.split_once(" column="))
+            .ok_or_else(|| {
+                std::io::Error::other(format!("unexpected parse diagnostic: {diagnostic}"))
+            })?;
+        assert!(line.parse::<usize>().is_ok_and(|line| line > 0));
+        assert!(column.parse::<usize>().is_ok_and(|column| column > 0));
+    }
+    Ok(())
+}
 
 #[test]
 fn binary_applies_decoded_files_without_remote_attribution() {
@@ -142,23 +197,37 @@ fn binary_manifest_stdin_rejects_extra_args_before_telemetry() {
 }
 
 #[test]
-fn binary_invalid_stdin_manifest_logs_parse_failure_without_body() {
-    let fixture = BinaryLoggingFixture::new("stdin-invalid").unwrap();
+fn binary_syntax_invalid_manifest_logs_parse_failure_without_body() {
     let body = b"{{not valid json super-secret-body";
+    for mode in ["path", "stdin"] {
+        let fixture = BinaryLoggingFixture::new(&format!("{mode}-invalid")).unwrap();
+        let output = if mode == "stdin" {
+            fixture.run_manifest_stdin(body).unwrap()
+        } else {
+            let path = fixture.dir.path().join("manifest.json");
+            std::fs::write(&path, body).unwrap();
+            fixture.run_manifest_path(&path).unwrap()
+        };
+        assert_parse_failure(&fixture, &output, "Syntax").unwrap();
+    }
+}
 
-    let output = fixture.run_manifest_stdin(body).unwrap();
+#[test]
+fn binary_type_invalid_stdin_manifest_does_not_log_signed_url() {
+    let fixture = BinaryLoggingFixture::new("stdin-type-invalid").unwrap();
+    let output = fixture
+        .run_manifest_stdin(&type_invalid_manifest().unwrap())
+        .unwrap();
+    assert_parse_failure(&fixture, &output, "Data").unwrap();
+}
 
-    assert!(!output.status.success());
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    assert!(!stderr.contains("super-secret-body"));
-    let content = fixture.read_system_log().unwrap();
-    assert!(
-        content.contains("[ERROR] [sandbox:guest-storage-apply] Failed to parse manifest"),
-        "unexpected system log: {content:?}"
-    );
-    assert!(!content.contains("super-secret-body"));
-    let ops = fixture.ops_entries().unwrap();
-    assert_single_download_total_success(&ops, false);
+#[test]
+fn binary_type_invalid_file_manifest_does_not_log_signed_url() {
+    let fixture = BinaryLoggingFixture::new("file-type-invalid").unwrap();
+    let path = fixture.dir.path().join("manifest.json");
+    std::fs::write(&path, type_invalid_manifest().unwrap()).unwrap();
+    let output = fixture.run_manifest_path(&path).unwrap();
+    assert_parse_failure(&fixture, &output, "Data").unwrap();
 }
 
 #[test]

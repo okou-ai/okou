@@ -13,6 +13,8 @@ fn builder(client: reqwest::Client, url: String) -> ApiRequestBuilder {
         client,
         client_headers: ClientHeaders::new("observed-session".into(), "1.2.3").unwrap(),
         query: Vec::new(),
+        retry_slots: Arc::new(tokio::sync::Semaphore::new(8)),
+        policy: None,
     }
 }
 
@@ -58,9 +60,10 @@ async fn dns_failure_keeps_request_identity_error_and_phase_outcomes() {
     let captured = CapturedEvents::default();
     let subscriber = tracing_subscriber::registry().with(captured.clone());
     let result = prepared
-        .send_observed_claim(RunId::new_v4(), Instant::now())
+        .send_observed_claim(RunId::new_v4(), Instant::now(), None)
         .with_subscriber(subscriber)
-        .await;
+        .await
+        .result;
     assert!(matches!(result, Err(ProviderError::ApiTransport(ref error))
         if error.failure_kind == crate::error::ApiFailureKind::Connect));
     let event = summary(&captured);
@@ -104,8 +107,9 @@ async fn observed_request_preserves_json_headers_query_and_timeout_override() {
     let pending = tokio::spawn(
         async move {
             prepared
-                .send_observed_claim(RunId::new_v4(), Instant::now())
+                .send_observed_claim(RunId::new_v4(), Instant::now(), None)
                 .await
+                .result
         }
         .with_subscriber(subscriber),
     );

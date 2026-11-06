@@ -71,12 +71,14 @@ async fn execute_prepared_marks_stdout_incomplete_when_process_cancel_send_fails
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let source_ip = sandbox.source_ip().to_string();
-    let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
+    let mut telemetry = test_telemetry(&config, &ctx);
+    let network_log_session = register_proxy(&config, &ctx, &source_ip, &mut telemetry)
+        .await
+        .unwrap();
     let system_stream_log_path = config.log_paths.system_stream_log(ctx.run_id);
     let cancel = tokio_util::sync::CancellationToken::new();
     let run_cancel = cancel.clone();
     let run_task = tokio::spawn(async move {
-        let mut telemetry = test_telemetry(&config, &ctx);
         execute_prepared_sandbox_run_with_process_cancel_timeouts(
             PreparedSandboxRun {
                 sandbox,
@@ -142,12 +144,14 @@ async fn execute_prepared_marks_stdout_incomplete_when_terminal_grace_expires() 
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let source_ip = sandbox.source_ip().to_string();
-    let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
+    let mut telemetry = test_telemetry(&config, &ctx);
+    let network_log_session = register_proxy(&config, &ctx, &source_ip, &mut telemetry)
+        .await
+        .unwrap();
     let system_stream_log_path = config.log_paths.system_stream_log(ctx.run_id);
     let cancel = tokio_util::sync::CancellationToken::new();
     let run_cancel = cancel.clone();
     let run_task = tokio::spawn(async move {
-        let mut telemetry = test_telemetry(&config, &ctx);
         execute_prepared_sandbox_run_with_process_cancel_timeouts(
             PreparedSandboxRun {
                 sandbox,
@@ -303,10 +307,12 @@ async fn execute_inner_preserves_system_stream_log_after_nonzero_exit_guest_copy
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let source_ip = sandbox.source_ip().to_string();
-    let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
+    let mut telemetry = test_telemetry(&config, &ctx);
+    let network_log_session = register_proxy(&config, &ctx, &source_ip, &mut telemetry)
+        .await
+        .unwrap();
     let system_log_path = config.log_paths.system_log(ctx.run_id);
     let system_stream_log_path = config.log_paths.system_stream_log(ctx.run_id);
-    let mut telemetry = test_telemetry(&config, &ctx);
 
     let (outcome, events) = capture_async_events(execute_prepared_sandbox_run(
         PreparedSandboxRun {
@@ -369,8 +375,10 @@ async fn execute_prepared_sandbox_run_logs_discovered_guest_session_id() {
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let source_ip = sandbox.source_ip().to_string();
-    let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
     let mut telemetry = test_telemetry(&config, &ctx);
+    let network_log_session = register_proxy(&config, &ctx, &source_ip, &mut telemetry)
+        .await
+        .unwrap();
 
     let (outcome, events) = capture_async_events(execute_prepared_sandbox_run(
         PreparedSandboxRun {
@@ -421,8 +429,10 @@ async fn execute_prepared_sandbox_run_discovers_guest_session_id_after_nonzero_e
     let sandbox = create_overridden_sandbox(Arc::clone(&overrides)).await;
     let ctx = minimal_context();
     let source_ip = sandbox.source_ip().to_string();
-    let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
     let mut telemetry = test_telemetry(&config, &ctx);
+    let network_log_session = register_proxy(&config, &ctx, &source_ip, &mut telemetry)
+        .await
+        .unwrap();
 
     let (outcome, events) = capture_async_events(execute_prepared_sandbox_run(
         PreparedSandboxRun {
@@ -479,8 +489,10 @@ async fn execute_prepared_sandbox_run_canonicalizes_codex_discovered_cli_agent_s
     let mut ctx = minimal_context();
     ctx.cli_agent_type = "codex".into();
     let source_ip = sandbox.source_ip().to_string();
-    let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
     let mut telemetry = test_telemetry(&config, &ctx);
+    let network_log_session = register_proxy(&config, &ctx, &source_ip, &mut telemetry)
+        .await
+        .unwrap();
 
     let (outcome, events) = capture_async_events(execute_prepared_sandbox_run(
         PreparedSandboxRun {
@@ -531,8 +543,10 @@ async fn execute_prepared_sandbox_run_ignores_non_uuid_codex_discovered_cli_agen
     let mut ctx = minimal_context();
     ctx.cli_agent_type = "codex".into();
     let source_ip = sandbox.source_ip().to_string();
-    let network_log_session = register_proxy(&config, &ctx, &source_ip).await.unwrap();
     let mut telemetry = test_telemetry(&config, &ctx);
+    let network_log_session = register_proxy(&config, &ctx, &source_ip, &mut telemetry)
+        .await
+        .unwrap();
 
     let (outcome, events) = capture_async_events(execute_prepared_sandbox_run(
         PreparedSandboxRun {

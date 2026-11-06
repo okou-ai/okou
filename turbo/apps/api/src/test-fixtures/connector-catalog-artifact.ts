@@ -1640,8 +1640,8 @@ const connectors = [
         "bd7281358f92548984805062735454a06a0a08dfe8718efb5ab99ff9944ea4bb",
       storageVersionPrefix:
         "__system__/volume/connector-skill@nintendo-store/bd7281358f92548984805062735454a06a0a08dfe8718efb5ab99ff9944ea4bb",
-      size: 64,
-      archiveSize: 64,
+      size: 117,
+      archiveSize: 172,
       fileCount: 1,
     },
     firewall: generatedFirewall(

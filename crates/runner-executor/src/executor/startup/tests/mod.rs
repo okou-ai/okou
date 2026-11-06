@@ -26,7 +26,7 @@ fn client(api_url: String) -> HttpClient {
 async fn wait_for_retry(
     mut report: Pin<&mut impl Future<Output = ()>>,
     captured: &CapturedEvents,
-    attempt: usize,
+    attempt: u8,
 ) {
     let attempt = attempt.to_string();
     tokio::time::timeout(
@@ -37,11 +37,10 @@ async fn wait_for_retry(
                 "startup report finished before retry {attempt}"
             );
             if captured.entries().iter().any(|entry| {
-                entry
-                    .fields
-                    .get("message")
-                    .is_some_and(|message| message.starts_with("sandbox startup report"))
-                    && entry.fields.get("attempt") == Some(&attempt)
+                entry.fields.get("message").is_some_and(|message| {
+                    message == "API request recovery waiting"
+                        || message.starts_with("sandbox startup report")
+                }) && entry.fields.get("attempt") == Some(&attempt)
                     && entry.fields.get("will_retry").map(String::as_str) == Some("true")
             }) {
                 // No await separates the retry event from the sleep select.
@@ -59,7 +58,7 @@ async fn wait_for_retry(
 async fn advance_retry(
     report: Pin<&mut impl Future<Output = ()>>,
     captured: &CapturedEvents,
-    attempt: usize,
+    attempt: u8,
 ) {
     wait_for_retry(report, captured, attempt).await;
     // Keep the report unpolled while time is paused. Real HTTP and peer
@@ -108,6 +107,10 @@ async fn retries_transient_failures_with_identical_startup_fact() {
         [rejection(408), rejection(421)],
         [rejection(425), rejection(429)],
         [RawHttpAction::Disconnect, rejection(503)],
+        [
+            RawHttpAction::ResetConnection,
+            RawHttpAction::ResetConnection,
+        ],
     ] {
         let mut server = RawHttpTestServer::spawn(vec![
             first,
@@ -132,6 +135,7 @@ async fn retries_transient_failures_with_identical_startup_fact() {
         )
         .with_subscriber(subscriber);
         tokio::pin!(report);
+        let mut request_ids = std::collections::HashSet::new();
         for (attempt, description) in [
             (1, "initial startup report"),
             (2, "second attempt"),
@@ -144,6 +148,23 @@ async fn retries_transient_failures_with_identical_startup_fact() {
             };
             assert!(request.starts_with(&format!("PUT /api/runners/runs/{run_id}/startup ")));
             assert!(request.contains(r#"{"sandboxStartupPath":"blank"}"#));
+            assert!(
+                request
+                    .to_ascii_lowercase()
+                    .contains("authorization: bearer startup-run-token\r\n")
+            );
+            let request_id = request
+                .lines()
+                .find_map(|line| {
+                    let (name, value) = line.split_once(':')?;
+                    name.eq_ignore_ascii_case("x-client-request-id")
+                        .then_some(value.trim())
+                })
+                .unwrap();
+            assert!(
+                request_ids.insert(request_id.to_owned()),
+                "each attempt has a fresh request ID"
+            );
             if attempt < STARTUP_REPORT_MAX_ATTEMPTS {
                 advance_retry(report.as_mut(), &captured, attempt).await;
             }
@@ -154,10 +175,10 @@ async fn retries_transient_failures_with_identical_startup_fact() {
             .entries()
             .into_iter()
             .filter(|entry| {
-                entry
-                    .fields
-                    .get("message")
-                    .is_some_and(|message| message.starts_with("sandbox startup report"))
+                entry.fields.get("message").is_some_and(|message| {
+                    message == "API request recovery waiting"
+                        || message.starts_with("sandbox startup report")
+                })
             })
             .collect();
         assert_eq!(reports.len(), 2);
@@ -227,10 +248,10 @@ async fn exhausted_startup_reports_emit_error_only_after_three_attempts() {
         .entries()
         .into_iter()
         .filter(|entry| {
-            entry
-                .fields
-                .get("message")
-                .is_some_and(|message| message.starts_with("sandbox startup report"))
+            entry.fields.get("message").is_some_and(|message| {
+                message == "API request recovery waiting"
+                    || message.starts_with("sandbox startup report")
+            })
         })
         .collect();
     assert_eq!(
@@ -238,9 +259,24 @@ async fn exhausted_startup_reports_emit_error_only_after_three_attempts() {
         vec![Level::INFO, Level::INFO, Level::ERROR]
     );
     let last = reports.last().unwrap();
-    assert_eq!(last.fields.get("attempt").map(String::as_str), Some("3"));
     assert_eq!(
-        last.fields.get("will_retry").map(String::as_str),
+        last.fields.get("status").map(String::as_str),
+        Some("503 Service Unavailable")
+    );
+    let terminal = captured
+        .entries()
+        .into_iter()
+        .find(|entry| {
+            entry.fields.get("message").map(String::as_str)
+                == Some("API request recovery completed")
+        })
+        .unwrap();
+    assert_eq!(
+        terminal.fields.get("attempt").map(String::as_str),
+        Some("3")
+    );
+    assert_eq!(
+        terminal.fields.get("will_retry").map(String::as_str),
         Some("false")
     );
 }

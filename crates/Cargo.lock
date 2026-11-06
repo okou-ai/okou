@@ -2014,7 +2014,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.45"
+version = "0.109.47"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2053,7 +2053,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.153"
+version = "0.1.155"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2119,7 +2119,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.78"
+version = "0.24.80"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2137,7 +2137,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.146"
+version = "0.12.148"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2166,7 +2166,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.64"
+version = "0.20.66"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2186,7 +2186,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.29.4"
+version = "0.29.5"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -3018,9 +3018,9 @@ dependencies = [
 
 [[package]]
 name = "mime"
-version = "0.3.17"
+version = "0.3.18"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "6877bb514081ee2a7ff5ef9de3281f14a4dd4bceac4c09388074a6b5df8a139a"
+checksum = "d5848f5a9e8117cf94f2f90faac24a87ff81600ff8628c1e3deaab572e76bfa1"
 
 [[package]]
 name = "minimal-lexical"
@@ -3614,7 +3614,7 @@ dependencies = [
 
 [[package]]
 name = "process-launch"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "libc",
  "tempfile",
@@ -4047,7 +4047,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.25"
+version = "0.244.29"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4121,7 +4121,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.19.20"
+version = "0.19.22"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4169,7 +4169,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.10.31"
+version = "0.10.32"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -4194,7 +4194,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.70"
+version = "0.17.71"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4225,7 +4225,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.4.12"
+version = "0.4.13"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4257,7 +4257,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.16.15"
+version = "0.16.17"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4301,7 +4301,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.18"
+version = "0.31.20"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4402,7 +4402,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.8.34"
+version = "0.8.35"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4446,7 +4446,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.21.42"
+version = "0.21.44"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4770,7 +4770,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.73"
+version = "0.53.74"
 dependencies = [
  "api-contracts",
  "async-trait",

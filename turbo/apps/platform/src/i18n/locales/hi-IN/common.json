@@ -2086,6 +2086,11 @@
       "sourcePartsHeading_one": "{{description}} से {{count}} भाग उद्धृत",
       "sourcePartsHeading_other": "{{description}} से {{count}} भाग उद्धृत"
     },
+    "fork": {
+      "action": "Fork",
+      "description": "चुने गए हिस्से से नई चैट शुरू करें",
+      "sent": "नई चैट बनाई गई"
+    },
     "forward": {
       "action": "फ़ॉरवर्ड करें",
       "agents": "एजेंट",
@@ -2342,7 +2347,6 @@
       "number": "संख्या"
     },
     "sidebar": {
-      "allChats": "सभी चैट",
       "archive": "चैट आर्काइव करें",
       "archived": "आर्काइव की गई",
       "chatsWith": "{{agentName}} के साथ चैट",
@@ -4250,7 +4254,6 @@
     "instructions": "निर्देश",
     "loadError": "आपके निर्देश लोड नहीं हो सके। फिर कोशिश करें।",
     "markdown": "सादे टेक्स्ट या Markdown में लिखें",
-    "newChat": "नई चैट",
     "placeholder": "Okou को बताएँ कि आप कैसे काम करना पसंद करते हैं…",
     "reload": "सहेजे गए निर्देश फिर लोड करें",
     "retry": "फिर कोशिश करें",

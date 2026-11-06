@@ -580,7 +580,7 @@ async fn assert_completion_retry_delay<F>(
                 && event
                     .fields
                     .get("message")
-                    .is_some_and(|message| message == "completion report failed, retrying")
+                    .is_some_and(|message| message == "API request recovery waiting")
         }) {
             std::task::Poll::Ready(())
         } else {
@@ -962,12 +962,17 @@ async fn assert_heartbeat_failure_recovers_without_axiom_warning(
             .with(captured.clone())
             .with(with_ingest_filter(layer)),
     );
-    let server = RawHttpTestServer::spawn(vec![
-        action,
+    let mut actions = vec![action];
+    if failure_cause == Some(ApiTransportCause::ConnectionReset) {
+        // Exhaust the shared reset recovery before testing the provider's
+        // existing delivery-degradation episode and later scheduled success.
+        actions.push(RawHttpAction::ResetConnection);
+    }
+    actions.extend([
         RawHttpAction::Respond(status_response(200)),
         RawHttpAction::Respond(status_response(500)),
-    ])
-    .await;
+    ]);
+    let server = RawHttpTestServer::spawn(actions).await;
     let provider = api_provider_for_test(
         server.url(),
         CancellationToken::new(),
@@ -2310,6 +2315,50 @@ async fn discover_returns_http_poll_job_after_wakeup() {
     assert!(discovered.poll_due_to_job_discovered_elapsed().is_some());
     assert!(discovered.poll_http_request_elapsed().is_some());
     mock.assert_async().await;
+}
+
+#[tokio::test]
+async fn discover_recovers_reset_within_the_original_poll_without_a_wakeup_retry() {
+    let run_id = RunId::new_v4();
+    let server = RawHttpTestServer::spawn(vec![
+        RawHttpAction::ResetConnection,
+        RawHttpAction::Respond(poll_job_response(run_id)),
+    ])
+    .await;
+    let provider = api_provider_for_test(
+        server.url(),
+        CancellationToken::new(),
+        Arc::new(PollWakeups::new(false)),
+    );
+    let (result, events) = capture_api_provider_events(tokio::time::timeout(
+        Duration::from_secs(1),
+        provider.discover(),
+    ))
+    .await;
+    assert_eq!(result.unwrap().unwrap().run_id(), run_id);
+    let requests = server.assert_finished_with_requests().await;
+    assert_eq!(requests.len(), 2);
+    let bodies: Vec<_> = requests
+        .iter()
+        .map(|request| {
+            assert!(request.starts_with("POST /api/runners/poll "));
+            serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap()
+        })
+        .collect();
+    assert_eq!(bodies[0], bodies[1]);
+    assert_eq!(bodies[1]["telemetry"]["pollReason"], "immediate");
+    assert!(
+        events
+            .iter()
+            .all(|event| event.level != Level::WARN && event.level != Level::ERROR)
+    );
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.fields.get("message").map(String::as_str)
+                == Some("poll failed, will retry"))
+    );
+    provider.shutdown().await;
 }
 
 #[tokio::test]
@@ -3927,20 +3976,47 @@ async fn api_client_complete_non_success_includes_status_and_body() {
         })
         .await;
     let api = api_client_for_server(&server);
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let request = CompleteRequest {
+        run_id: RunId::from(uuid::Uuid::nil()),
+        exit_code: 1,
+        failure_reason: None,
+        error: Some("boom".to_string()),
+        sandbox_id: None,
+    };
+    let completion = api
+        .complete("sandbox-token", &request)
+        .with_subscriber(subscriber);
+    tokio::pin!(completion);
 
-    let err = api
-        .complete(
-            "sandbox-token",
-            &CompleteRequest {
-                run_id: RunId::from(uuid::Uuid::nil()),
-                exit_code: 1,
-                failure_reason: None,
-                error: Some("boom".to_string()),
-                sandbox_id: None,
-            },
+    for attempt in 1..=2 {
+        // Drive the real HTTP response until this attempt has armed its retry timer.
+        tokio::time::timeout(
+            Duration::from_secs(5),
+            std::future::poll_fn(|cx| {
+                assert!(
+                    completion.as_mut().poll(cx).is_pending(),
+                    "completion returned before retry {attempt}"
+                );
+                if captured.entries().iter().any(|event| {
+                    event.fields.get("attempt") == Some(&attempt.to_string())
+                        && event.fields.get("message").map(String::as_str)
+                            == Some("API request recovery waiting")
+                }) {
+                    std::task::Poll::Ready(())
+                } else {
+                    std::task::Poll::Pending
+                }
+            }),
         )
         .await
-        .unwrap_err();
+        .expect("completion must register each retry wait before advancing time");
+        // Resume before any awakened task or the next HTTP poll can run.
+        raw_http_test_support::clock::advance_timer_phase(Duration::from_secs(2)).await;
+    }
+
+    let err = completion.await.unwrap_err();
 
     assert_api_status_error(
         err,
@@ -3948,7 +4024,7 @@ async fn api_client_complete_non_success_includes_status_and_body() {
         StatusCode::INTERNAL_SERVER_ERROR,
         "complete failed",
     );
-    mock.assert_async().await;
+    mock.assert_calls_async(3).await;
 }
 
 #[tokio::test]
@@ -5222,9 +5298,12 @@ async fn api_provider_complete_does_not_retry_permanent_http_failure() {
     );
     let event = captured_event(&events, "failed to report completion");
     assert_eq!(event.level, Level::ERROR);
-    assert_eq!(event_field(event, "attempt"), "1");
-    assert_eq!(event_field(event, "max_attempts"), "3");
-    assert_eq!(event_field(event, "will_retry"), "false");
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.fields.get("message").map(String::as_str)
+                == Some("API request recovery waiting"))
+    );
     assert_eq!(event_field(event, "status"), "400");
     assert_eq!(event_field(event, "failure_kind"), "http_status");
 }
@@ -5286,9 +5365,10 @@ async fn api_provider_complete_retries_transient_http_failures() {
                     .iter()
                     .filter(|event| {
                         event.level == Level::INFO
-                            && event.fields.get("message").is_some_and(|message| {
-                                message == "completion report failed, retrying"
-                            })
+                            && event
+                                .fields
+                                .get("message")
+                                .is_some_and(|message| message == "API request recovery waiting")
                     })
                     .count(),
                 success_attempt - 1,
@@ -5360,7 +5440,7 @@ async fn api_provider_complete_retries_transport_failure() {
                         && event
                             .fields
                             .get("message")
-                            .is_some_and(|message| message == "completion report failed, retrying")
+                            .is_some_and(|message| message == "API request recovery waiting")
                 })
                 .count(),
             2,
@@ -5438,7 +5518,7 @@ async fn api_provider_complete_timeout_retry_is_info_and_exhaustion_is_error() {
                         && event
                             .fields
                             .get("message")
-                            .is_some_and(|message| message == "completion report failed, retrying")
+                            .is_some_and(|message| message == "API request recovery waiting")
                 }) {
                     std::task::Poll::Ready(())
                 } else {
@@ -5454,7 +5534,7 @@ async fn api_provider_complete_timeout_retry_is_info_and_exhaustion_is_error() {
         server.assert_finished().await;
 
         let events = captured.entries();
-        let retry_event = captured_event(&events, "completion report failed, retrying");
+        let retry_event = captured_event(&events, "API request recovery waiting");
         assert_eq!(retry_event.level, Level::INFO);
         assert_eq!(event_field(retry_event, "attempt"), "1");
         assert_eq!(event_field(retry_event, "max_attempts"), "3");
@@ -5466,8 +5546,12 @@ async fn api_provider_complete_timeout_retry_is_info_and_exhaustion_is_error() {
             .collect();
         if repeated_timeout {
             assert_eq!(terminal_events.len(), 1, "{events:#?}");
-            let final_event = captured_event(&events, "failed to report completion after retry");
-            assert_eq!(final_event.level, Level::ERROR);
+            assert_eq!(
+                captured_event(&events, "failed to report completion").level,
+                Level::ERROR
+            );
+            let final_event = captured_event(&events, "API request recovery completed");
+            assert_eq!(final_event.level, Level::INFO);
             assert_eq!(event_field(final_event, "attempt"), "3");
             assert_eq!(event_field(final_event, "will_retry"), "false");
             assert_eq!(event_field(final_event, "failure_kind"), "timeout");
@@ -5496,8 +5580,12 @@ async fn api_provider_complete_does_not_retry_local_request_failure() {
 
     let event = captured_event(&events, "failed to report completion");
     assert_eq!(event.level, Level::ERROR);
-    assert_eq!(event_field(event, "attempt"), "1");
-    assert_eq!(event_field(event, "will_retry"), "false");
+    assert!(
+        !events
+            .iter()
+            .any(|event| event.fields.get("message").map(String::as_str)
+                == Some("API request recovery waiting"))
+    );
     assert_eq!(event_field(event, "status"), "");
     assert_eq!(event_field(event, "failure_kind"), "local");
     assert!(event_field(event, "error").contains("build API request"));
@@ -5551,7 +5639,7 @@ async fn api_provider_complete_stops_after_three_transient_failures() {
                     && event
                         .fields
                         .get("message")
-                        .is_some_and(|message| message == "completion report failed, retrying")
+                        .is_some_and(|message| message == "API request recovery waiting")
             }) {
                 std::task::Poll::Ready(())
             } else {
@@ -5574,8 +5662,8 @@ async fn api_provider_complete_stops_after_three_transient_failures() {
             .iter()
             .filter(|event| event.fields.get("run_id") == Some(&run_id))
             .count(),
-        3,
-        "three failed requests should produce three provider events: {events:#?}"
+        1,
+        "the provider reports the final outcome once: {events:#?}"
     );
     let retry_events: Vec<_> = events
         .iter()
@@ -5583,7 +5671,7 @@ async fn api_provider_complete_stops_after_three_transient_failures() {
             event
                 .fields
                 .get("message")
-                .is_some_and(|message| message == "completion report failed, retrying")
+                .is_some_and(|message| message == "API request recovery waiting")
         })
         .collect();
     assert_eq!(retry_events.len(), 2);
@@ -5596,8 +5684,12 @@ async fn api_provider_complete_stops_after_three_transient_failures() {
         assert_eq!(event_field(retry_event, "failure_kind"), "http_status");
     }
 
-    let final_event = captured_event(&events, "failed to report completion after retry");
-    assert_eq!(final_event.level, Level::ERROR);
+    assert_eq!(
+        captured_event(&events, "failed to report completion").level,
+        Level::ERROR
+    );
+    let final_event = captured_event(&events, "API request recovery completed");
+    assert_eq!(final_event.level, Level::INFO);
     assert_eq!(event_field(final_event, "attempt"), "3");
     assert_eq!(event_field(final_event, "will_retry"), "false");
     assert_eq!(event_field(final_event, "status"), "500");

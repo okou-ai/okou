@@ -22,6 +22,8 @@ mod transport_timing;
 use transport_timing::{ConnectionTimingLayer, TimedResolver};
 mod transport_diagnostics;
 use transport_diagnostics::{ConnectionDiagnosticsLayer, TransportDiagnostics};
+mod recovery;
+pub(crate) use recovery::{RecoveryPolicy, RetryConditions};
 
 // Retain only the bounded provider-issued identifier, never arbitrary headers.
 pub(crate) fn response_cf_ray(headers: &HeaderMap) -> Option<&str> {
@@ -148,6 +150,7 @@ struct Inner {
     vercel_bypass: Option<String>,
     runner_version: &'static str,
     client_headers: ClientHeaders,
+    retry_slots: Arc<tokio::sync::Semaphore>,
 }
 
 #[derive(Clone)]
@@ -174,6 +177,9 @@ pub struct PreparedApiRequest {
     diagnostics: TransportDiagnostics,
     request: Request,
     context: ApiRequestContext,
+    client_headers: ClientHeaders,
+    retry_slots: Arc<tokio::sync::Semaphore>,
+    policy: RecoveryPolicy,
 }
 
 /// Request builder for generated platform API routes.
@@ -186,41 +192,43 @@ pub struct ApiRequestBuilder {
     builder: reqwest::RequestBuilder,
     client_headers: ClientHeaders,
     query: Vec<(String, String)>,
+    retry_slots: Arc<tokio::sync::Semaphore>,
+    policy: Option<RecoveryPolicy>,
 }
 
 impl ApiRequestBuilder {
-    pub fn json<T: Serialize + ?Sized>(self, json: &T) -> Self {
-        let Self {
-            client,
-            diagnostics,
-            builder,
-            client_headers,
-            query,
-        } = self;
-        Self {
-            client,
-            diagnostics,
-            builder: builder.json(json),
-            client_headers,
-            query,
-        }
+    pub fn json<T: Serialize + ?Sized>(mut self, json: &T) -> Self {
+        self.builder = self.builder.json(json);
+        self
     }
 
-    pub fn timeout(self, timeout: Duration) -> Self {
-        let Self {
-            client,
-            diagnostics,
-            builder,
-            client_headers,
-            query,
-        } = self;
-        Self {
-            client,
-            diagnostics,
-            builder: builder.timeout(timeout),
-            client_headers,
-            query,
-        }
+    pub fn timeout(mut self, timeout: Duration) -> Self {
+        self.builder = self.builder.timeout(timeout);
+        self
+    }
+
+    /// Declare an audited endpoint's semantic replay guarantee, not just cloneability.
+    pub(crate) fn idempotent(self) -> Self {
+        self.recovery(RecoveryPolicy::idempotent())
+    }
+
+    /// Retain an audited replay-safe operation's bounded transient recovery.
+    ///
+    /// Retries transport failures and transient HTTP statuses. Each attempt
+    /// retains the configured timeout, bounded overall by attempts * timeout
+    /// plus the intervening delays. Cloneability alone does not establish that
+    /// repeating this operation is safe; callers must verify its API contract.
+    /// At least one attempt is always made.
+    pub fn retry_transient(self, attempts: u8, delay: Duration) -> Self {
+        self.recovery(
+            RecoveryPolicy::bounded(attempts, delay, RetryConditions::Transient)
+                .full_attempt_timeouts(),
+        )
+    }
+
+    pub(crate) fn recovery(mut self, policy: RecoveryPolicy) -> Self {
+        self.policy = Some(policy);
+        self
     }
 
     pub fn query(mut self, pairs: &[(&str, &str)]) -> Self {
@@ -239,12 +247,20 @@ impl ApiRequestBuilder {
     pub fn prepare(self, endpoint_label: &'static str) -> ProviderResult<PreparedApiRequest> {
         let client = self.client.clone();
         let diagnostics = self.diagnostics.clone();
+        let client_headers = self.client_headers.clone();
+        let retry_slots = self.retry_slots.clone();
+        let policy = self.policy.clone();
         let finalized = self.finalize(endpoint_label)?;
+        let policy =
+            policy.unwrap_or_else(|| RecoveryPolicy::for_method(finalized.request.method()));
         Ok(PreparedApiRequest {
             client,
             diagnostics,
             request: finalized.request,
             context: finalized.context,
+            client_headers,
+            retry_slots,
+            policy,
         })
     }
 
@@ -278,21 +294,9 @@ impl ApiRequestBuilder {
     }
 
     #[cfg(test)]
-    fn header_for_test(self, name: &'static str, value: &'static str) -> Self {
-        let Self {
-            client,
-            diagnostics,
-            builder,
-            client_headers,
-            query,
-        } = self;
-        Self {
-            client,
-            diagnostics,
-            builder: builder.header(name, value),
-            client_headers,
-            query,
-        }
+    fn header_for_test(mut self, name: &'static str, value: &'static str) -> Self {
+        self.builder = self.builder.header(name, value);
+        self
     }
 }
 
@@ -301,39 +305,38 @@ impl PreparedApiRequest {
         self.request.url()
     }
 
+    /// Identity of the initial prepared request. Recovery records link subsequent
+    /// attempts; a terminal transport error carries its actual attempt context.
     pub fn context(&self) -> &ApiRequestContext {
         &self.context
     }
 
     pub async fn send(self) -> ProviderResult<Response> {
-        let Self {
-            client,
-            diagnostics,
-            request,
-            context,
-        } = self;
-        let started = Instant::now();
-        let result = diagnostics
-            .scope(&context.client_request_id, client.execute(request))
-            .await;
-        match result {
-            Ok(response) => {
-                diagnostics.response(&response, &context.client_request_id, started);
-                Ok(response)
-            }
-            Err(error) => {
-                diagnostics.failure(&context, started, &error);
-                Err(api_transport_error(context, error))
-            }
-        }
+        recovery::send(self, None, None, None).await.result
+    }
+
+    /// Keep the current wire-attempt identity available even if an outer
+    /// deadline drops the pending send before it returns a response.
+    pub(crate) async fn send_with_context(
+        self,
+        context: &mut ApiRequestContext,
+    ) -> ProviderResult<Response> {
+        recovery::send(self, None, Some(context), None).await.result
     }
 
     pub(crate) async fn send_observed_claim(
         self,
         run_id: runner_types::ids::RunId,
         execution_started_at: Instant,
-    ) -> ProviderResult<Response> {
-        transport_timing::send_claim(self, run_id, execution_started_at).await
+        prepare_replay: Option<&mut recovery::PrepareReplay<'_>>,
+    ) -> recovery::AttemptOutcome {
+        recovery::send(
+            self,
+            Some((run_id, execution_started_at)),
+            None,
+            prepare_replay,
+        )
+        .await
     }
 }
 
@@ -418,6 +421,9 @@ impl HttpClient {
                 vercel_bypass,
                 runner_version,
                 client_headers: ClientHeaders::new(client_session_id, runner_version)?,
+                retry_slots: Arc::new(tokio::sync::Semaphore::new(
+                    recovery::MAX_CONCURRENT_RECOVERIES,
+                )),
             }),
         })
     }
@@ -476,8 +482,20 @@ impl HttpClient {
             builder: req,
             client_headers: self.inner.client_headers.clone(),
             query: Vec::new(),
+            retry_slots: self.inner.retry_slots.clone(),
+            policy: None,
         }
     }
+}
+
+pub(crate) fn is_transient_http_status(status: reqwest::StatusCode) -> bool {
+    matches!(
+        status,
+        reqwest::StatusCode::REQUEST_TIMEOUT
+            | reqwest::StatusCode::MISDIRECTED_REQUEST
+            | reqwest::StatusCode::TOO_EARLY
+            | reqwest::StatusCode::TOO_MANY_REQUESTS
+    ) || status.is_server_error()
 }
 
 fn reqwest_method(method: Method) -> reqwest::Method {
