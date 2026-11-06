@@ -43,9 +43,8 @@ import {
 } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import {
-  changeChatThreadList,
+  changeChatIndicators,
   changeChatThreadReadCursor,
-  createChatEvent,
 } from "../../../mocks/mock-helpers.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -564,7 +563,7 @@ test.each(["agent", "thread"] as const)(
     });
 
     hasUnread = true;
-    changeChatThreadList();
+    changeChatIndicators();
 
     await waitFor(() => {
       expect(unreadIndicator()).toBeInTheDocument();
@@ -572,8 +571,8 @@ test.each(["agent", "thread"] as const)(
   },
 );
 
-test.each(["thread list", "read cursor"] as const)(
-  "Refresh the running indicator after a %s change without warming chats",
+test.each(["indicator", "read cursor"] as const)(
+  "Refresh the running indicator after the %s notification without warming chats",
   async (notification) => {
     mockMobileLayout();
     prepareDefaultAgent();
@@ -607,8 +606,8 @@ test.each(["thread list", "read cursor"] as const)(
     });
 
     const changeIndicator = () => {
-      if (notification === "thread list") {
-        changeChatThreadList();
+      if (notification === "indicator") {
+        changeChatIndicators();
       } else {
         changeChatThreadReadCursor({
           threadId: EXISTING_THREAD_ID,
@@ -635,7 +634,7 @@ test.each(["thread list", "read cursor"] as const)(
 );
 
 test.each([false, true])(
-  "Refresh the latest unread state after a message burst with a failed leading fetch: %s",
+  "Refresh the latest unread state after an indicator burst with a failed leading fetch: %s",
   async (failLeadingRefresh) => {
     mockMobileLayout();
     prepareDefaultAgent();
@@ -679,11 +678,11 @@ test.each([false, true])(
     });
 
     blockRefresh = true;
-    createChatEvent(EXISTING_THREAD_ID);
+    changeChatIndicators();
     await refreshStarted.promise;
     hasUnread = true;
     for (let index = 0; index < 20; index++) {
-      createChatEvent(EXISTING_THREAD_ID);
+      changeChatIndicators();
     }
 
     // Advance the scheduling clock before unblocking the request: no sleeps

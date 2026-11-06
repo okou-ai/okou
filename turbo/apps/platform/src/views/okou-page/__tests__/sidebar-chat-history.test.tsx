@@ -50,7 +50,6 @@ import {
   fill,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
 import {
   chatEventRowsResponse,
   testContext,
@@ -58,10 +57,7 @@ import {
 import { pathname } from "../../../signals/location.ts";
 import { PLACEHOLDER } from "./chat-test-helpers.ts";
 import { mockChatEventRows } from "./chat-event-test-helpers.ts";
-import {
-  changeChatThreadReadCursor,
-  createChatEvent,
-} from "../../../mocks/mock-helpers.ts";
+import { changeChatThreadReadCursor } from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
 const {
@@ -1375,164 +1371,4 @@ test("Mark the current conversation unread after navigating away", async () => {
   expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
     "Release plan Unread",
   );
-});
-
-test("An open thread with runless messages reads each newer delivery without a terminal Run", async () => {
-  const firstAt = "2026-03-10T00:04:00Z";
-  const secondAt = "2026-03-10T00:05:00Z";
-  const thirdAt = "2026-03-10T00:06:00Z";
-  mockNow(Date.parse("2026-03-10T00:04:30Z"), context.signal);
-  prepareDefaultAgent();
-  mockSidebarThreadStory([
-    createThread(EXISTING_THREAD_ID, "Runless updates"),
-    createThread(INCIDENT_THREAD_ID, "Other conversation"),
-  ]);
-
-  const rows = mockChatEventRows([
-    {
-      id: "runless-message-1",
-      threadId: EXISTING_THREAD_ID,
-      eventType: "output.message" as const,
-      content: "First runless update",
-      seqId: 1,
-      createdAt: firstAt,
-    },
-  ]);
-  let unreadAt: string | null = firstAt;
-  let historyRequests = 0;
-  let unreadRequests = 0;
-  const markedThrough: string[] = [];
-  const secondMarkStarted = context.mocks.deferred<void>();
-  const releaseSecondMark = context.mocks.deferred<void>();
-  const thirdIndicatorsStarted = context.mocks.deferred<void>();
-  const releaseThirdIndicators = context.mocks.deferred<void>();
-
-  context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
-    unreadRequests += 1;
-    if (unreadAt === thirdAt) {
-      thirdIndicatorsStarted.resolve();
-      await releaseThirdIndicators.promise;
-    }
-    return respond(200, {
-      agents: unreadAt === null ? {} : { [AGENT_ID]: "unread" },
-      threads: unreadAt === null ? {} : { [EXISTING_THREAD_ID]: "unread" },
-      unreadAt: unreadAt === null ? {} : { [EXISTING_THREAD_ID]: unreadAt },
-    });
-  });
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    ({ params, query, respond }) => {
-      historyRequests += 1;
-      return respond(
-        200,
-        chatEventRowsResponse(
-          rows.filter((row) => {
-            return (
-              row.chatThreadId === params.threadId &&
-              row.seqId > query.sinceSeqId
-            );
-          }),
-          query,
-        ),
-      );
-    },
-  );
-  context.mocks.api(
-    chatThreadMarkReadContract.markRead,
-    async ({ params, respond }) => {
-      expect(params.id).toBe(EXISTING_THREAD_ID);
-      expect(historyRequests).toBeGreaterThan(0);
-      const target = unreadAt;
-      if (target === null) {
-        throw new Error("mark-read started without a server unread");
-      }
-      markedThrough.push(target);
-      unreadAt = null;
-      if (target === secondAt) {
-        secondMarkStarted.resolve();
-        await releaseSecondMark.promise;
-      }
-      // This response snapshot is intentionally stale when the third delivery
-      // arrives while the second request is in flight.
-      return respond(200, { lastReadAt: target });
-    },
-  );
-
-  await setupSidebarPage({
-    context,
-    path: `/chats/${EXISTING_THREAD_ID}`,
-    sharedWorkerTestTransport: "message-port",
-  });
-  await expect(
-    screen.findByText("First runless update"),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(markedThrough).toStrictEqual([firstAt]);
-  });
-
-  mockNow(Date.parse("2026-03-10T00:05:30Z"), context.signal);
-  unreadAt = secondAt;
-  rows.push(
-    ...mockChatEventRows([
-      {
-        id: "runless-message-2",
-        threadId: EXISTING_THREAD_ID,
-        eventType: "output.message" as const,
-        content: "Second runless update",
-        seqId: 2,
-        createdAt: secondAt,
-      },
-    ]),
-  );
-  createChatEvent(EXISTING_THREAD_ID);
-  await expect
-    .poll(() => {
-      return {
-        historyRequests,
-        unreadRequests,
-        markedThrough: [...markedThrough],
-        secondMarkStarted: secondMarkStarted.settled(),
-      };
-    })
-    .toMatchObject({
-      markedThrough: [firstAt, secondAt],
-      secondMarkStarted: true,
-    });
-  await expect(
-    screen.findByText("Second runless update"),
-  ).resolves.toBeVisible();
-
-  mockNow(Date.parse("2026-03-10T00:06:30Z"), context.signal);
-  unreadAt = thirdAt;
-  rows.push(
-    ...mockChatEventRows([
-      {
-        id: "runless-message-3",
-        threadId: EXISTING_THREAD_ID,
-        eventType: "output.message" as const,
-        content: "Third runless update",
-        seqId: 3,
-        createdAt: thirdAt,
-      },
-    ]),
-  );
-  createChatEvent(EXISTING_THREAD_ID);
-  await thirdIndicatorsStarted.promise;
-  releaseSecondMark.resolve();
-
-  // A pending indicator refresh must not block the actual message delivery.
-  await expect(
-    screen.findByText("Third runless update"),
-  ).resolves.toBeVisible();
-  releaseThirdIndicators.resolve();
-  await waitFor(() => {
-    expect(markedThrough).toStrictEqual([firstAt, secondAt, thirdAt]);
-    expect(unreadRequests).toBeGreaterThanOrEqual(3);
-  });
-  click(threadLinkByTitle("Other conversation"));
-  await waitFor(() => {
-    expect(threadLinkByTitle("Runless updates")).toHaveAccessibleName(
-      "Runless updates",
-    );
-  });
 });

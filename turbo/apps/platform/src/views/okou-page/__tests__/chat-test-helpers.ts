@@ -5,7 +5,10 @@ import {
   type ReasoningEffort,
 } from "@okouai/api-contracts/contracts/model-reasoning-effort";
 import { waitFor } from "@testing-library/react";
-import { createChatEvent } from "../../../mocks/mock-helpers.ts";
+import {
+  changeChatIndicators,
+  createChatEvent,
+} from "../../../mocks/mock-helpers.ts";
 import {
   chatThreadsContract,
   chatThreadByIdContract,
@@ -459,6 +462,7 @@ export function mockChatLifecycle(
     runError = "Run cancelled";
     assistantSeqId = allocateDynamicSeqId();
     createChatEvent(threadId);
+    changeChatIndicators();
   };
 
   const appendRecallControlEvent = (body: {
@@ -727,6 +731,7 @@ export function mockChatLifecycle(
     assistantSeqId = allocateDynamicSeqId();
     completedMarkerSeqId = undefined;
     createChatEvent(threadId);
+    changeChatIndicators();
     return {
       runId: currentRunId,
       threadId,
@@ -1040,6 +1045,7 @@ export function mockChatLifecycle(
           return runId !== activeSeedRunId;
         });
         createChatEvent(threadId);
+        changeChatIndicators();
         return;
       }
       runStatus = "completed";
@@ -1048,12 +1054,14 @@ export function mockChatLifecycle(
       assistantSeqId = allocateDynamicSeqId();
       completedMarkerSeqId = allocateDynamicSeqId();
       createChatEvent(threadId);
+      changeChatIndicators();
     },
     failRun: (error: string) => {
       runStatus = "failed";
       runError = error;
       assistantSeqId = allocateDynamicSeqId();
       createChatEvent(threadId);
+      changeChatIndicators();
     },
     cancelRun: () => {
       markRunCancelled();

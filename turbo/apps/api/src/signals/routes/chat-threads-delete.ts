@@ -7,7 +7,10 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
 import { waitUntil } from "../context/wait-until";
-import { publishThreadListChanged } from "../external/realtime";
+import {
+  publishChatIndicatorsChangedSafely,
+  publishThreadListChanged,
+} from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { deleteChatThread$ } from "../services/chat-thread.service";
@@ -77,6 +80,11 @@ const deleteAndCleanUp$ = command(
     signal.throwIfAborted();
 
     await publishThreadListChanged({ userId: args.userId, orgId: args.orgId });
+    signal.throwIfAborted();
+    await publishChatIndicatorsChangedSafely({
+      userId: args.userId,
+      orgId: args.orgId,
+    });
     signal.throwIfAborted();
 
     return { status: 204 as const, body: undefined };

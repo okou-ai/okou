@@ -1336,7 +1336,7 @@ test("Refresh unread indicators after thread metadata changes without warming me
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
         credentialChannel(),
-        "threadListChanged",
+        "chatIndicatorsChanged",
       ),
     ).toBeTruthy();
   });
@@ -1344,7 +1344,12 @@ test("Refresh unread indicators after thread metadata changes without warming me
     bridge.getComputed("chat-thread-indicators"),
   ).resolves.toMatchObject({ threads: { [threadId]: "unread" } });
   muted = true;
+  // Muting publishes the thread-list change and the indicator change.
   context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
+  context.mocks.ably.triggerOnChannel(
+    credentialChannel(),
+    "chatIndicatorsChanged",
+  );
   await vi.waitFor(async () => {
     await expect(
       bridge.getComputed("chat-thread-indicators"),
@@ -1382,7 +1387,10 @@ test("Warm unread chats only after chat message notifications", async () => {
   });
   await bridge.registerTab(context.signal);
   await vi.waitFor(() => {
-    for (const topic of ["threadListChanged", "chatThreadReadCursorUpdated"]) {
+    for (const topic of [
+      "chatIndicatorsChanged",
+      "chatThreadReadCursorUpdated",
+    ]) {
       expect(
         context.mocks.ably.hasSubscriptionOnChannel(credentialChannel(), topic),
       ).toBeTruthy();
@@ -1392,15 +1400,20 @@ test("Warm unread chats only after chat message notifications", async () => {
   context.mocks.ably.triggerOnChannel(credentialChannel(), "threadListChanged");
   context.mocks.ably.triggerOnChannel(
     credentialChannel(),
+    "chatIndicatorsChanged",
+  );
+  context.mocks.ably.triggerOnChannel(
+    credentialChannel(),
     "chatThreadReadCursorUpdated",
     { threadId, lastReadAt: null },
   );
   await vi.waitFor(() => {
-    expect(indicatorReloadCount).toBeGreaterThanOrEqual(4);
+    expect(indicatorReloadCount).toBeGreaterThanOrEqual(3);
   });
-  // Both metadata and read-cursor notifications invalidate and settle indicators.
-  // Neither notification warms chat content.
-  expect(indicatorReloadCount).toBe(4);
+  // An indicator change invalidates before and after its refresh; a read
+  // cursor invalidates after its refresh. Thread-list changes do neither, and
+  // no notification warms chat content.
+  expect(indicatorReloadCount).toBe(3);
   expect(catchUpRequestCount).toBe(0);
 
   const firstWarmed = warming.next();

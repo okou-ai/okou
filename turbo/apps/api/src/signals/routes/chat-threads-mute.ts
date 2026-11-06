@@ -5,7 +5,10 @@ import { chatThreadMuteContract } from "@okouai/api-contracts/contracts/chat-thr
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { pathParamsOf, queryOf } from "../context/request";
-import { publishThreadListChanged } from "../external/realtime";
+import {
+  publishChatIndicatorsChangedSafely,
+  publishThreadListChanged,
+} from "../external/realtime";
 import { notFound } from "../../lib/error";
 import { updateOwnedChatThreadWithEvent$ } from "../services/chat-thread-owned-update.service";
 import type { RouteEntry } from "../route-entry";
@@ -37,6 +40,12 @@ function muteHandler(muted: boolean) {
       set(synchronizeUserPushBadge$, auth.userId, new AbortController().signal),
     );
     await publishThreadListChanged({ userId: auth.userId, orgId: auth.orgId });
+    signal.throwIfAborted();
+    // Unread indicators exclude muted threads.
+    await publishChatIndicatorsChangedSafely({
+      userId: auth.userId,
+      orgId: auth.orgId,
+    });
     signal.throwIfAborted();
     return { status: 204 as const, body: undefined };
   });

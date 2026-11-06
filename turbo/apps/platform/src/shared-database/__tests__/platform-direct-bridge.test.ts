@@ -24,7 +24,10 @@ import {
   upgradeChatIdb,
 } from "../../signals/external/chat-idb-schema.ts";
 import { openDB } from "idb";
-import { measureIndexedDbSnapshotFromWorker$ } from "../../signals/shared-database.ts";
+import {
+  chatThreadIndicatorsFromWorker$,
+  measureIndexedDbSnapshotFromWorker$,
+} from "../../signals/shared-database.ts";
 
 const context = testContext();
 const CREATED_AT = "2026-08-14T10:00:00.000Z";
@@ -483,7 +486,7 @@ test("Subscribe shared chat data through the worker", async () => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
         realtimeChannel(),
-        "threadListChanged",
+        "chatIndicatorsChanged",
       ),
     ).toBeTruthy();
   });
@@ -577,4 +580,134 @@ test("Keep the chat list current with realtime thread changes", async () => {
       })?.title,
     ).toBe("Second remote title");
   });
+});
+
+test("Refetch indicators only when the server reports an indicator change", async () => {
+  const threadId = crypto.randomUUID();
+  const agentId = crypto.randomUUID();
+  const snapshotThread: ChatThreadSnapshotProjection = {
+    id: threadId,
+    agentId,
+    title: "Snapshot title",
+    sortAt: CREATED_AT,
+    createdAt: CREATED_AT,
+    updatedAt: CREATED_AT,
+    pinnedAt: null,
+    archived: false,
+    renamedAt: null,
+    selectedModel: null,
+    serviceTier: null,
+    computerUseHostId: null,
+  };
+  const renamed: ChatThreadEvent = {
+    id: crypto.randomUUID(),
+    seqId: 2,
+    kind: "renamed",
+    chatThreadId: threadId,
+    agentId,
+    title: "Renamed during the run",
+    selectedModel: null,
+    serviceTier: null,
+    computerUseHostId: null,
+    createdAt: CREATED_AT,
+  };
+  const idle = { agents: {}, threads: {}, unreadAt: {} };
+  const active = {
+    agents: { [agentId]: "active" as const },
+    threads: { [threadId]: "active" as const },
+    unreadAt: {},
+  };
+  let servedIndicators: typeof idle | typeof active = idle;
+  let indicatorRequests = 0;
+  let availableEvents: readonly ChatThreadEvent[] = [];
+
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    indicatorRequests += 1;
+    return respond(200, servedIndicators);
+  });
+  context.mocks.api(chatThreadsContract.snapshot, ({ respond }) => {
+    return respond(
+      200,
+      mockChatThreadSnapshotResponse(context, {
+        chatThreads: [snapshotThread],
+        latestEventId: crypto.randomUUID(),
+        latestSeqId: 1,
+      }),
+    );
+  });
+  context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+    return respond(200, {
+      events: availableEvents.filter((event) => {
+        return event.seqId > (query.sinceSeqId ?? 0);
+      }),
+      hasMore: false,
+    });
+  });
+  context.mocks.api(chatThreadEventsContract.catchUp, ({ body, respond }) => {
+    return respond(200, {
+      events: Object.fromEntries(
+        body.map(([candidate]) => {
+          return [candidate, []];
+        }),
+      ),
+      notFoundThreads: [],
+    });
+  });
+
+  await setupPage({
+    context,
+    path: "/error",
+    sharedWorkerTestTransport: "message-port",
+    auth: {
+      user: { id: userId(), fullName: "Direct Bridge User" },
+      session: { token: "direct-bridge-token" },
+      organization: {
+        activeOrg: { id: orgId(), name: "Direct Bridge Org" },
+        memberships: [{ id: orgId() }],
+      },
+    },
+  });
+  await vi.waitFor(() => {
+    expect(
+      context.store.get(eventDrivenChatThreads$).find((thread) => {
+        return thread.id === threadId;
+      })?.title,
+    ).toBe("Snapshot title");
+  });
+  await expect(
+    context.store.get(chatThreadIndicatorsFromWorker$),
+  ).resolves.toStrictEqual(idle);
+  const requestsBeforeRunOutput = indicatorRequests;
+
+  // Run output and thread-list changes arrive while the server state changes,
+  // but only the explicit indicator signal may refetch it.
+  servedIndicators = active;
+  availableEvents = [renamed];
+  context.mocks.ably.triggerOnChannel(
+    realtimeChannel(),
+    `chatThreadMessageCreated:${threadId}`,
+  );
+  context.mocks.ably.triggerOnChannel(realtimeChannel(), "threadListChanged");
+  await vi.waitFor(() => {
+    expect(
+      context.store.get(eventDrivenChatThreads$).find((thread) => {
+        return thread.id === threadId;
+      })?.title,
+    ).toBe("Renamed during the run");
+  });
+  expect(indicatorRequests).toBe(requestsBeforeRunOutput);
+  await expect(
+    context.store.get(chatThreadIndicatorsFromWorker$),
+  ).resolves.toStrictEqual(idle);
+
+  context.mocks.ably.triggerOnChannel(
+    realtimeChannel(),
+    "chatIndicatorsChanged",
+  );
+  await vi.waitFor(async () => {
+    await expect(
+      context.store.get(chatThreadIndicatorsFromWorker$),
+    ).resolves.toStrictEqual(active);
+  });
+  expect(indicatorRequests).toBe(requestsBeforeRunOutput + 1);
 });
