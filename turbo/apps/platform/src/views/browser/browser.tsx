@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { flushSync } from "react-dom";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -458,7 +459,7 @@ function BrowserAddress({
   const { t } = useTranslation();
   const address = useGet(signals.address$);
   const addressRef = useSet(signals.refs.address$);
-  const focus = useSet(signals.focusAddress$);
+  const beginEdit = useSet(signals.beginAddressEdit$);
   const blur = useSet(signals.blurAddress$);
   const edit = useSet(signals.editAddress$);
   const reset = useSet(signals.resetAddress$);
@@ -491,7 +492,16 @@ function BrowserAddress({
           spellCheck={false}
           aria-busy={navigating}
           onFocus={() => {
-            return focus();
+            return beginEdit("focus");
+          }}
+          onPointerDown={() => {
+            return beginEdit("interaction");
+          }}
+          onBeforeInput={() => {
+            return beginEdit("interaction");
+          }}
+          onCompositionStart={() => {
+            return beginEdit("interaction");
           }}
           onBlur={() => {
             return blur();
@@ -504,12 +514,19 @@ function BrowserAddress({
               event.nativeEvent.isComposing ||
               event.nativeEvent.keyCode === 229
             ) {
+              beginEdit("interaction");
               return;
             }
             if (event.key === "Escape") {
               event.preventDefault();
-              reset();
+              // Select the reset value after React commits the controlled input.
+              flushSync(() => {
+                reset();
+                beginEdit("interaction");
+              });
               event.currentTarget.select();
+            } else if (event.key !== "Enter") {
+              beginEdit("interaction");
             }
           }}
         />

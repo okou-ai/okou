@@ -133,7 +133,7 @@ export interface BrowserSignals {
   >;
   readonly editAddress$: Command<void, [string]>;
   readonly resetAddress$: Command<void, []>;
-  readonly focusAddress$: Command<void, []>;
+  readonly beginAddressEdit$: Command<void, ["focus" | "interaction"]>;
   readonly blurAddress$: Command<void, []>;
   readonly reconnect$: Command<Promise<void>, [AbortSignal]>;
   readonly retryImage$: Command<Promise<void>, [AbortSignal]>;

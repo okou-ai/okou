@@ -3,23 +3,21 @@ import type { ViewerNavigation, NavigationReceipt } from "../viewer/types.ts";
 import type { ViewerIntent } from "../viewer/lifecycle.ts";
 
 interface AddressSubmission {
+  readonly targetId: string | null;
   readonly selection: object;
   readonly scope: object;
-  readonly version: object;
   readonly value: string;
   readonly baseline: ViewerNavigation | null;
 }
-interface AddressDraft {
+interface SubmittedAddress {
+  readonly token: AddressSubmission;
+  readonly receipt: NavigationReceipt | null;
+}
+interface AddressEditor {
+  readonly kind: "creation" | "focus" | "input";
   readonly targetId: string | null;
   readonly creation: object | null;
-  readonly version: object;
   readonly value: string;
-  readonly dirty: boolean;
-  readonly editing: boolean;
-  readonly submission?: {
-    readonly token: AddressSubmission;
-    readonly receipt: NavigationReceipt | null;
-  };
 }
 
 function confirmsSubmission(
@@ -49,49 +47,61 @@ type AddressTarget =
 
 function createAddressState(sources: AddressSources) {
   const { selectedTabId$, navigation$, navigationScope$ } = sources;
-  const draftState$ = state<AddressDraft | null>(null);
+  const editorState$ = state<AddressEditor | null>(null);
+  const submissionState$ = state<SubmittedAddress | null>(null);
   const targetState$ = state<AddressTarget>({ kind: "unselected" });
+  const pendingAddress$ = computed((get) => {
+    const submitted = get(submissionState$);
+    if (!submitted) {
+      return null;
+    }
+    const document = get(navigation$);
+    const reattached =
+      document &&
+      submitted.token.targetId === get(selectedTabId$) &&
+      submitted.token.scope !== get(navigationScope$);
+    const confirmed =
+      submitted.receipt &&
+      submitted.token.scope === get(navigationScope$) &&
+      confirmsSubmission(document, submitted.token, submitted.receipt);
+    return confirmed || reattached ? null : submitted.token;
+  });
   const editTargetId$ = computed((get) => {
+    const editor = get(editorState$);
+    if (editor) {
+      return editor.targetId;
+    }
+    const pending = get(pendingAddress$);
+    if (pending) {
+      return pending.targetId;
+    }
     const target = get(targetState$);
     return target.kind === "target" ? target.id : null;
   });
   const address$ = computed((get) => {
-    const draft = get(draftState$);
-    const document = get(navigation$);
-    const remote = document?.url ?? "";
-    if (draft) {
-      const submitted = draft.submission;
-      const reattached =
-        submitted &&
-        document &&
-        draft.targetId === get(selectedTabId$) &&
-        submitted.token.scope !== get(navigationScope$);
-      const confirmed =
-        submitted?.receipt &&
-        submitted.token.scope === get(navigationScope$) &&
-        confirmsSubmission(document, submitted.token, submitted.receipt);
-      if (
-        draft.creation ||
-        draft.editing ||
-        (draft.dirty && !submitted) ||
-        (submitted && !confirmed && !reattached)
-      ) {
-        return draft.value;
-      }
+    const editor = get(editorState$);
+    if (editor) {
+      return editor.value;
     }
+    const pending = get(pendingAddress$);
+    if (pending) {
+      return pending.value;
+    }
+    const remote = get(navigation$)?.url ?? "";
     return remote === "about:blank" ? "" : remote;
   });
   const addressTargetMatches$ = computed((get) => {
-    const draft = get(draftState$);
     const target = get(selectedTabId$);
     return (
       target !== null &&
-      (!draft || (!draft.creation && draft.targetId === target))
+      !get(editorState$)?.creation &&
+      get(editTargetId$) === target
     );
   });
   return {
     ...sources,
-    draftState$,
+    editorState$,
+    submissionState$,
     targetState$,
     editTargetId$,
     address$,
@@ -100,219 +110,226 @@ function createAddressState(sources: AddressSources) {
 }
 type AddressGraph = ReturnType<typeof createAddressState>;
 
-function createDraftActions(graph: AddressGraph) {
-  const { draftState$, targetState$, editTargetId$, selectedTabId$ } = graph;
+function createTargetActions(graph: AddressGraph) {
+  const { editorState$, submissionState$, targetState$, address$ } = graph;
   const observeAddressTarget$ = command(({ get, set }, targetId: string) => {
     const previous = get(targetState$);
-    const draft = get(draftState$);
-    // Only the initial default selection may adopt an edit made before discovery.
-    // Detached bindings and failed creations retain text without target authority.
+    const editor = get(editorState$);
+    // Only initial discovery can adopt an edit without an established target.
     if (
       previous.kind === "unselected" &&
-      draft &&
-      !draft.creation &&
-      draft.targetId === null
+      editor &&
+      !editor.creation &&
+      editor.targetId === null
     ) {
-      set(draftState$, { ...draft, targetId });
+      set(editorState$, { ...editor, targetId });
     }
     set(targetState$, { kind: "target", id: targetId });
   });
   const selectAddress$ = command(({ get, set }, targetId: string) => {
     set(targetState$, { kind: "target", id: targetId });
-    const draft = get(draftState$);
-    if (draft && (draft.creation || draft.targetId !== targetId)) {
-      set(draftState$, null);
+    const editor = get(editorState$);
+    if (editor && (editor.creation || editor.targetId !== targetId)) {
+      set(editorState$, null);
+    }
+    if (get(submissionState$)?.token.targetId !== targetId) {
+      set(submissionState$, null);
     }
   });
   const detachAddress$ = command(({ get, set }) => {
+    const retained = get(editorState$) || get(submissionState$);
+    const value = get(address$);
     set(targetState$, { kind: "detached" });
-    const draft = get(draftState$);
-    if (draft) {
-      set(draftState$, {
-        ...draft,
+    set(submissionState$, null);
+    if (retained) {
+      set(editorState$, {
+        kind: "input",
         targetId: null,
         creation: null,
-        dirty: true,
-        submission: undefined,
+        value,
       });
     }
   });
+  return { observeAddressTarget$, selectAddress$, detachAddress$ };
+}
+
+function createCreationActions(
+  graph: AddressGraph,
+  detachAddress$: ReturnType<typeof createTargetActions>["detachAddress$"],
+) {
+  const { editorState$, submissionState$ } = graph;
   const beginAddressCreation$ = command(({ set }, creation: object) => {
-    set(draftState$, {
+    set(submissionState$, null);
+    set(editorState$, {
+      kind: "creation",
       targetId: null,
       creation,
-      version: {},
       value: "",
-      dirty: false,
-      editing: false,
     });
   });
   const adoptAddressCreation$ = command(
     ({ get, set }, creation: object, targetId: string) => {
-      const draft = get(draftState$);
-      if (draft?.creation === creation) {
-        set(draftState$, { ...draft, targetId, creation: null });
+      const editor = get(editorState$);
+      if (editor?.creation === creation) {
+        set(
+          editorState$,
+          editor.kind === "creation"
+            ? null
+            : { ...editor, targetId, creation: null },
+        );
       }
     },
   );
   const cancelAddressCreation$ = command(({ get, set }, creation: object) => {
-    const draft = get(draftState$);
-    if (draft?.creation === creation) {
-      if (draft.dirty) {
+    const editor = get(editorState$);
+    if (editor?.creation === creation) {
+      if (editor.kind === "input") {
         set(detachAddress$);
       } else {
-        set(draftState$, null);
+        set(editorState$, null);
       }
     }
   });
+  return {
+    beginAddressCreation$,
+    adoptAddressCreation$,
+    cancelAddressCreation$,
+  };
+}
+
+function createEditorActions(
+  graph: AddressGraph,
+  beginAddressCreation$: ReturnType<
+    typeof createCreationActions
+  >["beginAddressCreation$"],
+) {
+  const {
+    editorState$,
+    submissionState$,
+    targetState$,
+    editTargetId$,
+    address$,
+  } = graph;
+  const beginAddressEdit$ = command(
+    ({ get, set }, origin: "focus" | "interaction") => {
+      const editor = get(editorState$);
+      if (editor) {
+        // Automatic New tab focus is passive; a subsequent gesture owns editing.
+        if (editor.kind === "creation" && origin === "interaction") {
+          set(editorState$, { ...editor, kind: "focus" });
+        }
+        return;
+      }
+      set(editorState$, {
+        kind: "focus",
+        targetId: get(editTargetId$),
+        creation: null,
+        value: get(address$),
+      });
+    },
+  );
+  const blurAddress$ = command(({ get, set }) => {
+    const editor = get(editorState$);
+    if (editor?.kind === "focus") {
+      set(
+        editorState$,
+        editor.creation ? { ...editor, kind: "creation" } : null,
+      );
+    }
+  });
+  const editAddress$ = command(({ get, set }, value: string) => {
+    const editor = get(editorState$);
+    set(editorState$, {
+      kind: "input",
+      targetId: get(editTargetId$),
+      creation: editor?.creation ?? null,
+      value,
+    });
+  });
   const resetAddress$ = command(({ get, set }) => {
-    const draft = get(draftState$);
-    if (draft?.creation) {
-      set(beginAddressCreation$, draft.creation);
+    const editor = get(editorState$);
+    if (editor?.creation) {
+      set(beginAddressCreation$, editor.creation);
     } else {
-      set(draftState$, null);
-      const target = get(selectedTabId$);
+      set(editorState$, null);
+      set(submissionState$, null);
+      const target = get(graph.selectedTabId$);
       set(
         targetState$,
         target ? { kind: "target", id: target } : { kind: "unselected" },
       );
     }
   });
-  const editAddress$ = command(({ get, set }, value: string) => {
-    const draft = get(draftState$);
-    set(draftState$, {
-      targetId: draft ? draft.targetId : get(editTargetId$),
-      creation: draft?.creation ?? null,
-      version: {},
-      value,
-      dirty: true,
-      editing: true,
-    });
-  });
-  return {
-    observeAddressTarget$,
-    selectAddress$,
-    detachAddress$,
-    beginAddressCreation$,
-    adoptAddressCreation$,
-    cancelAddressCreation$,
-    resetAddress$,
-    editAddress$,
-  };
-}
-
-function createFocusActions(graph: AddressGraph) {
-  const { draftState$, editTargetId$, address$ } = graph;
-  const focusAddress$ = command(({ get, set }) => {
-    const draft = get(draftState$);
-    const targetId = get(editTargetId$);
-    if (
-      draft &&
-      (draft.creation ||
-        draft.targetId !== targetId ||
-        (draft.dirty && !draft.submission))
-    ) {
-      return;
-    }
-    // A new focus owns its visible value independently of an old submission.
-    set(draftState$, {
-      targetId,
-      creation: null,
-      version: {},
-      value: get(address$),
-      dirty: false,
-      editing: true,
-    });
-  });
-  const blurAddress$ = command(({ get, set }) => {
-    const draft = get(draftState$);
-    if (draft && !draft.dirty && !draft.creation) {
-      set(draftState$, null);
-    } else if (draft?.editing) {
-      set(draftState$, { ...draft, editing: false });
-    }
-  });
-  return { focusAddress$, blurAddress$ };
+  return { beginAddressEdit$, blurAddress$, editAddress$, resetAddress$ };
 }
 
 function createSubmissionActions(graph: AddressGraph) {
   const {
-    draftState$,
+    editorState$,
+    submissionState$,
     intent$,
-    selectedTabId$,
     navigation$,
     navigationScope$,
-    address$,
   } = graph;
   const prepareAddress$ = command(
     ({ get, set }, scope: object): AddressSubmission => {
       const token: AddressSubmission = Object.freeze({
+        targetId: get(graph.editTargetId$),
         selection: get(intent$).selection,
         scope,
-        version: {},
-        value: get(address$),
+        value: get(graph.address$),
         baseline: get(navigation$),
       });
-      set(draftState$, {
-        targetId: get(selectedTabId$),
-        creation: null,
-        version: token.version,
-        value: token.value,
-        dirty: true,
-        editing: false,
-        submission: { token, receipt: null },
-      });
+      set(submissionState$, { token, receipt: null });
+      set(editorState$, null);
       return token;
     },
   );
   const acceptAddress$ = command(
     ({ get, set }, token: AddressSubmission, receipt: NavigationReceipt) => {
-      const draft = get(draftState$);
       if (
-        !draft ||
-        draft.version !== token.version ||
+        get(submissionState$)?.token !== token ||
         get(intent$).selection !== token.selection ||
         get(navigationScope$) !== token.scope
       ) {
         return;
       }
-      if (
+      set(
+        submissionState$,
         receipt.kind === "download" ||
-        receipt.kind === "unavailable" ||
-        confirmsSubmission(get(navigation$), token, receipt)
-      ) {
-        set(draftState$, null);
-      } else {
-        set(draftState$, { ...draft, submission: { token, receipt } });
-      }
+          receipt.kind === "unavailable" ||
+          confirmsSubmission(get(navigation$), token, receipt)
+          ? null
+          : { token, receipt },
+      );
     },
   );
   const reconcileAddress$ = command(({ get, set }, scope: object) => {
-    const draft = get(draftState$);
-    const submission = draft?.submission;
+    const submitted = get(submissionState$);
     if (
-      draft &&
-      submission?.receipt &&
-      submission.token.scope === scope &&
+      submitted?.receipt &&
+      submitted.token.scope === scope &&
       get(navigationScope$) === scope &&
-      submission.token.selection === get(intent$).selection &&
-      draft.version === submission.token.version &&
-      confirmsSubmission(get(navigation$), submission.token, submission.receipt)
+      submitted.token.selection === get(intent$).selection &&
+      confirmsSubmission(get(navigation$), submitted.token, submitted.receipt)
     ) {
-      set(draftState$, null);
+      set(submissionState$, null);
     }
   });
   return { prepareAddress$, acceptAddress$, reconcileAddress$ };
 }
 
-/** One mounted local editor survives remote resource replacement without granting authority. */
+/** Local interaction and submitted native effects have independent lifetimes. */
 export function createAddressSignals(sources: AddressSources) {
   const graph = createAddressState(sources);
+  const targets = createTargetActions(graph);
+  const creation = createCreationActions(graph, targets.detachAddress$);
   return {
     address$: graph.address$,
     addressTargetMatches$: graph.addressTargetMatches$,
-    ...createDraftActions(graph),
-    ...createFocusActions(graph),
+    ...targets,
+    ...creation,
+    ...createEditorActions(graph, creation.beginAddressCreation$),
     ...createSubmissionActions(graph),
   };
 }

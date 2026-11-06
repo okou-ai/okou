@@ -1716,7 +1716,7 @@ export function createBrowserRuntime(
     rejectFavicon$: model.rejectFavicon$,
     editAddress$: model.editAddress$,
     resetAddress$: model.resetAddress$,
-    focusAddress$: model.focusAddress$,
+    beginAddressEdit$: model.beginAddressEdit$,
     blurAddress$: model.blurAddress$,
     dismissClipboardRecovery$: graph.native.dismissClipboard$,
     ...tabActions,

@@ -279,35 +279,43 @@ test("A submitted address can start a fresh selection after connection recovery"
   expect(address.selectionStart).toBe(2);
 });
 
-test("Refocusing a recovered submission cannot transfer it to an automatic successor", async () => {
-  const viewer = mockViewer();
-  await viewer.start();
-  await ready();
-  const navigation = viewer.browser.holdNext("Page.navigate");
-  const address = screen.getByLabelText("Address");
-  await fill(address, "submitted.example/path");
-  await userEvent.keyboard("{Enter}");
-  await navigation.received;
-  act(() => {
-    viewer.browser.disconnect({ code: 1006, wasClean: false });
-  });
-  await pendingRecovery();
-  act(() => {
-    viewer.browser.move("example-page", 202);
-  });
-  viewer.advance(1000);
-  await waitFor(() => {
-    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
-    expect(
-      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
-    ).toHaveAttribute("aria-selected", "true");
-  });
-  await userEvent.click(screen.getByLabelText("Remote browser input"));
-  await userEvent.click(address);
-  await userEvent.keyboard("{Enter}");
-  expect(address).toHaveValue("submitted.example/path");
-  expect(viewer.browser.targets[1]?.url).toBe("https://other.example");
-});
+test.each([false, true])(
+  "Interacting with a recovered submission cannot transfer it to an automatic successor (type=%s)",
+  async (type) => {
+    const viewer = mockViewer();
+    await viewer.start();
+    await ready();
+    const navigation = viewer.browser.holdNext("Page.navigate");
+    const address = screen.getByLabelText("Address");
+    await fill(address, "submitted.example/path");
+    await userEvent.keyboard("{Enter}");
+    await navigation.received;
+    act(() => {
+      viewer.browser.disconnect({ code: 1006, wasClean: false });
+    });
+    await pendingRecovery();
+    act(() => {
+      viewer.browser.move("example-page", 202);
+    });
+    viewer.advance(1000);
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(
+        screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+      ).toHaveAttribute("aria-selected", "true");
+    });
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    await userEvent.click(address);
+    if (type) {
+      await userEvent.keyboard("{Home}x");
+    }
+    await userEvent.keyboard("{Enter}");
+    expect(address).toHaveValue(
+      type ? "xsubmitted.example/path" : "submitted.example/path",
+    );
+    expect(viewer.browser.targets[1]?.url).toBe("https://other.example");
+  },
+);
 
 test("An address first edited during recovery stays bound to the restored tab", async () => {
   const viewer = mockViewer();

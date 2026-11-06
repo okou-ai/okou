@@ -219,6 +219,35 @@ test("Address blur releases an unchanged baseline but retains an unsent edit", a
   expect(address).toHaveValue("unsent.example/path");
 });
 
+test("Escape resets the address without surrendering its selected text to a document update", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText<HTMLInputElement>("Address");
+  await fill(address, "discarded.example/path");
+  await userEvent.keyboard("{Escape}");
+  expect(address).toHaveValue("https://example.com");
+  expect(address.selectionStart).toBe(0);
+  expect(address.selectionEnd).toBe("https://example.com".length);
+  act(() => {
+    browser.event(
+      "Page.frameNavigated",
+      {
+        frame: {
+          id: "example-frame",
+          loaderId: "after-reset",
+          url: "https://background.example/",
+        },
+      },
+      browser.pageSession("example-page"),
+    );
+  });
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("https://example.com");
+  expect(address.selectionStart).toBe(0);
+  expect(address.selectionEnd).toBe("https://example.com".length);
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).toHaveValue("https://background.example/");
+});
+
 test("An invalid local address remains a draft across membership reattachment", async () => {
   const browser = await setupViewer(0);
   const address = screen.getByLabelText("Address");
@@ -691,6 +720,49 @@ test.each(["created", "existing"] as const)(
   },
 );
 
+test.each([false, true])(
+  "A new tab distinguishes automatic focus from interaction before its creation receipt (interaction=%s)",
+  async (interact) => {
+    const browser = await setupViewer(0);
+    const creation = browser.holdNextNative("createTab");
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    await creation.received;
+    const address = screen.getByLabelText<HTMLInputElement>("Address");
+    expect(address).toHaveFocus();
+    expect(address).toHaveValue("");
+    if (interact) {
+      await userEvent.keyboard("{Home}");
+    }
+    await act(async () => {
+      await creation.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    for (const page of ["first", "second"]) {
+      act(() => {
+        browser.event(
+          "Page.frameNavigated",
+          {
+            frame: {
+              id: "example-frame",
+              loaderId: `external-${page}`,
+              url: `https://${page}.example/`,
+            },
+          },
+          browser.pageSession("created-1"),
+        );
+      });
+      const expected = interact ? "" : `https://${page}.example/`;
+      expect(address).toHaveValue(expected);
+      expect(address).toHaveFocus();
+      expect(address.selectionStart).toBe(expected.length);
+    }
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    expect(address).toHaveValue("https://second.example/");
+  },
+);
+
 test.each(["first image", "input initialization"] as const)(
   "Selecting a tab waits for its %s before accepting another browser action",
   async (waitingFor) => {
@@ -808,6 +880,52 @@ test.each([true, false])(
   },
 );
 
+test.each(["keyboard", "pointer", "composition"] as const)(
+  "A %s interaction after submission protects the still-focused address before another character",
+  async (interaction) => {
+    const browser = await setupViewer(0);
+    const navigation = browser.holdNext("Page.navigate");
+    const address = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Address",
+    });
+    await fill(address, "submitted.example/path");
+    await userEvent.keyboard("{Enter}");
+    await navigation.received;
+    expect(address).toHaveFocus();
+    if (interaction === "keyboard") {
+      await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+    } else if (interaction === "pointer") {
+      await userEvent.pointer({
+        target: address,
+        keys: "[MouseLeft]",
+        offset: 2,
+      });
+    } else {
+      address.setSelectionRange(2, 2);
+      fireEvent.compositionStart(address);
+    }
+    expect(address.selectionStart).toBe(2);
+    await act(async () => {
+      await navigation.release();
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Opening page. You can keep editing the address."),
+      ).not.toBeInTheDocument();
+    });
+    expect(address).toBeEnabled();
+    expect(address).toHaveFocus();
+    expect(address).toHaveValue("submitted.example/path");
+    expect(address.selectionStart).toBe(2);
+    if (interaction === "composition") {
+      fireEvent.compositionEnd(address);
+    }
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    expect(address).toHaveValue("http://submitted.example/path");
+    expect(browser.targets[0]?.url).toBe("http://submitted.example/path");
+  },
+);
+
 test("Refocusing a submitted address protects selection until the user leaves it", async () => {
   const browser = await setupViewer(0);
   const navigation = browser.holdNext("Page.navigate");
@@ -835,6 +953,35 @@ test("Refocusing a submitted address protects selection until the user leaves it
   await userEvent.click(screen.getByLabelText("Remote browser input"));
   expect(address).toHaveValue("http://submitted.example/path");
   expect(browser.targets[0]?.url).toBe("http://submitted.example/path");
+});
+
+test("Leaving a clean refocus retains the pending navigation until its own receipt", async () => {
+  const browser = await setupViewer(0);
+  const navigation = browser.holdNext("Page.navigate");
+  const address = screen.getByLabelText("Address");
+  await fill(address, "submitted.example/path");
+  await userEvent.keyboard("{Enter}");
+  await navigation.received;
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("submitted.example", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  await userEvent.click(address);
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).not.toHaveFocus();
+  expect(address).toHaveValue("submitted.example/path");
+  await act(async () => {
+    await navigation.release();
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByText("Opening page. You can keep editing the address."),
+    ).not.toBeInTheDocument();
+  });
+  expect(address).toHaveValue("http://submitted.example/path");
 });
 
 test("An address submission waits for its navigation receipt across its own document change", async () => {
