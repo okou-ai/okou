@@ -7,8 +7,6 @@ struct NewChatGreeting: View {
   let agentName: String
   let isDefaultAgent: Bool
   let text: String
-  /// The header has no title, so the agent's own avatar opens its profile.
-  var openAgent: (() -> Void)? = nil
   @State private var revealed = false
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -16,8 +14,11 @@ struct NewChatGreeting: View {
     let words = text.split(separator: " ", omittingEmptySubsequences: true).map(String.init)
     // Stacked on one centre line: it stays tidy at every width and greeting length.
     VStack(spacing: OkouSpace.md) {
-      avatar
-        .modifier(GreetingEntrance(revealed: revealed, delay: 0))
+      OkouAgentAvatar(
+        avatarURL: avatarURL, name: agentName, isDefault: isDefaultAgent,
+        size: OkouAvatarSize.greeting
+      )
+      .modifier(GreetingEntrance(revealed: revealed, delay: 0))
       GreetingWordFlow {
         ForEach(Array(words.enumerated()), id: \.offset) { index, word in
           Text(word)
@@ -37,23 +38,6 @@ struct NewChatGreeting: View {
       } else {
         withAnimation { revealed = true }
       }
-    }
-  }
-}
-
-extension NewChatGreeting {
-  @ViewBuilder fileprivate var avatar: some View {
-    let image = OkouAgentAvatar(
-      avatarURL: avatarURL, name: agentName, isDefault: isDefaultAgent,
-      size: OkouAvatarSize.greeting)
-    if let openAgent {
-      Button(action: openAgent) { image }
-        .buttonStyle(.plain)
-        .accessibilityLabel(agentName)
-        .accessibilityHint("Shows the agent")
-        .accessibilityIdentifier("greeting-agent")
-    } else {
-      image
     }
   }
 }

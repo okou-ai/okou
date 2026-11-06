@@ -4,11 +4,10 @@ import SwiftUI
 struct ChatThreadMoreButton: View {
   let store: WorkspaceStore
   let threadID: String
-  let openAgent: () -> Void
 
   var body: some View {
     if store.list.threads.contains(where: { $0.id == threadID }) {
-      ChatThreadMoreControl(store: store, threadID: threadID, openAgent: openAgent)
+      ChatThreadMoreControl(store: store, threadID: threadID)
         .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
     }
   }
@@ -17,7 +16,6 @@ struct ChatThreadMoreButton: View {
 private struct ChatThreadMoreControl: UIViewRepresentable {
   let store: WorkspaceStore
   let threadID: String
-  let openAgent: () -> Void
 
   func makeUIView(context: Context) -> UIButton {
     let button = UIButton(type: .system)
@@ -88,19 +86,7 @@ private struct ChatThreadMoreControl: UIViewRepresentable {
     ) { _ in
       UIApplication.shared.open(store.webURL.appending(path: "chats/\(threadID)"))
     }
-    // The header has no title; the agent doing the work is named first in its menu.
-    let agentName =
-      store.list.agents.first(where: { $0.agentId == thread.agentID })?.displayName ?? "Okou"
-    let agent = UIAction(
-      title: agentName, subtitle: String(localized: "Agent profile"),
-      image: OkouIcon.uiImage("bot"), identifier: UIAction.Identifier("chat-agent")
-    ) { _ in openAgent() }
     var actions: [UIMenuElement] = [pin, rename, status, openWeb]
-    if !list.singleAgentEnabled
-      || thread.agentID != list.agents.first(where: \.isDefaultAgent)?.agentId
-    {
-      actions.insert(UIMenu(options: .displayInline, children: [agent]), at: 0)
-    }
     if list.canMuteChats || thread.isMuted {
       actions.append(
         UIAction(

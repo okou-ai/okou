@@ -1843,43 +1843,6 @@
         }
       }
     },
-    "Agent profile": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Agent-Profil" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Perfil del agente" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Profil de l’agent" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "एजेंट प्रोफ़ाइल" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Profil agen" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Profilo dell’agente" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "エージェントのプロフィール" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "에이전트 프로필" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Perfil do agente" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "智能体资料" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "智能體資料" }
-        }
-      }
-    },
     "AI": {
       "localizations": {
         "de": {
@@ -8633,43 +8596,6 @@
         }
       }
     },
-    "Edit on web": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Im Web bearbeiten" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Editar en la web" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Modifier sur le Web" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "वेब पर संपादित करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Edit di web" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Modifica sul web" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "Web で編集" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "웹에서 편집" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Editar na web" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "在网页端编辑" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "在網頁端編輯" }
-        }
-      }
-    },
     "Email address": {
       "localizations": {
         "de": {
@@ -11468,43 +11394,6 @@
         }
       }
     },
-    "Loading workflows…": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Workflows werden geladen…" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Cargando flujos de trabajo…" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Chargement des workflows…" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "वर्कफ़्लो लोड हो रहे हैं…" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Memuat alur kerja…" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Caricamento dei flussi di lavoro…" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "ワークフローを読み込み中…" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "워크플로 불러오는 중…" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Carregando fluxos de trabalho…" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "正在加载工作流…" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "正在載入工作流…" }
-        }
-      }
-    },
     "Loading Workflows…": {
       "localizations": {
         "de": {
@@ -13345,43 +13234,6 @@
         }
       }
     },
-    "No saved workflows yet. When a job repeats, Okou offers to save it here.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Noch keine gespeicherten Workflows. Wenn sich eine Aufgabe wiederholt, bietet Okou an, sie hier zu speichern." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Aún no hay flujos de trabajo guardados. Cuando una tarea se repite, Okou te ofrece guardarla aquí." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Aucun workflow enregistré pour l’instant. Quand une tâche se répète, Okou propose de l’enregistrer ici." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "अभी तक कोई सेव किया गया वर्कफ़्लो नहीं है। जब कोई काम दोहराया जाता है, तो Okou उसे यहाँ सेव करने का सुझाव देता है।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Belum ada alur kerja tersimpan. Saat suatu pekerjaan berulang, Okou akan menawarkan untuk menyimpannya di sini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nessun flusso di lavoro salvato. Quando un'attività si ripete, Okou ti propone di salvarla qui." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "保存したワークフローはまだありません。同じ作業が繰り返されると、Okou がここに保存するよう提案します。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "아직 저장된 워크플로가 없습니다. 작업이 반복되면 Okou가 여기에 저장하도록 제안합니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Nenhum fluxo de trabalho salvo ainda. Quando uma tarefa se repete, o Okou oferece salvá-la aqui." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "还没有保存的工作流。当某项任务重复出现时，Okou 会建议将其保存到这里。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "還沒有儲存的工作流。當某項工作重複出現時，Okou 會建議將其儲存到這裡。" }
-        }
-      }
-    },
     "No speech detected.": {
       "localizations": {
         "de": {
@@ -13946,43 +13798,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "開啟" }
-        }
-      }
-    },
-    "Only you": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Nur Sie" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Solo tú" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Vous uniquement" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "केवल आप" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Hanya Anda" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Solo tu" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "自分のみ" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "나만 보기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Só você" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "仅自己可见" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "僅自己可見" }
         }
       }
     },
@@ -19517,43 +19332,6 @@
         }
       }
     },
-    "Shared with the workspace": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Mit dem Arbeitsbereich geteilt" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Compartido con el espacio de trabajo" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Partagé avec l’espace de travail" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "वर्कस्पेस के साथ शेयर किया गया" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Dibagikan ke ruang kerja" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Condiviso con l'area di lavoro" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "ワークスペースと共有" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "워크스페이스와 공유됨" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Compartilhado com o espaço de trabalho" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已与工作区共享" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "已與工作區共用" }
-        }
-      }
-    },
     "Shipped": {
       "localizations": {
         "de": {
@@ -19662,43 +19440,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "顯示較少" }
-        }
-      }
-    },
-    "Shows the agent": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Zeigt den Agenten" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Muestra el agente" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Affiche l’agent" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "एजेंट दिखाता है" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Menampilkan agen" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Mostra l'agente" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "エージェントを表示します" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "에이전트를 표시합니다" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Mostra o agente" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "显示该智能体" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "顯示該智能體" }
         }
       }
     },
@@ -22023,43 +21764,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "開啟" }
-        }
-      }
-    },
-    "Type / in the message composer to run one.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Geben Sie / im Nachrichtenfeld ein, um einen auszuführen." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Escribe / en el cuadro de mensaje para ejecutar uno." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Tapez / dans le champ de message pour en exécuter un." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "किसी को चलाने के लिए संदेश कंपोज़र में / टाइप करें।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Ketik / di kolom pesan untuk menjalankannya." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Digita / nel campo del messaggio per eseguirne uno." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "メッセージ入力欄で / を入力すると実行できます。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "메시지 입력창에 /를 입력하여 실행하세요." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Digite / no campo de mensagem para executar um." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "在消息输入框中输入 / 即可运行。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "在訊息輸入框中輸入 / 即可執行。" }
         }
       }
     },

@@ -31,7 +31,7 @@ agents and recent chats scoped to the selected agent, filtered like the web (Inb
 Unread, Archived, Muted). Workspace switching and "back to chat" sit at the top; the
 bottom bar has the account photo for Settings, search, and new chat. Native list actions support pinning,
 archiving, and renaming chats. The chat header has no title; its native More menu
-names the agent (opening its profile) and also supports muting. Archive and mute controls follow the existing `chatThreadArchiving` and
+also supports muting. Archive and mute controls follow the existing `chatThreadArchiving` and
 `chatThreadMuting` feature switches; muted chats can still be unmuted after the
 muting switch is turned off. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected
@@ -40,8 +40,7 @@ chat-specific choices and personal subscription account management.
 Workspace setup remains on the web. Settings shows the profile, workspace,
 notifications, appearance, language, support and version, and offers sign-out.
 Account deletion is available only on the web.
-The new-chat screen greets with the agent and the description of a custom one; the
-greeting's avatar opens the agent's profile and saved workflows.
+The new-chat screen greets with the agent and the description of a custom one.
 
 Conversation history renders durable user messages and assistant results using
 the official Textual 0.5.0 release. The renderer supports Markdown headings, lists,
