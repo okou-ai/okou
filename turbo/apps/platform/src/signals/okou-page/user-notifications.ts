@@ -7,6 +7,16 @@ import { authenticatedSessionKey$ } from "../auth.ts";
 import { pageVersion$ } from "../page-signal.ts";
 import { onRef } from "../utils.ts";
 
+function createNotificationPageSelection() {
+  const pageIndex$ = state(0);
+  return {
+    pageIndex$,
+    selectPage$: command(({ set }, index: number) => {
+      set(pageIndex$, index);
+    }),
+  };
+}
+
 function createInboxState() {
   const revision$ = state(0);
   const detailRevision$ = state(0);
@@ -24,7 +34,12 @@ function createInboxState() {
   const scrollTop$ = state(0);
 
   const descriptionId = crypto.randomUUID();
+  const pageSelection$ = computed((get) => {
+    get(detailRevision$);
+    return createNotificationPageSelection();
+  });
   return {
+    pageSelection$,
     revision$,
     detailRevision$,
     summaryRevision$,
@@ -309,6 +324,7 @@ function createNotificationInbox() {
     lastSelectedId$: inbox.lastSelectedId$,
     readRequest$: inbox.readRequest$,
     descriptionId: inbox.descriptionId,
+    pageSelection$: inbox.pageSelection$,
   };
 }
 

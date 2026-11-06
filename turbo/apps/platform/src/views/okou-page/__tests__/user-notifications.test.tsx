@@ -69,13 +69,16 @@ function row(title: string): HTMLElement {
   }
   return result;
 }
-function mockInbox(items: UserNotificationSummary[] = [first, second]) {
+function mockInbox(
+  items: UserNotificationSummary[] = [first, second],
+  notification: UserNotification = detail,
+) {
   let entries = structuredClone(items);
   context.mocks.api(userNotificationsContract.list, ({ respond }) => {
     return respond(200, { items: entries, nextCursor: null });
   });
   context.mocks.api(userNotificationsContract.get, ({ respond }) => {
-    return respond(200, detail);
+    return respond(200, notification);
   });
   context.mocks.api(
     userNotificationsContract.markRead,
@@ -333,4 +336,57 @@ test("A notification delivered after the bulk snapshot stays unread", async () =
     ).not.toBeInTheDocument();
   });
   expect(within(row(second.title)).getByText("Unread")).toBeInTheDocument();
+});
+
+test("Carousel notifications navigate pages and reopen at the first page", async () => {
+  const entry = {
+    ...first,
+    type: "carousel",
+    title: "A three-page walkthrough",
+  };
+  const carousel = {
+    ...detail,
+    title: entry.title,
+    payload: {
+      type: "carousel",
+      pages: [
+        {
+          markdown:
+            "## Start with an idea\n\nDescribe what you want to achieve.",
+        },
+        {
+          markdown:
+            "## Bring your context\n\n![Context overview](https://static.okou.io/notification-preview.png)",
+        },
+        { markdown: "## Make it happen\n\nKeep the next step in sight." },
+      ],
+    },
+  } satisfies UserNotification;
+  mockInbox([entry], carousel);
+  await openInbox();
+  await screen.findByText(entry.title);
+  click(row(entry.title));
+  const dialog = await screen.findByRole("dialog", { name: entry.title });
+  await within(dialog).findByText("Start with an idea");
+  expect(within(dialog).getByText("Page 1 of 3")).toBeInTheDocument();
+  expect(button("Previous page", dialog)).toBeDisabled();
+  click(button("Next page", dialog));
+  await within(dialog).findByText("Bring your context");
+  expect(within(dialog).getByAltText("Context overview")).toBeInTheDocument();
+  expect(within(dialog).getByText("Page 2 of 3")).toBeInTheDocument();
+  click(button("Next page", dialog));
+  await within(dialog).findByText("Make it happen");
+  expect(button("Next page", dialog)).toBeDisabled();
+  click(button("Previous page", dialog));
+  await within(dialog).findByText("Bring your context");
+  await screen.findByText("0 unread notifications");
+  click(button("Close", dialog));
+  await screen.findByText(entry.title);
+  await waitFor(() => {
+    expect(row(entry.title)).toHaveFocus();
+  });
+  click(row(entry.title));
+  const reopened = await screen.findByRole("dialog", { name: entry.title });
+  await within(reopened).findByText("Start with an idea");
+  expect(within(reopened).getByText("Page 1 of 3")).toBeInTheDocument();
 });

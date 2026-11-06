@@ -2,7 +2,7 @@ import type { UserNotification } from "@okouai/api-contracts/contracts/user-noti
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Bell, ChevronRight } from "lucide-react";
+import { Bell, ChevronLeft, ChevronRight } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -90,40 +90,139 @@ function ReadError({ inbox }: { readonly inbox: NotificationInbox }) {
   );
 }
 
+function NotificationHeader({ item }: { readonly item: UserNotification }) {
+  const { t } = useTranslation();
+  return (
+    <DialogHeader className="space-y-3 pr-7">
+      <DialogDescription>
+        {t(($) => {
+          return $.userNotifications.sender;
+        })}
+      </DialogDescription>
+      <DialogTitle className="text-2xl leading-tight">{item.title}</DialogTitle>
+      <time
+        dateTime={item.createdAt}
+        className="block text-xs text-muted-foreground"
+      >
+        {formatChatTimestamp(item.createdAt)}
+      </time>
+    </DialogHeader>
+  );
+}
+
 function RichTextNotification({
   inbox,
   item,
+  markdown,
 }: {
   readonly inbox: NotificationInbox;
   readonly item: UserNotification;
+  readonly markdown: string;
 }) {
-  const { t } = useTranslation();
   const mounted = useSet(inbox.detailRef$);
   return (
     <>
       <div ref={mounted} className="min-w-0 space-y-5">
-        <DialogHeader className="space-y-3 pr-7">
-          <DialogDescription>
-            {t(($) => {
-              return $.userNotifications.sender;
-            })}
-          </DialogDescription>
-          <DialogTitle className="text-2xl leading-tight">
-            {item.title}
-          </DialogTitle>
-          <time
-            dateTime={item.createdAt}
-            className="block text-xs text-muted-foreground"
-          >
-            {formatChatTimestamp(item.createdAt)}
-          </time>
-        </DialogHeader>
+        <NotificationHeader item={item} />
         <Markdown
-          source={item.payload.markdown}
+          source={markdown}
           escapeHtml
           mediaPreview={false}
           className="text-sm! leading-relaxed!"
         />
+      </div>
+      <ReadError inbox={inbox} />
+    </>
+  );
+}
+
+type CarouselPages = Extract<
+  UserNotification["payload"],
+  { type: "carousel" }
+>["pages"];
+
+function CarouselNotification({
+  inbox,
+  item,
+  pages,
+}: {
+  readonly inbox: NotificationInbox;
+  readonly item: UserNotification;
+  readonly pages: Readonly<CarouselPages>;
+}) {
+  const { t } = useTranslation();
+  const selection = useGet(inbox.pageSelection$);
+  const index = useGet(selection.pageIndex$);
+  const selectPage = useSet(selection.selectPage$);
+  const mounted = useSet(inbox.detailRef$);
+  const page = pages[index];
+  if (!page) {
+    throw new Error("Notification page is outside the selected message");
+  }
+  const counterId = `${inbox.descriptionId}-page-count`;
+  const bodyId = `${inbox.descriptionId}-page-body`;
+  return (
+    <>
+      <div ref={mounted} className="min-w-0 space-y-5">
+        <NotificationHeader item={item} />
+        <div className="flex items-center justify-end gap-2">
+          <IconButton
+            aria-label={t(($) => {
+              return $.userNotifications.previousPage;
+            })}
+            aria-controls={bodyId}
+            disabled={index === 0}
+            className="size-8 shrink-0 text-muted-foreground pointer-coarse:size-11"
+            onClick={() => {
+              selectPage(index - 1);
+            }}
+          >
+            <ChevronLeft className="size-4" aria-hidden="true" />
+          </IconButton>
+          <span
+            id={counterId}
+            aria-live="polite"
+            className="w-32 shrink-0 text-center text-xs tabular-nums text-muted-foreground"
+          >
+            {t(
+              ($) => {
+                return $.userNotifications.pageOf;
+              },
+              {
+                current: formatLocalizedNumber(index + 1),
+                total: formatLocalizedNumber(pages.length),
+              },
+            )}
+          </span>
+          <IconButton
+            aria-label={t(($) => {
+              return $.userNotifications.nextPage;
+            })}
+            aria-controls={bodyId}
+            disabled={index === pages.length - 1}
+            className="size-8 shrink-0 text-muted-foreground pointer-coarse:size-11"
+            onClick={() => {
+              selectPage(index + 1);
+            }}
+          >
+            <ChevronRight className="size-4" aria-hidden="true" />
+          </IconButton>
+        </div>
+        <div
+          key={index}
+          id={bodyId}
+          role="region"
+          aria-labelledby={counterId}
+          tabIndex={0}
+          className="h-96 max-h-[50dvh] overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+        >
+          <Markdown
+            source={page.markdown}
+            escapeHtml
+            mediaPreview={false}
+            className="text-sm! leading-relaxed! [&_img]:max-h-48 [&_img]:object-contain"
+          />
+        </div>
       </div>
       <ReadError inbox={inbox} />
     </>
@@ -176,15 +275,30 @@ function NotificationDetail({ inbox }: { readonly inbox: NotificationInbox }) {
   if (!item) {
     return null;
   }
-  // rich_text is informational. Future approval payloads must render their
+  // Rich text and carousels are informational. Approval payloads must render their
   // own decision UI; a read receipt is never a confirm/approve operation.
   switch (item.payload.type) {
     case "rich_text": {
-      return <RichTextNotification inbox={inbox} item={item} />;
+      return (
+        <RichTextNotification
+          inbox={inbox}
+          item={item}
+          markdown={item.payload.markdown}
+        />
+      );
+    }
+    case "carousel": {
+      return (
+        <CarouselNotification
+          inbox={inbox}
+          item={item}
+          pages={item.payload.pages}
+        />
+      );
     }
     default: {
       // A newer API can add a type while this browser still has older assets.
-      // Unsupported content must not gain a rich-text renderer or read receipt.
+      // Unsupported content must not gain a renderer or read receipt.
       return (
         <>
           <DialogTitle>

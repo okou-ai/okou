@@ -49,7 +49,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.UserNotifications]: {
     maintainer: "yuma@okou.ai",
     displayName: "In-app notifications",
-    description: "Receive personal rich-text announcements from the Okou team.",
+    description: "Receive personal announcements from the Okou team.",
     enabled: false,
   },
   [FeatureSwitchKey.ConnectorSkillBundleDelivery]: {

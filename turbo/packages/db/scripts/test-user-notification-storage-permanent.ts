@@ -36,11 +36,38 @@ export async function validateUserNotificationStorage(databaseUrl: string) {
       "INSERT INTO user_notifications (user_id, title, summary, payload) VALUES ($1, 'First', '', $2), ($1, 'Second', '', $2)",
       [userId, payload],
     );
+    await client.query(
+      "INSERT INTO user_notifications (user_id, title, summary, payload) VALUES ($1, 'A walkthrough', '', $2)",
+      [
+        userId,
+        {
+          type: "carousel",
+          pages: [
+            { markdown: "First page" },
+            { markdown: "Second page" },
+            { markdown: "Third page" },
+          ],
+        },
+      ],
+    );
     for (const invalid of [
       { markdown: "Missing type" },
       { type: "approval", markdown: "Approve this" },
       { type: "rich_text", markdown: "" },
       { type: "rich_text", markdown: null },
+      { type: "carousel", pages: [{ markdown: "Only one page" }] },
+      {
+        type: "carousel",
+        pages: [{ markdown: "First page" }, { markdown: "" }],
+      },
+      { type: "carousel", pages: [{ markdown: "First page" }, {}] },
+      { type: "carousel", pages: "Not a page list" },
+      {
+        type: "carousel",
+        pages: Array.from({ length: 11 }, () => {
+          return { markdown: "A page" };
+        }),
+      },
     ]) {
       await assert.rejects(
         client.query(

@@ -1,4 +1,4 @@
-import { sql } from "drizzle-orm";
+import { sql, type SQLWrapper } from "drizzle-orm";
 import {
   check,
   index,
@@ -10,6 +10,33 @@ import {
   uuid,
 } from "drizzle-orm/pg-core";
 import type { UserNotificationPayload } from "../jsonb-contracts/user-notification";
+
+const MAX_NOTIFICATION_PAGES = 10;
+
+function notificationPayloadCheck(payload: SQLWrapper) {
+  const pages = sql`${payload}->'pages'`;
+  const pageChecks = Array.from(
+    { length: MAX_NOTIFICATION_PAGES },
+    (_, index) => {
+      const page = sql`(${pages}->${index})`;
+      return sql`(${page} IS NULL OR (
+      jsonb_typeof(${page}) = 'object'
+      AND jsonb_typeof(${page}->'markdown') = 'string'
+      AND length(${page}->>'markdown') BETWEEN 1 AND 50000
+    ))`;
+    },
+  );
+  return sql`(jsonb_typeof(${payload}) = 'object' AND CASE
+    WHEN ${payload}->>'type' = 'rich_text' THEN (
+      jsonb_typeof(${payload}->'markdown') = 'string'
+      AND length(${payload}->>'markdown') BETWEEN 1 AND 50000
+    )
+    WHEN ${payload}->>'type' = 'carousel' AND jsonb_typeof(${pages}) = 'array' THEN (
+      jsonb_array_length(${pages}) BETWEEN 2 AND ${MAX_NOTIFICATION_PAGES}
+      AND ${sql.join(pageChecks, sql` AND `)}
+    )
+    ELSE false END) IS TRUE`.inlineParams();
+}
 
 /** Insert one row per recipient. Read receipts are personal, across workspaces. */
 export const userNotifications = pgTable(
@@ -50,12 +77,7 @@ export const userNotifications = pgTable(
       ),
       check(
         "chk_user_notification_payload",
-        sql`(
-    jsonb_typeof(${table.payload}) = 'object'
-    AND ${table.payload}->>'type' = 'rich_text'
-    AND jsonb_typeof(${table.payload}->'markdown') = 'string'
-    AND length(${table.payload}->>'markdown') BETWEEN 1 AND 50000
-  ) IS TRUE`,
+        notificationPayloadCheck(table.payload),
       ),
     ];
   },

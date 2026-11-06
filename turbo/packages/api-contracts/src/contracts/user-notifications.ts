@@ -1,7 +1,6 @@
 import {
   array,
   iso,
-  literal,
   number,
   object,
   string,
@@ -21,7 +20,8 @@ export const userNotificationCursorSchema = object({
 
 export const userNotificationSummarySchema = object({
   id: uuid(),
-  type: literal("rich_text"),
+  // Older clients can list newer message types; detail decoding owns rendering.
+  type: string().min(1),
   title: string().min(1).max(200),
   summary: string().max(500),
   createdAt: iso.datetime(),
