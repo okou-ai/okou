@@ -26,6 +26,7 @@ import {
 import { alias, QueryBuilder } from "drizzle-orm/pg-core";
 import { ZodError } from "zod";
 import { isForeignKeyViolation, safeSqlStateCode } from "../../lib/pg-errors";
+import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { recordBrowserLifecycleFact } from "./browser-lifecycle-telemetry";
@@ -373,14 +374,14 @@ const claimSharedWindowRetirement$ = command(
         state: windows.state,
         primaryWindowId: windows.primaryWindowId,
         expiresAt: windows.expiresAt,
-        idleExpired: lte(windows.expiresAt, at).mapWith(Boolean),
+        idleExpired: lte(windows.expiresAt, at).mapWith(pgBooleanDecoder),
         instanceExpired: exists(
           new QueryBuilder()
             .select({ id: profiles.id })
             .from(profiles)
             .where(and(exactProfile(profile), lte(profiles.timeoutAt, at))),
-        ).mapWith(Boolean),
-        threadDeleted: orphanedWindow().mapWith(Boolean),
+        ).mapWith(pgBooleanDecoder),
+        threadDeleted: orphanedWindow().mapWith(pgBooleanDecoder),
       });
     signal.throwIfAborted();
     if (!closing) {
