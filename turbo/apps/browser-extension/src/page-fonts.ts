@@ -4,6 +4,7 @@ const supplementalFamily = '"Arial Unicode MS"';
 const supplementalPattern = /(?:^|,)\s*["']?Arial Unicode MS["']?\s*(?:,|$)/i;
 // Letters, rather than whole Unicode blocks, leave icon PUA and emoji alone.
 const nonLatinLetter = /(?=\p{Letter})\P{Script_Extensions=Latin}/u;
+const stylesheetSelector = 'style, link[rel~="stylesheet"]';
 const overrides = new WeakMap<
   HTMLElement,
   {
@@ -32,6 +33,22 @@ function inlineFontChanged(
   before: string | null,
 ): boolean {
   previousStyle.cssText = before ?? "";
+  // A custom property can change inherited typography even while our own
+  // font-family declaration is unchanged. Do not mistake it for our write.
+  const variableChanged = [
+    ...Array.from(previousStyle),
+    ...Array.from(element.style),
+  ].some((property) => {
+    return (
+      property.startsWith("--") &&
+      (previousStyle.getPropertyValue(property) !==
+        element.style.getPropertyValue(property) ||
+        previousStyle.getPropertyPriority(property) !==
+          element.style.getPropertyPriority(property))
+    );
+  });
+  if (variableChanged) return true;
+  if (ownsFont(element)) return false;
   // System shorthands such as `font: caption` expose an empty fontFamily.
   return (
     previousStyle.fontFamily !== element.style.fontFamily ||
@@ -79,12 +96,13 @@ const observer = new MutationObserver((records) => {
         : record.target.parentElement;
     const stylesheetChange =
       element?.closest("style") ||
-      element?.matches("link[rel=stylesheet]") ||
+      element?.matches(stylesheetSelector) ||
       (record.type === "childList" &&
         [...record.addedNodes, ...record.removedNodes].some((node) => {
           return (
             node instanceof Element &&
-            node.matches("style, link[rel=stylesheet]")
+            (node.matches(stylesheetSelector) ||
+              node.querySelector(stylesheetSelector) !== null)
           );
         }));
     if (stylesheetChange) {
@@ -96,7 +114,6 @@ const observer = new MutationObserver((records) => {
         record.attributeName === "style" &&
         record.target instanceof HTMLElement
       ) {
-        if (ownsFont(record.target)) continue;
         // Transforms/opacity often change every animation frame. They do not
         // invalidate font inheritance or require walking their descendants.
         if (!inlineFontChanged(record.target, record.oldValue)) continue;
@@ -120,7 +137,6 @@ function observe(root: Document | ShadowRoot): void {
     characterData: true,
     attributes: true,
     attributeOldValue: true,
-    attributeFilter: ["class", "style", "lang", "type"],
   });
 }
 

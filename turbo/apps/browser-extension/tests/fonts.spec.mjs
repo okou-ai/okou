@@ -9,9 +9,10 @@ const styles = `<style>
   @font-face { font-family: 'Owned Latin'; src: local('Liberation Sans'), local('Arial'); unicode-range: U+0000-007F; }
   @font-face { font-family: 'Arial Unicode MS'; src: local('Liberation Serif'), local('Times New Roman'); }
   @font-face { font-family: 'Owned Site Face'; src: local('Liberation Mono'), local('Courier New'); }
-  body { font: 24px 'Owned Latin'; }
-  #sample { font-weight: 700; font-style: italic; }
+  body { font: 24px var(--page-font, 'Owned Latin'); }
+  #sample, #variable-sample { font-weight: 700; font-style: italic; }
   .alternate { font-family: 'Owned Site Face' !important; }
+  [data-site-font=alternate] #container { font-family: 'Owned Site Face' !important; }
   #site-control { font-family: 'Owned Site Face'; font-weight: 700; font-style: italic; }
   #caption-control { font: caption; font-weight: 700; font-style: italic; }
   code { font-family: monospace; }
@@ -28,12 +29,17 @@ test.beforeAll(async () => {
       <div id="container"><span id="sample">Αλφάβητο ABC</span></div>
       <p id="site-control">Αλφάβητο ABC</p>
       <p id="caption-control">Αλφάβητο ABC</p>
+      <p id="variable-sample" style="--text-font: 'Owned Latin'; font-family: var(--text-font)">Αλφάβητο ABC</p>
       <span id="latin">Latin ABC 123</span><span id="latin-reference">Latin ABC 123</span>
       <p id="symbols">★ 😀</p><code id="code">const value = 123;</code>
       <label>Search<input id="search" placeholder="Αναζήτηση"></label>
       <button id="add">Add text</button><button id="theme">Change site font</button>
       <button id="system">Use system font</button>
       <button id="inline">Change inline font</button><button id="clear">Use Latin text</button>
+      <button id="variable">Change inherited font variable</button>
+      <button id="own-variable">Change local font variable</button>
+      <button id="nested-style">Toggle nested stylesheet</button>
+      <button id="attribute-theme">Change attribute theme</button>
       <div id="dynamic"></div><div id="shadow-host"></div>
       <iframe title="Languages" src="/frame"></iframe>
       <script>
@@ -43,6 +49,10 @@ test.beforeAll(async () => {
         document.querySelector('#system').onclick=()=>{document.querySelector('#container').style.font='caption';};
         document.querySelector('#inline').onclick=()=>{document.querySelector('#sample').style.setProperty('font-family','"Owned Latin"','important');};
         document.querySelector('#clear').onclick=()=>{document.querySelector('#sample').textContent='Latin ABC 123';};
+        document.querySelector('#variable').onclick=()=>{document.documentElement.style.setProperty('--page-font', '"Owned Site Face"');};
+        document.querySelector('#own-variable').onclick=()=>{document.querySelector('#variable-sample').style.setProperty('--text-font', '"Owned Site Face"');};
+        document.querySelector('#nested-style').onclick=()=>{const current=document.querySelector('#nested-styles');if(current){current.remove();return;}const wrapper=document.createElement('div');wrapper.id='nested-styles';wrapper.innerHTML='<style>#container { font-family: "Owned Site Face" !important; }</style>';document.body.append(wrapper);};
+        document.querySelector('#attribute-theme').onclick=()=>{document.documentElement.dataset.siteFont='alternate';};
       </script>
     </body></html>`);
   });
@@ -217,6 +227,85 @@ test("follows dynamic text and authored class/inline changes without retaining s
         return await f.fonts("sample");
       })
       .toEqual(await f.fonts("latin-reference"));
+  } finally {
+    await f.close();
+  }
+});
+
+test("follows inherited and local font variables after supplementing text", async () => {
+  const f = await fixture();
+  try {
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("variable-sample"));
+      })
+      .toBe(true);
+    await f.page
+      .getByRole("button", { name: "Change inherited font variable" })
+      .click();
+    await expect
+      .poll(async () => {
+        return await f.fonts("sample");
+      })
+      .toEqual(await f.fonts("site-control"));
+    await f.page
+      .getByRole("button", { name: "Change local font variable" })
+      .click();
+    await expect
+      .poll(async () => {
+        return await f.fonts("variable-sample");
+      })
+      .toEqual(await f.fonts("site-control"));
+  } finally {
+    await f.close();
+  }
+});
+
+test("follows nested stylesheets added to and removed from another subtree", async () => {
+  const f = await fixture();
+  try {
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("sample"));
+      })
+      .toBe(true);
+    await f.page
+      .getByRole("button", { name: "Toggle nested stylesheet" })
+      .click();
+    await expect
+      .poll(async () => {
+        return await f.fonts("sample");
+      })
+      .toEqual(await f.fonts("site-control"));
+    await f.page
+      .getByRole("button", { name: "Toggle nested stylesheet" })
+      .click();
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("sample"));
+      })
+      .toBe(true);
+  } finally {
+    await f.close();
+  }
+});
+
+test("follows site typography selected by ancestor attributes", async () => {
+  const f = await fixture();
+  try {
+    await expect
+      .poll(async () => {
+        return suppliedGreek(await f.fonts("sample"));
+      })
+      .toBe(true);
+    await f.page
+      .getByRole("button", { name: "Change attribute theme" })
+      .click();
+    await expect
+      .poll(async () => {
+        return await f.fonts("sample");
+      })
+      .toEqual(await f.fonts("site-control"));
   } finally {
     await f.close();
   }
