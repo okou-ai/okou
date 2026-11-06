@@ -790,8 +790,8 @@ function createListenersRef({
             return;
           }
           scrollReconciliationScheduled = true;
-          // Browser scroll events can precede the ResizeObserver pass that
-          // restores the selected text's viewport position.
+          // Browser scroll events can precede the layout restoration that
+          // returns the selected text to its viewport position.
           animationFrame(
             () => {
               scrollReconciliationScheduled = false;

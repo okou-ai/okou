@@ -437,7 +437,7 @@ single floating line, and colour is a small accent for status only.
 - **Chat header** has no title: the menu glass circle and the model capsule on the left, the
   chat's "…" menu on the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.
-- Provider headings separate identity from allowance (`OkouLabeledValue`); do not
+- Provider headings separate identity from allowance; do not
   shrink or truncate allowance text to fit beside a brand name.
 
 ### Status and motion
@@ -556,7 +556,7 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouChatSkeleton` / `OkouSkeletonBlock`                                      | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, shimmering as one (`okouShimmer()`)                                                               |
 | `OkouAgentAvatar`, `OkouWorkspaceLogo`                                        | Shared avatar and workspace artwork with native sizing                                                                                                                               |
 | `OkouWordmark`                                                                | Approved aspect ratio and theme-aware foreground                                                                                                                                     |
-| `OkouCloseButton`, `OkouLabeledValue`                                         | Native toolbar dismissal and width-adaptive label/value information                                                                                                                  |
+| `OkouCloseButton`                                                             | Native toolbar dismissal                                                                                                                                                             |
 | `OkouProviderButtonStyle`                                                     | Full-width provider action with a branded icon and explicit provider name; neutral resting/pressed/disabled states                                                                   |
 | `OkouAuthTheme`                                                               | Public Clerk integration; retains SDK-owned authentication behavior                                                                                                                  |
 | `OkouGlassControl`                                                            | Clear glass icon (`.circle`) or labeled (`.capsule`) control on an exact 44 pt shape; pairs and bars read at one size                                                                |

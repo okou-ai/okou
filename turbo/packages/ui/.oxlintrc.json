@@ -13,5 +13,27 @@
         "import/no-default-export": "off"
       }
     }
-  ]
+  ],
+  "rules": {
+    "no-restricted-globals": [
+      "error",
+      {
+        "name": "ResizeObserver",
+        "message": "ResizeObserver turns layout into a render side effect. Continue the orchestration in the command that causes the change; see docs/app/resize-observer.md."
+      }
+    ],
+    "no-restricted-properties": [
+      "error",
+      {
+        "object": "window",
+        "property": "ResizeObserver",
+        "message": "ResizeObserver turns layout into a render side effect. Continue the orchestration in the command that causes the change; see docs/app/resize-observer.md."
+      },
+      {
+        "object": "globalThis",
+        "property": "ResizeObserver",
+        "message": "ResizeObserver turns layout into a render side effect. Continue the orchestration in the command that causes the change; see docs/app/resize-observer.md."
+      }
+    ]
+  }
 }

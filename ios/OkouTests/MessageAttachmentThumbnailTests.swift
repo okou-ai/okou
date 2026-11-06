@@ -162,15 +162,106 @@ final class MessageAttachmentThumbnailTests: XCTestCase {
     } catch { XCTAssertEqual((error as? APIClientError)?.statusCode, 403) }
   }
 
+  func testLoadedImageOpensAndReopensWithoutRetransferringOriginalBytes() async throws {
+    let bytes = imageData()
+    let transfers = Mutex(0)
+    let server = try ChatFileHTTPServer { _ in
+      transfers.withLock { $0 += 1 }
+      return .init(body: bytes)
+    }
+    addTeardownBlock { await server.stop() }
+    let origin = try await server.start()
+    let lookups = Mutex(0)
+    let fixture = ChatHTTPFixture { _ in
+      lookups.withLock { $0 += 1 }
+      return ChatHTTPResponse(
+        body: "{\"url\":\"\(origin)/image\",\"downloadUrl\":\"\(origin)/download\"}")
+    }
+    let viewer = makeViewer(fixture)
+    defer { viewer.close() }
+    let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
+    let thumbnail = try await viewer.thumbnail(image)
+    XCTAssertNotNil(thumbnail)
+    viewer.open(image)
+    try await waitForBusinessResult { viewer.preview?.file != nil }
+    let url = try XCTUnwrap(viewer.preview?.file?.url)
+    XCTAssertEqual(try Data(contentsOf: url), bytes)
+    viewer.dismiss()
+    viewer.open(image)
+    try await waitForBusinessResult { viewer.preview?.file != nil }
+    let reopened = try XCTUnwrap(viewer.preview?.file?.url)
+    XCTAssertEqual(try Data(contentsOf: reopened), bytes)
+    XCTAssertEqual(lookups.withLock { $0 }, 3)
+    XCTAssertEqual(transfers.withLock { $0 }, 1)
+    try await waitForFileRemoval(at: url) { viewer.deactivate() }
+  }
+
+  func testSeparateThumbnailStaysAvailableWhileOpeningTheFullOriginal() async throws {
+    let poster = imageData()
+    let original = imageData(color: .systemOrange)
+    let paths = Mutex<[String]>([])
+    let server = try ChatFileHTTPServer { request in
+      let path = request.url!.path
+      paths.withLock { $0.append(path) }
+      return .init(body: path == "/poster" ? poster : original)
+    }
+    addTeardownBlock { await server.stop() }
+    let origin = try await server.start()
+    let fixture = ChatHTTPFixture { _ in
+      ChatHTTPResponse(
+        body:
+          "{\"url\":\"\(origin)/image\",\"downloadUrl\":\"\(origin)/download\",\"previewImageUrl\":\"\(origin)/poster\"}"
+      )
+    }
+    let viewer = makeViewer(fixture)
+    defer { viewer.close() }
+    let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
+    let thumbnail = try await viewer.thumbnail(image)
+    XCTAssertNotNil(thumbnail)
+    viewer.open(image)
+    XCTAssertNotNil(viewer.preview?.thumbnail)
+    try await waitForBusinessResult { viewer.preview?.file != nil }
+    let url = try XCTUnwrap(viewer.preview?.file?.url)
+    XCTAssertEqual(try Data(contentsOf: url), original)
+    XCTAssertEqual(paths.withLock { $0 }, ["/poster", "/download"])
+  }
+
+  func testCachedOriginalCannotBeOpenedAfterAccessIsRevoked() async throws {
+    let bytes = imageData()
+    let server = try ChatFileHTTPServer { _ in .init(body: bytes) }
+    addTeardownBlock { await server.stop() }
+    let origin = try await server.start()
+    let denied = Mutex(false)
+    let fixture = ChatHTTPFixture { _ in
+      if denied.withLock({ $0 }) {
+        return ChatHTTPResponse(status: 403, body: "{\"error\":{\"message\":\"Forbidden\"}}")
+      }
+      return ChatHTTPResponse(
+        body: "{\"url\":\"\(origin)/image\",\"downloadUrl\":\"\(origin)/download\"}")
+    }
+    let viewer = makeViewer(fixture)
+    defer { viewer.close() }
+    let image = ChatMessageAttachment(id: "image", filename: "image.png", contentType: "image/png")
+    let thumbnail = try await viewer.thumbnail(image)
+    XCTAssertNotNil(thumbnail)
+    denied.withLock { $0 = true }
+    viewer.open(image)
+    try await waitForBusinessResult { viewer.preview?.error != nil }
+    XCTAssertEqual(
+      viewer.preview?.error, "You do not have permission to view this attachment.")
+    XCTAssertNil(viewer.preview?.file)
+    XCTAssertEqual(viewer.preview?.canRetry, false)
+  }
+
   private func makeViewer(_ fixture: ChatHTTPFixture) -> MessageAttachmentStore {
     MessageAttachmentStore(
       commands: ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client)),
       didFail: { _ in })
   }
 
-  private func imageData() -> Data {
+  private func imageData(color: UIColor = .systemTeal) -> Data {
     UIGraphicsImageRenderer(size: CGSize(width: 8, height: 8)).pngData { context in
-      UIColor.systemTeal.setFill()
+      color.setFill()
       context.fill(CGRect(x: 0, y: 0, width: 8, height: 8))
     }
   }

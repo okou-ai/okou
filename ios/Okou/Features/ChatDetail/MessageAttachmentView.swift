@@ -124,7 +124,13 @@ struct MessageAttachmentPreview: View {
               }
             }
           } else {
-            OkouLoadingRow("Downloading attachment…").fixedSize()
+            VStack(spacing: OkouSpace.lg) {
+              if let thumbnail = preview.thumbnail {
+                Image(uiImage: thumbnail).resizable().scaledToFit()
+              }
+              OkouLoadingRow("Opening attachment…").fixedSize()
+            }
+            .padding(OkouSpace.lg)
           }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
