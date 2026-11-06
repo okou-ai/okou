@@ -33,6 +33,7 @@ struct ChatSidebarView: View {
     authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
   }
 
+  @State private var menuLogos = OkouWorkspaceMenuLogos()
   /// One caption2 line of Geist under each pinned agent's avatar.
   @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
   /// One leading edge for the header, every heading, row content and the footer buttons.
@@ -133,6 +134,7 @@ struct ChatSidebarView: View {
       )
     ) {
       ChatSearchView(workspace: store, showsArchived: showArchived, didOpen: close)
+        .okouSheetBackground()
     }
   }
 
@@ -152,21 +154,22 @@ struct ChatSidebarView: View {
 
   private var workspaceSwitcher: some View {
     Menu {
-      ForEach(authentication.workspaces) { workspace in
-        Button {
-          Task {
-            do { try await authentication.switchWorkspace(workspace.id) } catch {
-              accountError = error.localizedDescription
-            }
-          }
-        } label: {
-          if workspace.id == workspaceID {
-            Label(workspace.name, okouSymbol: "check")
-          } else {
+      // A picker draws the system's check beside the current workspace, and every row
+      // carries its logo, as the web's switcher does.
+      Picker("Workspace", selection: workspaceSelection) {
+        ForEach(authentication.workspaces) { workspace in
+          Label {
             Text(workspace.name)
+          } icon: {
+            menuLogos.image(
+              workspaceID: workspace.id, imageURL: workspace.imageURL,
+              hasImage: workspace.hasImage)
           }
+          .tag(workspace.id)
         }
       }
+      .pickerStyle(.inline)
+      .labelsHidden()
     } label: {
       HStack(spacing: OkouSpace.sm) {
         let workspace = authentication.workspaces.first(where: { $0.id == workspaceID })
@@ -186,6 +189,24 @@ struct ChatSidebarView: View {
     .buttonStyle(.plain)
     .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
     .accessibilityLabel("Workspace: \(workspaceName)")
+    .task(id: authentication.workspaces) {
+      for workspace in authentication.workspaces {
+        await menuLogos.load(
+          workspaceID: workspace.id, imageURL: workspace.imageURL, hasImage: workspace.hasImage)
+      }
+    }
+  }
+
+  private var workspaceSelection: Binding<String> {
+    Binding {
+      workspaceID
+    } set: { id in
+      Task {
+        do { try await authentication.switchWorkspace(id) } catch {
+          accountError = error.localizedDescription
+        }
+      }
+    }
   }
 
   /// Pinned agents as one sideways row of avatars, so pinning many never pushes the chats
@@ -458,7 +479,9 @@ struct ChatSidebarView: View {
       .sheet(isPresented: $showsSettings) {
         ChatSettingsView(
           store: store, authentication: authentication, notifications: notifications,
-          accountError: $accountError)
+          accountError: $accountError
+        )
+        .okouSheetBackground()
       }
       Button {
         store.search.present()

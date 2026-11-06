@@ -71,7 +71,7 @@ struct ComposerAddSheet: View {
     }
     .presentationDetents([.medium, .large])
     .presentationDragIndicator(.visible)
-    .presentationBackground(OkouColor.background)
+    .okouSheetBackground(OkouColor.background)
   }
 
   /// Camera first, then the latest photos when the library is open to Okou; every photo is

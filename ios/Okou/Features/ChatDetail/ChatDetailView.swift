@@ -283,6 +283,7 @@ struct ChatDetailView: View {
       )
       .presentationDetents([.medium, .large])
       .presentationDragIndicator(.visible)
+      .okouSheetBackground()
       .task { await conversation.modelSelection?.models.loadUsageCatalog() }
     }
     .sheet(
@@ -292,6 +293,7 @@ struct ChatDetailView: View {
       )
     ) { flow in
       ConnectorAuthorizationSheet(flow: flow, store: conversation.connectorActions)
+        .okouSheetBackground()
     }
     .alert(
       "Unable to open connection",

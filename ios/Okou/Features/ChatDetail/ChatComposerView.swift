@@ -301,6 +301,7 @@ struct ChatComposerView: View {
         ComposerConnectorSheet(store: connectorSelection)
           .presentationDetents([.medium, .large])
           .presentationDragIndicator(.visible)
+          .okouSheetBackground()
       }
     }
     // Model settings decide whether the draft can be sent, so a mounted composer loads them

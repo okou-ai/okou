@@ -120,6 +120,33 @@ struct ChatSettingsView: View {
         } header: {
           Text("Support").okouSectionHeader()
         }
+        #if DEBUG
+          // Debug builds only: the live design system, pushed here so Back returns to
+          // Settings and ✕ closes Settings from any page. English only, so it never enters
+          // the string catalog.
+          Section {
+            NavigationLink {
+              OkouDesignSystemCatalog()
+                .toolbar { OkouCloseToolbarItem { dismiss() } }
+            } label: {
+              OkouRowLabel(Text(verbatim: "Design system")) {
+                OkouIcon("layout-grid", size: OkouIconSize.standard)
+              }
+            }
+            NavigationLink {
+              ResultStylesPage()
+                .toolbar { OkouCloseToolbarItem { dismiss() } }
+            } label: {
+              OkouRowLabel(Text(verbatim: "Results in a chat")) {
+                OkouIcon("images", size: OkouIconSize.standard)
+              }
+            }
+          } header: {
+            Text(verbatim: "Developer").okouSectionHeader()
+          } footer: {
+            Text(verbatim: "Only in Debug builds.").okouSectionNote()
+          }
+        #endif
         Section {
           Button(role: .destructive) {
             signingOut = true

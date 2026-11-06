@@ -79,6 +79,7 @@ struct AssistantFailureCard: View {
           }
           .presentationDetents([.medium, .large])
           .presentationDragIndicator(.visible)
+          .okouSheetBackground()
       }
     }
   }

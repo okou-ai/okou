@@ -46,17 +46,24 @@ struct ChatFeedbackSurface: View {
   }
 
   private var messageLabel: some View {
-    HStack(alignment: .center, spacing: OkouSpace.sm) {
-      Group {
-        if isWorking {
-          ProgressView().controlSize(.mini).tint(OkouColor.mutedForeground)
-        } else {
-          OkouIcon(icon, size: OkouIconSize.inline)
-            .foregroundStyle(OkouColor.mutedForeground)
+    HStack(alignment: .firstTextBaseline, spacing: OkouSpace.sm) {
+      // A glyph has no baseline, so on its own it would sit on the text's baseline and ride
+      // high. It centres in an empty line of the same type instead, whose baseline is the
+      // message's: the glyph sits mid-line at every text size and stays on the first line
+      // when the message wraps.
+      Text(verbatim: " ")
+        .font(.okou(.subheadline).weight(.medium))
+        .hidden()
+        .frame(width: OkouIconSize.inline)
+        .overlay {
+          if isWorking {
+            ProgressView().controlSize(.mini).tint(OkouColor.mutedForeground)
+          } else {
+            OkouIcon(icon, size: OkouIconSize.inline)
+              .foregroundStyle(OkouColor.mutedForeground)
+          }
         }
-      }
-      .frame(width: OkouIconSize.inline)
-      .accessibilityHidden(true)
+        .accessibilityHidden(true)
       Text(message)
         .font(.okou(.subheadline).weight(.medium))
         .foregroundStyle(OkouColor.foreground)
@@ -87,27 +94,5 @@ struct ChatFeedbackSurface: View {
     .buttonStyle(.plain)
     .accessibilityLabel("Dismiss feedback")
     .accessibilityIdentifier("dismiss-chat-feedback")
-  }
-}
-
-struct ChatFeedbackBanner: View {
-  let store: WorkspaceStore
-  @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-  var body: some View {
-    ZStack(alignment: .top) {
-      if let feedback = store.threadFeedback {
-        ChatThreadFeedbackView(store: store, feedback: feedback)
-          .id(feedback.id)
-          .transition(.opacity)
-          .zIndex(1)
-      } else {
-        ChatSyncStatusView(state: store.synchronizationState) {
-          await store.retrySynchronization()
-        }
-      }
-    }
-    .padding(.horizontal, OkouSpace.lg)
-    .animation(reduceMotion ? nil : OkouMotion.press, value: store.threadFeedback?.id)
   }
 }

@@ -27,6 +27,11 @@
     @FocusState private var emailFocused: Bool
     @State private var enabled = true
     @State private var showsSheet = false
+    static let sampleWorkspaces = [
+      (id: "catalog", name: "Max & Zoe, Inc"), (id: "catalog-2", name: "Okou Labs"),
+    ]
+    @State private var catalogWorkspace = "catalog"
+    @State private var menuLogos = OkouWorkspaceMenuLogos()
 
     var body: some View {
       ScrollView {
@@ -306,6 +311,35 @@
               }
             }
           }
+          section("Results in the transcript") {
+            // Every result style and state; also its own page with `--result-styles`.
+            ResultStylesGallery()
+          }
+          section("Workspace menu") {
+            // The sidebar's switcher: each workspace's logo beside its name, a check on the
+            // current one.
+            Menu {
+              Picker("Workspace", selection: $catalogWorkspace) {
+                ForEach(Self.sampleWorkspaces, id: \.id) { workspace in
+                  Label {
+                    Text(verbatim: workspace.name)
+                  } icon: {
+                    menuLogos.image(workspaceID: workspace.id, imageURL: nil, hasImage: false)
+                  }
+                  .tag(workspace.id)
+                }
+              }
+              .pickerStyle(.inline)
+              .labelsHidden()
+            } label: {
+              Text(verbatim: "Open the workspace menu")
+            }
+            .task {
+              for workspace in Self.sampleWorkspaces {
+                await menuLogos.load(workspaceID: workspace.id, imageURL: nil, hasImage: false)
+              }
+            }
+          }
           section("Agent identities") {
             HStack(spacing: OkouSpace.md) {
               OkouAgentAvatar(
@@ -417,7 +451,8 @@
               }
             }
           }
-          .scrollEdgeEffectStyle(.soft, for: .top)
+          // Every sheet's grouped ground, so this sheet presents as the product's do.
+          .okouGroupedBackground()
           .navigationTitle("Component reference")
           .navigationBarTitleDisplayMode(.inline)
           .toolbar {
@@ -428,6 +463,7 @@
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+        .okouSheetBackground()
       }
       .background(OkouColor.background)
       .navigationTitle("Design system")

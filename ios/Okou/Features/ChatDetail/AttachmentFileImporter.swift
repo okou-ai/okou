@@ -3,7 +3,9 @@ import ChatDomain
 import CoreTransferable
 import Foundation
 import ImageIO
+import QuickLookThumbnailing
 import Synchronization
+import UIKit
 import UniformTypeIdentifiers
 
 struct ImportedAttachmentFile: Codable, Equatable, Transferable, Sendable {
@@ -176,6 +178,19 @@ actor AttachmentFileImporter {
 
   func thumbnail(_ url: URL, maximumPixelSize: Int = 160) -> Data? {
     Self.makeThumbnail(url, maximumPixelSize: maximumPixelSize)
+  }
+
+  /// The first page or slide of a document as Quick Look draws it, wide enough to fill a
+  /// result card's cover from the top.
+  func documentCover(_ url: URL) async -> Data? {
+    let request = QLThumbnailGenerator.Request(
+      fileAt: url, size: CGSize(width: 400, height: 1_000), scale: 2,
+      representationTypes: .thumbnail)
+    guard
+      let representation = try? await QLThumbnailGenerator.shared.generateBestRepresentation(
+        for: request)
+    else { return nil }
+    return representation.uiImage.jpegData(compressionQuality: 0.85)
   }
 
   private nonisolated static func makeThumbnail(_ url: URL, maximumPixelSize: Int) -> Data? {

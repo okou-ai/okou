@@ -93,7 +93,9 @@ struct PermissionActionCard: View {
       }
     }
     .accessibilityIdentifier("permission-action-card")
-    .sheet(isPresented: $showsDetails) { PermissionActionDetails(store: store) }
+    .sheet(isPresented: $showsDetails) {
+      PermissionActionDetails(store: store).okouSheetBackground()
+    }
     .task(id: store.isActive) { if loadsState { await store.loadIfNeeded() } }
   }
 }
@@ -217,7 +219,7 @@ struct PermissionActionDetails: View {
           .accessibilityIdentifier("permission-duration")
         }
         .font(.okou(.body))
-        .frame(minHeight: OkouControl.listRow)
+        .frame(minHeight: OkouControl.groupedRow)
         .padding(.horizontal, OkouSpace.lg)
         .modifier(OkouSurfaceStyle())
       }

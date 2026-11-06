@@ -160,6 +160,7 @@ private actor MarkdownWorker {
       }
     }
     if !tracksDiagrams { content.markdownSourcePosition = nil }
+    content = content.repairingEmphasizedAutolinks()
     shortenCommitHashes(in: &content)
     return content
   }
@@ -196,5 +197,73 @@ struct PreparedMessageParser: MarkupParser {
       return content.withInlineCodeChips()
     }
     return content
+  }
+}
+
+extension AttributedString {
+  /// Foundation's bare-address links run to the next space, so in
+  /// `**https://example.com/**（见下）` the link takes the closing `**` and the Chinese after
+  /// it, and opens a page that does not exist. An address ends at the first non-ASCII
+  /// character, and GFM leaves trailing `*`, `_` and `~` out of it; those markers go back to
+  /// the emphasis they close, so the link opens the page and reads bold.
+  func repairingEmphasizedAutolinks() -> AttributedString {
+    struct Repair {
+      let start: Int
+      let length: Int
+      let address: Int
+      let markers: String
+      let url: URL
+      let opens: Bool
+    }
+    var repairs: [Repair] = []
+    for run in runs {
+      guard let url = run.link, run.inlinePresentationIntent?.contains(.code) != true else {
+        continue
+      }
+      let text = String(self[run.range].characters)
+      // Only a bare address: its text is the link itself.
+      guard url.absoluteString.removingPercentEncoding == text else { continue }
+      let ascii = String(text.prefix(while: \.isASCII))
+      let markers = String(ascii.reversed().prefix(while: { "*_~".contains($0) }).reversed())
+      let address = String(ascii.dropLast(markers.count))
+      guard address.count < text.count, address.count > "https://".count,
+        let target = URL(string: address)
+      else { continue }
+      let start = characters.distance(from: startIndex, to: run.range.lowerBound)
+      var opens = false
+      if !markers.isEmpty, start >= markers.count {
+        let before = characters.index(run.range.lowerBound, offsetBy: -markers.count)
+        opens = String(characters[before..<run.range.lowerBound]) == markers
+      }
+      repairs.append(
+        Repair(
+          start: start, length: text.count, address: address.count, markers: markers,
+          url: target, opens: opens))
+    }
+    guard !repairs.isEmpty else { return self }
+    var repaired = self
+    // Last first, so the offsets of the earlier links still hold.
+    for repair in repairs.reversed() {
+      func index(_ offset: Int) -> AttributedString.Index {
+        repaired.characters.index(repaired.startIndex, offsetBy: offset)
+      }
+      let addressEnd = repair.start + repair.address
+      repaired[index(addressEnd)..<index(repair.start + repair.length)].link = nil
+      if repair.opens {
+        repaired.removeSubrange(index(addressEnd)..<index(addressEnd + repair.markers.count))
+      }
+      let link = index(repair.start)..<index(addressEnd)
+      repaired[link].link = repair.url
+      guard repair.opens else { continue }
+      var intent = repaired[link].inlinePresentationIntent ?? []
+      switch repair.markers {
+      case "**", "__": intent.insert(.stronglyEmphasized)
+      case "*", "_": intent.insert(.emphasized)
+      default: intent.insert(.strikethrough)
+      }
+      repaired[link].inlinePresentationIntent = intent
+      repaired.removeSubrange(index(repair.start - repair.markers.count)..<index(repair.start))
+    }
+    return repaired
   }
 }

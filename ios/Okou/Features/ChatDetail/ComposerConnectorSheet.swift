@@ -93,6 +93,7 @@ struct ComposerConnectorSheet: View {
           set: { if $0 == nil { store.authorization.cancel() } })
       ) { flow in
         ConnectorAuthorizationSheet(flow: flow, store: store.authorization)
+          .okouSheetBackground()
       }
       .sheet(item: $store.webDestination, onDismiss: { Task { await store.refresh() } }) { page in
         ConnectorSafariView(url: page.url) { store.webDestination = nil }
@@ -193,7 +194,7 @@ struct ComposerConnectorSheet: View {
       .labelsHidden().disabled(store.isSaving || store.uncertain)
       .accessibilityLabel("Allow \(connector.label) for this Agent")
     }
-    .listRowInsets(EdgeInsets(top: 4, leading: 16, bottom: 4, trailing: 16))
+    .listRowInsets(.vertical, OkouSpace.xs)
   }
 
   private func rowAction(
@@ -364,7 +365,9 @@ private struct ComposerRemoteControls: View {
         .okouGroupedBackground()
         .navigationTitle("Connect my computer")
         .toolbar { OkouCloseToolbarItem { showsDesktopSetup = false } }
-      }.presentationDetents([.medium])
+      }
+      .presentationDetents([.medium])
+      .okouSheetBackground()
     }
   }
   private func choice(_ host: ChatRemoteHost, protocol: ChatRemoteProtocol) -> String {

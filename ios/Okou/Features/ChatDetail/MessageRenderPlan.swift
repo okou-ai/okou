@@ -117,16 +117,29 @@ struct MessageRenderPlan: Sendable {
     _ content: AttributedString, source: String, origin: Context.ArtifactOrigin?
   ) -> Unit {
     guard let origin else { return diagramUnits(content, source: source) }
-    return .group(
-      MessageArtifactBody.blocks(content, resolve: origin.resource).compactMap { block in
-        switch block {
-        case .markdown(let fragment):
-          guard hasText(fragment) else { return nil }
-          return diagramUnits(fragment, source: source)
-        case .artifact(let resource, let label, let destination):
-          return .artifact(resource, label: label, destination: destination)
+    let blocks = MessageArtifactBody.blocks(content, resolve: origin.resource)
+    // A result shows once: an image already drawn as a card is not repeated for a link to it.
+    var shown = Set<ChatArtifact.Source>()
+    for block in blocks {
+      if case .artifact(let resource, _, _) = block { shown.insert(resource.id) }
+    }
+    var units: [Unit] = []
+    for block in blocks {
+      switch block {
+      case .markdown(let fragment):
+        guard hasText(fragment) else { continue }
+        units.append(diagramUnits(fragment, source: source))
+        // A linked website, deck or file gets its card after the passage that names it, as
+        // Manus places a result under "You can view it below".
+        for link in MessageArtifactBody.links(fragment, resolve: origin.resource)
+        where shown.insert(link.resource.id).inserted {
+          units.append(.artifact(link.resource, label: link.label, destination: nil))
         }
-      }, spacing: 8)
+      case .artifact(let resource, let label, let destination):
+        units.append(.artifact(resource, label: label, destination: destination))
+      }
+    }
+    return .group(units, spacing: 8)
   }
 
   private static func diagramUnits(_ content: AttributedString, source: String) -> Unit {
