@@ -1619,7 +1619,7 @@ impl ApiClient {
             &self.token,
         );
         let request = request
-            .query(&[("workflowSkills", "2")])
+            .query(&[("workflowSkills", "2"), ("singleCharacterSkills", "1")])
             .json(&body)
             .recovery(recovery);
         let request = request.prepare("claim").map_err(|error| match error {

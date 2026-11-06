@@ -122,6 +122,7 @@ readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
 readonly CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH=.github/rollback-floors/connector-skill-bundle-claims
+readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-character-skill-bundle-reader
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly REGISTRY_ARCHIVE_READER_PATH=.github/rollback-floors/registry-archive-reader
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
@@ -923,6 +924,26 @@ if ! git merge-base --is-ancestor "$connector_skill_bundle_claims_commit" "$TARG
   fail "Rollback target predates Connector Skill bundle claim precedence: ${connector_skill_bundle_claims_commit}."
 fi
 
+# The marker records the separately deployed Runner reader. Its own addition
+# is the API reader floor: both must accept captured single-character Skills.
+if ! single_character_skill_runner_commit=$(git show "origin/main:${SINGLE_CHARACTER_SKILL_READER_PATH}"); then
+  fail "Cannot read the single-character Skill Runner reader rollback floor from main."
+fi
+if [[ ! "$single_character_skill_runner_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid single-character Skill Runner reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$single_character_skill_runner_commit" origin/main; then
+  fail "Single-character Skill Runner reader rollback floor is not on main."
+fi
+single_character_skill_api_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SINGLE_CHARACTER_SKILL_READER_PATH" | sed -n '1p')
+if [[ ! "$single_character_skill_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged single-character Skill API reader on main."
+fi
+if ! git merge-base --is-ancestor "$single_character_skill_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the single-character Skill API reader: ${single_character_skill_api_commit}."
+fi
+
 if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates immutable content bundle publication: ${CONTENT_BUNDLE_PREPARATION_COMMIT}."
 fi
@@ -1132,6 +1153,10 @@ fi
 
 if ! git merge-base --is-ancestor "$content_bundle_archive_reader_commit" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates bounded content bundle archive delivery: ${content_bundle_archive_reader_commit}."
+fi
+
+if ! git merge-base --is-ancestor "$single_character_skill_runner_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates single-character Skill bundle support: ${single_character_skill_runner_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$WORKFLOW_DOWNLOAD_READER_COMMIT" "$runner_tag_commit"; then
