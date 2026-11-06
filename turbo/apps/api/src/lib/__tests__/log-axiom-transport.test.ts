@@ -45,6 +45,10 @@ test("keeps native window failure attribution finite and provider details privat
   await f.owned.run(async () => {
     const chat = await f.start();
     const first = await open(chat);
+    const [providerSessionId] = f.provider.sessionIds;
+    if (!providerSessionId) {
+      throw new Error("Expected the external Browser provider session");
+    }
     const privateDetail = "private-provider-window-detail";
     const scenarios = [
       {
@@ -105,6 +109,8 @@ test("keeps native window failure attribution finite and provider details privat
         .catchall(string().or(number()))
         .parse(warning?.[1]);
       expect(record).toStrictEqual({
+        instanceId: first.window?.instanceId,
+        primaryWindowId: first.window?.primaryWindowId,
         phase: "check-native-window",
         ...fields,
         context: "SharedBrowserReconcile",
@@ -114,7 +120,7 @@ test("keeps native window failure attribution finite and provider details privat
       expect(serialized).not.toContain("Private provider");
       expect(serialized).not.toContain(f.provider.native.url);
       expect(serialized).not.toContain(chat.threadId);
-      expect(serialized).not.toContain(first.window?.instanceId);
+      expect(serialized).not.toContain(providerSessionId);
     }
   });
 });
