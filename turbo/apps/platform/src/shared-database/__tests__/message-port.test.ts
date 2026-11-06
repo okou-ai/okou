@@ -1313,7 +1313,7 @@ function cachedRows(
   );
 }
 
-test("Refresh unread indicators after thread metadata changes without warming messages", async () => {
+test("Refresh unread indicators after an indicator change without warming messages", async () => {
   const threadId = crypto.randomUUID();
   const agentId = crypto.randomUUID();
   let muted = false;
