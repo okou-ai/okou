@@ -808,6 +808,35 @@ test.each([true, false])(
   },
 );
 
+test("Refocusing a submitted address protects selection until the user leaves it", async () => {
+  const browser = await setupViewer(0);
+  const navigation = browser.holdNext("Page.navigate");
+  const address = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "Address",
+  });
+  await fill(address, "submitted.example/path");
+  await userEvent.keyboard("{Enter}");
+  await navigation.received;
+  await userEvent.click(screen.getByLabelText("Browser settings"));
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(address);
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  await act(async () => {
+    await navigation.release();
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByText("Opening page. You can keep editing the address."),
+    ).not.toBeInTheDocument();
+  });
+  expect(address).toHaveValue("submitted.example/path");
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(2);
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).toHaveValue("http://submitted.example/path");
+  expect(browser.targets[0]?.url).toBe("http://submitted.example/path");
+});
+
 test("An address submission waits for its navigation receipt across its own document change", async () => {
   const browser = await setupViewer(0);
   const navigation = browser.holdNext("Page.navigate");

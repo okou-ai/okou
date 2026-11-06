@@ -16,7 +16,6 @@ interface AddressDraft {
   readonly value: string;
   readonly dirty: boolean;
   readonly editing: boolean;
-  readonly baseline: ViewerNavigation | null;
   readonly submission?: {
     readonly token: AddressSubmission;
     readonly receipt: NavigationReceipt | null;
@@ -75,7 +74,7 @@ function createAddressState(sources: AddressSources) {
         draft.creation ||
         draft.editing ||
         (draft.dirty && !submitted) ||
-        (submitted ? !confirmed && !reattached : draft.baseline === document)
+        (submitted && !confirmed && !reattached)
       ) {
         return draft.value;
       }
@@ -102,13 +101,7 @@ function createAddressState(sources: AddressSources) {
 type AddressGraph = ReturnType<typeof createAddressState>;
 
 function createDraftActions(graph: AddressGraph) {
-  const {
-    draftState$,
-    targetState$,
-    editTargetId$,
-    selectedTabId$,
-    navigation$,
-  } = graph;
+  const { draftState$, targetState$, editTargetId$, selectedTabId$ } = graph;
   const observeAddressTarget$ = command(({ get, set }, targetId: string) => {
     const previous = get(targetState$);
     const draft = get(draftState$);
@@ -152,7 +145,6 @@ function createDraftActions(graph: AddressGraph) {
       value: "",
       dirty: false,
       editing: false,
-      baseline: null,
     });
   });
   const adoptAddressCreation$ = command(
@@ -195,7 +187,6 @@ function createDraftActions(graph: AddressGraph) {
       value,
       dirty: true,
       editing: true,
-      baseline: get(navigation$),
     });
   });
   return {
@@ -211,25 +202,33 @@ function createDraftActions(graph: AddressGraph) {
 }
 
 function createFocusActions(graph: AddressGraph) {
-  const { draftState$, editTargetId$, address$, navigation$ } = graph;
+  const { draftState$, editTargetId$, address$ } = graph;
   const focusAddress$ = command(({ get, set }) => {
     const draft = get(draftState$);
-    if (draft && (draft.dirty || draft.creation || draft.submission)) {
+    const targetId = get(editTargetId$);
+    if (
+      draft &&
+      (draft.creation ||
+        draft.targetId !== targetId ||
+        (draft.dirty && !draft.submission))
+    ) {
       return;
     }
+    // A new focus owns its visible value independently of an old submission.
     set(draftState$, {
-      targetId: get(editTargetId$),
+      targetId,
       creation: null,
       version: {},
       value: get(address$),
       dirty: false,
       editing: true,
-      baseline: get(navigation$),
     });
   });
   const blurAddress$ = command(({ get, set }) => {
     const draft = get(draftState$);
-    if (draft?.editing) {
+    if (draft && !draft.dirty && !draft.creation) {
+      set(draftState$, null);
+    } else if (draft?.editing) {
       set(draftState$, { ...draft, editing: false });
     }
   });
@@ -261,7 +260,6 @@ function createSubmissionActions(graph: AddressGraph) {
         value: token.value,
         dirty: true,
         editing: false,
-        baseline: token.baseline,
         submission: { token, receipt: null },
       });
       return token;
