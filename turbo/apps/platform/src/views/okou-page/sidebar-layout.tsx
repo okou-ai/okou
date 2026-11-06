@@ -41,7 +41,10 @@ import {
   sidebarOff$,
   isChatRoute,
 } from "../../signals/okou-page/nav.ts";
-import { activeRoute$ } from "../../signals/active-route.ts";
+import {
+  activeRoute$,
+  agentChatPageActive$,
+} from "../../signals/active-route.ts";
 import { mobileBreadcrumb$ } from "../../signals/okou-page/mobile-breadcrumb.ts";
 import { Link } from "../router/link.tsx";
 import { isOrgAdmin$ } from "../../signals/org.ts";
@@ -492,6 +495,7 @@ function SidebarWorkspace({
 }) {
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
+  const agentChatPage = useGet(agentChatPageActive$);
 
   const workspaceHeader = (
     <>
@@ -500,8 +504,7 @@ function SidebarWorkspace({
       {!isDesktop &&
         !(
           pwaNavigation &&
-          (activeRoute === "me" ||
-            (activeRoute === "agentChat" && chatListVisible))
+          (activeRoute === "me" || (agentChatPage && chatListVisible))
         ) &&
         (pwaNavigation ? (
           <MobileTopBar pwaNavigation />

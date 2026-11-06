@@ -14,10 +14,9 @@ import {
 } from "../okou-page/agent-composer-signals.ts";
 import { setupProjectPageKeyboardShortcuts$ } from "../okou-page/agent-chat-keyboard.ts";
 import { setTalkDraft$ } from "../okou-page/chat-draft.ts";
+import { navigateToAgentChat$ } from "../okou-page/agent-chat-navigation.ts";
 import { resetChatPageModelSelection$ } from "../okou-page/chat-page.ts";
 import { updatePage$ } from "../react-router.ts";
-import { detachedNavigateTo$ } from "../route.ts";
-import { ROUTES } from "../route-paths.ts";
 import { selectedProjectId$ } from "./project-navigation.ts";
 import { hydrateProjects$, projects$ } from "./projects.ts";
 
@@ -56,10 +55,7 @@ export const setupProjectPage$ = command(
           return $.projects.unavailable;
         }),
       );
-      set(detachedNavigateTo$, ROUTES.agentChat, {
-        pathParams: { agentId },
-        replace: true,
-      });
+      set(navigateToAgentChat$, agentId, { replace: true });
       return;
     }
     set(updateDocumentTitle$, project.name);

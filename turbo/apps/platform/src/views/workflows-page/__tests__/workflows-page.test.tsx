@@ -4591,6 +4591,6 @@ test("creates a workspace Workflow with the default Okou without choosing an Age
   ).toBeInTheDocument();
   click(buttonByText("Create workflow", dialog));
   await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+    expect(pathname()).toBe("/");
   });
 });

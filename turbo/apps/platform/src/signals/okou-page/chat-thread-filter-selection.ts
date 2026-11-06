@@ -16,7 +16,7 @@ import {
   setChatThreadUnreadFilter$,
 } from "./chat-thread-filter.ts";
 import { shouldHandleShortcutPress } from "./nav.ts";
-import { activeRoute$ } from "../active-route.ts";
+import { agentChatPageActive$ } from "../active-route.ts";
 import { pwaChatListVisible$ } from "./pwa-navigation.ts";
 
 export type ChatThreadFilter = "all" | "unread" | "archived" | "muted";
@@ -37,7 +37,7 @@ export const selectChatThreadFilter$ = command(
       set(setChatThreadUnreadFilter$, filter === "unread");
     }
 
-    if (get(pwaChatListVisible$) && get(activeRoute$) === "agentChat") {
+    if (get(pwaChatListVisible$) && get(agentChatPageActive$)) {
       return;
     }
 

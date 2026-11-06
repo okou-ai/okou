@@ -696,15 +696,18 @@ function ThreeColumnChatListToggle({
 
 function LabeledChatRailLink() {
   const activeId = useGet(activeRoute$);
+  const singleAgent = useGet(singleAgentEnabled$);
   const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
+  // My Okou's chat page is `/` itself.
+  const agentChatId = singleAgent ? null : defaultAgentId;
   const onLinkClick = useSidebarLinkClick();
   const { t } = useTranslation();
   return (
     <LabeledRailLink
       id="chat"
-      navPath={defaultAgentId ? ROUTES.agentChat : ROUTES.home}
+      navPath={agentChatId ? ROUTES.agentChat : ROUTES.home}
       navOptions={
-        defaultAgentId ? { pathParams: { agentId: defaultAgentId } } : undefined
+        agentChatId ? { pathParams: { agentId: agentChatId } } : undefined
       }
       label={t(($) => {
         return $.appShell.sidebar.chat;

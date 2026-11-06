@@ -4,6 +4,8 @@ import { i18n } from "../../i18n/index.ts";
 import { navigateToChat$ } from "../okou-page/nav.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { navigateTo$ } from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
+import { singleAgentEnabled$ } from "../single-agent.ts";
 import { onDomEventFn } from "../utils.ts";
 import { setChatThreadArchived$ } from "./chat-event.ts";
 import { chatThreadMetaMap$ } from "./chat-thread-event-sourcing.ts";
@@ -38,7 +40,8 @@ export const setChatThreadArchivedWithFeedback$ = command(
       readonly threadId: string;
       readonly archived: boolean;
       // The mobile header fills the screen with the thread, so archiving
-      // returns to the agent's list instead of staying on a hidden chat.
+      // returns to the agent's list (My Okou's `/`) instead of staying on a
+      // hidden chat.
       readonly leaveToAgentId?: string;
     },
     signal: AbortSignal,
@@ -55,12 +58,14 @@ export const setChatThreadArchivedWithFeedback$ = command(
     await Promise.all([
       set(setChatThreadArchived$, { threadId, archived }, signal),
       leaving
-        ? set(
-            navigateTo$,
-            "/agents/:agentId/chat",
-            { pathParams: { agentId: leaveToAgentId } },
-            signal,
-          )
+        ? get(singleAgentEnabled$)
+          ? set(navigateTo$, ROUTES.home, undefined, signal)
+          : set(
+              navigateTo$,
+              "/agents/:agentId/chat",
+              { pathParams: { agentId: leaveToAgentId } },
+              signal,
+            )
         : undefined,
     ]);
     signal.throwIfAborted();

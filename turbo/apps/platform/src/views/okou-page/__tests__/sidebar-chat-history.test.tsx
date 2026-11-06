@@ -1087,7 +1087,7 @@ test("My Okou drops the chat list title for a toggle and one New menu", async ()
 
   await setupSidebarPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: "/",
     featureSwitches: {
       [FeatureSwitchKey.SingleAgent]: true,
       [FeatureSwitchKey.Projects]: true,
@@ -1155,7 +1155,7 @@ test("My Okou without Projects starts a chat straight from the header +", async 
 
   await setupSidebarPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: "/",
     featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
 
@@ -1179,6 +1179,46 @@ test("My Okou without Projects starts a chat straight from the header +", async 
   click(within(header).getByLabelText("New chat"));
   await waitFor(() => {
     expect(createdAgentIds).toStrictEqual([AGENT_ID]);
+  });
+});
+
+test("My Okou's Chat link and new chat shortcut open its chat page at /", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Existing conversation"),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  await screen.findByPlaceholderText(PLACEHOLDER);
+  const chatLink = within(rail).getByLabelText("Chat");
+  expect(chatLink).toHaveAttribute("href", "/");
+
+  fireEvent.keyDown(document, {
+    key: "O",
+    code: "KeyO",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  await expect(
+    screen.findByPlaceholderText(PLACEHOLDER),
+  ).resolves.toBeInTheDocument();
+
+  click(within(sidebar()).getByText("Existing conversation"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+  });
+  click(chatLink);
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
   });
 });
 

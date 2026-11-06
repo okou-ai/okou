@@ -9,20 +9,24 @@ interface PwaPageLocation {
   readonly searchParams: URLSearchParams;
 }
 
-const matchAgentChat = match(ROUTES.agentChat);
-const matchTabRoots = [
-  ROUTES.home,
-  ROUTES.connectors,
-  ROUTES.artifacts,
-  ROUTES.me,
-].map((path) => {
+// The chats tab is `/`, which is My Okou's chat page, or an agent chat URL.
+const matchChatPages = [ROUTES.home, ROUTES.agentChat].map((path) => {
   return match(path);
 });
+const matchTabRoots = [ROUTES.connectors, ROUTES.artifacts, ROUTES.me].map(
+  (path) => {
+    return match(path);
+  },
+);
 
-// Only the four bottom tab destinations are root pages. An agent chat URL that
+// Only the four bottom tab destinations are root pages. A chat page URL that
 // opens its composer is a nested page, like every other route.
 function isTabRootPage({ pathname, searchParams }: PwaPageLocation): boolean {
-  if (matchAgentChat(pathname)) {
+  if (
+    matchChatPages.some((matchChatPage) => {
+      return Boolean(matchChatPage(pathname));
+    })
+  ) {
     return !isPwaAgentComposeRequested(searchParams);
   }
   return matchTabRoots.some((matchTabRoot) => {

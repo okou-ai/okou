@@ -47,7 +47,7 @@ import {
   workflowAutomationDialogOpen$,
 } from "../../signals/automation-page/workflow-automation-dialog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
+import { navigateToAgentChat$ } from "../../signals/okou-page/agent-chat-navigation.ts";
 import { ROUTES } from "../../signals/route-paths.ts";
 import { Link as RouterLink } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
@@ -1019,7 +1019,7 @@ export function CreateWorkflowAutomationDialog() {
   const agentSelectionLocked = useGet(workflowAutomationAgentSelectionLocked$);
   const selectedAgentIdState = useGet(selectedWorkflowAutomationAgentId$);
   const startCreateWorkflow = useSet(startCreateWorkflowFromAutomationDialog$);
-  const navigate = useSet(detachedNavigateTo$);
+  const navigateToAgentChat = useSet(navigateToAgentChat$);
   const selectedAgentId = selectedAgentIdState;
   const selectedAgent =
     agents.find((agent) => {
@@ -1028,8 +1028,7 @@ export function CreateWorkflowAutomationDialog() {
 
   const startChatCreation = (agentId: string, prompt: string) => {
     setOpen(false);
-    navigate(ROUTES.agentChat, {
-      pathParams: { agentId },
+    navigateToAgentChat(agentId, {
       searchParams: new URLSearchParams({ prompt }),
     });
   };

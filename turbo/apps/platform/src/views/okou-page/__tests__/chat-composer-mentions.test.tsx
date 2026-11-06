@@ -277,10 +277,18 @@ async function openAgentMentionWorkspace(newChat = false, singleAgent = false) {
     ]),
   });
   installAgents(agents);
+  // My Okou always chats with the default agent, at `/` for a new chat.
+  if (singleAgent) {
+    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
+  }
 
   await setupPage({
     context,
-    path: newChat ? `/agents/${AGENT_ID}/chat` : `/chats/${current.id}`,
+    path: !newChat
+      ? `/chats/${current.id}`
+      : singleAgent
+        ? "/"
+        : `/agents/${AGENT_ID}/chat`,
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.SingleAgent]: singleAgent,
