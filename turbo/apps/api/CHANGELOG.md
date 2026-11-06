@@ -10,6 +10,18 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.49.2](https://github.com/okou-ai/okou/compare/api-v2.49.1...api-v2.49.2) (2026-11-06)
+
+
+### Refactoring
+
+* **api:** enforce fixed instance environment configuration ([#45542](https://github.com/okou-ai/okou/issues/45542)) ([64fc3ee](https://github.com/okou-ai/okou/commit/64fc3eef0b63ac6cff825515cf11160e890858be))
+
+
+### Performance Improvements
+
+* **api:** narrow claim permission catalog projection ([#45541](https://github.com/okou-ai/okou/issues/45541)) ([1b602d3](https://github.com/okou-ai/okou/commit/1b602d3789e8552268ab9e10fc87b0ec518dac22))
+
 ## [2.49.1](https://github.com/okou-ai/okou/compare/api-v2.49.0...api-v2.49.1) (2026-11-06)
 
 

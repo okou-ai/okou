@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1097.2](https://github.com/okou-ai/okou/compare/app-v0.1097.1...app-v0.1097.2) (2026-11-06)
+
+
+### Refactoring
+
+* **app:** replace the chat list resize observer with layout requests ([#45481](https://github.com/okou-ai/okou/issues/45481)) ([6ba0d4c](https://github.com/okou-ai/okou/commit/6ba0d4c4fccbba6f60d083879ea81b075ac9f645))
+
 ## [0.1097.1](https://github.com/okou-ai/okou/compare/app-v0.1097.0...app-v0.1097.1) (2026-11-06)
 
 

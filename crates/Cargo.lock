@@ -4047,7 +4047,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.23"
+version = "0.244.24"
 dependencies = [
  "api-contracts",
  "async-trait",
