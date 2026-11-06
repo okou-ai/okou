@@ -40,8 +40,13 @@ def _registered_key_name(node: ast.AST) -> str | None:
 
 
 def _contains_registered_key(nodes: Iterable[ast.AST]) -> bool:
+    # Walk structural nodes too, but only expressions and keywords can hold a key.
+    expression_types = (ast.expr, ast.keyword)
     return any(
-        _registered_key_name(child) is not None for node in nodes for child in ast.walk(node)
+        _registered_key_name(child) is not None
+        for node in nodes
+        for child in ast.walk(node)
+        if isinstance(child, expression_types)
     )
 
 
