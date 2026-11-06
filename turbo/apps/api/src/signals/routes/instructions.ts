@@ -11,7 +11,7 @@ import {
 } from "@okouai/core/seed-instructions";
 import { instructions } from "@okouai/db/schema/instructions";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
 import { conflict, resourceUnavailable } from "../../lib/error";
 import { nowDate } from "../../lib/time";
@@ -89,22 +89,20 @@ function defaultResponse(scope: PersonalScope): InstructionsResponse {
   };
 }
 
-const readSavedInstructions$ = command(
-  async ({ get }, scope: PersonalScope, signal: AbortSignal) => {
-    const [row] = await get(db$)
-      .select()
-      .from(instructions)
-      .where(
-        and(
-          eq(instructions.orgId, scope.orgId),
-          eq(instructions.userId, scope.userId),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    return row;
-  },
-);
+const savedInstructions$ = computed(async (get) => {
+  const auth = get(organizationAuthContext$);
+  const [row] = await get(db$)
+    .select()
+    .from(instructions)
+    .where(
+      and(
+        eq(instructions.orgId, auth.orgId),
+        eq(instructions.userId, auth.userId),
+      ),
+    )
+    .limit(1);
+  return row;
+});
 
 const readInstructions$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (!(await set(personalModeAllowed$, signal))) {
@@ -113,11 +111,13 @@ const readInstructions$ = command(async ({ get, set }, signal: AbortSignal) => {
     );
   }
   const auth = get(organizationAuthContext$);
-  const scope = { orgId: auth.orgId, userId: auth.userId };
-  const row = await set(readSavedInstructions$, scope, signal);
+  const row = await get(savedInstructions$);
+  signal.throwIfAborted();
   return {
     status: 200 as const,
-    body: row ? response(row) : defaultResponse(scope),
+    body: row
+      ? response(row)
+      : defaultResponse({ orgId: auth.orgId, userId: auth.userId }),
   };
 });
 
@@ -137,7 +137,8 @@ const updateInstructions$ = command(
     }
     const scope = { orgId: auth.orgId, userId: auth.userId };
     const { ifVersion } = body.data;
-    const saved = await set(readSavedInstructions$, scope, signal);
+    const saved = await get(savedInstructions$);
+    signal.throwIfAborted();
     if (
       ifVersion !== undefined &&
       ifVersion !== (saved?.version ?? DEFAULT_VERSION)
