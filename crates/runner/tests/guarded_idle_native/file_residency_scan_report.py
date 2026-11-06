@@ -22,6 +22,7 @@ from file_residency_report import (
     read_regular,
     require,
     sha256,
+    validate_sources,
 )
 from file_residency_scan import BOUNDS, SOURCES
 
@@ -173,22 +174,7 @@ def replay(
         == integer(capture["descriptor_count_after"], 1),
         "failed or unretired acquisition",
     )
-    fields(capture["sources"], " ".join(SOURCES))
-    for name in SOURCES:
-        require(
-            sha256(read_regular(root, name, 65536))
-            == hash_value(capture["sources"][name]),
-            "original source changed",
-        )
-    require(
-        sha256(
-            json.dumps(
-                capture["sources"], sort_keys=True, separators=(",", ":")
-            ).encode()
-        )
-        == source_sha256,
-        "source bundle mismatch",
-    )
+    validate_sources(root, capture["sources"], SOURCES, source_sha256)
     fields(capture["host"], "kernel_release architecture effective_uid boot_id")
     for name in ["kernel_release", "architecture"]:
         require(

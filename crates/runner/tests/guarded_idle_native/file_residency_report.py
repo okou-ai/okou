@@ -116,6 +116,21 @@ def hash_value(value):
     return value
 
 
+def validate_sources(root, sources, names, expected_sha256):
+    """Verify retained source files and their externally supplied bundle digest."""
+    fields(sources, " ".join(names))
+    for name in names:
+        require(
+            sha256(read_regular(root, name, 65536)) == hash_value(sources[name]),
+            "original source changed",
+        )
+    require(
+        sha256(json.dumps(sources, sort_keys=True, separators=(",", ":")).encode())
+        == expected_sha256,
+        "source bundle mismatch",
+    )
+
+
 def identity(value):
     fields(value, "device inode")
     return integer(value["device"]), integer(value["inode"], 1)
@@ -159,22 +174,7 @@ def replay(root, invocation, source_sha256):
         and capture["source_sha256"] == source_sha256,
         "foreign/replayed invocation or source",
     )
-    fields(capture["sources"], " ".join(SOURCES))
-    for name in SOURCES:
-        require(
-            sha256(read_regular(root, name, 65536))
-            == hash_value(capture["sources"][name]),
-            "original source changed",
-        )
-    require(
-        sha256(
-            json.dumps(
-                capture["sources"], sort_keys=True, separators=(",", ":")
-            ).encode()
-        )
-        == source_sha256,
-        "source bundle mismatch",
-    )
+    validate_sources(root, capture["sources"], SOURCES, source_sha256)
     fields(capture["claims"], " ".join(CLAIMS))
     require(
         all(capture["claims"][name] is False for name in CLAIMS),
