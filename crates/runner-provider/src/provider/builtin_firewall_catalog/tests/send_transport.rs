@@ -13,6 +13,43 @@ enum SendFailure {
     ConnectionReset,
 }
 
+// A catalog-owned failure episode begins only after shared recovery is exhausted.
+fn exhaust_resets(actions: Vec<RawHttpAction>) -> Vec<RawHttpAction> {
+    let mut exhausted = Vec::new();
+    for action in actions {
+        if matches!(action, RawHttpAction::ResetConnection) {
+            exhausted.push(RawHttpAction::ResetConnection);
+        }
+        exhausted.push(action);
+    }
+    exhausted
+}
+
+async fn final_attempt_request(
+    server: &mut RawHttpTestServer,
+    captured: &CapturedEvents,
+    first: String,
+) -> String {
+    let recoveries = captured
+        .entries()
+        .iter()
+        .filter(|event| {
+            event.fields.get("message").map(String::as_str) == Some("API request recovery attempt")
+        })
+        .count();
+    assert!(recoveries <= 1, "one shared retry per catalog request");
+    let request = if recoveries == 1 {
+        server.next_request("catalog shared reset recovery").await
+    } else {
+        first
+    };
+    assert!(
+        server.try_next_request().is_err(),
+        "no additional catalog attempts"
+    );
+    request
+}
+
 impl SendFailure {
     fn action(self) -> (RawHttpAction, Option<oneshot::Sender<()>>) {
         match self {
@@ -137,6 +174,7 @@ async fn next_send_failure(
         tokio::time::resume();
     }
     let event = outcome(captured).await;
+    let request = final_attempt_request(server, captured, request).await;
     if let Some(release) = release {
         release.send(()).unwrap();
     }
@@ -145,8 +183,10 @@ async fn next_send_failure(
 
 async fn next_response(server: &mut RawHttpTestServer, captured: &CapturedEvents) -> CapturedEvent {
     advance_interval(captured).await;
-    server.next_request("next periodic catalog refresh").await;
-    outcome(captured).await
+    let request = server.next_request("next periodic catalog refresh").await;
+    let event = outcome(captured).await;
+    final_attempt_request(server, captured, request).await;
+    event
 }
 
 #[tokio::test]
@@ -181,11 +221,11 @@ async fn assert_send_failure_recovers_unchanged_cache_without_axiom_warning(
             .with(with_ingest_filter(layer)),
     );
     let (action, release) = send_failure.action();
-    let mut server = RawHttpTestServer::spawn(vec![
+    let mut server = RawHttpTestServer::spawn(exhaust_resets(vec![
         RawHttpAction::Respond(catalog_response()),
         action,
         RawHttpAction::Respond(catalog_response()),
-    ])
+    ]))
     .await;
     let refresh = Refresh::start(&mut server).await;
     let original = tokio::fs::read(&refresh.cache_path).await.unwrap();
@@ -302,7 +342,7 @@ async fn send_failures_share_degradation_with_body_reads_and_preserve_genuine_wa
     let (first, first_release) = timeout_action();
     let (second, second_release) = timeout_action();
     let (reset_episode, reset_release) = timeout_action();
-    let mut server = RawHttpTestServer::spawn(vec![
+    let mut server = RawHttpTestServer::spawn(exhaust_resets(vec![
         RawHttpAction::Respond(catalog_response()),
         first,
         second,
@@ -326,7 +366,7 @@ async fn send_failures_share_degradation_with_body_reads_and_preserve_genuine_wa
         RawHttpAction::ResetConnection,
         RawHttpAction::ResetConnection,
         RawHttpAction::Respond(catalog_response()),
-    ])
+    ]))
     .await;
     let refresh = Refresh::start(&mut server).await;
     let (first, _) = next_send_failure(&mut server, &captured, Some(first_release)).await;
@@ -443,11 +483,11 @@ async fn assert_send_failure_warns_immediately_when_published_cache_is_no_longer
         let _subscriber =
             tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
         let (action, release) = send_failure.action();
-        let mut server = RawHttpTestServer::spawn(vec![
+        let mut server = RawHttpTestServer::spawn(exhaust_resets(vec![
             RawHttpAction::Respond(catalog_response()),
             action,
             RawHttpAction::Respond(catalog_response()),
-        ])
+        ]))
         .await;
         let refresh = Refresh::start(&mut server).await;
         // Only host filesystem interference can damage an already published
@@ -519,11 +559,11 @@ async fn assert_cancellation_after_send_failure_does_not_fabricate_recovery(
     let _subscriber =
         tracing::subscriber::set_default(tracing_subscriber::registry().with(captured.clone()));
     let (action, release) = send_failure.action();
-    let mut server = RawHttpTestServer::spawn(vec![
+    let mut server = RawHttpTestServer::spawn(exhaust_resets(vec![
         RawHttpAction::Respond(catalog_response()),
         action,
         RawHttpAction::WaitForDisconnect,
-    ])
+    ]))
     .await;
     let refresh = Refresh::start(&mut server).await;
     let original = tokio::fs::read(&refresh.cache_path).await.unwrap();

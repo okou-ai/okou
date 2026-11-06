@@ -275,8 +275,8 @@ The Runner reads the run's next steerable input prompt from
 an `active-input` push for that run, or an Ably subscription connection or
 reconnection that wakes all active runs. A lagged notification receiver also
 wakes its reader because it may have missed a matching push. There is no periodic
-API recheck or automatic read retry; the 250 ms polling delay applies only to the
-local queue.
+API recheck; the 250 ms polling delay applies only to the local queue. An eligible
+request-stage reset can recover once in the shared HTTP transport described below.
 
 A failed read emits `active-input source read failed; waiting for the next wakeup`
 at ERROR, then waits for another wakeup. Without one, the input can remain unread
@@ -300,6 +300,40 @@ The [provider source](runner-provider/src/active_input.rs),
 The [active-input regression tests](runner-executor/src/executor/tests/agent_run_tests/active_input.rs)
 cover failed-read waits, the absence of periodic API reads, and reconnect wakeups.
 
+### Shared API request recovery
+
+The shared Runner HTTP owner recovers a request-stage TCP reset once for
+GET/HEAD/OPTIONS and audited replay-safe poll, heartbeat and catalog POSTs. It
+waits 100–150 ms, preserves authentication, body and query, and assigns a fresh
+client request ID to each attempt it owns. Both attempts and the wait share the
+original request timeout (normally 10s; catalog resolution overrides it to 60s).
+At most eight logical requests per shared client can be recovering concurrently;
+original requests do not wait for this capacity. Dropping the caller cancels the
+pending wait or attempt.
+
+Preferred reuse claims declare their existing conditional policy to this same
+owner: one retry after 100 ms on HTTP 500 or reset, while the local preference is
+valid and shutdown has not begun. The first admitted request still drains, and
+each attempt retains its 10s allowance. Completion declares its existing three
+attempts, two-second waits and transient HTTP/transport eligibility, with 10s per
+attempt and a 34s total ceiling. The provider retains admission, cooldowns,
+ownership and final outcome handling without another transport retry loop.
+Executor startup reporting uses the same bounded transient policy with three
+two-second attempts and two-second waits (a 10s ceiling); its outer cancellation
+still interrupts either a request or backoff, and its report task remains owned.
+Claim replay rebuilds its typed request telemetry so discovery/admission timing
+includes the first failure and backoff; other request payloads stay unchanged.
+
+Cloneable bytes alone do not grant replay permission. Other writes, including
+append-style telemetry and network logs, are not replayed. Failures while reading
+a response body after headers are returned are not transparently retried.
+Caller-owned raw transport paths, including uncertain remote-control commands,
+keep their existing ownership. Fault diagnostics remain local INFO, one record
+per failed attempt plus bounded recovery metadata; healthy requests add no
+recovery log. Recovery reduces a reset's impact without identifying its sender.
+Reqwest/Hyper's existing safe protocol recovery remains unchanged; these limits
+count attempts owned by the shared client.
+
 ### API heartbeat delivery recovery
 
 The Runner sends routine API heartbeats every 10s through one single-flight
@@ -318,11 +352,12 @@ Stopping-mode heartbeats and unsupported construction, HTTP status, body,
 decode, protocol, local and unclassified failures retain immediate WARN
 visibility and do not advance an eligible episode.
 
-This policy does not replay an ambiguously completed request. The next scheduled
-heartbeat sends fresh Runner state using the existing cadence, request timeout,
-single-flight ownership and freshness boundaries. Recovery proves that later
-heartbeat delivery resumed; it does not identify the reset initiator or prove
-whether an unlogged failed request reached server processing.
+The shared transport can replay the same monotonic heartbeat snapshot once on a
+request-stage reset within the original timeout. Exhausted failures still enter
+this episode; the next scheduled heartbeat sends fresh Runner state using the
+existing cadence, single-flight ownership and freshness boundaries. Recovery
+proves that later heartbeat delivery resumed; it does not identify the reset
+initiator or prove whether an unlogged failed request reached server processing.
 
 Before closing [#35470](https://github.com/vm0-ai/okou/issues/35470), identify the
 deployed Runner release and commit and inspect a bounded real-traffic window for
@@ -334,7 +369,7 @@ require or authorize production fault injection.
 ### Builtin firewall catalog refresh recovery
 
 Startup still requires a successful catalog fetch, validation and private cache
-publication. Periodic refresh keeps its five-minute interval and ten-second
+publication. Periodic refresh keeps its five-minute interval and sixty-second
 request budget. A failed refresh never replaces the last published catalog.
 
 A typed send-stage timeout or TCP connection reset, or an already classified

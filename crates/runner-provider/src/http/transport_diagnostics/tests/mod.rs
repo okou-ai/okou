@@ -93,6 +93,93 @@ async fn reused_https_reset_before_headers_keeps_the_underlying_tcp_tuple() {
     reset_case(true).await;
 }
 
+#[tokio::test]
+async fn https_reset_recovery_keeps_each_timed_claim_attempt_observable() {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".into()]).unwrap();
+    let config = rustls::ServerConfig::builder_with_provider(Arc::new(
+        rustls::crypto::aws_lc_rs::default_provider(),
+    ))
+    .with_safe_default_protocol_versions()
+    .unwrap()
+    .with_no_client_auth()
+    .with_single_cert(
+        vec![cert.cert.der().clone()],
+        rustls::pki_types::PrivatePkcs8KeyDer::from(cert.signing_key.serialize_der()).into(),
+    )
+    .unwrap();
+    let peer = tokio::spawn(async move {
+        let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
+        let mut requests = Vec::new();
+        for attempt in 1..=2 {
+            let (tcp, _) = listener.accept().await.unwrap();
+            let mut tls = acceptor.accept(tcp).await.unwrap();
+            requests.push(request(&mut tls).await);
+            if attempt == 1 {
+                tls.reset();
+            } else {
+                tls.write_all(
+                    b"HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok",
+                )
+                .await
+                .unwrap();
+                tls.flush().await.unwrap();
+                // Send close_notify after the complete response body.
+                tls.shutdown().await.unwrap();
+            }
+        }
+        requests
+    });
+    let url = format!("https://localhost:{}", address.port());
+    let mut http = client(&url);
+    Arc::get_mut(&mut http.inner).unwrap().client = reqwest::Client::builder()
+        .timeout(super::super::DEFAULT_TIMEOUT)
+        .dns_resolver(super::super::TimedResolver::default())
+        .connector_layer(super::super::ConnectionTimingLayer)
+        .connector_layer(ConnectionDiagnosticsLayer)
+        .add_root_certificate(reqwest::Certificate::from_der(cert.cert.der()).unwrap())
+        .build()
+        .unwrap();
+    let captured = CapturedEvents::default();
+    let subscriber = tracing_subscriber::registry().with(captured.clone());
+    let attempt = http
+        .authenticated_request(
+            reqwest::Method::GET,
+            format!("{url}/claim"),
+            "private-token",
+        )
+        .prepare("claim")
+        .unwrap()
+        .send_observed_claim(runner_types::ids::RunId::new_v4(), Instant::now(), None)
+        .with_subscriber(subscriber)
+        .await;
+    assert_eq!(attempt.result.unwrap().text().await.unwrap(), "ok");
+    let requests = join_raw_http_task(peer, "TLS recovery peer").await;
+    assert_eq!(requests.len(), 2);
+    let events = captured.entries();
+    let summaries: Vec<_> = events
+        .iter()
+        .filter(|e| {
+            e.fields.get("message").map(String::as_str) == Some("claim transport completed")
+        })
+        .collect();
+    assert_eq!(summaries.len(), 2, "{events:#?}");
+    assert_ne!(
+        summaries[0].fields["client_request_id"],
+        summaries[1].fields["client_request_id"]
+    );
+    assert_eq!(summaries[0].fields["outcome"], "request_failed");
+    assert_eq!(summaries[1].fields["outcome"], "response_headers");
+    assert_eq!(
+        summaries[1].fields["client_request_id"],
+        attempt.context.client_request_id
+    );
+    for (request, summary) in requests.iter().zip(summaries) {
+        assert!(request.contains(&summary.fields["client_request_id"]));
+    }
+}
+
 async fn reset_case(tls: bool) {
     let captured = CapturedEvents::default();
     let (signal, mut events) = mpsc::channel(128);
