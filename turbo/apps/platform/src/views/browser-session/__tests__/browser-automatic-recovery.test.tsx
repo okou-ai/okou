@@ -189,7 +189,7 @@ async function replaceRecoveringEndpoint(attempts: 1 | 3, interval: number) {
   const received = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   let reads = 0;
-  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+  context.mocks.api(browserContract.get, async ({ respond }) => {
     reads++;
     if (reads === 2) {
       received.resolve();
@@ -197,8 +197,11 @@ async function replaceRecoveringEndpoint(attempts: 1 | 3, interval: number) {
     }
     return respond(200, {
       browser: viewer.session(),
-      cdpUrl: reads === 1 ? endpoint : nextEndpoint,
-      extension: TEST_BROWSER_EXTENSION,
+      viewer: {
+        browser: viewer.session(),
+        cdpUrl: reads === 1 ? endpoint : nextEndpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   await viewer.start();
@@ -236,6 +239,205 @@ async function replaceRecoveringEndpoint(attempts: 1 | 3, interval: number) {
     },
   };
 }
+
+async function revalidatePaintedRecovery(
+  attempts: 1 | 3,
+  interval: number,
+  outcome: "ready" | "terminal" | "absent" = "ready",
+) {
+  const viewer = mockViewer();
+  const received = context.mocks.deferred<void>();
+  const release = context.mocks.deferred<void>();
+  const notified = context.mocks.deferred<void>();
+  let reads = 0;
+  context.mocks.api(browserContract.get, async ({ respond }) => {
+    reads++;
+    if (reads === 2) {
+      received.resolve();
+      await release.promise;
+      if (outcome === "terminal") {
+        return respond(409, {
+          error: { code: "CONFLICT", message: "The assigned window was lost" },
+        });
+      }
+      if (outcome === "absent") {
+        return respond(200, {
+          browser: { ...viewer.session(), status: "suspended" },
+          viewer: null,
+        });
+      }
+    }
+    return respond(200, {
+      browser: viewer.session(),
+      viewer: {
+        browser: viewer.session(),
+        cdpUrl: endpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      },
+    });
+  });
+  await viewer.start();
+  await ready();
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  await failImageAttempts(viewer, attempts - 1);
+  const image = viewer.browser.holdTargetFrames("example-page");
+  viewer.advance(interval);
+  await image.received;
+  const canvas = screen.getByLabelText<HTMLCanvasElement>("Live browser view");
+  const rendering = canvas.getContext("2d")!;
+  const drawImage = rendering.drawImage.bind(rendering);
+  const notify = (jobs: number): void => {
+    if (context.signal.aborted) {
+      return;
+    }
+    if (jobs > 0) {
+      queueMicrotask(() => {
+        notify(jobs - 1);
+      });
+      return;
+    }
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+    notified.resolve();
+  };
+  vi.spyOn(rendering, "drawImage").mockImplementationOnce((picture, x, y) => {
+    drawImage(picture, x, y);
+    // Deliberately interleave the external notification with the successful
+    // native attempt's Promise jobs. This is not provider scheduling evidence.
+    notify(12);
+  });
+  await act(image.release);
+  await notified.promise;
+  await received.promise;
+  return {
+    viewer,
+    release: () => {
+      release.resolve();
+    },
+    reads: () => {
+      return reads;
+    },
+  };
+}
+
+test.each([1, 3] as const)(
+  "A successful image attempt %i stays pending through same-binding revalidation",
+  async (attempts) => {
+    const { viewer, release, reads } = await revalidatePaintedRecovery(
+      attempts,
+      attempts === 1 ? 1000 : 4000,
+    );
+    await pendingRecovery();
+    expect(viewer.sentry.reports).toHaveLength(0);
+    await act(release);
+    await ready();
+    await waitFor(() => {
+      expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    });
+    await insertText("input after successful attempt revalidation");
+    await waitFor(() => {
+      expect(viewer.browser.input.at(-1)).toMatchObject({
+        sessionId: viewer.browser.pageSession("example-page"),
+        params: { text: "input after successful attempt revalidation" },
+      });
+    });
+    act(() => {
+      viewer.browser.frame("!");
+    });
+    await pendingRecovery();
+    viewer.advance(1000);
+    await ready();
+    await waitFor(() => {
+      expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+    });
+    expect(reads()).toBe(2);
+    expect(viewer.browser.connections()).toBe(1);
+    expect(viewer.sentry.reports).toHaveLength(0);
+    expect(viewer.errorLogs()).toHaveLength(0);
+  },
+);
+
+test("A successful image attempt retains the original deadline during revalidation", async () => {
+  const { viewer, release, reads } = await revalidatePaintedRecovery(
+    3,
+    114_000,
+  );
+  viewer.advance(999);
+  await pendingRecovery();
+  expect(viewer.sentry.reports).toHaveLength(0);
+  viewer.advance(1);
+  await waitFor(() => {
+    expect(viewer.sentry.reports).toHaveLength(1);
+  });
+  expect(viewer.sentry.reports[0]).toMatchObject({
+    error: { kind: "frame" },
+    context: { contexts: { browser_recovery: { outcome: "exhausted" } } },
+  });
+  expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(release);
+  await ready();
+  await insertText("input after expired successful attempt");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      sessionId: viewer.browser.pageSession("example-page"),
+      params: { text: "input after expired successful attempt" },
+    });
+  });
+  expect(reads()).toBe(2);
+  expect(viewer.browser.connections()).toBe(1);
+  expect(viewer.sentry.reports).toHaveLength(1);
+});
+
+test("A successful image attempt preserves a current terminal descriptor error", async () => {
+  const { viewer, release } = await revalidatePaintedRecovery(
+    1,
+    1000,
+    "terminal",
+  );
+  await pendingRecovery();
+  await act(release);
+  await screen.findByText("Browser view unavailable");
+  await waitFor(() => {
+    expect(reconnect()).toBeEnabled();
+  });
+  // The rejected descriptor read also reaches the shared Promise reporting
+  // boundary. Preserve it and the coordinator's one final report in order.
+  expect(viewer.sentry.reports).toHaveLength(2);
+  expect(viewer.sentry.reports).toMatchObject([
+    {
+      error: { name: "ApiError", status: 409, code: "CONFLICT" },
+      context: { tags: { logger: "Promise" } },
+    },
+    {
+      error: { kind: "protocol" },
+      context: {
+        tags: { browser_event: "recovery-stopped", logger: "Browser" },
+        contexts: {
+          browser_recovery: { outcome: "terminal" },
+          browser_http: { status: 409, code: "CONFLICT" },
+        },
+      },
+    },
+  ]);
+  click(reconnect());
+  await ready();
+  expect(viewer.sentry.reports).toHaveLength(2);
+  expect(viewer.errorLogs()).toHaveLength(1);
+});
+
+test("Confirmed suspension after a successful image attempt leaves no pending viewer", async () => {
+  const { release } = await revalidatePaintedRecovery(1, 1000, "absent");
+  await pendingRecovery();
+  await act(release);
+  await screen.findByText("Start browser", { selector: "button" });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await waitFor(() => {
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  });
+});
 
 test.each([1, 3] as const)(
   "A same-window endpoint replacement preserves recovery attempt %i",
@@ -600,14 +802,17 @@ test("Recovery waits for a pending descriptor and selection without reporting it
   const received = context.mocks.deferred<void>();
   const release = context.mocks.deferred<void>();
   let reads = 0;
-  context.mocks.api(browserContract.viewerConnection, async ({ respond }) => {
+  context.mocks.api(browserContract.get, async ({ respond }) => {
     reads++;
     received.resolve();
     await release.promise;
     return respond(200, {
       browser: viewer.session(),
-      cdpUrl: endpoint,
-      extension: TEST_BROWSER_EXTENSION,
+      viewer: {
+        browser: viewer.session(),
+        cdpUrl: endpoint,
+        extension: TEST_BROWSER_EXTENSION,
+      },
     });
   });
   act(() => {

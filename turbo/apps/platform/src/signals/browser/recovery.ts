@@ -97,6 +97,7 @@ export interface RecoveryIntent {
 export interface RecoveryView {
   readonly enabled: boolean;
   readonly paused: boolean;
+  /** The current descriptor request has not been confirmed by the runtime. */
   readonly pending: boolean;
   readonly nodes: object | null;
   readonly binding: BrowserConnection | null;
@@ -115,6 +116,7 @@ interface RecoveryPorts {
   readonly notification$: State<(() => void) | null>;
   readonly notify$: Command<void, []>;
   readonly restoration$: State<RecoveryTarget | null>;
+  /** Attempt completion is not current readiness or window-absence proof. */
   readonly reconnect$: Command<Promise<void>, [AbortSignal]>;
   readonly retryImage$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -194,16 +196,32 @@ function failure(view: RecoveryView): Failure | null {
 type RecoveryProgress =
   | { readonly status: "ready" }
   | { readonly status: "pending" }
-  | { readonly status: "failed"; readonly failure: Failure };
+  | {
+      readonly status: "failed";
+      readonly error: ViewerError;
+      readonly mode: RecoveryMode | null;
+    };
 
 function recoveryProgress(view: RecoveryView): RecoveryProgress {
   if (view.usable) {
     return { status: "ready" };
   }
   const current = failure(view);
-  return current
-    ? { status: "failed", failure: current }
-    : { status: "pending" };
+  if (current) {
+    return { status: "failed", error: current.error, mode: current.mode };
+  }
+  // Runtime confirms a resolved missing descriptor separately from a pending
+  // revalidation. Native-attempt completion alone proves neither fact.
+  if (!view.pending && view.binding === null) {
+    return {
+      status: "failed",
+      error: diagnostic(
+        new CdpFault("scope", "The assigned browser window is unavailable."),
+      ),
+      mode: null,
+    };
+  }
+  return { status: "pending" };
 }
 
 function manualRecoveryMode(
@@ -218,19 +236,20 @@ function recoveryMode(
   progress: RecoveryProgress,
   manualMode: RecoveryMode | null,
 ): RecoveryMode | null {
-  return (
-    manualMode ?? (progress.status === "failed" ? progress.failure.mode : null)
-  );
+  return manualMode ?? (progress.status === "failed" ? progress.mode : null);
 }
 
 function attemptError(
-  error: unknown,
-  current: Failure,
+  result: PromiseSettledResult<void>,
+  current: Extract<RecoveryProgress, { status: "failed" }>,
   pending: boolean,
 ): ViewerError {
-  return pending || isAbortError(error) || current.mode === null
+  return result.status === "fulfilled" ||
+    pending ||
+    isAbortError(result.reason) ||
+    current.mode === null
     ? current.error
-    : diagnostic(error);
+    : diagnostic(result.reason);
 }
 
 function sameFailureOwner(
@@ -406,7 +425,7 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
           return;
         }
         if (progress.status === "failed") {
-          lastError = progress.failure.error;
+          lastError = progress.error;
         }
         const mode = recoveryMode(progress, manualMode);
         if (!mode) {
@@ -418,26 +437,10 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
         ]);
         signal.throwIfAborted();
         set(assertCurrent$, operation, signal);
-        if (get(ports.view$).usable) {
-          finishRecovery(completion, { status: "restored" });
-          return;
-        }
-        if (result.status === "fulfilled") {
-          finishRecovery(completion, {
-            status: "terminal",
-            error: diagnostic(
-              new CdpFault(
-                "scope",
-                "The assigned browser window is unavailable.",
-              ),
-            ),
-          });
-          return;
-        }
         let afterAttempt = recoveryProgress(get(ports.view$));
         const pendingAfterAttempt = afterAttempt.status === "pending";
-        // Retiring one native attempt does not spend its still-current logical
-        // episode while a compatible successor is becoming ready.
+        // Success or cancellation ends one native attempt, not a still-current
+        // logical episode whose compatible resources are becoming ready.
         while (afterAttempt.status === "pending") {
           await set(waitForProgress$, signal);
           set(assertCurrent$, operation, signal);
@@ -447,9 +450,8 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
           finishRecovery(completion, { status: "restored" });
           return;
         }
-        const stopped = afterAttempt.failure;
-        lastError = attemptError(result.reason, stopped, pendingAfterAttempt);
-        if (!lastError.transient || stopped.mode === null) {
+        lastError = attemptError(result, afterAttempt, pendingAfterAttempt);
+        if (!lastError.transient || afterAttempt.mode === null) {
           finishRecovery(completion, { status: "terminal", error: lastError });
           return;
         }
