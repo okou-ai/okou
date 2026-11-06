@@ -1,3 +1,4 @@
+use cli_test_support::json_fixture::parse_json_lines;
 use std::time::Duration;
 
 use httpmock::Method::POST;
@@ -160,11 +161,9 @@ async fn only_the_first_published_chunk_records_first_output_timing() {
     .await;
 
     endpoint.assert_calls(2);
-    let ops: Vec<serde_json::Value> = std::fs::read_to_string(&telemetry_path)
-        .expect("sandbox ops")
-        .lines()
-        .map(|line| serde_json::from_str(line).expect("sandbox op JSON"))
-        .collect();
+    let ops: Vec<serde_json::Value> =
+        parse_json_lines(&std::fs::read_to_string(&telemetry_path).expect("sandbox ops"))
+            .expect("sandbox op JSON");
     let named = |name: &str| {
         ops.iter()
             .filter(|op| op["action_type"] == name)

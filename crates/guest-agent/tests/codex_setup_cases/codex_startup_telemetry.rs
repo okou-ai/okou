@@ -1,6 +1,7 @@
 //! Entry-point coverage for Codex startup telemetry.
 
 use crate::common;
+use cli_test_support::json_fixture::parse_json_lines;
 
 use serde_json::{Value, json};
 use shell_quote::quote_shell_arg;
@@ -222,10 +223,7 @@ fn write_jsonl_executable(path: &Path, events: &[Value], read_stdin: bool) -> Te
 fn read_sandbox_operations(runtime_dir: &Path) -> Result<Vec<Value>, TestError> {
     let path = guest_contracts::runtime_paths::sandbox_ops_log_file(runtime_dir);
     let contents = std::fs::read_to_string(path)?;
-    contents
-        .lines()
-        .map(|line| serde_json::from_str(line).map_err(Into::into))
-        .collect()
+    parse_json_lines(&contents).map_err(Into::into)
 }
 
 fn assert_one_codex_startup(operations: &[Value], expected_success: bool) -> TestResult {

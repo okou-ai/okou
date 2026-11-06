@@ -1,3 +1,4 @@
+use cli_test_support::json_fixture::parse_json_lines;
 use std::future::poll_fn;
 use std::os::unix::fs::{PermissionsExt, symlink};
 use std::path::Path;
@@ -16,11 +17,7 @@ fn mode(path: &Path) -> u32 {
 }
 
 fn read_json_lines(path: &Path) -> Vec<serde_json::Value> {
-    std::fs::read_to_string(path)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect()
+    parse_json_lines(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
 async fn source_ip_registered(manager: &NetworkLogManager, source_ip: &str) -> bool {

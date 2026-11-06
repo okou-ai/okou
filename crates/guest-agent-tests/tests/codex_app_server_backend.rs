@@ -4,6 +4,7 @@
 //! and guest runtime path overrides used during setup.
 
 mod codex_app_server_startup_policy;
+use cli_test_support::json_fixture::parse_json_lines;
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
@@ -215,18 +216,14 @@ fn read_sandbox_ops(
     paths: &guest_agent::paths::GuestPaths,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
     let log = std::fs::read_to_string(paths.sandbox_ops_file())?;
-    log.lines()
-        .map(|line| serde_json::from_str(line).map_err(Into::into))
-        .collect()
+    parse_json_lines(&log).map_err(Into::into)
 }
 
 fn read_agent_log_events(
     paths: &guest_agent::paths::GuestPaths,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
     let log = std::fs::read_to_string(paths.agent_log_file())?;
-    log.lines()
-        .map(|line| serde_json::from_str(line).map_err(Into::into))
-        .collect()
+    parse_json_lines(&log).map_err(Into::into)
 }
 
 fn read_codex_session_history_events(
@@ -242,10 +239,7 @@ fn read_codex_session_history_events(
     .ok_or("missing Codex session history")?;
     let history = std::fs::read(history_path)?;
     let history = String::from_utf8(history)?;
-    history
-        .lines()
-        .map(|line| serde_json::from_str(line).map_err(Into::into))
-        .collect()
+    parse_json_lines(&history).map_err(Into::into)
 }
 
 fn find_file(

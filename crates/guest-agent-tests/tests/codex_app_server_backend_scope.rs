@@ -3,6 +3,7 @@
 //! This test lives in its own binary to isolate process env, working directory,
 //! and guest runtime path overrides used during setup.
 
+use cli_test_support::json_fixture::parse_json_lines;
 use guest_agent_tests as common;
 
 use guest_agent::masker::SecretMasker;
@@ -67,7 +68,5 @@ fn read_agent_log_events(
     paths: &guest_agent::paths::GuestPaths,
 ) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
     let log = std::fs::read_to_string(paths.agent_log_file())?;
-    log.lines()
-        .map(|line| serde_json::from_str(line).map_err(Into::into))
-        .collect()
+    parse_json_lines(&log).map_err(Into::into)
 }

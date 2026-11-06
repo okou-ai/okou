@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_support::SandboxOpsOverrideGuard;
+use cli_test_support::json_fixture::parse_json_lines;
 use std::collections::HashSet;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Duration;
@@ -48,11 +49,8 @@ fn startup_resource_is_captured_with_the_sink_and_cleared_on_replacement() {
     set_sandbox_ops_log_file(&path);
     record_sandbox_op("api_to_agent_start", Duration::ZERO, true, None);
 
-    let records: Vec<serde_json::Value> = std::fs::read_to_string(&path)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
+    let records: Vec<serde_json::Value> =
+        parse_json_lines(&std::fs::read_to_string(&path).unwrap()).unwrap();
     let paths: Vec<_> = records
         .iter()
         .map(|record| {
@@ -220,10 +218,7 @@ fn record_sandbox_op_reuses_file_until_path_is_reinstalled() {
 
     assert!(!log_path.exists());
     let moved_content = std::fs::read_to_string(&moved_path).unwrap();
-    let moved_entries: Vec<serde_json::Value> = moved_content
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
+    let moved_entries: Vec<serde_json::Value> = parse_json_lines(&moved_content).unwrap();
     assert_eq!(moved_entries.len(), 2);
     assert_eq!(moved_entries[0]["action_type"], "before_move");
     assert_eq!(moved_entries[1]["action_type"], "retained_file");
@@ -232,10 +227,7 @@ fn record_sandbox_op_reuses_file_until_path_is_reinstalled() {
     record_sandbox_op("reopened_path", Duration::from_millis(3), true, None);
 
     let reopened_content = std::fs::read_to_string(&log_path).unwrap();
-    let reopened_entries: Vec<serde_json::Value> = reopened_content
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
+    let reopened_entries: Vec<serde_json::Value> = parse_json_lines(&reopened_content).unwrap();
     assert_eq!(reopened_entries.len(), 1);
     assert_eq!(reopened_entries[0]["action_type"], "reopened_path");
 }
@@ -254,10 +246,7 @@ fn record_sandbox_op_retries_open_after_failure() {
     record_sandbox_op("open_retried", Duration::from_millis(2), true, None);
 
     let content = std::fs::read_to_string(&log_path).unwrap();
-    let entries: Vec<serde_json::Value> = content
-        .lines()
-        .map(|line| serde_json::from_str(line).unwrap())
-        .collect();
+    let entries: Vec<serde_json::Value> = parse_json_lines(&content).unwrap();
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["action_type"], "open_retried");
 }

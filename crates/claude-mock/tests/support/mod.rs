@@ -1,5 +1,6 @@
 //! Shared harness for claude-mock integration tests.
 
+use cli_test_support::json_fixture::parse_json_lines;
 #[cfg(target_os = "linux")]
 use std::fs;
 use std::io::{BufRead, BufReader, Read};
@@ -124,10 +125,7 @@ pub fn expected_history_path(home: &std::path::Path, session_id: &str) -> std::p
 
 pub fn parse_jsonl(output: &[u8]) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
     let stdout = String::from_utf8(output.to_vec())?;
-    stdout
-        .lines()
-        .map(|line| Ok(serde_json::from_str::<Value>(line)?))
-        .collect()
+    parse_json_lines(&stdout).map_err(Into::into)
 }
 
 pub fn init_session_id(events: &[Value]) -> Result<String, Box<dyn std::error::Error>> {
