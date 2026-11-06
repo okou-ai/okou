@@ -134,7 +134,9 @@ reject EVENT_NAME=pull_request CHECKOUT_REF=refs/heads/ios-pr
 reject EVENT_NAME=unexpected
 
 gate() {
-  EVENT_NAME=pull_request DETECT_RESULT=$1 SCRIPT_CHECKS_RESULT=${5-success} IOS_NEEDED=$2 BUILD_RESULT=$3 PACKAGES_RESULT=${4-$3} ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
+  local lint_result=success
+  if [[ "$2" == false ]]; then lint_result=skipped; fi
+  EVENT_NAME=pull_request DETECT_RESULT=$1 SCRIPT_CHECKS_RESULT=${5-success} LINT_RESULT=${6-$lint_result} IOS_NEEDED=$2 BUILD_RESULT=$3 PACKAGES_RESULT=${4-$3} ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 }
 gate success true success
 gate success false skipped
@@ -166,6 +168,17 @@ if gate success "" skipped > "$test_root/rejected.log" 2>&1; then
   echo "Gate accepted a missing change decision" >&2
   exit 1
 fi
+for lint_result in failure cancelled skipped ''; do
+  if gate success true success success success "$lint_result" > "$test_root/rejected.log" 2>&1; then
+    echo "Gate accepted failed/missing required lint $lint_result" >&2
+    exit 1
+  fi
+done
+if gate success false skipped skipped success success > "$test_root/rejected.log" 2>&1; then
+  echo 'Gate accepted lint running without an iOS change decision' >&2
+  exit 1
+fi
+export LINT_RESULT=success
 EVENT_NAME=merge_group DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=success BUILD_RESULT=success ARCHIVE_RESULT=success PUBLISH_RESULT=success bash "$script_dir/ci-gate.sh"
 EVENT_NAME=push DETECT_RESULT=success SCRIPT_CHECKS_RESULT=success IOS_NEEDED=true PACKAGES_RESULT=skipped BUILD_RESULT=skipped ARCHIVE_RESULT=skipped PUBLISH_RESULT=skipped bash "$script_dir/ci-gate.sh"
 for result in failure cancelled skipped; do
