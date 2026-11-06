@@ -110,10 +110,32 @@ async fn failed_locked_registry_publication_cleans_staging_and_unlocks() {
     std::fs::remove_file(harness.registry_path()).unwrap();
     std::fs::create_dir(harness.registry_path()).unwrap();
 
-    let error =
-        write_registry_with_reserve(harness.registry_path(), &registry, 0, transaction._guard)
-            .await
-            .unwrap_err();
+    let mut observations = super::registration_observation::RegistrationObservations::default();
+    let error = write_registry_with_reserve_observed(
+        harness.registry_path(),
+        &registry,
+        0,
+        transaction._guard,
+        &mut observations,
+    )
+    .await
+    .unwrap_err();
+
+    use ProxyRegistrationStage::*;
+    assert_eq!(
+        observations
+            .stages
+            .iter()
+            .map(|&(stage, _, success)| (stage, success))
+            .collect::<Vec<_>>(),
+        vec![
+            (Serialize, true),
+            (Digest, true),
+            (PublishQueue, true),
+            (PublishWrite, false),
+            (Publish, false)
+        ]
+    );
 
     assert!(error.to_string().contains("rename state file"), "{error}");
     let released = wait_for_publication_lock(&harness.handle.lock_path).await;

@@ -22,6 +22,7 @@
 
 use std::fs::File;
 use std::path::{Path, PathBuf};
+use std::time::{Duration, Instant};
 
 use nix::fcntl::Flock;
 use tokio::task::JoinHandle;
@@ -248,22 +249,39 @@ pub fn write_private_atomic_blocking(path: &Path, content: &[u8]) -> HostResult<
         .map_err(|e| HostError::Internal(e.to_string()))
 }
 
+/// In-memory observations from a single lock-owning atomic write worker.
+pub struct LockedPrivateAtomicWriteReport {
+    pub queue_wait: Duration,
+    pub write_duration: Duration,
+    pub result: HostResult<()>,
+}
+
 /// Submit a private atomic write with its caller-supplied write authority.
 ///
 /// Call from a Tokio runtime with the lock that authorizes `path`. The blocking
 /// worker owns that exact guard through publication and staging cleanup;
 /// dropping the returned observer detaches the work without releasing its lock.
 /// The join result stays separate from the native write result so callers can
-/// retain their domain-specific task-failure diagnostics. Filesystem behavior
+/// retain their domain-specific task-failure diagnostics. Queue time ends when
+/// this worker starts; write time includes error cleanup, but not lock release
+/// or scheduling the join observer. Filesystem behavior
 /// and the lack of an fsync guarantee match [`write_private_atomic_blocking`].
 pub fn spawn_locked_private_atomic_write(
     path: PathBuf,
     content: Vec<u8>,
     guard: Flock<File>,
-) -> JoinHandle<HostResult<()>> {
+) -> JoinHandle<LockedPrivateAtomicWriteReport> {
+    let queued_at = Instant::now();
     tokio::task::spawn_blocking(move || {
         let _guard = guard;
-        write_private_atomic_blocking(&path, &content)
+        let started = Instant::now();
+        let queue_wait = started.duration_since(queued_at);
+        let result = write_private_atomic_blocking(&path, &content);
+        LockedPrivateAtomicWriteReport {
+            queue_wait,
+            write_duration: started.elapsed(),
+            result,
+        }
     })
 }
 
