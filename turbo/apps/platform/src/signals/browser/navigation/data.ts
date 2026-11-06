@@ -173,7 +173,8 @@ export function createNavigationData(
       signal.throwIfAborted();
       const attachment = { ended: createDeferredPromise<never>(signal) };
       set(graph.attachment$, attachment);
-      while (true) {
+      let observed = false;
+      while (!observed) {
         const revision = get(graph.initialRevision$);
         const tree = await client.request(
           "Page.getFrameTree",
@@ -193,7 +194,7 @@ export function createNavigationData(
           continue;
         }
         set(observe$, tree.frameTree.frame);
-        return;
+        observed = true;
       }
     },
   );
