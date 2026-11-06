@@ -27,6 +27,7 @@ export enum FeatureSwitchKey {
   ZoomConnector = "zoomConnector",
   RealAgentInPreview = "_realAgentInPreview",
   ArtifactSidebarPreview = "artifactSidebarPreview",
+  ArtifactPreviewToolbar = "artifactPreviewToolbar",
   SidebarSubscriptionUsage = "sidebarSubscriptionUsage",
   PwaNavigation = "pwaNavigation",
   FeishuIntegration = "_feishuIntegration",

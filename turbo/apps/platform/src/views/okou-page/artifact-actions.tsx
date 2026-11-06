@@ -15,11 +15,12 @@ import {
   hostedSiteUrlChanges$,
 } from "../../signals/hosted-site-url-changes.ts";
 import { isHostedSiteUrl } from "../../signals/chat-page/parse-body-blocks.ts";
-import type { ReactElement, ReactNode } from "react";
+import type { ReactElement, ReactNode, Ref } from "react";
 import {
   ChevronLeft,
   ChevronRight,
   Download,
+  Ellipsis,
   Loader2,
   RotateCcw,
   Share2,
@@ -163,6 +164,7 @@ export function ArtifactShareButton({
   ariaLabel,
   className,
   iconSize = 16,
+  reserveSpace = false,
   url,
 }: {
   artifactShareIdentity$?: AttachmentPreviewSignals["artifactShareIdentity$"];
@@ -171,6 +173,7 @@ export function ArtifactShareButton({
   ariaLabel?: string;
   className?: string;
   iconSize?: number;
+  reserveSpace?: boolean;
   url: string;
 }) {
   const { t } = useTranslation();
@@ -192,6 +195,17 @@ export function ArtifactShareButton({
     );
   }
   if (!shareUrl) {
+    if (reserveSpace) {
+      return (
+        <span className="inline-flex h-8 w-8 shrink-0">
+          {shareUrl === undefined && (
+            <Button variant="quiet" size="icon-sm" disabled aria-label={label}>
+              <Share2 size={iconSize} />
+            </Button>
+          )}
+        </span>
+      );
+    }
     // Private artifacts have no public address. Keep the action hidden while
     // resolving, and until explicit publication provides a share URL.
     return null;
@@ -705,16 +719,19 @@ function GoogleDriveMenuItem({
   );
 }
 
-type ArtifactDownloadMenuProps = {
+export type ArtifactDownloadMenuProps = {
   align?: "center" | "end" | "start";
   ariaLabel?: string;
   artifactKind?: ChatThreadArtifactFile["artifactKind"];
   className?: string;
+  children?: ReactNode;
   filename: string;
   iconSize?: number;
   showGoogleDriveAction?: boolean;
   syncTarget?: ArtifactDownloadSyncTarget;
   surface?: "dialog" | "page";
+  trigger?: "download" | "more";
+  triggerRef?: Ref<HTMLButtonElement>;
   url: string;
 };
 
@@ -723,20 +740,27 @@ export function ArtifactDownloadMenu({
   ariaLabel,
   artifactKind,
   className,
+  children,
   filename,
   iconSize = 16,
   showGoogleDriveAction = true,
   syncTarget,
   surface = "page",
+  trigger = "download",
+  triggerRef,
   url: sourceUrl,
 }: ArtifactDownloadMenuProps) {
   const { t } = useTranslation();
   const url = currentHostedSiteUrl(sourceUrl, useGet(hostedSiteUrlChanges$));
   const label =
     ariaLabel ??
-    t(($) => {
-      return $.artifacts.actions.downloadOptions;
-    });
+    (trigger === "more"
+      ? t(($) => {
+          return $.artifacts.actions.more;
+        })
+      : t(($) => {
+          return $.artifacts.actions.downloadOptions;
+        }));
   const [downloadLoadable, downloadAttachment] =
     useLoadableSet(downloadAttachment$);
   const pageSignal = useGet(pageSignal$);
@@ -749,9 +773,12 @@ export function ArtifactDownloadMenu({
     <DropdownMenu>
       <ArtifactActionTooltip label={label}>
         <DropdownMenuTrigger
+          ref={triggerRef}
           aria-label={label}
-          aria-busy={downloadPending ? "true" : undefined}
-          disabled={downloadPending}
+          aria-busy={
+            trigger === "download" && downloadPending ? "true" : undefined
+          }
+          disabled={trigger === "download" && downloadPending}
           render={
             <Button
               type="button"
@@ -764,7 +791,9 @@ export function ArtifactDownloadMenu({
             />
           }
         >
-          {downloadPending ? (
+          {trigger === "more" ? (
+            <Ellipsis size={iconSize} />
+          ) : downloadPending ? (
             <Loader2 size={iconSize} className="animate-spin" />
           ) : (
             <Download size={iconSize} />
@@ -773,6 +802,7 @@ export function ArtifactDownloadMenu({
       </ArtifactActionTooltip>
       <DropdownMenuContent align={align} sideOffset={6} className="w-56">
         <DropdownMenuItem
+          disabled={downloadPending}
           onClick={() => {
             detach(
               downloadAttachment({ filename: downloadName, url }, pageSignal),
@@ -781,7 +811,11 @@ export function ArtifactDownloadMenu({
             );
           }}
         >
-          <Download size={14} />
+          {downloadPending ? (
+            <Loader2 size={14} className="animate-spin" />
+          ) : (
+            <Download size={14} />
+          )}
           {t(($) => {
             return $.artifacts.actions.download;
           })}
@@ -806,6 +840,7 @@ export function ArtifactDownloadMenu({
             )}
           </>
         )}
+        {children}
       </DropdownMenuContent>
     </DropdownMenu>
   );

@@ -1,4 +1,9 @@
-import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
+import {
+  ArtifactDeleteButton,
+  ArtifactPreviewMoreMenu,
+} from "./artifact-deletion.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   ArtifactPreviewCloseButton,
   ArtifactPreviewDialogFrame,
@@ -1386,6 +1391,8 @@ function ArtifactPreviewDialogActions({
   );
   const shareUrl = useLastResolved(preview.shareUrl$);
   const showShare = preview.shareAvailable !== false;
+  const refinedToolbar =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
   const showSplitView = preview.splitViewAvailable !== false;
   const closeLightboxImmediately = useSet(closeLightboxImmediately$);
   const annotationTarget =
@@ -1422,6 +1429,7 @@ function ArtifactPreviewDialogActions({
           artifactShareIdentity$={preview.artifactShareIdentity$}
           surface="dialog"
           shareUrl={shareUrl}
+          reserveSpace={refinedToolbar}
           ariaLabel={t(($) => {
             return $.artifacts.actions.share;
           })}
@@ -1429,23 +1437,39 @@ function ArtifactPreviewDialogActions({
           url={preview.url}
         />
       )}
-      <ArtifactDownloadMenu
-        surface="dialog"
-        key={`${preview.url}:${artifact?.filename ?? artifactDialogFilename(preview)}`}
-        ariaLabel={t(($) => {
-          return $.artifacts.actions.downloadOptions;
-        })}
-        artifactKind={artifact?.artifactKind}
-        filename={artifact?.filename ?? artifactDialogFilename(preview)}
-        iconSize={18}
-        syncTarget={artifactDialogSyncTarget(artifact)}
-        url={preview.url}
-      />
-      <ArtifactDeleteButton
-        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-        origin={{ kind: "preview-dialog" }}
-        iconSize={18}
-      />
+      {refinedToolbar ? (
+        <ArtifactPreviewMoreMenu
+          key={preview.url}
+          surface="dialog"
+          artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+          origin={{ kind: "preview-dialog" }}
+          artifactKind={artifact?.artifactKind}
+          filename={artifact?.filename ?? artifactDialogFilename(preview)}
+          iconSize={18}
+          syncTarget={artifactDialogSyncTarget(artifact)}
+          url={preview.url}
+        />
+      ) : (
+        <>
+          <ArtifactDownloadMenu
+            surface="dialog"
+            key={`${preview.url}:${artifact?.filename ?? artifactDialogFilename(preview)}`}
+            ariaLabel={t(($) => {
+              return $.artifacts.actions.downloadOptions;
+            })}
+            artifactKind={artifact?.artifactKind}
+            filename={artifact?.filename ?? artifactDialogFilename(preview)}
+            iconSize={18}
+            syncTarget={artifactDialogSyncTarget(artifact)}
+            url={preview.url}
+          />
+          <ArtifactDeleteButton
+            artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+            origin={{ kind: "preview-dialog" }}
+            iconSize={18}
+          />
+        </>
+      )}
       <ArtifactActionSeparator />
       {showSplitView && (
         <ArtifactDialogSplitViewButton onClick={openInSplitView} />

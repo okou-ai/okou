@@ -428,19 +428,21 @@ function artifactPreview(): HTMLElement {
 
 async function openDriveArtifactDownloadMenu(
   filename = "Drive report.pdf",
+  triggerLabel = "Download artifact",
 ): Promise<void> {
   await openResourceArtifact(filename);
   await waitFor(() => {
-    expect(buttonNamed("Download artifact", artifactPreview())).toBeEnabled();
+    expect(buttonNamed(triggerLabel, artifactPreview())).toBeEnabled();
   });
-  click(buttonNamed("Download artifact", artifactPreview()));
+  click(buttonNamed(triggerLabel, artifactPreview()));
 }
 
 async function openDriveArtifactMenu(
   actionName = "Connect Google Drive",
   filename = "Drive report.pdf",
+  triggerLabel = "Download artifact",
 ): Promise<void> {
-  await openDriveArtifactDownloadMenu(filename);
+  await openDriveArtifactDownloadMenu(filename, triggerLabel);
   await waitFor(() => {
     expect(roleItemNamed("menuitem", actionName)).not.toHaveAttribute(
       "aria-disabled",
@@ -506,14 +508,26 @@ test.each([
   {
     action: "Upload to Google Drive",
     url: "https://drive.google.test/file/d/original-report/view?usp=drivesdk",
+    refined: false,
   },
   {
     action: "Upload to Google Docs",
     url: "https://docs.google.test/document/d/converted-report/edit",
+    refined: false,
+  },
+  {
+    action: "Upload to Google Drive",
+    url: "https://drive.google.test/file/d/original-report/view?usp=drivesdk",
+    refined: true,
+  },
+  {
+    action: "Upload to Google Docs",
+    url: "https://docs.google.test/document/d/converted-report/edit",
+    refined: true,
   },
 ])(
-  "Offer a link to the uploaded file after $action",
-  async ({ action, url }) => {
+  "Offer a link to the uploaded file after $action with refined toolbar $refined",
+  async ({ action, url, refined }) => {
     mockWideScreen();
     installDriveMocks(context, "connected", {
       filename: "report.txt",
@@ -525,9 +539,14 @@ test.each([
       context,
       path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
       host: "app.okou.ai",
+      featureSwitches: { [FeatureSwitchKey.ArtifactPreviewToolbar]: refined },
     });
 
-    await openDriveArtifactMenu(action, "report.txt");
+    await openDriveArtifactMenu(
+      action,
+      "report.txt",
+      refined ? "More artifact actions" : "Download artifact",
+    );
     click(roleItemNamed("menuitem", action));
 
     const link = await findNamedLink("View it");

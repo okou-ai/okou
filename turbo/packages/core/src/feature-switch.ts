@@ -121,6 +121,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
   },
+  [FeatureSwitchKey.ArtifactPreviewToolbar]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact preview toolbar",
+    description:
+      "Keep sharing and view controls visible while grouping downloads, Google Drive, and deletion in a stable More menu.",
+    enabled: false,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",

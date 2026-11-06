@@ -215,6 +215,21 @@ function createPreviewArtifactDeletion(
 }
 
 function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
+  const menuTrigger$ = state<HTMLButtonElement | null>(null);
+  const menuTriggerRef$ = onRef(
+    command(({ get, set }, element: HTMLButtonElement, signal: AbortSignal) => {
+      set(menuTrigger$, element);
+      signal.addEventListener(
+        "abort",
+        () => {
+          if (get(menuTrigger$) === element) {
+            set(menuTrigger$, null);
+          }
+        },
+        { once: true },
+      );
+    }),
+  );
   const identity$ = state<{
     readonly artifactId: string;
     readonly sourceKind?: ArtifactDeletionSourceKind;
@@ -260,7 +275,17 @@ function createPreviewDeletionScope(surface: "dialog" | "sidebar" | "page") {
       },
     ),
   );
-  return { session$, mountRef$ };
+  const requestFromMenu$ = command(
+    async ({ get, set }, signal: AbortSignal) => {
+      const session = get(session$);
+      const trigger = get(menuTrigger$);
+      if (session && trigger) {
+        // The menu item unmounts on selection; return to the persistent trigger.
+        await set(session.request$, trigger, signal);
+      }
+    },
+  );
+  return { session$, mountRef$, menuTriggerRef$, requestFromMenu$ };
 }
 
 export type PreviewArtifactDeletion = ReturnType<
