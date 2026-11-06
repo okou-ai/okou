@@ -223,12 +223,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
-    // The header and composer insets are safe-area insets (see updateContentInsets), so the
-    // native edge effects cover the whole bar instead of only the status bar band. The header
-    // has only glass controls and no title, so the soft blur is enough at both edges.
+    // The header and composer insets are safe-area insets (see updateContentInsets). Blur
+    // content beneath the header, but let it show through beneath the composer's own glass.
     collection.contentInsetAdjustmentBehavior = .always
     collection.topEdgeEffect.style = .soft
-    collection.bottomEdgeEffect.style = .soft
+    collection.bottomEdgeEffect.isHidden = true
     collection.keyboardDismissMode = .interactive
     collection.selfSizingInvalidation = .disabled
     collection.register(MessageSelectionCell.self, forCellWithReuseIdentifier: "message")
