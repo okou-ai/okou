@@ -1,5 +1,6 @@
 use super::*;
 use api_contracts::generated::types::runners::storage::ArtifactEntryMissingRootPolicy;
+use cli_test_support::json_fixture::parse_json_lines;
 use httpmock::prelude::*;
 use serde_json::json;
 #[cfg(target_os = "linux")]
@@ -45,11 +46,8 @@ fn assert_artifact_hash_failure(telemetry_path: &std::path::Path, expected_error
     let expected_error = expected_error
         .strip_prefix("finalization: ")
         .unwrap_or(expected_error);
-    let telemetry_entries = std::fs::read_to_string(telemetry_path)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let telemetry_entries =
+        parse_json_lines(&std::fs::read_to_string(telemetry_path).unwrap()).unwrap();
     let matching_failure = telemetry_entries.iter().any(|entry| {
         entry.get("action_type").and_then(serde_json::Value::as_str)
             == Some("artifact_hash_compute")

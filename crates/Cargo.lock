@@ -7,6 +7,7 @@ name = "ably-subscriber"
 version = "2.0.6"
 dependencies = [
  "base64 0.23.1",
+ "cli-test-support",
  "futures-util",
  "hmac 0.13.0",
  "httpmock",
@@ -1066,6 +1067,7 @@ name = "claude-mock"
 version = "0.22.89"
 dependencies = [
  "api-contracts",
+ "cli-test-support",
  "guest-contracts",
  "libc",
  "serde_json",
@@ -2220,6 +2222,7 @@ name = "guest-telemetry"
 version = "0.3.187"
 dependencies = [
  "chrono",
+ "cli-test-support",
  "guest-contracts",
  "libc",
  "serde",
@@ -4451,6 +4454,7 @@ dependencies = [
  "api-contracts",
  "async-trait",
  "chrono",
+ "cli-test-support",
  "flate2",
  "futures-util",
  "guest-contracts",

@@ -42,6 +42,7 @@ pub use cli_test_support::{
     readiness::{unique_temp_path, wait_for_file_contains, wait_for_path},
 };
 
+use cli_test_support::json_fixture::parse_json_lines;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::future::Future;
@@ -496,10 +497,7 @@ pub fn read_codex_session_history_events_for_runtime(
         .into());
     };
     let history = std::fs::read_to_string(history_path)?;
-    history
-        .lines()
-        .map(|line| serde_json::from_str(line).map_err(Into::into))
-        .collect()
+    parse_json_lines(&history).map_err(Into::into)
 }
 
 pub fn expected_codex_turn_usage() -> Value {

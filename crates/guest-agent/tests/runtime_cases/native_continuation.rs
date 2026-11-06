@@ -4,6 +4,7 @@
 #![cfg(target_os = "linux")]
 
 use crate::common;
+use cli_test_support::json_fixture::parse_json_lines;
 
 use guest_agent::env::{GuestConfig, GuestConfigRaw};
 use guest_agent::http::HttpClient;
@@ -247,10 +248,7 @@ async fn codex_continues_a_first_turn_from_the_same_retained_home() -> TestResul
         user_env,
     )?;
     execute(&second).await?;
-    let messages = std::fs::read_to_string(capture)?
-        .lines()
-        .map(serde_json::from_str::<Value>)
-        .collect::<Result<Vec<_>, _>>()?;
+    let messages = parse_json_lines(&std::fs::read_to_string(capture)?)?;
     let resumed = messages
         .iter()
         .find(|message| message["method"] == "thread/resume")
@@ -350,10 +348,7 @@ async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history()
                 },
                 "an unrelated resume RPC failure must remain visible"
             );
-            let requests = std::fs::read_to_string(&capture)?
-                .lines()
-                .map(serde_json::from_str::<Value>)
-                .collect::<Result<Vec<_>, _>>()?;
+            let requests = parse_json_lines(&std::fs::read_to_string(&capture)?)?;
             assert!(
                 !requests
                     .iter()
@@ -362,10 +357,7 @@ async fn codex_resumes_exact_rollout_and_recovers_missing_or_ambiguous_history()
             continue;
         }
         execute(&run).await?;
-        let messages = std::fs::read_to_string(capture)?
-            .lines()
-            .map(serde_json::from_str::<Value>)
-            .collect::<Result<Vec<_>, _>>()?;
+        let messages = parse_json_lines(&std::fs::read_to_string(capture)?)?;
         let thread_request = messages
             .iter()
             .rev()

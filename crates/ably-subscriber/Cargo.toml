@@ -19,6 +19,7 @@ tracing = { workspace = true, features = ["attributes", "std"] }
 url = { workspace = true, features = ["std"] }
 
 [dev-dependencies]
+cli-test-support = { workspace = true, features = ["test-support"] }
 hmac = { workspace = true }
 httpmock = { workspace = true, features = ["cookies"] }
 proptest = { workspace = true, features = ["std"] }

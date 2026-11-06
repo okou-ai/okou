@@ -1,4 +1,5 @@
 use super::*;
+use cli_test_support::json_fixture::parse_json_lines;
 use httpmock::prelude::*;
 use sha2::{Digest, Sha256};
 use std::io::Read;
@@ -226,11 +227,7 @@ async fn snapshot_rejects_shape_invalid_prepare_response_before_upload_or_commit
     manifest_upload.assert_calls(0);
     commit.assert_calls(0);
 
-    let entries = std::fs::read_to_string(&telemetry_path)
-        .unwrap()
-        .lines()
-        .map(|line| serde_json::from_str::<serde_json::Value>(line).unwrap())
-        .collect::<Vec<_>>();
+    let entries = parse_json_lines(&std::fs::read_to_string(&telemetry_path).unwrap()).unwrap();
     let prepare_failure = entries
         .iter()
         .find(|entry| {

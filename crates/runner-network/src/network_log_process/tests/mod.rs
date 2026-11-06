@@ -1,4 +1,5 @@
 use super::*;
+use cli_test_support::json_fixture::parse_json_lines;
 use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::Arc;
@@ -134,11 +135,7 @@ impl BlockedWriter {
         tokio::time::timeout(TEST_WAIT, self.manager.flush_path(&self.path))
             .await
             .unwrap();
-        std::fs::read_to_string(&self.path)
-            .unwrap()
-            .lines()
-            .map(|line| serde_json::from_str(line).unwrap())
-            .collect()
+        parse_json_lines(&std::fs::read_to_string(&self.path).unwrap()).unwrap()
     }
 }
 

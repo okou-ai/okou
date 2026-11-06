@@ -2,7 +2,7 @@
 
 use crate::common;
 
-use common::json_fixture::{JsonFieldTemplate, serialized_len};
+use common::json_fixture::{JsonFieldTemplate, parse_json_lines, serialized_len};
 use serde_json::{Value, json};
 use std::io;
 
@@ -65,4 +65,51 @@ fn counted_singleton_event_envelope_preserves_serialized_byte_lengths()
         }
     }
     Ok(())
+}
+
+#[test]
+fn strict_json_lines_preserve_complete_values_order_and_line_endings()
+-> Result<(), serde_json::Error> {
+    assert!(parse_json_lines("")?.is_empty());
+    for ending in ["", "\n", "\r\n"] {
+        let input = format!(
+            "{{\"sequence\":1}}\r\n[2,\"你好\"]\r\nnull\r\nfalse\r\n7\r\n\"escaped\\ntext\"{ending}"
+        );
+        assert_eq!(
+            parse_json_lines(&input)?,
+            vec![
+                json!({"sequence":1}),
+                json!([2, "你好"]),
+                Value::Null,
+                json!(false),
+                json!(7),
+                json!("escaped\ntext")
+            ]
+        );
+    }
+    Ok(())
+}
+
+#[test]
+fn strict_json_lines_reject_blank_or_malformed_records_at_the_first_error() {
+    for input in [
+        "\n",
+        " \r\n",
+        "{}\n\n{}",
+        "{}\n\n",
+        "{}\r\n\r\n",
+        "{}\nnot-json",
+        "{} trailing",
+    ] {
+        assert!(
+            parse_json_lines(input).is_err(),
+            "accepted invalid snapshot: {input:?}"
+        );
+    }
+    let error = parse_json_lines("true\n[\nnot-json").unwrap_err();
+    assert!(
+        error.is_eof(),
+        "later syntax error replaced the first incomplete record: {error}"
+    );
+    assert_eq!(error.line(), 1, "retain per-record Serde error coordinates");
 }
