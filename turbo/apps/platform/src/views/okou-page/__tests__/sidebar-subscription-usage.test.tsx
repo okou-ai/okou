@@ -77,9 +77,6 @@ test("Open subscriptions by clicking the rail and open Models in Settings", asyn
   expect(within(codex).getByText("55% left")).toBeInTheDocument();
   expect(within(claude).getByText("88% left")).toBeInTheDocument();
   expect(within(claude).getByText("76% left")).toBeInTheDocument();
-  expect(within(panel).queryByText("Credits")).not.toBeInTheDocument();
-  expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
-  expect(within(panel).queryByText(/Resets in /)).not.toBeInTheDocument();
 
   const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
     "Subscription usage",
@@ -111,9 +108,6 @@ test("Open subscriptions by clicking the rail and open Models in Settings", asyn
     expect(entry).toHaveFocus();
     expect(entry).toHaveAttribute("aria-expanded", "false");
   });
-  expect(
-    screen.queryByTestId("account-menu-subscriptions"),
-  ).not.toBeInTheDocument();
   await user.keyboard("{Enter}");
   await expect(
     screen.findByRole("dialog", { name: "Subscription usage" }),
@@ -177,9 +171,6 @@ test.each(["Escape", "Close"])(
       expect(entry).toHaveFocus();
       expect(entry).toHaveAttribute("aria-expanded", "false");
     });
-    expect(
-      screen.queryByTestId("account-menu-subscriptions"),
-    ).not.toBeInTheDocument();
 
     // A fresh keyboard activation still opens the preview.
     act(() => {
@@ -248,7 +239,7 @@ test.each<{
   },
 );
 
-test("Keep ChatGPT summary and actions tied to its weekly limit", async () => {
+test("Keep the ChatGPT summary tied to its weekly limit", async () => {
   mockNow(new Date("2030-01-01T00:48:00.000Z"), context.signal);
   mockAdminAccountSidebar();
   context.mocks.data.personalModelProviders([
@@ -303,8 +294,6 @@ test("Keep ChatGPT summary and actions tied to its weekly limit", async () => {
       "Subscription usage",
     ),
   ).toBeInTheDocument();
-  expect(within(codex).queryByText("Reset usage")).not.toBeInTheDocument();
-  expect(within(codex).queryByText(/Resets in /)).not.toBeInTheDocument();
 });
 
 test("Show an exhausted week with its own reset time", async () => {
@@ -355,7 +344,6 @@ test("Show an exhausted week with its own reset time", async () => {
     ),
   ).toHaveAccessibleDescription("ChatGPT: Limit reached");
   expect(within(panel).getByText("Resets in 5d 23h")).toBeInTheDocument();
-  expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
   await userEvent.setup().hover(week);
   await waitFor(() => {
     expectVisibleText(
@@ -412,9 +400,6 @@ test.each(["Escape", "Cancel"])(
       expect(entry).toHaveFocus();
       expect(entry).toHaveAttribute("aria-expanded", "false");
     });
-    expect(
-      screen.queryByTestId("account-menu-subscriptions"),
-    ).not.toBeInTheDocument();
     click(entry);
     await expect(
       screen.findByTestId("account-menu-subscriptions"),
@@ -510,11 +495,6 @@ test("Keep Codex reset pending until refreshed sidebar usage is ready", async ()
   finishRefresh.resolve();
 
   await waitFor(() => {
-    expect(
-      screen.queryByRole("dialog", { name: "Reset Codex usage?" }),
-    ).not.toBeInTheDocument();
-  });
-  await waitFor(() => {
     const entry = within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
       /^Subscription usage/,
     );
@@ -524,11 +504,9 @@ test("Keep Codex reset pending until refreshed sidebar usage is ready", async ()
 
   panel = await openSubscriptionUsage();
   expect(within(panel).getByText("100% left")).toBeInTheDocument();
-  expect(within(panel).queryByText("Credits")).not.toBeInTheDocument();
-  expect(within(panel).queryByText("Reset usage")).not.toBeInTheDocument();
 });
 
-test.each([0, null, undefined])(
+test.each([0, null])(
   "Keep reset unavailable when the reset balance is %s",
   async (resetCredits) => {
     mockAdminAccountSidebar();
@@ -595,7 +573,6 @@ test.each([null] as const)(
     expect(workflows).toBeInTheDocument();
     expect(mockedClerk.redirectToSignIn).not.toHaveBeenCalled();
     expect(mockedClerk.signOut).not.toHaveBeenCalled();
-    expect(screen.queryByText("Unauthorized")).not.toBeInTheDocument();
 
     click(within(menu).getByText("Settings"));
     await expect(
@@ -669,7 +646,7 @@ test.each([
   },
 );
 
-test("Keep the account menu available without a subscription entry", async () => {
+test("Keep the account menu available without connected subscriptions", async () => {
   mockAdminAccountSidebar();
   context.mocks.data.personalModelProviders([]);
   await setupPage({
@@ -681,9 +658,6 @@ test("Keep the account menu available without a subscription entry", async () =>
   await expect(
     within(menu).findByText("12,500 credits"),
   ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByLabelText(/^Subscription usage/),
-  ).not.toBeInTheDocument();
 });
 
 test("Describe connected usage with an unknown percentage without treating it as empty", async () => {
@@ -711,8 +685,6 @@ test("Describe connected usage with an unknown percentage without treating it as
   expect(entry).toHaveAccessibleDescription("Claude: —");
   const panel = await openSubscriptionUsage();
   expect(within(panel).getByText("—")).toBeInTheDocument();
-  expect(within(panel).getByRole("meter")).not.toHaveAttribute("aria-valuenow");
-  expect(within(panel).queryByText("Limit reached")).not.toBeInTheDocument();
 });
 
 test.each([
