@@ -176,7 +176,6 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
   const mails = useLastLoadable(manager.mails$);
   const query = useGet(manager.query$);
   const setQuery = useSet(manager.setQuery$);
-  const close = useSet(manager.close$);
   // The first list stands in as a skeleton; later reloads keep the last list.
   const loading = mails.state === "loading";
   // Search and filters have nothing to act on until the chat has an email.
@@ -191,7 +190,6 @@ function ThreadMailHeader({ thread }: { readonly thread: ChatPanelSignals }) {
       closeLabel={t(($) => {
         return $.chat.mail.manager.close;
       })}
-      onClose={close}
     >
       {loading && <ThreadMailHeaderSkeleton />}
       {!loading && !empty && (

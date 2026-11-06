@@ -95,8 +95,11 @@ function parseUserLocale(value: unknown): UserLocale | null {
  * retired: reads always answer `false` and writes are ignored.
  *
  * Rollout fallback. Surface: old web App -> API, where cached pages still read
- * and write the field. Gate: the replacement App is live and the web client
- * floor excludes older builds; then remove the contract field, which also
+ * and write the field. Window: from this API's promotion until a later release
+ * raises the web client floor above the last App build that uses the field;
+ * an open old page keeps sending it until that floor reaches it. Gate: the
+ * replacement App is live and the floor excludes older builds; then remove
+ * this constant, the contract field and its BDD case together, which also
  * needs proof for the iOS-registered `GET /api/user-preferences` response.
  */
 const RETIRED_CHAT_RESOURCES_PREFERENCE = false;

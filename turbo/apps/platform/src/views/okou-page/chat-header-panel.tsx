@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Button } from "@okouai/ui";
+import { Button, PopoverClose } from "@okouai/ui";
 import { X } from "lucide-react";
 
 /**
@@ -14,14 +14,12 @@ export function ChatHeaderPanelHeader({
   title,
   count,
   closeLabel,
-  onClose,
   children,
 }: {
   readonly icon: ReactNode;
   readonly title: string;
   readonly count?: number;
   readonly closeLabel: string;
-  readonly onClose: () => void;
   /** Controls below the title row, such as search and filters. */
   readonly children?: ReactNode;
 }) {
@@ -35,15 +33,19 @@ export function ChatHeaderPanelHeader({
             <span className="ml-2 text-xs text-muted-foreground">{count}</span>
           )}
         </h2>
-        <Button
-          type="button"
-          variant="quiet"
-          size="icon-sm"
-          onClick={onClose}
-          aria-label={closeLabel}
+        {/* Closing goes through the popover, so its onOpenChange still owns it. */}
+        <PopoverClose
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              aria-label={closeLabel}
+            />
+          }
         >
           <X size={16} />
-        </Button>
+        </PopoverClose>
       </div>
       {children}
     </div>

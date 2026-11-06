@@ -4,6 +4,7 @@ import {
 } from "@okouai/api-contracts/contracts/artifact-catalog";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { screen, waitFor, within } from "@testing-library/react";
+import { expect } from "vitest";
 import { click, setupPage } from "../../../__tests__/page-helper.ts";
 import type { TestContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
@@ -34,11 +35,11 @@ export const RESOURCE_ARTIFACT_ID = "e0000000-0000-4000-a000-000000000999";
 
 /** Open the chat's resource panel and wait for its complete content. */
 export async function openResources() {
-  click(
-    await waitFor(() => {
-      return resourceButton();
-    }),
-  );
+  // The trigger takes presses once its chat has settled.
+  await waitFor(() => {
+    expect(resourceButton()).toHaveAttribute("aria-disabled", "false");
+  });
+  click(resourceButton());
   return await screen.findByRole("dialog", { name: "Artifacts and chats" });
 }
 

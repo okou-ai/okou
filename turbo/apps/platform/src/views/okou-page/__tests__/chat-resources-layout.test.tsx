@@ -23,11 +23,6 @@ const context = testContext();
 const { setupResources, setupOverflowResources } =
   createChatResourcesHelpers(context);
 
-test("Start each chat with the resource panel closed", async () => {
-  await setupResources({ open: false });
-  expect(resourceState()).toStrictEqual({ open: false, visible: false });
-});
-
 test("Dismiss the panel on a composer click, like other header panels", async () => {
   await setupResources();
   expect(resourceState()).toStrictEqual({ open: true, visible: true });

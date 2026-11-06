@@ -8,7 +8,6 @@ import {
   currentHostedSiteUrl,
   hostedSiteUrlChanges$,
 } from "../hosted-site-url-changes.ts";
-import { onRef } from "../utils.ts";
 import type { ChatRelationSignals } from "./chat-relations.ts";
 
 export const copyChatResourceArtifact$ = command(
@@ -56,29 +55,16 @@ export const copyChatResourceArtifact$ = command(
 
 function createChatResourcePanelSignals() {
   // A header popover like Emails: a press opens it, an outside press, focus
-  // leaving or Escape closes it, and each visit to the chat starts closed.
+  // leaving or Escape closes it. Each thread visit builds a new panel graph,
+  // so every visit starts closed.
   const open$ = state(false);
-  const setOpen$ = command(({ set }, open: boolean) => {
-    set(open$, open);
-  });
-  const layoutOnRef$ = onRef(
-    command(({ set }, _element: HTMLElement, signal: AbortSignal) => {
-      set(open$, false);
-      signal.addEventListener(
-        "abort",
-        () => {
-          set(open$, false);
-        },
-        { once: true },
-      );
-    }),
-  );
   return {
     open$: computed((get) => {
       return get(open$);
     }),
-    setOpen$,
-    layoutOnRef$,
+    setOpen$: command(({ set }, open: boolean) => {
+      set(open$, open);
+    }),
   };
 }
 
@@ -102,11 +88,9 @@ export function createChatResourceSignals(
     if (!get(initialEventsReady$)) {
       return false;
     }
-    const [page] = await Promise.allSettled([
-      get(content$),
-      get(relations.chats.data$),
-    ]);
-    return page.status === "rejected" || page.value !== null;
+    // A failed source still draws: the panel explains the failure.
+    await Promise.allSettled([get(content$), get(relations.chats.data$)]);
+    return true;
   });
   const expandedSections$ = state({
     chats: false,

@@ -118,9 +118,6 @@ function ChatResourcesButtonInner({
           closeLabel={t(($) => {
             return $.chat.resources.close;
           })}
-          onClose={() => {
-            setOpen(false);
-          }}
         />
         {visible ? (
           <ChatResourcesContent

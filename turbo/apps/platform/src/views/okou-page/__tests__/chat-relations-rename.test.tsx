@@ -1,6 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test, vi } from "vitest";
+import { expect, test } from "vitest";
 import { chatRelationsContract } from "@okouai/api-contracts/contracts/chat-relations";
 import {
   chatThreadRenameContract,
@@ -59,18 +59,6 @@ async function setupRelationships({
     threads: [child, parent],
     chatEventRows: [{ ...launch, runId: launch.id }],
   });
-  const original = HTMLElement.prototype.getBoundingClientRect;
-  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockImplementation(
-    function (this: HTMLElement) {
-      if (Object.hasOwn(this.dataset, "scrollContainer")) {
-        return new DOMRect(0, 80, 1800, 700);
-      }
-      if (Object.hasOwn(this.dataset, "messageContainer")) {
-        return new DOMRect(420, 80, 900, 700);
-      }
-      return original.call(this);
-    },
-  );
   context.mocks.browser.matchMedia(true);
   const saveResponse = context.mocks.deferred<void>();
   const relationshipResponse = context.mocks.deferred<void>();

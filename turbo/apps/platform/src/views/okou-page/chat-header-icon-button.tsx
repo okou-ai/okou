@@ -31,8 +31,8 @@ export type ChatHeaderIconButtonUsage =
     }
   | { readonly kind: "popup"; readonly popup: "popover" | "menu" };
 
-// Base UI marks an open sidebar toggle with aria-pressed and an open popup
-// trigger with data-popup-open; both read as the same selected state.
+// A sidebar toggle is aria-pressed while its sidebar shows, and Base UI marks
+// an open popup trigger with data-popup-open; both read as one selected state.
 const OPEN_CLASS =
   "aria-pressed:bg-primary/10 aria-pressed:text-selected-foreground aria-pressed:hover:text-selected-foreground data-popup-open:bg-primary/10 data-popup-open:text-selected-foreground data-popup-open:hover:text-selected-foreground";
 

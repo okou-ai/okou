@@ -3548,21 +3548,6 @@ function ChatThreadFeedbackSlot({ thread }: { thread: ChatPanelSignals }) {
   );
 }
 
-function ChatThreadResourceLayout({
-  thread,
-  children,
-}: {
-  thread: ChatPanelSignals;
-  children: ReactNode;
-}) {
-  const resourceLayoutRef = useSet(thread.resources.layoutOnRef$);
-  return (
-    <div className="relative min-h-0 flex-1" ref={resourceLayoutRef}>
-      {children}
-    </div>
-  );
-}
-
 function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
   const exists = useGet(thread.threadExists$);
   if (!exists) {
@@ -3580,12 +3565,12 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
 function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
   return (
     <>
-      <ChatThreadResourceLayout thread={thread}>
+      <div className="relative min-h-0 flex-1">
         <div className="flex h-full min-w-0 flex-col">
           <ChatThreadEventsPane thread={thread} />
           <ChatThreadBottomBar thread={thread} />
         </div>
-      </ChatThreadResourceLayout>
+      </div>
       <ChatThreadFeedbackSlot thread={thread} />
     </>
   );

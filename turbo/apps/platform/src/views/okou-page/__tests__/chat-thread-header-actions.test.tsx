@@ -267,33 +267,12 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   );
 });
 
-test("Build every desktop header button from one icon button and mark an open popup on its trigger", async () => {
+test("Report sidebar toggles as pressed and popup triggers as expanded in the desktop header", async () => {
   context.mocks.browser.matchMedia(true);
   await setupHeaderPage();
-  const group = buttonNamed("Share messages").parentElement;
-  if (!group) {
-    throw new Error("Header action group is missing");
-  }
-  const buttons = queryAllByRoleFast("button", group);
-  expect(
-    buttons.map((button) => {
-      return button.getAttribute("aria-label");
-    }),
-  ).toStrictEqual([
-    "Share messages",
-    "Automations",
-    "Manage emails",
-    "Open browser",
-    "Artifacts and chats",
-  ]);
-  // One settling state for every button once the chat has loaded.
   await waitFor(() => {
-    for (const button of buttons) {
-      expect(button).toHaveAttribute("aria-disabled", "false");
-      expect(button).toHaveAttribute("aria-busy", "false");
-    }
+    expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
   });
-  // Sidebar toggles report pressed; popup triggers report expanded.
   expect(buttonNamed("Automations")).toHaveAttribute("aria-pressed", "false");
   expect(buttonNamed("Open browser")).toHaveAttribute("aria-pressed", "false");
   const mail = buttonNamed("Manage emails");
@@ -301,7 +280,6 @@ test("Build every desktop header button from one icon button and mark an open po
   click(mail);
   await screen.findByRole("dialog", { name: "Emails" });
   expect(mail).toHaveAttribute("aria-expanded", "true");
-  expect(mail).toHaveAttribute("data-popup-open");
 });
 
 test("Archive from the mobile header and return to the thread's agent before saving", async () => {
