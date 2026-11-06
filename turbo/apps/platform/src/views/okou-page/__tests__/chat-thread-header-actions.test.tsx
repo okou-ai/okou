@@ -31,6 +31,7 @@ async function setupHeaderPage(
   threadEvents: readonly ChatThreadEvent[] = [],
   archiveEnabled = true,
   mutingEnabled = false,
+  pwaNavigation?: boolean,
 ) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -74,6 +75,7 @@ async function setupHeaderPage(
     featureSwitches: {
       [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled,
       [FeatureSwitchKey.ChatThreadMuting]: mutingEnabled,
+      [FeatureSwitchKey.PwaNavigation]: pwaNavigation,
     },
   });
   await screen.findByText("Review the header layout");
@@ -171,7 +173,7 @@ test("Keep menu pin changes responsive across resize and save", async () => {
       return respond(204);
     },
   );
-  await setupHeaderPage(events);
+  await setupHeaderPage(events, true, false, false);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));
@@ -230,7 +232,7 @@ test("Keep Share and More in the header and match the sidebar menu order", async
       ],
     });
   });
-  await setupHeaderPage();
+  await setupHeaderPage([], true, false, false);
   await waitFor(() => {
     expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
   });
@@ -607,7 +609,7 @@ test("Continue saving the next pin change after an earlier request fails", async
   context.mocks.api(chatThreadUnpinContract.unpin, ({ respond }) => {
     return respond(500, { error: { message: "Unpin request failed" } });
   });
-  await setupHeaderPage();
+  await setupHeaderPage([], true, false, false);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));

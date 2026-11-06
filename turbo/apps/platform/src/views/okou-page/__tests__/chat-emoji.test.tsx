@@ -31,10 +31,12 @@ function setupEmojiPage(
   return setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches:
-      archiveEnabled === undefined
-        ? undefined
-        : { [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled },
+    featureSwitches: {
+      [FeatureSwitchKey.PwaNavigation]: false,
+      ...(archiveEnabled === undefined
+        ? {}
+        : { [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled }),
+    },
   });
 }
 

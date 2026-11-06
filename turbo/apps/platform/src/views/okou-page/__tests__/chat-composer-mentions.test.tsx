@@ -285,6 +285,7 @@ async function openAgentMentionWorkspace(newChat = false, singleAgent = false) {
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.SingleAgent]: singleAgent,
+      [FeatureSwitchKey.PwaNavigation]: false,
     },
   });
   return { current, savedMentionThread, workspace };

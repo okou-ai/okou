@@ -4,6 +4,7 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -125,6 +126,7 @@ async function prepareRemoteDefaults(
   await setupPage({
     context,
     path: `/chats/${SCOUT_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
   click(await findFastControl("button", "Connectors"));
   const remoteAccess = await screen.findByText("Remote access");
@@ -633,6 +635,7 @@ async function prepareDraftHostChoices() {
   await setupPage({
     context,
     path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);

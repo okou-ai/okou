@@ -202,6 +202,9 @@ export async function setupOverflowResources(
     readonly paginated?: boolean;
     readonly withLinks?: boolean;
     readonly mock?: (catalog: readonly ArtifactSummary[]) => void;
+    readonly featureSwitches?: Parameters<
+      typeof setupPage
+    >[0]["featureSwitches"];
   } = {},
 ) {
   const resize = installResourceGeometry(480);
@@ -286,6 +289,7 @@ export async function setupOverflowResources(
   await setupPage({
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
+    featureSwitches: options.featureSwitches,
   });
   const panel = await screen.findByRole("region", {
     name: "Artifacts and chats",
