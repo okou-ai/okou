@@ -57,6 +57,7 @@ fn test_config(base_dir: PathBuf) -> FirecrackerConfig {
 fn test_factory_without_resources() -> FirecrackerFactory {
     FirecrackerFactory {
         home_drive_pressure: None,
+        snapshot_memory: None,
         config: test_config(PathBuf::from("/tmp/factory-test-base")),
         factory_paths: FactoryPaths::new(PathBuf::from("/tmp/factory-test")),
         runtime_paths: RuntimePaths::new(),
@@ -93,6 +94,7 @@ fn test_factory_with_resources(
     cleanup_group.start_accepting();
     FirecrackerFactory {
         home_drive_pressure: None,
+        snapshot_memory: None,
         config: test_config(PathBuf::from("/tmp/factory-test-base")),
         factory_paths,
         runtime_paths: RuntimePaths::new(),
