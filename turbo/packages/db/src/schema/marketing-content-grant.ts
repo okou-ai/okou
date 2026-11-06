@@ -17,6 +17,8 @@ export const marketingContentGrants = pgTable(
     resourceHash: text("resource_hash").notNull(),
     subject: text("subject").notNull(),
     expiresAt: timestamp("expires_at"),
+    // Account-qualified R2 bucket; NULL receipts still require object verification.
+    verifiedManifestBucket: text("verified_manifest_bucket"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (table) => {
@@ -35,6 +37,10 @@ export const marketingContentGrants = pgTable(
       check(
         "marketing_content_grant_subject",
         sql`${table.subject} = 'public' OR ${table.subject} LIKE 'user:%' OR ${table.subject} LIKE 'session:%'`,
+      ),
+      check(
+        "marketing_content_grant_manifest_bucket",
+        sql`${table.verifiedManifestBucket} IS NULL OR (${table.resourceType} = 'manifest' AND length(${table.verifiedManifestBucket}) > 0)`,
       ),
     ];
   },

@@ -34,8 +34,6 @@ export enum FeatureSwitchKey {
   WhatsappIntegration = "whatsappIntegration",
   CodexExecution = "_codexExecution",
   AutoContinueBusyChats = "_autoContinueBusyChats",
-  ChatThreadArchiving = "chatThreadArchiving",
-  ChatThreadMuting = "chatThreadMuting",
   ChatThreadInlineRename = "chatThreadInlineRename",
   ChatMessagePdf = "chatMessagePdf",
   PresentationConvert = "presentationConvert",

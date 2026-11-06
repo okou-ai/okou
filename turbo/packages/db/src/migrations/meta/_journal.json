@@ -3151,6 +3151,13 @@
       "when": 1793877151133,
       "tag": "1528_personal_instructions",
       "breakpoints": true
+    },
+    {
+      "idx": 1529,
+      "version": "7",
+      "when": 1793948686106,
+      "tag": "1529_verified-marketing-manifest-bucket",
+      "breakpoints": true
     }
   ]
 }

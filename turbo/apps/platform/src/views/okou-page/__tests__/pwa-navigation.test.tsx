@@ -211,7 +211,6 @@ test.each([false, true])(
       path: CHAT_LIST_PATH,
       featureSwitches: {
         [FeatureSwitchKey.PwaNavigation]: true,
-        [FeatureSwitchKey.ChatThreadArchiving]: true,
       },
       ...workspace.pageOptions,
     });
@@ -353,7 +352,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
     path: CHAT_LIST_PATH,
     featureSwitches: {
       [FeatureSwitchKey.PwaNavigation]: true,
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
     },
     ...workspace.pageOptions,
   });
