@@ -437,133 +437,167 @@ pub(super) fn write_oversized_delivery_notifications<W: Write>(
     let codex_command = format!("/bin/bash -lc '{managed_command}'");
     write_json_line(
         output,
-        &json!({
-            "method": "item/completed",
-            "params": {
-                "threadId": thread_id,
-                "turnId": turn_id,
-                "completedAtMs": completed_at_ms,
-                "item": {
-                    "id": "oversized-agent-message",
-                    "type": "agentMessage",
-                    "text": format!("agent-head-{secret}-{large}-agent-tail"),
-                }
-            }
-        }),
+        &item_notification(
+            "item/completed",
+            thread_id,
+            turn_id,
+            "completedAtMs",
+            completed_at_ms,
+            Value::Object(serde_json::Map::from_iter([
+                ("id".into(), "oversized-agent-message".into()),
+                ("type".into(), "agentMessage".into()),
+                (
+                    "text".into(),
+                    format!("agent-head-{secret}-{large}-agent-tail").into(),
+                ),
+            ])),
+        ),
     )?;
     write_json_line(
         output,
-        &json!({
-            "method": "item/completed",
-            "params": {
-                "threadId": thread_id,
-                "turnId": turn_id,
-                "completedAtMs": completed_at_ms + 1,
-                "item": {
-                    "id": "oversized-reasoning",
-                    "type": "reasoning",
-                    "summary": [format!("reasoning-head-{large}")],
-                    "content": [format!("{secret}-{large}-reasoning-tail")],
-                }
-            }
-        }),
+        &item_notification(
+            "item/completed",
+            thread_id,
+            turn_id,
+            "completedAtMs",
+            completed_at_ms + 1,
+            Value::Object(serde_json::Map::from_iter([
+                ("id".into(), "oversized-reasoning".into()),
+                ("type".into(), "reasoning".into()),
+                (
+                    "summary".into(),
+                    Value::Array(vec![format!("reasoning-head-{large}").into()]),
+                ),
+                (
+                    "content".into(),
+                    Value::Array(vec![format!("{secret}-{large}-reasoning-tail").into()]),
+                ),
+            ])),
+        ),
     )?;
     write_json_line(
         output,
-        &json!({
-            "method": "item/completed",
-            "params": {
-                "threadId": thread_id,
-                "turnId": turn_id,
-                "completedAtMs": completed_at_ms + 2,
-                "item": {
-                    "id": "oversized-plan",
-                    "type": "plan",
-                    "text": format!("plan-head-{large}-{secret}-plan-tail"),
-                }
-            }
-        }),
+        &item_notification(
+            "item/completed",
+            thread_id,
+            turn_id,
+            "completedAtMs",
+            completed_at_ms + 2,
+            Value::Object(serde_json::Map::from_iter([
+                ("id".into(), "oversized-plan".into()),
+                ("type".into(), "plan".into()),
+                (
+                    "text".into(),
+                    format!("plan-head-{large}-{secret}-plan-tail").into(),
+                ),
+            ])),
+        ),
     )?;
     write_json_line(
         output,
-        &json!({
-            "method": "item/completed",
-            "params": {
-                "threadId": thread_id,
-                "turnId": turn_id,
-                "completedAtMs": completed_at_ms + 3,
-                "item": {
-                    "id": "oversized-command",
-                    "type": "commandExecution",
-                    "command": codex_command,
-                    "cwd": "/workspace",
-                    "status": "completed",
-                    "aggregatedOutput": format!("output-head-{secret}-{large}-output-tail"),
-                    "exitCode": 0,
-                    "durationMs": 123,
-                }
-            }
-        }),
+        &item_notification(
+            "item/completed",
+            thread_id,
+            turn_id,
+            "completedAtMs",
+            completed_at_ms + 3,
+            Value::Object(serde_json::Map::from_iter([
+                ("id".into(), "oversized-command".into()),
+                ("type".into(), "commandExecution".into()),
+                ("command".into(), codex_command.into()),
+                ("cwd".into(), "/workspace".into()),
+                ("status".into(), "completed".into()),
+                (
+                    "aggregatedOutput".into(),
+                    format!("output-head-{secret}-{large}-output-tail").into(),
+                ),
+                ("exitCode".into(), 0.into()),
+                ("durationMs".into(), 123.into()),
+            ])),
+        ),
     )?;
     write_json_line(
         output,
-        &json!({
-            "method": "item/completed",
-            "params": {
-                "threadId": thread_id,
-                "turnId": turn_id,
-                "completedAtMs": completed_at_ms + 4,
-                "item": {
-                    "id": "oversized-file-change",
-                    "type": "fileChange",
-                    "status": "completed",
-                    "changes": [{
-                        "path": "large.txt",
-                        "kind": "modify",
-                        "diff": format!("diff-head-{secret}-{large}-diff-tail"),
-                    }],
-                }
-            }
-        }),
+        &item_notification(
+            "item/completed",
+            thread_id,
+            turn_id,
+            "completedAtMs",
+            completed_at_ms + 4,
+            Value::Object(serde_json::Map::from_iter([
+                ("id".into(), "oversized-file-change".into()),
+                ("type".into(), "fileChange".into()),
+                ("status".into(), "completed".into()),
+                (
+                    "changes".into(),
+                    Value::Array(vec![Value::Object(serde_json::Map::from_iter([
+                        ("path".into(), "large.txt".into()),
+                        ("kind".into(), "modify".into()),
+                        (
+                            "diff".into(),
+                            format!("diff-head-{secret}-{large}-diff-tail").into(),
+                        ),
+                    ]))]),
+                ),
+            ])),
+        ),
     )?;
     write_json_line(
         output,
         &plan_update_notification(
             thread_id,
             turn_id,
-            (0..75_000).map(|index| json!({
-                    "step": format!("step-{index:06}-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz"),
-                    "status": "pending",
-                })).collect(),
+            (0..75_000)
+                .map(|index| {
+                    Value::Object(serde_json::Map::from_iter([
+                        (
+                            "step".into(),
+                            format!("step-{index:06}-abcdefghijklmnopqrstuvwxyz-abcdefghijklmnopqrstuvwxyz")
+                                .into(),
+                        ),
+                        ("status".into(), "pending".into()),
+                    ]))
+                })
+                .collect(),
         ),
     )?;
     write_json_line(
         output,
-        &json!({
-            "method": "item/completed",
-            "params": {
-                "threadId": thread_id,
-                "turnId": turn_id,
-                "completedAtMs": completed_at_ms + 6,
-                "item": {
-                    "id": "oversized-multi-change",
-                    "type": "fileChange",
-                    "status": "completed",
-                    "changes": [
-                        {
-                            "path": "structure-a.txt",
-                            "kind": "modify",
-                            "diff": format!("structure-a-head-{secret}-{large}-structure-a-tail"),
-                        },
-                        {
-                            "path": "structure-b.txt",
-                            "kind": "modify",
-                            "diff": format!("structure-b-head-{secret}-{large}-structure-b-tail"),
-                        }
-                    ],
-                }
-            }
-        }),
+        &item_notification(
+            "item/completed",
+            thread_id,
+            turn_id,
+            "completedAtMs",
+            completed_at_ms + 6,
+            Value::Object(serde_json::Map::from_iter([
+                ("id".into(), "oversized-multi-change".into()),
+                ("type".into(), "fileChange".into()),
+                ("status".into(), "completed".into()),
+                (
+                    "changes".into(),
+                    Value::Array(vec![
+                        Value::Object(serde_json::Map::from_iter([
+                            ("path".into(), "structure-a.txt".into()),
+                            ("kind".into(), "modify".into()),
+                            (
+                                "diff".into(),
+                                format!("structure-a-head-{secret}-{large}-structure-a-tail")
+                                    .into(),
+                            ),
+                        ])),
+                        Value::Object(serde_json::Map::from_iter([
+                            ("path".into(), "structure-b.txt".into()),
+                            ("kind".into(), "modify".into()),
+                            (
+                                "diff".into(),
+                                format!("structure-b-head-{secret}-{large}-structure-b-tail")
+                                    .into(),
+                            ),
+                        ])),
+                    ]),
+                ),
+            ])),
+        ),
     )?;
     if let Some(path) = std::env::var_os("MOCK_CODEX_DELIVERY_ITEMS_PATH") {
         let items: Vec<Value> = serde_json::from_slice(&std::fs::read(path)?)?;
