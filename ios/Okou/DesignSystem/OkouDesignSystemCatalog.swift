@@ -109,12 +109,11 @@
               }
             }
             .background(OkouColor.sidebar)
-            // Chat rows, as the sidebar draws them: an Active chat with its agent's avatar,
-            // then status emoji, the quiet glyph, and the trailing states.
+            // Chat rows, as the sidebar draws them: status emoji, the quiet glyph,
+            // and the trailing states.
             VStack(spacing: 0) {
               OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
-                OkouAgentAvatar(
-                  avatarURL: nil, name: "Okou", isDefault: true, size: OkouAvatarSize.row)
+                OkouChatStatusMark(emoji: "✅")
               }
               OkouChatRowLabel("!36076 Share in two steps", trailing: .running(phase: 0)) {
                 OkouChatStatusMark(emoji: "✅")

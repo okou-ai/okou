@@ -33,7 +33,6 @@ struct ChatSidebarView: View {
     authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
   }
 
-  @ScaledMetric(relativeTo: .body) private var rowAvatar = OkouAvatarSize.row
   /// One caption2 line of Geist under each pinned agent's avatar.
   @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
   /// One leading edge for the header, every heading, row content and the footer buttons.
@@ -43,14 +42,6 @@ struct ChatSidebarView: View {
   /// a section without any keeps its titles flush.
   private func usesStatusColumn(_ threads: [ChatThread]) -> Bool {
     threads.contains { $0.titleParts.emoji != nil }
-  }
-
-  /// The agent doing an active chat's work, drawn in the row's status column.
-  private func agentAvatar(_ id: String) -> some View {
-    let agent = store.list.agents.first(where: { $0.agentId == id })
-    return OkouAgentAvatar(
-      avatarURL: agent?.avatarUrl, name: agent?.displayName ?? "Okou",
-      isDefault: agent?.isDefaultAgent ?? false, size: rowAvatar)
   }
 
   private var visibleThreads: [ChatThread] {
@@ -78,9 +69,6 @@ struct ChatSidebarView: View {
   var body: some View {
     List {
       pinnedAgentsSection
-      if threadFilter.wrappedValue == .recent && !activeThreads.isEmpty {
-        activeSection
-      }
       if store.list.isLoading && !store.list.hasLoadedThreads {
         OkouLoadingRow("Loading chats…")
           .frame(maxWidth: .infinity)
@@ -251,27 +239,6 @@ struct ChatSidebarView: View {
     }
   }
 
-  /// Running and unread chats from every agent, so parallel work is visible without
-  /// switching agents one by one. Each row is one line like the rest, with its agent's
-  /// avatar in the status column.
-  private var activeSection: some View {
-    Section {
-      scrollingSectionHeading("Active · \(activeThreads.count)")
-      ForEach(Array(activeThreads.enumerated()), id: \.element.id) { index, thread in
-        threadRow(thread, showsAgent: true, waveIndex: index)
-      }
-    }
-  }
-
-  private var activeThreads: [ChatThread] {
-    let threads = store.list.threads.filter { thread in
-      if thread.isArchived { return false }
-      if thread.indicator == .active { return true }
-      return thread.indicator == .unread && !thread.isMuted
-    }
-    return Array(threads.sorted { $0.sortAt > $1.sortAt }.prefix(6))
-  }
-
   private struct ThreadGroup: Identifiable {
     let id: String
     let title: LocalizedStringKey
@@ -322,7 +289,7 @@ struct ChatSidebarView: View {
   }
 
   private func threadRow(
-    _ thread: ChatThread, showsAgent: Bool = false, waveIndex: Int = 0,
+    _ thread: ChatThread, waveIndex: Int = 0,
     showsStatusColumn: Bool = false
   ) -> some View {
     Button {
@@ -331,10 +298,7 @@ struct ChatSidebarView: View {
     } label: {
       let parts = thread.titleParts
       let trailing = chatTrailing(thread, waveIndex: waveIndex)
-      if showsAgent {
-        // Active chats come from every agent: its avatar names the one doing the work.
-        OkouChatRowLabel(parts.text, trailing: trailing) { agentAvatar(thread.agentID) }
-      } else if showsStatusColumn {
+      if showsStatusColumn {
         // Every row in the section fills the column, so titles share one left edge.
         OkouChatRowLabel(parts.text, trailing: trailing) {
           OkouChatStatusMark(emoji: parts.emoji)
