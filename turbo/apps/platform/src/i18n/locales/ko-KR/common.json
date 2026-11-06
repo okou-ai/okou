@@ -6338,6 +6338,27 @@
       "thread_other": "{{value}}개 스레드"
     }
   },
+  "userNotifications": {
+    "close": "닫기",
+    "countUnavailable": "읽지 않은 알림 수를 확인할 수 없어요",
+    "detailFailed": "이 알림을 불러오지 못했어요",
+    "empty": "아직 알림이 없어요",
+    "emptyDescription": "Okou의 소식이 여기에 표시됩니다.",
+    "loadFailed": "알림을 불러오지 못했어요",
+    "loading": "알림을 불러오는 중",
+    "loadMore": "이전 알림 보기",
+    "nextPage": "다음 페이지",
+    "pageOf": "{{current}} / {{total}} 페이지",
+    "previousPage": "이전 페이지",
+    "readAll": "모두 읽음으로 표시",
+    "readFailed": "읽음으로 표시하지 못했어요",
+    "retry": "다시 시도",
+    "sender": "Okou 팀",
+    "title": "알림",
+    "unread": "읽지 않음",
+    "unreadCount_one": "읽지 않은 알림 {{count}}개",
+    "unreadCount_other": "읽지 않은 알림 {{count}}개"
+  },
   "vnc": {
     "add": "호스트 추가",
     "cancel": "취소",

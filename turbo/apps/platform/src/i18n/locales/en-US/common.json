@@ -6356,6 +6356,27 @@
       "thread_other": "{{value}} threads"
     }
   },
+  "userNotifications": {
+    "close": "Close",
+    "countUnavailable": "Unread count unavailable",
+    "detailFailed": "Couldn’t load this notification",
+    "empty": "No notifications yet",
+    "emptyDescription": "Updates from Okou will appear here.",
+    "loadFailed": "Couldn’t load notifications",
+    "loading": "Loading notifications",
+    "loadMore": "Show older",
+    "nextPage": "Next page",
+    "pageOf": "Page {{current}} of {{total}}",
+    "previousPage": "Previous page",
+    "readAll": "Mark all as read",
+    "readFailed": "Couldn’t mark as read",
+    "retry": "Try again",
+    "sender": "Okou team",
+    "title": "Notifications",
+    "unread": "Unread",
+    "unreadCount_one": "{{count}} unread notification",
+    "unreadCount_other": "{{count}} unread notifications"
+  },
   "vnc": {
     "add": "Add host",
     "cancel": "Cancel",

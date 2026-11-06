@@ -9,6 +9,7 @@ import * as wechatSchema from "./schema/wechat";
 import * as whatsappSchema from "./schema/whatsapp";
 import * as getStartedClaimSchema from "./schema/get-started-claim";
 import * as friendReferralSchema from "./schema/friend-referral";
+import * as userNotificationSchema from "./schema/user-notification";
 import * as mailNotificationSchema from "./schema/mail-notification";
 import * as billingRunAttributionSchema from "./schema/billing-run-attribution";
 import * as activeAgentRunSchema from "./schema/active-agent-run";
@@ -186,6 +187,7 @@ export const schema = {
   ...whatsappSchema,
   ...getStartedClaimSchema,
   ...friendReferralSchema,
+  ...userNotificationSchema,
   ...activeAgentRunSchema,
   ...agentSuggestionSchema,
   ...userSchema,

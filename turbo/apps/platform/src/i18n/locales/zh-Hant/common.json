@@ -6338,6 +6338,27 @@
       "thread_other": "{{value}} 個會話"
     }
   },
+  "userNotifications": {
+    "close": "關閉",
+    "countUnavailable": "未讀數量暫不可用",
+    "detailFailed": "未能載入這則通知",
+    "empty": "暫無通知",
+    "emptyDescription": "Okou 的更新會顯示在這裡。",
+    "loadFailed": "未能載入通知",
+    "loading": "正在載入通知",
+    "loadMore": "查看更早的通知",
+    "nextPage": "下一頁",
+    "pageOf": "第 {{current}} / {{total}} 頁",
+    "previousPage": "上一頁",
+    "readAll": "全部已讀",
+    "readFailed": "未能標記為已讀",
+    "retry": "重試",
+    "sender": "Okou 團隊",
+    "title": "通知",
+    "unread": "未讀",
+    "unreadCount_one": "{{count}} 則未讀通知",
+    "unreadCount_other": "{{count}} 則未讀通知"
+  },
   "vnc": {
     "add": "新增主機",
     "cancel": "取消",

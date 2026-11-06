@@ -6426,6 +6426,28 @@
       "thread_other": "{{value}} conversazioni"
     }
   },
+  "userNotifications": {
+    "close": "Chiudi",
+    "countUnavailable": "Conteggio delle notifiche da leggere non disponibile",
+    "detailFailed": "Impossibile caricare questa notifica",
+    "empty": "Nessuna notifica per ora",
+    "emptyDescription": "Le novità di Okou appariranno qui.",
+    "loadFailed": "Impossibile caricare le notifiche",
+    "loading": "Caricamento delle notifiche",
+    "loadMore": "Mostra precedenti",
+    "nextPage": "Pagina successiva",
+    "pageOf": "Pagina {{current}} di {{total}}",
+    "previousPage": "Pagina precedente",
+    "readAll": "Segna tutte come lette",
+    "readFailed": "Impossibile segnare come letto",
+    "retry": "Riprova",
+    "sender": "Team Okou",
+    "title": "Notifiche",
+    "unread": "Da leggere",
+    "unreadCount_one": "{{count}} notifica da leggere",
+    "unreadCount_many": "",
+    "unreadCount_other": "{{count}} notifiche da leggere"
+  },
   "vnc": {
     "add": "Aggiungi host",
     "cancel": "Annulla",

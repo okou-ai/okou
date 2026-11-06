@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  UserNotifications = "userNotifications",
   SingleAgent = "singleAgent",
   FriendReferrals = "friendReferrals",
   Projects = "projects",
