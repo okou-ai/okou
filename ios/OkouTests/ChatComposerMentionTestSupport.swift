@@ -180,7 +180,7 @@ func mentionInputs(in view: UIView) -> [ComposerTextView] {
 @MainActor
 func focusMentionInput(_ input: ComposerTextView) async throws {
   input.becomeFirstResponder()
-  await hostingPresentationFrame()
+  try await hostingPresentationFrame()
   try await eventually(
     message:
       "Native composer focus: \(input.isFirstResponder); "
@@ -208,6 +208,11 @@ func mountMentionHost<V: View>(_ host: UIHostingController<V>) async throws -> U
     return input.window === window
   }
   // Native focus must follow the initial hosting transaction's presented frame.
-  await hostingPresentationFrame()
-  return window
+  do {
+    try await hostingPresentationFrame()
+    return window
+  } catch {
+    unmount(window)
+    throw error
+  }
 }

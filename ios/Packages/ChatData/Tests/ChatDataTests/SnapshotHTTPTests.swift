@@ -8,6 +8,27 @@ import XCTest
 
 @MainActor
 final class SnapshotHTTPTests: XCTestCase {
+  func testUnhandledSnapshotRequestReportsItsMethodAndURLBeforeTransportFailure() async throws {
+    let reports = Mutex<[String]>([])
+    let server = try SnapshotLoopbackServer { message in
+      reports.withLock { $0.append(message) }
+    }
+    defer { server.stop() }
+    let origin = try await server.start()
+    let url = origin.appending(path: "unexpected")
+    let session = URLSession(configuration: .ephemeral)
+    defer { session.invalidateAndCancel() }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    do {
+      _ = try await session.data(for: request)
+      XCTFail("An unhandled request must fail its transport")
+    } catch is URLError {}
+    let messages = reports.withLock { $0 }
+    XCTAssertFalse(messages.isEmpty)
+    XCTAssertTrue(messages.allSatisfy { $0 == "Unhandled snapshot fixture request: POST \(url)" })
+  }
+
   func testGzipChatThreadArchiveReplaysEventsWithoutForwardingBearer() async throws {
     let server = try SnapshotLoopbackServer()
     defer { server.stop() }
@@ -106,6 +127,7 @@ private final class SnapshotLoopbackServer: Sendable {
   }
 
   private let listener: NWListener
+  private let onUnhandledRequest: @Sendable (String) -> Void
   private let queue = DispatchQueue(label: "io.okou.tests.snapshot-http")
   private let observedRequests = Mutex<[Request]>([])
   private let connections = Mutex<[NWConnection]>([])
@@ -113,7 +135,8 @@ private final class SnapshotLoopbackServer: Sendable {
 
   var requests: [Request] { observedRequests.withLock { $0 } }
 
-  init() throws {
+  init(onUnhandledRequest: @escaping @Sendable (String) -> Void = { XCTFail($0) }) throws {
+    self.onUnhandledRequest = onUnhandledRequest
     let parameters = NWParameters.tcp
     parameters.requiredLocalEndpoint = .hostPort(host: "127.0.0.1", port: .any)
     listener = try NWListener(using: parameters)
@@ -200,7 +223,8 @@ private final class SnapshotLoopbackServer: Sendable {
 
   private func respond(to request: String, on connection: NWConnection) {
     let lines = request.components(separatedBy: "\r\n")
-    guard let target = lines.first?.split(separator: " ").dropFirst().first,
+    guard let method = lines.first?.split(separator: " ").first,
+      let target = lines.first?.split(separator: " ").dropFirst().first,
       let requestURL = URL(string: "http://127.0.0.1" + target),
       let port = listener.port
     else {
@@ -263,6 +287,8 @@ private final class SnapshotLoopbackServer: Sendable {
       body = Data("{\"lastReadAt\":null,\"cancellationRecoveryPending\":false}".utf8)
       contentHeaders = "Content-Type: application/json\r\n"
     default:
+      onUnhandledRequest(
+        "Unhandled snapshot fixture request: \(method) http://127.0.0.1:\(port.rawValue)\(target)")
       close(connection)
       return
     }
