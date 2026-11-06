@@ -2,6 +2,7 @@
 
 use std::collections::HashSet;
 use std::fs::File;
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
@@ -9,6 +10,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use nix::fcntl::Flock;
+use tokio::time::Instant;
 use tracing::{info, warn};
 
 use crate::error::{RunnerError, RunnerResult};
@@ -54,6 +56,12 @@ struct TestCleanupStatRead {
     proc_root: PathBuf,
 }
 
+#[cfg(test)]
+struct TestEnvironmentErrorRecheckGate {
+    pid: u32,
+    gate: crate::test_fixtures::ReapGate,
+}
+
 /// Serializes owners of the runner-local proxy resources and scopes every
 /// PyInstaller extraction to one private launch directory.
 pub(super) struct MitmdumpRuntime {
@@ -63,6 +71,8 @@ pub(super) struct MitmdumpRuntime {
     test_environment_read_error: std::sync::Mutex<Option<TestEnvironmentReadError>>,
     #[cfg(test)]
     test_cleanup_stat_read: std::sync::Mutex<Option<TestCleanupStatRead>>,
+    #[cfg(test)]
+    test_environment_error_recheck_gate: std::sync::Mutex<Option<TestEnvironmentErrorRecheckGate>>,
 }
 
 impl MitmdumpRuntime {
@@ -89,6 +99,8 @@ impl MitmdumpRuntime {
             test_environment_read_error: std::sync::Mutex::new(None),
             #[cfg(test)]
             test_cleanup_stat_read: std::sync::Mutex::new(None),
+            #[cfg(test)]
+            test_environment_error_recheck_gate: std::sync::Mutex::new(None),
         });
         runtime.reconcile().await?;
         Ok(runtime)
@@ -225,10 +237,13 @@ impl MitmdumpRuntime {
                 }
             } else {
                 consecutive_empty_scans = 0;
+                // Exceptional verification and signalled-process retirement
+                // share one budget; no candidate gets an extra exit window.
+                let deadline = Instant::now() + PROCESS_EXIT_TIMEOUT;
                 for process in &snapshot.processes {
-                    signal_stable_process(self, exact_path, process.identity).await?;
+                    signal_stable_process(self, exact_path, process.identity, deadline).await?;
                 }
-                wait_for_processes_exit(self, target, &snapshot).await?;
+                wait_for_processes_exit(self, target, &snapshot, deadline).await?;
             }
             tokio::time::sleep(PROCESS_EXIT_POLL_INTERVAL).await;
         }
@@ -315,6 +330,35 @@ impl MitmdumpRuntime {
             pid,
             error: Box::new(error),
         });
+    }
+
+    #[cfg(test)]
+    fn set_test_environment_error_recheck_gate(
+        &self,
+        pid: u32,
+        gate: crate::test_fixtures::ReapGate,
+    ) {
+        let mut slot = self.test_environment_error_recheck_gate.lock().unwrap();
+        assert!(
+            slot.is_none(),
+            "environment error recheck gate is already set"
+        );
+        *slot = Some(TestEnvironmentErrorRecheckGate { pid, gate });
+    }
+
+    #[cfg(test)]
+    async fn wait_for_test_environment_error_recheck(&self, pid: u32) {
+        let gate = {
+            let mut slot = self.test_environment_error_recheck_gate.lock().unwrap();
+            if slot.as_ref().is_some_and(|entry| entry.pid == pid) {
+                slot.take()
+            } else {
+                None
+            }
+        };
+        if let Some(entry) = gate {
+            entry.gate.wait().await;
+        }
     }
 }
 
@@ -495,8 +539,8 @@ async fn wait_for_processes_exit(
     runtime: &MitmdumpRuntime,
     target: &Path,
     snapshot: &ProcessSnapshot,
+    deadline: Instant,
 ) -> RunnerResult<()> {
-    let deadline = tokio::time::Instant::now() + PROCESS_EXIT_TIMEOUT;
     let mut remaining = snapshot.processes.clone();
     loop {
         let mut live = Vec::new();
@@ -584,11 +628,14 @@ async fn signal_stable_process(
     runtime: &MitmdumpRuntime,
     exact_path: Option<&Path>,
     process: ProcessIdentity,
+    deadline: Instant,
 ) -> RunnerResult<()> {
     let Some(pidfd) = open_pidfd(process.pid)? else {
         return Ok(());
     };
-    if !marked_process_matches_after_pidfd_open(runtime, exact_path, process).await? {
+    if !marked_process_matches_after_pidfd_open(runtime, exact_path, process, &pidfd, deadline)
+        .await?
+    {
         return Ok(());
     }
     match rustix::process::pidfd_send_signal(&pidfd, rustix::process::Signal::KILL) {
@@ -600,7 +647,7 @@ async fn signal_stable_process(
     }
 }
 
-fn open_pidfd(pid: u32) -> RunnerResult<Option<std::os::fd::OwnedFd>> {
+fn open_pidfd(pid: u32) -> RunnerResult<Option<OwnedFd>> {
     let raw_pid = i32::try_from(pid)
         .ok()
         .and_then(rustix::process::Pid::from_raw)
@@ -618,10 +665,32 @@ fn open_pidfd(pid: u32) -> RunnerResult<Option<std::os::fd::OwnedFd>> {
     }
 }
 
+async fn wait_for_pidfd_exit(pidfd: &OwnedFd, deadline: Instant) -> std::io::Result<()> {
+    let budget_elapsed =
+        || std::io::Error::new(std::io::ErrorKind::TimedOut, "mitmdump exit budget elapsed");
+    if Instant::now() >= deadline {
+        return Err(budget_elapsed());
+    }
+    // SAFETY: the caller retains the owned pidfd through this await. The
+    // borrowed descriptor cannot close or change while AsyncFd is registered.
+    let exit = unsafe {
+        tokio::io::unix::AsyncFd::register_with_interest(
+            pidfd.as_fd(),
+            tokio::io::Interest::READABLE,
+        )
+    }?;
+    let _ready = tokio::time::timeout_at(deadline, exit.readable())
+        .await
+        .map_err(|_| budget_elapsed())??;
+    Ok(())
+}
+
 async fn marked_process_matches_after_pidfd_open(
     runtime: &MitmdumpRuntime,
     exact_path: Option<&Path>,
     process: ProcessIdentity,
+    pidfd: &OwnedFd,
+    deadline: Instant,
 ) -> RunnerResult<bool> {
     let before = match runner_host::process::read_process_stat_checked(process.pid).await {
         ProcessStatRead::Found(stat) if process_stat_is_live(&stat) => stat,
@@ -652,6 +721,23 @@ async fn marked_process_matches_after_pidfd_open(
                 ProcessStatRead::Found(stat)
                     if process_stat_is_live(&stat) && stat.starttime == process.starttime =>
                 {
+                    #[cfg(test)]
+                    runtime
+                        .wait_for_test_environment_error_recheck(process.pid)
+                        .await;
+                    // Kernel teardown can make environ root-owned before stat
+                    // becomes terminal. Only this retained pidfd's exit event
+                    // can resolve that ambiguity; never signal an unverified
+                    // live process or treat EACCES itself as proof of exit.
+                    if environment_error.raw_os_error() == Some(nix::libc::EACCES) {
+                        return wait_for_pidfd_exit(pidfd, deadline)
+                            .await
+                            .map(|()| false)
+                            .map_err(|exit_error| RunnerError::Internal(format!(
+                                "recheck /proc/{}/environ after opening mitmdump cleanup pidfd: {environment_error}; observe pidfd exit: {exit_error}",
+                                process.pid
+                            )));
+                    }
                     return Err(RunnerError::Internal(format!(
                         "recheck /proc/{}/environ after opening mitmdump cleanup pidfd: {environment_error}",
                         process.pid
