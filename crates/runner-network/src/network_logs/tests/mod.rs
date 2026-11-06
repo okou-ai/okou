@@ -794,17 +794,27 @@ async fn upload_network_logs_completes_incident_sized_file_within_batch_budget()
     let path = network_log_file(&dir);
     let run_id = RunId::from(uuid::Uuid::nil());
     let body = "x".repeat(INCIDENT_BODY_BYTES);
-    let mut content = String::with_capacity(INCIDENT_SOURCE_BYTES);
-    for sequence in 0..INCIDENT_ENTRY_COUNT {
-        writeln!(
-            &mut content,
-            r#"{{"timestamp":"2026-02-15T10:00:00Z","sequence":{sequence},"body":"{body}"}}"#
-        )
-        .unwrap();
-    }
-    assert!(content.len().abs_diff(INCIDENT_SOURCE_BYTES) <= 1024);
-    tokio::fs::write(&path, &content).await.unwrap();
-    let source_bytes = content.len();
+    let mut original_lengths = Vec::with_capacity(INCIDENT_ENTRY_COUNT);
+    let source_bytes = {
+        let mut file = std::io::BufWriter::new(std::fs::File::create(&path).unwrap());
+        let mut line = String::new();
+        let mut source_bytes = 0;
+        for sequence in 0..INCIDENT_ENTRY_COUNT {
+            line.clear();
+            writeln!(
+                &mut line,
+                r#"{{"timestamp":"2026-02-15T10:00:00Z","sequence":{sequence},"body":"{body}"}}"#
+            )
+            .unwrap();
+            file.write_all(line.as_bytes()).unwrap();
+            // Match the original lines() oracle: exclude only writeln's newline.
+            original_lengths.push(line.len() - 1);
+            source_bytes += line.len();
+        }
+        file.flush().unwrap();
+        source_bytes
+    };
+    assert!(source_bytes.abs_diff(INCIDENT_SOURCE_BYTES) <= 1024);
 
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let api_url = format!("http://{}", listener.local_addr().unwrap());
@@ -813,7 +823,7 @@ async fn upload_network_logs_completes_incident_sized_file_within_batch_budget()
     let server_task = tokio::spawn(async move {
         let mut received_batch_count = 0;
         let mut received_entry_count = 0;
-        let mut original_lines = content.lines();
+        let mut original_line_lengths = original_lengths.into_iter();
         loop {
             let (mut stream, _) = tokio::select! {
                 () = server_stop.notified() => break,
@@ -831,8 +841,8 @@ async fn upload_network_logs_completes_incident_sized_file_within_batch_budget()
                 assert_eq!(log["body"], body);
                 assert_eq!(log["timestamp"], "2026-02-15T10:00:00Z");
                 // These compact ASCII records have the same length in any key order.
-                let original = original_lines.next().unwrap();
-                let entry_bytes = original.len() + NETWORK_LOG_UPLOAD_ENTRY_OVERHEAD_BYTES;
+                let original_bytes = original_line_lengths.next().unwrap();
+                let entry_bytes = original_bytes + NETWORK_LOG_UPLOAD_ENTRY_OVERHEAD_BYTES;
                 estimated_bytes = estimated_bytes.saturating_add(entry_bytes);
             }
             assert!(estimated_bytes <= NETWORK_LOG_UPLOAD_MAX_BATCH_BYTES);
@@ -843,7 +853,7 @@ async fn upload_network_logs_completes_incident_sized_file_within_batch_budget()
                 .await
                 .unwrap();
         }
-        assert!(original_lines.next().is_none());
+        assert!(original_line_lengths.next().is_none());
         (received_batch_count, received_entry_count)
     });
 
