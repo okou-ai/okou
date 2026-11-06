@@ -41,6 +41,7 @@ interface ShareButtonProps {
   readonly ariaLabel: string;
   readonly className?: string;
   readonly iconSize?: number;
+  readonly readyOnly?: boolean;
 }
 
 function HostedSiteBannerSetting({
@@ -54,12 +55,14 @@ function HostedSiteBannerSetting({
   const current = useLastResolved(session.banner$);
   const [operation, change] = useLoadableSet(session.changeBanner$);
   const signal = useGet(session.signal$);
-  const rows = useGet(featureSwitch$)[FeatureSwitchKey.HostedSiteShareRows];
+  const features = useGet(featureSwitch$);
+  const rows = features[FeatureSwitchKey.HostedSiteShareRows];
   if (
     !signal ||
     owner.state !== "hasData" ||
     !owner.data ||
-    (banner.state === "hasData" && !banner.data)
+    (banner.state === "hasData" && !banner.data) ||
+    (features[FeatureSwitchKey.ArtifactPreviewToolbar] && !current)
   ) {
     return null;
   }
@@ -582,23 +585,12 @@ function HostedSiteShareBody({
   );
 }
 
-function HostedSiteSharePreload({
-  session,
-}: {
-  readonly session: HostedSiteShareSession;
-}) {
-  // Keep mounted-session preloads reactive without refreshing the visual frame.
-  useLoadable(session.copyUrl$);
-  useLoadable(session.visibility$);
-  useLoadable(session.banner$);
-  return null;
-}
-
 function HostedSiteSharePopover({
   session,
   ariaLabel,
   className,
   iconSize = 16,
+  readyOnly = false,
   saving,
   children,
 }: ShareButtonProps & {
@@ -611,7 +603,15 @@ function HostedSiteSharePopover({
   const open = useGet(session.open$);
   const setOpen = useSet(session.setOpen$);
   const show = useSet(session.show$);
-  if (!signal) {
+  // Preload even while the trigger is absent. The toolbar does not own these
+  // requests through the conditional presence of the popover body.
+  useLoadable(session.copyUrl$);
+  useLoadable(session.visibility$);
+  useLoadable(session.banner$);
+  if (
+    !signal ||
+    (readyOnly && settings.state !== "hasData" && !open && !saving)
+  ) {
     return null;
   }
   return (
@@ -630,7 +630,6 @@ function HostedSiteSharePopover({
         }
       }}
     >
-      <HostedSiteSharePreload session={session} />
       <PopoverTrigger
         aria-label={ariaLabel}
         render={<Button variant="quiet" size="icon-sm" className={className} />}
@@ -701,8 +700,13 @@ export function HostedSiteShareMenu({
   const session = useGet(scope.session$);
   const mountRef = useSet(scope.mountRef$);
   return (
-    <span key={url} ref={mountRef} data-share-url={url} className="inline-flex">
-      {session ? (
+    <span
+      key={url}
+      ref={mountRef}
+      data-share-url={url}
+      className={props.readyOnly ? "contents" : "inline-flex"}
+    >
+      {session?.sourceUrl === url ? (
         // Settings have independent subscriptions; URL saves keep these nodes.
         <HostedSiteShareSessionMenu
           session={session}
@@ -710,7 +714,7 @@ export function HostedSiteShareMenu({
           banner={<HostedSiteBannerSetting session={session} />}
           {...props}
         />
-      ) : (
+      ) : props.readyOnly ? null : (
         <Button
           variant="quiet"
           size="icon-sm"

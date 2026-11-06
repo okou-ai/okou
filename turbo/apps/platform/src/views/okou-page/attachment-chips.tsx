@@ -1429,7 +1429,6 @@ function ArtifactPreviewDialogActions({
           artifactShareIdentity$={preview.artifactShareIdentity$}
           surface="dialog"
           shareUrl={shareUrl}
-          reserveSpace={refinedToolbar}
           ariaLabel={t(($) => {
             return $.artifacts.actions.share;
           })}

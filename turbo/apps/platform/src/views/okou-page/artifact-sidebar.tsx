@@ -660,7 +660,6 @@ function ArtifactSidebarPreviewActions({
         <ArtifactShareButton
           surface="sidebar"
           shareUrl={shareUrl}
-          reserveSpace={refinedToolbar}
           ariaLabel={t(($) => {
             return $.artifacts.actions.shareArtifact;
           })}

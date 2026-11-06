@@ -416,14 +416,19 @@ interface ShareButtonProps {
   readonly className?: string;
   readonly iconSize?: number;
   readonly ariaLabel?: string;
+  readonly readyOnly?: boolean;
 }
 
 function ShareButtonPlaceholder({
   className,
   iconSize = 16,
   ariaLabel,
+  readyOnly = false,
 }: ShareButtonProps) {
   const { t } = useTranslation();
+  if (readyOnly) {
+    return null;
+  }
   return (
     <Button
       variant="quiet"
@@ -446,6 +451,7 @@ function ShareSessionMenu({
   className,
   iconSize = 16,
   ariaLabel,
+  readyOnly = false,
 }: ShareButtonProps & { readonly session: ArtifactShareSession }) {
   const { t } = useTranslation();
   // Subscribing as soon as the preview mounts preloads permissions before Share.
@@ -467,6 +473,9 @@ function ShareSessionMenu({
   const recipient = loadable.state === "hasData" && !loadable.data?.status;
   const failed = loadable.state === "hasError";
   const loading = !details && loadable.state === "loading";
+  if (readyOnly && !details && !requestedOpen) {
+    return null;
+  }
   return (
     <Popover
       open={requestedOpen && !recipient}
@@ -514,6 +523,21 @@ interface ArtifactShareMenuProps extends ShareButtonProps {
   readonly artifactShareIdentity$?: AttachmentPreviewSignals["artifactShareIdentity$"];
 }
 
+function artifactShareMenuKey({
+  url,
+  copyUrl,
+  artifactShareIdentity,
+}: {
+  readonly url: string;
+  readonly copyUrl?: string;
+  readonly artifactShareIdentity?: ArtifactShareIdentity;
+}): string {
+  const identity = artifactShareIdentity
+    ? `${artifactShareIdentity.target.kind}:${artifactShareIdentity.target.id}:${artifactShareIdentity.sharedThreadSnapshot === true ? "snapshot" : "artifact"}`
+    : "";
+  return `${url}:${copyUrl ?? ""}:${identity}`;
+}
+
 function ArtifactShareMenuContent({
   url,
   surface,
@@ -526,12 +550,14 @@ function ArtifactShareMenuContent({
   const scope = getArtifactShareScope(surface);
   const session = useGet(scope.session$);
   const mountRef = useSet(scope.mountRef$);
-  const identityKey = artifactShareIdentity
-    ? `${artifactShareIdentity.target.kind}:${artifactShareIdentity.target.id}:${artifactShareIdentity.sharedThreadSnapshot === true ? "snapshot" : "artifact"}`
-    : "";
+  const identityKey = artifactShareMenuKey({
+    url,
+    copyUrl,
+    artifactShareIdentity,
+  });
   return (
     <span
-      key={`${url}:${copyUrl ?? ""}:${identityKey}`}
+      key={identityKey}
       ref={mountRef}
       data-share-url={url}
       data-copy-url={copyUrl}
@@ -542,9 +568,9 @@ function ArtifactShareMenuContent({
           ? "true"
           : undefined
       }
-      className="inline-flex"
+      className={buttonProps.readyOnly ? "contents" : "inline-flex"}
     >
-      {session ? (
+      {session && artifactShareMenuKey(session.source) === identityKey ? (
         <ShareSessionMenu session={session} {...buttonProps} />
       ) : (
         <ShareButtonPlaceholder {...buttonProps} />

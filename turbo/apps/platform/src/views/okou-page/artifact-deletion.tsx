@@ -16,7 +16,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@okouai/ui";
-import { Loader2, MoreHorizontal, Trash2 } from "lucide-react";
+import { Loader2, MoreHorizontal, RotateCcw, Trash2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 
 import {
@@ -29,6 +29,13 @@ import {
   type ArtifactDeletionSourceKind,
 } from "../../signals/artifact-deletion.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { getArtifactShareScope } from "../../signals/artifact-sharing.ts";
+import { getHostedSiteShareScope } from "../../signals/hosted-site-sharing.ts";
+import {
+  artifactGoogleDriveCatalogItem$,
+  inactiveArtifactGoogleDriveCatalogItem$,
+  needsArtifactGoogleDriveCatalog,
+} from "../../signals/artifact-preview-actions.ts";
 import {
   artifactDeletionSurface,
   confirmArtifactDeletion$,
@@ -41,6 +48,31 @@ import {
   type ArtifactDownloadMenuProps,
 } from "./artifact-actions.tsx";
 
+function usePreviewShareFailures(
+  surface: "dialog" | "sidebar" | "page",
+  url: string,
+  syncTarget: ArtifactDownloadMenuProps["syncTarget"],
+) {
+  const shareSurface = surface === "dialog" ? "dialog" : "sidebar";
+  const shareScope = getArtifactShareScope(shareSurface);
+  const siteScope = getHostedSiteShareScope(shareSurface);
+  const shareSession = useGet(shareScope.session$);
+  const siteSession = useGet(siteScope.session$);
+  const sharing = useLoadable(shareScope.details$);
+  const hostedSite = useLoadable(siteScope.settings$);
+  const drive = useLoadable(
+    needsArtifactGoogleDriveCatalog(syncTarget)
+      ? artifactGoogleDriveCatalogItem$
+      : inactiveArtifactGoogleDriveCatalogItem$,
+  );
+  return {
+    sharing: shareSession?.source.url === url && sharing.state === "hasError",
+    hostedSite:
+      siteSession?.sourceUrl === url && hostedSite.state === "hasError",
+    drive: drive.state === "hasError" && !syncTarget?.accountReady,
+  };
+}
+
 export function ArtifactPreviewMoreMenu({
   artifactId,
   origin,
@@ -49,14 +81,33 @@ export function ArtifactPreviewMoreMenu({
   readonly artifactId?: string;
   readonly origin: ArtifactDeletionOrigin;
 }) {
-  const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
+  const { t } = useTranslation();
+  const surface = artifactDeletionSurface(origin);
+  const scope = artifactPreviewDeletionScope(surface);
   const mountRef = useSet(scope.mountRef$);
   const triggerRef = useSet(scope.menuTriggerRef$);
   const session = useGet(scope.session$);
+  // Subscribe outside the popup so ownership is ready before the first click.
+  const detail = useLoadable(scope.detail$);
+  const snapshot = useGet(scope.menuSnapshot$);
+  const captureMenu = useSet(scope.captureMenu$);
+  const retryActions = useSet(scope.retryActions$);
+  const shareFailures = usePreviewShareFailures(
+    surface,
+    downloadProps.url,
+    downloadProps.syncTarget,
+  );
   const currentSession =
     session?.artifactId === artifactId && session?.sourceKind === undefined
       ? session
       : null;
+  const deleteReady =
+    currentSession !== null && detail.state === "hasData" && !!detail.data;
+  const failed = {
+    deletion: currentSession !== null && detail.state === "hasError",
+    ...shareFailures,
+  };
+  const unavailable = Object.values(failed).some(Boolean);
 
   return (
     <>
@@ -64,13 +115,43 @@ export function ArtifactPreviewMoreMenu({
         {...downloadProps}
         trigger="more"
         triggerRef={triggerRef}
+        previewMenu={{
+          snapshot,
+          deleteArtifactId: deleteReady ? (artifactId ?? null) : null,
+          recovery: unavailable,
+          onOpen: captureMenu,
+        }}
       >
-        {currentSession && (
-          <PreviewArtifactDeleteMenuItem
-            session={currentSession}
-            origin={origin}
-          />
-        )}
+        {deleteReady &&
+          snapshot?.url === downloadProps.url &&
+          snapshot.delete === artifactId && (
+            <PreviewArtifactDeleteMenuItem origin={origin} />
+          )}
+        {unavailable &&
+          snapshot?.url === downloadProps.url &&
+          snapshot.recovery && (
+            <>
+              <DropdownMenuSeparator />
+              <div
+                role="status"
+                className="px-2 py-1.5 text-xs text-muted-foreground"
+              >
+                {t(($) => {
+                  return $.artifacts.actions.partiallyUnavailable;
+                })}
+              </div>
+              <DropdownMenuItem
+                onClick={() => {
+                  retryActions(failed);
+                }}
+              >
+                <RotateCcw size={14} />
+                {t(($) => {
+                  return $.artifacts.actions.retry;
+                })}
+              </DropdownMenuItem>
+            </>
+          )}
       </ArtifactDownloadMenu>
       {artifactId && (
         <span
@@ -88,39 +169,14 @@ export function ArtifactPreviewMoreMenu({
 }
 
 function PreviewArtifactDeleteMenuItem({
-  session,
   origin,
 }: {
-  readonly session: PreviewArtifactDeletion;
   readonly origin: ArtifactDeletionOrigin;
 }) {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const detail = useLoadable(session.detail$);
   const scope = artifactPreviewDeletionScope(artifactDeletionSurface(origin));
   const requestDeletion = useSet(scope.requestFromMenu$);
-  if (detail.state === "hasData" && !detail.data) {
-    return null;
-  }
-  if (detail.state !== "hasData") {
-    return (
-      <>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem disabled>
-          {detail.state === "loading" && (
-            <Loader2 size={14} className="animate-spin" />
-          )}
-          {detail.state === "loading"
-            ? t(($) => {
-                return $.artifacts.sharing.loadingPermissions;
-              })
-            : t(($) => {
-                return $.artifacts.sharing.loadFailed;
-              })}
-        </DropdownMenuItem>
-      </>
-    );
-  }
   return (
     <>
       <DropdownMenuSeparator />
