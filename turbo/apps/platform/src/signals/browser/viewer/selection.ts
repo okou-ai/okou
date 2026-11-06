@@ -13,6 +13,7 @@ interface SessionReceipt {
   readonly sessionId: string;
 }
 
+/** Native attachment only; the selected session separately owns initialization and paint. */
 export interface AttachedSelection {
   readonly owner: SelectionOwner;
   readonly client: CdpClient;

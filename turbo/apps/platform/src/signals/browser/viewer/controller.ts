@@ -187,12 +187,78 @@ function createFrameLease(root: FrameSink) {
   };
 }
 
-/** Constructed only by the immutable attached-session identity computed. */
+interface SessionAuthority {
+  /** Lifetime of the exact resource owner, independent of membership refresh. */
+  readonly alive$: Computed<boolean>;
+  /** Permission for this selected target in the current discovery round. */
+  readonly admitted$: Computed<boolean>;
+}
+
+type SessionProgressEvent =
+  | "input-initialized"
+  | "capture-pending"
+  | "frame-painted"
+  | "admission-changed";
+
+/** Facts and their publication stay together for every completion order. */
+function createSessionReadiness(
+  owner: SelectionOwner,
+  authority: SessionAuthority,
+  changed$: Command<void, [SelectionOwner]>,
+) {
+  const progress$ = state<{
+    readonly initialization: "pending" | "complete";
+    readonly picture: "pending" | "painted";
+  }>({ initialization: "pending", picture: "pending" });
+  const initialized$ = computed((get) => {
+    return get(progress$).initialization === "complete";
+  });
+  const painted$ = computed((get) => {
+    return get(progress$).picture === "painted";
+  });
+  const phase$ = computed((get) => {
+    if (!get(authority.alive$)) {
+      return "retired";
+    }
+    if (!get(initialized$)) {
+      return "initializing";
+    }
+    if (!get(authority.admitted$)) {
+      return "blocked";
+    }
+    return get(painted$) ? "ready" : "awaiting-frame";
+  });
+  const usable$ = computed((get) => {
+    return get(phase$) === "ready";
+  });
+  const transition$ = command(({ get, set }, event: SessionProgressEvent) => {
+    if (!get(authority.alive$)) {
+      return;
+    }
+    const progress = get(progress$);
+    if (event === "input-initialized") {
+      if (progress.initialization === "complete") {
+        return;
+      }
+      set(progress$, { ...progress, initialization: "complete" });
+    } else if (event !== "admission-changed") {
+      const picture = event === "frame-painted" ? "painted" : "pending";
+      if (progress.picture === picture) {
+        return;
+      }
+      set(progress$, { ...progress, picture });
+    }
+    // Admission remains derived from native proof, never copied into progress.
+    set(changed$, owner);
+  });
+  return { initialized$, painted$, phase$, usable$, transition$ };
+}
+
+/** Published attachment identity is stable even while initialization is pending. */
 function createSelectedSession(
   attached: AttachedSelection,
-  current$: Computed<boolean>,
+  authority: SessionAuthority,
   host: {
-    readonly active$: Computed<boolean>;
     readonly waitForAdmission$: Command<
       Promise<void>,
       [SelectionOwner, AbortSignal]
@@ -209,10 +275,16 @@ function createSelectedSession(
       void,
       [SelectionOwner, CaptureSettings, AbortSignal]
     >;
+    readonly sessionChanged$: Command<void, [SelectionOwner]>;
   },
 ) {
-  const { active$, sink, directory, nativeHost, settings$, failed$, started$ } =
-    host;
+  const { sink, directory, nativeHost, settings$, failed$, started$ } = host;
+  const { alive$, admitted$ } = authority;
+  const readiness = createSessionReadiness(
+    attached.owner,
+    authority,
+    host.sessionChanged$,
+  );
   const waitForAdmission$ = command(async ({ set }, signal: AbortSignal) => {
     await set(host.waitForAdmission$, attached.owner, signal);
   });
@@ -221,17 +293,15 @@ function createSelectedSession(
   const navigation = createNavigationData(
     attached.client,
     attached.sessionId,
-    current$,
+    admitted$,
   );
   const input = createInputSession(
     attached,
-    current$,
+    admitted$,
     geometry,
     nativeHost,
     navigation,
   );
-  const painted$ = state(false);
-  const inputReady$ = state(false);
   const failure$ = state<unknown>(null);
   const favicon$ = state<FaviconDocument>({
     wanted: true,
@@ -246,8 +316,7 @@ function createSelectedSession(
   const captureStarted$ = command(
     ({ set }, settings: CaptureSettings, signal: AbortSignal) => {
       signal.throwIfAborted();
-      set(painted$, false);
-      set(nativeHost.synchronize$);
+      set(readiness.transition$, "capture-pending");
       set(geometry.setCapture$, {
         width: settings.maxWidth,
         height: settings.maxHeight,
@@ -260,11 +329,9 @@ function createSelectedSession(
       client: attached.frames,
       sessionId: attached.frameSessionId,
       sink: frameLease.sink,
-      current$: active$,
+      alive$,
       waitForAdmission$,
-      painted$: computed((get) => {
-        return get(painted$);
-      }),
+      painted$: readiness.painted$,
       failed$: captureFailed$,
       starting$: captureStarted$,
     },
@@ -272,7 +339,7 @@ function createSelectedSession(
   );
   const { refresh$, prepareRetry$ } = createSessionRefreshGraph({
     attached,
-    active$,
+    alive$,
     waitForAdmission$,
     directory,
     geometry,
@@ -283,15 +350,14 @@ function createSelectedSession(
   });
   return {
     attached,
-    active$,
-    current$,
+    alive$,
+    admitted$,
     geometry,
     input,
     navigation,
     stream,
     frameLease,
-    painted$,
-    inputReady$,
+    readiness,
     failure$,
     favicon$,
     waitForAdmission$,
@@ -303,7 +369,7 @@ type SelectedSession = ReturnType<typeof createSelectedSession>;
 
 interface SessionRefreshNodes {
   readonly attached: AttachedSelection;
-  readonly active$: Computed<boolean>;
+  readonly alive$: Computed<boolean>;
   readonly waitForAdmission$: Command<Promise<void>, [AbortSignal]>;
   readonly directory: TargetDirectory;
   readonly geometry: DisplayViewport;
@@ -320,7 +386,7 @@ function createSessionRestart(
 ) {
   const {
     attached,
-    active$,
+    alive$,
     waitForAdmission$,
     settings$,
     stream,
@@ -329,7 +395,7 @@ function createSessionRestart(
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     signal.throwIfAborted();
     const intent = get(refreshIntent$);
-    if (!intent || !get(active$)) {
+    if (!intent || !get(alive$)) {
       throw cancelled();
     }
     const progress: { phase: "stopping" | "stopped" | "starting" } = {
@@ -340,13 +406,13 @@ function createSessionRestart(
         await set(stream.stop$, signal);
         progress.phase = "stopped";
         signal.throwIfAborted();
-        if (!get(active$)) {
+        if (!get(alive$)) {
           throw cancelled();
         }
         await set(waitForAdmission$, signal);
         await set(intent.prepare$);
         signal.throwIfAborted();
-        if (!get(active$)) {
+        if (!get(alive$)) {
           throw cancelled();
         }
         progress.phase = "starting";
@@ -358,7 +424,7 @@ function createSessionRestart(
       return;
     }
     const error: unknown = result.reason;
-    if (get(active$) && !signal.aborted) {
+    if (get(alive$) && !signal.aborted) {
       if (
         progress.phase === "stopping" &&
         error instanceof CdpFault &&
@@ -371,14 +437,14 @@ function createSessionRestart(
             if (progress.phase !== "stopped") {
               await set(stream.stop$, attached.frames.signal);
             }
-            if (!get(active$)) {
+            if (!get(alive$)) {
               throw cancelled();
             }
             await set(stream.begin$, get(settings$), signal);
           })(),
         ]);
         signal.throwIfAborted();
-        if (restored.status === "rejected" && get(active$)) {
+        if (restored.status === "rejected" && get(alive$)) {
           await set(captureFailed$, restored.reason, signal);
         }
       }
@@ -388,7 +454,7 @@ function createSessionRestart(
 }
 
 function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
-  const { attached, active$, stream, waitForAdmission$, directory, geometry } =
+  const { attached, alive$, stream, waitForAdmission$, directory, geometry } =
     nodes;
   const refreshIntent$ = state<RefreshIntent | null>(null);
   const restartExclusive$ = createSessionRestart(nodes, refreshIntent$);
@@ -416,7 +482,7 @@ function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
       };
       await set(stream.exclusive$, restartExclusive$, signal);
       signal.throwIfAborted();
-      if (!get(active$)) {
+      if (!get(alive$)) {
         throw cancelled();
       }
     },
@@ -425,12 +491,12 @@ function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       signal.throwIfAborted();
       await set(waitForAdmission$, signal);
-      if (!get(active$)) {
+      if (!get(alive$)) {
         throw cancelled();
       }
       await set(directory.assertMember$, attached.owner.targetId, signal);
       signal.throwIfAborted();
-      if (!get(active$)) {
+      if (!get(alive$)) {
         throw cancelled();
       }
       const boundary = await captureBoundary(
@@ -439,12 +505,12 @@ function createSessionRefreshGraph(nodes: SessionRefreshNodes) {
         nodes.frameCurrent,
       );
       signal.throwIfAborted();
-      if (boundary === null || !get(active$)) {
+      if (boundary === null || !get(alive$)) {
         throw cancelled();
       }
       await set(directory.assertMember$, attached.owner.targetId, signal);
       signal.throwIfAborted();
-      if (!get(active$)) {
+      if (!get(alive$)) {
         throw cancelled();
       }
       set(geometry.fence$, boundary);
@@ -502,7 +568,7 @@ interface ControllerLinks {
     [SelectedSession, Retirement, InputStop, AbortSignal]
   >;
   readonly retireCurrent$: Command<void, [InputStop, boolean, boolean?]>;
-  readonly streaming$: Command<void, [SelectedSession]>;
+  readonly sessionChanged$: Command<void, [SelectionOwner]>;
   readonly waitReady$: Command<Promise<void>, [SelectionOwner, AbortSignal]>;
   readonly waitForReady$: Command<Promise<void>, [AbortSignal]>;
   readonly waitSelection$: Command<
@@ -897,6 +963,7 @@ function createDiscoveryInvalidation(
         const selected = get(get(links$).selectedSession$);
         if (selected) {
           set(selected.input.revoke$);
+          set(selected.readiness.transition$, "admission-changed");
         }
         set(context.wake$);
       }
@@ -940,32 +1007,18 @@ type DiscoveryDependencies = ControllerDependencies<
   | "selectTab$"
   | "selectedSession$"
   | "scheduleCapture$"
-  | "refreshFavicon$"
-  | "streaming$"
 >;
 
-function createDiscoveryReadmission(
-  model: ViewerSignals,
-  hasSelectionRecovery$: Computed<boolean>,
-  links$: DiscoveryDependencies,
-) {
-  return command(({ get, set }, signal: AbortSignal) => {
+function createDiscoveryReadmission(links$: DiscoveryDependencies) {
+  return command(({ get, set }) => {
     const retained = get(get(links$).selectedSession$);
-    if (!retained || !get(retained.current$) || !get(retained.inputReady$)) {
+    if (!retained) {
       return;
     }
-    if (
-      get(model.snapshot$).status === "connecting" &&
-      !get(hasSelectionRecovery$)
-    ) {
-      set(get(links$).streaming$, retained);
+    set(retained.readiness.transition$, "admission-changed");
+    if (get(retained.admitted$) && get(retained.readiness.initialized$)) {
+      set(get(links$).scheduleCapture$);
     }
-    set(get(links$).scheduleCapture$);
-    detachBrowser(
-      set(get(links$).refreshFavicon$, retained, signal),
-      Reason.DomCallback,
-      "browser revalidated favicon",
-    );
   });
 }
 
@@ -994,11 +1047,7 @@ function createDiscoveryGraph(
   const hasSelectionRecovery$ = computed((get) => {
     return get(model.imageRecovery$) !== null || get(context.crashed$) !== null;
   });
-  const readmitted$ = createDiscoveryReadmission(
-    model,
-    hasSelectionRecovery$,
-    links$,
-  );
+  const readmitted$ = createDiscoveryReadmission(links$);
   const discoveryFailed$ = createDiscoveryFailure(context, links$);
   const discoveryChanged$ = command(
     ({ get, set }, signal: AbortSignal): void => {
@@ -1063,7 +1112,7 @@ function createDiscoveryGraph(
       ) {
         set(model.transition$, { type: "target-lost", error: null });
       }
-      set(readmitted$, signal);
+      set(readmitted$);
       set(nativeHost.synchronize$);
       set(wake$);
     },
@@ -1149,7 +1198,7 @@ function createCaptureRecoveryGraph(
         !selected ||
         selected.attached.owner !== owner ||
         selected.attached.frames !== get(context.framesState$) ||
-        !get(selected.active$)
+        !get(selected.alive$)
       ) {
         return;
       }
@@ -1182,7 +1231,7 @@ function createCaptureRecoveryGraph(
         new Map(get(retirements$)).set(owner.targetId, retirement),
       );
       set(selected.stream.suspend$);
-      set(selected.painted$, false);
+      set(selected.readiness.transition$, "capture-pending");
       const display = get(get(links$).displayGraph$);
       if (display) {
         set(display.setSuspended$, true);
@@ -1230,7 +1279,11 @@ function createSelectedSessionsGraph(
     | "sink"
   >,
   links$: ControllerDependencies<
-    "captureFailed$" | "discovery$" | "scheduleCapture$" | "waitForAdmission$"
+    | "captureFailed$"
+    | "discovery$"
+    | "scheduleCapture$"
+    | "waitForAdmission$"
+    | "sessionChanged$"
   >,
 ): Pick<ControllerLinks, "captureStarted$" | "selectedSession$"> {
   const {
@@ -1266,28 +1319,32 @@ function createSelectedSessionsGraph(
     if (!attached || !directory) {
       return null;
     }
-    const active$ = computed((get) => {
+    const alive$ = computed((get) => {
       return get(available$) && get(selectedOwner$) === attached.owner;
     });
-    const current$ = computed((get) => {
+    const admitted$ = computed((get) => {
       const discovery = get(get(links$).discovery$);
       return (
-        get(active$) &&
+        get(alive$) &&
         !!discovery &&
         get(discovery.admitted$) &&
         get(discovery.selectedTargetId$) === attached.owner.targetId
       );
     });
-    return createSelectedSession(attached, current$, {
-      active$,
-      waitForAdmission$: get(links$).waitForAdmission$,
-      sink,
-      directory,
-      nativeHost,
-      settings$,
-      failed$: get(links$).captureFailed$,
-      started$: captureStarted$,
-    });
+    return createSelectedSession(
+      attached,
+      { alive$, admitted$ },
+      {
+        waitForAdmission$: get(links$).waitForAdmission$,
+        sink,
+        directory,
+        nativeHost,
+        settings$,
+        failed$: get(links$).captureFailed$,
+        started$: captureStarted$,
+        sessionChanged$: get(links$).sessionChanged$,
+      },
+    );
   });
   return { captureStarted$, selectedSession$ };
 }
@@ -1329,7 +1386,7 @@ function createDisplayGraph(
       signal: AbortSignal,
     ): Promise<void> => {
       const selected = get(get(links$).selectedSession$);
-      if (!selected || !get(selected.active$)) {
+      if (!selected || !get(selected.alive$)) {
         throw cancelled();
       }
       await set(selected.refresh$, prepare$, signal);
@@ -1367,9 +1424,7 @@ function createDisplayGraph(
     const selected = get(get(links$).selectedSession$);
     const image = get(model.imageRecovery$);
     return selected &&
-      get(selected.current$) &&
-      get(selected.painted$) &&
-      get(selected.inputReady$) &&
+      get(selected.readiness.usable$) &&
       get(selected.input.available$) &&
       (!image || image.phase === "presented")
       ? selected.input
@@ -1411,7 +1466,6 @@ function createCaptureGraph(
     | "captureStartedState$"
     | "captureUpdated$"
     | "displaySize$"
-    | "nativeHost"
     | "settings$"
   >,
   links$: ControllerDependencies<
@@ -1430,7 +1484,6 @@ function createCaptureGraph(
     settings$,
     capturePending$,
     assertAvailable$,
-    nativeHost,
   } = context;
   const resetCaptureDeadline$ = resetSignal();
   const cancelCapture$ = command(({ set }) => {
@@ -1443,7 +1496,7 @@ function createCaptureGraph(
       set(assertAvailable$, signal);
       set(cancelCapture$);
       const selected = get(get(links$).selectedSession$);
-      if (!selected || !get(selected.active$)) {
+      if (!selected || !get(selected.alive$)) {
         throw cancelled();
       }
       await set(selected.waitForAdmission$, signal);
@@ -1451,12 +1504,11 @@ function createCaptureGraph(
         return;
       }
       const requested = get(settings$);
-      set(selected.painted$, false);
-      set(nativeHost.synchronize$);
+      set(selected.readiness.transition$, "capture-pending");
       await set(selected.stream.configure$, requested, signal);
       signal.throwIfAborted();
       if (
-        !get(selected.active$) ||
+        !get(selected.alive$) ||
         !sameCaptureSettings(requested, get(settings$))
       ) {
         throw cancelled();
@@ -1473,7 +1525,7 @@ function createCaptureGraph(
     const size = get(displaySize$);
     if (
       !selected ||
-      !get(selected.current$) ||
+      !get(selected.admitted$) ||
       !size ||
       ![size.width, size.height, size.dpr].every(positive) ||
       get(get(links$).display$).pending
@@ -1505,7 +1557,7 @@ function createCaptureGraph(
     timeout(
       () => {
         set(captureScheduled$, false);
-        if (!get(selected.current$)) {
+        if (!get(selected.admitted$)) {
           return;
         }
         if (performance.now() - get(captureUpdated$) < 150) {
@@ -1811,11 +1863,7 @@ function createReadinessWait(
           if (failure) {
             throw failure;
           }
-          if (
-            get(selected.current$) &&
-            get(selected.painted$) &&
-            get(selected.inputReady$)
-          ) {
+          if (get(selected.readiness.usable$)) {
             return;
           }
         }
@@ -1851,32 +1899,39 @@ function createReadinessGraph(
   >,
 ): Pick<
   ControllerLinks,
-  "streaming$" | "waitReady$" | "waitForReady$" | "waitSelection$"
+  "sessionChanged$" | "waitReady$" | "waitForReady$" | "waitSelection$"
 > {
   const { model, wake$, nativeHost } = context;
-  const streaming$ = command(({ get, set }, selected: SelectedSession) => {
+  const sessionChanged$ = command(({ get, set }, owner: SelectionOwner) => {
+    const selected = get(get(links$).selectedSession$);
     if (
-      !get(selected.current$) ||
-      !get(selected.painted$) ||
-      !get(selected.inputReady$)
+      !selected ||
+      selected.attached.owner !== owner ||
+      !get(selected.alive$)
     ) {
       return;
     }
-    const image = get(model.imageRecovery$);
-    if (image) {
-      set(get(links$).imageEvent$, {
-        type: "image-painted",
-        owner: image.owner,
-      });
-    } else {
-      const display = get(get(links$).displayGraph$);
-      if (display) {
-        set(display.setSuspended$, false);
+    if (get(selected.readiness.usable$)) {
+      const image = get(model.imageRecovery$);
+      if (image) {
+        set(get(links$).imageEvent$, {
+          type: "image-painted",
+          owner: image.owner,
+        });
+      } else if (get(model.snapshot$).status === "connecting") {
+        const display = get(get(links$).displayGraph$);
+        if (display) {
+          set(display.setSuspended$, false);
+        }
+        set(model.transition$, { type: "streaming" });
       }
-      set(model.transition$, { type: "streaming" });
-      set(wake$);
     }
+    // Native focus sees the completed image-recovery transition, not its prior phase.
     set(nativeHost.synchronize$);
+    set(wake$);
+    if (!get(selected.readiness.usable$)) {
+      return;
+    }
     detachBrowser(
       set(
         get(links$).refreshFavicon$,
@@ -1940,7 +1995,7 @@ function createReadinessGraph(
       }
     },
   );
-  return { streaming$, waitReady$, waitForReady$, waitSelection$ };
+  return { sessionChanged$, waitReady$, waitForReady$, waitSelection$ };
 }
 
 function detachLateAttachment(source: CdpClient, value: unknown) {
@@ -2030,13 +2085,11 @@ function createAttachmentAdmission(
 }
 
 function createAttachmentInitialization(
-  context: ControllerContext<"nativeHost" | "wake$">,
-  links$: ControllerDependencies<
-    "displayGraph$" | "selectedSession$" | "streaming$"
-  >,
+  context: ControllerContext<"wake$">,
+  links$: ControllerDependencies<"displayGraph$" | "selectedSession$">,
   assertCurrent$: Command<void, [SelectionOwner, AbortSignal]>,
 ) {
-  const { wake$, nativeHost } = context;
+  const { wake$ } = context;
   const initialize$ = command(
     async (
       { get, set },
@@ -2054,9 +2107,7 @@ function createAttachmentInitialization(
       if (inputResult.status === "rejected") {
         throw inputResult.reason;
       }
-      set(selected.inputReady$, true);
-      set(nativeHost.synchronize$);
-      set(get(links$).streaming$, selected);
+      set(selected.readiness.transition$, "input-initialized");
       if (captureResult.status === "rejected") {
         throw captureResult.reason;
       }
@@ -2094,7 +2145,6 @@ function createAttachmentGraph(
     | "displayGraph$"
     | "ensureFrames$"
     | "selectedSession$"
-    | "streaming$"
     | "waitRetirement$"
   >,
   admission: ReturnType<typeof createAttachmentAdmission>,
@@ -2488,9 +2538,7 @@ function createSelectionGraph(
       const previous = get(get(links$).selectedSession$);
       if (
         previous?.attached.owner.targetId === targetId &&
-        get(previous.current$) &&
-        get(previous.painted$) &&
-        get(previous.inputReady$) &&
+        get(previous.readiness.usable$) &&
         !get(model.imageRecovery$)
       ) {
         return "completed";
@@ -2549,9 +2597,7 @@ function createFaviconGraph(
       const document = get(selected.favicon$);
       if (
         signal.aborted ||
-        !get(selected.current$) ||
-        !get(selected.painted$) ||
-        !get(selected.inputReady$) ||
+        !get(selected.readiness.usable$) ||
         !document.wanted ||
         !get(faviconAvailable$) ||
         get(faviconPending$)
@@ -2587,7 +2633,7 @@ function createFaviconGraph(
       signal.throwIfAborted();
       if (result.status === "fulfilled") {
         if (
-          get(selected.active$) &&
+          get(selected.alive$) &&
           get(selected.favicon$) === readingDocument &&
           result.value !== undefined
         ) {
@@ -2611,7 +2657,7 @@ function createFaviconGraph(
       ) {
         set(faviconAvailable$, false);
       }
-      if (get(selected.active$) && get(selected.favicon$) === readingDocument) {
+      if (get(selected.alive$) && get(selected.favicon$) === readingDocument) {
         set(selected.favicon$, { wanted: false, waiting: false, ready: true });
         set(model.setFavicon$, {
           targetId: selected.attached.owner.targetId,
@@ -2706,7 +2752,7 @@ function createSessionEvent(
 
 function createScreencastEvent(
   context: ControllerContext<"framesState$" | "framePresented$">,
-  links$: ControllerDependencies<"selectedSession$" | "streaming$">,
+  links$: ControllerDependencies<"selectedSession$">,
 ) {
   const { framesState$ } = context;
   return command(({ get, set }, event: CdpEvent, source: CdpClient) => {
@@ -2728,7 +2774,7 @@ function createScreencastEvent(
       !selected ||
       source !== selected.attached.frames ||
       id !== selected.attached.frameSessionId ||
-      !get(selected.current$) ||
+      !get(selected.admitted$) ||
       !get(selected.stream.acceptingFrames$) ||
       typeof params.data !== "string"
     ) {
@@ -2742,19 +2788,16 @@ function createScreencastEvent(
       selected.stream.push$,
       params.data,
       (raster: Viewport) => {
-        if (!get(selected.current$)) {
+        if (!get(selected.admitted$)) {
           return;
         }
         set(selected.geometry.paintFrame$, receipt, raster);
         set(context.framePresented$, selected.attached.owner.targetId);
-        if (!get(selected.painted$)) {
-          set(selected.painted$, true);
-          set(get(links$).streaming$, selected);
-        }
+        set(selected.readiness.transition$, "frame-painted");
       },
       (raster: Viewport) => {
         return (
-          get(selected.current$) &&
+          get(selected.admitted$) &&
           set(selected.geometry.acceptFrame$, receipt, raster)
         );
       },
@@ -2872,7 +2915,6 @@ function createProtocolEventDispatch(
     | "retireCurrent$"
     | "revalidateSelection$"
     | "selectedSession$"
-    | "streaming$"
   >,
   followActiveTarget$: ControllerLinks["followActiveTarget$"],
 ) {
@@ -3285,7 +3327,6 @@ function createEventsGraph(
     | "revalidateSelection$"
     | "selectTab$"
     | "selectedSession$"
-    | "streaming$"
   >,
 ): Pick<
   ControllerLinks,
@@ -4220,13 +4261,13 @@ function createNavigationGraph(
   const reloadCrashed$ = createCrashedPageReload(context, links$);
   const navigation$ = computed((get) => {
     const selected = get(get(links$).selectedSession$);
-    return selected && get(selected.current$)
+    return selected && get(selected.admitted$)
       ? get(selected.navigation.navigation$)
       : null;
   });
   const history$ = computed(async (get): Promise<ViewerHistory | null> => {
     const selected = get(get(links$).selectedSession$);
-    return selected && get(selected.current$)
+    return selected && get(selected.admitted$)
       ? await get(selected.navigation.history$)
       : null;
   });
@@ -4236,7 +4277,7 @@ function createNavigationGraph(
       return crash;
     }
     const selected = get(get(links$).selectedSession$);
-    return selected && get(selected.current$)
+    return selected && get(selected.admitted$)
       ? selected.navigation.scope
       : null;
   });
@@ -4262,11 +4303,7 @@ function createNavigationGraph(
 
 function createImageRetryGraph(
   context: ControllerContext<
-    | "assertAvailable$"
-    | "framesState$"
-    | "model"
-    | "nativeHost"
-    | "selectedOwner$"
+    "assertAvailable$" | "framesState$" | "model" | "selectedOwner$"
   >,
   links$: ControllerDependencies<
     | "imageEvent$"
@@ -4277,8 +4314,7 @@ function createImageRetryGraph(
     | "waitRetirement$"
   >,
 ): Pick<ControllerLinks, "retryStartingGraph$" | "retryImage$"> {
-  const { model, selectedOwner$, framesState$, assertAvailable$, nativeHost } =
-    context;
+  const { model, selectedOwner$, framesState$, assertAvailable$ } = context;
   const retryStartingGraph$ = computed((get) => {
     const selected = get(get(links$).selectedSession$);
     const image = get(model.imageRecovery$);
@@ -4333,8 +4369,7 @@ function createImageRetryGraph(
             throw cancelled();
           }
           set(selected.failure$, null);
-          set(selected.painted$, false);
-          set(nativeHost.synchronize$);
+          set(selected.readiness.transition$, "capture-pending");
           set(get(links$).imageEvent$, {
             type: "image-retrying",
             owner: image.owner,
@@ -4354,7 +4389,7 @@ function createImageRetryGraph(
             signal,
           );
           signal.throwIfAborted();
-          if (!get(selected.active$)) {
+          if (!get(selected.alive$)) {
             throw cancelled();
           }
           set(get(links$).imageEvent$, {
@@ -4366,7 +4401,7 @@ function createImageRetryGraph(
       ]);
       signal.throwIfAborted();
       if (result.status === "rejected") {
-        if (get(selected.active$)) {
+        if (get(selected.alive$)) {
           set(get(links$).imageEvent$, {
             type: "image-blocked",
             owner: image.owner,

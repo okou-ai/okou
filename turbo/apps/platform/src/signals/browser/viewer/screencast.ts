@@ -19,7 +19,7 @@ interface ScreencastOwner {
   readonly sessionId: string;
   readonly sink: FrameSink;
   /** Resource ownership survives a temporary input/presentation admission gate. */
-  readonly current$: Computed<boolean>;
+  readonly alive$: Computed<boolean>;
   readonly waitForAdmission$: Command<Promise<void>, [AbortSignal]>;
   /** starting$ invalidates the previous capture's accepted-paint proof. */
   readonly painted$: Computed<boolean>;
@@ -72,16 +72,16 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
     new Set(),
   );
 
-  const current$ = computed((get) => {
+  const alive$ = computed((get) => {
     return (
       get(ownerActive$) &&
       !get(disposed$) &&
       !get(detachedState$) &&
-      get(owner.current$)
+      get(owner.alive$)
     );
   });
   const acceptingFrames$ = computed((get) => {
-    return get(current$) && !get(halted$) && get(accepting$);
+    return get(alive$) && !get(halted$) && get(accepting$);
   });
   const stopped$ = computed((get) => {
     return get(native$).kind === "stopped";
@@ -105,7 +105,7 @@ function createCaptureState(owner: ScreencastOwner, settings: CaptureSettings) {
     navigationRevision$,
     navigating$,
     navigationListeners$,
-    current$,
+    alive$,
     acceptingFrames$,
     stopped$,
   };
@@ -185,7 +185,7 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
     disposed$,
     accepting$,
     revision$,
-    current$,
+    alive$,
     native$,
     detachedState$,
     resetFirstFrame$,
@@ -215,7 +215,7 @@ function createCaptureCore(owner: ScreencastOwner, graph: CaptureState) {
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      if (!get(current$) || get(halted$)) {
+      if (!get(alive$) || get(halted$)) {
         return;
       }
       set(suspend$);
@@ -295,14 +295,14 @@ function createCaptureReadiness(
   graph: CaptureState,
   core: CaptureCore,
 ) {
-  const { current$, native$, halted$, resetFirstFrame$ } = graph;
+  const { alive$, native$, halted$, resetFirstFrame$ } = graph;
   return command(({ get, set }, native: NativeCapture) => {
     const signal = set(resetFirstFrame$, owner.client.signal);
     const deadline = monotonicNow() + 30_000;
     setLoop(
       async () => {
         if (
-          !get(current$) ||
+          !get(alive$) ||
           get(native$) !== native ||
           get(halted$) ||
           get(owner.painted$)
@@ -339,7 +339,7 @@ function createCaptureBegin(
 ) {
   const {
     native$,
-    current$,
+    alive$,
     halted$,
     accepting$,
     applied$,
@@ -357,7 +357,7 @@ function createCaptureBegin(
       const identity = {};
       await set(acquireLane$, identity, "cleanup", signal);
       const [result] = await Promise.allSettled(
-        get(native$) === native || !get(current$) || get(halted$)
+        get(native$) === native || !get(alive$) || get(halted$)
           ? [set(stop$, signal)]
           : [],
       );
@@ -379,7 +379,7 @@ function createCaptureBegin(
     ): Promise<void> => {
       signal.throwIfAborted();
       await set(owner.waitForAdmission$, signal);
-      if (!get(current$)) {
+      if (!get(alive$)) {
         return;
       }
       if (get(halted$)) {
@@ -391,7 +391,7 @@ function createCaptureBegin(
       set(native$, native);
       set(owner.starting$, next, signal);
       signal.throwIfAborted();
-      if (!get(current$) || get(halted$)) {
+      if (!get(alive$) || get(halted$)) {
         return;
       }
       const { quality, ...image } = next;
@@ -411,7 +411,7 @@ function createCaptureBegin(
         signal,
       );
       signal.throwIfAborted();
-      if (!get(current$) || get(native$) !== native || get(halted$)) {
+      if (!get(alive$) || get(native$) !== native || get(halted$)) {
         return;
       }
       set(applied$, next);
@@ -420,7 +420,7 @@ function createCaptureBegin(
   );
   const resume$ = command(({ get, set }, signal: AbortSignal) => {
     signal.throwIfAborted();
-    if (!get(current$) || get(halted$) || get(stopped$)) {
+    if (!get(alive$) || get(halted$) || get(stopped$)) {
       return;
     }
     set(accepting$, true);
@@ -434,7 +434,7 @@ function createCaptureBegin(
 function createCaptureNavigation(graph: CaptureState, core: CaptureCore) {
   const {
     navigating$,
-    current$,
+    alive$,
     navigationListeners$,
     halted$,
     navigationRevision$,
@@ -443,7 +443,7 @@ function createCaptureNavigation(graph: CaptureState, core: CaptureCore) {
   const waitForNavigation$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
       signal.throwIfAborted();
-      if (!get(navigating$).size || !get(current$)) {
+      if (!get(navigating$).size || !get(alive$)) {
         return true;
       }
       const event = createDeferredPromise<boolean>(signal);
@@ -466,7 +466,7 @@ function createCaptureNavigation(graph: CaptureState, core: CaptureCore) {
       if (result.status === "rejected") {
         throw result.reason;
       }
-      return result.value && get(current$) && !get(halted$);
+      return result.value && get(alive$) && !get(halted$);
     },
   );
 
@@ -495,7 +495,7 @@ function createCaptureConfiguration(
     CaptureNavigation,
 ) {
   const {
-    current$,
+    alive$,
     halted$,
     reservation$,
     applied$,
@@ -518,7 +518,7 @@ function createCaptureConfiguration(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
       signal.throwIfAborted();
       let recoveredNavigation = false;
-      while (get(current$) && !get(halted$) && !get(reservation$)) {
+      while (get(alive$) && !get(halted$) && !get(reservation$)) {
         const previous = get(applied$);
         if (previous && sameCaptureSettings(previous, get(desired$))) {
           return;
@@ -526,7 +526,7 @@ function createCaptureConfiguration(
         if (!get(stopped$)) {
           await set(stop$, signal);
           signal.throwIfAborted();
-          if (!get(current$) || get(halted$)) {
+          if (!get(alive$) || get(halted$)) {
             return;
           }
         }
@@ -567,7 +567,7 @@ function createCaptureConfiguration(
         set(releaseLane$, identity);
         signal.throwIfAborted();
       }
-      if (!get(current$) || get(halted$) || get(reservation$)) {
+      if (!get(alive$) || get(halted$) || get(reservation$)) {
         set(releaseLane$, identity);
         return;
       }
@@ -673,7 +673,7 @@ function createCaptureExclusive(
   graph: CaptureState,
   ports: CaptureLaneCommands & CaptureConfiguration,
 ) {
-  const { current$, halted$, reservation$ } = graph;
+  const { alive$, halted$, reservation$ } = graph;
   const { releaseLane$, acquireLane$, reconcile$ } = ports;
   const runExclusive$ = command(
     async (
@@ -682,7 +682,7 @@ function createCaptureExclusive(
       signal: AbortSignal,
     ): Promise<void> => {
       signal.throwIfAborted();
-      if (get(current$) && !get(halted$)) {
+      if (get(alive$) && !get(halted$)) {
         await set(operation$, signal);
         signal.throwIfAborted();
       }
@@ -791,7 +791,7 @@ function createCaptureRetry(
     CaptureExclusive &
     CaptureCleanup,
 ) {
-  const { current$, halted$, applied$, desired$, reservation$ } = graph;
+  const { alive$, halted$, applied$, desired$, reservation$ } = graph;
   const {
     begin$,
     quiesce$,
@@ -810,11 +810,11 @@ function createCaptureRetry(
       signal.throwIfAborted();
       await set(prepare$, signal);
       signal.throwIfAborted();
-      if (!get(current$)) {
+      if (!get(alive$)) {
         return;
       }
       set(starting$);
-      if (!get(current$)) {
+      if (!get(alive$)) {
         return;
       }
       set(halted$, false);
@@ -832,7 +832,7 @@ function createCaptureRetry(
       signal.throwIfAborted();
       await set(quiesce$, signal);
       signal.throwIfAborted();
-      if (!get(current$)) {
+      if (!get(alive$)) {
         return;
       }
       if (get(reservation$)) {

@@ -88,7 +88,7 @@ interface SessionConnection {
 
 function createSessionState(
   connection: SessionConnection,
-  isCurrent$: Computed<boolean>,
+  admitted$: Computed<boolean>,
   geometry: DisplayViewport,
   nativeHost: NativeInputHost,
   navigation: NavigationData,
@@ -121,7 +121,7 @@ function createSessionState(
       get(available$) &&
       !get(retiring$) &&
       !get(navigationGate$) &&
-      get(isCurrent$) &&
+      get(admitted$) &&
       get(lifetime$) !== null
     );
   });
@@ -147,7 +147,7 @@ function createSessionState(
   return {
     client,
     sessionId,
-    isCurrent$,
+    admitted$,
     geometry,
     nativeHost,
     navigation,
@@ -1040,7 +1040,7 @@ function createSessionKeyboard(graph: SessionObservations) {
 function createNavigationAdmission(graph: SessionActions) {
   const {
     navigationGate$,
-    isCurrent$,
+    admitted$,
     retiring$,
     available$,
     lifetime$,
@@ -1050,7 +1050,7 @@ function createNavigationAdmission(graph: SessionActions) {
     ({ get, set }, gate: object, lifetime: object, owner?: InputOwner) => {
       if (
         get(navigationGate$) !== gate ||
-        !get(isCurrent$) ||
+        !get(admitted$) ||
         get(retiring$) ||
         !get(available$) ||
         get(lifetime$) !== lifetime
@@ -1175,7 +1175,7 @@ function createSessionNavigation(graph: SessionActions) {
 /** A stable, store-isolated input graph for one native CDP session. */
 export function createInputSession(
   connection: SessionConnection,
-  isCurrent$: Computed<boolean>,
+  admitted$: Computed<boolean>,
   geometry: DisplayViewport,
   nativeHost: NativeInputHost,
   navigation: NavigationData,
@@ -1183,7 +1183,7 @@ export function createInputSession(
   const { client, sessionId } = connection;
   const values = createSessionState(
     connection,
-    isCurrent$,
+    admitted$,
     geometry,
     nativeHost,
     navigation,
@@ -1195,7 +1195,7 @@ export function createInputSession(
     client,
     values.lifecycle,
     values.effects,
-    isCurrent$,
+    admitted$,
     failed$,
   );
   const selectionReader = createSelectionReader(

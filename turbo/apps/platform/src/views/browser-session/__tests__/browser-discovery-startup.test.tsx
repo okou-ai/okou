@@ -111,6 +111,9 @@ async function ready(url = "https://first.example.com") {
   await waitFor(() => {
     expect(screen.getByLabelText("Address")).toHaveValue(url);
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    expect(
+      screen.getByRole("img", { name: "Live browser view" }),
+    ).toBeVisible();
   });
 }
 
@@ -337,6 +340,162 @@ test("An initial document receipt is retained until membership is readmitted", a
   });
   await ready();
 });
+
+test.each([
+  ["input", "proof", "frame"],
+  ["input", "frame", "proof"],
+  ["proof", "input", "frame"],
+  ["proof", "frame", "input"],
+  ["frame", "input", "proof"],
+  ["frame", "proof", "input"],
+] as const)(
+  "Retained initialization joins %s, %s, then %s before accepting input",
+  async (first, second, third) => {
+    const { browser, start } = viewer();
+    const layout = browser.holdNext("Page.getLayoutMetrics");
+    const frame = browser.holdTargetFrames("own-first");
+    await start();
+    await layout.received;
+    await frame.received;
+    await screen.findByLabelText("Later own tab");
+    const proof = browser.holdNextMembership("own-first");
+    act(() => {
+      browser.nativeEvent("tab-created", undefined, {
+        tabId: 100,
+        windowId: 101,
+      });
+    });
+    await proof.received;
+    const completed = new Set<string>();
+    let acceptedFrame = false;
+    for (const step of [first, second, third]) {
+      if (step === "input") {
+        await act(layout.release);
+      } else if (step === "proof") {
+        await act(proof.release);
+      } else {
+        await act(() => {
+          frame.release();
+        });
+        acceptedFrame = completed.has("proof");
+      }
+      completed.add(step);
+      await waitFor(() => {
+        expect(screen.getByLabelText("Remote browser input")).toHaveProperty(
+          "disabled",
+          !(completed.size === 3 && acceptedFrame),
+        );
+      });
+    }
+    if (!acceptedFrame) {
+      // A picture received without current membership cannot become proof later.
+      await act(() => {
+        browser.frame("AAAA", browser.pageSession("own-first"));
+      });
+    }
+    await ready();
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    const text = `${first}-${second}-${third}`;
+    fireEvent.input(input, {
+      target: { value: text },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.insertText",
+          sessionId: browser.pageSession("own-first"),
+          params: { text },
+        }),
+      );
+    });
+  },
+);
+
+test.each(["input", "proof"] as const)(
+  "A retained initial picture becomes usable when %s completes before the other prerequisite",
+  async (first) => {
+    const { browser, start } = viewer();
+    const layout = browser.holdNext("Page.getLayoutMetrics");
+    const frame = browser.holdTargetFrames("own-first");
+    await start();
+    await layout.received;
+    await frame.received;
+    await screen.findByLabelText("Later own tab");
+    await act(() => {
+      frame.release();
+    });
+    const proof = browser.holdNextMembership("own-first");
+    act(() => {
+      browser.nativeEvent("tab-created", undefined, {
+        tabId: 100,
+        windowId: 101,
+      });
+    });
+    await proof.received;
+    await act(first === "input" ? layout.release : proof.release);
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await act(first === "input" ? proof.release : layout.release);
+    // No replacement frame: whichever prerequisite finishes last publishes ready.
+    await ready();
+  },
+);
+
+test.each([false, true])(
+  "Moving an initializing retained tab cancels its late readiness (painted: %s)",
+  async (painted) => {
+    const { browser, start } = viewer();
+    const layout = browser.holdNext("Page.getLayoutMetrics");
+    const frame = browser.holdTargetFrames("own-first");
+    await start();
+    await layout.received;
+    await frame.received;
+    await screen.findByLabelText("Later own tab");
+    if (painted) {
+      await act(() => {
+        frame.release();
+      });
+    }
+    const proof = browser.holdNextMembership("own-first");
+    act(() => {
+      browser.nativeEvent("tab-created", undefined, {
+        tabId: 100,
+        windowId: 101,
+      });
+    });
+    await proof.received;
+    act(() => {
+      browser.move("own-first", 202);
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await act(proof.release);
+    await ready("https://later.example.com");
+    await act(layout.release);
+    if (!painted) {
+      await act(() => {
+        frame.release();
+      });
+    }
+    await ready("https://later.example.com");
+    expect(screen.queryByLabelText("First own tab")).not.toBeInTheDocument();
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    fireEvent.input(input, {
+      target: { value: "surviving initialization" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.insertText",
+          sessionId: browser.pageSession("own-later"),
+          params: { text: "surviving initialization" },
+        }),
+      );
+    });
+  },
+);
 
 test.each(["Page.getFrameTree", "Page.getLayoutMetrics"] as const)(
   "Initial document setup retains a same-document change while %s is held",

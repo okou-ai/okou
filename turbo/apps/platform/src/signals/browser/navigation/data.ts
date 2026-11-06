@@ -15,12 +15,12 @@ function cancelled(): DOMException {
 function createNavigationState(
   client: CdpClient,
   sessionId: string,
-  current$: Computed<boolean>,
+  admitted$: Computed<boolean>,
 ) {
   return {
     client,
     sessionId,
-    current$,
+    admitted$,
     scope: Object.freeze({}),
     document$: state<ViewerNavigation | null>(null),
     initialRevision$: state(0),
@@ -34,25 +34,25 @@ function createNavigationReads(graph: NavigationState) {
   const {
     client,
     sessionId,
-    current$,
+    admitted$,
     document$,
     attachment$,
     historyVersion$,
   } = graph;
   const navigation$ = computed((get) => {
-    return get(current$) ? get(document$) : null;
+    return get(admitted$) ? get(document$) : null;
   });
   const history$ = computed(async (get): Promise<ViewerHistory | null> => {
     const attachment = get(attachment$);
     get(historyVersion$);
-    if (!attachment || !get(current$) || !get(document$)) {
+    if (!attachment || !get(admitted$) || !get(document$)) {
       return null;
     }
     const history = await Promise.race([
       client.request("Page.getNavigationHistory", undefined, sessionId),
       attachment.ended.promise,
     ]);
-    if (!get(current$)) {
+    if (!get(admitted$)) {
       throw cancelled();
     }
     return {
@@ -63,7 +63,7 @@ function createNavigationReads(graph: NavigationState) {
   });
   const readHistory$ = command(async ({ get }, signal: AbortSignal) => {
     const attachment = get(attachment$);
-    if (!attachment || !get(current$)) {
+    if (!attachment || !get(admitted$)) {
       throw cancelled();
     }
     const history = await Promise.race([
@@ -77,7 +77,7 @@ function createNavigationReads(graph: NavigationState) {
       attachment.ended.promise,
     ]);
     signal.throwIfAborted();
-    if (!get(current$)) {
+    if (!get(admitted$)) {
       throw cancelled();
     }
     return history;
@@ -161,9 +161,9 @@ function createNavigationObservation(graph: NavigationState) {
 export function createNavigationData(
   client: CdpClient,
   sessionId: string,
-  current$: Computed<boolean>,
+  admitted$: Computed<boolean>,
 ) {
-  const graph = createNavigationState(client, sessionId, current$);
+  const graph = createNavigationState(client, sessionId, admitted$);
   const { observe$, ...observation } = createNavigationObservation(graph);
   const frameId$ = computed((get) => {
     return get(graph.document$)?.frameId ?? null;
