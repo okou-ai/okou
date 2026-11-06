@@ -73,10 +73,6 @@ export function createSelectedVisibility(
     set(receipt$, completion);
     return completion;
   });
-  const preparing$ = command(({ set }) => {
-    set(geometry.resumePresentation$);
-    set(presenting$, true);
-  });
   const resume$ = command(async ({ get, set }, signal: AbortSignal) => {
     const operation = set(resetResume$, attached.client.signal, signal);
     const receipt = get(receipt$);
@@ -91,7 +87,12 @@ export function createSelectedVisibility(
     if (!get(alive$) || get(intent$).paused) {
       return;
     }
-    await set(stream.retry$, prepareRetry$, preparing$, operation);
+    await set(
+      stream.retry$,
+      prepareRetry$,
+      geometry.resumePresentation$,
+      operation,
+    );
     signal.throwIfAborted();
     operation.throwIfAborted();
     // Preserve established-session proof while its new picture is pending.

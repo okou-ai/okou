@@ -2854,12 +2854,16 @@ test("Rapid visibility changes retain the preview until original capture cleanup
   });
 });
 
-test.each(["original stop", "resume preparation"] as const)(
+test.each([
+  "original stop",
+  "pending original stop",
+  "resume preparation",
+] as const)(
   "A resume after a failed %s requires explicit recovery before accepting input",
   async (failure) => {
     const visibility = context.mocks.browser.visibilityState("visible");
     const browser = await setupViewer(0);
-    if (failure === "original stop") {
+    if (failure !== "resume preparation") {
       browser.failNext("Page.stopScreencast", "Original stop failed");
     }
     const stop = browser.holdNext("Page.stopScreencast");
@@ -2882,7 +2886,7 @@ test.each(["original stop", "resume preparation"] as const)(
     await screen.findByText("Browser view unavailable");
     const retry = await waitFor(() => {
       const name =
-        failure === "original stop" ? "Retry live image" : "Reconnect";
+        failure !== "resume preparation" ? "Retry live image" : "Reconnect";
       const button = queryAllByRoleFast("button").find((candidate) => {
         return candidate.textContent?.trim() === name;
       });
@@ -2890,7 +2894,15 @@ test.each(["original stop", "resume preparation"] as const)(
       return button!;
     });
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    const image = browser.holdTargetFrames("example-page");
     await userEvent.click(retry);
+    await act(async () => {
+      await image.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      image.release();
+    });
     await waitFor(() => {
       expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
     });

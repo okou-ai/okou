@@ -328,6 +328,8 @@ function createSelectedSession(
     ({ set }, settings: CaptureSettings, signal: AbortSignal) => {
       signal.throwIfAborted();
       set(readiness.transition$, "capture-pending");
+      // Visibility resume and explicit image recovery share this capture owner.
+      set(presenting$, true);
       set(geometry.setCapture$, {
         width: settings.maxWidth,
         height: settings.maxHeight,
