@@ -49,7 +49,9 @@ final class RecommendedFollowupTests: XCTestCase {
     try await waitForBusinessResult { conversation.draft == first }
     replaceInput("Keep the trailing paragraph\n   ", in: input)
     editor.selectOrAppendText(first)
-    try await waitForBusinessResult { conversation.draft == "Keep the trailing paragraph\n   " + first }
+    try await waitForBusinessResult {
+      conversation.draft == "Keep the trailing paragraph\n   " + first
+    }
     XCTAssertFalse(
       fixture.requests.values.withLock {
         $0.contains { $0.contains("/api/chat/events") || $0.contains("generat") }
