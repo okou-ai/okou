@@ -29,6 +29,10 @@ URL_LOG_MAX_CHARACTERS = 1_000_000
 HTTP_NETWORK_LOG_MAX_JSONL_BYTES = 1_000_000
 _TRUNCATED_URL = "[truncated]"
 
+# Even non-BMP characters expand to at most 12 JSON ASCII bytes each. Keep
+# connection errors small enough to duplicate in proxy message/error fields.
+CONNECTION_ERROR_LOG_MAX_CHARACTERS = 4_096
+
 
 @dataclass(frozen=True)
 class _ProxyLogUrlProjection:
@@ -165,6 +169,19 @@ def log_http_network_entry(log_path: str, entry: dict, raw_url: str) -> None:
             line = omission_line
 
     jsonl_writer.write_jsonl_line(log_path, line, "network")
+
+
+def project_connection_error_for_log(error_msg: str) -> str:
+    """Bound native error text before interpolation, JSON and UTF-8 encoding.
+
+    Native protocol errors can embed an entire incomplete response head. Omit
+    oversized values without traversing them or retaining a potentially sensitive
+    raw prefix; the native flow error and upstream parser buffers are unchanged.
+    """
+    original_char_count = len(error_msg)
+    if original_char_count > CONNECTION_ERROR_LOG_MAX_CHARACTERS:
+        return f"[connection error omitted: {original_char_count} characters]"
+    return error_msg
 
 
 def project_url_for_proxy_log(raw_url: str) -> _ProxyLogUrlProjection:

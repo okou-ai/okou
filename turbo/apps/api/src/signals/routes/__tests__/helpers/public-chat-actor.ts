@@ -108,7 +108,7 @@ export async function publicChatActor(
     });
   });
   restoreSetupWebhook = undefined;
-  const { providerId } = await run(() => {
+  const { providerId, model } = await run(() => {
     return fixture.api.ensurePersonalSubscriptionModel(actor);
   });
   const agent = await run(() => {
@@ -124,6 +124,7 @@ export async function publicChatActor(
     agentId: agent.agentId,
     runnerGroup,
     providerId,
+    model,
   };
   ready = true;
   return {
