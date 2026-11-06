@@ -21,6 +21,7 @@ pub mod exec_limits;
 pub mod exec_terminal;
 pub mod file_write;
 pub mod guest_binary;
+pub mod guest_timezone;
 pub mod home_cache_history;
 pub mod home_mount;
 pub mod managed_command;
