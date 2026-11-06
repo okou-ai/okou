@@ -129,7 +129,7 @@ final class MessageArtifactStore {
     item.renewedHTMLSignature = renewedHTMLSignature
     let previewID = item.id
     preview = item
-    if item.file != nil, item.artifact.kind == .image { return }
+    if item.file != nil, item.artifact.kind == .image, imageSources.isEmpty { return }
     previewTask = Task { [weak self] in
       guard let self else { return }
       do {

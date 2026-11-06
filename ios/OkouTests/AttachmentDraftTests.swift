@@ -26,7 +26,7 @@ final class AttachmentDraftTests: XCTestCase {
       },
       attachment: ChatAttachment(
         id: AttachmentFlowFixture.fileID, filename: "Screenshot.png", contentType: "image/png",
-        size: bytes.count))
+        size: bytes.count, url: "artifact://\(AttachmentFlowFixture.fileID)"))
     let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { store.close() }
     let source = try makeFile(filename: "Screenshot.png", content: bytes)

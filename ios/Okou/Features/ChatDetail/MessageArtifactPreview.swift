@@ -9,65 +9,68 @@ struct MessageArtifactPreview: View {
   @State private var webLoading = true
 
   var body: some View {
-    if let preview = viewer.preview {
-      MessagePreviewSheet(title: preview.artifact.filename, dismiss: viewer.dismiss) {
-        VStack(spacing: 0) {
-          content(preview).frame(maxWidth: .infinity, maxHeight: .infinity)
-          if let error = preview.downloadError {
-            Text(error).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(
-              OkouSpace.md)
+    Group {
+      if let preview = viewer.preview {
+        MessagePreviewSheet(title: preview.artifact.filename, dismiss: viewer.dismiss) {
+          VStack(spacing: 0) {
+            content(preview).frame(maxWidth: .infinity, maxHeight: .infinity)
+            if let error = preview.downloadError {
+              Text(error).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(
+                OkouSpace.md)
+            }
+            if let warning = viewer.catalogWarning {
+              DisclosureGroup("File details unavailable") {
+                Text(warning).font(.okou(.caption))
+                Button("Refresh file details") { Task { await viewer.refreshDetails() } }
+              }.font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(
+                OkouSpace.md)
+            }
           }
-          if let warning = viewer.catalogWarning {
-            DisclosureGroup("File details unavailable") {
-              Text(warning).font(.okou(.caption))
-              Button("Refresh file details") { Task { await viewer.refreshDetails() } }
-            }.font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(OkouSpace.md)
+        } actions: {
+          if preview.artifact.kind == .image {
+            Button {
+              viewer.navigateImage(-1)
+            } label: {
+              OkouToolbarIcon("chevron-left")
+            }
+            .disabled(!viewer.canNavigateImage(-1)).accessibilityLabel("Previous image")
+            Button {
+              viewer.navigateImage(1)
+            } label: {
+              OkouToolbarIcon("chevron-right")
+            }
+            .disabled(!viewer.canNavigateImage(1)).accessibilityLabel("Next image")
+          }
+          if let text = preview.text {
+            Button {
+              UIPasteboard.general.string = text.text
+            } label: {
+              OkouToolbarIcon("copy")
+            }
+            .accessibilityLabel("Copy content")
+          }
+          if preview.file != nil {
+            Button {
+              viewer.share()
+            } label: {
+              OkouToolbarIcon("share")
+            }
+            .accessibilityLabel("Share or save to Files")
+          } else if preview.isDownloading {
+            ProgressView().accessibilityLabel("Downloading file")
+          } else {
+            Button {
+              viewer.downloadForSharing()
+            } label: {
+              OkouToolbarIcon("download")
+            }
+            .accessibilityLabel("Download file to share or save")
           }
         }
-      } actions: {
-        if preview.artifact.kind == .image {
-          Button {
-            viewer.navigateImage(-1)
-          } label: {
-            OkouToolbarIcon("chevron-left")
-          }
-          .disabled(!viewer.canNavigateImage(-1)).accessibilityLabel("Previous image")
-          Button {
-            viewer.navigateImage(1)
-          } label: {
-            OkouToolbarIcon("chevron-right")
-          }
-          .disabled(!viewer.canNavigateImage(1)).accessibilityLabel("Next image")
+        .onChange(of: preview.id) { _, _ in
+          webError = nil
+          webLoading = true
         }
-        if let text = preview.text {
-          Button {
-            UIPasteboard.general.string = text.text
-          } label: {
-            OkouToolbarIcon("copy")
-          }
-          .accessibilityLabel("Copy content")
-        }
-        if preview.file != nil {
-          Button {
-            viewer.share()
-          } label: {
-            OkouToolbarIcon("share")
-          }
-          .accessibilityLabel("Share or save to Files")
-        } else if preview.isDownloading {
-          ProgressView().accessibilityLabel("Downloading file")
-        } else {
-          Button {
-            viewer.downloadForSharing()
-          } label: {
-            OkouToolbarIcon("download")
-          }
-          .accessibilityLabel("Download file to share or save")
-        }
-      }
-      .onChange(of: preview.id) { _, _ in
-        webError = nil
-        webLoading = true
       }
     }
     .sheet(

@@ -42,13 +42,13 @@ public final class ChatAttachmentFile: Sendable {
     -> ChatAttachmentFile
   {
     let temporary = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: temporary) }
     // A separate link keeps draft cleanup from deleting the sent file without duplicating bytes.
     do {
       try FileManager.default.linkItem(at: source, to: temporary)
     } catch {
       try FileManager.default.copyItem(at: source, to: temporary)
     }
-    defer { try? FileManager.default.removeItem(at: temporary) }
     return try adopt(temporary, filename: filename, originalAttachmentID: attachmentID)
   }
 
