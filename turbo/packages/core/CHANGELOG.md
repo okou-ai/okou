@@ -1,5 +1,30 @@
 # Changelog
 
+## [8.821.0](https://github.com/okou-ai/okou/compare/core-v8.820.1...core-v8.821.0) (2026-11-06)
+
+
+### Features
+
+* roll out message pdf export, pwa navigation and subscription usage to all users ([#45649](https://github.com/okou-ai/okou/issues/45649)) ([7dfca6c](https://github.com/okou-ai/okou/commit/7dfca6cb087e0337b3519a8ae72d1fefd271ff69))
+
+
+### Refactoring
+
+* remove chat thread archiving and muting feature switches ([#45680](https://github.com/okou-ai/okou/issues/45680)) ([4183b2f](https://github.com/okou-ai/okou/commit/4183b2f44fb472a38962c5ad3124939bb11b5cdc))
+* remove ChatThreadInlineRename feature switch ([#45667](https://github.com/okou-ai/okou/issues/45667)) ([9d43b51](https://github.com/okou-ai/okou/commit/9d43b517bffb15108c0c0a96e7df808f2dd58bfe))
+
+
+### Performance Improvements
+
+* **api:** reference default personal instructions instead of initializing at dispatch ([#45686](https://github.com/okou-ai/okou/issues/45686)) ([22b2e6b](https://github.com/okou-ai/okou/commit/22b2e6b28a4eda306d61ba6a35e17a1d9831d74d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.3
+
 ## [8.820.1](https://github.com/okou-ai/okou/compare/core-v8.820.0...core-v8.820.1) (2026-11-06)
 
 

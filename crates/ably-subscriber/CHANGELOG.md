@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.0.7](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.6...ably-subscriber-v2.0.7) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** share strict jsonl fixture parsing ([#45691](https://github.com/okou-ai/okou/issues/45691)) ([5ec5173](https://github.com/okou-ai/okou/commit/5ec5173b2fc232a0068877e4b36bde0b057f195e))
+
 ## [2.0.6](https://github.com/okou-ai/okou/compare/ably-subscriber-v2.0.5...ably-subscriber-v2.0.6) (2026-11-06)
 
 

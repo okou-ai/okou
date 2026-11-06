@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.14](https://github.com/okou-ai/okou/compare/runner-network-v0.4.13...runner-network-v0.4.14) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** share strict jsonl fixture parsing ([#45691](https://github.com/okou-ai/okou/issues/45691)) ([5ec5173](https://github.com/okou-ai/okou/commit/5ec5173b2fc232a0068877e4b36bde0b057f195e))
+
 ## [0.4.13](https://github.com/okou-ai/okou/compare/runner-network-v0.4.12...runner-network-v0.4.13) (2026-11-06)
 
 

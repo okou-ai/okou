@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.30](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.29...runner-rs-v0.244.30) (2026-11-06)
+
+
+### Performance Improvements
+
+* **runner:** discard data router request ids without decoding ([#45684](https://github.com/okou-ai/okou/issues/45684)) ([239eb7e](https://github.com/okou-ai/okou/commit/239eb7ee2b628b7fc71e373beeab52c3a880e24c))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.29](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.28...runner-rs-v0.244.29) (2026-11-06)
 
 
