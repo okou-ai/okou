@@ -1990,6 +1990,7 @@ function createReadinessGraph(
     // Native focus sees the completed image-recovery transition, not its prior phase.
     set(nativeHost.synchronize$);
     set(wake$);
+    set(model.readinessChanged$);
     if (!get(selected.readiness.usable$)) {
       return;
     }

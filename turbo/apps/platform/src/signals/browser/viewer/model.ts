@@ -577,6 +577,8 @@ export function createViewerSignals(
     ...address,
     ...favicon,
     ...configuration,
+    // Resource-owned readiness can change without a lifecycle transition.
+    readinessChanged$: changed$,
   };
 }
 export type ViewerSignals = ReturnType<typeof createViewerSignals>;

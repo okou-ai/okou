@@ -487,6 +487,71 @@ test("Recovery waits for a pending descriptor and selection without reporting it
   expect(viewer.sentry.reports).toHaveLength(0);
 });
 
+test("Retained input readmission completes recovery after toolbar interaction", async () => {
+  const viewer = mockViewer();
+  await viewer.start();
+  await ready();
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  act(() => {
+    context.mocks.ably.trigger("browserSessionChanged", { threadId });
+  });
+  await ready();
+  expect(screen.getByText("Reconnecting…")).toBeInTheDocument();
+  const selected = viewer.browser.holdNextMembership("example-page");
+  act(() => {
+    const target = {
+      targetId: "readmission-background",
+      title: "Readmission background",
+      url: "https://readmission.example",
+      windowId: 101,
+    };
+    viewer.browser.targets.push(target);
+    viewer.browser.nativeEvent("tab-created", target);
+    viewer.browser.event("Target.targetCreated", {
+      targetInfo: { ...target, type: "page" },
+    });
+    viewer.advance(1000);
+  });
+  await selected.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(screen.getByLabelText("Address")).toBeDisabled();
+  click(screen.getByLabelText("Browser settings"));
+  await screen.findByRole("menu", { name: "Browser settings" });
+  await userEvent.keyboard("{Escape}");
+  expect(
+    screen.queryByRole("menu", { name: "Browser settings" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByText("Reconnecting…")).toBeInTheDocument();
+  await act(selected.release);
+  await ready();
+  await waitFor(() => {
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  });
+  viewer.advance(180_000);
+  await insertText("input after retained readmission");
+  await waitFor(() => {
+    expect(viewer.browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      sessionId: viewer.browser.pageSession("example-page"),
+      params: { text: "input after retained readmission" },
+    });
+  });
+  act(() => {
+    viewer.browser.frame("!");
+  });
+  await pendingRecovery();
+  viewer.advance(1000);
+  await ready();
+  await waitFor(() => {
+    expect(screen.queryByText("Reconnecting…")).not.toBeInTheDocument();
+  });
+  expect(viewer.browser.connections()).toBe(1);
+  expect(viewer.sentry.reports).toHaveLength(0);
+});
+
 async function createDuringImageRecovery(
   viewer: ReturnType<typeof mockViewer>,
 ) {
