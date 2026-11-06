@@ -2,10 +2,12 @@ use std::future::{Future, pending};
 use std::path::PathBuf;
 use std::time::Duration;
 
+use nbd_cow::KeptCow;
 use tokio::sync::oneshot;
 
 use super::super::*;
-use crate::snapshot::cow::{snapshot_attempt_cow_file, snapshot_attempt_home_image_file};
+use crate::snapshot::cow::snapshot_attempt_home_image_file;
+use crate::snapshot::tests::write_kept_cow_for_test;
 
 struct EarlyAttempt {
     _dir: tempfile::TempDir,
@@ -19,16 +21,15 @@ struct EarlyAttempt {
 }
 
 impl EarlyAttempt {
-    fn new() -> Self {
+    async fn new() -> Self {
         let dir = tempfile::tempdir().unwrap();
         let output = SnapshotOutputPaths::new(dir.path().join("output"));
         let paths = SandboxPaths::new(output.work_dir());
-        let cow_file = snapshot_attempt_cow_file(paths.workspace(), "early");
-        let bitmap_file = cow_file.with_file_name("cow.img.bitmap");
+        let KeptCow {
+            cow_file,
+            bitmap_file,
+        } = write_kept_cow_for_test(paths.workspace(), "early").await;
         let attempt_dir = cow_file.parent().unwrap().to_path_buf();
-        std::fs::create_dir_all(&attempt_dir).unwrap();
-        std::fs::write(&cow_file, b"cow").unwrap();
-        std::fs::write(&bitmap_file, b"bitmap").unwrap();
         let sock_dir = dir.path().join("sockets");
         std::fs::create_dir(&sock_dir).unwrap();
 
@@ -103,7 +104,7 @@ async fn netns_failure_respects_cow_cleanup_safety_and_preserves_setup_error() {
             destroy_started,
             release_destroy,
             cow_cleanup_complete,
-        } = EarlyAttempt::new();
+        } = EarlyAttempt::new().await;
         assert_backing_files(&cow_file, &bitmap_file);
         let result = bounded(async {
             tokio::join!(
@@ -151,7 +152,7 @@ async fn cancellation_during_netns_creation_uses_attempt_finalizer() {
             destroy_started,
             release_destroy,
             cow_cleanup_complete,
-        } = EarlyAttempt::new();
+        } = EarlyAttempt::new().await;
         let (netns_started_tx, netns_started_rx) = oneshot::channel();
         let (attempt_done_tx, attempt_done_rx) = oneshot::channel();
         attempt.notify_cleanup_complete_for_test(attempt_done_tx);
@@ -198,7 +199,7 @@ async fn cancellation_during_netns_failure_cleanup_waits_for_cow_safety() {
             destroy_started,
             release_destroy,
             cow_cleanup_complete,
-        } = EarlyAttempt::new();
+        } = EarlyAttempt::new().await;
         let (attempt_done_tx, attempt_done_rx) = oneshot::channel();
         attempt.notify_cleanup_complete_for_test(attempt_done_tx);
         let task = tokio::spawn(async move {
@@ -241,7 +242,7 @@ async fn successful_netns_creation_keeps_cow_owned_until_attempt_cleanup() {
         release_destroy,
         cow_cleanup_complete,
         ..
-    } = EarlyAttempt::new();
+    } = EarlyAttempt::new().await;
     attempt
         .initialize_netns_pool(async { Ok(NetnsPool::inactive_for_test()) })
         .await
