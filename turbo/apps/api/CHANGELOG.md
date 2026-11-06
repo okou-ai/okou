@@ -10,6 +10,22 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.51.0](https://github.com/okou-ai/okou/compare/api-v2.50.0...api-v2.51.0) (2026-11-06)
+
+
+### Features
+
+* **api:** stage connector skill bundle delivery ([#45631](https://github.com/okou-ai/okou/issues/45631)) ([885c5cf](https://github.com/okou-ai/okou/commit/885c5cf9e2e261bb969a025529b98e8848583ad8))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.820.0
+    * @okouai/db bumped to 2.23.3
+    * @okouai/pi-agent-runtime bumped to 1.51.75
+
 ## [2.50.0](https://github.com/okou-ai/okou/compare/api-v2.49.2...api-v2.50.0) (2026-11-06)
 
 
