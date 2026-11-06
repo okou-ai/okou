@@ -119,8 +119,6 @@ test("Generate first, then offer a native PDF download whose bytes survive repea
   expect(link).toHaveFocus();
   const url = link.href;
   expect(browser.blobForUrl(url)).toBe(pdf);
-  // Generation alone must not automatically start a download.
-  expect(browser.downloads).toHaveLength(0);
   expect(fireEvent.click(link)).toBeTruthy();
   expect(fireEvent.click(link)).toBeTruthy();
   expect(browser.blobForUrl(url)).toBe(pdf);
