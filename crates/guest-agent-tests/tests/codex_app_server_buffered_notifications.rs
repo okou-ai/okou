@@ -1,10 +1,24 @@
 //! Notifications before an RPC response must preserve output and allow the
 //! response and turn to finish without exhausting a local protocol queue.
 
+mod codex_large_stdout;
+
+use codex_large_stdout::LocalItem;
 use guest_agent::masker::SecretMasker;
 use guest_agent_tests as common;
 use serde_json::Value;
 use std::time::Duration;
+
+#[derive(serde::Deserialize)]
+struct LocalEvent<'a> {
+    #[serde(rename = "type")]
+    kind: String,
+    message: Option<String>,
+    #[serde(borrow)]
+    item: Option<LocalItem<'a>>,
+    #[serde(flatten)]
+    _remaining: serde::de::IgnoredAny,
+}
 
 #[tokio::test]
 async fn codex_app_server_delivers_buffered_notifications_before_turn_start_response()
@@ -53,23 +67,18 @@ async fn codex_app_server_delivers_buffered_notifications_before_turn_start_resp
     let mut local_order = Vec::new();
     let mut warnings = 0;
     for line in log.lines() {
-        let event: Value = serde_json::from_str(line)?;
-        local_order.push(
-            event["type"]
-                .as_str()
-                .ok_or("local event type missing")?
-                .to_owned(),
-        );
-        if event["type"] == "warning" {
-            assert_eq!(event["message"], format!("codex-mock warning {warnings}"));
+        let event: LocalEvent<'_> = serde_json::from_str(line)?;
+        if event.kind == "warning" {
+            assert_eq!(
+                event.message,
+                Some(format!("codex-mock warning {warnings}"))
+            );
             warnings += 1;
         }
-        if event["type"] == "item.completed" {
-            assert_eq!(event["item"]["id"], "large-command");
-            let output = event
-                .pointer("/item/aggregated_output")
-                .and_then(Value::as_str)
-                .ok_or("local command output missing")?;
+        if event.kind == "item.completed" {
+            let item = event.item.ok_or("local command item missing")?;
+            assert_eq!(item.id, "large-command");
+            let output = item.aggregated_output;
             assert_eq!(output.len(), 65 * 1024 * 1024 + 22);
             assert!(output.starts_with("large-head-"));
             assert!(output.ends_with("-large-tail"));
@@ -80,6 +89,7 @@ async fn codex_app_server_delivers_buffered_notifications_before_turn_start_resp
                     .all(|chunk| chunk == &EXPECTED_CHUNK[..chunk.len()])
             );
         }
+        local_order.push(event.kind);
     }
     assert_eq!(warnings, 129);
     assert_eq!(local_order, expected_order);
