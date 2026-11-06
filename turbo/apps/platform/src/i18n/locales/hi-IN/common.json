@@ -393,6 +393,8 @@
       "ariaLabel": "साइड बार",
       "chat": "चैट",
       "collapse": "साइडबार को संक्षिप्त करें",
+      "feedWaiting_one": "{{count}} प्रतीक्षारत",
+      "feedWaiting_other": "{{count}} प्रतीक्षारत",
       "hideChatList": "चैट सूची छिपाएं",
       "manage": "प्रबंधित करें",
       "mobile": {

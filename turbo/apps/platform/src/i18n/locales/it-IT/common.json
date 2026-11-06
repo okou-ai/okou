@@ -407,6 +407,9 @@
       "ariaLabel": "Barra laterale",
       "chat": "Chat",
       "collapse": "Comprimi la barra laterale",
+      "feedWaiting_one": "{{count}} in attesa",
+      "feedWaiting_many": "{{count}} in attesa",
+      "feedWaiting_other": "{{count}} in attesa",
       "hideChatList": "Nascondi elenco chat",
       "manage": "Gestisci",
       "mobile": {

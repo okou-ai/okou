@@ -393,6 +393,7 @@
       "ariaLabel": "サイドバー",
       "chat": "チャット",
       "collapse": "サイドバーを折りたたむ",
+      "feedWaiting_other": "{{count}} 件が対応待ち",
       "hideChatList": "チャットリストを非表示",
       "manage": "管理",
       "mobile": {

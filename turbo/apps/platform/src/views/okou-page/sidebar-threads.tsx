@@ -100,6 +100,7 @@ import type {
   SidebarChatThreadItemSignals,
 } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { FeedChatListRow } from "./sidebar-feed-row.tsx";
 import { useTitleReveal } from "./use-title-reveal.ts";
 import {
   currentChatAgentScope$,
@@ -1901,6 +1902,11 @@ export function ChatThreadsSection({
           />
         </div>
       ) : null}
+      {/* Okou's entry leads the list and stays outside its scroll viewport,
+          whose virtual rows start at the viewport's top. */}
+      <div className={cn("empty:hidden", contentClassName)}>
+        <FeedChatListRow />
+      </div>
       <ChatThreadsContent
         scrollSignals={scrollSignals}
         contentClassName={contentClassName}

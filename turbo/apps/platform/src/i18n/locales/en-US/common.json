@@ -393,6 +393,8 @@
       "ariaLabel": "Sidebar",
       "chat": "Chat",
       "collapse": "Collapse sidebar",
+      "feedWaiting_one": "{{count}} waiting",
+      "feedWaiting_other": "{{count}} waiting",
       "hideChatList": "Hide chat list",
       "manage": "Manage",
       "mobile": {

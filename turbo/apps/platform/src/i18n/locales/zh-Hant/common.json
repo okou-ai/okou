@@ -393,6 +393,7 @@
       "ariaLabel": "側邊欄",
       "chat": "聊天",
       "collapse": "收起側邊欄",
+      "feedWaiting_other": "{{count}} 則待處理",
       "hideChatList": "隱藏聊天列表",
       "manage": "管理",
       "mobile": {

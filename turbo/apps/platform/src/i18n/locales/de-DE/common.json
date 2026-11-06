@@ -393,6 +393,8 @@
       "ariaLabel": "Seitenleiste",
       "chat": "Chat",
       "collapse": "Seitenleiste einklappen",
+      "feedWaiting_one": "{{count}} offen",
+      "feedWaiting_other": "{{count}} offen",
       "hideChatList": "Chatliste ausblenden",
       "manage": "Verwalten",
       "mobile": {

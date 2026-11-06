@@ -393,6 +393,7 @@
       "ariaLabel": "Bilah samping",
       "chat": "Chat",
       "collapse": "Ciutkan sidebar",
+      "feedWaiting_other": "{{count}} menunggu",
       "hideChatList": "Sembunyikan daftar chat",
       "manage": "Kelola",
       "mobile": {

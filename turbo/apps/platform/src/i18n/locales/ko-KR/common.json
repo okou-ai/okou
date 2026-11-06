@@ -393,6 +393,7 @@
       "ariaLabel": "사이드바",
       "chat": "채팅",
       "collapse": "사이드바 접기",
+      "feedWaiting_other": "대기 중 {{count}}개",
       "hideChatList": "채팅 목록 숨기기",
       "manage": "관리",
       "mobile": {
