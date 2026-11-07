@@ -4,16 +4,14 @@ These helpers only implement dependency-light syntax rules. Callers keep ownersh
 trust-boundary-specific encoding rules, exception types, and error messages.
 """
 
+import re
 from collections.abc import Sequence
 from typing import Literal
 
 type HeaderValueBudgetStatus = Literal["missing", "within_budget", "exceeded"]
 
-_HTTP_TOKEN_CHARS: frozenset[str] = frozenset(
-    "!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
-)
-_ASCII_CONTROL_MAX = 0x1F
-_ASCII_DELETE = 0x7F
+_HTTP_HEADER_NAME_PATTERN = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
+_FORBIDDEN_HEADER_VALUE_CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0A-\x1F\x7F]")
 _HTTP_OWS_BYTES = b" \t"
 _HTTP_LIST_DELIMITER = ord(",")
 
@@ -27,7 +25,7 @@ def is_http_header_name(value: str) -> bool:
     helper does not apply caller-specific encoding, exception, or error-message
     policies.
     """
-    return bool(value) and all(char in _HTTP_TOKEN_CHARS for char in value)
+    return _HTTP_HEADER_NAME_PATTERN.fullmatch(value) is not None
 
 
 def has_forbidden_header_value_control(value: str) -> bool:
@@ -38,10 +36,7 @@ def has_forbidden_header_value_control(value: str) -> bool:
     are outside this predicate's rejection set. Callers remain responsible for
     any encoding or additional validation required at their trust boundary.
     """
-    return any(
-        (ord(char) <= _ASCII_CONTROL_MAX and char != "\t") or ord(char) == _ASCII_DELETE
-        for char in value
-    )
+    return _FORBIDDEN_HEADER_VALUE_CONTROL_PATTERN.search(value) is not None
 
 
 def header_fields_contain_token(

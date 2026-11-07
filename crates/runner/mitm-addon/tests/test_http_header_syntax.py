@@ -14,7 +14,7 @@ from mitmproxy import http
 import http_header_syntax
 
 # RFC 9110 tchar: "!#$%&'*+-.^_`|~" plus ASCII digits and letters. Deliberately
-# independent of http_header_syntax._HTTP_TOKEN_CHARS so mutations are caught.
+# independent of the production implementation so mutations are caught.
 _TCHAR = frozenset("!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _ASCII_CODE_POINTS = range(128)
 _TEST_HEADER_WORK_LIMIT = 256
