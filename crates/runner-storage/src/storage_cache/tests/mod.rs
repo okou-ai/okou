@@ -7,6 +7,7 @@ mod decoded_observation;
 mod fresh_staging;
 mod fresh_teardown;
 mod group_failures;
+mod guest_application;
 mod http_reuse;
 mod large_selection;
 mod mixed_preparation;

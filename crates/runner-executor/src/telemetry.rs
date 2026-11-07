@@ -266,6 +266,25 @@ pub struct JobTelemetry {
     in_flight_flushes: Vec<JoinHandle<()>>,
 }
 
+/// Return a concurrent collector's records and send ownership even when the
+/// borrowing phase is cancelled. The parent's final flush still joins sends.
+pub(crate) struct ConcurrentPhase<'a> {
+    parent: &'a mut JobTelemetry,
+    phase: JobTelemetry,
+}
+
+impl ConcurrentPhase<'_> {
+    pub(crate) fn collectors(&mut self) -> (&mut JobTelemetry, &mut JobTelemetry) {
+        (self.parent, &mut self.phase)
+    }
+}
+
+impl Drop for ConcurrentPhase<'_> {
+    fn drop(&mut self) {
+        self.parent.merge_phase(&mut self.phase);
+    }
+}
+
 #[derive(Clone)]
 struct HomeStartupSource {
     cache_key: String,
@@ -615,9 +634,23 @@ impl JobTelemetry {
         }
     }
 
+    /// Borrow collectors for a cancellable concurrent phase without losing
+    /// records or flush tasks when its future is dropped.
+    pub(crate) fn concurrent_phase(&mut self) -> ConcurrentPhase<'_> {
+        let phase = self.fork_concurrent_phase();
+        ConcurrentPhase {
+            parent: self,
+            phase,
+        }
+    }
+
     /// Reclaim every pending or in-flight operation from a concurrent phase.
     pub(crate) fn merge_concurrent_phase(&mut self, mut phase: Self) {
-        self.pending.append(phase.pending);
+        self.merge_phase(&mut phase);
+    }
+
+    fn merge_phase(&mut self, phase: &mut Self) {
+        self.pending.append(std::mem::take(&mut phase.pending));
         self.in_flight_flushes.append(&mut phase.in_flight_flushes);
     }
 

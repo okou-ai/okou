@@ -38,42 +38,30 @@ fn overlaps(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 
-// Resolve missing leaves through their existing ancestor, retaining its physical
-// identity so an input alias cannot erase the private notification directory.
-fn physical_path(path: &Path) -> io::Result<PathBuf> {
-    let mut existing = path;
-    let mut missing = Vec::new();
-    loop {
-        match existing.canonicalize() {
-            Ok(mut resolved) => {
-                for name in missing.into_iter().rev() {
-                    resolved.push(name);
-                }
-                return Ok(resolved);
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                if std::fs::symlink_metadata(existing)
-                    .is_ok_and(|metadata| metadata.file_type().is_symlink())
-                {
-                    return Err(invalid("pending archive input has an unresolved alias"));
-                }
-                missing.push(
-                    existing
-                        .file_name()
-                        .ok_or_else(|| invalid("invalid runtime ancestor"))?,
-                );
-                existing = existing
-                    .parent()
-                    .ok_or_else(|| invalid("missing runtime ancestor"))?;
-            }
+// A sufficient namespace proof, not a prediction of cleanup or execution.
+// Inspect shallow prefixes without following aliases; an absent tail can be
+// created normally. File/symlink obstructions remain ordinary application's job.
+fn directory_path_is_unaliased(path: &Path) -> io::Result<bool> {
+    for prefix in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
+        match std::fs::symlink_metadata(prefix) {
+            Ok(metadata) if !metadata.is_dir() => return Ok(false),
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
             Err(error) => return Err(error),
         }
     }
+    Ok(true)
 }
 
 impl Readiness {
     pub(crate) fn prepare(manifest: &Manifest, runtime: Option<&Path>) -> io::Result<Option<Self>> {
-        Self::prepare_with_timeout(manifest, runtime, Duration::from_secs(60))
+        let timeout = manifest
+            .archive_readiness
+            .as_ref()
+            .map_or(Duration::from_secs(60), |descriptor| {
+                descriptor.wait_timeout()
+            });
+        Self::prepare_with_timeout(manifest, runtime, timeout)
     }
 
     fn prepare_with_timeout(
@@ -85,44 +73,10 @@ impl Readiness {
             return Ok(None);
         };
         descriptor.validate(manifest).map_err(invalid)?;
-        if !cfg!(target_os = "linux") {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "archive readiness requires Linux",
-            ));
+        if !Self::eligible(manifest, runtime)? {
+            return Err(invalid("pending archive layout is not eligible"));
         }
-        let runtime = runtime
-            .filter(|path| path.is_absolute() && normalize_path(path) == *path)
-            .ok_or_else(|| invalid("pending archives require a private absolute runtime"))?;
-        let physical_runtime = physical_path(runtime)?;
-        for target in manifest
-            .storages
-            .iter()
-            .map(|entry| PathBuf::from(&entry.mount_path))
-            .chain(
-                manifest
-                    .artifacts
-                    .iter()
-                    .map(|entry| PathBuf::from(&entry.mount_path)),
-            )
-            .chain(manifest.cleanup_paths.iter().map(PathBuf::from))
-            .chain(manifest.instruction_cleanups.iter().filter_map(|entry| {
-                entry
-                    .target_filename
-                    .as_ref()
-                    .map(|name| Path::new(&entry.mount_path).join(name))
-            }))
-        {
-            let logical_target = normalize_path(&target);
-            // Canonicalize the original path: collapsing symlink/.. first can
-            // hide its actual destination inside the private runtime.
-            if !logical_target.is_absolute()
-                || overlaps(&logical_target, runtime)
-                || overlaps(&physical_path(&target)?, &physical_runtime)
-            {
-                return Err(invalid("pending archive runtime overlaps an input"));
-            }
-        }
+        let runtime = runtime.ok_or_else(|| invalid("missing private runtime"))?;
         let directory = descriptor.directory(runtime);
         runtime_paths::ensure_dir(&directory)?;
         let state = Arc::new(State {
@@ -145,6 +99,63 @@ impl Readiness {
             #[cfg(target_os = "linux")]
             events,
         }))
+    }
+
+    pub(crate) fn eligible(manifest: &Manifest, runtime: Option<&Path>) -> io::Result<bool> {
+        let descriptor = manifest
+            .archive_readiness
+            .as_ref()
+            .ok_or_else(|| invalid("missing archive readiness descriptor"))?;
+        descriptor.validate(manifest).map_err(invalid)?;
+        if !cfg!(target_os = "linux") {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "archive readiness requires Linux",
+            ));
+        }
+        let runtime = runtime
+            .filter(|path| path.is_absolute() && normalize_path(path) == *path)
+            .ok_or_else(|| invalid("pending archives require a private absolute runtime"))?;
+        // The private control namespace is required even when input overlap is
+        // ineligible. Its errors must not become an ordinary-application choice.
+        if !directory_path_is_unaliased(runtime)? {
+            return Err(invalid(
+                "private runtime has a non-directory or aliased prefix",
+            ));
+        }
+        for target in manifest
+            .storages
+            .iter()
+            .map(|entry| PathBuf::from(&entry.mount_path))
+            .chain(
+                manifest
+                    .artifacts
+                    .iter()
+                    .map(|entry| PathBuf::from(&entry.mount_path)),
+            )
+            .chain(manifest.cleanup_paths.iter().map(PathBuf::from))
+            // Conservatively cover each cleanup directory without interpreting
+            // managed filenames, preservation, repair or deletion semantics.
+            .chain(
+                manifest
+                    .instruction_cleanups
+                    .iter()
+                    .map(|entry| PathBuf::from(&entry.mount_path)),
+            )
+        {
+            let logical_target = normalize_path(&target);
+            if !target.is_absolute() || logical_target != target || overlaps(&target, runtime) {
+                return Ok(false);
+            }
+            match directory_path_is_unaliased(&target) {
+                Ok(true) => {}
+                // Input access is not a prerequisite for an optimization:
+                // preserved entries may require no IO, and cleanup may replace
+                // old paths. Ordinary application alone owns required failures.
+                Ok(false) | Err(_) => return Ok(false),
+            }
+        }
+        Ok(true)
     }
 
     pub(crate) fn gate(&self, url: &str) -> Option<Arc<AtomicBool>> {
