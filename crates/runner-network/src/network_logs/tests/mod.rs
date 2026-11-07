@@ -796,6 +796,50 @@ async fn upload_network_logs_completes_incident_sized_file_within_batch_budget()
     const INCIDENT_ENTRY_COUNT: usize = 98_129;
     const INCIDENT_BODY_BYTES: usize = 372;
 
+    // Derived structs also accept arrays; retain the original object-shape oracle.
+    struct Object<T>(T);
+
+    impl<'de, T: serde::Deserialize<'de>> serde::Deserialize<'de> for Object<T> {
+        fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+            struct ObjectVisitor<T>(std::marker::PhantomData<T>);
+
+            impl<'de, T: serde::Deserialize<'de>> serde::de::Visitor<'de> for ObjectVisitor<T> {
+                type Value = Object<T>;
+
+                fn expecting(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+                    formatter.write_str("a JSON object")
+                }
+
+                fn visit_map<A: serde::de::MapAccess<'de>>(
+                    self,
+                    map: A,
+                ) -> Result<Self::Value, A::Error> {
+                    T::deserialize(serde::de::value::MapAccessDeserializer::new(map)).map(Object)
+                }
+            }
+
+            deserializer.deserialize_map(ObjectVisitor(std::marker::PhantomData))
+        }
+    }
+
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct IncidentLog<'a> {
+        #[serde(borrow)]
+        timestamp: std::borrow::Cow<'a, str>,
+        sequence: usize,
+        #[serde(borrow)]
+        body: std::borrow::Cow<'a, str>,
+    }
+
+    #[derive(serde::Deserialize)]
+    struct IncidentPayload<'a> {
+        #[serde(rename = "runId", borrow)]
+        run_id: std::borrow::Cow<'a, str>,
+        #[serde(rename = "networkLogs", borrow)]
+        logs: Vec<Object<IncidentLog<'a>>>,
+    }
+
     let dir = tempfile::tempdir().unwrap();
     let path = network_log_file(&dir);
     let run_id = RunId::from(uuid::Uuid::nil());
@@ -836,16 +880,16 @@ async fn upload_network_logs_completes_incident_sized_file_within_batch_budget()
                 accepted = listener.accept() => accepted.unwrap(),
             };
             let request_body = read_http_request_body(&mut stream).await;
-            let payload: serde_json::Value = serde_json::from_slice(&request_body).unwrap();
-            let logs = payload["networkLogs"].as_array().unwrap();
+            let Object(payload): Object<IncidentPayload<'_>> =
+                serde_json::from_slice(&request_body).unwrap();
+            let logs = &payload.logs;
             assert!(logs.len() <= NETWORK_LOG_UPLOAD_MAX_BATCH_ENTRIES);
-            assert_eq!(payload["runId"], run_id.to_string());
+            assert_eq!(payload.run_id.as_ref(), run_id.to_string().as_str());
             let mut estimated_bytes = empty_batch_estimated_bytes(&run_id);
-            for (offset, log) in logs.iter().enumerate() {
-                assert_eq!(log.as_object().unwrap().len(), 3);
-                assert_eq!(log["sequence"], received_entry_count + offset);
-                assert_eq!(log["body"], body);
-                assert_eq!(log["timestamp"], "2026-02-15T10:00:00Z");
+            for (offset, Object(log)) in logs.iter().enumerate() {
+                assert_eq!(log.sequence, received_entry_count + offset);
+                assert_eq!(log.body.as_ref(), body.as_str());
+                assert_eq!(log.timestamp.as_ref(), "2026-02-15T10:00:00Z");
                 // These compact ASCII records have the same length in any key order.
                 let original_bytes = original_line_lengths.next().unwrap();
                 let entry_bytes = original_bytes + NETWORK_LOG_UPLOAD_ENTRY_OVERHEAD_BYTES;
