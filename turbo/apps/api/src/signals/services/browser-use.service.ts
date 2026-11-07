@@ -1082,6 +1082,14 @@ function boundedRestorableBrowserUseTabUrls(
   return boundedUrls;
 }
 
+function restorableBrowserUseTabUrls(
+  urls: readonly string[],
+): readonly string[] {
+  return urls.filter((url) => {
+    return url.length <= MAX_BROWSER_USE_TAB_URL_CHARS && URL.canParse(url);
+  });
+}
+
 function browserUseCdpSignal(signal: AbortSignal): AbortSignal {
   return AbortSignal.any([
     signal,
@@ -3721,8 +3729,8 @@ export async function restoreBrowserUseWindowTabUrls(
   urls: readonly string[],
   signal: AbortSignal,
 ): Promise<void> {
-  const bounded = boundedRestorableBrowserUseTabUrls(urls);
-  if (bounded.length === 0) {
+  const restorable = restorableBrowserUseTabUrls(urls);
+  if (restorable.length === 0) {
     return;
   }
   const restored = await settleIncludingAbort(
@@ -3730,7 +3738,7 @@ export async function restoreBrowserUseWindowTabUrls(
       if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
         throw new Error("The Browser restore window is unavailable");
       }
-      for (const url of bounded) {
+      for (const url of restorable) {
         const created = await client.call("createTab", {
           windowId: window.primaryWindowId,
           url,
@@ -3781,8 +3789,8 @@ export async function restoreBrowserUseTabUrls(
   if (urls.length === 0) {
     return;
   }
-  const boundedUrls = boundedRestorableBrowserUseTabUrls(urls);
-  if (boundedUrls.length === 0) {
+  const restorable = restorableBrowserUseTabUrls(urls);
+  if (restorable.length === 0) {
     return;
   }
   const cdpSignal = browserUseCdpSignal(signal);
@@ -3797,7 +3805,7 @@ export async function restoreBrowserUseTabUrls(
     );
     let commandId = 2;
     let restored = 0;
-    for (const url of boundedUrls) {
+    for (const url of restorable) {
       const result = await settle(
         sendBrowserUseCdpCommand(
           socket,
