@@ -52,6 +52,8 @@ pub mod reactor;
 pub mod sandbox_finalization;
 #[cfg(any(test, feature = "test-support"))]
 pub mod test_support;
+#[cfg(test)]
+mod tests;
 
 /// A factory owned by the reactor and shared with jobs and idle sandboxes.
 pub type SharedFactory = Arc<Box<dyn SandboxFactory>>;
