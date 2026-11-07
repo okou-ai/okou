@@ -122,14 +122,12 @@ import {
   loadCustomConnectorPermissionBundle,
 } from "./custom-connector-permission-bundle.service";
 import {
-  prepareCustomConnectorSkillVolume$,
+  prepareCustomConnectorSkillBundle$,
   type PreparedCustomConnectorSkill,
-} from "./custom-connector-skill-volume.service";
+} from "./custom-connector-skill-bundle.service";
 import { userFeatureSwitchContext } from "./feature-switches.service";
 import { effectiveCustomConnectorPermissionBundleRef } from "./feishu-custom-connector-permissions";
 
-import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
-import { preparedVolumePublicationPlan } from "./storage-volume-publication-sql";
 import { addUserCustomConnector$ } from "./user-connectors.service";
 
 const L = logger("CustomConnectorService");
@@ -1923,7 +1921,7 @@ export function customConnectorCreateSource(
         .mapWith(orgCustomConnectors.skillMarkdown)
         .as("skill_markdown"),
     skillStorageVersionId:
-      sql`${sql.param(args.preparedSkill?.version.versionId ?? null, orgCustomConnectors.skillStorageVersionId)}`
+      sql`${sql.param(args.preparedSkill?.sourceVersionId ?? null, orgCustomConnectors.skillStorageVersionId)}`
         .mapWith(orgCustomConnectors.skillStorageVersionId)
         .as("skill_storage_version_id"),
     skillContentBundle:
@@ -1931,7 +1929,7 @@ export function customConnectorCreateSource(
         .mapWith(zodDriverValueDecoder(contentBundleSchema.nullable()))
         .as("skill_content_bundle"),
     skillContentBundleSourceVersionId:
-      sql`${sql.param(args.preparedSkill?.version.versionId ?? null, orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId)}`
+      sql`${sql.param(args.preparedSkill?.sourceVersionId ?? null, orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId)}`
         .mapWith(nullableDriverValueDecoder(pgTextDecoder))
         .as("skill_content_bundle_source_version_id"),
     storageVersion:
@@ -2032,16 +2030,11 @@ const persistCustomConnectorCreate$ = command(
     if ((args.definition.authMode === "oauth") !== (oauth !== null)) {
       throw new Error("custom connector OAuth mode and config do not match");
     }
-    const publication = args.preparedSkill
-      ? preparedVolumePublicationPlan(args.preparedSkill, nowDate())
-      : null;
-    const source =
-      publication?.published ?? sql`(VALUES (1)) AS connector_create_source`;
+    const source = sql`(VALUES (1)) AS connector_create_source`;
     const values = db.select(customConnectorCreateSource(args)).from(source);
     const created = db
       .$with("created_connector")
       .as(db.insert(orgCustomConnectors).select(values).returning());
-    const ctes = publication?.ctes ?? [];
     signal.throwIfAborted();
     if (oauth) {
       const config = db.$with("created_oauth_config").as(
@@ -2064,17 +2057,12 @@ const persistCustomConnectorCreate$ = command(
           .returning(),
       );
       const [result] = await db
-        .with(...ctes, created, config)
+        .with(created, config)
         .select()
         .from(created)
         .innerJoin(config, eq(config.connectorId, created.id));
       signal.throwIfAborted();
       if (!result) {
-        if (args.preparedSkill) {
-          throw new StorageVersionIdentityConflictError(
-            args.preparedSkill.version.versionId,
-          );
-        }
         throw new Error("Expected insert to return a row");
       }
       return {
@@ -2082,17 +2070,9 @@ const persistCustomConnectorCreate$ = command(
         oauthConfig: result.created_oauth_config,
       };
     }
-    const [row] = await db
-      .with(...ctes, created)
-      .select()
-      .from(created);
+    const [row] = await db.with(created).select().from(created);
     signal.throwIfAborted();
     if (!row) {
-      if (args.preparedSkill) {
-        throw new StorageVersionIdentityConflictError(
-          args.preparedSkill.version.versionId,
-        );
-      }
       throw new Error("Expected insert to return a row");
     }
     return { row, oauthConfig: null };
@@ -2155,7 +2135,7 @@ export const createCustomConnector$ = command(
       v.skillMarkdown === null
         ? null
         : await set(
-            prepareCustomConnectorSkillVolume$,
+            prepareCustomConnectorSkillBundle$,
             {
               orgId: args.orgId,
               connectorId,
@@ -2298,10 +2278,10 @@ function customConnectorDefinitionUpdateValues(
     queryInjections: [...args.definition.queryInjections],
     authMode: args.definition.authMode,
     skillMarkdown: args.definition.skillMarkdown,
-    skillStorageVersionId: args.preparedSkill?.version.versionId ?? null,
+    skillStorageVersionId: args.preparedSkill?.sourceVersionId ?? null,
     skillContentBundle: args.preparedSkill?.contentBundle ?? null,
     skillContentBundleSourceVersionId:
-      args.preparedSkill?.version.versionId ?? null,
+      args.preparedSkill?.sourceVersionId ?? null,
     storageVersion: args.storageVersion,
     updatedAt: at,
   };
@@ -2352,18 +2332,10 @@ function customConnectorUpdatePublicationPlan(
       .for("update", { of: orgCustomConnectors })
       .limit(1),
   );
-  const publication = args.preparedSkill
-    ? preparedVolumePublicationPlan(
-        args.preparedSkill,
-        nowDate(),
-        exists(query.select({ id: locked.id }).from(locked)),
-      )
-    : null;
-  const source = publication?.published ?? locked;
-  const ready = exists(query.select({ id: source.id }).from(source));
+  const ready = exists(query.select({ id: locked.id }).from(locked));
   return {
     locked,
-    ctes: [locked, ...(publication?.ctes ?? [])],
+    ctes: [locked],
     ready,
     bindings: and(
       eq(customConnectorAccountOauthBindings.customConnectorId, args.id),
@@ -2429,16 +2401,10 @@ const failedCustomConnectorUpdate$ = command(
 );
 
 function publishedCustomConnectorUpdate(
-  args: PersistCustomConnectorUpdateArgs,
   row: CustomConnectorDefinitionRow | null,
   oauthConfig: CustomConnectorOAuthConfigRow | null,
 ) {
   if (!row) {
-    if (args.preparedSkill) {
-      throw new StorageVersionIdentityConflictError(
-        args.preparedSkill.version.versionId,
-      );
-    }
     throw new Error("Expected locked custom connector to be updated");
   }
   requireCustomConnectorOAuthConfig(row.authMode, oauthConfig);
@@ -2599,7 +2565,6 @@ const persistCustomConnectorUpdate$ = command(
     signal.throwIfAborted();
     return result
       ? publishedCustomConnectorUpdate(
-          args,
           result.updated_custom_connector,
           result.custom_connector_oauth_result,
         )
@@ -2805,7 +2770,7 @@ export const updateCustomConnectorDefinition$ = command(
       prepared.definition.skillMarkdown === null
         ? null
         : await set(
-            prepareCustomConnectorSkillVolume$,
+            prepareCustomConnectorSkillBundle$,
             {
               orgId: args.orgId,
               connectorId: existingConnector.id,

@@ -1,3 +1,4 @@
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
 import { createPublicConnectorActor } from "./helpers/public-connector-actor";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -223,7 +224,7 @@ function commandInput(command: unknown): Record<string, unknown> {
 function uploadedSkillInstruction(command: unknown): string | null {
   const input = commandInput(command);
   if (
-    !String(input.Key).endsWith("/archive.tar.gz") ||
+    !String(input.Key).startsWith("bundles/v1/") ||
     !Buffer.isBuffer(input.Body)
   ) {
     return null;
@@ -7147,6 +7148,14 @@ describe("CONN-03: custom connectors and connector-owned secrets", () => {
       const staleUploadStarted = createDeferredPromise<void>(context.signal);
       const releaseStaleUpload = createDeferredPromise<void>(context.signal);
       context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+        if (
+          command instanceof HeadObjectCommand &&
+          command.input.Key?.startsWith("bundles/v1/")
+        ) {
+          throw Object.assign(new Error("Bundle missing"), {
+            name: "NotFound",
+          });
+        }
         const skill = uploadedSkillInstruction(command);
         if (skill?.includes("Stale writer instructions")) {
           if (!staleUploadStarted.settled()) {

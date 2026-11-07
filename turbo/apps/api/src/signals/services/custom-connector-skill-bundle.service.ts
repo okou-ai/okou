@@ -1,36 +1,28 @@
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
+import { prepareContentBundle } from "@okouai/core/content-bundle";
 import { orgCustomConnectorSkillBundles } from "@okouai/db/runtime/org-custom-connector-skill-bundle";
-import {
-  getCustomConnectorSkillName,
-  getCustomConnectorSkillStorageName,
-} from "@okouai/core/storage-names";
+import { db$ } from "../external/db";
+import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { synthesizeSkillMd } from "@okouai/core/skill-document";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { publishContentBundle$ } from "./content-bundle.service";
-import { db$ } from "../external/db";
 
-import {
-  prepareVolumeServerSide$,
-  type PreparedServerSideVolume,
-} from "./storage-volume-publication.service";
 const SKILL_FILENAME = "SKILL.md";
 
-export interface PreparedCustomConnectorSkill extends PreparedServerSideVolume {
+export interface PreparedCustomConnectorSkill {
   readonly contentBundle: ContentBundle;
+  readonly sourceVersionId: string;
 }
 
 interface CustomConnectorSkillContentInput {
+  readonly orgId: string;
   readonly connectorId: string;
   readonly connectorSlug: string;
   readonly displayName: string;
   readonly skillMarkdown: string;
   readonly skillName?: string;
   readonly skillDescription?: string;
-}
-
-interface PrepareCustomConnectorSkillVolumeInput extends CustomConnectorSkillContentInput {
-  readonly orgId: string;
 }
 
 function buildCustomConnectorSkillFiles(
@@ -50,29 +42,28 @@ function buildCustomConnectorSkillFiles(
   ];
 }
 
-export const prepareCustomConnectorSkillVolume$ = command(
+export const prepareCustomConnectorSkillBundle$ = command(
   async (
     { get, set },
-    args: PrepareCustomConnectorSkillVolumeInput,
+    args: CustomConnectorSkillContentInput,
     signal: AbortSignal,
   ): Promise<PreparedCustomConnectorSkill> => {
-    const files = buildCustomConnectorSkillFiles(args);
-    const volume = await set(
-      prepareVolumeServerSide$,
-      {
-        orgId: args.orgId,
-        storageName: getCustomConnectorSkillStorageName(args.connectorId),
-        files,
-        piResourceIndex: true,
-      },
-      signal,
-    );
+    const files = buildCustomConnectorSkillFiles(args).map((file) => {
+      return {
+        path: file.path,
+        content: Buffer.from(file.content, "utf8"),
+        mode: 0o644 as const,
+      };
+    });
+    const prepared = await prepareContentBundle(files);
     signal.throwIfAborted();
     const [registered] = await get(db$)
       .select({
         contentBundle: orgCustomConnectorSkillBundles.skillContentBundle,
         sourceVersionId:
           orgCustomConnectorSkillBundles.skillContentBundleSourceVersionId,
+        selectedSourceVersionId:
+          orgCustomConnectorSkillBundles.skillStorageVersionId,
       })
       .from(orgCustomConnectorSkillBundles)
       .where(
@@ -83,25 +74,24 @@ export const prepareCustomConnectorSkillVolume$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    // A successful owner publication already attested to these shared bytes.
-    // Reuse only its exact source; older writers can leave a stale reference.
+    // Reuse a publication attested by this owner, including its historical source
+    // ID. An unchanged edit must not require a successful remote object read.
     if (
-      registered?.contentBundle &&
-      registered.sourceVersionId === volume.version.versionId
+      registered?.contentBundle?.sha256 === prepared.descriptor.sha256 &&
+      registered.contentBundle.archiveBytes ===
+        prepared.descriptor.archiveBytes &&
+      registered.sourceVersionId !== null &&
+      registered.sourceVersionId === registered.selectedSourceVersionId
     ) {
-      return { ...volume, contentBundle: registered.contentBundle };
+      return {
+        contentBundle: registered.contentBundle,
+        sourceVersionId: registered.sourceVersionId,
+      };
     }
-    const contentBundle = await set(
-      publishContentBundle$,
-      files.map((file) => {
-        return {
-          path: file.path,
-          content: Buffer.from(file.content, "utf8"),
-          mode: 0o644 as const,
-        };
-      }),
-      signal,
-    );
-    return { ...volume, contentBundle };
+    const contentBundle = await set(publishContentBundle$, files, signal);
+    // Keep both captured-source fields equal for the serving claim reader.
+    // New publications derive that identity from the canonical bundle bytes;
+    // it no longer names a generic Storage version. Historical IDs stay intact.
+    return { contentBundle, sourceVersionId: contentBundle.sha256 };
   },
 );
