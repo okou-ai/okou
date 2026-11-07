@@ -1,5 +1,12 @@
 use super::*;
 
+pub(super) struct EarlyApplication<'a> {
+    pub(super) application: &'a mut GuestApplication,
+    pub(super) plan: &'a StoragePlan,
+    pub(super) owned_groups: &'a [CacheTargetGroup],
+    pub(super) decoded_outcomes: &'a [(CacheTargetGroup, TargetOutcome)],
+}
+
 /// Both futures stay borrowed by the population call. An error cancels the
 /// sibling but never drops an accepted Guest write or atomic publication.
 pub(super) async fn prepare_mixed(
@@ -8,6 +15,7 @@ pub(super) async fn prepare_mixed(
     groups: Vec<CacheTargetGroup>,
     concurrency: usize,
     stage: &mut GuestStageRecorder<'_>,
+    early: Option<EarlyApplication<'_>>,
 ) -> RunnerResult<(
     Vec<FreshArchiveResolved>,
     Vec<(CacheTargetGroup, TargetOutcome)>,
@@ -16,6 +24,7 @@ pub(super) async fn prepare_mixed(
     let cancel_fresh = delivery.cancel.clone();
     let mut metrics = CacheProcessMetrics::default();
     let result = {
+        let sandbox = stage.sandbox;
         let fresh = delivery.resolve_inner(home, &mut metrics);
         let ordinary = prepare_ordinary(groups, home, concurrency, Some(&cancel_ordinary), stage);
         tokio::pin!(fresh, ordinary);
@@ -30,7 +39,31 @@ pub(super) async fn prepare_mixed(
                 }
             },
             prepared = &mut ordinary => match prepared {
-                Ok(prepared) => fresh.await.map(|resolved| (resolved, prepared)),
+                Ok(prepared) => {
+                    // Do not introduce markers when fresh work is already resolved.
+                    if let std::task::Poll::Ready(resolved) = futures_util::poll!(fresh.as_mut()) {
+                        resolved.map(|resolved| (resolved, prepared))
+                    } else {
+                        let handoff = if let Some(early) = early {
+                            early.application.start_if_useful(
+                                sandbox,
+                                early.plan,
+                                early.owned_groups,
+                                early.decoded_outcomes,
+                                &prepared,
+                            ).await
+                        } else {
+                            Ok(())
+                        };
+                        if let Err(error) = handoff {
+                            cancel_fresh.cancel();
+                            let _ = fresh.await;
+                            Err(error)
+                        } else {
+                            fresh.await.map(|resolved| (resolved, prepared))
+                        }
+                    }
+                },
                 Err(error) => {
                     cancel_fresh.cancel();
                     let _ = fresh.await;

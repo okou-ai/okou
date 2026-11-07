@@ -40,7 +40,7 @@ fn overlaps(left: &Path, right: &Path) -> bool {
 
 // Resolve missing leaves through their existing ancestor, retaining its physical
 // identity so an input alias cannot erase the private notification directory.
-fn physical_path(path: &Path) -> io::Result<PathBuf> {
+fn physical_path(path: &Path) -> io::Result<Option<PathBuf>> {
     let mut existing = path;
     let mut missing = Vec::new();
     loop {
@@ -49,13 +49,13 @@ fn physical_path(path: &Path) -> io::Result<PathBuf> {
                 for name in missing.into_iter().rev() {
                     resolved.push(name);
                 }
-                return Ok(resolved);
+                return Ok(Some(resolved));
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 if std::fs::symlink_metadata(existing)
                     .is_ok_and(|metadata| metadata.file_type().is_symlink())
                 {
-                    return Err(invalid("pending archive input has an unresolved alias"));
+                    return Ok(None);
                 }
                 missing.push(
                     existing
@@ -73,7 +73,13 @@ fn physical_path(path: &Path) -> io::Result<PathBuf> {
 
 impl Readiness {
     pub(crate) fn prepare(manifest: &Manifest, runtime: Option<&Path>) -> io::Result<Option<Self>> {
-        Self::prepare_with_timeout(manifest, runtime, Duration::from_secs(60))
+        let timeout = manifest
+            .archive_readiness
+            .as_ref()
+            .map_or(Duration::from_secs(60), |descriptor| {
+                descriptor.wait_timeout()
+            });
+        Self::prepare_with_timeout(manifest, runtime, timeout)
     }
 
     fn prepare_with_timeout(
@@ -85,44 +91,10 @@ impl Readiness {
             return Ok(None);
         };
         descriptor.validate(manifest).map_err(invalid)?;
-        if !cfg!(target_os = "linux") {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "archive readiness requires Linux",
-            ));
+        if !Self::eligible(manifest, runtime)? {
+            return Err(invalid("pending archive runtime overlaps an input"));
         }
-        let runtime = runtime
-            .filter(|path| path.is_absolute() && normalize_path(path) == *path)
-            .ok_or_else(|| invalid("pending archives require a private absolute runtime"))?;
-        let physical_runtime = physical_path(runtime)?;
-        for target in manifest
-            .storages
-            .iter()
-            .map(|entry| PathBuf::from(&entry.mount_path))
-            .chain(
-                manifest
-                    .artifacts
-                    .iter()
-                    .map(|entry| PathBuf::from(&entry.mount_path)),
-            )
-            .chain(manifest.cleanup_paths.iter().map(PathBuf::from))
-            .chain(manifest.instruction_cleanups.iter().filter_map(|entry| {
-                entry
-                    .target_filename
-                    .as_ref()
-                    .map(|name| Path::new(&entry.mount_path).join(name))
-            }))
-        {
-            let logical_target = normalize_path(&target);
-            // Canonicalize the original path: collapsing symlink/.. first can
-            // hide its actual destination inside the private runtime.
-            if !logical_target.is_absolute()
-                || overlaps(&logical_target, runtime)
-                || overlaps(&physical_path(&target)?, &physical_runtime)
-            {
-                return Err(invalid("pending archive runtime overlaps an input"));
-            }
-        }
+        let runtime = runtime.ok_or_else(|| invalid("missing private runtime"))?;
         let directory = descriptor.directory(runtime);
         runtime_paths::ensure_dir(&directory)?;
         let state = Arc::new(State {
@@ -145,6 +117,59 @@ impl Readiness {
             #[cfg(target_os = "linux")]
             events,
         }))
+    }
+
+    pub(crate) fn eligible(manifest: &Manifest, runtime: Option<&Path>) -> io::Result<bool> {
+        let descriptor = manifest
+            .archive_readiness
+            .as_ref()
+            .ok_or_else(|| invalid("missing archive readiness descriptor"))?;
+        descriptor.validate(manifest).map_err(invalid)?;
+        if !cfg!(target_os = "linux") {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "archive readiness requires Linux",
+            ));
+        }
+        let runtime = runtime
+            .filter(|path| path.is_absolute() && normalize_path(path) == *path)
+            .ok_or_else(|| invalid("pending archives require a private absolute runtime"))?;
+        let physical_runtime = physical_path(runtime)?
+            .ok_or_else(|| invalid("private runtime has an unresolved alias"))?;
+        for target in manifest
+            .storages
+            .iter()
+            .map(|entry| PathBuf::from(&entry.mount_path))
+            .chain(
+                manifest
+                    .artifacts
+                    .iter()
+                    .map(|entry| PathBuf::from(&entry.mount_path)),
+            )
+            .chain(manifest.cleanup_paths.iter().map(PathBuf::from))
+            .chain(manifest.instruction_cleanups.iter().filter_map(|entry| {
+                entry
+                    .target_filename
+                    .as_ref()
+                    .map(|name| Path::new(&entry.mount_path).join(name))
+            }))
+        {
+            let logical_target = normalize_path(&target);
+            // Canonicalize the original path: collapsing symlink/.. first can
+            // hide its actual destination inside the private runtime.
+            if !logical_target.is_absolute() || overlaps(&logical_target, runtime) {
+                return Ok(false);
+            }
+            let Some(physical_target) = physical_path(&target)? else {
+                // Ordinary application can replace a dangling alias. Do not
+                // activate readiness when its physical destination is unknown.
+                return Ok(false);
+            };
+            if overlaps(&physical_target, &physical_runtime) {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 
     pub(crate) fn gate(&self, url: &str) -> Option<Arc<AtomicBool>> {

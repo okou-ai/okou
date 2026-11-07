@@ -4446,6 +4446,7 @@ dependencies = [
  "tower-service",
  "tracing",
  "url",
+ "uuid",
  "zstd",
 ]
 
@@ -4819,6 +4820,7 @@ dependencies = [
  "async-trait",
  "guest-contracts",
  "sandbox",
+ "serde_json",
  "tempfile",
  "tokio",
  "tokio-util",

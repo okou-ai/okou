@@ -197,6 +197,22 @@ fn run_manifest_with_files_in_runtime(
     files: Vec<guest_contracts::storage_files::StorageFiles>,
     runtime_dir: Option<&Path>,
 ) -> bool {
+    if manifest
+        .archive_readiness
+        .as_ref()
+        .is_some_and(|value| value.check_only)
+    {
+        return match readiness::Readiness::eligible(&manifest, runtime_dir) {
+            Ok(eligible) => {
+                println!("{eligible}");
+                true
+            }
+            Err(error) => {
+                log_error!(LOG_TAG, "Archive readiness eligibility failed: {error}");
+                false
+            }
+        };
+    }
     // Validate and arm source publication before any input cleanup. Runtime
     // control files are private to this operation, never part of an input tree.
     let readiness = match readiness::Readiness::prepare(&manifest, runtime_dir) {

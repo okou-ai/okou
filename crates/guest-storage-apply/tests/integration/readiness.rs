@@ -34,6 +34,8 @@ fn manifest(dir: &Path) -> Result<(Manifest, ArchiveReadiness), Box<dyn std::err
     let descriptor = ArchiveReadiness {
         id: uuid::Uuid::new_v4(),
         sources: vec![format!("file://{}", dir.join("pending.tar.gz").display())],
+        wait_timeout_ms: None,
+        check_only: false,
     };
     let manifest: Manifest = serde_json::from_value(json!({
         "storageMounts":[
@@ -53,6 +55,50 @@ fn spawn(manifest: &Manifest, runtime: &Path) -> std::io::Result<CommandExecutio
         .env(runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV, runtime);
     let bytes = serde_json::to_vec(manifest).map_err(std::io::Error::other)?;
     CommandExecution::spawn(&mut command, Some(&bytes))
+}
+
+#[test]
+fn eligibility_checks_physical_aliases_without_applying_or_cleaning_inputs() {
+    use std::os::unix::fs::symlink;
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = dir.path().join("runtime");
+    fs::create_dir_all(&runtime).unwrap();
+    fs::write(runtime.join("retained"), b"private").unwrap();
+    let (mut manifest, _) = manifest(dir.path()).unwrap();
+    manifest.archive_readiness.as_mut().unwrap().check_only = true;
+    fs::create_dir_all(dir.path().join("ready")).unwrap();
+    fs::write(dir.path().join("ready/old"), b"retained input").unwrap();
+    manifest
+        .cleanup_paths
+        .push(dir.path().join("ready").display().to_string());
+    for overlap in [false, true] {
+        let alias = dir.path().join("alias");
+        if alias.exists() {
+            fs::remove_file(&alias).unwrap();
+        }
+        symlink(if overlap { &runtime } else { dir.path() }, &alias).unwrap();
+        manifest.artifacts[0].mount_path = alias
+            .join(if overlap { "input" } else { "pending" })
+            .display()
+            .to_string();
+        let output = spawn(&manifest, &runtime).unwrap().wait().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            serde_json::from_slice::<bool>(&output.stdout).unwrap(),
+            !overlap
+        );
+        assert_eq!(
+            fs::read(dir.path().join("ready/old")).unwrap(),
+            b"retained input"
+        );
+        assert_eq!(fs::read(runtime.join("retained")).unwrap(), b"private");
+        assert!(!dir.path().join("ready/value").exists());
+        assert!(!runtime.join("archive-readiness").exists());
+    }
 }
 
 #[test]
