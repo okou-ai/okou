@@ -6,12 +6,10 @@ export default defineConfig({
     emptyOutDir: true,
     minify: false,
     lib: {
-      entry: {
-        background: "src/background.ts",
-      },
+      entry: "src/background.ts",
       formats: ["es"],
-      fileName: (_format, entryName) => {
-        return `${entryName}.js`;
+      fileName: () => {
+        return "background.js";
       },
     },
   },
