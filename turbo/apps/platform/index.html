@@ -1,5 +1,11 @@
 <!doctype html>
-<html lang="en-US" translate="no" data-app-brand-name="Okou">
+<!-- Temporary diagnostic preview: disable CSS transitions, not CSS animations. -->
+<html
+  lang="en-US"
+  translate="no"
+  data-app-brand-name="Okou"
+  class="transition-none! [&_*]:transition-none! [&::before]:transition-none! [&::after]:transition-none! [&_*::before]:transition-none! [&_*::after]:transition-none!"
+>
   <head>
     <script>
       window.__appBootstrapStart = performance.now();
@@ -229,16 +235,10 @@
         box-sizing: border-box;
         background: #fdfdfe;
         opacity: 1;
-        transition: opacity 300ms ease;
       }
 
       [data-theme="dark"] #app-bootstrap-skeleton {
         background: #19191b;
-      }
-
-      #app-bootstrap-skeleton.app-bootstrap-skeleton--hidden {
-        pointer-events: none;
-        opacity: 0;
       }
 
       .app-bootstrap-skeleton__content {
