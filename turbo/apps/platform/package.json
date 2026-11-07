@@ -52,7 +52,7 @@
     "@tiptap/extension-paragraph": "3.31.4",
     "@tiptap/extension-strike": "3.31.4",
     "@tiptap/extension-text": "3.31.4",
-    "@tiptap/extension-underline": "3.31.4",
+    "@tiptap/extension-underline": "3.32.2",
     "@tiptap/extensions": "3.31.4",
     "@tiptap/markdown": "3.31.4",
     "@tiptap/pm": "3.31.4",
