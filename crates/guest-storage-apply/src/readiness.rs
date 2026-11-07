@@ -1,6 +1,7 @@
 //! One operation's publication gates; the existing runtime owns their cleanup.
 
 use crate::cleanup_directory::CleanupDirectory;
+use crate::instructions::InstructionFilename;
 use guest_contracts::runtime_paths;
 use guest_contracts::storage_manifest::Manifest;
 use guest_contracts::storage_paths::normalize_path;
@@ -38,6 +39,28 @@ fn overlaps(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 
+fn has_cleanup_ancestor(manifest: &Manifest, target: &Path) -> bool {
+    manifest
+        .cleanup_paths
+        .iter()
+        .map(PathBuf::from)
+        .chain(manifest.instruction_cleanups.iter().flat_map(|entry| {
+            InstructionFilename::ALL
+                .into_iter()
+                .filter(move |name| {
+                    entry
+                        .target_filename
+                        .as_deref()
+                        .is_none_or(|target| target == name.as_str())
+                })
+                .map(move |name| Path::new(&entry.mount_path).join(name.as_str()))
+        }))
+        .any(|root| {
+            let root = normalize_path(&root);
+            root.is_absolute() && target.starts_with(root)
+        })
+}
+
 // Resolve missing leaves through their existing ancestor, retaining its physical
 // identity so an input alias cannot erase the private notification directory.
 fn physical_path(path: &Path) -> io::Result<Option<PathBuf>> {
@@ -50,6 +73,15 @@ fn physical_path(path: &Path) -> io::Result<Option<PathBuf>> {
                     resolved.push(name);
                 }
                 return Ok(Some(resolved));
+            }
+            // Instruction cleanup can remove a file or cyclic alias before
+            // preparing a nested mount. Its future physical identity cannot be
+            // established here; keep such layouts on the ordinary apply path.
+            Err(error)
+                if error.kind() == io::ErrorKind::NotADirectory
+                    || error.raw_os_error() == Some(libc::ELOOP) =>
+            {
+                return Ok(None);
             }
             Err(error) if error.kind() == io::ErrorKind::NotFound => {
                 if std::fs::symlink_metadata(existing)
@@ -160,7 +192,19 @@ impl Readiness {
             if !logical_target.is_absolute() || overlaps(&logical_target, runtime) {
                 return Ok(false);
             }
-            let Some(physical_target) = physical_path(&target)? else {
+            let physical_target = match physical_path(&target) {
+                // Cleanup can unlink an alias without traversing its old
+                // destination. Do not require access to that destination just
+                // to decide whether the ordinary apply path should be used.
+                Err(error)
+                    if error.kind() == io::ErrorKind::PermissionDenied
+                        && has_cleanup_ancestor(manifest, &logical_target) =>
+                {
+                    return Ok(false);
+                }
+                result => result?,
+            };
+            let Some(physical_target) = physical_target else {
                 // Ordinary application can replace a dangling alias. Do not
                 // activate readiness when its physical destination is unknown.
                 return Ok(false);

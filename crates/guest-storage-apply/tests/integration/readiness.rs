@@ -102,6 +102,164 @@ fn eligibility_checks_physical_aliases_without_applying_or_cleaning_inputs() {
 }
 
 #[test]
+fn eligibility_keeps_cleanup_of_obstructing_instruction_ancestors_on_the_ordinary_path() {
+    use guest_contracts::storage_manifest::InstructionCleanupEntry;
+    use std::os::unix::fs::symlink;
+    for cyclic in [false, true] {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = dir.path().join("runtime");
+        let work = dir.path().join("work");
+        fs::create_dir(&work).unwrap();
+        let instructions = work.join("AGENTS.md");
+        if cyclic {
+            symlink(&instructions, &instructions).unwrap();
+        } else {
+            fs::write(&instructions, b"previous instructions").unwrap();
+        }
+        let (mut manifest, _) = manifest(dir.path()).unwrap();
+        manifest.artifacts[0].mount_path = instructions.join("nested").display().to_string();
+        manifest.instruction_cleanups.push(InstructionCleanupEntry {
+            mount_path: work.display().to_string(),
+            target_filename: Some("AGENTS.md".into()),
+        });
+        manifest.archive_readiness.as_mut().unwrap().check_only = true;
+        let output = spawn(&manifest, &runtime).unwrap().wait().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!serde_json::from_slice::<bool>(&output.stdout).unwrap());
+        if cyclic {
+            assert_eq!(fs::read_link(&instructions).unwrap(), instructions);
+        } else {
+            assert_eq!(fs::read(&instructions).unwrap(), b"previous instructions");
+        }
+        assert!(!dir.path().join("ready/value").exists());
+        assert!(!runtime.join("archive-readiness").exists());
+
+        // Only the ordinary application may remove the old file/alias before
+        // preparing this otherwise valid nested mount.
+        manifest.archive_readiness = None;
+        let output = spawn(&manifest, &runtime).unwrap().wait().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            fs::read(instructions.join("nested/value")).unwrap(),
+            b"stale"
+        );
+        assert_eq!(fs::read(dir.path().join("ready/value")).unwrap(), b"ready");
+    }
+}
+
+#[test]
+fn eligibility_allows_planned_cleanup_of_unsearchable_aliases_but_preserves_other_io_errors() {
+    use guest_contracts::storage_manifest::InstructionCleanupEntry;
+    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
+    use std::os::unix::process::CommandExt;
+
+    struct RestoreSearchPermission(std::path::PathBuf);
+    impl Drop for RestoreSearchPermission {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o700));
+        }
+    }
+
+    for cleanup in ["instruction", "all-instructions", "stale-path"] {
+        let dir = tempfile::tempdir().unwrap();
+        let runtime = dir.path().join("runtime");
+        let work = dir.path().join("work");
+        let protected = dir.path().join("protected");
+        fs::create_dir(&work).unwrap();
+        fs::create_dir(&protected).unwrap();
+        fs::write(protected.join("sentinel"), b"untouched").unwrap();
+        let instructions = work.join(if cleanup == "all-instructions" {
+            "CLAUDE.md"
+        } else {
+            "AGENTS.md"
+        });
+        symlink(&protected, &instructions).unwrap();
+        let (mut manifest, _) = manifest(dir.path()).unwrap();
+        manifest.artifacts[0].mount_path = instructions.join("nested").display().to_string();
+        manifest.archive_readiness.as_mut().unwrap().check_only = true;
+
+        // Root bypasses mode bits. Give an unprivileged child an accessible
+        // binary and fixture, so the CLI observes the same permission boundary.
+        let root = fs::metadata(dir.path()).unwrap().uid() == 0;
+        let binary = if root {
+            let binary = dir.path().join("guest-storage-apply");
+            fs::copy(env!("CARGO_BIN_EXE_guest-storage-apply"), &binary).unwrap();
+            fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
+            binary
+        } else {
+            env!("CARGO_BIN_EXE_guest-storage-apply").into()
+        };
+        for path in [dir.path(), &work] {
+            fs::set_permissions(path, fs::Permissions::from_mode(0o777)).unwrap();
+        }
+        for name in ["ready.tar.gz", "pending.tar.gz"] {
+            fs::set_permissions(dir.path().join(name), fs::Permissions::from_mode(0o644)).unwrap();
+        }
+        let restore = RestoreSearchPermission(protected.clone());
+        fs::set_permissions(&protected, fs::Permissions::from_mode(0o0)).unwrap();
+        let run = |manifest: &Manifest| {
+            let mut command = Command::new(&binary);
+            command
+                .arg("--manifest-stdin")
+                .current_dir(dir.path())
+                .env("OKOU_RUN_ID", "readiness-permission-test")
+                .env(runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV, &runtime);
+            if root {
+                command.uid(65534);
+            }
+            CommandExecution::spawn(&mut command, Some(&serde_json::to_vec(manifest).unwrap()))
+                .unwrap()
+                .wait()
+                .unwrap()
+        };
+
+        // Without a cleanup covering the alias, this is a required IO failure.
+        assert_eq!(run(&manifest).status.code(), Some(1));
+        if cleanup == "stale-path" {
+            manifest.cleanup_paths.push(work.display().to_string());
+        } else {
+            manifest.instruction_cleanups.push(InstructionCleanupEntry {
+                mount_path: work.display().to_string(),
+                target_filename: (cleanup == "instruction").then(|| "AGENTS.md".into()),
+            });
+        }
+        let output = run(&manifest);
+        assert!(
+            output.status.success(),
+            "{cleanup}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(!serde_json::from_slice::<bool>(&output.stdout).unwrap());
+        assert_eq!(fs::read_link(&instructions).unwrap(), protected);
+        assert!(!dir.path().join("ready/value").exists());
+        assert!(!runtime.join("archive-readiness").exists());
+
+        manifest.archive_readiness = None;
+        let output = run(&manifest);
+        assert!(
+            output.status.success(),
+            "{cleanup}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert_eq!(
+            fs::read(instructions.join("nested/value")).unwrap(),
+            b"stale"
+        );
+        assert_eq!(fs::read(dir.path().join("ready/value")).unwrap(), b"ready");
+        drop(restore);
+        assert_eq!(fs::read(protected.join("sentinel")).unwrap(), b"untouched");
+    }
+}
+
+#[test]
 fn ready_input_applies_while_another_archive_waits_for_this_operation() {
     let dir = tempfile::tempdir().unwrap();
     let runtime = dir.path().join("runtime");
