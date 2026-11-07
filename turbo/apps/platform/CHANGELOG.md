@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1102.0](https://github.com/okou-ai/okou/compare/app-v0.1101.1...app-v0.1102.0) (2026-11-07)
+
+
+### Features
+
+* **platform:** add staff capability homepage and empty chat discovery ([#45863](https://github.com/okou-ai/okou/issues/45863)) ([b3bf2d5](https://github.com/okou-ai/okou/commit/b3bf2d520fe7f2aa2ada7162ed4be57f68b21ea6))
+
+
+### Bug Fixes
+
+* cap chat attachment uploads at 512 megabytes ([#45845](https://github.com/okou-ai/okou/issues/45845)) ([3936b03](https://github.com/okou-ai/okou/commit/3936b03aa991094a7417091344c17c5ff0287bf2))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.5
+    * @okouai/connectors bumped to 3.21.6
+    * @okouai/core bumped to 8.823.0
+
 ## [0.1101.1](https://github.com/okou-ai/okou/compare/app-v0.1101.0...app-v0.1101.1) (2026-11-07)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.5](https://github.com/okou-ai/okou/compare/ios-v0.28.4...ios-v0.28.5) (2026-11-07)
+
+
+### Bug Fixes
+
+* cap chat attachment uploads at 512 megabytes ([#45845](https://github.com/okou-ai/okou/issues/45845)) ([3936b03](https://github.com/okou-ai/okou/commit/3936b03aa991094a7417091344c17c5ff0287bf2))
+
 ## [0.28.4](https://github.com/okou-ai/okou/compare/ios-v0.28.3...ios-v0.28.4) (2026-11-07)
 
 

@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.38](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.37...runner-rs-v0.244.38) (2026-11-07)
+
+
+### Refactoring
+
+* **runner:** centralize active firewall auth mode selection ([#45868](https://github.com/okou-ai/okou/issues/45868)) ([76fb130](https://github.com/okou-ai/okou/commit/76fb1303163c9986e4855f3b115c753cf9cd1ed7))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.37](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.36...runner-rs-v0.244.37) (2026-11-07)
 
 

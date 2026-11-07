@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.53.0](https://github.com/okou-ai/okou/compare/api-v2.52.6...api-v2.53.0) (2026-11-07)
+
+
+### Features
+
+* **api:** force app.vm0.ai clients to upgrade to v0.1098.0 ([#45850](https://github.com/okou-ai/okou/issues/45850)) ([5d5fe56](https://github.com/okou-ai/okou/commit/5d5fe56e2df2386ea863fab58ed679705c1f82aa))
+
+
+### Refactoring
+
+* **connectors:** accept skill metadata without storage addresses ([#45846](https://github.com/okou-ai/okou/issues/45846)) ([fb2b44c](https://github.com/okou-ai/okou/commit/fb2b44cc80615dd5bbda9aab39af7897b3b18a40)) [#45309](https://github.com/okou-ai/okou/issues/45309)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.5
+    * @okouai/connectors bumped to 3.21.6
+    * @okouai/core bumped to 8.823.0
+    * @okouai/db bumped to 2.23.12
+    * @okouai/pi-agent-runtime bumped to 1.51.83
+
 ## [2.52.6](https://github.com/okou-ai/okou/compare/api-v2.52.5...api-v2.52.6) (2026-11-07)
 
 
