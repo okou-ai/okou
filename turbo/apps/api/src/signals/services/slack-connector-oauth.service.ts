@@ -141,6 +141,7 @@ export const startSlackConnectorOAuth$ = command(
       getMemberRoleAndUpdateCache$,
       context.orgId,
       context.userId,
+      "shared",
       signal,
     );
     if (
@@ -288,6 +289,7 @@ const resolveSlackConnectorCallback$ = command(
       getMemberRoleAndUpdateCache$,
       context.orgId,
       context.userId,
+      "shared",
       signal,
     );
     if (

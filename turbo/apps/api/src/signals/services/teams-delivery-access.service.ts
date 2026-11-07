@@ -52,6 +52,7 @@ export const teamsDeliveryAccess$ = command(
       getMemberRoleAndUpdateCache$,
       args.orgId,
       args.userId,
+      "shared",
       signal,
     );
     if (member.kind !== "member") {

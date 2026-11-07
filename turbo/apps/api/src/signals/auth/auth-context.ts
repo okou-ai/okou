@@ -96,6 +96,7 @@ const cliAuth$ = command(
       getMemberRoleAndUpdateCache$,
       resolved.orgId,
       resolved.userId,
+      "pat",
       signal,
     );
     // A deleted Clerk identity must not degrade into the user-only context a
@@ -187,6 +188,7 @@ const agentAuth$ = command(
       getMemberRoleAndUpdateCache$,
       agentAuth.orgId,
       agentAuth.userId,
+      "agent",
       signal,
     );
     if (membership.kind === "identity_not_found") {
@@ -279,6 +281,7 @@ const resolvedAuthContext$ = command(
           getMemberRoleAndUpdateCache$,
           principal.orgId,
           principal.userId,
+          "oauth",
           signal,
         );
         if (membership.kind !== "member") {

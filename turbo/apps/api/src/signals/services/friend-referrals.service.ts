@@ -124,6 +124,7 @@ export const grantPaidFriendReferralRewards$ = command(
         getMemberRoleAndUpdateCache$,
         candidate.orgId,
         candidate.userId,
+        "shared",
         signal,
       );
       if (membership.kind !== "member") {

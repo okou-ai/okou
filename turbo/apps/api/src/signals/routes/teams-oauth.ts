@@ -264,6 +264,7 @@ const resolveTeamsOauthStateAuth$ = command(
       getMemberRoleAndUpdateCache$,
       state.orgId,
       state.userId,
+      "shared",
       signal,
     );
     signal.throwIfAborted();

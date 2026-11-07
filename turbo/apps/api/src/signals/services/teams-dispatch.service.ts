@@ -1880,6 +1880,7 @@ const teamsExecutionInstallation$ = command(
       getMemberRoleAndUpdateCache$,
       executionOrgId,
       connection.userId,
+      "shared",
       signal,
     );
     if (

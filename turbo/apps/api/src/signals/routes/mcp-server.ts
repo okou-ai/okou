@@ -177,6 +177,7 @@ const mcpRequest$ = command(async ({ get, set }, signal: AbortSignal) => {
       getMemberRoleAndUpdateCache$,
       principal.orgId,
       principal.userId,
+      "oauth",
       signal,
     ),
     signal,

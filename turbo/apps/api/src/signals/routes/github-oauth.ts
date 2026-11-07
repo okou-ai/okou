@@ -317,6 +317,7 @@ const isGithubInstallOrgAdmin$ = command(
       getMemberRoleAndUpdateCache$,
       args.orgId,
       args.userId,
+      "shared",
       signal,
     );
     signal.throwIfAborted();

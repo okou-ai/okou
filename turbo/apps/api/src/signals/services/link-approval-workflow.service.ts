@@ -151,6 +151,7 @@ export const pollLinkApproval$ = command(
       getMemberRoleAndUpdateCache$,
       row.orgId,
       row.userId,
+      "shared",
       signal,
     );
     signal.throwIfAborted();

@@ -465,6 +465,7 @@ export const notifyPendingTeamsConnectWelcomes$ = command(
         getMemberRoleAndUpdateCache$,
         args.orgId,
         connection.userId,
+        "shared",
         signal,
       );
       if (membership.kind !== "member") {

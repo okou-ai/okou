@@ -10,7 +10,10 @@ import { getApiTestMocks } from "../../../__tests__/mocks";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockOptionalEnv } from "../../../lib/env";
+import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { createAuthOrgAgentsBddApi } from "../../routes/__tests__/helpers/api-bdd-auth-org";
+import { mockClerkMembership } from "../../routes/__tests__/helpers/api-bdd-clerk";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../utils";
 import {
@@ -37,6 +40,95 @@ function sdkClientForDataset(
 }
 
 describe("shared SDK ingestion", () => {
+  it("emits one content-free membership census event for cold, fresh and expired PAT requests", async () => {
+    // Telemetry-client suite exception: exercise real public authentication,
+    // then verify the complete ingestion schema, including redaction by omission.
+    const api = createAuthOrgAgentsBddApi(context);
+    const actor = api.user();
+    mockClerkMembership(context, actor, "org:admin");
+    const { token } = await api.createCliToken(actor);
+    const base = now();
+    mockNow(base);
+    context.mocks.axiom.sdkIngest.mockClear();
+
+    const read = async () => {
+      const response = await api.requestReadMeWithBearer(token, actor, [200]);
+      expect(response.body).toMatchObject({
+        userId: actor.userId,
+        orgId: actor.orgId,
+      });
+    };
+    await read();
+    await read();
+    mockNow(base + 60_000);
+    await read();
+
+    const common = {
+      _time: expect.any(String),
+      source: "api",
+      op_type: "auth_member_role",
+      operation_domain: "api",
+      duration_ms: expect.any(Number),
+      success: true,
+      auth_path: "pat",
+      membership_outcome: "member",
+      cache_lookup_ms: expect.any(Number),
+      api_commit_sha: "a".repeat(40),
+    };
+    expect(context.mocks.axiom.sdkIngest.mock.calls).toStrictEqual([
+      [
+        "vm0-sandbox-op-log-dev",
+        [
+          {
+            ...common,
+            cache_state: "missing",
+            clerk_read_ms: expect.any(Number),
+            cache_upsert_ms: expect.any(Number),
+          },
+        ],
+      ],
+      ["vm0-sandbox-op-log-dev", [{ ...common, cache_state: "fresh" }]],
+      [
+        "vm0-sandbox-op-log-dev",
+        [
+          {
+            ...common,
+            cache_state: "expired",
+            clerk_read_ms: expect.any(Number),
+            cache_upsert_ms: expect.any(Number),
+          },
+        ],
+      ],
+    ]);
+  });
+
+  it.each([
+    new Error("Telemetry rejected"),
+    new DOMException("Telemetry rejected", "AbortError"),
+  ])(
+    "preserves PAT success and provider failure when the optional membership sink throws $name",
+    async (error) => {
+      const api = createAuthOrgAgentsBddApi(context);
+      const actor = api.user();
+      mockClerkMembership(context, actor, "org:admin");
+      const { token } = await api.createCliToken(actor);
+      context.mocks.axiom.sdkIngest.mockImplementation(() => {
+        throw error;
+      });
+      const response = await api.requestReadMeWithBearer(token, actor, [200]);
+      expect(response.body).toMatchObject({
+        userId: actor.userId,
+        orgId: actor.orgId,
+      });
+      mockNow(now() + 60_000);
+      context.mocks.clerk.users.getOrganizationMembershipList.mockRejectedValue(
+        new Error("Membership provider unavailable"),
+      );
+      const failed = await api.requestReadMeWithBearer(token, actor, [500]);
+      expect(failed.body).toStrictEqual({ error: "Internal server error" });
+    },
+  );
+
   it("preserves independent filesystem samples through the metrics HTTP transport", async () => {
     // Telemetry-client suite exception: the ingestion payload is the subject,
     // and no production read endpoint exposes these measurements. Construct

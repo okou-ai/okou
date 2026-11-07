@@ -608,6 +608,7 @@ const resolveConnectedSlackAgentRouteAdmission$ = command(
           getMemberRoleAndUpdateCache$,
           thread.orgId,
           args.connection.userId,
+          "shared",
           signal,
         );
         if (membership.kind !== "member") {
@@ -710,6 +711,7 @@ const resolveSlackAccountRoute$ = command(
         getMemberRoleAndUpdateCache$,
         candidateOrgId,
         candidate.connection.userId,
+        "shared",
         signal,
       );
       if (membership.kind !== "member") {

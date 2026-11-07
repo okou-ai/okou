@@ -34,7 +34,13 @@ export const formatIntegrationRunError$ = command(
     }
 
     const [membership, capabilities] = await Promise.all([
-      set(getMemberRoleAndUpdateCache$, args.orgId, args.userId, signal),
+      set(
+        getMemberRoleAndUpdateCache$,
+        args.orgId,
+        args.userId,
+        "shared",
+        signal,
+      ),
       set(loadOrgPlanCapabilities$, args.orgId),
     ]);
     signal.throwIfAborted();
