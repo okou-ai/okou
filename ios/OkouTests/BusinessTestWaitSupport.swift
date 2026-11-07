@@ -10,7 +10,10 @@ extension XCTestCase {
     message: @autoclosure () -> String = "",
     _ predicate: @escaping @MainActor () -> Bool
   ) async throws {
-    let ready = expectation(description: "The production business result became available")
+    // A committed result does not need another actor turn or an observation deadline.
+    if predicate() { return }
+    let ready = expectation(
+      description: "The production business result became available at \(file):\(line)")
     let observation = Task {
       for await result in Observations({ predicate() }) {
         if result {
