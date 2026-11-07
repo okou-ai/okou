@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.52](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.51...runner-supervisor-v0.21.52) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-lifecycle:** share post-read memory observation gates ([#45838](https://github.com/okou-ai/okou/issues/45838)) ([21af541](https://github.com/okou-ai/okou/commit/21af541e251ff57ac93535d3e97e1103a3cf30bd))
+
 ## [0.21.51](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.50...runner-supervisor-v0.21.51) (2026-11-07)
 
 

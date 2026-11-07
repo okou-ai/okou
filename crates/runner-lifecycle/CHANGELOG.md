@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.78](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.77...runner-lifecycle-v0.17.78) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-lifecycle:** share post-read memory observation gates ([#45838](https://github.com/okou-ai/okou/issues/45838)) ([21af541](https://github.com/okou-ai/okou/commit/21af541e251ff57ac93535d3e97e1103a3cf30bd))
+
 ## [0.17.77](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.76...runner-lifecycle-v0.17.77) (2026-11-07)
 
 

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.4](https://github.com/okou-ai/okou/compare/ios-v0.28.3...ios-v0.28.4) (2026-11-07)
+
+
+### Performance Improvements
+
+* **ios:** publish messages sooner and parallelize navigation ([#45836](https://github.com/okou-ai/okou/issues/45836)) ([57436b2](https://github.com/okou-ai/okou/commit/57436b2eb258e81a2df28720b32c3410b5a6de73))
+
 ## [0.28.3](https://github.com/okou-ai/okou/compare/ios-v0.28.2...ios-v0.28.3) (2026-11-07)
 
 
