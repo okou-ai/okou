@@ -1676,7 +1676,7 @@
     },
     "attachments": {
       "attach": "Adjuntar",
-      "fileTooLarge": "{{filename}} supera el límite de 1 GB",
+      "fileTooLarge": "{{filename}} supera el límite de 512 MB",
       "imageUnavailable": "[Imagen no disponible: {{filename}}]",
       "loadingFile": "Cargando {{filename}}",
       "previewFile": "Vista previa de {{filename}}",

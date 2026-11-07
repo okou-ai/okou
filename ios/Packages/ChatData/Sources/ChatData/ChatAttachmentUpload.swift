@@ -3,6 +3,8 @@ import Foundation
 
 public struct ChatAttachment: Codable, Equatable, Sendable {
   public static let maximumSize = 1024 * 1024 * 1024
+  /// Artifact downloads keep `maximumSize`; chat attachment uploads use this smaller cap.
+  public static let maximumUploadSize = 512 * 1024 * 1024
   public let id: String
   public let filename: String
   public let contentType: String
@@ -29,8 +31,8 @@ struct ChatAttachmentUpload {
     guard values.isRegularFile == true, let size = values.fileSize else {
       throw ChatError.invalidContract("The selected file could not be read. Select it again.")
     }
-    guard size <= ChatAttachment.maximumSize else {
-      throw ChatError.invalidContract("File too large (max 1 GB).")
+    guard size <= ChatAttachment.maximumUploadSize else {
+      throw ChatError.invalidContract("File too large (max 512 MB).")
     }
     let prepared: PreparedUpload = try await client.request(
       "/api/uploads/prepare", method: "POST",
