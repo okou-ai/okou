@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.35](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.34...runner-rs-v0.244.35) (2026-11-07)
+
+
+### Refactoring
+
+* **runner:** share connection identity projection ([#45802](https://github.com/okou-ai/okou/issues/45802)) ([8111672](https://github.com/okou-ai/okou/commit/8111672e0b6ab9a432a0966cb35861483d879319))
+
 ## [0.244.34](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.33...runner-rs-v0.244.34) (2026-11-07)
 
 

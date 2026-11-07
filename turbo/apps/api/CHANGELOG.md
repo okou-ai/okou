@@ -10,6 +10,20 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.52.5](https://github.com/okou-ai/okou/compare/api-v2.52.4...api-v2.52.5) (2026-11-07)
+
+
+### Refactoring
+
+* **api:** retire connector skill storage writes ([#45808](https://github.com/okou-ai/okou/issues/45808)) ([1eff26d](https://github.com/okou-ai/okou/commit/1eff26d7b735f6459f0157f1d111231bc6e0f9d4))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.23.10
+
 ## [2.52.4](https://github.com/okou-ai/okou/compare/api-v2.52.3...api-v2.52.4) (2026-11-07)
 
 
