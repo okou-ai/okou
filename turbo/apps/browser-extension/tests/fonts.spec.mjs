@@ -4,21 +4,45 @@ import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
 const defaultFamily = (region = "SC") => {
-  return `-webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto ${region}"`;
+  const regions = [
+    region,
+    ...["SC", "TC", "JP", "KR"].filter((r) => {
+      return r !== region;
+    }),
+  ];
+  return [
+    "-webkit-body",
+    '"Okou Browser Noto Sans"',
+    ...regions.map((r) => {
+      return `"Okou Browser Noto ${r}"`;
+    }),
+  ].join(", ");
 };
 const greek = "Αλφάβητο ABC 123";
 // Controlled supply keeps native CI independent of Google's availability.
 // Real Google download/selection and regional faces are verified in Browser Use.
-const supply = ["SC", "TC", "JP", "KR"]
-  .map((region) => {
-    return `@font-face {
+const supply =
+  Object.entries({
+    SC: "U+3040-30FF, U+4E00-9FFF",
+    TC: "U+3040-30FF, U+4E00-7B7F, U+7B81-9FFF",
+    JP: "U+3040-30FF, U+4E00-7B7F, U+7B81-9FFF",
+    KR: "U+3040-30FF, U+4E00-7B7F, U+7B81-9FFF, U+AC00-D7AF",
+  })
+    .map(([region, range]) => {
+      return `@font-face {
       font-family: 'Okou Browser Noto ${region}';
       font-weight: 400;
       src: local('Noto Sans CJK ${region}'), local('Unifont'), local('WenQuanYi Zen Hei'), local('IPAGothic');
-      unicode-range: U+4E00-9FFF;
+      unicode-range: ${range};
     }`;
-  })
-  .join("\n");
+    })
+    .join("\n") +
+  `@font-face {
+    font-family: 'Okou Browser Noto Sans';
+    font-weight: 400;
+    src: local('NotoSansDevanagari-Regular'), local('Unifont');
+    unicode-range: U+0900-097F;
+  }`;
 const styles = `
   @font-face { font-family: 'Site A'; src: local('Liberation Sans'), local('Arial'); }
   @font-face { font-family: 'Site B'; src: local('Liberation Mono'), local('Courier New'); }
@@ -40,6 +64,12 @@ let origin;
 test.beforeAll(async () => {
   server = createServer((request, response) => {
     response.setHeader("Content-Type", "text/html; charset=utf-8");
+    if (request.url === "/mixed") {
+      response.end(
+        `<!doctype html><html lang="en"><head><style>${styles}${supply}</style></head><body></body></html>`,
+      );
+      return;
+    }
     if (request.url === "/site.css") {
       response.setHeader("Content-Type", "text/css");
       response.end('.external { font-family: "Site A"; }');
@@ -115,6 +145,13 @@ async function fixture(path = "/") {
       ignoreDefaultArgs: ["--disable-extensions"],
     });
     const page = await context.newPage();
+    if (path !== "/font-csp") {
+      // Controlled local supply must not depend on Google's live availability.
+      // Leave the policy fixture un-intercepted to exercise actual CSP denial.
+      await context.route("https://fonts.gstatic.com/**", (route) => {
+        return route.abort();
+      });
+    }
     const stylesheetRequests = [];
     const fontRequests = [];
     const fontResponses = [];
@@ -312,6 +349,88 @@ test("root language changes select regional default glyph supply", async () => {
     }
   });
 });
+
+for (const [lang, region] of [
+  ["en", "SC"],
+  ["zh-Hans", "SC"],
+  ["zh-Hant", "TC"],
+  ["ja", "JP"],
+  ["ko", "KR"],
+]) {
+  test(`mixed-script fallback remains reachable under ${lang} roots`, async () => {
+    await withFixture(async ({ page, fonts, fontRequests }) => {
+      const samples = [
+        ["mixed-korean", "한국어안녕하세요", "KR"],
+        ["mixed-han", "简", "SC"],
+        ["mixed-kana", "こんにちは", region],
+        ["mixed-hindi", "हिन्दी", "Sans"],
+      ];
+      await page.evaluate(
+        ({ lang, samples }) => {
+          document.documentElement.lang = lang;
+          const container = document.createElement("div");
+          // An English-language child must keep access to the inherited tail,
+          // without selecting a CJK-capable native standard from the root lang.
+          container.lang = "en";
+          container.id = "mixed-defaults";
+          for (const [id, text] of samples) {
+            const span = document.createElement("span");
+            span.id = id;
+            span.textContent = text;
+            container.append(span);
+          }
+          document.body.append(container);
+          container.getBoundingClientRect();
+          return document.fonts.ready;
+        },
+        { lang, samples: samples.slice(0, 1) },
+      );
+      // Hangul must skip the unrelated remote faces before the KR supply.
+      expect(fontRequests).toHaveLength(0);
+      await page.evaluate((samples) => {
+        const container = document.getElementById("mixed-defaults");
+        for (const [id, text] of samples) {
+          const span = document.createElement("span");
+          span.id = id;
+          span.textContent = text;
+          container.append(span);
+        }
+        container.getBoundingClientRect();
+        return document.fonts.ready;
+      }, samples.slice(1));
+      // Check before direct reference faces can trigger their own loading.
+      const loaded = await page.evaluate(() => {
+        return [...document.fonts]
+          .filter((face) => {
+            return face.status === "loaded";
+          })
+          .map((face) => {
+            return face.family.replaceAll('"', "");
+          });
+      });
+      for (const [id, text, region] of samples) {
+        const family = `Okou Browser Noto ${region}`;
+        expect(loaded).toContain(family);
+        const selected = await fonts(id);
+        expect(selected.length).toBeGreaterThan(0);
+        await page.evaluate(
+          ({ id, text, family }) => {
+            const reference = document.createElement("span");
+            reference.id = `${id}-reference`;
+            reference.lang = "en";
+            reference.style.fontFamily = `"${family}"`;
+            reference.textContent = text;
+            document.body.append(reference);
+            reference.getBoundingClientRect();
+            return document.fonts.ready;
+          },
+          { id, text, family },
+        );
+        expect(selected).toEqual(await fonts(`${id}-reference`));
+      }
+    }, "/mixed");
+  });
+}
 
 for (const [path, family] of [
   ["/normal", '"Site A"'],

@@ -1,6 +1,8 @@
 /* Coverage hints keep unrelated scripts from downloading a full CJK file.
    Sans ranges come from Google Noto Sans v42 metadata; CJK uses Unicode blocks.
-   Files themselves remain complete, not per-page/text subsets. */
+   Non-Korean sources leave Korean blocks to KR, so mixed Korean
+   text reaches KR without downloading unrelated CJK files. Files themselves
+   remain complete, not per-page/text subsets. */
 
 /* Pinned Google Fonts regular WOFF2 sources. Keep few full faces: segmented
    metadata produces hundreds of CSP violation events even for unused fonts.
@@ -66,8 +68,8 @@
   src: url(https://fonts.gstatic.com/s/notosanssc/v41/k3kCo84MPvpLmixcA63oeAL7Iqp5IZJF9bmaG9_FnYk.woff2)
     format("woff2");
   unicode-range:
-    U+1100-11FF, U+2E80-9FFF, U+A960-A97F, U+AC00-D7FF, U+F900-FAFF,
-    U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF, U+1AFF0-1B16F, U+20000-323AF;
+    U+2E80-302D, U+3030-312F, U+3190-9FFF, U+F900-FAFF, U+FE10-FE1F,
+    U+FE30-FE4F, U+FF00-FF9F, U+FFE0-FFEF, U+1AFF0-1B16F, U+20000-323AF;
 }
 
 /* https://fonts.googleapis.com/css2?family=Noto+Sans+TC%3Awght%40400&display=swap
@@ -80,8 +82,8 @@
   src: url(https://fonts.gstatic.com/s/notosanstc/v40/-nFuOG829Oofr2wohFbTp9ifNAn722rq0MXz76Cy_C8.woff2)
     format("woff2");
   unicode-range:
-    U+1100-11FF, U+2E80-9FFF, U+A960-A97F, U+AC00-D7FF, U+F900-FAFF,
-    U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF, U+1AFF0-1B16F, U+20000-323AF;
+    U+2E80-302D, U+3030-312F, U+3190-9FFF, U+F900-FAFF, U+FE10-FE1F,
+    U+FE30-FE4F, U+FF00-FF9F, U+FFE0-FFEF, U+1AFF0-1B16F, U+20000-323AF;
 }
 
 /* https://fonts.googleapis.com/css2?family=Noto+Sans+JP%3Awght%40400&display=swap
@@ -94,8 +96,8 @@
   src: url(https://fonts.gstatic.com/s/notosansjp/v57/-F6jfjtqLzI2JPCgQBnw7HFyzSD-AsregP8VFBEj754.woff2)
     format("woff2");
   unicode-range:
-    U+1100-11FF, U+2E80-9FFF, U+A960-A97F, U+AC00-D7FF, U+F900-FAFF,
-    U+FE10-FE1F, U+FE30-FE4F, U+FF00-FFEF, U+1AFF0-1B16F, U+20000-323AF;
+    U+2E80-302D, U+3030-312F, U+3190-9FFF, U+F900-FAFF, U+FE10-FE1F,
+    U+FE30-FE4F, U+FF00-FF9F, U+FFE0-FFEF, U+1AFF0-1B16F, U+20000-323AF;
 }
 
 /* https://fonts.googleapis.com/css2?family=Noto+Sans+KR%3Awght%40400&display=swap
