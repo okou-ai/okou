@@ -150,14 +150,14 @@ test("Accept supported drops and reject an oversized dropped file", async () => 
   });
   Object.defineProperty(oversized, "size", {
     configurable: true,
-    value: 1024 * 1024 * 1024 + 1,
+    value: 512 * 1024 * 1024 + 1,
   });
   fireEvent.drop(composerDropTarget(), {
     dataTransfer: { types: ["Files"], files: [dropped, oversized] },
   });
 
   await expect(
-    screen.findByText("archive.iso exceeds the 1 GB limit"),
+    screen.findByText("archive.iso exceeds the 512 MB limit"),
   ).resolves.toBeVisible();
   await waitFor(() => {
     expect(fastButton("Remove dropped.txt")).toBeVisible();

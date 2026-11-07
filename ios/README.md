@@ -14,8 +14,8 @@ selection, chat lists, conversation history, creating chats, sending text,
 retrying uncertain sends, and stopping work. The composer supports system image
 paste in new and existing chats alongside native photo, video and file selection, with
 local previews, upload progress, removal and retry. Uploads use the existing
-direct-to-storage API and its 1 GB limit; files of 5 MB or more use multipart
-uploads. A message can contain files with or without text. Selected files and
+direct-to-storage API with a 512 MB chat attachment limit; files of 5 MB or more
+use multipart uploads. A message can contain files with or without text. Selected files and
 uploads belong to their workspace and draft. Draft text, canonical message context
 and completed-upload metadata persist per API origin, user, workspace and
 Agent/thread, and synchronize through the existing draft APIs. New-chat drafts

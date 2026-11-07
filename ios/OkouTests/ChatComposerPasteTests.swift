@@ -236,7 +236,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let file = try makeImage()
     defer { try? FileManager.default.removeItem(at: file) }
     let handle = try FileHandle(forWritingTo: file)
-    try handle.truncate(atOffset: UInt64(ChatAttachment.maximumSize + 1))
+    try handle.truncate(atOffset: UInt64(ChatAttachment.maximumUploadSize + 1))
     try handle.close()
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
@@ -246,7 +246,9 @@ final class ChatComposerPasteTests: XCTestCase {
       return Progress(totalUnitCount: 1)
     }
     input.paste(itemProviders: [provider])
-    try await waitForBusinessResult { conversation.attachmentDraft.error?.contains("1 GB") == true }
+    try await waitForBusinessResult {
+      conversation.attachmentDraft.error?.contains("512 MB") == true
+    }
     XCTAssertEqual(conversation.draft, "Keep selected text")
     XCTAssertEqual(input.selectedRange, NSRange(location: 5, length: 8))
     XCTAssertFalse(conversation.attachmentDraft.hasAttachments)

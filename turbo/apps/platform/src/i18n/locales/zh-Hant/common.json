@@ -1649,7 +1649,7 @@
     },
     "attachments": {
       "attach": "新增附件",
-      "fileTooLarge": "{{filename}} 超過 1 GB 上限",
+      "fileTooLarge": "{{filename}} 超過 512 MB 上限",
       "imageUnavailable": "[圖片不可用：{{filename}}]",
       "loadingFile": "正在載入 {{filename}}",
       "previewFile": "預覽 {{filename}}",

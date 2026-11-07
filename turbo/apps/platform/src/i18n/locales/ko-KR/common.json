@@ -1649,7 +1649,7 @@
     },
     "attachments": {
       "attach": "첨부",
-      "fileTooLarge": "{{filename}} 파일이 1GB 제한을 초과했습니다",
+      "fileTooLarge": "{{filename}} 파일이 512MB 제한을 초과했습니다",
       "imageUnavailable": "[이미지 없음: {{filename}}]",
       "loadingFile": "{{filename}} 불러오는 중",
       "previewFile": "{{filename}} 미리보기",
