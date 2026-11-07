@@ -411,6 +411,7 @@ public actor HostRuntime {
         guard running, acceptingCommands, generation == current else { return }
         if await rejectAuthentication(error) { return }
         await notifications.setAvailable(false, channelName: connection.channelName)
+        requestStateRefresh(generation: current, connection: connection)
         guard running, generation == current else { return }
         attempt += 1
         let operation = await trace.snapshot()

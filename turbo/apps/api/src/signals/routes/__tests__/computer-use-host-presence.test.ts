@@ -268,6 +268,33 @@ describe("Desktop host presence", () => {
     );
   });
 
+  it("removes a revoked host session even when its Ably presence is retained", async () => {
+    const s = await scenario();
+    mockNow(now() + 31_000);
+    context.mocks.clerk.sessions.getSession.mockResolvedValue({
+      id: s.actor.sessionId,
+      userId: s.actor.userId,
+      status: "revoked",
+    });
+    const listed = await accept(s.api(directory).list({ headers }), [200]);
+    expect(listed.body.hosts).toContainEqual(
+      expect.objectContaining({ id: s.params.hostId, status: "offline" }),
+    );
+    await accept(
+      s
+        .api(hosts)
+        .next({
+          headers,
+          params: s.params,
+          body: {
+            ...s.generation,
+            supportedCapabilities: runtime.supportedCapabilities,
+          },
+        }),
+      [409],
+    );
+  });
+
   it("reports presence-provider failure as unavailable instead of offline", async () => {
     const s = await scenario();
     mockNow(now() + 120_000);
