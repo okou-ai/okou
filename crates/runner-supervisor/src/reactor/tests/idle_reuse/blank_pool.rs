@@ -6,22 +6,57 @@ use super::super::super::*;
 use super::super::support::{
     TestParkedIdleCandidateSpec, context_with_session, minimal_context, mock_run_config,
     mock_run_config_with_overrides, push_job, seed_home_cache_state, seed_idle_pool_with_timing,
-    shutdown, test_profiles, two_profiles, wait_budget_count, wait_idle_pool_len, wait_status_mode,
+    shutdown, test_profiles, two_profiles, wait_budget_count, wait_heartbeat_matching_after,
+    wait_idle_pool_len, wait_status_mode,
 };
 
 use crate::home_image_cache::HomeImageCache;
 use runner_host::paths::RunnerPaths;
 
-#[tokio::test(start_paused = true)]
+#[tokio::test]
 async fn blank_pool_prepares_and_serves_a_job() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let calls = Arc::clone(&overrides);
-    let (config, env) = mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
+    let preparation_gate = sandbox_mock::MockLifecycleGate::new();
+    calls.set_create_lifecycle_gate(preparation_gate.clone());
+    let (mut config, env) =
+        mock_run_config_with_overrides(test_profiles(), 16, 32_768, 8, overrides);
+    let (_heartbeat_trigger, heartbeat_trigger_rx) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_routine_heartbeat_rx = Some(heartbeat_trigger_rx);
     let idle_pool = Arc::clone(&config.shared.idle_pool);
     let budget = Arc::clone(&config.capacity.budget);
     let run_handle = tokio::spawn(run(config));
 
+    preparation_gate
+        .wait_entered(1, Duration::from_secs(5))
+        .await
+        .expect("blank preparation should own its budget before creating a sandbox");
+    assert!(
+        wait_heartbeat_matching_after(&env.handle, 0, Duration::from_secs(5), |state| {
+            state.allocated_vcpu == 2
+                && state.allocated_memory_mb == 4096
+                && state.running_count == 1
+        })
+        .await,
+        "blank preparation must report its new reservation without a routine tick",
+    );
+    let preparing_report = env.handle.heartbeat_count();
+    preparation_gate.release_one();
     wait_idle_pool_len(&idle_pool, 1, Duration::from_secs(5)).await;
+    assert!(
+        wait_heartbeat_matching_after(
+            &env.handle,
+            preparing_report,
+            Duration::from_secs(5),
+            |state| {
+                state.allocated_vcpu == 2
+                    && state.allocated_memory_mb == 4096
+                    && state.running_count == 0
+            },
+        )
+        .await,
+        "parking must report the idle count while retaining the same budget",
+    );
     assert_eq!(budget.allocated(), (2, 4096, 1));
     assert_eq!(calls.blank_park_call_count(), 1);
     assert_eq!(calls.home_drive_mount_calls(), 1);

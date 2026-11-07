@@ -337,6 +337,15 @@ async fn capacity_and_producer_changes_report_without_routine_ticks() {
 
 #[tokio::test]
 async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
+    assert_coalesced_heartbeat_follow_up(false).await;
+}
+
+#[tokio::test]
+async fn heartbeat_follow_up_uses_live_mode_after_silent_mode_flip() {
+    assert_coalesced_heartbeat_follow_up(true).await;
+}
+
+async fn assert_coalesced_heartbeat_follow_up(resume_before_delivery: bool) {
     let wait_gate = sandbox_mock::MockLifecycleGate::new();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     overrides.set_wait_process_lifecycle_gate(wait_gate.clone());
@@ -385,13 +394,16 @@ async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
     assert_eq!(env.handle.heartbeat_count(), 2);
     assert_eq!(env.handle.max_heartbeat_in_flight(), 1);
 
-    // Flip again without notifying or adding another trigger. The follow-up
-    // must sample mode when the active send completes, not retain the mode
-    // observed by the trigger that marked it dirty.
-    env.mode_tx.send_if_modified(|mode| {
-        *mode = RunnerMode::Running;
-        false
-    });
+    if resume_before_delivery {
+        // The follow-up must sample mode when the active send completes,
+        // not retain the mode of the trigger that marked it dirty. Observing
+        // this later transition also requests its own lifecycle report, so
+        // this case checks the first follow-up, not the final report count.
+        env.mode_tx.send_if_modified(|mode| {
+            *mode = RunnerMode::Running;
+            false
+        });
+    }
 
     env.handle.unblock_heartbeats();
     assert!(
@@ -414,9 +426,18 @@ async fn heartbeat_triggers_coalesce_into_one_current_mode_follow_up() {
             .lock()
             .unwrap_or_else(|error| error.into_inner());
         let heartbeats = &heartbeats[1..]; // Required startup delivery precedes routine sends.
-        assert_eq!(heartbeats.len(), 2);
+        if !resume_before_delivery {
+            assert_eq!(heartbeats.len(), 2, "reported snapshots: {heartbeats:#?}");
+        }
         assert_eq!(heartbeats[0].mode, "running");
-        assert_eq!(heartbeats[1].mode, "running");
+        assert_eq!(
+            heartbeats[1].mode,
+            if resume_before_delivery {
+                "running"
+            } else {
+                "draining"
+            }
+        );
         assert_eq!(heartbeats[1].running_count, 1);
         assert_eq!(heartbeats[0].snapshot_generation, 7);
         assert_eq!(heartbeats[1].snapshot_generation, 7);

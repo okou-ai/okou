@@ -1024,6 +1024,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // learns about a held reusable sandbox or home image cache without
     // waiting for the next routine tick.
     let reuse_state_notify = Arc::clone(&shared.reuse_state_notify);
+    // Pool ownership changes running_count even when its budget lease stays
+    // unchanged, including blank preparation, reservation and restoration.
+    let mut idle_pool_changes = shared.idle_pool.lock().await.subscribe_changes();
     let idle_destroy_tracker = IdleDestroyTracker::new(Arc::clone(&reuse_state_notify));
     let orphaned_active_runs = OrphanedActiveRuns::new();
     let mut orphan_reap_tick = tokio::time::interval_at(
@@ -1572,6 +1575,11 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 heartbeat.request(*mode_rx.borrow())?;
             }
             _ = capacity.budget.changed(),
+                if matches!(mode, RunnerMode::Running | RunnerMode::Draining) =>
+            {
+                heartbeat.request(*mode_rx.borrow())?;
+            }
+            _ = idle_pool_changes.changed(),
                 if matches!(mode, RunnerMode::Running | RunnerMode::Draining) =>
             {
                 heartbeat.request(*mode_rx.borrow())?;

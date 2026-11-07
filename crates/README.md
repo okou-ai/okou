@@ -337,10 +337,10 @@ count attempts owned by the shared client.
 ### API heartbeat delivery recovery
 
 The Runner sends routine API heartbeats every 60s through one single-flight
-owner. Capacity, lifecycle and reusable-inventory changes request prompt full
-snapshots; in-flight triggers coalesce into one live-state follow-up. The API
-considers reuse inventory fresh for 180s. Local status retry and passive host
-memory observation retain their independent 10s cadence.
+owner. Capacity, idle-pool ownership, lifecycle and reusable-inventory changes
+request prompt full snapshots; in-flight triggers coalesce into one live-state
+follow-up. The API considers reuse inventory fresh for 180s. Local status retry
+and passive host memory observation retain their independent 10s cadence.
 
 Failed background heartbeats in `running` and `draining` retry fresh state after
 10s without waiting for the routine timer. A new state report supersedes a
