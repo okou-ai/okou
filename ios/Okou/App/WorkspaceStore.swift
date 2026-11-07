@@ -9,6 +9,7 @@ import Observation
 final class WorkspaceStore {
   private let client: APIClient
   private let sync: ChatSync
+  private let resources: WorkspaceResources
   private let commands: ChatCommands
   private let conversationLimit: Int
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
@@ -78,7 +79,7 @@ final class WorkspaceStore {
   }
 
   @ObservationIgnored lazy var modelStore = ChatModelStore(
-    client: client, webURL: webURL, readRetrySleep: readRetrySleep,
+    client: client, webURL: webURL, resources: resources, readRetrySleep: readRetrySleep,
     didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var composerWorkflows = ComposerWorkflowSource(
     client: client, storage: draftStorage, didFail: { [weak self] in self?.handle($0) })
@@ -91,7 +92,7 @@ final class WorkspaceStore {
     didFail: { [weak self] in self?.handle($0) })
 
   @ObservationIgnored lazy var list = ThreadListStore(
-    client: client, sync: sync, commands: commands,
+    client: client, sync: sync, commands: commands, resources: resources,
     didRefresh: { [weak self] in self?.applyThreads($0) },
     didFail: { [weak self] in self?.handle($0) }, readRetrySleep: readRetrySleep)
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
@@ -124,6 +125,7 @@ final class WorkspaceStore {
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
     self.client = client
+    resources = WorkspaceResources(client: client, sleep: readRetrySleep)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
     self.didRefreshReadState = didRefreshReadState
@@ -237,6 +239,7 @@ final class WorkspaceStore {
     composerWorkflows.close()
     newModelSelection.close()
     list.close()
+    resources.close()
     threadFeedback = nil
     search.close()
     searchArtifacts.close()
@@ -329,6 +332,8 @@ final class WorkspaceStore {
     if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
     {
       await modelStore.refresh(batch)
+    } else if full {
+      do { try resources.invalidate(batch) } catch { handle(error) }
     }
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {

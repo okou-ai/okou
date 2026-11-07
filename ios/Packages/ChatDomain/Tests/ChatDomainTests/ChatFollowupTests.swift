@@ -42,7 +42,8 @@ final class ChatFollowupTests: XCTestCase {
 
   func testNewReplyNewUserAndActiveWorkHideOlderRecommendations() throws {
     let rows = completed + [followups(4)]
-    XCTAssertNotNil(try project(rows).recommendedFollowups)
+    let history = try project(rows)
+    XCTAssertNotNil(history.recommendedFollowups)
     for tail in [
       [event(5, .outputMessage, content: "Updated", run: "run")],
       [event(5, .inputPrompt, run: "next")],
@@ -58,7 +59,10 @@ final class ChatFollowupTests: XCTestCase {
     ] {
       XCTAssertNil(try project(rows + tail).recommendedFollowups)
     }
-    XCTAssertNil(try ChatEventProjection.history(rows: rows, recovering: true).recommendedFollowups)
+    let recovering = try ChatEventProjection.history(rows: rows, recovering: true)
+    XCTAssertNil(recovering.recommendedFollowups)
+    XCTAssertEqual(history.withCancellationRecoveryPending(true), recovering)
+    XCTAssertEqual(history.withCancellationRecoveryPending(false), history)
   }
 
   func testLateOldRunDoesNotOvertakeNewRunAndSameRunNewTurnRetiresSource() throws {

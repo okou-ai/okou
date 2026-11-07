@@ -24,6 +24,7 @@ final class ThreadListStore {
   private(set) var updatingThreads: Set<String> = []
   private let client: APIClient
   private let sync: ChatSync
+  private let resources: WorkspaceResources
   private let commands: ChatCommands
   private let didRefresh: @MainActor ([ChatThread]) -> Void
   private let didFail: @MainActor (Error) -> Void
@@ -55,7 +56,7 @@ final class ThreadListStore {
   private var blocked = false
 
   init(
-    client: APIClient, sync: ChatSync, commands: ChatCommands,
+    client: APIClient, sync: ChatSync, commands: ChatCommands, resources: WorkspaceResources,
     didRefresh: @escaping @MainActor ([ChatThread]) -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
@@ -64,6 +65,7 @@ final class ThreadListStore {
   ) {
     self.client = client
     self.sync = sync
+    self.resources = resources
     self.commands = commands
     self.didRefresh = didRefresh
     self.didFail = didFail
@@ -126,19 +128,16 @@ final class ThreadListStore {
     guard !closed, !blocked, !Task.isCancelled else { return }
     navigationRevision += 1
     do {
-      let result: [AgentRecord] = try await client.request("/api/agents")
+      let reads = try resources.navigation(refresh: navigationRevision > 1)
+      let agents = try await reads.agents.value
       guard !closed, !Task.isCancelled else { return }
-      agents = result
-      let preferences: SidebarPreferences = try await client.request("/api/user-preferences")
+      self.agents = agents
+      let preferences = try await reads.preferences.value
       guard !closed, !Task.isCancelled else { return }
       pinnedAgentIDs = preferences.pinnedAgentIds
       navigationError = nil
     } catch is CancellationError {
       return
-    } catch let error as APIClientError where error.statusCode == 409 {
-      guard !closed, !Task.isCancelled else { return }
-      pinnedAgentIDs = []
-      navigationError = nil
     } catch {
       guard !closed, !Task.isCancelled else { return }
       navigationError = error.localizedDescription

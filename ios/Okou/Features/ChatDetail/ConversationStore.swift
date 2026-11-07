@@ -272,7 +272,7 @@ final class ConversationStore {
     guard !closed, !Task.isCancelled, refreshGeneration == generation,
       history?.persistedEventIDs == previousIDs
     else { return }
-    history = cached
+    history = cached.withCancellationRecoveryPending(history?.executionState == .recovering)
     pending.removeAll { cached.persistedEventIDs.contains($0.id) }
     rebuildMessages()
   }
@@ -301,15 +301,27 @@ final class ConversationStore {
       repeat {
         refreshAgain = false
         do {
-          let result = try await ChatReadRecovery.read("chat history", sleep: readRetrySleep) {
-            try await sync.history(threadID: thread.id)
+          async let recovery = ChatReadRecovery.read("cancellation recovery", sleep: readRetrySleep)
+          {
+            try await self.sync.cancellationRecoveryPending(threadID: self.thread.id)
           }
+          let events = try await ChatReadRecovery.read("chat history", sleep: readRetrySleep) {
+            try await sync.eventHistory(threadID: thread.id)
+          }
+          // Keep a confirmed recovery visible until its independent read finishes.
+          let result = events.withCancellationRecoveryPending(
+            history?.executionState == .recovering)
           await messageMarkdown.prepareLatest(result.messages)
           try Task.checkCancellation()
           guard !closed, refreshGeneration == generation else { return }
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
+          let recovering = try await recovery
+          try Task.checkCancellation()
+          guard !closed, refreshGeneration == generation else { return }
+          let verified = events.withCancellationRecoveryPending(recovering)
+          if history != verified { history = verified }
           historySyncError = nil
           if !result.canStop { stopIssue = nil }
           let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
