@@ -270,3 +270,55 @@ test("Pausing during a tab attachment releases its late receipt before resuming 
   await ordered(["Second", "New tab", "First"]);
   await ready();
 });
+
+test.each(["initial", "later"])(
+  "A new tab accepts input while the %s native order read is pending",
+  async (phase) => {
+    const { browser, start } = viewer();
+    const held = phase === "initial" ? browser.holdNext("tab-order") : null;
+    await start();
+    if (!held) {
+      await ordered();
+    }
+    await ready();
+    const pending = held ?? browser.holdNext("tab-order");
+    if (!held) {
+      act(() => {
+        return browser.reorder(101, ["blank", "second", "first"]);
+      });
+    }
+    await pending.received;
+    click(
+      screen.getByLabelText("New tab", {
+        selector: 'button:not([role="tab"])',
+      }),
+    );
+    await waitFor(() => {
+      expect(screen.getByLabelText("Address")).toHaveValue("");
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+      expect(
+        queryAllByRoleFast("tab").filter((tab) => {
+          return tab.getAttribute("aria-selected") === "true";
+        }),
+      ).toHaveLength(1);
+    });
+    const input = screen.getByLabelText("Remote browser input");
+    await userEvent.click(input);
+    fireEvent.input(input, {
+      target: { value: "input before native order completes" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input).toContainEqual(
+        expect.objectContaining({
+          method: "Input.insertText",
+          params: { text: "input before native order completes" },
+          sessionId: browser.pageSession("created-1"),
+        }),
+      );
+    });
+    await act(pending.release);
+    await ordered(["New tab", "Second", "First", "New tab"]);
+    await ready();
+  },
+);

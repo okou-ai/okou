@@ -14,6 +14,7 @@ import {
 interface NativeTarget {
   readonly targetId: string;
   windowId: number;
+  index?: number;
   url?: string;
 }
 
@@ -105,7 +106,7 @@ export function createNativeWindowProvider(context: TestContext) {
               return {
                 id,
                 windowId,
-                index,
+                index: target.index ?? index,
                 active: index === 0,
                 pinned: false,
                 discarded: false,
