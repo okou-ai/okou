@@ -463,7 +463,7 @@ async fn cancelled_or_denied_admission_keeps_inventory_lease_and_complete_home_b
         let revision = pool.status_snapshot().revision;
         let mut retirement = pending(&pool, &identity, &env);
         if available == 64 {
-            let (seen, release) = env.source.gate_read();
+            let (seen, release) = env.source.gate_next_read();
             {
                 let grant = retirement.try_grant();
                 tokio::pin!(grant);
@@ -534,7 +534,7 @@ async fn reserve_restore_same_sandbox_and_parked_age_invalidates_waiting_retirem
     let identity = park(&mut fixture, &mut pool);
     let before = pool.retirement_candidate(&identity).unwrap();
     let mut retirement = IdlePoolRetirement::new(before, &env.operations, envelope()).unwrap();
-    let (seen, release) = env.source.gate_read();
+    let (seen, release) = env.source.gate_next_read();
     {
         let grant = retirement.try_grant();
         tokio::pin!(grant);

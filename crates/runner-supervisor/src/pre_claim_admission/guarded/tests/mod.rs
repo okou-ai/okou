@@ -1,21 +1,20 @@
 //! Real provider claim, Executor guest preparation and rollback composition.
 
-use std::{path::PathBuf, sync::Mutex, time::Duration};
+use std::{sync::Mutex, time::Duration};
 
-use futures_util::future::BoxFuture;
-use runner_host::host_memory::HostMemoryObservation;
 use runner_lifecycle::guest_timezone::GuestTimezoneIntent;
 use runner_lifecycle::home_image_cache::HomeCacheCheckoutResult;
 use runner_lifecycle::home_promotion::test_support::{
     HomePromotionFixture, add_healthy_cache_preparation_matcher, test_home_image,
 };
-use runner_lifecycle::host_memory_operations::{MemoryObservationSource, MemoryOperationPolicy};
+use runner_lifecycle::host_memory_operations::MemoryOperationPolicy;
 use runner_lifecycle::host_memory_policy::HostMemoryBounds;
 use runner_lifecycle::idle_pool::{
     ActivationCleanupOutcome, IdlePool, IdlePoolConfig, ParkResult,
     test_support::ParkedIdleCandidateBuilder,
 };
 use runner_lifecycle::resource_budget::ResourceBudget;
+use runner_lifecycle::test_fixtures::memory_observation::FileMemoryObservationSource as Source;
 use runner_provider::{ApiClaimTiming, ClaimResponseAttribution};
 use sandbox::{SandboxBackingProcess, SandboxFactory};
 use sandbox_mock::{
@@ -32,24 +31,6 @@ const MIB: u64 = 1024 * 1024;
 const WAIT: Duration = Duration::from_secs(5);
 
 mod http_claim;
-
-struct Source {
-    path: PathBuf,
-    gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
-}
-impl MemoryObservationSource for Source {
-    fn observe(&self) -> BoxFuture<'_, HostMemoryObservation> {
-        Box::pin(async move {
-            let gate = self.gate.lock().unwrap().take();
-            let sample = HostMemoryObservation::read_at(&self.path).await;
-            if let Some((seen, release)) = gate {
-                seen.send(()).unwrap();
-                release.await.unwrap();
-            }
-            sample
-        })
-    }
-}
 
 struct Fixture {
     home: RetainedHome,
@@ -127,10 +108,7 @@ impl Fixture {
         let admission =
             GuardedSpeculativeAdmission::new(pool.take_reserved("thread:spec-supervisor").unwrap())
                 .unwrap_or_else(|_| panic!("parked exact"));
-        let source = Arc::new(Source {
-            path: home._dir.path().join("meminfo"),
-            gate: Mutex::new(None),
-        });
+        let source = Arc::new(Source::new(home._dir.path().join("meminfo")));
         tokio::fs::write(
             &source.path,
             format!("MemAvailable: {} kB\n", available * 1024),
@@ -457,9 +435,7 @@ async fn no_unknown_or_cancelled_cleanup_observation_retains_original_required_d
                 .unwrap();
         }
         if fault == "cancel" {
-            let (seen, observed) = oneshot::channel();
-            let (release, wait) = oneshot::channel();
-            *fixture.source.gate.lock().unwrap() = Some((seen, wait));
+            let (observed, release) = fixture.source.gate_next_read();
             let mut pending = Box::pin(fixture.rollback(&mut admission));
             assert!(futures_util::poll!(pending.as_mut()).is_pending());
             tokio::select! { _ = observed => {}, _ = pending.as_mut() => panic!("unexpected acceptance") }
@@ -691,9 +667,7 @@ async fn pool_mutation_during_replacement_admission_retains_incoming_and_origina
         .await
         .unwrap();
     let (_exit, blank) = add_blank(&fixture).await;
-    let (seen, observed) = oneshot::channel();
-    let (release, wait) = oneshot::channel();
-    *fixture.source.gate.lock().unwrap() = Some((seen, wait));
+    let (observed, release) = fixture.source.gate_next_read();
     let mut pending = Box::pin(fixture.rollback(&mut admission));
     assert!(futures_util::poll!(pending.as_mut()).is_pending());
     tokio::select! { _ = observed => {}, _ = pending.as_mut() => panic!("unexpected acceptance") }
@@ -912,9 +886,7 @@ async fn incoming_backing_change_or_loss_during_admission_never_rebinds_the_orig
             .await
             .unwrap();
         let (_exit, blank) = add_blank(&fixture).await;
-        let (seen, observed) = oneshot::channel();
-        let (release, wait) = oneshot::channel();
-        *fixture.source.gate.lock().unwrap() = Some((seen, wait));
+        let (observed, release) = fixture.source.gate_next_read();
         let mut pending = Box::pin(fixture.rollback(&mut admission));
         assert!(futures_util::poll!(pending.as_mut()).is_pending());
         tokio::select! { _ = observed => {}, _ = pending.as_mut() => panic!("unexpected acceptance") }

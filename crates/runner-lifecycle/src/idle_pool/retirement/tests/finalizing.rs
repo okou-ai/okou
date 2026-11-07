@@ -220,7 +220,7 @@ async fn finalizing_cancelled_coverage_wait_keeps_original_capsule() {
     let mut required = owner.take_cleanup_owner().unwrap();
     assert!(required.activate(RunId::new_v4()).await.is_err());
     let env = Env::new(64).await;
-    let (seen, release) = env.source.gate_read();
+    let (seen, release) = env.source.gate_next_read();
     let mut pending = Box::pin(required.grant_cleanup(&env.operations, envelope()));
     tokio::select! {
         result = &mut pending => panic!("coverage unexpectedly completed: {result:?}"),

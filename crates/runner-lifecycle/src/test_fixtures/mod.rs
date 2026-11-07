@@ -1,3 +1,5 @@
+pub mod memory_observation;
+
 #[cfg(test)]
 pub use runner_host::test_fixtures::ignored_child;
 
