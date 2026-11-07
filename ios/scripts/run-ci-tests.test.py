@@ -177,12 +177,13 @@ class CIProcessTests(unittest.TestCase):
 
     def lean_fixture(self):
         runtime = self.root / "iOS.simruntime"
-        daemons = (
-            runtime / "Contents/Resources/RuntimeRoot/System/Library/LaunchDaemons"
-        )
-        daemons.mkdir(parents=True)
-        for label in ("com.apple.PosterBoard", "com.apple.chronod"):
-            (daemons / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label}))
+        for kind, label in (
+            ("LaunchAgents", "com.apple.PosterBoard"),
+            ("LaunchDaemons", "com.apple.chronod"),
+        ):
+            directory = runtime / "Contents/Resources/RuntimeRoot/System/Library" / kind
+            directory.mkdir(parents=True)
+            (directory / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label}))
         self.env.update(
             {
                 "GITHUB_ACTIONS": "true",

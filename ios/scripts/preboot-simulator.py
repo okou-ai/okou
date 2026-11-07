@@ -77,14 +77,21 @@ def apply_lean_profile(runtime, device):
     (selected,) = [
         item for item in inventory["runtimes"] if item["identifier"] == runtime
     ]
-    daemons = (
-        Path(selected["bundlePath"])
-        / "Contents/Resources/RuntimeRoot/System/Library/LaunchDaemons"
+    library = (
+        Path(selected["bundlePath"]) / "Contents/Resources/RuntimeRoot/System/Library"
     )
-    for label in LEAN_SERVICES:
-        with (daemons / f"{label}.plist").open("rb") as source:
-            if plistlib.load(source)["Label"] != label:
-                raise ValueError(f"Unexpected runtime service: {label}")
+    definitions = {}
+    for kind in ("LaunchDaemons", "LaunchAgents"):
+        for path in (library / kind).glob("*.plist"):
+            with path.open("rb") as source:
+                label = plistlib.load(source).get("Label")
+            if label in LEAN_SERVICES:
+                definitions[label] = str(path)
+    if set(definitions) != set(LEAN_SERVICES):
+        raise ValueError(
+            f"Lean service definitions not found in {library}: {definitions}"
+        )
+    print("iOS simulator service definitions: " + json.dumps(definitions), flush=True)
 
     directory = launchd_directory(device["udid"])
     created_directory = not directory.exists()

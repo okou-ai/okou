@@ -112,6 +112,15 @@ for env in [evidence['env'], ios['jobs']['publish-archive']['env']]:
         assert env[key] == value
 simulator = next(step for step in native if step.get('name') == 'Build app and run isolated simulator tests')
 assert "steps.evidence.outputs.run_tests == 'true'" in simulator['if']
+# Lean simulator settings cannot enter PR/merge-group native release evidence.
+assert ios['on']['workflow_dispatch']['inputs']['simulator_profile']['default'] == 'standard'
+profile = simulator['env']['IOS_SIMULATOR_PROFILE'].removeprefix('${{').removesuffix('}}').strip()
+for event in ['pull_request', 'merge_group', 'push', 'workflow_dispatch']:
+    for selected in ['standard', 'lean', '']:
+        expression = (profile.replace('github.event_name', repr(event))
+            .replace('inputs.simulator_profile', repr(selected)).replace('&&', 'and').replace('||', 'or'))
+        expected = selected if event == 'workflow_dispatch' and selected else 'standard'
+        assert eval(expression, {'__builtins__': {}}, {}) == expected
 # A verified hit avoids native setup in this job; a miss and normal PR/manual
 # requests retain it without a second Mac job or an archive dependency.
 cache = next(step for step in native if step.get('id') == 'build-cache')

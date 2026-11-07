@@ -123,12 +123,13 @@ class PrebootSimulatorTests(unittest.TestCase):
         }
         self.state.write_text(json.dumps(self.inventory))
         runtime = self.root / "iOS.simruntime"
-        daemons = (
-            runtime / "Contents/Resources/RuntimeRoot/System/Library/LaunchDaemons"
-        )
-        daemons.mkdir(parents=True, exist_ok=True)
-        for label in ("com.apple.PosterBoard", "com.apple.chronod"):
-            (daemons / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label}))
+        for kind, label in (
+            ("LaunchAgents", "com.apple.PosterBoard"),
+            ("LaunchDaemons", "com.apple.chronod"),
+        ):
+            directory = runtime / "Contents/Resources/RuntimeRoot/System/Library" / kind
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label}))
         directory = Path("/var/tmp") / f"com.apple.CoreSimulator.SimDevice.{udid}"
         self.addCleanup(shutil.rmtree, directory, True)
         self.env.update(
