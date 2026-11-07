@@ -1889,6 +1889,102 @@
       "uncertain": "Comprueba el navegador",
       "uncertainDescription": "Es posible que el navegador haya recibido la información. Pide al agente que compruebe el resultado."
     },
+    "capabilityHome": {
+      "back": "Todas las funciones",
+      "capabilities": "Explora las funciones de Okou",
+      "create": {
+        "description": "De tu primera idea a algo listo para compartir.",
+        "documentFormats": "Doc · PDF · Hoja",
+        "title": "Crear"
+      },
+      "explore": "Explorar",
+      "research": {
+        "items": {
+          "ads": "Explorar creatividades publicitarias",
+          "products": "Investigar productos",
+          "searchOpportunities": "Encontrar oportunidades de búsqueda",
+          "tools": "Comparar herramientas",
+          "topic": "Investigar un tema",
+          "traffic": "Comparar tráfico web"
+        },
+        "prompt": "{{task}}. Aclara qué quiero aprender, compara las pruebas y resume los hallazgos principales con sus fuentes.",
+        "title": "Investigar"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Programas de afiliación",
+          "creators": "Colaboraciones con creadores",
+          "customers": "Clientes potenciales",
+          "decisionMakers": "Responsables de decisiones",
+          "podcasts": "Pódcasts a los que contactar",
+          "speakers": "Ponentes para eventos"
+        },
+        "prompt": "Ayúdame a encontrar: {{task}}. Pregúntame primero por el objetivo, los criterios y el alcance. Devuelve una selección con detalles relevantes y enlaces a las fuentes.",
+        "title": "Encontrar personas"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Conecta tus herramientas y pasos.",
+          "title": "Flujos de trabajo avanzados"
+        },
+        "description": "Una pequeña configuración. Mucho menos trabajo.",
+        "scheduled": {
+          "description": "Ejecuta en el momento adecuado.",
+          "items": {
+            "daily": "Rutina diaria",
+            "once": "Recordatorio puntual",
+            "weekly": "Revisión semanal"
+          },
+          "prompt": "Ayúdame a configurar: {{task}}. Pregunta qué quiero hacer, cuándo debe ejecutarse y en qué zona horaria.",
+          "title": "Tareas programadas"
+        },
+        "suggestions": "Empieza con una sugerencia y adáptala a ti.",
+        "triggers": {
+          "description": "Empieza cuando ocurra algo.",
+          "eventPrompt": "Ayúdame a configurar {{task}} con {{source}}. Flujo: {{event}} → {{action}} → {{result}}. Pregunta por la fuente, los filtros y el destino del resultado. Prepara un borrador del flujo y confirma la configuración antes de activarlo.",
+          "items": {
+            "calendar": {
+              "action": "Investigar asistentes",
+              "event": "Evento editado",
+              "result": "Preparar informe",
+              "title": "Preparar reuniones"
+            },
+            "email": {
+              "action": "Extraer solicitudes",
+              "event": "Correo destacado",
+              "result": "Redactar respuesta",
+              "title": "Respuestas por correo"
+            },
+            "news": {
+              "action": "Filtrar temas",
+              "event": "Palabra clave",
+              "result": "Resumir noticias",
+              "title": "Resumen de noticias"
+            },
+            "slack": {
+              "action": "Extraer acciones",
+              "event": "Mención",
+              "result": "Lista de tareas",
+              "title": "Tareas de Slack"
+            },
+            "social": {
+              "action": "Filtrar intereses",
+              "event": "Nueva publicación",
+              "result": "Resumir contenido",
+              "title": "Seguimiento de X"
+            },
+            "webhook": {
+              "action": "Investigar empresa",
+              "event": "Formulario enviado",
+              "result": "Redactar seguimiento",
+              "title": "Seguimiento de clientes"
+            }
+          },
+          "monitorPrompt": "Ayúdame a configurar {{task}} con {{source}}. Flujo: {{event}} → {{action}} → {{result}}. Pregunta qué fuentes, temas o cuentas seguir, con qué frecuencia y dónde guardar el resumen. Revisa periódicamente, omite los elementos ya procesados y confirma la configuración antes de activarlo.",
+          "title": "Activadores"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Ver detalles"
     },
@@ -2660,12 +2756,9 @@
       "ideasLabel": "Ideas para empezar",
       "label": "Tareas para empezar",
       "more": "Más",
-      "moreTemplates": "Más plantillas",
       "presentationTemplates": "Plantillas de presentación",
       "removeTask": "Quitar {{task}}",
       "shelf": {
-        "browseStyles": "Ver todos los estilos",
-        "browseTemplates": "Ver todas las plantillas",
         "document": "Plantillas de documentos",
         "image": "Estilos de imagen",
         "nextPage": "Página siguiente",
@@ -2681,6 +2774,7 @@
         "website": "Sitio web",
         "workflow": "Flujo de trabajo"
       },
+      "viewAll": "Ver todo",
       "visualization": {
         "allCharts": "Todos los gráficos",
         "back": "Back to visualization options",

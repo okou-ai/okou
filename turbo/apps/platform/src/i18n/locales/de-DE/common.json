@@ -1860,6 +1860,102 @@
       "uncertain": "Browser prüfen",
       "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitte den Agenten, das Ergebnis zu prüfen."
     },
+    "capabilityHome": {
+      "back": "Alle Funktionen",
+      "capabilities": "Okou-Funktionen entdecken",
+      "create": {
+        "description": "Von der ersten Idee bis zum fertigen Ergebnis.",
+        "documentFormats": "Doc · PDF · Tabelle",
+        "title": "Erstellen"
+      },
+      "explore": "Entdecken",
+      "research": {
+        "items": {
+          "ads": "Werbemotive erkunden",
+          "products": "Produkte recherchieren",
+          "searchOpportunities": "Suchpotenziale entdecken",
+          "tools": "Tools vergleichen",
+          "topic": "Ein Thema recherchieren",
+          "traffic": "Website-Traffic vergleichen"
+        },
+        "prompt": "{{task}}. Kläre, was ich erfahren möchte, vergleiche die Belege und fasse die wichtigsten Erkenntnisse mit Quellen zusammen.",
+        "title": "Recherche"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Affiliate-Programme",
+          "creators": "Creator-Kooperationen",
+          "customers": "Potenzielle Kunden",
+          "decisionMakers": "Entscheidungsträger",
+          "podcasts": "Passende Podcasts",
+          "speakers": "Vortragende für Events"
+        },
+        "prompt": "Hilf mir, Folgendes zu finden: {{task}}. Frage zuerst nach Zielgruppe, Kriterien und Umfang. Erstelle dann eine Auswahlliste mit relevanten Details und Quellenlinks.",
+        "title": "Personen finden"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Verbinde deine Tools und Arbeitsschritte.",
+          "title": "Erweiterte Workflows"
+        },
+        "description": "Einmal einrichten. Viel Arbeit sparen.",
+        "scheduled": {
+          "description": "Automatisch zum richtigen Zeitpunkt.",
+          "items": {
+            "daily": "Tägliche Routine",
+            "once": "Einmalige Erinnerung",
+            "weekly": "Wöchentlicher Rückblick"
+          },
+          "prompt": "Hilf mir beim Einrichten: {{task}}. Frage nach der Aufgabe, dem Ausführungszeitpunkt und der Zeitzone.",
+          "title": "Geplante Aufgaben"
+        },
+        "suggestions": "Starte mit einem Vorschlag und passe ihn an.",
+        "triggers": {
+          "description": "Starten, sobald etwas passiert.",
+          "eventPrompt": "Hilf mir, {{task}} mit {{source}} einzurichten. Ablauf: {{event}} → {{action}} → {{result}}. Frage nach Quelle, Filtern und Ausgabeziel. Erstelle einen Workflow-Entwurf und bestätige die Einrichtung vor der Aktivierung.",
+          "items": {
+            "calendar": {
+              "action": "Teilnehmer prüfen",
+              "event": "Termin geändert",
+              "result": "Briefing erstellen",
+              "title": "Meeting-Briefings"
+            },
+            "email": {
+              "action": "Anliegen erfassen",
+              "event": "E-Mail markiert",
+              "result": "Antwort entwerfen",
+              "title": "E-Mail-Antworten"
+            },
+            "news": {
+              "action": "Themen filtern",
+              "event": "Suchwort gefunden",
+              "result": "Zusammenfassen",
+              "title": "Nachrichtenüberblick"
+            },
+            "slack": {
+              "action": "Aufgaben erfassen",
+              "event": "Erwähnt",
+              "result": "Aufgabenliste",
+              "title": "Slack-Aufgaben"
+            },
+            "social": {
+              "action": "Interessen filtern",
+              "event": "Neuer Beitrag",
+              "result": "Beiträge bündeln",
+              "title": "X-Beobachtung"
+            },
+            "webhook": {
+              "action": "Firma recherchieren",
+              "event": "Formular gesendet",
+              "result": "Nachricht entwerfen",
+              "title": "Lead-Nachverfolgung"
+            }
+          },
+          "monitorPrompt": "Hilf mir, {{task}} mit {{source}} einzurichten. Ablauf: {{event}} → {{action}} → {{result}}. Frage nach Feeds, Themen oder Konten, Prüfintervall und Speicherort. Prüfe regelmäßig, überspringe bereits verarbeitete Einträge und bestätige die Einrichtung vor der Aktivierung.",
+          "title": "Auslöser"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Details ansehen"
     },
@@ -2613,12 +2709,9 @@
       "ideasLabel": "Ideen zum Einstieg",
       "label": "Aufgaben zum Einstieg",
       "more": "Mehr",
-      "moreTemplates": "Weitere Vorlagen",
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
       "shelf": {
-        "browseStyles": "Alle Stile durchsuchen",
-        "browseTemplates": "Alle Vorlagen durchsuchen",
         "document": "Dokumentvorlagen",
         "image": "Bildstile",
         "nextPage": "Nächste Seite",
@@ -2634,6 +2727,7 @@
         "website": "Website",
         "workflow": "Workflow"
       },
+      "viewAll": "Alle anzeigen",
       "visualization": {
         "allCharts": "Alle Diagramme",
         "back": "Back to visualization options",

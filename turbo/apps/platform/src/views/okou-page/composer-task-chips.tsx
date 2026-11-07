@@ -1,6 +1,7 @@
 import { useGet, useSet, useLastLoadable } from "ccstate-react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
-import { ArrowRight, Image, MessageSquare } from "lucide-react";
+import { Image, MessageSquare } from "lucide-react";
 import { Button } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import type { UserTemplateCatalogEntry } from "@okouai/api-contracts/contracts/user-templates";
@@ -41,6 +42,7 @@ import { ComposerWorkflowRecommendations } from "./composer-workflow-recommendat
 import { ComposerVisualizationOptions } from "./composer-visualization-options.tsx";
 import { TemplateFilterPillRow } from "./template-filter-pill.tsx";
 import { ComposerTaskChipRow } from "./composer-task-chip-row.tsx";
+import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
 
 /**
  * An idea is a sentence, not a label, so it gets a card rather than the pill
@@ -222,9 +224,11 @@ function ComposerTemplateCover({
 function ComposerTemplateShelf({
   signals,
   task,
+  headerAction,
 }: {
   readonly signals: ComposerSignals;
   readonly task: ComposerTemplateTask;
+  readonly headerAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const { category, width, ratio } = TASK_TEMPLATE_SHELF[task];
@@ -253,22 +257,14 @@ function ComposerTemplateShelf({
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
         <p className="min-w-0 truncate text-base font-medium">{label}</p>
-        <Button
-          type="button"
-          variant="quiet"
-          size="xs"
-          className="shrink-0 gap-1.5 font-normal"
-          onClick={() => {
-            openTemplates({ kind: "insert", category });
-          }}
-        >
-          {t(($) => {
-            return task === "image"
-              ? $.chat.taskChips.shelf.browseStyles
-              : $.chat.taskChips.shelf.browseTemplates;
-          })}
-          <ArrowRight className="size-3" aria-hidden />
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <ComposerTemplatePickerButton
+            onClick={() => {
+              openTemplates({ kind: "insert", category });
+            }}
+          />
+          {headerAction}
+        </div>
       </div>
       <ComposerRail
         rail={`templates:${task}`}
@@ -405,7 +401,7 @@ function ComposerDocumentTemplateRail({
   items,
 }: {
   readonly signals: ComposerSignals;
-  readonly category: DocumentTemplateCategory | "custom" | undefined;
+  readonly category: DocumentTemplateCategory | "custom" | "all" | undefined;
   readonly templates: readonly UserTemplateCatalogEntry[];
   readonly items: readonly DocumentTemplateItem[];
 }) {
@@ -418,8 +414,8 @@ function ComposerDocumentTemplateRail({
       key={category}
       rail={`templates:document:${category}`}
       itemWidth={200}
-      items={
-        category === "custom"
+      items={[
+        ...(category === "custom" || category === "all"
           ? [
               <TemplateImportCard
                 key="import"
@@ -460,44 +456,52 @@ function ComposerDocumentTemplateRail({
                 );
               }),
             ]
-          : items.map((item) => {
-              return (
-                <ComposerTemplateCover
-                  key={item.id}
-                  title={item.title}
-                  coverUrl={r2ImageTransformUrl(item.previewImageUrl, {
-                    width: 284,
-                  })}
-                  ratio="aspect-[4/3]"
-                  documentPage={{ hasMorePages: item.previewPages.length > 1 }}
-                  onSelect={() => {
-                    selectTemplate(toDocumentGenerationTemplate(item), {
-                      type: "document",
-                      title: item.title,
-                      category: "document",
-                    });
-                    detach(saveDraft(pageSignal), Reason.DomCallback);
-                  }}
-                />
-              );
-            })
-      }
+          : []),
+        ...items.map((item) => {
+          return (
+            <ComposerTemplateCover
+              key={item.id}
+              title={item.title}
+              coverUrl={r2ImageTransformUrl(item.previewImageUrl, {
+                width: 284,
+              })}
+              ratio="aspect-[4/3]"
+              documentPage={{ hasMorePages: item.previewPages.length > 1 }}
+              onSelect={() => {
+                selectTemplate(toDocumentGenerationTemplate(item), {
+                  type: "document",
+                  title: item.title,
+                  category: "document",
+                });
+                detach(saveDraft(pageSignal), Reason.DomCallback);
+              }}
+            />
+          );
+        }),
+      ]}
     />
   );
 }
 
 function ComposerDocumentRecommendations({
   signals,
+  headerAction,
+  allTemplates = false,
 }: {
   readonly signals: ComposerSignals;
+  readonly headerAction?: ReactNode;
+  readonly allTemplates?: boolean;
 }) {
   const { t } = useTranslation();
   const categoryResult = useLastLoadable(signals.taskChips.documentCategory$);
-  const category =
-    categoryResult.state === "hasData" ? categoryResult.data : undefined;
+  const category = allTemplates
+    ? "all"
+    : categoryResult.state === "hasData"
+      ? categoryResult.data
+      : undefined;
   const custom = useCustomTemplateRecommendations(signals, "document");
   const items = DOCUMENT_TEMPLATE_ITEMS.filter((item) => {
-    return item.category === category;
+    return category === "all" || item.category === category;
   });
   const setCategory = useSet(signals.taskChips.setDocumentCategory$);
   const setPickerCategory = useSet(signals.template.setDocumentCategory$);
@@ -514,65 +518,61 @@ function ComposerDocumentRecommendations({
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
         <p className="min-w-0 truncate text-base font-medium">{label}</p>
-        <Button
-          type="button"
-          variant="quiet"
-          size="xs"
-          className="shrink-0 gap-1.5 font-normal"
-          onClick={() => {
-            setPickerCategory(category ?? "all");
-            openTemplates({ kind: "insert", category: "document" });
-          }}
-        >
-          {t(($) => {
-            return $.chat.taskChips.moreTemplates;
-          })}
-          <ArrowRight className="size-3" aria-hidden />
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <ComposerTemplatePickerButton
+            onClick={() => {
+              setPickerCategory(category ?? "all");
+              openTemplates({ kind: "insert", category: "document" });
+            }}
+          />
+          {headerAction}
+        </div>
       </div>
       {/* The filter row travels like the cover rail under it: the overrun
           dissolves and a pager moves it, instead of a pill cut in half at the
           column edge. */}
-      <div className={RAIL_ROOT_CLASS} data-rail-root="">
-        <TemplateFilterPillRow
-          active={category ?? ""}
-          layout="scroll"
-          rail={DOCUMENT_FILTER_RAIL}
-          label={t(($) => {
-            return $.documentTemplates.filter;
-          })}
-          pills={[
-            {
-              id: "custom",
-              label: t(($) => {
-                return $.templates.custom;
-              }),
-            },
-            ...DOCUMENT_CATEGORIES.map((id) => {
-              return {
-                id,
+      {!allTemplates && (
+        <div className={RAIL_ROOT_CLASS} data-rail-root="">
+          <TemplateFilterPillRow
+            active={category ?? ""}
+            layout="scroll"
+            rail={DOCUMENT_FILTER_RAIL}
+            label={t(($) => {
+              return $.documentTemplates.filter;
+            })}
+            pills={[
+              {
+                id: "custom",
                 label: t(($) => {
-                  return $.documentTemplates.categories[id];
+                  return $.templates.custom;
                 }),
-              };
-            }),
-          ]}
-          onSelect={(id) => {
-            if (id === "custom") {
-              setCategory("custom");
-              return;
-            }
-            const next = DOCUMENT_CATEGORIES.find((value) => {
-              return value === id;
-            });
-            if (next) {
-              setCategory(next);
-            }
-          }}
-        />
-        <ComposerRailPager side="back" />
-        <ComposerRailPager side="forward" />
-      </div>
+              },
+              ...DOCUMENT_CATEGORIES.map((id) => {
+                return {
+                  id,
+                  label: t(($) => {
+                    return $.documentTemplates.categories[id];
+                  }),
+                };
+              }),
+            ]}
+            onSelect={(id) => {
+              if (id === "custom") {
+                setCategory("custom");
+                return;
+              }
+              const next = DOCUMENT_CATEGORIES.find((value) => {
+                return value === id;
+              });
+              if (next) {
+                setCategory(next);
+              }
+            }}
+          />
+          <ComposerRailPager side="back" />
+          <ComposerRailPager side="forward" />
+        </div>
+      )}
       <ComposerDocumentTemplateRail
         signals={signals}
         category={category}
@@ -580,6 +580,50 @@ function ComposerDocumentRecommendations({
         items={items}
       />
     </div>
+  );
+}
+
+/** The same live catalogs, without the legacy prompt rows. */
+export function ComposerTaskTemplates({
+  signals,
+  selected,
+  headerAction,
+}: {
+  readonly signals: ComposerSignals;
+  readonly selected: Exclude<ComposerTask, "workflow">;
+  readonly headerAction?: ReactNode;
+}) {
+  if (selected === "presentation") {
+    return (
+      <ComposerPresentationRecommendations
+        signals={signals}
+        headerAction={headerAction}
+      />
+    );
+  }
+  if (selected === "document") {
+    return (
+      <ComposerDocumentRecommendations
+        signals={signals}
+        headerAction={headerAction}
+        allTemplates
+      />
+    );
+  }
+  if (selected === "visualization") {
+    return (
+      <ComposerVisualizationOptions
+        signals={signals}
+        headerAction={headerAction}
+      />
+    );
+  }
+  return (
+    <ComposerTemplateShelf
+      signals={signals}
+      task={selected}
+      headerAction={headerAction}
+    />
   );
 }
 

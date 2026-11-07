@@ -11,6 +11,8 @@ import { emptyChatRunUsage$ } from "../../signals/chat-page/chat-run-usage.ts";
 import { ExternalSourceMessageAnnotation } from "./external-source-message-annotation.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
+import { CapabilityHomeContent } from "./capability-home-page.tsx";
+import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
@@ -3550,14 +3552,30 @@ function ChatThreadContent({ thread }: { thread: ChatPanelSignals }) {
 }
 
 function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
+  const capabilitiesEnabled =
+    useGet(featureSwitch$)[FeatureSwitchKey.HomeCapabilities];
+  const initialEventsReady = useGet(thread.initialEventsReady$);
+  const hasEvents = useLastResolved(thread.hasEvents$);
+  const sharingPhase = useGet(thread.sharing.phase$);
+  const showCapabilities =
+    capabilitiesEnabled &&
+    initialEventsReady &&
+    hasEvents === false &&
+    sharingPhase === "idle";
+
   return (
     <>
       <div className="relative min-h-0 flex-1">
         <div className="flex h-full min-w-0 flex-col">
-          <ChatThreadEventsPane thread={thread} />
+          {showCapabilities ? (
+            <CapabilityHomeContent signals={thread.composer} />
+          ) : (
+            <ChatThreadEventsPane thread={thread} />
+          )}
           <ChatThreadBottomBar thread={thread} />
         </div>
       </div>
+      {showCapabilities && <ChatHomeCompliance />}
       <ChatThreadFeedbackSlot thread={thread} />
     </>
   );

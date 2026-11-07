@@ -67,7 +67,7 @@ function WorkflowFacts({ item }: { readonly item: WorkflowRecommendation }) {
  * art in its own box, one line of caption under it. The description, the
  * connector names and the steps live in the dialog the tile opens.
  */
-function WorkflowTile({
+export function WorkflowTile({
   item,
   onSelect,
 }: {

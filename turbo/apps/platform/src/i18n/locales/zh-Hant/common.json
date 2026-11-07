@@ -1855,6 +1855,102 @@
       "uncertain": "請檢查瀏覽器",
       "uncertainDescription": "瀏覽器可能已收到這些資訊。請讓代理檢查結果。"
     },
+    "capabilityHome": {
+      "back": "所有能力",
+      "capabilities": "探索 Okou 的能力",
+      "create": {
+        "description": "從一個想法，到可以分享的作品。",
+        "documentFormats": "文件 · PDF · 試算表",
+        "title": "創作"
+      },
+      "explore": "探索",
+      "research": {
+        "items": {
+          "ads": "探索廣告創意",
+          "products": "研究產品",
+          "searchOpportunities": "發現搜尋機會",
+          "tools": "比較工具",
+          "topic": "研究一個主題",
+          "traffic": "比較網站流量"
+        },
+        "prompt": "{{task}}。先確認我想了解什麼，再比較證據並總結關鍵發現，附上來源。",
+        "title": "研究"
+      },
+      "search": {
+        "items": {
+          "affiliates": "聯盟行銷計畫",
+          "creators": "創作者合作",
+          "customers": "潛在客戶",
+          "decisionMakers": "決策者",
+          "podcasts": "可投稿的 Podcast",
+          "speakers": "活動講者"
+        },
+        "prompt": "幫我尋找{{task}}。先向我確認目標、篩選條件和範圍，再提供包含相關資訊和來源連結的精選名單。",
+        "title": "找人"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "串聯工具與多個步驟。",
+          "title": "進階工作流程"
+        },
+        "description": "簡單設定，讓瑣事自動完成。",
+        "scheduled": {
+          "description": "在合適的時間自動執行。",
+          "items": {
+            "daily": "每日例行任務",
+            "once": "一次性提醒",
+            "weekly": "每週回顧"
+          },
+          "prompt": "幫我設定{{task}}。先確認要做什麼、執行時間和時區。",
+          "title": "定時任務"
+        },
+        "suggestions": "從一條建議開始，按你的需要調整。",
+        "triggers": {
+          "description": "事件發生時自動開始。",
+          "eventPrompt": "幫我使用 {{source}} 設定「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先確認具體來源、篩選條件和輸出位置，準備工作流程草稿，確認設定後再啟用。",
+          "items": {
+            "calendar": {
+              "action": "研究與會者",
+              "event": "行程變更",
+              "result": "準備簡報",
+              "title": "會前簡報"
+            },
+            "email": {
+              "action": "提取需求",
+              "event": "郵件加星號",
+              "result": "草擬回覆",
+              "title": "郵件回覆"
+            },
+            "news": {
+              "action": "比對主題",
+              "event": "關鍵字符合",
+              "result": "整理摘要",
+              "title": "新聞摘要"
+            },
+            "slack": {
+              "action": "提取行動項目",
+              "event": "有人 @你",
+              "result": "待辦清單",
+              "title": "訊息轉待辦"
+            },
+            "social": {
+              "action": "篩選興趣",
+              "event": "新貼文",
+              "result": "提煉觀點",
+              "title": "X 動態追蹤"
+            },
+            "webhook": {
+              "action": "研究公司",
+              "event": "表單提交",
+              "result": "草擬跟進",
+              "title": "潛客跟進"
+            }
+          },
+          "monitorPrompt": "幫我使用 {{source}} 設定「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先確認要追蹤的訂閱來源、主題或帳號、檢查頻率和摘要儲存位置。定期檢查，只處理尚未處理的新內容，確認設定後再啟用。",
+          "title": "觸發器"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "檢視詳情"
     },
@@ -2601,12 +2697,9 @@
       "ideasLabel": "上手靈感",
       "label": "上手任務",
       "more": "更多",
-      "moreTemplates": "更多模板",
       "presentationTemplates": "簡報模板",
       "removeTask": "移除{{task}}",
       "shelf": {
-        "browseStyles": "瀏覽全部風格",
-        "browseTemplates": "瀏覽全部模板",
         "document": "文件模板",
         "image": "圖片風格",
         "nextPage": "下一頁",
@@ -2622,6 +2715,7 @@
         "website": "網站",
         "workflow": "工作流"
       },
+      "viewAll": "檢視全部",
       "visualization": {
         "allCharts": "全部圖表",
         "back": "返回視覺化選項",

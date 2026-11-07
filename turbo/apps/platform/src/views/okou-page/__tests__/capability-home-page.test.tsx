@@ -1,0 +1,244 @@
+import { screen, waitFor } from "@testing-library/react";
+import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
+import {
+  click,
+  fill,
+  queryAllByRoleFast,
+  setupPage,
+} from "../../../__tests__/page-helper.ts";
+import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import {
+  composerInlineTemplates,
+  findComposerEditor,
+  tabByText,
+} from "./chat-composer-test-helpers.ts";
+import {
+  AGENT_ID,
+  THREAD_ID,
+  createTemplateGalleryHelpers,
+} from "./chat-composer-template-gallery-test-helpers.ts";
+
+const context = testContext();
+const { mockTemplateChat } = createTemplateGalleryHelpers(context);
+function button(
+  label: string,
+  container: ParentNode = document.body,
+): HTMLElement {
+  const result = queryAllByRoleFast("button", container).find((item) => {
+    return (
+      (item.getAttribute("aria-label") ?? item.textContent?.trim()) === label
+    );
+  });
+  if (!result) {
+    throw new Error(`Expected button ${label}`);
+  }
+  return result;
+}
+async function setupHome() {
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
+  });
+  return await findComposerEditor();
+}
+function capabilities() {
+  return screen.getByRole("group", { name: "Explore Okou capabilities" });
+}
+
+test("An empty conversation offers capabilities without an avatar and sends its first message in the same conversation", async () => {
+  const capture = mockTemplateChat();
+  await setupPage({
+    context,
+    path: `/chats/${THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
+  });
+  const editor = await findComposerEditor();
+  const discovery = await screen.findByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  expect(screen.queryByTestId("chat-greeting")).toBeNull();
+  await fill(editor, "Prepare the launch presentation");
+  click(button("Presentation", discovery));
+  const shelf = await screen.findByRole("group", {
+    name: "Presentation templates",
+  });
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+  click(button(template.title, shelf));
+  await waitFor(() => {
+    expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
+  });
+  click(button("All capabilities", shelf));
+  expect(capabilities()).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Prepare the launch presentation");
+  click(button("Send"));
+  await waitFor(() => {
+    const conversation = document.querySelector(
+      `[data-chat-thread-container-id="${THREAD_ID}"] [data-message-container]`,
+    );
+    expect(conversation).toHaveTextContent("Prepare the launch presentation");
+    expect(conversation).toHaveTextContent(template.title);
+  });
+  expect(editor).toBeInTheDocument();
+  expect(
+    screen.queryByRole("group", { name: "Explore Okou capabilities" }),
+  ).toBeNull();
+  expect(capture.threadCreates).toStrictEqual([]);
+});
+
+test("Capability discovery and templates replace each other while the composer keeps the draft and template", async () => {
+  mockTemplateChat();
+  const editor = await setupHome();
+  expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
+  await fill(editor, "Keep my launch brief");
+  click(button("Presentation", capabilities()));
+  const shelf = await screen.findByRole("group", {
+    name: "Presentation templates",
+  });
+  expect(screen.queryByTestId("chat-greeting")).toBeNull();
+  expect(
+    screen.queryByRole("group", { name: "Explore Okou capabilities" }),
+  ).toBeNull();
+  const template = PRESENTATION_TEMPLATE_PICKER_ITEMS[0]!;
+  click(button(template.title, shelf));
+  await waitFor(() => {
+    expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
+  });
+  click(button("All capabilities", shelf));
+  expect(capabilities()).toBeInTheDocument();
+  expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
+  expect(
+    screen.queryByRole("group", { name: "Presentation templates" }),
+  ).toBeNull();
+  expect(editor).toHaveTextContent("Keep my launch brief");
+  expect(composerInlineTemplates()[0]).toHaveTextContent(template.title);
+  click(button("Presentation", capabilities()));
+  await expect(
+    screen.findByRole("group", { name: "Presentation templates" }),
+  ).resolves.toBeInTheDocument();
+  expect(editor).toHaveTextContent("Keep my launch brief");
+});
+
+test("Workflow suggestions preserve the draft and open the real workflow picker", async () => {
+  mockTemplateChat();
+  const editor = await setupHome();
+  await fill(editor, "Focus on customer meetings");
+  click(button("Advanced workflows", capabilities()));
+  const suggestions = await screen.findByRole("region", {
+    name: "Advanced workflows",
+  });
+  expect(
+    screen.queryByRole("group", { name: "Explore Okou capabilities" }),
+  ).toBeNull();
+  click(button("Start your day with a clear plan", suggestions));
+  expect(editor).toHaveTextContent("Focus on customer meetings");
+  expect(editor).toHaveTextContent("Help me set up a morning brief");
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Morning brief");
+  expect(
+    button("Keep important emails moving", suggestions),
+  ).toBeInTheDocument();
+  click(button("View all", suggestions));
+  const dialog = await screen.findByRole("dialog");
+  expect(tabByText("Workflow")).toHaveAttribute("aria-selected", "true");
+  expect(
+    button("Select workflow template Morning brief", dialog),
+  ).toBeInTheDocument();
+  click(button("Close", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).toBeNull();
+  });
+  click(button("All capabilities", suggestions));
+  click(button("Triggers", capabilities()));
+  await expect(
+    screen.findByRole("region", { name: "Triggers" }),
+  ).resolves.toBeInTheDocument();
+  expect(button("Email replies")).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Focus on customer meetings");
+});
+
+test("Scheduled tasks and triggers prepare their own editable automation requests", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupHome();
+  await fill(editor, "Use my work account.");
+  click(button("Scheduled tasks", capabilities()));
+  const scheduled = await screen.findByRole("region", {
+    name: "Scheduled tasks",
+  });
+  click(button("Daily routine", scheduled));
+  expect(editor).toHaveTextContent("Help me set up Daily routine.");
+  expect(editor).toHaveTextContent("which time zone to use");
+  expect(editor).toHaveFocus();
+  click(button("All capabilities", scheduled));
+  click(button("Triggers", capabilities()));
+  const triggers = await screen.findByRole("region", { name: "Triggers" });
+  click(button("Email replies", triggers));
+  expect(editor).toHaveTextContent("Help me set up Email replies using Gmail.");
+  expect(editor).toHaveTextContent(
+    "Email starred → Extract requests → Draft reply",
+  );
+  expect(editor).toHaveTextContent("confirm the setup before enabling it");
+  expect(editor).toHaveTextContent("Use my work account.");
+  expect(editor).toHaveFocus();
+  expect(capture.runPrompts).toStrictEqual([]);
+});
+
+test.each([
+  { title: "News digest", source: "RSS", event: "Keyword match" },
+  { title: "X watchlist", source: "X", event: "New post" },
+])(
+  "$title prepares a periodic monitoring request without starting it",
+  async ({ title, source, event }) => {
+    const capture = mockTemplateChat();
+    const editor = await setupHome();
+    await fill(editor, "Focus on product launches.");
+    click(button("Triggers", capabilities()));
+    const triggers = await screen.findByRole("region", { name: "Triggers" });
+    click(button(title, triggers));
+    expect(editor).toHaveTextContent(
+      `Help me set up ${title} using ${source}.`,
+    );
+    expect(editor).toHaveTextContent(event);
+    expect(editor).toHaveTextContent("how often to check");
+    expect(editor).toHaveTextContent(
+      "Check periodically, skip items already processed",
+    );
+    expect(editor).toHaveTextContent("Focus on product launches.");
+    expect(editor).toHaveFocus();
+    expect(capture.runPrompts).toStrictEqual([]);
+  },
+);
+
+test("Search and Research open separate suggestions and prepare editable drafts without starting a run", async () => {
+  const capture = mockTemplateChat();
+  const editor = await setupHome();
+  await fill(editor, "I am planning a research project.");
+  click(button("Find people", capabilities()));
+  const search = await screen.findByRole("region", { name: "Find people" });
+  expect(screen.queryByTestId("chat-greeting")).toBeNull();
+  expect(
+    screen.queryByRole("group", { name: "Explore Okou capabilities" }),
+  ).toBeNull();
+  click(button("Potential customers", search));
+  expect(editor).toHaveTextContent("Help me find: Potential customers.");
+  expect(editor).toHaveTextContent("I am planning a research project.");
+  expect(editor).toHaveFocus();
+  expect(capture.runPrompts).toStrictEqual([]);
+  click(button("All capabilities", search));
+  const explore = queryAllByRoleFast("link", capabilities()).find((link) => {
+    return link.getAttribute("aria-label") === "Explore";
+  });
+  expect(explore).toHaveAttribute("href", "https://www.okou.ai/en/blog");
+  expect(explore).toHaveAttribute("target", "_blank");
+  click(button("Research", capabilities()));
+  const research = await screen.findByRole("region", { name: "Research" });
+  expect(screen.queryByRole("region", { name: "Find people" })).toBeNull();
+  click(button("Compare website traffic", research));
+  expect(editor).toHaveTextContent("Compare website traffic.");
+  expect(editor).toHaveTextContent("I am planning a research project.");
+  expect(capture.runPrompts).toStrictEqual([]);
+  click(button("All capabilities", research));
+  expect(capabilities()).toBeInTheDocument();
+  expect(editor).toHaveTextContent("Compare website traffic.");
+});

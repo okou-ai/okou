@@ -12,7 +12,7 @@ export interface WorkflowRecommendationActions {
   readonly saveDraft$: Command<Promise<void>, [AbortSignal]>;
 }
 
-interface WorkflowRecommendationDraft {
+export interface WorkflowRecommendationDraft {
   readonly template: {
     readonly id: WorkflowTemplateItem["id"];
     readonly title: string;
