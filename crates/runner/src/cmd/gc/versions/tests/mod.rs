@@ -5,7 +5,7 @@ use std::os::unix::fs::PermissionsExt;
 use nix::fcntl::{Flock, FlockArg};
 
 use super::*;
-use crate::cmd::gc::test_support::test_home;
+use crate::cmd::gc::test_support::{age_version_past_gc_min_age, test_home};
 use crate::test_fixtures::ignored_child::{
     ignored_child_test_env_guard_enabled, run_ignored_child_test,
 };
@@ -144,23 +144,6 @@ macro_rules! version_gc_test {
 
 fn test_version_service_unit(version: &str) -> service::RunnerServiceUnit {
     service::RunnerServiceUnit::from_suffix(version).unwrap()
-}
-
-fn age_version_past_gc_min_age(home: &HomePaths, name: &str) {
-    let old_time = SystemTime::now() - Duration::from_secs(GC_MIN_AGE.as_secs() + 60);
-    for path in [
-        home.bin_dir().join(name),
-        home.bin_dir().join(name).join("runner"),
-        home.runners_dir().join(name),
-        home.runners_dir().join(name).join("runner.yaml"),
-    ] {
-        if path.exists() {
-            std::fs::File::open(path)
-                .unwrap()
-                .set_times(std::fs::FileTimes::new().set_modified(old_time))
-                .unwrap();
-        }
-    }
 }
 
 fn age_versions_past_gc_min_age(home: &HomePaths, names: &[&str]) {
