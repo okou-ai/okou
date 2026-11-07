@@ -1614,6 +1614,39 @@ interface NormalInputAssetSnapshot {
     | { readonly ok: false; readonly error: unknown }
     | null;
 }
+function normalSendAssetSnapshots(
+  attachments: readonly NormalInputAsset[],
+  owners: ReadonlyMap<string, NormalInputAssetOwnerRead>,
+): NormalInputAssetSnapshot[] {
+  return attachments.map((asset, index) => {
+    if (asset.plan) {
+      return { index, asset, loaded: null };
+    }
+    const owner = owners.get(asset.owner.file.id.toLowerCase());
+    if (!owner) {
+      throw new Error("Private attachment owner read is missing");
+    }
+    if (!owner.ok) {
+      // Preparation failures still belong to the input-insertion SQL guard.
+      return { index, asset, loaded: owner };
+    }
+    const loaded = safeSync(() => {
+      const owned = owner.value;
+      return {
+        owned,
+        plan: canonicalPrivateWebInputPlan({ ...asset.owner, owned }),
+      };
+    });
+    return {
+      index,
+      asset,
+      loaded:
+        "ok" in loaded
+          ? { ok: true, value: loaded.ok }
+          : { ok: false, error: loaded.error },
+    };
+  });
+}
 type NormalPreparedEvent =
   | { readonly ok: true; readonly value: ReturnType<typeof prepareChatEvent> }
   | { readonly ok: false; readonly error: unknown };
@@ -2007,33 +2040,7 @@ const appendNormalSendInput$ = command(
         owners.set(id, loaded.ok ? { ok: true, value: rows.get(id) } : loaded);
       }
     }
-    const snapshots: NormalInputAssetSnapshot[] = [];
-    for (const [index, asset] of input.attachments.entries()) {
-      if (asset.plan) {
-        snapshots.push({ index, asset, loaded: null });
-        continue;
-      }
-      const owner = owners.get(asset.owner.file.id.toLowerCase());
-      if (!owner) {
-        throw new Error("Private attachment owner read is missing");
-      }
-      if (!owner.ok) {
-        // Preparation failures still belong to the input-insertion SQL guard.
-        snapshots.push({ index, asset, loaded: owner });
-        continue;
-      }
-      const loaded = await settle(
-        (async () => {
-          const owned = owner.value;
-          return {
-            owned,
-            plan: canonicalPrivateWebInputPlan({ ...asset.owner, owned }),
-          };
-        })(),
-      );
-      signal.throwIfAborted();
-      snapshots.push({ index, asset, loaded });
-    }
+    const snapshots = normalSendAssetSnapshots(input.attachments, owners);
     const prepared = normalSendPreparedPublication(
       args,
       input,

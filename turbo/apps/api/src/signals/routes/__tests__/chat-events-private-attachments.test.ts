@@ -214,7 +214,7 @@ describe("private attachments through normal chat send", () => {
         runs.body.data.some((run) => {
           return run.prompt === prompt;
         }),
-      ).toBe(false);
+      ).toBeFalsy();
       const resolved = await chat.resolveWebFileUrl(actor, ownedId);
       expect(storage.signedKey(resolved.url)).toBe(
         `private-artifacts/${ownedId}/${file.filename}`,
