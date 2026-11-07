@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.50](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.49...runner-supervisor-v0.21.50) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-supervisor:** share active-run status observers ([#45801](https://github.com/okou-ai/okou/issues/45801)) ([fda4b80](https://github.com/okou-ai/okou/commit/fda4b80752e3dde0e266043b18fdbf7814fae3cb))
+
 ## [0.21.49](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.48...runner-supervisor-v0.21.49) (2026-11-07)
 
 ## [0.21.48](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.47...runner-supervisor-v0.21.48) (2026-11-06)
