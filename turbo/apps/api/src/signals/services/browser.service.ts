@@ -125,7 +125,7 @@ const TERMINAL_RUN_STATUSES = [
   "cancelled",
 ] as const;
 const L = logger("Browser");
-const browserTabSnapshotSchema = array(string().max(8192)).max(50);
+const browserTabSnapshotSchema = array(string().max(8192));
 
 const BROWSER_SESSION_SELECTION = {
   id: browserSessions.id,
