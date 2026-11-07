@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.37](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.36...runner-rs-v0.244.37) (2026-11-07)
+
+
+### Refactoring
+
+* **runner:** unify websocket handshake inspection ownership ([#45839](https://github.com/okou-ai/okou/issues/45839)) ([6746289](https://github.com/okou-ai/okou/commit/6746289c9eab9d82a537e1264ca56540b6d2ff17))
+
 ## [0.244.36](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.35...runner-rs-v0.244.36) (2026-11-07)
 
 
