@@ -3443,11 +3443,7 @@ function createEventsGraph(
       set(directory.invalidateOrder$);
       const discovery = get(get(links$).discovery$);
       if (discovery) {
-        detachBrowser(
-          set(discovery.reorder$, client.signal),
-          Reason.DomCallback,
-          "browser native tab ordering",
-        );
+        set(discovery.reorder$, client.signal);
       }
       return;
     }

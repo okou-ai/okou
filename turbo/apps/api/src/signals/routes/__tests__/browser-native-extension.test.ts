@@ -139,6 +139,9 @@ test.each([
         throw new Error("Expected A's native page");
       }
       const saved = "https://a.example.test/accepted";
+      // Failed seed cleanup leaves a real blank tab, which complete snapshots now retain.
+      const expectedUrls =
+        failure === "seed close error" ? ["about:blank", saved] : [saved];
       page.url = saved;
       mockNow(START + 9 * MINUTE);
       await renew(b);
@@ -169,11 +172,8 @@ test.each([
           })
           .map((target) => {
             return target.url;
-          })
-          .filter((url) => {
-            return url !== "about:blank";
           }),
-      ).toStrictEqual([saved]);
+      ).toStrictEqual(expectedUrls);
       expect((await view(b)).window).toStrictEqual(sibling.window);
       expect(f.provider.sessionRequests).toHaveLength(1);
 
@@ -189,7 +189,7 @@ test.each([
         [...f.provider.native.targets.values()].map((target) => {
           return target.url;
         }),
-      ).toStrictEqual([saved]);
+      ).toStrictEqual(expectedUrls);
       expect((await view(b)).status).toBe("suspended");
     });
   },
