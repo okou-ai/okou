@@ -194,17 +194,24 @@ async fn bounded_drain_preserves_readiness_for_remaining_events() {
     cache.ensure_home_cache_entry_dir(&cache_key).await.unwrap();
     let entry_dir = cache.home_image_cache_entry_dir(&cache_key);
 
-    for index in 0..5_000 {
-        tokio::fs::write(entry_dir.join(format!("noise-{index:04}")), b"")
-            .await
-            .unwrap();
-    }
+    // Finish every real write before subscribing, without a worker handoff per file.
+    let setup_dir = entry_dir.clone();
+    tokio::task::spawn_blocking(move || {
+        for index in 0..5_000 {
+            std::fs::write(setup_dir.join(format!("noise-{index:04}")), b"").unwrap();
+        }
+    })
+    .await
+    .unwrap();
     let mut watcher = HomeCacheWatcher::new(cache.clone()).await.unwrap();
-    for index in 0..5_000 {
-        tokio::fs::remove_file(entry_dir.join(format!("noise-{index:04}")))
-            .await
-            .unwrap();
-    }
+    // Queue every deletion before publishing metadata or polling the watcher.
+    tokio::task::spawn_blocking(move || {
+        for index in 0..5_000 {
+            std::fs::remove_file(entry_dir.join(format!("noise-{index:04}"))).unwrap();
+        }
+    })
+    .await
+    .unwrap();
     assert_eq!(commit_entry(&cache, "bounded-drain").await, cache_key);
 
     let change = tokio::time::timeout(std::time::Duration::from_secs(2), watcher.next_change())
