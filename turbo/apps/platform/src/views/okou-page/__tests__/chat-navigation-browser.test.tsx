@@ -1731,6 +1731,74 @@ test("Start and close a browser from the thread sidebar", async () => {
   });
 });
 
+test("Closing the sidebar publishes its order before hiding the live viewer", async () => {
+  mockWideScreen();
+  const session = liveBrowserSession();
+  const native = mockBrowserApi(session, [
+    { targetId: "first-order", title: "First", url: "https://same.example/" },
+    { targetId: "second-order", title: "Second", url: "https://same.example/" },
+  ]);
+  const binding = {
+    instanceId: "22222222-2222-4222-8222-222222222222",
+    windowId: null,
+    targetIds: ["second-order", "first-order"],
+  };
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, {
+      browser: session,
+      cdpUrl: "wss://cdp.browser-use.com/sidebar",
+      extension: TEST_BROWSER_EXTENSION,
+      tabOrder: binding,
+    });
+  });
+  let reported: unknown;
+  context.mocks.api(browserContract.close, ({ body, respond }) => {
+    reported = body.tabOrder;
+    return respond(200, {});
+  });
+  await openConversation(completedConversationEvents(), true);
+  await expectConversationReady();
+  click(buttonByName("Open browser"));
+  const sidebar = await screen.findByRole("complementary", {
+    name: "Cloud browser",
+  });
+  await waitFor(() => {
+    return expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  click(
+    within(sidebar).getByLabelText("New tab", {
+      selector: 'button:not([role="tab"])',
+    }),
+  );
+  await waitFor(() => {
+    return expect(
+      queryAllByRoleFast("tab", sidebar).map((tab) => {
+        return tab.getAttribute("aria-label");
+      }),
+    ).toStrictEqual(["Second", "First", "New tab"]);
+  });
+  await waitFor(() => {
+    return expect(
+      within(sidebar).getByLabelText("Remote browser input"),
+    ).toBeEnabled();
+  });
+  click(buttonByName("Close cloud browser", sidebar));
+  await waitFor(() => {
+    return expect(reported).toStrictEqual({
+      ...binding,
+      targetIds: ["second-order", "first-order", "created-1"],
+    });
+  });
+  expect(sidebar).not.toBeInTheDocument();
+  expect(
+    native.native.requests.some((request) => {
+      return request.method === "Target.setAutoAttach";
+    }),
+  ).toBeFalsy();
+});
+
 test("Open a stopped browser card and offer a new session", async () => {
   mockWideScreen();
   mockBrowserApi(null);

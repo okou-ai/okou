@@ -1,6 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
-import { createDeferredPromise, Reason } from "../../utils.ts";
-import { detachBrowser } from "../reporting.ts";
+import { createDeferredPromise } from "../../utils.ts";
 import { CdpFault, isRecord, isRecoverableReadFailure } from "../cdp/errors.ts";
 import { pageTarget, type TargetDirectory } from "../cdp/targets.ts";
 import type { CdpEvent } from "../cdp/client.ts";
@@ -22,6 +21,7 @@ interface DiscoveryModel {
   readonly inventory$: Command<TargetInventory, [InventoryEvent]>;
 }
 interface DiscoveryOptions {
+  readonly order$: Command<readonly string[], []>;
   readonly preferredTargetId: string | null;
   readonly invalidated$: Command<void, [boolean, AbortSignal]>;
   readonly settleInput$: Command<Promise<void>, [AbortSignal]>;
@@ -34,8 +34,6 @@ type RefreshScope = "all" | "members";
 function createDiscoveryState(model: DiscoveryModel) {
   const dirty$ = state<ReadonlySet<string>>(new Set());
   const fullWanted$ = state(false);
-  const orderWanted$ = state(false);
-  const orderRunning$ = state(false);
   const refreshScope$ = state<RefreshScope>("all");
   const running$ = state(false);
   const started$ = state(false);
@@ -43,7 +41,6 @@ function createDiscoveryState(model: DiscoveryModel) {
   const initialized$ = state(false);
   const validating$ = state(true);
   const epoch$ = state<number | null>(null);
-  const ownerSignal$ = state<AbortSignal | null>(null);
   const unwatchAbort$ = state<(() => void) | null>(null);
   const listeners$ = state<
     ReadonlySet<(result: PromiseSettledResult<void>) => void>
@@ -79,8 +76,6 @@ function createDiscoveryState(model: DiscoveryModel) {
   return {
     dirty$,
     fullWanted$,
-    orderWanted$,
-    orderRunning$,
     refreshScope$,
     running$,
     started$,
@@ -88,7 +83,6 @@ function createDiscoveryState(model: DiscoveryModel) {
     initialized$,
     validating$,
     epoch$,
-    ownerSignal$,
     unwatchAbort$,
     listeners$,
     active$,
@@ -121,10 +115,8 @@ function createDiscoveryLifecycle(
     set(closed$, true);
     get(unwatchAbort$)?.();
     set(unwatchAbort$, null);
-    set(nodes.ownerSignal$, null);
     set(dirty$, new Set());
     set(fullWanted$, false);
-    set(nodes.orderWanted$, false);
     if (get(model.inventoryState$).epoch === get(epoch$)) {
       set(model.inventory$, { type: "reset" });
     }
@@ -275,6 +267,8 @@ function createMembershipReader(
     },
   );
 }
+type MembershipReader = ReturnType<typeof createMembershipReader>;
+
 function createMembershipReads(
   directory: TargetDirectory,
   model: DiscoveryModel,
@@ -311,6 +305,7 @@ function createMembershipReads(
           return;
         }
         set(commit$, { type: "listed", round, targets: pages }, signal);
+        set(commit$, { type: "reordered", ids: set(options.order$) }, signal);
         set(initialized$, true);
       }
       const selected =
@@ -379,7 +374,6 @@ function createMembershipReads(
       set(model.inventory$, { type: "complete-round", round });
       set(validating$, false);
       set(options.changed$, signal);
-      set(nodes.orderWanted$, true);
     },
   );
   const readFull$ = command(
@@ -432,11 +426,10 @@ function createDrainObservation(nodes: DiscoveryState) {
 function createDiscoveryDrain(
   nodes: DiscoveryState,
   lifecycle: DiscoveryLifecycle,
-  reads: ReturnType<typeof createMembershipReads>,
+  readFull$: Command<Promise<void>, [AbortSignal]>,
+  readMembership$: MembershipReader,
   waitForDrain$: Command<Promise<void>, [AbortSignal]>,
-  startOrder$: Command<void, [AbortSignal]>,
 ) {
-  const { readFull$, readMembership$ } = reads;
   const { readable$, fullWanted$, dirty$, running$, listeners$ } = nodes;
   const readWanted$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
@@ -496,87 +489,7 @@ function createDiscoveryDrain(
       set(lifecycle.fail$, result.reason, signal);
       throw result.reason;
     }
-    set(startOrder$, signal);
   });
-}
-
-function createOrderDrain(
-  directory: TargetDirectory,
-  nodes: DiscoveryState,
-  lifecycle: DiscoveryLifecycle,
-) {
-  const readOrder$ = createOrderRead(directory, nodes, lifecycle);
-  const { readable$, orderWanted$, orderRunning$ } = nodes;
-  const readWanted$ = command(async ({ get, set }, signal: AbortSignal) => {
-    while (get(readable$) && get(orderWanted$)) {
-      await set(readOrder$, signal);
-      signal.throwIfAborted();
-    }
-  });
-  const drain$ = command(async ({ set }, signal: AbortSignal) => {
-    set(orderRunning$, true);
-    using _running = {
-      [Symbol.dispose]: () => {
-        set(orderRunning$, false);
-        // A move can arrive after the last read settles but before this owner exits.
-        if (!signal.aborted) {
-          set(startOrder$, signal);
-        }
-      },
-    };
-    const [result] = await Promise.allSettled([set(readWanted$, signal)]);
-    signal.throwIfAborted();
-    if (result.status === "rejected") {
-      set(lifecycle.fail$, result.reason, signal);
-      throw result.reason;
-    }
-  });
-  const startOrder$: Command<void, [AbortSignal]> = command(
-    ({ get, set }, signal: AbortSignal) => {
-      signal.throwIfAborted();
-      if (get(readable$) && get(orderWanted$) && !get(orderRunning$)) {
-        // A refresh observer may end while the discovery's background work remains live.
-        detachBrowser(
-          set(drain$, get(nodes.ownerSignal$)!),
-          Reason.Daemon,
-          "browser native tab ordering",
-        );
-      }
-    },
-  );
-  return startOrder$;
-}
-
-function createOrderRead(
-  directory: TargetDirectory,
-  nodes: DiscoveryState,
-  lifecycle: DiscoveryLifecycle,
-) {
-  return command(
-    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
-      while (get(nodes.readable$)) {
-        set(nodes.orderWanted$, false);
-        const ids = await set(
-          directory.readOrder$,
-          () => {
-            return get(nodes.readable$);
-          },
-          signal,
-        );
-        signal.throwIfAborted();
-        if (!get(nodes.active$)) {
-          return false;
-        }
-        if (!get(nodes.readable$) || ids === null) {
-          set(nodes.orderWanted$, true);
-          continue;
-        }
-        set(lifecycle.commit$, { type: "reordered", ids }, signal);
-        return true;
-      }
-      return false;
-    },
-  );
 }
 
 function createDiscoveryRefresh(
@@ -627,7 +540,6 @@ function createDiscoveryStart(
       return;
     }
     set(started$, true);
-    set(nodes.ownerSignal$, signal);
     set(epoch$, set(model.inventory$, { type: "reset" }).epoch);
     const abort = () => {
       set(lifecycle.close$);
@@ -734,16 +646,12 @@ function createDiscoveryTargets(
 }
 
 function createDiscoveryEvents(
-  directory: TargetDirectory,
   nodes: DiscoveryState,
   model: DiscoveryModel,
   lifecycle: DiscoveryLifecycle,
-  operations: {
-    readonly removed$: Command<void, [string, AbortSignal]>;
-    readonly drain$: Command<Promise<void>, [AbortSignal]>;
-  },
+  removed$: Command<void, [string, AbortSignal]>,
+  drain$: Command<Promise<void>, [AbortSignal]>,
 ) {
-  const { removed$, drain$ } = operations;
   const { active$, dirty$ } = nodes;
   return command(
     async (
@@ -769,10 +677,6 @@ function createDiscoveryEvents(
         event.method === "Target.targetDestroyed" ? null : pageTarget(info);
       const inventory = get(model.inventoryState$);
       const present = inventory.entries.has(id);
-      if ((!target && present) || (target && !present)) {
-        set(directory.invalidateOrder$);
-        set(nodes.orderWanted$, true);
-      }
       if (!target) {
         if (!present && !inventory.round) {
           return;
@@ -797,8 +701,7 @@ export function createTargetDiscovery(
 ) {
   const nodes = createDiscoveryState(model);
   const lifecycle = createDiscoveryLifecycle(nodes, model, options);
-  const startOrder$ = createOrderDrain(directory, nodes, lifecycle);
-  const reads = createMembershipReads(
+  const { readMembership$, readFull$ } = createMembershipReads(
     directory,
     model,
     nodes,
@@ -809,9 +712,9 @@ export function createTargetDiscovery(
   const drain$ = createDiscoveryDrain(
     nodes,
     lifecycle,
-    reads,
+    readFull$,
+    readMembership$,
     waitForDrain$,
-    startOrder$,
   );
   const refresh$ = createDiscoveryRefresh(nodes, model, options, drain$, "all");
   const refreshMembers$ = createDiscoveryRefresh(
@@ -835,18 +738,13 @@ export function createTargetDiscovery(
     waitForDrain$,
   );
   const targets = createDiscoveryTargets(nodes, model, lifecycle);
-  const event$ = createDiscoveryEvents(directory, nodes, model, lifecycle, {
-    removed$: targets.removed$,
+  const event$ = createDiscoveryEvents(
+    nodes,
+    model,
+    lifecycle,
+    targets.removed$,
     drain$,
-  });
-  const reorder$ = command(({ get, set }, signal: AbortSignal) => {
-    signal.throwIfAborted();
-    if (!get(nodes.active$)) {
-      return;
-    }
-    set(nodes.orderWanted$, true);
-    set(startOrder$, signal);
-  });
+  );
   return {
     active$: nodes.active$,
     admitted$: nodes.admitted$,
@@ -855,7 +753,6 @@ export function createTargetDiscovery(
     readComplete$,
     refresh$,
     refreshMembers$,
-    reorder$,
     resume$: drain$,
     ...targets,
     event$,

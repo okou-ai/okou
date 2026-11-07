@@ -4,6 +4,7 @@ import type {
   BrowserSession,
   BrowserViewerConnection,
   BrowserViewerAcquisition,
+  BrowserTabOrder,
 } from "@okouai/api-contracts/contracts/browser";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { browserSessionChangedPayloadSchema } from "@okouai/api-contracts/validators/realtime";
@@ -195,12 +196,13 @@ async function requestBrowserSessionLease(
   createClient: ApiClientFactory,
   threadId: string,
   signal: AbortSignal,
+  tabOrder: BrowserTabOrder | null,
 ) {
   const [lease] = await Promise.allSettled([
     accept(
       createClient(browserContract).leaseByThread({
         params: { threadId },
-        body: {},
+        body: { tabOrder: tabOrder ?? undefined },
         fetchOptions: { signal },
       }),
       [200, 404, 409, 500, 502, 503, 504],
@@ -308,10 +310,10 @@ function createStartBrowserSignals(
   return { start$: openBrowser$ };
 }
 
-function createCloseBrowserSignals({
-  descriptor,
-  reload$,
-}: BrowserMutationSignalContext): Pick<BrowserSessionSignals, "close$"> {
+function createCloseBrowserSignals(
+  { descriptor, reload$ }: BrowserMutationSignalContext,
+  tabOrder$: BrowserSignals["tabOrder$"],
+): Pick<BrowserSessionSignals, "close$"> {
   const close$ = command(async ({ get, set }, signal: AbortSignal) => {
     // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
     await withCleanup(
@@ -319,7 +321,7 @@ function createCloseBrowserSignals({
         accept(
           get(apiClient$)(browserContract).close({
             params: { threadId: descriptor.threadId },
-            body: {},
+            body: { tabOrder: get(tabOrder$) ?? undefined },
             fetchOptions: { signal },
           }),
           [200],
@@ -389,8 +391,9 @@ function createBrowserSessionKeepAliveSignals(
   session$: BrowserSessionSignals["session$"],
   lifetime$: Computed<BrowserSessionLifetime>,
   reload$: BrowserSessionSignals["reload$"],
-  connectionChanged$: BrowserSignals["connectionChanged$"],
+  browser: Pick<BrowserSignals, "connectionChanged$" | "tabOrder$">,
 ): Pick<BrowserSessionSignals, "keepAliveRef$"> {
+  const { connectionChanged$, tabOrder$ } = browser;
   const applyLease$ = command(
     async (
       { get, set },
@@ -463,6 +466,7 @@ function createBrowserSessionKeepAliveSignals(
             get(apiClient$),
             descriptor.threadId,
             signal,
+            get(tabOrder$),
           );
           signal.throwIfAborted();
           // Authorization and reload transitions create a new request owner,
@@ -676,9 +680,14 @@ function createBrowserSessionReadSignals(
       return connection && !isBrowserUnauthorized(connection)
         ? {
             cdpUrl: connection.cdpUrl,
-            instanceId: connection.browser.window?.instanceId ?? null,
+            threadId: descriptor.threadId,
+            instanceId:
+              connection.browser.window?.instanceId ??
+              connection.tabOrder?.instanceId ??
+              null,
             windowId: connection.browser.window?.primaryWindowId ?? null,
             extension: connection.extension,
+            tabOrder: connection.tabOrder,
           }
         : null;
     },
@@ -754,7 +763,10 @@ export function createBrowserSessionSignals(
     lifecycleSession$,
     replaceAcquisition$,
   );
-  const closeSignals = createCloseBrowserSignals(mutationContext);
+  const closeSignals = createCloseBrowserSignals(
+    mutationContext,
+    browser.tabOrder$,
+  );
   const subscriptionSignals = createBrowserSessionSubscriptionSignals(
     descriptor,
     session$,
@@ -767,7 +779,7 @@ export function createBrowserSessionSignals(
     session$,
     lifetime$,
     reload$,
-    browser.connectionChanged$,
+    browser,
   );
 
   return {

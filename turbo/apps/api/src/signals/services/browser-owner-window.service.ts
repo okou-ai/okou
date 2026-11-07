@@ -10,6 +10,7 @@ import { and, eq, exists } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { BrowserDisplaySize } from "@okouai/core/browser-display";
 import { db$ } from "../external/db";
+import type { BrowserTabOrderState } from "@okouai/db/jsonb-contracts/browser-tab-order";
 import { recordBrowserLifecycleFact } from "./browser-lifecycle-telemetry";
 import { settleIncludingAbort } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
@@ -92,7 +93,7 @@ async function prepareBrowserOwnerWindow(
   candidate: BrowserUseWindowCandidate,
   encryptedTabUrls: string | null,
   signal: AbortSignal,
-): Promise<void> {
+): Promise<BrowserTabOrderState> {
   if (input.initialDisplay) {
     await prepareBrowserUseWindowDisplay(
       input.cdpUrl,
@@ -111,15 +112,31 @@ async function prepareBrowserOwnerWindow(
   }
   signal.throwIfAborted();
   if (encryptedTabUrls === null) {
-    return;
+    return {
+      instanceId: input.instanceId,
+      windowId: candidate.primaryWindowId,
+      tabs: [{ targetId: candidate.targetId, tabId: null }],
+      savedTabIds: [],
+    };
   }
   const decoded = await decryptPersistentSecretValue(encryptedTabUrls, {
     userId: input.owner.userId,
   });
   signal.throwIfAborted();
   const urls = array(string().max(8192)).parse(JSON.parse(decoded));
-  await restoreBrowserUseWindowTabUrls(input, candidate, urls, signal);
+  const restored = await restoreBrowserUseWindowTabUrls(
+    input,
+    candidate,
+    urls,
+    signal,
+  );
   signal.throwIfAborted();
+  return {
+    instanceId: input.instanceId,
+    windowId: candidate.primaryWindowId,
+    tabs: [...restored.tabs],
+    savedTabIds: [...restored.savedTabIds],
+  };
 }
 
 /** Publish only a fully prepared native window. */
@@ -178,7 +195,7 @@ export const createBrowserOwnerWindow$ = command(
           );
       cleanup.candidate = candidate;
       signal.throwIfAborted();
-      await prepareBrowserOwnerWindow(
+      const tabOrder = await prepareBrowserOwnerWindow(
         input,
         candidate,
         snapshot.encryptedTabUrls,
@@ -193,6 +210,7 @@ export const createBrowserOwnerWindow$ = command(
           kind: "admit",
           instanceId: input.instanceId,
           primaryWindowId: candidate.primaryWindowId,
+          tabOrder,
         },
         signal,
       );

@@ -87,7 +87,7 @@ test.each(["native window", "empty capture", "encryption"] as const)(
           "Native window unavailable",
         );
       } else if (failure === "empty capture") {
-        f.provider.native.emptySnapshot = true;
+        f.provider.native.emptySnapshotTargetId = page.targetId;
       } else {
         useSecretKmsProbe(() => {
           return Promise.reject(new Error("KMS unavailable"));
@@ -97,7 +97,7 @@ test.each(["native window", "empty capture", "encryption"] as const)(
       const restored = await open(a);
       expect(f.provider.sessionIds.size).toBe(1);
       expect(f.provider.stoppedSessionIds.size).toBe(1);
-      f.provider.native.emptySnapshot = false;
+      f.provider.native.emptySnapshotTargetId = undefined;
       useSecretKmsProbe();
       expect(restored.window?.instanceId).not.toBe(first.window?.instanceId);
       expect(urls(f, restored.window?.primaryWindowId)).toStrictEqual([saved]);

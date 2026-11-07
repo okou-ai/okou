@@ -1,4 +1,5 @@
 import type { Command, Computed } from "ccstate";
+import type { BrowserTabOrder } from "@okouai/api-contracts/contracts/browser";
 import { isAbortError } from "../utils.ts";
 import { createBrowserRuntime } from "./runtime.ts";
 import { CdpFault } from "./cdp/errors.ts";
@@ -23,6 +24,8 @@ import type {
 } from "./viewer/types.ts";
 
 export interface BrowserConnection {
+  readonly threadId: string;
+  readonly tabOrder?: BrowserTabOrder;
   readonly cdpUrl: string;
   readonly instanceId: string | null;
   readonly windowId: number | null;
@@ -106,6 +109,7 @@ export interface AddressSubmitNotice {
 
 /** Read-only observations and finite domain actions; resource plumbing is private. */
 export interface BrowserSignals {
+  readonly tabOrder$: Computed<BrowserTabOrder | null>;
   readonly recoveryOperation$: Computed<Promise<BrowserRecoveryResult> | null>;
   readonly tabs$: Computed<readonly BrowserTab[]>;
   readonly selectedTabId$: Computed<string | null>;

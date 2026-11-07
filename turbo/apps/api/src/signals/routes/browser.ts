@@ -21,6 +21,7 @@ import {
   type BrowserServiceError,
 } from "../services/browser.service";
 import { createSharedBrowserGraph } from "../services/browser-shared.service";
+import { recordBrowserTabOrder$ } from "../services/browser-tab-order.service";
 
 function errorResponse(error: BrowserServiceError) {
   return {
@@ -185,6 +186,19 @@ const leaseBrowserByThreadInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
+    if (body.data.tabOrder) {
+      await set(
+        recordBrowserTabOrder$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          chatThreadId: get(leaseByThreadParams$).threadId,
+          ...("runId" in auth ? { runId: auth.runId } : {}),
+        },
+        body.data.tabOrder,
+        signal,
+      );
+    }
     const shared = await set(sharedThread.lease$, signal);
     if (shared) {
       return shared.kind === "error"
@@ -285,6 +299,19 @@ const closeBrowserInner$ = command(
       return body.response;
     }
     const auth = get(organizationAuthContext$);
+    if (body.data.tabOrder) {
+      await set(
+        recordBrowserTabOrder$,
+        {
+          orgId: auth.orgId,
+          userId: auth.userId,
+          chatThreadId: get(closeParams$).threadId,
+          ...("runId" in auth ? { runId: auth.runId } : {}),
+        },
+        body.data.tabOrder,
+        signal,
+      );
+    }
     const shared = await set(sharedThread.close$, signal);
     if (shared) {
       return shared.kind === "error"

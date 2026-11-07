@@ -99,6 +99,7 @@ import {
   createSelectedPresentation,
 } from "./presentation.ts";
 import { createTargetDiscovery } from "./discovery.ts";
+import { createTabOrder } from "./tab-order.ts";
 import { readFavicon } from "./favicon.ts";
 import {
   createSelectionLifecycle,
@@ -805,6 +806,7 @@ function createControllerState(
   const { authority$, nativeHost, preferredTargetId, selectionChanged$ } =
     owner;
   const atoms = createControllerAtoms(canvas);
+  const tabOrder = createTabOrder(connection);
   const {
     clientState$,
     connectedState$,
@@ -908,6 +910,8 @@ function createControllerState(
     assertAvailable$,
     directory$,
     tabOpening: createTabOpeningGraph(model, creation$),
+    readTabOrder$: tabOrder.read$,
+    saveTabOrder$: tabOrder.save$,
   };
 }
 type ControllerState = ReturnType<typeof createControllerState>;
@@ -961,6 +965,8 @@ type DiscoveryContext = ControllerContext<
   | "model"
   | "nativeHost"
   | "preferredTargetId"
+  | "readTabOrder$"
+  | "saveTabOrder$"
   | "readinessFailure$"
   | "selectionChanged$"
   | "selectedOwner$"
@@ -1105,6 +1111,7 @@ function createDiscoveryGraph(
         return isRecoverableReadFailure(error) ? null : error;
       });
       const snapshot = get(model.snapshot$);
+      set(context.saveTabOrder$, snapshot.inventory);
       let selected = snapshot.selectedTargetId;
       if (
         selected &&
@@ -1176,6 +1183,7 @@ function createDiscoveryGraph(
           },
           {
             preferredTargetId: context.preferredTargetId,
+            order$: context.readTabOrder$,
             invalidated$,
             settleInput$,
             changed$: discoveryChanged$,
@@ -3434,17 +3442,6 @@ function createEventsGraph(
         ),
         client,
       );
-      return;
-    }
-    if (
-      event.kind === "tab-moved" &&
-      (windowId === null || event.windowId === windowId)
-    ) {
-      set(directory.invalidateOrder$);
-      const discovery = get(get(links$).discovery$);
-      if (discovery) {
-        set(discovery.reorder$, client.signal);
-      }
       return;
     }
     if (!changesMembership(event, windowId ?? undefined)) {

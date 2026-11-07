@@ -4,6 +4,7 @@ import {
   check,
   foreignKey,
   index,
+  jsonb,
   pgTable,
   text,
   timestamp,
@@ -12,6 +13,7 @@ import {
   varchar,
 } from "drizzle-orm/pg-core";
 import { browserOwnerProfiles } from "./browser-owner";
+import type { BrowserTabOrderState } from "../jsonb-contracts/browser-tab-order";
 
 /** One logical chat Browser; recovery survives retirement of its live binding. */
 export const browserChatSessions = pgTable(
@@ -26,6 +28,7 @@ export const browserChatSessions = pgTable(
     primaryWindowId: bigint("primary_window_id", { mode: "number" }),
     expiresAt: timestamp("expires_at"),
     encryptedTabUrls: text("encrypted_tab_urls"),
+    tabOrder: jsonb("tab_order").$type<BrowserTabOrderState>(),
     tabUrlsCapturedAt: timestamp("tab_urls_captured_at"),
     screenshotObjectKey: text("screenshot_object_key"),
     screenshotUrl: text("screenshot_url"),

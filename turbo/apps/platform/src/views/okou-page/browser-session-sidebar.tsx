@@ -45,12 +45,10 @@ function BrowserSessionActions({
         showTooltip
         type="button"
         onClick={() => {
+          // Capture the complete order before hiding the viewer revokes its lease.
+          const closing = closeBrowser(pageSignal);
           onClose();
-          detach(
-            closeBrowser(pageSignal),
-            Reason.DomCallback,
-            "close thread browser sidebar",
-          );
+          detach(closing, Reason.DomCallback, "close thread browser sidebar");
         }}
         aria-label={t(($) => {
           return $.browserSession.close;

@@ -16,6 +16,7 @@ import type {
 } from "@okouai/api-contracts/contracts/browser";
 import type { BrowserUserActionState } from "@okouai/api-contracts/contracts/browser-user-actions";
 import type { BrowserUserActionPayload } from "@okouai/db/jsonb-contracts/browser-user-action";
+import type { BrowserTabOrderState } from "../jsonb-contracts/browser-tab-order";
 
 import { agentRuns } from "./agent-run";
 import { chatThreads } from "./chat-thread";
@@ -196,6 +197,7 @@ export const browserSessionInstances = pgTable(
   "browser_session_instances",
   {
     providerSessionId: uuid("provider_session_id").primaryKey(),
+    tabOrder: jsonb("tab_order").$type<BrowserTabOrderState>(),
     // Nullable compatibility reference for the previous browser-ID API.
     browserSessionId: uuid("browser_session_id").references(
       () => {

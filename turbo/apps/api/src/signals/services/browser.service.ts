@@ -1,4 +1,10 @@
 import { rootSignal$ } from "../context/root";
+import type { BrowserTabOrderState } from "@okouai/db/jsonb-contracts/browser-tab-order";
+import {
+  browserTabOrderState,
+  publicBrowserTabOrder,
+  savedBrowserTabUrls,
+} from "./browser-tab-order";
 import {
   BROWSER_IDLE_LEASE_MINUTES,
   BROWSER_INITIAL_SCREEN_HEIGHT,
@@ -575,6 +581,73 @@ interface ActiveBrowserInstance {
   readonly userId: string;
 }
 
+const prepareBrowserTabSnapshot$ = command(
+  async ({ get }, target: ActiveBrowserInstance, signal: AbortSignal) => {
+    const [instance] = await get(db$)
+      .select({
+        tabOrder: browserSessionInstances.tabOrder,
+        encryptedTabUrls: browserSessionTabSnapshots.encryptedTabUrls,
+      })
+      .from(browserSessionInstances)
+      .leftJoin(
+        browserSessionTabSnapshots,
+        eq(
+          browserSessionTabSnapshots.chatThreadId,
+          browserSessionInstances.chatThreadId,
+        ),
+      )
+      .where(
+        eq(browserSessionInstances.providerSessionId, target.providerSessionId),
+      );
+    signal.throwIfAborted();
+    const previousOrder = instance?.tabOrder ?? null;
+    const order = browserTabOrderState(previousOrder, {
+      instanceId: target.providerSessionId,
+      windowId: null,
+    });
+    let savedUrls: ReturnType<typeof savedBrowserTabUrls> = [];
+    if (order.savedTabIds.length) {
+      if (!instance?.encryptedTabUrls) {
+        throw new Error("Browser URL snapshot is missing its saved identities");
+      }
+      savedUrls = savedBrowserTabUrls(
+        order,
+        JSON.parse(
+          await decryptPersistentSecretValue(instance.encryptedTabUrls, {
+            userId: target.userId,
+          }),
+        ),
+      );
+    }
+    const provider = await getBrowserUseSession(
+      target.providerSessionId,
+      signal,
+    );
+    signal.throwIfAborted();
+    if (provider.status !== "active" || !provider.cdpUrl) {
+      return null;
+    }
+    const { urls, tabs, savedTabIds } = await listBrowserUseTabUrls(
+      browserUseNativeConnection(provider),
+      AbortSignal.any([
+        signal,
+        AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
+      ]),
+      undefined,
+      previousOrder === null ? undefined : order.tabs,
+      savedUrls,
+    );
+    signal.throwIfAborted();
+    const encryptedTabUrls = await encryptPersistentSecretValue(
+      JSON.stringify(urls),
+      { userId: target.userId },
+    );
+    signal.throwIfAborted();
+
+    return { previousOrder, order, tabs, savedTabIds, encryptedTabUrls };
+  },
+);
+
 const saveBrowserTabSnapshot$ = command(
   async (
     { set },
@@ -584,27 +657,12 @@ const saveBrowserTabSnapshot$ = command(
     const db = set(writeDb$);
     const saved = await settle(
       (async () => {
-        const provider = await getBrowserUseSession(
-          target.providerSessionId,
-          signal,
-        );
-        signal.throwIfAborted();
-        if (provider.status !== "active" || !provider.cdpUrl) {
+        const prepared = await set(prepareBrowserTabSnapshot$, target, signal);
+        if (!prepared) {
           return;
         }
-        const { urls } = await listBrowserUseTabUrls(
-          browserUseNativeConnection(provider),
-          AbortSignal.any([
-            signal,
-            AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
-          ]),
-        );
-        signal.throwIfAborted();
-        const encryptedTabUrls = await encryptPersistentSecretValue(
-          JSON.stringify(urls),
-          { userId: target.userId },
-        );
-        signal.throwIfAborted();
+        const { previousOrder, order, tabs, savedTabIds, encryptedTabUrls } =
+          prepared;
         const t = browserSessionTabSnapshots;
         const savedAt = nowDate();
         // Provider/KMS work may outlive legacy retirement and shared cutover.
@@ -632,6 +690,29 @@ const saveBrowserTabSnapshot$ = command(
               eq(browserSessions.status, "active"),
             ),
           );
+        const publishedOrder = db.$with("captured_browser_order").as(
+          db
+            .update(browserSessionInstances)
+            .set({
+              tabOrder: {
+                ...order,
+                tabs: [...tabs],
+                savedTabIds: [...savedTabIds],
+              },
+            })
+            .where(
+              and(
+                eq(
+                  browserSessionInstances.providerSessionId,
+                  target.providerSessionId,
+                ),
+                eq(browserSessionInstances.status, "active"),
+                exists(currentInstance),
+                sql`${browserSessionInstances.tabOrder} IS NOT DISTINCT FROM ${sql.param(previousOrder, browserSessionInstances.tabOrder)}::jsonb`,
+              ),
+            )
+            .returning({ chatThreadId: browserSessionInstances.chatThreadId }),
+        );
         const source = new QueryBuilder()
           .select({
             chatThreadId: sql`${target.chatThreadId}::uuid`
@@ -647,8 +728,9 @@ const saveBrowserTabSnapshot$ = command(
               .mapWith(t.updatedAt)
               .as("updated_at"),
           })
-          .from(currentInstance.as("current_instance"));
+          .from(publishedOrder);
         await db
+          .with(publishedOrder)
           .insert(t)
           .select(source)
           .onConflictDoUpdate({
@@ -676,9 +758,11 @@ const restoreBrowserTabSnapshot$ = command(
     { get },
     browser: BrowserSessionRow,
     cdpUrl: string,
+    provider: BrowserUseSession,
     signal: AbortSignal,
-  ): Promise<void> => {
+  ): Promise<BrowserTabOrderState | null> => {
     const db = get(db$);
+    let order: BrowserTabOrderState | null = null;
     const restored = await settle(
       (async () => {
         const [snapshot] = await db
@@ -702,7 +786,39 @@ const restoreBrowserTabSnapshot$ = command(
           ) as unknown,
         );
         signal.throwIfAborted();
-        await restoreBrowserUseTabUrls(cdpUrl, urls, signal);
+        const targetIds = await restoreBrowserUseTabUrls(cdpUrl, urls, signal);
+        // Creation receipts already establish the new page sequence. Optional
+        // native enrichment retains discarded pages without URL identity guesses.
+        order = {
+          instanceId: provider.id,
+          windowId: null,
+          tabs: targetIds.map((targetId) => {
+            return { targetId, tabId: null };
+          }),
+          savedTabIds: [],
+        };
+        const captured = await listBrowserUseTabUrls(
+          browserUseNativeConnection(provider),
+          signal,
+          undefined,
+          order.tabs,
+        );
+        const createdIds = targetIds.map((id) => {
+          return captured.tabs.find((tab) => {
+            return tab.targetId === id;
+          })?.tabId;
+        });
+        order = {
+          ...order,
+          tabs: [...captured.tabs],
+          savedTabIds:
+            targetIds.length === urls.length &&
+            createdIds.every((id) => {
+              return id !== undefined && id !== null;
+            })
+              ? (createdIds as number[])
+              : [],
+        };
       })(),
     );
     signal.throwIfAborted();
@@ -711,6 +827,7 @@ const restoreBrowserTabSnapshot$ = command(
         chatThreadId: browser.chatThreadId,
       });
     }
+    return order;
   },
 );
 
@@ -1956,6 +2073,7 @@ interface StartedBrowserClaimArgs {
   readonly context: BrowserRunContext;
   readonly provider: BrowserUseSession;
   readonly screenHeight: number;
+  readonly tabOrder: BrowserTabOrderState | null;
 }
 
 function browserStartInstanceValues(
@@ -1965,6 +2083,7 @@ function browserStartInstanceValues(
   const cleanupAfterStart = current.status === "stopping";
   return {
     providerSessionId: args.provider.id,
+    tabOrder: args.tabOrder,
     chatThreadId: current.chatThreadId,
     runId: args.context.runId,
     status: cleanupAfterStart ? "stopped" : "active",
@@ -2206,14 +2325,23 @@ const createAndClaimProviderInstance$ = command(
       return resized;
     }
 
-    const claimResult = await settleIncludingAbort(
-      set(claimStartedProviderInstance$, {
+    const claimResult = await settleIncludingAbort(async () => {
+      // Prepare URLs and their new identity bindings before exposing the instance.
+      const tabOrder = await set(
+        restoreBrowserTabSnapshot$,
+        args.browser,
+        cdpUrl,
+        provider.value,
+        get(rootSignal$),
+      );
+      return await set(claimStartedProviderInstance$, {
         browser: args.browser,
         context: args.context,
         provider: provider.value,
         screenHeight: args.screenHeight,
-      }),
-    );
+        tabOrder,
+      });
+    });
     if (!claimResult.ok) {
       // Provider creation is irreversible. Any failed claim must reclaim the
       // provider because the atomic statement rolls back every durable owner row.
@@ -2288,12 +2416,6 @@ const startProviderInstance$ = command(
       };
     }
 
-    await set(
-      restoreBrowserTabSnapshot$,
-      claimed.browser,
-      started.cdpUrl,
-      signal,
-    );
     const screenshotUrl = await set(
       loadBrowserScreenshotUrl$,
       claimed.browser.chatThreadId,
@@ -3240,6 +3362,12 @@ export const getBrowserViewerConnection$ = command(
             }),
             cdpUrl: connection.value,
             extension: browserUseNativeConnection(provider.value).extension,
+            tabOrder: publicBrowserTabOrder(
+              browserTabOrderState(instance.tabOrder, {
+                instanceId: instance.providerSessionId,
+                windowId: null,
+              }),
+            ),
           },
         };
   },

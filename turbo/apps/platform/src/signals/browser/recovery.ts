@@ -141,7 +141,7 @@ function cancelled(): DOMException {
   return new DOMException("The browser recovery was cancelled.", "AbortError");
 }
 
-/** Legacy unscoped connections have no physical binding proof beyond their endpoint. */
+/** Legacy connections without order metadata have endpoint-only binding proof. */
 export function sameRecoveryBinding(
   left: BrowserConnection,
   right: BrowserConnection,

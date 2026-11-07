@@ -326,6 +326,8 @@
     "src/signals/external/feishu-client.ts",
     "src/signals/services/autonomy-budget-schema.service.ts",
     "src/signals/services/browser-use.service.ts",
+    "src/signals/services/browser-tab-inventory.ts",
+    "src/signals/services/browser-tab-order.ts",
     "src/signals/services/browser-user-actions.service.ts",
     "src/signals/services/claude-code-usage.service.ts",
     "src/signals/services/codex-reset-credit-expiry.service.ts",

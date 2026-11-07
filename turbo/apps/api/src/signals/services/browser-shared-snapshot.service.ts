@@ -14,7 +14,12 @@ import {
   listBrowserUseTabUrls,
   type BrowserUseNativeConnection,
 } from "./browser-use.service";
-import { encryptPersistentSecretValue } from "./crypto.utils";
+import {
+  decryptPersistentSecretValue,
+  encryptPersistentSecretValue,
+} from "./crypto.utils";
+import { browserTabOrderState, savedBrowserTabUrls } from "./browser-tab-order";
+import type { BrowserTabOrderState } from "@okouai/db/jsonb-contracts/browser-tab-order";
 
 type Profile = typeof profiles.$inferSelect;
 type Window = BrowserChatWindow;
@@ -54,6 +59,8 @@ export function sharedBrowserLifetime(
   );
 }
 export interface SharedSnapshotCapture {
+  readonly previousOrder: BrowserTabOrderState | null;
+  readonly tabOrder: BrowserTabOrderState;
   readonly previousValue: string | null;
   readonly encryptedTabUrls: string;
   readonly capturedAt: Date;
@@ -65,7 +72,7 @@ export const captureSharedSnapshot$ = command(
     { get },
     args: BrowserUseNativeConnection & {
       readonly owner: SnapshotOwner;
-      readonly window: Pick<Window, "primaryWindowId">;
+      readonly window: Pick<Window, "primaryWindowId" | "instanceId">;
       readonly purpose: "active" | "retirement";
     },
     signal: AbortSignal,
@@ -73,10 +80,14 @@ export const captureSharedSnapshot$ = command(
     const { owner, window } = args;
     const t = windows;
     const [previous] = await get(db$)
-      .select({ encryptedTabUrls: t.encryptedTabUrls })
+      .select({ encryptedTabUrls: t.encryptedTabUrls, tabOrder: t.tabOrder })
       .from(t)
       .where(eq(t.chatThreadId, owner.chatThreadId));
     signal.throwIfAborted();
+    const order = browserTabOrderState(previous?.tabOrder ?? null, {
+      instanceId: window.instanceId,
+      windowId: window.primaryWindowId,
+    });
     const captureSignal =
       args.purpose === "retirement"
         ? AbortSignal.any([
@@ -89,8 +100,30 @@ export const captureSharedSnapshot$ = command(
     const prepared = await settleIncludingAbort(async () => {
       // Order captures before native IO; a late reply is not a newer snapshot.
       const capturedAt = nowDate();
+      let savedUrls: ReturnType<typeof savedBrowserTabUrls> = [];
+      if (order.savedTabIds.length) {
+        if (!previous?.encryptedTabUrls) {
+          throw new Error(
+            "Browser URL snapshot is missing its saved identities",
+          );
+        }
+        savedUrls = savedBrowserTabUrls(
+          order,
+          JSON.parse(
+            await decryptPersistentSecretValue(previous.encryptedTabUrls, {
+              userId: owner.userId,
+            }),
+          ),
+        );
+      }
       const observed = await settleIncludingAbort(
-        listBrowserUseTabUrls(args, captureSignal, window.primaryWindowId),
+        listBrowserUseTabUrls(
+          args,
+          captureSignal,
+          window.primaryWindowId,
+          order.tabs,
+          savedUrls,
+        ),
       );
       captureSignal.throwIfAborted();
       if (!observed.ok) {
@@ -115,6 +148,12 @@ export const captureSharedSnapshot$ = command(
       );
       captureSignal.throwIfAborted();
       return {
+        previousOrder: previous?.tabOrder ?? null,
+        tabOrder: {
+          ...order,
+          tabs: [...snapshot.tabs],
+          savedTabIds: [...snapshot.savedTabIds],
+        },
         previousValue: previous?.encryptedTabUrls ?? null,
         encryptedTabUrls,
         capturedAt,
@@ -140,11 +179,13 @@ export function sharedSnapshotPublication(capture: SharedSnapshotCapture) {
     previousValue: capture.previousValue,
     capturedAt: capture.capturedAt,
   });
+  const canReplace = sql`${publication.canReplace} AND ${windows.tabOrder} IS NOT DISTINCT FROM ${sql.param(capture.previousOrder, windows.tabOrder)}::jsonb`;
   return {
-    canReplace: publication.canReplace,
+    canReplace,
     set: {
-      encryptedTabUrls: sql`CASE WHEN ${publication.canReplace} THEN ${capture.encryptedTabUrls} ELSE ${windows.encryptedTabUrls} END`,
-      tabUrlsCapturedAt: sql`CASE WHEN ${publication.canReplace} THEN ${publication.updatedAt} ELSE ${windows.tabUrlsCapturedAt} END`,
+      tabOrder: sql`CASE WHEN ${canReplace} THEN ${sql.param(capture.tabOrder, windows.tabOrder)}::jsonb ELSE ${windows.tabOrder} END`,
+      encryptedTabUrls: sql`CASE WHEN ${canReplace} THEN ${capture.encryptedTabUrls} ELSE ${windows.encryptedTabUrls} END`,
+      tabUrlsCapturedAt: sql`CASE WHEN ${canReplace} THEN ${publication.updatedAt} ELSE ${windows.tabUrlsCapturedAt} END`,
     },
   };
 }

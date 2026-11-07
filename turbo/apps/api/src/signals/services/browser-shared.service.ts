@@ -74,6 +74,10 @@ import {
   sharedBrowserLifetime,
 } from "./browser-shared-snapshot.service";
 import { reconcileSharedBrowsers$ } from "./browser-shared-reconcile.service";
+import {
+  browserTabOrderState,
+  publicBrowserTabOrder,
+} from "./browser-tab-order";
 
 interface SharedBrowserInput {
   readonly viewer?: boolean;
@@ -1185,7 +1189,11 @@ const confirmSharedBrowserViewer$ = command(
       signal,
     );
     const [binding] = await get(db$)
-      .select({ expiresAt: windows.expiresAt, timeoutAt: profiles.timeoutAt })
+      .select({
+        expiresAt: windows.expiresAt,
+        timeoutAt: profiles.timeoutAt,
+        tabOrder: windows.tabOrder,
+      })
       .from(windows)
       .innerJoin(
         profiles,
@@ -1225,6 +1233,12 @@ const confirmSharedBrowserViewer$ = command(
               idleExpiresAt: binding.expiresAt.toISOString(),
             },
             cdpUrl,
+            tabOrder: publicBrowserTabOrder(
+              browserTabOrderState(binding.tabOrder, {
+                instanceId: identity.instanceId,
+                windowId: identity.primaryWindowId,
+              }),
+            ),
           },
         }
       : unavailable();

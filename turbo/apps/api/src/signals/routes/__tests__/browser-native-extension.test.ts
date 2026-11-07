@@ -87,7 +87,7 @@ test.each(["empty closing-window snapshot", "unavailable bridge"] as const)(
       await renew(b);
       mockNow(START + 11 * MINUTE);
       if (failure === "empty closing-window snapshot") {
-        f.provider.native.emptySnapshot = true;
+        f.provider.native.emptySnapshotTargetId = page.targetId;
       } else {
         f.provider.native.bridgeAvailable = false;
       }
@@ -96,7 +96,7 @@ test.each(["empty closing-window snapshot", "unavailable bridge"] as const)(
       );
       expect((await view(b)).window).toStrictEqual(sibling.window);
       expect(f.provider.sessionRequests).toHaveLength(1);
-      f.provider.native.emptySnapshot = false;
+      f.provider.native.emptySnapshotTargetId = undefined;
       f.provider.native.bridgeAvailable = true;
       const reopened = await open(a);
       expect(reopened.window?.instanceId).toBe(first.window?.instanceId);
@@ -189,7 +189,10 @@ test.each([
         [...f.provider.native.targets.values()].map((target) => {
           return target.url;
         }),
-      ).toStrictEqual(expectedUrls);
+      ).toStrictEqual(
+        // A leftover seed is appended to our restored sequence on the next save.
+        failure === "seed close error" ? [saved, "about:blank"] : expectedUrls,
+      );
       expect((await view(b)).status).toBe("suspended");
     });
   },

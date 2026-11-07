@@ -1,6 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { ws } from "msw";
-import { number, object, record, string, unknown as zUnknown } from "zod";
+import {
+  array,
+  number,
+  object,
+  record,
+  string,
+  unknown as zUnknown,
+} from "zod";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { detach, Mechanism } from "../../../utils";
 import {
@@ -15,6 +22,7 @@ interface NativeTarget {
   readonly targetId: string;
   windowId: number;
   index?: number;
+  discarded?: boolean;
   url?: string;
 }
 
@@ -48,13 +56,14 @@ export function createNativeWindowProvider(context: TestContext) {
     windowBoundsError?: { readonly code: number; readonly message: string };
     bridgeAvailable: boolean;
     snapshotEventWindowId?: number;
-    emptySnapshot: boolean;
+    emptySnapshotTargetId?: string;
     beforeCreateReply?: (target: NativeTarget) => Promise<void> | void;
     onSocketClose?: () => void;
     windowError?: string;
     closeSucceeds: boolean;
     closeReply: "reply" | "withhold" | "disconnect";
     seedCloseError?: string;
+    tabChildInfo?: unknown;
     windowReply: "reply" | "withhold";
     createReply: "reply" | "disconnect" | "withhold";
     command?: (command: {
@@ -75,7 +84,6 @@ export function createNativeWindowProvider(context: TestContext) {
     commands: [],
     connections: 0,
     bridgeAvailable: true,
-    emptySnapshot: false,
     closeSucceeds: true,
     closeReply: "reply",
     windowReply: "reply",
@@ -109,7 +117,7 @@ export function createNativeWindowProvider(context: TestContext) {
                 index: target.index ?? index,
                 active: index === 0,
                 pinned: false,
-                discarded: false,
+                discarded: target.discarded ?? false,
                 url: target.url ?? "about:blank",
               };
             }),
@@ -130,7 +138,9 @@ export function createNativeWindowProvider(context: TestContext) {
     }
     if (
       request.populate &&
-      state.emptySnapshot &&
+      state.emptySnapshotTargetId !== undefined &&
+      state.targets.get(state.emptySnapshotTargetId)?.windowId ===
+        Number(request.windowId) &&
       request.method === "getWindow"
     ) {
       return { id: request.windowId, focused: true, tabs: [] };
@@ -311,7 +321,7 @@ export function createNativeWindowProvider(context: TestContext) {
         const targetId = String(command.params.targetId);
         await state.beforeWindowForTargetReply?.(targetId);
         context.signal.throwIfAborted();
-        const target = state.targets.get(targetId);
+        const target = state.targets.get(targetId.replace(/^native-tab:/u, ""));
         const error = state.windowErrors.get(targetId) ?? state.windowError;
         sendResult(
           command.id,
@@ -355,6 +365,86 @@ export function createNativeWindowProvider(context: TestContext) {
       );
       return true;
     };
+    const replyTabInventory = (
+      command: ReturnType<typeof commandSchema.parse>,
+    ): boolean => {
+      if (command.method === "Target.getTargets") {
+        const filter = object({
+          filter: array(object({ type: string().optional() })),
+        }).safeParse(command.params);
+        if (!filter.success || filter.data.filter[0]?.type !== "tab") {
+          return false;
+        }
+        sendResult(command.id, {
+          targetInfos: [...state.targets.values()].map((target) => {
+            return {
+              targetId: `native-tab:${target.targetId}`,
+              type: "tab",
+              url: target.url ?? "about:blank",
+              embedderData: {
+                tabStripIndex:
+                  target.index ??
+                  [...state.targets.values()]
+                    .filter((other) => {
+                      return other.windowId === target.windowId;
+                    })
+                    .indexOf(target),
+              },
+            };
+          }),
+        });
+        return true;
+      }
+      if (
+        command.method === "Target.attachToTarget" &&
+        String(command.params.targetId).startsWith("native-tab:")
+      ) {
+        sendResult(command.id, {
+          sessionId: `tab-session:${String(command.params.targetId).slice("native-tab:".length)}`,
+        });
+        return true;
+      }
+      if (
+        command.method === "Target.setAutoAttach" &&
+        command.sessionId?.startsWith("tab-session:")
+      ) {
+        const target = state.targets.get(
+          command.sessionId.slice("tab-session:".length),
+        );
+        sendResult(
+          command.id,
+          {},
+          target && !target.discarded
+            ? [
+                {
+                  method: "Target.attachedToTarget",
+                  sessionId: command.sessionId,
+                  params: {
+                    sessionId: `child:${target.targetId}`,
+                    targetInfo:
+                      state.tabChildInfo !== undefined
+                        ? state.tabChildInfo
+                        : {
+                            targetId: target.targetId,
+                            type: "page",
+                            url: target.url ?? "about:blank",
+                          },
+                  },
+                },
+              ]
+            : [],
+        );
+        return true;
+      }
+      if (
+        command.method === "Target.detachFromTarget" &&
+        String(command.params.sessionId).startsWith("tab-session:")
+      ) {
+        sendResult(command.id, {});
+        return true;
+      }
+      return false;
+    };
     const reply = async (event: { readonly data: unknown }) => {
       const command = commandSchema.parse(JSON.parse(String(event.data)));
       state.commands.push(command);
@@ -363,6 +453,9 @@ export function createNativeWindowProvider(context: TestContext) {
         return;
       }
       if (await replyWindowLookup(command)) {
+        return;
+      }
+      if (replyTabInventory(command)) {
         return;
       }
       if (command.method === "Target.createTarget") {
@@ -394,6 +487,9 @@ export function createNativeWindowProvider(context: TestContext) {
       } else if (command.method === "Target.getTargets") {
         result = {
           targetInfos: [...state.targets.values()]
+            .filter((target) => {
+              return !target.discarded;
+            })
             .map((target) => {
               return {
                 targetId: target.targetId,
@@ -434,7 +530,29 @@ export function createNativeWindowProvider(context: TestContext) {
       );
     });
   });
-  return Object.assign(state, { handler });
+  return Object.assign(state, {
+    handler,
+    discard(targetId: string) {
+      const target = state.targets.get(targetId);
+      if (!target) {
+        throw new Error("Discard fixture target is missing");
+      }
+      const siblings = [...state.targets.values()].filter((tab) => {
+        return tab.windowId === target.windowId;
+      });
+      for (const [index, tab] of siblings.entries()) {
+        tab.index ??= index;
+      }
+      state.targets.delete(targetId);
+      const replacement = {
+        ...target,
+        targetId: randomUUID(),
+        discarded: true,
+      };
+      state.targets.set(replacement.targetId, replacement);
+      return replacement;
+    },
+  });
 }
 
 export function installBrowserWindowContentCommands(

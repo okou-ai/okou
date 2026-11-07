@@ -15,6 +15,7 @@ import {
 import {
   OkouBrowserClient,
   type CdpEvent,
+  type CdpTransport,
 } from "@okouai/browser-extension-client";
 import {
   BROWSER_USER_ACTION_MAX_ACCEPT_LENGTH,
@@ -49,6 +50,12 @@ import {
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { mapConcurrent } from "../../lib/map-concurrent";
+import { readBrowserTabInventory } from "./browser-tab-inventory";
+import {
+  orderBrowserTabs,
+  type TabOrderEntry,
+  type SavedTabUrl,
+} from "./browser-tab-order";
 import {
   bestEffort,
   readBoundedResponseText,
@@ -599,7 +606,7 @@ async function nativeBrowserWindow(
 async function withBrowserUseBridge<T>(
   connection: BrowserUseNativeConnection,
   signal: AbortSignal,
-  operation: (client: OkouBrowserClient) => Promise<T>,
+  operation: (client: OkouBrowserClient, transport: CdpTransport) => Promise<T>,
 ): Promise<T> {
   return await withBrowserUseCdpDeadline(signal, async (deadline) => {
     return await withBrowserUseCdpSocket(
@@ -618,47 +625,48 @@ async function withBrowserUseBridge<T>(
         socket.addEventListener("close", onDisconnect);
         socket.addEventListener("error", onDisconnect);
         let client: OkouBrowserClient | undefined;
+        const transport: CdpTransport = {
+          request: async (method, params, sessionId) => {
+            return await sendBrowserUseCdpCommand(
+              socket,
+              {
+                id: nextId++,
+                method,
+                params,
+                sessionId,
+                maxResponseBytes: MAX_BROWSER_USE_RESPONSE_BYTES,
+              },
+              connectionSignal,
+            );
+          },
+          onEvent: (listener: (event: CdpEvent) => void) => {
+            const received = (event: MessageEvent) => {
+              if (
+                typeof event.data !== "string" ||
+                event.data.length > MAX_BROWSER_USE_RESPONSE_BYTES
+              ) {
+                return;
+              }
+              const parsed = browserUseCdpEventSchema.safeParse(
+                safeJsonParse(event.data),
+              );
+              if (parsed.success) {
+                listener(parsed.data);
+              }
+            };
+            socket.addEventListener("message", received);
+            return () => {
+              socket.removeEventListener("message", received);
+            };
+          },
+        };
         const result = await settleIncludingAbort(async () => {
           client = await OkouBrowserClient.connect({
             runtimeId: connection.extension.runtimeId,
             signal: connectionSignal,
-            transport: {
-              request: async (method, params, sessionId) => {
-                return await sendBrowserUseCdpCommand(
-                  socket,
-                  {
-                    id: nextId++,
-                    method,
-                    params,
-                    sessionId,
-                    maxResponseBytes: MAX_BROWSER_USE_RESPONSE_BYTES,
-                  },
-                  connectionSignal,
-                );
-              },
-              onEvent: (listener: (event: CdpEvent) => void) => {
-                const received = (event: MessageEvent) => {
-                  if (
-                    typeof event.data !== "string" ||
-                    event.data.length > MAX_BROWSER_USE_RESPONSE_BYTES
-                  ) {
-                    return;
-                  }
-                  const parsed = browserUseCdpEventSchema.safeParse(
-                    safeJsonParse(event.data),
-                  );
-                  if (parsed.success) {
-                    listener(parsed.data);
-                  }
-                };
-                socket.addEventListener("message", received);
-                return () => {
-                  socket.removeEventListener("message", received);
-                };
-              },
-            },
+            transport,
           });
-          return await operation(client);
+          return await operation(client, transport);
         });
         const released = await settleIncludingAbort(async () => {
           await client?.close();
@@ -1124,62 +1132,114 @@ async function withBrowserUseCdpDeadline<T>(
   return result.value;
 }
 
+function browserTabUrlEntries(tabs: readonly { id: number; url?: string }[]) {
+  const saved = tabs.flatMap((tab) => {
+    return restorableBrowserUseTabUrls(
+      tab.url === undefined ? [] : [tab.url],
+    ).map((url) => {
+      return { tabId: tab.id, url };
+    });
+  });
+  return {
+    urls: saved.map((tab) => {
+      return tab.url;
+    }),
+    savedTabIds: saved.map((tab) => {
+      return tab.tabId;
+    }),
+  };
+}
+
 export async function listBrowserUseTabUrls(
   connection: BrowserUseNativeConnection,
   signal: AbortSignal,
   primaryWindowId?: number,
+  previousOrder?: readonly TabOrderEntry[],
+  savedUrls: readonly SavedTabUrl[] = [],
 ): Promise<{
   readonly windowExists: boolean;
   readonly urls: readonly string[];
+  readonly tabs: readonly TabOrderEntry[];
+  readonly savedTabIds: readonly number[];
 }> {
-  return await withBrowserUseBridge(connection, signal, async (client) => {
-    const observed =
-      primaryWindowId === undefined
-        ? await client.call("listWindows", { populate: true })
-        : await client.call("getWindow", {
-            windowId: primaryWindowId,
-            populate: true,
-          });
-    const windows = array(browserUseNativeWindowSchema).parse(
-      primaryWindowId === undefined
-        ? observed.value
-        : observed.value === null
-          ? []
-          : [observed.value],
-    );
-    if (
-      primaryWindowId !== undefined &&
-      windows.some((window) => {
-        return window.id !== primaryWindowId;
-      })
-    ) {
-      throw new Error("Browser URL inventory returned a different window");
-    }
-    const tabs = windows.flatMap((window) => {
-      const tabs = array(browserUseNativeTabSchema).parse(window.tabs);
+  return await withBrowserUseBridge(
+    connection,
+    signal,
+    async (client, transport) => {
+      if (previousOrder !== undefined) {
+        const windows = await readBrowserTabInventory(
+          client,
+          transport,
+          signal,
+          primaryWindowId,
+        );
+        const tabs = orderBrowserTabs(
+          windows.flatMap((window) => {
+            return [...window.tabs].sort((a, b) => {
+              return a.index - b.index;
+            });
+          }),
+          previousOrder,
+          savedUrls,
+        );
+        if (windows.length > 0 && tabs.length === 0) {
+          throw new Error("Browser window has no capturable tabs");
+        }
+        return {
+          windowExists: windows.length > 0,
+          ...browserTabUrlEntries(tabs),
+          tabs: tabs.map((tab) => {
+            return { tabId: tab.id, targetId: tab.targetId };
+          }),
+        };
+      }
+      const observed =
+        primaryWindowId === undefined
+          ? await client.call("listWindows", { populate: true })
+          : await client.call("getWindow", {
+              windowId: primaryWindowId,
+              populate: true,
+            });
+      const windows = array(browserUseNativeWindowSchema).parse(
+        primaryWindowId === undefined
+          ? observed.value
+          : observed.value === null
+            ? []
+            : [observed.value],
+      );
       if (
-        tabs.some((tab) => {
-          return tab.windowId !== window.id;
+        primaryWindowId !== undefined &&
+        windows.some((window) => {
+          return window.id !== primaryWindowId;
         })
       ) {
-        throw new Error("Browser URL inventory contains a moved tab");
+        throw new Error("Browser URL inventory returned a different window");
       }
-      return tabs.sort((a, b) => {
-        return a.index - b.index;
+      const tabs = windows.flatMap((window) => {
+        const tabs = array(browserUseNativeTabSchema).parse(window.tabs);
+        if (
+          tabs.some((tab) => {
+            return tab.windowId !== window.id;
+          })
+        ) {
+          throw new Error("Browser URL inventory contains a moved tab");
+        }
+        return tabs.sort((a, b) => {
+          return a.index - b.index;
+        });
       });
-    });
-    if (windows.length > 0 && tabs.length === 0) {
-      throw new Error("Browser window has no capturable tabs");
-    }
-    return {
-      windowExists: windows.length > 0,
-      urls: restorableBrowserUseTabUrls(
-        tabs.flatMap((tab) => {
-          return tab.url === undefined ? [] : [tab.url];
+      if (windows.length > 0 && tabs.length === 0) {
+        throw new Error("Browser window has no capturable tabs");
+      }
+      return {
+        windowExists: windows.length > 0,
+        ...browserTabUrlEntries(tabs),
+        tabs: tabs.map((tab) => {
+          return { tabId: tab.id, targetId: null };
         }),
-      ),
-    };
-  });
+      };
+    },
+  );
 }
 
 async function selectBrowserScreenshotPage(
@@ -3704,13 +3764,20 @@ export async function restoreBrowserUseWindowTabUrls(
   window: BrowserUseWindowCandidate,
   urls: readonly string[],
   signal: AbortSignal,
-): Promise<void> {
+): Promise<{
+  readonly tabs: readonly TabOrderEntry[];
+  readonly savedTabIds: readonly number[];
+}> {
   const restorable = restorableBrowserUseTabUrls(urls);
   if (restorable.length === 0) {
-    return;
+    return {
+      tabs: [{ targetId: window.targetId, tabId: null }],
+      savedTabIds: [],
+    };
   }
-  const restored = await settleIncludingAbort(
-    withBrowserUseBridge(connection, signal, async (client) => {
+  const createdOrder: TabOrderEntry[] = [];
+  const restored = await settleIncludingAbort(async () => {
+    await withBrowserUseBridge(connection, signal, async (client) => {
       if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
         throw new Error("The Browser restore window is unavailable");
       }
@@ -3726,9 +3793,18 @@ export async function restoreBrowserUseWindowTabUrls(
             "The Browser could not confirm restored tab placement",
           );
         }
+        createdOrder.push({ tabId: tab.id, targetId: null });
       }
-    }),
-  );
+    });
+    // Seed cleanup is advisory; publishing the new identity binding is required.
+    await tryCloseRestoredBrowserSeed(connection.cdpUrl, window, signal);
+    return await listBrowserUseTabUrls(
+      connection,
+      signal,
+      window.primaryWindowId,
+      createdOrder,
+    );
+  });
   signal.throwIfAborted();
   if (!restored.ok) {
     throw restored.error instanceof BrowserUseProviderError
@@ -3739,8 +3815,15 @@ export async function restoreBrowserUseWindowTabUrls(
           "Managed Browser operation could not be confirmed",
         );
   }
-  // The restored URLs are ready; blank-seed cleanup cannot undo that result.
-  await tryCloseRestoredBrowserSeed(connection.cdpUrl, window, signal);
+  return {
+    tabs: restored.value.tabs,
+    savedTabIds:
+      restorable.length === urls.length
+        ? createdOrder.map((tab) => {
+            return tab.tabId!;
+          })
+        : [],
+  };
 }
 
 /** Residual native windows are reclaimed when the physical Browser stops. */
@@ -3761,16 +3844,16 @@ export async function restoreBrowserUseTabUrls(
   cdpUrl: string,
   urls: readonly string[],
   signal: AbortSignal,
-): Promise<void> {
+): Promise<readonly string[]> {
   if (urls.length === 0) {
-    return;
+    return [];
   }
   const restorable = restorableBrowserUseTabUrls(urls);
   if (restorable.length === 0) {
-    return;
+    return [];
   }
   const cdpSignal = browserUseCdpSignal(signal);
-  await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
+  return await withBrowserUseCdpSocket(cdpUrl, cdpSignal, async (socket) => {
     const targets = browserUseCdpTargetsSchema.parse(
       await sendBrowserUseCdpCommand(
         socket,
@@ -3781,6 +3864,7 @@ export async function restoreBrowserUseTabUrls(
     );
     let commandId = 2;
     let restored = 0;
+    const targetIds: string[] = [];
     for (const url of restorable) {
       const result = await settle(
         sendBrowserUseCdpCommand(
@@ -3792,6 +3876,9 @@ export async function restoreBrowserUseTabUrls(
       commandId += 1;
       signal.throwIfAborted();
       if (result.ok) {
+        targetIds.push(
+          object({ targetId: string().min(1) }).parse(result.value).targetId,
+        );
         restored += 1;
       }
     }
@@ -3816,6 +3903,7 @@ export async function restoreBrowserUseTabUrls(
       commandId += 1;
       signal.throwIfAborted();
     }
+    return targetIds;
   });
 }
 

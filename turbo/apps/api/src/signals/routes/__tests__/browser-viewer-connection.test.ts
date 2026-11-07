@@ -121,6 +121,7 @@ async function viewerScenario() {
     ...owned,
     ...current,
     provider,
+    providerId,
     webSocketUrl,
     orgId,
   };
@@ -149,6 +150,11 @@ test("retrieves a viewer connection for its signed-in owner", async () => {
       }),
       cdpUrl: scenario.webSocketUrl,
       extension: TEST_BROWSER_EXTENSION,
+      tabOrder: {
+        instanceId: scenario.providerId,
+        windowId: null,
+        targetIds: [],
+      },
     });
     expect(connected.headers.get("cache-control")).toBe("no-store");
     const deniedRun = await client().viewerConnection({
@@ -208,6 +214,11 @@ test.each(["provider WSS", "live WSS", "double-encoded live WSS"] as const)(
         }),
         cdpUrl: scenario.webSocketUrl,
         extension: TEST_BROWSER_EXTENSION,
+        tabOrder: {
+          instanceId: scenario.providerId,
+          windowId: null,
+          targetIds: [],
+        },
       });
       // Teardown also uses the normal provider discovery path.
       scenario.provider.discoveryUrl = scenario.webSocketUrl;

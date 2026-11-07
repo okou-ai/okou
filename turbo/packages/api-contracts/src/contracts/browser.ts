@@ -13,6 +13,7 @@ import {
 
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
+import { browserTabOrderSchema } from "../validators/browser-tab-order";
 
 export { BROWSER_IDLE_LEASE_MINUTES } from "../validators/browser";
 
@@ -152,9 +153,17 @@ export const browserExtensionSchema = object({
 
 export type BrowserExtension = zInfer<typeof browserExtensionSchema>;
 
+export {
+  browserTabOrderBindingSchema,
+  browserTabOrderSchema,
+  type BrowserTabOrder,
+} from "../validators/browser-tab-order";
+
 const browserViewerConnectionSchema = browserResponseSchema.extend({
   cdpUrl: url({ protocol: /^wss$/u }),
   extension: browserExtensionSchema,
+  // Required once pre-order APIs cannot serve or be selected for rollback (#45844).
+  tabOrder: browserTabOrderSchema.optional(),
 });
 
 export type BrowserViewerConnection = zInfer<
@@ -231,7 +240,7 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/lease",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: object({}),
+    body: object({ tabOrder: browserTabOrderSchema.optional() }),
     responses: {
       200: browserResponseSchema,
       ...commonErrorResponses,
@@ -260,7 +269,7 @@ export const browserContract = c.router({
     path: "/api/chat-threads/:threadId/browser/close",
     headers: authHeadersSchema,
     pathParams: browserThreadParamsSchema,
-    body: object({}),
+    body: object({ tabOrder: browserTabOrderSchema.optional() }),
     responses: {
       200: object({}),
       ...commonErrorResponses,

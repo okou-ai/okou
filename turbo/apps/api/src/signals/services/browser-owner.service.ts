@@ -1,4 +1,5 @@
 import { randomUUID } from "node:crypto";
+import type { BrowserTabOrderState } from "@okouai/db/jsonb-contracts/browser-tab-order";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { agents } from "@okouai/db/schema/agent";
@@ -75,6 +76,7 @@ type BrowserOwnerMutation =
       readonly kind: "admit";
       readonly instanceId: string;
       readonly primaryWindowId: number;
+      readonly tabOrder: BrowserTabOrderState;
     }
   | {
       readonly kind: "renew";
@@ -433,6 +435,9 @@ const admitOwnerBrowserWindow$ = command(
                   .mapWith(windows.expiresAt)
                   .as("expires_at"),
               encryptedTabUrls: sql`NULL::text`.as("encrypted_tab_urls"),
+              tabOrder: sql`${JSON.stringify(action.tabOrder)}::jsonb`
+                .mapWith(windows.tabOrder)
+                .as("tab_order"),
               tabUrlsCapturedAt: sql`NULL::timestamp`.as(
                 "tab_urls_captured_at",
               ),
@@ -458,6 +463,7 @@ const admitOwnerBrowserWindow$ = command(
             instanceId: action.instanceId,
             state: "active",
             primaryWindowId: action.primaryWindowId,
+            tabOrder: action.tabOrder,
             expiresAt: sql`excluded.expires_at`,
             updatedAt: now,
           },

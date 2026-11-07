@@ -281,6 +281,69 @@ test("A distinct confirmed replacement streams while old bridge cleanup is unack
   expect(startupErrors).toHaveLength(0);
 });
 
+test("Legacy order metadata distinguishes a replacement at the same endpoint", async () => {
+  const startupErrors = recordBrowserStartupErrors();
+  mockSessionReads();
+  const retired = mockBrowserCdp(context, endpoint, {
+    targets: [
+      {
+        targetId: "old-page",
+        title: "Old",
+        url: "https://old.example.com",
+        windowId: 101,
+      },
+    ],
+  });
+  let connection: BrowserViewerConnection = {
+    browser: { ...oldSession, window: undefined },
+    cdpUrl: endpoint,
+    extension: TEST_BROWSER_EXTENSION,
+    tabOrder: {
+      instanceId: oldSession.window!.instanceId,
+      windowId: null,
+      targetIds: ["old-page"],
+    },
+  };
+  context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
+    return respond(200, connection);
+  });
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await waitFor(() => {
+    return expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  retired.holdNext("Runtime.removeBinding");
+  act(() => {
+    return retired.resetWorker();
+  });
+  await screen.findByText("Browser disconnected");
+  const replacement = mockReplacement();
+  connection = {
+    browser: { ...replacementSession, window: undefined },
+    cdpUrl: endpoint,
+    extension: TEST_BROWSER_EXTENSION,
+    tabOrder: {
+      instanceId: replacementSession.window!.instanceId,
+      windowId: null,
+      targetIds: ["replacement", "sibling"],
+    },
+  };
+  const reconnect = queryAllByRoleFast("button").find((button) => {
+    return button.textContent?.trim() === "Reconnect";
+  });
+  if (!reconnect) {
+    throw new Error("Expected explicit reconnect");
+  }
+  click(reconnect);
+  await waitFor(() => {
+    expect(screen.getByLabelText("Address")).toHaveValue(
+      "https://replacement.example.com",
+    );
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(replacement.connections()).toBe(1);
+  expect(startupErrors).toHaveLength(0);
+});
+
 test("A replacement clears a delayed old creation's blank presentation", async () => {
   const startupErrors = recordBrowserStartupErrors();
   mockSessionReads();

@@ -1737,6 +1737,20 @@ export function createBrowserRuntime(
   });
   return {
     tabs$: model.tabs$,
+    tabOrder$: computed((get) => {
+      const binding = get(context.installed$)?.identity.connection.tabOrder;
+      const inventory = get(model.snapshot$).inventory;
+      return binding &&
+        get(context.authority$) &&
+        inventory.status === "complete"
+        ? {
+            ...binding,
+            targetIds: inventory.targets.map((target) => {
+              return target.id;
+            }),
+          }
+        : null;
+    }),
     selectedTabId$: model.selectedTabId$,
     address$: model.address$,
     imageRecovery$: model.imageRecovery$,
