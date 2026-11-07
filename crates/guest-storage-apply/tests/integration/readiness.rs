@@ -57,8 +57,110 @@ fn spawn(manifest: &Manifest, runtime: &Path) -> std::io::Result<CommandExecutio
     CommandExecution::spawn(&mut command, Some(&bytes))
 }
 
+struct RestoreSearchPermission(std::path::PathBuf);
+
+impl Drop for RestoreSearchPermission {
+    fn drop(&mut self) {
+        let _ = fs::set_permissions(&self.0, std::os::unix::fs::PermissionsExt::from_mode(0o700));
+    }
+}
+
+fn unprivileged_command(dir: &Path, runtime: &Path) -> std::io::Result<Command> {
+    use std::os::unix::fs::{MetadataExt, PermissionsExt};
+    use std::os::unix::process::CommandExt;
+
+    // Root bypasses mode bits. An accessible copied binary and dropped child
+    // identity keep these CLI fixtures on the real permission boundary.
+    let root = fs::metadata(dir)?.uid() == 0;
+    let binary = if root {
+        let binary = dir.join("guest-storage-apply");
+        fs::copy(env!("CARGO_BIN_EXE_guest-storage-apply"), &binary)?;
+        fs::set_permissions(&binary, fs::Permissions::from_mode(0o755))?;
+        binary
+    } else {
+        env!("CARGO_BIN_EXE_guest-storage-apply").into()
+    };
+    fs::set_permissions(dir, fs::Permissions::from_mode(0o777))?;
+    for name in ["ready.tar.gz", "pending.tar.gz"] {
+        fs::set_permissions(dir.join(name), fs::Permissions::from_mode(0o644))?;
+    }
+    let mut command = Command::new(binary);
+    command
+        .arg("--manifest-stdin")
+        .current_dir(dir)
+        .env("OKOU_RUN_ID", "readiness-permission-test")
+        .env(runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV, runtime);
+    if root {
+        command.uid(65534);
+    }
+    Ok(command)
+}
+
 #[test]
-fn eligibility_checks_physical_aliases_without_applying_or_cleaning_inputs() {
+fn eligibility_leaves_inaccessible_reused_storage_to_ordinary_application() {
+    use guest_contracts::storage_manifest::StorageEntry;
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let runtime = dir.path().join("runtime");
+    let protected = dir.path().join("protected");
+    let kept = protected.join("kept");
+    fs::create_dir_all(&kept).unwrap();
+    fs::write(kept.join("sentinel"), b"preserved input").unwrap();
+    let (mut manifest, _) = manifest(dir.path()).unwrap();
+    manifest.storages.insert(
+        0,
+        StorageEntry {
+            mount_path: kept.display().to_string(),
+            archive_url: None,
+            cached: true,
+            vas_storage_name: Some("kept".into()),
+            vas_version_id: Some("v1".into()),
+        },
+    );
+    manifest.cleanup_paths = ["ready", "pending"]
+        .map(|name| dir.path().join(name).display().to_string())
+        .to_vec();
+    manifest.archive_readiness.as_mut().unwrap().check_only = true;
+    let mut command = unprivileged_command(dir.path(), &runtime).unwrap();
+    let restore = RestoreSearchPermission(protected.clone());
+    fs::set_permissions(&protected, fs::Permissions::from_mode(0o0)).unwrap();
+    let output =
+        CommandExecution::spawn(&mut command, Some(&serde_json::to_vec(&manifest).unwrap()))
+            .unwrap()
+            .wait()
+            .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(!serde_json::from_slice::<bool>(&output.stdout).unwrap());
+    assert!(!dir.path().join("ready/value").exists());
+    assert!(!runtime.join("archive-readiness").exists());
+
+    manifest.archive_readiness = None;
+    let output =
+        CommandExecution::spawn(&mut command, Some(&serde_json::to_vec(&manifest).unwrap()))
+            .unwrap()
+            .wait()
+            .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(fs::read(dir.path().join("ready/value")).unwrap(), b"ready");
+    assert_eq!(
+        fs::read(dir.path().join("pending/value")).unwrap(),
+        b"stale"
+    );
+    drop(restore);
+    assert_eq!(fs::read(kept.join("sentinel")).unwrap(), b"preserved input");
+}
+
+#[test]
+fn eligibility_requires_unaliased_inputs_without_applying_or_cleaning_them() {
     use std::os::unix::fs::symlink;
     let dir = tempfile::tempdir().unwrap();
     let runtime = dir.path().join("runtime");
@@ -71,6 +173,9 @@ fn eligibility_checks_physical_aliases_without_applying_or_cleaning_inputs() {
     manifest
         .cleanup_paths
         .push(dir.path().join("ready").display().to_string());
+    let output = spawn(&manifest, &runtime).unwrap().wait().unwrap();
+    assert!(output.status.success());
+    assert!(serde_json::from_slice::<bool>(&output.stdout).unwrap());
     for overlap in [false, true] {
         let alias = dir.path().join("alias");
         if alias.exists() {
@@ -87,10 +192,7 @@ fn eligibility_checks_physical_aliases_without_applying_or_cleaning_inputs() {
             "{}",
             String::from_utf8_lossy(&output.stderr)
         );
-        assert_eq!(
-            serde_json::from_slice::<bool>(&output.stdout).unwrap(),
-            !overlap
-        );
+        assert!(!serde_json::from_slice::<bool>(&output.stdout).unwrap());
         assert_eq!(
             fs::read(dir.path().join("ready/old")).unwrap(),
             b"retained input"
@@ -99,6 +201,23 @@ fn eligibility_checks_physical_aliases_without_applying_or_cleaning_inputs() {
         assert!(!dir.path().join("ready/value").exists());
         assert!(!runtime.join("archive-readiness").exists());
     }
+    // Disjoint aliases remain valid ordinary inputs; only overlap admission is
+    // conservative. Runtime-overlapping aliases above must stay non-mutating.
+    fs::remove_file(dir.path().join("alias")).unwrap();
+    symlink(dir.path(), dir.path().join("alias")).unwrap();
+    manifest.artifacts[0].mount_path = dir.path().join("alias/pending").display().to_string();
+    manifest.archive_readiness = None;
+    let output = spawn(&manifest, &runtime).unwrap().wait().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read(dir.path().join("pending/value")).unwrap(),
+        b"stale"
+    );
+    assert_eq!(fs::read(runtime.join("retained")).unwrap(), b"private");
 }
 
 #[test]
@@ -161,17 +280,9 @@ fn eligibility_keeps_cleanup_of_obstructing_instruction_ancestors_on_the_ordinar
 }
 
 #[test]
-fn eligibility_allows_planned_cleanup_of_unsearchable_aliases_but_preserves_other_io_errors() {
+fn ordinary_application_owns_cleanup_and_required_permission_failures() {
     use guest_contracts::storage_manifest::InstructionCleanupEntry;
-    use std::os::unix::fs::{MetadataExt, PermissionsExt, symlink};
-    use std::os::unix::process::CommandExt;
-
-    struct RestoreSearchPermission(std::path::PathBuf);
-    impl Drop for RestoreSearchPermission {
-        fn drop(&mut self) {
-            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o700));
-        }
-    }
+    use std::os::unix::fs::{PermissionsExt, symlink};
 
     for cleanup in ["instruction", "all-instructions", "stale-path"] {
         let dir = tempfile::tempdir().unwrap();
@@ -191,43 +302,25 @@ fn eligibility_allows_planned_cleanup_of_unsearchable_aliases_but_preserves_othe
         manifest.artifacts[0].mount_path = instructions.join("nested").display().to_string();
         manifest.archive_readiness.as_mut().unwrap().check_only = true;
 
-        // Root bypasses mode bits. Give an unprivileged child an accessible
-        // binary and fixture, so the CLI observes the same permission boundary.
-        let root = fs::metadata(dir.path()).unwrap().uid() == 0;
-        let binary = if root {
-            let binary = dir.path().join("guest-storage-apply");
-            fs::copy(env!("CARGO_BIN_EXE_guest-storage-apply"), &binary).unwrap();
-            fs::set_permissions(&binary, fs::Permissions::from_mode(0o755)).unwrap();
-            binary
-        } else {
-            env!("CARGO_BIN_EXE_guest-storage-apply").into()
-        };
-        for path in [dir.path(), &work] {
-            fs::set_permissions(path, fs::Permissions::from_mode(0o777)).unwrap();
-        }
-        for name in ["ready.tar.gz", "pending.tar.gz"] {
-            fs::set_permissions(dir.path().join(name), fs::Permissions::from_mode(0o644)).unwrap();
-        }
+        let mut command = unprivileged_command(dir.path(), &runtime).unwrap();
+        fs::set_permissions(&work, fs::Permissions::from_mode(0o777)).unwrap();
         let restore = RestoreSearchPermission(protected.clone());
         fs::set_permissions(&protected, fs::Permissions::from_mode(0o0)).unwrap();
-        let run = |manifest: &Manifest| {
-            let mut command = Command::new(&binary);
-            command
-                .arg("--manifest-stdin")
-                .current_dir(dir.path())
-                .env("OKOU_RUN_ID", "readiness-permission-test")
-                .env(runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV, &runtime);
-            if root {
-                command.uid(65534);
-            }
+        let mut run = |manifest: &Manifest| {
             CommandExecution::spawn(&mut command, Some(&serde_json::to_vec(manifest).unwrap()))
                 .unwrap()
                 .wait()
                 .unwrap()
         };
 
-        // Without a cleanup covering the alias, this is a required IO failure.
+        let output = run(&manifest);
+        assert!(output.status.success());
+        assert!(!serde_json::from_slice::<bool>(&output.stdout).unwrap());
+        // The query does not predict cleanup success or suppress a real apply
+        // failure. Without cleanup, the same active target still fails EACCES.
+        let descriptor = manifest.archive_readiness.take();
         assert_eq!(run(&manifest).status.code(), Some(1));
+        manifest.archive_readiness = descriptor;
         if cleanup == "stale-path" {
             manifest.cleanup_paths.push(work.display().to_string());
         } else {

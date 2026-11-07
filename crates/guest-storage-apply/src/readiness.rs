@@ -1,7 +1,6 @@
 //! One operation's publication gates; the existing runtime owns their cleanup.
 
 use crate::cleanup_directory::CleanupDirectory;
-use crate::instructions::InstructionFilename;
 use guest_contracts::runtime_paths;
 use guest_contracts::storage_manifest::Manifest;
 use guest_contracts::storage_paths::normalize_path;
@@ -39,82 +38,19 @@ fn overlaps(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 
-fn cleanup_can_unlink_ancestor(manifest: &Manifest, target: &Path) -> io::Result<bool> {
-    let cleanup_roots = manifest
-        .cleanup_paths
-        .iter()
-        .map(PathBuf::from)
-        .chain(manifest.instruction_cleanups.iter().flat_map(|entry| {
-            InstructionFilename::ALL
-                .into_iter()
-                .filter(move |name| {
-                    entry
-                        .target_filename
-                        .as_deref()
-                        .is_none_or(|target| target == name.as_str())
-                })
-                .map(move |name| Path::new(&entry.mount_path).join(name.as_str()))
-        }))
-        .map(|root| normalize_path(&root))
-        .filter(|root| root.is_absolute())
-        .collect::<Vec<_>>();
-    // Inspect shallow prefixes first, so an obsolete alias is identified
-    // without following its inaccessible, cyclic or otherwise invalid target.
-    for ancestor in target.ancestors().collect::<Vec<_>>().into_iter().rev() {
-        let logical = normalize_path(ancestor);
-        if !cleanup_roots.iter().any(|root| logical.starts_with(root)) {
-            continue;
-        }
-        match std::fs::symlink_metadata(ancestor) {
-            Ok(metadata) if !metadata.is_dir() => return Ok(true),
+// A sufficient namespace proof, not a prediction of cleanup or execution.
+// Inspect shallow prefixes without following aliases; an absent tail can be
+// created normally. File/symlink obstructions remain ordinary application's job.
+fn directory_path_is_unaliased(path: &Path) -> io::Result<bool> {
+    for prefix in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
+        match std::fs::symlink_metadata(prefix) {
+            Ok(metadata) if !metadata.is_dir() => return Ok(false),
             Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
             Err(error) => return Err(error),
         }
     }
-    Ok(false)
-}
-
-// Resolve missing leaves through their existing ancestor, retaining its physical
-// identity so an input alias cannot erase the private notification directory.
-fn physical_path(path: &Path) -> io::Result<Option<PathBuf>> {
-    let mut existing = path;
-    let mut missing = Vec::new();
-    loop {
-        match existing.canonicalize() {
-            Ok(mut resolved) => {
-                for name in missing.into_iter().rev() {
-                    resolved.push(name);
-                }
-                return Ok(Some(resolved));
-            }
-            // Instruction cleanup can remove a file or cyclic alias before
-            // preparing a nested mount. Its future physical identity cannot be
-            // established here; keep such layouts on the ordinary apply path.
-            Err(error)
-                if error.kind() == io::ErrorKind::NotADirectory
-                    || error.raw_os_error() == Some(libc::ELOOP) =>
-            {
-                return Ok(None);
-            }
-            Err(error) if error.kind() == io::ErrorKind::NotFound => {
-                if std::fs::symlink_metadata(existing)
-                    .is_ok_and(|metadata| metadata.file_type().is_symlink())
-                {
-                    return Ok(None);
-                }
-                missing.push(
-                    existing
-                        .file_name()
-                        .ok_or_else(|| invalid("invalid runtime ancestor"))?,
-                );
-                existing = existing
-                    .parent()
-                    .ok_or_else(|| invalid("missing runtime ancestor"))?;
-            }
-            Err(error) => return Err(error),
-        }
-    }
+    Ok(true)
 }
 
 impl Readiness {
@@ -138,7 +74,7 @@ impl Readiness {
         };
         descriptor.validate(manifest).map_err(invalid)?;
         if !Self::eligible(manifest, runtime)? {
-            return Err(invalid("pending archive runtime overlaps an input"));
+            return Err(invalid("pending archive layout is not eligible"));
         }
         let runtime = runtime.ok_or_else(|| invalid("missing private runtime"))?;
         let directory = descriptor.directory(runtime);
@@ -180,8 +116,13 @@ impl Readiness {
         let runtime = runtime
             .filter(|path| path.is_absolute() && normalize_path(path) == *path)
             .ok_or_else(|| invalid("pending archives require a private absolute runtime"))?;
-        let physical_runtime = physical_path(runtime)?
-            .ok_or_else(|| invalid("private runtime has an unresolved alias"))?;
+        // The private control namespace is required even when input overlap is
+        // ineligible. Its errors must not become an ordinary-application choice.
+        if !directory_path_is_unaliased(runtime)? {
+            return Err(invalid(
+                "private runtime has a non-directory or aliased prefix",
+            ));
+        }
         for target in manifest
             .storages
             .iter()
@@ -193,38 +134,25 @@ impl Readiness {
                     .map(|entry| PathBuf::from(&entry.mount_path)),
             )
             .chain(manifest.cleanup_paths.iter().map(PathBuf::from))
-            .chain(manifest.instruction_cleanups.iter().filter_map(|entry| {
-                entry
-                    .target_filename
-                    .as_ref()
-                    .map(|name| Path::new(&entry.mount_path).join(name))
-            }))
+            // Conservatively cover each cleanup directory without interpreting
+            // managed filenames, preservation, repair or deletion semantics.
+            .chain(
+                manifest
+                    .instruction_cleanups
+                    .iter()
+                    .map(|entry| PathBuf::from(&entry.mount_path)),
+            )
         {
             let logical_target = normalize_path(&target);
-            // Canonicalize the original path: collapsing symlink/.. first can
-            // hide its actual destination inside the private runtime.
-            if !logical_target.is_absolute() || overlaps(&logical_target, runtime) {
+            if !target.is_absolute() || logical_target != target || overlaps(&target, runtime) {
                 return Ok(false);
             }
-            let physical_target = match physical_path(&target) {
-                // Cleanup can unlink an alias without traversing its old
-                // destination. Do not require access to that destination just
-                // to decide whether the ordinary apply path should be used.
-                Err(error) => {
-                    if cleanup_can_unlink_ancestor(manifest, &target)? {
-                        return Ok(false);
-                    }
-                    return Err(error);
-                }
-                Ok(path) => path,
-            };
-            let Some(physical_target) = physical_target else {
-                // Ordinary application can replace a dangling alias. Do not
-                // activate readiness when its physical destination is unknown.
-                return Ok(false);
-            };
-            if overlaps(&physical_target, &physical_runtime) {
-                return Ok(false);
+            match directory_path_is_unaliased(&target) {
+                Ok(true) => {}
+                // Input access is not a prerequisite for an optimization:
+                // preserved entries may require no IO, and cleanup may replace
+                // old paths. Ordinary application alone owns required failures.
+                Ok(false) | Err(_) => return Ok(false),
             }
         }
         Ok(true)
