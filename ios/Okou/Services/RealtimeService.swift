@@ -20,11 +20,13 @@ final class RealtimeService {
   private let tokenProvider: @Sendable () async throws -> Data
   private let onChange: @MainActor (ChatInvalidation) -> Void
   private let onConnection: @MainActor (RealtimeConnectionStatus) -> Void
+  private let createRealtime: (ARTClientOptions) -> ARTRealtime
   private var isForeground = false
   private var realtime: ARTRealtime?
   private var generation = UUID()
   private var connectionAvailability = Availability.connecting
   private var channelAvailability: [String: Availability] = [:]
+  private var catchUpPending = false
 
   private enum Availability {
     case connecting, connected, unavailable, disconnected
@@ -38,13 +40,15 @@ final class RealtimeService {
     userID: String, workspaceID: String,
     tokenProvider: @escaping @Sendable () async throws -> Data,
     onChange: @escaping @MainActor (ChatInvalidation) -> Void,
-    onConnection: @escaping @MainActor (RealtimeConnectionStatus) -> Void
+    onConnection: @escaping @MainActor (RealtimeConnectionStatus) -> Void,
+    createRealtime: @escaping (ARTClientOptions) -> ARTRealtime = { ARTRealtime(options: $0) }
   ) {
     self.userID = userID
     self.workspaceID = workspaceID
     self.tokenProvider = tokenProvider
     self.onChange = onChange
     self.onConnection = onConnection
+    self.createRealtime = createRealtime
   }
 
   func start() {
@@ -69,7 +73,7 @@ final class RealtimeService {
         } catch { completion(nil, error) }
       }
     }
-    let realtime = ARTRealtime(options: options)
+    let realtime = createRealtime(options)
     self.realtime = realtime
     realtime.connection.on { [weak self] change in
       let state = change.current
@@ -82,11 +86,11 @@ final class RealtimeService {
         case .disconnected, .suspended, .failed: connectionAvailability = .unavailable
         @unknown default: connectionAvailability = .connecting
         }
-        reportAvailability()
         if state == .connected {
+          catchUpPending = true
           reconcilePresence()
-          onChange(.reconnected)
         }
+        reportAvailability()
       }
     }
     for name in channelNames {
@@ -109,8 +113,9 @@ final class RealtimeService {
             channelAvailability[name] = .unavailable
           @unknown default: channelAvailability[name] = .unavailable
           }
+          // This also covers SDK updates when an attached channel loses continuity.
+          if state == .attached { catchUpPending = true }
           reportAvailability()
-          if state == .attached { onChange(.reconnected) }
         }
       }
     }
@@ -133,6 +138,14 @@ final class RealtimeService {
       } else {
         onConnection(.connecting)
       }
+    }
+    let attached = channelNames.allSatisfy({ channelAvailability[$0] == .connected })
+    let unavailable = channelAvailability.values.contains(.unavailable)
+    // Healthy startup waits for both subscriptions. A failed channel must not
+    // indefinitely delay catch-up for the other channel; its restoration reads again.
+    if catchUpPending, connectionAvailability == .connected, attached || unavailable {
+      catchUpPending = false
+      onChange(.reconnected)
     }
   }
 
@@ -191,6 +204,7 @@ final class RealtimeService {
     isForeground = false
     reconcilePresence()
     generation = UUID()
+    catchUpPending = false
     realtime?.close()
     realtime = nil
   }
