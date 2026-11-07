@@ -1,0 +1,33 @@
+/* The first normal layer lets website fonts keep ownership of the cascade.
+   -webkit-body preserves the standard preference, which can differ from serif.
+   Keep every regional source reachable for mixed scripts; lang only reorders. */
+@layer okou-browser-default-fonts {
+  :where(:root) {
+    font-family:
+      -webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto SC",
+      "Okou Browser Noto TC", "Okou Browser Noto JP", "Okou Browser Noto KR";
+  }
+
+  :where(
+    :root:lang(zh-Hant),
+    :root:lang(zh-TW),
+    :root:lang(zh-HK),
+    :root:lang(zh-MO)
+  ) {
+    font-family:
+      -webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto TC",
+      "Okou Browser Noto SC", "Okou Browser Noto JP", "Okou Browser Noto KR";
+  }
+
+  :where(:root:lang(ja)) {
+    font-family:
+      -webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto JP",
+      "Okou Browser Noto SC", "Okou Browser Noto TC", "Okou Browser Noto KR";
+  }
+
+  :where(:root:lang(ko)) {
+    font-family:
+      -webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto KR",
+      "Okou Browser Noto SC", "Okou Browser Noto TC", "Okou Browser Noto JP";
+  }
+}

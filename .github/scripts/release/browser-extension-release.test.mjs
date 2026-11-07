@@ -116,17 +116,47 @@ async function fixture(t) {
   await mkdir(artifacts);
   await writeFile(
     resolve(directory, "manifest.json"),
-    JSON.stringify({ manifest_version: 3, name: "Okou Browser", version }),
+    JSON.stringify({
+      manifest_version: 3,
+      name: "Okou Browser",
+      version,
+      content_scripts: [
+        {
+          matches: ["https://*/*"],
+          css: ["noto-fonts.css", "page-fonts.css"],
+        },
+      ],
+    }),
   );
   await writeFile(
     resolve(directory, "background.js"),
     "globalThis.fixture = true;\n",
   );
+  await writeFile(
+    resolve(directory, "noto-fonts.css"),
+    "@font-face { font-family: 'Fixture Noto'; src: url(https://fonts.gstatic.com/fixture.woff2); }\n",
+  );
+  await writeFile(
+    resolve(directory, "page-fonts.css"),
+    ":root { color: inherit; }\n",
+  );
   const name = `browser-extension-${version}.zip`;
   const archive = resolve(artifacts, name);
-  execFileSync("zip", ["-q", "-j", archive, "manifest.json", "background.js"], {
-    cwd: directory,
-  });
+  execFileSync(
+    "zip",
+    [
+      "-q",
+      "-j",
+      archive,
+      "manifest.json",
+      "background.js",
+      "noto-fonts.css",
+      "page-fonts.css",
+    ],
+    {
+      cwd: directory,
+    },
+  );
   const bytes = await readFile(archive);
   const sha256 = createHash("sha256").update(bytes).digest("hex");
   await writeFile(`${archive}.sha256`, `${sha256}  ${name}\n`);
