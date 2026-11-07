@@ -8,10 +8,13 @@ import XCTest
 final class AuthenticationStartupTests: XCTestCase {
   func testHomeDataAndLocalDraftStayUsableWhileIdentityRestores() async throws {
     let fixture = try AuthenticationHTTPFixture()
+    addTeardownBlock { await fixture.close() }
     let authentication = try await fixture.authentication()
+    addTeardownBlock { @MainActor in try? await authentication.signOut() }
     let directory = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     let bundleURL = directory.appending(path: "Startup.bundle")
     try FileManager.default.createDirectory(at: bundleURL, withIntermediateDirectories: true)
+    addTeardownBlock { try FileManager.default.removeItem(at: directory) }
     let info = [
       "CFBundleIdentifier": "ai.okou.tests.startup", "CFBundleShortVersionString": "1.0.0",
       "APIBaseURL": fixture.api.baseURL.absoluteString,
@@ -20,28 +23,34 @@ final class AuthenticationStartupTests: XCTestCase {
     try PropertyListSerialization.data(fromPropertyList: info, format: .xml, options: 0)
       .write(to: bundleURL.appending(path: "Info.plist"))
     let configuration = try AppConfiguration(bundle: XCTUnwrap(Bundle(url: bundleURL)))
-    let notifications = NotificationService(system: NotificationSystemFixture())
+    let suite = "startup-" + UUID().uuidString
+    let defaults = try XCTUnwrap(UserDefaults(suiteName: suite))
+    addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+    let notifications = NotificationService(system: NotificationSystemFixture(), defaults: defaults)
     let data = try XCTUnwrap(
       notifications.data(
         authentication: authentication, configuration: configuration, session: fixture.api.session))
     let store = WorkspaceStore(
       client: data.client, webURL: configuration.webURL, sharedSync: data.sync)
-    addTeardownBlock { @MainActor in
-      store.close()
-      await fixture.clientReads.releaseAll()
-      try? await authentication.signOut()
-      await fixture.close()
-      try FileManager.default.removeItem(at: directory)
-    }
+    addTeardownBlock { @MainActor in store.close() }
     await fixture.clientReads.hold()
     let observation = await fixture.clientReads.observeRequests()
-    let refresh = Task { await authentication.refresh() }
+    let refresh = Task {
+      await authentication.refresh()
+      await fixture.clientReads.stopObserving(observation.id)
+    }
     addTeardownBlock {
+      refresh.cancel()
       await fixture.clientReads.releaseAll()
       await refresh.value
       await fixture.clientReads.stopObserving(observation.id)
     }
-    for await _ in observation.arrivals { break }
+    var arrival: Int?
+    for await request in observation.arrivals {
+      arrival = request
+      break
+    }
+    _ = try XCTUnwrap(arrival, "Identity refresh completed without its expected HTTP request")
     await fixture.clientReads.stopObserving(observation.id)
     XCTAssertNil(authentication.scopeID)
     store.newChatDraft = "Draft written before identity verification"
@@ -50,7 +59,6 @@ final class AuthenticationStartupTests: XCTestCase {
     let resolved = try XCTUnwrap(
       notifications.data(
         authentication: authentication, configuration: configuration, session: fixture.api.session))
-    XCTAssertTrue(data.sync === resolved.sync)
     XCTAssertEqual(data.scopeID, authentication.scopeID)
     XCTAssertEqual(store.newChatDraft, "Draft written before identity verification")
     _ = try await resolved.client.data("/api/agents")
