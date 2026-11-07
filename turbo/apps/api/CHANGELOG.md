@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.53.1](https://github.com/okou-ai/okou/compare/api-v2.53.0...api-v2.53.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **browser:** prepare snapshot readers for complete tab lists ([#45867](https://github.com/okou-ai/okou/issues/45867)) ([22e6913](https://github.com/okou-ai/okou/commit/22e69133c44bd4449119c4c6ebdc9eee825fffcf))
+
 ## [2.53.0](https://github.com/okou-ai/okou/compare/api-v2.52.6...api-v2.53.0) (2026-11-07)
 
 
