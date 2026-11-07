@@ -1,6 +1,7 @@
 """Number and literal contracts for bounded selective JSON extraction."""
 
 import json
+from collections.abc import Iterable
 from itertools import pairwise
 from typing import Literal, Never
 
@@ -132,11 +133,11 @@ def _number_chunks(
     number_length: int,
     number_splits: tuple[int, ...],
     feed_mode: _NumberFeedMode,
-) -> tuple[bytes, ...]:
+) -> Iterable[bytes]:
     if feed_mode == "whole":
         return (payload,)
     if feed_mode == "bytewise":
-        return tuple(payload[index : index + 1] for index in range(len(payload)))
+        return (payload[index : index + 1] for index in range(len(payload)))
 
     number_end = number_start + number_length
     boundaries = sorted(
@@ -148,7 +149,7 @@ def _number_chunks(
             len(payload),
         }
     )
-    return tuple(payload[start:end] for start, end in pairwise(boundaries) if start != end)
+    return (payload[start:end] for start, end in pairwise(boundaries) if start != end)
 
 
 def _assert_no_observations(result: JsonExtractionResult) -> None:

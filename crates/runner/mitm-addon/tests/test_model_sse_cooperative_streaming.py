@@ -78,7 +78,7 @@ async def test_partitions_preserve_final_usage_and_trailing_event(
     chunks = (
         [wire]
         if chunk_size is None
-        else [wire[offset : offset + chunk_size] for offset in range(0, len(wire), chunk_size)]
+        else (wire[offset : offset + chunk_size] for offset in range(0, len(wire), chunk_size))
     )
     mitm_addon.responseheaders(flow)
     forwarded = bytearray()
