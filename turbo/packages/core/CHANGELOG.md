@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.823.0](https://github.com/okou-ai/okou/compare/core-v8.822.4...core-v8.823.0) (2026-11-07)
+
+
+### Features
+
+* **platform:** add staff capability homepage and empty chat discovery ([#45863](https://github.com/okou-ai/okou/issues/45863)) ([b3bf2d5](https://github.com/okou-ai/okou/commit/b3bf2d520fe7f2aa2ada7162ed4be57f68b21ea6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.5
+
 ## [8.822.4](https://github.com/okou-ai/okou/compare/core-v8.822.3...core-v8.822.4) (2026-11-07)
 
 
