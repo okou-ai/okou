@@ -176,17 +176,23 @@ function release(args: {
   };
 }
 
-function bundledSkill() {
+function bundledSkill(layout: "legacy" | "contracted") {
   const versionId = createHash("sha256").update(randomUUID()).digest("hex");
-  const storageName = "connector-skill@catalog-service";
-  return {
+  const skill = {
     kind: "bundled" as const,
     versionId,
-    storageName,
-    storageVersionPrefix: `__system__/volume/${storageName}/${versionId}`,
     size: 32,
     archiveSize: 128,
     fileCount: 1,
+  };
+  if (layout === "contracted") {
+    return skill;
+  }
+  const storageName = "connector-skill@catalog-service";
+  return {
+    ...skill,
+    storageName,
+    storageVersionPrefix: `__system__/volume/${storageName}/${versionId}`,
   };
 }
 
@@ -278,62 +284,71 @@ beforeEach(() => {
 });
 
 describe("connector catalog v4 preparation", () => {
-  it("keeps the serving catalog until every Skill has a preparation receipt", async () => {
-    const client = (
-      await setupApp({
-        context,
-        routes: cronConnectorCatalogRoutes,
-        isolatePg: true,
-      })
-    )(cronConnectorCatalogContract);
-    const skill = bundledSkill();
-    const candidate = release({ skill });
-    const serving = (await publicCatalog()).body;
-    serveObjects(candidate.objects);
-    expect((await sync(client)).body).toStrictEqual({
-      outcome: "rejected",
-      failureCode: "invalid-reference",
-    });
-    expect((await publicCatalog()).body).toStrictEqual(serving);
-    const receipt = preparationReceipt(candidate.pointer.catalogDigest, skill);
-    candidate.objects.set(receipt.key, receipt.bytes);
-    serveObjects(candidate.objects);
-    expect((await sync(client)).body.outcome).toBe("accepted");
-    expect((await sync(client)).body.outcome).toBe("unchanged");
-    // Completed metadata preparation no longer depends on re-reading the
-    // receipt; the serving catalog and its captured source remain available.
-    serveObjects(
-      new Map([["connectors/v4/active.json", bytes(candidate.pointer)]]),
-    );
-    expect((await sync(client)).body.outcome).toBe("unchanged");
-    const listed = await publicCatalog();
-    expect(JSON.stringify(listed.body)).toContain("catalog-service");
-  });
+  it.each(["legacy", "contracted"] as const)(
+    "keeps the serving catalog until every %s Skill has a preparation receipt",
+    async (layout) => {
+      const client = (
+        await setupApp({
+          context,
+          routes: cronConnectorCatalogRoutes,
+          isolatePg: true,
+        })
+      )(cronConnectorCatalogContract);
+      const skill = bundledSkill(layout);
+      const candidate = release({ skill });
+      const serving = (await publicCatalog()).body;
+      serveObjects(candidate.objects);
+      expect((await sync(client)).body).toStrictEqual({
+        outcome: "rejected",
+        failureCode: "invalid-reference",
+      });
+      expect((await publicCatalog()).body).toStrictEqual(serving);
+      const receipt = preparationReceipt(
+        candidate.pointer.catalogDigest,
+        skill,
+      );
+      candidate.objects.set(receipt.key, receipt.bytes);
+      serveObjects(candidate.objects);
+      expect((await sync(client)).body.outcome).toBe("accepted");
+      expect((await sync(client)).body.outcome).toBe("unchanged");
+      // Completed metadata preparation no longer depends on re-reading the
+      // receipt; the serving catalog and its captured source remain available.
+      serveObjects(
+        new Map([["connectors/v4/active.json", bytes(candidate.pointer)]]),
+      );
+      expect((await sync(client)).body.outcome).toBe("unchanged");
+      const listed = await publicCatalog();
+      expect(JSON.stringify(listed.body)).toContain("catalog-service");
+    },
+  );
 
-  it("retains the serving catalog when a receipt binds a candidate to a different source version", async () => {
-    const client = (
-      await setupApp({
-        context,
-        routes: cronConnectorCatalogRoutes,
-        isolatePg: true,
-      })
-    )(cronConnectorCatalogContract);
-    const serving = (await publicCatalog()).body;
-    const skill = bundledSkill();
-    const candidate = release({ skill, label: "Rejected Skill bundle" });
-    const receipt = preparationReceipt(
-      candidate.pointer.catalogDigest,
-      skill,
-      "e".repeat(64),
-    );
-    candidate.objects.set(receipt.key, receipt.bytes);
-    serveObjects(candidate.objects);
-    expect((await sync(client)).body).toStrictEqual({
-      outcome: "rejected",
-      failureCode: "invalid-reference",
-    });
-    expect((await publicCatalog()).body).toStrictEqual(serving);
-  });
+  it.each(["legacy", "contracted"] as const)(
+    "retains the serving catalog when a receipt binds a %s candidate to a different source version",
+    async (layout) => {
+      const client = (
+        await setupApp({
+          context,
+          routes: cronConnectorCatalogRoutes,
+          isolatePg: true,
+        })
+      )(cronConnectorCatalogContract);
+      const serving = (await publicCatalog()).body;
+      const skill = bundledSkill(layout);
+      const candidate = release({ skill, label: "Rejected Skill bundle" });
+      const receipt = preparationReceipt(
+        candidate.pointer.catalogDigest,
+        skill,
+        "e".repeat(64),
+      );
+      candidate.objects.set(receipt.key, receipt.bytes);
+      serveObjects(candidate.objects);
+      expect((await sync(client)).body).toStrictEqual({
+        outcome: "rejected",
+        failureCode: "invalid-reference",
+      });
+      expect((await publicCatalog()).body).toStrictEqual(serving);
+    },
+  );
   it("keeps serving the catalog when its source is unavailable", async () => {
     const serving = (await publicCatalog()).body;
     serveObjects(new Map());
