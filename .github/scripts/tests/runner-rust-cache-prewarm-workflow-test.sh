@@ -14,8 +14,10 @@ fail() {
 
 command -v yq >/dev/null || fail "yq is required"
 yq -o=json '.' "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml" > "${TEST_ROOT}/architecture.json"
+yq -o=json '.' "${REPO_ROOT}/.github/workflows/release-please.yml" > "${TEST_ROOT}/release.json"
 yq -o=json '.' "$WORKFLOW" | jq --slurpfile architecture "${TEST_ROOT}/architecture.json" \
-  '. + {architecture: $architecture[0]}' > "${TEST_ROOT}/workflow.json"
+  --slurpfile release "${TEST_ROOT}/release.json" \
+  '. + {architecture: $architecture[0], release: $release[0]}' > "${TEST_ROOT}/workflow.json"
 
 # Producer and consumers must derive compatible keys, without relaxing any
 # required compiler gate or making an image/deployment wait for cache warming.
@@ -23,6 +25,8 @@ jq -e '
   .architecture.jobs.compile as $compile |
   .jobs["prewarm-rust-cache"] as $warm |
   ($compile.steps | map(select((.uses // "") | startswith("Swatinem/rust-cache@"))) | .[0]) as $cache |
+  (.release.jobs["build-runner-release-assets"].steps |
+    map(select((.uses // "") | startswith("Swatinem/rust-cache@"))) | .[0]) as $release_cache |
   ($warm.steps | map(select(.id == "cache-lookup")) | .[0]) as $lookup |
   ($warm.steps | map(select(.id == "cache-restore")) | .[0]) as $restore |
   $warm.needs == ["prepare"] and
@@ -37,6 +41,10 @@ jq -e '
   $warm.strategy.matrix.include == "${{ fromJSON(needs.prepare.outputs.runner-binary-hit-matrix) }}" and
   ($compile | has("continue-on-error") | not) and
   $cache.with["save-if"] == "${{ github.ref == '\''refs/heads/main'\'' }}" and
+  $cache.uses == $release_cache.uses and
+  $cache.with.workspaces == $release_cache.with.workspaces and
+  ($cache.with["shared-key"] | split("${{ matrix.cacheSuffix }}") | join("__architecture__")) ==
+    ($release_cache.with["shared-key"] | split("${{ steps.target-metadata.outputs.cache_suffix }}") | join("__architecture__")) and
   $lookup.uses == $cache.uses and
   $restore.uses == $cache.uses and
   $lookup.with.workspaces == $cache.with.workspaces and

@@ -166,13 +166,13 @@ Dir.mktmpdir("runner-index-") do |fixture|
   make_producer = lambda do |run, target, bytes = "fresh #{target}\n"|
     cwd = "#{fixture}/producer-#{run}-#{target}"
     FileUtils.mkdir_p(["#{cwd}/.github/scripts/runner/runner-binary-build", "#{cwd}/crates/runner",
-      "#{cwd}/crates/target/#{target}/ci", "#{cwd}/runner-binary-fresh"])
+      "#{cwd}/crates/target/#{target}/release", "#{cwd}/runner-binary-fresh"])
     %w[runner-binary-cache.sh runner-binary-github.sh runner-binary-transport.sh runner-binary-download.sh runner-binary-r2.sh runner-image-target.sh runner-guest-binaries.sh].each do |name|
       FileUtils.cp("#{root}/.github/scripts/runner/#{name}", "#{cwd}/.github/scripts/runner/#{name}")
     end
     FileUtils.cp("#{root}/.github/scripts/runner/runner-binary-build/contract.env", "#{cwd}/.github/scripts/runner/runner-binary-build/contract.env")
     FileUtils.cp("#{root}/crates/runner/guest-binaries.json", "#{cwd}/crates/runner/guest-binaries.json")
-    File.write("#{cwd}/crates/target/#{target}/ci/runner", bytes)
+    File.write("#{cwd}/crates/target/#{target}/release/runner", bytes)
     metadata = {schemaVersion: 1, target: target, binaryInputDigest: digests.fetch(target), toolchainImage: toolchain,
       guestSha256: guest_hashes, runnerSha256: Digest::SHA256.hexdigest(bytes), runnerSizeBytes: bytes.bytesize}
     File.write("#{cwd}/runner-binary-fresh/metadata.json", JSON.generate(metadata))
@@ -181,7 +181,8 @@ Dir.mktmpdir("runner-index-") do |fixture|
     File.write("#{run_dir}/run.json", JSON.generate({id: run, status: "in_progress", run_attempt: 1,
       head_sha: "b" * 40, head_branch: "main", event: "push", path: ".github/workflows/runner-image.yml",
       repository: {full_name: "okou-ai/okou"}, pull_requests: []}))
-    {run: run, target: target, cwd: cwd, outputs: {"build" => {"binary-input-digest" => digests.fetch(target)}}}
+    {run: run, target: target, cwd: cwd, outputs: {"build" => {"binary-input-digest" => digests.fetch(target),
+      "runner-path" => "#{cwd}/crates/target/#{target}/release/runner"}}}
   end
   execute = lambda do |producer, selected, extra = {}|
     context = {"github.repository" => "okou-ai/okou", "github.run_id" => producer.fetch(:run).to_s,

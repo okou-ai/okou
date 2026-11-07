@@ -393,7 +393,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: crates -> target
-          shared-key: ${{ matrix.cacheSuffix }}-ci
+          shared-key: ${{ matrix.cacheSuffix }}-release
           lookup-only: true
           # A lookup miss must never save an empty dependency cache.
           save-if: false
@@ -404,7 +404,7 @@ jobs:
         uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2
         with:
           workspaces: crates -> target
-          shared-key: ${{ matrix.cacheSuffix }}-ci
+          shared-key: ${{ matrix.cacheSuffix }}-release
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Download private CLI build input

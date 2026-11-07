@@ -532,7 +532,7 @@ Both HTTP clients in the workspace use `rustls-platform-verifier` to read from t
 cargo build
 cargo build --release
 
-# Cross-compile with the faster CI/dev profile.
+# Cross-compile with the shared production, CI and development release profile.
 # Supported targets:
 #   aarch64-unknown-linux-musl
 #   x86_64-unknown-linux-musl
@@ -540,8 +540,8 @@ TARGET_TRIPLE=aarch64-unknown-linux-musl
 
 # Step 1: build guest binaries
 cargo build --target "$TARGET_TRIPLE" \
-  -p guest-agent -p guest-storage-apply -p guest-init -p claude-mock -p codex-mock -p guest-state-restore -p guest-tool-exec -p guest-write-file -p guest-home-mount -p runner-rpc-client \
-  --profile ci
+  -p guest-agent -p guest-storage-apply -p guest-init -p claude-mock -p codex-mock -p guest-state-restore -p guest-tool-exec -p guest-task-exec -p guest-write-file -p guest-home-mount -p runner-rpc-client \
+  --release
 
 # Step 2: build runner with embedded Guest binaries and the CLI tarball.
 # Build package.tgz + manifest.json from this same checkout first (see the Runner Image workflow).
@@ -549,17 +549,18 @@ cargo build --target "$TARGET_TRIPLE" \
 # Paths below are relative to crates/; set every Guest, CLI and manifest path or omit all.
 GUEST_CLI_PATH="../runner-cli-intermediate/package.tgz" \
 GUEST_CLI_MANIFEST_PATH="../runner-cli-intermediate/manifest.json" \
-GUEST_AGENT_PATH="target/$TARGET_TRIPLE/ci/guest-agent" \
-GUEST_STORAGE_APPLY_PATH="target/$TARGET_TRIPLE/ci/guest-storage-apply" \
-GUEST_INIT_PATH="target/$TARGET_TRIPLE/ci/guest-init" \
-CLAUDE_MOCK_PATH="target/$TARGET_TRIPLE/ci/claude-mock" \
-CODEX_MOCK_PATH="target/$TARGET_TRIPLE/ci/codex-mock" \
-GUEST_STATE_RESTORE_PATH="target/$TARGET_TRIPLE/ci/guest-state-restore" \
-GUEST_TOOL_EXEC_PATH="target/$TARGET_TRIPLE/ci/guest-tool-exec" \
-GUEST_WRITE_FILE_PATH="target/$TARGET_TRIPLE/ci/guest-write-file" \
-GUEST_HOME_MOUNT_PATH="target/$TARGET_TRIPLE/ci/guest-home-mount" \
-RUNNER_RPC_CLIENT_PATH="target/$TARGET_TRIPLE/ci/runner-rpc-client" \
-cargo build --target "$TARGET_TRIPLE" -p runner --profile ci
+GUEST_AGENT_PATH="target/$TARGET_TRIPLE/release/guest-agent" \
+GUEST_STORAGE_APPLY_PATH="target/$TARGET_TRIPLE/release/guest-storage-apply" \
+GUEST_INIT_PATH="target/$TARGET_TRIPLE/release/guest-init" \
+CLAUDE_MOCK_PATH="target/$TARGET_TRIPLE/release/claude-mock" \
+CODEX_MOCK_PATH="target/$TARGET_TRIPLE/release/codex-mock" \
+GUEST_STATE_RESTORE_PATH="target/$TARGET_TRIPLE/release/guest-state-restore" \
+GUEST_TOOL_EXEC_PATH="target/$TARGET_TRIPLE/release/guest-tool-exec" \
+GUEST_TASK_EXEC_PATH="target/$TARGET_TRIPLE/release/guest-task-exec" \
+GUEST_WRITE_FILE_PATH="target/$TARGET_TRIPLE/release/guest-write-file" \
+GUEST_HOME_MOUNT_PATH="target/$TARGET_TRIPLE/release/guest-home-mount" \
+RUNNER_RPC_CLIENT_PATH="target/$TARGET_TRIPLE/release/runner-rpc-client" \
+cargo build --target "$TARGET_TRIPLE" -p runner --release
 ```
 
 ## Testing

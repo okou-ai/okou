@@ -295,14 +295,23 @@ fails when its R2 configuration is missing instead of silently falling back.
 
 ### Production release compilation
 
-Production `--release` builds and CI/native acceptance `--profile ci` builds
-share the optimization settings owned by `profile.release` in `crates/Cargo.toml`:
-Cargo `lto=false` (retaining thin local LTO), four codegen units and stripping.
-The `ci` profile inherits without overrides. This applies to all workspace
-release builds, including Guests and release-profile native checks. The existing
-profile-specific output directories and cache identities remain separate;
-matching settings do not imply identical built artifacts. Manifest changes
-naturally invalidate canonical binary-input keys for both targets.
+Production releases, CI images, native acceptance and development deployments
+use Cargo's `release` profile, with settings owned by `profile.release` in
+`crates/Cargo.toml`: `lto=false` (retaining thin local LTO), four codegen units
+and stripping. Guest and Runner compiler outputs use `target/<triple>/release`.
+This applies to all workspace release builds. Runtime Runner profiles such as
+`vm0/default` remain independent of the Cargo build profile.
+
+Image compilation and dependency-cache prewarming use the same architecture
+`-release` GitHub Rust-cache key as production compilation. Native test caches
+retain their target and workload identity with a `-release` suffix. Main-only
+writers, lookup/restore behavior and retention remain enforced. A renamed key
+can initially miss; existing immutable entries follow normal retention.
+
+Sharing a Cargo profile does not make independently built release, image and
+test artifacts interchangeable. Their source and embedded-input identities
+still apply. Manifest and compiler-contract changes naturally invalidate
+canonical binary-input keys for both targets.
 
 `build-runner-release-assets` uses the same shared action before its existing
 release rust-cache. The release matrix resolves its Rust target through
@@ -347,9 +356,9 @@ The planner partitions the configured targets into hit and compile matrices,
 so a target already requiring main compilation is not also prewarmed.
 
 The producer uses the same pinned Rust Cache action, toolchain container,
-sccache/compiler environment, `crates/target` directory, canonical `ci` build,
-and `aarch64-musl-ci` or `x86_64-musl-ci` shared key as consumers. It first checks
-the exact key with `lookup-only` and saving disabled. An exact hit skips cache
+sccache/compiler environment, `crates/target` directory, canonical `release` build,
+and `aarch64-musl-release` or `x86_64-musl-release` shared key as consumers. It
+first checks the exact key with `lookup-only` and saving disabled. An exact hit skips cache
 restore, CLI-input download, and compilation. Otherwise it restores compatible
 dependency artifacts and builds only if restore does not report an exact hit;
 an exact hit appearing between lookup and restore also skips the build. The
@@ -435,9 +444,9 @@ validates all configured architecture manifests before starting the runner.
 Native host CPU placement and guest RPC tests compile after `runner-host-groups`
 resolves the architecture inventory, in parallel with `runner-test-prepare`
 waiting for its selected image. The `host-cpu-fairness-build` and
-`guest-rpc-firecracker-build` jobs both use the optimized `ci` profile and
-separate target-specific Cargo cache keys. The host CPU producer uses an 8-core
-builder and the shared R2 compiler cache, with its cache architecture derived from
+`guest-rpc-firecracker-build` jobs both use the `release` profile and separate
+target/workload-specific Cargo cache keys ending in `-release`. The host CPU
+producer uses an 8-core builder and the shared R2 compiler cache, with its cache architecture derived from
 the selected target. Compilation does not use a metal host, rootfs, or snapshot.
 
 The host CPU artifact compiles for the selected target and executes with the host

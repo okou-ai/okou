@@ -212,10 +212,6 @@ lto = false
 strip = true
 codegen-units = 4
 
-# Keep the CI output directory while inheriting the production optimization policy.
-[profile.ci]
-inherits = "release"
-
 [workspace.lints.rust]
 warnings = "deny"
 

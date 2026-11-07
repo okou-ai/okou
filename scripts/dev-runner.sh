@@ -118,19 +118,19 @@ cmd_deploy() {
   local index
   for index in "${!RUNNER_GUEST_PACKAGES[@]}"; do
     guest_cargo_args+=("-p" "${RUNNER_GUEST_PACKAGES[$index]}")
-    guest_env+=("${RUNNER_GUEST_PATH_ENVS[$index]}=target/$TARGET/ci/${RUNNER_GUEST_BINARIES[$index]}")
+    guest_env+=("${RUNNER_GUEST_PATH_ENVS[$index]}=target/$TARGET/release/${RUNNER_GUEST_BINARIES[$index]}")
   done
 
   # Build guests
   log "Building guest binaries..."
   cd "$CRATES_DIR"
-  cargo build --profile ci --target "$TARGET" "${guest_cargo_args[@]}"
+  cargo build --release --target "$TARGET" "${guest_cargo_args[@]}"
 
   # Build runner
   log "Building runner with embedded guests..."
-  env "${guest_env[@]}" cargo build --profile ci --target "$TARGET" -p runner
+  env "${guest_env[@]}" cargo build --release --target "$TARGET" -p runner
 
-  BINARY="$CRATES_DIR/target/$TARGET/ci/runner"
+  BINARY="$CRATES_DIR/target/$TARGET/release/runner"
   log "Binary: $BINARY ($(du -h "$BINARY" | cut -f1))"
 
   # Stop old service before uploading (avoids "Text file busy").

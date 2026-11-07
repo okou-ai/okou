@@ -13,23 +13,6 @@ fail() {
 command -v yq >/dev/null || fail "yq is required"
 release_json=$(yq -o=json '.' "$RELEASE_WORKFLOW")
 
-# Native CI acceptance and production must consume the same profile settings.
-python3 - "${REPO_ROOT}/crates/Cargo.toml" <<'PY'
-import sys
-import tomllib
-
-with open(sys.argv[1], "rb") as manifest:
-    profiles = tomllib.load(manifest)["profile"]
-
-release = profiles["release"]
-ci = profiles["ci"]
-if ci.get("inherits") != "release":
-    sys.exit("CI must inherit the production release profile")
-effective_ci = release | {key: value for key, value in ci.items() if key != "inherits"}
-if effective_ci != release:
-    sys.exit("CI and production release profile settings must match")
-PY
-
 jq -e '
   .jobs["build-runner-release-assets"] as $job |
   ($job | has("environment") | not) and
