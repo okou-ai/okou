@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.20.2...runner-executor-v0.20.3) (2026-11-07)
+
+
+### Performance Improvements
+
+* **runner:** overlap ready storage with cold archive delivery ([#45841](https://github.com/okou-ai/okou/issues/45841)) ([109d67a](https://github.com/okou-ai/okou/commit/109d67a03b63a3e53938af322ae13a7dd6507a52))
+
 ## [0.20.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.20.1...runner-executor-v0.20.2) (2026-11-07)
 
 ## [0.20.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.20.0...runner-executor-v0.20.1) (2026-11-07)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.31.0...guest-contracts-v0.31.1) (2026-11-07)
+
+
+### Performance Improvements
+
+* **runner:** overlap ready storage with cold archive delivery ([#45841](https://github.com/okou-ai/okou/issues/45841)) ([109d67a](https://github.com/okou-ai/okou/commit/109d67a03b63a3e53938af322ae13a7dd6507a52))
+
 ## [0.31.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.4...guest-contracts-v0.31.0) (2026-11-07)
 
 

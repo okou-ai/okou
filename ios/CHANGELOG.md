@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.28.7](https://github.com/okou-ai/okou/compare/ios-v0.28.6...ios-v0.28.7) (2026-11-07)
+
+
+### Performance Improvements
+
+* **ios:** load chats alongside model catch-up ([#45884](https://github.com/okou-ai/okou/issues/45884)) ([27e1434](https://github.com/okou-ai/okou/commit/27e1434d236f5c34ba3cf66abd5058587433807b))
+* **ios:** show home before background workspace loads finish ([#45885](https://github.com/okou-ai/okou/issues/45885)) ([56815e0](https://github.com/okou-ai/okou/commit/56815e0e40db0efbab54d8aa01a5a61ab89f9f8e))
+
 ## [0.28.6](https://github.com/okou-ai/okou/compare/ios-v0.28.5...ios-v0.28.6) (2026-11-07)
 
 
