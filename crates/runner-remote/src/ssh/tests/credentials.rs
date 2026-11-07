@@ -1,3 +1,5 @@
+mod openssh;
+
 use base64::Engine;
 use russh::keys::{Algorithm, EcdsaCurve, ssh_key};
 use serde_json::json;
@@ -30,7 +32,7 @@ async fn supported_key_algorithms_and_containers_authenticate_with_real_signatur
         },
         Algorithm::Rsa { hash: None },
     ] {
-        let key = key(algorithm.clone());
+        let (key, encrypted_openssh) = openssh::key_pair(&algorithm);
         let mut h = Harness::with_keys(Reply::default(), key.clone(), key.clone()).await;
         let mut encodings = vec![
             (
@@ -57,11 +59,7 @@ async fn supported_key_algorithms_and_containers_authenticate_with_real_signatur
             ),
             (
                 "encrypted OpenSSH",
-                key.encrypt(&mut russh::keys::key::safe_rng(), " test passphrase ")
-                    .unwrap()
-                    .to_openssh(ssh_key::LineEnding::LF)
-                    .unwrap()
-                    .to_string(),
+                encrypted_openssh,
                 Some(" test passphrase "),
             ),
         ];
