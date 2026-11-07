@@ -13,6 +13,7 @@ import claim_loss_report_test as c7_test
 import claim_producer_report as producer
 import cleanup_report as cleanup
 import report
+import report_test
 
 
 class ClaimProducerReportTests(unittest.TestCase):
@@ -105,10 +106,9 @@ class ClaimProducerReportTests(unittest.TestCase):
             self.samples.append(reading)
 
     def write(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(v) for v in self.samples))
-        (self.root/"stdout.log").write_text("\n".join([report.PREFIX+json.dumps(v) for v in self.events]
-            + [producer.PREFIX+json.dumps(v) for v in self.witnesses])+"\ntest result: FAILED\n")
+        report_test.write_report_fixture(self.root, self.collector, self.samples,
+            [(report.PREFIX, self.events), (producer.PREFIX, self.witnesses)],
+            stdout_suffix="\ntest result: FAILED\n")
         (self.root/"stderr.log").write_text("Error: ProducerLost\n")
 
     def validate(self):

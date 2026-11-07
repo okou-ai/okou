@@ -66,11 +66,8 @@ class ContinuationReportTests(unittest.TestCase):
                                       "backing_generation":events[1]["backing_generation"],"evidence":proof})
 
     def write(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"stdout.log").write_text("\n".join(
-            [report.PREFIX+json.dumps(e) for e in self.events]
-            + [continuation.PREFIX+json.dumps(e) for e in self.witnesses]))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(s) for s in self.samples))
+        report_test.write_report_fixture(self.root, self.collector, self.samples,
+            [(report.PREFIX, self.events), (continuation.PREFIX, self.witnesses)])
 
     def validate(self):
         self.write()

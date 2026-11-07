@@ -13,6 +13,7 @@ import uuid
 import fixed_restore_report_test as original
 import quiesce_report as quiesce
 import report
+import report_test
 
 
 def frame(kind, payload=b"", sequence=2):
@@ -60,14 +61,13 @@ class QuiesceReportTests(unittest.TestCase):
                                   connection_retained_pending=not unwind)
 
     def write(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(value) for value in self.samples))
-        lines = [report.PREFIX+json.dumps(self.events[0]),
-                 "NATIVE_CONTINUATION_WITNESS "+json.dumps(self.continuation)]
-        lines += [quiesce.PREFIX+json.dumps(value) for value in self.witnesses[:2]]
-        lines += [report.PREFIX+json.dumps(self.events[1])]
-        lines += [quiesce.PREFIX+json.dumps(value) for value in self.witnesses[2:]]
-        (self.root/"stdout.log").write_text("\n".join(lines)+"\ntest result: FAILED\n")
+        report_test.write_report_fixture(self.root, self.collector, self.samples, [
+            (report.PREFIX, [self.events[0]]),
+            ("NATIVE_CONTINUATION_WITNESS ", [self.continuation]),
+            (quiesce.PREFIX, self.witnesses[:2]),
+            (report.PREFIX, [self.events[1]]),
+            (quiesce.PREFIX, self.witnesses[2:]),
+        ], stdout_suffix="\ntest result: FAILED\n")
         (self.root/"stderr.log").write_text("Error: QuiesceUncertain\n")
 
     def validate(self):

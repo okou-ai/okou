@@ -13,6 +13,7 @@ import uuid
 import batch_aba_report as aba
 import cleanup_report as cleanup
 import report
+import report_test
 import status_failure_report_test as failure_test
 
 
@@ -97,10 +98,8 @@ class BatchAbaReportTests(unittest.TestCase):
         return next(e for e in self.witnesses if e["phase"] == phase)
 
     def write(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(s) for s in self.samples))
-        (self.root/"stdout.log").write_text("\n".join([report.PREFIX+json.dumps(e) for e in self.events]
-            + [aba.PREFIX+json.dumps(e) for e in self.witnesses]))
+        report_test.write_report_fixture(self.root, self.collector, self.samples,
+            [(report.PREFIX, self.events), (aba.PREFIX, self.witnesses)])
 
     def validate(self):
         self.write()
