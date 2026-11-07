@@ -1593,6 +1593,13 @@ function normalSendPublicAssetWrite(
 
 type NormalInputPlan = ReturnType<typeof normalSendInputPlan>;
 type NormalInputAsset = NormalInputPlan["attachments"][number];
+const NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE = 1000;
+type NormalInputAssetOwnerRead =
+  | {
+      readonly ok: true;
+      readonly value: typeof runUploadedFiles.$inferSelect | undefined;
+    }
+  | { readonly ok: false; readonly error: unknown };
 interface NormalInputAssetSnapshot {
   readonly index: number;
   readonly asset: NormalInputAsset;
@@ -1962,19 +1969,62 @@ const appendNormalSendInput$ = command(
           : null
         : [input.replacementTarget];
     signal.throwIfAborted();
+    // Match PostgreSQL's UUID spelling without changing the input references.
+    const privateIds = [
+      ...new Set(
+        input.attachments.flatMap((asset) => {
+          return asset.plan ? [] : [asset.owner.file.id.toLowerCase()];
+        }),
+      ),
+    ];
+    const owners = new Map<string, NormalInputAssetOwnerRead>();
+    for (
+      let offset = 0;
+      offset < privateIds.length;
+      offset += NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE
+    ) {
+      const ids = privateIds.slice(
+        offset,
+        offset + NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE,
+      );
+      const loaded = await settle(
+        (async () => {
+          return await db
+            .select()
+            .from(runUploadedFiles)
+            .where(inArray(runUploadedFiles.id, ids));
+        })(),
+      );
+      signal.throwIfAborted();
+      const rows = new Map(
+        loaded.ok
+          ? loaded.value.map((row) => {
+              return [row.id, row] as const;
+            })
+          : [],
+      );
+      for (const id of ids) {
+        owners.set(id, loaded.ok ? { ok: true, value: rows.get(id) } : loaded);
+      }
+    }
     const snapshots: NormalInputAssetSnapshot[] = [];
     for (const [index, asset] of input.attachments.entries()) {
       if (asset.plan) {
         snapshots.push({ index, asset, loaded: null });
         continue;
       }
+      const owner = owners.get(asset.owner.file.id.toLowerCase());
+      if (!owner) {
+        throw new Error("Private attachment owner read is missing");
+      }
+      if (!owner.ok) {
+        // Preparation failures still belong to the input-insertion SQL guard.
+        snapshots.push({ index, asset, loaded: owner });
+        continue;
+      }
       const loaded = await settle(
         (async () => {
-          const [owned] = await db
-            .select()
-            .from(runUploadedFiles)
-            .where(eq(runUploadedFiles.id, asset.owner.file.id))
-            .limit(1);
+          const owned = owner.value;
           return {
             owned,
             plan: canonicalPrivateWebInputPlan({ ...asset.owner, owned }),
