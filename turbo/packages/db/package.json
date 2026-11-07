@@ -101,7 +101,7 @@
     "tar": "^7.5.19",
     "tsx": "^4.21.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.5",
+    "vitest": "^5.1.0",
     "zod": "^4.5.4"
   }
 }
