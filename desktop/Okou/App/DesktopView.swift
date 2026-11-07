@@ -300,7 +300,7 @@ struct DesktopView: View {
         runtimeCell("Status", model.statusLabel)
         runtimeCell("Host ID", model.runtime.hostId ?? "Not registered")
         runtimeCell(
-          "Last heartbeat",
+          model.runtime.usesPresence ? "Last server contact" : "Last heartbeat",
           model.runtime.lastHeartbeat?.formatted(date: .omitted, time: .standard) ?? "Never")
         runtimeCell(
           "Last command",

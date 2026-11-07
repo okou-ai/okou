@@ -35,10 +35,11 @@ private actor NotificationBoundary: CommandNotifications {
     continuation = stream.continuation
     self.tokenProvider = tokenProvider
     onStart()
-    if attachedOnStart { continuation?.yield(.refresh) }
+    if attachedOnStart { continuation?.yield(.ready) }
     return stream.stream
   }
   func refresh() { continuation?.yield(.refresh) }
+  func reconnect() { continuation?.yield(.ready) }
   func renew() async throws -> JSONValue {
     guard let tokenProvider else { throw CancellationError() }
     return try await tokenProvider()
@@ -1669,6 +1670,65 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       onChange: { state in if state.status == "error" { unavailable.fulfill() } })
     await runtime.start()
     await fulfillment(of: [unavailable], timeout: 1)
+    await runtime.stop()
+  }
+
+  func testPresenceHostSynchronizesChangesAndReconnectsWithoutIdleHeartbeat() async throws {
+    let initial = expectation(description: "Presence attachment synchronizes host state")
+    let changed = expectation(description: "Changed permissions are synchronized")
+    let reconnected = expectation(description: "Reattachment synchronizes host state")
+    let synced = RequestCount()
+    let changes = RequestCount()
+    let registration = CompletionFlag()
+    let notifications = NotificationBoundary()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        var registration = registeredHostResponse()
+        registration["livenessMode"] = .string("presence")
+        connection.reply(registration)
+      } else if path.hasSuffix("/state") {
+        switch synced.next() {
+        case 1, 2, 3: break
+        default: XCTFail("Unchanged state must not cause another synchronization")
+        }
+        connection.reply(heartbeatResponse(pending: false))
+      } else if path.hasSuffix("/wait") {
+        // The transport remains pending until runtime.stop cancels it.
+      } else if path.hasSuffix("/realtime-token") {
+        connection.reply(.object(["keyName": .string("scoped-host-key")]))
+      } else if path.hasSuffix("/next") {
+        connection.reply(.object(["status": .string("idle")]))
+      } else if path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected request for a presence host: \(path)")
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications) { state in
+      if state.status == "online" && state.usesPresence {
+        if !registration.value { registration.finish(); return }
+        switch changes.next() {
+        case 1: initial.fulfill()
+        case 2: changed.fulfill()
+        case 3: reconnected.fulfill()
+        default: break
+        }
+      }
+    }
+    await runtime.start()
+    await fulfillment(of: [initial], timeout: 3)
+    let permissions = JSONValue.object(["accessibility": .bool(true), "screenRecording": .bool(true)])
+    await runtime.updatePermissions(permissions)
+    await fulfillment(of: [changed], timeout: 3)
+    await runtime.updatePermissions(permissions)
+    let token = try await notifications.renew()
+    XCTAssertEqual(token["keyName"].string, "scoped-host-key")
+    await notifications.reconnect()
+    await fulfillment(of: [reconnected], timeout: 3)
     await runtime.stop()
   }
 

@@ -1,3 +1,4 @@
+import { ablyTokenRequestSchema } from "./realtime";
 import { desktopUpgradeRequiredSchema } from "./desktop-updates";
 import {
   array,
@@ -151,6 +152,7 @@ const computerUseRuntimeBodySchema = object({
 
 const computerUseHostStartBodySchema = computerUseRuntimeBodySchema.extend({
   installationId: hostInstallationIdSchema,
+  livenessMode: literal("presence").optional(),
 });
 
 const computerUseCommandTargetShape = {
@@ -540,6 +542,7 @@ export const computerUseHostsContract = c.router({
     path: "/api/computer-use/hosts",
     headers: authHeadersSchema,
     responses: {
+      503: apiErrorSchema,
       200: computerUseHostListResponseSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -555,6 +558,7 @@ export const computerUseAuthorizationRequestsContract = c.router({
     headers: authHeadersSchema,
     body: computerUseAuthorizationRequestCreateBodySchema,
     responses: {
+      503: apiErrorSchema,
       200: computerUseAuthorizationRequestCreateResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -571,6 +575,7 @@ export const computerUseAuthorizationRequestsContract = c.router({
     headers: authHeadersSchema,
     pathParams: authorizationRequestTokenPathParamsSchema,
     responses: {
+      503: apiErrorSchema,
       200: computerUseAuthorizationRequestResponseSchema,
       401: apiErrorSchema,
       403: apiErrorSchema,
@@ -586,6 +591,7 @@ export const computerUseAuthorizationRequestsContract = c.router({
     pathParams: authorizationRequestTokenPathParamsSchema,
     body: computerUseAuthorizationRequestApplyBodySchema,
     responses: {
+      503: apiErrorSchema,
       200: computerUseAuthorizationRequestApplyResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -604,6 +610,7 @@ export const computerUseCommandContract = c.router({
     headers: authHeadersSchema,
     body: computerUseCommandCreateBodySchema,
     responses: {
+      503: apiErrorSchema,
       200: computerUseCommandCreateResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -648,6 +655,7 @@ export const computerUseWriteCommandContract = c.router({
     headers: authHeadersSchema,
     body: computerUseWriteCommandCreateBodySchema,
     responses: {
+      503: apiErrorSchema,
       200: computerUseCommandCreateResponseSchema,
       400: apiErrorSchema,
       401: apiErrorSchema,
@@ -765,6 +773,7 @@ export const computerUseSessionHostsContract = c.router({
       200: sessionHostGenerationSchema.extend({
         hostId: uuid(),
         commandNotifications: computerUseCommandNotificationsSchema,
+        livenessMode: zEnum(["heartbeat", "presence"]).optional(),
       }),
       426: desktopUpgradeRequiredSchema,
       ...sessionHostResponses,
@@ -786,6 +795,43 @@ export const computerUseSessionHostsContract = c.router({
       ...sessionHostResponses,
     },
     summary: "Refresh the current session's computer-use host",
+  },
+  wait: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/commands/wait",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: sessionHostGenerationSchema,
+    responses: {
+      200: object({ hasPendingCommands: boolean() }),
+      ...sessionHostResponses,
+    },
+    summary: "Wait for queued work without claiming or executing it",
+  },
+  state: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/state",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: computerUseRuntimeBodySchema.extend(
+      sessionHostGenerationSchema.shape,
+    ),
+    responses: {
+      200: computerUseHeartbeatResponseSchema.extend({
+        hasPendingCommands: boolean(),
+      }),
+      ...sessionHostResponses,
+    },
+    summary: "Synchronize changed computer-use host state",
+  },
+  realtimeToken: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/realtime-token",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: sessionHostGenerationSchema,
+    responses: { 200: ablyTokenRequestSchema, ...sessionHostResponses },
+    summary: "Issue realtime credentials for this authorized host generation",
   },
   stop: {
     method: "POST",
