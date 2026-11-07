@@ -3436,6 +3436,21 @@ function createEventsGraph(
       );
       return;
     }
+    if (
+      event.kind === "tab-moved" &&
+      (windowId === null || event.windowId === windowId)
+    ) {
+      set(directory.invalidateOrder$);
+      const discovery = get(get(links$).discovery$);
+      if (discovery) {
+        detachBrowser(
+          set(discovery.reorder$, client.signal),
+          Reason.DomCallback,
+          "browser native tab ordering",
+        );
+      }
+      return;
+    }
     if (!changesMembership(event, windowId ?? undefined)) {
       return;
     }

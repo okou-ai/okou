@@ -1,4 +1,4 @@
-import { array, number, object, string, unknown } from "zod";
+import { array, boolean, number, object, string, unknown } from "zod";
 import { vi } from "vitest";
 import type { TestContext } from "../signals/__tests__/test-helpers.ts";
 import type { BrowserWebSocketPeer } from "../signals/__tests__/test-mocks.ts";
@@ -42,7 +42,14 @@ const requestSchema = object({
   id: number().optional(),
   method: string(),
   sessionId: string().optional(),
-  params: object({ targetId: string().optional() }).loose().optional(),
+  params: object({
+    targetId: string().optional(),
+    filter: array(
+      object({ type: string().optional(), exclude: boolean().optional() }),
+    ).optional(),
+  })
+    .loose()
+    .optional(),
 });
 type BrowserRequest = ReturnType<typeof requestSchema.parse> & {
   readonly connectionId: number;
@@ -63,6 +70,7 @@ export function mockBrowserCdp(
     readonly autoOpen?: boolean;
     readonly streaming?: boolean;
     readonly targets?: readonly BrowserTarget[];
+    readonly nativeOrder?: readonly string[];
     readonly unavailableTargets?: readonly string[];
     readonly crashedTargets?: readonly string[];
     readonly extensionAvailable?: boolean;
@@ -95,6 +103,9 @@ export function mockBrowserCdp(
   ).map((target) => {
     return { ...target };
   });
+  let nativeOrder = [
+    ...(options.nativeOrder ?? targets.map((target) => target.targetId)),
+  ];
   let created = 0;
   let corruptPageAttachment = false;
   let updateBeforeTabRead = false;
@@ -110,6 +121,8 @@ export function mockBrowserCdp(
   const retiredSessions = new Set<string>();
   const sessionTargets = new Map<string, string>();
   const sessionPeers = new Map<string, BrowserWebSocketPeer>();
+  const tabParents = new Map<string, string>();
+  const tabChildren = new Map<string, string>();
   const discoveryPeers = new Set<BrowserWebSocketPeer>();
   const capturing = new Set<string>();
   const crashedTargets = new Set(options.crashedTargets);
@@ -230,7 +243,20 @@ export function mockBrowserCdp(
     return {
       id,
       windowId: target.windowId ?? 0,
-      index: targets.indexOf(target),
+      index: [
+        ...nativeOrder,
+        ...targets
+          .map((tab) => tab.targetId)
+          .filter((id) => !nativeOrder.includes(id)),
+      ]
+        .filter((id) =>
+          targets.some(
+            (tab) =>
+              tab.targetId === id &&
+              (tab.windowId ?? 0) === (target.windowId ?? 0),
+          ),
+        )
+        .indexOf(target.targetId),
       active: true,
       pinned: false,
       discarded: false,
@@ -367,7 +393,11 @@ export function mockBrowserCdp(
     request: BrowserRequest,
     peer: BrowserWebSocketPeer,
   ): unknown {
-    if (request.params?.targetId !== "okou-worker" && corruptPageAttachment) {
+    if (
+      request.params?.targetId !== "okou-worker" &&
+      !request.params?.targetId?.startsWith("native-tab:") &&
+      corruptPageAttachment
+    ) {
       corruptPageAttachment = false;
       return { sessionId: "" };
     }
@@ -384,7 +414,45 @@ export function mockBrowserCdp(
     }
     sessionTargets.set(sessionId, targetId);
     sessionPeers.set(sessionId, peer);
+    if (targetId.startsWith("native-tab:")) {
+      tabParents.set(sessionId, targetId.slice("native-tab:".length));
+    }
     return { sessionId };
+  }
+
+  function isTabQuery(request: BrowserRequest): boolean {
+    return (
+      request.method === "Target.getTargets" &&
+      !request.sessionId &&
+      !!request.params?.filter?.some(
+        (entry) => entry.type === "tab" && entry.exclude !== true,
+      )
+    );
+  }
+
+  function attachTabChildren(
+    request: BrowserRequest,
+    peer: BrowserWebSocketPeer,
+  ) {
+    const targetId = request.sessionId && tabParents.get(request.sessionId);
+    const target = targets.find((target) => target.targetId === targetId);
+    if (target && request.params?.autoAttach === true) {
+      // Keep observers independent of explicit page-session receipts.
+      const childSessionId = `tab-child-${++sessionSequence}`;
+      sessionTargets.set(childSessionId, target.targetId);
+      sessionPeers.set(childSessionId, peer);
+      tabChildren.set(request.sessionId!, childSessionId);
+      event(
+        "Target.attachedToTarget",
+        {
+          sessionId: childSessionId,
+          targetInfo: { ...target, type: "page" },
+          waitingForDebugger: false,
+        },
+        request.sessionId,
+      );
+    }
+    return {};
   }
 
   function targetResult(
@@ -401,6 +469,16 @@ export function mockBrowserCdp(
         return {};
       }
       case "Target.getTargets": {
+        if (isTabQuery(request)) {
+          return {
+            targetInfos: targets.map((target) => ({
+              type: "tab",
+              targetId: `native-tab:${target.targetId}`,
+              url: target.url,
+              embedderData: { tabStripIndex: nativeTab(target).index },
+            })),
+          };
+        }
         return {
           targetInfos: request.sessionId
             ? [
@@ -445,6 +523,13 @@ export function mockBrowserCdp(
         );
         detached.push(sessionId);
         retiredSessions.add(sessionId);
+        const child = tabChildren.get(sessionId);
+        if (child) {
+          retiredSessions.add(child);
+          detached.push(child);
+          tabChildren.delete(sessionId);
+        }
+        tabParents.delete(sessionId);
         capturing.delete(sessionId);
         bindings.delete(sessionId);
         queueMicrotask(() => {
@@ -454,6 +539,9 @@ export function mockBrowserCdp(
       }
       case "Target.attachToTarget": {
         return attachTarget(request, peer);
+      }
+      case "Target.setAutoAttach": {
+        return attachTabChildren(request, peer);
       }
       case "Target.attachToBrowserTarget": {
         const sessionId = `native-browser-${++sessionSequence}`;
@@ -468,8 +556,9 @@ export function mockBrowserCdp(
 
   function browserResponse(request: BrowserRequest): BrowserResponse {
     if (request.method === "Browser.getWindowForTarget") {
+      const targetId = request.params?.targetId?.replace(/^native-tab:/, "");
       const target = targets.find((candidate) => {
-        return candidate.targetId === request.params?.targetId;
+        return candidate.targetId === targetId;
       });
       if (!target || options.unavailableTargets?.includes(target.targetId)) {
         return {
@@ -748,6 +837,9 @@ export function mockBrowserCdp(
       ...respond(request, peer),
     });
     let receiptKey = request.method;
+    if (isTabQuery(request) && heldReplies.has("tab-order")) {
+      receiptKey = "tab-order";
+    }
     if (request.method === "Runtime.evaluate") {
       const { expression } = object({ expression: string() }).parse(
         request.params,
@@ -910,6 +1002,17 @@ export function mockBrowserCdp(
     },
     requests,
     nativeEvent,
+    reorder(windowId: number, ids: readonly string[]) {
+      nativeOrder = [...nativeOrder.filter((id) => !ids.includes(id)), ...ids];
+      nativeEvent(
+        "tab-moved",
+        targets.find((target) => target.targetId === ids[0]),
+        { windowId },
+      );
+    },
+    shufflePageEnumeration(ids: readonly string[]) {
+      targets.sort((a, b) => ids.indexOf(a.targetId) - ids.indexOf(b.targetId));
+    },
     resetWorker() {
       nativeEpoch = "replacement-worker";
       nativeEvent("tab-updated");
