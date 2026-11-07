@@ -145,20 +145,10 @@ final class ThreadListStore {
       didFail(error)
     }
     guard !closed, !blocked, !Task.isCancelled else { return }
-    let switches: SidebarFeatureSwitches
-    do {
-      switches = try await client.request("/api/feature-switches")
-    } catch {
-      guard !closed, !Task.isCancelled else { return }
-      didFail(error)
-      return
-    }
-    guard !closed, !Task.isCancelled else { return }
     if navigationError == nil {
       await sync.persistNavigation(
         SidebarNavigationSnapshot(
-          agents: agents, preferences: SidebarPreferences(pinnedAgentIds: pinnedAgentIDs),
-          featureSwitches: switches))
+          agents: agents, preferences: SidebarPreferences(pinnedAgentIds: pinnedAgentIDs)))
     }
   }
 
