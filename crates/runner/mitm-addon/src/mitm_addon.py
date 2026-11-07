@@ -12,8 +12,6 @@ This addon runs on the runner HOST (not inside sandboxes) and:
 """
 
 import asyncio
-import base64
-import binascii
 import codecs
 import tempfile
 from collections.abc import Awaitable
@@ -29,10 +27,11 @@ import addon_process_logging
 # --- Sub-module imports ---
 #
 # auth_base_forwarder/body_capture/connector_diagnostics/connector_intent/content_length/
-# http_header_syntax/matching/model_websocket_usage/
+# matching/model_websocket_usage/
 # response_encoding_negotiation/
 # response_streaming/
 # runner_flush_lifecycle/terminal_usage/upstream_admission/usage/websocket_framing/
+# websocket_handshake/
 # websocket_retention are imported
 # by module (not selective `from X import ...`) so that:
 #   1. Cross-module calls read as ``auth_base_forwarder.X(...)`` /
@@ -43,7 +42,8 @@ import addon_process_logging
 #      ``response_streaming.X(...)`` / ``runner_flush_lifecycle.X(...)`` /
 #      ``terminal_usage.X(...)`` /
 #      ``upstream_admission.X(...)`` / ``usage.X(...)`` /
-#      ``websocket_framing.X(...)`` / ``websocket_retention.X(...)``, making the
+#      ``websocket_framing.X(...)`` / ``websocket_handshake.X(...)`` /
+#      ``websocket_retention.X(...)``, making the
 #      module boundary visible at call sites.
 #   2. Tests can patch names on the owning module object and affect all
 #      callers — no mock-placement pitfalls from copied function bindings.
@@ -62,7 +62,6 @@ import data_router
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import header_auth_response
-import http_header_syntax
 import http_local_responses
 import http_network_log
 import managed_openrouter
@@ -88,6 +87,7 @@ import upstream_admission
 import upstream_destination_binding
 import usage
 import websocket_framing
+import websocket_handshake
 import websocket_inspection
 import websocket_retention
 from auth import (
@@ -172,8 +172,6 @@ _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
 
 _AUTH_BASE_BODYLESS_METHODS = frozenset(("GET", "HEAD"))
 _HTTP_RESPONSE_BODYLESS_METHODS = frozenset(("CONNECT", "HEAD"))
-_WEBSOCKET_KEY_BYTES = 16
-_WEBSOCKET_KEY_BASE64_BYTES = 24
 _WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT = 8 * 1024
 _BufferedRequestBodyCheckKind = Literal["ok", "too_large", "length_required"]
 
@@ -1942,7 +1940,10 @@ async def request(flow: http.HTTPFlow) -> None:
             flow.metadata.pop(metadata_keys.MODEL_USAGE_PROVIDER, None)
             flow.metadata.pop(metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS, None)
             flow_metadata.set_firewall_decision(flow.metadata, "ALLOW")
-            if _is_websocket_upgrade_request(flow):
+            if websocket_handshake.is_websocket_upgrade_request(
+                flow,
+                websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
+            ):
                 flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
             run_usage.admit(flow)
             return
@@ -2057,7 +2058,10 @@ def _maybe_normalize_accept_encoding_for_body_inspection(
     allow: matching.FirewallAllow,
     sandbox_info: dict,
 ) -> None:
-    is_websocket_upgrade = _is_websocket_upgrade_request(flow)
+    is_websocket_upgrade = websocket_handshake.is_websocket_upgrade_request(
+        flow,
+        websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
+    )
     if is_websocket_upgrade:
         flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
     if _expects_http_response_body_usage_inspection(
@@ -2089,53 +2093,6 @@ def _expects_http_response_body_usage_inspection(
     return is_billable_firewall(allow.name, sandbox_info) and usage.has_connector_response_parser(
         allow.name
     )
-
-
-def _is_websocket_upgrade_request(flow: http.HTTPFlow) -> bool:
-    if flow.request.method.upper() != "GET":
-        return False
-    if flow.request.http_version != "HTTP/1.1":
-        return False
-    if not http_header_syntax.header_fields_contain_token(
-        flow.request.headers.fields,
-        b"upgrade",
-        b"websocket",
-        max_work_units=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    ):
-        return False
-    websocket_key = http_header_syntax.single_header_value(
-        flow.request.headers.fields,
-        b"sec-websocket-key",
-        max_fields=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-        max_value_bytes=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    )
-    if websocket_key is None or not _is_valid_websocket_key(websocket_key):
-        return False
-    websocket_version = http_header_syntax.single_header_value(
-        flow.request.headers.fields,
-        b"sec-websocket-version",
-        max_fields=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-        max_value_bytes=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    )
-    if websocket_version != b"13":
-        return False
-
-    return http_header_syntax.header_fields_contain_token(
-        flow.request.headers.fields,
-        b"connection",
-        b"upgrade",
-        max_work_units=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    )
-
-
-def _is_valid_websocket_key(value: bytes) -> bool:
-    if len(value) != _WEBSOCKET_KEY_BASE64_BYTES:
-        return False
-    try:
-        decoded = base64.b64decode(value, validate=True)
-    except binascii.Error:
-        return False
-    return len(decoded) == _WEBSOCKET_KEY_BYTES
 
 
 # ============================================================================
@@ -2230,7 +2187,7 @@ def websocket_end(flow: http.HTTPFlow) -> None:
 
 
 def _should_retain_model_websocket_tracking(flow: http.HTTPFlow) -> bool:
-    return response_streaming.is_confirmed_websocket_upgrade_response(
+    return websocket_handshake.is_confirmed_websocket_upgrade_response(
         flow,
         websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
     ) and model_websocket_usage.is_enabled(flow)
