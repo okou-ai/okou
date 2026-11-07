@@ -40,11 +40,198 @@ export type TargetResolution =
 
 export interface TargetDirectory {
   readonly invalidate$: Command<void, []>;
+  readonly invalidateOrder$: Command<void, []>;
   readonly assertWindow$: Command<Promise<void>, [AbortSignal]>;
   readonly contains$: Command<Promise<boolean>, [string, AbortSignal]>;
   readonly assertMember$: Command<Promise<void>, [string, AbortSignal]>;
   readonly read$: Command<Promise<readonly ViewerTarget[]>, [AbortSignal]>;
+  readonly readOrder$: Command<
+    Promise<readonly string[] | null>,
+    [() => boolean, AbortSignal]
+  >;
   readonly resolve$: Command<Promise<TargetResolution>, [string, AbortSignal]>;
+}
+
+function nativeTabIndex(data: unknown): number {
+  if (
+    !isRecord(data) ||
+    typeof data.tabStripIndex !== "number" ||
+    !Number.isSafeInteger(data.tabStripIndex) ||
+    data.tabStripIndex < 0
+  ) {
+    throw new CdpFault(
+      "unsupported-capability",
+      "The browser did not provide native tab positions.",
+    );
+  }
+  return data.tabStripIndex;
+}
+
+async function readTabPages(
+  client: CdpClient,
+  info: unknown,
+  windowId: number | null,
+  current: () => boolean,
+  signal: AbortSignal,
+) {
+  if (!current()) {
+    return [];
+  }
+  if (
+    !isRecord(info) ||
+    info.type !== "tab" ||
+    typeof info.targetId !== "string" ||
+    !info.targetId
+  ) {
+    throw new CdpFault("protocol", "Invalid native tab target.");
+  }
+  const [lookup] = await Promise.allSettled([
+    client.request(
+      "Browser.getWindowForTarget",
+      { targetId: info.targetId },
+      undefined,
+      undefined,
+      signal,
+    ),
+  ]);
+  signal.throwIfAborted();
+  if (!current()) {
+    return [];
+  }
+  if (lookup.status === "rejected") {
+    if (isRecoverableReadFailure(lookup.reason)) {
+      // A missing background tab cannot revoke another page's membership proof.
+      return [];
+    }
+    throw lookup.reason;
+  }
+  const window: unknown = lookup.value;
+  if (
+    !isRecord(window) ||
+    typeof window.windowId !== "number" ||
+    !Number.isSafeInteger(window.windowId)
+  ) {
+    throw new CdpFault("protocol", "Invalid native tab window.");
+  }
+  if (windowId !== null && window.windowId !== windowId) {
+    return [];
+  }
+  const index = nativeTabIndex(info.embedderData);
+  const nativeWindowId = window.windowId;
+  const detach = (value: unknown) => {
+    if (
+      isRecord(value) &&
+      typeof value.sessionId === "string" &&
+      value.sessionId
+    ) {
+      client.notify("Target.detachFromTarget", { sessionId: value.sessionId });
+    }
+  };
+  const attached: unknown = await client.request(
+    "Target.attachToTarget",
+    { targetId: info.targetId, flatten: true },
+    undefined,
+    detach,
+    signal,
+  );
+  if (
+    !isRecord(attached) ||
+    typeof attached.sessionId !== "string" ||
+    !attached.sessionId
+  ) {
+    throw new CdpFault("protocol", "Invalid native tab attachment.");
+  }
+  const sessionId = attached.sessionId;
+  using _session = {
+    [Symbol.dispose]: () => {
+      // Detaching the parent also releases its auto-attached child sessions.
+      detach(attached);
+    },
+  };
+  signal.throwIfAborted();
+  if (!current()) {
+    return [];
+  }
+  const pages: string[] = [];
+  using _events = {
+    [Symbol.dispose]: client.onEvent((event) => {
+      if (
+        event.sessionId === sessionId &&
+        event.method === "Target.attachedToTarget"
+      ) {
+        const page = pageTarget(event.params.targetInfo);
+        if (page) {
+          pages.push(page.id);
+        }
+      }
+    }),
+  };
+  // Chrome announces existing children before acknowledging auto-attachment.
+  // This session never pauses a target or owns another inspector's attachment.
+  await client.request(
+    "Target.setAutoAttach",
+    {
+      autoAttach: true,
+      waitForDebuggerOnStart: false,
+      flatten: true,
+      filter: [{ type: "page", exclude: false }, { exclude: true }],
+    },
+    sessionId,
+    undefined,
+    signal,
+  );
+  signal.throwIfAborted();
+  return pages.map((id) => {
+    return { id, windowId: nativeWindowId, index };
+  });
+}
+
+async function readNativeOrder(
+  client: CdpClient,
+  windowId: number | null,
+  current: () => boolean,
+  signal: AbortSignal,
+): Promise<readonly string[] | null> {
+  if (!current()) {
+    return null;
+  }
+  const raw: unknown = await client.request(
+    "Target.getTargets",
+    { filter: [{ type: "tab", exclude: false }, { exclude: true }] },
+    undefined,
+    undefined,
+    signal,
+  );
+  if (!isRecord(raw) || !Array.isArray(raw.targetInfos)) {
+    throw new CdpFault("protocol", "Invalid native tab list.");
+  }
+  const tabs = raw.targetInfos as unknown[];
+  const pages: { id: string; windowId: number; index: number }[] = [];
+  for (let offset = 0; offset < tabs.length; offset += 4) {
+    signal.throwIfAborted();
+    if (!current()) {
+      return null;
+    }
+    const results = await Promise.allSettled(
+      tabs.slice(offset, offset + 4).map((tab) => {
+        return readTabPages(client, tab, windowId, current, signal);
+      }),
+    );
+    // Wait for every sibling's cleanup before propagating a failed observation.
+    for (const result of results) {
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      pages.push(...result.value);
+    }
+  }
+  return pages
+    .sort((a, b) => {
+      return a.windowId - b.windowId || a.index - b.index;
+    })
+    .map((page) => {
+      return page.id;
+    });
 }
 
 function createWindowLookup(client: CdpClient) {
@@ -180,10 +367,17 @@ export function createTargetDirectory(
   }
   const resources = { native, client };
   const revision$ = state(0);
+  const orderRevision$ = state(0);
+  const invalidateOrder$ = command(({ set }) => {
+    set(orderRevision$, (revision) => {
+      return revision + 1;
+    });
+  });
   const invalidate$ = command(({ set }) => {
     set(revision$, (revision) => {
       return revision + 1;
     });
+    set(invalidateOrder$);
   });
   const assertNative$ = command((_context, signal: AbortSignal) => {
     const { native, client } = resources;
@@ -258,12 +452,35 @@ export function createTargetDirectory(
     },
   );
   const resolve$ = createTargetResolution(read$, assertWindow$);
+  const readOrder$ = command(
+    async ({ get, set }, readable: () => boolean, signal: AbortSignal) => {
+      set(assertNative$, signal);
+      const revision = get(orderRevision$);
+      const current = () => {
+        return readable() && revision === get(orderRevision$);
+      };
+      const [result] = await Promise.allSettled([
+        readNativeOrder(client, scopedWindowId, current, signal),
+      ]);
+      signal.throwIfAborted();
+      set(assertNative$, signal);
+      if (!current()) {
+        return null;
+      }
+      if (result.status === "rejected") {
+        throw result.reason;
+      }
+      return result.value;
+    },
+  );
   return {
     invalidate$,
+    invalidateOrder$,
     assertWindow$,
     contains$,
     assertMember$,
     read$,
+    readOrder$,
     resolve$,
   };
 }

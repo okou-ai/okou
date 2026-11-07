@@ -3436,6 +3436,17 @@ function createEventsGraph(
       );
       return;
     }
+    if (
+      event.kind === "tab-moved" &&
+      (windowId === null || event.windowId === windowId)
+    ) {
+      set(directory.invalidateOrder$);
+      const discovery = get(get(links$).discovery$);
+      if (discovery) {
+        set(discovery.reorder$, client.signal);
+      }
+      return;
+    }
     if (!changesMembership(event, windowId ?? undefined)) {
       return;
     }

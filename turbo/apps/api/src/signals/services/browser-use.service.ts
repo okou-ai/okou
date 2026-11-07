@@ -65,7 +65,6 @@ const MAX_BROWSER_USE_RESPONSE_BYTES = 512 * 1024;
 const MAX_BROWSER_USE_CDP_RESPONSE_BYTES = 64 * 1024;
 const MAX_BROWSER_USE_SCREENSHOT_RESPONSE_BYTES = 4 * 1024 * 1024;
 const MAX_BROWSER_USE_ERROR_MESSAGE_CHARS = 2048;
-const MAX_BROWSER_USE_TAB_URLS = 50;
 const MAX_BROWSER_USE_TAB_URL_CHARS = 8192;
 const BROWSER_USE_SCREENSHOT_WIDTH = 640;
 const BROWSER_USE_SCREENSHOT_QUALITY = 80;
@@ -568,6 +567,7 @@ async function withBrowserUseCdpSocket<T>(
 const browserUseNativeTabSchema = object({
   id: number().int().nonnegative().safe(),
   windowId: number().int().nonnegative().safe(),
+  index: number().int().nonnegative().safe(),
   url: string().optional(),
 });
 const browserUseNativeWindowSchema = object({
@@ -733,14 +733,6 @@ async function resizeBrowserUseCdp(
       signal,
     );
   });
-}
-
-function restorableBrowserUseTabUrl(url: string): boolean {
-  if (url.length > MAX_BROWSER_USE_TAB_URL_CHARS || !URL.canParse(url)) {
-    return false;
-  }
-  const protocol = new URL(url).protocol;
-  return protocol === "http:" || protocol === "https:";
 }
 
 export interface BrowserUseWindowCandidate {
@@ -1064,22 +1056,12 @@ export async function browserUseWindowExists(
   return health.value;
 }
 
-function boundedRestorableBrowserUseTabUrls(
-  urls: Iterable<string>,
+function restorableBrowserUseTabUrls(
+  urls: readonly string[],
 ): readonly string[] {
-  const boundedUrls: string[] = [];
-  const seenUrls = new Set<string>();
-  for (const url of urls) {
-    if (!restorableBrowserUseTabUrl(url) || seenUrls.has(url)) {
-      continue;
-    }
-    seenUrls.add(url);
-    boundedUrls.push(url);
-    if (boundedUrls.length === MAX_BROWSER_USE_TAB_URLS) {
-      break;
-    }
-  }
-  return boundedUrls;
+  return urls.filter((url) => {
+    return url.length <= MAX_BROWSER_USE_TAB_URL_CHARS && URL.canParse(url);
+  });
 }
 
 function browserUseCdpSignal(signal: AbortSignal): AbortSignal {
@@ -1182,14 +1164,16 @@ export async function listBrowserUseTabUrls(
       ) {
         throw new Error("Browser URL inventory contains a moved tab");
       }
-      return tabs;
+      return tabs.sort((a, b) => {
+        return a.index - b.index;
+      });
     });
     if (windows.length > 0 && tabs.length === 0) {
       throw new Error("Browser window has no capturable tabs");
     }
     return {
       windowExists: windows.length > 0,
-      urls: boundedRestorableBrowserUseTabUrls(
+      urls: restorableBrowserUseTabUrls(
         tabs.flatMap((tab) => {
           return tab.url === undefined ? [] : [tab.url];
         }),
@@ -3721,8 +3705,8 @@ export async function restoreBrowserUseWindowTabUrls(
   urls: readonly string[],
   signal: AbortSignal,
 ): Promise<void> {
-  const bounded = boundedRestorableBrowserUseTabUrls(urls);
-  if (bounded.length === 0) {
+  const restorable = restorableBrowserUseTabUrls(urls);
+  if (restorable.length === 0) {
     return;
   }
   const restored = await settleIncludingAbort(
@@ -3730,7 +3714,7 @@ export async function restoreBrowserUseWindowTabUrls(
       if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
         throw new Error("The Browser restore window is unavailable");
       }
-      for (const url of bounded) {
+      for (const url of restorable) {
         const created = await client.call("createTab", {
           windowId: window.primaryWindowId,
           url,
@@ -3781,8 +3765,8 @@ export async function restoreBrowserUseTabUrls(
   if (urls.length === 0) {
     return;
   }
-  const boundedUrls = boundedRestorableBrowserUseTabUrls(urls);
-  if (boundedUrls.length === 0) {
+  const restorable = restorableBrowserUseTabUrls(urls);
+  if (restorable.length === 0) {
     return;
   }
   const cdpSignal = browserUseCdpSignal(signal);
@@ -3797,7 +3781,7 @@ export async function restoreBrowserUseTabUrls(
     );
     let commandId = 2;
     let restored = 0;
-    for (const url of boundedUrls) {
+    for (const url of restorable) {
       const result = await settle(
         sendBrowserUseCdpCommand(
           socket,

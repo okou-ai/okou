@@ -104,7 +104,7 @@ export const captureSharedSnapshot$ = command(
       }
       const snapshot = observed.value;
       // A closed native window cannot replace its last recoverable snapshot.
-      // A live window containing only blank pages still deliberately saves [].
+      // A live window publishes its ordered URLs, including blank pages.
       if (!snapshot.windowExists) {
         return null;
       }
