@@ -1468,7 +1468,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.2
         with:
           workspaces: crates -> target
-          shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-host-cpu-fairness-ci
+          shared-key: ${{ needs.runner-host-groups.outputs.selected-target }}-host-cpu-fairness-release-${{ hashFiles('crates/Cargo.toml') }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Configure pinned Kerberos cache
@@ -1595,7 +1595,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.2
         with:
           workspaces: crates -> target
-          shared-key: ${{ matrix.target }}-guest-rpc
+          shared-key: ${{ matrix.target }}-guest-rpc-release-${{ hashFiles('crates/Cargo.toml') }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Configure pinned Kerberos cache

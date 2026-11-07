@@ -23,9 +23,10 @@ runner_image_validate_target "$TARGET_TRIPLE"
 [[ "$GITHUB_SHA" =~ ^[0-9a-f]{40}$ ]] || fail "invalid source SHA"
 [[ "$GITHUB_RUN_ID" =~ ^[1-9][0-9]*$ && "$PRODUCER_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || fail "invalid producer identity"
 case "$TEST_NAME" in
-  host_cpu_fairness|guest_rpc) profile=ci; profile_args=(--profile ci) ;;
+  host_cpu_fairness|guest_rpc) ;;
   *) fail "unsupported integration test: $TEST_NAME" ;;
 esac
+profile=release
 
 # This is an exact producer address, not a cross-run cache lookup. Using the
 # producer's attempt also keeps consumer-only reruns on their original inputs.
@@ -88,7 +89,7 @@ case "${1:-}" in
     trap 'rm -f "$cargo_output"' EXIT
     (
       cd "$SCRIPT_DIR/../../../crates"
-      cargo test --no-run "${profile_args[@]}" --target "$TARGET_TRIPLE" \
+      cargo test --no-run --release --target "$TARGET_TRIPLE" \
         -p sandbox-firecracker --test "$TEST_NAME" --message-format=json-render-diagnostics
     ) >"$cargo_output"
     test_bin=$(jq -ers --arg test "$TEST_NAME" '
