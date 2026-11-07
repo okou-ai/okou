@@ -227,7 +227,12 @@ async function publish() {
   );
   if (
     JSON.stringify(entries) !==
-      JSON.stringify(["background.js", "manifest.json", "page-fonts.css"]) ||
+      JSON.stringify([
+        "background.js",
+        "manifest.json",
+        "noto-fonts.css",
+        "page-fonts.css",
+      ]) ||
     manifest.version !== version ||
     manifest.name !== "Okou Browser" ||
     manifest.manifest_version !== 3

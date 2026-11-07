@@ -3,18 +3,25 @@ import { createServer } from "node:http";
 import { mkdtemp, mkdir, rm } from "node:fs/promises";
 import { resolve } from "node:path";
 
-const defaultFamily = '-webkit-body, "Okou Browser Default"';
+const defaultFamily = (region = "SC") => {
+  return `-webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto ${region}"`;
+};
 const greek = "Αλφάβητο ABC 123";
+// Controlled supply keeps native CI independent of Google's availability.
+// Real Google download/selection and regional faces are verified in Browser Use.
+const supply = ["SC", "TC", "JP", "KR"]
+  .map((region) => {
+    return `@font-face {
+      font-family: 'Okou Browser Noto ${region}';
+      font-weight: 400;
+      src: local('Noto Sans CJK ${region}'), local('Unifont'), local('WenQuanYi Zen Hei'), local('IPAGothic');
+      unicode-range: U+4E00-9FFF;
+    }`;
+  })
+  .join("\n");
 const styles = `
   @font-face { font-family: 'Site A'; src: local('Liberation Sans'), local('Arial'); }
   @font-face { font-family: 'Site B'; src: local('Liberation Mono'), local('Courier New'); }
-  /* Controlled supply, not a claim that the host has Arial Unicode MS.
-     Full-Chromium CI installs CJK faces with Playwright's native dependencies. */
-  @font-face {
-    font-family: 'Okou Browser Default';
-    src: local('Noto Sans CJK SC'), local('Unifont'), local('WenQuanYi Zen Hei'), local('IPAGothic');
-    unicode-range: U+4E00-9FFF;
-  }
   body { font-size: 24px; }
   span { display: inline-block; }
   #native-latin, #native-han { font-family: -webkit-body; }
@@ -38,8 +45,15 @@ test.beforeAll(async () => {
       response.end('.external { font-family: "Site A"; }');
       return;
     }
-    if (request.url === "/csp")
+    if (request.url === "/csp") {
       response.setHeader("Content-Security-Policy", "style-src 'none'");
+      response.end(
+        '<!doctype html><html><body><span id="default-latin">ABC 123 iiiWW</span></body></html>',
+      );
+      return;
+    }
+    if (request.url === "/font-csp")
+      response.setHeader("Content-Security-Policy", "font-src 'none'");
     const rootStyle =
       request.url === "/normal"
         ? ":root { font-family: 'Site A'; }"
@@ -51,7 +65,7 @@ test.beforeAll(async () => {
         ? ' style="font-family: &quot;Site B&quot;"'
         : "";
     response.end(`<!doctype html><html lang="en"${inline}><head>
-      <style>${styles}${rootStyle}</style><link id="site-css" rel="stylesheet" href="/site.css">
+      <style>${styles}${request.url === "/font-csp" ? "" : supply}${rootStyle}</style><link id="site-css" rel="stylesheet" href="/site.css">
       </head><body>
       <span id="default-latin">ABC 123 iiiWW</span><span id="native-latin">ABC 123 iiiWW</span>
       <p><span id="default-han">中文測試</span><span id="native-han">中文測試</span></p>
@@ -102,9 +116,16 @@ async function fixture(path = "/") {
     });
     const page = await context.newPage();
     const stylesheetRequests = [];
+    const fontRequests = [];
+    const fontResponses = [];
     page.on("request", (request) => {
+      if (request.resourceType() === "font") fontRequests.push(request);
       if (request.url() === origin + "/site.css")
         stylesheetRequests.push(request);
+    });
+    page.on("response", (response) => {
+      if (response.request().resourceType() === "font")
+        fontResponses.push(response.status());
     });
     await page.emulateMedia({ colorScheme: "light" });
     await page.goto(origin + path);
@@ -162,6 +183,8 @@ async function fixture(path = "/") {
       cdp,
       fonts,
       stylesheetRequests,
+      fontRequests,
+      fontResponses,
       close: async () => {
         try {
           await context.close();
@@ -192,7 +215,7 @@ test("default text keeps native Latin and actually consumes an available glyph s
   await withFixture(async ({ page, fonts }) => {
     await expect(page.locator("#default-latin")).toHaveCSS(
       "font-family",
-      defaultFamily,
+      defaultFamily(),
     );
     expect(await fonts("default-latin")).toEqual(await fonts("native-latin"));
     const supplied = await fonts("default-han");
@@ -202,7 +225,7 @@ test("default text keeps native Latin and actually consumes an available glyph s
       await page.evaluate(() => {
         return [...document.fonts].some((face) => {
           return (
-            face.family.includes("Okou Browser Default") &&
+            face.family.includes("Okou Browser Noto SC") &&
             face.status === "loaded"
           );
         });
@@ -211,7 +234,7 @@ test("default text keeps native Latin and actually consumes an available glyph s
     await page.evaluate(() => {
       const reference = document.createElement("span");
       reference.id = "supplement-reference";
-      reference.style.fontFamily = '"Okou Browser Default"';
+      reference.style.fontFamily = '"Okou Browser Noto SC"';
       reference.textContent = "中文測試";
       document.body.append(reference);
     });
@@ -249,8 +272,44 @@ test("standard preference remains distinct from serif", async () => {
     ).toContain("Liberation Mono");
     await expect(page.locator("#default-latin")).toHaveCSS(
       "font-family",
-      defaultFamily,
+      defaultFamily(),
     );
+  });
+});
+
+test("root language changes select regional default glyph supply", async () => {
+  await withFixture(async ({ page, fonts }) => {
+    await page.evaluate(() => {
+      const reference = document.createElement("span");
+      reference.id = "regional-reference";
+      reference.textContent = "中文測試";
+      document.body.append(reference);
+    });
+    for (const [lang, region] of [
+      ["zh-Hant", "TC"],
+      ["zh-TW", "TC"],
+      ["ja-JP", "JP"],
+      ["ko-KR", "KR"],
+      ["zh-Hans", "SC"],
+    ]) {
+      await page.evaluate(
+        ({ lang, region }) => {
+          document.documentElement.lang = lang;
+          document.getElementById("regional-reference").style.fontFamily =
+            `"Okou Browser Noto ${region}"`;
+          document.body.getBoundingClientRect();
+          return document.fonts.ready;
+        },
+        { lang, region },
+      );
+      await expect(page.locator("#default-han")).toHaveCSS(
+        "font-family",
+        defaultFamily(region),
+      );
+      expect(await fonts("default-han")).toEqual(
+        await fonts("regional-reference"),
+      );
+    }
   });
 });
 
@@ -325,7 +384,7 @@ test("site CSSOM edits and removal remain effective without reloading links", as
     });
     await expect(page.locator("#default-latin")).toHaveCSS(
       "font-family",
-      defaultFamily,
+      defaultFamily(),
     );
     expect(stylesheetRequests.length).toBe(requests);
   });
@@ -338,7 +397,7 @@ test("native code and control font categories retain their own choices", async (
       await page.locator("#text-control").evaluate((node) => {
         return getComputedStyle(node).fontFamily;
       }),
-    ).not.toContain("Okou Browser Default");
+    ).not.toContain("Okou Browser Noto");
   });
 });
 
@@ -346,21 +405,21 @@ test("default inheritance reaches matching frames, reload and later shadow conte
   await withFixture(async ({ page }) => {
     await expect(
       page.frameLocator('iframe[name="http"]').locator("#default-latin"),
-    ).toHaveCSS("font-family", defaultFamily);
+    ).toHaveCSS("font-family", defaultFamily());
     const blank = page.frame({ name: "blank" });
     await blank.evaluate(() => {
       document.body.innerHTML = '<span id="blank-text">Default text</span>';
     });
     await expect(
       page.frameLocator('iframe[name="blank"]').locator("#blank-text"),
-    ).toHaveCSS("font-family", defaultFamily);
+    ).toHaveCSS("font-family", defaultFamily());
     await page.locator("#shadow-host").evaluate((node) => {
       node.attachShadow({ mode: "open" }).innerHTML =
         '<span id="shadow-default">Default text</span><span id="shadow-authored" style="font-family:monospace">Code</span>';
     });
     await expect(page.locator("#shadow-default")).toHaveCSS(
       "font-family",
-      defaultFamily,
+      defaultFamily(),
     );
     await expect(page.locator("#shadow-authored")).toHaveCSS(
       "font-family",
@@ -369,7 +428,7 @@ test("default inheritance reaches matching frames, reload and later shadow conte
     await page.reload();
     await expect(page.locator("#default-latin")).toHaveCSS(
       "font-family",
-      defaultFamily,
+      defaultFamily(),
     );
   });
 });
@@ -378,8 +437,32 @@ test("manifest CSS supplies defaults when page inline styles are forbidden", asy
   await withFixture(async ({ page }) => {
     await expect(page.locator("#default-latin")).toHaveCSS(
       "font-family",
-      defaultFamily,
+      defaultFamily(),
     );
     expect(await page.locator("html").getAttribute("style")).toBeNull();
   }, "/csp");
+});
+
+test("font-src denial preserves native glyphs with bounded policy noise", async () => {
+  await withFixture(async ({ page, fonts, fontRequests, fontResponses }) => {
+    await expect(page.locator("#default-han")).toHaveCSS(
+      "font-family",
+      defaultFamily(),
+    );
+    expect(await fonts("default-han")).toEqual(await fonts("native-han"));
+    expect(
+      await page.evaluate(() => {
+        return [...document.fonts].some((face) => {
+          return (
+            face.family.includes("Okou Browser Noto") && face.status === "error"
+          );
+        });
+      }),
+    ).toBe(true);
+    expect(fontResponses).toHaveLength(0);
+    // A large split-face set reports even unused denied sources on strict pages.
+    // Keep this actual browser request boundary small, independent of glyphs.
+    expect(fontRequests.length).toBeGreaterThan(0);
+    expect(fontRequests.length).toBeLessThanOrEqual(6);
+  }, "/font-csp");
 });

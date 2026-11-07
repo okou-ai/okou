@@ -8,7 +8,7 @@
   "content_scripts": [
     {
       "matches": ["http://*/*", "https://*/*"],
-      "css": ["page-fonts.css"],
+      "css": ["noto-fonts.css", "page-fonts.css"],
       "run_at": "document_start",
       "all_frames": true,
       "match_about_blank": true

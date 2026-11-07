@@ -1,14 +1,24 @@
-/* Use a private local face: Chrome's -webkit-body mapping can remap a direct
-   installed-family tail back to standard. Existing website families stay intact. */
-@font-face {
-  font-family: "Okou Browser Default";
-  src: local("Arial Unicode MS");
-}
-
 /* The first normal layer lets website fonts keep ownership of the cascade.
    -webkit-body preserves the standard preference, which can differ from serif. */
 @layer okou-browser-default-fonts {
   :where(:root) {
-    font-family: -webkit-body, "Okou Browser Default";
+    font-family: -webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto SC";
+  }
+
+  :where(
+    :root:lang(zh-Hant),
+    :root:lang(zh-TW),
+    :root:lang(zh-HK),
+    :root:lang(zh-MO)
+  ) {
+    font-family: -webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto TC";
+  }
+
+  :where(:root:lang(ja)) {
+    font-family: -webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto JP";
+  }
+
+  :where(:root:lang(ko)) {
+    font-family: -webkit-body, "Okou Browser Noto Sans", "Okou Browser Noto KR";
   }
 }

@@ -120,12 +120,21 @@ async function fixture(t) {
       manifest_version: 3,
       name: "Okou Browser",
       version,
-      content_scripts: [{ matches: ["https://*/*"], css: ["page-fonts.css"] }],
+      content_scripts: [
+        {
+          matches: ["https://*/*"],
+          css: ["noto-fonts.css", "page-fonts.css"],
+        },
+      ],
     }),
   );
   await writeFile(
     resolve(directory, "background.js"),
     "globalThis.fixture = true;\n",
+  );
+  await writeFile(
+    resolve(directory, "noto-fonts.css"),
+    "@font-face { font-family: 'Fixture Noto'; src: url(https://fonts.gstatic.com/fixture.woff2); }\n",
   );
   await writeFile(
     resolve(directory, "page-fonts.css"),
@@ -135,7 +144,15 @@ async function fixture(t) {
   const archive = resolve(artifacts, name);
   execFileSync(
     "zip",
-    ["-q", "-j", archive, "manifest.json", "background.js", "page-fonts.css"],
+    [
+      "-q",
+      "-j",
+      archive,
+      "manifest.json",
+      "background.js",
+      "noto-fonts.css",
+      "page-fonts.css",
+    ],
     {
       cwd: directory,
     },
