@@ -246,7 +246,9 @@ final class ChatComposerPasteTests: XCTestCase {
       return Progress(totalUnitCount: 1)
     }
     input.paste(itemProviders: [provider])
-    try await waitForBusinessResult { conversation.attachmentDraft.error?.contains("512 MB") == true }
+    try await waitForBusinessResult {
+      conversation.attachmentDraft.error?.contains("512 MB") == true
+    }
     XCTAssertEqual(conversation.draft, "Keep selected text")
     XCTAssertEqual(input.selectedRange, NSRange(location: 5, length: 8))
     XCTAssertFalse(conversation.attachmentDraft.hasAttachments)
