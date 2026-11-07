@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.20.0...runner-executor-v0.20.1) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-host:** share json file-access test observation ([#45824](https://github.com/okou-ai/okou/issues/45824)) ([7e4918a](https://github.com/okou-ai/okou/commit/7e4918a6ae6e250dca3732384b3f7a9ce5c281d6))
+
 ## [0.20.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.26...runner-executor-v0.20.0) (2026-11-07)
 
 

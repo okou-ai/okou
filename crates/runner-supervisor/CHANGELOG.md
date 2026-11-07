@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.51](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.50...runner-supervisor-v0.21.51) (2026-11-07)
+
+
+### Performance Improvements
+
+* **runner:** reduce periodic heartbeats with immediate state reports ([#45825](https://github.com/okou-ai/okou/issues/45825)) ([8c64e5a](https://github.com/okou-ai/okou/commit/8c64e5aa6693a52afaa219b4a3ad51e368a17029))
+
 ## [0.21.50](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.49...runner-supervisor-v0.21.50) (2026-11-07)
 
 

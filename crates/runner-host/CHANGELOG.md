@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.38](https://github.com/okou-ai/okou/compare/runner-host-v0.10.37...runner-host-v0.10.38) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-host:** share json file-access test observation ([#45824](https://github.com/okou-ai/okou/issues/45824)) ([7e4918a](https://github.com/okou-ai/okou/commit/7e4918a6ae6e250dca3732384b3f7a9ce5c281d6))
+
 ## [0.10.37](https://github.com/okou-ai/okou/compare/runner-host-v0.10.36...runner-host-v0.10.37) (2026-11-07)
 
 ## [0.10.36](https://github.com/okou-ai/okou/compare/runner-host-v0.10.35...runner-host-v0.10.36) (2026-11-06)

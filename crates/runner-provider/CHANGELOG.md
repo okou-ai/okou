@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.16.23](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.22...runner-provider-v0.16.23) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-host:** share json file-access test observation ([#45824](https://github.com/okou-ai/okou/issues/45824)) ([7e4918a](https://github.com/okou-ai/okou/commit/7e4918a6ae6e250dca3732384b3f7a9ce5c281d6))
+
+
+### Performance Improvements
+
+* **runner:** reduce periodic heartbeats with immediate state reports ([#45825](https://github.com/okou-ai/okou/issues/45825)) ([8c64e5a](https://github.com/okou-ai/okou/commit/8c64e5aa6693a52afaa219b4a3ad51e368a17029))
+
 ## [0.16.22](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.21...runner-provider-v0.16.22) (2026-11-07)
 
 

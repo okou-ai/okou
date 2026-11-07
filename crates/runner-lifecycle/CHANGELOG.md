@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.77](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.76...runner-lifecycle-v0.17.77) (2026-11-07)
+
+
+### Performance Improvements
+
+* **runner:** reduce periodic heartbeats with immediate state reports ([#45825](https://github.com/okou-ai/okou/issues/45825)) ([8c64e5a](https://github.com/okou-ai/okou/commit/8c64e5aa6693a52afaa219b4a3ad51e368a17029))
+
 ## [0.17.76](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.75...runner-lifecycle-v0.17.76) (2026-11-07)
 
 ## [0.17.75](https://github.com/okou-ai/okou/compare/runner-lifecycle-v0.17.74...runner-lifecycle-v0.17.75) (2026-11-06)

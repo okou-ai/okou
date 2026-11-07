@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.244.36](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.35...runner-rs-v0.244.36) (2026-11-07)
+
+
+### Refactoring
+
+* **runner:** separate connector auth-material inspection ([#45826](https://github.com/okou-ai/okou/issues/45826)) ([df52c1a](https://github.com/okou-ai/okou/commit/df52c1a0741408d6e9e9d6d829b4cf7ea413b903))
+
+
+### Performance Improvements
+
+* **mitm-addon:** avoid unused os mock histories in process-event capture ([#45819](https://github.com/okou-ai/okou/issues/45819)) ([92029a7](https://github.com/okou-ai/okou/commit/92029a7e908812f4b437a865be8267aacf24f948))
+* **runner:** reduce periodic heartbeats with immediate state reports ([#45825](https://github.com/okou-ai/okou/issues/45825)) ([8c64e5a](https://github.com/okou-ai/okou/commit/8c64e5aa6693a52afaa219b4a3ad51e368a17029))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.35](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.34...runner-rs-v0.244.35) (2026-11-07)
 
 
