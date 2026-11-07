@@ -336,8 +336,18 @@ count attempts owned by the shared client.
 
 ### API heartbeat delivery recovery
 
-The Runner sends routine API heartbeats every 10s through one single-flight
-owner. In `starting`, `running` and `draining` modes, send timeouts, connect
+The Runner sends routine API heartbeats every 60s through one single-flight
+owner. Capacity, lifecycle and reusable-inventory changes request prompt full
+snapshots; in-flight triggers coalesce into one live-state follow-up. The API
+considers reuse inventory fresh for 180s. Local status retry and passive host
+memory observation retain their independent 10s cadence.
+
+Failed background heartbeats in `running` and `draining` retry fresh state after
+10s without waiting for the routine timer. A new state report supersedes a
+scheduled retry. Startup still requires initial delivery success; shutdown
+drains owned work without starting a background retry loop.
+
+In `starting`, `running` and `draining` modes, send timeouts, connect
 failures and a typed TCP connection reset participate in one Runner-local
 heartbeat degradation episode. The first failure is INFO. If delivery keeps
 failing for at least 30s after the first observed failure, the next failed
@@ -354,9 +364,9 @@ visibility and do not advance an eligible episode.
 
 The shared transport can replay the same monotonic heartbeat snapshot once on a
 request-stage reset within the original timeout. Exhausted failures still enter
-this episode; the next scheduled heartbeat sends fresh Runner state using the
-existing cadence, single-flight ownership and freshness boundaries. Recovery
-proves that later heartbeat delivery resumed; it does not identify the reset
+this episode; the next report sends fresh Runner state using the retry cadence
+and single-flight ownership described above. Recovery proves that later
+heartbeat delivery resumed; it does not identify the reset
 initiator or prove whether an unlogged failed request reached server processing.
 
 Before closing [#35470](https://github.com/vm0-ai/okou/issues/35470), identify the

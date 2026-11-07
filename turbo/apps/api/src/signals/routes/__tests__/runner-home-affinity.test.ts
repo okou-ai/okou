@@ -466,23 +466,29 @@ describe("canonical API home affinity", () => {
     });
   });
 
-  it("does not use a stale holder for a newly queued job", async () => {
-    const f = await setup();
-    await heartbeat(f);
-    await cancel(f);
-    mockNow(f.clock + 31_000);
-    const run = await f.own(() => {
-      return f.api.createThreadRun(f.actor, {
-        agentId: f.agentId,
-        threadId: f.run.threadId,
-        prompt: "Fresh queue, stale heartbeat",
+  it.each([
+    { ageMs: 90_000, kind: "preference" },
+    { ageMs: 180_000, kind: "noPreference" },
+  ])(
+    "uses heartbeat freshness for a new job at $ageMs ms",
+    async ({ ageMs, kind }) => {
+      const f = await setup();
+      await heartbeat(f);
+      await cancel(f);
+      mockNow(f.clock + ageMs);
+      const run = await f.own(() => {
+        return f.api.createThreadRun(f.actor, {
+          agentId: f.agentId,
+          threadId: f.run.threadId,
+          prompt: "Fresh queue, retained heartbeat",
+        });
       });
-    });
-    const next = { ...f, run };
-    expect((await poll(next))?.runnerPreference).toMatchObject({
-      kind: "noPreference",
-    });
-  });
+      const next = { ...f, run };
+      expect((await poll(next))?.runnerPreference).toMatchObject({
+        kind,
+      });
+    },
+  );
 
   it("does not accept official home inventory from a PAT heartbeat", async () => {
     const f = await setup();

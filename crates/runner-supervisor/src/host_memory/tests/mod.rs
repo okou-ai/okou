@@ -43,9 +43,9 @@ async fn slow_reads_are_single_flight_and_cancel_joins_without_a_tick() {
     });
     tokio::task::yield_now().await;
     assert_eq!(reads.load(Ordering::SeqCst), 1);
-    tokio::time::advance(HEARTBEAT_PERIOD - Duration::from_millis(1)).await;
+    tokio::time::advance(OBSERVATION_PERIOD - Duration::from_millis(1)).await;
     assert_eq!(reads.load(Ordering::SeqCst), 1);
-    tokio::time::advance(HEARTBEAT_PERIOD * 3).await;
+    tokio::time::advance(OBSERVATION_PERIOD * 3).await;
     observer.latest.changed().await.unwrap();
     assert_eq!(
         observer.available_bytes(),
@@ -93,8 +93,11 @@ async fn failed_read_invalidates_the_latest_observation() {
     });
     observer.latest.changed().await.unwrap();
     assert_eq!(observer.available_bytes(), Ok(43008));
-    tokio::time::advance(HEARTBEAT_PERIOD).await;
-    observer.latest.changed().await.unwrap();
+    tokio::time::advance(Duration::from_secs(10)).await;
+    tokio::time::timeout(Duration::from_secs(1), observer.latest.changed())
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(
         observer.available_bytes(),
         Err(HostMemoryUnknown::ReadFailed(std::io::ErrorKind::NotFound))
@@ -114,7 +117,7 @@ async fn missed_ticks_are_coalesced_instead_of_replayed() {
     });
     observer.latest.changed().await.unwrap();
     assert_eq!(reads.load(Ordering::SeqCst), 1);
-    tokio::time::advance(HEARTBEAT_PERIOD * 100).await;
+    tokio::time::advance(OBSERVATION_PERIOD * 100).await;
     observer.latest.changed().await.unwrap();
     assert_eq!(reads.load(Ordering::SeqCst), 2);
     observer.shutdown().await.unwrap();

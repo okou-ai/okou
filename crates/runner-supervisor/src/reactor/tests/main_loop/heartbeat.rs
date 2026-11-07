@@ -3,9 +3,11 @@ use super::super::support::{
     MockRunEnv, TEST_RUNNER_ID, assert_run_exits_within, minimal_context, mock_run_config,
     mock_run_config_with_delay, mock_run_config_with_overrides, push_job, shutdown, test_profiles,
     wait_budget_count, wait_budget_exhausted_reactor, wait_cancel_token, wait_cancel_token_removed,
-    wait_discover_entered, wait_status_idle_reuse_keys_and_active_runs, wait_status_mode,
+    wait_discover_entered, wait_heartbeat_matching_after,
+    wait_status_idle_reuse_keys_and_active_runs, wait_status_mode,
 };
 use crate::status::StatusPersistenceError;
+use raw_http_test_support::clock::advance_timer_phase;
 use runner_types::types::HeartbeatState;
 use sandbox::SandboxId;
 use std::sync::Arc;
@@ -59,10 +61,8 @@ fn assert_final_basic_heartbeat(state: &HeartbeatState) {
 }
 
 #[tokio::test]
-async fn routine_heartbeat_retries_unpublished_status() {
-    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
-    let (heartbeat_trigger, heartbeat_trigger_rx) = tokio::sync::mpsc::unbounded_channel();
-    config.test_hooks.manual_routine_heartbeat_rx = Some(heartbeat_trigger_rx);
+async fn status_retry_does_not_wait_for_routine_heartbeat() {
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 1);
     let status_parent = env._temp_dir.path().join("status-state");
     let unavailable_parent = env._temp_dir.path().join("status-state-unavailable");
     tokio::fs::create_dir(&status_parent).await.unwrap();
@@ -95,7 +95,7 @@ async fn routine_heartbeat_retries_unpublished_status() {
         .await
         .unwrap();
 
-    trigger_routine_heartbeat(&heartbeat_trigger, &env, RunnerMode::Running).await;
+    advance_timer_phase(maintenance::STATUS_RETRY_PERIOD).await;
     wait_status_idle_reuse_keys_and_active_runs(&status_path, &[], &[], Duration::from_secs(5))
         .await;
 
@@ -105,24 +105,14 @@ async fn routine_heartbeat_retries_unpublished_status() {
 // -----------------------------------------------------------------------
 // Test 2: Discover survives heartbeat ticks (regression #8783)
 //
-// ApiProvider's discover() has an internal poll timer (30s) that must
-// survive heartbeat ticks (10s). Without pinning, `select!` cancels
-// and recreates discover() each tick, restarting the timer from scratch.
-//
-// We use poll_delay=20s to simulate this: if the future is pinned, the
-// delay completes at t=20s and the job is discovered. If not pinned,
-// heartbeat at t=10s restarts the delay → it won't complete until t=30s.
+// Provider-owned discovery must survive routine ticks even when its delay
+// exceeds the reporting period. Otherwise each select tick resets the delay.
 // -----------------------------------------------------------------------
 
 #[tokio::test(start_paused = true)]
 async fn discover_survives_heartbeat_ticks() {
-    let (config, env) = mock_run_config_with_delay(
-        test_profiles(),
-        8,
-        32768,
-        4,
-        Duration::from_secs(20), // poll delay: 20s
-    );
+    let (config, env) =
+        mock_run_config_with_delay(test_profiles(), 8, 32768, 4, HEARTBEAT_PERIOD * 2);
     let run_handle = tokio::spawn(run(config));
     assert!(
         env.handle
@@ -136,25 +126,21 @@ async fn discover_survives_heartbeat_ticks() {
     let run_id = RunId::new_v4();
     push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
 
-    // Advance to the first heartbeat while the 20s discover delay is still
+    // Advance to the first heartbeat while the discovery delay is still
     // pending, then let the runner task observe the ready timer.
     tokio::time::advance(HEARTBEAT_PERIOD).await;
     tokio::task::yield_now().await;
     assert!(
         env.handle
-            .wait_heartbeat_past(0, Duration::from_secs(1))
+            .wait_heartbeat_past(1, Duration::from_secs(1))
             .await,
         "heartbeat should fire while discover poll delay is running"
     );
 
-    // Advance past the rest of the 20s poll delay. If discover was cancelled
-    // and recreated at t=10s, the delay restarts and this is still too early.
-    tokio::time::advance(Duration::from_secs(15)).await;
+    // Pass the original delay, but not a delay restarted by the first tick.
+    tokio::time::advance(HEARTBEAT_PERIOD + Duration::from_secs(5)).await;
 
-    // Job should have been discovered and completed.
-    // If discover was cancelled and recreated at t=10s, the 20s delay
-    // restarts → at t=25s only 15s of the second delay has elapsed →
-    // job not discovered yet → this assertion fails.
+    // A restarted discovery still cannot complete at this point.
     let completion = env
         .handle
         .wait_completion(run_id, Duration::from_secs(10))
@@ -226,6 +212,126 @@ async fn routine_delivery_failure_after_startup_keeps_job_admission_available() 
             .is_some(),
         "a later heartbeat failure must not turn healthy startup into an admission failure"
     );
+    shutdown(&env, run_handle).await;
+}
+
+#[tokio::test]
+async fn failed_report_retries_without_waiting_for_a_routine_tick() {
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 1);
+    let (trigger, receiver) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_routine_heartbeat_rx = Some(receiver);
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+    let cursor = env.start_observer.cursor();
+    env.handle.fail_next_heartbeat();
+    trigger_routine_heartbeat(&trigger, &env, RunnerMode::Running).await;
+    env.start_observer
+        .wait_after(
+            cursor,
+            Duration::from_secs(5),
+            "heartbeat retry admission",
+            &mut |event| matches!(event, StartLoopEvent::HeartbeatRetryScheduled).then_some(()),
+        )
+        .await;
+
+    advance_timer_phase(crate::heartbeat::HEARTBEAT_RETRY_DELAY).await;
+    assert!(
+        env.handle
+            .wait_heartbeat_past(2, Duration::from_secs(5))
+            .await
+    );
+    assert_eq!(env.handle.max_heartbeat_in_flight(), 1);
+    {
+        let states = env.handle.heartbeats.lock().unwrap();
+        assert_eq!(states[2].snapshot_sequence, 3);
+        assert_eq!(states[2].mode, "running");
+    }
+    shutdown(&env, run_handle).await;
+}
+
+#[tokio::test]
+async fn capacity_and_producer_changes_report_without_routine_ticks() {
+    let (mut config, env) = mock_run_config(test_profiles(), 8, 32768, 1);
+    let (_trigger, receiver) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_routine_heartbeat_rx = Some(receiver);
+    let budget = Arc::clone(&config.capacity.budget);
+    let run_handle = tokio::spawn(run(config));
+    wait_discover_entered(&env, Duration::from_secs(5)).await;
+
+    let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+    assert!(
+        env.handle
+            .wait_heartbeat_past(1, Duration::from_secs(5))
+            .await
+    );
+    {
+        let states = env.handle.heartbeats.lock().unwrap();
+        let state = states.last().unwrap();
+        assert_eq!(
+            (
+                state.allocated_vcpu,
+                state.allocated_memory_mb,
+                state.running_count
+            ),
+            (2, 4096, 1)
+        );
+        assert!(state.admittable_profiles.is_empty());
+    }
+
+    let run_id = RunId::new_v4();
+    let guard =
+        env.active_runs
+            .register(run_id, Some("thread:report".into()), "vm0/default".into());
+    assert!(
+        env.handle
+            .wait_heartbeat_past(2, Duration::from_secs(5))
+            .await
+    );
+    {
+        let states = env.handle.heartbeats.lock().unwrap();
+        assert_eq!(
+            states.last().unwrap().active_reuse_producers[0].run_id,
+            run_id
+        );
+    }
+    assert!(guard.reuse_publisher().publish_no_exact_sandbox());
+    assert!(
+        env.handle
+            .wait_heartbeat_past(3, Duration::from_secs(5))
+            .await
+    );
+    assert!(
+        env.handle
+            .heartbeats
+            .lock()
+            .unwrap()
+            .last()
+            .unwrap()
+            .active_reuse_producers
+            .is_empty()
+    );
+
+    drop(guard);
+    drop(lease);
+    assert!(
+        env.handle
+            .wait_heartbeat_past(4, Duration::from_secs(5))
+            .await
+    );
+    {
+        let states = env.handle.heartbeats.lock().unwrap();
+        let state = states.last().unwrap();
+        assert_eq!(
+            (
+                state.allocated_vcpu,
+                state.allocated_memory_mb,
+                state.running_count
+            ),
+            (0, 0, 0)
+        );
+        assert_eq!(state.admittable_profiles, ["vm0/default"]);
+    }
+    assert_eq!(env.handle.max_heartbeat_in_flight(), 1);
     shutdown(&env, run_handle).await;
 }
 
@@ -472,11 +578,21 @@ async fn heartbeat_fires_while_draining() {
         .await
         .expect("active job should enter wait_process before Draining heartbeat check");
 
-    // Enter Draining before triggering the routine heartbeat. `status.json`
+    // Enter Draining without a routine tick. `status.json`
     // is updated only after the main loop observes the mode transition.
+    let changed_before = env.handle.heartbeat_count();
     env.drain();
     wait_status_mode(&status_path, "draining", Duration::from_secs(5)).await;
     assert_eq!(*env.mode_tx.borrow(), RunnerMode::Draining);
+    assert!(
+        wait_heartbeat_matching_after(
+            &env.handle,
+            changed_before,
+            Duration::from_secs(5),
+            |state| { state.mode == "draining" }
+        )
+        .await
+    );
     let before = env.handle.heartbeat_count();
 
     // Trigger a routine heartbeat while Draining mode is active. A broken
@@ -603,45 +719,27 @@ async fn heartbeat_tick_uses_live_mode_after_silent_mode_flip() {
     .await;
 }
 
-/// Regression for #10146 / #10223: the main-loop `heartbeat_tick` interval
-/// must defer its first tick past the configured period, so the tick branch
-/// is not Ready on the first `select!` poll. Otherwise it pre-empts
-/// `discover_fut` (which parks on
-/// `rx.recv()` → Pending) and any silent `mode_tx` flip during the
-/// tick body breaks the loop before the pending job is ever claimed.
-///
-/// The behavioral test `claim_after_stopping_sent_cancels_new_job`
-/// only triggers the underlying race under `cargo llvm-cov`, so a
-/// silent revert of `interval_at` → `interval` would not fail it on
-/// the default CI path. This test pins the invariant directly: a
-/// job pushed immediately at startup is processed without any tick
-/// having fired, observable via only the required startup heartbeat.
+// Stable reporting also retains the deferred first tick (#10146 / #10223).
 #[tokio::test(start_paused = true)]
-async fn heartbeat_tick_defers_past_first_select_poll() {
-    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 4);
+async fn stable_state_reports_once_per_minute_after_startup() {
+    let (config, env) = mock_run_config(test_profiles(), 8, 32768, 1);
     let run_handle = tokio::spawn(run(config));
-
     wait_discover_entered(&env, Duration::from_secs(2)).await;
-
-    // `minimal_context` → no reuse key → completion path does not trigger
-    // `reuse_state_notify`, so any heartbeat beyond the required startup
-    // inventory came from the interval tick (which must not fire yet).
-    let run_id = RunId::new_v4();
-    push_job(&env, run_id, "vm0/default", Some(minimal_context(run_id)));
-
-    let completion = env
-        .handle
-        .wait_completion(run_id, Duration::from_secs(5))
-        .await;
-    assert!(completion.is_some(), "job must complete");
-
+    let started = tokio::time::Instant::now();
+    assert!(
+        env.handle
+            .wait_heartbeat_past(1, Duration::from_secs(65))
+            .await
+    );
+    assert!(started.elapsed() >= Duration::from_secs(60));
     assert_eq!(
         env.handle.heartbeat_count(),
-        1,
-        "heartbeat tick fired before the startup job was processed — \
-             is the main-loop interval `interval_at(now + period, period)` \
-             instead of `interval(period)`?"
+        2,
+        "only startup and one routine report are due"
     );
-
+    let states = env.handle.heartbeats.lock().unwrap().clone();
+    assert_eq!(states[0].snapshot_sequence, 1);
+    assert_eq!(states[1].snapshot_sequence, 2);
+    assert_eq!(states[1].running_count, 0);
     shutdown(&env, run_handle).await;
 }

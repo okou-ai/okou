@@ -53,7 +53,8 @@ const RUNNER_EXACT_SANDBOX_ROUTING_WINDOW_MS = Math.min(
 // A short bridge covers a terminal predecessor before active-producer inventory
 // arrives. Only current producer proof earns the longer telemetry-close budget.
 const RUNNER_FINALIZING_COMPLETION_BRIDGE_MS = 1500;
-const RUNNER_REUSE_STATE_FRESH_MS = 30_000;
+// Allow three 60-second routine reports; state changes still report immediately.
+const RUNNER_REUSE_STATE_FRESH_MS = 180_000;
 
 const predecessorRun = alias(agentRuns, "reuse_predecessor_run");
 const predecessorRunnerState = alias(runnerState, "predecessor_runner");

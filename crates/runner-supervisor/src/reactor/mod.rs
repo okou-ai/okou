@@ -385,6 +385,7 @@ enum StartLoopEvent {
     RoutineHeartbeatRequested {
         mode: RunnerMode,
     },
+    HeartbeatRetryScheduled,
     HomeCacheChangeObserved,
     HomeCacheGcTickConsumed,
     HomeCachePressureTickConsumed,
@@ -1013,6 +1014,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     };
     #[cfg(not(test))]
     let mut heartbeat_tick = MaintenanceTrigger::interval(HEARTBEAT_PERIOD);
+    let mut status_retry_tick = MaintenanceTrigger::interval(maintenance::STATUS_RETRY_PERIOD);
 
     // -----------------------------------------------------------------------
     // Main loop
@@ -1020,7 +1022,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
     // Notification channel: spawned jobs signal the main loop to send an
     // immediate heartbeat after reusable state changes, so the server
     // learns about a held reusable sandbox or home image cache without
-    // waiting for the next 10-second tick.
+    // waiting for the next routine tick.
     let reuse_state_notify = Arc::clone(&shared.reuse_state_notify);
     let idle_destroy_tracker = IdleDestroyTracker::new(Arc::clone(&reuse_state_notify));
     let orphaned_active_runs = OrphanedActiveRuns::new();
@@ -1032,7 +1034,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
 
     // Pin the discover future so it survives cancellation by other select!
     // branches (heartbeat, lifecycle changes, etc.). Without pinning, heartbeat
-    // (10s) cancels discover() on every tick, restarting its provider-owned
+    // ticks can cancel discover(), restarting its provider-owned
     // wait from scratch before reconciliation can run. See #8747.
     let mut discover_fut = Box::pin(provider_state.provider.discover());
 
@@ -1159,6 +1161,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 )));
                 break;
             }
+            if matches!(mode, RunnerMode::Running | RunnerMode::Draining) {
+                heartbeat.request(mode)?;
+            }
         }
         pending_candidate.clear_if_inactive(mode);
         blank_pool.cancel_if_inactive(mode);
@@ -1250,6 +1255,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         let can_discover = can_discover && claim_tasks.has_capacity();
         let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
+        let heartbeat_retry_deadline = heartbeat.retry_deadline().map(Into::into);
         let pending_finalizing_deadline =
             pending_candidate.expiry_deadline(mode, claim_tasks.has_capacity());
         tokio::select! {
@@ -1368,6 +1374,10 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     ).await;
                     terminal_error = Some(error.into());
                     break;
+                }
+                #[cfg(test)]
+                if heartbeat.retry_deadline().is_some() {
+                    test_hooks.test_observer.record(StartLoopEvent::HeartbeatRetryScheduled);
                 }
             }
             observation = home_cache_observation.wait() => {
@@ -1548,11 +1558,23 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             _ = heartbeat_tick.tick() => {
                 let live_mode = *mode_rx.borrow();
                 heartbeat.request(live_mode)?;
-                maintenance.request_status_retry(&shared.status);
                 #[cfg(test)]
                 test_hooks
                     .test_observer
                     .notify_routine_heartbeat_requested(live_mode);
+            }
+            _ = status_retry_tick.tick() => {
+                maintenance.request_status_retry(&shared.status);
+            }
+            _ = sleep_until_optional_instant(heartbeat_retry_deadline),
+                if matches!(mode, RunnerMode::Running | RunnerMode::Draining) =>
+            {
+                heartbeat.request(*mode_rx.borrow())?;
+            }
+            _ = capacity.budget.changed(),
+                if matches!(mode, RunnerMode::Running | RunnerMode::Draining) =>
+            {
+                heartbeat.request(*mode_rx.borrow())?;
             }
             _ = sleep_until_optional_instant(pending_finalizing_deadline) =>
             {
@@ -1562,7 +1584,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
             }
             // Immediate heartbeat after reusable state changes eliminates the
-            // up-to-10s blind spot for reuse-aware routing.
+            // routine-report blind spot for reuse-aware routing.
             _ = reuse_state_notify.notified(), if matches!(mode, RunnerMode::Running | RunnerMode::Draining) => {
                 let live_mode = *mode_rx.borrow();
                 pending_candidate.request_retry(live_mode);

@@ -29,8 +29,9 @@ pub(super) use self::status::{
 pub(super) use self::wait::{
     assert_run_exits_within, wait_budget_count, wait_budget_exhausted_reactor, wait_cancel_handle,
     wait_cancel_token, wait_cancel_token_removed, wait_discover_entered,
-    wait_home_cache_reuse_keys, wait_idle_pool_len, wait_idle_pool_reuse_keys, wait_parking_state,
-    wait_sandbox_lifecycle_counts, wait_usage_flush_requested,
+    wait_heartbeat_matching_after, wait_home_cache_reuse_keys, wait_idle_pool_len,
+    wait_idle_pool_reuse_keys, wait_parking_state, wait_sandbox_lifecycle_counts,
+    wait_usage_flush_requested,
 };
 pub(in super::super) struct FileMemorySource(pub(in super::super) std::path::PathBuf);
 
