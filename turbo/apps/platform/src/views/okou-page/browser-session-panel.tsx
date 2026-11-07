@@ -220,7 +220,7 @@ function BrowserCdpViewer({
           inert={connecting}
           data-browser-session-cdp-viewer
           className={cn(
-            "relative isolate flex min-h-0 flex-1",
+            "relative isolate flex min-h-0 min-w-0 flex-1",
             connecting && "invisible",
           )}
         >
