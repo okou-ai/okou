@@ -215,7 +215,8 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
     let original_items_path = tmp.path().join("original-delivery-items.json");
     // Batch escaped-string writes while retaining every canonical fixture byte.
     {
-        let mut original_items = BufWriter::new(std::fs::File::create(&original_items_path)?);
+        let mut original_items =
+            BufWriter::with_capacity(1024 * 1024, std::fs::File::create(&original_items_path)?);
         let items = delivery_items
             .as_array()
             .ok_or("delivery items must be an array")?
