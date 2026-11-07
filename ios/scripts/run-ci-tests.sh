@@ -10,6 +10,7 @@ cd "$repo_root"
 ios_preboot_pid=""
 ios_phase_pid=""
 cleanup() {
+  local ios_status=$?
   local ios_child
   for ios_child in "$ios_preboot_pid" "$ios_phase_pid"; do
     if [[ -n "$ios_child" ]]; then
@@ -17,6 +18,15 @@ cleanup() {
       wait "$ios_child" 2>/dev/null || true
     fi
   done
+  if [[ "${IOS_SIMULATOR_PROFILE:-standard}" == lean ]]; then
+    if ! python3 ios/scripts/preboot-simulator.py restore; then
+      echo "Failed to restore the simulator launchd profile" >&2
+      if [[ "$ios_status" == 0 ]]; then
+        ios_status=1
+      fi
+    fi
+  fi
+  exit "$ios_status"
 }
 trap cleanup EXIT
 trap 'exit 130' INT

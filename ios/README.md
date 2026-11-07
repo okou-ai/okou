@@ -316,6 +316,18 @@ Release-only merge groups can reuse App test evidence only when exact input fing
 the verified prior result; missing evidence and mixed groups run the tests.
 See [archive promotion](ARCHIVE_PROMOTION.md).
 
+For a simulator startup comparison, manually dispatch `ios.yml` with
+`simulator_profile=standard` (the default) or `simulator_profile=lean` on the same
+revision. The lean experiment is limited to GitHub-hosted iOS 27.0 runners. It
+disables only wallpaper and Widget services before boot, verifies that they are
+disabled and unloaded, and restores its launchd settings after tests, failure,
+or cancellation. Runtime service definitions must match; verification failures
+block tests. Native tests, runner size, caches and timeouts are unchanged.
+Simulator command timings and the full workflow duration include profile setup,
+verification and restoration overhead; compare those totals rather than a CPU
+percentage. This uses version-specific CoreSimulator configuration and remains
+opt-in. Ordinary PRs and merge groups always use the standard profile.
+
 For a slow compile-phase Xcode launch, manually dispatch `ios.yml` with
 `sample_xcode_startup=true`. The opt-in observer records UTC and monotonic
 timing, first output and command-banner milestones, process-name/CPU/memory

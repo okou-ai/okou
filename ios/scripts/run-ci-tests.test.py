@@ -2,6 +2,7 @@
 """Exercise real CI scripts with controlled external compiler/simulator processes."""
 
 import os
+import plistlib
 import shutil
 import signal
 import subprocess
@@ -9,10 +10,11 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from uuid import uuid4
 
 SCRIPTS = Path(__file__).parent
 MOCK = r"""#!/usr/bin/env python3
-import json, os, pathlib, signal, sys, time
+import json, os, pathlib, plistlib, signal, sys, time
 state = pathlib.Path(os.environ['CI_PROCESS_STATE'])
 scenario = os.environ['CI_PROCESS_SCENARIO']
 role = ''
@@ -30,14 +32,18 @@ def stopped(signum, frame):
 signal.signal(signal.SIGTERM, stopped)
 args = sys.argv[1:]
 command = pathlib.Path(sys.argv[0]).name
+udid = os.environ['CI_PROCESS_UDID']
 if command == 'xcrun':
     if args == ['simctl', 'list', 'devices', 'available', '--json']:
-        print(json.dumps({'devices': {'com.apple.CoreSimulator.SimRuntime.iOS-26-2':
-            [{'name': 'iPhone 17 Pro', 'udid': 'configured', 'state': 'Shutdown'}]}}))
-    elif args == ['simctl', 'boot', 'configured']:
+        print(json.dumps({'devices': {os.environ['CI_PROCESS_RUNTIME']:
+            [{'name': 'iPhone 17 Pro', 'udid': udid, 'state': 'Shutdown'}]}}))
+    elif args == ['simctl', 'list', 'runtimes', '--json']:
+        print(json.dumps({'runtimes': [{'identifier': os.environ['CI_PROCESS_RUNTIME'],
+            'bundlePath': os.environ['CI_PROCESS_RUNTIME_BUNDLE']}]}))
+    elif args == ['simctl', 'boot', udid]:
         if not (state / 'build-finished').exists():
             sys.exit('Simulator boot requested before compilation finished')
-    elif args == ['simctl', 'bootstatus', 'configured']:
+    elif args == ['simctl', 'bootstatus', udid]:
         role = 'boot'
         if not (state / 'prepare-finished').exists():
             sys.exit('Simulator started before locked dependency resolution finished')
@@ -49,6 +55,17 @@ if command == 'xcrun':
         if scenario == 'cancel-boot':
             wait_for('allow-boot')
         mark('boot-finished')
+    elif args[:3] == ['simctl', 'spawn', udid]:
+        database = pathlib.Path('/var/tmp') / ('com.apple.CoreSimulator.SimDevice.' + udid) / 'disabled.plist'
+        flags = plistlib.loads(database.read_bytes())
+        if args[4:] == ['print-disabled', 'system']:
+            for label, value in flags.items():
+                print('"' + label + '" => ' + str(value).lower())
+        elif args[4] == 'print':
+            print('Could not find service "' + args[5].split('/')[1] + '" in domain for system', file=sys.stderr)
+            sys.exit(113)
+        else:
+            raise ValueError(args)
     elif args[0] != 'swift-format':
         raise ValueError(args)
 elif command == 'swift':
@@ -138,6 +155,9 @@ class CIProcessTests(unittest.TestCase):
         resolved.write_text('{"pins": []}\n')
         self.state = self.root / "state"
         self.state.mkdir()
+        udid = str(uuid4()).upper()
+        self.launchd = Path("/var/tmp") / f"com.apple.CoreSimulator.SimDevice.{udid}"
+        self.addCleanup(shutil.rmtree, self.launchd, True)
         mock = self.root / "bin"
         mock.mkdir()
         for name in ("xcrun", "swift", "xcodebuild"):
@@ -150,7 +170,29 @@ class CIProcessTests(unittest.TestCase):
             "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 17 Pro,OS=26.2",
             "CI_PROCESS_STATE": str(self.state),
             "CI_PROCESS_SCENARIO": "success",
+            "CI_PROCESS_UDID": udid,
+            "CI_PROCESS_RUNTIME": "com.apple.CoreSimulator.SimRuntime.iOS-26-2",
+            "IOS_SIMULATOR_PROFILE": "standard",
         }
+
+    def lean_fixture(self):
+        runtime = self.root / "iOS.simruntime"
+        daemons = (
+            runtime / "Contents/Resources/RuntimeRoot/System/Library/LaunchDaemons"
+        )
+        daemons.mkdir(parents=True)
+        for label in ("com.apple.PosterBoard", "com.apple.chronod"):
+            (daemons / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label}))
+        self.env.update(
+            {
+                "GITHUB_ACTIONS": "true",
+                "RUNNER_ENVIRONMENT": "github-hosted",
+                "IOS_SIMULATOR_PROFILE": "lean",
+                "CI_PROCESS_RUNTIME": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
+                "CI_PROCESS_RUNTIME_BUNDLE": str(runtime),
+                "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 17 Pro,OS=27.0",
+            }
+        )
 
     def command(self, script="run-ci-tests.sh"):
         return ["bash", str(self.repo / "ios/scripts" / script)]
@@ -238,6 +280,36 @@ class CIProcessTests(unittest.TestCase):
         self.assertEqual(result.returncode, 65, result.stderr)
         bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
         self.assertEqual((bundle / "failure.txt").read_text(), "First failed assertion")
+
+    def test_native_failure_restores_the_lean_profile_without_masking_the_failure(self):
+        self.lean_fixture()
+        self.env["CI_PROCESS_SCENARIO"] = "test-failure"
+        result = self.invoke()
+        self.assertEqual(result.returncode, 65, result.stderr)
+        self.assertTrue((self.state / "tests-ran").exists())
+        self.assertFalse((self.launchd / "disabled.plist").exists())
+        self.assertFalse(
+            (self.root / "work/okou-ios-ci/simulator-profile.json").exists()
+        )
+
+    def test_cancellation_retires_boot_before_restoring_the_lean_profile(self):
+        self.lean_fixture()
+        self.env["CI_PROCESS_SCENARIO"] = "cancel-boot"
+        with subprocess.Popen(
+            self.command(),
+            cwd=self.repo,
+            env=self.env,
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+        ) as process:
+            self.await_marker("boot-started")
+            process.send_signal(signal.SIGTERM)
+            _, stderr = process.communicate(timeout=5)
+            self.assertEqual(process.returncode, 143, stderr)
+        self.await_marker("boot-stopped")
+        self.assertFalse((self.launchd / "disabled.plist").exists())
+        self.assertFalse((self.state / "tests-ran").exists())
 
     def test_cancellation_retires_resolution_without_starting_the_simulator(self):
         self.env["CI_PROCESS_SCENARIO"] = "cancel"
