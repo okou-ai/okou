@@ -6,15 +6,15 @@ import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import Mock, patch
 
 import addon_process_logging
 
 
 @contextmanager
-def capture_addon_process_events() -> Iterator[MagicMock]:
+def capture_addon_process_events() -> Iterator[Mock]:
     """Capture the external stderr write after real event serialization."""
-    log = MagicMock()
+    log = Mock()
 
     def capture(fd: int, record: bytes) -> int:
         assert fd == 42
