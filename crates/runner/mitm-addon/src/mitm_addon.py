@@ -54,6 +54,7 @@ import body_capture
 import builtin_connector_diagnostics
 import builtin_host_policy
 import codex_model_catalog_cache
+import connection_endpoints
 import connector_diagnostics
 import connector_intent
 import content_length
@@ -707,15 +708,8 @@ def _block_builtin_host_policy_denied(
         flow,
         allow=allow,
         error=error,
-        upstream_endpoint=_endpoint_text(upstream_endpoint),
+        upstream_endpoint=connection_endpoints.diagnostic_text(upstream_endpoint),
     )
-
-
-def _endpoint_text(address: tuple[str, int] | None) -> str:
-    if address is None:
-        return ""
-    host, port = address
-    return f"{host}:{port}"
 
 
 def server_connect(data: object) -> None:

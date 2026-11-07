@@ -513,7 +513,12 @@ def diagnostic_snapshot_for_flow(
         "client_binding_match": bool(matching_client_bindings),
         "client_binding_endpoint_match": client_binding_endpoint_match,
         "client_binding_hosts": ",".join(
-            sorted({f"{binding.host}:{binding.port}" for binding in client_bindings})[:8]
+            sorted(
+                {
+                    connection_endpoints.diagnostic_text((binding.host, binding.port))
+                    for binding in client_bindings
+                }
+            )[:8]
         ),
     }
 

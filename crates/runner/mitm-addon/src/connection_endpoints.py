@@ -59,6 +59,18 @@ def address_pair(address: object) -> tuple[str, int] | None:
     return host, port
 
 
+def diagnostic_text(address: tuple[str, int] | None) -> str:
+    """Render diagnostic endpoint text, preserving the original host and port.
+
+    Missing endpoints render as empty text. IPv6 hosts remain unbracketed;
+    this representation is not a URL or HTTP authority.
+    """
+    if address is None:
+        return ""
+    host, port = address
+    return f"{host}:{port}"
+
+
 def authoritative_connected_endpoint(endpoint: object) -> ConnectedIpEndpoint | None:
     """Return parsed evidence from an acceptable connected IP endpoint.
 
