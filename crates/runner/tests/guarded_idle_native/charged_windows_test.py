@@ -373,6 +373,54 @@ class ReplayTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "file bytes"):
             self.replay()
 
+    def test_retained_file_refusals_close_original_descriptors(self):
+        path = self.root / "retained.bin"
+        for kind in ("missing", "symlink", "fifo", "truncated", "oversized"):
+            with self.subTest(kind=kind):
+                path.unlink(missing_ok=True)
+                if kind == "symlink":
+                    path.symlink_to(self.original_file)
+                elif kind == "fifo":
+                    os.mkfifo(path)
+                elif kind in ("truncated", "oversized"):
+                    with path.open("xb") as handle:
+                        handle.truncate(64 * MIB + (-1 if kind == "truncated" else 1))
+                before = set(os.listdir("/proc/self/fd"))
+                with self.assertRaises((OSError, ValueError)):
+                    self.replay()
+                self.assertEqual(set(os.listdir("/proc/self/fd")), before)
+
+    def test_retained_file_growth_during_replay_is_refused(self):
+        path = self.root / "retained.bin"
+        path.unlink()
+        with path.open("xb") as handle:
+            handle.truncate(64 * MIB)
+        identity = path.stat()
+        read = os.read
+        changed = False
+
+        def grow_after_read(fd, count):
+            nonlocal changed
+            raw = read(fd, count)
+            info = os.fstat(fd)
+            if not changed and (info.st_dev, info.st_ino) == (
+                identity.st_dev,
+                identity.st_ino,
+            ):
+                with path.open("ab") as handle:
+                    handle.write(b"x")
+                changed = True
+            return raw
+
+        before = set(os.listdir("/proc/self/fd"))
+        with (
+            unittest.mock.patch.object(os, "read", side_effect=grow_after_read),
+            self.assertRaisesRegex(ValueError, "original file changed"),
+        ):
+            self.replay()
+        self.assertTrue(changed)
+        self.assertEqual(set(os.listdir("/proc/self/fd")), before)
+
 
 class SafetyTests(unittest.TestCase):
     @unittest.skipUnless(
