@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.6](https://github.com/okou-ai/okou/compare/ios-v0.28.5...ios-v0.28.6) (2026-11-07)
+
+
+### Bug Fixes
+
+* **ios:** preserve successful navigation resources on partial failure ([#45835](https://github.com/okou-ai/okou/issues/45835)) ([fa7ad1c](https://github.com/okou-ai/okou/commit/fa7ad1c33c425dd858528ebe92cba77f7c77ed6b))
+
 ## [0.28.5](https://github.com/okou-ai/okou/compare/ios-v0.28.4...ios-v0.28.5) (2026-11-07)
 
 

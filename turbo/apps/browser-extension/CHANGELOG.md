@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.5.5](https://github.com/okou-ai/okou/compare/browser-extension-v0.5.4...browser-extension-v0.5.5) (2026-11-07)
+
+
+### Bug Fixes
+
+* **browser:** load default noto fonts from google ([#45739](https://github.com/okou-ai/okou/issues/45739)) ([734bfec](https://github.com/okou-ai/okou/commit/734bfecfeef1606776579feb319fbb6aa21bc5b6))
+
 ## [0.5.4](https://github.com/okou-ai/okou/compare/browser-extension-v0.5.3...browser-extension-v0.5.4) (2026-11-03)
 
 
