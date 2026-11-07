@@ -1048,7 +1048,7 @@ describe("connector catalog valid lifecycle", () => {
     });
   });
 
-  it("reuses a bundled skill registration in a later catalog release", async () => {
+  it("reuses a prepared Skill bundle in a later catalog release", async () => {
     const app = await setupApp({
       context,
       routes: cronConnectorCatalogRoutes,

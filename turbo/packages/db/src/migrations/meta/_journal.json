@@ -3165,6 +3165,13 @@
       "when": 1793999130080,
       "tag": "1530_drop_retired_action_and_artifact_preferences",
       "breakpoints": true
+    },
+    {
+      "idx": 1531,
+      "version": "7",
+      "when": 1794022994310,
+      "tag": "1531_connector_skill_registry_free_source",
+      "breakpoints": true
     }
   ]
 }

@@ -10,11 +10,6 @@ import {
   type ConnectorCatalogArtifact,
 } from "@okouai/connectors/connector-catalog/artifacts/artifacts";
 import { db$, writeDb$ } from "../external/db";
-import {
-  prepareConnectorCatalogSkills$,
-  registerPreparedConnectorCatalogSkills$,
-} from "./connector-catalog-skill-registration.service";
-
 const IMMUTABLE_CATALOG_ENTRY_INSERT_BATCH_SIZE = 100;
 
 export const immutableCatalogHash$ = command(
@@ -34,8 +29,7 @@ export const immutableCatalogHash$ = command(
   },
 );
 
-// Legacy Storage registration precedes entry publication. Bundle preparation
-// fills only additive metadata, before pointer publication or on an unchanged
+// Bundle preparation fills additive metadata before pointer publication or on an unchanged
 // sync. Interrupted preparation leaves a partial generation that a retry at the
 // same hash reuses; immutable catalog fields captured by readers never change.
 export const prepareImmutableCatalogEntries$ = command(
@@ -65,13 +59,6 @@ export const prepareImmutableCatalogEntries$ = command(
     if (missing.length === 0) {
       return;
     }
-    const registrations = await set(
-      prepareConnectorCatalogSkills$,
-      { ...args.artifact, connectors: missing },
-      signal,
-    );
-    await set(registerPreparedConnectorCatalogSkills$, registrations, signal);
-    signal.throwIfAborted();
     // Bounded multi-row statements keep a cold ~4,600-entry generation from
     // paying one database round trip per entry. Each batch is independently
     // idempotent; batches follow publication order for every preparer.
