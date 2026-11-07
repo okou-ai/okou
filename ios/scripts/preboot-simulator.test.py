@@ -23,6 +23,8 @@ if sys.argv[1:] == ['simctl', 'list', 'devices', 'available', '--json']:
 elif sys.argv[1:] == ['simctl', 'list', 'runtimes', '--json']:
     print(json.dumps({'runtimes': [{'identifier': 'com.apple.CoreSimulator.SimRuntime.iOS-27-0',
         'bundlePath': os.environ['SIMULATOR_RUNTIME_BUNDLE']}]}))
+elif sys.argv[1:3] == ['simctl', 'get_app_container']:
+    print(os.environ['SIMULATOR_POSTER_APP'])
 elif sys.argv[1:3] == ['simctl', 'boot']:
     if os.environ.get('SIMULATOR_BOOT_FAILURE'):
         sys.exit('Simulator boot failed')
@@ -123,13 +125,17 @@ class PrebootSimulatorTests(unittest.TestCase):
         }
         self.state.write_text(json.dumps(self.inventory))
         runtime = self.root / "iOS.simruntime"
-        for kind, label in (
-            ("LaunchAgents", "com.apple.PosterBoard"),
-            ("LaunchDaemons", "com.apple.chronod"),
-        ):
-            directory = runtime / "Contents/Resources/RuntimeRoot/System/Library" / kind
-            directory.mkdir(parents=True, exist_ok=True)
-            (directory / f"{label}.plist").write_bytes(plistlib.dumps({"Label": label}))
+        daemon = (
+            runtime
+            / "Contents/Resources/RuntimeRoot/System/Library/LaunchDaemons/com.apple.chronod.plist"
+        )
+        daemon.parent.mkdir(parents=True, exist_ok=True)
+        daemon.write_bytes(plistlib.dumps({"Label": "com.apple.chronod"}))
+        app = self.root / "installed-apps/PosterBoard.app"
+        app.mkdir(parents=True, exist_ok=True)
+        (app / "Info.plist").write_bytes(
+            plistlib.dumps({"CFBundleIdentifier": "com.apple.PosterBoard"})
+        )
         directory = Path("/var/tmp") / f"com.apple.CoreSimulator.SimDevice.{udid}"
         self.addCleanup(shutil.rmtree, directory, True)
         self.env.update(
@@ -139,6 +145,7 @@ class PrebootSimulatorTests(unittest.TestCase):
                 "RUNNER_TEMP": str(self.root / "work"),
                 "IOS_SIMULATOR_PROFILE": "lean",
                 "SIMULATOR_RUNTIME_BUNDLE": str(runtime),
+                "SIMULATOR_POSTER_APP": str(app),
                 "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0",
             }
         )

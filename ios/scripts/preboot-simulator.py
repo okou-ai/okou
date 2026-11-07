@@ -29,6 +29,10 @@ def simctl(phase, *args, capture=False, check=True):
             capture_output=capture,
             text=True,
         )
+    except subprocess.CalledProcessError as error:
+        if capture and error.stderr:
+            print(error.stderr, file=sys.stderr, end="", flush=True)
+        raise
     finally:
         print(
             f"iOS simulator {phase}: {time.monotonic() - started:.3f} seconds",
@@ -77,21 +81,13 @@ def apply_lean_profile(runtime, device):
     (selected,) = [
         item for item in inventory["runtimes"] if item["identifier"] == runtime
     ]
-    library = (
-        Path(selected["bundlePath"]) / "Contents/Resources/RuntimeRoot/System/Library"
-    )
-    definitions = {}
-    for kind in ("LaunchDaemons", "LaunchAgents"):
-        for path in (library / kind).glob("*.plist"):
-            with path.open("rb") as source:
-                label = plistlib.load(source).get("Label")
-            if label in LEAN_SERVICES:
-                definitions[label] = str(path)
-    if set(definitions) != set(LEAN_SERVICES):
-        raise ValueError(
-            f"Lean service definitions not found in {library}: {definitions}"
-        )
-    print("iOS simulator service definitions: " + json.dumps(definitions), flush=True)
+    root = Path(selected["bundlePath"]) / "Contents/Resources/RuntimeRoot"
+    # PosterBoard is an app, so its installed identity is checked after boot.
+    path = root / "System/Library/LaunchDaemons/com.apple.chronod.plist"
+    with path.open("rb") as source:
+        if plistlib.load(source)["Label"] != "com.apple.chronod":
+            raise ValueError(f"Unexpected simulator daemon identity in {path}")
+    print(f"iOS simulator daemon definition: {path}", flush=True)
 
     directory = launchd_directory(device["udid"])
     created_directory = not directory.exists()
@@ -135,6 +131,17 @@ def apply_lean_profile(runtime, device):
 
 
 def verify_lean_profile(udid):
+    app = simctl(
+        "system app identity",
+        "get_app_container",
+        udid,
+        "com.apple.PosterBoard",
+        "app",
+        capture=True,
+    ).stdout.strip()
+    with (Path(app) / "Info.plist").open("rb") as source:
+        if plistlib.load(source)["CFBundleIdentifier"] != "com.apple.PosterBoard":
+            raise ValueError("Unexpected PosterBoard application identity")
     disabled = simctl(
         "profile verification",
         "spawn",
