@@ -1,7 +1,19 @@
 import Foundation
 
-/// Owned by HostRuntime so concurrent API calls cannot overwrite a heartbeat's evidence.
-struct HeartbeatDiagnostics {
+/// Each host request loop owns its diagnostics so concurrent calls cannot overwrite evidence.
+struct HostRequestDiagnostics {
+  enum Request: String {
+    case heartbeat, state
+    case queueWait = "commands/wait"
+
+    var label: String {
+      switch self {
+      case .heartbeat: return "heartbeat"
+      case .state: return "state synchronization"
+      case .queueWait: return "command wait"
+      }
+    }
+  }
   enum Outcome: String {
     case failed, recovered, stopped
     case authorityRejected = "authority_rejected"
@@ -45,14 +57,17 @@ struct HeartbeatDiagnostics {
     }
   }
 
+  private let request: Request
   private let now: @Sendable () -> ContinuousClock.Instant
   private let awakeNow: @Sendable () -> SuspendingClock.Instant
   private var episode: Episode?
 
   init(
+    request: Request = .heartbeat,
     now: @escaping @Sendable () -> ContinuousClock.Instant = { .now },
     awakeNow: @escaping @Sendable () -> SuspendingClock.Instant = { .now }
   ) {
+    self.request = request
     self.now = now
     self.awakeNow = awakeNow
   }
@@ -106,12 +121,12 @@ struct HeartbeatDiagnostics {
     // prolonged awake failure visible without reporting every subsequent retry.
     let sustained = current.timing(at: instant, awakeAt: awakeInstant).awakeDuration >= .seconds(90)
     if !current.reportedError && (!retryable || sustained) {
-      DesktopTelemetry.captureHeartbeatEpisode(
+      DesktopTelemetry.captureHostRequestEpisode(request: request,
         id: current.id, outcome: .failed, level: .error,
         context: current.context(at: instant, awakeAt: awakeInstant))
       current.reportedError = true
     } else if current.attempts == 1 {
-      DesktopTelemetry.captureHeartbeatEpisode(
+      DesktopTelemetry.captureHostRequestEpisode(request: request,
         id: current.id, outcome: .failed,
         context: current.context(at: instant, awakeAt: awakeInstant))
     }
@@ -135,9 +150,9 @@ struct HeartbeatDiagnostics {
     if !current.reportedError,
       current.timing(at: instant, awakeAt: awakeInstant).awakeDuration >= .seconds(90)
     {
-      DesktopTelemetry.captureHeartbeatEpisode(
+      DesktopTelemetry.captureHostRequestEpisode(request: request,
         id: current.id, outcome: .failed, level: .error, context: context)
     }
-    DesktopTelemetry.captureHeartbeatEpisode(id: current.id, outcome: outcome, context: context)
+    DesktopTelemetry.captureHostRequestEpisode(request: request, id: current.id, outcome: outcome, context: context)
   }
 }

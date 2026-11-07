@@ -51,12 +51,14 @@ public actor HostRuntime {
     let hostId: String
     let generation: Int
     let usesPresence: Bool
+    let channelName: String
     init?(registration: ComputerUseHostRegistration) {
       guard UUID(uuidString: registration.hostId) != nil, registration.connectionGeneration > 0
       else { return nil }
       hostId = registration.hostId
       generation = registration.connectionGeneration
       usesPresence = registration.livenessMode?.rawValue == "presence"
+      channelName = registration.commandNotifications.channelName
     }
     func body(_ value: JSONValue) -> JSONValue {
       guard case .object(var fields) = value else { return value }
@@ -79,7 +81,9 @@ public actor HostRuntime {
   private var queueWaitTask: Task<Void, Never>?
   private var lastAdvertisedState: JSONValue?
   private var pendingStateRefresh = false
-  private var heartbeatDiagnostics = HeartbeatDiagnostics()
+  private var heartbeatDiagnostics = HostRequestDiagnostics()
+  private var stateDiagnostics = HostRequestDiagnostics(request: .state)
+  private var queueDiagnostics = HostRequestDiagnostics(request: .queueWait)
   private var notificationTask: Task<Void, Never>?
   private var notificationStops = 0
   private var drainTask: Task<Void, Never>?
@@ -292,6 +296,8 @@ public actor HostRuntime {
     lastAdvertisedState = nil
     pendingStateRefresh = false
     heartbeatDiagnostics.finish(outcome: .stopped)
+    stateDiagnostics.finish(outcome: .stopped)
+    queueDiagnostics.finish(outcome: .stopped)
     if let connection {
       do {
         let response = try await api.authenticatedRequest(
@@ -330,18 +336,22 @@ public actor HostRuntime {
     defer { if generation == current { stateTask = nil } }
     var attempt = 0
     while running && generation == current {
+      let trace = APIRequestTrace()
       do {
         pendingStateRefresh = false
         let advertised = await body()
         let response = try await request(
-          connection.state, connection: connection, body: advertised, timeout: 10, generation: current)
+          connection.state, connection: connection, body: advertised, timeout: 10, generation: current, trace: trace)
+        let operation = await trace.snapshot()
         guard running, generation == current else { return }
         if await rejectAuthority(response) { return }
         guard (200..<300).contains(response.status) else {
           throw DesktopFailure("network_error", "Host state synchronization failed (HTTP \(response.status))")
         }
         let result = try response.decode(ComputerUseHostHeartbeat.self)
-        await notifications.setAvailable(true)
+        stateDiagnostics.finish(outcome: .recovered, requests: operation.requests, operation: operation)
+        await notifications.setAvailable(true, channelName: connection.channelName)
+        guard running, generation == current else { return }
         lastAdvertisedState = advertised
         state.lastHeartbeat = Date()
         state.status = acceptingCommands ? "online" : "stopping"
@@ -355,8 +365,12 @@ public actor HostRuntime {
       } catch is CancellationError { return } catch {
         guard running, generation == current else { return }
         if await rejectAuthentication(error) { return }
-        await notifications.setAvailable(false)
+        await notifications.setAvailable(false, channelName: connection.channelName)
+        guard running, generation == current else { return }
         attempt += 1
+        let operation = await trace.snapshot()
+        guard running, generation == current else { return }
+        stateDiagnostics.failed(error: error, requests: operation.requests, retryDelay: delay(attempt), operation: operation)
         await recover(error, attempt: attempt)
         do { try await Task.sleep(for: .seconds(delay(attempt))) } catch { return }
       }
@@ -365,9 +379,11 @@ public actor HostRuntime {
   private func queueWaitLoop(generation current: Int, connection: Connection) async {
     var attempt = 0
     while running && acceptingCommands && generation == current {
+      let trace = APIRequestTrace()
       do {
         let response = try await request(
-          connection.wait, connection: connection, body: .object([:]), timeout: 70, generation: current)
+          connection.wait, connection: connection, body: .object([:]), timeout: 70, generation: current, trace: trace)
+        let operation = await trace.snapshot()
         try Task.checkCancellation()
         guard running, acceptingCommands, generation == current else { return }
         if await rejectAuthority(response) { return }
@@ -375,7 +391,9 @@ public actor HostRuntime {
           throw DesktopFailure("network_error", "Command wait failed (HTTP \(response.status))")
         }
         let pending = try response.decode(ComputerUseHostCommandWait.self)
-        await notifications.setAvailable(true)
+        queueDiagnostics.finish(outcome: .recovered, requests: operation.requests, operation: operation)
+        await notifications.setAvailable(true, channelName: connection.channelName)
+        guard running, generation == current else { return }
         state.lastHeartbeat = Date()
         state.status = "online"
         state.lastError = nil
@@ -385,15 +403,19 @@ public actor HostRuntime {
         attempt = 0
         if pending.hasPendingCommands {
           requestCommandRefresh(generation: current, connection: connection)
-          await drainTask?.value
-          // A temporarily unclaimable item must not turn the recovery wait into a busy loop.
-          try await Task.sleep(for: .seconds(2))
+          // Continue receiving liveness evidence while an existing command drains.
+          // A temporarily unclaimable item must not turn this into a busy loop.
+          try await Task.sleep(for: .seconds(15))
         }
       } catch is CancellationError { return } catch {
         guard running, acceptingCommands, generation == current else { return }
         if await rejectAuthentication(error) { return }
-        await notifications.setAvailable(false)
+        await notifications.setAvailable(false, channelName: connection.channelName)
+        guard running, generation == current else { return }
         attempt += 1
+        let operation = await trace.snapshot()
+        guard running, generation == current else { return }
+        queueDiagnostics.failed(error: error, requests: operation.requests, retryDelay: delay(attempt), operation: operation)
         await recover(error, attempt: attempt)
         do { try await Task.sleep(for: .seconds(delay(attempt))) } catch { return }
       }
@@ -448,6 +470,8 @@ public actor HostRuntime {
       return false
     }
     heartbeatDiagnostics.finish(outcome: .authorityRejected)
+    stateDiagnostics.finish(outcome: .authorityRejected)
+    queueDiagnostics.finish(outcome: .authorityRejected)
     queueWaitTask?.cancel()
     queueWaitTask = nil
     running = false
@@ -463,6 +487,8 @@ public actor HostRuntime {
   private func rejectAuthority(_ response: APIResponse) async -> Bool {
     guard [401, 403, 409, 426].contains(response.status) else { return false }
     heartbeatDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
+    stateDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
+    queueDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
     queueWaitTask?.cancel()
     queueWaitTask = nil
     if response.status == 426 {

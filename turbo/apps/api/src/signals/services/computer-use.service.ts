@@ -1,3 +1,5 @@
+import { HTTPException } from "hono/http-exception";
+import { providerUnavailable } from "../../lib/error";
 import { setTimeout as delay } from "node:timers/promises";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -62,7 +64,11 @@ import {
 } from "../external/realtime";
 import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
 import { joinAll, settle } from "../utils";
-import { verifyClerkComputerUseSession } from "../external/clerk";
+import {
+  verifyClerkComputerUseSession,
+  clerkRateLimit,
+  clerkReadUnavailable,
+} from "../external/clerk";
 import {
   computerUseHostAuthorityCondition,
   resolveComputerUseHost$,
@@ -312,17 +318,37 @@ export const computerUseHostIsOnline$ = command(
     ) {
       return false;
     }
-    const authorized = await set(
-      resolveComputerUseHost$,
-      {
-        hostId: host.id,
-        orgId: host.orgId,
-        userId: host.userId,
-        sessionId: host.sessionId,
-        connectionGeneration: host.connectionGeneration,
-      },
+    const authorization = await settle(
+      set(
+        resolveComputerUseHost$,
+        {
+          hostId: host.id,
+          orgId: host.orgId,
+          userId: host.userId,
+          sessionId: host.sessionId,
+          connectionGeneration: host.connectionGeneration,
+        },
+        signal,
+      ),
       signal,
     );
+    if (!authorization.ok) {
+      if (
+        clerkReadUnavailable(authorization.error) ||
+        clerkRateLimit(authorization.error)
+      ) {
+        const error = providerUnavailable(
+          "Authentication provider is temporarily unavailable",
+        );
+        throw new HTTPException(error.status, {
+          res: Response.json(error.body, { status: error.status }),
+          cause: authorization.error,
+        });
+      }
+      throw authorization.error;
+    }
+    const authorized = authorization.value;
+
     if (authorized === null) {
       return false;
     }
@@ -1526,7 +1552,8 @@ export const getComputerUseCommand$ = command(
     signal.throwIfAborted();
     if (
       commandRow.status === "queued" &&
-      host?.status === "online" &&
+      host?.livenessMode === "presence" &&
+      host.status === "online" &&
       host.revokedAt === null
     ) {
       publishComputerUseCommandsChangedSafely({

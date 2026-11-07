@@ -1,4 +1,3 @@
-import { ablyTokenRequestSchema } from "./realtime";
 import { desktopUpgradeRequiredSchema } from "./desktop-updates";
 import {
   array,
@@ -27,6 +26,7 @@ import { fileDownloadUrlSchema } from "./file-download";
 import { authHeadersSchema, initContract } from "./base";
 import { ApiError, apiErrorSchema } from "./errors";
 import {
+  ablyTokenRequestSchema,
   computerUseCommandNotificationsSchema,
   realtimeSubscriptionSchema,
 } from "./realtime";

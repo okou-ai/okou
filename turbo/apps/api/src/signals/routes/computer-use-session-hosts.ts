@@ -112,7 +112,9 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       hostId: result.hostId,
-      livenessMode: result.livenessMode,
+      ...(result.livenessMode === "presence"
+        ? { livenessMode: "presence" as const }
+        : {}),
       connectionGeneration: result.connectionGeneration,
       commandNotifications: {
         channelName: computerUseHostChannelName(

@@ -1553,7 +1553,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(operation.phase, .tokenRefresh)
       XCTAssertEqual(operation.deadline, .authenticatedRequest)
       XCTAssertEqual(operation.requests.map(\.status), [401])
-      var diagnostics = HeartbeatDiagnostics()
+      var diagnostics = HostRequestDiagnostics()
       diagnostics.failed(
         error: error, requests: operation.requests, retryDelay: 2, operation: operation)
       diagnostics.finish(outcome: .stopped)
@@ -1596,7 +1596,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(error.code, "network_error")
       XCTAssertEqual(error.message, "Desktop authentication request timed out")
       let operation = await trace.snapshot()
-      var diagnostics = HeartbeatDiagnostics()
+      var diagnostics = HostRequestDiagnostics()
       diagnostics.failed(
         error: error, requests: operation.requests, retryDelay: 2, operation: operation)
     }
@@ -1708,7 +1708,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         connection.reply(.object([:]))
       }
     }
-    let runtime = notificationTestRuntime(session: session, notifications: notifications) { state in
+    let runtime = notificationTestRuntime(session: session, notifications: notifications, onChange: { state in
       if state.status == "online" && state.usesPresence {
         if !registration.value { registration.finish(); return }
         switch changes.next() {
@@ -1718,7 +1718,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         default: break
         }
       }
-    }
+    })
     await runtime.start()
     await fulfillment(of: [initial], timeout: 3)
     let permissions = JSONValue.object(["accessibility": .bool(true), "screenRecording": .bool(true)])
@@ -1729,6 +1729,36 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     XCTAssertEqual(token["keyName"].string, "scoped-host-key")
     await notifications.reconnect()
     await fulfillment(of: [reconnected], timeout: 3)
+    await runtime.stop()
+  }
+
+  func testPresenceHostRecoversQueuedWorkWhenRealtimeNeverAttaches() async throws {
+    let reported = expectation(description: "HTTP queue wait recovers without Ably or a result reader")
+    let claims = RequestCount()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        var registration = registeredHostResponse()
+        registration["livenessMode"] = .string("presence")
+        connection.reply(registration)
+      } else if path.hasSuffix("/wait") {
+        connection.reply(.object(["hasPendingCommands": .bool(true)]))
+      } else if path.hasSuffix("/next") {
+        connection.reply(claims.next() == 1 ? commandResponse("without-realtime") : .object(["status": .string("idle")]))
+      } else if path.hasSuffix("/complete") {
+        connection.reply(.object([:]))
+        reported.fulfill()
+      } else if path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected request: \(path)")
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: NotificationBoundary(attachedOnStart: false))
+    await runtime.start()
+    await fulfillment(of: [reported], timeout: 4)
     await runtime.stop()
   }
 

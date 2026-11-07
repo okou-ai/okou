@@ -24,11 +24,11 @@ public protocol CommandNotifications: Sendable {
     subscription: CommandNotificationSubscription,
     tokenProvider: @escaping @Sendable () async throws -> JSONValue
   ) async throws -> AsyncStream<CommandNotificationEvent>
-  func setAvailable(_ available: Bool) async
+  func setAvailable(_ available: Bool, channelName: String) async
   func stop() async
 }
 
 // Non-presence notification adapters have no availability membership to change.
 extension CommandNotifications {
-  public func setAvailable(_ available: Bool) async {}
+  public func setAvailable(_ available: Bool, channelName: String) async {}
 }

@@ -18,11 +18,11 @@ private final class HeartbeatClock: @unchecked Sendable {
 }
 
 @MainActor
-final class HeartbeatDiagnosticsTests: XCTestCase {
+final class HostRequestDiagnosticsTests: XCTestCase {
   func testRetriesUploadBoundedCorrelatedHistoryAtInfoLevel() throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
-    var diagnostics = HeartbeatDiagnostics()
+    var diagnostics = HostRequestDiagnostics()
     for _ in 1...12 {
       diagnostics.failed(
         error: DesktopFailure("network_error", "private-error-description"),
@@ -48,7 +48,7 @@ final class HeartbeatDiagnosticsTests: XCTestCase {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     let clock = HeartbeatClock()
-    var diagnostics = HeartbeatDiagnostics(now: { clock.now() }, awakeNow: { clock.awakeNow() })
+    var diagnostics = HostRequestDiagnostics(now: { clock.now() }, awakeNow: { clock.awakeNow() })
     let error = URLError(.networkConnectionLost)
     let operation = APIRequestTraceSnapshot(
       requests: [], authentication: [], phase: .httpRequest, deadline: .authenticatedRequest,
@@ -82,7 +82,7 @@ final class HeartbeatDiagnosticsTests: XCTestCase {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     let clock = HeartbeatClock()
-    var diagnostics = HeartbeatDiagnostics(now: { clock.now() }, awakeNow: { clock.awakeNow() })
+    var diagnostics = HostRequestDiagnostics(now: { clock.now() }, awakeNow: { clock.awakeNow() })
     let operation = APIRequestTraceSnapshot(
       requests: [], authentication: [], phase: .httpRequest, deadline: .authenticatedRequest,
       timing: APIRequestTiming(duration: .seconds(32), awakeDuration: .milliseconds(451)))
@@ -106,7 +106,7 @@ final class HeartbeatDiagnosticsTests: XCTestCase {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
     let clock = HeartbeatClock()
-    var diagnostics = HeartbeatDiagnostics(now: { clock.now() }, awakeNow: { clock.awakeNow() })
+    var diagnostics = HostRequestDiagnostics(now: { clock.now() }, awakeNow: { clock.awakeNow() })
     diagnostics.failed(error: URLError(.timedOut), requests: [], retryDelay: 60)
     clock.advance(.seconds(91), awake: .seconds(91))
     diagnostics.finish(outcome: .recovered)
@@ -124,7 +124,7 @@ final class HeartbeatDiagnosticsTests: XCTestCase {
   func testTransientHTTPFailuresAreInfoAndUnexpectedResponsesEscalateImmediately() throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
-    var diagnostics = HeartbeatDiagnostics()
+    var diagnostics = HostRequestDiagnostics()
     for status in [500, 503, 400] {
       let response = HTTPURLResponse(
         url: URL(string: "https://api.example.test/heartbeat")!, statusCode: status,
@@ -154,7 +154,7 @@ final class HeartbeatDiagnosticsTests: XCTestCase {
   func testUnknownFailuresRemainErrorsEvenWithoutHTTP() throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
-    var diagnostics = HeartbeatDiagnostics()
+    var diagnostics = HostRequestDiagnostics()
     diagnostics.failed(
       error: DesktopFailure("invalid_response", "private-decoder-error"), requests: [], retryDelay: 2)
     diagnostics.finish(outcome: .stopped)
@@ -165,4 +165,18 @@ final class HeartbeatDiagnosticsTests: XCTestCase {
     XCTAssertEqual(failure["level"].string, "error")
     XCTAssertFalse(failure.formatted.contains("private-decoder-error"))
   }
+  func testQueueWaitDiagnosticsPreserveTheActualRouteAndCorrelateRecovery() throws {
+    let collector = try SentryHTTPCollector()
+    addTeardownBlock { try await collector.close() }
+    var diagnostics = HostRequestDiagnostics(request: .queueWait)
+    diagnostics.failed(error: URLError(.networkConnectionLost), requests: [], retryDelay: 2)
+    diagnostics.finish(outcome: .recovered)
+    let events = try collector.events()
+    XCTAssertEqual(events.count, 2)
+    let recovered = try XCTUnwrap(events.first { $0["tags"]["hostRequestOutcome"].string == "recovered" })
+    XCTAssertEqual(recovered["contexts"]["hostRequest"]["pathTemplate"].string,
+      "/api/computer-use/hosts/:hostId/commands/wait")
+    XCTAssertEqual(Set(events.compactMap { $0["tags"]["hostRequestEpisodeId"].string }).count, 1)
+  }
+
 }

@@ -173,8 +173,8 @@ final class AblyCommandNotifications: CommandNotifications {
     }
   }
 
-  func setAvailable(_ available: Bool) async {
-    guard self.available != available else { return }
+  func setAvailable(_ available: Bool, channelName: String) async {
+    guard subscription?.channelName == channelName, self.available != available else { return }
     self.available = available
     if !available, let realtime, let subscription, subscription.presenceEnabled {
       presenceReady = false
