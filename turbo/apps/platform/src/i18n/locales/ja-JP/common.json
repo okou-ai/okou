@@ -392,6 +392,7 @@
     "sidebar": {
       "ariaLabel": "サイドバー",
       "chat": "チャット",
+      "feedWaiting_other": "{{count}} 件が対応待ち",
       "hideChatList": "チャットリストを非表示",
       "mobile": {
         "invite": "招待する",

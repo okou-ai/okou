@@ -321,16 +321,45 @@ test("A cached card still sends its action after server cleanup", async () => {
   expect(pathname()).toBe("/feed");
 });
 
-test("The Feed sidebar entry opens the suggestions on their own page", async () => {
-  mockPool();
+test("The Okou row leads the chat list, counts waiting cards and opens the Feed", async () => {
+  mockPool(numberedSuggestions(2));
   await setupPage({ context, path: homePath, featureSwitches: features });
-  await waitFor(() => {
-    expect(link("/feed")).toBeInTheDocument();
+  const row = await waitFor(() => {
+    return link("/feed");
   });
-  click(link("/feed"));
-  await screen.findByText(makeSuggestion().title);
+  expect(row).toHaveTextContent(/^Okou/);
+  await within(row).findByText("2 waiting");
+  // The row leads the chats, above their scrolling list.
+  const chats = within(screen.getByTestId("chat-list-column")).getByTestId(
+    "sidebar-scroll-area",
+  );
+  expect(
+    row.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+
+  click(row);
+  await screen.findByText("Suggested action 1");
   expect(pathname()).toBe("/feed");
   expect(link("/feed")).toHaveAttribute("aria-current", "page");
+});
+
+test("The Okou row's count follows committed suggestion changes", async () => {
+  const pool = mockPool(numberedSuggestions(2));
+  await openFeed();
+  await within(link("/feed")).findByText("2 waiting");
+
+  click(button("Dismiss"));
+  await within(link("/feed")).findByText("1 waiting");
+
+  pool.publish(numberedSuggestions(3)[2]);
+  notifySuggestionsChanged();
+  await within(link("/feed")).findByText("2 waiting");
+
+  pool.withdrawAll();
+  notifySuggestionsChanged();
+  await waitFor(() => {
+    expect(link("/feed")).toHaveTextContent(/^Okou$/);
+  });
 });
 
 test("Each Feed visit loads new suggestions and an empty pool says so", async () => {

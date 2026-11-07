@@ -406,6 +406,9 @@
     "sidebar": {
       "ariaLabel": "Barra lateral",
       "chat": "Chat",
+      "feedWaiting_one": "{{count}} pendiente",
+      "feedWaiting_many": "{{count}} pendientes",
+      "feedWaiting_other": "{{count}} pendientes",
       "hideChatList": "Ocultar lista de chats",
       "mobile": {
         "invite": "Invitar",

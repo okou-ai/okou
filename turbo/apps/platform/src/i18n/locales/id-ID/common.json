@@ -392,6 +392,7 @@
     "sidebar": {
       "ariaLabel": "Bilah samping",
       "chat": "Chat",
+      "feedWaiting_other": "{{count}} menunggu",
       "hideChatList": "Sembunyikan daftar chat",
       "mobile": {
         "invite": "Undang",

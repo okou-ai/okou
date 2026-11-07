@@ -392,6 +392,8 @@
     "sidebar": {
       "ariaLabel": "Sidebar",
       "chat": "Chat",
+      "feedWaiting_one": "{{count}} waiting",
+      "feedWaiting_other": "{{count}} waiting",
       "hideChatList": "Hide chat list",
       "mobile": {
         "invite": "Invite",

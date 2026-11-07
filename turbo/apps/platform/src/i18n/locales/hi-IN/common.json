@@ -392,6 +392,8 @@
     "sidebar": {
       "ariaLabel": "साइड बार",
       "chat": "चैट",
+      "feedWaiting_one": "{{count}} प्रतीक्षारत",
+      "feedWaiting_other": "{{count}} प्रतीक्षारत",
       "hideChatList": "चैट सूची छिपाएं",
       "mobile": {
         "invite": "आमंत्रित करें",

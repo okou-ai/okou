@@ -392,6 +392,7 @@
     "sidebar": {
       "ariaLabel": "사이드바",
       "chat": "채팅",
+      "feedWaiting_other": "대기 중 {{count}}개",
       "hideChatList": "채팅 목록 숨기기",
       "mobile": {
         "invite": "초대",

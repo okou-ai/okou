@@ -392,6 +392,8 @@
     "sidebar": {
       "ariaLabel": "Seitenleiste",
       "chat": "Chat",
+      "feedWaiting_one": "{{count}} offen",
+      "feedWaiting_other": "{{count}} offen",
       "hideChatList": "Chatliste ausblenden",
       "mobile": {
         "invite": "Einladen",

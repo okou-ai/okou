@@ -5,7 +5,6 @@ import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   LayoutGrid,
-  Lightbulb,
   Package,
   Route,
   Users,
@@ -59,7 +58,6 @@ import {
 } from "../../signals/okou-page/unified-chat-workspace.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
 import { newChatAgentId$ } from "../../signals/agent-chat.ts";
-import { suggestionFeedEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { commitWorkspaceLayout$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { workspaceLayoutThreads$ } from "../../signals/chat-page/workspace-layout-commit.ts";
@@ -69,7 +67,7 @@ type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
 const slackIcon = settingsIconAssetUrl("slack");
 
-type ManageNavId = "feed" | "agents" | "artifacts" | "connectors" | "workflows";
+type ManageNavId = "agents" | "artifacts" | "connectors" | "workflows";
 type SidebarNavId = ManageNavId | "chat" | "works";
 
 interface ManageNavItem {
@@ -80,12 +78,6 @@ interface ManageNavItem {
 }
 
 const MANAGE_NAV: readonly ManageNavItem[] = [
-  {
-    id: "feed",
-    activeKeys: ["feed"],
-    pathname: "/feed",
-    icon: Lightbulb as NavIcon,
-  },
   {
     id: "agents",
     activeKeys: ["agents", "agentDetail", "agentPermissions"],
@@ -141,15 +133,9 @@ const FOOTER_NAV: readonly FooterNavItem[] = [
 
 function useManageNavItems() {
   const { t } = useTranslation();
-  const feedEnabled = useGet(suggestionFeedEnabled$);
   const singleAgent = useGet(singleAgentEnabled$);
   const manageLabel = (id: ManageNavId): string => {
     switch (id) {
-      case "feed": {
-        return t(($) => {
-          return $.appShell.sidebar.navigation.feed;
-        });
-      }
       case "agents": {
         return t(($) => {
           return $.appShell.sidebar.navigation.agents;
@@ -172,9 +158,7 @@ function useManageNavItems() {
       }
     }
   };
-  return MANAGE_NAV.filter((item) => {
-    return item.id !== "feed" || feedEnabled;
-  }).map((item) => {
+  return MANAGE_NAV.map((item) => {
     return item.id === "agents" && singleAgent
       ? {
           ...item,
