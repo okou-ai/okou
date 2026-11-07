@@ -94,6 +94,10 @@ import { onRejection, safeSync, settle, tapError } from "../utils";
 import type { AgentConnectorScopeSnapshot } from "./agent-connector-scope.service";
 import { activatePendingRun$ as activateCommittedRun$ } from "./agent-run-activation.service";
 import type { PendingRunActivation } from "./agent-run-activation.types";
+import {
+  prepareRunnerReusePreference$,
+  type RunnerReusePreparation,
+} from "./runner-reuse-preference";
 import type { AgentRunContextSignals } from "./agent-run-context.signals";
 import type {
   AgentRunModelPin,
@@ -4086,7 +4090,10 @@ export function createThreadClaimRunObjects(
         if ("kind" in result && result.kind === "pending") {
           set(internalCommittedRunId$, result.run.id);
         }
-        const transactionReturnedAt = now();
+        const transactionReturnedAt =
+          "kind" in result && result.kind === "pending"
+            ? result.publicationReturnedAt
+            : now();
         await admissionTiming.finish(admissionAttemptOutcome(result));
         return { result, transactionReturnedAt };
       })().finally(() => {
@@ -4318,6 +4325,8 @@ type AtomicLaunchCommitResult =
       readonly runnerJobCreatedAt: Date;
       readonly runContextSnapshot: RunContextAxiomSnapshot;
       readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
+      readonly reusePreparation?: RunnerReusePreparation;
+      readonly publicationReturnedAt: number;
     }
   | QueueFirstRunClaimLost;
 
@@ -4909,6 +4918,7 @@ function committedAtomicLaunchResponse(args: {
       reuseKey: args.committed.runnerJobPayload.reuseKey,
       cliAgentSessionId: args.committed.runnerJobPayload.cliAgentSessionId,
       createdAt: args.committed.runnerJobCreatedAt,
+      reusePreparation: args.committed.reusePreparation,
     },
     timing: {
       activationOrigin: "direct",
@@ -6135,13 +6145,33 @@ interface RunModelProviderArgs {
 function pendingLaunchCommitResult(
   args: PreparedCommitPreparedLaunchArgs,
   admission: AdmittedPreparedLaunch,
-  persisted: PersistedAtomicLaunchRows,
-): AtomicLaunchCommitResult {
+  published: PromiseSettledResult<{
+    readonly persisted: ReturnType<typeof pendingAtomicLaunchResult>;
+    readonly publicationReturnedAt: number;
+  }>,
+  preparedReuse: PromiseSettledResult<RunnerReusePreparation | undefined>,
+): AtomicLaunchCommitAttempt {
+  if (published.status === "rejected") {
+    throw published.reason;
+  }
+  const { persisted, publicationReturnedAt } = published.value;
+  if (!("run" in persisted)) {
+    return persisted;
+  }
+  const reusePreparation: RunnerReusePreparation | undefined =
+    preparedReuse.status === "fulfilled"
+      ? preparedReuse.value
+      : {
+          selection: { ok: false, error: preparedReuse.reason },
+          operations: [],
+        };
   return {
     ...persisted,
     runnerJobPayload: args.persistence.payload,
     runContextSnapshot: args.launch.runContextSnapshot,
     queueFirstClaim: admission.queueFirstClaim,
+    reusePreparation,
+    publicationReturnedAt,
   };
 }
 
@@ -6507,7 +6537,7 @@ export const commitPreparedPendingLaunch$ = command(
       queueFirst,
     });
     const leafStartedAt = admissionTiming.leafStartedAt();
-    return await (async () => {
+    const publication = (async () => {
       signal.throwIfAborted();
       const capture: PgQueryExecutionCapture = { executions: [] };
       const databaseStartedAt = performance.now();
@@ -6555,12 +6585,44 @@ export const commitPreparedPendingLaunch$ = command(
           capture.executions,
         );
       });
-      admissionTiming.callbackFinished();
-      return "run" in persisted
-        ? pendingLaunchCommitResult(args, accepted, persisted)
-        : persisted;
+      return { persisted, publicationReturnedAt: now() };
     })().finally(() => {
       admissionTiming.recordLeafElapsed("persistence", leafStartedAt);
     });
+    const thread = accepted.validatedThreadSession;
+    const payload = args.persistence.payload;
+    const preparation =
+      thread && payload.reuseKey
+        ? set(prepareRunnerReusePreference$, {
+            runId: args.identity.runId,
+            runnerGroup: payload.runnerGroup,
+            profile: payload.profile,
+            reuseKey: payload.reuseKey,
+            thread: {
+              threadId: thread.chatThreadId,
+              userId: args.createArgs.userId,
+              orgId: args.createArgs.orgId,
+              predecessorRunId: thread.frameworkSessionRunId,
+            },
+          })
+        : Promise.resolve(undefined);
+    // Both reads and the guarded write belong to this attempt. Drain either
+    // failure before returning; only publication establishes a durable launch.
+    return await (async () => {
+      const [published, preparedReuse] = await Promise.allSettled([
+        publication,
+        preparation,
+      ]);
+      if (published.status === "fulfilled") {
+        admissionTiming.callbackFinished();
+      }
+      // Return the durable identity before the caller observes cancellation.
+      return pendingLaunchCommitResult(
+        args,
+        accepted,
+        published,
+        preparedReuse,
+      );
+    })();
   },
 );
