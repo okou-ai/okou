@@ -13,6 +13,7 @@ import uuid
 import final_exec_report as final
 import fixed_restore_report_test as original
 import report
+import report_test
 
 
 def frame(kind, payload):
@@ -73,13 +74,13 @@ class FinalExecReportTests(unittest.TestCase):
         self.values[6].update(exchange_joined=not unwind,transport_producer_unwound=unwind,connection_retained_pending=not unwind)
 
     def write(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(v) for v in self.samples))
-        lines = [report.PREFIX+json.dumps(self.events[0]),"NATIVE_CONTINUATION_WITNESS "+json.dumps(self.continuation)]
-        lines += [final.PREFIX+json.dumps(v) for v in self.witnesses[:2]]
-        lines += [report.PREFIX+json.dumps(self.events[1])]
-        lines += [final.PREFIX+json.dumps(v) for v in self.witnesses[2:]]
-        (self.root/"stdout.log").write_text("\n".join(lines)+"\ntest result: FAILED\n")
+        report_test.write_report_fixture(self.root, self.collector, self.samples, [
+            (report.PREFIX, [self.events[0]]),
+            ("NATIVE_CONTINUATION_WITNESS ", [self.continuation]),
+            (final.PREFIX, self.witnesses[:2]),
+            (report.PREFIX, [self.events[1]]),
+            (final.PREFIX, self.witnesses[2:]),
+        ], stdout_suffix="\ntest result: FAILED\n")
         (self.root/"stderr.log").write_text("Error: FinalExecUncertain\n")
 
     def validate(self):

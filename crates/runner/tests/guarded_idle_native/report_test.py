@@ -18,6 +18,14 @@ report = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(report)
 
 
+def write_report_fixture(root, collector, samples, log_groups, *, stdout_suffix=""):
+    """Serialize synthetic consumer inputs; callers own evidence and log order."""
+    (root / "report.json").write_text(json.dumps(collector))
+    (root / "samples.jsonl").write_text("\n".join(json.dumps(sample) for sample in samples))
+    lines = [prefix + json.dumps(record) for prefix, records in log_groups for record in records]
+    (root / "stdout.log").write_text("\n".join(lines) + stdout_suffix)
+
+
 def prepare_snapshot_record(root, artifacts):
     """Write synthetic real-file evidence for ordinary consumer tests, never a native run."""
     inputs = {key: artifacts[key] for key in (
@@ -88,10 +96,7 @@ class NativeReportTests(unittest.TestCase):
                 clock += 10
 
     def validate(self):
-        (self.root / "report.json").write_text(json.dumps(self.collector))
-        (self.root / "stdout.log").write_text("\n".join(
-            report.PREFIX + json.dumps(e) for e in self.events))
-        (self.root / "samples.jsonl").write_text("\n".join(json.dumps(s) for s in self.samples))
+        write_report_fixture(self.root, self.collector, self.samples, [(report.PREFIX, self.events)])
         return report.validate(self.root)
 
     def test_positive_native_proof_retains_generic_collector_limits(self):

@@ -99,11 +99,8 @@ class StatusFailureReportTests(unittest.TestCase):
                     "evidence": copy.deepcopy(value)})
 
     def write(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(s) for s in self.samples))
-        (self.root/"stdout.log").write_text("\n".join(
-            [report.PREFIX+json.dumps(e) for e in self.events]
-            + [failure.PREFIX+json.dumps(e) for e in self.witnesses]))
+        report_test.write_report_fixture(self.root, self.collector, self.samples,
+            [(report.PREFIX, self.events), (failure.PREFIX, self.witnesses)])
 
     def validate(self):
         self.write()
