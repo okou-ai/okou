@@ -166,19 +166,28 @@ final class WorkspaceStore {
     if selectedAgentID == nil {
       selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
     }
-    await refreshNavigation()
-    guard canContinueStartup(generation) else { return }
-    let realtime = RealtimeService(
-      userID: userID, workspaceID: workspaceID,
-      tokenProvider: { [client] in
-        try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
-      },
-      onChange: { [weak self] in self?.requestRefresh($0) },
-      onConnection: { [weak self] in self?.connectionStatus = $0 })
-    self.realtime = realtime
-    realtime.setForeground(isForeground)
-    realtime.start()
-    await refresh()
+    await withTaskCancellationHandler {
+      async let navigation: Void = refreshNavigation()
+      let realtime = RealtimeService(
+        userID: userID, workspaceID: workspaceID,
+        tokenProvider: { [client] in
+          try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
+        },
+        onChange: { [weak self] in self?.requestRefresh($0) },
+        onConnection: { [weak self] in self?.connectionStatus = $0 })
+      self.realtime = realtime
+      realtime.setForeground(isForeground)
+      realtime.start()
+      await refresh()
+      await navigation
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        guard let self, startupGeneration == generation else { return }
+        realtime?.stop()
+        realtime = nil
+        list.cancelRefresh()
+      }
+    }
   }
 
   private func canContinueStartup(_ generation: UUID) -> Bool {
@@ -776,7 +785,6 @@ final class WorkspaceStore {
   private func applyThreads(_ threads: [ChatThread]) {
     guard !closed else { return }
     didRefreshReadState()
-    if selectedAgentID == nil { selectedAgentID = threads.first?.agentID }
     for thread in threads { conversations[thread.id]?.thread = thread }
     if let selectedThreadID {
       if let thread = threads.first(where: { $0.id == selectedThreadID }) {

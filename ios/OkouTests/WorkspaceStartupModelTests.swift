@@ -10,7 +10,8 @@ final class WorkspaceStartupModelTests: XCTestCase {
   func testStartupReadsSettingsChangedWhileNavigationWasPending() async throws {
     let release = ModelResponseGate()
     defer { release.open() }
-    let navigation = expectation(description: "Navigation is pending before realtime starts")
+    let navigation = expectation(
+      description: "Navigation is pending while startup resources refresh")
     navigation.expectedFulfillmentCount = 2
     let fixture = WorkspaceStartupFixture(beforeNavigationRead: {
       navigation.fulfill()
@@ -30,6 +31,10 @@ final class WorkspaceStartupModelTests: XCTestCase {
     }
     await fulfillment(of: [navigation], timeout: 3)
     fixture.setRemoteModel("claude-model")
+    workspace.requestRefresh(.modelPreference)
+    try await waitForBusinessResult {
+      workspace.newModelSelection.selection.model == "claude-model"
+    }
     release.open()
     await startup.value
 

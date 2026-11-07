@@ -242,6 +242,66 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertNil(store.list.navigationError)
   }
 
+  func testStartupLoadsChatsAndRealtimeDuringSlowNavigationWithoutChangingTheDraftAgent()
+    async throws
+  {
+    for explicitSelection in [false, true] {
+      let gate = HTTPResponseGate()
+      defer { gate.open() }
+      let navigation = expectation(description: "Agent response is pending")
+      let realtime = expectation(description: "Realtime starts independently of navigation")
+      let requestedRealtime = Mutex(false)
+      let defaultAgent = "40000000-0000-4000-8000-000000000008"
+      let fixture = ChatHTTPFixture { request in
+        switch request.url?.path {
+        case "/api/agents":
+          navigation.fulfill()
+          await gate.wait()
+          return ChatHTTPResponse(
+            body: """
+              [{"agentId":"\(defaultAgent)","isDefaultAgent":true,"displayName":"Default assistant"},
+              {"agentId":"\(storeAgentID)","isDefaultAgent":false,"displayName":"Other assistant"}]
+              """)
+        case "/api/user-preferences": return ChatHTTPResponse(body: #"{"pinnedAgentIds":[]}"#)
+        case "/api/chat-threads/snapshot": return threadSnapshot(title: "Other agent's chat")
+        case "/api/chat-threads/events":
+          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+        case "/api/indicators":
+          return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
+        case "/api/realtime/token":
+          if requestedRealtime.withLock({ requested in
+            guard !requested else { return false }
+            requested = true
+            return true
+          }) {
+            realtime.fulfill()
+          }
+          return ChatHTTPResponse(status: 403, body: #"{"error":{"message":"Fixture"}}"#)
+        default: throw URLError(.unsupportedURL)
+        }
+      }
+      let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+      defer { store.close() }
+      if explicitSelection { store.startNewChat(agentID: storeAgentID) }
+      store.newChatDraft = "Input entered before navigation finishes"
+      let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
+      addTeardownBlock { @MainActor in
+        store.close()
+        startup.cancel()
+        gate.open()
+        await startup.value
+      }
+      await fulfillment(of: [navigation, realtime], timeout: 3)
+      try await waitForBusinessResult { store.list.threads.first?.title == "Other agent's chat" }
+      XCTAssertEqual(store.selectedAgentID, explicitSelection ? storeAgentID : nil)
+      gate.open()
+      await startup.value
+      XCTAssertEqual(store.selectedAgentID, explicitSelection ? storeAgentID : defaultAgent)
+      XCTAssertEqual(store.newChatDraft, "Input entered before navigation finishes")
+      XCTAssertNil(store.selectedThreadID)
+    }
+  }
+
   func testStartupShowsCachedRecentChatsBeforeNavigationAndPreservesArchiveVisibility() async throws
   {
     let cacheDirectory = CacheTestDirectory(owner: self)
@@ -450,9 +510,7 @@ final class WorkspaceStoreTests: XCTestCase {
       navigationStarted.expectedFulfillmentCount = 2
       let releaseNavigation = HTTPResponseGate()
       defer { releaseNavigation.open() }
-      let requests = Mutex<[String]>([])
       let fixture = ChatHTTPFixture { request in
-        requests.withLock { $0.append(request.url?.path ?? "") }
         switch request.url?.path {
         case "/api/agents":
           navigationStarted.fulfill()
@@ -468,6 +526,8 @@ final class WorkspaceStoreTests: XCTestCase {
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+        case "/api/indicators":
+          return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
         case "/api/realtime/token":
           return ChatHTTPResponse(
             status: 403, body: "{\"error\":{\"message\":\"No live updates\"}}")
@@ -478,7 +538,6 @@ final class WorkspaceStoreTests: XCTestCase {
         scope: ChatCacheScope(
           apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace"))
       try await ChatSync(client: fixture.client, cache: cache).prefetchThreadList()
-      requests.withLock { $0.removeAll() }
       let store = WorkspaceStore(
         client: fixture.client, webURL: fixture.baseURL, cache: cache)
       defer { store.close() }
@@ -497,12 +556,6 @@ final class WorkspaceStoreTests: XCTestCase {
       XCTAssertEqual(store.list.threads.map(\.title), ["Cached chat"])
       XCTAssertTrue(store.list.agents.isEmpty)
       XCTAssertNil(store.list.navigationError)
-      XCTAssertTrue(
-        requests.withLock {
-          $0.allSatisfy {
-            ["/api/agents", "/api/user-preferences"].contains($0)
-          }
-        })
     }
   }
 

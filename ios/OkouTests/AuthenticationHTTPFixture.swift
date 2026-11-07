@@ -373,6 +373,7 @@ actor AuthenticationRequestGate {
   private var observers: [UUID: AsyncStream<Int>.Continuation] = [:]
 
   func hold() { open = false }
+  func count() -> Int { requests }
 
   func observeRequests() -> (id: UUID, arrivals: AsyncStream<Int>) {
     let id = UUID()
