@@ -60,7 +60,7 @@ describe("predecessor Home publication evidence", () => {
     "requires fresh recipient state without borrowing stale %s producer proof",
     async (role) => {
       const f = await predecessorHomeFixture(context);
-      mockNow(f.clock + 30_001);
+      mockNow(f.clock + 180_001);
       await predecessorHomeHeartbeat(
         f,
         role === "source" ? f.receiverRunnerId : f.predecessorRunnerId,

@@ -3,14 +3,14 @@ use super::super::support::{
     HomePromotionSeedSpec, assert_run_exits_within, context_with_session, minimal_context,
     mock_run_config, mock_run_config_with_overrides, push_job, seed_home_cache_state,
     seed_idle_pool_with_home_promotion, seed_idle_pool_with_overrides, shutdown, test_profiles,
-    wait_budget_count, wait_cancel_token, wait_discover_entered, wait_idle_pool_reuse_keys,
-    wait_status_mode,
+    wait_budget_count, wait_cancel_token, wait_discover_entered, wait_heartbeat_matching_after,
+    wait_idle_pool_reuse_keys, wait_status_mode,
 };
 
 use crate::home_image_cache::HomeImageCache;
 use crate::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use runner_host::paths::{HomePaths, RunnerPaths};
-use runner_types::types::{HOME_AFFINITY_VERSION, HeartbeatState, HomeCacheCapability};
+use runner_types::types::{HOME_AFFINITY_VERSION, HomeCacheCapability};
 
 fn reusable_candidate(
     run_id: RunId,
@@ -19,29 +19,6 @@ fn reusable_candidate(
 ) -> runner_provider::JobCandidate {
     runner_provider::JobCandidate::new(run_id, profile_name.to_string())
         .with_reuse_key(Some(reuse_key.to_string()))
-}
-
-pub(super) async fn wait_heartbeat_matching_after(
-    handle: &crate::provider_test_support::MockProviderHandle,
-    mut cursor: usize,
-    timeout: Duration,
-    matches: impl Fn(&HeartbeatState) -> bool,
-) -> bool {
-    let deadline = tokio::time::Instant::now() + timeout;
-    loop {
-        {
-            let heartbeats = handle.heartbeats.lock().unwrap_or_else(|e| e.into_inner());
-            if heartbeats[cursor..].iter().any(&matches) {
-                return true;
-            }
-            cursor = heartbeats.len();
-        }
-
-        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
-        if remaining.is_zero() || !handle.wait_heartbeat_past(cursor, remaining).await {
-            return false;
-        }
-    }
 }
 
 #[tokio::test(start_paused = true)]
@@ -461,6 +438,8 @@ async fn non_empty_initial_home_cache_is_heartbeated_before_the_routine_tick() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
     let (mut config, env) = mock_run_config(profiles, 8, 32768, 4);
+    let (heartbeat_trigger, heartbeat_trigger_rx) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_routine_heartbeat_rx = Some(heartbeat_trigger_rx);
     let observations = runner_storage::operation_test_support::RecordedHomeObservations::default();
     config.sandbox_op_reporter = Some(observations.handle());
     let runner_paths = RunnerPaths::new(config.paths.base_dir.clone());
@@ -514,7 +493,8 @@ async fn non_empty_initial_home_cache_is_heartbeated_before_the_routine_tick() {
     let mut heartbeat_cursor = env.start_observer.cursor();
     for _ in 0..2 {
         let before = env.handle.heartbeat_count();
-        tokio::time::advance(HEARTBEAT_PERIOD).await;
+        // Exercise remote reporting without also advancing inventory timers.
+        heartbeat_trigger.send(()).unwrap();
         heartbeat_cursor = env
             .start_observer
             .wait_routine_heartbeat_requested_after(
@@ -552,7 +532,7 @@ async fn non_empty_initial_home_cache_is_heartbeated_before_the_routine_tick() {
         );
     }
 
-    tokio::time::advance(HOME_CACHE_RECONCILIATION_INITIAL_DELAY - HEARTBEAT_PERIOD * 2).await;
+    tokio::time::advance(HOME_CACHE_RECONCILIATION_INITIAL_DELAY).await;
     assert_eq!(
         home_cache
             .wait_for_held_state_root_scan_after(0, Duration::from_secs(5))
@@ -698,6 +678,8 @@ async fn invalidated_home_cache_watcher_uses_periodic_reconciliation() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
     let (mut config, env) = mock_run_config(profiles, 8, 32768, 4);
+    let (heartbeat_trigger, heartbeat_trigger_rx) = tokio::sync::mpsc::unbounded_channel();
+    config.test_hooks.manual_routine_heartbeat_rx = Some(heartbeat_trigger_rx);
     let home = config.paths.home.clone();
     let group = config.runner.group.clone();
     let cache_root = home.home_image_cache_dir();
@@ -736,7 +718,7 @@ async fn invalidated_home_cache_watcher_uses_periodic_reconciliation() {
     let before = env.handle.heartbeat_count();
     let mut heartbeat_cursor = env.start_observer.cursor();
     for _ in 0..2 {
-        tokio::time::advance(HEARTBEAT_PERIOD).await;
+        heartbeat_trigger.send(()).unwrap();
         heartbeat_cursor = env
             .start_observer
             .wait_routine_heartbeat_requested_after(
@@ -752,7 +734,7 @@ async fn invalidated_home_cache_watcher_uses_periodic_reconciliation() {
         "routine heartbeats must retain the snapshot after runtime watcher failure",
     );
 
-    tokio::time::advance(HOME_CACHE_RECONCILIATION_INITIAL_DELAY - HEARTBEAT_PERIOD * 2).await;
+    tokio::time::advance(HOME_CACHE_RECONCILIATION_INITIAL_DELAY).await;
     assert!(
         wait_heartbeat_matching_after(&env.handle, before, Duration::from_secs(5), |heartbeat| {
             heartbeat

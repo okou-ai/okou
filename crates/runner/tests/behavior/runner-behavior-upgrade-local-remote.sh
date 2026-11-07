@@ -90,13 +90,10 @@ cleanup_submit_pid() {
 # is still active afterward so the EXIT trap dumps journalctl at the
 # right diagnostic boundary (instead of hanging inside systemctl stop).
 wait_for_exit() {
-  # Budget must exceed the 10s heartbeat tick — drain can only
-  # complete on a tick boundary, so anything <10s has no headroom
-  # for real teardown work (idle pool + namespace cleanup
-  # + mitm/dns/kmsg shutdown). Shared metal-host contention can also make
-  # namespace cleanup exceed 30s while it is still making progress, so allow
-  # six heartbeat ticks before treating the drain as stuck. See issues #10869
-  # and #13688.
+  # Lifecycle and job-completion events drive drain independently of routine
+  # heartbeat cadence. Retain the teardown budget for idle-pool, namespace,
+  # mitm/dns/kmsg cleanup: shared metal-host contention can make namespace
+  # cleanup exceed 30s while still making progress. See #10869 and #13688.
   local svc=$1 budget=${2:-60}
   echo "--- Waiting up to ${budget}s for $svc to exit ---"
   for _ in $(seq 1 "$budget"); do
