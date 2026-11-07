@@ -650,12 +650,7 @@ def _is_sha256_hex_digest(value: str) -> bool:
 
 
 def _has_content_hash_invalid_text(value: str) -> bool:
-    return any(
-        ord(char) > _ASCII_DELETE
-        or (ord(char) <= _ASCII_CONTROL_MAX and char != "\t")
-        or ord(char) == _ASCII_DELETE
-        for char in value
-    )
+    return not value.isascii() or has_forbidden_header_value_control(value)
 
 
 def _signature(

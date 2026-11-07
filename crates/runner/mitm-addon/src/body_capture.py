@@ -11,6 +11,7 @@ from mitmproxy import http
 
 import body_decoding
 import flow_metadata_keys as metadata_keys
+import http_header_syntax
 import request_streaming
 import stream_capture
 from body_limits import BODY_CAPTURE_LIMIT
@@ -29,7 +30,6 @@ _TEXT_APPLICATION_SUBTYPES = frozenset(
     }
 )
 
-_HTTP_FIELD_NAME_PATTERN = re.compile(r"[!#$%&'*+\-.^_`|~0-9A-Za-z]+")
 # RFC 6838 section 4.2 limits registered media type names to 127 ASCII characters.
 _MEDIA_TYPE_NAME_PATTERN = re.compile(r"[0-9A-Za-z][!#$&+\-.^_0-9A-Za-z]{0,126}")
 _HTTP_KNOWN_CONTENT_CODING_PATTERN = r"(?:br|compress|deflate|gzip|identity|zstd)"
@@ -47,7 +47,6 @@ _HTTP_IMF_FIXDATE_PATTERN = re.compile(
     r"[0-9]{4} "
     r"(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9] GMT"
 )
-_UNSAFE_CAPTURE_HEADER_VALUE_CHARS = re.compile(r"[\x00-\x08\x0A-\x1F\x7F]")
 _HTTP_OPTIONAL_WHITESPACE = " \t"
 _MAX_CAPTURE_HEADER_NAME_LENGTH = 256
 _MAX_CAPTURE_HEADER_VALUE_TO_PRESERVE = 256
@@ -225,7 +224,7 @@ def _sanitize_allowed_capture_header_value(name: str, value: str) -> str | None:
 
     if len(value) > _MAX_CAPTURE_HEADER_VALUE_TO_PRESERVE:
         return None
-    if _UNSAFE_CAPTURE_HEADER_VALUE_CHARS.search(value) is not None:
+    if http_header_syntax.has_forbidden_header_value_control(value):
         return None
     normalized_value = value.strip(_HTTP_OPTIONAL_WHITESPACE)
     if normalized_name == "date":
@@ -245,7 +244,7 @@ def _sanitize_header_value_for_capture(name: str, value: str) -> str:
 def _sanitize_header_name_for_capture(name: str) -> str:
     if len(name) > _MAX_CAPTURE_HEADER_NAME_LENGTH:
         return _REDACTED_HEADER_NAME
-    if _HTTP_FIELD_NAME_PATTERN.fullmatch(name) is None:
+    if not http_header_syntax.is_http_header_name(name):
         return _REDACTED_HEADER_NAME
     return name
 
@@ -265,7 +264,7 @@ def _has_valid_body_capture_content_type(headers: http.Headers) -> bool:
         return False
 
     value = values[0]
-    if _UNSAFE_CAPTURE_HEADER_VALUE_CHARS.search(value) is not None:
+    if http_header_syntax.has_forbidden_header_value_control(value):
         return False
     media_type = value.partition(";")[0].strip(_HTTP_OPTIONAL_WHITESPACE)
     type_name, separator, subtype_name = media_type.partition("/")
@@ -282,11 +281,11 @@ def _has_valid_body_capture_content_encoding(headers: http.Headers) -> bool:
         return True
 
     folded_value = ", ".join(values)
-    if _UNSAFE_CAPTURE_HEADER_VALUE_CHARS.search(folded_value) is not None:
+    if http_header_syntax.has_forbidden_header_value_control(folded_value):
         return False
     for raw_coding in folded_value.split(","):
         coding = raw_coding.strip(_HTTP_OPTIONAL_WHITESPACE)
-        if not coding or _HTTP_FIELD_NAME_PATTERN.fullmatch(coding) is None:
+        if not http_header_syntax.is_http_header_name(coding):
             return False
     return True
 
