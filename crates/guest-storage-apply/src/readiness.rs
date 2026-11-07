@@ -39,8 +39,8 @@ fn overlaps(left: &Path, right: &Path) -> bool {
     left.starts_with(right) || right.starts_with(left)
 }
 
-fn has_cleanup_ancestor(manifest: &Manifest, target: &Path) -> bool {
-    manifest
+fn cleanup_can_unlink_ancestor(manifest: &Manifest, target: &Path) -> io::Result<bool> {
+    let cleanup_roots = manifest
         .cleanup_paths
         .iter()
         .map(PathBuf::from)
@@ -55,10 +55,24 @@ fn has_cleanup_ancestor(manifest: &Manifest, target: &Path) -> bool {
                 })
                 .map(move |name| Path::new(&entry.mount_path).join(name.as_str()))
         }))
-        .any(|root| {
-            let root = normalize_path(&root);
-            root.is_absolute() && target.starts_with(root)
-        })
+        .map(|root| normalize_path(&root))
+        .filter(|root| root.is_absolute())
+        .collect::<Vec<_>>();
+    // Inspect shallow prefixes first, so an obsolete alias is identified
+    // without following its inaccessible, cyclic or otherwise invalid target.
+    for ancestor in target.ancestors().collect::<Vec<_>>().into_iter().rev() {
+        let logical = normalize_path(ancestor);
+        if !cleanup_roots.iter().any(|root| logical.starts_with(root)) {
+            continue;
+        }
+        match std::fs::symlink_metadata(ancestor) {
+            Ok(metadata) if !metadata.is_dir() => return Ok(true),
+            Ok(_) => {}
+            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(false),
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(false)
 }
 
 // Resolve missing leaves through their existing ancestor, retaining its physical
@@ -196,13 +210,13 @@ impl Readiness {
                 // Cleanup can unlink an alias without traversing its old
                 // destination. Do not require access to that destination just
                 // to decide whether the ordinary apply path should be used.
-                Err(error)
-                    if error.kind() == io::ErrorKind::PermissionDenied
-                        && has_cleanup_ancestor(manifest, &logical_target) =>
-                {
-                    return Ok(false);
+                Err(error) => {
+                    if cleanup_can_unlink_ancestor(manifest, &target)? {
+                        return Ok(false);
+                    }
+                    return Err(error);
                 }
-                result => result?,
+                Ok(path) => path,
             };
             let Some(physical_target) = physical_target else {
                 // Ordinary application can replace a dangling alias. Do not

@@ -105,14 +105,19 @@ fn eligibility_checks_physical_aliases_without_applying_or_cleaning_inputs() {
 fn eligibility_keeps_cleanup_of_obstructing_instruction_ancestors_on_the_ordinary_path() {
     use guest_contracts::storage_manifest::InstructionCleanupEntry;
     use std::os::unix::fs::symlink;
-    for cyclic in [false, true] {
+    for obstruction in ["file", "cyclic", "overlong-alias"] {
         let dir = tempfile::tempdir().unwrap();
         let runtime = dir.path().join("runtime");
         let work = dir.path().join("work");
         fs::create_dir(&work).unwrap();
         let instructions = work.join("AGENTS.md");
-        if cyclic {
-            symlink(&instructions, &instructions).unwrap();
+        let alias = match obstruction {
+            "cyclic" => Some(instructions.clone()),
+            "overlong-alias" => Some(dir.path().join("x".repeat(256))),
+            _ => None,
+        };
+        if let Some(target) = &alias {
+            symlink(target, &instructions).unwrap();
         } else {
             fs::write(&instructions, b"previous instructions").unwrap();
         }
@@ -130,8 +135,8 @@ fn eligibility_keeps_cleanup_of_obstructing_instruction_ancestors_on_the_ordinar
             String::from_utf8_lossy(&output.stderr)
         );
         assert!(!serde_json::from_slice::<bool>(&output.stdout).unwrap());
-        if cyclic {
-            assert_eq!(fs::read_link(&instructions).unwrap(), instructions);
+        if let Some(target) = &alias {
+            assert_eq!(fs::read_link(&instructions).unwrap(), *target);
         } else {
             assert_eq!(fs::read(&instructions).unwrap(), b"previous instructions");
         }
