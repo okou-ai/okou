@@ -2342,7 +2342,8 @@ const validateSendThreadRevocation$ = command(
 
 const prepareNormalSendModels$ = command(
   async ({ get }, context: AgentRunContextSignals, signal: AbortSignal) => {
-    const [orgModels, memberModels, memberMetadata] = await Promise.all([
+    // One waitUntil owns this group, including reads still pending after a failure.
+    const [orgModels, memberModels, memberMetadata] = await joinAll([
       get(context.modelFacts$),
       get(context.memberModels$),
       get(context.memberMetadata$),

@@ -26,7 +26,7 @@ import {
 } from "../../lib/db-structured-result";
 import { mapConcurrent } from "../../lib/map-concurrent";
 import { waitUntil } from "../context/wait-until";
-import { safeSync, settle } from "../utils";
+import { joinAll, safeSync, settle } from "../utils";
 import type { BootstrapAgent } from "./agent-data.service";
 import {
   agentStorageReadPlan,
@@ -450,7 +450,8 @@ function createOrgContext(
   const modelFacts$ =
     sharedOrg?.modelFacts$ ??
     computed(async (get) => {
-      const [capabilities, org, catalog] = await Promise.all([
+      // Retain both read sources until completion, even when either fails.
+      const [capabilities, org, catalog] = await joinAll([
         get(plan$),
         get(orgMetadata$),
         get(modelCatalog$),
