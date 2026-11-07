@@ -1372,8 +1372,9 @@ async fn apply_prepared_storage(
         super::DEFAULT_EXEC_TIMEOUT,
         Arc::clone(&host_failed),
     )?;
-    let mut guest_telemetry = telemetry.fork_concurrent_phase();
-    let result = {
+    let mut phase_telemetry = telemetry.concurrent_phase();
+    let (telemetry, guest_telemetry) = phase_telemetry.collectors();
+    {
         let population = async {
             let result = crate::storage_cache::populate_cache_for_guest(
                 prepared,
@@ -1403,7 +1404,7 @@ async fn apply_prepared_storage(
                 context,
                 manifest,
                 &files,
-                &mut guest_telemetry,
+                guest_telemetry,
                 &cancel,
             )
             .await;
@@ -1435,9 +1436,7 @@ async fn apply_prepared_storage(
             )),
             (Ok(deferred), Ok(Some(()))) => Ok(deferred),
         }
-    };
-    telemetry.merge_concurrent_phase(guest_telemetry);
-    result
+    }
 }
 
 enum GuestRuntimeStatePreparation {

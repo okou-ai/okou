@@ -26,7 +26,7 @@ fn archive() -> Vec<u8> {
 
 #[tokio::test]
 async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_failure() {
-    for failure in ["none", "guest", "ready", "abort", "cooperative"] {
+    for failure in ["none", "guest", "ready", "abort", "cooperative", "hard"] {
         let temp = tempfile::tempdir().unwrap();
         let (config, _startup_api) = test_executor_config_with_startup_api(temp.path()).await;
         let body = archive();
@@ -36,7 +36,7 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
             .await
             .unwrap();
         let (release, waiting) = tokio::sync::oneshot::channel();
-        let disconnected = matches!(failure, "guest" | "cooperative");
+        let disconnected = matches!(failure, "guest" | "cooperative" | "hard");
         let action = if disconnected {
             RawHttpAction::WaitForDisconnect
         } else {
@@ -132,6 +132,9 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
         if failure == "cooperative" {
             assert!(cancel.request_cooperative_user_cancellation().await);
         }
+        if failure == "hard" {
+            assert!(cancel.request_hard_cancellation().await);
+        }
         if disconnected {
             drop(release);
         } else {
@@ -150,8 +153,10 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
                 "even a failed abort cannot abandon accepted application"
             );
         }
-        application.release_one();
-        let (outcome, _) = tokio::time::timeout(Duration::from_secs(5), task)
+        if failure != "hard" {
+            application.release_one();
+        }
+        let (outcome, telemetry) = tokio::time::timeout(Duration::from_secs(5), task)
             .await
             .unwrap()
             .unwrap();
@@ -184,5 +189,14 @@ async fn early_storage_application_joins_both_owners_before_spawn_or_terminal_fa
             }
         }
         server.assert_finished_with_requests().await;
+        if failure == "hard" {
+            assert!(
+                telemetry
+                    .pending_ops_snapshot()
+                    .iter()
+                    .any(|(action, _, _)| action == "runner_storage_manifest_batch_prepare"),
+                "hard cancellation must retain observations already recorded by the application"
+            );
+        }
     }
 }
