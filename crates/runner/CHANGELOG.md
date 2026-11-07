@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.40](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.39...runner-rs-v0.244.40) (2026-11-07)
+
+
+### Refactoring
+
+* **python:** centralize diagnostic endpoint rendering ([#45902](https://github.com/okou-ai/okou/issues/45902)) ([b85a5bf](https://github.com/okou-ai/okou/commit/b85a5bfa1bf4692aa996a7118255c2eb61747e44))
+
 ## [0.244.39](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.38...runner-rs-v0.244.39) (2026-11-07)
 
 
