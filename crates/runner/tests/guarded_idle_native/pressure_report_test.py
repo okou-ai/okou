@@ -12,8 +12,7 @@ import uuid
 
 import pressure_report
 import report
-import report_test
-from report_test import prepare_snapshot_record
+from report_test import prepare_snapshot_record, write_report_fixture
 
 
 class PressureReportTests(unittest.TestCase):
@@ -103,7 +102,7 @@ class PressureReportTests(unittest.TestCase):
             clock += 20
 
     def write(self):
-        report_test.write_report_fixture(self.root, self.collector, self.samples,
+        write_report_fixture(self.root, self.collector, self.samples,
             [(report.PREFIX, self.events), (pressure_report.PREFIX, self.witnesses)])
 
     def validate(self):
