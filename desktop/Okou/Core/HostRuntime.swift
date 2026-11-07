@@ -57,6 +57,9 @@ public actor HostRuntime {
       else { return nil }
       hostId = registration.hostId
       generation = registration.connectionGeneration
+      // New Desktop -> old API compatibility (#45809). Remove this negotiation
+      // and its legacy heartbeat loop after pre-presence APIs have drained and
+      // are no longer supported rollback targets.
       usesPresence = registration.livenessMode?.rawValue == "presence"
       channelName = registration.commandNotifications.channelName
     }

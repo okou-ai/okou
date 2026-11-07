@@ -309,6 +309,10 @@ export const computerUseHostIsOnline$ = command(
     now: Date,
     signal: AbortSignal,
   ): Promise<boolean> => {
+    // Old Desktop -> new API compatibility (#45809). Retire heartbeat-mode
+    // registration/selection and its endpoint after a live presence-capable
+    // Desktop release and enforced floor exclude old clients, retained hosts
+    // are reconciled, and pre-presence API rollback writers are excluded.
     if (host.livenessMode === "heartbeat") {
       return computerUseHostIsOnline(host, now);
     }
