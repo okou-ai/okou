@@ -58,7 +58,7 @@
     "@t3-oss/env-core": "^0.13.11",
     "@vercel/functions": "^3.4.4",
     "@vercel/oidc": "^3.2.1",
-    "@vercel/otel": "^2.1.2",
+    "@vercel/otel": "^2.2.1",
     "ably": "^2.28.0",
     "agentkeepalive": "^4.6.0",
     "archiver": "^8.0.0",
