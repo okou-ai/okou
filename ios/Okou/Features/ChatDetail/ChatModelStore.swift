@@ -147,7 +147,6 @@ final class ChatModelSelectionStore {
   private(set) var isLoading = false
   private(set) var hasLoaded: Bool
   private(set) var error: String?
-  private(set) var savedDefault = false
   private(set) var uncertain = false
   private(set) var needsThreadReadback = false
   var isSending = false
@@ -188,6 +187,20 @@ final class ChatModelSelectionStore {
   }
   var effectiveEffort: String? { models.configuration?.effectiveEffort(for: selection) }
   var requestedEffort: String? { models.configuration?.requestedEffort(for: selection) }
+  var canSaveForFutureChats: Bool {
+    guard !closed, threadID == nil, let configuration = models.configuration else { return false }
+    let current = selection
+    let defaultSelection = configuration.defaultSelection
+    // Compare the preferred effort, preserving choices narrowed by the current runtime.
+    // Settings remembered for other models do not change this chat's selection.
+    func preferredEffort(_ value: ChatModelSelection) -> String? {
+      value.model.flatMap { value.modelSettings[$0]?.effort }
+        ?? configuration.effectiveEffort(for: value)
+    }
+    return current.model != defaultSelection.model
+      || current.serviceTier != defaultSelection.serviceTier
+      || preferredEffort(current) != preferredEffort(defaultSelection)
+  }
 
   func apply(thread: ChatThread, replacing previous: ChatThread) {
     guard !closed, thread.id == threadID else { return }
@@ -258,7 +271,6 @@ final class ChatModelSelectionStore {
     guard threadID == nil, !isBusy else { return }
     stored = nil
     error = nil
-    savedDefault = false
   }
   func choose(model: String?) async {
     var next = selection
@@ -288,7 +300,6 @@ final class ChatModelSelectionStore {
     else { return }
     revision += 1
     isSaving = true
-    savedDefault = false
     defer { isSaving = false }
     guard let threadID else {
       stored = next
@@ -331,7 +342,7 @@ final class ChatModelSelectionStore {
     }
   }
   func saveForFutureChats() async {
-    guard !closed, !isBusy, !uncertain, models.configuration != nil else { return }
+    guard canSaveForFutureChats, !isBusy, !uncertain else { return }
     isSaving = true
     let value = selection
     defer { isSaving = false }
@@ -343,7 +354,6 @@ final class ChatModelSelectionStore {
       // Preserve canonical readback after a write while reusing other metadata.
       await models.refresh([.modelPreference])
       guard !closed, !Task.isCancelled else { return }
-      savedDefault = true
       error = nil
     } catch {
       guard !closed else { return }
