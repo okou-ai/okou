@@ -13,6 +13,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1101.1](https://github.com/okou-ai/okou/compare/app-v0.1101.0...app-v0.1101.1) (2026-11-07)
+
+
+### Bug Fixes
+
+* **browser:** constrain viewer to its panel width ([#45828](https://github.com/okou-ai/okou/issues/45828)) ([0ed2726](https://github.com/okou-ai/okou/commit/0ed2726e47264e91680a7ef0db8050f0c53f6fde))
+
+
+### Performance Improvements
+
+* **browser:** defer paused viewer discovery reads ([#45770](https://github.com/okou-ai/okou/issues/45770)) ([ee7a1f8](https://github.com/okou-ai/okou/commit/ee7a1f86bbcebed125153b7bb3b897f78ad096b1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.4
+    * @okouai/core bumped to 8.822.4
+
 ## [0.1101.0](https://github.com/okou-ai/okou/compare/app-v0.1100.0...app-v0.1101.0) (2026-11-07)
 
 

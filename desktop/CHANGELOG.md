@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.1](https://github.com/okou-ai/okou/compare/desktop-v0.56.0...desktop-v0.56.1) (2026-11-07)
+
+
+### Refactoring
+
+* **desktop:** replace heartbeat liveness with scoped presence ([#45811](https://github.com/okou-ai/okou/issues/45811)) ([4a7b3db](https://github.com/okou-ai/okou/commit/4a7b3db94ea5b97274f5ea3fb80689683c202254))
+
 ## [0.56.0](https://github.com/okou-ai/okou/compare/desktop-v0.55.10...desktop-v0.56.0) (2026-11-05)
 
 

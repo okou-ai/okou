@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.28.3](https://github.com/okou-ai/okou/compare/ios-v0.28.2...ios-v0.28.3) (2026-11-07)
+
+
+### Bug Fixes
+
+* **ios:** preserve text selection when dismissing the composer ([#45812](https://github.com/okou-ai/okou/issues/45812)) ([0b1f54a](https://github.com/okou-ai/okou/commit/0b1f54a7d4b8ac27640e30c198e172face9dac58))
+* **ios:** scope model defaults to new chats ([#45807](https://github.com/okou-ai/okou/issues/45807)) ([2b5c67d](https://github.com/okou-ai/okou/commit/2b5c67dc67b8bc8caf959f17e3a0848793974233))
+
+
+### Performance Improvements
+
+* **ios:** coalesce realtime subscription catch-up reads ([#45823](https://github.com/okou-ai/okou/issues/45823)) ([96d88d8](https://github.com/okou-ai/okou/commit/96d88d8561f696b42b99e6c4ec14117454313d1f))
+
 ## [0.28.2](https://github.com/okou-ai/okou/compare/ios-v0.28.1...ios-v0.28.2) (2026-11-07)
 
 

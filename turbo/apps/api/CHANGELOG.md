@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.52.6](https://github.com/okou-ai/okou/compare/api-v2.52.5...api-v2.52.6) (2026-11-07)
+
+
+### Refactoring
+
+* **desktop:** replace heartbeat liveness with scoped presence ([#45811](https://github.com/okou-ai/okou/issues/45811)) ([4a7b3db](https://github.com/okou-ai/okou/commit/4a7b3db94ea5b97274f5ea3fb80689683c202254))
+
+
+### Performance Improvements
+
+* **runner:** reduce periodic heartbeats with immediate state reports ([#45825](https://github.com/okou-ai/okou/issues/45825)) ([8c64e5a](https://github.com/okou-ai/okou/commit/8c64e5aa6693a52afaa219b4a3ad51e368a17029))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.4
+    * @okouai/core bumped to 8.822.4
+    * @okouai/db bumped to 2.23.11
+    * @okouai/pi-agent-runtime bumped to 1.51.82
+
 ## [2.52.5](https://github.com/okou-ai/okou/compare/api-v2.52.4...api-v2.52.5) (2026-11-07)
 
 
