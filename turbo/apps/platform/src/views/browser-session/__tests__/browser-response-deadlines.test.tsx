@@ -298,7 +298,6 @@ test.each(["initially hidden", "hidden during native setup"] as const)(
       });
       await screen.findByText("Viewing paused");
       await hello.release();
-      await screen.findByLabelText("Original", { selector: '[role="tab"]' });
     }
     await screen.findByText("Viewing paused");
     expect(viewer.browser.activeConnections()).toBe(hello ? 1 : 0);
@@ -306,6 +305,7 @@ test.each(["initially hidden", "hidden during native setup"] as const)(
       visibility.changeTo("visible");
     });
     await expectReady();
+    await screen.findByLabelText("Original", { selector: '[role="tab"]' });
     await insertText("after paused startup");
     await waitFor(() => {
       expect(viewer.browser.input.at(-1)).toMatchObject({
@@ -354,10 +354,10 @@ test("A viewport pause during native setup keeps its DOM-owned resume path", asy
   changeVisibility(false);
   await screen.findByText("Viewing paused");
   await hello.release();
-  await screen.findByLabelText("Original", { selector: '[role="tab"]' });
   viewer.advance(121_000);
   changeVisibility(true);
   await expectReady();
+  await screen.findByLabelText("Original", { selector: '[role="tab"]' });
   expect(viewer.browser.connections()).toBe(1);
   expect(viewer.startupErrors).toHaveLength(0);
 });

@@ -51,6 +51,9 @@ function createDiscoveryState(model: DiscoveryModel) {
       get(epoch$) === get(model.inventoryState$).epoch
     );
   });
+  const readable$ = computed((get) => {
+    return get(active$) && !get(model.intent$).paused;
+  });
   const admitted$ = computed((get) => {
     return (
       get(active$) &&
@@ -82,6 +85,7 @@ function createDiscoveryState(model: DiscoveryModel) {
     unwatchAbort$,
     listeners$,
     active$,
+    readable$,
     admitted$,
     selectedTargetId$,
   };
@@ -168,7 +172,25 @@ function createDiscoveryLifecycle(
   const roundCurrent$ = command(({ get }, round: InventoryRound) => {
     return get(active$) && currentRound(get(model.inventoryState$), round);
   });
-  return { close$, fail$, commit$, observe$, accepts$, roundCurrent$ };
+  const continueRound$ = command(({ get, set }, round: InventoryRound) => {
+    if (!set(roundCurrent$, round)) {
+      return false;
+    }
+    if (!get(nodes.readable$)) {
+      set(fullWanted$, true);
+      return false;
+    }
+    return true;
+  });
+  return {
+    close$,
+    fail$,
+    commit$,
+    observe$,
+    accepts$,
+    roundCurrent$,
+    continueRound$,
+  };
 }
 type DiscoveryLifecycle = ReturnType<typeof createDiscoveryLifecycle>;
 
@@ -255,7 +277,7 @@ function createMembershipReads(
 ) {
   const readMembership$ = createMembershipReader(directory, model, lifecycle);
   const { initialized$, validating$ } = nodes;
-  const { roundCurrent$, commit$ } = lifecycle;
+  const { roundCurrent$, continueRound$, commit$ } = lifecycle;
   const readRound$ = command(
     async (
       { get, set },
@@ -265,20 +287,20 @@ function createMembershipReads(
     ): Promise<void> => {
       await set(directory.assertWindow$, signal);
       signal.throwIfAborted();
-      if (!set(roundCurrent$, round)) {
+      if (!set(continueRound$, round)) {
         return;
       }
       if (scope === "members") {
         await set(options.settleInput$, signal);
         signal.throwIfAborted();
-        if (!set(roundCurrent$, round)) {
+        if (!set(continueRound$, round)) {
           return;
         }
       }
       if (!get(initialized$)) {
         const pages = await set(directory.read$, signal);
         signal.throwIfAborted();
-        if (!set(roundCurrent$, round)) {
+        if (!set(continueRound$, round)) {
           return;
         }
         set(commit$, { type: "listed", round, targets: pages }, signal);
@@ -299,6 +321,9 @@ function createMembershipReads(
           return Number(b === selected) - Number(a === selected);
         });
       for (let offset = 0; offset < ids.length;) {
+        if (!set(continueRound$, round)) {
+          return;
+        }
         // An established selection's proof must not wait for a background read.
         const size =
           scope === "members" && offset === 0 && ids[0] === selected ? 1 : 4;
@@ -319,6 +344,9 @@ function createMembershipReads(
         if (rejected?.status === "rejected") {
           throw rejected.reason;
         }
+        if (!set(continueRound$, round)) {
+          return;
+        }
         const inventory = get(model.inventoryState$);
         if (
           (inventory.coverage === "pending" || scope === "members") &&
@@ -338,7 +366,7 @@ function createMembershipReads(
           set(options.changed$, signal);
         }
       }
-      if (!set(roundCurrent$, round)) {
+      if (!set(continueRound$, round)) {
         return;
       }
       set(model.inventory$, { type: "complete-round", round });
@@ -400,10 +428,10 @@ function createDiscoveryDrain(
   readMembership$: MembershipReader,
   waitForDrain$: Command<Promise<void>, [AbortSignal]>,
 ) {
-  const { active$, fullWanted$, dirty$, running$, listeners$ } = nodes;
+  const { readable$, fullWanted$, dirty$, running$, listeners$ } = nodes;
   const readWanted$ = command(
     async ({ get, set }, signal: AbortSignal): Promise<void> => {
-      while (get(active$) && (get(fullWanted$) || get(dirty$).size)) {
+      while (get(readable$) && (get(fullWanted$) || get(dirty$).size)) {
         signal.throwIfAborted();
         if (get(fullWanted$)) {
           set(fullWanted$, false);
@@ -426,11 +454,14 @@ function createDiscoveryDrain(
     },
   );
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    if (get(running$)) {
-      await set(waitForDrain$, signal);
+    if (!get(readable$)) {
       return;
     }
-    if (!get(active$)) {
+    while (get(running$)) {
+      await set(waitForDrain$, signal);
+      signal.throwIfAborted();
+    }
+    if (!get(readable$)) {
       return;
     }
     set(running$, true);
@@ -534,6 +565,12 @@ function createCompleteInventoryRead(
       await set(waitForDrain$, signal);
     }
     signal.throwIfAborted();
+    if (get(model.intent$).paused) {
+      throw new DOMException(
+        "The browser operation was cancelled.",
+        "AbortError",
+      );
+    }
     const snapshot = get(model.snapshot$);
     const inventory = snapshot.inventory;
     if (!get(nodes.admitted$) || inventory.status !== "complete") {
@@ -714,6 +751,7 @@ export function createTargetDiscovery(
     readComplete$,
     refresh$,
     refreshMembers$,
+    resume$: drain$,
     ...targets,
     event$,
     close$: lifecycle.close$,
