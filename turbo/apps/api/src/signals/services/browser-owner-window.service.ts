@@ -117,7 +117,7 @@ async function prepareBrowserOwnerWindow(
     userId: input.owner.userId,
   });
   signal.throwIfAborted();
-  const urls = array(string().max(8192)).max(50).parse(JSON.parse(decoded));
+  const urls = array(string().max(8192)).parse(JSON.parse(decoded));
   await restoreBrowserUseWindowTabUrls(input, candidate, urls, signal);
   signal.throwIfAborted();
 }
