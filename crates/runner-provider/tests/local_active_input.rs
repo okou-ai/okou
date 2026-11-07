@@ -6,8 +6,8 @@ use std::io::Write;
 use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
-use nix::errno::Errno;
 use nix::sys::inotify::{AddWatchFlags, InitFlags, Inotify};
+use runner_host::test_fixtures::file_events::json_file_accesses as payload_accesses;
 use runner_provider::local_queue::{self, ActiveInputEntry, LocalQueue};
 use runner_provider::{
     ACTIVE_INPUT_CONTROL_PAYLOAD_MAX_BYTES, identified_active_input_payload_len,
@@ -35,28 +35,6 @@ fn watch_payloads(group_dir: &Path, run_id: RunId) -> Inotify {
         )
         .unwrap();
     watcher
-}
-
-fn payload_accesses(watcher: &Inotify) -> BTreeSet<OsString> {
-    let mut names = BTreeSet::new();
-    loop {
-        match watcher.read_events() {
-            Ok(events) => {
-                for event in events {
-                    assert!(!event.mask.contains(AddWatchFlags::IN_Q_OVERFLOW));
-                    if let Some(name) = event.name
-                        && Path::new(&name)
-                            .extension()
-                            .is_some_and(|ext| ext == "json")
-                    {
-                        names.insert(name);
-                    }
-                }
-            }
-            Err(Errno::EAGAIN) => return names,
-            Err(error) => panic!("read payload access events: {error}"),
-        }
-    }
 }
 
 fn write_future_inputs(
