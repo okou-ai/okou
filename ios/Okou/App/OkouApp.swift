@@ -101,7 +101,6 @@ struct AppRootView: View {
     let data = notifications.data(
       authentication: authentication, configuration: configuration, session: session)
     _workspaceData = State(initialValue: data)
-    _presentedScopeID = State(initialValue: data?.scopeID)
   }
 
   var body: some View {
@@ -111,7 +110,7 @@ struct AppRootView: View {
         let userID = authentication.userID
       {
         if let workspaceData, workspaceData.scopeID == scopeID,
-          scenePhase == .active || presentedScopeID == scopeID
+          scenePhase != .background || presentedScopeID == scopeID
         {
           WorkspaceRootView(
             authentication: authentication, configuration: configuration,
