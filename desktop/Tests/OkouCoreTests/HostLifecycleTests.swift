@@ -1762,4 +1762,39 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await runtime.stop()
   }
 
+  func testPresenceHostPublishesPermissionChangesMadeDuringRegistration() async throws {
+    let registering = expectation(description: "Registration is in flight")
+    let synchronized = expectation(description: "The changed state is acknowledged")
+    let pending = PendingResponse()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        pending.hold(connection)
+        registering.fulfill()
+      } else if path.hasSuffix("/state") {
+        XCTAssertEqual(connection.body["permissions"]["accessibility"], .bool(true))
+        connection.reply(heartbeatResponse(pending: false))
+        synchronized.fulfill()
+      } else if path.hasSuffix("/wait") {
+        // Owned pending request is cancelled and joined by stop().
+      } else if path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected request: \(path)")
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: NotificationBoundary(attachedOnStart: false))
+    let start = Task { await runtime.start() }
+    await fulfillment(of: [registering], timeout: 3)
+    await runtime.updatePermissions(.object(["accessibility": .bool(true), "screenRecording": .bool(true)]))
+    var response = registeredHostResponse()
+    response["livenessMode"] = .string("presence")
+    pending.reply(response)
+    await start.value
+    await fulfillment(of: [synchronized], timeout: 3)
+    await runtime.stop()
+  }
+
 }

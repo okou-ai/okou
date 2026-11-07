@@ -119,8 +119,9 @@ public actor HostRuntime {
   }
   public func refreshAdvertisement() async {
     guard let connection, connection.usesPresence, running, acceptingCommands else { return }
+    let current = generation
     if await body() != lastAdvertisedState {
-      requestStateRefresh(generation: generation, connection: connection)
+      requestStateRefresh(generation: current, connection: connection)
     }
   }
   private func body() async -> JSONValue {
@@ -185,7 +186,8 @@ public actor HostRuntime {
     }
   }
   private func register(generation current: Int) async throws {
-    var registrationBody = await body()
+    let advertised = await body()
+    var registrationBody = advertised
     registrationBody["livenessMode"] = .string("presence")
     let response = try await api.authenticatedRequest(
       ApiRoutes.computerUseHostRegister, body: registrationBody, timeout: 10,
@@ -229,6 +231,7 @@ public actor HostRuntime {
       throw DesktopFailure("invalid_response", "Host registration response is missing its identity")
     }
     self.connection = connection
+    lastAdvertisedState = advertised
     let notifications = registration.commandNotifications
     state.hostId = connection.hostId
     state.usesPresence = connection.usesPresence
@@ -239,9 +242,9 @@ public actor HostRuntime {
     state.retryAt = nil
     await publish()
     guard running, acceptingCommands, generation == current else { return }
-    lastAdvertisedState = await body()
     if connection.usesPresence {
       queueWaitTask = Task { await self.queueWaitLoop(generation: current, connection: connection) }
+      await refreshAdvertisement()
     } else {
       heartbeatTask = Task { await self.heartbeatLoop(generation: current, connection: connection) }
     }
@@ -265,12 +268,14 @@ public actor HostRuntime {
   }
   private func stopRuntime() async {
     acceptingCommands = false
-    queueWaitTask?.cancel()
+    let waiting = queueWaitTask
+    waiting?.cancel()
     queueWaitTask = nil
     state.status = "stopping"
     await executor.retireShellSessions()
     await publish()
     await stopNotifications()
+    await waiting?.value
     // Keep heartbeats alive while an existing command drains; its Clerk
     // session must remain available until the completion report has been sent.
     if connection == nil {
