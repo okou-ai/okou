@@ -7,4 +7,6 @@
 )]
 
 pub mod blocking_worker;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+pub mod file_events;
 pub mod ignored_child;
