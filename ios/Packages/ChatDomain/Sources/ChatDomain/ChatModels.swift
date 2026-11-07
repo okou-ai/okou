@@ -174,7 +174,7 @@ public struct ChatHistory: Equatable, Sendable {
   public var persistedEventIDs: Set<String> = []
   public let latestRunFinishAt: Date?
   public let latestFailureID: String?
-  public let recommendedFollowups: ChatRecommendedFollowupSource?
+  public private(set) var recommendedFollowups: ChatRecommendedFollowupSource?
   public let usageEventIDs: [String: String]
   public let runUsageAnchors: [String: String]
 
@@ -211,6 +211,7 @@ public struct ChatHistory: Equatable, Sendable {
     var history = self
     history.executionState = .recovering
     history.activityRunID = nil
+    history.recommendedFollowups = nil
     return history
   }
 
