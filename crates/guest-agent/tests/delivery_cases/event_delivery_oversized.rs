@@ -47,7 +47,7 @@ async fn oversized_claude_events_are_reduced_or_skipped_while_run_completes()
     // Keep the complete output fixture out of the unrelated input prompt.
     let source_path = tmp.path().join("original.jsonl");
     {
-        let mut events = BufWriter::new(std::fs::File::create(&source_path)?);
+        let mut events = BufWriter::with_capacity(64 * 1024, std::fs::File::create(&source_path)?);
         for event in [
             json!({"type":"system","subtype":"init","session_id":SESSION_ID,"model":"mock-claude"}),
             json!({"type":"assistant","message":{"id":"ordinary","role":"assistant","content":[{"type":"text","text":"ordinary text"}]}}),
