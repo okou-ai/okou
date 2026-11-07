@@ -20,7 +20,7 @@ const pkg = JSON.parse(
 if (manifest.version !== pkg.version || !/^\d+\.\d+\.\d+$/.test(pkg.version)) {
   throw new Error("Manifest and package must share one three-part version");
 }
-const files = ["background.js", "page-fonts.js", "manifest.json"];
+const files = ["background.js", "page-fonts.css", "manifest.json"];
 const dist = resolve(directory, "dist");
 await copyFile(
   resolve(directory, "manifest.json"),

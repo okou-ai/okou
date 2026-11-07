@@ -120,19 +120,22 @@ async function fixture(t) {
       manifest_version: 3,
       name: "Okou Browser",
       version,
-      content_scripts: [{ matches: ["https://*/*"], js: ["page-fonts.js"] }],
+      content_scripts: [{ matches: ["https://*/*"], css: ["page-fonts.css"] }],
     }),
   );
   await writeFile(
     resolve(directory, "background.js"),
     "globalThis.fixture = true;\n",
   );
-  await writeFile(resolve(directory, "page-fonts.js"), "void 0;\n");
+  await writeFile(
+    resolve(directory, "page-fonts.css"),
+    ":root { color: inherit; }\n",
+  );
   const name = `browser-extension-${version}.zip`;
   const archive = resolve(artifacts, name);
   execFileSync(
     "zip",
-    ["-q", "-j", archive, "manifest.json", "background.js", "page-fonts.js"],
+    ["-q", "-j", archive, "manifest.json", "background.js", "page-fonts.css"],
     {
       cwd: directory,
     },

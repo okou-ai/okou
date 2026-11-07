@@ -8,7 +8,6 @@ export default defineConfig({
     lib: {
       entry: {
         background: "src/background.ts",
-        "page-fonts": "src/page-fonts.ts",
       },
       formats: ["es"],
       fileName: (_format, entryName) => {
