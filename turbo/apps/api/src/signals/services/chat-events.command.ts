@@ -550,12 +550,6 @@ function isNormalSendBody(body: SendBody): body is NormalSendBody {
   return "prompt" in body && body.prompt !== undefined;
 }
 const ATTACHMENT_METADATA_CONCURRENCY = 4;
-function unwrapSettledResult<T>(result: PromiseSettledResult<T>): T {
-  if (result.status === "rejected") {
-    throw result.reason;
-  }
-  return result.value;
-}
 /**
  * Resolve the stored object behind each attached file. The canonical input
  * asset rows recorded with the input need its key and size, and the lookup is
@@ -572,18 +566,43 @@ const resolveIncomingAttachFileMetadata$ = command(
     signal: AbortSignal,
   ): Promise<ChatEventAttachFileMetadata[]> => {
     const files = userMessagePhysicalFiles(args.userMessage);
-    const metadata: ChatEventAttachFileMetadata[] = [];
-    for (
-      let offset = 0;
-      offset < files.length;
-      offset += ATTACHMENT_METADATA_CONCURRENCY
-    ) {
-      const wave = files.slice(
-        offset,
-        offset + ATTACHMENT_METADATA_CONCURRENCY,
-      );
-      const results = await Promise.allSettled(
-        wave.map(async (file) => {
+    type AttachmentObject = NonNullable<
+      Awaited<ReturnType<(typeof uploadedArtifactObject$)["write"]>>
+    >;
+    interface Lookup {
+      readonly file: (typeof files)[number];
+      result?: Awaited<
+        ReturnType<typeof settleIncludingAbort<AttachmentObject>>
+      >;
+    }
+    const lookups = new Map<string, Lookup>();
+    const references = files.map((file) => {
+      // Public-object resolution uses the filename hint. The request fixes
+      // storage configuration and sends no variant; content type is a per-
+      // reference snapshot, not a lookup argument. Reuse never crosses sends.
+      const key = JSON.stringify([
+        args.userId,
+        args.orgId,
+        file.fileId,
+        file.filenameSnapshot,
+      ]);
+      let lookup = lookups.get(key);
+      if (!lookup) {
+        lookup = { file };
+        lookups.set(key, lookup);
+      }
+      return { file, lookup };
+    });
+    const pending = lookups.values();
+    let failed = false;
+    const resolve = async () => {
+      for (const lookup of pending) {
+        if (failed || signal.aborted) {
+          return;
+        }
+        const file = lookup.file;
+        lookup.result = await settleIncludingAbort(async () => {
+          signal.throwIfAborted();
           const object = await set(
             uploadedArtifactObject$,
             {
@@ -594,27 +613,48 @@ const resolveIncomingAttachFileMetadata$ = command(
             },
             signal,
           );
-          return { file, object };
-        }),
-      );
-      signal.throwIfAborted();
-      for (const result of results) {
-        const { file, object } = unwrapSettledResult(result);
-        signal.throwIfAborted();
-        if (!object) {
-          throw new Error(`User-message attachment not found: ${file.fileId}`);
-        }
-        metadata.push({
-          id: file.fileId,
-          filename: file.filenameSnapshot,
-          contentType: file.contentType,
-          size: object.size,
-          objectKey: object.key,
-          publicBrand: linkLayoutSegment(object.layout),
+          signal.throwIfAborted();
+          if (!object) {
+            throw new Error(
+              `User-message attachment not found: ${file.fileId}`,
+            );
+          }
+          return object;
         });
+        if (!lookup.result.ok) {
+          failed = true;
+          return;
+        }
       }
-    }
-    return metadata;
+    };
+    await joinAll(
+      Array.from(
+        { length: Math.min(ATTACHMENT_METADATA_CONCURRENCY, lookups.size) },
+        resolve,
+      ),
+    );
+    // Cancellation wins; otherwise surface the earliest reference's failure,
+    // after joining all started reads. Before a slow failure is observed, up
+    // to U - 1 other unique lookups may run, but only four can be active.
+    signal.throwIfAborted();
+    return references.map(({ file, lookup }) => {
+      const result = lookup.result;
+      if (!result) {
+        throw new Error("Attachment metadata resolution is incomplete");
+      }
+      if (!result.ok) {
+        throw result.error;
+      }
+      const object = result.value;
+      return {
+        id: file.fileId,
+        filename: file.filenameSnapshot,
+        contentType: file.contentType,
+        size: object.size,
+        objectKey: object.key,
+        publicBrand: linkLayoutSegment(object.layout),
+      };
+    });
   },
 );
 function authorizeSendAgent(
