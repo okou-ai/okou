@@ -8,10 +8,8 @@ import {
   followFeedWaitingCountOnRef$,
   suggestionFeedEnabled$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
-import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
-import { shouldHandleLinkClick } from "../router/link-click.ts";
 
 function FeedWaitingCount() {
   const { t } = useTranslation();
@@ -44,7 +42,6 @@ export function FeedChatListRow() {
   const active = useGet(activeRoute$) === "feed";
   const assistantName = useGet(assistantName$);
   const followCount = useSet(followFeedWaitingCountOnRef$);
-  const setExpanded = useSet(setSidebarExpanded$);
   if (!enabled) {
     return null;
   }
@@ -53,12 +50,6 @@ export function FeedChatListRow() {
       ref={followCount}
       pathname="/feed"
       aria-current={active ? "page" : undefined}
-      onClick={(event) => {
-        // The mobile drawer closes once the Feed opens in this tab.
-        if (shouldHandleLinkClick(event)) {
-          setExpanded(false);
-        }
-      }}
       className={cn(
         "flex h-8 w-full min-w-0 items-center rounded-lg pr-2 text-left text-sm text-nav-copy motion-safe:transition-colors motion-safe:duration-[180ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
         active ? "bg-state-selected font-medium" : "hover:bg-state-hover",

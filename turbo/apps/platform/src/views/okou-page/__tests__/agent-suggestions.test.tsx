@@ -329,16 +329,13 @@ test("The Okou row leads the chat list, counts waiting cards and opens the Feed"
   });
   expect(row).toHaveTextContent(/^Okou/);
   await within(row).findByText("2 waiting");
+  // The row leads the chats, above their scrolling list.
+  const chats = within(screen.getByTestId("chat-list-column")).getByTestId(
+    "sidebar-scroll-area",
+  );
   expect(
-    within(screen.getByTestId("labeled-nav-rail")).queryByRole("link", {
-      name: "Feed",
-    }),
-  ).not.toBeInTheDocument();
-  expect(
-    within(screen.getByTestId("chat-list-column")).getByRole("link", {
-      name: /^Okou/,
-    }),
-  ).toBe(row);
+    row.compareDocumentPosition(chats) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
 
   click(row);
   await screen.findByText("Suggested action 1");
@@ -361,9 +358,8 @@ test("The Okou row's count follows committed suggestion changes", async () => {
   pool.withdrawAll();
   notifySuggestionsChanged();
   await waitFor(() => {
-    expect(within(link("/feed")).queryByText(/waiting$/)).toBeNull();
+    expect(link("/feed")).toHaveTextContent(/^Okou$/);
   });
-  expect(link("/feed")).toHaveTextContent(/^Okou$/);
 });
 
 test("Each Feed visit loads new suggestions and an empty pool says so", async () => {

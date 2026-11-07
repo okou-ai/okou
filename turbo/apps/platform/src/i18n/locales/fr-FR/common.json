@@ -406,8 +406,8 @@
     "sidebar": {
       "ariaLabel": "Barre latérale",
       "chat": "Chat",
-      "feedWaiting_many": "{{count}} en attente",
       "feedWaiting_one": "{{count}} en attente",
+      "feedWaiting_many": "{{count}} en attente",
       "feedWaiting_other": "{{count}} en attente",
       "hideChatList": "Masquer la liste des chats",
       "mobile": {
