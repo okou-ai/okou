@@ -338,6 +338,7 @@ final class WorkspaceStore {
     let selectedBeforeRefresh = selectedThreadID
     let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
+    // Model catch-up must stay fresh, but it does not gate the chat list or messages.
     async let modelRefresh: Void = refreshModels(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
@@ -355,7 +356,6 @@ final class WorkspaceStore {
     if awaitingSelectedThread, selectedThreadID == selectedBeforeRefresh {
       await selectedConversation?.refresh()
     }
-    guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
     await modelRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil,
@@ -368,7 +368,6 @@ final class WorkspaceStore {
   }
 
   private func refreshModels(_ batch: Set<ChatInvalidation>) async {
-    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     let full = batch.contains(.reconnected)
     if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
     {

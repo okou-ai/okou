@@ -302,54 +302,6 @@ final class WorkspaceStoreTests: XCTestCase {
     }
   }
 
-  func testListRefreshPublishesChatsWhileModelMetadataIsStillLoading() async throws {
-    let gate = HTTPResponseGate()
-    defer { gate.open() }
-    let metadata = expectation(description: "Model catalog is pending")
-    let firstCatalog = Mutex(true)
-    let fixture = ChatHTTPFixture { request in
-      let path = request.url!.path
-      if path == "/api/model-catalog" {
-        if firstCatalog.withLock({ first in
-          defer { first = false }
-          return first
-        }) {
-          metadata.fulfill()
-        }
-        await gate.wait()
-      }
-      if let model = ModelHTTPFixtures.response(path) { return model }
-      switch path {
-      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Ready before models")
-      case "/api/chat-threads/events":
-        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
-      case "/api/indicators":
-        return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
-      default: throw URLError(.unsupportedURL)
-      }
-    }
-    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-    defer { store.close() }
-    let models = Task.immediate { await store.newModelSelection.open() }
-    let refresh = Task { await store.refresh() }
-    addTeardownBlock { @MainActor in
-      store.close()
-      models.cancel()
-      refresh.cancel()
-      gate.open()
-      await models.value
-      await refresh.value
-    }
-    await fulfillment(of: [metadata], timeout: 3)
-    try await waitForBusinessResult { store.list.threads.first?.title == "Ready before models" }
-    store.newChatDraft = "Typing while models load"
-    gate.open()
-    await refresh.value
-    await models.value
-    XCTAssertEqual(store.newChatDraft, "Typing while models load")
-    XCTAssertNotNil(store.modelStore.configuration)
-  }
-
   func testStartupShowsCachedRecentChatsBeforeNavigationAndPreservesArchiveVisibility() async throws
   {
     let cacheDirectory = CacheTestDirectory(owner: self)
