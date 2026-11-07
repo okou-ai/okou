@@ -1951,7 +1951,6 @@ test.each([
       ...workspace.pageOptions,
       featureSwitches: {
         [FeatureSwitchKey.Projects]: true,
-        [FeatureSwitchKey.PwaNavigation]: mobile,
       },
     });
     const row = await waitFor(() => {
@@ -2064,7 +2063,6 @@ test("PWA uses the same Projects and a bottom sheet for Thread membership", asyn
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.Projects]: true,
-      [FeatureSwitchKey.PwaNavigation]: true,
     },
   });
   const user = userEvent.setup({ delay: null });
@@ -2136,13 +2134,12 @@ test("A Project mention reveals a folded chat sidebar and keeps the current conv
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.Projects]: true,
-      [FeatureSwitchKey.UnifiedChatWorkspace]: true,
     },
   });
   const user = userEvent.setup({ delay: null });
   await user.click(button("Hide chat list"));
   await waitFor(() => {
-    expect(screen.queryByTestId("chat-list-column")).not.toBeInTheDocument();
+    expect(button("Show chat list")).toBeInTheDocument();
   });
   const mention = await waitFor(() => {
     const message = document.querySelector<HTMLElement>(

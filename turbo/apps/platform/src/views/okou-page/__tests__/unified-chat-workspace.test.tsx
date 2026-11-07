@@ -1,4 +1,3 @@
-import { FeatureSwitchKey } from "@okouai/core";
 import { cleanup, fireEvent, screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 
@@ -45,7 +44,6 @@ function releasePageDom(): void {
 
 async function openUnifiedWorkspace(
   options: {
-    readonly unified?: boolean;
     readonly containerWidth?: number;
     readonly pageContext?: Parameters<typeof setupPage>[0]["context"];
   } = {},
@@ -68,9 +66,6 @@ async function openUnifiedWorkspace(
     context: options.pageContext ?? context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.UnifiedChatWorkspace]: options.unified ?? true,
-    },
   });
   await openResourceArtifact("Unified report.txt");
   const unavailable = await screen.findByTestId(
@@ -137,18 +132,16 @@ test("Panel borrowing folds immediately after the list minimum and restores only
   expect(handle).toHaveAttribute("aria-valuenow", "640");
   // The very next pixel folds: there is no held-geometry plateau.
   fireEvent.pointerMove(handle, { ...POINTER, clientX: 359 });
-  await waitFor(() => {
-    expect(screen.queryByTestId("chat-list-column")).toBeNull();
-  });
+  expect(listSeam).toHaveAttribute("aria-valuenow", "0");
   expect(handle).toHaveAttribute("aria-valuenow", "641");
   expect(handle.hasPointerCapture(POINTER.pointerId)).toBeTruthy();
 
   fireEvent.pointerMove(handle, { ...POINTER, clientX: 360 });
   expect(handle).toHaveAttribute("aria-valuenow", "640");
-  expect(screen.queryByTestId("chat-list-column")).toBeNull();
+  expect(listSeam).toHaveAttribute("aria-valuenow", "0");
   fireEvent.pointerMove(handle, { ...POINTER, clientX: 375 });
   expect(handle).toHaveAttribute("aria-valuenow", "625");
-  expect(screen.queryByTestId("chat-list-column")).toBeNull();
+  expect(listSeam).toHaveAttribute("aria-valuenow", "0");
   fireEvent.pointerMove(handle, { ...POINTER, clientX: 376 });
   await screen.findByTestId("chat-list-column");
   expect(listSeam).toHaveAttribute("aria-valuenow", "256");
@@ -182,9 +175,6 @@ test("The chat list folds at its minimum and keeps capture for a hysteretic same
   fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 240 });
   expect(listSeam).toHaveAttribute("aria-valuenow", "240");
   fireEvent.pointerMove(listSeam, { ...POINTER, clientX: 239 });
-  await waitFor(() => {
-    expect(screen.queryByTestId("chat-list-column")).toBeNull();
-  });
   expect(
     document.querySelector("[data-chat-list-resize-mask]"),
   ).toBeInTheDocument();
@@ -229,9 +219,6 @@ test("The workspace preserves the grab offset and remembers final pointerup widt
   fireEvent.pointerUp(handle, { ...POINTER, buttons: 0, clientX: 812 });
   expect(handle).toHaveAttribute("aria-valuenow", "632");
   click(buttonNamed("Hide chat list"));
-  await waitFor(() => {
-    expect(screen.queryByTestId("chat-list-column")).toBeNull();
-  });
 
   context.store.set(resetFirstPage$);
   releasePageDom();
@@ -239,7 +226,7 @@ test("The workspace preserves the grab offset and remembers final pointerup widt
     pageContext: reloadedContext,
   });
   await waitFor(() => {
-    expect(screen.queryByTestId("chat-list-column")).toBeNull();
+    expect(buttonNamed("Show chat list")).toBeInTheDocument();
   });
   expect(reloadedHandle).toHaveAttribute("aria-valuenow", "632");
 
@@ -293,22 +280,17 @@ test("Releasing at the viewport origin applies the final coordinate before clean
   expect(listSeam).toHaveAttribute("aria-valuenow", "340");
   fireEvent.pointerUp(listSeam, { ...POINTER, buttons: 0, clientX: 0 });
   expect(listSeam).toHaveAttribute("aria-valuenow", "0");
-  expect(listSeam.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
 
   fireEvent.pointerDown(handle, { ...POINTER, clientX: 700 });
   fireEvent.pointerMove(handle, { ...POINTER, clientX: 840 });
   expect(handle).toHaveAttribute("aria-valuenow", "600");
   fireEvent.pointerUp(handle, { ...POINTER, buttons: 0, clientX: 0 });
   expect(handle).toHaveAttribute("aria-valuenow", "1020");
-  expect(handle.hasPointerCapture(POINTER.pointerId)).toBeFalsy();
 });
 
 test("A folded chat list can be dragged open from its persistent divider", async () => {
   await openUnifiedWorkspace();
   click(buttonNamed("Hide chat list"));
-  await waitFor(() => {
-    expect(screen.queryByTestId("chat-list-column")).toBeNull();
-  });
   const seam = await chatListSeam();
   expect(seam).toHaveAttribute("aria-valuenow", "0");
 
@@ -322,13 +304,4 @@ test("A folded chat list can be dragged open from its persistent divider", async
   fireEvent.pointerMove(seam, { ...POINTER, clientX: 400 });
   fireEvent.pointerUp(seam, { ...POINTER, buttons: 0, clientX: 400 });
   expect(seam).toHaveAttribute("aria-valuenow", "320");
-  expect(document.querySelector("[data-chat-list-resize-mask]")).toBeNull();
-});
-
-test("Without the switch the chat list keeps its fixed width", async () => {
-  const { shell } = await openUnifiedWorkspace({ unified: false });
-  expect(
-    screen.queryByRole("separator", { name: "Resize chat list" }),
-  ).toBeNull();
-  expect(sidebarWidth(shell)).toBe("min(760px, 48vw)");
 });

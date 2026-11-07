@@ -26,10 +26,7 @@ import { cn } from "@okouai/ui/lib/utils";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type { ComposerTask } from "../../signals/okou-page/composer-task-chips.ts";
 import { sidebarOff$ } from "../../signals/okou-page/nav.ts";
-import {
-  chatListWidth$,
-  unifiedChatWorkspace$,
-} from "../../signals/okou-page/unified-chat-workspace.ts";
+import { chatListWidth$ } from "../../signals/okou-page/unified-chat-workspace.ts";
 
 const TASK_CHIP = "shrink-0 px-3";
 const TASK_ICONS = {
@@ -244,14 +241,12 @@ export function ComposerTaskChipRow({
   const finalFocus = useSet(signals.taskChips.taskMenuFinalFocus$);
   const sidebarHidden = useGet(sidebarOff$);
   const chatListWidth = useGet(chatListWidth$);
-  const unified = useGet(unifiedChatWorkspace$);
   const layoutKey = JSON.stringify([
     tasks.map((task) => {
       return [task, labels[task]];
     }),
     sidebarHidden,
     chatListWidth,
-    unified,
   ]);
 
   return (

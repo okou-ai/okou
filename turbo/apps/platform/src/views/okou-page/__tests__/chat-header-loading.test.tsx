@@ -4,7 +4,6 @@ import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -47,8 +46,7 @@ function menuItem(name: string, container: ParentNode) {
 
 async function navigate(threadId: string, desktop = true) {
   if (!desktop) {
-    click(fastButton("Open menu"));
-    await screen.findByRole("dialog", { name: "Sidebar" });
+    click(screen.getByLabelText("Back to chats"));
   }
   const link = await waitFor(() => {
     const found = document.querySelector<HTMLAnchorElement>(
@@ -166,7 +164,6 @@ async function setupHeaders({
     context,
     path,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
   await waitFor(() => {
     expect(fastButton("Share messages")).toHaveAttribute(

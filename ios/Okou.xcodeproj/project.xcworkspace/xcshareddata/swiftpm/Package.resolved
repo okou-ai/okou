@@ -1,5 +1,5 @@
 {
-  "originHash" : "10ff92a2329b1cb8d6dbbb4b04a2817270b3e7e3d43a09aab0fa84481cca1775",
+  "originHash" : "7145b0d3160d1a347b3b699c2655255a61a0d80c5447ed54564205788f1ee728",
   "pins" : [
     {
       "identity" : "ably-cocoa",
@@ -80,6 +80,14 @@
       "state" : {
         "revision" : "2c420d31d0c31b525fa9e7c552ef0fc9d924befc",
         "version" : "9.17.1"
+      }
+    },
+    {
+      "identity" : "swift-ccstate",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/lancy/swift-ccstate.git",
+      "state" : {
+        "revision" : "d75c85c8ff3d8c5f9ee224f852ca7b3ad851ab7c"
       }
     },
     {

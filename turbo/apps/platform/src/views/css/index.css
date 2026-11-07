@@ -48,7 +48,6 @@
      everywhere else they are unset and each consumer falls back to the shared
      sidebar token it already read. */
   --color-nav-border: var(--nav-border, var(--color-sidebar-border));
-  --color-nav-rail: var(--nav-rail, var(--color-sidebar-rail));
 
   /* Credit balance breakdown segment colors (usage bar chart) */
   --color-credit-free: #008d76;
@@ -1604,9 +1603,8 @@ details > summary {
   --ring: var(--okou-color-theme-ring);
   /* Halved with the neutral sidebar: this surface now frames the workspace
      card as well as backing the chat column, and a full-strength tint around a
-     white sheet overpowers it. The rail keeps its depth and stays the anchor. */
+     white sheet overpowers it. */
   --sidebar: var(--okou-color-theme-hue) 30% 98.4%;
-  --nav-rail: hsl(var(--okou-color-theme-hue) 36% 93.5%);
   --nav-border: hsl(var(--border) / 0.5);
   --nav-copy: hsl(var(--okou-color-theme-hue) 10% 14.2%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 5% 30.6%);
@@ -1653,7 +1651,6 @@ details > summary {
   --input: var(--gray-200);
   --ring: var(--okou-color-theme-hue) 45% 62%;
   --sidebar: var(--okou-color-theme-hue) 6% 12.4%;
-  --nav-rail: hsl(var(--okou-color-theme-hue) 10% 8.9%);
   --nav-border: hsl(var(--border) / 0.5);
   --nav-copy: hsl(var(--okou-color-theme-hue) 46% 97.1%);
   --nav-copy-muted: hsl(var(--okou-color-theme-hue) 6% 77.9%);

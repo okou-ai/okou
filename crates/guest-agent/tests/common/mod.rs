@@ -22,6 +22,7 @@
 
 #![allow(dead_code)] // consumed across multiple test binaries
 
+pub mod native_cli;
 mod system_log;
 
 // Every executable uses a different subset of this shared fixture facade.

@@ -1,3 +1,15 @@
+pub(crate) fn temp_dir(label: &str) -> (std::path::PathBuf, tempfile::TempDir) {
+    use std::os::unix::fs::PermissionsExt;
+
+    let guard = tempfile::Builder::new()
+        .prefix(&format!("guest-control-server-{label}-"))
+        .tempdir()
+        .unwrap();
+    let dir = guard.path().to_path_buf();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    (dir, guard)
+}
+
 #[cfg(target_os = "linux")]
 pub(crate) fn open_pidfd(pid: libc::pid_t) -> std::io::Result<std::os::fd::OwnedFd> {
     use std::os::fd::FromRawFd;

@@ -66,7 +66,7 @@ async fn preferred_claim_recovers_retryable_failure_within_the_original_operatio
         let mut bodies = Vec::new();
         for request in &requests {
             assert!(request.starts_with(&format!(
-                "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2&singleCharacterSkills=1 "
+                "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2 "
             )));
             let body: Value =
                 serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
@@ -148,7 +148,7 @@ async fn preferred_claim_retry_settles_unavailable_or_enters_cooldown() {
         assert_eq!(requests.len(), 3);
         for request in &requests[..2] {
             assert!(request.starts_with(&format!(
-                "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2&singleCharacterSkills=1 "
+                "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2 "
             )));
         }
         assert!(requests[2].starts_with("POST /api/runners/poll "));

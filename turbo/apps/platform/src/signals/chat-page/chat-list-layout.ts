@@ -3,10 +3,7 @@ import { animationFrame } from "signal-timers";
 import { pwaChatThreadScrollSignals$ } from "../okou-page/pwa-chat-list.ts";
 import { rootSignal$ } from "../root-signal.ts";
 import { createDeferredPromise, detach, onRef, Reason } from "../utils.ts";
-import {
-  responsiveSidebarChatThreadScrollSignals,
-  threeColumnSidebarChatThreadScrollSignals,
-} from "./sidebar-chat-thread-scroll.ts";
+import { threeColumnSidebarChatThreadScrollSignals } from "./sidebar-chat-thread-scroll.ts";
 
 /**
  * Awaited by the operation that changes the space beside the chat list. The
@@ -24,7 +21,6 @@ export const refreshChatListLayout$ = command(
     );
     await frame.promise;
     signal.throwIfAborted();
-    set(responsiveSidebarChatThreadScrollSignals.measureViewport$);
     set(threeColumnSidebarChatThreadScrollSignals.measureViewport$);
     set(get(pwaChatThreadScrollSignals$).measureViewport$);
   },

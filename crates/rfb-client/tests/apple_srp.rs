@@ -4,6 +4,8 @@
     reason = "synthetic peers and manual live fixture use assertions"
 )]
 
+mod common_srp;
+
 use std::{
     io,
     pin::Pin,
@@ -82,9 +84,8 @@ fn sha512(parts: &[&[u8]]) -> Vec<u8> {
     hasher.finalize().to_vec()
 }
 
-/// Independent synthetic server: derives its verifier with the maintained
-/// PBKDF2 crate, then uses the SRP server equation instead of reusing the
-/// client's SRP implementation.
+/// Independent synthetic server: loads a known-answer verifier, then uses the
+/// SRP server equation instead of reusing the client's SRP implementation.
 #[derive(Clone, Copy)]
 enum PeerScenario {
     HandoffMarker,
@@ -114,12 +115,7 @@ async fn srp_peer(server: &mut DuplexStream, scenario: PeerScenario) {
         BoxedMontyParams::new_vartime(Option::<Odd<BoxedUint>>::from(Odd::new(n)).expect("odd N"));
     let g = BoxedMontyForm::new(BoxedUint::from_be_slice(&[5], 4096).expect("g"), &params);
     let salt = [0x13; 32];
-    let mut derived = [0u8; 128];
-    pbkdf2::pbkdf2_hmac::<Sha512>(b"test-password", &salt, 10_000, &mut derived);
-    let x_inner = sha512(&[b":", &derived]);
-    let x_hash = sha512(&[&salt, &x_inner]);
-    let x = BoxedUint::from_be_slice(&x_hash, 4096).expect("x");
-    let verifier = g.pow_bounded_exp(&x, 512);
+    let verifier = common_srp::verifier(&params).expect("fixed synthetic SRP verifier");
     let mut g_padded = [0u8; 512];
     g_padded[511] = 5;
     let k_hash = sha512(&[&n_bytes, &g_padded]);

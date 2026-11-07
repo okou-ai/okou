@@ -95,6 +95,7 @@ fn storage_manifest_preserves_complete_wire_without_input_sized_projection()
 -> Result<(), Box<dyn std::error::Error>> {
     check_wire(
         &Manifest {
+            archive_readiness: None,
             storages: vec![],
             artifacts: vec![],
             cleanup_paths: vec![],
@@ -104,6 +105,7 @@ fn storage_manifest_preserves_complete_wire_without_input_sized_projection()
     )?;
     check_wire(
         &Manifest {
+            archive_readiness: None,
             storages: vec![StorageEntry {
                 mount_path: "/data/引号\"\\\n".into(),
                 archive_url: Some("https://example.test/archive?key=\"\\".into()),
@@ -168,6 +170,7 @@ fn storage_manifest_preserves_complete_wire_without_input_sized_projection()
     expected.flush()?;
     drop(expected);
     let manifest = Manifest {
+        archive_readiness: None,
         storages: vec![StorageEntry {
             mount_path: "/data".into(),
             archive_url: Some(archive_url),

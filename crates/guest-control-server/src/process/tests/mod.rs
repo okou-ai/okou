@@ -1,36 +1,11 @@
 use super::*;
-use std::os::unix::fs::PermissionsExt;
-use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::sync::atomic::AtomicBool;
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant};
 
 #[cfg(target_os = "linux")]
-use crate::test_support::{kill_pidfd_and_wait, open_pidfd, wait_for_pidfd_exit};
+use crate::test_support::{kill_pidfd_and_wait, open_pidfd, temp_dir, wait_for_pidfd_exit};
 use crate::wait::{WaitOutcome, wait_with_kill_timeout_or_connection_cancelled};
-
-struct TempDirGuard(PathBuf);
-
-impl Drop for TempDirGuard {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.0);
-    }
-}
-
-fn temp_dir(label: &str) -> (PathBuf, TempDirGuard) {
-    let dir = std::env::temp_dir().join(format!(
-        "guest-control-server-{label}-{}-{}",
-        std::process::id(),
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_nanos()
-    ));
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
-    let guard = TempDirGuard(dir.clone());
-    (dir, guard)
-}
 
 fn wait_for_path(path: &std::path::Path, timeout: Duration) -> bool {
     let deadline = Instant::now() + timeout;

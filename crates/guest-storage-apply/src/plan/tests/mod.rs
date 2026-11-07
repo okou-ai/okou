@@ -120,6 +120,7 @@ fn run_plan_skips_cached_artifact_when_mount_root_exists() {
     fs::create_dir_all(&mount).unwrap();
     let mount_path = mount.to_string_lossy().into_owned();
     let manifest = Manifest {
+        archive_readiness: None,
         storages: vec![],
         artifacts: vec![ArtifactEntry {
             mount_path: mount_path.clone(),
@@ -148,6 +149,7 @@ fn run_plan_downloads_cached_storage_when_mount_root_exists() {
     fs::create_dir_all(&mount).unwrap();
     let mount_path = mount.to_string_lossy().into_owned();
     let manifest = Manifest {
+        archive_readiness: None,
         storages: vec![StorageEntry {
             mount_path: mount_path.clone(),
             archive_url: Some("https://s3/storage.tar.gz".into()),
@@ -185,6 +187,7 @@ fn run_plan_downloads_cached_artifact_when_mount_root_is_missing() {
         .to_string_lossy()
         .into_owned();
     let manifest = Manifest {
+        archive_readiness: None,
         storages: vec![],
         artifacts: vec![ArtifactEntry {
             mount_path: mount_path.clone(),

@@ -288,11 +288,10 @@ async function openAgentMentionWorkspace(newChat = false, singleAgent = false) {
       ? `/chats/${current.id}`
       : singleAgent
         ? "/"
-        : `/agents/${AGENT_ID}/chat`,
+        : `/agents/${AGENT_ID}/chat?compose=1`,
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.SingleAgent]: singleAgent,
-      [FeatureSwitchKey.PwaNavigation]: false,
     },
   });
   return { current, savedMentionThread, workspace };

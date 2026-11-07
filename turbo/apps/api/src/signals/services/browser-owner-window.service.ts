@@ -10,6 +10,7 @@ import { and, eq, exists } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { BrowserDisplaySize } from "@okouai/core/browser-display";
 import { db$ } from "../external/db";
+import { recordBrowserLifecycleFact } from "./browser-lifecycle-telemetry";
 import { settleIncludingAbort } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import {
@@ -66,6 +67,11 @@ const cleanupWindowCandidate$ = command(
     if (references.length > 0) {
       return;
     }
+    recordBrowserLifecycleFact({
+      lifecycleEvent: "unpublished-native-close-requested",
+      instanceId: args.instanceId,
+      primaryWindowId: args.candidate.primaryWindowId,
+    });
     await tryCloseBrowserUseWindow(
       args,
       args.candidate.primaryWindowId,

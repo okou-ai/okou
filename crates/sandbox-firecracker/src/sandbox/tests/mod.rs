@@ -168,6 +168,7 @@ fn test_sandbox_with_state(state: SandboxState) -> FirecrackerSandbox {
     let (state_tx, _) = watch::channel(state);
 
     FirecrackerSandbox {
+        snapshot_memory: None,
         config: sandbox::SandboxConfig {
             id,
             resources: test_resources(),

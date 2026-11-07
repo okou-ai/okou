@@ -3,11 +3,7 @@ import type {
   ModelProviderListResponse,
   ModelProviderResponse,
 } from "@okouai/api-contracts/contracts/model-providers";
-import {
-  isFeatureEnabled,
-  type FeatureSwitchContext,
-} from "@okouai/core/feature-switch";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
 import { modelProviderAccounts } from "@okouai/db/schema/model-provider-account";
 import { and, eq } from "drizzle-orm";
 
@@ -194,12 +190,7 @@ const refreshCodexProvider$ = command(
 
     return {
       ...withSubscriptionMetadata(args.provider, metadata),
-      ...(isFeatureEnabled(
-        FeatureSwitchKey.SidebarSubscriptionUsage,
-        args.featureSwitchContext,
-      )
-        ? { subscriptionCredits: metadata.subscriptionCredits }
-        : {}),
+      subscriptionCredits: metadata.subscriptionCredits,
     };
   },
 );

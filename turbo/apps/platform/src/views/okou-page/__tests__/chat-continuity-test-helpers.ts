@@ -404,9 +404,9 @@ export function installContinuityWorkspace(
 }
 
 export function continuitySidebarLink(threadId: string): HTMLAnchorElement {
-  const activeThreadList =
-    document.querySelector<HTMLElement>("[data-sidebar-expanded]") ??
-    document.querySelector<HTMLElement>('[data-testid="chat-list-column"]');
+  const activeThreadList = document.querySelector<HTMLElement>(
+    '[data-testid="chat-list-column"]',
+  );
   if (!activeThreadList) {
     throw new Error("Expected an active chat thread list");
   }

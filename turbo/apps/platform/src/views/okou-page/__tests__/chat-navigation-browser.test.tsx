@@ -217,7 +217,6 @@ function mockWideScreen() {
 function openConversation(
   chatEvents: MockChatEventInput[],
   refined = false,
-  pwaNavigation = false,
   cloudBrowserEnabled = true,
   sharedOwner = false,
 ): Promise<void> {
@@ -233,7 +232,6 @@ function openConversation(
     host: "app.okou.ai",
     featureSwitches: {
       [FeatureSwitchKey.CloudBrowserPanel]: refined,
-      [FeatureSwitchKey.PwaNavigation]: pwaNavigation,
       [FeatureSwitchKey.BrowserSharedOwner]: sharedOwner,
     },
   });
@@ -314,7 +312,7 @@ test("A live Browser card resumes a window reclaimed after its summary was read"
         }
       : event;
   });
-  await openConversation(events, false, false, true, true);
+  await openConversation(events, false, true, true);
   await expectConversationReady();
   const card = await waitFor(() => {
     const card = document.querySelector<HTMLElement>(
@@ -407,7 +405,7 @@ test("A summary card and a previous Start cannot authorize a reopened shared vie
         }
       : event;
   });
-  await openConversation(events, false, false, true, true);
+  await openConversation(events, false, true, true);
   await expectConversationReady();
   const card = await waitFor(() => {
     const card = document.querySelector<HTMLElement>(
@@ -470,7 +468,7 @@ test("An unauthorized Browser keeps its card and sidebar with an authorization p
         }
       : event;
   });
-  await openConversation(events, true, false, false);
+  await openConversation(events, true, false);
   await expectConversationReady();
   const card = await waitFor(() => {
     const element = document.querySelector<HTMLElement>(
@@ -1566,19 +1564,14 @@ test("The chat browser sidebar forwards a touch tap exactly once", async () => {
   ]);
 });
 
-test.each([
-  { pwaNavigation: false, active: false },
-  { pwaNavigation: false, active: true },
-  { pwaNavigation: true, active: false },
-  { pwaNavigation: true, active: true },
-])(
-  "Open the mobile chat browser and return to the conversation (PWA=$pwaNavigation, active=$active)",
-  async ({ pwaNavigation, active }) => {
+test.each([false, true])(
+  "Open the mobile chat browser and return to the conversation (active=%s)",
+  async (active) => {
     context.mocks.browser.matchMedia((query) => {
-      return query === "(display-mode: standalone)" && pwaNavigation;
+      return query === "(display-mode: standalone)";
     });
     mockBrowserApi(active ? liveBrowserSession() : null);
-    await openConversation(completedConversationEvents(), true, pwaNavigation);
+    await openConversation(completedConversationEvents(), true);
     await expectConversationReady();
 
     click(buttonByName("More actions"));

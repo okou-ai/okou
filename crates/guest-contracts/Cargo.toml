@@ -1,6 +1,6 @@
 [package]
 name = "guest-contracts"
-version = "0.30.3"
+version = "0.30.4"
 edition.workspace = true
 description = "Shared contracts between runner and guest binaries"
 
@@ -11,7 +11,7 @@ chrono = { workspace = true, features = ["alloc"] }
 libc = { workspace = true, features = ["std"] }
 serde = { workspace = true, features = ["derive", "std"] }
 serde_json = { workspace = true, features = ["std"] }
-uuid = { workspace = true, features = ["std", "v4"] }
+uuid = { workspace = true, features = ["std", "v4", "serde"] }
 
 [dev-dependencies]
 tempfile = { workspace = true, features = ["getrandom"] }

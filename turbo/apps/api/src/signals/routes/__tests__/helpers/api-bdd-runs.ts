@@ -811,7 +811,7 @@ export function createRunsApi(context: TestContext) {
     ) {
       const response = await accept(
         runApp(context)(runnersJobClaimContract).claim({
-          query: { workflowSkills: "2", singleCharacterSkills: "1" },
+          query: { workflowSkills: "2" },
           headers: runnerHeaders(true),
           extraHeaders: { "X-Client-Version": "0.234.18", ...extraHeaders },
           params: { id: runId },

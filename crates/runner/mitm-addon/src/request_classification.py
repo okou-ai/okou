@@ -89,24 +89,19 @@ def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallReque
         )
 
     raw_fields = flow.request.headers.fields
-    if len(raw_fields) > auth.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS:
+    if not http_header_syntax.raw_header_list_within_budget(
+        raw_fields,
+        max_fields=auth.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS,
+        max_bytes=auth.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES,
+        field_overhead_bytes=auth.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES,
+    ):
         return matching.FirewallRequestContext(
             body=flow.request.raw_content,
             aws_inspection_available=False,
         )
 
     selected: list[tuple[str, str]] = []
-    header_list_size = 0
     for raw_name, raw_value in raw_fields:
-        header_list_size += (
-            len(raw_name) + len(raw_value) + auth.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
-        )
-        if header_list_size > auth.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES:
-            return matching.FirewallRequestContext(
-                body=flow.request.raw_content,
-                aws_inspection_available=False,
-            )
-
         name_bytes = bytes(raw_name)
         if name_bytes.lower() not in matching.AWS_FIREWALL_REQUEST_HEADER_NAMES:
             continue

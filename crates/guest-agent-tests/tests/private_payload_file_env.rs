@@ -4,6 +4,7 @@
 
 use guest_agent_tests as common;
 
+use base64::Engine as _;
 use std::ffi::{OsStr, OsString};
 use std::os::unix::ffi::OsStringExt;
 use std::path::{Path, PathBuf};
@@ -401,6 +402,65 @@ fn assert_json_validation_preserves_destructive_order(root: &Path) -> TestResult
     Ok(())
 }
 
+fn assert_type_invalid_json_is_private(root: &Path) -> TestResult {
+    let private_prompt = "private-prompt-must-not-leak".repeat(1024);
+    let private_token = "private-token-must-not-leak";
+    let encoded_token = base64::engine::general_purpose::STANDARD.encode(private_token);
+    let payload = guest_contracts::env::RunPayload {
+        prompt: private_prompt,
+        secret_values: encoded_token.clone(),
+        ..guest_contracts::env::RunPayload::default()
+    };
+    let user_env = serde_json::json!({ "SERVICE_TOKEN": private_token });
+
+    for (name, key, json) in [
+        (
+            "type-invalid-run-payload",
+            guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV,
+            serde_json::to_string(&payload)?,
+        ),
+        (
+            "type-invalid-user-env",
+            guest_contracts::env::CANONICAL_USER_ENV_FILE_ENV,
+            serde_json::to_string(&user_env)?,
+        ),
+    ] {
+        let files = write_private_files(root, name)?;
+        let is_run_payload = key == guest_contracts::env::CANONICAL_RUN_PAYLOAD_FILE_ENV;
+        let path = if is_run_payload {
+            &files.run_payload_path
+        } else {
+            &files.user_env_path
+        };
+        let double_encoded = serde_json::to_string(&json)?;
+        std::fs::write(path, &double_encoded)?;
+        configure_private_files(&files, name)?;
+        set_canonical_pointers(&files);
+
+        let error = expect_config_error(capture_raw()?, name)?;
+        assert_eq!(
+            error,
+            format!(
+                "parse {key} JSON: category=Data line=1 column={}",
+                double_encoded.len()
+            )
+        );
+        assert!(error.len() < 160);
+        for sentinel in [
+            "private-prompt-must-not-leak",
+            private_token,
+            encoded_token.as_str(),
+        ] {
+            assert!(!error.contains(sentinel));
+        }
+        assert!(!files.run_payload_path.exists());
+        assert!(!files.run_payload_dir.exists());
+        assert_eq!(files.user_env_path.exists(), is_run_payload);
+        assert_eq!(files.user_env_dir.exists(), is_run_payload);
+    }
+    Ok(())
+}
+
 #[test]
 fn private_payload_files_are_captured_once_and_consumed_once() -> TestResult {
     assert_eq!(
@@ -419,6 +479,7 @@ fn private_payload_files_are_captured_once_and_consumed_once() -> TestResult {
     assert_missing_run_payload_precedes_user_env(tmp.path())?;
     assert_canonical_path_validation_and_failure_precedence(tmp.path())?;
     assert_json_validation_preserves_destructive_order(tmp.path())?;
+    assert_type_invalid_json_is_private(tmp.path())?;
     reset_bootstrap_env();
     Ok(())
 }

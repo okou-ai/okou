@@ -392,14 +392,11 @@
     "sidebar": {
       "ariaLabel": "侧边栏",
       "chat": "聊天",
-      "collapse": "收起侧边栏",
       "feedWaiting_other": "{{count}} 条待处理",
       "hideChatList": "隐藏聊天列表",
-      "manage": "管理",
       "mobile": {
         "invite": "邀请",
-        "openAutomations": "打开自动化面板",
-        "openMenu": "打开菜单"
+        "openAutomations": "打开自动化面板"
       },
       "navigation": {
         "agents": "智能体",

@@ -1,7 +1,5 @@
 import { command, computed, state } from "ccstate";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "../../views/okou-page/sidebar-breakpoint.ts";
-import { featureSwitch$ } from "../external/feature-switch.ts";
 
 const mobileViewport$ = state(false);
 const agentComposeRequested$ = state(false);
@@ -10,15 +8,8 @@ export const mobileChatViewport$ = computed((get) => {
   return get(mobileViewport$);
 });
 
-export const pwaNavigationEnabled$ = computed((get) => {
-  return (
-    get(featureSwitch$)[FeatureSwitchKey.PwaNavigation] === true &&
-    get(mobileViewport$)
-  );
-});
-
 export const pwaChatListVisible$ = computed((get) => {
-  return get(pwaNavigationEnabled$) && !get(agentComposeRequested$);
+  return get(mobileViewport$) && !get(agentComposeRequested$);
 });
 
 // Prompt and template links still open their prepared composer. A bare agent

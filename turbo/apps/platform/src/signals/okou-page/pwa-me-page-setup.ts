@@ -7,11 +7,11 @@ import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
 import { updatePage$ } from "../react-router.ts";
 import { initializePwaMePage$ } from "./pwa-me-page.ts";
-import { pwaNavigationEnabled$ } from "./pwa-navigation.ts";
+import { mobileChatViewport$ } from "./pwa-navigation.ts";
 
 export const setupPwaMePage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (!get(pwaNavigationEnabled$)) {
+    if (!get(mobileChatViewport$)) {
       set(updatePage$, createElement(NotFoundPage));
       await set(hideAppSkeleton$, signal);
       return;

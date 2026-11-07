@@ -41,7 +41,7 @@ const THREAD_ID = "b0000000-0000-4000-a000-000000000930";
 const WORKFLOWS = ["axiom-red", "axiom-status", "axiom-traces"] as const;
 
 async function openSlashActions({
-  path = `/agents/${AGENT_ID}/chat`,
+  path = `/agents/${AGENT_ID}/chat?compose=1`,
   enabled = true,
   noModelChoice = false,
   noEffort = false,
@@ -365,9 +365,7 @@ test("The keyboard enters an action's choices and leaves them again", async () =
 test("On a narrow screen an action's choices replace the first level", async () => {
   context.mocks.browser.matchMedia(false);
   const user = userEvent.setup();
-  await openSlashActions({
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
-  });
+  await openSlashActions();
   await waitFor(() => {
     return menuButton("Effort");
   });

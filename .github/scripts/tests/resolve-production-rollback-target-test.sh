@@ -32,7 +32,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "f00df00df00df00df00df00df00df00df00df00d" ]; then
+    if [ "${3:-}" = "deadc0dedeadc0dedeadc0dedeadc0dedeadc0de" ]; then
+      [ "${MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "f00df00df00df00df00df00df00df00df00df00d" ]; then
       [ "${MOCK_SINGLE_CHARACTER_SKILL_API_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef" ]; then
       if [ "${4:-}" = "origin/main" ]; then
@@ -154,6 +156,10 @@ case "${1:-}" in
       [ "${MOCK_RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "94389e2203aaa62408b780156c2cf8f9a9cc5414" ]; then
       [ "${MOCK_MEMBER_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "222d8618346194b5af227c5e147a0076181ee3e0" ]; then
+      [ "${MOCK_PROACTIVE_ACTION_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "11b6837e854dcd643e31ca309b450b7a15a5de37" ]; then
+      [ "${MOCK_ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "c8de6212dc54a5aae0d4658acf1afa6a35f939ab" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_DAV_RUNNER_READER_VALID:-1}" = "1" ]
@@ -305,6 +311,10 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *rollback-floors/single-character-skill-capability-free-api* ]]; then
+      printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT-deadc0dedeadc0dedeadc0dedeadc0dedeadc0de}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/single-character-skill-bundle-reader* ]]; then
       printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_API_COMMIT-f00df00df00df00df00df00df00df00df00df00d}"
       exit 0
@@ -2134,6 +2144,20 @@ assert_failure "Rollback target predates the retired member preference mapping" 
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Retired member preference mapping must reject before artifact or host access"
 fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired proactive action preference mapping" \
+  run_resolver "${tmp_dir}/proactive-action-floor.output" MOCK_PROACTIVE_ACTION_PREFERENCE_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/proactive-action-floor.output" ] || fail "proactive-action-floor-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Retired proactive action preference mapping must reject before artifact or host access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired artifacts auto-open preference mapping" \
+  run_resolver "${tmp_dir}/artifact-auto-open-floor.output" MOCK_ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/artifact-auto-open-floor.output" ] || fail "artifact-auto-open-floor-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Retired artifacts auto-open preference mapping must reject before artifact or host access"
+fi
 
 assert_failure "Cannot resolve the merged direct Workflow attachment runtime" \
   run_resolver "${tmp_dir}/workflow-attachment-missing.output" MOCK_WORKFLOW_ATTACHMENT_COMMIT=
@@ -2274,6 +2298,18 @@ assert_failure "predates single-character Skill bundle support" \
 if grep -Eq '^ssh ' "${tmp_dir}/boundaries.log"; then
   fail "invalid Skill Runner floors must fail before host access"
 fi
+
+for expectation in \
+  "MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT=|Cannot resolve the merged capability-free single-character Skill API on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT=invalid|Cannot resolve the merged capability-free single-character Skill API on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_VALID=0|Rollback target predates capability-free single-character Skill claims"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" run_resolver "${tmp_dir}/single-character-capability-free-api.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/single-character-capability-free-api.output" ] || fail "incompatible Skill claim API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "capability-free Skill claim floor must fail before artifact or host access"
+  fi
+done
 
 for expectation in \
   "MOCK_TEAMS_IDENTITY_PREPARATION_COMMIT=|Cannot resolve the merged Teams identity preparation on main" \

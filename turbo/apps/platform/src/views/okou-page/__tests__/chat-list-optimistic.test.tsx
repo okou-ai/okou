@@ -7,7 +7,6 @@ import {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -133,10 +132,9 @@ async function openUnconfirmedConversation() {
 
   await setupPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/agents/${CHAT_LIST_AGENT_ID}/chat?compose=1`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(9, []),
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
   });
   return { confirmation, requests, stream };
 }

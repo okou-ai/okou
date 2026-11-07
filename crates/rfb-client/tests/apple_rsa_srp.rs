@@ -5,6 +5,7 @@
 )]
 
 mod common_rsa;
+mod common_srp;
 
 use crypto_bigint::{
     BoxedUint, Odd,
@@ -80,12 +81,7 @@ impl PeerFixture {
             Option::<Odd<BoxedUint>>::from(Odd::new(n)).expect("odd"),
         );
         let g = BoxedMontyForm::new(BoxedUint::from_be_slice(&[5], 4096).expect("g"), &params);
-        let mut derived = [0u8; 128];
-        pbkdf2::pbkdf2_hmac::<Sha512>(b"test-password", &SALT, 10_000, &mut derived);
-        let x_inner = sha512(&[b":", &derived]);
-        let x_hash = sha512(&[&SALT, &x_inner]);
-        let x = BoxedUint::from_be_slice(&x_hash, 4096).expect("x");
-        let verifier = g.pow_bounded_exp(&x, 512);
+        let verifier = common_srp::verifier(&params).expect("fixed synthetic SRP verifier");
         let mut g_pad = [0u8; 512];
         g_pad[511] = 5;
         let k_hash = sha512(&[&n_bytes, &g_pad]);

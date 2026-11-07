@@ -392,14 +392,11 @@
     "sidebar": {
       "ariaLabel": "Bilah samping",
       "chat": "Chat",
-      "collapse": "Ciutkan sidebar",
       "feedWaiting_other": "{{count}} menunggu",
       "hideChatList": "Sembunyikan daftar chat",
-      "manage": "Kelola",
       "mobile": {
         "invite": "Undang",
-        "openAutomations": "Buka otomatisasi mobile",
-        "openMenu": "Buka menu"
+        "openAutomations": "Buka otomatisasi mobile"
       },
       "navigation": {
         "agents": "Agen",

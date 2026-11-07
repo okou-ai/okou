@@ -47,6 +47,12 @@ readonly RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT=26bacab4693d32e4a4453dce5c
 # proactive_planning_enabled. Migration drop_retired_member_preference_columns
 # drops them, so earlier APIs fail every member preference statement.
 readonly MEMBER_PREFERENCE_RETIREMENT_COMMIT=94389e2203aaa62408b780156c2cf8f9a9cc5414
+# #45210 and #45669 stopped naming org_members_metadata.proactive_action_enabled
+# and chat_resources_enabled_by_default. Migration
+# drop_retired_action_and_artifact_preferences drops both, so earlier APIs fail
+# every member preference statement.
+readonly PROACTIVE_ACTION_PREFERENCE_RETIREMENT_COMMIT=222d8618346194b5af227c5e147a0076181ee3e0
+readonly ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_COMMIT=11b6837e854dcd643e31ca309b450b7a15a5de37
 # DAV catalog rules require #43517's API/Runner method support and rollout.
 readonly DAV_FIREWALL_READER_COMMIT=c8de6212dc54a5aae0d4658acf1afa6a35f939ab
 # #43667 prepared reference-only Workflow claims and current-content downloads.
@@ -123,6 +129,7 @@ readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
 readonly CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH=.github/rollback-floors/connector-skill-bundle-claims
 readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-character-skill-bundle-reader
+readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors/single-character-skill-capability-free-api
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly REGISTRY_ARCHIVE_READER_PATH=.github/rollback-floors/registry-archive-reader
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
@@ -244,6 +251,14 @@ fi
 
 if ! git merge-base --is-ancestor "$MEMBER_PREFERENCE_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the retired member preference mapping: ${MEMBER_PREFERENCE_RETIREMENT_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$PROACTIVE_ACTION_PREFERENCE_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired proactive action preference mapping: ${PROACTIVE_ACTION_PREFERENCE_RETIREMENT_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired artifacts auto-open preference mapping: ${ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$TARGET_COMMIT"; then
@@ -942,6 +957,17 @@ if [[ ! "$single_character_skill_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$single_character_skill_api_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates the single-character Skill API reader: ${single_character_skill_api_commit}."
+fi
+
+# Current Runners omit the temporary claim query. Earlier APIs leave their
+# single-character Skill jobs pending forever, even with a compatible Runner.
+single_character_skill_capability_free_api_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH" | sed -n '1p')
+if [[ ! "$single_character_skill_capability_free_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged capability-free single-character Skill API on main."
+fi
+if ! git merge-base --is-ancestor "$single_character_skill_capability_free_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates capability-free single-character Skill claims: ${single_character_skill_capability_free_api_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_COMMIT"; then

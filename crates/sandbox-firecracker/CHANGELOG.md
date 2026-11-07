@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.78](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.77...sandbox-firecracker-v0.53.78) (2026-11-06)
+
+
+### Performance Improvements
+
+* **sandbox:** prefetch learned snapshot startup pages ([#45752](https://github.com/okou-ai/okou/issues/45752)) ([5455551](https://github.com/okou-ai/okou/commit/54555515b40c3988b0af9ec28db5ac81c9bcabaf))
+
 ## [0.53.77](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.76...sandbox-firecracker-v0.53.77) (2026-11-06)
 
 ## [0.53.76](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.75...sandbox-firecracker-v0.53.76) (2026-11-06)

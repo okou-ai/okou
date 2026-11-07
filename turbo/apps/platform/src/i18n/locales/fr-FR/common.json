@@ -406,16 +406,13 @@
     "sidebar": {
       "ariaLabel": "Barre latérale",
       "chat": "Chat",
-      "collapse": "Réduire la barre latérale",
-      "feedWaiting_one": "{{count}} en attente",
       "feedWaiting_many": "{{count}} en attente",
+      "feedWaiting_one": "{{count}} en attente",
       "feedWaiting_other": "{{count}} en attente",
       "hideChatList": "Masquer la liste des chats",
-      "manage": "Gérer",
       "mobile": {
         "invite": "Inviter",
-        "openAutomations": "Ouvrir les automatisations mobiles",
-        "openMenu": "Ouvrir le menu"
+        "openAutomations": "Ouvrir les automatisations mobiles"
       },
       "navigation": {
         "agents": "Agents",

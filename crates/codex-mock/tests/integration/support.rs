@@ -348,6 +348,7 @@ fn kill_process_group(child_pid: u32) -> std::io::Result<()> {
     }
 }
 
+#[cfg(not(unix))]
 pub(crate) fn wait_child_with_timeout(
     child: Child,
     timeout: Duration,

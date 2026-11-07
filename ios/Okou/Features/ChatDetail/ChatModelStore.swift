@@ -18,7 +18,8 @@ final class ChatModelStore {
   private var revision = 0
   private var closed = false
   private var reportingCatalog: ModelCatalog?
-  private var catalogTask: Task<Void, Never>?
+  private var loadTask: Task<Void, Never>?
+  private let resources: ChatModelResources
   let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let didFail: @MainActor (Error) -> Void
 
@@ -31,33 +32,68 @@ final class ChatModelStore {
   ) {
     self.readRetrySleep = readRetrySleep
     self.webURL = webURL
-    service = ChatModelService(client: client)
+    let service = ChatModelService(client: client)
+    self.service = service
+    resources = ChatModelResources(service: service, sleep: readRetrySleep)
     connectorAccess = ChatComposerAccess(client: client)
     connectorAuthorization = ChatConnectorService(client: client)
     subscriptions = PersonalSubscriptionStore(client: client, didFail: didFail)
     self.didFail = didFail
-    subscriptions.didMutate = { [weak self] in await self?.refresh() }
+    // Connecting a subscription can also change the server's default model.
+    subscriptions.didMutate = { [weak self] in
+      await self?.refresh([.runModels, .modelPreference])
+    }
   }
-  func refresh() async {
+
+  /// Reading from another composer or sheet reuses the graph's existing Tasks.
+  func load() async {
     guard !closed, !Task.isCancelled else { return }
     active = true
+    if let loadTask {
+      await loadTask.value
+      return
+    }
     revision += 1
     let request = revision
     isLoading = true
-    defer { if request == revision { isLoading = false } }
-    do {
-      let result = try await ChatReadRecovery.read("model settings", sleep: readRetrySleep) {
-        try await service.load()
+    // Publication belongs to the workspace, not whichever transient view awaits it.
+    let task = Task { [weak self] in
+      guard let self else { return }
+      defer {
+        if request == revision {
+          isLoading = false
+          loadTask = nil
+        }
       }
-      guard !closed, !Task.isCancelled, request == revision else { return }
-      configuration = result
-      error = nil
-    } catch is CancellationError {
-    } catch {
-      guard !closed, request == revision else { return }
-      self.error = ChatRequestFailure.message(for: error)
-      didFail(error)
+      do {
+        let result = try await resources.load().value
+        guard !closed, !Task.isCancelled, request == revision else { return }
+        configuration = result
+        error = nil
+      } catch is CancellationError {
+      } catch {
+        guard !closed, request == revision else { return }
+        self.error = ChatRequestFailure.message(for: error)
+        didFail(error)
+      }
     }
+    loadTask = task
+    await task.value
+  }
+
+  func refresh(_ changes: Set<ChatInvalidation> = [.reconnected]) async {
+    guard !closed, !Task.isCancelled else { return }
+    // A restored subscription must read after attachment to cover its missed-event window.
+    do {
+      try resources.invalidate(changes)
+      revision += 1
+      loadTask?.cancel()
+      loadTask = nil
+    } catch {
+      report(error)
+      return
+    }
+    await load()
   }
 
   var usageCatalog: ModelCatalog? { configuration?.catalog ?? reportingCatalog }
@@ -66,25 +102,15 @@ final class ChatModelStore {
   /// This read does not activate model selection or load subscription quotas.
   func loadUsageCatalog() async {
     guard !closed, !Task.isCancelled, usageCatalog == nil else { return }
-    if let catalogTask {
-      await catalogTask.value
-      return
+    do {
+      let result = try await resources.loadCatalog().value
+      guard !closed, !Task.isCancelled else { return }
+      reportingCatalog = result
+    } catch is CancellationError {
+    } catch {
+      guard !closed, !Task.isCancelled else { return }
+      didFail(error)
     }
-    let task = Task { [weak self] in
-      guard let self else { return }
-      defer { catalogTask = nil }
-      do {
-        let result = try await service.catalog()
-        guard !closed, !Task.isCancelled else { return }
-        reportingCatalog = result
-      } catch is CancellationError {
-      } catch {
-        guard !closed, !Task.isCancelled else { return }
-        didFail(error)
-      }
-    }
-    catalogTask = task
-    await task.value
   }
   func report(_ failure: Error) {
     guard !closed else { return }
@@ -93,15 +119,18 @@ final class ChatModelStore {
   func applyPreference(_ preference: ModelPreference) {
     guard !closed, let configuration else { return }
     revision += 1
+    loadTask?.cancel()
+    loadTask = nil
     isLoading = false
     self.configuration = configuration.withPreference(preference)
   }
   func close() {
     closed = true
     revision += 1
+    loadTask?.cancel()
+    loadTask = nil
     configuration = nil
-    catalogTask?.cancel()
-    catalogTask = nil
+    resources.close()
     reportingCatalog = nil
     subscriptions.close()
   }
@@ -183,7 +212,9 @@ final class ChatModelSelectionStore {
   }
 
   func open() async {
-    if models.configuration == nil { await models.refresh() }
+    if models.configuration == nil {
+      if models.error == nil { await models.load() } else { await models.refresh() }
+    }
     if models.configuration != nil { await refresh() }
     // Usage never delays the model list; the separate task is cancelled with the sheet.
   }
@@ -309,7 +340,8 @@ final class ChatModelSelectionStore {
         value, effort: value.model.flatMap { value.modelSettings[$0]?.effort })
       guard !closed, !Task.isCancelled else { return }
       models.applyPreference(preference)
-      await models.refresh()
+      // Preserve canonical readback after a write while reusing other metadata.
+      await models.refresh([.modelPreference])
       guard !closed, !Task.isCancelled else { return }
       savedDefault = true
       error = nil

@@ -1,6 +1,7 @@
 use crate::LOG_TAG;
 use crate::archive;
 use crate::error::DownloadError;
+use crate::readiness::Readiness;
 use crate::source;
 use crate::telemetry::{
     DownloadRunTelemetry, DownloadTaskTelemetry, LocalArchiveTaskMetrics, RemoteArchiveTaskMetrics,
@@ -12,6 +13,7 @@ use std::collections::VecDeque;
 use std::fs;
 use std::panic::AssertUnwindSafe;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, mpsc};
 use std::thread;
 use std::time::{Duration, Instant};
@@ -90,6 +92,7 @@ impl DownloadTask {
         Ok(PreparedDownloadTask {
             task: self,
             effective_mount_path,
+            source_ready: None,
         })
     }
 }
@@ -97,6 +100,7 @@ impl DownloadTask {
 pub(crate) struct PreparedDownloadTask {
     task: DownloadTask,
     effective_mount_path: PathBuf,
+    source_ready: Option<Arc<AtomicBool>>,
 }
 
 impl PreparedDownloadTask {
@@ -212,6 +216,11 @@ struct DownloadCompletion {
     outcome: AttemptOutcome,
 }
 
+enum DownloadEvent {
+    Completed(Box<DownloadCompletion>),
+    SourceReadiness(std::io::Result<()>),
+}
+
 enum AttemptOutcome {
     Finished(Result<(), DownloadError>),
     Panicked(String),
@@ -307,14 +316,31 @@ pub(crate) fn prepare_download_tasks(
 /// Allows additional overlap for remote header waits while keeping local-only
 /// extraction bounded. Serializes logically or physically overlapping mounts.
 /// Returns true if all downloads succeeded, false if any failed.
-pub(crate) fn download_all_parallel(tasks: Vec<PreparedDownloadTask>) -> bool {
-    download_all_parallel_with_runner(tasks, run_download_attempt)
+pub(crate) fn download_all_parallel(
+    tasks: Vec<PreparedDownloadTask>,
+    readiness: Option<Readiness>,
+) -> bool {
+    download_with_readiness(tasks, readiness, run_download_attempt)
 }
 
+#[cfg(test)]
 fn download_all_parallel_with_runner(
     tasks: Vec<PreparedDownloadTask>,
     attempt_runner: AttemptRunner,
 ) -> bool {
+    download_with_readiness(tasks, None, attempt_runner)
+}
+
+fn download_with_readiness(
+    mut tasks: Vec<PreparedDownloadTask>,
+    readiness: Option<Readiness>,
+    attempt_runner: AttemptRunner,
+) -> bool {
+    if let Some(readiness) = &readiness {
+        for task in &mut tasks {
+            task.source_ready = readiness.gate(&task.task.url);
+        }
+    }
     // Remote requests spend time waiting for headers before extraction can
     // start. Grow only for actual remote work; decoded HTTP-origin inputs and
     // file archives retain the smaller CPU-bound worker budget.
@@ -349,6 +375,21 @@ fn download_all_parallel_with_runner(
 
     let success = thread::scope(|scope| {
         let (completion_tx, completion_rx) = mpsc::channel();
+        let mut watcher = match readiness
+            .map(|readiness| {
+                let completion_tx = completion_tx.clone();
+                readiness.watch(move |event| {
+                    let _ = completion_tx.send(DownloadEvent::SourceReadiness(event));
+                })
+            })
+            .transpose()
+        {
+            Ok(watcher) => watcher,
+            Err(error) => {
+                log_error!(LOG_TAG, "Archive readiness startup failed: {error}");
+                return false;
+            }
+        };
         // Admission counts queued and running attempts together, so this queue
         // cannot add work beyond the selected bound. The sender is
         // local to this scope's closure: every return closes it before joining.
@@ -376,7 +417,9 @@ fn download_all_parallel_with_runner(
                     }))
                     .map(AttemptOutcome::Finished)
                     .unwrap_or_else(|e| AttemptOutcome::Panicked(panic_message(e.as_ref())));
-                    let _ = completion_tx.send(DownloadCompletion { download, outcome });
+                    let _ = completion_tx.send(DownloadEvent::Completed(Box::new(
+                        DownloadCompletion { download, outcome },
+                    )));
                 }
             });
         }
@@ -389,13 +432,18 @@ fn download_all_parallel_with_runner(
                 return false;
             }
 
-            if !scheduler.can_make_progress() {
+            if !scheduler.can_make_progress() && watcher.is_none() {
                 log_error!(LOG_TAG, "Download scheduler cannot make progress");
                 return false;
             }
 
             let completion = match completion_rx.recv() {
-                Ok(completion) => completion,
+                Ok(DownloadEvent::Completed(completion)) => *completion,
+                Ok(DownloadEvent::SourceReadiness(Ok(()))) => continue,
+                Ok(DownloadEvent::SourceReadiness(Err(error))) => {
+                    log_error!(LOG_TAG, "Archive readiness failed: {error}");
+                    return false;
+                }
                 Err(e) => {
                     log_error!(LOG_TAG, "Download scheduler failed: {e}");
                     return false;
@@ -404,6 +452,11 @@ fn download_all_parallel_with_runner(
             scheduler.record_completion(completion);
         }
 
+        let sources_finished = watcher.as_mut().map(|watcher| watcher.finish()).transpose();
+        if let Err(error) = sources_finished {
+            log_error!(LOG_TAG, "Archive readiness completion failed: {error}");
+            return false;
+        }
         scheduler.all_success
     });
     telemetry.finish();
@@ -418,6 +471,14 @@ fn find_startable_download(
     // Independent tasks may bypass blocked work, but conflicting tasks must
     // retain their order even when the earlier task has not started yet.
     for (index, download) in pending.iter().enumerate() {
+        if download
+            .task
+            .source_ready
+            .as_ref()
+            .is_some_and(|gate| !gate.load(Ordering::Acquire))
+        {
+            continue;
+        }
         if let Some((blocking, pending_path, reserved_path)) =
             reservations.iter().find_map(|reservation| {
                 conflicting_mount_paths(

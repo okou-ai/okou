@@ -1,11 +1,6 @@
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { Collapsible } from "@base-ui/react/collapsible";
-import type {
-  ComponentProps,
-  CSSProperties,
-  MouseEvent,
-  ReactNode,
-} from "react";
+import type { ComponentProps, CSSProperties, ReactNode } from "react";
 import { useLastResolved, useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
@@ -15,29 +10,15 @@ import {
   Users,
   Edit,
   MessageCircle,
-  ChevronRight,
   PanelLeftClose,
   Plug,
   Search,
 } from "lucide-react";
-import {
-  Button,
-  RequestCommit,
-  SheetClose,
-  SheetContent,
-  ShortcutTooltipGroup,
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-  cn,
-} from "@okouai/ui";
+import { Button, RequestCommit, ShortcutTooltipGroup, cn } from "@okouai/ui";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
 import {
   sidebarOff$,
   toggleSidebarOff$,
-  sidebarExpanded$,
-  setSidebarExpanded$,
   handleAccountAction$,
 } from "../../signals/okou-page/nav.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
@@ -49,13 +30,7 @@ import {
   setThreeColumnSearchOpen$,
   threeColumnSearchOpen$,
 } from "../../signals/okou-page/sidebar-state.ts";
-import {
-  manageSectionCollapsed$,
-  setManageSectionCollapsed$,
-} from "../../signals/okou-page/sidebar-manage-section.ts";
-import { pageSignal$ } from "../../signals/page-signal.ts";
-import { detach, Reason } from "../../signals/utils.ts";
-import { OrgSwitcher, OrgSwitcherCompact } from "./org-switcher.tsx";
+import { OrgSwitcherCompact } from "./org-switcher.tsx";
 import { Link } from "../router/link.tsx";
 import { slackOrgScopeMismatch$ } from "../../signals/okou-page/slack.ts";
 import { AccountDropdown } from "./sidebar-account.tsx";
@@ -66,10 +41,7 @@ import {
   ChatThreadsSection,
   useChatThreadsFilterLabel,
 } from "./sidebar-threads.tsx";
-import {
-  responsiveSidebarChatThreadScrollSignals,
-  threeColumnSidebarChatThreadScrollSignals,
-} from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
+import { threeColumnSidebarChatThreadScrollSignals } from "../../signals/chat-page/sidebar-chat-thread-scroll.ts";
 import {
   PinAgentDialogContainer,
   PinnedAgentListSection,
@@ -83,10 +55,8 @@ import {
   chatListResizeHandleRef$,
   chatListResizing$,
   chatListWidth$,
-  unifiedChatWorkspace$,
 } from "../../signals/okou-page/unified-chat-workspace.ts";
 import { detachedNavigateTo$ } from "../../signals/route.ts";
-import { InstatusStatusNotice } from "../components/instatus-status-notice.tsx";
 import { newChatAgentId$ } from "../../signals/agent-chat.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
 import { commitWorkspaceLayout$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
@@ -96,7 +66,6 @@ import { workspaceResizing$ } from "../../signals/chat-page/workspace-resize.ts"
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
 const slackIcon = settingsIconAssetUrl("slack");
-const MANAGE_CONTENT_ID = "sidebar-manage-content";
 
 type ManageNavId = "agents" | "artifacts" | "connectors" | "workflows";
 type SidebarNavId = ManageNavId | "chat" | "works";
@@ -221,328 +190,12 @@ function useFooterNavItems() {
   });
 }
 
-function useResolvedNavItems() {
-  const manageNav = useManageNavItems();
-  const footerNav = useFooterNavItems();
-  return { manageNav, footerNav };
-}
-
-function useSidebarLinkClick() {
-  const setExpanded = useSet(setSidebarExpanded$);
-  return (event: MouseEvent<HTMLAnchorElement>) => {
-    if (
-      event.button === 0 &&
-      !event.metaKey &&
-      !event.ctrlKey &&
-      !event.shiftKey &&
-      !event.altKey
-    ) {
-      setExpanded(false);
-    }
-  };
-}
-
-function useSidebarCollapseToggle() {
-  const toggleOff = useSet(toggleSidebarOff$);
-  const setExpanded = useSet(setSidebarExpanded$);
-  return () => {
-    setExpanded(false);
-    toggleOff();
-  };
-}
-
 // Wraps AccountDropdown with the handler subscription so siblings don't have
 // to thread onAccountAction through props.
-function AccountDropdownContainer({
-  collapsed = false,
-  renderCodexResetDialog = true,
-}: {
-  collapsed?: boolean;
-  renderCodexResetDialog?: boolean;
-}) {
+function AccountDropdownContainer() {
   const onAccountAction = useSet(handleAccountAction$);
   return (
-    <AccountDropdown
-      onAccountAction={onAccountAction}
-      collapsed={collapsed}
-      renderCodexResetDialog={renderCodexResetDialog}
-      showSubscriptionEntry={collapsed}
-    />
-  );
-}
-
-// --- Expanded mobile drawer ---
-
-function ExpandedSidebarSurface({
-  children,
-}: {
-  readonly children: ReactNode;
-}) {
-  const expanded = useGet(sidebarExpanded$);
-  const { t } = useTranslation();
-  return (
-    <SheetContent
-      side="left"
-      showCloseButton={false}
-      aria-label={t(($) => {
-        return $.appShell.sidebar.ariaLabel;
-      })}
-      overlayClassName="bg-black/40 dark:bg-black/40 [@media(display-mode:standalone)]:-bottom-safe"
-      className={cn(
-        // The `before` layer exists for one case: in a standalone PWA it extends
-        // the sidebar fill past the bottom of the viewport, into the home
-        // indicator, while the drawer's own content keeps its safe-area padding.
-        // `isolate` keeps that `-z-1` layer inside this element rather than
-        // letting it fall behind the page. The sheet backdrop carries the
-        // same standalone extension.
-        "isolate before:pointer-events-none before:absolute before:inset-0 before:-z-1 before:bg-sidebar before:content-[''] before:[@media(display-mode:standalone)]:-bottom-safe",
-        // A fixed mobile drawer escapes the page shell, so its content owns an
-        // immutable safe-area boundary.
-        "box-border w-[300px] max-w-full gap-0 overflow-visible border-r border-nav-border bg-sidebar p-safe shadow-xl dark:shadow-xl",
-      )}
-    >
-      <aside
-        data-slot="sidebar-expanded"
-        data-sidebar-expanded={expanded || undefined}
-        aria-label={t(($) => {
-          return $.appShell.sidebar.ariaLabel;
-        })}
-        className="flex min-h-0 flex-1 flex-col"
-      >
-        {children}
-      </aside>
-    </SheetContent>
-  );
-}
-
-function ExpandedSidebar() {
-  return (
-    <ExpandedSidebarSurface>
-      <ExpandedHeader />
-      <ExpandedMainNav />
-      <InstatusStatusNotice placement="sidebar" />
-      <ExpandedUpgradeSection />
-      <ExpandedFooter />
-    </ExpandedSidebarSurface>
-  );
-}
-
-function ExpandedHeader() {
-  const toggleOff = useSet(toggleSidebarOff$);
-  const { t } = useTranslation();
-  const collapseLabel = t(($) => {
-    return $.appShell.sidebar.collapse;
-  });
-  return (
-    <div className="shrink-0 px-2 pt-1.5 pb-0">
-      <div className="flex items-center justify-between gap-2 rounded-lg py-0.5 [-webkit-app-region:no-drag]">
-        <div className="min-w-0 flex-1">
-          <OrgSwitcher />
-        </div>
-        <TooltipProvider delay={200}>
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <SheetClose
-                  render={
-                    <Button
-                      type="button"
-                      variant="quiet"
-                      size="icon-sm"
-                      iconSize="md"
-                      className="shrink-0"
-                      onClick={toggleOff}
-                      aria-label={collapseLabel}
-                    />
-                  }
-                >
-                  <PanelLeftClose className="opacity-50" size={18} />
-                </SheetClose>
-              }
-            />
-            <TooltipContent side="bottom">
-              <p className="text-xs">{collapseLabel}</p>
-            </TooltipContent>
-          </Tooltip>
-        </TooltipProvider>
-      </div>
-    </div>
-  );
-}
-
-function ExpandedMainNav() {
-  const { t } = useTranslation();
-  return (
-    <nav
-      aria-label={t(($) => {
-        return $.appShell.sidebar.ariaLabel;
-      })}
-      className="flex-1 flex flex-col min-h-0 overflow-hidden px-2 pt-1"
-    >
-      <ExpandedManageSection />
-      <ExpandedSidebarSections />
-    </nav>
-  );
-}
-
-function ExpandedManageSection() {
-  const activeId = useGet(activeRoute$);
-  const onLinkClick = useSidebarLinkClick();
-  const { manageNav } = useResolvedNavItems();
-  const manageCollapsed = useGet(manageSectionCollapsed$);
-  const setManageCollapsed = useSet(setManageSectionCollapsed$);
-  const pageSignal = useGet(pageSignal$);
-  const { t } = useTranslation();
-  return (
-    <div className="shrink-0">
-      <Button
-        type="button"
-        variant="quiet"
-        size="sm"
-        aria-expanded={!manageCollapsed}
-        aria-controls={MANAGE_CONTENT_ID}
-        className="group flex h-8 w-full shrink-0 items-center justify-between rounded-lg pl-2 pr-0 text-left hover:bg-state-hover active:bg-transparent transition-colors [&_svg]:size-3"
-        onClick={() => {
-          detach(
-            setManageCollapsed(!manageCollapsed, pageSignal),
-            Reason.DomCallback,
-          );
-        }}
-      >
-        <span className="flex flex-1 items-center gap-1 truncate text-[13px] font-medium leading-4 text-[color:var(--nav-copy-muted,color-mix(in_oklab,var(--color-sidebar-foreground)_50%,transparent))] group-hover:text-nav-copy group-focus-visible:text-nav-copy transition-colors">
-          {t(($) => {
-            return $.appShell.sidebar.manage;
-          })}
-          <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100">
-            <ChevronRight
-              className={`opacity-35 ${manageCollapsed ? "" : "rotate-90"}`}
-              size={12}
-            />
-          </span>
-        </span>
-      </Button>
-      <div id={MANAGE_CONTENT_ID} hidden={manageCollapsed}>
-        {!manageCollapsed && (
-          <div className="flex flex-col gap-1">
-            {manageNav.map(
-              ({ id, activeKeys, pathname: navPath, label, icon: Icon }) => {
-                const isActive =
-                  activeId !== null &&
-                  (activeKeys as readonly RouteKey[]).includes(activeId);
-                return (
-                  <Link
-                    key={id}
-                    pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
-                    onClick={onLinkClick}
-                    aria-current={isActive ? "page" : undefined}
-                    className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-left text-sm leading-5 transition-colors duration-200 ${
-                      isActive
-                        ? "bg-state-selected text-sidebar-foreground font-medium"
-                        : "text-sidebar-foreground hover:bg-state-hover"
-                    }`}
-                  >
-                    <Icon size={16} className="shrink-0" />
-                    <span className="text-[color:var(--nav-copy,inherit)] truncate">
-                      {label}
-                    </span>
-                  </Link>
-                );
-              },
-            )}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function ExpandedSidebarSections() {
-  return (
-    <div className="flex-1 min-h-0 -mx-2 mt-2 pt-2 flex flex-col overflow-hidden">
-      <div className="px-2">
-        <PinnedAgentListSection />
-      </div>
-      <ChatThreadsSection
-        scrollSignals={responsiveSidebarChatThreadScrollSignals}
-        contentClassName="px-2"
-        showMarkAllRead
-      />
-    </div>
-  );
-}
-
-function ExpandedUpgradeSection() {
-  // The nav above has no bottom padding, so the card carries its own top gap.
-  // Collapses to nothing when SidebarUpgradeCard renders null.
-  return (
-    <div className="px-2 pt-2 empty:hidden">
-      <SidebarUpgradeCard />
-    </div>
-  );
-}
-
-function ExpandedFooter() {
-  const activeId = useGet(activeRoute$);
-  const onLinkClick = useSidebarLinkClick();
-  const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
-  const { footerNav } = useResolvedNavItems();
-  return (
-    <div className="p-2">
-      <div className="flex flex-col gap-1">
-        {footerNav.map(
-          ({
-            id,
-            activeKeys,
-            pathname: navPath,
-            label,
-            icon: Icon,
-            iconImg,
-          }) => {
-            const isActive =
-              activeId !== null &&
-              (activeKeys as readonly RouteKey[]).includes(activeId);
-            return (
-              <Link
-                key={id}
-                pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
-                onClick={onLinkClick}
-                className={`flex w-full h-8 items-center gap-2 rounded-lg p-2 text-left text-sm leading-5 transition-colors duration-200 ${
-                  isActive
-                    ? "bg-state-selected text-sidebar-foreground font-medium"
-                    : "text-sidebar-foreground hover:bg-state-hover"
-                }`}
-              >
-                {iconImg ? (
-                  <span className="inline-flex h-3.5 w-3.5 shrink-0 items-center justify-center overflow-hidden">
-                    <img
-                      src={iconImg}
-                      alt=""
-                      className="h-3.5 w-3.5 scale-[2.2]"
-                      width={14}
-                      height={14}
-                    />
-                  </span>
-                ) : (
-                  <Icon size={16} className="shrink-0" />
-                )}
-                <span className="text-[color:var(--nav-copy,inherit)] flex-1 truncate">
-                  {label}
-                </span>
-                {id === "works" && slackScopeMismatch && (
-                  <span
-                    data-testid="slack-scope-mismatch-indicator"
-                    className="h-2 w-2 shrink-0 rounded-full bg-red-500"
-                  />
-                )}
-              </Link>
-            );
-          },
-        )}
-        <div className="h-px bg-divider/30 mx-1 my-1" />
-        {/* The always-mounted rail owns the shared reset dialog controller. */}
-        <AccountDropdownContainer renderCodexResetDialog={false} />
-      </div>
-    </div>
+    <AccountDropdown onAccountAction={onAccountAction} showSubscriptionEntry />
   );
 }
 
@@ -554,7 +207,6 @@ function ExpandedFooter() {
    the corner they sit in as from the edge beside them. */
 const RAIL_FRAME =
   "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center py-[18px]";
-const RAIL_CHROME = "border-r border-nav-border bg-nav-rail";
 
 function LabeledRailLink({
   id,
@@ -565,7 +217,6 @@ function LabeledRailLink({
   iconImg,
   isActive,
   showBadge,
-  onClick,
 }: {
   id: SidebarNavId;
   navPath: string;
@@ -575,7 +226,6 @@ function LabeledRailLink({
   iconImg?: string | undefined;
   isActive: boolean;
   showBadge?: boolean;
-  onClick: (event: MouseEvent<HTMLAnchorElement>) => void;
 }) {
   const { t } = useTranslation();
   const caption = (() => {
@@ -604,7 +254,6 @@ function LabeledRailLink({
     <Link
       pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
       options={navOptions}
-      onClick={onClick}
       aria-label={label}
       aria-current={isActive ? "page" : undefined}
       className="group flex w-full shrink-0 scroll-my-1 flex-col items-center gap-0.5 rounded-lg no-underline outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
@@ -653,13 +302,15 @@ function ThreeColumnChatListToggle({
 }: ComponentProps<typeof Button> & {
   hidden: boolean;
 }) {
-  const onToggle = useSidebarCollapseToggle();
+  const onToggle = useSet(toggleSidebarOff$);
 
   return (
     <Button
       {...props}
       type="button"
-      onClick={onToggle}
+      onClick={() => {
+        onToggle();
+      }}
       aria-keyshortcuts={
         GLOBAL_KEYBOARD_SHORTCUTS.toggleChatList.ariaKeyShortcuts
       }
@@ -684,7 +335,6 @@ function LabeledChatRailLink() {
   const defaultAgentId = useLastResolved(defaultAgentId$) ?? null;
   // My Okou's chat page is `/` itself.
   const agentChatId = singleAgent ? null : defaultAgentId;
-  const onLinkClick = useSidebarLinkClick();
   const { t } = useTranslation();
   return (
     <LabeledRailLink
@@ -702,7 +352,6 @@ function LabeledChatRailLink() {
         ["home", "agentChat", "agentIdeas", "chat"].includes(activeId)
       }
       showBadge={false}
-      onClick={onLinkClick}
     />
   );
 }
@@ -710,7 +359,6 @@ function LabeledChatRailLink() {
 function LabeledManageRailLinks() {
   const activeId = useGet(activeRoute$);
   const manageNav = useManageNavItems();
-  const onLinkClick = useSidebarLinkClick();
   return manageNav.map((item) => {
     return (
       <LabeledRailLink
@@ -721,7 +369,6 @@ function LabeledManageRailLinks() {
         icon={item.icon}
         isActive={activeId !== null && item.activeKeys.includes(activeId)}
         showBadge={false}
-        onClick={onLinkClick}
       />
     );
   });
@@ -731,7 +378,6 @@ function LabeledFooterRailLinks() {
   const activeId = useGet(activeRoute$);
   const footerNav = useFooterNavItems();
   const slackScopeMismatch = useLastResolved(slackOrgScopeMismatch$) ?? false;
-  const onLinkClick = useSidebarLinkClick();
   return footerNav.map((item) => {
     return (
       <LabeledRailLink
@@ -743,7 +389,6 @@ function LabeledFooterRailLinks() {
         iconImg={item.iconImg}
         isActive={activeId !== null && item.activeKeys.includes(activeId)}
         showBadge={slackScopeMismatch}
-        onClick={onLinkClick}
       />
     );
   });
@@ -755,7 +400,7 @@ function LabeledNavRail() {
   return (
     <LabeledNavRailFrame
       workspaceSwitcher={<OrgSwitcherCompact />}
-      accountMenu={<AccountDropdownContainer collapsed />}
+      accountMenu={<AccountDropdownContainer />}
     />
   );
 }
@@ -768,14 +413,13 @@ function LabeledNavRailFrame({
   readonly accountMenu: ReactNode;
 }) {
   const chatListHidden = useGet(sidebarOff$);
-  const unified = useGet(unifiedChatWorkspace$);
   const { t } = useTranslation();
   return (
     <aside
       data-testid="labeled-nav-rail"
-      // In the unified workspace the rail is part of the page ground the
-      // sheet floats on, so it takes no fill or edge of its own.
-      className={cn(RAIL_FRAME, !unified && RAIL_CHROME)}
+      // The rail is part of the page ground the sheet floats on, so it takes
+      // no fill or edge of its own.
+      className={RAIL_FRAME}
     >
       <div className="mb-3 shrink-0">{workspaceSwitcher}</div>
       {chatListHidden && (
@@ -991,7 +635,6 @@ function ChatListResizeSeam() {
 }
 
 function ChatListColumn() {
-  const unified = useGet(unifiedChatWorkspace$);
   const singleAgent = useGet(singleAgentEnabled$);
   const width = useGet(chatListWidth$);
   return (
@@ -999,24 +642,21 @@ function ChatListColumn() {
       data-testid="chat-list-column"
       className={cn(
         "hidden md:flex shrink-0 flex-col",
-        // Unified: the list is the left part of the workspace sheet, which
-        // continues it from the divider rightwards. It sits half a step toward
-        // the ground, so it reads below the content without leaving the sheet.
-        unified
-          ? "relative my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas-recessed"
-          : "h-full w-[300px] bg-sidebar",
+        // The list is the left part of the workspace sheet, which continues it
+        // from the divider rightwards. It sits half a step toward the ground,
+        // so it reads below the content without leaving the sheet.
+        "relative my-2 rounded-l-2xl border border-r-0 border-border bg-workspace-canvas-recessed",
       )}
-      style={unified ? { width } : undefined}
+      style={{ width }}
     >
       <ChatListHeader />
       <div className="flex min-h-0 flex-1 flex-col overflow-hidden pt-1">
         <div className={CHAT_LIST_INSET}>
-          <PinnedAgentListSection layout="horizontal" />
+          <PinnedAgentListSection />
         </div>
         <ChatThreadsSection
           scrollSignals={threeColumnSidebarChatThreadScrollSignals}
           contentClassName={CHAT_LIST_INSET}
-          collapsible={false}
           showMarkAllRead
           showTitle={!singleAgent}
         />
@@ -1035,7 +675,6 @@ function ThreeColumnNav() {
   const hidden = useGet(sidebarOff$);
   const syncLayout = useSet(commitWorkspaceLayout$);
   const workspaceThreads = useGet(workspaceLayoutThreads$);
-  const unified = useGet(unifiedChatWorkspace$);
   const width = useGet(chatListWidth$);
   const resizing = useGet(workspaceResizing$);
   return (
@@ -1050,8 +689,7 @@ function ThreeColumnNav() {
             const layoutKey = JSON.stringify([
               state.open,
               state.transitionStatus,
-              unified,
-              unified ? width : 300,
+              width,
               resizing,
             ]);
             return (
@@ -1081,22 +719,22 @@ function ThreeColumnNav() {
           )}
           style={
             {
-              "--chat-list-width": `${String(unified ? width : 300)}px`,
+              "--chat-list-width": `${String(width)}px`,
             } as CSSProperties
           }
         >
           <ChatListColumn />
         </Collapsible.Panel>
-        {unified && <ChatListResizeSeam />}
+        <ChatListResizeSeam />
       </Collapsible.Root>
     </>
   );
 }
 
-export function Sidebar({ isDesktop }: { isDesktop: boolean }) {
+export function Sidebar() {
   return (
     <>
-      {isDesktop ? <ThreeColumnNav /> : <ExpandedSidebar />}
+      <ThreeColumnNav />
       <ThreeColumnSearchDialogContainer />
       <PinAgentDialogContainer />
       <ChatThreadDialogs />

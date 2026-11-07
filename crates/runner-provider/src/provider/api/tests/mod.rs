@@ -4187,8 +4187,7 @@ async fn api_provider_claim_accepts_single_character_connector_skill() {
         .mock_async(|when, then| {
             when.method(POST)
                 .path(claim_path.as_str())
-                .query_param("workflowSkills", "2")
-                .query_param("singleCharacterSkills", "1");
+                .query_param("workflowSkills", "2");
             then.status(200).json_body(body);
         })
         .await;
@@ -4909,7 +4908,7 @@ async fn cancellation_reconciliation_starts_only_after_valid_claim_without_activ
         });
         let request = server.next_request("claim before eligibility").await;
         assert!(request.starts_with(&format!(
-            "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2&singleCharacterSkills=1 "
+            "POST /api/runners/jobs/{run_id}/claim?workflowSkills=2 "
         )));
         assert!(!registration.is_cancelled());
         release.send(()).unwrap();

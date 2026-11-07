@@ -573,6 +573,7 @@ pub struct FirecrackerSandbox {
     runtime_cancel: CancellationToken,
     /// Optional managed host CPU placement for the Firecracker process.
     host_cpu_cgroup: Option<Arc<HostCpuCgroupManager>>,
+    snapshot_memory: Option<crate::snapshot_memory::SnapshotMemoryHandle>,
     #[cfg(feature = "test-support")]
     pub(crate) preparation_checkpoint: Option<crate::GuestPreparationCheckpoint>,
 }
@@ -587,6 +588,7 @@ pub(crate) struct FirecrackerSandboxInit {
     pub(crate) device_rate_limits: Option<FirecrackerDeviceRateLimits>,
     pub(crate) leak_tx: Option<tokio::sync::mpsc::UnboundedSender<LeakedResources>>,
     pub(crate) host_cpu_cgroup: Option<Arc<HostCpuCgroupManager>>,
+    pub(crate) snapshot_memory: Option<crate::snapshot_memory::SnapshotMemoryHandle>,
 }
 
 pub(crate) struct SandboxNetwork {
@@ -666,6 +668,7 @@ impl FirecrackerSandbox {
             device_rate_limits,
             leak_tx,
             host_cpu_cgroup,
+            snapshot_memory,
         } = init;
         let id = config.id.to_string();
         Self {
@@ -679,6 +682,7 @@ impl FirecrackerSandbox {
             device_rate_limits,
             runtime: SandboxRuntimeHandles::default(),
             process_group_pid: None,
+            snapshot_memory,
             state: Arc::new(AtomicU8::new(SandboxState::Created as u8)),
             state_publish_lock: Arc::new(Mutex::new(())),
             state_tx: watch::channel(SandboxState::Created).0,
@@ -3325,6 +3329,9 @@ impl Sandbox for FirecrackerSandbox {
                 )),
             },
         )?;
+        if let Some(memory) = self.snapshot_memory.as_ref() {
+            memory.learn();
+        }
         Ok(handle)
     }
 

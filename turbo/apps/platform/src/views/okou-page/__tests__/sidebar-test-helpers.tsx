@@ -64,9 +64,6 @@ export function createSidebarHelpers(context: TestContext) {
     ) => {
       return mockUnreadAgents(context, unreadAgentIds, onRequest);
     },
-    mockMobileLayout: () => {
-      return mockMobileLayout(context);
-    },
     mockSidebarThreadStory: (
       firstPageThreads: SidebarThread[],
       extraThreads?: SidebarThread[],
@@ -388,22 +385,6 @@ export function buttonByText(
 
 export function sidebar(): HTMLElement {
   return screen.getByTestId("chat-list-column");
-}
-
-export function queryMobileSidebar(): HTMLElement | null {
-  return screen.queryByRole("complementary", { name: "Sidebar" });
-}
-
-export function mobileSidebar(): HTMLElement {
-  const drawer = queryMobileSidebar();
-  if (!drawer) {
-    throw new Error("Mobile sidebar not found");
-  }
-  return drawer;
-}
-
-export function mockMobileLayout(context: TestContext) {
-  return context.mocks.browser.matchMedia(false);
 }
 
 export function pinnedAgentLink(

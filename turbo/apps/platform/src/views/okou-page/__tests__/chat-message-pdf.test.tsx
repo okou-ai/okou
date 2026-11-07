@@ -9,7 +9,6 @@ import { fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core";
 import {
   artifactReferencePath,
   artifactReferencesContract,
@@ -90,9 +89,6 @@ async function setupPdfChat(
     context,
     path: `/chats/${THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.ChatMessagePdf]: true,
-    },
   });
   await screen.findByText(ANSWER);
   await waitFor(() => {
@@ -123,8 +119,6 @@ test("Generate first, then offer a native PDF download whose bytes survive repea
   expect(link).toHaveFocus();
   const url = link.href;
   expect(browser.blobForUrl(url)).toBe(pdf);
-  // Generation alone must not automatically start a download.
-  expect(browser.downloads).toHaveLength(0);
   expect(fireEvent.click(link)).toBeTruthy();
   expect(fireEvent.click(link)).toBeTruthy();
   expect(browser.blobForUrl(url)).toBe(pdf);

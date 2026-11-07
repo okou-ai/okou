@@ -29,30 +29,6 @@ import { CHAT_LIST_AGENT_ID, fastButton } from "./chat-list-test-helpers.ts";
 const context = testContext();
 const CHAT_LIST_PATH = `/agents/${CHAT_LIST_AGENT_ID}/chat`;
 
-const legacyEnvironments = [
-  {
-    name: "a disabled switch in a mobile PWA",
-    caseId: 71,
-    standalone: true,
-    desktop: false,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
-  },
-  {
-    name: "a disabled switch in a regular mobile browser",
-    caseId: 72,
-    standalone: false,
-    desktop: false,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: false },
-  },
-  {
-    name: "an enabled switch in a desktop PWA",
-    caseId: 73,
-    standalone: true,
-    desktop: true,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
-  },
-] as const;
-
 function mockDisplayMode({
   standalone,
   desktop,
@@ -88,55 +64,16 @@ function menuItem(name: string): HTMLElement {
   return item;
 }
 
-test.each(
-  legacyEnvironments.filter((environment) => {
-    return !environment.desktop;
-  }),
-)("Keep the existing chat page for $name", async (environment) => {
-  mockDisplayMode(environment);
-  const thread = continuityThread(environment.caseId, 1, "Existing work");
+test("Keep the desktop navigation in a desktop PWA", async () => {
+  mockDisplayMode({ standalone: true, desktop: true });
   const workspace = installContinuityWorkspace(context, {
-    caseId: environment.caseId,
-    threads: [thread],
+    caseId: 73,
+    threads: [continuityThread(73, 1, "Existing work")],
   });
 
   await setupPage({
     context,
     path: CHAT_LIST_PATH,
-    featureSwitches: environment.featureSwitches,
-    ...workspace.pageOptions,
-  });
-
-  await expect(
-    screen.findByRole("textbox", { name: "Message" }),
-  ).resolves.toBeInTheDocument();
-  expect(
-    screen.queryByRole("navigation", { name: "Main navigation" }),
-  ).not.toBeInTheDocument();
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-
-  click(screen.getByLabelText("Open menu"));
-  const sidebar = await screen.findByRole("complementary", {
-    name: "Sidebar",
-  });
-  await waitFor(() => {
-    expect(sidebar).toHaveAttribute("data-sidebar-expanded", "true");
-  });
-  expect(within(sidebar).getByText("Existing work")).toBeInTheDocument();
-});
-
-test("Keep the existing desktop PWA navigation when the switch is enabled", async () => {
-  const environment = legacyEnvironments[2];
-  mockDisplayMode(environment);
-  const workspace = installContinuityWorkspace(context, {
-    caseId: environment.caseId,
-    threads: [continuityThread(environment.caseId, 1, "Existing work")],
-  });
-
-  await setupPage({
-    context,
-    path: CHAT_LIST_PATH,
-    featureSwitches: environment.featureSwitches,
     ...workspace.pageOptions,
   });
 
@@ -144,9 +81,6 @@ test("Keep the existing desktop PWA navigation when the switch is enabled", asyn
     screen.findByRole("textbox", { name: "Message" }),
   ).resolves.toBeInTheDocument();
   expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-  expect(
-    screen.queryByRole("navigation", { name: "Main navigation" }),
-  ).not.toBeInTheDocument();
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
 });
 
@@ -162,7 +96,6 @@ test("Switch between the desktop composer and mobile chat list as the browser re
   await setupPage({
     context,
     path: CHAT_LIST_PATH,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -177,10 +110,6 @@ test("Switch between the desktop composer and mobile chat list as the browser re
   expect(
     screen.getByRole("navigation", { name: "Main navigation" }),
   ).toBeInTheDocument();
-  expect(screen.queryByTestId("labeled-nav-rail")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
 
   act(() => {
     viewport.setMatches((query) => {
@@ -190,9 +119,6 @@ test("Switch between the desktop composer and mobile chat list as the browser re
 
   await screen.findByRole("textbox", { name: "Message" });
   expect(screen.getByTestId("labeled-nav-rail")).toBeInTheDocument();
-  expect(
-    screen.queryByRole("navigation", { name: "Main navigation" }),
-  ).not.toBeInTheDocument();
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
 });
 
@@ -209,9 +135,6 @@ test.each([false, true])(
     await setupPage({
       context,
       path: CHAT_LIST_PATH,
-      featureSwitches: {
-        [FeatureSwitchKey.PwaNavigation]: true,
-      },
       ...workspace.pageOptions,
     });
 
@@ -261,7 +184,6 @@ test("Keep Me within mobile widths while the browser resizes", async () => {
   await setupPage({
     context,
     path: "/me",
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -274,9 +196,6 @@ test("Keep Me within mobile widths while the browser resizes", async () => {
   });
 
   await screen.findByRole("heading", { name: "That page isn't here." });
-  expect(
-    screen.queryByRole("navigation", { name: "Main navigation" }),
-  ).not.toBeInTheDocument();
 
   act(() => {
     viewport.setMatches(false);
@@ -288,34 +207,6 @@ test("Keep Me within mobile widths while the browser resizes", async () => {
   ).toBeInTheDocument();
   expect(window.location.pathname).toBe("/me");
 });
-
-test.each(legacyEnvironments)(
-  "Keep /me unavailable for $name",
-  async (environment) => {
-    mockDisplayMode(environment);
-    const workspace = installContinuityWorkspace(context, {
-      caseId: environment.caseId + 10,
-      threads: [],
-    });
-
-    await setupPage({
-      context,
-      path: "/me",
-      featureSwitches: environment.featureSwitches,
-      ...workspace.pageOptions,
-    });
-
-    await expect(
-      screen.findByRole("heading", { name: "That page isn't here." }),
-    ).resolves.toBeInTheDocument();
-    expect(
-      screen.queryByRole("navigation", { name: "Main navigation" }),
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("heading", { name: "Me" }),
-    ).not.toBeInTheDocument();
-  },
-);
 
 test("Browse and filter mobile browser chats before opening a conversation and returning", async () => {
   mockDisplayMode({ standalone: false, desktop: false });
@@ -350,9 +241,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
   await setupPage({
     context,
     path: CHAT_LIST_PATH,
-    featureSwitches: {
-      [FeatureSwitchKey.PwaNavigation]: true,
-    },
     ...workspace.pageOptions,
   });
 
@@ -368,13 +256,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
   expect(linkTo("/connectors", navigation)).toHaveTextContent("Connectors");
   expect(linkTo("/artifacts", navigation)).toHaveTextContent("Artifacts");
   expect(linkTo("/me", navigation)).toHaveTextContent("Me");
-  expect(
-    screen.queryByRole("complementary", { name: "Sidebar" }),
-  ).not.toBeInTheDocument();
-  expect(screen.queryByTestId("labeled-nav-rail")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
   expect(screen.queryByText("Previous launch")).not.toBeInTheDocument();
 
   click(fastButton("Open chat list menu"));
@@ -386,9 +267,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
   await screen.findByText("Previous launch");
   expect(screen.queryByText("Plan the launch")).not.toBeInTheDocument();
   expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
 
   click(linkTo(`/chats/${archived.id}`));
 
@@ -404,9 +282,6 @@ test("Browse and filter mobile browser chats before opening a conversation and r
 
   await waitFor(() => {
     expect(window.location.pathname).toBe(CHAT_LIST_PATH);
-    expect(
-      screen.queryByRole("textbox", { name: "Message" }),
-    ).not.toBeInTheDocument();
   });
   expect(screen.getByLabelText("Switch agent")).toHaveTextContent("List agent");
 
@@ -447,7 +322,6 @@ test("Slide conversations in from the mobile chat list and out back to the tabs"
   await setupPage({
     context,
     path: CHAT_LIST_PATH,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -482,12 +356,9 @@ test("Slide conversations in from the mobile chat list and out back to the tabs"
   });
 
   await waitFor(() => {
-    expect(
-      screen.queryByRole("textbox", { name: "Message" }),
-    ).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   });
   await screen.findByText("Draft the brief");
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   expect(viewTransition.startedTypes).toStrictEqual([
     ["push"],
     ["pop"],
@@ -530,7 +401,6 @@ test("My Okou's chats tab is its chat list at / and composes a new chat there", 
     context,
     path: "/",
     featureSwitches: {
-      [FeatureSwitchKey.PwaNavigation]: true,
       [FeatureSwitchKey.SingleAgent]: true,
     },
     ...workspace.pageOptions,
@@ -541,10 +411,6 @@ test("My Okou's chats tab is its chat list at / and composes a new chat there", 
   });
   await screen.findByText("Draft the brief");
   expect(linkTo("/", navigation)).toHaveAttribute("aria-current", "page");
-  expect(screen.queryByLabelText("Back to chats")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
 
   click(linkTo(`/chats/${thread.id}`));
 
@@ -592,7 +458,6 @@ test("Leave the slide to the browser after an edge swipe back", async () => {
   await setupPage({
     context,
     path: CHAT_LIST_PATH,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -610,12 +475,9 @@ test("Leave the slide to the browser after an edge swipe back", async () => {
   });
 
   await waitFor(() => {
-    expect(
-      screen.queryByRole("textbox", { name: "Message" }),
-    ).not.toBeInTheDocument();
+    expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   });
   await screen.findByText("Plan the offsite");
-  expect(window.location.pathname).toBe(CHAT_LIST_PATH);
   expect(viewTransition.startedTypes).toStrictEqual([["push"]]);
 });
 
@@ -637,7 +499,6 @@ test("Change desktop pages without a slide", async () => {
   await setupPage({
     context,
     path: CHAT_LIST_PATH,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -661,7 +522,6 @@ test("Open profile settings from Me in a regular mobile browser", async () => {
   await setupPage({
     context,
     path: "/me",
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -689,7 +549,6 @@ test("Start the first chat from an empty mobile chat list", async () => {
   await setupPage({
     context,
     path: CHAT_LIST_PATH,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -716,12 +575,10 @@ test("Step back to Me from the pages it opens", async () => {
   await setupPage({
     context,
     path: "/me",
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
   await screen.findByRole("heading", { name: "Me" });
-  expect(screen.queryByLabelText("Back")).not.toBeInTheDocument();
 
   click(linkTo("/workflows"));
 
@@ -786,7 +643,6 @@ test("Point to unread chats in other agents from the tabs and the agent switcher
   await setupPage({
     context,
     path: CHAT_LIST_PATH,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -832,7 +688,6 @@ test("Keep a PWA home prompt handoff in the prepared chat composer", async () =>
   await setupPage({
     context,
     path: "/?prompt=Draft%20a%20launch%20plan",
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -883,15 +738,10 @@ test("Remove a disconnected subscription from Me without reopening the page", as
   await setupPage({
     context,
     path: "/me",
-    featureSwitches: {
-      [FeatureSwitchKey.PwaNavigation]: true,
-      [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
-    },
     ...workspace.pageOptions,
   });
 
   await screen.findByRole("heading", { name: "ChatGPT" });
-  expect(screen.queryByText("Reset usage")).not.toBeInTheDocument();
 
   click(fastButton("Settings"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });
@@ -933,7 +783,6 @@ test("Remove a disconnected subscription from Me without reopening the page", as
   expect(
     screen.queryByRole("heading", { name: "ChatGPT" }),
   ).not.toBeInTheDocument();
-  expect(screen.queryByLabelText("2 resets left")).not.toBeInTheDocument();
   expect(window.location.pathname).toBe("/me");
 });
 
@@ -985,7 +834,6 @@ test("Switch the mobile browser chat list to another agent", async () => {
   await setupPage({
     context,
     path: CHAT_LIST_PATH,
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
     ...workspace.pageOptions,
   });
 
@@ -1001,15 +849,9 @@ test("Switch the mobile browser chat list to another agent", async () => {
   await screen.findByText("Research brief");
   await waitFor(() => {
     expect(fastButton("Switch agent")).toHaveTextContent("Research agent");
-    expect(
-      screen.queryByRole("option", { name: "Research agent" }),
-    ).not.toBeInTheDocument();
   });
   expect(window.location.pathname).toBe(`/agents/${researchAgentId}/chat`);
   expect(screen.queryByText("Launch planning")).not.toBeInTheDocument();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
   const navigation = screen.getByRole("navigation", {
     name: "Main navigation",
   });

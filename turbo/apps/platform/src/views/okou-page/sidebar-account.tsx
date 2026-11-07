@@ -39,10 +39,7 @@ import {
   type AccountMenuSubscriptionUsageRowsCacheKey,
 } from "../../signals/okou-page/account-menu-subscriptions.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import {
-  setSidebarExpanded$,
-  type AccountAction,
-} from "../../signals/okou-page/nav.ts";
+import type { AccountAction } from "../../signals/okou-page/nav.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   openSettingsDialogAt$,
@@ -170,55 +167,29 @@ function accountDisplayFrom(
 function renderAccountTrigger(
   display: AccountDisplay,
   visible: boolean,
-  collapsed: boolean,
   avatarShape: "circle" | "square",
 ) {
-  if (collapsed) {
-    return (
-      <Button
-        showTooltip
-        type="button"
-        variant="quiet"
-        size="icon"
-        aria-label={display.name}
-        className="shrink-0 p-0"
-      >
-        {visible ? (
-          <UserAvatar
-            imageUrl={display.imageUrl}
-            name={display.name}
-            initial={display.initial}
-            size="md+"
-            shape={avatarShape}
-          />
-        ) : (
-          <ThumbnailPlaceholder size="md+" shape={avatarShape} />
-        )}
-      </Button>
-    );
-  }
-  // Geometry mirrors OrgSwitcher's trigger so the workspace row at the top
-  // of the sidebar and the account row at the bottom read as one pair.
   return (
-    <button
+    <Button
+      showTooltip
       type="button"
-      className="w-full flex items-center gap-2.5 px-2 py-2 rounded-lg hover:bg-state-hover text-sidebar-foreground transition-colors"
+      variant="quiet"
+      size="icon"
+      aria-label={display.name}
+      className="shrink-0 p-0"
     >
       {visible ? (
         <UserAvatar
           imageUrl={display.imageUrl}
           name={display.name}
           initial={display.initial}
-          size="sm"
+          size="md+"
           shape={avatarShape}
         />
       ) : (
-        <ThumbnailPlaceholder size="sm" shape={avatarShape} />
+        <ThumbnailPlaceholder size="md+" shape={avatarShape} />
       )}
-      <span className="min-w-0 flex-1 text-left text-sm font-medium leading-tight truncate">
-        {visible ? display.name : null}
-      </span>
-    </button>
+    </Button>
   );
 }
 
@@ -263,20 +234,20 @@ function AccountUsageGroup({
   onResetCodexUsage,
   resetPending,
   subscriptionRowsCacheKey,
-  subscriptionsEnabled,
+  showSubscriptions,
 }: {
   onOpenCreditBalance: () => void;
   onOpenModel: () => void;
   onResetCodexUsage: (resetCredits: number | null) => void;
   resetPending: boolean;
   subscriptionRowsCacheKey: AccountMenuSubscriptionUsageRowsCacheKey;
-  subscriptionsEnabled: boolean;
+  showSubscriptions: boolean;
 }) {
   const isAdminLoadable = useLastLoadable(isOrgAdmin$);
   const isAdmin =
     isAdminLoadable.state === "hasData" && isAdminLoadable.data === true;
 
-  if (subscriptionsEnabled) {
+  if (showSubscriptions) {
     return (
       <AccountUsageGroupWithSubscriptions
         combinedCredit={isAdmin}
@@ -612,8 +583,6 @@ export function useAccountProfile() {
     userInfoLoadable.state === "hasData" ? userInfoLoadable.data : undefined;
   const features = useLastResolved(featureSwitch$);
   const labEnabled = features?.[FeatureSwitchKey.Lab] ?? false;
-  const subscriptionsEnabled =
-    features?.[FeatureSwitchKey.SidebarSubscriptionUsage] ?? false;
   const current = accounts.find((a) => {
     return a.isActive;
   });
@@ -639,7 +608,6 @@ export function useAccountProfile() {
     others,
     subscriptionRowsCacheKey,
     labEnabled,
-    subscriptionsEnabled,
   };
 }
 
@@ -648,7 +616,6 @@ export function useAccountActions(
   onAccountAction?: (action: AccountAction) => void,
 ) {
   const openSettings = useSet(openSettingsDialogAt$);
-  const setSidebarExpanded = useSet(setSidebarExpanded$);
   const pageSignal = useGet(pageSignal$);
   const openClerkAddAccount = useSet(openClerkAddAccount$);
 
@@ -686,7 +653,6 @@ export function useAccountActions(
   };
 
   const openSettingsSection = (section: SettingsSection) => {
-    setSidebarExpanded(false);
     detach(openSettings(section, pageSignal), Reason.DomCallback);
   };
 
@@ -781,15 +747,11 @@ function AccountCodexResetDialog({
 
 export function AccountDropdown({
   onAccountAction,
-  collapsed = false,
   hidePreferences = false,
-  renderCodexResetDialog = true,
   showSubscriptionEntry = false,
 }: {
   onAccountAction?: (action: AccountAction) => void;
-  collapsed?: boolean;
   hidePreferences?: boolean;
-  renderCodexResetDialog?: boolean;
   showSubscriptionEntry?: boolean;
 }) {
   const profile = useAccountProfile();
@@ -803,7 +765,6 @@ export function AccountDropdown({
     others,
     subscriptionRowsCacheKey,
     labEnabled,
-    subscriptionsEnabled,
   } = profile;
   const {
     handleAccountAction,
@@ -843,7 +804,7 @@ export function AccountDropdown({
       Reason.DomCallback,
       "reload account menu credit balances",
     );
-    if (!subscriptionsEnabled || showSubscriptionEntry) {
+    if (showSubscriptionEntry) {
       return;
     }
 
@@ -856,7 +817,7 @@ export function AccountDropdown({
 
   return (
     <>
-      {!hidePreferences && showSubscriptionEntry && subscriptionsEnabled && (
+      {!hidePreferences && showSubscriptionEntry && (
         <SidebarSubscriptionUsage resetPending={resetAction.actionPending} />
       )}
       <DropdownMenu onOpenChange={handleMenuOpenChange}>
@@ -864,7 +825,6 @@ export function AccountDropdown({
           render={renderAccountTrigger(
             accountDisplay,
             accountVisible,
-            collapsed,
             avatarShape,
           )}
         />
@@ -886,9 +846,7 @@ export function AccountDropdown({
               onResetCodexUsage={handleOpenCodexReset}
               resetPending={resetAction.actionPending}
               subscriptionRowsCacheKey={subscriptionRowsCacheKey}
-              subscriptionsEnabled={
-                subscriptionsEnabled && !showSubscriptionEntry
-              }
+              showSubscriptions={!showSubscriptionEntry}
             />
           )}
           {!hidePreferences && (
@@ -908,7 +866,7 @@ export function AccountDropdown({
           <SignOutItem onAccountAction={handleAccountAction} />
         </DropdownMenuContent>
       </DropdownMenu>
-      {renderCodexResetDialog && <AccountCodexResetDialog {...resetAction} />}
+      <AccountCodexResetDialog {...resetAction} />
     </>
   );
 }
