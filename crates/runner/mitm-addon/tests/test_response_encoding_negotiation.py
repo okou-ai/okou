@@ -10,6 +10,7 @@ import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import response_encoding_negotiation
+import websocket_handshake
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.request_handler_helpers import _single_firewall_sandbox, _write_registry
@@ -1362,9 +1363,9 @@ def test_oversized_websocket_key_is_rejected_before_base64_decode(monkeypatch) -
     def fail_decode(_value: str, *, validate: bool) -> bytes:
         raise AssertionError(f"oversized key reached Base64 decoder with validate={validate}")
 
-    monkeypatch.setattr(mitm_addon.base64, "b64decode", fail_decode)
+    monkeypatch.setattr(websocket_handshake.base64, "b64decode", fail_decode)
 
-    assert not mitm_addon._is_valid_websocket_key(b"A" * 25)
+    assert not websocket_handshake._is_valid_websocket_key(b"A" * 25)
 
 
 async def test_browser_passthrough_keeps_accept_encoding_for_parser_connector(

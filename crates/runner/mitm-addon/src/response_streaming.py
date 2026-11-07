@@ -17,12 +17,10 @@ from collections.abc import Callable, Generator
 from typing import NamedTuple
 
 from mitmproxy import http
-from wsproto.utilities import generate_accept_token
 
 import body_decoding
 import flow_metadata
 import flow_metadata_keys as metadata_keys
-import http_header_syntax
 import http_response_classification
 import model_websocket_usage
 import response_inspection
@@ -30,17 +28,15 @@ import run_usage
 import runtime_url_parsing
 import stream_capture
 import usage
+import websocket_handshake
 from body_limits import STREAM_BUFFER_LIMIT
 from logging_utils import log_proxy_entry
 from usage.providers.connectors.response_parser import ConnectorResponseParser
 from usage.underbilling import log_usage_underbilling
 
-_HTTP_STATUS_SWITCHING_PROTOCOLS = 101
 _HTTP_STATUS_OK_MIN = 200
 _HTTP_STATUS_REDIRECT_MIN = 300
 _HTTP_STATUS_BAD_GATEWAY = 502
-_WEBSOCKET_KEY_BASE64_BYTES = 24
-_WEBSOCKET_ACCEPT_BASE64_BYTES = 28
 
 _MODEL_JSON_USAGE_FINISH = "model_json_usage_finish"
 _MODEL_SSE_USAGE_FINISH = "model_sse_usage_finish"
@@ -137,7 +133,7 @@ def uses_model_json_fallback(
         return False
     if http_response_classification.has_event_stream_media_type(response):
         return False
-    return not is_confirmed_websocket_upgrade_response(
+    return not websocket_handshake.is_confirmed_websocket_upgrade_response(
         flow,
         websocket_header_work_limit=websocket_header_work_limit,
     )
@@ -578,9 +574,12 @@ def _configure_response_inspection_stream(
     is_billable_model_provider = usage.is_model_provider_usage_billable(flow)
     extract_model_usage = flow_metadata.firewall_name(flow.metadata).startswith("model-provider:")
     model_protocol = model_usage_protocol(flow) if extract_model_usage else None
-    if model_protocol == "openai_responses" and is_confirmed_websocket_upgrade_response(
-        flow,
-        websocket_header_work_limit=websocket_header_work_limit,
+    if (
+        model_protocol == "openai_responses"
+        and websocket_handshake.is_confirmed_websocket_upgrade_response(
+            flow,
+            websocket_header_work_limit=websocket_header_work_limit,
+        )
     ):
         model_websocket_usage.activate(flow)
         return _ResponseStreamSetup(None, False)
@@ -608,72 +607,6 @@ def _configure_response_inspection_stream(
         response,
         is_billable_flow=is_billable_flow,
     )
-
-
-def is_confirmed_websocket_upgrade_response(
-    flow: http.HTTPFlow,
-    *,
-    websocket_header_work_limit: int,
-) -> bool:
-    """Return whether ``flow`` completed a confirmed WebSocket upgrade.
-
-    Confirmation requires a response with status 101, the exact ``True``
-    value for ``WEBSOCKET_UPGRADE_REQUEST``, response ``Upgrade`` and
-    ``Connection`` field values containing the ``websocket`` and ``upgrade``
-    list tokens, singleton request ``Sec-WebSocket-Key`` and response
-    ``Sec-WebSocket-Accept`` fields, an ASCII request key, and a matching
-    RFC-generated accept token. Missing or malformed values fail closed and
-    return ``False``.
-
-    For a billable OpenAI Responses model-provider flow, ``True`` is the
-    signal for WebSocket usage activation and allows tracked-flow release to
-    wait for ``websocket_end()``; ``False`` follows ordinary HTTP terminal
-    handling.
-    """
-    response = flow.response
-    if response is None:
-        return False
-    if response.status_code != _HTTP_STATUS_SWITCHING_PROTOCOLS:
-        return False
-    if flow.metadata.get(metadata_keys.WEBSOCKET_UPGRADE_REQUEST) is not True:
-        return False
-    if not http_header_syntax.header_fields_contain_token(
-        response.headers.fields,
-        b"upgrade",
-        b"websocket",
-        max_work_units=websocket_header_work_limit,
-    ):
-        return False
-    if not http_header_syntax.header_fields_contain_token(
-        response.headers.fields,
-        b"connection",
-        b"upgrade",
-        max_work_units=websocket_header_work_limit,
-    ):
-        return False
-
-    request_key = http_header_syntax.single_header_value(
-        flow.request.headers.fields,
-        b"sec-websocket-key",
-        max_fields=websocket_header_work_limit,
-        max_value_bytes=websocket_header_work_limit,
-    )
-    response_accept = http_header_syntax.single_header_value(
-        response.headers.fields,
-        b"sec-websocket-accept",
-        max_fields=websocket_header_work_limit,
-        max_value_bytes=websocket_header_work_limit,
-    )
-    if (
-        request_key is None
-        or len(request_key) != _WEBSOCKET_KEY_BASE64_BYTES
-        or not request_key.isascii()
-        or response_accept is None
-        or len(response_accept) != _WEBSOCKET_ACCEPT_BASE64_BYTES
-    ):
-        return False
-    expected_accept = generate_accept_token(request_key)
-    return response_accept == expected_accept
 
 
 def _discard_uninspectable_response_body(_chunk: bytes) -> bytes:
