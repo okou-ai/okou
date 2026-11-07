@@ -157,7 +157,6 @@ final class AuthenticationScopeTests: XCTestCase {
     await provider.memberships.hold()
     let observation = await provider.memberships.observeRequests()
     let first = expectation(description: "The initial identity is loading memberships")
-    let replacement = expectation(description: "The replacement identity loads its own memberships")
     let observer = Task {
       for await _ in observation.arrivals {
         first.fulfill()
@@ -174,7 +173,10 @@ final class AuthenticationScopeTests: XCTestCase {
       await startup.value
     }
     await fulfillment(of: [first], timeout: 3)
+    // The SDK can request memberships before the app's session refresh completes.
+    try await waitForBusinessResult { authentication.scopeID != nil }
     let oldScope = try XCTUnwrap(authentication.scopeID)
+    let replacement = expectation(description: "The replacement identity loads its own memberships")
     let sessionID = "sess_replacement_" + UUID().uuidString
     provider.identityOverride.withLock {
       $0 = { request in
