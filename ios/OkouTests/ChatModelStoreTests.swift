@@ -34,6 +34,82 @@ final class ModelResponseGate: Sendable {
 
 @MainActor
 final class ChatModelCommandTests: XCTestCase {
+  func testOnlyChangedNewChatSettingsCanBecomeTheDefault() async throws {
+    let writes = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "PUT" {
+        writes.withLock { $0 += 1 }
+      }
+      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    let selection = ChatModelSelectionStore(models: resource)
+    let existing = ChatModelSelectionStore(models: resource, thread: thread())
+    defer {
+      selection.close()
+      existing.close()
+      resource.close()
+    }
+    XCTAssertFalse(selection.canSaveForFutureChats)
+    await selection.open()
+    await selection.saveForFutureChats()
+    XCTAssertFalse(selection.canSaveForFutureChats)
+
+    await existing.open()
+    XCTAssertEqual(existing.effectiveEffort, "max")
+    XCTAssertFalse(existing.canSaveForFutureChats)
+    await existing.saveForFutureChats()
+
+    await selection.choose(model: "claude-model")
+    XCTAssertTrue(selection.canSaveForFutureChats)
+    await selection.choose(effort: "high")
+    await selection.choose(model: "codex-model")
+    XCTAssertFalse(selection.canSaveForFutureChats)
+
+    await selection.setFast(true)
+    XCTAssertTrue(selection.canSaveForFutureChats)
+    await selection.setFast(false)
+    XCTAssertFalse(selection.canSaveForFutureChats)
+
+    // Pi displays medium for the saved ultra preference; choosing medium explicitly
+    // must still allow saving that distinct preference for future chats.
+    await selection.choose(effort: "medium")
+    XCTAssertTrue(selection.canSaveForFutureChats)
+    selection.resetNewChat()
+    XCTAssertFalse(selection.canSaveForFutureChats)
+    XCTAssertEqual(writes.withLock { $0 }, 0)
+  }
+
+  func testDefaultSaveAvailabilityFollowsCrossDevicePreferenceChanges() async throws {
+    let changed = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      var response = try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+      if request.url?.path == "/api/user-model-preference", changed.withLock({ $0 }) {
+        response.body = response.body.replacingOccurrences(
+          of: "\"selectedModel\":\"codex-model\"", with: "\"selectedModel\":\"claude-model\"")
+      }
+      return response
+    }
+    let resource = ChatModelStore(
+      client: fixture.client, webURL: fixture.baseURL, didFail: { _ in })
+    let selection = ChatModelSelectionStore(models: resource)
+    defer {
+      selection.close()
+      resource.close()
+    }
+    await selection.open()
+    await selection.choose(model: "claude-model")
+    XCTAssertTrue(selection.canSaveForFutureChats)
+    changed.withLock { $0 = true }
+    await resource.refresh([.modelPreference])
+    XCTAssertEqual(selection.selection.model, "claude-model")
+    XCTAssertFalse(selection.canSaveForFutureChats)
+    changed.withLock { $0 = false }
+    await resource.refresh([.modelPreference])
+    XCTAssertTrue(selection.canSaveForFutureChats)
+  }
+
   func testClosedWorkspaceCannotPublishLateModelOrSubscriptionReads() async throws {
     let gate = ModelResponseGate()
     let began = expectation(description: "Old model read")
@@ -117,7 +193,7 @@ final class ChatModelCommandTests: XCTestCase {
     await selection.choose(model: "claude-model")
     await selection.saveForFutureChats()
     XCTAssertNotNil(selection.error)
-    XCTAssertFalse(selection.savedDefault)
+    XCTAssertTrue(selection.canSaveForFutureChats)
     XCTAssertEqual(selection.selection.model, "claude-model")
     XCTAssertEqual(resource.configuration?.defaultSelection.model, "codex-model")
     selection.resetNewChat()
@@ -334,7 +410,7 @@ final class ChatModelCommandTests: XCTestCase {
     expectedReads["/api/user-model-preference", default: 0] += 1
     await selection.saveForFutureChats()
     XCTAssertEqual(writes.withLock { $0.count }, 1)
-    XCTAssertTrue(selection.savedDefault)
+    XCTAssertFalse(selection.canSaveForFutureChats)
     selection.resetNewChat()
     XCTAssertEqual(selection.selection.serviceTier, "priority")
     XCTAssertEqual(selection.effectiveEffort, "max")

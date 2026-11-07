@@ -3680,43 +3680,6 @@
         }
       }
     },
-    "Changes apply to this chat right away.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Änderungen gelten sofort für diesen Chat." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Los cambios se aplican a este chat al instante." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Les modifications s’appliquent immédiatement à cette discussion." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "बदलाव इस चैट पर तुरंत लागू होते हैं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Perubahan langsung berlaku untuk chat ini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Le modifiche si applicano subito a questa chat." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "変更はすぐにこのチャットに適用されます。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "변경 사항은 이 채팅에 즉시 적용됩니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "As alterações valem para esta conversa imediatamente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "更改会立即应用于此聊天。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "變更會立即套用到此聊天。" }
-        }
-      }
-    },
     "Changes apply to this chat.": {
       "extractionState": "manual",
       "localizations": {
@@ -7066,43 +7029,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "預設（開啟）" }
-        }
-      }
-    },
-    "Default for new chats": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "新对话的默认模型" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "新對話的預設模型" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "新しいチャットのデフォルト" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "새 채팅 기본값" }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Standard für neue Chats" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Predeterminado para chats nuevos" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Par défaut pour les nouvelles discussions" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Predefinito per le nuove chat" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Padrão para novas conversas" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Default untuk chat baru" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "नई चैट के लिए डिफ़ॉल्ट" }
         }
       }
     },
@@ -13811,6 +13737,43 @@
         }
       }
     },
+    "Only this new chat uses these settings.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Diese Einstellungen gelten nur für diesen neuen Chat." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Esta configuración solo se usa en este chat nuevo." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ces réglages s’appliquent uniquement à cette nouvelle discussion." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "ये सेटिंग केवल इस नई चैट पर लागू होती हैं।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Pengaturan ini hanya berlaku untuk chat baru ini." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Queste impostazioni si applicano solo a questa nuova chat." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "これらの設定はこの新しいチャットにのみ適用されます。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "이 설정은 이 새 채팅에만 적용됩니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Estas configurações se aplicam apenas a esta nova conversa." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这些设置仅用于本次新对话。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "這些設定僅用於本次新對話。" }
+        }
+      }
+    },
     "Open authorization page": {
       "extractionState": "manual",
       "localizations": {
@@ -18994,6 +18957,43 @@
         }
       }
     },
+    "Set as default for new chats": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Als Standard für neue Chats festlegen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Establecer como predeterminado para chats nuevos" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Définir par défaut pour les nouvelles discussions" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "नई चैट के लिए डिफ़ॉल्ट सेट करें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Jadikan default untuk chat baru" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Imposta come predefinito per le nuove chat" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "新しいチャットのデフォルトに設定" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "새 채팅의 기본값으로 설정" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Definir como padrão para novas conversas" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "设为新对话的默认配置" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "設為新對話的預設設定" }
+        }
+      }
+    },
     "Set listed permissions": {
       "localizations": {
         "de": {
@@ -23123,43 +23123,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "之後的聊天也使用" }
-        }
-      }
-    },
-    "Use for new chats too": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Auch für neue Chats verwenden" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Usar también en chats nuevos" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Utiliser aussi pour les nouvelles discussions" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "नई चैट के लिए भी इस्तेमाल करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Gunakan juga untuk chat baru" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Usa anche per le nuove chat" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "新しいチャットにも使う" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "새 채팅에도 사용" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Usar também em novos chats" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "也用于新对话" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "也用於新對話" }
         }
       }
     },

@@ -114,34 +114,24 @@ struct ChatModelPickerView: View {
               }
             }
           }
-          if configuration.models.contains(where: { $0.selectedModel != nil }) {
+          if selection.canSaveForFutureChats {
             Section {
-              // An ordinary action row, like Settings' rows: amber is for the primary commit.
-              if selection.savedDefault {
+              Button {
+                Task { await save(.futureChats) { await selection.saveForFutureChats() } }
+              } label: {
                 HStack {
-                  Text("Default for new chats")
+                  Text("Set as default for new chats").foregroundStyle(OkouColor.foreground)
                   Spacer()
-                  OkouIcon("check", size: OkouIconSize.inline)
-                }
-                .foregroundStyle(OkouColor.mutedForeground)
-              } else {
-                Button {
-                  Task { await save(.futureChats) { await selection.saveForFutureChats() } }
-                } label: {
-                  HStack {
-                    Text("Use for new chats too").foregroundStyle(OkouColor.foreground)
-                    Spacer()
-                    if selection.isSaving && pendingChange == .futureChats {
-                      ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
-                    }
+                  if selection.isSaving && pendingChange == .futureChats {
+                    ProgressView().controlSize(.small).tint(OkouColor.mutedForeground)
                   }
-                  .contentShape(Rectangle())
                 }
-                .accessibilityIdentifier("save-model-default")
-                .disabled(selection.isBusy || selection.uncertain)
+                .contentShape(Rectangle())
               }
+              .accessibilityIdentifier("save-model-default")
+              .disabled(selection.isBusy || selection.uncertain)
             } footer: {
-              Text("Changes apply to this chat right away.").okouSectionNote()
+              Text("Only this new chat uses these settings.").okouSectionNote()
             }
           }
           ForEach(["built-in"] + PersonalSubscriptionType.allCases.map(\.rawValue), id: \.self) {
