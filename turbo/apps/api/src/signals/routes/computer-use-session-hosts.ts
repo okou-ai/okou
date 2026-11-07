@@ -13,10 +13,16 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { bodyResultOf, pathParamsOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
 import { clerkRateLimit, clerkReadUnavailable } from "../external/clerk";
+import {
+  createComputerUseHostRealtimeToken,
+  publishUserSignal,
+} from "../external/realtime";
+import { resolveComputerUseHost$ } from "../services/computer-use-host-auth.service";
 import { settle } from "../utils";
 import type { RouteEntry } from "../route-entry";
 import {
   startComputerUseHost$,
+  waitForComputerUseHostCommands$,
   heartbeatComputerUseHost$,
   stopComputerUseHost$,
   claimNextComputerUseHostCommand$,
@@ -106,6 +112,9 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       hostId: result.hostId,
+      ...(result.livenessMode === "presence"
+        ? { livenessMode: "presence" as const }
+        : {}),
       connectionGeneration: result.connectionGeneration,
       commandNotifications: {
         channelName: computerUseHostChannelName(
@@ -149,6 +158,84 @@ const heartbeat$ = command(async ({ get, set }, signal: AbortSignal) => {
       hasPendingCommands: result.hasPendingCommands,
     },
   };
+});
+
+const waitBody$ = bodyResultOf(contract.wait);
+const waitParams$ = pathParamsOf(contract.wait);
+const wait$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const identity = get(identity$);
+  if (!identity) {
+    return invalidSession;
+  }
+  const body = await get(waitBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const result = await set(
+    waitForComputerUseHostCommands$,
+    { ...get(waitParams$), ...body.data, ...identity },
+    signal,
+  );
+  if (result.status === "invalid_connection") {
+    return invalidConnection;
+  }
+  return {
+    status: 200 as const,
+    body: { hasPendingCommands: result.hasPendingCommands },
+  };
+});
+
+const stateBody$ = bodyResultOf(contract.state);
+const stateParams$ = pathParamsOf(contract.state);
+const state$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const identity = get(identity$);
+  if (!identity) {
+    return invalidSession;
+  }
+  const body = await get(stateBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const result = await set(
+    heartbeatComputerUseHost$,
+    { ...get(stateParams$), ...body.data, ...identity },
+    signal,
+  );
+  if (result.status === "invalid_connection") {
+    return invalidConnection;
+  }
+  await publishUserSignal([identity.userId], "computerUseHostsChanged");
+  signal.throwIfAborted();
+  return {
+    status: 200 as const,
+    body: {
+      ok: true as const,
+      hostId: result.hostId,
+      hasPendingCommands: result.hasPendingCommands,
+    },
+  };
+});
+
+const realtimeTokenBody$ = bodyResultOf(contract.realtimeToken);
+const realtimeTokenParams$ = pathParamsOf(contract.realtimeToken);
+const realtimeToken$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const identity = get(identity$);
+  if (!identity) {
+    return invalidSession;
+  }
+  const body = await get(realtimeTokenBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const authority = { ...get(realtimeTokenParams$), ...body.data, ...identity };
+  if (!(await set(resolveComputerUseHost$, authority, signal))) {
+    return invalidConnection;
+  }
+  const token = await createComputerUseHostRealtimeToken(authority, signal);
+  return { status: 200 as const, body: token };
 });
 
 const stopBody$ = bodyResultOf(contract.stop);
@@ -243,6 +330,9 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
 export const computerUseSessionHostRoutes: readonly RouteEntry[] = [
   { route: contract.register, handler: sessionRoute(register$) },
   { route: contract.heartbeat, handler: sessionRoute(heartbeat$) },
+  { route: contract.wait, handler: sessionRoute(wait$) },
+  { route: contract.state, handler: sessionRoute(state$) },
+  { route: contract.realtimeToken, handler: sessionRoute(realtimeToken$) },
   { route: contract.stop, handler: sessionRoute(stop$) },
   {
     route: contract.next,

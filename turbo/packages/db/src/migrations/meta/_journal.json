@@ -3172,6 +3172,13 @@
       "when": 1794022994310,
       "tag": "1531_connector_skill_registry_free_source",
       "breakpoints": true
+    },
+    {
+      "idx": 1532,
+      "version": "7",
+      "when": 1794025769163,
+      "tag": "1532_computer_use_host_presence",
+      "breakpoints": true
     }
   ]
 }

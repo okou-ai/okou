@@ -1,3 +1,4 @@
+import { HTTPException } from "hono/http-exception";
 import Ably, { type CapabilityOp } from "ably";
 import type { RunnerSshInvalidate } from "@okouai/api-contracts/contracts/runner-ssh";
 import type { RunnerVncInvalidate } from "@okouai/api-contracts/contracts/runner-vnc";
@@ -24,7 +25,13 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { singleton } from "../../lib/singleton";
 import { waitUntil } from "../context/wait-until";
-import { awaitWithSignal, bestEffort, settle, tapError } from "../utils";
+import {
+  awaitWithSignal,
+  bestEffort,
+  settle,
+  settleIncludingAbort,
+  tapError,
+} from "../utils";
 
 const L = logger("Realtime");
 
@@ -46,6 +53,79 @@ export async function isUserInForeground(
   const members = await channel.presence.get({ clientId: userId, limit: 1 });
   signal.throwIfAborted();
   return members.items.length > 0;
+}
+
+/** Presence is scoped to one registered Desktop connection, never a user-wide socket. */
+export async function computerUseHostIsPresent(
+  target: {
+    readonly userId: string;
+    readonly orgId: string;
+    readonly id: string;
+    readonly connectionGeneration: number;
+  },
+  signal: AbortSignal,
+): Promise<boolean> {
+  signal.throwIfAborted();
+  const request = async () => {
+    const members = await ablyClient()
+      .channels.get(
+        computerUseHostChannelName(
+          target.userId,
+          target.orgId,
+          target.id,
+          target.connectionGeneration,
+        ),
+      )
+      .presence.get({ clientId: target.userId, limit: 1 });
+    return members.items.length > 0;
+  };
+  const result = await settleIncludingAbort(
+    awaitWithSignal(
+      request(),
+      AbortSignal.any([signal, AbortSignal.timeout(3000)]),
+    ),
+  );
+  signal.throwIfAborted();
+  if (!result.ok) {
+    throw new HTTPException(503, {
+      res: Response.json(
+        {
+          error: {
+            code: "PROVIDER_UNAVAILABLE",
+            message: "Computer-use presence is temporarily unavailable",
+          },
+        },
+        { status: 503 },
+      ),
+      cause: result.error,
+    });
+  }
+  return result.value;
+}
+
+export async function createComputerUseHostRealtimeToken(
+  target: {
+    readonly userId: string;
+    readonly orgId: string;
+    readonly hostId: string;
+    readonly connectionGeneration: number;
+  },
+  signal: AbortSignal,
+): Promise<Ably.TokenRequest> {
+  signal.throwIfAborted();
+  const channelName = computerUseHostChannelName(
+    target.userId,
+    target.orgId,
+    target.hostId,
+    target.connectionGeneration,
+  );
+  const token = await ablyClient().auth.createTokenRequest({
+    capability: { [channelName]: ["subscribe", "presence"] },
+    ttl: 60 * 60 * 1000,
+    clientId: target.userId,
+  });
+  signal.throwIfAborted();
+  return token;
 }
 
 function getUserChannelName(userId: string): string {
@@ -113,9 +193,16 @@ export async function createPlatformRealtimeToken(
 async function publishComputerUseCommandsChangedNow(
   channelName: string,
 ): Promise<void> {
-  await ablyClient()
-    .channels.get(channelName)
-    .publish(computerUseCommandsChangedEvent, null);
+  const channel = ablyClient().channels.get(channelName);
+  const first = await settle(
+    channel.publish(computerUseCommandsChangedEvent, null),
+  );
+  if (!first.ok) {
+    // Repeating a wakeup is safe: only the HTTP queue claim can admit an action.
+    await ablyClient()
+      .channels.get(channelName)
+      .publish(computerUseCommandsChangedEvent, null);
+  }
 }
 
 export function publishComputerUseCommandsChangedSafely(target: {

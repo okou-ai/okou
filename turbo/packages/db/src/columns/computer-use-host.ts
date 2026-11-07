@@ -25,6 +25,10 @@ export function computerUseHostColumns() {
       .$type<ComputerUsePermissions>()
       .default({ accessibility: false, screenRecording: false })
       .notNull(),
+    livenessMode: text("liveness_mode")
+      .$type<"heartbeat" | "presence">()
+      .default("heartbeat")
+      .notNull(),
     status: text("status").default("online").notNull(),
     lastSeenAt: timestamp("last_seen_at").defaultNow().notNull(),
     revokedAt: timestamp("revoked_at"),

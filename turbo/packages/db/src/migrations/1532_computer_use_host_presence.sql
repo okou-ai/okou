@@ -1,0 +1,1 @@
+ALTER TABLE "computer_use_hosts" ADD COLUMN "liveness_mode" text DEFAULT 'heartbeat' NOT NULL;
