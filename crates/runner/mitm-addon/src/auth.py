@@ -18,6 +18,7 @@ from mitmproxy import http
 
 import aws_sigv4_body_admission
 import aws_sigv4_hash_executor
+import firewall_auth_config
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_header_syntax
@@ -67,7 +68,6 @@ from firewall_auth_client import (
     FirewallAuthRequest,
     InsufficientCreditsError,
 )
-from firewall_auth_config import auth_config_injects_credentials
 from firewall_auth_failure import project_firewall_auth_failure
 from logging_utils import log_proxy_entry
 from request_authority import custom_http_auth_is_allowed
@@ -511,17 +511,11 @@ def _auth_config_uses_body_dependent_auth(
     flow: http.HTTPFlow,
     auth_config: object,
 ) -> bool:
-    if not isinstance(auth_config, dict):
-        return False
-    auth_base = auth_config.get("base")
-    if isinstance(auth_base, str) and auth_base:
+    if firewall_auth_config.auth_base_from_config(auth_config) is not None:
         return True
-    auth_aws_sigv4 = auth_config.get("awsSigv4")
-    return (
-        isinstance(auth_aws_sigv4, dict)
-        and bool(auth_aws_sigv4)
-        and aws_sigv4_request_requires_body_for_signing(flow)
-    )
+    return firewall_auth_config.uses_aws_sigv4(
+        auth_config
+    ) and aws_sigv4_request_requires_body_for_signing(flow)
 
 
 def _build_firewall_auth_plan(
@@ -531,17 +525,9 @@ def _build_firewall_auth_plan(
 ) -> _FirewallAuthPlan:
     """Derive shared firewall-auth policy without mutating request state."""
     auth_config = allow.api_entry.get("auth", {})
-    uses_auth_base = (
-        isinstance(auth_config, dict)
-        and isinstance(auth_config.get("base"), str)
-        and bool(auth_config["base"])
-    )
-    uses_aws_sigv4 = (
-        isinstance(auth_config, dict)
-        and isinstance(auth_config.get("awsSigv4"), dict)
-        and bool(auth_config["awsSigv4"])
-    )
-    injects_credentials = auth_config_injects_credentials(auth_config)
+    uses_auth_base = firewall_auth_config.auth_base_from_config(auth_config) is not None
+    uses_aws_sigv4 = firewall_auth_config.uses_aws_sigv4(auth_config)
+    injects_credentials = firewall_auth_config.auth_config_injects_credentials(auth_config)
     needs_resolution = injects_credentials or is_billable_firewall(allow.name, sandbox_info)
 
     failure = None
