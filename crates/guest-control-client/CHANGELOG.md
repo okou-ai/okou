@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.23.80](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.79...guest-control-client-v0.23.80) (2026-11-07)
+
+
+### Refactoring
+
+* **rust:** use canonical ownership for fresh test directories ([#45780](https://github.com/okou-ai/okou/issues/45780)) ([abc1987](https://github.com/okou-ai/okou/commit/abc1987be619ba283e8c45a6816488d9170c3489))
+
 ## [0.23.79](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.78...guest-control-client-v0.23.79) (2026-11-06)
 
 ## [0.23.78](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.77...guest-control-client-v0.23.78) (2026-11-06)

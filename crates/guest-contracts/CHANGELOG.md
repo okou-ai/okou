@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.4...guest-contracts-v0.31.0) (2026-11-07)
+
+
+### Features
+
+* **guest-storage:** add event-driven pending archive readiness ([#45766](https://github.com/okou-ai/okou/issues/45766)) ([2fe135a](https://github.com/okou-ai/okou/commit/2fe135ae51a7a4a3624917b3a987b43ab142b9b5))
+
 ## [0.30.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.3...guest-contracts-v0.30.4) (2026-11-06)
 
 

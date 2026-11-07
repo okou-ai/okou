@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.281](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.280...guest-write-file-v0.1.281) (2026-11-07)
+
+
+### Refactoring
+
+* **rust:** colocate direct-child wait contracts with their owner ([#45773](https://github.com/okou-ai/okou/issues/45773)) ([f101331](https://github.com/okou-ai/okou/commit/f1013317f3bcab41784d00ab6cc7cac5ce56caf8))
+
 ## [0.1.280](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.279...guest-write-file-v0.1.280) (2026-11-06)
 
 ## [0.1.279](https://github.com/okou-ai/okou/compare/guest-write-file-v0.1.278...guest-write-file-v0.1.279) (2026-11-06)

@@ -1,5 +1,20 @@
 # Changelog
 
+## [0.244.34](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.33...runner-rs-v0.244.34) (2026-11-07)
+
+
+### Refactoring
+
+* **python:** give auth config validation its canonical owner ([#45789](https://github.com/okou-ai/okou/issues/45789)) ([87f9999](https://github.com/okou-ai/okou/commit/87f99994b9e77c6b3150bbf340ffda0191415591))
+* **python:** separate builtin catalog validation from cache state ([#45776](https://github.com/okou-ai/okou/issues/45776)) ([197e50d](https://github.com/okou-ai/okou/commit/197e50d001e5e5bce5a9f5e38a996ab84710a4ea))
+* **python:** share sigv4 raw header-list budget guards ([#45782](https://github.com/okou-ai/okou/issues/45782)) ([78eb9ed](https://github.com/okou-ai/okou/commit/78eb9ed30c85ceee9f5c8dc7fde65f79647a9453))
+* remove single-character skill claim negotiation ([#45775](https://github.com/okou-ai/okou/issues/45775)) ([ff5a579](https://github.com/okou-ai/okou/commit/ff5a5793fa5f19083c6a4fe76f8c020554bea19f)) [#45748](https://github.com/okou-ai/okou/issues/45748)
+* **runner:** share managed-version gc aging fixture ([#45793](https://github.com/okou-ai/okou/issues/45793)) ([0b07b93](https://github.com/okou-ai/okou/commit/0b07b93e76494d5cc779fb6fe34c8d94a32d06ca))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.33](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.32...runner-rs-v0.244.33) (2026-11-06)
 
 

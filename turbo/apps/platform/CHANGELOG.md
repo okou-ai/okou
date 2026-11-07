@@ -13,6 +13,26 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1100.0](https://github.com/okou-ai/okou/compare/app-v0.1099.2...app-v0.1100.0) (2026-11-07)
+
+
+### Features
+
+* **app:** lead the chat list with an okou row that opens the feed ([#45761](https://github.com/okou-ai/okou/issues/45761)) ([4c74b4a](https://github.com/okou-ai/okou/commit/4c74b4a617aea2a2e2002f1456413190babf70e4))
+
+
+### Bug Fixes
+
+* **browser:** preserve recovery ownership across resource handoffs ([#45696](https://github.com/okou-ai/okou/issues/45696)) ([811bc03](https://github.com/okou-ai/okou/commit/811bc03cdb20d3d146fde223965fc79e03d0df58))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.3
+    * @okouai/core bumped to 8.822.3
+
 ## [0.1099.2](https://github.com/okou-ai/okou/compare/app-v0.1099.1...app-v0.1099.2) (2026-11-06)
 
 

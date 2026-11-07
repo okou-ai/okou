@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.2](https://github.com/okou-ai/okou/compare/ios-v0.28.1...ios-v0.28.2) (2026-11-07)
+
+
+### Performance Improvements
+
+* **ios:** reuse model metadata reads with ccstate ([#45778](https://github.com/okou-ai/okou/issues/45778)) ([c97efb6](https://github.com/okou-ai/okou/commit/c97efb658e94bfcfae697552c042764eb0cfe8c4))
+
 ## [0.28.1](https://github.com/okou-ai/okou/compare/ios-v0.28.0...ios-v0.28.1) (2026-11-06)
 
 

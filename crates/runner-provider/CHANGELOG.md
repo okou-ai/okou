@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.16.22](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.21...runner-provider-v0.16.22) (2026-11-07)
+
+
+### Refactoring
+
+* remove single-character skill claim negotiation ([#45775](https://github.com/okou-ai/okou/issues/45775)) ([ff5a579](https://github.com/okou-ai/okou/commit/ff5a5793fa5f19083c6a4fe76f8c020554bea19f)) [#45748](https://github.com/okou-ai/okou/issues/45748)
+
 ## [0.16.21](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.20...runner-provider-v0.16.21) (2026-11-06)
 
 ## [0.16.20](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.19...runner-provider-v0.16.20) (2026-11-06)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.39...runner-storage-v0.9.0) (2026-11-07)
+
+
+### Features
+
+* **guest-storage:** add event-driven pending archive readiness ([#45766](https://github.com/okou-ai/okou/issues/45766)) ([2fe135a](https://github.com/okou-ai/okou/commit/2fe135ae51a7a4a3624917b3a987b43ab142b9b5))
+
 ## [0.8.39](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.38...runner-storage-v0.8.39) (2026-11-06)
 
 ## [0.8.38](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.37...runner-storage-v0.8.38) (2026-11-06)

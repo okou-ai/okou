@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.20.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.26...runner-executor-v0.20.0) (2026-11-07)
+
+
+### Features
+
+* **guest-storage:** add event-driven pending archive readiness ([#45766](https://github.com/okou-ai/okou/issues/45766)) ([2fe135a](https://github.com/okou-ai/okou/commit/2fe135ae51a7a4a3624917b3a987b43ab142b9b5))
+
 ## [0.19.26](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.25...runner-executor-v0.19.26) (2026-11-06)
 
 ## [0.19.25](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.24...runner-executor-v0.19.25) (2026-11-06)
