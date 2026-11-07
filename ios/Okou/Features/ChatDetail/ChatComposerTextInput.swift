@@ -438,6 +438,8 @@ final class ComposerTextView: UITextView {
     invalidateIntrinsicContentSize()
   }
 
+  @objc func dismissComposerKeyboard() { resignFirstResponder() }
+
   private func reconcileFocus() {
     // SwiftUI can prepare the replacement editor before it has a window.
     guard window != nil else { return }

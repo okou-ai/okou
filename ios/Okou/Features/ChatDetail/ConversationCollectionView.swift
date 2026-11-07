@@ -1368,10 +1368,7 @@ private final class ConversationAccessibilityCollection: UICollectionView {
 /// Messages and ChatGPT. It never takes the tap from what is under it: links, cards and text
 /// selection still get it.
 final class KeyboardDismissTap: NSObject, UIGestureRecognizerDelegate {
-  private weak var view: UIView?
-
   init(on view: UIView) {
-    self.view = view
     super.init()
     let tap = UITapGestureRecognizer(target: self, action: #selector(dismiss))
     tap.cancelsTouchesInView = false
@@ -1379,7 +1376,11 @@ final class KeyboardDismissTap: NSObject, UIGestureRecognizerDelegate {
     view.addGestureRecognizer(tap)
   }
 
-  @objc private func dismiss() { view?.window?.endEditing(true) }
+  @objc private func dismiss() {
+    // The transcript's text selection must keep its own first responder.
+    UIApplication.shared.sendAction(
+      #selector(ComposerTextView.dismissComposerKeyboard), to: nil, from: self, for: nil)
+  }
 
   func gestureRecognizer(
     _ gestureRecognizer: UIGestureRecognizer,
