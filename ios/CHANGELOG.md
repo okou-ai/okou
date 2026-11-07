@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.8](https://github.com/okou-ai/okou/compare/ios-v0.28.7...ios-v0.28.8) (2026-11-07)
+
+
+### Performance Improvements
+
+* **ios:** present cached home before identity refresh ([#45901](https://github.com/okou-ai/okou/issues/45901)) ([d98c265](https://github.com/okou-ai/okou/commit/d98c2653ad0cb69c66c41896e2eb088a0abc4351))
+
 ## [0.28.7](https://github.com/okou-ai/okou/compare/ios-v0.28.6...ios-v0.28.7) (2026-11-07)
 
 
