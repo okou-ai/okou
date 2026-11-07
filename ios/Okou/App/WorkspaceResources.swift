@@ -63,8 +63,7 @@ final class WorkspaceResources {
   }
 
   func navigation(refresh: Bool) throws -> (
-    agents: Task<[AgentRecord], Error>, preferences: Task<SidebarPreferences, Error>,
-    features: Task<SidebarFeatureSwitches, Error>
+    agents: Task<[AgentRecord], Error>, preferences: Task<SidebarPreferences, Error>
   ) {
     if refresh {
       try store.set(
@@ -75,12 +74,10 @@ final class WorkspaceResources {
     }
     try agents.retryFailed(in: store)
     try sidebarPreferences.retryFailed(in: store)
-    try features.retryFailed(in: store)
-    // All three tasks start before the first suspension. Models share the feature task.
+    // Both navigation tasks start before the first suspension.
     let agents = try store.get(agents.value)
     let preferences = try store.get(sidebarPreferences.value)
-    let features = try store.get(features.value)
-    return (agents, preferences, features)
+    return (agents, preferences)
   }
 
   func invalidate(_ changes: Set<ChatInvalidation>) throws {

@@ -127,7 +127,7 @@ final class ChatModelResourceTests: XCTestCase {
     XCTAssertEqual(observed, expected)
   }
 
-  func testNavigationAndModelsShareFeaturesAndStartIndependentReadsTogether() async throws {
+  func testNavigationAndModelsStartIndependentWorkspaceReadsTogether() async throws {
     let gate = ModelResponseGate()
     let began = expectation(description: "Independent workspace reads have all started")
     began.expectedFulfillmentCount = 6

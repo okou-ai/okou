@@ -255,9 +255,9 @@ final class WorkspaceStoreTests: XCTestCase {
         "sortAt":"\(storeDate)","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","archived":true}
         ],"latestEventId":null,"latestSeqId":null}
         """)
-    let switchesStarted = expectation(description: "Archive visibility is being loaded")
-    let releaseSwitches = HTTPResponseGate()
-    defer { releaseSwitches.open() }
+    let navigationStarted = expectation(description: "Navigation is being loaded")
+    let releaseNavigation = HTTPResponseGate()
+    defer { releaseNavigation.open() }
     let catchUpStarted = expectation(
       description: "Cached chats are shown before network catch-up")
     let releaseCatchUp = HTTPResponseGate()
@@ -270,12 +270,10 @@ final class WorkspaceStoreTests: XCTestCase {
           body: """
             [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
             """)
-      case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
-      case "/api/feature-switches":
-        switchesStarted.fulfill()
-        await releaseSwitches.wait()
-        return ChatHTTPResponse(
-          body: "{\"effectiveSwitches\":{}}")
+      case "/api/user-preferences":
+        navigationStarted.fulfill()
+        await releaseNavigation.wait()
+        return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
       case "/api/chat-threads/snapshot": return snapshot
       case "/api/chat-threads/events":
         if holdCatchUp.withLock({ $0 }) {
@@ -304,12 +302,19 @@ final class WorkspaceStoreTests: XCTestCase {
     defer { store.close() }
     store.startNewChat(agentID: storeAgentID)
     let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
-    await fulfillment(of: [switchesStarted], timeout: 2)
+    addTeardownBlock { @MainActor in
+      store.close()
+      startup.cancel()
+      releaseNavigation.open()
+      releaseCatchUp.open()
+      await startup.value
+    }
+    await fulfillment(of: [navigationStarted], timeout: 2)
     XCTAssertEqual(
       store.list.threads(agentID: storeAgentID, archived: false).map(\.title),
       ["Recent cached chat"])
 
-    releaseSwitches.open()
+    releaseNavigation.open()
     await fulfillment(of: [catchUpStarted], timeout: 2)
     let expected = ["Recent cached chat"]
     XCTAssertEqual(
@@ -389,9 +394,6 @@ final class WorkspaceStoreTests: XCTestCase {
       case "/api/user-preferences":
         return ChatHTTPResponse(
           body: "{\"pinnedAgentIds\":\(fresh ? "[]" : "[\"\(otherAgent)\"]")}")
-      case "/api/feature-switches":
-        return ChatHTTPResponse(
-          body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
@@ -445,7 +447,7 @@ final class WorkspaceStoreTests: XCTestCase {
       let cacheDirectory = CacheTestDirectory(owner: self)
       let navigationStarted = expectation(
         description: "Independent navigation reads start after cached chats")
-      navigationStarted.expectedFulfillmentCount = 3
+      navigationStarted.expectedFulfillmentCount = 2
       let releaseNavigation = HTTPResponseGate()
       defer { releaseNavigation.open() }
       let requests = Mutex<[String]>([])
@@ -463,10 +465,6 @@ final class WorkspaceStoreTests: XCTestCase {
           navigationStarted.fulfill()
           await releaseNavigation.wait()
           return ChatHTTPResponse(body: #"{"pinnedAgentIds":[]}"#)
-        case "/api/feature-switches":
-          navigationStarted.fulfill()
-          await releaseNavigation.wait()
-          return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
@@ -502,7 +500,7 @@ final class WorkspaceStoreTests: XCTestCase {
       XCTAssertTrue(
         requests.withLock {
           $0.allSatisfy {
-            ["/api/agents", "/api/user-preferences", "/api/feature-switches"].contains($0)
+            ["/api/agents", "/api/user-preferences"].contains($0)
           }
         })
     }
@@ -519,9 +517,6 @@ final class WorkspaceStoreTests: XCTestCase {
             """)
       case "/api/user-preferences":
         return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[\"\(otherAgentID)\"]}")
-      case "/api/feature-switches":
-        return ChatHTTPResponse(
-          body: #"{"effectiveSwitches":{"singleAgent":true}}"#)
       case "/api/chat-threads/snapshot": return threadSnapshot(title: "Existing chat")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
@@ -1239,7 +1234,7 @@ final class WorkspaceStoreTests: XCTestCase {
 
   func testAuxiliaryUpgradeResponseBlocksAllFurtherWorkspaceReads() async {
     for endpoint in [
-      "/api/agents", "/api/user-preferences", "/api/feature-switches", "/api/indicators",
+      "/api/agents", "/api/user-preferences", "/api/indicators",
     ] {
       let requests = Mutex<[String]>([])
       let fixture = ChatHTTPFixture { request in
@@ -1256,7 +1251,6 @@ final class WorkspaceStoreTests: XCTestCase {
               "[{\"agentId\":\"\(storeAgentID)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
           )
         case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
-        case "/api/feature-switches": return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Chat")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
