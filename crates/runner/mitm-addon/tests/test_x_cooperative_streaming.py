@@ -92,7 +92,7 @@ async def test_transport_partitions_preserve_rows_resources_and_failures(
     chunks = (
         [wire]
         if chunk_size is None
-        else [wire[offset : offset + chunk_size] for offset in range(0, len(wire), chunk_size)]
+        else (wire[offset : offset + chunk_size] for offset in range(0, len(wire), chunk_size))
     )
     forwarded = bytearray()
     with usage_webhook_api() as webhook:
