@@ -40,8 +40,6 @@ if command == 'xcrun':
     elif args == ['simctl', 'list', 'runtimes', '--json']:
         print(json.dumps({'runtimes': [{'identifier': os.environ['CI_PROCESS_RUNTIME'],
             'bundlePath': os.environ['CI_PROCESS_RUNTIME_BUNDLE']}]}))
-    elif args[:2] == ['simctl', 'get_app_container']:
-        print(os.environ['CI_PROCESS_POSTER_APP'])
     elif args == ['simctl', 'boot', udid]:
         if not (state / 'build-finished').exists():
             sys.exit('Simulator boot requested before compilation finished')
@@ -179,17 +177,18 @@ class CIProcessTests(unittest.TestCase):
 
     def lean_fixture(self):
         runtime = self.root / "iOS.simruntime"
-        daemon = (
-            runtime
-            / "Contents/Resources/RuntimeRoot/System/Library/LaunchDaemons/com.apple.chronod.plist"
-        )
-        daemon.parent.mkdir(parents=True)
-        daemon.write_bytes(plistlib.dumps({"Label": "com.apple.chronod"}))
-        app = self.root / "installed-apps/PosterBoard.app"
-        app.mkdir(parents=True)
-        (app / "Info.plist").write_bytes(
-            plistlib.dumps({"CFBundleIdentifier": "com.apple.PosterBoard"})
-        )
+        for kind, label in (
+            ("LaunchAngels", "com.apple.PosterBoard"),
+            ("LaunchDaemons", "com.apple.chronod"),
+        ):
+            path = (
+                runtime
+                / "Contents/Resources/RuntimeRoot/System/Library"
+                / kind
+                / f"{label}.plist"
+            )
+            path.parent.mkdir(parents=True)
+            path.write_bytes(plistlib.dumps({"Label": label}))
         self.env.update(
             {
                 "GITHUB_ACTIONS": "true",
@@ -197,7 +196,6 @@ class CIProcessTests(unittest.TestCase):
                 "IOS_SIMULATOR_PROFILE": "lean",
                 "CI_PROCESS_RUNTIME": "com.apple.CoreSimulator.SimRuntime.iOS-27-0",
                 "CI_PROCESS_RUNTIME_BUNDLE": str(runtime),
-                "CI_PROCESS_POSTER_APP": str(app),
                 "IOS_TEST_DESTINATION": "platform=iOS Simulator,name=iPhone 17 Pro,OS=27.0",
             }
         )

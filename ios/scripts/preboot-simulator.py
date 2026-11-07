@@ -82,12 +82,22 @@ def apply_lean_profile(runtime, device):
         item for item in inventory["runtimes"] if item["identifier"] == runtime
     ]
     root = Path(selected["bundlePath"]) / "Contents/Resources/RuntimeRoot"
-    # PosterBoard is an app, so its installed identity is checked after boot.
-    path = root / "System/Library/LaunchDaemons/com.apple.chronod.plist"
-    with path.open("rb") as source:
-        if plistlib.load(source)["Label"] != "com.apple.chronod":
-            raise ValueError(f"Unexpected simulator daemon identity in {path}")
-    print(f"iOS simulator daemon definition: {path}", flush=True)
+    # Wallpaper is a LaunchAngel, not a LaunchDaemon or a registered user app.
+    definitions = {
+        "com.apple.PosterBoard": root
+        / "System/Library/LaunchAngels/com.apple.PosterBoard.plist",
+        "com.apple.chronod": root
+        / "System/Library/LaunchDaemons/com.apple.chronod.plist",
+    }
+    for label, path in definitions.items():
+        with path.open("rb") as source:
+            if plistlib.load(source)["Label"] != label:
+                raise ValueError(f"Unexpected simulator service identity in {path}")
+    print(
+        "iOS simulator service definitions: "
+        + json.dumps({label: str(path) for label, path in definitions.items()}),
+        flush=True,
+    )
 
     directory = launchd_directory(device["udid"])
     created_directory = not directory.exists()
@@ -131,17 +141,6 @@ def apply_lean_profile(runtime, device):
 
 
 def verify_lean_profile(udid):
-    app = simctl(
-        "system app identity",
-        "get_app_container",
-        udid,
-        "com.apple.PosterBoard",
-        "app",
-        capture=True,
-    ).stdout.strip()
-    with (Path(app) / "Info.plist").open("rb") as source:
-        if plistlib.load(source)["CFBundleIdentifier"] != "com.apple.PosterBoard":
-            raise ValueError("Unexpected PosterBoard application identity")
     disabled = simctl(
         "profile verification",
         "spawn",
@@ -168,8 +167,16 @@ def verify_lean_profile(udid):
             result.returncode != 113
             or f'Could not find service "{label}"' not in result.stderr
         ):
+            # Retain service state without exposing launchctl's arguments/environment.
+            fields = [
+                line.strip()[:300]
+                for line in result.stdout.splitlines()
+                if line.strip().split(" = ", 1)[0]
+                in {"state", "pid", "active count", "runs"}
+            ][:8]
             raise ValueError(
-                f"Simulator service is still loaded or could not be verified: {label}: {result.stderr}"
+                f"Simulator service is still loaded or could not be verified: {label}: "
+                f"status={result.returncode}, fields={fields}, error={result.stderr}"
             )
     print("iOS simulator lean profile verified", flush=True)
 

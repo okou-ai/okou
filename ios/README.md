@@ -321,7 +321,7 @@ For a simulator startup comparison, manually dispatch `ios.yml` with
 revision. The lean experiment is limited to GitHub-hosted iOS 27.0 runners. It
 disables only wallpaper and Widget services before boot, verifies that they are
 disabled and unloaded, and restores its launchd settings after tests, failure,
-or cancellation. Runtime service/app identities must match; verification failures
+or cancellation. Runtime launchd service identities must match; verification failures
 block tests. Native tests, runner size, caches and timeouts are unchanged.
 Simulator command timings and the full workflow duration include profile setup,
 verification and restoration overhead; compare those totals rather than a CPU
