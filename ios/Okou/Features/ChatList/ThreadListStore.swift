@@ -129,13 +129,32 @@ final class ThreadListStore {
     navigationRevision += 1
     do {
       let reads = try resources.navigation(refresh: navigationRevision > 1)
-      let agents = try await reads.agents.value
-      guard !closed, !Task.isCancelled else { return }
-      self.agents = agents
-      let preferences = try await reads.preferences.value
-      guard !closed, !Task.isCancelled else { return }
-      pinnedAgentIDs = preferences.pinnedAgentIds
-      navigationError = nil
+      var failure: Error?
+      do {
+        let agents = try await reads.agents.value
+        guard !closed, !Task.isCancelled else { return }
+        self.agents = agents
+      } catch is CancellationError {
+        return
+      } catch {
+        guard !closed, !Task.isCancelled else { return }
+        failure = error
+        didFail(error)
+      }
+      guard !closed, !blocked, !Task.isCancelled else { return }
+      do {
+        let preferences = try await reads.preferences.value
+        guard !closed, !Task.isCancelled else { return }
+        pinnedAgentIDs = preferences.pinnedAgentIds
+      } catch is CancellationError {
+        return
+      } catch {
+        guard !closed, !Task.isCancelled else { return }
+        failure = error
+        didFail(error)
+      }
+      guard !closed, !blocked, !Task.isCancelled else { return }
+      navigationError = failure?.localizedDescription
     } catch is CancellationError {
       return
     } catch {

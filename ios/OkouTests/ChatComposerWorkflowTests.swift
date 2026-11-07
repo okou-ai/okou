@@ -161,6 +161,10 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
     try await type("/rel", in: input, conversation: conversation)
     _ = try await workflowCell("release", in: host.view)
+    // IME confirmation settles before UIKit exposes suggestion key commands again.
+    try await eventually {
+      input.keyCommands?.contains { $0.input == UIKeyCommand.inputDownArrow } == true
+    }
     let down = try XCTUnwrap(input.keyCommands?.first { $0.input == UIKeyCommand.inputDownArrow })
     _ = input.perform(down.action, with: down)
     let confirm = try XCTUnwrap(input.keyCommands?.first { $0.input == "\r" })

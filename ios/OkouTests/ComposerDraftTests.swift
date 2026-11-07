@@ -54,6 +54,8 @@ final class ComposerDraftTests: XCTestCase {
     XCTAssertEqual(
       composer.document.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
     let saved = composer.value
+    // Let the host consume the reference edit's focus request before changing its target.
+    try await waitForBusinessResult { composer.focusRequest == nil }
     try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.cut(nil)
