@@ -1,10 +1,77 @@
-"""Shared count-and-byte admission for retained request bodies."""
+"""Bounded request framing and independent retained-body admission budgets."""
 
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
+from typing import Literal
 
 from mitmproxy import http
+
+import content_length
+
+_RequestBodyHeaderCheckKind = Literal["ok", "too_large", "length_required"]
+
+
+@dataclass(frozen=True)
+class RequestBodyHeaderCheck:
+    """Declared body-size admission result under the caller's framing policy."""
+
+    kind: _RequestBodyHeaderCheckKind
+    observed_size: int = 0
+    reason: str = ""
+
+
+def check_request_headers(
+    flow: http.HTTPFlow,
+    *,
+    request_end_stream: bool | None,
+    max_body_bytes: int,
+    method_allows_missing_content_length: bool,
+) -> RequestBodyHeaderCheck:
+    """Check bounded framing without reserving capacity or mutating the flow."""
+    # Only presence matters; decoding ignored values can do input-sized work.
+    if any(name.lower() == b"transfer-encoding" for name, _value in flow.request.headers.fields):
+        return RequestBodyHeaderCheck(
+            kind="length_required",
+            reason="transfer_encoding",
+        )
+
+    parsed_content_length = content_length.parse(
+        flow.request.headers.get_all("Content-Length"),
+        max_value=max_body_bytes,
+    )
+    if parsed_content_length.kind == "missing":
+        if not method_allows_missing_content_length:
+            return RequestBodyHeaderCheck(
+                kind="length_required",
+                reason="missing_content_length",
+            )
+        if request_end_stream is not True:
+            reason = (
+                "request_stream_open"
+                if request_end_stream is False
+                else "request_end_stream_unavailable"
+            )
+            return RequestBodyHeaderCheck(kind="length_required", reason=reason)
+        return RequestBodyHeaderCheck(kind="ok")
+
+    if parsed_content_length.kind == "conflicting":
+        return RequestBodyHeaderCheck(
+            kind="length_required",
+            reason="conflicting_content_length",
+        )
+    if parsed_content_length.kind == "over_limit":
+        return RequestBodyHeaderCheck(
+            kind="too_large",
+            observed_size=parsed_content_length.value,
+        )
+    if parsed_content_length.kind == "valid":
+        return RequestBodyHeaderCheck(kind="ok", observed_size=parsed_content_length.value)
+    return RequestBodyHeaderCheck(
+        kind="length_required",
+        reason="invalid_content_length",
+    )
 
 
 class RequestBodyAdmissionCountSaturatedError(Exception):

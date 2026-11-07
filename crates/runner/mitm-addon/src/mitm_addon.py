@@ -173,14 +173,6 @@ _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
 _AUTH_BASE_BODYLESS_METHODS = frozenset(("GET", "HEAD"))
 _HTTP_RESPONSE_BODYLESS_METHODS = frozenset(("CONNECT", "HEAD"))
 _WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT = 8 * 1024
-_BufferedRequestBodyCheckKind = Literal["ok", "too_large", "length_required"]
-
-
-@dataclass(frozen=True)
-class _BufferedRequestBodyCheck:
-    kind: _BufferedRequestBodyCheckKind
-    observed_size: int = 0
-    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -594,63 +586,12 @@ def _connector_auth_destination_is_current(
     return True
 
 
-def _buffered_auth_body_header_check(
-    flow: http.HTTPFlow,
-    *,
-    request_end_stream: bool | None,
-    max_body_bytes: int,
-    method_allows_missing_content_length: bool,
-) -> _BufferedRequestBodyCheck:
-    # Only presence matters; decoding ignored values can do input-sized work.
-    if any(name.lower() == b"transfer-encoding" for name, _value in flow.request.headers.fields):
-        return _BufferedRequestBodyCheck(
-            kind="length_required",
-            reason="transfer_encoding",
-        )
-
-    parsed_content_length = content_length.parse(
-        flow.request.headers.get_all("Content-Length"),
-        max_value=max_body_bytes,
-    )
-    if parsed_content_length.kind == "missing":
-        if not method_allows_missing_content_length:
-            return _BufferedRequestBodyCheck(
-                kind="length_required",
-                reason="missing_content_length",
-            )
-        if request_end_stream is not True:
-            reason = (
-                "request_stream_open"
-                if request_end_stream is False
-                else "request_end_stream_unavailable"
-            )
-            return _BufferedRequestBodyCheck(kind="length_required", reason=reason)
-        return _BufferedRequestBodyCheck(kind="ok")
-
-    if parsed_content_length.kind == "conflicting":
-        return _BufferedRequestBodyCheck(
-            kind="length_required",
-            reason="conflicting_content_length",
-        )
-    if parsed_content_length.kind == "over_limit":
-        return _BufferedRequestBodyCheck(
-            kind="too_large",
-            observed_size=parsed_content_length.value,
-        )
-    if parsed_content_length.kind == "valid":
-        return _BufferedRequestBodyCheck(kind="ok", observed_size=parsed_content_length.value)
-    return _BufferedRequestBodyCheck(
-        kind="length_required",
-        reason="invalid_content_length",
-    )
-
-
 def _auth_base_body_header_check(
     flow: http.HTTPFlow,
     *,
     request_end_stream: bool | None,
-) -> _BufferedRequestBodyCheck:
-    return _buffered_auth_body_header_check(
+) -> request_body_admission.RequestBodyHeaderCheck:
+    return request_body_admission.check_request_headers(
         flow,
         request_end_stream=request_end_stream,
         max_body_bytes=auth_base_forwarder.MAX_AUTH_BASE_REQUEST_BODY_BYTES,
@@ -664,8 +605,8 @@ def _aws_sigv4_body_header_check(
     flow: http.HTTPFlow,
     *,
     request_end_stream: bool | None,
-) -> _BufferedRequestBodyCheck:
-    return _buffered_auth_body_header_check(
+) -> request_body_admission.RequestBodyHeaderCheck:
+    return request_body_admission.check_request_headers(
         flow,
         request_end_stream=request_end_stream,
         max_body_bytes=aws_sigv4_body_admission.MAX_AWS_SIGV4_REQUEST_BODY_BYTES,
@@ -674,17 +615,18 @@ def _aws_sigv4_body_header_check(
 
 
 def _request_body_fits_stream_buffer(flow: http.HTTPFlow) -> bool:
-    if flow.request.headers.get_all("Transfer-Encoding"):
-        return False
-
-    parsed_content_length = content_length.parse(
-        flow.request.headers.get_all("Content-Length"),
-        max_value=STREAM_BUFFER_LIMIT,
-    )
     # requestheaders() does not expose mitmproxy's end_stream flag. Treat
     # missing Content-Length as unknown length even for GET/HEAD because
     # HTTP/2 can carry DATA frames after headers without a length header.
-    return parsed_content_length.kind == "valid"
+    return (
+        request_body_admission.check_request_headers(
+            flow,
+            request_end_stream=None,
+            max_body_bytes=STREAM_BUFFER_LIMIT,
+            method_allows_missing_content_length=False,
+        ).kind
+        == "ok"
+    )
 
 
 def _restore_request_headers_probe_metadata(
@@ -1296,7 +1238,7 @@ def _reject_buffered_allowed_request_body(
     *,
     classification: request_classification.FirewallAllow
     | request_classification.FirewallPolicyAllow,
-    body_check: _BufferedRequestBodyCheck,
+    body_check: request_body_admission.RequestBodyHeaderCheck,
     error: str,
     message: str,
     max_body_bytes: int,
@@ -1326,7 +1268,7 @@ def _check_data_router_request_body(
     classification: request_classification.FirewallAllow,
     request_end_stream: bool | None,
 ) -> None:
-    body_check = _buffered_auth_body_header_check(
+    body_check = request_body_admission.check_request_headers(
         flow,
         request_end_stream=request_end_stream,
         max_body_bytes=DATA_ROUTER_REQUEST_BODY_MAX_BYTES,
@@ -1357,7 +1299,7 @@ def _admit_buffered_public_destination_request(
     | request_classification.FirewallPolicyAllow,
     request_end_stream: bool | None,
 ) -> None:
-    body_check = _buffered_auth_body_header_check(
+    body_check = request_body_admission.check_request_headers(
         flow,
         request_end_stream=request_end_stream,
         max_body_bytes=public_destination_body_admission.MAX_REQUEST_BODY_BYTES,
@@ -1397,7 +1339,7 @@ def _admit_buffered_aws_sigv4_request(
     flow: http.HTTPFlow,
     *,
     classification: request_classification.FirewallAllow | request_classification.FirewallBlock,
-    body_check: _BufferedRequestBodyCheck,
+    body_check: request_body_admission.RequestBodyHeaderCheck,
 ) -> None:
     # Native framing rejection already owns the error and prevents buffering.
     if flow.error is not None:
@@ -1460,7 +1402,7 @@ async def _try_firewall_request_stream_from_headers(
     metadata_snapshot: dict[str, object],
     request_end_stream: bool | None,
     capture_body: bool,
-    aws_sigv4_buffered_fallback: _BufferedRequestBodyCheck | None,
+    aws_sigv4_buffered_fallback: request_body_admission.RequestBodyHeaderCheck | None,
     managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> None:
     allow = classification.firewall_allow
