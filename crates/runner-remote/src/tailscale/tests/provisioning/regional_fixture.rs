@@ -129,9 +129,14 @@ impl Dial for Relay {
                 .tcp(server)
                 .await?
         } else {
-            tokio::net::TcpStream::connect(target.address)
+            let socket = tokio::net::TcpStream::connect(target.address)
                 .await
-                .map_err(|_| Failure::DomainFailed)?
+                .map_err(|_| Failure::DomainFailed)?;
+            // Match the production dialer's small-frame transport behavior.
+            socket
+                .set_nodelay(true)
+                .map_err(|_| Failure::DomainFailed)?;
+            socket
         };
         self.descriptors.lock().unwrap().push(socket.as_raw_fd());
         Ok(PausedTcp::new(socket, Arc::clone(&target.gate)))
