@@ -3,9 +3,10 @@ use std::path::Path;
 use std::time::{Duration, SystemTime};
 
 use super::*;
-use crate::cmd::gc::GC_MIN_AGE;
 use crate::cmd::gc::images::gc_nested_images_with_protected_refs;
-use crate::cmd::gc::test_support::{old_gc_time, set_mtime, test_home};
+use crate::cmd::gc::test_support::{
+    age_version_past_gc_min_age, old_gc_time, set_mtime, test_home,
+};
 use crate::cmd::gc::versions::{
     analyze_version_gc, analyze_version_gc_with_injected_config_scan_error,
     analyze_version_gc_with_injected_scan_error,
@@ -120,23 +121,6 @@ fi
 printf '%s\n' "unexpected fake systemctl invocation: $*" >&2
 exit 2
 "#;
-
-fn age_version_past_gc_min_age(home: &HomePaths, name: &str) {
-    let old_time = SystemTime::now() - Duration::from_secs(GC_MIN_AGE.as_secs() + 60);
-    for path in [
-        home.bin_dir().join(name),
-        home.bin_dir().join(name).join("runner"),
-        home.runners_dir().join(name),
-        home.runners_dir().join(name).join("runner.yaml"),
-    ] {
-        if path.exists() {
-            std::fs::File::open(path)
-                .unwrap()
-                .set_times(std::fs::FileTimes::new().set_modified(old_time))
-                .unwrap();
-        }
-    }
-}
 
 fn test_hash(ch: char) -> String {
     std::iter::repeat_n(ch, 64).collect()
