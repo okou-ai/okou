@@ -49,28 +49,21 @@ class TlsAdmission:
 _api_destination_cache: tuple[str, platform_api_url.PlatformApiUrl | None] | None = None
 
 
-def _client_connection_id(client: object) -> str | None:
-    client_id = getattr(client, "id", None)
-    if isinstance(client_id, str) and client_id:
-        return client_id
-    return None
-
-
 def record_tls_admission(client: object, admission: TlsAdmission) -> None:
-    client_id = _client_connection_id(client)
+    client_id = connection_endpoints.connection_id(client)
     if client_id is not None:
         _tls_admissions[client_id] = admission
 
 
 def tls_admission_for_client(client: object) -> TlsAdmission | None:
-    client_id = _client_connection_id(client)
+    client_id = connection_endpoints.connection_id(client)
     if client_id is None:
         return None
     return _tls_admissions.get(client_id)
 
 
 def forget_tls_admission(client: object) -> None:
-    client_id = _client_connection_id(client)
+    client_id = connection_endpoints.connection_id(client)
     if client_id is not None:
         _tls_admissions.pop(client_id, None)
 

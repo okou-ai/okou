@@ -1,4 +1,4 @@
-"""Read-only helpers for mitmproxy connection endpoint shapes."""
+"""Read-only helpers for mitmproxy connection identity and endpoint shapes."""
 
 import ipaddress
 from dataclasses import dataclass
@@ -16,6 +16,14 @@ class ConnectedIpEndpoint:
 
     address: tuple[str, int]
     parsed_ip: ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
+def connection_id(connection: object) -> str | None:
+    """Return the original truthy string ID without proving ownership or authorization."""
+    connection_id = getattr(connection, "id", None)
+    if isinstance(connection_id, str) and connection_id:
+        return connection_id
+    return None
 
 
 def client_peername(client: object) -> tuple[str, int] | None:
