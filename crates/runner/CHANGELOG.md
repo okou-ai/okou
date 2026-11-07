@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.244.39](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.38...runner-rs-v0.244.39) (2026-11-07)
+
+
+### Refactoring
+
+* **python:** centralize capture and signing header syntax ([#45894](https://github.com/okou-ai/okou/issues/45894)) ([4249810](https://github.com/okou-ai/okou/commit/42498101d392af5bda85b187d59c321834e7c401))
+* **runner:** unify bounded request-body header admission ([#45880](https://github.com/okou-ai/okou/issues/45880)) ([b8b0b21](https://github.com/okou-ai/okou/commit/b8b0b217bb5ef44d9fa8fb1b0470cba0e1c5c68c))
+
 ## [0.244.38](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.37...runner-rs-v0.244.38) (2026-11-07)
 
 
