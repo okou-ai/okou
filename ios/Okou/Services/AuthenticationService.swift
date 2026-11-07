@@ -47,7 +47,8 @@ final class AuthenticationService {
   let clerk: Clerk?
   private var isRestoringSession = true
   private var clientRefreshGeneration = 0
-  private var clientRefreshTask: (id: UUID, task: Task<Void, Never>)?
+  private var clientRefreshTask:
+    (id: UUID, identity: Task<Result<Void, Error>, Never>, task: Task<Void, Never>)?
   private var resolvedWorkspaceIdentity: WorkspaceIdentity?
   private var workspaceSwitch: (id: UUID, sessionID: String, userID: String)?
   private(set) var isLoadingWorkspaces = false
@@ -135,11 +136,10 @@ final class AuthenticationService {
       imageURL: URL(string: user.imageUrl), hasImage: user.hasImage)
   }
 
-  var activeWorkspaceID: String? {
-    guard isAuthenticated,
-      !isSwitchingWorkspace,
-      let identity = workspaceIdentity, resolvedWorkspaceIdentity == identity,
-      let id = identity.workspaceID
+  /// A restored SDK session can present its own local cache before network verification.
+  /// This does not authorize requests; accessToken waits for the refreshed identity.
+  var presentationWorkspaceID: String? {
+    guard isAuthenticated, let identity = workspaceIdentity, let id = identity.workspaceID
     else { return nil }
     if workspacesSessionID == identity.sessionID, workspacesUserID == identity.userID,
       !workspaces.contains(where: { $0.id == id })
@@ -147,6 +147,20 @@ final class AuthenticationService {
       return nil
     }
     return id
+  }
+
+  var activeWorkspaceID: String? {
+    guard !isSwitchingWorkspace, let identity = workspaceIdentity,
+      resolvedWorkspaceIdentity == identity
+    else { return nil }
+    return presentationWorkspaceID
+  }
+
+  var presentationScopeID: String? {
+    guard let userID, let sessionID = clerk?.session?.id, let presentationWorkspaceID else {
+      return nil
+    }
+    return "\(userID):\(sessionID):\(presentationWorkspaceID)"
   }
 
   /// Changes on account, session, or workspace changes; a workspace store owns one scope.
@@ -167,6 +181,7 @@ final class AuthenticationService {
   func start() async {
     guard let clerk else { return }
     defer {
+      clientRefreshTask?.identity.cancel()
       clientRefreshTask?.task.cancel()
       clientRefreshTask = nil
     }
@@ -197,25 +212,34 @@ final class AuthenticationService {
         group.cancelAll()
       }
     } onCancel: {
-      Task { @MainActor [weak self] in self?.clientRefreshTask?.task.cancel() }
+      Task { @MainActor [weak self] in
+        self?.clientRefreshTask?.identity.cancel()
+        self?.clientRefreshTask?.task.cancel()
+      }
     }
   }
 
   func refresh() async {
     guard clerk != nil, !Task.isCancelled else { return }
-    if let clientRefreshTask {
-      await clientRefreshTask.task.value
-      return
-    }
-    let id = UUID()
-    let task = Task { await self.restoreSession() }
-    clientRefreshTask = (id, task)
-    await task.value
-    if clientRefreshTask?.id == id { clientRefreshTask = nil }
+    _ = beginClientRefresh()
+    await clientRefreshTask?.task.value
   }
 
-  private func restoreSession() async {
-    guard let clerk else { return }
+  private func beginClientRefresh() -> Task<Result<Void, Error>, Never> {
+    if let clientRefreshTask { return clientRefreshTask.identity }
+    let id = UUID()
+    let identity = Task { await self.restoreSession() }
+    let task = Task {
+      defer { if clientRefreshTask?.id == id { clientRefreshTask = nil } }
+      guard case .success = await identity.value, !Task.isCancelled else { return }
+      await refreshWorkspaces()
+    }
+    clientRefreshTask = (id, identity, task)
+    return identity
+  }
+
+  private func restoreSession() async -> Result<Void, Error> {
+    guard let clerk else { return .failure(AuthenticationError.notConfigured) }
     clientRefreshGeneration += 1
     let generation = clientRefreshGeneration
     let startingIdentity = workspaceIdentity
@@ -230,22 +254,23 @@ final class AuthenticationService {
         try await clerk.refreshEnvironment()
       }
       try Task.checkCancellation()
-      guard generation == clientRefreshGeneration else { return }
+      guard generation == clientRefreshGeneration else { return .failure(CancellationError()) }
       try await clerk.refreshClient()
       try Task.checkCancellation()
-      guard generation == clientRefreshGeneration else { return }
+      guard generation == clientRefreshGeneration else { return .failure(CancellationError()) }
       if isAuthenticated, let identity = workspaceIdentity, identity.workspaceID != nil {
         resolvedWorkspaceIdentity = identity
         isRestoringSession = false
       }
-      await refreshWorkspaces()
+      return .success(())
     } catch is CancellationError {
-      return
+      return .failure(CancellationError())
     } catch {
       guard generation == clientRefreshGeneration, startingIdentity == workspaceIdentity else {
-        return
+        return .failure(error)
       }
       errorMessage = error.localizedDescription
+      return .failure(error)
     }
   }
 
@@ -368,8 +393,19 @@ final class AuthenticationService {
     else {
       throw AuthenticationError.signedOut
     }
+    guard !isSwitchingWorkspace, presentationWorkspaceID == workspaceID,
+      expectedScopeID == nil || expectedScopeID == presentationScopeID
+    else { throw AuthenticationError.workspaceChanged }
+    let presentedScope = presentationScopeID
+    if resolvedWorkspaceIdentity != workspaceIdentity {
+      let result = await beginClientRefresh().value
+      try Task.checkCancellation()
+      try result.get()
+    }
     guard activeWorkspaceID == workspaceID,
-      expectedScopeID == nil || expectedScopeID == scopeID
+      presentedScope == presentationScopeID,
+      expectedScopeID == nil || expectedScopeID == scopeID,
+      clerk.session?.id == session.id, clerk.user?.id == userID
     else { throw AuthenticationError.workspaceChanged }
     let startingScope = scopeID
     let token = try await session.getToken()
@@ -407,6 +443,7 @@ final class AuthenticationService {
   }
 
   private func clearWorkspaces() {
+    clientRefreshTask?.identity.cancel()
     clientRefreshTask?.task.cancel()
     clientRefreshTask = nil
     refreshGeneration += 1

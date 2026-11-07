@@ -98,13 +98,16 @@ struct AppRootView: View {
     self.configuration = configuration
     self.session = session
     self.notifications = notifications
+    let data = notifications.data(
+      authentication: authentication, configuration: configuration, session: session)
+    _workspaceData = State(initialValue: data)
+    _presentedScopeID = State(initialValue: data?.scopeID)
   }
 
   var body: some View {
-    AppStartupContainer(isLoading: authentication.isLoading || authentication.isSwitchingWorkspace)
-    {
-      if let scopeID = authentication.scopeID,
-        let workspaceID = authentication.activeWorkspaceID,
+    Group {
+      if let scopeID = authentication.presentationScopeID,
+        let workspaceID = authentication.presentationWorkspaceID,
         let userID = authentication.userID
       {
         if let workspaceData, workspaceData.scopeID == scopeID,
@@ -123,7 +126,7 @@ struct AppRootView: View {
         SignInView(authentication: authentication, webURL: configuration.webURL)
       }
     }
-    .task(id: authentication.scopeID) {
+    .task(id: authentication.presentationScopeID) {
       let data = notifications.data(
         authentication: authentication, configuration: configuration, session: session)
       workspaceData = data
@@ -146,7 +149,7 @@ struct AppRootView: View {
     }
     .onChange(of: scenePhase, initial: true) { _, phase in
       notifications.setForeground(phase == .active)
-      if phase == .active { presentedScopeID = authentication.scopeID }
+      if phase == .active { presentedScopeID = authentication.presentationScopeID }
       foregroundRefresh?.cancel()
       foregroundRefresh =
         phase == .active
@@ -437,13 +440,13 @@ private struct WorkspaceRootView: View {
     let agent = store.list.agents.first(where: { $0.agentId == store.selectedAgentID })
     return VStack(spacing: OkouSpace.xxl) {
       Spacer(minLength: 24)
-      // Restarts the web's word-by-word entrance for each agent and each return home.
+      // Background restoration keeps the entrance; user navigation starts a fresh greeting.
       NewChatGreeting(
         avatarURL: agent?.avatarUrl, agentName: agent?.displayName ?? "Okou",
         isDefaultAgent: agent?.isDefaultAgent ?? true,
         text: greetingText
       )
-      .id("\(store.selectedAgentID ?? "")-\(taglineIndex)")
+      .id(taglineIndex)
       // A custom agent says what it is for under its greeting.
       if agent?.isDefaultAgent == false,
         let description = agent?.description?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -467,7 +470,9 @@ private struct WorkspaceRootView: View {
       UIApplication.shared.sendAction(
         #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
     }
-    .onChange(of: store.selectedAgentID) { _, _ in taglineIndex = Int.random(in: 0..<64) }
+    .onChange(of: store.selectedAgentID) { previous, _ in
+      if previous != nil { taglineIndex = Int.random(in: 0..<64) }
+    }
     .onChange(of: store.selectedThreadID) { _, id in
       if id == nil { taglineIndex = Int.random(in: 0..<64) }
     }
