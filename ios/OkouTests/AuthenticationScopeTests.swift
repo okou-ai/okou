@@ -139,7 +139,8 @@ final class AuthenticationScopeTests: XCTestCase {
     let refresh = try await refreshUntilRequest(authentication, at: provider.clientReads)
     let authorized = expectation(description: "Scoped request resumes after identity verification")
     let token = Task.immediate {
-      let value = try await authentication.accessToken(workspaceID: "org_one", scopeID: presentation)
+      let value = try await authentication.accessToken(
+        workspaceID: "org_one", scopeID: presentation)
       authorized.fulfill()
       return value
     }
