@@ -42,7 +42,7 @@ jq -e '
   any($job.steps[];
     ((.uses // "") | startswith("Swatinem/rust-cache@")) and
     .with.workspaces == "crates -> target" and
-    .with["shared-key"] == "${{ steps.target-metadata.outputs.cache_suffix }}-release" and
+    .with["shared-key"] == "${{ steps.target-metadata.outputs.cache_suffix }}-release-${{ hashFiles('\''crates/Cargo.toml'\'') }}" and
     (.with["save-if"] | contains("github.ref == ")) and
     (.with["save-if"] | contains("refs/heads/main"))
   ) and

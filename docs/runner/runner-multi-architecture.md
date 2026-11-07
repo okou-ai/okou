@@ -303,10 +303,14 @@ This applies to all workspace release builds. Runtime Runner profiles such as
 `vm0/default` remain independent of the Cargo build profile.
 
 Image compilation and dependency-cache prewarming use the same architecture
-`-release` GitHub Rust-cache key as production compilation. Native test caches
-retain their target and workload identity with a `-release` suffix. Main-only
-writers, lookup/restore behavior and retention remain enforced. A renamed key
-can initially miss; existing immutable entries follow normal retention.
+`-release-<workspace-manifest-hash>` GitHub Rust-cache namespace as production
+compilation. The explicit `hashFiles('crates/Cargo.toml')` binds the virtual
+workspace's compiler policy, which the pinned cache action omits from its member
+manifest hashing. LTO, codegen-unit and stripping changes therefore select a new
+key. Other root-manifest edits also invalidate this coarse cache identity.
+Native test caches retain their target/workload identity and the same policy
+hash. Main-only writers, lookup/restore behavior and retention remain enforced.
+New keys can initially miss; existing immutable entries follow normal retention.
 
 Sharing a Cargo profile does not make independently built release, image and
 test artifacts interchangeable. Their source and embedded-input identities
@@ -357,8 +361,9 @@ so a target already requiring main compilation is not also prewarmed.
 
 The producer uses the same pinned Rust Cache action, toolchain container,
 sccache/compiler environment, `crates/target` directory, canonical `release` build,
-and `aarch64-musl-release` or `x86_64-musl-release` shared key as consumers. It
-first checks the exact key with `lookup-only` and saving disabled. An exact hit skips cache
+and `aarch64-musl-release-<workspace-manifest-hash>` or
+`x86_64-musl-release-<workspace-manifest-hash>` shared key as consumers. It first
+checks the exact key with `lookup-only` and saving disabled. An exact hit skips cache
 restore, CLI-input download, and compilation. Otherwise it restores compatible
 dependency artifacts and builds only if restore does not report an exact hit;
 an exact hit appearing between lookup and restore also skips the build. The
@@ -445,7 +450,7 @@ Native host CPU placement and guest RPC tests compile after `runner-host-groups`
 resolves the architecture inventory, in parallel with `runner-test-prepare`
 waiting for its selected image. The `host-cpu-fairness-build` and
 `guest-rpc-firecracker-build` jobs both use the `release` profile and separate
-target/workload-specific Cargo cache keys ending in `-release`. The host CPU
+target/workload-specific Cargo cache keys carrying the release policy hash. The host CPU
 producer uses an 8-core builder and the shared R2 compiler cache, with its cache architecture derived from
 the selected target. Compilation does not use a metal host, rootfs, or snapshot.
 

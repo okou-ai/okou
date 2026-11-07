@@ -15,9 +15,11 @@ fail() {
 command -v yq >/dev/null || fail "yq is required"
 yq -o=json '.' "${REPO_ROOT}/.github/workflows/runner-image-architecture.yml" > "${TEST_ROOT}/architecture.json"
 yq -o=json '.' "${REPO_ROOT}/.github/workflows/release-please.yml" > "${TEST_ROOT}/release.json"
+yq -o=json '.' "${REPO_ROOT}/.github/workflows/crates.yml" > "${TEST_ROOT}/crates.json"
 yq -o=json '.' "$WORKFLOW" | jq --slurpfile architecture "${TEST_ROOT}/architecture.json" \
   --slurpfile release "${TEST_ROOT}/release.json" \
-  '. + {architecture: $architecture[0], release: $release[0]}' > "${TEST_ROOT}/workflow.json"
+  --slurpfile crates "${TEST_ROOT}/crates.json" \
+  '. + {architecture: $architecture[0], release: $release[0], crates: $crates[0]}' > "${TEST_ROOT}/workflow.json"
 
 # Producer and consumers must derive compatible keys, without relaxing any
 # required compiler gate or making an image/deployment wait for cache warming.
@@ -78,6 +80,7 @@ jq -e '
 # and cache-service responses. No GitHub cache is read or written by this test.
 node - "${TEST_ROOT}/workflow.json" <<'JS'
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const vm = require("node:vm");
 const workflow = JSON.parse(fs.readFileSync(process.argv[2], "utf8"));
@@ -93,7 +96,7 @@ const targets = [
 // Resolve hyphenated Actions output names before evaluating that small subset.
 function evaluate(expression, context) {
   const source = expression.trim().replace(/^\$\{\{\s*|\s*\}\}$/g, "")
-    .replace(/\b(?:github|needs|steps)(?:\.[A-Za-z0-9_-]+)+/g, path => {
+    .replace(/\b(?:github|needs|steps|matrix)(?:\.[A-Za-z0-9_-]+)+/g, path => {
       let value = context;
       for (const key of path.split(".")) value = value?.[key];
       return JSON.stringify(value ?? "");
@@ -101,6 +104,13 @@ function evaluate(expression, context) {
   return vm.runInNewContext(source, {
     cancelled: () => context.cancelled,
     fromJSON: JSON.parse,
+    // Model hashFiles for the single virtual-workspace manifest. These are
+    // workflow-key observations, not GitHub cache hit/save measurements.
+    hashFiles: pattern => {
+      assert.equal(pattern, "crates/Cargo.toml");
+      const fileHash = crypto.createHash("sha256").update(context.workspaceManifest).digest();
+      return crypto.createHash("sha256").update(fileHash).digest("hex");
+    },
   }, { timeout: 1000 });
 }
 
@@ -148,6 +158,52 @@ for (const [label, input, expected] of [
   const selected = [steps["cache-restore"], cliDownload, steps.prewarm]
     .map(step => evaluate(step.if, data));
   assert.deepEqual(selected, expected, label);
+}
+
+const cacheKey = job => job.steps.find(step => step.uses?.startsWith("Swatinem/rust-cache@"))
+  .with["shared-key"];
+const templates = [
+  ["image compiler", cacheKey(workflow.architecture.jobs.compile)],
+  ["prewarm lookup", steps["cache-lookup"].with["shared-key"]],
+  ["prewarm restore", steps["cache-restore"].with["shared-key"]],
+  ["production release", cacheKey(workflow.release.jobs["build-runner-release-assets"])],
+  ["CPU placement", cacheKey(workflow.crates.jobs["host-cpu-fairness-build"])],
+  ["Guest RPC", cacheKey(workflow.crates.jobs["guest-rpc-firecracker-build"])],
+];
+const manifest = ({ lto = false, strip = true, codegenUnits = 4 } = {}) =>
+  `[workspace]\n[profile.release]\nlto = ${lto}\nstrip = ${strip}\ncodegen-units = ${codegenUnits}\n`;
+const architectures = [
+  { target: "aarch64-unknown-linux-musl", cacheSuffix: "aarch64-musl" },
+  { target: "x86_64-unknown-linux-musl", cacheSuffix: "x86_64-musl" },
+];
+const render = (template, context) => template.replace(/\$\{\{\s*([^}]+?)\s*\}\}/g,
+  (_, expression) => evaluate(expression, context));
+const baselineKeys = [];
+for (const architecture of architectures) {
+  const data = {
+    matrix: architecture,
+    needs: { "runner-host-groups": { outputs: { "selected-target": architecture.target } } },
+    steps: { "target-metadata": { outputs: { cache_suffix: architecture.cacheSuffix } } },
+    workspaceManifest: manifest(),
+  };
+  const before = templates.map(([, template]) => render(template, data));
+  assert.equal(new Set(before.slice(0, 4)).size, 1, "image/prewarm/release keys must agree");
+  assert.equal(new Set(before).size, 3, "native workload cache scopes must remain separate");
+  baselineKeys.push(before);
+  for (const [setting, policy] of [
+    ["LTO", { lto: true }], ["codegen units", { codegenUnits: 1 }], ["stripping", { strip: false }],
+  ]) {
+    const changed = { ...data, workspaceManifest: manifest(policy) };
+    const after = templates.map(([name, template], index) => {
+      const key = render(template, changed);
+      assert.notEqual(key, before[index], `${name}: changing ${setting} must invalidate its dependency key`);
+      return key;
+    });
+    assert.equal(new Set(after.slice(0, 4)).size, 1, "changed policy must preserve paired keys");
+  }
+}
+for (let index = 0; index < templates.length; index++) {
+  assert.notEqual(baselineKeys[0][index], baselineKeys[1][index], "architectures must not share a key");
 }
 JS
 
