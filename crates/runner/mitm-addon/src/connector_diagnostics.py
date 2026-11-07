@@ -5,6 +5,10 @@ handling, flow-scoped diagnostic lookup state, response replacement, diagnostic
 proxy logging, and diagnostic stream cleanup. Catalog compilation and matching
 remain in ``builtin_connector_diagnostics``.
 
+Read-only bounded request authentication-material inspection lives in
+``connector_auth_material``; this module retains the diagnostic and authorization
+decisions that consume those observations.
+
 Lifecycle:
 
 - ``requestheaders()`` and ``request()`` both capture connector intent before
@@ -90,32 +94,21 @@ contract update before existing fields are removed or their meanings change.
 """
 
 import json
-import urllib.parse
-from typing import Literal
 
 from mitmproxy import http
 
 import builtin_connector_diagnostics
+import connector_auth_material
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import http_local_responses
 import matching
 import request_classification
-import runtime_url_parsing
 from logging_utils import log_proxy_entry, project_url_for_proxy_log
 
 _HTTP_STATUS_UNAUTHORIZED = 401
 _HTTP_STATUS_FORBIDDEN = 403
 _HTTP_STATUS_FAILED_DEPENDENCY = 424
-_AuthMaterialStatus = Literal["absent", "present", "unknown"]
-
-MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS = 64 * 1024
-MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS = 8 * 1024
-MAX_CONNECTOR_DIAGNOSTIC_HEADER_FIELDS = 1024
-MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES = 1024
-MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_NAME_BYTES = 16 * 1024
-MAX_CONNECTOR_DIAGNOSTIC_HEADER_VALUE_BYTES = 16 * 1024
-MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_VALUE_BYTES = 64 * 1024
 
 _CONNECTOR_DIAGNOSTIC_ELIGIBLE = "_connector_diagnostic_eligible"
 _CONNECTOR_DIAGNOSTIC_ACTIVE_FIREWALL_NAMES = "_connector_diagnostic_active_firewall_names"
@@ -142,38 +135,6 @@ _DISCARDED_RESPONSE_HEADER_NAMES = (
 )
 _DISCARDED_RESPONSE_HEADER_NAME_LENGTHS = frozenset(
     len(name) for name in _DISCARDED_RESPONSE_HEADER_NAMES
-)
-_GENERIC_AUTH_HEADER_NAMES = frozenset(
-    (
-        b"authorization",
-        b"x-api-key",
-        b"api-key",
-    )
-)
-_GENERIC_AUTH_QUERY_PARAM_NAMES = frozenset(
-    (
-        "access_token",
-        "api_key",
-        "apikey",
-        "app_key",
-        "auth",
-        "authorization",
-        "key",
-        "token",
-    )
-)
-_AUTH_SCHEMES_REQUIRING_CREDENTIAL = frozenset(
-    (
-        "api-key",
-        "apikey",
-        "basic",
-        "bearer",
-        "digest",
-        "key",
-        "oauth",
-        "oauth2",
-        "token",
-    )
 )
 
 
@@ -274,7 +235,9 @@ def maybe_make_connector_owner_local_response(
         return False
 
     candidate = resolution.candidate
-    auth_status = _request_auth_material_status(flow, candidate, original_url)
+    auth_status = connector_auth_material.request_auth_material_status(
+        flow, candidate, original_url
+    )
     if auth_status != "absent":
         if auth_status == "present":
             flow_metadata.start_request_timing(flow.metadata)
@@ -338,7 +301,7 @@ def install_response_stream_if_needed(flow: http.HTTPFlow) -> bool:
     candidate = _resolve_candidate(flow, original_url=original_url)
     if candidate is None:
         return False
-    if _request_may_have_auth_material(flow, candidate, original_url):
+    if connector_auth_material.request_may_have_auth_material(flow, candidate, original_url):
         return False
 
     upstream_status = flow.response.status_code
@@ -418,7 +381,7 @@ def maybe_replace_response(
     if candidate is None:
         return
     upstream_status = flow.response.status_code
-    if _request_may_have_auth_material(flow, candidate, original_url):
+    if connector_auth_material.request_may_have_auth_material(flow, candidate, original_url):
         return
 
     _set_failure_metadata(flow, candidate)
@@ -699,142 +662,6 @@ def _message(
         f"{candidate.connector_slug} is not configured for this run. "
         f"{env_names} {verb} unavailable, so credentials cannot be injected."
     )
-
-
-def _request_may_have_auth_material(
-    flow: http.HTTPFlow,
-    candidate: builtin_connector_diagnostics.ConnectorDiagnosticCandidate,
-    original_url: str,
-) -> bool:
-    """Return whether auth is present or bounded header/query inspection is inconclusive."""
-    return _request_auth_material_status(flow, candidate, original_url) != "absent"
-
-
-def _request_auth_material_status(
-    flow: http.HTTPFlow,
-    candidate: builtin_connector_diagnostics.ConnectorDiagnosticCandidate,
-    original_url: str,
-) -> _AuthMaterialStatus:
-    header_status = _request_headers_auth_material_status(flow, candidate.auth_header_names)
-    if header_status == "present":
-        return header_status
-
-    configured_query_params = set(candidate.auth_query_param_names)
-    normalized_configured_query_params = {name.lower() for name in candidate.auth_query_param_names}
-    try:
-        parsed = runtime_url_parsing.split_runtime_url(original_url)
-    except ValueError:
-        return header_status
-
-    query = parsed.query
-    if len(query) > MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS:
-        return "unknown"
-
-    field_count = 0
-    field_start = 0
-    query_end = len(query)
-    while field_start < query_end:
-        field_end = query.find("&", field_start)
-        if field_end == -1:
-            field_end = query_end
-
-        if field_start < field_end:
-            field_count += 1
-            if field_count > MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS:
-                return "unknown"
-
-            separator_index = query.find("=", field_start, field_end)
-            name_end = field_end if separator_index == -1 else separator_index
-            name = urllib.parse.unquote_plus(query[field_start:name_end])
-            normalized_name = name.lower()
-            is_auth_param = (
-                name in configured_query_params
-                or normalized_name in normalized_configured_query_params
-                or normalized_name in _GENERIC_AUTH_QUERY_PARAM_NAMES
-            )
-            if is_auth_param:
-                value_start = field_end if separator_index == -1 else separator_index + 1
-                value = urllib.parse.unquote_plus(query[value_start:field_end])
-                if _query_param_has_auth_material(value):
-                    return "present"
-
-        field_start = field_end + 1
-
-    return header_status
-
-
-def _request_headers_auth_material_status(
-    flow: http.HTTPFlow, configured_header_names: tuple[str, ...]
-) -> _AuthMaterialStatus:
-    """Inspect raw fields once, suppressing optional diagnostics when a budget is exhausted.
-
-    Name/field limits apply independently to the configured lookup and request
-    scan. Values share one byte budget across relevant names and duplicates.
-    Check raw sizes before normalization or UTF-8/surrogateescape decoding;
-    never decode unrelated values or inspect fields after finding credentials.
-    These per-invocation limits do not reject or modify the request.
-    """
-    if len(configured_header_names) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_FIELDS:
-        return "unknown"
-    auth_headers: set[bytes] = set(_GENERIC_AUTH_HEADER_NAMES)
-    configured_name_bytes = 0
-    for name in configured_header_names:
-        # Bound string work before encoding, then enforce the actual byte limit.
-        if len(name) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES:
-            return "unknown"
-        raw_name = name.lower().encode("utf-8", "surrogateescape")
-        configured_name_bytes += len(raw_name)
-        if (
-            len(raw_name) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES
-            or configured_name_bytes > MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_NAME_BYTES
-        ):
-            return "unknown"
-        auth_headers.add(raw_name.lower())
-
-    name_bytes = 0
-    value_bytes = 0
-    for index, (raw_name, raw_value) in enumerate(flow.request.headers.fields):
-        name_bytes += len(raw_name)
-        if (
-            index >= MAX_CONNECTOR_DIAGNOSTIC_HEADER_FIELDS
-            or len(raw_name) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_NAME_BYTES
-            or name_bytes > MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_NAME_BYTES
-        ):
-            return "unknown"
-        normalized_name = raw_name.lower()
-        if normalized_name not in auth_headers:
-            continue
-        value_bytes += len(raw_value)
-        if (
-            len(raw_value) > MAX_CONNECTOR_DIAGNOSTIC_HEADER_VALUE_BYTES
-            or value_bytes > MAX_CONNECTOR_DIAGNOSTIC_HEADER_TOTAL_VALUE_BYTES
-        ):
-            return "unknown"
-        value = raw_value.decode("utf-8", "surrogateescape")
-        if _header_value_has_auth_material(normalized_name, value):
-            return "present"
-    return "absent"
-
-
-def _header_value_has_auth_material(name: bytes, value: str) -> bool:
-    stripped = value.strip()
-    if not stripped:
-        return False
-    if name not in (b"authorization", b"proxy-authorization"):
-        return True
-
-    return _scheme_auth_value_has_credential(stripped)
-
-
-def _scheme_auth_value_has_credential(stripped: str) -> bool:
-    parts = stripped.split(None, 1)
-    if len(parts) == 1:
-        return parts[0].lower() not in _AUTH_SCHEMES_REQUIRING_CREDENTIAL
-    return bool(parts[1].strip())
-
-
-def _query_param_has_auth_material(value: str) -> bool:
-    return bool(value.strip())
 
 
 def _replace_response_content(
