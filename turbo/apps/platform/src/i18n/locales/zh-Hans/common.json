@@ -1855,6 +1855,102 @@
       "uncertain": "请检查浏览器",
       "uncertainDescription": "浏览器可能已收到这些信息。请让代理检查结果。"
     },
+    "capabilityHome": {
+      "back": "所有能力",
+      "capabilities": "探索 Okou 的能力",
+      "create": {
+        "description": "从一个想法，到可以分享的作品。",
+        "documentFormats": "文档 · PDF · 表格",
+        "title": "创作"
+      },
+      "explore": "探索",
+      "research": {
+        "items": {
+          "ads": "探索广告创意",
+          "products": "研究产品",
+          "searchOpportunities": "发现搜索机会",
+          "tools": "比较工具",
+          "topic": "研究一个主题",
+          "traffic": "比较网站流量"
+        },
+        "prompt": "{{task}}。先确认我想了解什么，再比较证据并总结关键发现，附上来源。",
+        "title": "研究"
+      },
+      "search": {
+        "items": {
+          "affiliates": "联盟营销计划",
+          "creators": "创作者合作",
+          "customers": "潜在客户",
+          "decisionMakers": "决策者",
+          "podcasts": "可投稿的播客",
+          "speakers": "活动嘉宾"
+        },
+        "prompt": "帮我寻找{{task}}。先向我确认目标、筛选条件和范围，再提供包含相关信息和来源链接的精选名单。",
+        "title": "找人"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "串联工具与多个步骤。",
+          "title": "高级工作流"
+        },
+        "description": "简单设置，让琐事自动完成。",
+        "scheduled": {
+          "description": "在合适的时间自动执行。",
+          "items": {
+            "daily": "每日例行任务",
+            "once": "一次性提醒",
+            "weekly": "每周回顾"
+          },
+          "prompt": "帮我设置{{task}}。先确认要做什么、执行时间和时区。",
+          "title": "定时任务"
+        },
+        "suggestions": "从一条建议开始，按你的需要调整。",
+        "triggers": {
+          "description": "事件发生时自动开始。",
+          "eventPrompt": "帮我使用 {{source}} 设置「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先确认具体来源、筛选条件和输出位置，准备工作流草稿，确认设置后再启用。",
+          "items": {
+            "calendar": {
+              "action": "研究参会人",
+              "event": "日程变更",
+              "result": "准备简报",
+              "title": "会前简报"
+            },
+            "email": {
+              "action": "提取需求",
+              "event": "邮件标星",
+              "result": "起草回复",
+              "title": "邮件回复"
+            },
+            "news": {
+              "action": "匹配主题",
+              "event": "关键词匹配",
+              "result": "整理摘要",
+              "title": "新闻摘要"
+            },
+            "slack": {
+              "action": "提取行动项",
+              "event": "有人 @你",
+              "result": "待办清单",
+              "title": "消息转待办"
+            },
+            "social": {
+              "action": "筛选兴趣",
+              "event": "新帖子",
+              "result": "提炼观点",
+              "title": "X 动态追踪"
+            },
+            "webhook": {
+              "action": "研究公司",
+              "event": "表单提交",
+              "result": "起草跟进",
+              "title": "线索跟进"
+            }
+          },
+          "monitorPrompt": "帮我使用 {{source}} 设置「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先确认要关注的订阅源、主题或账号、检查频率和摘要保存位置。定期检查，只处理未处理过的新内容，确认设置后再启用。",
+          "title": "触发器"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "查看详情"
     },
@@ -2601,12 +2697,9 @@
       "ideasLabel": "上手灵感",
       "label": "上手任务",
       "more": "更多",
-      "moreTemplates": "更多模板",
       "presentationTemplates": "演示文稿模板",
       "removeTask": "移除{{task}}",
       "shelf": {
-        "browseStyles": "浏览全部风格",
-        "browseTemplates": "浏览全部模板",
         "document": "文档模板",
         "image": "图片风格",
         "nextPage": "下一页",
@@ -2622,6 +2715,7 @@
         "website": "网站",
         "workflow": "工作流"
       },
+      "viewAll": "查看全部",
       "visualization": {
         "allCharts": "全部图表",
         "back": "返回可视化选项",

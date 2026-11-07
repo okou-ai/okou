@@ -26,6 +26,7 @@ import {
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
 import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
+import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type {
@@ -118,7 +119,6 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import {
   AlertTriangle,
   ArrowLeft,
-  ArrowRight,
   ArrowUp,
   Bolt,
   Check,
@@ -312,6 +312,7 @@ const COMPOSER_CONTROL_FOCUS_CLASS =
 interface ChatComposerProps {
   readonly signals: ComposerSignals;
   readonly showPendingItems?: boolean;
+  readonly layout?: "default" | "thread";
 }
 
 interface ComposerComputerUseHost {
@@ -3311,8 +3312,10 @@ function ComposerPresentationSuggestion({
 
 export function ComposerPresentationRecommendations({
   signals,
+  headerAction,
 }: {
   readonly signals: ComposerSignals;
+  readonly headerAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const picker = useComposerTemplatePicker(signals);
@@ -3333,22 +3336,14 @@ export function ComposerPresentationRecommendations({
     >
       <div className="flex min-w-0 items-center justify-between gap-3">
         <p className="min-w-0 truncate text-base font-medium">{label}</p>
-        <Button
-          type="button"
-          variant="quiet"
-          size="xs"
-          className="shrink-0 gap-1.5 font-normal"
-          onClick={() => {
-            // This shelf is the presentation catalog's entry, so "more" opens
-            // the Presentation tab like every other type's shelf does.
-            openTemplates({ kind: "insert", category: "slides" });
-          }}
-        >
-          {t(($) => {
-            return $.chat.taskChips.moreTemplates;
-          })}
-          <ArrowRight className="size-3" aria-hidden />
-        </Button>
+        <div className="flex shrink-0 items-center gap-2">
+          <ComposerTemplatePickerButton
+            onClick={() => {
+              openTemplates({ kind: "insert", category: "slides" });
+            }}
+          />
+          {headerAction}
+        </div>
       </div>
       <ComposerRail
         rail="templates:presentation"
@@ -5851,17 +5846,20 @@ interface ComposerLayoutHeightClassNames {
 function composerLayoutHeightClassNames(
   { singleLineOnMobile, forwardComposer }: ComposerSignals["editor"],
   hasTemplateAttachment: boolean,
+  layout: "default" | "thread",
 ): ComposerLayoutHeightClassNames {
-  // The start page opens at the compact shell at every width. Most first
+  // The start page defaults to the compact shell at every width. Most first
   // messages are a line or two, and a field several lines deep reads as a
   // demand for a long message rather than an invitation. The page centres the
   // composer, so every pixel of empty field is also taken from the room the
   // slash and mention menus open into. The input still grows with the draft.
   // The forward dialog shares these signals and is not that page, so it keeps
-  // the dialog's shell.
-  const startPage = !singleLineOnMobile && !forwardComposer;
+  // the dialog's shell. The capability homepage opts into the thread's
+  // responsive shell because its composer also sits at the bottom.
+  const responsive = singleLineOnMobile || layout === "thread";
+  const startPage = !responsive && !forwardComposer;
   if (hasTemplateAttachment) {
-    return singleLineOnMobile
+    return responsive
       ? {
           input: "min-h-[86px] composer-wide:min-h-[114px]",
           shell: "min-h-[158px] composer-wide:min-h-[186px]",
@@ -5876,7 +5874,7 @@ function composerLayoutHeightClassNames(
             shell: "min-h-[186px]",
           };
   }
-  return singleLineOnMobile
+  return responsive
     ? {
         input: "min-h-12 composer-wide:min-h-[76px]",
         shell: "min-h-[120px] composer-wide:min-h-[148px]",
@@ -6940,7 +6938,13 @@ function containsFiles(dataTransfer: DataTransfer): boolean {
   );
 }
 
-function ComposerCard({ signals }: { signals: ComposerSignals }) {
+function ComposerCard({
+  signals,
+  layout,
+}: {
+  signals: ComposerSignals;
+  layout: "default" | "thread";
+}) {
   const actions = useComposerActions(signals);
   const connectorActions = useComposerConnectorActions(signals.connector);
   const hasTemplateAttachment = useGet(signals.template.hasTemplateAttachment$);
@@ -6951,6 +6955,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
   const layoutHeightClassNames = composerLayoutHeightClassNames(
     signals.editor,
     hasTemplateAttachment,
+    layout,
   );
 
   return (
@@ -7018,6 +7023,7 @@ function ComposerCard({ signals }: { signals: ComposerSignals }) {
 export function ChatComposer({
   signals,
   showPendingItems = true,
+  layout = "default",
 }: ChatComposerProps) {
   const setImageAnnotationLifecycleRef = useSet(
     signals.setImageAnnotationLifecycleRef$,
@@ -7033,7 +7039,7 @@ export function ChatComposer({
         className="@container/composer relative flex w-full min-w-0 flex-col"
       >
         {showPendingItems ? <PendingItemsStrip signals={signals} /> : null}
-        <ComposerCard signals={signals} />
+        <ComposerCard signals={signals} layout={layout} />
         <ComposerNoticeSlot signals={signals} />
         <ImageAnnotationEditor signals={signals.imageAnnotation} />
       </div>

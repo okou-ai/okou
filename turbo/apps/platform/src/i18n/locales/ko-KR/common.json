@@ -1855,6 +1855,102 @@
       "uncertain": "브라우저를 확인하세요",
       "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 에이전트에게 결과를 확인해 달라고 요청하세요."
     },
+    "capabilityHome": {
+      "back": "모든 기능",
+      "capabilities": "Okou 기능 살펴보기",
+      "create": {
+        "description": "첫 아이디어부터 바로 공유할 수 있는 결과물까지.",
+        "documentFormats": "문서 · PDF · 시트",
+        "title": "만들기"
+      },
+      "explore": "탐색",
+      "research": {
+        "items": {
+          "ads": "광고 소재 살펴보기",
+          "products": "제품 조사",
+          "searchOpportunities": "검색 기회 찾기",
+          "tools": "도구 비교",
+          "topic": "주제 조사",
+          "traffic": "웹사이트 트래픽 비교"
+        },
+        "prompt": "{{task}}. 알고 싶은 내용을 확인한 다음 근거를 비교하고 주요 결과를 출처와 함께 요약해 주세요.",
+        "title": "리서치"
+      },
+      "search": {
+        "items": {
+          "affiliates": "제휴 프로그램",
+          "creators": "크리에이터 협업",
+          "customers": "잠재 고객",
+          "decisionMakers": "의사 결정권자",
+          "podcasts": "출연을 제안할 팟캐스트",
+          "speakers": "행사 연사"
+        },
+        "prompt": "{{task}} 찾기를 도와주세요. 먼저 대상, 조건, 범위를 확인한 다음 관련 정보와 출처 링크가 포함된 후보 목록을 만들어 주세요.",
+        "title": "사람 찾기"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "도구와 작업 단계를 연결하세요.",
+          "title": "고급 워크플로"
+        },
+        "description": "간단한 설정으로 반복 작업을 줄이세요.",
+        "scheduled": {
+          "description": "알맞은 시간에 실행하세요.",
+          "items": {
+            "daily": "매일 반복 작업",
+            "once": "일회성 알림",
+            "weekly": "주간 점검"
+          },
+          "prompt": "{{task}} 설정을 도와주세요. 할 일, 실행 시각, 시간대를 먼저 확인해 주세요.",
+          "title": "예약 작업"
+        },
+        "suggestions": "추천 작업을 선택하고 필요에 맞게 조정하세요.",
+        "triggers": {
+          "description": "이벤트가 발생하면 시작하세요.",
+          "eventPrompt": "{{source}}로 {{task}} 설정을 도와주세요. 흐름: {{event}} → {{action}} → {{result}}. 소스, 필터, 결과 저장 위치를 물어보고 워크플로 초안을 준비한 뒤 설정을 확인하고 활성화해 주세요.",
+          "items": {
+            "calendar": {
+              "action": "참석자 조사",
+              "event": "일정 변경",
+              "result": "브리핑 작성",
+              "title": "회의 사전 준비"
+            },
+            "email": {
+              "action": "요청 추출",
+              "event": "메일에 별표",
+              "result": "답장 초안",
+              "title": "이메일 답장"
+            },
+            "news": {
+              "action": "주제 필터링",
+              "event": "키워드 일치",
+              "result": "뉴스 요약",
+              "title": "뉴스 요약"
+            },
+            "slack": {
+              "action": "실행 항목 추출",
+              "event": "멘션됨",
+              "result": "할 일 목록",
+              "title": "메시지를 할 일로"
+            },
+            "social": {
+              "action": "관심사 필터링",
+              "event": "새 게시물",
+              "result": "게시물 요약",
+              "title": "X 동향 추적"
+            },
+            "webhook": {
+              "action": "회사 조사",
+              "event": "양식 제출",
+              "result": "후속 연락 초안",
+              "title": "잠재 고객 관리"
+            }
+          },
+          "monitorPrompt": "{{source}}로 {{task}} 설정을 도와주세요. 흐름: {{event}} → {{action}} → {{result}}. 확인할 피드, 주제 또는 계정, 확인 주기, 요약 저장 위치를 물어보세요. 정기적으로 확인하고 이미 처리한 항목은 제외하며, 설정을 확인한 후 활성화해 주세요.",
+          "title": "트리거"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "세부 정보 보기"
     },
@@ -2601,12 +2697,9 @@
       "ideasLabel": "시작 아이디어",
       "label": "시작할 작업",
       "more": "더 보기",
-      "moreTemplates": "더 많은 템플릿",
       "presentationTemplates": "프레젠테이션 템플릿",
       "removeTask": "{{task}} 제거",
       "shelf": {
-        "browseStyles": "모든 스타일 보기",
-        "browseTemplates": "모든 템플릿 보기",
         "document": "문서 템플릿",
         "image": "이미지 스타일",
         "nextPage": "다음 페이지",
@@ -2622,6 +2715,7 @@
         "website": "웹사이트",
         "workflow": "워크플로"
       },
+      "viewAll": "모두 보기",
       "visualization": {
         "allCharts": "모든 차트",
         "back": "Back to visualization options",

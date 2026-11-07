@@ -1,4 +1,5 @@
 import { useGet, useSet } from "ccstate-react";
+import type { ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ToggleButton, cn } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
@@ -58,8 +59,10 @@ function VisualizationOutputButton({
 
 function VisualizationOutputPicker({
   signals,
+  headerAction,
 }: {
   readonly signals: ComposerSignals;
+  readonly headerAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -77,9 +80,12 @@ function VisualizationOutputPicker({
       role="group"
       aria-label={copy.outputFormat}
     >
-      <p className="min-w-0 truncate text-base font-medium">
-        {copy.outputFormat}
-      </p>
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <p className="min-w-0 truncate text-base font-medium">
+          {copy.outputFormat}
+        </p>
+        {headerAction}
+      </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
         {VISUALIZATION_OUTPUTS.map((output) => {
           return (
@@ -217,8 +223,10 @@ function VisualizationChartPicker({
 
 export function ComposerVisualizationOptions({
   signals,
+  headerAction,
 }: {
   readonly signals: ComposerSignals;
+  readonly headerAction?: ReactNode;
 }) {
   const { t } = useTranslation();
   const copy = t(
@@ -237,7 +245,10 @@ export function ComposerVisualizationOptions({
       role="region"
       aria-label={copy.panelLabel}
     >
-      <VisualizationOutputPicker signals={signals} />
+      <VisualizationOutputPicker
+        signals={signals}
+        headerAction={headerAction}
+      />
       <VisualizationChartPicker signals={signals} />
     </section>
   );

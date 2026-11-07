@@ -20,6 +20,11 @@ export const emptyChatImg = pageAssetUrl("assets/empty-chat.webp");
 export const emptyAutomationsImg = pageAssetUrl(
   "assets/empty-automations-fe7f603eaa3c.webp",
 );
+export const scheduledTaskIllustrationImgs = {
+  once: pageAssetUrl("assets/scheduled-task-once-e613c99ede42.png"),
+  daily: pageAssetUrl("assets/scheduled-task-daily-969211d682c1.png"),
+  weekly: pageAssetUrl("assets/scheduled-task-weekly-c321c93e3808.png"),
+} as const;
 export const emptyWorkflowImg = pageAssetUrl(
   "assets/empty-workflow-96e709d12911.webp",
 );

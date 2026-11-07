@@ -1855,6 +1855,102 @@
       "uncertain": "Periksa browser",
       "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen untuk memeriksa hasilnya."
     },
+    "capabilityHome": {
+      "back": "Semua kemampuan",
+      "capabilities": "Jelajahi kemampuan Okou",
+      "create": {
+        "description": "Dari ide pertama hingga hasil yang siap dibagikan.",
+        "documentFormats": "Doc · PDF · Sheet",
+        "title": "Buat"
+      },
+      "explore": "Jelajahi",
+      "research": {
+        "items": {
+          "ads": "Jelajahi materi iklan",
+          "products": "Riset produk",
+          "searchOpportunities": "Temukan peluang pencarian",
+          "tools": "Bandingkan alat",
+          "topic": "Riset suatu topik",
+          "traffic": "Bandingkan trafik situs"
+        },
+        "prompt": "{{task}}. Perjelas apa yang ingin saya pelajari, lalu bandingkan bukti dan rangkum temuan utama beserta sumbernya.",
+        "title": "Riset"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Program afiliasi",
+          "creators": "Kemitraan kreator",
+          "customers": "Calon pelanggan",
+          "decisionMakers": "Pengambil keputusan",
+          "podcasts": "Podcast untuk dihubungi",
+          "speakers": "Pembicara acara"
+        },
+        "prompt": "Bantu saya menemukan: {{task}}. Tanyakan target, kriteria, dan cakupan saya terlebih dahulu. Berikan daftar pilihan dengan detail relevan dan tautan sumber.",
+        "title": "Temukan orang"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Hubungkan alat dan langkah kerja Anda.",
+          "title": "Alur kerja lanjutan"
+        },
+        "description": "Sedikit pengaturan. Banyak pekerjaan terselesaikan.",
+        "scheduled": {
+          "description": "Jalankan pada waktu yang tepat.",
+          "items": {
+            "daily": "Rutinitas harian",
+            "once": "Pengingat sekali",
+            "weekly": "Tinjauan mingguan"
+          },
+          "prompt": "Bantu saya menyiapkan: {{task}}. Tanyakan tugas, waktu pelaksanaan, dan zona waktu yang digunakan.",
+          "title": "Tugas terjadwal"
+        },
+        "suggestions": "Mulai dari saran, lalu sesuaikan dengan kebutuhan Anda.",
+        "triggers": {
+          "description": "Mulai saat suatu peristiwa terjadi.",
+          "eventPrompt": "Bantu saya menyiapkan {{task}} menggunakan {{source}}. Alur: {{event}} → {{action}} → {{result}}. Tanyakan sumber, filter, dan tujuan hasil. Siapkan draf alur kerja dan konfirmasi pengaturan sebelum mengaktifkannya.",
+          "items": {
+            "calendar": {
+              "action": "Teliti peserta",
+              "event": "Acara diubah",
+              "result": "Siapkan ringkasan",
+              "title": "Persiapan rapat"
+            },
+            "email": {
+              "action": "Ambil permintaan",
+              "event": "Email berbintang",
+              "result": "Draf balasan",
+              "title": "Balasan email"
+            },
+            "news": {
+              "action": "Saring topik",
+              "event": "Kata kunci cocok",
+              "result": "Rangkum berita",
+              "title": "Ringkasan berita"
+            },
+            "slack": {
+              "action": "Ambil tindakan",
+              "event": "Disebut",
+              "result": "Daftar tugas",
+              "title": "Tugas dari Slack"
+            },
+            "social": {
+              "action": "Saring minat",
+              "event": "Postingan baru",
+              "result": "Rangkum postingan",
+              "title": "Pantauan X"
+            },
+            "webhook": {
+              "action": "Teliti perusahaan",
+              "event": "Formulir dikirim",
+              "result": "Draf tindak lanjut",
+              "title": "Tindak lanjut prospek"
+            }
+          },
+          "monitorPrompt": "Bantu saya menyiapkan {{task}} menggunakan {{source}}. Alur: {{event}} → {{action}} → {{result}}. Tanyakan feed, topik atau akun yang dipantau, frekuensi pemeriksaan, dan lokasi ringkasan. Periksa secara berkala, lewati item yang sudah diproses, dan konfirmasi pengaturan sebelum mengaktifkannya.",
+          "title": "Pemicu"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Lihat detail"
     },
@@ -2601,12 +2697,9 @@
       "ideasLabel": "Ide untuk memulai",
       "label": "Mulai tugas",
       "more": "Lainnya",
-      "moreTemplates": "Template lainnya",
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
       "shelf": {
-        "browseStyles": "Jelajahi semua gaya",
-        "browseTemplates": "Jelajahi semua templat",
         "document": "Templat dokumen",
         "image": "Gaya gambar",
         "nextPage": "Halaman berikutnya",
@@ -2622,6 +2715,7 @@
         "website": "Situs web",
         "workflow": "Alur kerja"
       },
+      "viewAll": "Lihat semua",
       "visualization": {
         "allCharts": "Semua bagan",
         "back": "Back to visualization options",

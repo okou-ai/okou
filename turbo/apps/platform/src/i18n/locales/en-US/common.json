@@ -1860,6 +1860,102 @@
       "uncertain": "Check the browser",
       "uncertainDescription": "The browser may have received the information. Ask the agent to check the result."
     },
+    "capabilityHome": {
+      "back": "All capabilities",
+      "capabilities": "Explore Okou capabilities",
+      "create": {
+        "description": "From your first idea to something ready to share.",
+        "documentFormats": "Doc · PDF · Sheet",
+        "title": "Create"
+      },
+      "explore": "Explore",
+      "research": {
+        "items": {
+          "ads": "Explore ad creatives",
+          "products": "Research products",
+          "searchOpportunities": "Find search opportunities",
+          "tools": "Compare tools",
+          "topic": "Research a topic",
+          "traffic": "Compare website traffic"
+        },
+        "prompt": "{{task}}. Clarify what I want to learn, then compare the evidence and summarize key findings with sources.",
+        "title": "Research"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Affiliate programs",
+          "creators": "Creator partnerships",
+          "customers": "Potential customers",
+          "decisionMakers": "Decision-makers",
+          "podcasts": "Podcasts to pitch",
+          "speakers": "Event speakers"
+        },
+        "prompt": "Help me find: {{task}}. Ask me about my target, criteria, and scope first. Return a shortlist with relevant details and source links.",
+        "title": "Find people"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Connect your tools and steps.",
+          "title": "Advanced workflows"
+        },
+        "description": "A little setup. A lot off your plate.",
+        "scheduled": {
+          "description": "Run at just the right time.",
+          "items": {
+            "daily": "Daily routine",
+            "once": "One-time reminder",
+            "weekly": "Weekly check-in"
+          },
+          "prompt": "Help me set up {{task}}. Ask what I want done, when it should run, and which time zone to use.",
+          "title": "Scheduled tasks"
+        },
+        "suggestions": "Start with a suggestion, then make it yours.",
+        "triggers": {
+          "description": "Start when something happens.",
+          "eventPrompt": "Help me set up {{task}} using {{source}}. Flow: {{event}} → {{action}} → {{result}}. Ask which source, filters and output destination to use. Prepare a draft workflow and confirm the setup before enabling it.",
+          "items": {
+            "calendar": {
+              "action": "Research guests",
+              "event": "Event updated",
+              "result": "Brief",
+              "title": "Meeting briefs"
+            },
+            "email": {
+              "action": "Extract requests",
+              "event": "Email starred",
+              "result": "Draft reply",
+              "title": "Email replies"
+            },
+            "news": {
+              "action": "Match topics",
+              "event": "Keyword match",
+              "result": "News digest",
+              "title": "News digest"
+            },
+            "slack": {
+              "action": "Extract actions",
+              "event": "Mentioned",
+              "result": "Action list",
+              "title": "Slack to tasks"
+            },
+            "social": {
+              "action": "Filter interests",
+              "event": "New post",
+              "result": "Summary",
+              "title": "X watchlist"
+            },
+            "webhook": {
+              "action": "Research company",
+              "event": "Form submitted",
+              "result": "Follow-up",
+              "title": "Lead follow-up"
+            }
+          },
+          "monitorPrompt": "Help me set up {{task}} using {{source}}. Flow: {{event}} → {{action}} → {{result}}. Ask which feeds, topics or accounts to follow, how often to check, and where to save the summary. Check periodically, skip items already processed, and confirm the setup before enabling it.",
+          "title": "Triggers"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "View details"
     },
@@ -2613,12 +2709,9 @@
       "ideasLabel": "Ideas to get started",
       "label": "Tasks to get started",
       "more": "More",
-      "moreTemplates": "More templates",
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
       "shelf": {
-        "browseStyles": "Browse all styles",
-        "browseTemplates": "Browse all templates",
         "document": "Document templates",
         "image": "Image styles",
         "nextPage": "Next page",
@@ -2634,6 +2727,7 @@
         "website": "Website",
         "workflow": "Workflow"
       },
+      "viewAll": "View all",
       "visualization": {
         "allCharts": "All charts",
         "back": "Back to visualization options",

@@ -1889,6 +1889,102 @@
       "uncertain": "Vérifiez le navigateur",
       "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier le résultat."
     },
+    "capabilityHome": {
+      "back": "Toutes les fonctionnalités",
+      "capabilities": "Découvrez les possibilités d’Okou",
+      "create": {
+        "description": "De votre première idée à un résultat prêt à partager.",
+        "documentFormats": "Doc · PDF · Tableur",
+        "title": "Créer"
+      },
+      "explore": "Explorer",
+      "research": {
+        "items": {
+          "ads": "Explorer des créations publicitaires",
+          "products": "Étudier des produits",
+          "searchOpportunities": "Trouver des opportunités de recherche",
+          "tools": "Comparer des outils",
+          "topic": "Étudier un sujet",
+          "traffic": "Comparer le trafic web"
+        },
+        "prompt": "{{task}}. Précise ce que je veux apprendre, puis compare les éléments et résume les principales conclusions avec leurs sources.",
+        "title": "Étudier"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Des programmes d’affiliation",
+          "creators": "Partenariats créateurs",
+          "customers": "Des clients potentiels",
+          "decisionMakers": "Des décideurs",
+          "podcasts": "Des podcasts à contacter",
+          "speakers": "Des intervenants"
+        },
+        "prompt": "Aide-moi à trouver : {{task}}. Demande-moi d’abord la cible, les critères et le périmètre. Fournis une sélection avec les détails utiles et les liens vers les sources.",
+        "title": "Trouver des personnes"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Reliez vos outils et vos étapes.",
+          "title": "Workflows avancés"
+        },
+        "description": "Un peu de configuration. Beaucoup de temps gagné.",
+        "scheduled": {
+          "description": "Exécutez au bon moment.",
+          "items": {
+            "daily": "Routine quotidienne",
+            "once": "Rappel ponctuel",
+            "weekly": "Bilan hebdomadaire"
+          },
+          "prompt": "Aide-moi à configurer : {{task}}. Demande ce que je veux faire, à quel moment et dans quel fuseau horaire.",
+          "title": "Tâches planifiées"
+        },
+        "suggestions": "Partez d’une suggestion et adaptez-la à vos besoins.",
+        "triggers": {
+          "description": "Démarrez lorsqu’un événement se produit.",
+          "eventPrompt": "Aide-moi à configurer {{task}} avec {{source}}. Étapes : {{event}} → {{action}} → {{result}}. Demande la source, les filtres et la destination des résultats. Prépare un brouillon du workflow et confirme la configuration avant de l’activer.",
+          "items": {
+            "calendar": {
+              "action": "Étudier les invités",
+              "event": "Événement modifié",
+              "result": "Préparer une note",
+              "title": "Préparer les réunions"
+            },
+            "email": {
+              "action": "Extraire la demande",
+              "event": "E-mail suivi",
+              "result": "Rédiger la réponse",
+              "title": "Réponses aux e-mails"
+            },
+            "news": {
+              "action": "Filtrer les sujets",
+              "event": "Mot-clé trouvé",
+              "result": "Résumer l’actualité",
+              "title": "Résumé de l’actualité"
+            },
+            "slack": {
+              "action": "Extraire les actions",
+              "event": "Mention",
+              "result": "Liste de tâches",
+              "title": "Tâches Slack"
+            },
+            "social": {
+              "action": "Filtrer les intérêts",
+              "event": "Nouveau post",
+              "result": "Résumer les posts",
+              "title": "Veille sur X"
+            },
+            "webhook": {
+              "action": "Étudier l’entreprise",
+              "event": "Formulaire envoyé",
+              "result": "Rédiger un suivi",
+              "title": "Suivi des prospects"
+            }
+          },
+          "monitorPrompt": "Aide-moi à configurer {{task}} avec {{source}}. Étapes : {{event}} → {{action}} → {{result}}. Demande les flux, sujets ou comptes à suivre, la fréquence et où enregistrer le résumé. Vérifie périodiquement, ignore les éléments déjà traités et confirme la configuration avant de l’activer.",
+          "title": "Déclencheurs"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Voir les détails"
     },
@@ -2660,12 +2756,9 @@
       "ideasLabel": "Idées pour démarrer",
       "label": "Tâches pour démarrer",
       "more": "Plus",
-      "moreTemplates": "Autres modèles",
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
       "shelf": {
-        "browseStyles": "Parcourir tous les styles",
-        "browseTemplates": "Parcourir tous les modèles",
         "document": "Modèles de documents",
         "image": "Styles d'image",
         "nextPage": "Page suivante",
@@ -2681,6 +2774,7 @@
         "website": "Site web",
         "workflow": "Workflow"
       },
+      "viewAll": "Tout voir",
       "visualization": {
         "allCharts": "Tous les graphiques",
         "back": "Back to visualization options",

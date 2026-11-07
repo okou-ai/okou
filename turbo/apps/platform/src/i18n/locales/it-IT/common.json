@@ -1889,6 +1889,102 @@
       "uncertain": "Controlla il browser",
       "uncertainDescription": "Il browser potrebbe aver ricevuto le informazioni. Chiedi all’agente di verificare il risultato."
     },
+    "capabilityHome": {
+      "back": "Tutte le funzionalità",
+      "capabilities": "Scopri le funzionalità di Okou",
+      "create": {
+        "description": "Dalla prima idea a un risultato pronto da condividere.",
+        "documentFormats": "Doc · PDF · Foglio",
+        "title": "Crea"
+      },
+      "explore": "Esplora",
+      "research": {
+        "items": {
+          "ads": "Esplorare creatività pubblicitarie",
+          "products": "Studiare prodotti",
+          "searchOpportunities": "Trovare opportunità di ricerca",
+          "tools": "Confrontare strumenti",
+          "topic": "Approfondire un argomento",
+          "traffic": "Confrontare il traffico web"
+        },
+        "prompt": "{{task}}. Chiarisci cosa voglio sapere, confronta le prove e riassumi i risultati principali con le fonti.",
+        "title": "Ricerca"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Programmi di affiliazione",
+          "creators": "Partnership con creator",
+          "customers": "Potenziali clienti",
+          "decisionMakers": "I decisori",
+          "podcasts": "Podcast da contattare",
+          "speakers": "Relatori per eventi"
+        },
+        "prompt": "Aiutami a trovare: {{task}}. Chiedimi prima obiettivo, criteri e ambito. Presenta una selezione con dettagli pertinenti e link alle fonti.",
+        "title": "Trova persone"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Collega i tuoi strumenti e passaggi.",
+          "title": "Flussi di lavoro avanzati"
+        },
+        "description": "Poche impostazioni. Molto lavoro in meno.",
+        "scheduled": {
+          "description": "Esegui al momento giusto.",
+          "items": {
+            "daily": "Routine quotidiana",
+            "once": "Promemoria singolo",
+            "weekly": "Riepilogo settimanale"
+          },
+          "prompt": "Aiutami a configurare: {{task}}. Chiedi cosa voglio fare, quando eseguirlo e quale fuso orario usare.",
+          "title": "Attività pianificate"
+        },
+        "suggestions": "Parti da un suggerimento e adattalo alle tue esigenze.",
+        "triggers": {
+          "description": "Avvia quando si verifica un evento.",
+          "eventPrompt": "Aiutami a impostare {{task}} con {{source}}. Flusso: {{event}} → {{action}} → {{result}}. Chiedi quale fonte, quali filtri e dove salvare i risultati. Prepara una bozza del workflow e conferma la configurazione prima di attivarlo.",
+          "items": {
+            "calendar": {
+              "action": "Studiare gli ospiti",
+              "event": "Evento cambiato",
+              "result": "Preparare sintesi",
+              "title": "Preparare riunioni"
+            },
+            "email": {
+              "action": "Estrarre richieste",
+              "event": "E-mail preferita",
+              "result": "Preparare risposta",
+              "title": "Risposte alle e-mail"
+            },
+            "news": {
+              "action": "Filtrare argomenti",
+              "event": "Parola trovata",
+              "result": "Riassumere notizie",
+              "title": "Rassegna stampa"
+            },
+            "slack": {
+              "action": "Estrarre azioni",
+              "event": "Menzione",
+              "result": "Elenco attività",
+              "title": "Attività da Slack"
+            },
+            "social": {
+              "action": "Filtrare interessi",
+              "event": "Nuovo post",
+              "result": "Riassumere post",
+              "title": "Monitoraggio X"
+            },
+            "webhook": {
+              "action": "Studiare l’azienda",
+              "event": "Modulo inviato",
+              "result": "Preparare seguito",
+              "title": "Seguire i contatti"
+            }
+          },
+          "monitorPrompt": "Aiutami a impostare {{task}} con {{source}}. Flusso: {{event}} → {{action}} → {{result}}. Chiedi quali feed, argomenti o account seguire, con quale frequenza e dove salvare il riepilogo. Controlla periodicamente, ignora gli elementi già elaborati e conferma prima di attivarlo.",
+          "title": "Trigger"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Visualizza dettagli"
     },
@@ -2660,12 +2756,9 @@
       "ideasLabel": "Idee per iniziare",
       "label": "Attività per iniziare",
       "more": "Altro",
-      "moreTemplates": "Altri modelli",
       "presentationTemplates": "Modelli di presentazione",
       "removeTask": "Rimuovi {{task}}",
       "shelf": {
-        "browseStyles": "Sfoglia tutti gli stili",
-        "browseTemplates": "Sfoglia tutti i modelli",
         "document": "Modelli di documenti",
         "image": "Stili immagine",
         "nextPage": "Pagina successiva",
@@ -2681,6 +2774,7 @@
         "website": "Sito web",
         "workflow": "Workflow"
       },
+      "viewAll": "Mostra tutto",
       "visualization": {
         "allCharts": "Tutti i grafici",
         "back": "Back to visualization options",

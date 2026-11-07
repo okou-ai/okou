@@ -1889,6 +1889,102 @@
       "uncertain": "Verifique o navegador",
       "uncertainDescription": "O navegador pode ter recebido as informações. Peça ao agente para verificar o resultado."
     },
+    "capabilityHome": {
+      "back": "Todos os recursos",
+      "capabilities": "Explore os recursos do Okou",
+      "create": {
+        "description": "Da primeira ideia a algo pronto para compartilhar.",
+        "documentFormats": "Doc · PDF · Planilha",
+        "title": "Criar"
+      },
+      "explore": "Explorar",
+      "research": {
+        "items": {
+          "ads": "Explorar peças publicitárias",
+          "products": "Pesquisar produtos",
+          "searchOpportunities": "Encontrar oportunidades de busca",
+          "tools": "Comparar ferramentas",
+          "topic": "Pesquisar um tema",
+          "traffic": "Comparar tráfego de sites"
+        },
+        "prompt": "{{task}}. Esclareça o que quero aprender, compare as evidências e resuma os principais resultados com as fontes.",
+        "title": "Pesquisar"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Programas de afiliados",
+          "creators": "Parcerias com criadores",
+          "customers": "Clientes em potencial",
+          "decisionMakers": "Tomadores de decisão",
+          "podcasts": "Podcasts para contatar",
+          "speakers": "Palestrantes"
+        },
+        "prompt": "Ajude-me a encontrar: {{task}}. Pergunte primeiro sobre o público, os critérios e o escopo. Apresente uma seleção com detalhes relevantes e links para as fontes.",
+        "title": "Encontrar pessoas"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Conecte suas ferramentas e etapas.",
+          "title": "Fluxos de trabalho avançados"
+        },
+        "description": "Uma pequena configuração. Muito menos trabalho.",
+        "scheduled": {
+          "description": "Execute no momento certo.",
+          "items": {
+            "daily": "Rotina diária",
+            "once": "Lembrete único",
+            "weekly": "Revisão semanal"
+          },
+          "prompt": "Ajude-me a configurar: {{task}}. Pergunte o que quero fazer, quando executar e qual fuso horário usar.",
+          "title": "Tarefas agendadas"
+        },
+        "suggestions": "Comece com uma sugestão e adapte ao que você precisa.",
+        "triggers": {
+          "description": "Comece quando algo acontecer.",
+          "eventPrompt": "Ajude-me a configurar {{task}} com {{source}}. Fluxo: {{event}} → {{action}} → {{result}}. Pergunte a fonte, os filtros e o destino dos resultados. Prepare um rascunho do fluxo e confirme a configuração antes de ativar.",
+          "items": {
+            "calendar": {
+              "action": "Pesquisar convidados",
+              "event": "Evento alterado",
+              "result": "Preparar resumo",
+              "title": "Preparar reuniões"
+            },
+            "email": {
+              "action": "Extrair solicitações",
+              "event": "E-mail estrelado",
+              "result": "Rascunhar resposta",
+              "title": "Respostas por e-mail"
+            },
+            "news": {
+              "action": "Filtrar assuntos",
+              "event": "Palavra-chave",
+              "result": "Resumir notícias",
+              "title": "Resumo de notícias"
+            },
+            "slack": {
+              "action": "Extrair ações",
+              "event": "Menção",
+              "result": "Lista de tarefas",
+              "title": "Tarefas do Slack"
+            },
+            "social": {
+              "action": "Filtrar interesses",
+              "event": "Nova publicação",
+              "result": "Resumir publicações",
+              "title": "Monitoramento do X"
+            },
+            "webhook": {
+              "action": "Pesquisar empresa",
+              "event": "Formulário enviado",
+              "result": "Preparar contato",
+              "title": "Acompanhar leads"
+            }
+          },
+          "monitorPrompt": "Ajude-me a configurar {{task}} com {{source}}. Fluxo: {{event}} → {{action}} → {{result}}. Pergunte quais feeds, assuntos ou contas acompanhar, com que frequência e onde salvar o resumo. Verifique periodicamente, ignore itens já processados e confirme a configuração antes de ativar.",
+          "title": "Gatilhos"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Ver detalhes"
     },
@@ -2660,12 +2756,9 @@
       "ideasLabel": "Ideias para começar",
       "label": "Tarefas para começar",
       "more": "Mais",
-      "moreTemplates": "Mais modelos",
       "presentationTemplates": "Modelos de apresentação",
       "removeTask": "Remover {{task}}",
       "shelf": {
-        "browseStyles": "Ver todos os estilos",
-        "browseTemplates": "Ver todos os modelos",
         "document": "Modelos de documentos",
         "image": "Estilos de imagem",
         "nextPage": "Próxima página",
@@ -2681,6 +2774,7 @@
         "website": "Site",
         "workflow": "Fluxo de trabalho"
       },
+      "viewAll": "Ver tudo",
       "visualization": {
         "allCharts": "Todos os gráficos",
         "back": "Back to visualization options",
