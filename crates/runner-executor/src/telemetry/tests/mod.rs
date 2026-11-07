@@ -1107,6 +1107,48 @@ async fn partial_host_drain_preserves_the_pending_age_for_the_short_suffix() {
 }
 
 #[tokio::test]
+async fn dropped_concurrent_phase_returns_auto_flush_ownership_to_the_parent() {
+    use futures_util::FutureExt;
+
+    let (release, response) = tokio::sync::oneshot::channel();
+    let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::WaitThenRespond {
+        release: response,
+        response: json_response("200 OK", r#"{"success":true}"#),
+    }])
+    .await;
+    let mut telemetry = JobTelemetry::new(
+        http_client_for_api_url(&server.url()),
+        RunId::new_v4(),
+        "tok".into(),
+        None,
+    );
+    {
+        let mut owner = telemetry.concurrent_phase();
+        let (_, phase) = owner.collectors();
+        phase.record("before-drop", Duration::ZERO, true, None);
+        phase.rewind_oldest_pending_for_test(FLUSH_THRESHOLD + Duration::from_millis(1));
+        phase.record("flush-trigger", Duration::ZERO, true, None);
+    }
+    let request = server.next_request("concurrent phase auto flush").await;
+    let payload: serde_json::Value =
+        serde_json::from_str(request.split_once("\r\n\r\n").unwrap().1).unwrap();
+    let operations = payload["sandboxOperations"].as_array().unwrap();
+    assert_eq!(operations.len(), 2);
+    assert_eq!(operations[0]["action_type"], "before-drop");
+    assert_eq!(operations[1]["action_type"], "flush-trigger");
+    let mut flush = Box::pin(telemetry.flush());
+    assert!(
+        flush.as_mut().now_or_never().is_none(),
+        "the parent must join the dropped phase's held HTTP response"
+    );
+    release.send(()).unwrap();
+    tokio::time::timeout(Duration::from_secs(1), flush)
+        .await
+        .unwrap();
+    server.assert_finished().await;
+}
+
+#[tokio::test]
 async fn merged_pending_phases_keep_the_earliest_age_and_insertion_order() {
     for older_phase in [false, true] {
         let mut server = RawHttpTestServer::spawn(vec![RawHttpAction::Respond(json_response(

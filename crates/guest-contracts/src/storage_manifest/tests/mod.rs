@@ -17,6 +17,26 @@ fn explicit_archive_readiness_round_trips_and_rejects_invalid_bindings() {
         serde_json::to_value(&manifest).unwrap()["archiveReadiness"],
         input["archiveReadiness"]
     );
+    assert_eq!(
+        manifest.archive_readiness.as_ref().unwrap().wait_timeout(),
+        std::time::Duration::from_secs(60)
+    );
+    let mut explicit = input.clone();
+    explicit["archiveReadiness"]["checkOnly"] = json!(true);
+    explicit["archiveReadiness"]["waitTimeoutMs"] = json!(300_000);
+    let parsed: Manifest = serde_json::from_value(explicit.clone()).unwrap();
+    assert_eq!(
+        parsed.archive_readiness.as_ref().unwrap().wait_timeout(),
+        std::time::Duration::from_secs(300)
+    );
+    assert_eq!(
+        serde_json::to_value(parsed).unwrap()["archiveReadiness"],
+        explicit["archiveReadiness"]
+    );
+    for timeout in [0, 300_001] {
+        explicit["archiveReadiness"]["waitTimeoutMs"] = json!(timeout);
+        assert!(serde_json::from_value::<Manifest>(explicit.clone()).is_err());
+    }
     for sources in [
         json!([]),
         json!(["file:///tmp/unknown"]),

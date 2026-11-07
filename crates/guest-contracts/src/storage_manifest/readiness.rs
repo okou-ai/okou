@@ -12,9 +12,11 @@ use uuid::Uuid;
 /// creating its empty regular ready marker, and never modify a published source.
 /// An empty regular failed marker aborts the operation. Markers belong to the
 /// captured Run runtime and its existing reclamation owner, not a retained cache.
-/// The Guest bounds publication waiting to 60 seconds; an enclosing operation's
-/// process deadline may expire sooner. A failed application must never launch
-/// an Agent or make partially applied storage eligible for reuse.
+/// The default publication wait is 60 seconds. The embedded Host can bind it to
+/// its existing operation budget (at most 300 seconds); this never extends the
+/// enclosing process deadline or renews a producer's retry budget. A failed
+/// application must never launch an Agent or make partially applied storage
+/// eligible for reuse.
 /// Omit this descriptor for the ordinary all-prepared path. Runner and Guest
 /// binaries share one artifact; this is not an independently activated API.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
@@ -23,11 +25,40 @@ pub struct ArchiveReadiness {
     pub id: Uuid,
     /// Ordered unique local archive URLs already referenced by the manifest.
     pub sources: Vec<String>,
+    /// Existing accepted-operation budget, without extending its process deadline.
+    #[serde(
+        default,
+        rename = "waitTimeoutMs",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub wait_timeout_ms: Option<u32>,
+    /// Query current runtime-path eligibility without preparing or applying inputs.
+    #[serde(default, rename = "checkOnly", skip_serializing_if = "is_false")]
+    pub check_only: bool,
+}
+
+fn is_false(value: &bool) -> bool {
+    !value
 }
 
 impl ArchiveReadiness {
+    /// Maximum existing storage-operation budget accepted from the embedded Host.
+    pub const MAX_WAIT_TIMEOUT_MS: u32 = 300_000;
+
+    /// Publication waiting remains bounded independently of process containment.
+    #[must_use]
+    pub fn wait_timeout(&self) -> std::time::Duration {
+        std::time::Duration::from_millis(u64::from(self.wait_timeout_ms.unwrap_or(60_000)))
+    }
+
     /// Validate the descriptor without accessing or changing the filesystem.
     pub fn validate(&self, manifest: &Manifest) -> Result<(), &'static str> {
+        if self
+            .wait_timeout_ms
+            .is_some_and(|timeout| timeout == 0 || timeout > Self::MAX_WAIT_TIMEOUT_MS)
+        {
+            return Err("invalid archive publication budget");
+        }
         let available = manifest
             .storages
             .iter()

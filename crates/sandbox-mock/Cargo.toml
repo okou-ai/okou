@@ -7,6 +7,7 @@ edition.workspace = true
 async-trait.workspace = true
 guest-contracts.workspace = true
 sandbox = { workspace = true }
+serde_json.workspace = true
 tempfile = { workspace = true, features = ["getrandom"] }
 tokio = { workspace = true, features = ["sync", "time"] }
 tokio-util.workspace = true

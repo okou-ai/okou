@@ -1327,8 +1327,9 @@ async fn populate_storage_plan(
     sandbox: &dyn Sandbox,
     config: &ExecutorConfig,
     telemetry: &mut JobTelemetry,
+    started: Option<Instant>,
 ) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
-    let cache_started = Instant::now();
+    let cache_started = started.unwrap_or_else(Instant::now);
     let result = crate::storage_cache::populate_cache_with_fresh_delivery(
         plan,
         sandbox,
@@ -1345,6 +1346,97 @@ async fn populate_storage_plan(
         result.is_err().then_some(STORAGE_CACHE_POPULATE_FAILED),
     );
     result.map_err(Into::into)
+}
+
+/// Both futures stay borrowed by this accepted preparation phase. First failure
+/// signals its sibling, but the result is not returned until both owners settle.
+async fn apply_prepared_storage(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    config: &ExecutorConfig,
+    prepared: &mut crate::storage_cache::PreparedStorage,
+    telemetry: &mut JobTelemetry,
+    cache_started: Instant,
+) -> RunnerResult<Option<crate::storage_cache::DeferredBackgroundFill>> {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let cancel = prepared.delivery.cancellation_token();
+    let host_failed = Arc::new(AtomicBool::new(false));
+    let (send, receive) = tokio::sync::oneshot::channel();
+    let handoff = crate::storage_cache::GuestApplication::new(
+        send,
+        std::path::PathBuf::from(super::guest_runtime_dir(context.run_id)?),
+        context.run_id.to_string(),
+        super::DEFAULT_EXEC_TIMEOUT,
+        Arc::clone(&host_failed),
+    )?;
+    let mut phase_telemetry = telemetry.concurrent_phase();
+    let (telemetry, guest_telemetry) = phase_telemetry.collectors();
+    {
+        let population = async {
+            let result = crate::storage_cache::populate_cache_for_guest(
+                prepared,
+                sandbox,
+                &config.home,
+                telemetry,
+                &config.decoded_cache,
+                handoff,
+            )
+            .await;
+            telemetry.record(
+                "runner_storage_manifest_cache_populate",
+                cache_started.elapsed(),
+                result.is_ok(),
+                result.is_err().then_some(STORAGE_CACHE_POPULATE_FAILED),
+            );
+            result.map_err(RunnerError::from)
+        };
+        let application = async {
+            let Ok(crate::storage_cache::GuestStorageInput { manifest, files }) = receive.await
+            else {
+                return Ok(None);
+            };
+            let started = Instant::now();
+            let result = super::storage::download_storages_with_files_until_cancelled(
+                sandbox,
+                context,
+                manifest,
+                &files,
+                guest_telemetry,
+                &cancel,
+            )
+            .await;
+            guest_telemetry.record(
+                "runner_storage_manifest_guest_storage_apply",
+                started.elapsed(),
+                result.is_ok(),
+                result.is_err().then_some(STORAGE_DOWNLOAD_FAILED),
+            );
+            result.map(Some)
+        };
+        tokio::pin!(population, application);
+        let (population, application, host_primary) = tokio::select! {
+            biased;
+            result = &mut population => (result, application.await, true),
+            result = &mut application => {
+                let host_primary = host_failed.load(Ordering::Acquire);
+                if result.is_err() && !host_primary {
+                    cancel.cancel();
+                }
+                (population.await, result, host_primary)
+            }
+        };
+        match (population, application) {
+            (Err(_), Err(error)) if !host_primary => Err(error),
+            (Err(error), _) | (_, Err(error)) => Err(error),
+            (Ok(_), Ok(None)) => Err(RunnerError::Internal(
+                "Guest storage handoff was lost".into(),
+            )),
+            (Ok(deferred), Ok(Some(()))) => Ok(deferred),
+        }
+    }
 }
 
 enum GuestRuntimeStatePreparation {
@@ -1463,12 +1555,31 @@ async fn prepare_guest_storage(
                 let _ = prepared_storage.take();
                 Ok(None)
             } else {
+                let cache_started = Instant::now();
+                let owned_sources = prepared.delivery.has_owned_sources(telemetry).await;
+                if owned_sources.is_err() {
+                    telemetry.record(
+                        "runner_storage_manifest_cache_populate",
+                        cache_started.elapsed(),
+                        false,
+                        Some(STORAGE_CACHE_POPULATE_FAILED),
+                    );
+                }
+                if owned_sources? {
+                    let deferred = apply_prepared_storage(
+                        sandbox, context, config, prepared, telemetry, cache_started,
+                    )
+                    .await?;
+                    let _ = prepared_storage.take();
+                    return Ok(deferred);
+                }
                 let deferred = populate_storage_plan(
                     &mut prepared.plan,
                     Some(&mut prepared.delivery),
                     sandbox,
                     config,
                     telemetry,
+                    Some(cache_started),
                 )
                 .await?;
                 let mut prepared = prepared_storage.take().ok_or_else(|| {
@@ -1515,7 +1626,7 @@ async fn prepare_guest_storage(
                 Ok(None)
             } else {
                 let deferred =
-                    populate_storage_plan(&mut plan, None, sandbox, config, telemetry).await?;
+                    populate_storage_plan(&mut plan, None, sandbox, config, telemetry, None).await?;
                 let files = plan.take_decoded();
                 let guest_manifest = plan.into_guest_manifest();
                 let download_started = Instant::now();
@@ -1754,14 +1865,16 @@ pub(super) async fn run_in_sandbox_with_process_cancel_timeouts(
                     sandbox.id(),
                     "guest_storage",
                 ),
-                prepare_guest_storage(
+                // The accepted phase owns substantial concurrent transport and
+                // population state. Keep it out of nested replacement futures.
+                Box::pin(prepare_guest_storage(
                     sandbox,
                     context,
                     config,
                     &start,
                     telemetry,
                     &mut controls.prepared_storage,
-                ),
+                )),
             ))
             .await;
         model_catalog_prefetch.record_outcome(telemetry);

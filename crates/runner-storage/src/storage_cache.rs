@@ -12,6 +12,12 @@
 //! so `guest-storage-apply` reads the guest-local staged archive instead of
 //! re-fetching.
 //!
+//! Mixed attempts can hand the complete immutable Guest input to application
+//! after ordinary ready inputs are staged, while the same population owner
+//! finishes admitted fresh sources. Operation-bound readiness publishes only
+//! complete staged archives. Both owners settle before Agent launch; ordinary
+//! all-cache attempts retain the all-prepared application path.
+//!
 //! Production source preparation first selects admissible extracted-file hits
 //! and pins their owned bytes in the plan. Those identities bypass archive
 //! prefetch and staging entirely.
@@ -84,7 +90,10 @@ use runner_host::lock;
 use runner_host::paths::{HomePaths, short_digest, touch_mtime};
 
 pub mod decoded;
+mod guest_application;
 mod population;
+
+pub use guest_application::{GuestApplication, GuestStorageInput, populate_cache_for_guest};
 
 /// Archive sizes strictly larger than this are passthrough.
 const CACHE_MAX_SIZE: u64 = 8 * 1024 * 1024;
@@ -1378,6 +1387,22 @@ impl Drop for FreshArchiveDelivery {
 }
 
 impl FreshArchiveDelivery {
+    /// Resolve the existing classification before deciding whether Guest overlap is useful.
+    /// All-cache callers retain the ordinary population/application path.
+    pub async fn has_owned_sources(&mut self, telemetry: &mut JobTelemetry) -> RunnerResult<bool> {
+        if let Err(error) = self.finish_classification(telemetry).await {
+            self.cancel_and_drain(telemetry).await;
+            return Err(error);
+        }
+        Ok(!self.owned_keys.is_empty())
+    }
+
+    /// Cancellation of this delivery only; its parent Run is not cancelled.
+    /// The owner must still await population and accepted publication/staging.
+    pub fn cancellation_token(&self) -> CancellationToken {
+        self.cancel.clone()
+    }
+
     async fn finish_classification(&mut self, telemetry: &mut JobTelemetry) -> RunnerResult<()> {
         let Some(task) = self.classification.join_next().await else {
             return Ok(());
@@ -2360,15 +2385,45 @@ pub async fn populate_cache(
 ///
 /// Reuse, repair, empty, instruction, cleanup, and guest-work semantics remain
 /// owned by [`StoragePlan`].
-pub async fn populate_cache_with_fresh_delivery(
+pub fn populate_cache_with_fresh_delivery<'a>(
+    plan: &'a mut StoragePlan,
+    sandbox: &'a dyn Sandbox,
+    home: &'a HomePaths,
+    telemetry: &'a mut JobTelemetry,
+    fresh_delivery: Option<&'a mut FreshArchiveDelivery>,
+    decoded: Option<&'a decoded::DecodedCache>,
+) -> impl std::future::Future<Output = RunnerResult<Option<DeferredBackgroundFill>>> + 'a {
+    populate_cache_inner(
+        plan,
+        sandbox,
+        home,
+        telemetry,
+        PopulationSources {
+            fresh_delivery,
+            decoded,
+            application: None,
+        },
+    )
+}
+
+struct PopulationSources<'a> {
+    fresh_delivery: Option<&'a mut FreshArchiveDelivery>,
+    decoded: Option<&'a decoded::DecodedCache>,
+    application: Option<&'a mut GuestApplication>,
+}
+
+async fn populate_cache_inner(
     plan: &mut StoragePlan,
     sandbox: &dyn Sandbox,
     home: &HomePaths,
     telemetry: &mut JobTelemetry,
-    fresh_delivery: Option<&mut FreshArchiveDelivery>,
-    decoded: Option<&decoded::DecodedCache>,
+    sources: PopulationSources<'_>,
 ) -> RunnerResult<Option<DeferredBackgroundFill>> {
-    let mut fresh_delivery = fresh_delivery;
+    let PopulationSources {
+        mut fresh_delivery,
+        decoded,
+        mut application,
+    } = sources;
     let mut target_groups = if let Some(delivery) = fresh_delivery.as_mut() {
         if let Err(error) = delivery.finish_classification(telemetry).await {
             delivery.cancel_and_drain(telemetry).await;
@@ -2394,6 +2449,11 @@ pub async fn populate_cache_with_fresh_delivery(
         .map(|delivery| delivery.owned_keys.clone())
         .unwrap_or_default();
     let mut decoded_outcomes = Vec::new();
+    let owned_groups = target_groups
+        .iter()
+        .filter(|group| owned_keys.contains(&group.key()))
+        .cloned()
+        .collect::<Vec<_>>();
     let target_groups = target_groups
         .into_iter()
         .filter(|group| !owned_keys.contains(&group.key()))
@@ -2426,6 +2486,14 @@ pub async fn populate_cache_with_fresh_delivery(
                     target_groups,
                     ordinary_concurrency,
                     &mut stage,
+                    application
+                        .as_deref_mut()
+                        .map(|application| population::EarlyApplication {
+                            application,
+                            plan,
+                            owned_groups: &owned_groups,
+                            decoded_outcomes: &decoded_outcomes,
+                        }),
                 )
                 .await?;
                 let mut outcomes = stage_fresh_archives(resolved, &mut stage).await?;
@@ -2450,6 +2518,9 @@ pub async fn populate_cache_with_fresh_delivery(
     let outcomes = match stage_result {
         Ok(outcomes) => outcomes,
         Err(error) => {
+            if let Some(application) = application {
+                application.mark_failed();
+            }
             if let Some(delivery) = fresh_delivery {
                 delivery.cancel_and_drain(telemetry).await;
             }

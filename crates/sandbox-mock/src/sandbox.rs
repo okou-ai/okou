@@ -987,7 +987,19 @@ impl Sandbox for MockSandbox {
                         .pop_front()
                 })
             })
-            .unwrap_or_else(|| Ok(default_exec_result()))?;
+            .unwrap_or_else(|| {
+                let check_only = serde_json::from_slice::<
+                    guest_contracts::storage_manifest::Manifest,
+                >(request.manifest_json)
+                .ok()
+                .and_then(|value| value.archive_readiness)
+                .is_some_and(|value| value.check_only);
+                if check_only {
+                    Ok(ExecResult::new(0, b"true\n".to_vec(), Vec::new()))
+                } else {
+                    Ok(default_exec_result())
+                }
+            })?;
         Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_1_MIB))
     }
 
