@@ -86,9 +86,11 @@ function connectorCatalogSensitiveValues(
 ): ReadonlySet<string> {
   const values = new Set<string>();
   if (connector.skill.kind === "bundled") {
-    addSensitiveValue(connector.skill.storageName, values);
     addSensitiveValue(connector.skill.versionId, values);
-    addSensitiveValue(connector.skill.storageVersionPrefix, values);
+    if ("storageName" in connector.skill) {
+      addSensitiveValue(connector.skill.storageName, values);
+      addSensitiveValue(connector.skill.storageVersionPrefix, values);
+    }
   }
   for (const authMethod of connector.authMethods) {
     for (const name of authMethod.storage.secrets) {

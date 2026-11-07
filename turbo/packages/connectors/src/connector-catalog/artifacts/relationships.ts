@@ -178,14 +178,18 @@ function validateConnectorSemantics(artifact: ConnectorCatalogArtifact): void {
     });
 
     if (connector.skill.kind === "bundled") {
-      const storageOwner = skillStorageOwners.get(connector.skill.storageName);
-      if (storageOwner !== undefined) {
-        throw new ConnectorCatalogRelationshipError(
-          "duplicate-skill-storage-owner",
-          `Connector skill storage ${connector.skill.storageName} is claimed by ${storageOwner} and ${connector.slug}`,
+      if ("storageName" in connector.skill) {
+        const storageOwner = skillStorageOwners.get(
+          connector.skill.storageName,
         );
+        if (storageOwner !== undefined) {
+          throw new ConnectorCatalogRelationshipError(
+            "duplicate-skill-storage-owner",
+            `Connector skill storage ${connector.skill.storageName} is claimed by ${storageOwner} and ${connector.slug}`,
+          );
+        }
+        skillStorageOwners.set(connector.skill.storageName, connector.slug);
       }
-      skillStorageOwners.set(connector.skill.storageName, connector.slug);
 
       const versionOwner = skillVersionOwners.get(connector.skill.versionId);
       if (versionOwner !== undefined) {

@@ -12,9 +12,7 @@ function source(slug: string, versionId: string, archiveSize = 100) {
     slug,
     skill: {
       kind: "bundled" as const,
-      storageName: `connector-${slug}`,
       versionId,
-      storageVersionPrefix: `__system__/volume/connector-${slug}/${versionId}`,
       size: 10,
       archiveSize,
       fileCount: 1,
