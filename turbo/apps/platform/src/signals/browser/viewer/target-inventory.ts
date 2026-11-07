@@ -43,6 +43,7 @@ export interface TargetInventory {
 
 export type InventoryEvent =
   | { readonly type: "reset" | "order" | "invalidate-round" | "begin-round" }
+  | { readonly type: "reordered"; readonly ids: readonly string[] }
   | {
       readonly type: "listed";
       readonly round: InventoryRound;
@@ -164,6 +165,9 @@ export function transitionInventory(
     case "order": {
       return { ...state, sequence: order };
     }
+    case "reordered": {
+      return reorderInventory(state, event.ids, order);
+    }
     case "invalidate-round": {
       return {
         ...state,
@@ -220,6 +224,26 @@ export function transitionInventory(
       return updateInventoryMembership(state, event);
     }
   }
+}
+
+function reorderInventory(
+  state: TargetInventory,
+  ids: readonly string[],
+  sequence: number,
+): TargetInventory {
+  const entries = new Map<string, InventoryEntry>();
+  for (const id of ids) {
+    const entry = state.entries.get(id);
+    if (entry) {
+      entries.set(id, entry);
+    }
+  }
+  for (const [id, entry] of state.entries) {
+    if (!entries.has(id)) {
+      entries.set(id, entry);
+    }
+  }
+  return { ...state, sequence, entries };
 }
 
 function updateInventoryMetadata(
