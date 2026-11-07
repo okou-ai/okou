@@ -59,6 +59,7 @@ import connector_intent
 import content_length
 import custom_http
 import data_router
+import firewall_auth_config
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import header_auth_response
@@ -112,7 +113,6 @@ from firewall_auth_cache import (
     FirewallAuthCacheKey,
     invalidate_cached_firewall_headers,
 )
-from firewall_auth_config import auth_config_injects_ordinary_upstream_credentials
 from generated.data_router import DATA_ROUTER_REQUEST_BODY_MAX_BYTES
 from logging_utils import (
     NETWORK_LOG_MAX_SAFE_SIZE,
@@ -473,20 +473,6 @@ def _start_request_timing(flow: http.HTTPFlow) -> None:
     flow_metadata.start_request_timing(flow.metadata)
 
 
-def _firewall_allow_auth_base(allow: matching.FirewallAllow) -> str | None:
-    auth_config = allow.api_entry.get("auth", {})
-    auth_base = auth_config.get("base") if isinstance(auth_config, dict) else None
-    return auth_base if isinstance(auth_base, str) and auth_base else None
-
-
-def _firewall_allow_uses_aws_sigv4(allow: matching.FirewallAllow) -> bool:
-    auth_config = allow.api_entry.get("auth", {})
-    if not isinstance(auth_config, dict):
-        return False
-    aws_sigv4 = auth_config.get("awsSigv4")
-    return isinstance(aws_sigv4, dict) and bool(aws_sigv4)
-
-
 def _request_may_use_aws_sigv4(flow: http.HTTPFlow) -> bool:
     for name, value in flow.request.headers.fields:
         if name.lower() != b"authorization":
@@ -509,7 +495,9 @@ def _request_may_use_aws_sigv4(flow: http.HTTPFlow) -> bool:
 def _firewall_allow_injects_ordinary_upstream_credentials(
     allow: matching.FirewallAllow,
 ) -> bool:
-    return auth_config_injects_ordinary_upstream_credentials(allow.api_entry.get("auth"))
+    return firewall_auth_config.auth_config_injects_ordinary_upstream_credentials(
+        allow.api_entry.get("auth")
+    )
 
 
 def _builtin_host_policy_error_for_firewall_allow(
@@ -978,9 +966,13 @@ def _requestheaders_after_authority(
         if (
             bounded_classification is None
             or bounded_classification.kind != "firewall_allow"
-            or _firewall_allow_auth_base(bounded_classification.firewall_allow)
+            or firewall_auth_config.auth_base_from_config(
+                bounded_classification.firewall_allow.api_entry.get("auth", {})
+            )
             or (
-                not _firewall_allow_uses_aws_sigv4(bounded_classification.firewall_allow)
+                not firewall_auth_config.uses_aws_sigv4(
+                    bounded_classification.firewall_allow.api_entry.get("auth", {})
+                )
                 and bounded_classification.firewall_allow.name != data_router.OWNER
             )
         ):
@@ -1062,8 +1054,12 @@ def _requestheaders_after_authority(
         and (
             classification.kind == "firewall_policy_allow"
             or (
-                not _firewall_allow_auth_base(classification.firewall_allow)
-                and not _firewall_allow_uses_aws_sigv4(classification.firewall_allow)
+                not firewall_auth_config.auth_base_from_config(
+                    classification.firewall_allow.api_entry.get("auth", {})
+                )
+                and not firewall_auth_config.uses_aws_sigv4(
+                    classification.firewall_allow.api_entry.get("auth", {})
+                )
             )
         )
     ):
@@ -1079,7 +1075,7 @@ def _requestheaders_after_authority(
     if classification.kind == "firewall_allow":
         allow = classification.firewall_allow
         sandbox_info = classification.sandbox_info
-        auth_base = _firewall_allow_auth_base(allow)
+        auth_base = firewall_auth_config.auth_base_from_config(allow.api_entry.get("auth", {}))
         if auth_base_body_check.kind != "ok" and auth_base:
             _start_request_timing(flow)
             prepare_firewall_metadata(flow, allow, sandbox_info)
@@ -1129,7 +1125,7 @@ def _requestheaders_after_authority(
                 raise
             return None
 
-        if _firewall_allow_uses_aws_sigv4(allow):
+        if firewall_auth_config.uses_aws_sigv4(allow.api_entry.get("auth", {})):
             can_apply_from_headers = (
                 not request_classification.firewall_allow_uses_public_destination(allow)
                 and not aws_sigv4_request_requires_body_for_signing(flow)
@@ -1890,12 +1886,15 @@ async def request(flow: http.HTTPFlow) -> None:
             http_local_responses.block_authority_validation_error(flow, error)
             return
         classification = _request_classification_for_flow(flow)
-        if classification.kind != "firewall_allow" or not _firewall_allow_auth_base(
-            classification.firewall_allow
+        if (
+            classification.kind != "firewall_allow"
+            or not firewall_auth_config.auth_base_from_config(
+                classification.firewall_allow.api_entry.get("auth", {})
+            )
         ):
             auth_base_forwarder.release_forward_request_admission_from_flow(flow)
-        if classification.kind != "firewall_allow" or not _firewall_allow_uses_aws_sigv4(
-            classification.firewall_allow
+        if classification.kind != "firewall_allow" or not firewall_auth_config.uses_aws_sigv4(
+            classification.firewall_allow.api_entry.get("auth", {})
         ):
             aws_sigv4_body_admission.release_from_flow(flow)
 

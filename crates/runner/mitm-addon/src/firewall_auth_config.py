@@ -17,6 +17,20 @@ def _non_empty_mapping(value: object) -> bool:
     return isinstance(value, dict) and bool(value)
 
 
+def auth_base_from_config(auth_config: object) -> str | None:
+    """Return the original nonempty auth.base string without URL validation."""
+    auth_base = auth_config.get("base") if isinstance(auth_config, dict) else None
+    return auth_base if isinstance(auth_base, str) and auth_base else None
+
+
+def uses_aws_sigv4(auth_config: object) -> bool:
+    """Return whether the config selects a nonempty SigV4 mapping."""
+    if not isinstance(auth_config, dict):
+        return False
+    aws_sigv4 = auth_config.get("awsSigv4")
+    return isinstance(aws_sigv4, dict) and bool(aws_sigv4)
+
+
 def auth_config_injects_ordinary_upstream_credentials(auth_config: object) -> bool:
     """Return whether auth mutates the ordinary mitmproxy upstream request."""
     if not isinstance(auth_config, dict):
@@ -25,7 +39,7 @@ def auth_config_injects_ordinary_upstream_credentials(auth_config: object) -> bo
         return True
     if _non_empty_mapping(auth_config.get("query")):
         return True
-    return _non_empty_mapping(auth_config.get("awsSigv4"))
+    return uses_aws_sigv4(auth_config)
 
 
 def auth_config_injects_credentials(auth_config: object) -> bool:
@@ -34,7 +48,7 @@ def auth_config_injects_credentials(auth_config: object) -> bool:
         return False
     if auth_config_injects_ordinary_upstream_credentials(auth_config):
         return True
-    return isinstance(auth_config.get("base"), str) and auth_config["base"] != ""
+    return auth_base_from_config(auth_config) is not None
 
 
 def _is_string_record(value: object) -> bool:
