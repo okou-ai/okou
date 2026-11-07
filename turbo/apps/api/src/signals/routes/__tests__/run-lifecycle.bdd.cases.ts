@@ -3806,7 +3806,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           } else if (holder === "full") {
             await heartbeatHolder({ admittableProfiles: [] });
           } else if (holder === "stale") {
-            mockNow(now() - 60_000);
+            mockNow(now() - 180_001);
             onTestFinished(() => {
               clearMockNow();
             });
@@ -4046,7 +4046,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           sequence: 1,
           resource: "reusableSandbox",
         });
-        mockNow(baseTime + 31_000);
+        mockNow(baseTime + 180_001);
         await expectReusePreference(undefined);
       });
 
