@@ -5,7 +5,7 @@ import Observation
 import UIKit
 import UserNotifications
 
-/// One immutable authenticated data scope, shared by UI and notification work.
+/// One immutable local data scope; its client still verifies identity before requests.
 struct NotificationWorkspace {
   let scopeID: String
   let userID: String
@@ -77,6 +77,7 @@ final class NotificationService {
   private var requestedDeviceToken = false
   private var deviceToken: String?
   private var workspace: NotificationWorkspace?
+  @ObservationIgnored private var preparedWorkspace: NotificationWorkspace?
   private var registrationTask: Task<Void, Never>?
   private var generation = UUID()
   private var binding: Binding?
@@ -137,10 +138,13 @@ final class NotificationService {
   func data(
     authentication: AuthenticationService, configuration: AppConfiguration, session: URLSession
   ) -> NotificationWorkspace? {
-    guard let scopeID = authentication.scopeID, let userID = authentication.userID,
-      let workspaceID = authentication.activeWorkspaceID
-    else { return nil }
-    if let workspace, workspace.scopeID == scopeID { return workspace }
+    guard let scopeID = authentication.presentationScopeID, let userID = authentication.userID,
+      let workspaceID = authentication.presentationWorkspaceID
+    else {
+      preparedWorkspace = nil
+      return nil
+    }
+    if let preparedWorkspace, preparedWorkspace.scopeID == scopeID { return preparedWorkspace }
     let client = APIClient(
       baseURL: configuration.apiURL, clientVersion: configuration.appVersion, session: session
     ) {
@@ -156,9 +160,11 @@ final class NotificationService {
         : FileManager.default.urls(
           for: .applicationSupportDirectory, in: .userDomainMask
         ).first)
-    return NotificationWorkspace(
+    let data = NotificationWorkspace(
       scopeID: scopeID, userID: userID, workspaceID: workspaceID, client: client,
       sync: ChatSync(client: client, cache: cache))
+    preparedWorkspace = data
+    return data
   }
 
   func update(workspace: NotificationWorkspace?) async {
@@ -274,7 +280,7 @@ final class NotificationService {
   }
 
   func signOut(authentication: AuthenticationService) async throws {
-    let scopeID = authentication.scopeID
+    let scopeID = authentication.presentationScopeID
     workspaceNavigation?.cancel()
     workspaceNavigation = nil
     pendingDestination = nil
@@ -283,7 +289,7 @@ final class NotificationService {
         "Cannot unregister notification binding before session revocation: \(error.localizedDescription, privacy: .public)"
       )
     }
-    guard authentication.scopeID == scopeID else {
+    guard authentication.presentationScopeID == scopeID else {
       throw AuthenticationService.AuthenticationError.workspaceChanged
     }
     try await authentication.signOut()

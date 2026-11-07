@@ -114,12 +114,11 @@ final class AuthenticationHTTPFixture: Sendable {
     state.withLock { $0 = snapshot }
     try await clerk.refreshClient()
     try await clerk.refreshEnvironment()
-    if restoredAccessGroup != nil {
-      // SDK refreshes enqueue Keychain writes. Its test-only configure resets
-      // the previous SDK and cancels pending persistence, unlike a cold launch.
-      // Wait for the actual old-group session before testing its restoration.
+    do {
+      // Reconfiguration cancels the previous SDK's queued Keychain writes.
+      // Every restored-session fixture must wait for its actual commit first.
       let service = "ai.okou.tests." + host
-      let sessionID = snapshot.sessionID
+      let sessionID = snapshot.signedOut ? nil : snapshot.sessionID
       let persisted = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
           let query: [String: Any] = [
@@ -139,7 +138,7 @@ final class AuthenticationHTTPFixture: Sendable {
       let result = await XCTWaiter.fulfillment(of: [persisted], timeout: 3)
       _ = try XCTUnwrap(
         result == .completed ? true : nil,
-        "The initial session must be committed to Keychain before SDK restoration")
+        "The initial client must be committed to Keychain before SDK restoration")
     }
     // Recreate the SDK with its real persisted session, as on a cold launch.
     let restoredOptions = Clerk.Options(
@@ -147,11 +146,9 @@ final class AuthenticationHTTPFixture: Sendable {
       keychainConfig: .init(service: "ai.okou.tests." + host, accessGroup: restoredAccessGroup),
       proxyUrl: url.absoluteString)
     let restored = Clerk.configure(publishableKey: publishableKey, options: restoredOptions)
-    if restoredAccessGroup != nil {
-      XCTAssertEqual(
-        restored.session?.id, snapshot.sessionID,
-        "The explicit shared group must restore the session written to the app's implicit group")
-    }
+    XCTAssertEqual(
+      restored.session?.id, snapshot.signedOut ? nil : snapshot.sessionID,
+      "The SDK must restore the committed session in its configured access group")
     return AuthenticationService(clerk: restored)
   }
 
