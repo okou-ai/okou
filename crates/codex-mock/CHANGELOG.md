@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.12.54](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.53...codex-mock-v0.12.54) (2026-11-07)
+
+
+### Refactoring
+
+* **rust:** colocate direct-child wait contracts with their owner ([#45773](https://github.com/okou-ai/okou/issues/45773)) ([f101331](https://github.com/okou-ai/okou/commit/f1013317f3bcab41784d00ab6cc7cac5ce56caf8))
+
 ## [0.12.53](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.52...codex-mock-v0.12.53) (2026-11-06)
 
 ## [0.12.52](https://github.com/okou-ai/okou/compare/codex-mock-v0.12.51...codex-mock-v0.12.52) (2026-11-06)
