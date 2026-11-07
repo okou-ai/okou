@@ -189,7 +189,18 @@ final class RealtimeHTTPFixture: Sendable {
             return
           }
           guard header.hasPrefix("POST /keys/") && header.contains("/requestToken") else {
-            throw URLError(.unsupportedURL)
+            let lines = header.components(separatedBy: "\r\n")
+            let parts = lines[0].split(separator: " ")
+            let method = parts.prefix(1).joined(separator: "")
+            let target = parts.dropFirst().prefix(1).joined(separator: "")
+            let hostHeaders = lines.filter { $0.lowercased().hasPrefix("host:") }
+            let hosts = hostHeaders.map { $0.dropFirst(5).trimmingCharacters(in: .whitespaces) }
+            let url = "http://\(hosts.joined(separator: ","))\(target)"
+            throw URLError(
+              .unsupportedURL,
+              userInfo: [
+                NSLocalizedDescriptionKey: "Unhandled realtime HTTP request: \(method) \(url)"
+              ])
           }
           let bodyLength =
             header.components(separatedBy: "\r\n").first {
