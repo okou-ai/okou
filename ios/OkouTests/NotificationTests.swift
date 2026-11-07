@@ -121,7 +121,11 @@ final class NotificationTests: XCTestCase {
   {
     let identity = try AuthenticationHTTPFixture()
     addTeardownBlock { await identity.close() }
-    identity.state.withLock { $0.failMemberships = true }
+    identity.state.withLock {
+      $0.activeWorkspaceID = nil
+      $0.pending = true
+      $0.failMemberships = true
+    }
     let authentication = try await identity.authentication()
     XCTAssertTrue(authentication.isLoading)
     let fixture = ConversationHistoryFixture(count: 2)
@@ -149,7 +153,7 @@ final class NotificationTests: XCTestCase {
     await fulfillment(of: [completed], timeout: 5)
     XCTAssertFalse(authentication.isLoading)
     XCTAssertEqual(authentication.userID, user)
-    XCTAssertTrue(authentication.isAuthenticated)
+    XCTAssertTrue(authentication.needsWorkspaceSelection)
     XCTAssertNotNil(authentication.errorMessage)
     XCTAssertNil(authentication.activeWorkspaceID)
     XCTAssertTrue(fixture.requests.values.withLock { $0.isEmpty })

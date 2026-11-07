@@ -166,19 +166,28 @@ final class WorkspaceStore {
     if selectedAgentID == nil {
       selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
     }
-    await refreshNavigation()
-    guard canContinueStartup(generation) else { return }
-    let realtime = RealtimeService(
-      userID: userID, workspaceID: workspaceID,
-      tokenProvider: { [client] in
-        try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
-      },
-      onChange: { [weak self] in self?.requestRefresh($0) },
-      onConnection: { [weak self] in self?.connectionStatus = $0 })
-    self.realtime = realtime
-    realtime.setForeground(isForeground)
-    realtime.start()
-    await refresh()
+    await withTaskCancellationHandler {
+      async let navigation: Void = refreshNavigation()
+      let realtime = RealtimeService(
+        userID: userID, workspaceID: workspaceID,
+        tokenProvider: { [client] in
+          try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
+        },
+        onChange: { [weak self] in self?.requestRefresh($0) },
+        onConnection: { [weak self] in self?.connectionStatus = $0 })
+      self.realtime = realtime
+      realtime.setForeground(isForeground)
+      realtime.start()
+      await refresh()
+      await navigation
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        guard let self, startupGeneration == generation else { return }
+        realtime?.stop()
+        realtime = nil
+        list.cancelRefresh()
+      }
+    }
   }
 
   private func canContinueStartup(_ generation: UUID) -> Bool {
@@ -329,12 +338,7 @@ final class WorkspaceStore {
     let selectedBeforeRefresh = selectedThreadID
     let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
-    if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
-    {
-      await modelStore.refresh(batch)
-    } else if full {
-      do { try resources.invalidate(batch) } catch { handle(error) }
-    }
+    async let modelRefresh: Void = refreshModels(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
       await list.refresh()
@@ -352,6 +356,8 @@ final class WorkspaceStore {
       await selectedConversation?.refresh()
     }
     guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
+    await modelRefresh
+    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil,
       full || selectedConversation?.modelSelection?.needsThreadReadback == true
     {
@@ -359,6 +365,17 @@ final class WorkspaceStore {
     }
     await trimConversations(limit: conversationLimit)
     requestHistoryWarming()
+  }
+
+  private func refreshModels(_ batch: Set<ChatInvalidation>) async {
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    let full = batch.contains(.reconnected)
+    if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
+    {
+      await modelStore.refresh(batch)
+    } else if full {
+      do { try resources.invalidate(batch) } catch { handle(error) }
+    }
   }
 
   private func refreshConversations(_ batch: Set<ChatInvalidation>, generation: UUID) async {
@@ -769,7 +786,6 @@ final class WorkspaceStore {
   private func applyThreads(_ threads: [ChatThread]) {
     guard !closed else { return }
     didRefreshReadState()
-    if selectedAgentID == nil { selectedAgentID = threads.first?.agentID }
     for thread in threads { conversations[thread.id]?.thread = thread }
     if let selectedThreadID {
       if let thread = threads.first(where: { $0.id == selectedThreadID }) {

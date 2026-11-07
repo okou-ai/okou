@@ -9,7 +9,7 @@ struct SignInView: View {
       if let clerk = authentication.clerk, !authentication.isLoading,
         !authentication.needsWorkspaceSelection, clerk.environment != nil
       {
-        NativeAuthView(clerk: clerk) { await authentication.refreshWorkspaces() }
+        NativeAuthView(clerk: clerk) { await authentication.refresh() }
       } else {
         SignInPage(webURL: webURL) {
           if authentication.isLoading {
