@@ -6,8 +6,6 @@ use std::{
     time::Duration,
 };
 
-use futures_util::future::BoxFuture;
-use runner_host::host_memory::HostMemoryObservation;
 use runner_lifecycle::active_runs::{ActiveRunGuard, ActiveRuns};
 use runner_lifecycle::guest_timezone::GuestTimezoneIntent;
 use runner_lifecycle::home_image_cache::HomeCacheCheckoutResult;
@@ -15,13 +13,14 @@ use runner_lifecycle::home_promotion::test_support::{
     HomePromotionFixture, TEST_HOME_IMAGE_SIZE_BYTES, add_healthy_cache_preparation_matcher,
     test_home_image,
 };
-use runner_lifecycle::host_memory_operations::{MemoryObservationSource, MemoryOperationPolicy};
+use runner_lifecycle::host_memory_operations::MemoryOperationPolicy;
 use runner_lifecycle::host_memory_policy::HostMemoryBounds;
 use runner_lifecycle::idle_pool::{
     FinalizingHandoffState, IdleParkOutcome, IdleParkRequest, IdleParkRequestParts,
 };
 use runner_lifecycle::idle_reuse_preparation::add_healthy_reuse_preparation_matcher;
 use runner_lifecycle::resource_budget::ResourceBudget;
+use runner_lifecycle::test_fixtures::memory_observation::FileMemoryObservationSource as Source;
 use runner_provider::{
     ApiClaimTiming, ClaimResponseAttribution, CompletionAuth, JobCandidate, JobProvider,
 };
@@ -31,7 +30,7 @@ use sandbox::{SandboxBackingProcess, SandboxFactory};
 use sandbox_mock::{
     MockBackingProcess, MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandboxOverrides,
 };
-use tokio::sync::{Notify, oneshot};
+use tokio::sync::Notify;
 
 use super::*;
 use crate::test_fixtures::execution_context::execution_context_for_test;
@@ -68,24 +67,6 @@ impl SandboxBackingProcess for PanicOnceBacking {
     }
     async fn exit_confirmed(&self) -> bool {
         false
-    }
-}
-
-struct Source {
-    path: PathBuf,
-    gate: Mutex<Option<(oneshot::Sender<()>, oneshot::Receiver<()>)>>,
-}
-impl MemoryObservationSource for Source {
-    fn observe(&self) -> BoxFuture<'_, HostMemoryObservation> {
-        Box::pin(async move {
-            let gate = self.gate.lock().unwrap().take();
-            let sample = HostMemoryObservation::read_at(&self.path).await;
-            if let Some((seen, release)) = gate {
-                seen.send(()).unwrap();
-                release.await.unwrap();
-            }
-            sample
-        })
     }
 }
 
@@ -228,10 +209,7 @@ impl Fixture {
             }
             _ => panic!("unexpected producer outcome"),
         };
-        let source = Arc::new(Source {
-            path: home._dir.path().join("meminfo"),
-            gate: Mutex::new(None),
-        });
+        let source = Arc::new(Source::new(home._dir.path().join("meminfo")));
         tokio::fs::write(
             &source.path,
             format!("MemAvailable: {} kB\n", available * 1024),
@@ -659,9 +637,7 @@ async fn finalizing_cancelled_admission_and_unknown_observation_retain_cleanup_a
                 Err(MemoryOperationError::UnknownObservation(_))
             ));
         } else {
-            let (seen, observed) = oneshot::channel();
-            let (release, wait) = oneshot::channel();
-            *f.source.gate.lock().unwrap() = Some((seen, wait));
+            let (observed, release) = f.source.gate_next_read();
             let mut pending = Box::pin(admission.cleanup(&f.operations, Fixture::envelope()));
             tokio::select! { result = &mut pending => { assert!(result.is_err(), "unexpected acceptance"); panic!("coverage ended before gate"); }, result = observed => result.unwrap() }
             drop(pending);

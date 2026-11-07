@@ -118,7 +118,7 @@ async fn cancelled_and_panicked_memory_observation_keep_the_same_cleanup_capsule
         let (_, backing) = sandbox_mock::MockBackingProcess::channel();
         let mut fixture = JobFixture::new("thread:activation-observer", Some(backing)).await;
         let mut owner = failed(&mut fixture).await;
-        let (observed, release) = env.source.gate_read();
+        let (observed, release) = env.source.gate_next_read();
         let mut admission = Box::pin(owner.grant_cleanup(&env.operations, envelope()));
         assert!(futures_util::poll!(admission.as_mut()).is_pending());
         tokio::select! {
@@ -629,7 +629,7 @@ async fn resource_backing_change_during_a_held_grant_preserves_owner_before_term
     });
     let mut fixture = JobFixture::new("thread:caller-held-backing", Some(backing.clone())).await;
     let mut owner = failed(&mut fixture).await;
-    let (observed, release) = env.source.gate_read();
+    let (observed, release) = env.source.gate_next_read();
     let mut grant = Box::pin(owner.grant_cleanup(&env.operations, envelope()));
     assert!(futures_util::poll!(grant.as_mut()).is_pending());
     tokio::select! { _ = observed => {}, result = grant.as_mut() => panic!("grant unexpectedly completed {result:?}") }
