@@ -127,6 +127,54 @@ final class ChatModelResourceTests: XCTestCase {
     XCTAssertEqual(observed, expected)
   }
 
+  func testNavigationAndModelsShareFeaturesAndStartIndependentReadsTogether() async throws {
+    let gate = ModelResponseGate()
+    let began = expectation(description: "Independent workspace reads have all started")
+    began.expectedFulfillmentCount = 6
+    let requests = Mutex<[String: Int]>([:])
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url!.path
+      let count = requests.withLock { counts in
+        counts[path, default: 0] += 1
+        return counts[path, default: 0]
+      }
+      if count == 1 { began.fulfill() }
+      await gate.wait()
+      if path == "/api/agents" {
+        return ChatHTTPResponse(
+          body:
+            "[{\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"displayName\":\"Shared agent\",\"isDefaultAgent\":true}]"
+        )
+      }
+      if path == "/api/user-preferences" {
+        return ChatHTTPResponse(status: 409, body: #"{"error":{"message":"No preferences"}}"#)
+      }
+      return try XCTUnwrap(ModelHTTPFixtures.response(path))
+    }
+    let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    let navigation = Task { await workspace.refreshNavigation() }
+    let models = Task { await workspace.modelStore.load() }
+    addTeardownBlock { @MainActor in
+      workspace.close()
+      navigation.cancel()
+      models.cancel()
+      gate.open()
+      await navigation.value
+      await models.value
+    }
+    await fulfillment(of: [began], timeout: 3)
+    gate.open()
+    await navigation.value
+    await models.value
+    XCTAssertEqual(workspace.currentAgentName, "Shared agent")
+    XCTAssertEqual(workspace.newModelSelection.selection.model, "codex-model")
+    XCTAssertNil(workspace.list.navigationError)
+    var expected = initialRequests
+    expected["/api/agents"] = 1
+    expected["/api/user-preferences"] = 1
+    XCTAssertEqual(requests.withLock { $0 }, expected)
+  }
+
   private var initialRequests: [String: Int] {
     [
       "/api/user-model-preference": 1, "/api/run-models": 1,

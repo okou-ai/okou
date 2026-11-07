@@ -429,10 +429,22 @@ public actor ChatSync {
   }
 
   public func history(threadID: String) async throws -> ChatHistory {
+    var history = try await eventHistory(threadID: threadID)
+    if try await cancellationRecoveryPending(threadID: threadID) {
+      history.executionState = .recovering
+    }
+    return history
+  }
+
+  /// Durable messages do not depend on the separate cancellation-recovery read.
+  public func eventHistory(threadID: String) async throws -> ChatHistory {
     let history = try await readHistory(threadID: threadID, requirePersistence: false)
+    return try ChatEventProjection.history(rows: history.rows.map(\.event), recovering: false)
+  }
+
+  public func cancellationRecoveryPending(threadID: String) async throws -> Bool {
     let detail: ThreadDetail = try await client.request("/api/chat-threads/\(threadID)")
-    return try ChatEventProjection.history(
-      rows: history.rows.map(\.event), recovering: detail.cancellationRecoveryPending)
+    return detail.cancellationRecoveryPending
   }
 
   public struct PrefetchReceipt: Sendable {

@@ -167,7 +167,7 @@ public enum ChatExecutionState: String, Equatable, Sendable {
 public struct ChatHistory: Equatable, Sendable {
   public let messages: [ChatMessage]
   public let workSections: [ChatWorkSection]
-  public let executionState: ChatExecutionState
+  public var executionState: ChatExecutionState
   public let activeRunIDs: [String]
   public let activityRunID: String?
   public let queuedEventIDs: [String]

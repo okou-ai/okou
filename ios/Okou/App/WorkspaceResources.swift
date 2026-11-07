@@ -4,23 +4,36 @@ import Foundation
 
 /// One graph per authenticated workspace; each endpoint has its own cached Task.
 @MainActor
-final class ChatModelResources {
+final class WorkspaceResources {
   private let store = CCState.Store()
-  private let preference: ModelRead<ModelPreference>
-  private let available: ModelRead<AvailableRunModels>
-  private let catalog: ModelRead<ModelCatalog>
-  private let features: ModelRead<SidebarFeatureSwitches>
+  private let preference: WorkspaceRead<ModelPreference>
+  private let available: WorkspaceRead<AvailableRunModels>
+  private let catalog: WorkspaceRead<ModelCatalog>
+  private let features: WorkspaceRead<SidebarFeatureSwitches>
+  private let agents: WorkspaceRead<[AgentRecord]>
+  private let sidebarPreferences: WorkspaceRead<SidebarPreferences>
   private let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
-  init(service: ChatModelService, sleep: @escaping @Sendable (Duration) async throws -> Void) {
-    let preference = ModelRead("model preference", sleep: sleep, read: service.preference)
-    let available = ModelRead("available models", sleep: sleep, read: service.availableModels)
-    let catalog = ModelRead("model catalog", sleep: sleep, read: service.catalog)
-    let features = ModelRead("model feature switches", sleep: sleep, read: service.featureSwitches)
+  init(client: APIClient, sleep: @escaping @Sendable (Duration) async throws -> Void) {
+    let service = ChatModelService(client: client)
+    let preference = WorkspaceRead("model preference", sleep: sleep, read: service.preference)
+    let available = WorkspaceRead("available models", sleep: sleep, read: service.availableModels)
+    let catalog = WorkspaceRead("model catalog", sleep: sleep, read: service.catalog)
+    let features = WorkspaceRead(
+      "model feature switches", sleep: sleep, read: service.featureSwitches)
     self.preference = preference
     self.available = available
     self.catalog = catalog
     self.features = features
+    agents = WorkspaceRead("agents", sleep: sleep) { try await client.request("/api/agents") }
+    sidebarPreferences = WorkspaceRead("sidebar preferences", sleep: sleep) {
+      do { return try await client.request("/api/user-preferences") } catch let error
+        as APIClientError
+        where error.statusCode == 409
+      {
+        return SidebarPreferences(pinnedAgentIds: [])
+      }
+    }
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
@@ -49,6 +62,27 @@ final class ChatModelResources {
     return try store.get(catalog.value)
   }
 
+  func navigation(refresh: Bool) throws -> (
+    agents: Task<[AgentRecord], Error>, preferences: Task<SidebarPreferences, Error>,
+    features: Task<SidebarFeatureSwitches, Error>
+  ) {
+    if refresh {
+      try store.set(
+        Command<Void, Void> { context in
+          try context.set(self.agents.revision, update: { $0 + 1 })
+          try context.set(self.sidebarPreferences.revision, update: { $0 + 1 })
+        })
+    }
+    try agents.retryFailed(in: store)
+    try sidebarPreferences.retryFailed(in: store)
+    try features.retryFailed(in: store)
+    // All three tasks start before the first suspension. Models share the feature task.
+    let agents = try store.get(agents.value)
+    let preferences = try store.get(sidebarPreferences.value)
+    let features = try store.get(features.value)
+    return (agents, preferences, features)
+  }
+
   func invalidate(_ changes: Set<ChatInvalidation>) throws {
     let reload = Command<Void, Void> { context in
       if changes.contains(.reconnected) || changes.contains(.modelPreference) {
@@ -70,12 +104,14 @@ final class ChatModelResources {
     available.close()
     catalog.close()
     features.close()
+    agents.close()
+    sidebarPreferences.close()
   }
 }
 
 /// The graph owns caching; this small endpoint owner adds retry and cancellation.
 @MainActor
-private final class ModelRead<Value: Sendable> {
+private final class WorkspaceRead<Value: Sendable> {
   let revision = CCState.State(0)
   private let operation: String
   private let sleep: @Sendable (Duration) async throws -> Void

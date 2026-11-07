@@ -19,12 +19,13 @@ final class ChatModelStore {
   private var closed = false
   private var reportingCatalog: ModelCatalog?
   private var loadTask: Task<Void, Never>?
-  private let resources: ChatModelResources
+  private let resources: WorkspaceResources
+  private let ownsResources: Bool
   let readRetrySleep: @Sendable (Duration) async throws -> Void
   private let didFail: @MainActor (Error) -> Void
 
   init(
-    client: APIClient, webURL: URL,
+    client: APIClient, webURL: URL, resources: WorkspaceResources? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -34,7 +35,8 @@ final class ChatModelStore {
     self.webURL = webURL
     let service = ChatModelService(client: client)
     self.service = service
-    resources = ChatModelResources(service: service, sleep: readRetrySleep)
+    self.resources = resources ?? WorkspaceResources(client: client, sleep: readRetrySleep)
+    ownsResources = resources == nil
     connectorAccess = ChatComposerAccess(client: client)
     connectorAuthorization = ChatConnectorService(client: client)
     subscriptions = PersonalSubscriptionStore(client: client, didFail: didFail)
@@ -130,7 +132,7 @@ final class ChatModelStore {
     loadTask?.cancel()
     loadTask = nil
     configuration = nil
-    resources.close()
+    if ownsResources { resources.close() }
     reportingCatalog = nil
     subscriptions.close()
   }
