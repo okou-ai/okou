@@ -85,7 +85,6 @@ import {
 } from "../utils";
 import {
   createAgentRunContextSignals,
-  preloadAgentRunContext$,
   type AgentRunContextSignals,
 } from "./agent-run-context.signals";
 import type {
@@ -2377,8 +2376,8 @@ const prepareNormalSendContext$ = command(
       args.body.agentId,
     );
     // The pool serves checkouts in dispatch order. Issue the request-critical
-    // thread row before the preload's roots, several of which this request
-    // never awaits, so it takes a warm connection instead of opening one.
+    // thread row before the enqueue's model/identity roots so it takes a warm
+    // connection instead of opening one.
     // Authorization joins it with the Agent read in this same turn.
     const existingThreadRow =
       args.body.threadId === undefined
@@ -2398,9 +2397,10 @@ const prepareNormalSendContext$ = command(
         signal,
       ),
     );
-    // Start authenticated org/member reads immediately; authorization consumes
-    // the same promises. Settled waitUntil work stays owned on rejection/abort.
-    set(preloadAgentRunContext$, context, signal);
+    // Only enqueue-required model/identity reads compete with authorization.
+    // The consumer preloads launch-only context after it has input and capacity.
+    const models = settle(set(prepareNormalSendModels$, context, signal));
+    waitUntil(models);
     const prepared = await set(
       prepareNormalSend$,
       { ...args, context, existingThreadRow, agentRunSource },
@@ -2409,8 +2409,12 @@ const prepareNormalSendContext$ = command(
     if ("status" in prepared) {
       return prepared;
     }
-    const models = await set(prepareNormalSendModels$, context, signal);
-    return { ...prepared, ...models, context };
+    const capturedModels = await models;
+    signal.throwIfAborted();
+    if (!capturedModels.ok) {
+      throw capturedModels.error;
+    }
+    return { ...prepared, ...capturedModels.value, context };
   },
 );
 

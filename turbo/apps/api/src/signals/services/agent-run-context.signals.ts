@@ -598,8 +598,8 @@ function createIdentityContext(
 }
 
 /**
- * Trigger each group immediately after context creation, before authorization in
- * prepareNormalSendContext$, or at pick start when no matching context is passed.
+ * Trigger launch preparation only for a pick with input and capacity. Direct
+ * sends pass their enqueue context so captured model/identity reads are reused.
  * Cached failures remain authoritative.
  */
 export const preloadAgentRunContext$ = command(

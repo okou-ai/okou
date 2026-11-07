@@ -473,7 +473,7 @@ describe("chat agent bootstrap prefetch", () => {
     },
   );
 
-  it("uses the selected default account for each successive pick", async () => {
+  it("uses the default account selected before launch, including during attachment validation", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
     const first = await connectors.connectManualGrant(
       actor,
@@ -503,16 +503,56 @@ describe("chat agent bootstrap prefetch", () => {
       claimed.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
     ).toMatchObject({ sourceId: first.id });
     await cancelChatRun(actor, sent.runId, claimed.sandboxHeaders);
-    await connectors.setDefaultBuiltinConnectorAccount(
-      actor,
-      "openai",
-      second.id,
-    );
-    const next = await sendChatRun(actor, {
+    const fileId = randomUUID();
+    const filename = "launch-account.txt";
+    const key = buildArtifactKeyV2(fileId, filename);
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const originalSend = context.mocks.s3.send.getMockImplementation();
+    if (!originalSend) {
+      throw new Error("Expected the fixture's S3 implementation");
+    }
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      if (command instanceof HeadObjectCommand && command.input.Key === key) {
+        entered.resolve(undefined);
+        await release.promise;
+        return {
+          ContentLength: 42,
+          ContentType: "text/plain",
+          LastModified: new Date("2026-11-07T00:00:00Z"),
+          Metadata: {
+            "artifact-id": fileId,
+            filename: encodeURIComponent(filename),
+            "user-id": encodeURIComponent(actor.userId),
+          },
+        };
+      }
+      return await originalSend(command);
+    });
+    const sending = sendChatRun(actor, {
       agentId,
       threadId: sent.threadId,
       prompt: "use the next default",
+      userMessage: {
+        version: 1,
+        parts: [
+          {
+            type: "file",
+            fileId,
+            filenameSnapshot: filename,
+            contentType: "text/plain",
+          },
+          { type: "text", text: "use the next default" },
+        ],
+      },
     });
+    await entered.promise;
+    await connectors
+      .setDefaultBuiltinConnectorAccount(actor, "openai", second.id)
+      .finally(() => {
+        release.resolve(undefined);
+      });
+    const next = await sending;
     const nextClaim = await claimChatRun(runnerGroup, next.runId);
     expect(
       nextClaim.claim.secretConnectorMetadataMap?.OPENAI_TOKEN,
