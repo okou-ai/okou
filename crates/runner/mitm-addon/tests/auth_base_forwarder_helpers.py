@@ -499,12 +499,12 @@ def fake_forwarder_upstream(
         patch.object(
             transport.socket,
             "socket",
-            side_effect=upstream.create_socket,
+            new=upstream.create_socket,
         ),
         patch.object(
             transport.ssl,
             "create_default_context",
-            side_effect=upstream.create_default_context,
+            new=upstream.create_default_context,
         ),
     ):
         yield upstream
