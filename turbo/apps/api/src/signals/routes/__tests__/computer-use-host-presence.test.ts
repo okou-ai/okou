@@ -281,16 +281,14 @@ describe("Desktop host presence", () => {
       expect.objectContaining({ id: s.params.hostId, status: "offline" }),
     );
     await accept(
-      s
-        .api(hosts)
-        .next({
-          headers,
-          params: s.params,
-          body: {
-            ...s.generation,
-            supportedCapabilities: runtime.supportedCapabilities,
-          },
-        }),
+      s.api(hosts).next({
+        headers,
+        params: s.params,
+        body: {
+          ...s.generation,
+          supportedCapabilities: runtime.supportedCapabilities,
+        },
+      }),
       [409],
     );
   });
