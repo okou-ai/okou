@@ -1,6 +1,6 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { cn } from "@okouai/ui";
+import { Badge, cn } from "@okouai/ui";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import {
@@ -18,7 +18,7 @@ function FeedWaitingCount() {
     return null;
   }
   return (
-    <span className="shrink-0 text-xs tabular-nums text-nav-copy-muted">
+    <Badge className="shrink-0 text-xs font-medium tabular-nums text-nav-copy-muted">
       <span aria-hidden="true">{count}</span>
       <span className="sr-only">
         {t(
@@ -28,7 +28,7 @@ function FeedWaitingCount() {
           { count },
         )}
       </span>
-    </span>
+    </Badge>
   );
 }
 
