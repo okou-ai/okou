@@ -265,15 +265,14 @@ final class ConversationStore {
     guard !closed, !needsUpgrade, !Task.isCancelled else { return }
     let generation = refreshGeneration
     let previousIDs = history?.persistedEventIDs
-    guard var cached = await sync.cachedHistory(threadID: thread.id),
+    guard let cached = await sync.cachedHistory(threadID: thread.id),
       previousIDs != cached.persistedEventIDs
     else { return }
     await messageMarkdown.prepareLatest(cached.messages)
     guard !closed, !Task.isCancelled, refreshGeneration == generation,
       history?.persistedEventIDs == previousIDs
     else { return }
-    if history?.executionState == .recovering { cached.executionState = .recovering }
-    history = cached
+    history = cached.withCancellationRecoveryPending(history?.executionState == .recovering)
     pending.removeAll { cached.persistedEventIDs.contains($0.id) }
     rebuildMessages()
   }
@@ -306,12 +305,12 @@ final class ConversationStore {
           {
             try await self.sync.cancellationRecoveryPending(threadID: self.thread.id)
           }
-          var result = try await ChatReadRecovery.read("chat history", sleep: readRetrySleep) {
+          let events = try await ChatReadRecovery.read("chat history", sleep: readRetrySleep) {
             try await sync.eventHistory(threadID: thread.id)
           }
-          let eventState = result.executionState
           // Keep a confirmed recovery visible until its independent read finishes.
-          if history?.executionState == .recovering { result.executionState = .recovering }
+          let result = events.withCancellationRecoveryPending(
+            history?.executionState == .recovering)
           await messageMarkdown.prepareLatest(result.messages)
           try Task.checkCancellation()
           guard !closed, refreshGeneration == generation else { return }
@@ -321,8 +320,8 @@ final class ConversationStore {
           let recovering = try await recovery
           try Task.checkCancellation()
           guard !closed, refreshGeneration == generation else { return }
-          result.executionState = recovering ? .recovering : eventState
-          if history != result { history = result }
+          let verified = events.withCancellationRecoveryPending(recovering)
+          if history != verified { history = verified }
           historySyncError = nil
           if !result.canStop { stopIssue = nil }
           let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()

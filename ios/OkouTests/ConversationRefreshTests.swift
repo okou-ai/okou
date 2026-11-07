@@ -63,7 +63,7 @@ final class ConversationRefreshTests: XCTestCase {
     outcome.withLock { $0 = 2 }
     await conversation.refresh()
     XCTAssertEqual(conversation.messages.count, 3)
-    XCTAssertEqual(conversation.history?.executionState, .idle)
+    XCTAssertEqual(conversation.history?.executionState, .queued)
     XCTAssertNil(conversation.syncError)
   }
 }

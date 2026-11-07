@@ -443,7 +443,9 @@ final class WorkspaceStoreTests: XCTestCase {
   func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationReads() async throws {
     for cancelStartup in [false, true] {
       let cacheDirectory = CacheTestDirectory(owner: self)
-      let navigationStarted = expectation(description: "Navigation loads after cached chats")
+      let navigationStarted = expectation(
+        description: "Independent navigation reads start after cached chats")
+      navigationStarted.expectedFulfillmentCount = 3
       let releaseNavigation = HTTPResponseGate()
       defer { releaseNavigation.open() }
       let requests = Mutex<[String]>([])
@@ -457,6 +459,14 @@ final class WorkspaceStoreTests: XCTestCase {
             body: """
               [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
               """)
+        case "/api/user-preferences":
+          navigationStarted.fulfill()
+          await releaseNavigation.wait()
+          return ChatHTTPResponse(body: #"{"pinnedAgentIds":[]}"#)
+        case "/api/feature-switches":
+          navigationStarted.fulfill()
+          await releaseNavigation.wait()
+          return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
@@ -491,7 +501,9 @@ final class WorkspaceStoreTests: XCTestCase {
       XCTAssertNil(store.list.navigationError)
       XCTAssertTrue(
         requests.withLock {
-          $0.allSatisfy { $0 == "/api/agents" || $0 == "/api/realtime/token" }
+          $0.allSatisfy {
+            ["/api/agents", "/api/user-preferences", "/api/feature-switches"].contains($0)
+          }
         })
     }
   }
@@ -1244,6 +1256,7 @@ final class WorkspaceStoreTests: XCTestCase {
               "[{\"agentId\":\"\(storeAgentID)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
           )
         case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
+        case "/api/feature-switches": return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Chat")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")

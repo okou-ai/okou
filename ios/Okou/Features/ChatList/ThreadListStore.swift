@@ -130,8 +130,9 @@ final class ThreadListStore {
     do {
       let reads = try resources.navigation(refresh: navigationRevision > 1)
       do {
-        agents = try await reads.agents.value
+        let agents = try await reads.agents.value
         guard !closed, !Task.isCancelled else { return }
+        self.agents = agents
         let preferences = try await reads.preferences.value
         guard !closed, !Task.isCancelled else { return }
         pinnedAgentIDs = preferences.pinnedAgentIds

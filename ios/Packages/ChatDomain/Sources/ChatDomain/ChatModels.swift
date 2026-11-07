@@ -167,9 +167,9 @@ public enum ChatExecutionState: String, Equatable, Sendable {
 public struct ChatHistory: Equatable, Sendable {
   public let messages: [ChatMessage]
   public let workSections: [ChatWorkSection]
-  public var executionState: ChatExecutionState
+  public private(set) var executionState: ChatExecutionState
   public let activeRunIDs: [String]
-  public let activityRunID: String?
+  public private(set) var activityRunID: String?
   public let queuedEventIDs: [String]
   public var persistedEventIDs: Set<String> = []
   public let latestRunFinishAt: Date?
@@ -204,6 +204,14 @@ public struct ChatHistory: Equatable, Sendable {
     self.activityRunID = activityRunID
     self.queuedEventIDs = queuedEventIDs
     self.persistedEventIDs = persistedEventIDs
+  }
+
+  public func withCancellationRecoveryPending(_ pending: Bool) -> ChatHistory {
+    guard pending else { return self }
+    var history = self
+    history.executionState = .recovering
+    history.activityRunID = nil
+    return history
   }
 
   public static let empty = ChatHistory(

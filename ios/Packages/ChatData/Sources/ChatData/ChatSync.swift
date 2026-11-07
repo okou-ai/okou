@@ -429,11 +429,9 @@ public actor ChatSync {
   }
 
   public func history(threadID: String) async throws -> ChatHistory {
-    var history = try await eventHistory(threadID: threadID)
-    if try await cancellationRecoveryPending(threadID: threadID) {
-      history.executionState = .recovering
-    }
-    return history
+    let history = try await eventHistory(threadID: threadID)
+    return try await history.withCancellationRecoveryPending(
+      cancellationRecoveryPending(threadID: threadID))
   }
 
   /// Durable messages do not depend on the separate cancellation-recovery read.
