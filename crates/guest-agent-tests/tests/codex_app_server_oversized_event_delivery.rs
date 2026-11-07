@@ -10,7 +10,7 @@ use guest_agent::masker::SecretMasker;
 use serde::{Serialize, ser::SerializeMap as _};
 use serde_json::Value;
 use std::{
-    io::{BufWriter, Write},
+    io::{BufWriter, Read, Write},
     time::Duration,
 };
 
@@ -447,10 +447,31 @@ async fn codex_app_server_reduces_oversized_events_before_delivery()
         structure["item"]["output"],
         serde_json::json!([{"type":"input_text","text":FALLBACK_MARKER},{"type":"input_text","text":"[image omitted for delivery]"}])
     );
-    assert_eq!(
-        std::fs::read(&items_path)?,
-        std::fs::read(&original_items_path)?
-    );
+    // Compare every byte and both EOFs without retaining two complete files.
+    {
+        const COMPARISON_CHUNK_BYTES: usize = 64 * 1024;
+        let mut actual = std::fs::File::open(&items_path)?;
+        let mut expected = std::fs::File::open(&original_items_path)?;
+        let mut actual_chunk = Vec::with_capacity(COMPARISON_CHUNK_BYTES);
+        let mut expected_chunk = Vec::with_capacity(COMPARISON_CHUNK_BYTES);
+        loop {
+            actual_chunk.clear();
+            expected_chunk.clear();
+            Read::by_ref(&mut actual)
+                .take(COMPARISON_CHUNK_BYTES as u64)
+                .read_to_end(&mut actual_chunk)?;
+            Read::by_ref(&mut expected)
+                .take(COMPARISON_CHUNK_BYTES as u64)
+                .read_to_end(&mut expected_chunk)?;
+            assert!(
+                actual_chunk == expected_chunk,
+                "mock delivery input changed"
+            );
+            if actual_chunk.is_empty() {
+                break;
+            }
+        }
+    }
     let history = common::read_codex_session_history_events_for_runtime(&runtime)?;
     let inputs = history
         .iter()
