@@ -644,13 +644,6 @@ def forget_client(client: object) -> None:
     upstream_destination_binding.forget_client_bindings(client)
 
 
-def _endpoint_text(address: tuple[str, int] | None) -> str:
-    if address is None:
-        return ""
-    host, port = address
-    return f"{host}:{port}"
-
-
 def record_unbound_diagnostics(
     flow: http.HTTPFlow,
     *,
@@ -668,14 +661,16 @@ def record_unbound_diagnostics(
             "request_host": flow.request.host,
             "request_port": flow.request.port,
             "server_connected": bool(getattr(flow.server_conn, "connected", False)),
-            "server_address": _endpoint_text(connection_endpoints.server_address(flow.server_conn)),
-            "server_peername": _endpoint_text(
+            "server_address": connection_endpoints.diagnostic_text(
+                connection_endpoints.server_address(flow.server_conn)
+            ),
+            "server_peername": connection_endpoints.diagnostic_text(
                 connection_endpoints.server_peername(flow.server_conn)
             ),
-            "server_sockname": _endpoint_text(
+            "server_sockname": connection_endpoints.diagnostic_text(
                 connection_endpoints.connection_sockname(flow.server_conn)
             ),
-            "client_sockname": _endpoint_text(
+            "client_sockname": connection_endpoints.diagnostic_text(
                 connection_endpoints.connection_sockname(flow.client_conn)
             ),
         }
