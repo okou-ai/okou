@@ -48,7 +48,7 @@ elif sys.argv[1:3] == ['simctl', 'spawn']:
         for label, value in flags.items():
             if os.environ.get('SIMULATOR_IGNORE_PROFILE'):
                 value = False
-            print('"' + label + '" => ' + str(value).lower())
+            print('"' + label + '" => ' + ('disabled' if value else 'enabled'))
     elif sys.argv[5] == 'print':
         if os.environ.get('SIMULATOR_SERVICE_LOADED'):
             print('service is loaded')

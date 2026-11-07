@@ -10,6 +10,7 @@ The caller must invoke `restore` after retiring its test/preboot processes.
 import json
 import os
 import plistlib
+import re
 import subprocess
 import sys
 import tempfile
@@ -150,9 +151,20 @@ def verify_lean_profile(udid):
         "system",
         capture=True,
     ).stdout
+    states = {
+        label: re.findall(
+            r'^\s*"'
+            + re.escape(label)
+            + r'"\s*=>\s*(true|false|disabled|enabled)\s*;?\s*$',
+            disabled,
+            re.MULTILINE,
+        )
+        for label in LEAN_SERVICES
+    }
+    print("iOS simulator disabled states: " + json.dumps(states), flush=True)
     for label in LEAN_SERVICES:
-        if f'"{label}" => true' not in disabled:
-            raise ValueError(f"Simulator did not disable {label}")
+        if len(states[label]) != 1 or states[label][0] not in ("true", "disabled"):
+            raise ValueError(f"Simulator did not disable {label}: {states[label]}")
         result = simctl(
             "service verification",
             "spawn",
