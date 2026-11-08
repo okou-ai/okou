@@ -1,5 +1,8 @@
 # Okou for iOS
 
+Start with [iOS development](../docs/ios/ios-development.md) for architecture,
+state ownership, and verification, and [iOS ccstate](../docs/ios/ios-ccstate.md)
+for native graphs and SwiftUI bindings.
 For native UI work, start with the [Mobile Design System](../docs/ios/mobile-design-system.md)
 and [`AGENTS.md`](AGENTS.md). Shared tokens and reusable UI live in `Okou/DesignSystem/`.
 
