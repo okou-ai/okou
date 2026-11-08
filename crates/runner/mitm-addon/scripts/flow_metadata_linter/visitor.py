@@ -41,16 +41,6 @@ from flow_metadata_linter.metadata_rules import (
 )
 from flow_metadata_linter.registry import REGISTERED_METADATA_KEYS as _REGISTERED_METADATA_KEYS
 
-_METADATA_METHODS_WITH_KEY_ARGUMENTS = {
-    "__contains__",
-    "__delitem__",
-    "__getitem__",
-    "__setitem__",
-    "get",
-    "pop",
-    "setdefault",
-}
-_METADATA_METHODS_WITH_DICT_ARGUMENTS = {"__ior__", "update"}
 _DIRECT_UNBOUND_METADATA_KEY_CALL_ARGUMENTS = {
     ("dict", "__contains__"): (0, 1),
     ("dict", "__delitem__"): (0, 1),
@@ -68,6 +58,16 @@ _DIRECT_UNBOUND_METADATA_MAPPING_INPUT_CALLS = {
     ("dict", "__ior__"),
     ("dict", "update"),
     ("operator", "ior"),
+}
+_METADATA_METHODS_WITH_KEY_ARGUMENTS = {
+    method
+    for qualifier, method in _DIRECT_UNBOUND_METADATA_KEY_CALL_ARGUMENTS
+    if qualifier == "dict"
+}
+_METADATA_METHODS_WITH_DICT_ARGUMENTS = {
+    method
+    for qualifier, method in _DIRECT_UNBOUND_METADATA_MAPPING_INPUT_CALLS
+    if qualifier == "dict"
 }
 
 
