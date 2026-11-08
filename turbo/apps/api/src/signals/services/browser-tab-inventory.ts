@@ -219,6 +219,15 @@ export async function readBrowserTabInventory(
   if (changed || structure(before) !== structure(after)) {
     throw new Error("Browser tab structure changed during snapshot");
   }
+  if (
+    after.some((window) => {
+      return window.tabs.some((tab) => {
+        return !tab.discarded && !pages.has(tab.id);
+      });
+    })
+  ) {
+    throw new Error("Browser snapshot has an unconfirmed live tab identity");
+  }
   return after.map((window) => {
     return {
       ...window,

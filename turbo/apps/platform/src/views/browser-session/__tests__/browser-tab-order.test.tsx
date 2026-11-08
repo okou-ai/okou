@@ -357,6 +357,21 @@ test("Unavailable local storage cannot block new-tab creation or input", async (
   }
 });
 
+test("Unavailable cache reads retain server order during startup", async () => {
+  const { browser, start } = viewer();
+  vi.spyOn(localStorage, "getItem").mockImplementation((key) => {
+    if (key === `okou_browser-tab-order:${threadId}`) {
+      throw new DOMException("Storage unavailable", "SecurityError");
+    }
+    return null;
+  });
+  await start();
+  await ordered();
+  expect(tabNames()).toStrictEqual(["New tab", "Second", "First"]);
+  await ready();
+  noOrderingScans(browser);
+});
+
 test("The existing heartbeat publishes our complete scoped order", async () => {
   const { browser, start, reports } = viewer();
   await start();

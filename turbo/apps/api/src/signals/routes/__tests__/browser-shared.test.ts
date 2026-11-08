@@ -156,6 +156,19 @@ describe("shared Browser public consumers", () => {
         browser: session.body.browser,
         cdpUrl: f.provider.native.url,
         extension: TEST_BROWSER_EXTENSION,
+        tabOrder: {
+          instanceId: session.body.browser.window?.instanceId,
+          windowId: session.body.browser.window?.primaryWindowId,
+          targetIds: [...f.provider.native.targets.values()]
+            .filter((page) => {
+              return (
+                page.windowId === session.body.browser.window?.primaryWindowId
+              );
+            })
+            .map((page) => {
+              return page.targetId;
+            }),
+        },
       });
     });
   });
@@ -210,14 +223,17 @@ describe("shared Browser public consumers", () => {
 
       f.provider.native.windowReply = "reply";
       const retry = await client().use({ headers: runHeaders(a), body: {} });
-      expect({
-        status: retry.status,
-        windows: new Set(
-          [...f.provider.native.targets.values()].map((target) => {
-            return target.windowId;
-          }),
-        ).size,
-      }).toStrictEqual({ status: 409, windows: 1 });
+      expect(
+        {
+          status: retry.status,
+          windows: new Set(
+            [...f.provider.native.targets.values()].map((target) => {
+              return target.windowId;
+            }),
+          ).size,
+        },
+        JSON.stringify(retry.body),
+      ).toStrictEqual({ status: 409, windows: 1 });
       expect(f.provider.sessionRequests).toHaveLength(1);
       mockNow(START + 2 * MINUTE);
       const recovered = await use(a);

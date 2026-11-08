@@ -1111,7 +1111,11 @@ function createDiscoveryGraph(
         return isRecoverableReadFailure(error) ? null : error;
       });
       const snapshot = get(model.snapshot$);
-      set(context.saveTabOrder$, snapshot.inventory);
+      detachBrowser(
+        set(context.saveTabOrder$, snapshot.inventory, signal),
+        Reason.DomCallback,
+        "browser tab order cache",
+      );
       let selected = snapshot.selectedTargetId;
       if (
         selected &&

@@ -24,81 +24,93 @@ function client() {
 }
 
 describe("complete Browser tab snapshots", () => {
-  it("retains the accepted snapshot when a tab child reply is malformed", async () => {
-    const f = await fixture();
-    await f.owned.run(async () => {
-      installBrowserWindowContentCommands(f.provider.native);
-      const chat = await f.start();
-      const use = async () => {
-        return (
-          await accept(
-            client().use({
-              headers: {
-                authorization: `Bearer ${okouTokenFromClaim(chat.claim)}`,
-              },
+  it.each(["malformed", "missing"])(
+    "retains the accepted snapshot when a live tab child identity is %s",
+    async (fault) => {
+      const f = await fixture();
+      await f.owned.run(async () => {
+        installBrowserWindowContentCommands(f.provider.native);
+        const chat = await f.start();
+        const use = async () => {
+          return (
+            await accept(
+              client().use({
+                headers: {
+                  authorization: `Bearer ${okouTokenFromClaim(chat.claim)}`,
+                },
+                body: {},
+              }),
+              [200],
+            )
+          ).body;
+        };
+        const first = await use();
+        const windowId = first.browser.window!.primaryWindowId;
+        const page = [...f.provider.native.targets.values()].find((target) => {
+          return target.windowId === windowId;
+        })!;
+        const close = (status: 200 | 502 = 200) => {
+          return accept(
+            client().close({
+              headers,
+              params: { threadId: chat.threadId },
               body: {},
             }),
-            [200],
-          )
-        ).body;
-      };
-      const first = await use();
-      const windowId = first.browser.window!.primaryWindowId;
-      const page = [...f.provider.native.targets.values()].find((target) => {
-        return target.windowId === windowId;
-      })!;
-      const close = (status: 200 | 502 = 200) => {
-        return accept(
-          client().close({
-            headers,
-            params: { threadId: chat.threadId },
+            [status],
+          );
+        };
+        page.url = "https://accepted.example.test/";
+        await close();
+        page.url = "https://unconfirmed.example.test/";
+        if (fault === "malformed") {
+          f.provider.native.tabChildInfo = { targetId: 42, type: "page" };
+        } else {
+          f.provider.native.omitTabChild = true;
+        }
+        await close(502);
+        for (const [id, target] of f.provider.native.targets) {
+          if (target.windowId === windowId) {
+            f.provider.native.targets.delete(id);
+          }
+        }
+        await accept(
+          client().use({
+            headers: {
+              authorization: `Bearer ${okouTokenFromClaim(chat.claim)}`,
+            },
             body: {},
           }),
-          [status],
+          [502],
         );
-      };
-      page.url = "https://accepted.example.test/";
-      await close();
-      page.url = "https://unconfirmed.example.test/";
-      f.provider.native.tabChildInfo = { targetId: 42, type: "page" };
-      await close(502);
-      for (const [id, target] of f.provider.native.targets) {
-        if (target.windowId === windowId) {
-          f.provider.native.targets.delete(id);
-        }
-      }
-      await accept(
-        client().use({
-          headers: {
-            authorization: `Bearer ${okouTokenFromClaim(chat.claim)}`,
-          },
-          body: {},
-        }),
-        [502],
-      );
-      expect([...f.provider.native.targets.values()]).toHaveLength(0);
-      f.provider.native.tabChildInfo = undefined;
-      mockNow(START + 11 * MINUTE);
-      await accept(
-        setupApp({ context, routes: cronBrowserReconcileRoutes })(
-          cronBrowserReconcileContract,
-        ).reconcile({ headers: { authorization: "Bearer test-cron-secret" } }),
-        [200],
-      );
-      await flushWaitUntilForTest();
-      const reopened = await use();
-      expect(reopened.browser.window).not.toStrictEqual(first.browser.window);
-      expect(
-        [...f.provider.native.targets.values()]
-          .filter((target) => {
-            return target.windowId === reopened.browser.window!.primaryWindowId;
-          })
-          .map((target) => {
-            return target.url;
+        expect([...f.provider.native.targets.values()]).toHaveLength(0);
+        f.provider.native.tabChildInfo = undefined;
+        f.provider.native.omitTabChild = false;
+        mockNow(START + 11 * MINUTE);
+        await accept(
+          setupApp({ context, routes: cronBrowserReconcileRoutes })(
+            cronBrowserReconcileContract,
+          ).reconcile({
+            headers: { authorization: "Bearer test-cron-secret" },
           }),
-      ).toStrictEqual(["https://accepted.example.test/"]);
-    });
-  });
+          [200],
+        );
+        await flushWaitUntilForTest();
+        const reopened = await use();
+        expect(reopened.browser.window).not.toStrictEqual(first.browser.window);
+        expect(
+          [...f.provider.native.targets.values()]
+            .filter((target) => {
+              return (
+                target.windowId === reopened.browser.window!.primaryWindowId
+              );
+            })
+            .map((target) => {
+              return target.url;
+            }),
+        ).toStrictEqual(["https://accepted.example.test/"]);
+      });
+    },
+  );
 
   it.each([false, true])(
     "appends heartbeat order atomically without reordering existing tabs with shared=%s",

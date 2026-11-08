@@ -21,7 +21,7 @@ interface DiscoveryModel {
   readonly inventory$: Command<TargetInventory, [InventoryEvent]>;
 }
 interface DiscoveryOptions {
-  readonly order$: Command<readonly string[], []>;
+  readonly order$: Command<Promise<readonly string[]>, [AbortSignal]>;
   readonly preferredTargetId: string | null;
   readonly invalidated$: Command<void, [boolean, AbortSignal]>;
   readonly settleInput$: Command<Promise<void>, [AbortSignal]>;
@@ -299,13 +299,16 @@ function createMembershipReads(
         }
       }
       if (!get(initialized$)) {
-        const pages = await set(directory.read$, signal);
+        const [pages, order] = await Promise.all([
+          set(directory.read$, signal),
+          set(options.order$, signal),
+        ]);
         signal.throwIfAborted();
         if (!set(continueRound$, round)) {
           return;
         }
         set(commit$, { type: "listed", round, targets: pages }, signal);
-        set(commit$, { type: "reordered", ids: set(options.order$) }, signal);
+        set(commit$, { type: "reordered", ids: order }, signal);
         set(initialized$, true);
       }
       const selected =

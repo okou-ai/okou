@@ -215,17 +215,6 @@ export async function settle<T>(
   }
 }
 
-/** Guard synchronous optional IO without delaying its caller; aborts propagate. */
-export function settleSync<T>(operation: () => T): Settled<T> {
-  // eslint-disable-next-line no-restricted-syntax -- Central synchronous guard, matching settle's abort contract.
-  try {
-    return { ok: true, value: operation() };
-  } catch (error) {
-    throwIfAbort(error);
-    return { ok: false, error };
-  }
-}
-
 export async function withCleanup<T>(
   promise: Promise<T>,
   cleanup: () => void | Promise<void>,

@@ -64,6 +64,7 @@ export function createNativeWindowProvider(context: TestContext) {
     closeReply: "reply" | "withhold" | "disconnect";
     seedCloseError?: string;
     tabChildInfo?: unknown;
+    omitTabChild?: boolean;
     windowReply: "reply" | "withhold";
     createReply: "reply" | "disconnect" | "withhold";
     command?: (command: {
@@ -414,7 +415,7 @@ export function createNativeWindowProvider(context: TestContext) {
         sendResult(
           command.id,
           {},
-          target && !target.discarded
+          target && !target.discarded && !state.omitTabChild
             ? [
                 {
                   method: "Target.attachedToTarget",

@@ -174,6 +174,16 @@ export const clientContractImportManifest = [
         source: "validators/browser",
         imported: "BROWSER_IDLE_LEASE_MINUTES",
       },
+      {
+        name: "browserTabOrderBindingSchema",
+        source: "validators/browser-tab-order",
+        imported: "browserTabOrderBindingSchema",
+      },
+      {
+        name: "browserTabOrderSchema",
+        source: "validators/browser-tab-order",
+        imported: "browserTabOrderSchema",
+      },
     ],
   },
   {
