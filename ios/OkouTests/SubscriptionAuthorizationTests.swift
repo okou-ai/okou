@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import Foundation
+import Observation
 import Synchronization
 import XCTest
 
@@ -133,8 +134,7 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     await fulfillment(of: [scheduled], timeout: 3)
     clock.advance(by: .seconds(1))
     await fulfillment(of: [completed], timeout: 3)
-    try await waitForAuthorization(store, phase: .complete)
-    try await waitForBusinessResult { !store.accounts.isEmpty }
+    try await waitForAuthorization(store, phase: .complete, requiresAccounts: true)
     XCTAssertNil(store.browserURL)
     XCTAssertNil(store.verificationCode)
     XCTAssertEqual(store.authorizationCode, "")
@@ -323,26 +323,38 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     await fulfillment(of: [closed], timeout: 3)
   }
   private func waitForAuthorization(
-    _ store: PersonalSubscriptionStore, phase: PersonalSubscriptionAuthorization.Phase
+    _ store: PersonalSubscriptionStore, phase: PersonalSubscriptionAuthorization.Phase,
+    requiresAccounts: Bool = false
   ) async throws {
-    if store.authorization.current.phase == phase { return }
-    let ready = expectation(description: "The public authorization phase is \(phase)")
+    let succeeded: @MainActor () -> Bool = {
+      store.authorization.current.phase == phase && (!requiresAccounts || !store.accounts.isEmpty)
+    }
+    if succeeded() { return }
+    let ready = expectation(description: "The public authorization result is \(phase)")
     var observed = false
-    let subscription = try store.stateStore.watch(store.authorization.value) {
-      if !observed, store.authorization.current.phase == phase {
+    let notify: @MainActor () -> Void = {
+      if !observed, succeeded() {
         observed = true
         ready.fulfill()
       }
     }
+    let subscription = try store.stateStore.watch(store.authorization.value) { notify() }
     defer {
       do { try subscription.cancel() } catch { XCTFail("Authorization observer cleanup: \(error)") }
     }
-    if !observed, store.authorization.current.phase == phase {
-      observed = true
-      ready.fulfill()
+    // Confirmed account publication uses Observation; watching it must not start a quota request.
+    let accounts = Task { @MainActor in
+      for await _ in Observations({ store.accountRevision }) {
+        notify()
+        if observed { return }
+      }
     }
+    defer { accounts.cancel() }
+    notify()
     await fulfillment(of: [ready], timeout: 3)
-    _ = try XCTUnwrap(store.authorization.current.phase == phase ? true : nil)
+    accounts.cancel()
+    await accounts.value
+    _ = try XCTUnwrap(succeeded() ? true : nil)
   }
 
 }
