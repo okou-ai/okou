@@ -1,7 +1,57 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
+enum ConversationRunUsageState: Equatable {
+  case loading
+  case available(ChatRunUsage)
+  case unavailable
+  case failed(String)
+
+  init(_ value: Loadable<ChatRunUsage?>) {
+    switch value {
+    case .loading: self = .loading
+    case .hasData(let usage): self = usage.map(Self.available) ?? .unavailable
+    case .hasError(let error): self = .failed(ChatRequestFailure.message(for: error))
+    }
+  }
+}
+
 struct ConversationRunUsageView: View {
+  let runID: String
+  let usage: ConversationRunUsageStore
+  let showDetails: () -> Void
+
+  var body: some View {
+    StoreProvider(usage.stateStore) {
+      if let resource = usage.resources[runID] {
+        RunUsageValue(resource: resource) { state in
+          ConversationRunUsageLabel(runID: runID, state: state, showDetails: showDetails)
+        }
+        .id(ObjectIdentifier(resource))
+      } else {
+        ConversationRunUsageLabel(runID: runID, state: .loading, showDetails: showDetails)
+      }
+    }
+  }
+}
+
+private struct RunUsageValue<Content: View>: View {
+  @LoadableValue private var value: Loadable<ChatRunUsage?>
+  let content: (ConversationRunUsageState) -> Content
+
+  init(
+    resource: ConversationRunUsageResource,
+    @ViewBuilder content: @escaping (ConversationRunUsageState) -> Content
+  ) {
+    _value = LoadableValue(task: resource.value, keepLast: true)
+    self.content = content
+  }
+
+  var body: some View { content(ConversationRunUsageState(value)) }
+}
+
+private struct ConversationRunUsageLabel: View {
   let runID: String
   let state: ConversationRunUsageState
   let showDetails: () -> Void
@@ -40,6 +90,26 @@ struct ConversationRunUsageView: View {
 }
 
 struct ConversationRunUsageDetails: View {
+  let usage: ConversationRunUsageStore
+  let runID: String
+  let catalog: ModelCatalog?
+  let retry: () -> Void
+
+  var body: some View {
+    StoreProvider(usage.stateStore) {
+      if let resource = usage.resources[runID] {
+        RunUsageValue(resource: resource) { state in
+          ConversationRunUsageDetailsContent(state: state, catalog: catalog, retry: retry)
+        }
+        .id(ObjectIdentifier(resource))
+      } else {
+        ConversationRunUsageDetailsContent(state: .loading, catalog: catalog, retry: retry)
+      }
+    }
+  }
+}
+
+private struct ConversationRunUsageDetailsContent: View {
   let state: ConversationRunUsageState
   let catalog: ModelCatalog?
   let retry: () -> Void
