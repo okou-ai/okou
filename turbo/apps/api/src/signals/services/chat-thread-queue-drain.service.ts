@@ -34,7 +34,10 @@ import {
   type OrgPickCursor,
   type PickIteration,
 } from "./pick-chat-run.service";
-import { listQueuedChatThreadOrgIds$ } from "./queued-chat-thread.service";
+import {
+  listQueuedChatThreadOrgIds$,
+  type PublishedChatThreadLease,
+} from "./queued-chat-thread.service";
 
 const L = logger("ChatThreadQueue");
 
@@ -181,6 +184,7 @@ export const pickEnqueuedChatThread$ = command(
       readonly orgId: string;
       readonly chatThreadId: string;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
+      readonly publishedLease?: PublishedChatThreadLease;
       readonly context?: AgentRunContextSignals;
       readonly requestFacts?: ChatThreadRequestFacts;
     },

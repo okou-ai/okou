@@ -238,6 +238,68 @@ describe("CHAT-02: shared user message queue", () => {
     await cancelChatRun(actor, runId);
   }, 90_000);
 
+  it("launches the FIFO head of overlapping idle sends and steers the other input", async () => {
+    const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const thread = await chat.createThread(actor, { agentId });
+    const inputs = [
+      { clientEventId: randomUUID(), prompt: "first overlapping request" },
+      { clientEventId: randomUUID(), prompt: "second overlapping request" },
+    ];
+    await Promise.all(
+      inputs.map(async (input) => {
+        await chat.requestSendEvent(
+          actor,
+          { agentId, threadId: thread.id, ...input },
+          [201],
+        );
+      }),
+    );
+    await flushWaitUntilForTest();
+    const page = await chat.listThreadEvents(actor, thread.id);
+    const prompts = userMessages(page.events).filter((event) => {
+      return event.eventType === "input.prompt";
+    });
+    const originals = prompts
+      .filter((event) => {
+        return inputs.some((input) => {
+          return input.clientEventId === event.id;
+        });
+      })
+      .sort((left, right) => {
+        return left.seqId - right.seqId;
+      });
+    expect(originals).toHaveLength(2);
+    const [head, later] = originals;
+    if (!head || !later) {
+      throw new Error("Expected both overlapping inputs to commit");
+    }
+    const replacements = prompts.filter((event) => {
+      return event.revokesEventId !== undefined;
+    });
+    expect(replacements).toHaveLength(1);
+    const started = replacements[0];
+    if (!started?.runId) {
+      throw new Error("Expected exactly one FIFO input launch");
+    }
+    expect(started.revokesEventId).toBe(head.id);
+    const claimed = await claimChatRun(runnerGroup, started.runId);
+    expect(claimed.claim.prompt).toBe(chatEventDisplayText(head));
+    await expect(
+      api.nextSteerableInput(claimed.claim.sandboxToken, started.runId),
+    ).resolves.toStrictEqual({
+      input: { eventId: later.id, prompt: chatEventDisplayText(later) },
+    });
+    await api.declareSteeredInput(
+      claimed.claim.sandboxToken,
+      started.runId,
+      later.id,
+    );
+    await expect(
+      api.nextSteerableInput(claimed.claim.sandboxToken, started.runId),
+    ).resolves.toStrictEqual({ input: null });
+    await cancelChatRun(actor, started.runId, claimed.sandboxHeaders);
+  });
+
   it("skips a recalled queue head when dispatching a later idle Web send", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
 

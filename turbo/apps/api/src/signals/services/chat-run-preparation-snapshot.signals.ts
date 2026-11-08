@@ -193,6 +193,12 @@ export function createChatRunPreparationSnapshot(
         .with(occupancy, head)
         .select({
           hasCapacity: sql`${hasCapacity}`.mapWith(pgBooleanDecoder),
+          threadHasActiveRun: exists(
+            new QueryBuilder()
+              .select({ runId: activeAgentRuns.runId })
+              .from(activeAgentRuns)
+              .where(eq(activeAgentRuns.chatThreadId, claim.chatThreadId)),
+          ).mapWith(pgBooleanDecoder),
           head: {
             id: head.id,
             chatThreadId: head.chatThreadId,
@@ -230,7 +236,11 @@ export function createChatRunPreparationSnapshot(
     }
     const picked = row.head;
     if (!thread || !picked) {
-      return { hasCapacity: row.hasCapacity, pickedEvent: null };
+      return {
+        hasCapacity: row.hasCapacity,
+        threadHasActiveRun: row.threadHasActiveRun,
+        pickedEvent: null,
+      };
     }
     // Only this request's actual FIFO head may use its canonical input facts.
     const owned =
@@ -254,7 +264,11 @@ export function createChatRunPreparationSnapshot(
         threadConnectorSelections: row.threadConnectorSelections,
       },
     };
-    return { hasCapacity: row.hasCapacity, pickedEvent };
+    return {
+      hasCapacity: row.hasCapacity,
+      threadHasActiveRun: row.threadHasActiveRun,
+      pickedEvent,
+    };
   });
   return snapshot$;
 }

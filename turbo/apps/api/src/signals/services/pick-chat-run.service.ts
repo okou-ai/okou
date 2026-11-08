@@ -25,6 +25,10 @@ import { nowDate } from "../../lib/time";
 import type { ChatThreadRequestFacts } from "./chat-thread-request-facts";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
+  CHAT_THREAD_LEASE_MS,
+  type PublishedChatThreadLease,
+} from "./queued-chat-thread.service";
+import {
   createThreadClaimRunObjects,
   type ThreadClaim,
 } from "./thread-claim-run.service";
@@ -43,9 +47,6 @@ interface LeasedThreadClaim extends ThreadClaim {
   readonly context?: AgentRunContextSignals;
   readonly requestFacts?: ChatThreadRequestFacts;
 }
-
-/** Fixed chat thread lease; it is never renewed. */
-const CHAT_THREAD_LEASE_MS = 10_000;
 
 /** One pick launches a run, observes full capacity, or launches nothing. */
 export type PickResult =
@@ -106,11 +107,29 @@ interface PickInput {
   readonly after?: OrgPickCursor | null;
   readonly context?: AgentRunContextSignals;
   readonly requestFacts?: ChatThreadRequestFacts;
+  readonly publishedLease?: PublishedChatThreadLease;
 }
 
 export interface PickIteration {
   readonly result: PickResult;
   readonly cursor: OrgPickCursor | null;
+}
+
+function captureThreadClaim(
+  receipt: Omit<LeasedThreadClaim, "context" | "requestFacts">,
+  input: PickInput,
+): LeasedThreadClaim {
+  const { context, requestFacts } = input;
+  return Object.freeze({
+    ...receipt,
+    ...(context === undefined ? {} : { context }),
+    ...(requestFacts?.orgId === receipt.orgId &&
+    requestFacts.thread.id === receipt.chatThreadId &&
+    requestFacts.thread.userId === receipt.userId &&
+    requestFacts.thread.agentId === receipt.agentId
+      ? { requestFacts }
+      : {}),
+  });
 }
 
 function createPickObjects() {
@@ -207,7 +226,20 @@ function createPickObjects() {
 
   const claim$ = command(
     async ({ set }, input: PickInput, signal: AbortSignal) => {
-      const { orgId, context } = input;
+      const { orgId } = input;
+      const published = input.publishedLease;
+      if (
+        published?.orgId === orgId &&
+        published.chatThreadId === input.chatThreadId &&
+        published.claimExpiresAt.getTime() > nowDate().getTime()
+      ) {
+        const claim = captureThreadClaim(published, input);
+        set(claimReceipts$, (previous) => {
+          return [...previous, claim];
+        });
+        signal.throwIfAborted();
+        return { claim, cursor: input.after ?? null };
+      }
       let threadId = input.chatThreadId;
       let cursor = input.after ?? null;
       if (threadId === undefined) {
@@ -263,21 +295,17 @@ function createPickObjects() {
         throw new Error("A queued thread claim requires an Agent identity");
       }
       const claim: LeasedThreadClaim | null = row
-        ? Object.freeze({
-            orgId,
-            chatThreadId: row.chatThreadId,
-            claimId,
-            queuedAt: row.queuedAt,
-            userId: row.userId,
-            agentId: row.agentId,
-            ...(context === undefined ? {} : { context }),
-            ...(input.requestFacts?.orgId === orgId &&
-            input.requestFacts.thread.id === row.chatThreadId &&
-            input.requestFacts.thread.userId === row.userId &&
-            input.requestFacts.thread.agentId === row.agentId
-              ? { requestFacts: input.requestFacts }
-              : {}),
-          })
+        ? captureThreadClaim(
+            {
+              orgId,
+              chatThreadId: row.chatThreadId,
+              claimId,
+              queuedAt: row.queuedAt,
+              userId: row.userId,
+              agentId: row.agentId,
+            },
+            input,
+          )
         : null;
       if (claim) {
         // Preserve the actual SQL receipt before observing cancellation.
@@ -378,11 +406,19 @@ function createPickObjects() {
       }
       const claimed = await get(captured);
       signal.throwIfAborted();
-      const [hasCapacity, hasInput] = await Promise.all([
+      const [threadHasActiveRun, hasCapacity, hasInput] = await Promise.all([
+        get(claimed.threadHasActiveRun$),
         get(claimed.orgHasCapacity$),
         get(claimed.hasFirstPickableChatEvent$),
       ]);
       signal.throwIfAborted();
+      // Publication can wait for a launch whose active row was not visible in
+      // its earlier snapshot. Reobserve before reporting full/deleting empty
+      // work so the send still notifies that running Run about pending input.
+      if (threadHasActiveRun) {
+        await set(releaseClaim$, claim, signal);
+        return { kind: "none" };
+      }
       if (!hasCapacity) {
         if (await set(releaseClaim$, claim, signal)) {
           const freed = await get(claimed.orgHasCapacityAfterRelease$);
