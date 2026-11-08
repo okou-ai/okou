@@ -532,12 +532,6 @@ private struct SidebarPinnedAgents: View {
       .listRowInsets(EdgeInsets())
       .listRowSeparator(.hidden)
       .listRowBackground(Color.clear)
-      if isLoading {
-        OkouLoadingRow("Loading pinned Agents…")
-          .listRowInsets(.horizontal, rowInset)
-          .listRowSeparator(.hidden)
-          .listRowBackground(Color.clear)
-      }
       if let error = agents.error {
         failureRow(error, subject: String(localized: "Agents"))
       }
