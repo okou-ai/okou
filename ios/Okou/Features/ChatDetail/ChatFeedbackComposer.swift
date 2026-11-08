@@ -62,8 +62,8 @@ struct ChatFeedbackComposer: View {
                     }),
                   acceptsImages: acceptsImages,
                   isCurrent: {
-                    state.editorGeneration == generation && state.attachments.inputID == inputID
-                      && state.editorBlocks.contains(where: { $0.id == block.id })
+                    state.signals.isCurrent(generation: generation, blockID: block.id)
+                      && state.attachments.inputID == inputID
                   },
                   pasteImages: state.attachments.importPastedImages,
                   editor: state.editor, editorBlockID: block.id, editorOrder: order,

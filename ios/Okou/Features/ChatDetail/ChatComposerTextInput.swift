@@ -200,11 +200,12 @@ struct ChatComposerTextInput: UIViewRepresentable {
         item.itemProvider.hasItemConformingToTypeIdentifier(
           ComposerAttributedDocument.pasteboardType)
       {
+        let owner = input
         item.itemProvider.loadDataRepresentation(
           forTypeIdentifier: ComposerAttributedDocument.pasteboardType
         ) { data, _ in
-          Task { @MainActor [weak self] in
-            guard let self, self.input.isCurrent(), let data,
+          Task { @MainActor in
+            guard owner.isCurrent(), let data,
               let document = try? JSONDecoder().decode(ChatDraftDocument.self, from: data),
               document.isSupported, document.parts.allSatisfy(ComposerAttributedDocument.isInline)
             else {
