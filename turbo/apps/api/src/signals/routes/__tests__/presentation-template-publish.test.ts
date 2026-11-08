@@ -8,7 +8,6 @@ import {
   PRESENTATION_TEMPLATE_PAGE_CONTENT_TYPE,
   presentationTemplatesContract,
 } from "@okouai/api-contracts/contracts/presentation-templates";
-import { getPresentationTemplateStorageName } from "@okouai/core/storage-names";
 import { beforeEach, describe, expect, it } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -215,14 +214,9 @@ describe("presentation template publish", () => {
     );
     expect(reused.body).toStrictEqual(refreshed.body);
 
-    // The guidance package is stored under a name derived from the row id.
-    const storageName = getPresentationTemplateStorageName(published.body.id);
-    expect(storageName).toBe(`presentation-template@${published.body.id}`);
-    expect(
-      fixture.keys().some((key) => {
-        return key.endsWith("/archive.tar.gz");
-      }),
-    ).toBeTruthy();
+    expect(fixture.keys()).toContainEqual(
+      expect.stringMatching(/^bundles\/v1\/[a-f0-9]{64}\.tar\.gz$/u),
+    );
   });
 
   it("imports and previews private template files", async () => {

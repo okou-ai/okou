@@ -176,8 +176,8 @@ function buildRunTemplateGuidance(args: {
   if (guidance.status === "invalid") {
     return { error: { code: "BAD_REQUEST", message: guidance.message } };
   }
-  // #45716 C03: null remains the live legacy owner during reader preparation.
-  // Remove this bridge only after bundle activation/backfill and writer/rollback drain.
+  // #45716 C03: retained NULL owners use legacy Storage until the separately
+  // reviewed backfill and legacy-writer/rollback retirement are complete.
   const references: StoredTemplateGuidanceBundle[] = [
     ...presentations.flatMap((row) => {
       return row.guidanceBundle === null

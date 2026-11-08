@@ -56,11 +56,13 @@ function byteStream(body: Buffer): AsyncIterable<Uint8Array> {
 
 /** A minimal ustar archive, so the test exercises the real tar reader. */
 export function tarGz(
-  files: readonly { path: string; content: string }[],
+  files: readonly { path: string; content: string | Buffer }[],
 ): Buffer {
   const blocks: Buffer[] = [];
   for (const file of files) {
-    const content = Buffer.from(file.content, "utf8");
+    const content = Buffer.isBuffer(file.content)
+      ? file.content
+      : Buffer.from(file.content, "utf8");
     const header = Buffer.alloc(512);
     header.write(file.path, 0, 100, "utf8");
     header.write("0000644\0", 100, 8, "utf8");
@@ -95,7 +97,6 @@ export function installS3Fixture(context: TestContext) {
       metadata: Readonly<Record<string, string>>;
     }
   >();
-  const signedObjects = new Map<string, { bucket: string; key: string }>();
   let signature = 0;
 
   function readMetadata(input: Record<string, unknown>) {
@@ -111,6 +112,14 @@ export function installS3Fixture(context: TestContext) {
     const id = objectId(bucket, key);
 
     if (command instanceof PutObjectCommand) {
+      if (input.IfNoneMatch === "*" && objects.has(id)) {
+        return Promise.reject(
+          Object.assign(new Error("Object already exists"), {
+            name: "PreconditionFailed",
+            $metadata: { httpStatusCode: 412 },
+          }),
+        );
+      }
       const body = input.Body;
       objects.set(id, {
         body: Buffer.isBuffer(body)
@@ -170,15 +179,11 @@ export function installS3Fixture(context: TestContext) {
     (_client: unknown, command: unknown) => {
       const input = commandInput(command);
       signature += 1;
-      const url = `https://r2.example.test/signed/${signature.toString()}`;
+      const bucket = typeof input.Bucket === "string" ? input.Bucket : "";
       const key = typeof input.Key === "string" ? input.Key : "";
-      // Signed URLs are opaque, so remember which object each one was minted
-      // for: a caller handed the wrong object's URL is otherwise indist-
-      // inguishable from one handed the right object's.
-      signedObjects.set(url, {
-        bucket: typeof input.Bucket === "string" ? input.Bucket : "",
-        key,
-      });
+      const url = `https://r2.example.test/signed/${signature.toString()}?bucket=${encodeURIComponent(bucket)}&object=${encodeURIComponent(key)}`;
+      // Include the immutable object identity so a URL retained in the shared
+      // presign cache remains readable by the next fixture instance.
       if (command instanceof PutObjectCommand) {
         signedPuts.set(url, {
           bucket: typeof input.Bucket === "string" ? input.Bucket : "",
@@ -209,11 +214,14 @@ export function installS3Fixture(context: TestContext) {
     },
     /** The object a signed URL was minted for. */
     signedKey(url: string): string | undefined {
-      return signedObjects.get(url)?.key;
+      return new URL(url).searchParams.get("object") ?? undefined;
     },
     /** Read the external object addressed by a URL actually issued to a caller. */
     readSignedObject(url: string): Buffer {
-      const target = signedObjects.get(url);
+      const parsed = new URL(url);
+      const bucket = parsed.searchParams.get("bucket");
+      const key = parsed.searchParams.get("object");
+      const target = bucket && key ? { bucket, key } : undefined;
       const object = target
         ? objects.get(objectId(target.bucket, target.key))
         : undefined;

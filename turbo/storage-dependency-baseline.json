@@ -188,18 +188,13 @@
     },
     {
       "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
-      "uses": 32,
+      "uses": 30,
       "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
     },
     {
       "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
       "uses": 6,
       "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/presentation-template-publish.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-upload.service"
     },
     {
       "file": "turbo/apps/api/src/signals/services/run-storage-manifest.service.ts",
@@ -230,41 +225,6 @@
       "file": "turbo/apps/api/src/signals/services/storage-publication-fence.service.ts",
       "uses": 9,
       "dependency": "module:turbo/packages/db/src/schema/storage-publication-fence"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-volume-publication.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-volume-publication.service.ts",
-      "uses": 10,
-      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-volume-publication.service.ts",
-      "uses": 23,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
-      "uses": 3,
-      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
-      "uses": 7,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-publication.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
-      "uses": 7,
-      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/storage-volume-upload.service.ts",
-      "uses": 37,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {
       "file": "turbo/apps/api/src/signals/services/storage-write-conditions.ts",
@@ -370,16 +330,6 @@
       "file": "turbo/apps/api/src/signals/services/user-export-source.service.ts",
       "uses": 17,
       "dependency": "module:turbo/packages/db/src/schema/storage"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/user-template-publish.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-upload.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/user-template-repackage.service.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/storage-volume-upload.service"
     },
     {
       "file": "turbo/apps/api/src/signals/services/welcome-chat-thread.service.ts",

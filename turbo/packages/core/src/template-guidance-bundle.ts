@@ -11,7 +11,7 @@ import {
 import { contentBundleDigest, type ContentBundleFile } from "./content-bundle";
 import { prepareCanonicalBundleArchive } from "./content-bundle-archive";
 
-function validateFiles(
+export function validateTemplateGuidanceFiles(
   input: readonly ContentBundleFile[],
 ): readonly ContentBundleFile[] {
   if (input.length === 0 || input.length > MAX_TEMPLATE_GUIDANCE_FILES)
@@ -68,7 +68,7 @@ export async function prepareTemplateGuidanceBundle(
   readonly descriptor: TemplateGuidanceBundle;
   readonly archive: Buffer;
 }> {
-  const files = validateFiles(input).map((file) => {
+  const files = validateTemplateGuidanceFiles(input).map((file) => {
     return {
       ...file,
       mode: 0o644 as const,
@@ -134,5 +134,5 @@ export function readTemplateGuidanceBundle(
   });
   parser.end(bytes);
   if (failure) throw failure;
-  return validateFiles(files);
+  return validateTemplateGuidanceFiles(files);
 }
