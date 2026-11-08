@@ -1,10 +1,25 @@
 """Shared compression helpers for mitm-addon body decoding tests."""
 
+import gzip
 import zlib
 
 import brotli
+import zstandard
 
 import body_decoding
+
+
+def compress_one_shot_body(encoding: str, body: bytes) -> bytes:
+    """Compress one complete fixture body with the supported test encoders."""
+    if encoding == "gzip":
+        return gzip.compress(body)
+    if encoding == "deflate":
+        return zlib.compress(body)
+    if encoding == "br":
+        return brotli.compress(body)
+    if encoding == "zstd":
+        return zstandard.ZstdCompressor().compress(body)
+    raise AssertionError(f"unsupported test encoding: {encoding}")
 
 
 def zstd_skippable_frame(data: bytes = b"") -> bytes:
