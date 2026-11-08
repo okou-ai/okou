@@ -23,9 +23,11 @@ fn wait_for(path: &Path) {
 }
 
 fn manifest(dir: &Path) -> Result<(Manifest, ArchiveReadiness), Box<dyn std::error::Error>> {
+    // Entries are extracted in order, so the trailing marker witnesses that
+    // the preceding value has been completely written and closed.
     fs::write(
         dir.join("ready.tar.gz"),
-        create_tar_gz(&[("value", b"ready")])?,
+        create_tar_gz(&[("value", b"ready"), (".applied", b"")])?,
     )?;
     fs::write(
         dir.join("pending.tar.gz"),
@@ -363,7 +365,7 @@ fn ready_input_applies_while_another_archive_waits_for_this_operation() {
     let runtime = dir.path().join("runtime");
     let (manifest, descriptor) = manifest(dir.path()).unwrap();
     let child = spawn(&manifest, &runtime).unwrap();
-    wait_for(&dir.path().join("ready/value"));
+    wait_for(&dir.path().join("ready/.applied"));
     assert_eq!(fs::read(dir.path().join("ready/value")).unwrap(), b"ready");
     assert!(!dir.path().join("pending/value").exists());
     fs::write(
@@ -390,7 +392,7 @@ fn producer_failure_fails_the_real_helper_and_leaves_the_pending_input_unapplied
     let runtime = dir.path().join("runtime");
     let (manifest, descriptor) = manifest(dir.path()).unwrap();
     let child = spawn(&manifest, &runtime).unwrap();
-    wait_for(&dir.path().join("ready/value"));
+    wait_for(&dir.path().join("ready/.applied"));
     runtime_paths::write_private_new(descriptor.failed_path(&runtime), []).unwrap();
     assert!(!child.wait().unwrap().status.success());
     assert!(!dir.path().join("pending/value").exists());
