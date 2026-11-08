@@ -3179,6 +3179,13 @@
       "when": 1794025769163,
       "tag": "1532_computer_use_host_presence",
       "breakpoints": true
+    },
+    {
+      "idx": 1533,
+      "version": "7",
+      "when": 1794111441034,
+      "tag": "1533_prepare_template_guidance_bundles",
+      "breakpoints": true
     }
   ]
 }

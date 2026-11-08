@@ -1,5 +1,6 @@
 import { between, eq, sql, type SQL, type SQLWrapper } from "drizzle-orm";
 import { command } from "ccstate";
+import type { TemplateGuidanceBundle } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 import { presignedGetUrlSignerForBucket } from "../external/s3";
 import {
@@ -26,7 +27,9 @@ export function contentBundleAvailableCondition(reference: SQLWrapper): SQL {
 }
 
 export interface ClaimedContentBundleSignature {
-  readonly bundle: ContentBundle & { readonly downloadUrl: string };
+  readonly bundle: (ContentBundle | TemplateGuidanceBundle) & {
+    readonly downloadUrl: string;
+  };
   readonly cacheWrite: StoragePresignedUrlCacheWrite | undefined;
 }
 
@@ -35,7 +38,7 @@ export const signClaimedContentBundle$ = command(
   async (
     { get },
     args: {
-      readonly reference: ContentBundle;
+      readonly reference: ContentBundle | TemplateGuidanceBundle;
       readonly cache: ContentBundleUrlCacheContext;
       readonly cached:
         { readonly url: string; readonly expiresAtMs: number } | undefined;

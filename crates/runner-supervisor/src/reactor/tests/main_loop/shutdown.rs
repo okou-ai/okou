@@ -103,6 +103,7 @@ async fn shutdown_joins_accepted_fresh_archive_before_stopped() {
     });
     let manifest = runner_types::storage_manifest::StorageManifest {
         storages: vec![runner_types::storage_manifest::StorageEntry {
+            template_guidance: None,
             name: "shutdown-archive".into(),
             mount_path: "/mnt/archive".into(),
             vas_storage_name: "shutdown-archive".into(),

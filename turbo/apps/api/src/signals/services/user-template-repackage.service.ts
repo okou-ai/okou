@@ -1,7 +1,7 @@
 import { command } from "ccstate";
 import { getUserTemplateStorageName } from "@okouai/core/storage-names";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { and, eq, or } from "drizzle-orm";
+import { and, eq, isNull, or } from "drizzle-orm";
 
 import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
@@ -17,6 +17,7 @@ import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
 type RepackageResult =
   | { readonly kind: "replaced"; readonly row: UserTemplateRow }
   | { readonly kind: "not-found" }
+  | { readonly kind: "conflict" }
   | {
       readonly kind: "rejected";
       readonly response: ReturnType<typeof badRequestMessage>;
@@ -119,18 +120,31 @@ export const replaceUserTemplatePackage$ = command(
     );
     signal.throwIfAborted();
 
-    // Recorded after the package is in place, so a member who reads the row
-    // and sees a new timestamp is looking at a template whose guidance has
-    // already changed.
+    // The legacy publication is complete before invalidating its captured
+    // bundle pointer. Compare the actual package identity: a concurrent bundle
+    // publication must not be cleared by this outgoing writer.
     const currentTime = nowDate();
     const [updated] = await db
       .update(userTemplates)
-      .set({ updatedAt: currentTime, updatedBy: args.userId })
-      .where(eq(userTemplates.id, row.id))
+      .set({
+        updatedAt: currentTime,
+        updatedBy: args.userId,
+        guidanceBundle: null,
+      })
+      .where(
+        and(
+          eq(userTemplates.id, row.id),
+          eq(userTemplates.orgId, args.orgId),
+          eq(userTemplates.ownerUserId, args.userId),
+          row.guidanceBundle === null
+            ? isNull(userTemplates.guidanceBundle)
+            : eq(userTemplates.guidanceBundle, row.guidanceBundle),
+        ),
+      )
       .returning();
     signal.throwIfAborted();
     if (!updated) {
-      throw new Error("Failed to record the user template package update");
+      return { kind: "conflict" };
     }
     return { kind: "replaced", row: updated };
   },

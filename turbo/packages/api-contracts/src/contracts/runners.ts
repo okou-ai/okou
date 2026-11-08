@@ -1,3 +1,4 @@
+import { storedTemplateGuidanceBundleSchema } from "./template-guidance-bundle";
 import {
   contentBundleSchema,
   claimedContentBundlesSchema,
@@ -943,6 +944,8 @@ const storedExecutionContextObjectSchema = object({
   officialWorkflowBundles: array(storedSkillBundleSchema).optional(),
   // Every supported admission writer captures the selected Seed references.
   seedSkillBundles: array(storedSkillBundleSchema),
+  // Absent on retained contexts and on legacy-only preparation writers.
+  templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema).optional(),
   // API-only intent. No custom Workflow body or attachment is frozen here.
   customWorkflowSelection: object({
     agentId: uuid(),

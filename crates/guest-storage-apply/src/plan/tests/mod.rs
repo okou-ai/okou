@@ -151,6 +151,7 @@ fn run_plan_downloads_cached_storage_when_mount_root_exists() {
     let manifest = Manifest {
         archive_readiness: None,
         storages: vec![StorageEntry {
+            template_guidance: None,
             mount_path: mount_path.clone(),
             archive_url: Some("https://s3/storage.tar.gz".into()),
             cached: true,

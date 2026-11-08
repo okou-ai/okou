@@ -30,9 +30,18 @@ pub(crate) struct DownloadTask {
     normalized_mount_path: PathBuf,
     telemetry: DownloadTaskTelemetry,
     files: Option<Vec<guest_contracts::storage_files::StorageFile>>,
+    template_guidance: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
 }
 
 impl DownloadTask {
+    pub(crate) fn with_template_guidance(
+        mut self,
+        reference: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
+    ) -> Self {
+        self.template_guidance = reference;
+        self
+    }
+
     pub(crate) fn mount_path(&self) -> &str {
         &self.mount_path
     }
@@ -59,6 +68,7 @@ impl DownloadTask {
             normalized_mount_path,
             telemetry,
             files: None,
+            template_guidance: None,
         }
     }
 
@@ -72,6 +82,7 @@ impl DownloadTask {
             normalized_mount_path,
             telemetry,
             files: None,
+            template_guidance: None,
         }
     }
 
@@ -539,6 +550,11 @@ fn panic_message(payload: &(dyn Any + Send)) -> String {
 /// Download and extract one archive. Files written before an error remain in place.
 fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadError> {
     if let Some(files) = &download.task.task.files {
+        if download.task.task.template_guidance.is_some() {
+            return Err(DownloadError::new(
+                "Template guidance requires a verified archive",
+            ));
+        }
         return crate::files::materialize(
             files,
             download.task.effective_mount_path(),
@@ -553,6 +569,7 @@ fn run_download_attempt(download: &mut StartedDownload) -> Result<(), DownloadEr
         download.remote_metrics.as_mut(),
         download.local_metrics.as_mut(),
         download.concurrency,
+        download.task.task.template_guidance.as_ref(),
     )
 }
 
@@ -563,6 +580,7 @@ fn download_and_extract(
     remote_metrics: Option<&mut RemoteArchiveTaskMetrics>,
     local_metrics: Option<&mut LocalArchiveTaskMetrics>,
     concurrency: usize,
+    template_guidance: Option<&guest_contracts::storage_manifest::TemplateGuidanceReference>,
 ) -> Result<(), DownloadError> {
     fs::create_dir_all(target_path).map_err(|e| {
         DownloadError::new(format!(
@@ -592,7 +610,12 @@ fn download_and_extract(
     };
     *opened_file_compressed_bytes = reader.compressed_bytes();
     let extract_start = Instant::now();
-    let result = archive::extract_tar_gz(reader, target_path, concurrency);
+    let result = match template_guidance {
+        Some(reference) => {
+            crate::template_guidance::extract(reader, target_path, concurrency, reference)
+        }
+        None => archive::extract_tar_gz(reader, target_path, concurrency),
+    };
     let extract_wall = extract_start.elapsed();
     if let (Some(metrics), Some(attempt_metrics)) = (remote_metrics, &attempt_metrics) {
         metrics.record_attempt(attempt_metrics.snapshot(), extract_wall);

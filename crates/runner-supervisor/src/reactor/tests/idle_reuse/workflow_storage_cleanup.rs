@@ -50,6 +50,7 @@ async fn workflow_storage_paths_are_cleaned_after_finalization_and_exact_reuse()
     let mut first = context_with_session(first_run, reuse_key);
     first.storage_manifest = Some(runner_types::storage_manifest::StorageManifest {
         storages: vec![runner_types::storage_manifest::StorageEntry {
+            template_guidance: None,
             name: "workflow".into(),
             mount_path: mount.into(),
             vas_storage_name: "workflow".into(),

@@ -1,3 +1,4 @@
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import {
   userTemplatesContract,
   type PublishUserTemplateBody,
@@ -983,6 +984,69 @@ describe("POST /api/user-templates", () => {
     });
   });
 
+  it("returns a conflict if the owner is deleted during legacy package publication", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    signIn(actor);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(actor, fixture),
+      }),
+      [200],
+    );
+    const packageFileId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "replacement.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz([
+        ...guidance("presentation"),
+        { path: "revision.txt", content: "Revised package" },
+      ]),
+    );
+    const sendS3 = context.mocks.s3.send.getMockImplementation()!;
+    let deleted = false;
+    onTestFinished(() => {
+      context.mocks.s3.send.mockImplementation(sendS3);
+    });
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      const result = await sendS3(command);
+      if (!deleted && command instanceof PutObjectCommand) {
+        deleted = true;
+        // The external write has happened, but its response has not returned.
+        // Delete through the real API before repackage can update the owner.
+        await accept(
+          client.delete({
+            headers: webHeaders(),
+            params: { templateId: published.body.id },
+            body: undefined,
+          }),
+          [204],
+        );
+      }
+      return result;
+    });
+    await accept(
+      client.replacePackage({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { packageFileId },
+      }),
+      [409],
+    );
+    expect(deleted).toBeTruthy();
+    await accept(
+      client.replacePackage({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { packageFileId },
+      }),
+      [404],
+    );
+  });
+
   it("replaces the stored package rather than adding to it", async () => {
     const actor = bdd.user();
     runs.acceptTelemetryIngest();
@@ -1058,6 +1122,7 @@ describe("POST /api/user-templates", () => {
       activeRuns.add(runId);
       const { claim } = await chatEvents.claimChatRun(runnerGroup, runId);
       expect(claim.appendSystemPrompt).toContain("okou host screenshot");
+      expect(claim.contentBundles).not.toHaveProperty("templates");
       expect(claim.appendSystemPrompt).toContain("previewImageUrl");
       const mount = expectCanonicalStorageManifest(
         claim.storageManifest,

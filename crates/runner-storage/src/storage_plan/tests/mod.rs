@@ -8,6 +8,7 @@ use runner_types::storage_manifest::{ArtifactEntry, StorageEntry, StorageManifes
 
 fn storage(mount_path: &str, name: &str, version: &str) -> StorageEntry {
     StorageEntry {
+        template_guidance: None,
         name: name.into(),
         mount_path: mount_path.into(),
         vas_storage_name: name.into(),
@@ -75,6 +76,60 @@ fn unchanged_storage_reuses_without_guest_work() {
     let wire = plan.into_guest_manifest();
     assert!(wire.storages[0].cached);
     assert_eq!(wire.storages[0].archive_url, None);
+}
+
+#[test]
+fn template_guidance_retains_its_profile_through_archive_cache_and_home_reuse() {
+    use guest_contracts::storage_manifest::{
+        TEMPLATE_GUIDANCE_STORAGE_NAME, TemplateGuidanceReference,
+    };
+    let path = "/home/user/workspace/generated/user-template/859550cb-28ad-47ef-8728-f6b3849f8c55";
+    let hash = "a".repeat(64);
+    let reference = TemplateGuidanceReference {
+        sha256: hash.clone(),
+        archive_bytes: 40 * 1024 * 1024,
+    };
+    let mut entry = storage(path, TEMPLATE_GUIDANCE_STORAGE_NAME, &hash);
+    entry.archive_size = Some(reference.archive_bytes);
+    entry.template_guidance = Some(reference.clone());
+    let source = manifest(vec![entry], Vec::new());
+    let plan = build_storage_plan(&source, None).unwrap();
+    let handle = plan.cache_candidates()[0].handle;
+    assert!(!plan.is_decoded_download(handle));
+    assert!(plan.decoded_mount(handle).is_none());
+    let wire = plan.into_guest_manifest();
+    assert_eq!(
+        wire.storages[0].template_guidance.as_ref(),
+        Some(&reference)
+    );
+    assert!(!wire.storages[0].cached);
+
+    let previous = StorageFingerprints {
+        storages: HashMap::from([(
+            path.to_owned(),
+            StorageFingerprint::new(TEMPLATE_GUIDANCE_STORAGE_NAME, &hash),
+        )]),
+        artifacts: HashMap::new(),
+    };
+    let reused = build_storage_plan(&source, Some(&previous)).unwrap();
+    assert!(reused.cleanup_paths.is_empty());
+    let wire = reused.into_guest_manifest();
+    assert!(wire.storages[0].cached);
+    assert_eq!(
+        wire.storages[0].template_guidance.as_ref(),
+        Some(&reference)
+    );
+
+    let mut nested = source.clone();
+    nested
+        .storages
+        .insert(0, storage("/home/user/workspace", "workspace", "v2"));
+    let ordered = build_storage_plan(&nested, Some(&previous)).unwrap();
+    assert!(matches!(
+        ordered.storages[1].action,
+        StorageAction::Download { .. }
+    ));
+    assert!(ordered.cleanup_paths.contains(&path.to_owned()));
 }
 
 #[test]

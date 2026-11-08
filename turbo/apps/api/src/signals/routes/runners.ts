@@ -1,3 +1,7 @@
+import {
+  templateGuidanceMountPath,
+  type TemplateGuidanceBundle,
+} from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
@@ -248,6 +252,7 @@ type ClaimRouteTimingActionType =
   | "claim_route_content_bundles"
   | "claim_route_content_bundle_instructions_sign"
   | "claim_route_content_bundle_skills_sign"
+  | "claim_route_content_bundle_templates_sign"
   | "claim_route_content_bundle_response_assembly"
   | "claim_route_content_bundle_cache_write"
   | "claim_route_policy_catalog_read"
@@ -1172,11 +1177,12 @@ function withContentBundleMounts(
   responseBody: BaseClaimResponse,
   contentBundles: ExecutionContext["contentBundles"],
 ): ExecutionContext {
-  const bundledMountPaths = new Set(
-    contentBundles.skills.map((skill) => {
+  const bundledMountPaths = new Set([
+    ...contentBundles.skills.map((skill) => {
       return skill.mountPath;
     }),
-  );
+    ...(contentBundles.templates ?? []).map(templateGuidanceMountPath),
+  ]);
   return {
     ...responseBody,
     contentBundles,
@@ -1193,24 +1199,27 @@ function withContentBundleMounts(
   };
 }
 
-const withClaimedContentBundles$ = command(
+interface ClaimedContentBundlesInput {
+  readonly responseBody: BaseClaimResponse;
+  readonly claim: ClaimedTransitionResult;
+  readonly workflowInput: WorkflowClaimInput;
+  readonly officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"];
+  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
+  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+  readonly bundleUrlCache: ContentBundleUrlCacheContext;
+  readonly timing: ClaimRouteTimingCollector;
+}
+
+const signClaimedContentBundles$ = command(
   async (
     { set },
-    args: {
-      readonly responseBody: BaseClaimResponse;
-      readonly claim: ClaimedTransitionResult;
-      readonly workflowInput: WorkflowClaimInput;
-      readonly officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"];
-      readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
-      readonly bundleUrlCache: ContentBundleUrlCacheContext;
-      readonly timing: ClaimRouteTimingCollector;
-    },
+    args: ClaimedContentBundlesInput,
     signal: AbortSignal,
   ): Promise<{
-    readonly responseBody: ExecutionContext;
+    readonly contentBundles: ExecutionContext["contentBundles"];
     readonly cacheWrites: readonly StoragePresignedUrlCacheWrite[];
+    readonly uniqueBundleCount: number;
   }> => {
-    const startedAt = monotonicNow();
     const cachedUrls = new Map(
       args.claim.cachedBundleUrls.map((row) => {
         return [row.sha256, row];
@@ -1221,9 +1230,10 @@ const withClaimedContentBundles$ = command(
       Promise<ClaimedContentBundleSignature>
     >();
     const signBundle = (
-      reference: ContentBundle,
+      reference: ContentBundle | TemplateGuidanceBundle,
     ): Promise<ClaimedContentBundleSignature> => {
-      const pending = signatures.get(reference.sha256);
+      const identity = `${reference.sha256}:${reference.archiveBytes}`;
+      const pending = signatures.get(identity);
       if (pending) {
         return pending;
       }
@@ -1236,7 +1246,7 @@ const withClaimedContentBundles$ = command(
         },
         signal,
       );
-      signatures.set(reference.sha256, signed);
+      signatures.set(identity, signed);
       return signed;
     };
     const instructionsStartedAt = monotonicNow();
@@ -1291,40 +1301,83 @@ const withClaimedContentBundles$ = command(
       "claim_route_content_bundle_skills_sign",
       monotonicNow() - skillsStartedAt,
     );
+    const templatesStartedAt = monotonicNow();
+    const templates = await Promise.all(
+      (args.templateGuidanceBundles ?? []).map(async (reference) => {
+        const { ownerKind, templateId, beforeMountPaths, ...bundle } =
+          reference;
+        return {
+          ...(await signBundle(bundle)).bundle,
+          ownerKind,
+          templateId,
+          beforeMountPaths,
+        };
+      }),
+    );
+    signal.throwIfAborted();
+    if (templates.length) {
+      args.timing.recordDuration(
+        "claim_route_content_bundle_templates_sign",
+        monotonicNow() - templatesStartedAt,
+      );
+    }
     const signingResults = await Promise.all(signatures.values());
     signal.throwIfAborted();
     const cacheWrites = signingResults.flatMap((result) => {
       return result.cacheWrite ? [result.cacheWrite] : [];
     });
+    return {
+      contentBundles: {
+        format: "tar-gzip-v1",
+        instructions,
+        skills,
+        ...(templates.length ? { templates } : {}),
+      },
+      cacheWrites,
+      uniqueBundleCount: signatures.size,
+    };
+  },
+);
+
+const withClaimedContentBundles$ = command(
+  async ({ set }, args: ClaimedContentBundlesInput, signal: AbortSignal) => {
+    const startedAt = monotonicNow();
+    const signed = await set(signClaimedContentBundles$, args, signal);
+    signal.throwIfAborted();
     const assemblyStartedAt = monotonicNow();
-    const responseBody = withContentBundleMounts(args.responseBody, {
-      format: "tar-gzip-v1",
-      instructions,
-      skills,
-    });
+    const responseBody = withContentBundleMounts(
+      args.responseBody,
+      signed.contentBundles,
+    );
     args.timing.recordDuration(
       "claim_route_content_bundle_response_assembly",
       monotonicNow() - assemblyStartedAt,
     );
+    const { skills, instructions, templates = [] } = signed.contentBundles;
     // Only aggregate counts escape this request; no hash, mount or URL is logged.
     args.timing.recordDuration(
       "claim_route_content_bundles",
       monotonicNow() - startedAt,
       {
-        bundle_count: String(skills.length + (instructions ? 1 : 0)),
-        unique_bundle_count: String(signatures.size),
+        bundle_count: String(
+          skills.length + templates.length + (instructions ? 1 : 0),
+        ),
+        template_guidance_bundle_count: String(templates.length),
+        unique_bundle_count: String(signed.uniqueBundleCount),
         instruction_bundle_count: instructions ? "1" : "0",
         workflow_bundle_count: String(args.claim.workflows.length),
         official_workflow_bundle_count: String(
           args.officialWorkflowBundles?.length ?? 0,
         ),
         seed_skill_bundle_count: String(args.seedSkillBundles.length),
-        cache_hit_count: String(signingResults.length - cacheWrites.length),
-        cache_miss_count: String(cacheWrites.length),
+        cache_hit_count: String(
+          signed.uniqueBundleCount - signed.cacheWrites.length,
+        ),
+        cache_miss_count: String(signed.cacheWrites.length),
         cache_write_path: "background",
       },
     );
-    return { responseBody, cacheWrites };
+    return { responseBody, cacheWrites: signed.cacheWrites };
   },
 );
 
@@ -1688,6 +1741,7 @@ function claimResponseBody(args: {
     customWorkflowSelection: _customWorkflowSelection,
     officialWorkflowBundles: _officialWorkflowBundles,
     seedSkillBundles: _seedSkillBundles,
+    templateGuidanceBundles: _templateGuidanceBundles,
     storageMounts: _storedStorageMounts,
     ...runnerStoredContext
   } = args.storedContext;
@@ -2386,6 +2440,7 @@ const claimAuthorizedJob$ = command(
           additionalHashes: [
             ...(storedContext.officialWorkflowBundles ?? []),
             ...storedContext.seedSkillBundles,
+            ...(storedContext.templateGuidanceBundles ?? []),
           ].map((bundle) => {
             return bundle.sha256;
           }),
@@ -2423,6 +2478,7 @@ const claimAuthorizedJob$ = command(
         workflowInput,
         officialWorkflowBundles: storedContext.officialWorkflowBundles,
         seedSkillBundles: storedContext.seedSkillBundles,
+        templateGuidanceBundles: storedContext.templateGuidanceBundles,
         bundleUrlCache,
         timing: claimRouteTiming,
       },

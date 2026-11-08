@@ -1,3 +1,4 @@
+import { storedTemplateGuidanceBundleSchema } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import {
   runContextStorageMountSchema,
   type RunContextResponse,
@@ -130,6 +131,7 @@ interface NormalizedRunContextSnapshot {
   readonly firewalls: RunContextResponse["firewalls"];
   readonly networkPolicies: RunContextResponse["networkPolicies"];
   readonly storageMounts: RunContextStorageMount[];
+  readonly templateGuidanceBundles?: RunContextResponse["templateGuidanceBundles"];
   readonly featureFlags: Record<string, boolean> | null;
 }
 
@@ -576,6 +578,15 @@ export function normalizeRunContextSnapshot(
             artifact: artifactFromUnknown(snapshot.artifact),
           })
         : array(runContextStorageMountSchema).parse(snapshot.storageMounts),
+    // Axiom represents omitted writer fields as null in older/non-template rows.
+    ...(snapshot.templateGuidanceBundles === undefined ||
+    snapshot.templateGuidanceBundles === null
+      ? {}
+      : {
+          templateGuidanceBundles: array(
+            storedTemplateGuidanceBundleSchema,
+          ).parse(snapshot.templateGuidanceBundles),
+        }),
     featureFlags: featureFlagsFromEntries(snapshot.featureFlagEntries),
   };
 }

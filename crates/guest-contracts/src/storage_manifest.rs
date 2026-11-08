@@ -42,7 +42,9 @@ use std::collections::HashSet;
 use serde::{Deserialize, Serialize};
 
 mod readiness;
+mod template_guidance;
 pub use readiness::ArchiveReadiness;
+pub use template_guidance::*;
 
 /// In-memory execution projection behind the canonical storage manifest wire contract.
 ///
@@ -166,6 +168,9 @@ impl Manifest {
 
         for mount in storage_mounts {
             if mount.writeback {
+                if mount.template_guidance.is_some() {
+                    return Err("Template guidance cannot be writable".into());
+                }
                 artifacts.push(ArtifactEntry {
                     mount_path: mount.mount_path,
                     archive_url: mount.archive_url,
@@ -185,7 +190,11 @@ impl Manifest {
             if mount.missing_root_policy.is_some() {
                 return Err("read-only storage mount cannot contain missingRootPolicy".to_string());
             }
+            if let Some(reference) = &mount.template_guidance {
+                reference.validate()?;
+            }
             storages.push(StorageEntry {
+                template_guidance: mount.template_guidance,
                 mount_path: mount.mount_path,
                 archive_url: mount.archive_url,
                 cached: mount.cached,
@@ -240,6 +249,9 @@ pub struct StorageEntry {
     /// VAS version identifier used for diagnostics and cache identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vas_version_id: Option<String>,
+    /// Optional immutable template profile; absent for existing inputs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_guidance: Option<TemplateGuidanceReference>,
 }
 
 /// Artifact entry in the guest storage manifest.
@@ -308,6 +320,9 @@ pub struct StorageMountEntry {
     /// Whether changed contents are written back to the same Storage.
     #[serde(default)]
     pub writeback: bool,
+    /// Template-only compressed identity and extraction profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_guidance: Option<TemplateGuidanceReference>,
 }
 
 // Match the owned wire type's Serde identity, field order and omission rules.
@@ -329,6 +344,8 @@ struct BorrowedStorageMountEntry<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     missing_root_policy: Option<&'a str>,
     writeback: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    template_guidance: Option<&'a TemplateGuidanceReference>,
 }
 
 impl<'a> BorrowedStorageMountEntry<'a> {
@@ -343,6 +360,7 @@ impl<'a> BorrowedStorageMountEntry<'a> {
             empty: false,
             missing_root_policy: None,
             writeback: false,
+            template_guidance: entry.template_guidance.as_ref(),
         }
     }
 
@@ -357,6 +375,7 @@ impl<'a> BorrowedStorageMountEntry<'a> {
             empty: entry.empty,
             missing_root_policy: entry.missing_root_policy.as_deref(),
             writeback: true,
+            template_guidance: None,
         }
     }
 }

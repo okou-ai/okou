@@ -71,6 +71,7 @@ pub struct StoragePlan {
 
 #[derive(Debug, Clone)]
 struct StoragePlanEntry {
+    template_guidance: Option<wire::TemplateGuidanceReference>,
     mount_path: String,
     vas_storage_name: String,
     vas_version_id: String,
@@ -79,12 +80,19 @@ struct StoragePlanEntry {
 }
 
 impl StoragePlanEntry {
+    fn is_decoded_download(&self) -> bool {
+        // Templates retain their compressed source so Guest can verify the
+        // complete hash and template-specific modes/limits on cache hits too.
+        self.template_guidance.is_none() && matches!(self.action, StorageAction::Download { .. })
+    }
+
     fn into_guest_entry(self) -> wire::StorageEntry {
         let (archive_url, cached) = match self.action {
             StorageAction::Download { source } => (Some(source.wire_url()), false),
             StorageAction::ReuseExisting => (None, true),
         };
         wire::StorageEntry {
+            template_guidance: self.template_guidance,
             mount_path: self.mount_path,
             archive_url,
             cached,
@@ -250,14 +258,30 @@ pub fn build_storage_plan(
         .storages
         .iter()
         .map(|storage| {
-            let unchanged = previous.is_some_and(|fingerprints| {
-                fingerprints
+            // An ancestor can rewrite a child even when the child's own hash is
+            // unchanged. Keep templates in the ordered application in that case.
+            let is_ancestor = |mount: &str| {
+                Path::new(mount) != Path::new(&storage.mount_path)
+                    && Path::new(&storage.mount_path).starts_with(mount)
+            };
+            let ordered_template = storage.template_guidance.is_some()
+                && (manifest
                     .storages
-                    .get(&storage.mount_path)
-                    .is_some_and(|fingerprint| {
-                        fingerprint.matches(&storage.vas_storage_name, &storage.vas_version_id)
-                    })
-            });
+                    .iter()
+                    .any(|entry| is_ancestor(&entry.mount_path))
+                    || manifest
+                        .artifacts
+                        .iter()
+                        .any(|entry| is_ancestor(&entry.mount_path)));
+            let unchanged = !ordered_template
+                && previous.is_some_and(|fingerprints| {
+                    fingerprints
+                        .storages
+                        .get(&storage.mount_path)
+                        .is_some_and(|fingerprint| {
+                            fingerprint.matches(&storage.vas_storage_name, &storage.vas_version_id)
+                        })
+                });
             if unchanged {
                 reused_entries += 1;
             } else if previous.is_some() {
@@ -272,6 +296,7 @@ pub fn build_storage_plan(
             };
 
             StoragePlanEntry {
+                template_guidance: storage.template_guidance.clone(),
                 mount_path: storage.mount_path.clone(),
                 vas_storage_name: storage.vas_storage_name.clone(),
                 vas_version_id: storage.vas_version_id.clone(),
@@ -484,7 +509,7 @@ impl StoragePlan {
                 let Some(entry) = self.storages.get(handle.index) else {
                     return Ok(false);
                 };
-                if !matches!(entry.action, StorageAction::Download { .. }) {
+                if !entry.is_decoded_download() {
                     return Ok(false);
                 }
                 wire::Manifest {
@@ -521,7 +546,7 @@ impl StoragePlan {
             ArchiveKind::Storage => self
                 .storages
                 .get(handle.index)
-                .is_some_and(|entry| matches!(entry.action, StorageAction::Download { .. })),
+                .is_some_and(StoragePlanEntry::is_decoded_download),
             ArchiveKind::Artifact => self
                 .artifacts
                 .get(handle.index)
@@ -533,7 +558,7 @@ impl StoragePlan {
         let (mount_path, position) = match handle.kind {
             ArchiveKind::Storage => {
                 let entry = self.storages.get(handle.index)?;
-                if !matches!(entry.action, StorageAction::Download { .. }) {
+                if !entry.is_decoded_download() {
                     return None;
                 }
                 (entry.mount_path.as_str(), handle.index)

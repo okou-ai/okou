@@ -50,17 +50,17 @@ pub(crate) fn extract_tar_gz(
     target: &Path,
     concurrency: usize,
 ) -> Result<(), DownloadError> {
-    extract_tar_gz_checked(source, target, concurrency, u64::MAX, |_, _, _| Ok(()))
+    extract_tar_gz_checked(source, target, concurrency, u64::MAX, |_, _, _, _| Ok(()))
 }
 
 /// Reuse Storage extraction with an additional package contract before each write.
-/// Callers publish the private staging directory only after this succeeds.
+/// Validation runs before each write; extraction retains the non-atomic semantics above.
 pub(crate) fn extract_tar_gz_checked(
     source: ArchiveSource,
     target: &Path,
     concurrency: usize,
     max_unpacked_bytes: u64,
-    mut validate_entry: impl FnMut(&Path, tar::EntryType, u64) -> io::Result<()>,
+    mut validate_entry: impl FnMut(&Path, tar::EntryType, u64, &tar::Header) -> io::Result<()>,
 ) -> Result<(), DownloadError> {
     debug_assert!(concurrency > 0);
     let mut skipped_entries = SkippedEntries { target, skipped: 0 };
@@ -91,7 +91,7 @@ pub(crate) fn extract_tar_gz_checked(
             .into_owned();
 
         let entry_type = entry.header().entry_type();
-        validate_entry(&entry_path, entry_type, entry.size())
+        validate_entry(&entry_path, entry_type, entry.size(), entry.header())
             .map_err(|e| archive_error("Invalid archive entry", e))?;
 
         #[cfg(target_os = "linux")]

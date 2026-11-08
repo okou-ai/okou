@@ -236,6 +236,7 @@ fn home_at(temp: &tempfile::TempDir) -> HomePaths {
 
 fn storage_entry(mount_path: String, url: String, name: &str, version: &str) -> StorageEntry {
     StorageEntry {
+        template_guidance: None,
         name: name.to_string(),
         mount_path,
         archive_url: url,
