@@ -19,14 +19,18 @@ final class ConversationRunUsageResource {
     replace = Command { context, read in try context.set(source, read) }
   }
 
-  lazy var value: Computed<Task<ChatRunUsage?, Error>> = Computed { [weak self] get, options in
-    guard let self, try get(lifetime) else { throw CancellationError() }
-    let read = try get(source)
-    _ = try get(read.batch)
-    current = read.task
-    // Invalidating one Run never cancels another Run's shared HTTP batch.
-    options.signal.onCancel { read.task.cancel() }
-    return read.task
+  lazy var value = makeValue()
+
+  private func makeValue() -> Computed<Task<ChatRunUsage?, Error>> {
+    Computed { [weak self] get, options in
+      guard let self, try get(lifetime) else { throw CancellationError() }
+      let read = try get(source)
+      _ = try get(read.batch)
+      current = read.task
+      // Invalidating one Run never cancels another Run's shared HTTP batch.
+      options.signal.onCancel { read.task.cancel() }
+      return read.task
+    }
   }
 
   fileprivate func use(_ read: ConversationRunUsageRead, in store: CCState.Store) throws {
@@ -91,35 +95,39 @@ private final class ConversationRunUsageBatch {
     }
   }
 
-  lazy var value: Computed<Task<Void, Error>> = Computed { [weak self] _, options in
-    guard let self else { throw CancellationError() }
-    let signal = options.signal
-    let task = Task<Void, Error> {
-      @MainActor [self, sync, threadID, events, replies, completed, failed] in
-      let outcome: Result<[String: ChatRunUsage], Error>
-      do {
-        try Task.checkCancellation()
-        let result = try await sync.runUsage(threadID: threadID, runIDs: Array(events.keys))
-        try Task.checkCancellation()
-        try signal.checkCancellation()
-        outcome = .success(result)
-      } catch {
-        outcome = .failure(error)
-        if !Task.isCancelled, !signal.isCancelled { failed(error) }
+  lazy var value = makeValue()
+
+  private func makeValue() -> Computed<Task<Void, Error>> {
+    Computed { [weak self] _, options in
+      guard let self else { throw CancellationError() }
+      let signal = options.signal
+      let task = Task<Void, Error> {
+        @MainActor [self, sync, threadID, events, replies, completed, failed] in
+        let outcome: Result<[String: ChatRunUsage], Error>
+        do {
+          try Task.checkCancellation()
+          let result = try await sync.runUsage(threadID: threadID, runIDs: Array(events.keys))
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          outcome = .success(result)
+        } catch {
+          outcome = .failure(error)
+          if !Task.isCancelled, !signal.isCancelled { failed(error) }
+        }
+        // Replace superseded Run signals before delivering any old result.
+        completed()
+        for (id, reply) in replies {
+          reply.yield(outcome.map { $0[id] })
+          reply.finish()
+        }
+        self.request = nil
+        // Keep per-Run results in their Tasks, not a second retained batch-result cache.
+        return try outcome.map { _ in () }.get()
       }
-      // Replace superseded Run signals before delivering any old result.
-      completed()
-      for (id, reply) in replies {
-        reply.yield(outcome.map { $0[id] })
-        reply.finish()
-      }
-      self.request = nil
-      // Keep per-Run results in their Tasks, not a second retained batch-result cache.
-      return try outcome.map { _ in () }.get()
+      request = task
+      signal.onCancel { task.cancel() }
+      return task
     }
-    request = task
-    signal.onCancel { task.cancel() }
-    return task
   }
 
   func cancel() { request?.cancel() }
