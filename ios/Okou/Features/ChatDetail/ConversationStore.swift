@@ -244,7 +244,9 @@ final class ConversationStore {
       for index in pending.indices { pending[index].needsRetry = true }
       // Recovery inputs do not consume the composer; two absent documents are not an identity.
       if pending.contains(where: {
-        $0.document != nil && $0.document == composer.value.draftUserMessage
+        $0.document != nil
+          && $0.document?.trimmingWhitespace()
+            == composer.value.draftUserMessage?.trimmingWhitespace()
       }) {
         composer.clear()
       }
@@ -409,7 +411,8 @@ final class ConversationStore {
       initialMessage
       ?? PendingMessage(
         id: messageID, text: text, createdAt: Date(),
-        attachments: attachmentDraft.uploaded, document: composer.value.draftUserMessage)
+        attachments: attachmentDraft.uploaded,
+        document: composer.value.draftUserMessage?.trimmingWhitespace())
     if let initialSelection {
       message.modelSelection = initialSelection
       message.reasoningEffort = modelSelection?.models.configuration?.requestedEffort(

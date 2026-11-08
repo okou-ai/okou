@@ -167,11 +167,13 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     let reference = try XCTUnwrap(
       workspace.mentionTestSource.suggestions(for: "pl").first { $0.kind == .agent })
-    let expected = ChatDraftDocument(parts: [
+    let draft = ChatDraftDocument(parts: [
       reference.part, .object(["type": .string("text"), "text": .string(" ")]),
     ])
+    let expected = ChatDraftDocument(parts: [reference.part])
     let block = try XCTUnwrap(conversation.composer.editorBlocks.first)
-    conversation.composer.editBlock(block.id, document: expected)
+    conversation.composer.editBlock(block.id, document: draft)
+    XCTAssertEqual(conversation.composer.document, draft)
     XCTAssertTrue(conversation.composer.hasContent)
     XCTAssertEqual(conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines), "")
     await conversation.send()
@@ -262,11 +264,13 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     let reference = try XCTUnwrap(
       candidates.mentionTestSource.suggestions(for: "plan").first { $0.kind == .chat })
-    let expected = ChatDraftDocument(parts: [
+    let draft = ChatDraftDocument(parts: [
       reference.part, .object(["type": .string("text"), "text": .string(" ")]),
     ])
+    let expected = ChatDraftDocument(parts: [reference.part])
     let block = try XCTUnwrap(workspace.newComposer.editorBlocks.first)
-    workspace.newComposer.editBlock(block.id, document: expected)
+    workspace.newComposer.editBlock(block.id, document: draft)
+    XCTAssertEqual(workspace.newComposer.document, draft)
     await workspace.sendNewChat()
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     let pending = try XCTUnwrap(conversation.pending.first)

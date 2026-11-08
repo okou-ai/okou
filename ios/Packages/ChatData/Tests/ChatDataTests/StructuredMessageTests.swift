@@ -7,6 +7,44 @@ import XCTest
 
 @MainActor
 final class StructuredMessageTests: XCTestCase {
+  func testSendingTrimsTheCanonicalDocumentWithoutChangingTheDraft() async throws {
+    let threadID = "40000000-0000-4000-8000-000000000001"
+    let agentID = "40000000-0000-4000-8000-000000000002"
+    let sent = Mutex<Data?>(nil)
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/\(threadID)/metadata":
+        return ChatHTTPResponse(
+          body:
+            "{\"id\":\"\(threadID)\",\"agentId\":\"\(agentID)\",\"computerUseHostId\":null,\"cloudBrowserEnabled\":false}"
+        )
+      case "/api/chat/events":
+        sent.withLock { $0 = chatRequestBody(request) }
+        return ChatHTTPResponse(status: 201, body: "{\"threadId\":\"\(threadID)\"}")
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let text = "\n\n  请按这个方向改。\n\n    保留缩进。\n\t"
+    let document = ChatDraftDocument(parts: [
+      .object(["type": .string("text"), "text": .string(text)])
+    ])
+    let now = Date()
+    let thread = ChatThread(
+      id: threadID, agentID: agentID, title: "Trim", createdAt: now, updatedAt: now, sortAt: now)
+
+    _ = try await ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
+      .send(thread: thread, text: text, document: document)
+
+    struct SentMessage: Decodable {
+      let prompt: String
+      let userMessage: ChatDraftDocument
+    }
+    let message = try JSONDecoder().decode(SentMessage.self, from: XCTUnwrap(sent.withLock { $0 }))
+    XCTAssertEqual(message.prompt, "请按这个方向改。\n\n    保留缩进。")
+    XCTAssertEqual(message.userMessage.text, message.prompt)
+    XCTAssertEqual(document.text, text)
+  }
+
   func testStructuredHistorySurvivesHTTPDecodingAndAnOfflineCacheReopen() async throws {
     let thread = "40000000-0000-4000-8000-000000000001"
     let workflow = "40000000-0000-4000-8000-000000000002"

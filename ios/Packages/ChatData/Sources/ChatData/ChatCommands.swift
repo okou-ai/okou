@@ -125,6 +125,7 @@ public actor ChatCommands {
     async throws -> SendReceipt
   {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let document = document?.trimmingWhitespace()
     guard !prompt.isEmpty || !attachments.isEmpty || document?.parts.isEmpty == false else {
       throw ChatError.invalidContract("Enter a message before sending.")
     }
