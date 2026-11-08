@@ -416,7 +416,8 @@ function createPickObjects() {
       // its earlier snapshot. Reobserve before reporting full/deleting empty
       // work so the send still notifies that running Run about pending input.
       if (threadHasActiveRun) {
-        await set(releaseClaim$, claim, signal);
+        // Run completion may have skipped this live lease before its release.
+        await set(releaseClaimAndSchedulePick$, claim, signal);
         return { kind: "none" };
       }
       if (!hasCapacity) {

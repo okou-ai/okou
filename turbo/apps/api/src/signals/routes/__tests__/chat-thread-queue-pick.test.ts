@@ -424,6 +424,50 @@ describe("CHAT-02: queued chat thread picks", () => {
     await cancelChatRun(actor, takeover.runId);
   }, 90_000);
 
+  it("launches input exactly once when its send overlaps the thread's run failure", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const running = await sendChatRun(actor, {
+      agentId,
+      prompt: "the run failing during publication",
+    });
+    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    const clientEventId = randomUUID();
+    const prompt = "sent while the previous run fails";
+
+    await Promise.all([
+      chat.requestSendEvent(
+        actor,
+        { agentId, threadId: running.threadId, clientEventId, prompt },
+        [201],
+      ),
+      failChatRun(
+        running.runId,
+        runningClaim.sandboxHeaders,
+        "Provider unavailable",
+      ),
+    ]);
+    await flushWaitUntilForTest();
+
+    // No cron or additional send supplies a wakeup after these requests.
+    const page = await chat.listThreadEvents(actor, running.threadId);
+    const launches = userMessages(page.events).filter((message) => {
+      return message.revokesEventId === clientEventId && message.runId;
+    });
+    expect(launches).toHaveLength(1);
+    const runId = launches[0]?.runId;
+    if (!runId) {
+      throw new Error("Expected the overlapping input to launch");
+    }
+    await expect(threadRunIds(actor, running.threadId)).resolves.toStrictEqual([
+      running.runId,
+      runId,
+    ]);
+    const claimed = await claimChatRun(runnerGroup, runId);
+    expect(claimed.claim.prompt).toBe(prompt);
+    await cancelChatRun(actor, runId, claimed.sandboxHeaders);
+  }, 90_000);
+
   it("leaves a queued automation event for the pick while steering later prompts", async () => {
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor(
       {},
