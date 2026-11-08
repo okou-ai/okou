@@ -286,7 +286,8 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
     is warm and read as pink behind white rows);
   - an opaque `presentationBackground`: at a partial detent an iOS 26 sheet is glass
     and the system turns grouped rows grey, while full height they are white;
-  - the soft blur under the title bar (sheets do not inherit the root's style);
+  - the soft blur under the title bar and none at the bottom (sheets do not inherit the
+    root's style);
   - an 8 pt top content margin, so the first card starts just under the title bar.
 - **Section headers** use `okouSectionHeader()`: 15 pt medium `foreground`, sentence
   case; a provider header adds its logo before the same text. Never the inherited
@@ -369,17 +370,24 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Floating panels** over the transcript (slash workflows, @mentions) use
   `OkouFloatingPanelStyle`: the same card, card radius, plus the floating shadow.
   Not `.regularMaterial` — a grey material block did not match the rest of the UI.
-- **Edges under bars**: scroll edges default to native `.soft` (`OkouAppearance`).
-  Where a custom bar's text sits over scrolling text the edge must hide it:
-  - The chat transcript gets the header and composer heights as `contentInset`, not
-    `additionalSafeAreaInsets`, so its native `.soft` top edge blurs only the status bar
-    band. Moving them into the safe area (as the redesign once did) made the edge effect
-    cover the whole header and composer, a blur band far too tall. `OkouEdgeBlurView`
-    adds a little more blur inside that status bar band and behind the composer (its own
-    area only, nothing above it), so text never shows through the composer's glass.
+- **Edges under bars**: the top scroll edge defaults to native `.soft` and the bottom
+  edge is hidden everywhere (`OkouAppearance`, and `okouGroupedBackground()` for sheets).
+  Content passes plainly under the composer, the sidebar footer and other floating
+  controls, which carry their own glass. Where a custom bar's text sits over scrolling text
+  at the top, the edge must hide it:
+  - The chat transcript uses the system's `.soft` top edge, the progressive blur ChatGPT
+    and Manus draw: strongest at the screen's edge, clearing toward the content, with no
+    colour of its own. Its reach follows the safe area. The header and composer heights are
+    `contentInset`s, so the top edge blurs only the status bar band and text under the
+    header's glass controls stays sharp. Putting the header in the safe area (as the
+    redesign once did) blurs the whole header, a band far too tall. Its bottom edge is
+    hidden (`bottomEdgeEffect.isHidden`).
+  - Never draw an edge blur by hand. A `UIVisualEffectView` has one radius for the whole
+    band, so masking it to fade reads as a hard, opaque strip, and every blur style tints
+    a dark page grey. Only the system edge effect blurs progressively.
   - The warm sidebar hides the system top edge and paints its header in `sidebar`
     with a 16 pt fade; the system hard band is white and read as a separate block. Its
-    bottom edge is `.soft`, so rows fade out under the footer.
+    bottom edge is hidden like the rest, so rows pass plainly under the footer.
     Verify both themes with text scrolled under each bar after changing either.
 - Do not replace native Glass, Blur or safe-area bars with opaque cards, arbitrary
   opacity fills or custom outlines. Follow Reduce Transparency and Reduce Motion.
@@ -617,7 +625,6 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouSearchBar`                                                               | The sidebar's search button: 44 pt clear glass capsule, Lucide `search` glyph, placeholder grey. The search page keeps the system field and its interaction, drawn with the same glyphs (`OkouNavigationBar.applySearchField()`) |
 | `OkouSearchPage` | A full search page: the system field (rising into the bar while typing; no clear button, the app's ✕ via `okouSearchPageField()`), a filter row pinned on a solid header, results as a plain list, and one `OkouEmptyState` centred over what is left of the screen, above the keyboard. Built on `OkouUnderNavigationBar`, so filters and results move with the field. Catalog: Search page |
 | `OkouUnderNavigationBar` | A page laid out under the navigation bar by UIKit, so it moves with the bar when the bar changes height (the search field rising into it); takes `OkouAppearance` again in its own hosting controller |
-| `OkouEdgeBlurView`                                                            | A little more blur inside a band the transcript already has — the status bar band, the composer's own area — fading to clear over 16 pt; never a taller band                                                                     |
 | `OkouEmptyState`                                                              | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title                                                 |
 | `OkouLoadErrorRow` / `OkouLoadingRow`                                         | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                                                                 |
 | `OkouBanner`                                                                  | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                                                                        |

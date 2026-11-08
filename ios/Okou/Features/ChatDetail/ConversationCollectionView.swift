@@ -140,8 +140,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 {
   private typealias Measurement = ConversationMeasurementCache.Measurement
   private var keyboardTap: KeyboardDismissTap?
-  private let topBlur = OkouEdgeBlurView(edge: .top)
-  private let bottomBlur = OkouEdgeBlurView(edge: .bottom)
 
   private struct PreparedRows {
     let rows: [ConversationCollectionRow]
@@ -226,10 +224,11 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
-    // The header and composer heights are content insets (see updateContentInsets), so the
-    // soft top edge blurs only the status bar band — the edges as they were before the
-    // redesign moved those heights into the safe area. `OkouEdgeBlurView` adds a little more
-    // blur inside that band and behind the composer, without making either band taller.
+    // The top is the system's soft edge, the progressive blur ChatGPT and Manus draw:
+    // strongest at the screen's edge, clearing toward the content, with no colour of its own.
+    // It follows the safe area, so its reach is the status bar band (updateContentInsets).
+    // The bottom has none, as everywhere in the app: messages pass plainly under the
+    // composer's glass.
     collection.topEdgeEffect.style = .soft
     collection.bottomEdgeEffect.isHidden = true
     collection.keyboardDismissMode = .interactive
@@ -270,8 +269,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     refresh.addTarget(self, action: #selector(refreshConversation), for: .valueChanged)
     collection.refreshControl = refresh
     view.addSubview(collection)
-    view.addSubview(topBlur)
-    view.addSubview(bottomBlur)
     dataSource = UICollectionViewDiffableDataSource<Int, String>(collectionView: collection) {
       [weak self] collection, index, id in
       guard let self else { return nil }
@@ -527,7 +524,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
 
   override func viewDidLayoutSubviews() {
     super.viewDidLayoutSubviews()
-    layoutEdgeBlurs()
     let inset = ConversationCollectionRow.messageHorizontalInset
     loading.view.frame = CGRect(
       x: inset, y: collection.adjustedContentInset.top + OkouSpace.lg,
@@ -572,17 +568,8 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
   }
 
-  /// The top band is the status bar's, where the system soft edge already blurs; the bottom
-  /// band is the composer's own area, from its top edge to the screen's bottom.
-  private func layoutEdgeBlurs() {
-    let bounds = view.bounds
-    let safe = view.safeAreaInsets
-    topBlur.frame = CGRect(x: 0, y: 0, width: bounds.width, height: safe.top)
-    let composerTop = bounds.height - safe.bottom - source.contentInsets.bottom
-    bottomBlur.frame = CGRect(
-      x: 0, y: composerTop, width: bounds.width, height: max(0, bounds.height - composerTop))
-  }
-
+  /// The header and composer heights are content insets, not safe area, so the soft top edge
+  /// blurs only the status bar band; under the header's glass controls the text stays sharp.
   private func updateContentInsets() {
     let insets = UIEdgeInsets(
       top: source.contentInsets.top, left: source.contentInsets.leading,
@@ -590,7 +577,6 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     guard collection.contentInset != insets else { return }
     collection.contentInset = insets
     collection.verticalScrollIndicatorInsets = insets
-    layoutEdgeBlurs()
     source.sendTransition?.layoutDidChange()
     publishViewportChange()
     publishMetrics()
