@@ -6,6 +6,7 @@ import {
   PutObjectCommand,
   type S3ClientConfig,
 } from "@aws-sdk/client-s3";
+import { HttpResponse, http } from "msw";
 import { beforeEach, describe, expect, it } from "vitest";
 import {
   marketingHandoffsContract,
@@ -16,6 +17,7 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
+import { server } from "../../../mocks/server";
 import { marketingHandoffsRoutes } from "../marketing-handoffs";
 import { webFileUrlRoutes } from "../web-file-url";
 import { createRouteMocks } from "./helpers/route-test";
@@ -854,6 +856,71 @@ describe("Marketing content handoff", () => {
         })
       ).status,
     ).toBe(200);
+  });
+
+  describe("presets served by the Marketing site", () => {
+    const presetOrigin = "https://staging-www.omby.ai";
+    const shardUrl = `${presetOrigin}/handoff/v1/:shard`;
+
+    function address(body: MarketingHandoffManifest) {
+      return createHash("sha256")
+        .update(serializeMarketingHandoff(body))
+        .digest("hex")
+        .slice(0, 12);
+    }
+
+    function serve(entries: Record<string, MarketingHandoffManifest>) {
+      server.use(
+        http.get(shardUrl, ({ params }) => {
+          const shard = String(params.shard).replace(/\.json$/u, "");
+          const served = Object.entries(entries).filter(([key]) => {
+            return key.startsWith(shard);
+          });
+          return served.length > 0
+            ? HttpResponse.json(Object.fromEntries(served))
+            : new HttpResponse(null, { status: 404 });
+        }),
+      );
+    }
+
+    async function resolve(hash: string) {
+      return await api().resolve({
+        params: { hash },
+        body: {},
+        headers: auth,
+        extraHeaders: { origin },
+      });
+    }
+
+    beforeEach(() => {
+      mockEnv("MARKETING_HANDOFF_PRESET_ORIGIN", presetOrigin);
+    });
+
+    it("resolves an unpublished preset link for any account and keeps it after Marketing stops serving it", async () => {
+      const preset = {
+        ...manifest(),
+        options: { connector: "google-sheets", template: "report" },
+      };
+      const hash = address(preset);
+      serve({ [hash]: preset });
+      expect((await accept(resolve(hash), [200])).body).toStrictEqual(preset);
+
+      authenticateActor();
+      serve({});
+      expect((await accept(resolve(hash), [200])).body).toStrictEqual(preset);
+    });
+
+    it("does not grant a served entry whose digest differs from the link", async () => {
+      const preset = manifest();
+      serve({ [address(preset)]: manifest(`Replaced task ${taskId}`) });
+      expect((await resolve(address(preset))).status).toBe(404);
+    });
+
+    it("returns not found when Marketing does not serve the address", async () => {
+      const preset = manifest();
+      serve({});
+      expect((await resolve(address(preset))).status).toBe(404);
+    });
   });
 
   it("does not let an enabled browser session publish public content", async () => {

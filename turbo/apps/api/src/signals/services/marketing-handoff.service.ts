@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
+import { accept } from "@okouai/connectors/accept";
 import { command } from "ccstate";
-import { object, boolean } from "zod";
+import { object, boolean, record, string, unknown } from "zod";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { and, eq, gt, inArray, isNull, or, sql } from "drizzle-orm";
 import { marketingContentGrants } from "@okouai/db/schema/marketing-content-grant";
@@ -387,6 +388,100 @@ export const storeMarketingManifest$ = command(
       signal,
     );
     return { hash, shortHash };
+  },
+);
+
+const MARKETING_PRESET_SHARD_MAX_BYTES = 256 * 1024;
+const MARKETING_PRESET_FETCH_TIMEOUT_MS = 10_000;
+const marketingPresetShardSchema = record(string(), unknown());
+
+async function readBoundedText(
+  response: Response,
+  maxBytes: number,
+): Promise<string> {
+  const chunks: Buffer[] = [];
+  let size = 0;
+  if (response.body) {
+    for await (const chunk of response.body) {
+      size += chunk.byteLength;
+      if (size > maxBytes) {
+        throw new Error("Marketing preset shard is too large");
+      }
+      chunks.push(Buffer.from(chunk));
+    }
+  }
+  return Buffer.concat(chunks, size).toString("utf8");
+}
+
+/**
+ * Marketing deploys every preset in static shards keyed by the 12-character
+ * address its links carry: `/handoff/v1/<first two hex characters>.json`.
+ * Only an entry whose canonical digest matches the requested address counts.
+ */
+async function fetchMarketingPreset(
+  origin: string,
+  hash: string,
+  signal: AbortSignal,
+): Promise<MarketingHandoffManifest | null> {
+  const response = await accept(
+    fetch(new URL(`/handoff/v1/${hash.slice(0, 2)}.json`, origin), {
+      headers: { accept: "application/json" },
+      redirect: "error",
+      signal: AbortSignal.any([
+        signal,
+        AbortSignal.timeout(MARKETING_PRESET_FETCH_TIMEOUT_MS),
+      ]),
+    }),
+    [200, 404],
+  );
+  if (response.status === 404) {
+    await response.body?.cancel();
+    return null;
+  }
+  const shard = marketingPresetShardSchema.parse(
+    JSON.parse(
+      await readBoundedText(response, MARKETING_PRESET_SHARD_MAX_BYTES),
+    ),
+  );
+  const entry = shard[hash.slice(0, 12)];
+  if (entry === undefined) {
+    return null;
+  }
+  const manifest = marketingHandoffManifestSchema.parse(entry);
+  if (
+    !marketingContentHash(serializeMarketingHandoff(manifest)).startsWith(hash)
+  ) {
+    return null;
+  }
+  // Public file access needs its own publication; presets carry prompts only.
+  if (manifest.files.length > 0) {
+    throw new Error("Marketing presets cannot reference files");
+  }
+  return manifest;
+}
+
+/** Grant a preset served by the deployed Marketing site as public content. */
+export const publishServedMarketingPreset$ = command(
+  async (
+    { set },
+    args: { bucket: string; hash: string },
+    signal: AbortSignal,
+  ): Promise<{ hash: string; manifest: MarketingHandoffManifest } | null> => {
+    const origin = env("MARKETING_HANDOFF_PRESET_ORIGIN");
+    if (!origin) {
+      return null;
+    }
+    const manifest = await fetchMarketingPreset(origin, args.hash, signal);
+    signal.throwIfAborted();
+    if (!manifest) {
+      return null;
+    }
+    const stored = await set(
+      storeMarketingManifest$,
+      { bucket: args.bucket, manifest, subject: "public" },
+      signal,
+    );
+    return "status" in stored ? null : { hash: stored.hash, manifest };
   },
 );
 

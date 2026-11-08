@@ -27,6 +27,7 @@ import {
   marketingHandoffBucket,
   publicMarketingManifestHashes$,
   publishMarketingManifests$,
+  publishServedMarketingPreset$,
   readMarketingManifest$,
   storeMarketingManifest$,
 } from "../services/marketing-handoff.service";
@@ -290,24 +291,30 @@ const authorizedManifest$ = command(
       { bucket: context.bucket, hash },
       signal,
     );
-    if (!stored) {
-      return notFound("Content not found");
-    }
-    const { hash: resourceHash, manifest } = stored;
     const subjects = [context.subject, context.sessionSubject].filter(
       (subject): subject is string => {
         return subject !== null;
       },
     );
-    if (
-      !(await set(
+    const readable =
+      stored !== null &&
+      (await set(
         canReadMarketingContent$,
-        { resourceType: "manifest", resourceHash, subjects },
+        { resourceType: "manifest", resourceHash: stored.hash, subjects },
         signal,
-      ))
-    ) {
+      ));
+    // A preset link opened without the Marketing click upload has no grant yet.
+    const content = readable
+      ? stored
+      : await set(
+          publishServedMarketingPreset$,
+          { bucket: context.bucket, hash },
+          signal,
+        );
+    if (!content) {
       return notFound("Content not found");
     }
+    const { hash: resourceHash, manifest } = content;
     const claimed = await set(
       claimMarketingManifest$,
       {
