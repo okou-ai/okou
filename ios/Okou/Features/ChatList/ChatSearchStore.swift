@@ -142,7 +142,7 @@ final class ChatSearchStore {
     [weak self] get, options in
     guard let self else { throw CancellationError() }
     let keyword = try get(debouncedKeyword)
-    let task: Task<[ChatSearchResult], Error> = request(options.signal) { [sync] in
+    let task: Task<[ChatSearchResult], Error> = resourceTask(options.signal) { [sync] in
       guard let keyword = try await keyword.value else { return [] }
       try Task.checkCancellation()
       return try await sync.searchMessages(keyword: keyword)
@@ -155,7 +155,7 @@ final class ChatSearchStore {
     [weak self] get, options in
     guard let self else { throw CancellationError() }
     let keyword = try get(debouncedKeyword)
-    let task: Task<[ChatSearchArtifact], Error> = request(options.signal) { [sync] in
+    let task: Task<[ChatSearchArtifact], Error> = resourceTask(options.signal) { [sync] in
       guard let keyword = try await keyword.value else { return [] }
       try Task.checkCancellation()
       return try await sync.searchArtifacts(keyword: keyword)
@@ -169,7 +169,7 @@ final class ChatSearchStore {
   > { [weak self] get, options in
     guard let self else { throw CancellationError() }
     let shouldRead = try get(workflowRequest) != nil
-    let task: Task<[ChatSearchWorkflow], Error> = request(options.signal) { [sync] in
+    let task: Task<[ChatSearchWorkflow], Error> = resourceTask(options.signal) { [sync] in
       guard shouldRead else { return [] }
       return try await sync.searchWorkflows()
     }
@@ -257,7 +257,7 @@ final class ChatSearchStore {
     }
   }
 
-  private func request<Value: Sendable>(
+  private func resourceTask<Value: Sendable>(
     _ signal: EvaluationSignal, body: @escaping @MainActor () async throws -> Value
   ) -> Task<Value, Error> {
     // Start outside graph evaluation: reporting a force-upgrade may close this owner.
