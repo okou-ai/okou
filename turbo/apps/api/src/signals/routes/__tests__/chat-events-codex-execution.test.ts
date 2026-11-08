@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it } from "vitest";
+import { HttpResponse, http } from "msw";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { testContext } from "../../../__tests__/test-context";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -14,6 +15,7 @@ import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { mockSecretKmsHttp } from "./helpers/secret-kms-http";
 import { createAuthDeviceSupportApi } from "./helpers/api-bdd-auth-device-support";
 import { publicChatActor } from "./helpers/public-chat-actor";
+import { server } from "../../../mocks/server";
 
 const context = testContext();
 const {
@@ -67,7 +69,7 @@ describe("Codex execution switch", () => {
   beforeEach(mockSecretKmsHttp);
 
   it.each(SUBSCRIPTION_CASES)(
-    "uses native Codex for $model with tier $tier without changing its account",
+    "routes native Codex for $model with tier $tier when KMS decryption is unavailable",
     async ({ model, tier }) => {
       const owned = await ownedChatActor();
       await owned.run(async () => {
@@ -83,6 +85,19 @@ describe("Codex execution switch", () => {
           context,
           { ...actor, orgId: requireOrgId(actor) },
           { [FeatureSwitchKey.CodexExecution]: true },
+        );
+        server.use(
+          http.post("https://kms.us-west-2.amazonaws.com/", ({ request }) => {
+            if (
+              request.headers.get("x-amz-target") === "TrentService.Decrypt"
+            ) {
+              return HttpResponse.json(
+                { __type: "AccessDeniedException" },
+                { status: 400 },
+              );
+            }
+            return undefined;
+          }),
         );
         const run = await sendChatRun(actor, {
           agentId,
