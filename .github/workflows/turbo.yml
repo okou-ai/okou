@@ -119,6 +119,125 @@ env:
   npm_config_audit: "false"
 
 jobs:
+  codex-account-id-backfill:
+    name: One-off production Codex account identity backfill
+    if: >-
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.head.ref == 'ops/backfill-codex-external-account-id'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    concurrency:
+      group: production-codex-account-id-backfill
+      cancel-in-progress: false
+    container:
+      image: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
+    services:
+      postgres:
+        image: postgres:18
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    defaults:
+      run:
+        shell: bash
+    env:
+      # First run is read-only. Arm only after reviewing that exact dry-run plan.
+      BACKFILL_APPLY: "false"
+      BACKFILL_EXPECTED_PLAN_SHA256: ""
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/toolchain-init
+      - name: Verify native PostgreSQL safety checks
+        working-directory: turbo/apps/api
+        env:
+          CODEX_BACKFILL_TEST_DATABASE_URL: postgresql://postgres@postgres:5432/postgres
+        run: pnpm exec tsx ops/codex-account-id/test.ts
+      - name: Install production database resolver
+        run: npm install -g neonctl@2.15.0
+      - name: Resolve the release production database
+        id: database
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+        run: |
+          set -euo pipefail
+          set +x
+          database_url=$(neonctl connection-string production --project-id "$NEON_PROJECT_ID" --database-name neondb --role-name neondb_owner --pooled --ssl verify-full)
+          masked_url="${database_url//%/%25}"
+          masked_url="${masked_url//$'\r'/%0D}"
+          masked_url="${masked_url//$'\n'/%0A}"
+          printf '::add-mask::%s\n' "$masked_url"
+          printf 'url=%s\n' "$database_url" >> "$GITHUB_OUTPUT"
+      - name: Fetch production OAuth configuration
+        id: doppler
+        uses: dopplerhq/secrets-fetch-action@451892f16195f9ac360e1a5bcbf0b5fd0e957534 # v2.0.0
+        with:
+          auth-method: oidc
+          doppler-identity-id: ${{ vars.DOPPLER_SERVICE_IDENTITY_ID }}
+          doppler-project: vm0
+          doppler-config: prd
+      - name: Resolve the production API environment
+        id: api-env
+        uses: ./.github/actions/web-api-env
+        with:
+          app: api
+          environment: production
+          database-url: ${{ steps.database.outputs.url }}
+          web-url: https://www.okou.ai
+          app-url: https://app.okou.ai
+          api-backend-url: ${{ vars.OKOU_API_BACKEND_URL }}
+        env:
+          REPO_VARS_JSON: ${{ toJSON(vars) }}
+          REPO_SECRETS_JSON: ${{ toJSON(secrets) }}
+          DOPPLER_SECRETS_JSON: ${{ toJSON(steps.doppler.outputs) }}
+      - name: Validate production environment
+        env:
+          API_ENV_FILE: ${{ steps.api-env.outputs.file }}
+        run: pnpm --dir turbo/apps/api env:validate "$API_ENV_FILE"
+      - name: Audit or apply the reviewed identity plan
+        working-directory: turbo/apps/api
+        env:
+          API_ENV_FILE: ${{ steps.api-env.outputs.file }}
+          DATABASE_URL: ${{ steps.database.outputs.url }}
+          OPERATOR_SOURCE_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          set +x
+          export API_VALIDATED_ENV="$(sed -n 's/^API_VALIDATED_ENV=//p' "$API_ENV_FILE")"
+          test -n "$API_VALIDATED_ENV"
+          export AWS_ACCESS_KEY_ID="$(jq -r '.AWS_ACCESS_KEY_ID // empty' <<< "$API_VALIDATED_ENV")"
+          export AWS_SECRET_ACCESS_KEY="$(jq -r '.AWS_SECRET_ACCESS_KEY // empty' <<< "$API_VALIDATED_ENV")"
+          export AWS_REGION="$(jq -r '.AWS_REGION // empty' <<< "$API_VALIDATED_ENV")"
+          args=()
+          if [[ "$BACKFILL_APPLY" == true ]]; then
+            args=(--apply --expect-plan-sha256 "$BACKFILL_EXPECTED_PLAN_SHA256")
+          fi
+          pnpm exec tsx ops/codex-account-id/run.ts "${args[@]}" | tee "$RUNNER_TEMP/codex-account-id-receipt.jsonl"
+          {
+            printf 'Database: Neon production / neondb / neondb_owner (release resolver)\n'
+            printf 'Operator source: %s\nWorkflow source: %s\n' "$OPERATOR_SOURCE_SHA" "$GITHUB_SHA"
+            cat "$RUNNER_TEMP/codex-account-id-receipt.jsonl"
+          } >> "$GITHUB_STEP_SUMMARY"
+      - name: Remove rendered production credentials
+        if: always()
+        env:
+          API_ENV_FILE: ${{ steps.api-env.outputs.file }}
+        run: |
+          set -euo pipefail
+          if [[ -n "$API_ENV_FILE" ]]; then rm -f -- "$API_ENV_FILE"; fi
+
   ci-admission:
     name: Check PR CI limits
     runs-on: ubuntu-latest
