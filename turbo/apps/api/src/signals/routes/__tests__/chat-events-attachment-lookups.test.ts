@@ -259,7 +259,7 @@ describe("chat attachment lookup ownership", () => {
           }
           await release.promise;
           finished.push(request.input.Key);
-          if (outcome === "failure") {
+          if (outcome === "failure" && request.input.Key === keys[0]) {
             throw new Error("Object storage unavailable");
           }
         }
@@ -297,7 +297,9 @@ describe("chat attachment lookup ownership", () => {
       await entered.promise;
       expect([...started].sort()).toStrictEqual(keys.slice(0, 4).sort());
       if (outcome === "cancellation") {
-        controller.abort(new DOMException("Client disconnected", "AbortError"));
+        controller.abort(
+          new DOMException("Application owner cancelled", "AbortError"),
+        );
       }
       release.resolve(undefined);
       await expect(sending).resolves.toStrictEqual({
