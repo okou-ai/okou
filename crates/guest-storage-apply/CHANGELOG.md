@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.30.1...guest-storage-apply-v0.31.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
 ## [0.30.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.30.0...guest-storage-apply-v0.30.1) (2026-11-07)
 
 

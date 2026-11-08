@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.28.10](https://github.com/okou-ai/okou/compare/ios-v0.28.9...ios-v0.28.10) (2026-11-08)
+
+
+### Documentation
+
+* **ios:** define native development and ccstate standards ([#45934](https://github.com/okou-ai/okou/issues/45934)) ([50aaabc](https://github.com/okou-ai/okou/commit/50aaabcaa091640e3e22df007373acc71c02fb50))
+
+
+### Refactoring
+
+* **ios:** bind sidebar navigation through ccstate swiftui ([#45925](https://github.com/okou-ai/okou/issues/45925)) ([3c37fa4](https://github.com/okou-ai/okou/commit/3c37fa4b319d8436a33a0c580434e3c0dfc7f6b9))
+* **ios:** derive search resource state with ccstate ([#45936](https://github.com/okou-ai/okou/issues/45936)) ([1ff03a1](https://github.com/okou-ai/okou/commit/1ff03a1dd487a0b394a7bed125dfc7ecaa4c29ea))
+* **ios:** isolate composer drafts in ccstate ([#45924](https://github.com/okou-ai/okou/issues/45924)) ([db94d5c](https://github.com/okou-ai/okou/commit/db94d5ca16785a710c8e3f25931f2543bc964e2f))
+
 ## [0.28.9](https://github.com/okou-ai/okou/compare/ios-v0.28.8...ios-v0.28.9) (2026-11-08)
 
 

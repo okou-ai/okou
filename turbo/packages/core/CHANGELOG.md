@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.824.0](https://github.com/okou-ai/okou/compare/core-v8.823.0...core-v8.824.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.45.0
+
 ## [8.823.0](https://github.com/okou-ai/okou/compare/core-v8.822.4...core-v8.823.0) (2026-11-07)
 
 
