@@ -14,7 +14,6 @@ import {
   PI_RESOURCE_EXTRACTOR_VERSION,
   piResourceIndexFits,
   piResourceIndexHash,
-  piResourceVersionIndexSchema,
   RESOURCE_ARCHIVE_MAX_BYTES,
 } from "../../lib/pi-resource-index";
 import { now, nowDate } from "../../lib/time";
@@ -46,51 +45,6 @@ export function piResourceProjectionValues(
     leaseExpiresAt: null,
     updatedAt,
   };
-}
-
-interface PiResourceIndexReadRow {
-  readonly versionId: string;
-  readonly status: typeof piResourceVersionIndexes.$inferSelect.status;
-  readonly storageId: string;
-  readonly archiveSize: number | null;
-  readonly projection: typeof piResourceVersionIndexes.$inferSelect.projection;
-  readonly projectionHash: string | null;
-}
-
-export function piResourceVersionIndexesResult(
-  versionIds: readonly string[],
-  rows: readonly PiResourceIndexReadRow[],
-) {
-  const unique = [...new Set(versionIds)];
-  const indexes = new Map<
-    string,
-    {
-      readonly storageId: string;
-      readonly archiveSize: number;
-      readonly projection: PiResourceVersionIndex;
-    }
-  >();
-  const misses = { pending: 0, running: 0, unindexable: 0, missing: 0 };
-  misses.missing = unique.length - rows.length;
-  for (const row of rows) {
-    if (row.status !== "ready") {
-      misses[row.status]++;
-      continue;
-    }
-    const projection = piResourceVersionIndexSchema.parse(row.projection);
-    if (
-      row.archiveSize === null ||
-      piResourceIndexHash(projection) !== row.projectionHash
-    ) {
-      throw new Error("Pi resource version index failed integrity validation");
-    }
-    indexes.set(row.versionId, {
-      storageId: row.storageId,
-      archiveSize: row.archiveSize,
-      projection,
-    });
-  }
-  return { indexes, misses };
 }
 
 const claimWork$ = command(

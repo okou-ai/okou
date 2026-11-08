@@ -1,5 +1,4 @@
 import { command } from "ccstate";
-import { getUserTemplateStorageName } from "@okouai/core/storage-names";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { and, eq, isNull, or } from "drizzle-orm";
 
@@ -12,7 +11,7 @@ import {
 } from "./template-package.service";
 import type { UserTemplateRow } from "./user-template-data.service";
 import { packageLimitsFor } from "./user-template-publish.service";
-import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
+import { publishTemplateGuidanceBundle$ } from "./template-guidance-bundle.service";
 
 type RepackageResult =
   | { readonly kind: "replaced"; readonly row: UserTemplateRow }
@@ -40,9 +39,9 @@ function rejected(message: string): RepackageResult {
  * caller's claim — the same rule publish applies, read from the authority
  * rather than the request.
  *
- * Storage is versioned, so the new files land as a whole new version rather
- * than merging into the old one: a file the rebuild dropped is gone rather
- * than left behind to be read by a guide that no longer mentions it.
+ * Each publication is a complete immutable archive. Files removed by the
+ * rebuild are absent from the replacement; retained Runs keep their captured
+ * archive rather than following the owner's later pointer.
  */
 export const replaceUserTemplatePackage$ = command(
   async (
@@ -109,33 +108,29 @@ export const replaceUserTemplatePackage$ = command(
       return rejected(packageResult.message);
     }
 
-    await set(
-      uploadVolumeServerSide$,
-      {
-        orgId: args.orgId,
-        storageName: getUserTemplateStorageName(row.id),
-        files: packageResult.files,
-      },
+    const guidanceBundle = await set(
+      publishTemplateGuidanceBundle$,
+      packageResult.files,
       signal,
     );
     signal.throwIfAborted();
 
-    // The legacy publication is complete before invalidating its captured
-    // bundle pointer. Compare the actual package identity: a concurrent bundle
-    // publication must not be cleared by this outgoing writer.
+    // Publish bytes first, then switch only the owner revision we selected.
+    // Outgoing prepared APIs also compare the pointer before invalidating it.
     const currentTime = nowDate();
     const [updated] = await db
       .update(userTemplates)
       .set({
         updatedAt: currentTime,
         updatedBy: args.userId,
-        guidanceBundle: null,
+        guidanceBundle,
       })
       .where(
         and(
           eq(userTemplates.id, row.id),
           eq(userTemplates.orgId, args.orgId),
           eq(userTemplates.ownerUserId, args.userId),
+          eq(userTemplates.updatedAt, row.updatedAt),
           row.guidanceBundle === null
             ? isNull(userTemplates.guidanceBundle)
             : eq(userTemplates.guidanceBundle, row.guidanceBundle),

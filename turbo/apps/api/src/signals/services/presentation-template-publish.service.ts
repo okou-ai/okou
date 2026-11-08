@@ -11,7 +11,6 @@ import {
   REQUIRED_PRESENTATION_TEMPLATE_PACKAGE_FILES,
   type PublishPresentationTemplateBody,
 } from "@okouai/api-contracts/contracts/presentation-templates";
-import { getPresentationTemplateStorageName } from "@okouai/core/storage-names";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 
 import { badRequestMessage } from "../../lib/error";
@@ -24,7 +23,7 @@ import {
   type ResolvedUpload,
   type TemplatePackageLimits,
 } from "./template-package.service";
-import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
+import { publishTemplateGuidanceBundle$ } from "./template-guidance-bundle.service";
 
 function checkSource(source: ResolvedUpload): string | null {
   const accepted: readonly string[] =
@@ -118,8 +117,12 @@ export const publishPresentationTemplate$ = command(
     if (packageResult.kind === "rejected") {
       return rejected(packageResult.message);
     }
-    const files = packageResult.files;
-
+    const guidanceBundle = await set(
+      publishTemplateGuidanceBundle$,
+      packageResult.files,
+      signal,
+    );
+    signal.throwIfAborted();
     const currentTime = nowDate();
     const [created] = await db
       .insert(presentationTemplates)
@@ -129,6 +132,7 @@ export const publishPresentationTemplate$ = command(
         title: body.title,
         sourceStorageKey: source.storageKey,
         sourceFilename: source.filename,
+        guidanceBundle,
         pageKeys: pages.map((page) => {
           return page.storageKey;
         }),
@@ -143,18 +147,6 @@ export const publishPresentationTemplate$ = command(
       throw new Error("Failed to create the presentation template");
     }
 
-    // The package is stored under a name derived from the row id, so the
-    // template needs no column pointing at it.
-    await set(
-      uploadVolumeServerSide$,
-      {
-        orgId: args.orgId,
-        storageName: getPresentationTemplateStorageName(created.id),
-        files,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
     return { kind: "published", templateId: created.id };
   },
 );

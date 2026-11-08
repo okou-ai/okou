@@ -307,8 +307,6 @@
     "src/signals/services/pi-resource-version-index.service.ts",
     "src/signals/services/run-admission.service.ts",
     "src/signals/services/storage-index.service.ts",
-    "src/signals/services/storage-version-registration.service.ts",
-    "src/signals/services/storage-volume-publication.service.ts",
     "src/signals/services/system-storage-presigned-url-cache.service.ts",
     "src/signals/services/time-automation.ts",
     "src/signals/services/user-connectors.service.ts",

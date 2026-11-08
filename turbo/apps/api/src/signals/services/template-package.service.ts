@@ -1,6 +1,7 @@
 import { command } from "ccstate";
 import { gunzipSync } from "node:zlib";
 import { Parser } from "tar";
+import { validateTemplateGuidanceFiles } from "@okouai/core/template-guidance-bundle";
 
 import { createDeferredPromise, safeSync, settle } from "../utils";
 import { downloadS3BufferWithMaxBytes } from "../external/s3";
@@ -289,8 +290,14 @@ export const loadTemplatePackage$ = command(
       };
     }
     const packageError = checkPackage(read.value, limits);
-    return packageError === null
-      ? { kind: "files", files: read.value }
-      : { kind: "rejected", message: packageError };
+    if (packageError !== null) {
+      return { kind: "rejected", message: packageError };
+    }
+    const validated = safeSync(() => {
+      return validateTemplateGuidanceFiles(read.value);
+    });
+    return "error" in validated
+      ? { kind: "rejected", message: "Invalid template guidance package" }
+      : { kind: "files", files: validated.ok };
   },
 );

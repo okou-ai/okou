@@ -132,6 +132,7 @@ readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-chara
 readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors/single-character-skill-capability-free-api
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly REGISTRY_ARCHIVE_READER_PATH=.github/rollback-floors/registry-archive-reader
+readonly TEMPLATE_GUIDANCE_BUNDLE_READER_PATH=.github/rollback-floors/template-guidance-bundle-reader
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
@@ -1004,6 +1005,21 @@ if ! git merge-base --is-ancestor "$registry_archive_reader_commit" "$TARGET_COM
   fail "Rollback target predates independent Registry archive reads: ${registry_archive_reader_commit}."
 fi
 
+# Template owner pointers and retained Runs survive an API rollback. Runner is
+# restored first, so independently require this released reader in both roles.
+if ! template_guidance_bundle_reader_commit=$(git show "origin/main:${TEMPLATE_GUIDANCE_BUNDLE_READER_PATH}"); then
+  fail "Cannot read the template guidance bundle reader rollback floor from main."
+fi
+if [[ ! "$template_guidance_bundle_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid template guidance bundle reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" origin/main; then
+  fail "Template guidance bundle reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates template guidance bundle readers: ${template_guidance_bundle_reader_commit}."
+fi
+
 # Reference-only claims require the corrected archive reader. Keep the API
 # producer floor independent of the selected Runner reader artifact.
 content_bundle_archive_reader_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
@@ -1179,6 +1195,10 @@ fi
 
 if ! git merge-base --is-ancestor "$content_bundle_archive_reader_commit" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates bounded content bundle archive delivery: ${content_bundle_archive_reader_commit}."
+fi
+
+if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates template guidance bundle readers: ${template_guidance_bundle_reader_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$single_character_skill_runner_commit" "$runner_tag_commit"; then
