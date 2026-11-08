@@ -11,7 +11,6 @@ use std::os::fd::{AsRawFd, FromRawFd};
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{FileTypeExt, MetadataExt};
 use std::path::{Component, Path, PathBuf};
-use std::process::Command;
 
 use guest_contracts::home_mount::{HOME_DEVICE, HOME_DIR};
 use nix::unistd::{Group, User};
@@ -121,15 +120,27 @@ fn mount_at(
         }
         fs::create_dir_all(directory)?;
         reject_symlink_components(directory)?;
-        let status = Command::new("/usr/bin/mount")
-            .args(["-t", "ext4", "--"])
-            .arg(device)
-            .arg(directory)
-            .status()?;
-        if !status.success() {
-            return Err(io::Error::other(format!(
-                "ext4 home mount failed: {status}"
-            )));
+        let device = CString::new(device.as_os_str().as_bytes())
+            .map_err(|_| invalid("home device contains NUL"))?;
+        let directory = CString::new(directory.as_os_str().as_bytes())
+            .map_err(|_| invalid("home directory contains NUL"))?;
+        // SAFETY: all three strings are NUL-terminated and live through the
+        // syscall. The fixed ext4 mount uses the kernel's default options.
+        if unsafe {
+            libc::mount(
+                device.as_ptr(),
+                directory.as_ptr(),
+                c"ext4".as_ptr(),
+                0,
+                std::ptr::null(),
+            )
+        } != 0
+        {
+            let error = io::Error::last_os_error();
+            return Err(io::Error::new(
+                error.kind(),
+                format!("ext4 home mount failed: {error}"),
+            ));
         }
     }
     // Observe the actual post-mount view, including on repeated calls and
