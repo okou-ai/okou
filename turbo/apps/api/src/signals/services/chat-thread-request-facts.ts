@@ -31,7 +31,8 @@ export type ChatThreadRequestRow = Readonly<
 
 export interface ChatThreadRequestFacts {
   readonly orgId: string;
-  readonly thread: ChatThreadRequestRow;
+  /** Identity only; mutable thread/session facts belong to claim preparation. */
+  readonly thread: Pick<ChatThreadRequestRow, "id" | "userId" | "agentId">;
   readonly input: {
     readonly id: string;
     readonly userMessage: UserMessageDocument;

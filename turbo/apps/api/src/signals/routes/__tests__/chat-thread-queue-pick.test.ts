@@ -1,13 +1,15 @@
 import { createBddIntegrationApi } from "./helpers/api-bdd-integrations";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 import { randomUUID } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { HeadObjectCommand } from "@aws-sdk/client-s3";
+import { describe, expect, it, onTestFinished } from "vitest";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { createApp } from "../../../app-factory";
 import { mockEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { now } from "../../../lib/time";
+import { createDeferredPromise } from "../../utils";
 
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatEventsRoutes } from "../chat-events";
@@ -23,6 +25,10 @@ import {
 } from "./helpers/chat-events-fixture";
 
 import { postConcurrencyEntitlementsInvoicePaid } from "./helpers/stripe-billing-webhook";
+import {
+  installS3Fixture,
+  uploadTemplateFile,
+} from "./helpers/template-publish-fixture";
 
 /**
  * CHAT-02: at organization capacity, chat input waits in its thread without a
@@ -226,6 +232,161 @@ async function automationRunIds(
 }
 
 describe("CHAT-02: queued chat thread picks", () => {
+  it("resumes the completed session when completion overlaps attachment resolution", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const running = await sendChatRun(actor, {
+      agentId,
+      prompt: "complete while the next send resolves its attachment",
+    });
+    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    const storage = installS3Fixture(context);
+    const file = { filename: "overlap.txt", contentType: "text/plain" };
+    const fileId = await uploadTemplateFile(
+      context,
+      actor,
+      storage,
+      file,
+      Buffer.from("Read after the previous run completes"),
+    );
+    const { url } = await chat.resolveWebFileUrl(actor, fileId);
+    const key = storage.signedKey(url);
+    const entered = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    const originalSend = context.mocks.s3.send.getMockImplementation();
+    if (!key || !originalSend) {
+      throw new Error("Expected the uploaded object and S3 fixture");
+    }
+    context.mocks.s3.send.mockImplementation(async (request: unknown) => {
+      const response = await originalSend(request);
+      if (
+        request instanceof HeadObjectCommand &&
+        request.input.Key === key &&
+        !entered.settled()
+      ) {
+        entered.resolve(undefined);
+        await release.promise;
+      }
+      return response;
+    });
+    const clientEventId = randomUUID();
+    const sending = chat.requestSendEvent(
+      actor,
+      {
+        agentId,
+        threadId: running.threadId,
+        clientEventId,
+        prompt: "Read the attachment in the next run",
+        userMessage: {
+          version: 1,
+          parts: [
+            {
+              type: "file",
+              fileId,
+              filenameSnapshot: file.filename,
+              contentType: file.contentType,
+            },
+            { type: "text", text: "Read the attachment in the next run" },
+          ],
+        },
+      },
+      [201],
+    );
+    onTestFinished(async () => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+      await sending;
+    });
+    await entered.promise;
+    // The normal send has authorized its thread, but its external attachment
+    // read has not returned. Completion publishes a newer binding before pick.
+    chatCallbacks.mockChatOutputEvents([]);
+    await completeChatRunOk(running.runId, runningClaim.sandboxHeaders);
+    await flushWaitUntilForTest();
+    release.resolve(undefined);
+    await sending;
+    await flushWaitUntilForTest();
+
+    const page = await chat.listThreadEvents(actor, running.threadId);
+    const replacements = userMessages(page.events).filter((message) => {
+      return message.revokesEventId === clientEventId;
+    });
+    expect(replacements).toStrictEqual([
+      expect.objectContaining({
+        eventType: "input.prompt",
+        runId: expect.any(String),
+      }),
+    ]);
+    const nextRunId = replacements[0]?.runId;
+    if (!nextRunId) {
+      throw new Error("Expected the accepted input to launch once");
+    }
+    await expect(threadRunIds(actor, running.threadId)).resolves.toStrictEqual([
+      running.runId,
+      nextRunId,
+    ]);
+    const next = await claimChatRun(runnerGroup, nextRunId);
+    expect(next.claim.nativeContinuation).toMatchObject({
+      sessionId: `bdd-cli-${running.runId}`,
+      generationRunId: running.runId,
+    });
+    await cancelChatRun(actor, nextRunId);
+  });
+
+  it("launches an input exactly once when normal send and Runner completion race", async () => {
+    mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
+    const { actor, agentId, runnerGroup } = await entitledNativeChatActor();
+    const running = await sendChatRun(actor, {
+      agentId,
+      prompt: "the run completing during publication",
+    });
+    const runningClaim = await claimChatRun(runnerGroup, running.runId);
+    const clientEventId = randomUUID();
+    chatCallbacks.mockChatOutputEvents([]);
+    await Promise.all([
+      chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: running.threadId,
+          clientEventId,
+          prompt: "sent while the previous run completes",
+        },
+        [201],
+      ),
+      completeChatRunOk(running.runId, runningClaim.sandboxHeaders),
+    ]);
+    await flushWaitUntilForTest();
+    const page = await chat.listThreadEvents(actor, running.threadId);
+    const replacements = userMessages(page.events).filter((message) => {
+      return message.revokesEventId === clientEventId;
+    });
+    expect(replacements).toStrictEqual([
+      expect.objectContaining({
+        eventType: "input.prompt",
+        runId: expect.any(String),
+      }),
+    ]);
+    const nextRunId = replacements[0]?.runId;
+    if (!nextRunId) {
+      throw new Error("Expected the accepted input to launch once");
+    }
+    const next = await claimChatRun(runnerGroup, nextRunId);
+    expect(next.claim.nativeContinuation).toMatchObject({
+      sessionId: `bdd-cli-${running.runId}`,
+      generationRunId: running.runId,
+    });
+    // A duplicate authenticated completion cannot launch an additional Run.
+    await completeChatRunOk(running.runId, runningClaim.sandboxHeaders);
+    await flushWaitUntilForTest();
+    await expect(threadRunIds(actor, running.threadId)).resolves.toStrictEqual([
+      running.runId,
+      nextRunId,
+    ]);
+    await cancelChatRun(actor, nextRunId);
+  });
+
   it("launches only the FIFO head of a waiting thread and resumes its latest session", async () => {
     mockEnv("CONCURRENT_RUN_LIMIT_CAP", "1");
     const { actor, agentId, runnerGroup } = await entitledNativeChatActor();

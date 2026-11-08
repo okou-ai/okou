@@ -889,17 +889,6 @@ type SendThread = ExistingSendThread | NewSendThread;
 function normalSendRequestFacts(
   args: NormalSendArgs,
   thread: SendThread,
-  previousBinding:
-    | Pick<
-        ChatThreadRequestFacts["thread"],
-        | "framework"
-        | "frameworkSessionId"
-        | "frameworkSessionRunId"
-        | "projectId"
-        | "title"
-        | "renamedAt"
-      >
-    | undefined,
   event: Pick<
     ChatThreadRequestFacts["input"],
     "id" | "userMessage" | "modelSelection"
@@ -909,17 +898,8 @@ function normalSendRequestFacts(
     orgId: args.orgId,
     thread: {
       id: thread.threadId,
-      projectId: previousBinding?.projectId ?? null,
       userId: args.userId,
       agentId: args.body.agentId,
-      ...thread.runSettings,
-      ...thread.computerAccess,
-      framework: previousBinding?.framework ?? null,
-      frameworkSessionId: previousBinding?.frameworkSessionId ?? null,
-      frameworkSessionRunId: previousBinding?.frameworkSessionRunId ?? null,
-      // A new thread's row is inserted untitled and unrenamed.
-      title: previousBinding?.title ?? null,
-      renamedAt: previousBinding?.renamedAt ?? null,
     },
     input: {
       id: event.id,
@@ -2606,12 +2586,7 @@ export const sendNormalEvent$ = command(
               touchedAt: createdAt,
               ...(enqueueCommit ? { enqueueCommit } : {}),
               context,
-              requestFacts: normalSendRequestFacts(
-                args,
-                thread,
-                "thread" in authorized ? authorized.thread : undefined,
-                event,
-              ),
+              requestFacts: normalSendRequestFacts(args, thread, event),
             },
             signal,
           ),

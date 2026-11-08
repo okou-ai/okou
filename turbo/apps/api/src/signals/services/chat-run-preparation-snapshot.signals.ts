@@ -158,24 +158,6 @@ export function createChatRunPreparationSnapshot(
   bootstrap: AgentRunContextSignals,
   requestFacts?: ChatThreadRequestFacts,
 ) {
-  const threadRow$ = computed(async (get) => {
-    // Preserve the request's binding snapshot. Commit still checks that binding.
-    if (requestFacts) {
-      return requestFacts.thread;
-    }
-    const [row] = await get(db$)
-      .select(chatThreadRequestSelection())
-      .from(chatThreads)
-      .where(
-        and(
-          eq(chatThreads.id, claim.chatThreadId),
-          eq(chatThreads.userId, bootstrap.userId),
-          eq(chatThreads.agentId, bootstrap.agentId),
-        ),
-      )
-      .limit(1);
-    return row ?? null;
-  });
   const snapshot$ = computed(async (get) => {
     const database = get(db$);
     // The limit belongs to the identity context; occupancy is sampled here.
@@ -187,29 +169,31 @@ export function createChatRunPreparationSnapshot(
       agentId: bootstrap.agentId,
       orgId: claim.orgId,
     });
-    const [thread, [row]] = await Promise.all([
-      get(threadRow$),
-      database
-        .with(occupancy, head)
-        .select({
-          hasCapacity: sql`${hasCapacity}`.mapWith(pgBooleanDecoder),
-          head: {
-            id: head.id,
-            chatThreadId: head.chatThreadId,
-            createdAt: head.createdAt,
-            seqId: head.seqId,
-            eventType: head.eventType,
-            contextType: head.contextType,
-            contextId: head.contextId,
-            userMessage: head.userMessage,
-            requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
-            modelSelection: head.modelSelection,
-            canonicalModelSelection: head.canonicalModelSelection,
-            sourceAutonomyBudget: head.sourceAutonomyBudget,
-          },
-          // No head/full queues do not inspect policy or selections; automation
-          // inputs bypass the prompt-only Official thread policy as before.
-          isOfficialWorkflowThread: sql`CASE WHEN ${not(hasCapacity)} THEN false
+    // Completion publishes its session before releasing the active Run. Read
+    // the binding after this lease succeeds, never from the send's early read.
+    // Atomic launch still fences any changes after this preparation snapshot.
+    const [row] = await database
+      .with(occupancy, head)
+      .select({
+        hasCapacity: sql`${hasCapacity}`.mapWith(pgBooleanDecoder),
+        thread: chatThreadRequestSelection(),
+        head: {
+          id: head.id,
+          chatThreadId: head.chatThreadId,
+          createdAt: head.createdAt,
+          seqId: head.seqId,
+          eventType: head.eventType,
+          contextType: head.contextType,
+          contextId: head.contextId,
+          userMessage: head.userMessage,
+          requiredOfficialWorkflowIds: head.requiredOfficialWorkflowIds,
+          modelSelection: head.modelSelection,
+          canonicalModelSelection: head.canonicalModelSelection,
+          sourceAutonomyBudget: head.sourceAutonomyBudget,
+        },
+        // No head/full queues do not inspect policy or selections; automation
+        // inputs bypass the prompt-only Official thread policy as before.
+        isOfficialWorkflowThread: sql`CASE WHEN ${not(hasCapacity)} THEN false
             WHEN ${eq(head.eventType, "input.prompt")} THEN ${officialWorkflowThreadCondition(
               {
                 threadId: claim.chatThreadId,
@@ -217,18 +201,25 @@ export function createChatRunPreparationSnapshot(
                 userId: bootstrap.userId,
               },
             )} ELSE false END`.mapWith(pgBooleanDecoder),
-          threadConnectorSelections:
-            sql`CASE WHEN ${not(hasCapacity)} THEN '[]'::jsonb
+        threadConnectorSelections:
+          sql`CASE WHEN ${not(hasCapacity)} THEN '[]'::jsonb
             WHEN ${isNotNull(head.id)} THEN (${selections})
             ELSE '[]'::jsonb END`.mapWith(threadSelectionRowsDecoder),
-        })
-        .from(occupancy)
-        .leftJoin(head, sql`true`),
-    ]);
+      })
+      .from(occupancy)
+      .leftJoin(head, sql`true`)
+      .leftJoin(
+        chatThreads,
+        and(
+          eq(chatThreads.id, claim.chatThreadId),
+          eq(chatThreads.userId, bootstrap.userId),
+          eq(chatThreads.agentId, bootstrap.agentId),
+        ),
+      );
     if (!row) {
       throw new Error("Chat preparation occupancy returned no row");
     }
-    const picked = row.head;
+    const { thread, head: picked } = row;
     if (!thread || !picked) {
       return { hasCapacity: row.hasCapacity, pickedEvent: null };
     }
