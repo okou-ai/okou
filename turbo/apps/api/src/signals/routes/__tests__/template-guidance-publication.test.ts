@@ -291,6 +291,76 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
   });
 });
 
+test("allows package replacement and retry after a completed metadata edit", async () => {
+  const owner = await publicChatActor(context);
+  const fixture = await owner.run(() => {
+    return Promise.resolve(installS3Fixture(context));
+  });
+  const published = await owner.run(async () => {
+    return await publish(
+      "user-template",
+      await uploadInputs(owner.actor, fixture, tarGz(guidance("A"))),
+    );
+  });
+  if (published.status !== 200) {
+    throw new Error("Expected a published template");
+  }
+  const id = published.body.id;
+  await owner.run(async () => {
+    const renamed = await accept(
+      userClient().update({
+        headers: authHeaders(),
+        params: { templateId: id },
+        body: {
+          title: "Renamed before replacement",
+          visibility: "organization",
+        },
+      }),
+      [200],
+    );
+    const packageFileId = await uploadTemplateFile(
+      context,
+      owner.actor,
+      fixture,
+      { filename: "replacement.tar.gz", contentType: "application/gzip" },
+      tarGz(guidance("B")),
+    );
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const replaced = await accept(
+        userClient().replacePackage({
+          headers: authHeaders(),
+          params: { templateId: id },
+          body: { packageFileId },
+        }),
+        [200],
+      );
+      expect(replaced.body).toMatchObject({
+        id,
+        title: renamed.body.title,
+        visibility: renamed.body.visibility,
+      });
+    }
+    const retained = await accept(
+      userClient().get({ headers: authHeaders(), params: { templateId: id } }),
+      [200],
+    );
+    expect(retained.body).toMatchObject({
+      title: "Renamed before replacement",
+      visibility: "organization",
+    });
+  });
+  const run = await owner.sendChatRun(owner.actor, {
+    agentId: owner.agentId,
+    model: "claude-fable-5-1",
+    prompt: "Read the replacement after renaming",
+    template: selection("user-template", id),
+  });
+  const claimed = await owner.claimChatRun(owner.runnerGroup, run.runId);
+  expect(
+    claimedFiles(fixture, claimed.claim, "user-template", id),
+  ).toStrictEqual(guidance("B"));
+});
+
 test.each(["replacement", "metadata edit"] as const)(
   "does not overwrite a concurrent %s that published first",
   async (change) => {

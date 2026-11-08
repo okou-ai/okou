@@ -1,7 +1,8 @@
 import { command } from "ccstate";
 import { userTemplates } from "@okouai/db/schema/user-template";
-import { and, eq, isNull, or } from "drizzle-orm";
+import { and, eq, getTableColumns, isNull, or, sql } from "drizzle-orm";
 
+import { pgTextDecoder } from "../../lib/db-structured-result";
 import { badRequestMessage } from "../../lib/error";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
@@ -56,7 +57,13 @@ export const replaceUserTemplatePackage$ = command(
   ): Promise<RepackageResult> => {
     const db = set(writeDb$);
     const [selectedRow] = await get(db$)
-      .select()
+      .select({
+        ...getTableColumns(userTemplates),
+        // Date decoding loses the microseconds written by metadata edits.
+        observedUpdatedAt: sql`${userTemplates.updatedAt}::text`.mapWith(
+          pgTextDecoder,
+        ),
+      })
       .from(userTemplates)
       .where(
         and(
@@ -130,7 +137,7 @@ export const replaceUserTemplatePackage$ = command(
           eq(userTemplates.id, row.id),
           eq(userTemplates.orgId, args.orgId),
           eq(userTemplates.ownerUserId, args.userId),
-          eq(userTemplates.updatedAt, row.updatedAt),
+          eq(userTemplates.updatedAt, sql`${row.observedUpdatedAt}::timestamp`),
           row.guidanceBundle === null
             ? isNull(userTemplates.guidanceBundle)
             : eq(userTemplates.guidanceBundle, row.guidanceBundle),
