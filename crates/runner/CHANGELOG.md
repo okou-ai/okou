@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.41](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.40...runner-rs-v0.244.41) (2026-11-08)
+
+
+### Refactoring
+
+* **python:** derive metadata method coverage from qualified call policies ([#45920](https://github.com/okou-ai/okou/issues/45920)) ([f6745fa](https://github.com/okou-ai/okou/commit/f6745fa1d092347ea1c9c87d2869333cbfa5f1b0))
+
 ## [0.244.40](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.39...runner-rs-v0.244.40) (2026-11-07)
 
 

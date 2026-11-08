@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.9](https://github.com/okou-ai/okou/compare/ios-v0.28.8...ios-v0.28.9) (2026-11-08)
+
+
+### Refactoring
+
+* **ios:** bind model configuration through ccstate swiftui ([#45915](https://github.com/okou-ai/okou/issues/45915)) ([96ccfbf](https://github.com/okou-ai/okou/commit/96ccfbf91faa3846245f106784178ea98cbfc449))
+
 ## [0.28.8](https://github.com/okou-ai/okou/compare/ios-v0.28.7...ios-v0.28.8) (2026-11-07)
 
 

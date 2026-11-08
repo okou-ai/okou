@@ -10,6 +10,18 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.53.2](https://github.com/okou-ai/okou/compare/api-v2.53.1...api-v2.53.2) (2026-11-08)
+
+
+### Refactoring
+
+* **api:** retire non-seed skill storage publication ([#45919](https://github.com/okou-ai/okou/issues/45919)) ([c825fc8](https://github.com/okou-ai/okou/commit/c825fc80d116bfeeba68aa58ffb065dda29ebe6f))
+
+
+### Performance Improvements
+
+* **api:** stop tracing axiom ingest requests ([#45923](https://github.com/okou-ai/okou/issues/45923)) ([9909c82](https://github.com/okou-ai/okou/commit/9909c827471751874206d39e67f6747e1b2962e2))
+
 ## [2.53.1](https://github.com/okou-ai/okou/compare/api-v2.53.0...api-v2.53.1) (2026-11-07)
 
 
