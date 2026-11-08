@@ -150,9 +150,9 @@ jobs:
       run:
         shell: bash
     env:
-      # First run is read-only. Arm only after reviewing that exact dry-run plan.
-      BACKFILL_APPLY: "false"
-      BACKFILL_EXPECTED_PLAN_SHA256: ""
+      # Reviewed production audit: 68 scanned, 59 matching, 9 missing (run 42482032342).
+      BACKFILL_APPLY: "true"
+      BACKFILL_EXPECTED_PLAN_SHA256: "a296b43e9a566ab5fd546c01957c529bb40326794be883a7f5a161bdcf225e1f"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
