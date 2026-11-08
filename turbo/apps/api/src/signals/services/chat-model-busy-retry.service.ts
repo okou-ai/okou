@@ -63,7 +63,8 @@ export const scheduleModelBusyRetry$ = command(
     if (
       event.runStatus !== "failed" ||
       (event.failureReason !== "provider_overloaded" &&
-        event.failureReason !== "provider_rate_limited")
+        event.failureReason !== "provider_rate_limited" &&
+        event.failureReason !== "execution_timeout")
     ) {
       return;
     }
