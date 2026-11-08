@@ -51,6 +51,7 @@ import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { mapConcurrent } from "../../lib/map-concurrent";
 import { readBrowserTabInventory } from "./browser-tab-inventory";
+import { BrowserUseCdpCommandError } from "./browser-cdp-error";
 import {
   orderBrowserTabs,
   type TabOrderEntry,
@@ -162,16 +163,6 @@ interface BrowserUseCdpCommand {
   readonly params: Readonly<Record<string, unknown>>;
   readonly sessionId?: string;
   readonly maxResponseBytes?: number;
-}
-
-export class BrowserUseCdpCommandError extends Error {
-  constructor(
-    message: string,
-    readonly code: number | undefined,
-  ) {
-    super(message);
-    this.name = "BrowserUseCdpCommandError";
-  }
 }
 
 export class BrowserUseWindowHealthError extends Error {

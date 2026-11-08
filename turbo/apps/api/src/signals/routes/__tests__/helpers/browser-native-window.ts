@@ -327,7 +327,7 @@ export function createNativeWindowProvider(context: TestContext) {
         sendResult(
           command.id,
           !target || error
-            ? new Error(error ?? "No target with this ID")
+            ? new Error(error ?? "No target with given id")
             : { windowId: target.windowId },
         );
         return true;

@@ -10,6 +10,7 @@ import {
   string,
   type infer as zInfer,
 } from "zod";
+import { BrowserUseCdpCommandError } from "./browser-cdp-error";
 
 const nativeTab = object({
   id: number().int().nonnegative().safe(),
@@ -40,14 +41,33 @@ async function readTabPage(
   signal: AbortSignal,
 ) {
   signal.throwIfAborted();
-  const location = object({ windowId: number().int().safe() }).parse(
-    await transport.request("Browser.getWindowForTarget", {
+  const [location] = await Promise.allSettled([
+    transport.request("Browser.getWindowForTarget", {
       targetId: info.targetId,
     }),
+  ]);
+  signal.throwIfAborted();
+  if (location.status === "rejected") {
+    const error: unknown = location.reason;
+    // A sibling can close after enumeration. The final scoped inventory still
+    // requires a confirmed identity for every live tab in the owned window.
+    if (
+      error instanceof BrowserUseCdpCommandError &&
+      error.code === -32_000 &&
+      ["No target with given id", "Browser window not found"].includes(
+        error.message,
+      )
+    ) {
+      return null;
+    }
+    throw error;
+  }
+  const { windowId } = object({ windowId: number().int().safe() }).parse(
+    location.value,
   );
   const tab = before
     .find((window) => {
-      return window.id === location.windowId;
+      return window.id === windowId;
     })
     ?.tabs.find((tab) => {
       return tab.index === info.embedderData.tabStripIndex;

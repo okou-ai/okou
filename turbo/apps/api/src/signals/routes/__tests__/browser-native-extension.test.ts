@@ -57,6 +57,71 @@ test("keeps public window health traffic constant as sibling tabs grow", async (
   });
 });
 
+test.each([
+  { scope: "sibling", error: null, status: 200 },
+  { scope: "sibling", error: "Browser window not found", status: 200 },
+  { scope: "owned", error: "No target with given id", status: 502 },
+  { scope: "sibling", error: "Private provider command failure", status: 502 },
+] as const)(
+  "preserves scoped snapshots during CDP lookup ($scope: $error)",
+  async ({ scope, error, status }) => {
+    const f = await fixture();
+    await f.owned.run(async () => {
+      installBrowserWindowContentCommands(f.provider.native);
+      const a = await f.start();
+      const b = await f.start();
+      const first = await open(a);
+      const sibling = await open(b);
+      const page = [...f.provider.native.targets.values()].find((target) => {
+        return target.windowId === first.window?.primaryWindowId;
+      })!;
+      const other = [...f.provider.native.targets.values()].find((target) => {
+        return target.windowId === sibling.window?.primaryWindowId;
+      })!;
+      const accepted = "https://a.example.test/accepted";
+      const latest = "https://a.example.test/latest";
+      page.url = accepted;
+      const close = () => {
+        return client().close({
+          headers: { authorization: "Bearer clerk-session" },
+          params: { threadId: a.threadId },
+          body: {},
+        });
+      };
+      await accept(close(), [200]);
+      page.url = latest;
+      if (error === null) {
+        f.provider.native.beforeWindowForTargetReply = (targetId) => {
+          if (targetId === `native-tab:${other.targetId}`) {
+            f.provider.native.targets.delete(other.targetId);
+          }
+        };
+      } else {
+        f.provider.native.windowErrors.set(
+          `native-tab:${scope === "owned" ? page.targetId : other.targetId}`,
+          error,
+        );
+      }
+      await accept(close(), [status]);
+      f.provider.native.windowErrors.delete(
+        `native-tab:${scope === "owned" ? page.targetId : other.targetId}`,
+      );
+      f.provider.native.targets.delete(page.targetId);
+      const reopened = await open(a);
+      expect(reopened.window?.instanceId).toBe(first.window?.instanceId);
+      expect(
+        [...f.provider.native.targets.values()]
+          .filter((target) => {
+            return target.windowId === reopened.window?.primaryWindowId;
+          })
+          .map((target) => {
+            return target.url;
+          }),
+      ).toStrictEqual([status === 200 ? latest : accepted]);
+    });
+  },
+);
+
 test.each(["empty closing-window snapshot", "unavailable bridge"] as const)(
   "preserves scoped recovery after a native %s",
   async (failure) => {

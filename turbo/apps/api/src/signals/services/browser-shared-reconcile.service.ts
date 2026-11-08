@@ -33,8 +33,8 @@ import { recordBrowserLifecycleFact } from "./browser-lifecycle-telemetry";
 import { db$, writeDb$ } from "../external/db";
 import { publishBrowserSessionChangedSafely } from "../external/realtime";
 import { joinAll, settleIncludingAbort } from "../utils";
+import { BrowserUseCdpCommandError } from "./browser-cdp-error";
 import {
-  BrowserUseCdpCommandError,
   BrowserUseProviderError,
   BrowserUseWindowHealthError,
   browserUseWindowExists,
