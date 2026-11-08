@@ -2,6 +2,7 @@ use super::*;
 use crate::idle_pool::{
     IdlePool, IdlePoolConfig, IdleUnparkResult, ParkResult, ParkedIdleCandidate,
 };
+use httpmock::prelude::*;
 use runner_types::types::HomeReuseResult;
 use tokio_util::sync::CancellationToken;
 
@@ -27,7 +28,25 @@ async fn exercise(fail_replacement: bool, invalid_storage: bool) {
     let mut config = test_executor_config(dir.path()).await;
     config.home_cache = Some(cache.clone());
     let session = "blank-cached-home";
-    let seed = seed_home_image_cache(&cache, &paths, session, 16).await;
+    let server = MockServer::start_async().await;
+    let archive_get = server
+        .mock_async(|when, then| {
+            when.method(GET).path("/retained-storage.tar.gz");
+            then.status(500);
+        })
+        .await;
+    let manifest = StorageManifest {
+        storages: vec![api_storage(
+            "retained-storage",
+            "/home/user/workspace/data",
+            "v1",
+            &server.url("/retained-storage.tar.gz"),
+        )],
+        artifacts: Vec::new(),
+    };
+    let fingerprints = crate::storage_fingerprints::StorageFingerprints::from_manifest(&manifest);
+    let seed =
+        seed_home_image_cache_with_fingerprints(&cache, &paths, session, 16, &fingerprints).await;
     let metadata = seed.parent().unwrap().join("metadata.json");
     let original_metadata = tokio::fs::read(&metadata).await.unwrap();
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -61,6 +80,7 @@ async fn exercise(fail_replacement: bool, invalid_storage: bool) {
     context.reuse_key = Some(format!("thread:home-cache-{session}"));
     context.is_first_run = Some(false);
     context.api_start_time = Some(chrono::Utc::now().timestamp_millis() as u64);
+    context.storage_manifest = Some(manifest);
     if invalid_storage {
         let mut artifact = api_artifact(
             "invalid",
@@ -70,10 +90,12 @@ async fn exercise(fail_replacement: bool, invalid_storage: bool) {
             "https://archive.invalid/test",
         );
         artifact.archive_url = None;
-        context.storage_manifest = Some(StorageManifest {
-            storages: Vec::new(),
-            artifacts: vec![artifact],
-        });
+        context
+            .storage_manifest
+            .as_mut()
+            .unwrap()
+            .artifacts
+            .push(artifact);
     }
 
     let IdleUnparkResult::Reused {
@@ -133,6 +155,7 @@ async fn exercise(fail_replacement: bool, invalid_storage: bool) {
             );
         }
     }
+    archive_get.assert_calls_async(0).await;
     config.background_fill.shutdown().await;
     config.decoded_cache.shutdown().await;
 }
