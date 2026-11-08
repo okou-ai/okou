@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -9,6 +10,24 @@ import SwiftUI
 /// workflow starts its agent's new chat with `/name` in the draft, as the composer's `/` menu
 /// does; an artifact opens in the app's preview.
 struct ChatSearchView: View {
+  let workspace: WorkspaceStore
+  var showsArchived = false
+  let didOpen: () -> Void
+  let openAgent: (String) -> Void
+  let openWorkflow: (ChatSearchWorkflow) -> Void
+
+  var body: some View {
+    StoreProvider(workspace.search.stateStore) {
+      ChatSearchContent(
+        workspace: workspace, showsArchived: showsArchived, didOpen: didOpen,
+        openAgent: openAgent, openWorkflow: openWorkflow
+      )
+      .id(ObjectIdentifier(workspace.search))
+    }
+  }
+}
+
+private struct ChatSearchContent: View {
   enum Scope: CaseIterable, Hashable {
     case all, chats, messages, agents, workflows, artifacts
 
@@ -29,10 +48,39 @@ struct ChatSearchView: View {
   let didOpen: () -> Void
   let openAgent: (String) -> Void
   let openWorkflow: (ChatSearchWorkflow) -> Void
+  @LoadableValue private var messageResults: Loadable<[ChatSearchResult]>
+  @LoadableValue private var workflowResults: Loadable<[ChatSearchWorkflow]>
+  @LoadableValue private var artifactResults: Loadable<[ChatSearchArtifact]>
+
+  init(
+    workspace: WorkspaceStore, showsArchived: Bool, didOpen: @escaping () -> Void,
+    openAgent: @escaping (String) -> Void,
+    openWorkflow: @escaping (ChatSearchWorkflow) -> Void
+  ) {
+    self.workspace = workspace
+    self.showsArchived = showsArchived
+    self.didOpen = didOpen
+    self.openAgent = openAgent
+    self.openWorkflow = openWorkflow
+    _messageResults = LoadableValue(task: workspace.search.messagesValue)
+    _workflowResults = LoadableValue(task: workspace.search.workflowsValue)
+    _artifactResults = LoadableValue(task: workspace.search.artifactsValue)
+  }
+
   @Environment(\.openURL) private var openURL
   @State private var openingID: String?
   @State private var scope = Scope.all
   private var search: ChatSearchStore { workspace.search }
+
+  private var messages: [ChatSearchResult] { messageResults.data ?? [] }
+  private var workflows: [ChatSearchWorkflow] { workflowResults.data ?? [] }
+  private var artifacts: [ChatSearchArtifact] { artifactResults.data ?? [] }
+  private var isLoadingMessages: Bool { messageResults.state == .loading }
+  private var isLoadingWorkflows: Bool { workflowResults.state == .loading }
+  private var isLoadingArtifacts: Bool { artifactResults.state == .loading }
+  private var messageError: String? { messageResults.error?.localizedDescription }
+  private var workflowsError: String? { workflowResults.error?.localizedDescription }
+  private var artifactsError: String? { artifactResults.error?.localizedDescription }
 
   private var titleThreads: [ChatThread] {
     search.keyword.isEmpty
@@ -119,7 +167,7 @@ struct ChatSearchView: View {
   /// matches anywhere is one empty state for the page (`emptyState`), not an empty section.
   @ViewBuilder
   private var messagesSection: some View {
-    if !search.messages.isEmpty || search.isLoading || search.error != nil {
+    if !messages.isEmpty || isLoadingMessages || messageError != nil {
       Section {
         sectionTitle { Text("Messages").okouSectionHeader() }
         // One row per chat: several matches in the same chat are counted, not repeated.
@@ -146,9 +194,9 @@ struct ChatSearchView: View {
           }
           .accessibilityIdentifier("search-message-\(group.result.id)")
         }
-        if search.isLoading {
+        if isLoadingMessages {
           OkouLoadingRow("Searching messages…")
-        } else if let error = search.error {
+        } else if let error = messageError {
           OkouLoadErrorRow(message: error) { search.retry() }
         }
       }
@@ -181,7 +229,7 @@ struct ChatSearchView: View {
   /// Every workflow without a query when Workflows is chosen; under All only the matches.
   @ViewBuilder
   private var workflowsSection: some View {
-    let workflows = search.workflows
+    let workflows = self.workflows
     let showsAll = scope == .workflows
     if (showsAll || !search.keyword.isEmpty) && !workflows.isEmpty {
       Section {
@@ -208,9 +256,9 @@ struct ChatSearchView: View {
           .accessibilityIdentifier("search-workflow-\(workflow.id)")
         }
       }
-    } else if showsAll, search.isLoadingWorkflows {
+    } else if showsAll, isLoadingWorkflows {
       OkouLoadingRow("Loading workflows…")
-    } else if showsAll, let error = search.workflowsError {
+    } else if showsAll, let error = workflowsError {
       OkouLoadErrorRow(message: error) { search.retryWorkflows() }
     }
   }
@@ -219,10 +267,10 @@ struct ChatSearchView: View {
   @ViewBuilder
   private var artifactsSection: some View {
     if !search.keyword.isEmpty {
-      if !search.artifacts.isEmpty {
+      if !artifacts.isEmpty {
         Section {
           sectionTitle { Text("Artifacts").okouSectionHeader() }
-          ForEach(search.artifacts) { item in
+          ForEach(artifacts) { item in
             Button {
               open(item)
             } label: {
@@ -240,9 +288,9 @@ struct ChatSearchView: View {
           }
         }
       } else if scope == .artifacts {
-        if search.isLoadingArtifacts {
+        if isLoadingArtifacts {
           OkouLoadingRow("Searching artifacts…")
-        } else if let error = search.artifactsError {
+        } else if let error = artifactsError {
           OkouLoadErrorRow(message: error) { search.retry() }
         }
       }
@@ -299,22 +347,22 @@ struct ChatSearchView: View {
       pageState(
         "Search artifacts", icon: "layers",
         description: "Find a file, site or deck by its name.")
-    } else if !keyword.isEmpty && !search.isLoading && search.error == nil {
+    } else if !keyword.isEmpty && !isLoadingMessages && messageError == nil {
       switch scope {
       case .all
-      where !hasTitles && search.messages.isEmpty && agents.isEmpty && search.workflows.isEmpty
-        && search.artifacts.isEmpty && !search.isLoadingArtifacts:
+      where !hasTitles && messages.isEmpty && agents.isEmpty && workflows.isEmpty
+        && artifacts.isEmpty && !isLoadingArtifacts:
         noResults(messages: true)
-      case .messages where search.messages.isEmpty:
+      case .messages where messages.isEmpty:
         noResults(messages: true)
       case .chats where !hasTitles:
         noResults(messages: false)
       case .agents where agents.isEmpty:
         noResults(messages: false)
-      case .workflows where search.workflows.isEmpty && !search.isLoadingWorkflows:
+      case .workflows where workflows.isEmpty && !isLoadingWorkflows:
         noResults(messages: false)
       case .artifacts
-      where search.artifacts.isEmpty && !search.isLoadingArtifacts && search.artifactsError == nil:
+      where artifacts.isEmpty && !isLoadingArtifacts && artifactsError == nil:
         noResults(messages: false)
       default:
         EmptyView()
@@ -351,7 +399,7 @@ struct ChatSearchView: View {
   private var messageGroups: [(result: ChatSearchResult, count: Int)] {
     var order: [String] = []
     var groups: [String: (result: ChatSearchResult, count: Int)] = [:]
-    for result in search.messages {
+    for result in messages {
       if let existing = groups[result.chatThreadId] {
         groups[result.chatThreadId] = (existing.result, existing.count + 1)
       } else {
