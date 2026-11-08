@@ -27,6 +27,7 @@ final class ComposerVoiceInputTests: XCTestCase {
     // the exact-digital-silence shortcut.
     capture.record(Data(repeating: 1, count: 32_000))
     await voice.finish()
+    XCTAssertEqual(voice.duration, 1)
     XCTAssertEqual(composer.text, "Keep these notes")
     XCTAssertEqual(voice.phase, .idle)
     XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
