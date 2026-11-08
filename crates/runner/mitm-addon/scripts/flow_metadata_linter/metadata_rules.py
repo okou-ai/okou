@@ -8,6 +8,7 @@ from enum import Enum, auto
 from pathlib import Path
 
 from flow_metadata_linter.ast_helpers import (
+    _STATIC_ITERABLE_WRAPPER_CALLS,
     _expression_branches,
     _static_first_call_argument_nodes,
     _static_mapping_input_key_outcomes,
@@ -17,7 +18,6 @@ from flow_metadata_linter.registry import REGISTERED_METADATA_KEYS as _REGISTERE
 
 _METADATA_PAIR_LENGTH = 2
 _STRING_FORMAT_CONVERSION = ord("s")
-_SEQUENCE_WRAPPER_CALLS = {"frozenset", "iter", "list", "reversed", "set", "sorted", "tuple"}
 
 
 class _MetadataCollectionMode(Enum):
@@ -264,7 +264,7 @@ def _metadata_collection_call_violations(
                 )
             )
         return violations
-    if node.func.id in _SEQUENCE_WRAPPER_CALLS:
+    if node.func.id in _STATIC_ITERABLE_WRAPPER_CALLS:
         collection_mode = (
             _MetadataCollectionMode.PAIR_ITERABLE
             if mode is _MetadataCollectionMode.MAPPING_INPUT
