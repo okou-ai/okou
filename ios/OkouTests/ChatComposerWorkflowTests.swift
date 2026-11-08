@@ -112,19 +112,20 @@ final class ChatComposerWorkflowTests: XCTestCase {
     try await focusMentionInput(input)
     try await type("First paragraph\n/release", in: input, conversation: conversation)
     let workflows = conversation.composer.editor.workflows
-    try await waitForBusinessResult { workflows.matches.contains { $0.id == "release" } }
+    // Keyboard candidates belong to the native table, not business Observation state.
+    _ = try await workflowCell("release", in: host.view)
     input.selectedRange = NSRange(location: 0, length: 5)
     try await waitForBusinessResult { workflows.query == nil }
     XCTAssertFalse(workflows.handleKey("\r", in: input))
     XCTAssertEqual(conversation.draft, "First paragraph\n/release")
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
-    try await waitForBusinessResult { workflows.matches.contains { $0.id == "release" } }
+    _ = try await workflowCell("release", in: host.view)
     XCTAssertTrue(workflows.handleKey(UIKeyCommand.inputEscape, in: input))
     XCTAssertFalse(workflows.handleKey("\r", in: input))
     XCTAssertEqual(conversation.draft, "First paragraph\n/release")
     XCTAssertTrue(input.isFirstResponder)
     try await type("/r12", in: input, conversation: conversation)
-    try await waitForBusinessResult { workflows.matches.contains { $0.id == "12" } }
+    _ = try await workflowCell("12", in: host.view)
     let numeric = try XCTUnwrap(workflows.matches.first { $0.id == "12" })
     workflows.insert(numeric)
     try await waitForBusinessResult { conversation.draft == "/report-12 " }
@@ -568,25 +569,15 @@ private let workflowResponse =
 
 private final class WorkflowCounter: Sendable { let value = Mutex(0) }
 private final class WorkflowGate: Sendable {
-  private struct State {
-    var open = false
-    var waiters: [CheckedContinuation<Void, Never>] = []
+  private let stream: AsyncStream<Void>
+  private let continuation: AsyncStream<Void>.Continuation
+
+  init() {
+    let pair = AsyncStream<Void>.makeStream()
+    stream = pair.stream
+    continuation = pair.continuation
   }
-  private let state = Mutex(State())
-  func wait() async {
-    await withCheckedContinuation { continuation in
-      state.withLock {
-        if $0.open { continuation.resume() } else { $0.waiters.append(continuation) }
-      }
-    }
-  }
-  func open() {
-    let waiters = state.withLock { value in
-      value.open = true
-      let waiters = value.waiters
-      value.waiters = []
-      return waiters
-    }
-    for waiter in waiters { waiter.resume() }
-  }
+
+  func wait() async { for await _ in stream { return } }
+  func open() { continuation.finish() }
 }
