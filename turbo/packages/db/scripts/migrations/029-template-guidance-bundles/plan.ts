@@ -87,14 +87,11 @@ export type Source = zInfer<typeof sourceSchema>;
 export type Owner = zInfer<typeof ownerSchema>;
 export type PlannedRow = zInfer<typeof plannedRowSchema>;
 
-export async function configuration() {
-  const connection = process.env.DATABASE_URL_FILE
-    ? (await readFile(process.env.DATABASE_URL_FILE, "utf8")).trim()
-    : process.env.DATABASE_URL;
+export function objectConfiguration() {
   const bucket = process.env.R2_USER_STORAGES_BUCKET_NAME;
   const accessKeyId = process.env.R2_ACCESS_KEY_ID;
   const secretAccessKey = process.env.R2_SECRET_ACCESS_KEY;
-  if (!connection || !bucket || !accessKeyId || !secretAccessKey)
+  if (!bucket || !accessKeyId || !secretAccessKey)
     throw new BackfillError("MissingConfiguration");
   const endpoint = new URL(
     process.env.R2_ENDPOINT ??
@@ -116,18 +113,25 @@ export async function configuration() {
     endpoint.hash
   )
     throw new BackfillError("InvalidEndpoint");
+  return { bucket, endpoint, credentials: { accessKeyId, secretAccessKey } };
+}
+
+export async function configuration() {
+  const connection = process.env.DATABASE_URL_FILE
+    ? (await readFile(process.env.DATABASE_URL_FILE, "utf8")).trim()
+    : process.env.DATABASE_URL;
+  if (!connection) throw new BackfillError("MissingDatabaseConfiguration");
+  const objects = objectConfiguration();
   const address = new URL(connection);
   if (address.searchParams.has("host") || address.searchParams.has("port"))
     throw new BackfillError("InvalidDatabaseAddress");
   return {
     connection,
-    bucket,
-    endpoint,
-    credentials: { accessKeyId, secretAccessKey },
+    ...objects,
     scope: {
       database: `${address.hostname}:${address.port || "5432"}${address.pathname}`,
-      bucket,
-      endpoint: endpoint.origin,
+      bucket: objects.bucket,
+      endpoint: objects.endpoint.origin,
     },
   };
 }

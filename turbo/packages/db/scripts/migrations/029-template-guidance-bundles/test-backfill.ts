@@ -1,7 +1,20 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { randomBytes, randomUUID } from "node:crypto";
-import { mkdtemp, readFile, rm, writeFile, mkdir } from "node:fs/promises";
+import {
+  randomBytes,
+  randomUUID,
+  createDecipheriv,
+  generateKeyPairSync,
+  privateDecrypt,
+} from "node:crypto";
+import {
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+  mkdir,
+  readdir,
+} from "node:fs/promises";
 import {
   createServer,
   type IncomingMessage,
@@ -11,7 +24,8 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import { Client } from "pg";
-import { c } from "tar";
+import { c, Parser } from "tar";
+import { boolean, object, string } from "zod";
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 import {
   contentBundleDigest,
@@ -248,7 +262,7 @@ try {
     assert.equal(parsed.complete, true);
     const first = parsed.rows[0];
     assert.ok(first);
-    return { path, parsed, first };
+    return { path, parsed, first, inventory: input };
   }
   async function apply(
     path: string,
@@ -292,6 +306,91 @@ try {
       return r.guidance_bundle === null;
     }),
   );
+  const { publicKey, privateKey } = generateKeyPairSync("rsa", {
+    modulusLength: 2048,
+  });
+  const recipient = join(directory, "recipient.pem"),
+    capture = join(directory, "capture");
+  await writeFile(recipient, publicKey.export({ type: "spki", format: "pem" }));
+  await promisify(execFile)(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      "scripts/migrations/029-template-guidance-bundles/capture.ts",
+      "--inventory",
+      first.inventory,
+      "--public-key",
+      recipient,
+      "--output",
+      capture,
+    ],
+    {
+      env: {
+        PATH: environment.PATH,
+        NODE_OPTIONS: environment.NODE_OPTIONS,
+        R2_ENDPOINT: endpoint,
+        R2_USER_STORAGES_BUCKET_NAME: "test",
+        R2_ACCESS_KEY_ID: "fixture",
+        R2_SECRET_ACCESS_KEY: "fixture",
+      },
+    },
+  );
+  assert.deepEqual((await readdir(capture)).sort(), [
+    "envelope.json",
+    "payload.enc",
+    "report.json",
+  ]);
+  assert.equal(
+    object({ complete: boolean() }).parse(
+      JSON.parse(await readFile(join(capture, "report.json"), "utf8")),
+    ).complete,
+    true,
+  );
+  const envelope = object({
+    wrappedKey: string(),
+    iv: string(),
+    tag: string(),
+  }).parse(JSON.parse(await readFile(join(capture, "envelope.json"), "utf8")));
+  const key = privateDecrypt(
+    { key: privateKey, oaepHash: "sha256" },
+    Buffer.from(envelope.wrappedKey, "base64"),
+  );
+  const decipher = createDecipheriv(
+    "aes-256-gcm",
+    key,
+    Buffer.from(envelope.iv, "base64"),
+  );
+  decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
+  const plaintext = Buffer.concat([
+    decipher.update(await readFile(join(capture, "payload.enc"))),
+    decipher.final(),
+  ]);
+  key.fill(0);
+  const restored = new Map<string, Buffer>();
+  const parser = new Parser({
+    strict: true,
+    onReadEntry(entry) {
+      const chunks: Buffer[] = [];
+      entry.on("data", (chunk: Buffer) => {
+        chunks.push(chunk);
+      });
+      entry.on("end", () => {
+        restored.set(entry.path, Buffer.concat(chunks));
+      });
+    },
+  });
+  parser.end(plaintext);
+  for (const source of [user.source, presentation.source]) {
+    for (const name of ["archive.tar.gz", "manifest.json"]) {
+      assert.deepEqual(
+        restored.get(`${source.ownerKind}/${source.templateId}/${name}`),
+        objects.get(`${source.package.s3Key}/${name}`),
+      );
+    }
+  }
+  assert.equal(puts, 0, "capture only reads objects");
+  assert.deepEqual(await Promise.all(first.parsed.rows.map(owner)), original);
   losePutResponse = true;
   const receipt = await apply(first.path);
   assert.equal(

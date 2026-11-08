@@ -198,6 +198,8 @@ export async function prepareSource(
     ...prepared,
     archiveSha256: contentBundleDigest(archive),
     manifestSha256: contentBundleDigest(manifestBytes),
+    legacyArchive: archive,
+    legacyManifest: manifestBytes,
   };
 }
 

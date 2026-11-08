@@ -35,6 +35,31 @@ and review inventory if that boundary cannot be established or a source changes.
 
 ## Plan and isolated rehearsal
 
+When source credentials are available only to GitHub's protected production
+environment, use `capture-guidance` on the existing `copy-presentation-templates.yml`
+manual workflow. It remains main-only and requires the normal production review.
+Provide the frozen inventory JSON and an ephemeral RSA public key (2048 bits or
+larger). Keep the private key only in the rehearsal controller's private directory.
+The capture process only GETs the exact source objects, verifies every file, and
+never opens a database connection. It uploads a metadata report and an AES-256-GCM
+encrypted archive, with the data key wrapped using RSA-OAEP-SHA256; plaintext
+temporary files are removed. The artifact expires after one day. Download it
+from the verified run/commit, authenticate/decrypt it privately, and retain only
+the reviewed source files for the isolated rehearsal. Never upload private keys,
+plaintext packages, credentials or signed URLs as artifacts.
+
+The capture command is also usable with a GET-only local/rehearsal object peer:
+
+```sh
+node --import tsx scripts/migrations/029-template-guidance-bundles/capture.ts \
+  --inventory /private/frozen-sources.json --public-key /private/recipient.pem \
+  --output /private/encrypted-capture
+```
+
+A capture is frozen byte evidence, not an owner-CAS plan or production apply.
+Recheck the owner/root inventory after capture and build a database-bound plan
+on the actual isolated target before rehearsing.
+
 Required environment: `DATABASE_URL_FILE` (preferred) or `DATABASE_URL`,
 `R2_ENDPOINT` (native R2 HTTPS, or loopback HTTP for fixtures),
 `R2_USER_STORAGES_BUCKET_NAME`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`.
