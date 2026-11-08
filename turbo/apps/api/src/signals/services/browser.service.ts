@@ -629,13 +629,13 @@ const prepareBrowserTabSnapshot$ = command(
     }
     const { urls, tabs, savedTabIds } = await listBrowserUseTabUrls(
       browserUseNativeConnection(provider),
+      undefined,
+      previousOrder === null ? undefined : order.tabs,
+      savedUrls,
       AbortSignal.any([
         signal,
         AbortSignal.timeout(BROWSER_TAB_SNAPSHOT_TIMEOUT_MS),
       ]),
-      undefined,
-      previousOrder === null ? undefined : order.tabs,
-      savedUrls,
     );
     signal.throwIfAborted();
     const encryptedTabUrls = await encryptPersistentSecretValue(
@@ -799,9 +799,10 @@ const restoreBrowserTabSnapshot$ = command(
         };
         const captured = await listBrowserUseTabUrls(
           browserUseNativeConnection(provider),
-          signal,
           undefined,
           order.tabs,
+          [],
+          signal,
         );
         const createdIds = targetIds.map((id) => {
           return captured.tabs.find((tab) => {

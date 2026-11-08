@@ -195,8 +195,8 @@ async function fetchBrowserAcquisition(
 async function requestBrowserSessionLease(
   createClient: ApiClientFactory,
   threadId: string,
-  signal: AbortSignal,
   tabOrder: BrowserTabOrder | null,
+  signal: AbortSignal,
 ) {
   const [lease] = await Promise.allSettled([
     accept(
@@ -465,8 +465,8 @@ function createBrowserSessionKeepAliveSignals(
           const response = await requestBrowserSessionLease(
             get(apiClient$),
             descriptor.threadId,
-            signal,
             get(tabOrder$),
+            signal,
           );
           signal.throwIfAborted();
           // Authorization and reload transitions create a new request owner,

@@ -27,6 +27,7 @@ describe("complete Browser tab snapshots", () => {
   it.each(["malformed", "missing"])(
     "retains the accepted snapshot when a live tab child identity is %s",
     async (fault) => {
+      await setupApp({ context, routes: browserRoutes, isolatePg: true });
       const f = await fixture();
       await f.owned.run(async () => {
         installBrowserWindowContentCommands(f.provider.native);
@@ -208,6 +209,7 @@ describe("complete Browser tab snapshots", () => {
   it.each([false, true])(
     "restores ordered blank, internal and duplicate URLs beyond 50 tabs with shared=%s",
     async (shared) => {
+      await setupApp({ context, routes: browserRoutes, isolatePg: true });
       const f = await fixture(shared);
       await f.owned.run(async () => {
         installBrowserWindowContentCommands(f.provider.native);

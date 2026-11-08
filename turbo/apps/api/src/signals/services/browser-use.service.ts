@@ -1152,10 +1152,10 @@ function browserTabUrlEntries(tabs: readonly { id: number; url?: string }[]) {
 
 export async function listBrowserUseTabUrls(
   connection: BrowserUseNativeConnection,
+  primaryWindowId: number | undefined,
+  previousOrder: readonly TabOrderEntry[] | undefined,
+  savedUrls: readonly SavedTabUrl[],
   signal: AbortSignal,
-  primaryWindowId?: number,
-  previousOrder?: readonly TabOrderEntry[],
-  savedUrls: readonly SavedTabUrl[] = [],
 ): Promise<{
   readonly windowExists: boolean;
   readonly urls: readonly string[];
@@ -1170,8 +1170,8 @@ export async function listBrowserUseTabUrls(
         const windows = await readBrowserTabInventory(
           client,
           transport,
-          signal,
           primaryWindowId,
+          signal,
         );
         const tabs = orderBrowserTabs(
           windows.flatMap((window) => {
@@ -3800,9 +3800,10 @@ export async function restoreBrowserUseWindowTabUrls(
     await tryCloseRestoredBrowserSeed(connection.cdpUrl, window, signal);
     return await listBrowserUseTabUrls(
       connection,
-      signal,
       window.primaryWindowId,
       createdOrder,
+      [],
+      signal,
     );
   });
   signal.throwIfAborted();

@@ -119,10 +119,10 @@ export const captureSharedSnapshot$ = command(
       const observed = await settleIncludingAbort(
         listBrowserUseTabUrls(
           args,
-          captureSignal,
           window.primaryWindowId,
           order.tabs,
           savedUrls,
+          captureSignal,
         ),
       );
       captureSignal.throwIfAborted();

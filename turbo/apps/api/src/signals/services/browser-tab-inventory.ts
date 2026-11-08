@@ -116,8 +116,8 @@ async function readTabPage(
 export async function readBrowserTabInventory(
   client: OkouBrowserClient,
   transport: CdpTransport,
+  windowId: number | undefined,
   signal: AbortSignal,
-  windowId?: number,
 ) {
   let changed = false;
   using _native = {
