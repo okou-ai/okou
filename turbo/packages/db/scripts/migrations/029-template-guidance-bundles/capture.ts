@@ -135,7 +135,9 @@ async function main() {
     await c({ cwd: privateDirectory, file: archive, portable: true }, paths);
     const key = randomBytes(32),
       iv = randomBytes(12);
-    const cipher = createCipheriv("aes-256-gcm", key, iv);
+    const cipher = createCipheriv("aes-256-gcm", key, iv, {
+      authTagLength: 16,
+    });
     await pipeline(
       createReadStream(archive),
       cipher,

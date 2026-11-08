@@ -360,6 +360,7 @@ try {
     "aes-256-gcm",
     key,
     Buffer.from(envelope.iv, "base64"),
+    { authTagLength: 16 },
   );
   decipher.setAuthTag(Buffer.from(envelope.tag, "base64"));
   const plaintext = Buffer.concat([
