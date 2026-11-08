@@ -1,5 +1,24 @@
 # Changelog
 
+## [0.29.0](https://github.com/okou-ai/okou/compare/ios-v0.28.11...ios-v0.29.0) (2026-11-08)
+
+
+### Features
+
+* **ios:** add new chat entry points and retire ask okou ([#45962](https://github.com/okou-ai/okou/issues/45962)) ([1b91656](https://github.com/okou-ai/okou/commit/1b91656f6caee83800f09ead73a0de9fe8a3317b))
+
+
+### Bug Fixes
+
+* **ios:** show unread indicator on the sidebar button ([#45943](https://github.com/okou-ai/okou/issues/45943)) ([d24393e](https://github.com/okou-ai/okou/commit/d24393ed0bf3b0919846a8940a412668e2eaee8b))
+* **ios:** skip confirmed silence with system sound analysis ([#45946](https://github.com/okou-ai/okou/issues/45946)) ([5fee97b](https://github.com/okou-ai/okou/commit/5fee97bbe37c39abf525fe8a615c01a78adc8389))
+* **ios:** use the system soft top edge and hide bottom scroll-edge blur ([#45963](https://github.com/okou-ai/okou/issues/45963)) ([c6df61b](https://github.com/okou-ai/okou/commit/c6df61be3a6772381f7fb109958c7c27c1837d5a))
+
+
+### Refactoring
+
+* **ios:** derive composer workflow candidates with ccstate ([#45945](https://github.com/okou-ai/okou/issues/45945)) ([92d6869](https://github.com/okou-ai/okou/commit/92d6869130b9994c161c87d02b968ef84c2f270a))
+
 ## [0.28.11](https://github.com/okou-ai/okou/compare/ios-v0.28.10...ios-v0.28.11) (2026-11-08)
 
 

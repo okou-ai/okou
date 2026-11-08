@@ -10,6 +10,27 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.54.2](https://github.com/okou-ai/okou/compare/api-v2.54.1...api-v2.54.2) (2026-11-08)
+
+
+### Refactoring
+
+* publish template guidance as immutable bundles ([#45951](https://github.com/okou-ai/okou/issues/45951)) ([3f37903](https://github.com/okou-ai/okou/commit/3f37903b5452d477b82936cda8cd89f48c5816e7))
+
+
+### Performance Improvements
+
+* **api:** acquire normal-send lease during input publication ([#45938](https://github.com/okou-ai/okou/issues/45938)) ([425c2ee](https://github.com/okou-ai/okou/commit/425c2eeb5f5845368f713d51ed8a68e0e989a11d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.1
+    * @okouai/db bumped to 2.24.1
+    * @okouai/pi-agent-runtime bumped to 1.51.85
+
 ## [2.54.1](https://github.com/okou-ai/okou/compare/api-v2.54.0...api-v2.54.1) (2026-11-08)
 
 

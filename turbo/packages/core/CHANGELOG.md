@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.824.1](https://github.com/okou-ai/okou/compare/core-v8.824.0...core-v8.824.1) (2026-11-08)
+
+
+### Refactoring
+
+* publish template guidance as immutable bundles ([#45951](https://github.com/okou-ai/okou/issues/45951)) ([3f37903](https://github.com/okou-ai/okou/commit/3f37903b5452d477b82936cda8cd89f48c5816e7))
+
 ## [8.824.0](https://github.com/okou-ai/okou/compare/core-v8.823.0...core-v8.824.0) (2026-11-08)
 
 
