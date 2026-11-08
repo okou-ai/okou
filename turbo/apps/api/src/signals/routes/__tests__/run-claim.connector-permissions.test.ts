@@ -177,6 +177,7 @@ describe.each([false, true])(
 
       await publish(original);
       const first = await claimAndCancel(actor, agentId, runnerGroup);
+      expect(first.environment?.FIGMA_TOKEN).toBe("fixture-figma-token");
       expect(first.networkPolicies?.figma).toStrictEqual({
         allow: ["file_content:read"],
         deny: [],
@@ -197,6 +198,10 @@ describe.each([false, true])(
       if (figma?.firewall.kind !== "generated") {
         throw new Error("Expected the generated Figma firewall");
       }
+      figma.firewall.config.placeholders = {
+        ...figma.firewall.config.placeholders,
+        FIGMA_TOKEN: "updated-figma-placeholder",
+      };
       const api = figma.firewall.config.apis[0];
       if (!api) {
         throw new Error("Expected the Figma API");
@@ -222,7 +227,11 @@ describe.each([false, true])(
         unknownPolicy: "ask",
       });
       expect(claim.networkPolicyRefreshes?.figma).toBeUndefined();
+      // This Run retains its captured execution inputs while permissions refresh.
+      expect(claim.environment?.FIGMA_TOKEN).toBe("fixture-figma-token");
       await cancelChatRun(actor, queued.runId, sandboxHeaders);
+      const fresh = await claimAndCancel(actor, agentId, runnerGroup);
+      expect(fresh.environment?.FIGMA_TOKEN).toBe("updated-figma-placeholder");
 
       const rollbackQueued = await sendChatRun(actor, {
         agentId,
@@ -237,7 +246,14 @@ describe.each([false, true])(
         unknownPolicy: "allow",
       });
       expect(restored.claim.networkPolicyRefreshes?.figma).toBeUndefined();
+      expect(restored.claim.environment?.FIGMA_TOKEN).toBe(
+        "updated-figma-placeholder",
+      );
       await cancelChatRun(actor, rollbackQueued.runId, restored.sandboxHeaders);
+      const afterRollback = await claimAndCancel(actor, agentId, runnerGroup);
+      expect(afterRollback.environment?.FIGMA_TOKEN).toBe(
+        "fixture-figma-token",
+      );
 
       const removed = connectorCatalogArtifactSchema.parse(
         structuredClone(original),

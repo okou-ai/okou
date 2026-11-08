@@ -133,8 +133,7 @@ type ConnectorServerFirewallSource = Pick<
 interface AcceptedConnectorServerFirewallEntry {
   readonly connector: ConnectorServerFirewallSource;
   readonly runtimeMethods: () => readonly ConnectorAuthMethodRuntimeConfig[];
-  readonly permissionIndexes:
-    Map<ConnectorSlug, ConnectorServerFirewallPermissionIndex> | undefined;
+  readonly catalogMetadata: CatalogDerivedMetadata | undefined;
   firewall: AcceptedServerFirewall | undefined;
   routing: ConnectorCatalogFirewallRouting | undefined;
   permissionIndex: ConnectorServerFirewallPermissionIndex | undefined;
@@ -143,32 +142,52 @@ interface AcceptedConnectorServerFirewallEntry {
   routingMetadata: ConnectorServerFirewallRoutingMetadata | undefined;
 }
 
-const permissionIndexCache = singleton(
+interface CatalogDerivedMetadata {
+  readonly permissionIndexes: Map<
+    ConnectorSlug,
+    ConnectorServerFirewallPermissionIndex
+  >;
+  readonly executionMetadata: Map<
+    ConnectorSlug,
+    {
+      readonly bindingsKey: string;
+      readonly value: ConnectorServerFirewallExecutionMetadata;
+    }
+  >;
+}
+
+const catalogMetadataCache = singleton(
   (): {
     key: string | undefined;
-    indexes: Map<ConnectorSlug, ConnectorServerFirewallPermissionIndex>;
+    metadata: CatalogDerivedMetadata;
   } => {
-    return { key: undefined, indexes: new Map() };
+    return {
+      key: undefined,
+      metadata: { permissionIndexes: new Map(), executionMetadata: new Map() },
+    };
   },
 );
 
-function permissionIndexesForCatalog(
+function derivedMetadataForCatalog(
   identity: ExternalCatalogIdentity,
-): Map<ConnectorSlug, ConnectorServerFirewallPermissionIndex> {
+): CatalogDerivedMetadata {
   const key = JSON.stringify([
     identity.sourceId,
     identity.schemaVersion,
     identity.catalogDigest,
     identity.capabilityDigest,
   ]);
-  const cache = permissionIndexCache();
+  const cache = catalogMetadataCache();
   if (cache.key !== key) {
     cache.key = key;
     // Keep one generation. In-flight selections retain their captured map and
-    // cannot publish an old index into a later generation.
-    cache.indexes = new Map();
+    // cannot publish old metadata into a later generation.
+    cache.metadata = {
+      permissionIndexes: new Map(),
+      executionMetadata: new Map(),
+    };
   }
-  return cache.indexes;
+  return cache.metadata;
 }
 
 export interface FirewallRoutingRouteMetadata {
@@ -312,12 +331,12 @@ function runtimeBindingEntries(
 
 function expandedAcceptedPlaceholders(args: {
   readonly firewall: AcceptedServerFirewall["firewall"];
-  readonly methods: readonly ConnectorAuthMethodRuntimeConfig[];
+  readonly bindings: readonly ConnectorRuntimeBindingEntry[];
 }): Readonly<Record<string, string>> {
   const expanded: Record<string, string> = {
     ...args.firewall.placeholders,
   };
-  const bindings = runtimeBindingEntries(args.methods);
+  const bindings = args.bindings;
   for (const [name, value] of Object.entries(
     args.firewall.placeholders ?? {},
   )) {
@@ -354,7 +373,7 @@ function expandedAcceptedPlaceholders(args: {
 
 function acceptedPlaceholderValues(args: {
   readonly firewall: AcceptedServerFirewall["firewall"];
-  readonly methods: readonly ConnectorAuthMethodRuntimeConfig[];
+  readonly bindings: readonly ConnectorRuntimeBindingEntry[];
 }): Readonly<Record<string, string>> {
   const expanded = expandedAcceptedPlaceholders(args);
   const placeholderValues: Record<string, string> = {};
@@ -394,31 +413,55 @@ function acceptedBaseUrlTemplates(args: {
         : { hostPolicy: template.hostPolicy }),
     });
   }
-  return [...templates.values()].sort((left, right) => {
-    return compareStrings(left.base, right.base);
-  });
+  return Object.freeze(
+    [...templates.values()]
+      .sort((left, right) => {
+        return compareStrings(left.base, right.base);
+      })
+      .map((template) => {
+        const hostPolicy =
+          template.hostPolicy === undefined
+            ? undefined
+            : structuredClone(template.hostPolicy);
+        if (hostPolicy?.kind === "providerOwned") {
+          if (hostPolicy.exactHosts) {
+            Object.freeze(hostPolicy.exactHosts);
+          }
+          if (hostPolicy.suffixes) {
+            Object.freeze(hostPolicy.suffixes);
+          }
+        }
+        if (hostPolicy) {
+          Object.freeze(hostPolicy);
+        }
+        return Object.freeze({
+          ...template,
+          ...(hostPolicy === undefined ? {} : { hostPolicy }),
+        });
+      }),
+  );
 }
 
 function acceptedExecutionMetadata(args: {
   readonly firewall: AcceptedServerFirewall;
   readonly routing: ConnectorCatalogFirewallRouting;
-  readonly methods: readonly ConnectorAuthMethodRuntimeConfig[];
+  readonly bindings: readonly ConnectorRuntimeBindingEntry[];
 }): ConnectorServerFirewallExecutionMetadata {
   const placeholderValues = acceptedPlaceholderValues({
     firewall: args.firewall.firewall,
-    methods: args.methods,
+    bindings: args.bindings,
   });
-  return {
+  return Object.freeze({
     connectorSlug: args.firewall.connectorSlug,
     billable: args.firewall.billable,
-    baseUrlVarNames: args.routing.baseUrlVarNames,
+    baseUrlVarNames: Object.freeze([...args.routing.baseUrlVarNames]),
     baseUrlTemplates: acceptedBaseUrlTemplates({
       firewall: args.firewall,
       routing: args.routing,
     }),
-    secretPlaceholderNames: Object.keys(placeholderValues),
-    placeholderValues,
-  };
+    secretPlaceholderNames: Object.freeze(Object.keys(placeholderValues)),
+    placeholderValues: Object.freeze(placeholderValues),
+  });
 }
 
 function acceptedRoutingIndexMetadata(args: {
@@ -463,8 +506,8 @@ function acceptedEntries(args: {
     ConnectorSlug,
     AcceptedConnectorServerFirewallEntry
   >();
-  const permissionIndexes = args.catalogIdentity
-    ? permissionIndexesForCatalog(args.catalogIdentity)
+  const catalogMetadata = args.catalogIdentity
+    ? derivedMetadataForCatalog(args.catalogIdentity)
     : undefined;
   for (const connector of args.connectors) {
     if (connector.firewall.kind === "none") {
@@ -477,7 +520,7 @@ function acceptedEntries(args: {
     }
     entries.set(connector.slug, {
       connector,
-      permissionIndexes,
+      catalogMetadata,
       runtimeMethods: () => {
         return args.runtimeMethodsForSlug(connector.slug);
       },
@@ -534,14 +577,18 @@ function acceptedEntryPermissionIndex(
   entry: AcceptedConnectorServerFirewallEntry,
 ): ConnectorServerFirewallPermissionIndex {
   const cached =
-    entry.permissionIndex ?? entry.permissionIndexes?.get(entry.connector.slug);
+    entry.permissionIndex ??
+    entry.catalogMetadata?.permissionIndexes.get(entry.connector.slug);
   if (cached !== undefined) {
     entry.permissionIndex = cached;
     return cached;
   }
   const permissionIndex = acceptedPermissionIndex(acceptedEntryFirewall(entry));
   entry.permissionIndex = permissionIndex;
-  entry.permissionIndexes?.set(entry.connector.slug, permissionIndex);
+  entry.catalogMetadata?.permissionIndexes.set(
+    entry.connector.slug,
+    permissionIndex,
+  );
   return permissionIndex;
 }
 
@@ -551,12 +598,22 @@ function acceptedEntryExecutionMetadata(
   if (entry.executionMetadata !== undefined) {
     return entry.executionMetadata;
   }
+  const bindings = runtimeBindingEntries(entry.runtimeMethods());
+  const bindingsKey = JSON.stringify(bindings);
+  const cache = entry.catalogMetadata?.executionMetadata;
+  const cached = cache?.get(entry.connector.slug);
+  if (cached?.bindingsKey === bindingsKey) {
+    entry.executionMetadata = cached.value;
+    return cached.value;
+  }
   const executionMetadata = acceptedExecutionMetadata({
     firewall: acceptedEntryFirewall(entry),
     routing: acceptedEntryRouting(entry),
-    methods: entry.runtimeMethods(),
+    bindings,
   });
   entry.executionMetadata = executionMetadata;
+  // One most-recent binding variant per connector, never a selection-keyed cache.
+  cache?.set(entry.connector.slug, { bindingsKey, value: executionMetadata });
   return executionMetadata;
 }
 
