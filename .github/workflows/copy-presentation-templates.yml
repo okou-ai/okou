@@ -189,14 +189,14 @@ jobs:
           node --import tsx scripts/migrations/029-template-guidance-bundles/capture.ts \
             --inventory "$request_dir/inventory.json" --public-key "$request_dir/recipient.pem" \
             --output "$RUNNER_TEMP/template-guidance-capture" --commit "$GITHUB_SHA"
+          for capture_file in report.json envelope.json payload.enc; do
+            test -s "$RUNNER_TEMP/template-guidance-capture/$capture_file"
+          done
       - name: Retain only the encrypted payload and metadata receipt
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: template-guidance-capture-${{ github.run_id }}-${{ github.run_attempt }}
-          path: |
-            ${{ runner.temp }}/template-guidance-capture/report.json
-            ${{ runner.temp }}/template-guidance-capture/envelope.json
-            ${{ runner.temp }}/template-guidance-capture/payload.enc
-          if-no-files-found: warn
+          path: ${{ runner.temp }}/template-guidance-capture
+          if-no-files-found: error
           retention-days: 1
