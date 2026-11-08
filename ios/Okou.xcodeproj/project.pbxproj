@@ -23,6 +23,7 @@
 		000000000000000000000063 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000061 /* Sentry */; };
 		000000000000000000000072 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000071 /* BeautifulMermaid */; };
 		000000000000000000000082 /* CCState in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000081 /* CCState */; };
+		000000000000000000000084 /* CCStateSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000083 /* CCStateSwiftUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -127,6 +128,7 @@
 				000000000000000000000062 /* Sentry in Frameworks */,
 				000000000000000000000072 /* BeautifulMermaid in Frameworks */,
 				000000000000000000000082 /* CCState in Frameworks */,
+				000000000000000000000084 /* CCStateSwiftUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -207,6 +209,7 @@
 				000000000000000000000061 /* Sentry */,
 				000000000000000000000071 /* BeautifulMermaid */,
 				000000000000000000000081 /* CCState */,
+				000000000000000000000083 /* CCStateSwiftUI */,
 			);
 			productName = Okou;
 			productReference = 000000000000000000000009 /* Okou.app */;
@@ -669,6 +672,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */;
 			productName = CCState;
+		};
+		000000000000000000000083 /* CCStateSwiftUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */;
+			productName = CCStateSwiftUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

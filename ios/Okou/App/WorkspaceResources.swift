@@ -5,14 +5,14 @@ import Foundation
 /// One graph per authenticated workspace; each endpoint has its own cached Task.
 @MainActor
 final class WorkspaceResources {
-  private let store = CCState.Store()
+  let store = CCState.Store()
   private let preference: WorkspaceRead<ModelPreference>
   private let available: WorkspaceRead<AvailableRunModels>
   private let catalog: WorkspaceRead<ModelCatalog>
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let agents: WorkspaceRead<[AgentRecord]>
   private let sidebarPreferences: WorkspaceRead<SidebarPreferences>
-  private let configuration: Computed<Task<ChatModelConfiguration, Error>>
+  let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(client: APIClient, sleep: @escaping @Sendable (Duration) async throws -> Void) {
     let service = ChatModelService(client: client)

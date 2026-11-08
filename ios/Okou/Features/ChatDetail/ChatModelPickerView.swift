@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
@@ -5,17 +6,45 @@ import SwiftUI
 /// capsule the height of the other header controls with the model's name in the text colour
 /// and its thinking effort (and Fast) in supporting grey. It opens the model sheet.
 struct ChatModelPickerButton: View {
+  let selection: ChatModelSelectionStore
+
+  var body: some View {
+    StoreProvider(selection.models.stateStore) {
+      ChatModelPickerButtonContent(selection: selection)
+        .id(ObjectIdentifier(selection.models))
+    }
+  }
+}
+
+private struct ChatModelPickerButtonContent: View {
   @Bindable var selection: ChatModelSelectionStore
+  @ResolvedValue private var resolvedConfiguration: ChatModelConfiguration?
+  @LoadableStatus<ChatModelConfiguration> private var modelStatus: LoadableState
+
+  init(selection: ChatModelSelectionStore) {
+    self.selection = selection
+    _resolvedConfiguration = ResolvedValue(
+      task: selection.models.configurationValue, keepLast: true)
+    _modelStatus = LoadableStatus(task: selection.models.configurationValue)
+  }
+
+  // Keep the existing confirmed display when a refresh fails; the Task still exposes its error.
+  private var configuration: ChatModelConfiguration? {
+    resolvedConfiguration ?? models.configuration
+  }
+  private var modelError: String? {
+    $resolvedConfiguration.error.map(ChatRequestFailure.message(for:))
+  }
   @State private var isPresented = false
   private var models: ChatModelStore { selection.models }
-  private var isLoading: Bool { models.isLoading || selection.isBusy }
+  private var isLoading: Bool { modelStatus == .loading || selection.isBusy }
   private var hasError: Bool {
-    models.error != nil || selection.error != nil
-      || (models.configuration != nil && !selection.canSend && !isLoading)
+    modelError != nil || selection.error != nil
+      || (configuration != nil && !selection.canSend && !isLoading)
   }
   private var accessibilityValue: String {
-    guard let configuration = models.configuration else {
-      return models.error == nil
+    guard let configuration else {
+      return modelError == nil
         ? String(localized: "Loading model settings")
         : String(localized: "Model settings unavailable")
     }
@@ -43,7 +72,7 @@ struct ChatModelPickerButton: View {
     } label: {
       HStack(spacing: OkouSpace.six) {
         Text(
-          models.configuration.map { $0.catalog.name(selection.selection.model) }
+          configuration.map { $0.catalog.name(selection.selection.model) }
             ?? String(localized: "Model settings")
         )
         .font(.okou(.callout).weight(.medium))
@@ -78,13 +107,40 @@ struct ChatModelPickerButton: View {
         .presentationDragIndicator(.visible)
         .okouSheetBackground()
     }
-    // The composer loads model settings when it mounts (it needs them to send); this capsule
-    // only shows the result and opens the sheet, so the settings are not requested twice.
+    // The capsule and sheet observe the same workspace Task as the composer and send checks.
   }
 }
 
 struct ChatModelPickerView: View {
+  let selection: ChatModelSelectionStore
+
+  var body: some View {
+    StoreProvider(selection.models.stateStore) {
+      ChatModelPickerContent(selection: selection)
+        .id(ObjectIdentifier(selection.models))
+    }
+  }
+}
+
+private struct ChatModelPickerContent: View {
   @Bindable var selection: ChatModelSelectionStore
+  @ResolvedValue private var resolvedConfiguration: ChatModelConfiguration?
+  @LoadableStatus<ChatModelConfiguration> private var modelStatus: LoadableState
+
+  init(selection: ChatModelSelectionStore) {
+    self.selection = selection
+    _resolvedConfiguration = ResolvedValue(
+      task: selection.models.configurationValue, keepLast: true)
+    _modelStatus = LoadableStatus(task: selection.models.configurationValue)
+  }
+
+  // Keep the existing confirmed display when a refresh fails; the Task still exposes its error.
+  private var configuration: ChatModelConfiguration? {
+    resolvedConfiguration ?? models.configuration
+  }
+  private var modelError: String? {
+    $resolvedConfiguration.error.map(ChatRequestFailure.message(for:))
+  }
   @Environment(\.dismiss) private var dismiss
   private var models: ChatModelStore { selection.models }
   private var subscriptions: PersonalSubscriptionStore { models.subscriptions }
@@ -101,7 +157,7 @@ struct ChatModelPickerView: View {
   var body: some View {
     NavigationStack {
       List {
-        if let configuration = models.configuration {
+        if let configuration {
           // Thinking effort and Fast mode belong to the selected model, so they sit in that
           // model's provider card; only when no listed model is selected do they stand alone.
           if selectedSectionType(configuration) == nil {
@@ -217,7 +273,7 @@ struct ChatModelPickerView: View {
             }
           }
         }
-        if let error = selection.error ?? models.error ?? subscriptions.error {
+        if let error = selection.error ?? modelError ?? subscriptions.error {
           Section {
             Text(error).foregroundStyle(OkouColor.destructive)
             Button("Refresh model settings") {
@@ -233,7 +289,7 @@ struct ChatModelPickerView: View {
       .okouGroupedBackground()
       .listSectionSpacing(OkouSpace.lg)
       .overlay {
-        if models.configuration == nil && models.error == nil && selection.error == nil {
+        if configuration == nil && modelError == nil && selection.error == nil {
           ChatSettingsLoadingView(title: "Loading models…")
         }
       }
@@ -243,7 +299,7 @@ struct ChatModelPickerView: View {
         OkouCloseToolbarItem { dismiss() }
       }
       .task {
-        if !models.isLoading && !selection.isLoading { await selection.open() }
+        if modelStatus != .loading && !selection.isLoading { await selection.open() }
       }
       .task { await subscriptions.refresh() }
       .sheet(isPresented: $showsAuth, onDismiss: subscriptions.cancelAuth) {

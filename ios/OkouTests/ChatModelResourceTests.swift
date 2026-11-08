@@ -120,7 +120,7 @@ final class ChatModelResourceTests: XCTestCase {
     }
     await selection.open()
     XCTAssertEqual(selection.selection.model, "codex-model")
-    XCTAssertNil(models.error)
+    XCTAssertTrue(selection.canSend)
     var expected = initialRequests
     expected["/api/user-model-preference"] = 2
     let observed = requests.withLock { $0 }
