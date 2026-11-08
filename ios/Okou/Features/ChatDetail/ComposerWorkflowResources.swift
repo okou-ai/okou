@@ -24,7 +24,9 @@ final class ComposerWorkflowResources {
   }
 
   private enum Action {
-    case filter(Filter), reload(Request), dismiss
+    case filter(Filter)
+    case reload(Request)
+    case dismiss
   }
 
   let store = CCState.Store()
@@ -78,9 +80,10 @@ final class ComposerWorkflowResources {
     let workflows = try await pending.value
     try Task.checkCancellation()
     try signal.checkCancellation()
-    let values = filter.query.map {
-      ComposerWorkflowSearch.matches(workflows, query: $0, recent: filter.recent)
-    } ?? []
+    let values =
+      filter.query.map {
+        ComposerWorkflowSearch.matches(workflows, query: $0, recent: filter.recent)
+      } ?? []
     return Matches(requestID: request?.id, query: filter.query, values: values)
   }
 
