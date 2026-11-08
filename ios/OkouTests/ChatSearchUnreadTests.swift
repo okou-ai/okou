@@ -31,8 +31,8 @@ final class ChatSearchUnreadTests: XCTestCase {
     conversation.rememberReadingPosition(position)
     store.selectChat(SearchUnreadFixture.id(1))
     store.search.updateQuery("needle")
-    try await waitForBusinessResult { !store.search.isLoading }
-    XCTAssertEqual(store.search.messages.first?.matchedMessage.seqId, 5)
+    let hits = try await store.search.stateStore.get(store.search.messagesValue).value
+    XCTAssertEqual(hits.first?.matchedMessage.seqId, 5)
     let opened = await store.openSearchResult(id)
     XCTAssertTrue(opened)
     XCTAssertEqual(store.selectedAgentID, SearchUnreadFixture.otherAgent)
@@ -359,26 +359,39 @@ final class ChatSearchUnreadTests: XCTestCase {
     defer { search.close() }
     search.present()
     search.updateQuery("discarded")
+    let discarded = try search.stateStore.get(search.messagesValue)
     search.updateQuery("old")
+    let old = try search.stateStore.get(search.messagesValue)
+    addTeardownBlock { @MainActor in
+      search.close()
+      gate.open()
+      _ = await discarded.result
+      _ = await old.result
+    }
     await fulfillment(of: [started], timeout: 2)
     search.updateQuery("new")
-    try await waitForBusinessResult { !search.isLoading }
-    XCTAssertEqual(search.messages.first?.matchedMessage.content, "new")
+    let newest = try await search.stateStore.get(search.messagesValue).value
+    XCTAssertEqual(newest.first?.matchedMessage.content, "new")
     gate.open()
     await fulfillment(of: [cancelled], timeout: 2)
-    XCTAssertEqual(search.messages.first?.matchedMessage.content, "new")
+    let retained = try await search.stateStore.get(search.messagesValue).value
+    XCTAssertEqual(retained.first?.matchedMessage.content, "new")
     XCTAssertFalse(seen.withLock { $0.contains("discarded") })
     search.updateQuery("")
-    XCTAssertTrue(search.messages.isEmpty)
-    XCTAssertFalse(search.isLoading)
+    let cleared = try await search.stateStore.get(search.messagesValue).value
+    XCTAssertTrue(cleared.isEmpty)
     search.updateQuery("closed")
+    let dismissed = try search.stateStore.get(search.messagesValue)
     search.dismiss()
+    _ = await dismissed.result
     XCTAssertFalse(search.isPresented)
-    XCTAssertTrue(search.messages.isEmpty)
+    let afterDismissal = try await search.stateStore.get(search.messagesValue).value
+    XCTAssertTrue(afterDismissal.isEmpty)
 
     let fresh = SearchUnreadFixture().workspace()
     defer { fresh.close() }
-    XCTAssertTrue(fresh.search.messages.isEmpty)
+    let freshResults = try await fresh.search.stateStore.get(fresh.search.messagesValue).value
+    XCTAssertTrue(freshResults.isEmpty)
     XCTAssertFalse(fresh.search.isPresented)
     XCTAssertTrue(fresh.search.query.isEmpty)
   }
@@ -481,15 +494,20 @@ final class ChatSearchUnreadTests: XCTestCase {
     let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
     defer { search.close() }
     search.present()
-    try await waitForBusinessResult { !search.isLoadingWorkflows }
-    XCTAssertEqual(search.workflows.map(\.id), ["w1"])
+    let initial = try await search.stateStore.get(search.workflowsValue).value
+    XCTAssertEqual(initial.map(\.id), ["w1"])
     search.updateQuery("brand")
-    try await waitForBusinessResult { !search.isLoadingArtifacts && !search.isLoading }
+    let messages = try search.stateStore.get(search.messagesValue)
+    let artifacts = try search.stateStore.get(search.artifactsValue)
+    _ = try await messages.value
+    let found = try await artifacts.value
     // A shared conversation is left out: the app cannot open it.
-    XCTAssertEqual(search.artifacts.map(\.title), ["Brand site"])
-    XCTAssertEqual(search.workflows.map(\.id), ["w1"])
+    XCTAssertEqual(found.map(\.title), ["Brand site"])
+    let matching = try await search.stateStore.get(search.workflowsValue).value
+    XCTAssertEqual(matching.map(\.id), ["w1"])
     search.updateQuery("nothing like it")
-    XCTAssertTrue(search.workflows.isEmpty)
+    let filtered = try await search.stateStore.get(search.workflowsValue).value
+    XCTAssertTrue(filtered.isEmpty)
     XCTAssertEqual(workflowLoads.withLock { $0 }, 1)
   }
 
@@ -515,20 +533,141 @@ final class ChatSearchUnreadTests: XCTestCase {
     defer { search.close() }
     search.present()
     search.updateQuery("empty")
-    try await waitForBusinessResult { !search.isLoading }
-    XCTAssertTrue(search.messages.isEmpty)
-    XCTAssertNil(search.error)
-    search.updateQuery("denied")
-    try await waitForBusinessResult { !search.isLoading }
-    XCTAssertNotNil(search.error)
-    XCTAssertTrue(search.messages.isEmpty)
-    search.updateQuery("retry")
-    try await waitForBusinessResult { !search.isLoading }
-    XCTAssertNotNil(search.error)
+    let empty = try await search.stateStore.get(search.messagesValue).value
+    XCTAssertTrue(empty.isEmpty)
+    for (keyword, status) in [("denied", 403), ("retry", 503)] {
+      search.updateQuery(keyword)
+      do {
+        _ = try await search.stateStore.get(search.messagesValue).value
+        XCTFail("The failed search must retain its HTTP error")
+      } catch let error as APIClientError {
+        XCTAssertEqual(error.statusCode, status)
+      }
+    }
     search.retry()
-    try await waitForBusinessResult { !search.isLoading }
-    XCTAssertNil(search.error)
-    XCTAssertEqual(search.messages.first?.matchedMessage.content, "Recovered")
+    let recovered = try await search.stateStore.get(search.messagesValue).value
+    XCTAssertEqual(recovered.first?.matchedMessage.content, "Recovered")
+  }
+
+  func testSearchResourcesFinishIndependentlyAndRetainTheirOwnFailure() async throws {
+    let messagesGate = SearchResponseGate()
+    let workflowsGate = SearchResponseGate()
+    defer {
+      messagesGate.open()
+      workflowsGate.open()
+    }
+    let pending = expectation(description: "Messages and workflows reached their external gates")
+    pending.expectedFulfillmentCount = 2
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat/search":
+        pending.fulfill()
+        await messagesGate.wait()
+        return ChatHTTPResponse(status: 403, body: #"{"error":{"message":"Forbidden"}}"#)
+      case "/api/workflows":
+        pending.fulfill()
+        await workflowsGate.wait()
+        return ChatHTTPResponse(
+          body:
+            #"[{"id":"workflow","agentId":"agent","name":"brand-design","displayName":"Brand Design","description":"Posters","official":null}]"#
+        )
+      case "/api/artifacts/catalog":
+        return ChatHTTPResponse(
+          body:
+            #"{"artifacts":[{"id":"site","kind":"hosted-site","title":"Brand site","thumbnail":null,"aliasUrl":"https://brand.sites.vm0.io"}],"nextCursor":null}"#
+        )
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    defer { search.close() }
+    search.present()
+    search.updateQuery("brand")
+    let workflows = try search.stateStore.get(search.workflowsValue)
+    let messages = try search.stateStore.get(search.messagesValue)
+    let artifacts = try search.stateStore.get(search.artifactsValue)
+    addTeardownBlock { @MainActor in
+      search.close()
+      messagesGate.open()
+      workflowsGate.open()
+      _ = await workflows.result
+      _ = await messages.result
+      _ = await artifacts.result
+    }
+    await fulfillment(of: [pending], timeout: 2)
+    // The artifact is usable while both other endpoints are still pending.
+    let found = try await artifacts.value
+    XCTAssertEqual(found.map(\.title), ["Brand site"])
+    messagesGate.open()
+    do {
+      _ = try await messages.value
+      XCTFail("A denied message search must not become a successful empty result")
+    } catch let error as APIClientError {
+      XCTAssertEqual(error.statusCode, 403)
+    }
+    workflowsGate.open()
+    let available = try await workflows.value
+    XCTAssertEqual(available.map(\.id), ["workflow"])
+  }
+
+  func testDismissalCancelsEveryInFlightSearchResource() async throws {
+    let gates = Dictionary(
+      uniqueKeysWithValues: ["/api/chat/search", "/api/workflows", "/api/artifacts/catalog"].map {
+        ($0, SearchResponseGate())
+      })
+    defer { for gate in gates.values { gate.open() } }
+    let pending = expectation(description: "All search resources reached HTTP")
+    pending.expectedFulfillmentCount = 3
+    let cancelled = expectation(description: "Every original HTTP request observed cancellation")
+    cancelled.expectedFulfillmentCount = 3
+    let fixture = ChatHTTPFixture { request in
+      guard let gate = gates[request.url?.path ?? ""] else { throw URLError(.unsupportedURL) }
+      pending.fulfill()
+      await gate.wait()
+      XCTAssertTrue(Task.isCancelled)
+      cancelled.fulfill()
+      return emptySearchResources(request) ?? ChatHTTPResponse(body: #"{"results":[]}"#)
+    }
+    let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
+    defer { search.close() }
+    search.present()
+    search.updateQuery("pending")
+    let workflows = try search.stateStore.get(search.workflowsValue)
+    let messages = try search.stateStore.get(search.messagesValue)
+    let artifacts = try search.stateStore.get(search.artifactsValue)
+    addTeardownBlock { @MainActor in
+      search.close()
+      for gate in gates.values { gate.open() }
+      _ = await workflows.result
+      _ = await messages.result
+      _ = await artifacts.result
+    }
+    await fulfillment(of: [pending], timeout: 2)
+    search.dismiss()
+    await fulfillment(of: [cancelled], timeout: 2)
+    XCTAssertFalse(search.isPresented)
+    XCTAssertTrue(search.query.isEmpty)
+  }
+
+  func testArtifactSearchUpgradeClosesTheWorkspace() async throws {
+    let fixture = ChatHTTPFixture { request in
+      guard request.url?.path == "/api/artifacts/catalog" else {
+        throw URLError(.unsupportedURL)
+      }
+      return ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Update required"}}"#)
+    }
+    let workspace = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { workspace.close() }
+    workspace.search.present()
+    workspace.search.updateQuery("brand")
+    let pending = try workspace.search.stateStore.get(workspace.search.artifactsValue)
+    let outcome = await pending.result
+    guard case .failure(let error) = outcome else {
+      return XCTFail("The resource must retain the force-upgrade error")
+    }
+    XCTAssertEqual((error as? APIClientError)?.statusCode, 426)
+    XCTAssertTrue(workspace.needsUpgrade)
+    XCTAssertFalse(workspace.search.isPresented)
   }
 
   func testUnreadFilterMatchesPWABusyMutedArchivedBoundariesAndBulkReadScope() async throws {
