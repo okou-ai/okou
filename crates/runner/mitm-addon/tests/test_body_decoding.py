@@ -24,6 +24,7 @@ from body_limits import (
     STREAM_DECODE_MAX_EXPANSION_RATIO,
 )
 from tests.body_decode_helpers import (
+    compress_one_shot_body,
     pseudo_random_ascii,
     track_brotli_decompressor,
     track_zlib_decompressor,
@@ -35,20 +36,8 @@ from usage.json_selective import JsonSelectiveExtractor
 _ZLIB_INPUT_BOUND = 1024
 
 
-def _compress_one_shot_body(encoding: str, body: bytes) -> bytes:
-    if encoding == "gzip":
-        return gzip.compress(body)
-    if encoding == "deflate":
-        return zlib.compress(body)
-    if encoding == "br":
-        return brotli.compress(body)
-    if encoding == "zstd":
-        return zstandard.ZstdCompressor().compress(body)
-    raise AssertionError(f"unsupported test encoding: {encoding}")
-
-
 def _many_empty_zlib_members(encoding: str) -> bytes:
-    member = _compress_one_shot_body(encoding, b"")
+    member = compress_one_shot_body(encoding, b"")
     return member * (STREAM_BUFFER_LIMIT // len(member))
 
 
@@ -109,10 +98,10 @@ class TestStreamDecodeSession:
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
     def test_zlib_session_reports_corrupt_member_after_decoded_payload(self, headers, encoding):
         plaintext = b'{"model":"claude-sonnet-4-6","usage":{"input_tokens":42}}'
-        trailing_member = bytearray(_compress_one_shot_body(encoding, b""))
+        trailing_member = bytearray(compress_one_shot_body(encoding, b""))
         checksum_offset = -8 if encoding == "gzip" else -1
         trailing_member[checksum_offset] ^= 0xFF
-        compressed = _compress_one_shot_body(encoding, plaintext) + bytes(trailing_member)
+        compressed = compress_one_shot_body(encoding, plaintext) + bytes(trailing_member)
         chunks: list[bytes] = []
         session = create_stream_decode_session(
             headers(("Content-Encoding", encoding)), chunks.append
@@ -324,7 +313,7 @@ class TestStreamDecodeSession:
             + b"A" * (12 * 1024 * 1024)
             + b'"}'
         )
-        compressed = _compress_one_shot_body(encoding, plaintext)
+        compressed = compress_one_shot_body(encoding, plaintext)
         assert 50 * len(compressed) < len(plaintext) < 100 * len(compressed)
 
         extractor = JsonSelectiveExtractor(max_work_units=65_536)
@@ -363,7 +352,7 @@ class TestStreamDecodeSession:
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
     def test_zlib_expansion_budget_allows_exact_grace_and_empty_member(self, headers, encoding):
         plaintext = b"A" * STREAM_DECODE_EXPANSION_GRACE
-        compressed = _compress_one_shot_body(encoding, plaintext) + _compress_one_shot_body(
+        compressed = compress_one_shot_body(encoding, plaintext) + compress_one_shot_body(
             encoding, b""
         )
         assert len(compressed) * STREAM_DECODE_MAX_EXPANSION_RATIO < len(plaintext)
@@ -385,7 +374,7 @@ class TestStreamDecodeSession:
         plaintext = (compression_block * (plaintext_size // len(compression_block) + 1))[
             :plaintext_size
         ]
-        compressed = _compress_one_shot_body(encoding, plaintext)
+        compressed = compress_one_shot_body(encoding, plaintext)
         assert len(compressed) < STREAM_DECODE_CHUNK_LIMIT
         expected_decoded_bytes = len(compressed) * STREAM_DECODE_MAX_EXPANSION_RATIO
         assert STREAM_DECODE_EXPANSION_GRACE < expected_decoded_bytes < len(plaintext)
@@ -413,7 +402,7 @@ class TestStreamDecodeSession:
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
     def test_zlib_expansion_budget_is_shared_across_callbacks(self, headers, encoding):
         plaintext = b"A" * (8 * 1024 * 1024)
-        compressed = _compress_one_shot_body(encoding, plaintext)
+        compressed = compress_one_shot_body(encoding, plaintext)
         assert len(compressed) * STREAM_DECODE_MAX_EXPANSION_RATIO < STREAM_DECODE_EXPANSION_GRACE
         split_at = len(compressed) // 3
         chunks: list[bytes] = []
@@ -434,8 +423,8 @@ class TestStreamDecodeSession:
     def test_concatenated_zlib_members_share_expansion_budget(self, headers, encoding):
         first_plaintext = b"A" * (3 * 1024 * 1024)
         second_plaintext = b"B" * (3 * 1024 * 1024)
-        first_member = _compress_one_shot_body(encoding, first_plaintext)
-        second_member = _compress_one_shot_body(encoding, second_plaintext)
+        first_member = compress_one_shot_body(encoding, first_plaintext)
+        second_member = compress_one_shot_body(encoding, second_plaintext)
         assert (
             len(first_member + second_member) * STREAM_DECODE_MAX_EXPANSION_RATIO
             < STREAM_DECODE_EXPANSION_GRACE
@@ -460,7 +449,7 @@ class TestStreamDecodeSession:
         plaintext = hashlib.shake_256(b"vm0-streaming-zlib-low-ratio").digest(
             STREAM_DECODE_EXPANSION_GRACE + STREAM_DECODE_CHUNK_LIMIT
         )
-        compressed = _compress_one_shot_body(encoding, plaintext)
+        compressed = compress_one_shot_body(encoding, plaintext)
         assert len(compressed) * STREAM_DECODE_MAX_EXPANSION_RATIO > len(plaintext)
         chunks: list[bytes] = []
         session = create_stream_decode_session(
@@ -565,7 +554,7 @@ class TestDecompressBody:
         # Regression: the best-effort path must pass its remaining output
         # budget into real zlib rather than decoding fully and slicing.
         plaintext = b"A" * (10 * 1024 * 1024)  # 10 MB, high compression ratio
-        compressed = _compress_one_shot_body(encoding, plaintext)
+        compressed = compress_one_shot_body(encoding, plaintext)
         assert len(compressed) < len(plaintext) // 100
         stats = track_zlib_decompressor(monkeypatch, max_output=max_output)
         hdrs = headers(("Content-Encoding", encoding))
@@ -643,12 +632,10 @@ class TestDecompressBody:
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
     def test_corrupt_later_zlib_member_discards_its_partial_output(self, headers, encoding):
         prefix = b"prefix"
-        trailing_member = bytearray(
-            _compress_one_shot_body(encoding, pseudo_random_ascii(4 * 1024))
-        )
+        trailing_member = bytearray(compress_one_shot_body(encoding, pseudo_random_ascii(4 * 1024)))
         assert len(trailing_member) > _ZLIB_INPUT_BOUND
         trailing_member[-1] ^= 0xFF
-        compressed = _compress_one_shot_body(encoding, prefix) + trailing_member
+        compressed = compress_one_shot_body(encoding, prefix) + trailing_member
 
         hdrs = headers(("Content-Encoding", encoding))
         result = decompress_body(compressed, hdrs, max_output=64 * 1024)
@@ -802,13 +789,13 @@ class TestDecodeRequestBodyForNetworkLogCapture:
     @pytest.mark.parametrize("encoding", ["gzip", "deflate", "br", "zstd"])
     def test_valid_body_returns_decoded_bytes(self, headers, encoding):
         data = b'{"hello":"world"}'
-        compressed = _compress_one_shot_body(encoding, data)
+        compressed = compress_one_shot_body(encoding, data)
         hdrs = headers(("Content-Encoding", encoding))
         assert decode_request_body_for_network_log_capture(compressed, hdrs) == data
 
     @pytest.mark.parametrize("encoding", ["gzip", "deflate", "br", "zstd"])
     def test_valid_empty_compressed_body_returns_empty_bytes(self, headers, encoding):
-        compressed = _compress_one_shot_body(encoding, b"")
+        compressed = compress_one_shot_body(encoding, b"")
         hdrs = headers(("Content-Encoding", encoding))
         assert decode_request_body_for_network_log_capture(compressed, hdrs) == b""
 
@@ -819,7 +806,7 @@ class TestDecodeRequestBodyForNetworkLogCapture:
         input_budget = 128 * 1024
         # An incompressible single raw block has 12 bytes of frame/block overhead.
         body = hashlib.shake_256(b"zstd capture boundary").digest(input_budget - 12 + extra_input)
-        compressed = _compress_one_shot_body("zstd", body)
+        compressed = compress_one_shot_body("zstd", body)
         assert len(compressed) == input_budget + extra_input
         hdrs = headers(("Content-Encoding", "zstd"))
         stats = track_zstd_decompressor(monkeypatch, max_output=33)
@@ -838,7 +825,7 @@ class TestDecodeRequestBodyForNetworkLogCapture:
 
     def test_zstd_incompressible_capture_with_frame_overhead(self, headers):
         body = hashlib.shake_256(b"zstd ordinary capture").digest(DEFAULT_BODY_DECODE_LIMIT)
-        compressed = _compress_one_shot_body("zstd", body)
+        compressed = compress_one_shot_body("zstd", body)
         assert DEFAULT_BODY_DECODE_LIMIT < len(compressed) < 128 * 1024
         hdrs = headers(("Content-Encoding", "zstd"))
 
@@ -846,7 +833,7 @@ class TestDecodeRequestBodyForNetworkLogCapture:
 
     def test_zstd_large_input_policy_is_specific_to_request_capture(self, headers):
         body = hashlib.shake_256(b"zstd capture consumers").digest(128 * 1024)
-        compressed = _compress_one_shot_body("zstd", body)
+        compressed = compress_one_shot_body("zstd", body)
         assert len(compressed) > 128 * 1024
         hdrs = headers(("Content-Encoding", "zstd"))
 
@@ -864,9 +851,9 @@ class TestDecodeRequestBodyForNetworkLogCapture:
     def test_zstd_input_budget_preserves_strict_frame_budget(
         self, headers, monkeypatch, frame_count, body
     ):
-        compressed = _compress_one_shot_body("zstd", body) + _compress_one_shot_body(
-            "zstd", b""
-        ) * (frame_count - 1)
+        compressed = compress_one_shot_body("zstd", body) + compress_one_shot_body("zstd", b"") * (
+            frame_count - 1
+        )
         hdrs = headers(("Content-Encoding", "zstd"))
         max_output = max(1, len(body))
         stats = track_zstd_decompressor(monkeypatch, max_output=max_output + 1)
@@ -885,14 +872,14 @@ class TestDecodeRequestBodyForNetworkLogCapture:
     @pytest.mark.parametrize("tail_kind", ["invalid", "incomplete", "overflow"])
     def test_zstd_last_allowed_frame_preserves_failure_policy(self, headers, tail_kind):
         body = b"A" * 32
-        empty_frame = _compress_one_shot_body("zstd", b"")
+        empty_frame = compress_one_shot_body("zstd", b"")
         if tail_kind == "invalid":
             tail = b"not compressed"
         elif tail_kind == "incomplete":
             tail = empty_frame[:-1]
         else:
-            tail = _compress_one_shot_body("zstd", b"B")
-        compressed = _compress_one_shot_body("zstd", body) + empty_frame * 62 + tail
+            tail = compress_one_shot_body("zstd", b"B")
+        compressed = compress_one_shot_body("zstd", body) + empty_frame * 62 + tail
         hdrs = headers(("Content-Encoding", "zstd"))
 
         decoded = decode_request_body_for_network_log_capture(compressed, hdrs, max_output=32)
@@ -905,8 +892,8 @@ class TestDecodeRequestBodyForNetworkLogCapture:
     def test_zlib_member_budget_bounds_capture_work(
         self, headers, monkeypatch, encoding, member_count, body
     ):
-        empty_member = _compress_one_shot_body(encoding, b"")
-        compressed = _compress_one_shot_body(encoding, body) + empty_member * (member_count - 1)
+        empty_member = compress_one_shot_body(encoding, b"")
+        compressed = compress_one_shot_body(encoding, body) + empty_member * (member_count - 1)
         stats = track_zlib_decompressor(monkeypatch, "zlib_decoding.zlib.decompressobj")
         hdrs = headers(("Content-Encoding", encoding))
 
@@ -929,9 +916,9 @@ class TestDecodeRequestBodyForNetworkLogCapture:
         first = b"A" * 16
         second = b"B" * 16
         compressed = (
-            _compress_one_shot_body(encoding, first)
-            + _compress_one_shot_body(encoding, second)
-            + _compress_one_shot_body(encoding, b"") * 2
+            compress_one_shot_body(encoding, first)
+            + compress_one_shot_body(encoding, second)
+            + compress_one_shot_body(encoding, b"") * 2
         )
         hdrs = headers(("Content-Encoding", encoding))
 
@@ -944,14 +931,14 @@ class TestDecodeRequestBodyForNetworkLogCapture:
     @pytest.mark.parametrize("tail_kind", ["invalid", "incomplete", "overflow"])
     def test_zlib_last_allowed_member_preserves_failure_policy(self, headers, encoding, tail_kind):
         body = b"A" * 32
-        empty_member = _compress_one_shot_body(encoding, b"")
+        empty_member = compress_one_shot_body(encoding, b"")
         if tail_kind == "invalid":
             tail = b"not compressed"
         elif tail_kind == "incomplete":
             tail = empty_member[:-1]
         else:
-            tail = _compress_one_shot_body(encoding, b"B")
-        compressed = _compress_one_shot_body(encoding, body) + empty_member * 62 + tail
+            tail = compress_one_shot_body(encoding, b"B")
+        compressed = compress_one_shot_body(encoding, body) + empty_member * 62 + tail
         hdrs = headers(("Content-Encoding", encoding))
 
         decoded = decode_request_body_for_network_log_capture(compressed, hdrs, max_output=32)
@@ -979,7 +966,7 @@ class TestDecodeRequestBodyForNetworkLogCapture:
 
     @pytest.mark.parametrize("encoding", ["gzip", "deflate", "br", "zstd"])
     def test_incomplete_compressed_body_returns_none_before_decode_limit(self, headers, encoding):
-        compressed = _compress_one_shot_body(encoding, b"hello request body" * 100)
+        compressed = compress_one_shot_body(encoding, b"hello request body" * 100)
         hdrs = headers(("Content-Encoding", encoding))
 
         assert decode_request_body_for_network_log_capture(compressed[:-1], hdrs) is None
@@ -987,7 +974,7 @@ class TestDecodeRequestBodyForNetworkLogCapture:
     @pytest.mark.parametrize("encoding", ["gzip", "deflate", "br", "zstd"])
     def test_decode_limit_exceeded_returns_truncated_prefix(self, headers, encoding):
         body = b"x" * 1024
-        compressed = _compress_one_shot_body(encoding, body)
+        compressed = compress_one_shot_body(encoding, body)
         hdrs = headers(("Content-Encoding", encoding))
 
         decoded = decode_request_body_for_network_log_capture(
@@ -1021,7 +1008,7 @@ class TestDecompressJsonUsageBody:
     def test_concatenated_zlib_members_return_complete_body(self, headers, encoding):
         first = b'{"usage":'
         second = b'{"input_tokens":1}}'
-        compressed = _compress_one_shot_body(encoding, first) + _compress_one_shot_body(
+        compressed = compress_one_shot_body(encoding, first) + compress_one_shot_body(
             encoding, second
         )
         hdrs = headers(("Content-Encoding", encoding))
@@ -1103,9 +1090,9 @@ class TestDecompressJsonUsageBody:
     def test_zlib_exact_limit_accepts_empty_trailing_members(self, headers, encoding):
         body = b"A" * 32
         compressed = (
-            _compress_one_shot_body(encoding, body)
-            + _compress_one_shot_body(encoding, b"")
-            + _compress_one_shot_body(encoding, b"")
+            compress_one_shot_body(encoding, body)
+            + compress_one_shot_body(encoding, b"")
+            + compress_one_shot_body(encoding, b"")
         )
         hdrs = headers(("Content-Encoding", encoding))
 
@@ -1118,9 +1105,9 @@ class TestDecompressJsonUsageBody:
     def test_zlib_exact_limit_rejects_nonempty_trailing_member(self, headers, encoding):
         body = b"A" * 32
         compressed = (
-            _compress_one_shot_body(encoding, body)
-            + _compress_one_shot_body(encoding, b"")
-            + _compress_one_shot_body(encoding, b"B")
+            compress_one_shot_body(encoding, body)
+            + compress_one_shot_body(encoding, b"")
+            + compress_one_shot_body(encoding, b"B")
         )
         hdrs = headers(("Content-Encoding", encoding))
 
@@ -1132,7 +1119,7 @@ class TestDecompressJsonUsageBody:
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
     def test_zlib_exact_limit_classifies_invalid_trailing_data(self, headers, encoding):
         body = b"A" * 32
-        compressed = _compress_one_shot_body(encoding, body) + b"not compressed"
+        compressed = compress_one_shot_body(encoding, body) + b"not compressed"
         hdrs = headers(("Content-Encoding", encoding))
 
         _decoded, error = decompress_json_usage_body(compressed, hdrs, max_output=len(body))
@@ -1142,8 +1129,8 @@ class TestDecompressJsonUsageBody:
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
     def test_zlib_exact_limit_classifies_incomplete_trailing_member(self, headers, encoding):
         body = b"A" * 32
-        trailing_member = _compress_one_shot_body(encoding, b"")
-        compressed = _compress_one_shot_body(encoding, body) + trailing_member[:-1]
+        trailing_member = compress_one_shot_body(encoding, b"")
+        compressed = compress_one_shot_body(encoding, body) + trailing_member[:-1]
         hdrs = headers(("Content-Encoding", encoding))
 
         _decoded, error = decompress_json_usage_body(compressed, hdrs, max_output=len(body))
@@ -1153,7 +1140,7 @@ class TestDecompressJsonUsageBody:
     @pytest.mark.parametrize("encoding", ["gzip", "deflate"])
     def test_zlib_single_member_exceeding_limit_returns_error(self, headers, encoding):
         body = b"A" * 33
-        compressed = _compress_one_shot_body(encoding, body)
+        compressed = compress_one_shot_body(encoding, body)
         hdrs = headers(("Content-Encoding", encoding))
 
         decoded, error = decompress_json_usage_body(compressed, hdrs, max_output=32)
