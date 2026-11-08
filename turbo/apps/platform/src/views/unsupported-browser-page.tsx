@@ -21,6 +21,14 @@ const UPGRADE_COPY = {
     action: "Update Chromium",
     title: "Update Chromium to continue",
   },
+  edge: {
+    action: "Update Edge",
+    title: "Update Edge to continue",
+  },
+  firefox: {
+    action: "Update Firefox",
+    title: "Update Firefox to continue",
+  },
   ios: {
     action: "Update iOS",
     title: "Update iOS to continue",

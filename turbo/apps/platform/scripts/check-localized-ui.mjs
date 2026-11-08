@@ -274,6 +274,14 @@ function getLocaleIndependentShellAllowedLiterals() {
       "English-only browser compatibility shell outside localized app bootstrap",
     ],
     [
+      "src/views/unsupported-browser-page.tsx\u0000Update Edge to continue",
+      "English-only browser compatibility shell outside localized app bootstrap",
+    ],
+    [
+      "src/views/unsupported-browser-page.tsx\u0000Update Firefox to continue",
+      "English-only browser compatibility shell outside localized app bootstrap",
+    ],
+    [
       "src/views/unsupported-browser-page.tsx\u0000Update iOS to continue",
       "English-only browser compatibility shell outside localized app bootstrap",
     ],

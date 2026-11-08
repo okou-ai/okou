@@ -1,3 +1,6 @@
+import "../../polyfill.ts";
+import "@formatjs/intl-segmenter/polyfill.js";
+
 import { renderMessagePdf } from "./render.ts";
 import type { PdfWorkerRequest, PdfWorkerResponse } from "./types.ts";
 
