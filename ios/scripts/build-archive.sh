@@ -28,6 +28,7 @@ if [[ "${IOS_ARCHIVE_CACHE_ENABLED:-false}" == true ]]; then
 fi
 xcodebuild -version
 ios_archive_phase_started=$SECONDS
+python3 ios/scripts/prepare-voice-activity-model.py
 xcodebuild "${xcode_args[@]}" -resolvePackageDependencies
 cmp "$resolved" "$work/Package.resolved.before"
 echo "iOS archive dependency preparation: $((SECONDS - ios_archive_phase_started)) seconds"

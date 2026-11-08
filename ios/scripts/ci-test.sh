@@ -60,6 +60,7 @@ fi
 
 if [[ "$ios_test_phase" == all || "$ios_test_phase" == build || "$ios_test_phase" == prepare ]]; then
   ios_phase_started=$SECONDS
+  python3 ios/scripts/prepare-voice-activity-model.py
   cp "$resolved" "$build_root/Package.resolved.before"
   if [[ -n "${IOS_PACKAGE_SOURCES_DIR:-}" ]]; then
     python3 ios/scripts/prepare-package-sources.py "$resolved" "$build_root" "$IOS_PACKAGE_SOURCES_DIR"

@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Exercise real CI scripts with controlled external compiler/simulator processes."""
 
+import hashlib
+import json
 import os
 import shutil
 import signal
@@ -124,6 +126,7 @@ class CIProcessTests(unittest.TestCase):
         for name in (
             "ci-test.sh",
             "prepare-package-sources.py",
+            "prepare-voice-activity-model.py",
             "ci-package-test.sh",
             "preboot-simulator.py",
             "run-ci-tests.sh",
@@ -136,6 +139,16 @@ class CIProcessTests(unittest.TestCase):
         )
         resolved.parent.mkdir(parents=True)
         resolved.write_text('{"pins": []}\n')
+        models = self.repo / "ios/Okou/Resources/VoiceActivity"
+        models.mkdir(parents=True)
+        model = b"prepared fixture model"
+        (models / "fixture.onnx").write_bytes(model)
+        (models / "model.json").write_text(json.dumps({
+            "filename": "fixture.onnx",
+            "url": "https://model.example.invalid/fixture.onnx",
+            "sha256": hashlib.sha256(model).hexdigest(),
+            "size": len(model),
+        }))
         self.state = self.root / "state"
         self.state.mkdir()
         mock = self.root / "bin"
@@ -316,6 +329,56 @@ class CIProcessTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.state / "prepare-finished").exists())
+
+
+class VoiceModelPreparationTests(unittest.TestCase):
+    def setUp(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        self.root = Path(temporary.name)
+        self.source = self.root / "source.bin"
+        self.data = b"model artifact supplied by the external source"
+        self.source.write_bytes(self.data)
+        self.output = self.root / "fixture.onnx"
+        self.manifest = self.root / "model.json"
+        self.manifest.write_text(json.dumps({
+            "filename": self.output.name,
+            "url": self.source.as_uri(),
+            "sha256": hashlib.sha256(self.data).hexdigest(),
+            "size": len(self.data),
+        }))
+
+    def prepare(self):
+        return subprocess.run(
+            ["python3", str(SCRIPTS / "prepare-voice-activity-model.py"),
+             "--manifest", str(self.manifest)],
+            text=True,
+            capture_output=True,
+            timeout=5,
+            check=False,
+        )
+
+    def test_verified_model_is_reusable_without_the_download_source(self):
+        result = self.prepare()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(self.output.read_bytes(), self.data)
+        self.source.unlink()
+        cached = self.prepare()
+        self.assertEqual(cached.returncode, 0, cached.stderr)
+        self.assertEqual(self.output.read_bytes(), self.data)
+
+    def test_corrupted_download_is_not_published(self):
+        self.source.write_bytes(b"different artifact of the same length".ljust(len(self.data), b"!"))
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.output.exists())
+        self.assertEqual(set(self.root.iterdir()), {self.source, self.manifest})
+
+    def test_missing_source_fails_without_publishing_a_model(self):
+        self.source.unlink()
+        result = self.prepare()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertFalse(self.output.exists())
 
 
 if __name__ == "__main__":
