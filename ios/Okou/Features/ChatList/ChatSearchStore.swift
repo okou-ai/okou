@@ -121,60 +121,79 @@ final class ChatSearchStore {
     try get(input).keyword
   }
 
-  @ObservationIgnored private lazy var debouncedKeyword = Computed<Task<String?, Error>> {
-    [weak self] get, options in
-    guard let self else { throw CancellationError() }
-    let request = try get(queryRequest)
-    let signal = options.signal
-    let task = Task<String?, Error> { @MainActor in
-      guard let request else { return nil }
-      try await Task.sleep(for: .milliseconds(300))
-      try Task.checkCancellation()
-      try signal.checkCancellation()
-      return request.keyword
+  @ObservationIgnored private lazy var debouncedKeyword = makeDebouncedKeyword()
+
+  // Keep Task-producing closures out of lazy initializers so Swift can resolve actor defaults.
+  private func makeDebouncedKeyword() -> Computed<Task<String?, Error>> {
+    Computed {
+      [weak self] get, options in
+      guard let self else { throw CancellationError() }
+      let request = try get(queryRequest)
+      let signal = options.signal
+      let task = Task<String?, Error> { @MainActor in
+        guard let request else { return nil }
+        try await Task.sleep(for: .milliseconds(300))
+        try Task.checkCancellation()
+        try signal.checkCancellation()
+        return request.keyword
+      }
+      debounceTask = task
+      signal.onCancel { task.cancel() }
+      return task
     }
-    debounceTask = task
-    signal.onCancel { task.cancel() }
-    return task
+
   }
 
-  @ObservationIgnored lazy var messagesValue = Computed<Task<[ChatSearchResult], Error>> {
-    [weak self] get, options in
-    guard let self else { throw CancellationError() }
-    let keyword = try get(debouncedKeyword)
-    let task: Task<[ChatSearchResult], Error> = resourceTask(options.signal) { [sync] in
-      guard let keyword = try await keyword.value else { return [] }
-      try Task.checkCancellation()
-      return try await sync.searchMessages(keyword: keyword)
+  @ObservationIgnored lazy var messagesValue = makeMessagesValue()
+
+  private func makeMessagesValue() -> Computed<Task<[ChatSearchResult], Error>> {
+    Computed {
+      [weak self] get, options in
+      guard let self else { throw CancellationError() }
+      let keyword = try get(debouncedKeyword)
+      let task: Task<[ChatSearchResult], Error> = resourceTask(options.signal) { [sync] in
+        guard let keyword = try await keyword.value else { return [] }
+        try Task.checkCancellation()
+        return try await sync.searchMessages(keyword: keyword)
+      }
+      messagesTask = task
+      return task
     }
-    messagesTask = task
-    return task
+
   }
 
-  @ObservationIgnored lazy var artifactsValue = Computed<Task<[ChatSearchArtifact], Error>> {
-    [weak self] get, options in
-    guard let self else { throw CancellationError() }
-    let keyword = try get(debouncedKeyword)
-    let task: Task<[ChatSearchArtifact], Error> = resourceTask(options.signal) { [sync] in
-      guard let keyword = try await keyword.value else { return [] }
-      try Task.checkCancellation()
-      return try await sync.searchArtifacts(keyword: keyword)
+  @ObservationIgnored lazy var artifactsValue = makeArtifactsValue()
+
+  private func makeArtifactsValue() -> Computed<Task<[ChatSearchArtifact], Error>> {
+    Computed {
+      [weak self] get, options in
+      guard let self else { throw CancellationError() }
+      let keyword = try get(debouncedKeyword)
+      let task: Task<[ChatSearchArtifact], Error> = resourceTask(options.signal) { [sync] in
+        guard let keyword = try await keyword.value else { return [] }
+        try Task.checkCancellation()
+        return try await sync.searchArtifacts(keyword: keyword)
+      }
+      artifactsTask = task
+      return task
     }
-    artifactsTask = task
-    return task
+
   }
 
-  @ObservationIgnored private lazy var allWorkflowsValue = Computed<
-    Task<[ChatSearchWorkflow], Error>
-  > { [weak self] get, options in
-    guard let self else { throw CancellationError() }
-    let shouldRead = try get(workflowRequest) != nil
-    let task: Task<[ChatSearchWorkflow], Error> = resourceTask(options.signal) { [sync] in
-      guard shouldRead else { return [] }
-      return try await sync.searchWorkflows()
+  @ObservationIgnored private lazy var allWorkflowsValue = makeAllWorkflowsValue()
+
+  private func makeAllWorkflowsValue() -> Computed<Task<[ChatSearchWorkflow], Error>> {
+    Computed { [weak self] get, options in
+      guard let self else { throw CancellationError() }
+      let shouldRead = try get(workflowRequest) != nil
+      let task: Task<[ChatSearchWorkflow], Error> = resourceTask(options.signal) { [sync] in
+        guard shouldRead else { return [] }
+        return try await sync.searchWorkflows()
+      }
+      workflowsTask = task
+      return task
     }
-    workflowsTask = task
-    return task
+
   }
 
   @ObservationIgnored lazy var workflowsValue: Computed<Task<[ChatSearchWorkflow], Error>> =
