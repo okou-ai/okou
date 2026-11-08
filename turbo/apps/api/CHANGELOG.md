@@ -10,6 +10,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.54.0](https://github.com/okou-ai/okou/compare/api-v2.53.2...api-v2.54.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+
+### Performance Improvements
+
+* **api:** batch owner-scoped project reference validation ([#45895](https://github.com/okou-ai/okou/issues/45895)) ([d8c2bce](https://github.com/okou-ai/okou/commit/d8c2bcec6d599e90e0e3e6e8e988d10b7030d53d))
+* **api:** batch private attachment owner reads ([#45883](https://github.com/okou-ai/okou/issues/45883)) ([bf1fa96](https://github.com/okou-ai/okou/commit/bf1fa96477d2c92f5e096e5a2423c6dc8cdf1272))
+* **api:** overlap runner candidate lookup with launch persistence ([#45882](https://github.com/okou-ai/okou/issues/45882)) ([05f52bb](https://github.com/okou-ai/okou/commit/05f52bbb2204e2c8bdc010fd11e704f48ce12dd1))
+* **api:** reuse attachment lookups and refill validation slots ([#45892](https://github.com/okou-ai/okou/issues/45892)) ([08d7679](https://github.com/okou-ai/okou/commit/08d76793b064bbe3fc82f223707825c9f02dd058))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.45.0
+    * @okouai/core bumped to 8.824.0
+    * @okouai/db bumped to 2.24.0
+    * @okouai/pi-agent-runtime bumped to 1.51.84
+
 ## [2.53.2](https://github.com/okou-ai/okou/compare/api-v2.53.1...api-v2.53.2) (2026-11-08)
 
 
