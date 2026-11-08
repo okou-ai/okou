@@ -47,10 +47,16 @@ struct ComposerConnectorSheet: View {
               .foregroundStyle(OkouColor.mutedForeground)
             }
           }
-          NavigationLink {
-            ComposerConnectorDirectory(store: store)
+          Button {
+            store.openDirectory()
           } label: {
-            OkouRowLabel("Add connectors", okouSymbol: "plus")
+            HStack {
+              OkouRowLabel("Add connectors", okouSymbol: "plus")
+              Spacer(minLength: OkouSpace.sm)
+              OkouIcon("chevron-right", size: OkouIconSize.inline)
+                .foregroundStyle(OkouColor.mutedForeground)
+                .accessibilityHidden(true)
+            }
           }
         } header: {
           // The rule belongs above the switches it explains, not under a long list.
@@ -75,6 +81,16 @@ struct ComposerConnectorSheet: View {
       .navigationBarTitleDisplayMode(.inline)
       .navigationDestination(item: $destination) { destination in
         connectorDestination(destination)
+      }
+      .navigationDestination(
+        isPresented: Binding(
+          get: { store.directory != nil },
+          set: { if !$0 { store.closeDirectory() } })
+      ) {
+        if let resources = store.directory {
+          ComposerConnectorDirectory(store: store, resources: resources)
+            .id(ObjectIdentifier(resources))
+        }
       }
       .toolbar { OkouCloseToolbarItem { dismiss() } }
       .alert(
@@ -104,7 +120,10 @@ struct ComposerConnectorSheet: View {
     .onChange(of: scenePhase) { _, phase in
       if phase == .active { Task { await store.refresh() } }
     }
-    .onDisappear { store.authorization.cancel() }
+    .onDisappear {
+      store.authorization.cancel()
+      store.closeDirectory()
+    }
   }
 
   /// With chat account access a service opens the accounts this chat may use; otherwise it
