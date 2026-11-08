@@ -3,7 +3,7 @@
 //! Features:
 //! - Bounded parallel downloads using std::thread (up to 16 for remote inputs,
 //!   with 4 workers for local-only extraction)
-//! - Streaming extraction (no temp files)
+//! - Streaming extraction; immutable template archives use bounded temporary verification
 //!
 //! ## Manifest application and failure semantics
 //!
@@ -73,6 +73,7 @@ mod readiness;
 mod source;
 mod tar_metadata;
 mod telemetry;
+mod template_guidance;
 
 use guest_contracts::storage_manifest::Manifest;
 use guest_telemetry::{log_error, log_info, telemetry::record_sandbox_op};

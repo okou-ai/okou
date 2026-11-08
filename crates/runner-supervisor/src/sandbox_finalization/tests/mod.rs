@@ -901,6 +901,7 @@ async fn non_success_home_promotion_preserves_affected_paths_across_cache_source
             let sandbox = cache_sandbox(format!("home-promotion-{session_id}"));
             let current_manifest = StorageManifest {
                 storages: vec![StorageEntry {
+                    template_guidance: None,
                     name: "current-storage".into(),
                     mount_path: current_storage_path.clone(),
                     vas_storage_name: "current-storage".into(),

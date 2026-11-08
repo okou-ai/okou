@@ -979,7 +979,7 @@ async fn wait_for_ready_rejects_unresponsive_control_when_port_is_open() {
 }
 
 #[tokio::test]
-async fn spawn_mitmdump_passes_runner_options_and_preserves_ca() {
+async fn initial_start_passes_runner_options_and_preserves_ca() {
     let dir = tempfile::tempdir().unwrap();
     let home = HomePaths::with_root(dir.path().join("home"));
     prepare_test_ca(&home).await;
@@ -1004,23 +1004,15 @@ async fn spawn_mitmdump_passes_runner_options_and_preserves_ca() {
         client_session_id: "runner-session-test".to_string(),
         client_version: "test-runner-version",
     };
-    let (crash_tx, _crash_rx) = mpsc::channel(1);
-    let stopping = Arc::new(AtomicBool::new(false));
-    let port = find_available_port().unwrap();
-
-    let runtime = acquire_test_runtime(&config).await;
-    let child = spawn_mitmdump(
-        &config,
-        &runtime,
-        port,
-        &crash_tx,
-        &stopping,
-        "usage-state-test",
-    )
-    .await
-    .unwrap();
-    stopping.store(true, Ordering::Release);
-    child.stop_gracefully().await.unwrap();
+    let runtime_dir = config.runtime_dir.clone();
+    let (mut proxy, _crash_rx) = MitmProxy::new(config, ADDON_FILES.as_slice())
+        .await
+        .unwrap();
+    let usage_state_id = proxy.usage_state_id.clone();
+    // The selected port can be claimed before bind. Exercise the owning startup
+    // boundary, which handles that valid race before publishing a live child.
+    proxy.start().await.unwrap();
+    proxy.stop().await.unwrap();
 
     let args = std::fs::read_to_string(fake_mitmdump.with_extension("args")).unwrap();
     let environment = std::fs::read_to_string(fake_mitmdump.with_extension("env")).unwrap();
@@ -1045,7 +1037,7 @@ async fn spawn_mitmdump_passes_runner_options_and_preserves_ca() {
         "the launched mitmdump environment must contain exactly one canonical runtime marker"
     );
     let launch_path = Path::new(environment[0]);
-    assert_eq!(launch_path.parent(), Some(config.runtime_dir.as_path()));
+    assert_eq!(launch_path.parent(), Some(runtime_dir.as_path()));
     assert!(
         launch_path
             .file_name()
@@ -1066,7 +1058,7 @@ async fn spawn_mitmdump_passes_runner_options_and_preserves_ca() {
     );
     assert!(
         args.lines()
-            .any(|arg| arg == "okou_usage_state_id=usage-state-test"),
+            .any(|arg| arg == format!("okou_usage_state_id={usage_state_id}")),
         "mitmdump args should include okou_usage_state_id option; got:\n{args}",
     );
     assert!(

@@ -1,7 +1,9 @@
+import type { TemplateGuidanceBundle } from "../jsonb-contracts/content-bundle";
 import { sql } from "drizzle-orm";
 import {
   check,
   index,
+  jsonb,
   pgTable,
   real,
   text,
@@ -29,10 +31,10 @@ export type PresentationTemplateVisibility =
  * the user watches the analysis, and an abandoned analysis simply never
  * inserts.
  *
- * The compiled package is not referenced by a column: it is the storage named
- * `presentation-template@{id}`, derived from the row id the same way
- * `workflows` derives `custom-skill@{workflowId}`. One authoritative
- * location, nothing to keep in sync.
+ * A non-null guidance_bundle selects immutable package bytes. During reader
+ * preparation, null retains the legacy `presentation-template@{id}` publication.
+ * Publishers remain legacy until the separate activation; successful legacy
+ * replacements invalidate the previously captured bundle pointer.
  *
  * `source_storage_key` and `page_keys` reference independently owned objects
  * created by the normal private upload route. URLs remain a read-time
@@ -53,6 +55,8 @@ export const presentationTemplates = pgTable(
       .notNull()
       .default("private"),
     title: text("title").notNull(),
+    /** Reader preparation only; publishers remain legacy until the rollout gate. */
+    guidanceBundle: jsonb("guidance_bundle").$type<TemplateGuidanceBundle>(),
     /** Private artifact object key assigned by the normal upload route. */
     sourceStorageKey: text("source_storage_key").notNull(),
     sourceFilename: text("source_filename").notNull(),

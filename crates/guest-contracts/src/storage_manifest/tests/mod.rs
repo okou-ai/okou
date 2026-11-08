@@ -68,6 +68,7 @@ fn canonical_manifest_preserves_wire_shape() {
     let manifest = Manifest {
         archive_readiness: None,
         storages: vec![StorageEntry {
+            template_guidance: None,
             mount_path: "/home/user/.codex".into(),
             archive_url: Some("https://example.com/storage.tar.gz".into()),
             cached: false,

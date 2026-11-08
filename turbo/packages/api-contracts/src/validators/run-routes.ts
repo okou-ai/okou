@@ -1,3 +1,4 @@
+import { storedTemplateGuidanceBundleSchema } from "../contracts/template-guidance-bundle";
 import {
   array,
   boolean,
@@ -72,6 +73,7 @@ export const runContextResponseSchema = object({
   firewalls: array(runContextFirewallSchema),
   networkPolicies: networkPoliciesSchema.nullable(),
   storageMounts: array(runContextStorageMountSchema),
+  templateGuidanceBundles: array(storedTemplateGuidanceBundleSchema).optional(),
   featureFlags: record(string(), boolean()).nullable(),
 });
 

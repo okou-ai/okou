@@ -37,6 +37,7 @@ fn indexed_conflicts(mounts: &[&str]) -> Vec<bool> {
 
 fn storage(mount: &str) -> StorageEntry {
     StorageEntry {
+        template_guidance: None,
         mount_path: mount.into(),
         archive_url: Some("file:///archive".into()),
         cached: false,

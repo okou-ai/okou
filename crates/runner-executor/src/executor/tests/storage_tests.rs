@@ -23,6 +23,7 @@ fn empty_manifest() -> Manifest {
 fn storage_manifest() -> Manifest {
     Manifest {
         storages: vec![StorageEntry {
+            template_guidance: None,
             mount_path: "/data".into(),
             archive_url: Some("https://s3/archive.tar.gz".into()),
             cached: false,

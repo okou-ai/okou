@@ -1,3 +1,4 @@
+import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { performance } from "node:perf_hooks";
 import {
   agentRunConnectorDiagnosticRegistrationPayloadSchema,
@@ -4597,6 +4598,7 @@ function ingestRunContextSnapshot(
   snapshot: RunContextAxiomSnapshot,
   officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"],
   seedSkillBundles: StoredExecutionContext["seedSkillBundles"],
+  templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"],
 ): void {
   bestEffortTelemetry(() => {
     return ingestToAxiom(getDatasetName("run-context"), [
@@ -4612,6 +4614,7 @@ function ingestRunContextSnapshot(
           },
         ),
         seedSkillBundles,
+        ...(templateGuidanceBundles?.length ? { templateGuidanceBundles } : {}),
       },
     ]);
   });
@@ -4894,6 +4897,7 @@ function committedAtomicLaunchResponse(args: {
     args.committed.runContextSnapshot,
     args.committed.runnerJobPayload.executionContext.officialWorkflowBundles,
     args.committed.runnerJobPayload.executionContext.seedSkillBundles,
+    args.committed.runnerJobPayload.executionContext.templateGuidanceBundles,
   );
   const runContextRegisteredAt = now();
   const dispatchedProfile = args.committed.runnerJobPayload.profile;
@@ -5217,6 +5221,44 @@ function protectedWorkflowMountPaths(
   });
 }
 
+function capturedMountContextFields(args: {
+  readonly agentId: string | null;
+  readonly workflowAutomationId: string | null;
+  readonly additionalVolumes:
+    readonly AgentRunCreateAdditionalVolume[] | undefined;
+  readonly additionalVolumeSources: AdditionalVolumeSources;
+  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+}): Pick<
+  StoredExecutionContext,
+  "customWorkflowSelection" | "templateGuidanceBundles"
+> {
+  return {
+    ...(args.templateGuidanceBundles?.length
+      ? { templateGuidanceBundles: args.templateGuidanceBundles }
+      : {}),
+    // Capture Agent identity and mount precedence, never Workflow content.
+    ...(args.agentId !== null
+      ? {
+          customWorkflowSelection: {
+            agentId: args.agentId,
+            ...(args.workflowAutomationId === null
+              ? {}
+              : { automationId: args.workflowAutomationId }),
+            protectedMountPaths: [
+              ...protectedWorkflowMountPaths(
+                args.additionalVolumes,
+                args.additionalVolumeSources,
+              ),
+              ...(args.templateGuidanceBundles ?? []).map(
+                templateGuidanceMountPath,
+              ),
+            ],
+          },
+        }
+      : {}),
+  };
+}
+
 function buildStoredExecutionContextDraft(
   args: {
     readonly runId: string;
@@ -5238,6 +5280,7 @@ function buildStoredExecutionContextDraft(
       readonly AgentRunCreateAdditionalVolume[] | undefined;
     readonly additionalVolumeSources: AdditionalVolumeSources;
     readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
+    readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
     readonly platformEnvironment: Record<string, string> | undefined;
     readonly userTimezone: string | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
@@ -5298,21 +5341,13 @@ function buildStoredExecutionContextDraft(
     context: {
       environment,
       seedSkillBundles: args.seedSkillBundles,
-      // Capture Agent identity and mount precedence, never Workflow content.
-      ...(args.resolved.agentId !== null
-        ? {
-            customWorkflowSelection: {
-              agentId: args.resolved.agentId,
-              ...(args.workflowAutomationId === null
-                ? {}
-                : { automationId: args.workflowAutomationId }),
-              protectedMountPaths: protectedWorkflowMountPaths(
-                args.additionalVolumes,
-                args.additionalVolumeSources,
-              ),
-            },
-          }
-        : {}),
+      ...capturedMountContextFields({
+        agentId: args.resolved.agentId,
+        workflowAutomationId: args.workflowAutomationId,
+        additionalVolumes: args.additionalVolumes,
+        additionalVolumeSources: args.additionalVolumeSources,
+        templateGuidanceBundles: args.templateGuidanceBundles,
+      }),
       platformEnvironment,
       secretValueEnvironmentKeys,
       vars: args.environment.vars ?? null,
@@ -5400,6 +5435,7 @@ interface BuildRunnerJobPayloadInput {
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
+  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly chatThreadId: string | undefined;
   readonly userTimezone: string | undefined;

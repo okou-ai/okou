@@ -6,7 +6,7 @@ import {
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { and, desc, eq, getTableColumns, or, sql } from "drizzle-orm";
 
-import { notFound } from "../../lib/error";
+import { conflict, notFound } from "../../lib/error";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
@@ -512,6 +512,11 @@ const replacePackageInner$ = command(
     }
     if (result.kind === "rejected") {
       return result.response;
+    }
+    if (result.kind === "conflict") {
+      return conflict(
+        "Template guidance changed during replacement; retry with the current template",
+      );
     }
     const coverUrl = await set(coverUrlFor$, {
       row: result.row,

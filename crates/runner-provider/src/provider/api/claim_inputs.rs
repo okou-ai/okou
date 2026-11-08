@@ -30,6 +30,8 @@ struct ContentBundles {
     #[serde(default, deserialize_with = "instruction_reference")]
     instructions: Option<BundleReference>,
     skills: Vec<SkillBundle>,
+    #[serde(default)]
+    templates: Vec<TemplateBundle>,
 }
 
 #[derive(Deserialize)]
@@ -55,15 +57,67 @@ struct SkillBundle {
     mount_path: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "kebab-case")]
+enum TemplateOwnerKind {
+    UserTemplate,
+    PresentationTemplate,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TemplateBundle {
+    sha256: String,
+    archive_bytes: u64,
+    download_url: String,
+    owner_kind: TemplateOwnerKind,
+    template_id: String,
+    before_mount_paths: Vec<String>,
+}
+
+impl TemplateBundle {
+    fn mount_path(&self) -> Result<String, String> {
+        let id = self.template_id.as_bytes();
+        if id.len() != 36
+            || !id.iter().enumerate().all(|(index, c)| {
+                if [8, 13, 18, 23].contains(&index) {
+                    *c == b'-'
+                } else {
+                    c.is_ascii_hexdigit()
+                }
+            })
+        {
+            return Err("Invalid template guidance owner ID".into());
+        }
+        let directory = match self.owner_kind {
+            TemplateOwnerKind::UserTemplate => "user-template",
+            TemplateOwnerKind::PresentationTemplate => "presentation-template",
+        };
+        Ok(format!(
+            "/home/user/workspace/generated/{directory}/{}",
+            self.template_id
+        ))
+    }
+}
+
 impl BundleReference {
     fn storage(self, name: &str, mount_path: String) -> Result<StorageEntry, String> {
+        self.storage_with_limit(name, mount_path, 32 * 1024 * 1024)
+    }
+
+    fn storage_with_limit(
+        self,
+        name: &str,
+        mount_path: String,
+        max_bytes: u64,
+    ) -> Result<StorageEntry, String> {
         if self.sha256.len() != 64
             || !self
                 .sha256
                 .bytes()
                 .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
             || self.archive_bytes == 0
-            || self.archive_bytes > 32 * 1024 * 1024
+            || self.archive_bytes > max_bytes
         {
             return Err("Invalid content bundle identity or size".into());
         }
@@ -76,6 +130,7 @@ impl BundleReference {
             return Err("Invalid content bundle URL".into());
         }
         Ok(StorageEntry {
+            template_guidance: None,
             name: name.into(),
             mount_path,
             vas_storage_name: name.into(),
@@ -143,14 +198,52 @@ pub(super) fn decode_claim(body: &[u8]) -> Result<ExecutionContext, String> {
     } else {
         None
     };
-    context
+    let manifest = context
         .storage_manifest
         .get_or_insert_with(|| StorageManifest {
             storages: Vec::new(),
             artifacts: Vec::new(),
-        })
-        .storages
-        .extend(entries);
+        });
+    manifest.storages.extend(entries);
+    for template in inputs.packages.templates {
+        let mount_path = template.mount_path()?;
+        // Ancestor/descendant overlays are valid; a second destination is not.
+        if paths
+            .iter()
+            .any(|path| Path::new(path) == Path::new(&mount_path))
+        {
+            return Err("Conflicting template guidance mount".into());
+        }
+        paths.insert(mount_path.clone());
+        let integrity = guest_contracts::storage_manifest::TemplateGuidanceReference {
+            sha256: template.sha256.clone(),
+            archive_bytes: template.archive_bytes,
+        };
+        let mut entry = BundleReference {
+            sha256: template.sha256,
+            archive_bytes: template.archive_bytes,
+            download_url: template.download_url,
+        }
+        .storage_with_limit(
+            guest_contracts::storage_manifest::TEMPLATE_GUIDANCE_STORAGE_NAME,
+            mount_path,
+            guest_contracts::storage_manifest::MAX_TEMPLATE_ARCHIVE_BYTES,
+        )?;
+        entry.template_guidance = Some(integrity);
+        // Missing optional Storage mounts have no entry. Use the first surviving
+        // anchor to preserve the API's winning order across both transports.
+        let position = template
+            .before_mount_paths
+            .iter()
+            .find_map(|path| {
+                manifest
+                    .storages
+                    .iter()
+                    .position(|storage| Path::new(&storage.mount_path) == Path::new(path))
+            })
+            .unwrap_or(manifest.storages.len());
+        manifest.storages.insert(position, entry);
+    }
     context.instruction_file = instruction_file;
     Ok(context)
 }

@@ -15,3 +15,5 @@ mod rooted_extraction;
 mod scheduling;
 
 mod agent_instructions;
+
+mod template_guidance;

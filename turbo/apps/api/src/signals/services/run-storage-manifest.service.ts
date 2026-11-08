@@ -1,3 +1,4 @@
+import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { performance } from "node:perf_hooks";
 import {
   CANONICAL_CLAUDE_CONFIG_DIR,
@@ -1350,6 +1351,7 @@ interface PreparedAdditionalVolumes {
   readonly volumes: readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly sources: AdditionalVolumeSources;
   readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
+  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
 }
 
 function autoMemoryMountPath(framework: SupportedFramework): string {
@@ -1404,20 +1406,34 @@ function preparedRunAdditionalVolumes(args: {
       };
     }),
   ];
-  const seedSkillBundles = normalizeMountOverlay(candidates).flatMap(
-    (volume) => {
-      return "contentBundle" in volume
-        ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]
-        : [];
-    },
-  );
-  const bundledPaths = new Set(
-    seedSkillBundles.map((bundle) => {
+  const winners = normalizeMountOverlay(candidates);
+  const templateGuidanceBundles = winners.flatMap((volume, index) => {
+    return "templateGuidanceBundle" in volume
+      ? [
+          {
+            ...volume.templateGuidanceBundle,
+            beforeMountPaths: winners.slice(index + 1).map((later) => {
+              return later.mountPath;
+            }),
+          },
+        ]
+      : [];
+  });
+  const seedSkillBundles = winners.flatMap((volume) => {
+    return "contentBundle" in volume
+      ? [{ ...volume.contentBundle, mountPath: volume.mountPath }]
+      : [];
+  });
+  const bundledPaths = new Set([
+    ...seedSkillBundles.map((bundle) => {
       return bundle.mountPath;
     }),
-  );
+    ...templateGuidanceBundles.map(templateGuidanceMountPath),
+  ]);
   const storage = candidates.flatMap((volume) => {
-    return "contentBundle" in volume || bundledPaths.has(volume.mountPath)
+    return "contentBundle" in volume ||
+      "templateGuidanceBundle" in volume ||
+      bundledPaths.has(volume.mountPath)
       ? []
       : [volume];
   });
@@ -1429,6 +1445,7 @@ function preparedRunAdditionalVolumes(args: {
       return volume.source;
     }),
     seedSkillBundles,
+    templateGuidanceBundles,
   };
 }
 
@@ -1448,6 +1465,7 @@ export function prepareRunOutputMetadata(args: {
   readonly additionalVolumeSources: AdditionalVolumeSources;
   readonly officialWorkflowRun: OfficialWorkflowRunObservation | undefined;
   readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
+  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
 } {
   const skillsRoot = skillsRootForRun(args.framework, args.piSandbox);
   const additionalVolumes = preparedRunAdditionalVolumes({
@@ -1464,6 +1482,7 @@ export function prepareRunOutputMetadata(args: {
     additionalVolumes: additionalVolumes.volumes,
     additionalVolumeSources: additionalVolumes.sources,
     seedSkillBundles: additionalVolumes.seedSkillBundles,
+    templateGuidanceBundles: additionalVolumes.templateGuidanceBundles,
     artifacts,
     officialWorkflowRun: args.officialWorkflow && {
       ...args.officialWorkflow,

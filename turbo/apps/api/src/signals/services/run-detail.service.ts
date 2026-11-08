@@ -145,6 +145,12 @@ export function runContext(
         firewalls: normalizedSnapshot.firewalls,
         networkPolicies: normalizedSnapshot.networkPolicies,
         storageMounts: normalizedSnapshot.storageMounts,
+        ...(normalizedSnapshot.templateGuidanceBundles === undefined
+          ? {}
+          : {
+              templateGuidanceBundles:
+                normalizedSnapshot.templateGuidanceBundles,
+            }),
         featureFlags: normalizedSnapshot.featureFlags,
       },
     };

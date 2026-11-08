@@ -520,6 +520,7 @@ async fn oversized_mixed_manifest_preserves_decoded_entry_kinds() {
     let storage_mount = fixture.root.path().join("guest/storage");
     let prefix = "http://127.0.0.1:9/storage?signature=";
     manifest.storages.push(StorageEntry {
+        template_guidance: None,
         mount_path: storage_mount.to_str().unwrap().into(),
         archive_url: Some(format!("{prefix}{}", "x".repeat(35_000 - prefix.len()))),
         cached: false,
@@ -556,6 +557,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
     let (mut manifest, mut files) = fixture.prepare(&sandbox).await;
     let storage_mount = fixture.root.path().join("guest/storage-boundary");
     let mut storage = StorageEntry {
+        template_guidance: None,
         mount_path: storage_mount.to_str().unwrap().into(),
         archive_url: Some("https://archive.invalid/storage?signature=".into()),
         cached: false,
@@ -589,6 +591,7 @@ async fn mixed_decoded_batch_uses_exact_per_array_comma_accounting() {
         Arc::clone(&files[0].1),
     ));
     manifest.storages.push(StorageEntry {
+        template_guidance: None,
         mount_path: fixture
             .root
             .path()
@@ -743,6 +746,7 @@ async fn split_decoded_batches_clean_once_and_preserve_real_files_and_metadata()
         .cleanup_paths
         .push(guest_root.to_str().unwrap().into());
     manifest.storages.push(StorageEntry {
+        template_guidance: None,
         mount_path: preserved.to_str().unwrap().into(),
         archive_url: None,
         cached: true,
@@ -852,6 +856,7 @@ async fn split_delivery_rejects_cross_batch_ownership_conflicts_before_guest_wor
             }
             "duplicate" => manifest.storages.push(manifest.storages[0].clone()),
             _ => manifest.storages.push(StorageEntry {
+                template_guidance: None,
                 mount_path: mount,
                 archive_url: (conflict != "reused")
                     .then(|| "https://archive.invalid/source".into()),
@@ -888,6 +893,7 @@ async fn oversized_ordinary_manifest_keeps_file_transport_before_decoded_batches
     let sandbox = MockSandbox::new("decoded-large-ordinary");
     let (mut manifest, files) = fixture.prepare(&sandbox).await;
     manifest.storages.push(StorageEntry {
+        template_guidance: None,
         mount_path: fixture
             .root
             .path()
