@@ -5,6 +5,11 @@ description: Apply ccstate patterns for reactive values, commands, HTTP response
 
 # ccstate
 
+This router selects TypeScript API and Platform references. Native Swift work
+uses [iOS ccstate](../../../docs/ios/ios-ccstate.md) and
+[iOS development](../../../docs/ios/ios-development.md); do not apply browser
+syntax or runtime helpers to native code.
+
 Read the reference matching the changed behavior; API work does not require the
 React/DOM reference unless it also changes that surface.
 
