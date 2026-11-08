@@ -7,10 +7,11 @@ use sha2::{Digest, Sha256};
 use std::{fs, path::Path};
 
 fn manifest(mount: &Path, url: &str, archive: &[u8]) -> Value {
+    let digest = hex::encode(Sha256::digest(archive));
     json!({"storageMounts":[{
-        "name":"template-guidance", "versionId":hex::encode(Sha256::digest(archive)),
+        "name":"template-guidance", "versionId":digest,
         "mountPath":mount,"archiveUrl":url,
-        "templateGuidance":{"sha256":hex::encode(Sha256::digest(archive)),"archiveBytes":archive.len()}
+        "templateGuidance":{"sha256":digest,"archiveBytes":archive.len()}
     }]})
 }
 
