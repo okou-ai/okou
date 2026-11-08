@@ -20,23 +20,40 @@ final class ChatDraftDocumentTests: XCTestCase {
     XCTAssertEqual(document.text, "\r\n\t\u{00a0}  你好 🌷\n\n    code  continuation\t \n")
   }
 
-  func testSendTrimmingStopsAtReferencesAndKeepsQuotedNotesAndContext() throws {
-    let data = Data(
-      #"{"version":1,"parts":[{"type":"source","kind":"mcp","clientId":"client","clientName":"Research"},{"type":"text","text":"\n "},{"type":"agent","agentId":"agent","nameSnapshot":"Agent"},{"type":"text","text":" \n  Keep this spacing. \n "},{"type":"feedback","quote":"  Original passage.\n","note":[{"type":"text","text":"\n  Keep the note.\n"}]},{"type":"text","text":" \n"},{"type":"file","fileId":"file","filenameSnapshot":"notes.txt","contentType":"text/plain"},{"type":"additional_info","text":"  Context.\n"}]}"#
-        .utf8)
-    let document = try JSONDecoder().decode(ChatDraftDocument.self, from: data)
-    var expected = document
-    expected.parts.remove(at: 6)
-    expected.parts.remove(at: 1)
-
-    XCTAssertEqual(document.trimmingWhitespace(), expected)
-
-    let fileOnly = ChatDraftDocument(parts: [
-      document.parts[0], document.parts[1], document.parts[7], document.parts[6], document.parts[8],
+  func testSendTrimmingStopsAtReferencesAndKeepsQuotedNotesAndContext() {
+    let source: MessageJSON = .object([
+      "type": .string("source"), "kind": .string("mcp"),
+      "clientId": .string("client"), "clientName": .string("Research"),
+    ])
+    let reference: MessageJSON = .object([
+      "type": .string("agent"), "agentId": .string("agent"), "nameSnapshot": .string("Agent"),
+    ])
+    let spacing: MessageJSON = .object([
+      "type": .string("text"), "text": .string(" \n  Keep this spacing. \n "),
+    ])
+    let feedback: MessageJSON = .object([
+      "type": .string("feedback"), "quote": .string("  Original passage.\n"),
+      "note": .array([.object(["type": .string("text"), "text": .string("\n  Keep the note.\n")])]),
+    ])
+    let file: MessageJSON = .object([
+      "type": .string("file"), "fileId": .string("file"),
+      "filenameSnapshot": .string("notes.txt"), "contentType": .string("text/plain"),
+    ])
+    let context: MessageJSON = .object([
+      "type": .string("additional_info"), "text": .string("  Context.\n"),
+    ])
+    let padding: MessageJSON = .object(["type": .string("text"), "text": .string(" \n")])
+    let document = ChatDraftDocument(parts: [
+      source, padding, reference, spacing, feedback, padding, file, context,
     ])
     XCTAssertEqual(
+      document.trimmingWhitespace(),
+      ChatDraftDocument(parts: [source, reference, spacing, feedback, file, context]))
+
+    let fileOnly = ChatDraftDocument(parts: [source, padding, file, padding, context])
+    XCTAssertEqual(
       fileOnly.trimmingWhitespace().parts,
-      [document.parts[0], document.parts[7], document.parts[8]])
+      [source, file, context])
   }
 
   func testTextEditsPreserveRichPartsAndUnicodePositions() throws {
