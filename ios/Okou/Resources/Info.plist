@@ -34,6 +34,12 @@
     <key>LSRequiresIPhoneOS</key><true/>
     <key>UIApplicationSceneManifest</key>
     <dict><key>UIApplicationSupportsMultipleScenes</key><false/></dict>
+    <key>UIApplicationShortcutItems</key>
+    <array><dict>
+        <key>UIApplicationShortcutItemType</key><string>ai.okou.new-chat</string>
+        <key>UIApplicationShortcutItemTitle</key><string>New chat</string>
+        <key>UIApplicationShortcutItemIconFile</key><string>Lucide-square-pen</string>
+    </dict></array>
     <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
     <key>UISupportedInterfaceOrientations</key>
     <array><string>UIInterfaceOrientationPortrait</string></array>

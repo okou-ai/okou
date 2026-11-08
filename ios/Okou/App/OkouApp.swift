@@ -384,15 +384,9 @@ private struct WorkspaceRootView: View {
     .task(id: notifications.pendingDestination) {
       await openPendingNotification()
     }
-    // Siri / Shortcuts "Ask Okou": a new chat with the request in the composer, unsent.
-    .task(id: PendingAppRequest.shared.prompt) {
-      guard let prompt = PendingAppRequest.shared.prompt else { return }
-      PendingAppRequest.shared.prompt = nil
-      startNewChat()
-      guard !prompt.isEmpty else { return }
-      try? await Task.sleep(for: .milliseconds(400))
-      store.newComposer.editor.appendText(prompt)
-    }
+    .modifier(
+      NewChatNavigation(
+        workspace: store, isAuthenticated: !authentication.isLoading, didOpen: closeSidebar))
     .onDisappear {
       sidebar.cancelDrag()
       store.close()

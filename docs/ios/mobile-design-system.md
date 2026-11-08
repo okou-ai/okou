@@ -570,8 +570,6 @@ single floating line, and colour is a small accent for status only.
   starts with the account name. The version is a row in Support, as in ChatGPT and
   Apple's Settings; no app logo at the foot (none of ChatGPT, Claude, Perplexity or
   Gemini shows one).
-- App Shortcuts (`OkouIntents.swift`) accept only SF Symbol names; that system
-  surface is the one product exception to Lucide-only icons.
 
 ### Agent artwork
 

@@ -30,6 +30,7 @@ struct ChatSidebarView: View {
   @State private var showArchived = false
   @State private var showMuted = false
   @State private var showsSettings = false
+  @Environment(\.newChatActivation) private var newChatActivation
 
   private var workspaceName: String {
     authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
@@ -128,6 +129,7 @@ struct ChatSidebarView: View {
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(OkouColor.sidebar)
+    .onChange(of: newChatActivation) { _, _ in showsSettings = false }
     // Search is a page of its own: it grows out of the search capsule and fills the screen.
     .fullScreenCover(
       isPresented: Binding(

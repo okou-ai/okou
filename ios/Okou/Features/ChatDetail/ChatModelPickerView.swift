@@ -36,6 +36,7 @@ private struct ChatModelPickerButtonContent: View {
     $resolvedConfiguration.error.map(ChatRequestFailure.message(for:))
   }
   @State private var isPresented = false
+  @Environment(\.newChatActivation) private var newChatActivation
   private var models: ChatModelStore { selection.models }
   private var isLoading: Bool { modelStatus == .loading || selection.isBusy }
   private var hasError: Bool {
@@ -107,6 +108,7 @@ private struct ChatModelPickerButtonContent: View {
         .presentationDragIndicator(.visible)
         .okouSheetBackground()
     }
+    .onChange(of: newChatActivation) { _, _ in isPresented = false }
     // The capsule and sheet observe the same workspace Task as the composer and send checks.
   }
 }

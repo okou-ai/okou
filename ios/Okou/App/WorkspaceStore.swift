@@ -660,6 +660,21 @@ final class WorkspaceStore {
     error = nil
   }
 
+  var canOpenNewChatFromSystem: Bool {
+    isForeground && selectedAgentID != nil && !isCreating && !needsUpgrade && !closed
+  }
+
+  @discardableResult
+  func openNewChatFromSystem() -> Bool {
+    guard canOpenNewChatFromSystem else { return false }
+    startNewChat()
+    search.dismiss()
+    if let block = newComposer.editorBlocks.last {
+      newComposer.requestEditorFocus(block.id)
+    }
+    return true
+  }
+
   @discardableResult
   func createChat(agentID: String? = nil, composerOptions: ChatComposerOptions? = nil) async
     -> ChatThread?
