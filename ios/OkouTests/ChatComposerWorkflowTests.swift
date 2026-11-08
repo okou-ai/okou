@@ -420,7 +420,9 @@ final class ChatComposerWorkflowTests: XCTestCase {
   }
 
   func testCandidateReplacementAndDismissalCancelTheirOriginalHTTP() async throws {
-    let gate = WorkflowGate()
+    let oldGate = WorkflowGate()
+    let dismissedGate = WorkflowGate()
+    let pendingAgentID = "81000000-0000-4000-8000-000000000001"
     let started = expectation(description: "Original candidate request reached HTTP")
     let dismissedStarted = expectation(description: "Dismissed candidate request reached HTTP")
     let pendingCount = WorkflowCounter()
@@ -429,13 +431,18 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let fixture = AttachmentFlowFixture(workflows: { request in
       let agent = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
         .first { $0.name == "agentId" }?.value
-      if agent == "pending-agent" {
+      if agent == pendingAgentID {
         let attempt = pendingCount.value.withLock {
           $0 += 1
           return $0
         }
-        if attempt == 1 { started.fulfill() } else { dismissedStarted.fulfill() }
-        await gate.wait()
+        if attempt == 1 {
+          started.fulfill()
+          await oldGate.wait()
+        } else {
+          dismissedStarted.fulfill()
+          await dismissedGate.wait()
+        }
         XCTAssertTrue(Task.isCancelled)
         cancelled.fulfill()
       }
@@ -447,14 +454,16 @@ final class ChatComposerWorkflowTests: XCTestCase {
     defer {
       resources.dismiss()
       source.close()
-      gate.open()
+      oldGate.open()
+      dismissedGate.open()
     }
     resources.update(query: "rel", recent: [])
-    resources.reload(source: source, agentID: "pending-agent")
+    resources.reload(source: source, agentID: pendingAgentID)
     let old = try resources.store.get(resources.matches)
     addTeardownBlock { @MainActor in
       resources.dismiss()
-      gate.open()
+      oldGate.open()
+      dismissedGate.open()
       _ = await old.result
     }
     await fulfillment(of: [started], timeout: 2)
@@ -462,11 +471,12 @@ final class ChatComposerWorkflowTests: XCTestCase {
     resources.reload(source: source, agentID: AttachmentFlowFixture.agentID)
     let fresh = try await resources.store.get(resources.matches).value
     XCTAssertEqual(fresh.values.first?.id, "rel")
-    resources.reload(source: source, agentID: "pending-agent")
+    resources.reload(source: source, agentID: pendingAgentID)
     let dismissed = try resources.store.get(resources.matches)
     addTeardownBlock { @MainActor in
       resources.dismiss()
-      gate.open()
+      oldGate.open()
+      dismissedGate.open()
       _ = await dismissed.result
     }
     await fulfillment(of: [dismissedStarted], timeout: 2)
