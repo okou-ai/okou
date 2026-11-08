@@ -11,6 +11,7 @@ import { URL } from "node:url";
 import { createContext, runInContext, runInNewContext } from "node:vm";
 
 import { build, loadConfigFromFile } from "vite";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
 import type {
   PdfWorkerRequest,
   PdfWorkerResponse,
@@ -149,6 +150,29 @@ await test("built runtime supports resource scopes and URLs with missing or nati
   }
 });
 
+async function assertPdfLinkAnnotation(
+  blob: Blob,
+  expectedUrl: string,
+): Promise<void> {
+  const pdf = getDocument({
+    data: new Uint8Array(await blob.arrayBuffer()),
+    useSystemFonts: false,
+  });
+  try {
+    const document = await pdf.promise;
+    const page = await document.getPage(1);
+    const annotations: unknown[] = await page.getAnnotations();
+    assert.equal(annotations.length, 1);
+    const annotation = annotations[0];
+    assert.ok(
+      annotation && typeof annotation === "object" && "url" in annotation,
+    );
+    assert.equal(annotation.url, expectedUrl);
+  } finally {
+    await pdf.destroy();
+  }
+}
+
 await test("built PDF worker exports grapheme text and links with missing or native APIs", async () => {
   const result = await build({
     configFile: false,
@@ -251,11 +275,10 @@ await test("built PDF worker exports grapheme text and links with missing or nat
     const response = delivery.response;
     assert.ok(response?.ok);
     assert.equal(response.blob.type, "application/pdf");
-    const pdf = Buffer.from(await response.blob.arrayBuffer()).toString(
-      "latin1",
+    await assertPdfLinkAnnotation(
+      response.blob,
+      "https://example.com/reference",
     );
-    assert.ok(pdf.startsWith("%PDF-"));
-    assert.ok(pdf.includes("https://example.com/reference"));
     assert.deepEqual(
       Array.from(new workerIntl.Segmenter().segment("e\u0301👩‍💻"), (part) => {
         return part.segment;
