@@ -1,9 +1,5 @@
 import { accept } from "@okouai/connectors/accept";
 import { createHash } from "node:crypto";
-import { mkdirSync, rmSync } from "node:fs";
-import { mkdtemp, readFile, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { gunzipSync } from "node:zlib";
 
 import type { FileEntryWithHash } from "@okouai/api-contracts/contracts/storage-content-hash";
@@ -18,52 +14,17 @@ import {
   parseSkillFrontmatter,
   type SkillFrontmatter,
 } from "@okouai/core/skill-frontmatter";
-import {
-  getSkillStorageName,
-  SYSTEM_ORG_ID,
-  VOLUME_ORG_USER_ID,
-} from "@okouai/core/storage-names";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { skills } from "@okouai/db/schema/skill";
-import { storages, storageVersions } from "@okouai/db/schema/storage";
 import { command } from "ccstate";
-import {
-  and,
-  asc,
-  count,
-  eq,
-  exists,
-  gte,
-  inArray,
-  like,
-  sql,
-} from "drizzle-orm";
-import { create as createTar, Parser } from "tar";
+import { eq, inArray } from "drizzle-orm";
+import { Parser } from "tar";
 
-import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import {
-  deleteS3Objects,
-  listS3ObjectsUnderPrefix,
-  putS3Object,
-} from "../external/s3";
-import { createDeferredPromise, safeSync, tapError } from "../utils";
-
-import { newStorageS3Location } from "./storage-s3-prefix.utils";
-import { StorageVersionIdentityConflictError } from "./storage-version-registration.service";
+import { createDeferredPromise, safeSync } from "../utils";
 import { publishContentBundle$ } from "./content-bundle.service";
-
-import {
-  preparePiResourceIndex,
-  PI_RESOURCE_EXTRACTOR_VERSION,
-} from "../../lib/pi-resource-index";
-import { piResourceVersionIndexes } from "@okouai/db/schema/pi-resource-version-index";
-import {
-  piResourceProjectionValues,
-  readPiResourceVersionIndexes$,
-} from "./pi-resource-version-index.service";
 
 interface SyncSkillsResult {
   readonly commitSha: string;
@@ -91,21 +52,14 @@ interface SkillSyncContext {
   readonly files: readonly ExtractedFile[];
   readonly url: string;
   readonly fullPath: string;
-  readonly storageName: string;
   readonly frontmatter: SkillFrontmatter;
   readonly versionHash: string;
   readonly totalSize: number;
 }
 
-interface SkillArchiveUpload {
-  readonly archiveBuffer: Buffer;
-  readonly s3Key: string;
-}
-
 const log = logger("skills:sync");
 const REPO_REFS_URL = `https://github.com/${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}.git/info/refs?service=git-upload-pack`;
 const TARBALL_URL = `https://codeload.github.com/${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}/tar.gz/refs/heads/${DEFAULT_SKILLS_BRANCH}`;
-const OFFICIAL_SKILL_URL_ROOT = `https://github.com/${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}/tree/${DEFAULT_SKILLS_BRANCH}/`;
 const SYNC_BATCH_SIZE = 5;
 
 function parseHeadRef(pktLineText: string, branch: string): string {
@@ -161,6 +115,10 @@ function extractSkillsFromTarball(
       }
 
       const skillName = parts[1]!;
+      if (!SEED_SKILLS.includes(skillName)) {
+        entry.resume();
+        return;
+      }
       const relativePath = parts.slice(2).join("/");
       const chunks: Buffer[] = [];
       entry.on("data", (chunk: Buffer) => {
@@ -276,259 +234,12 @@ function buildSkillSyncContext(extracted: ExtractedSkill): SkillSyncContext {
     files,
     url,
     fullPath,
-    storageName: getSkillStorageName(fullPath),
     frontmatter,
     versionHash: computeSystemSkillHash(url, fileEntries),
     totalSize,
   };
 }
 
-async function createSkillArchive(
-  files: readonly ExtractedFile[],
-): Promise<{ archiveBuffer: Buffer; manifestBuffer: Buffer }> {
-  const tmpDir = await mkdtemp(join(tmpdir(), "api-skill-"));
-  await Promise.all(
-    files.map((file) => {
-      const filePath = join(tmpDir, file.path);
-      mkdirSync(join(filePath, ".."), { recursive: true });
-      return writeFile(filePath, file.content);
-    }),
-  );
-
-  const tarPath = join(tmpDir, "__archive.tar.gz");
-  await createTar(
-    {
-      gzip: true,
-      file: tarPath,
-      cwd: tmpDir,
-    },
-    files.map((file) => {
-      return file.path;
-    }),
-  );
-
-  const archiveBuffer = await readFile(tarPath);
-  const manifestBuffer = Buffer.from(
-    JSON.stringify(
-      {
-        version: 1,
-        files: files.map((file) => {
-          return {
-            path: file.path,
-            hash: file.hash,
-            size: file.size,
-          };
-        }),
-        createdAt: nowDate().toISOString(),
-      },
-      null,
-      2,
-    ),
-  );
-  rmSync(tmpDir, { recursive: true, force: true });
-
-  return { archiveBuffer, manifestBuffer };
-}
-
-const hasCurrentSkillVersion$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly url: string;
-      readonly versionHash: string;
-      readonly files: readonly ExtractedFile[];
-      readonly requiresBundle: boolean;
-    },
-    signal: AbortSignal,
-  ): Promise<boolean> => {
-    const [existingSkill] = await get(db$)
-      .select({
-        versionHash: skills.versionHash,
-        storageId: skills.storageId,
-        contentBundle: skills.contentBundle,
-        contentBundleSourceVersionHash: skills.contentBundleSourceVersionHash,
-      })
-      .from(skills)
-      .where(eq(skills.url, args.url))
-      .limit(1);
-    signal.throwIfAborted();
-
-    if (
-      existingSkill?.versionHash !== args.versionHash ||
-      (args.requiresBundle &&
-        (existingSkill.contentBundle === null ||
-          existingSkill.contentBundleSourceVersionHash !== args.versionHash))
-    ) {
-      return false;
-    }
-
-    if (args.requiresBundle) {
-      return true;
-    }
-
-    const [version] = await get(db$)
-      .select({
-        storageId: storageVersions.storageId,
-        fileCount: storageVersions.fileCount,
-        archiveSize: storageVersions.archiveSize,
-      })
-      .from(storageVersions)
-      .where(eq(storageVersions.id, args.versionHash))
-      .limit(1);
-    signal.throwIfAborted();
-    if (
-      !version ||
-      version.storageId !== existingSkill.storageId ||
-      version.fileCount !== args.files.length
-    ) {
-      throw new Error("Current skill references an invalid Storage version");
-    }
-    const { indexes } = await set(
-      readPiResourceVersionIndexes$,
-      [args.versionHash],
-      signal,
-    );
-    if (!indexes.has(args.versionHash)) {
-      // Reuse the publisher's archive encoding and bounded parser even when the
-      // logical version is unchanged. Raw files would bypass the expansion limit.
-      const { archiveBuffer } = await createSkillArchive(args.files);
-      signal.throwIfAborted();
-      const values = piResourceProjectionValues(
-        preparePiResourceIndex(archiveBuffer),
-        version.archiveSize,
-        nowDate(),
-      );
-      await set(writeDb$)
-        .insert(piResourceVersionIndexes)
-        .values({
-          storageVersionId: args.versionHash,
-          extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
-          ...values,
-        })
-        .onConflictDoUpdate({
-          target: [
-            piResourceVersionIndexes.storageVersionId,
-            piResourceVersionIndexes.extractorVersion,
-          ],
-          set: values,
-        });
-      signal.throwIfAborted();
-    }
-    return true;
-  },
-);
-
-const uploadSkillArchive$ = command(
-  async (
-    { get },
-    args: { readonly context: SkillSyncContext; readonly s3Prefix: string },
-    signal: AbortSignal,
-  ): Promise<SkillArchiveUpload> => {
-    const { context, s3Prefix } = args;
-    const { archiveBuffer, manifestBuffer } = await createSkillArchive(
-      context.files,
-    );
-    signal.throwIfAborted();
-
-    const bucketName = env("R2_USER_STORAGES_BUCKET_NAME");
-    const s3Key = `${s3Prefix}/${context.versionHash}`;
-
-    await Promise.all([
-      get(
-        putS3Object(
-          bucketName,
-          `${s3Key}/archive.tar.gz`,
-          archiveBuffer,
-          "application/gzip",
-        ),
-      ),
-      get(
-        putS3Object(
-          bucketName,
-          `${s3Key}/manifest.json`,
-          manifestBuffer,
-          "application/json",
-        ),
-      ),
-    ]);
-    signal.throwIfAborted();
-
-    return { archiveBuffer, s3Key };
-  },
-);
-
-const resolveSkillStorage$ = command(
-  async (
-    { get, set },
-    args: { readonly context: SkillSyncContext },
-    signal: AbortSignal,
-  ): Promise<{ readonly id: string; readonly s3Prefix: string }> => {
-    const db = set(writeDb$);
-    const location = newStorageS3Location(SYSTEM_ORG_ID);
-    await db
-      .insert(storages)
-      .values({
-        id: location.storageId,
-        orgId: SYSTEM_ORG_ID,
-        userId: VOLUME_ORG_USER_ID,
-        name: args.context.storageName,
-        s3Prefix: location.s3Prefix,
-        size: args.context.totalSize,
-        fileCount: args.context.files.length,
-      })
-      .onConflictDoNothing();
-    signal.throwIfAborted();
-    // Existing HEAD metadata belongs to the publication command. Reading
-    // the canonical prefix needs no row update or lock across R2 I/O.
-    const [storage] = await get(db$)
-      .select({ id: storages.id, s3Prefix: storages.s3Prefix })
-      .from(storages)
-      .where(
-        and(
-          eq(storages.orgId, SYSTEM_ORG_ID),
-          eq(storages.userId, VOLUME_ORG_USER_ID),
-          eq(storages.name, args.context.storageName),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    if (!storage) {
-      throw new Error(
-        `Failed to create storage for skill ${args.context.skillName}`,
-      );
-    }
-
-    return storage;
-  },
-);
-
-interface SkillPublication {
-  readonly storageId: string;
-  readonly context: SkillSyncContext;
-  readonly upload: SkillArchiveUpload;
-  readonly timestamp: Date;
-  readonly commitSha: string;
-}
-function skillVersionValues(args: SkillPublication) {
-  return {
-    id: args.context.versionHash,
-    storageId: args.storageId,
-    s3Key: args.upload.s3Key,
-    size: args.context.totalSize,
-    archiveSize: args.upload.archiveBuffer.length,
-    fileCount: args.context.files.length,
-    message: `Synced from ${DEFAULT_SKILLS_OWNER}/${DEFAULT_SKILLS_REPO}@${args.commitSha.slice(0, 7)}`,
-    createdBy: "system",
-  };
-}
-function skillHeadValues(args: SkillPublication) {
-  return {
-    headVersionId: args.context.versionHash,
-    size: args.context.totalSize,
-    fileCount: args.context.files.length,
-    updatedAt: args.timestamp,
-  };
-}
 function skillSourceValues(context: SkillSyncContext, timestamp: Date) {
   return {
     name: context.frontmatter.name ?? context.skillName,
@@ -540,16 +251,6 @@ function skillSourceValues(context: SkillSyncContext, timestamp: Date) {
     syncedAt: timestamp,
   };
 }
-function skillRecordValues(args: SkillPublication) {
-  return {
-    ...skillSourceValues(args.context, args.timestamp),
-    storageId: args.storageId,
-    contentBundle: null,
-    contentBundleSourceVersionHash: null,
-    s3Key: args.upload.s3Key,
-  };
-}
-
 const commitSeedSkillPublication$ = command(
   async (
     { set },
@@ -580,351 +281,46 @@ const commitSeedSkillPublication$ = command(
   },
 );
 
-function skillVersionMatches(
-  version: Pick<
-    typeof storageVersions.$inferSelect,
-    "storageId" | "s3Key" | "size" | "fileCount"
-  >,
-  storageId: string,
-  context: SkillSyncContext,
-  s3Key: string,
-) {
-  return (
-    version.storageId === storageId &&
-    version.s3Key === s3Key &&
-    Number(version.size) === context.totalSize &&
-    version.fileCount === context.files.length
-  );
-}
-const commitSkillPublication$ = command(
-  async (
-    { set },
-    args: SkillPublication,
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const db = set(writeDb$);
-    const record = skillRecordValues(args);
-    const projection = preparePiResourceIndex(args.upload.archiveBuffer);
-    const values = piResourceProjectionValues(
-      projection,
-      args.upload.archiveBuffer.length,
-      nowDate(),
-    );
-    const version = db.$with("published_skill_version").as(
-      db
-        .insert(storageVersions)
-        .values(skillVersionValues(args))
-        .onConflictDoUpdate({
-          target: storageVersions.id,
-          // Preserve canonical metadata while returning even a concurrent winner
-          // that was invisible to this statement's initial MVCC snapshot.
-          set: { id: storageVersions.id },
-          setWhere: and(
-            eq(storageVersions.storageId, args.storageId),
-            eq(storageVersions.s3Key, args.upload.s3Key),
-            eq(storageVersions.size, args.context.totalSize),
-            eq(storageVersions.fileCount, args.context.files.length),
-          ),
-        })
-        .returning({
-          id: storageVersions.id,
-          archiveSize: storageVersions.archiveSize,
-        }),
-    );
-    const head = db.$with("published_skill_head").as(
-      db
-        .update(storages)
-        .set(skillHeadValues(args))
-        .where(
-          and(
-            eq(storages.id, args.storageId),
-            exists(db.select({ id: version.id }).from(version)),
-          ),
-        )
-        .returning({ id: storages.id }),
-    );
-    // Drizzle's INSERT SELECT requires every table column. These gated inserts
-    // omit defaulted columns, retaining their actual schema defaults instead.
-    const catalog = db.$with("published_skill_catalog", { id: skills.id })
-      .as(sql`
-      INSERT INTO ${skills}
-        (url, name, full_path, storage_id, version_hash, content_bundle, content_bundle_source_version_hash, frontmatter,
-         s3_key, size, file_count, synced_at)
-      SELECT ${sql.param(args.context.url, skills.url)},
-        ${sql.param(record.name, skills.name)},
-        ${sql.param(record.fullPath, skills.fullPath)},
-        ${sql.param(record.storageId, skills.storageId)},
-        ${version.id}, ${sql.param(record.contentBundle, skills.contentBundle)},
-        ${sql.param(record.contentBundleSourceVersionHash, skills.contentBundleSourceVersionHash)},
-        ${sql.param(record.frontmatter, skills.frontmatter)},
-        ${sql.param(record.s3Key, skills.s3Key)},
-        ${sql.param(record.size, skills.size)},
-        ${sql.param(record.fileCount, skills.fileCount)},
-        ${sql.param(record.syncedAt, skills.syncedAt)}
-      FROM ${version}
-      WHERE ${gte(db.select({ count: count() }).from(head), 0)}
-      ON CONFLICT (url) DO UPDATE SET
-        name = excluded.name, full_path = excluded.full_path,
-        storage_id = excluded.storage_id, version_hash = excluded.version_hash,
-        content_bundle = excluded.content_bundle,
-        content_bundle_source_version_hash = excluded.content_bundle_source_version_hash,
-        frontmatter = excluded.frontmatter, s3_key = excluded.s3_key,
-        size = excluded.size, file_count = excluded.file_count,
-        synced_at = excluded.synced_at,
-        updated_at = ${sql.param(args.timestamp, skills.updatedAt)}
-      RETURNING id
-    `);
-    const indexed = db.$with("published_skill_index", {
-      storageVersionId: piResourceVersionIndexes.storageVersionId,
-    }).as(sql`
-      INSERT INTO ${piResourceVersionIndexes}
-        (storage_version_id, extractor_version, status, projection,
-         source_archive_size, projection_hash, lease_id, lease_expires_at, updated_at)
-      SELECT ${version.id},
-        ${sql.param(PI_RESOURCE_EXTRACTOR_VERSION, piResourceVersionIndexes.extractorVersion)},
-        ${sql.param(values.status, piResourceVersionIndexes.status)},
-        ${sql.param(values.projection, piResourceVersionIndexes.projection)},
-        ${version.archiveSize},
-        ${sql.param(values.projectionHash, piResourceVersionIndexes.projectionHash)},
-        ${sql.param(values.leaseId, piResourceVersionIndexes.leaseId)},
-        ${sql.param(values.leaseExpiresAt, piResourceVersionIndexes.leaseExpiresAt)},
-        ${sql.param(values.updatedAt, piResourceVersionIndexes.updatedAt)}
-      FROM ${version}
-      WHERE ${gte(db.select({ count: count() }).from(catalog), 0)}
-      ON CONFLICT (storage_version_id, extractor_version) DO UPDATE SET
-        status = excluded.status, projection = excluded.projection,
-        source_archive_size = excluded.source_archive_size,
-        projection_hash = excluded.projection_hash,
-        lease_id = excluded.lease_id, lease_expires_at = excluded.lease_expires_at,
-        updated_at = excluded.updated_at
-      RETURNING storage_version_id
-    `);
-    signal.throwIfAborted();
-    const [published] = await db
-      .with(version, head, catalog, indexed)
-      .select({ id: version.id })
-      .from(version)
-      // Exhaust every predecessor before completing the publication result.
-      .where(gte(db.select({ count: count() }).from(indexed), 0));
-    signal.throwIfAborted();
-    if (!published) {
-      throw new StorageVersionIdentityConflictError(args.context.versionHash);
-    }
-  },
-);
-
 const syncSingleSkill$ = command(
   async (
     { get, set },
-    args: { readonly extracted: ExtractedSkill; readonly commitSha: string },
+    extracted: ExtractedSkill,
     signal: AbortSignal,
   ): Promise<boolean> => {
-    const { extracted, commitSha } = args;
     const context = buildSkillSyncContext(extracted);
-    const requiresBundle = SEED_SKILLS.includes(context.skillName);
-
+    const [existingSkill] = await get(db$)
+      .select({
+        versionHash: skills.versionHash,
+        contentBundle: skills.contentBundle,
+        contentBundleSourceVersionHash: skills.contentBundleSourceVersionHash,
+      })
+      .from(skills)
+      .where(eq(skills.url, context.url))
+      .limit(1);
+    signal.throwIfAborted();
     if (
-      await set(
-        hasCurrentSkillVersion$,
-        {
-          url: context.url,
-          versionHash: context.versionHash,
-          files: context.files,
-          requiresBundle,
-        },
-        signal,
-      )
+      existingSkill?.versionHash === context.versionHash &&
+      existingSkill.contentBundle !== null &&
+      existingSkill.contentBundleSourceVersionHash === context.versionHash
     ) {
       return false;
     }
-
     const timestamp = nowDate();
-    if (requiresBundle) {
-      const contentBundle = await set(
-        publishContentBundle$,
-        context.files.map((file) => {
-          return { path: file.path, content: file.content };
-        }),
-        signal,
-      );
-      signal.throwIfAborted();
-      await set(
-        commitSeedSkillPublication$,
-        { context, timestamp, contentBundle },
-        signal,
-      );
-      signal.throwIfAborted();
-      return true;
-    }
-    // Resolve the storage row first: objects must land under its canonical
-    // prefix, which an existing row keeps from its creation time.
-    const storage = await set(resolveSkillStorage$, { context }, signal);
-    const storageId = storage.id;
-    const [existing] = await get(db$)
-      .select({
-        storageId: storageVersions.storageId,
-        s3Key: storageVersions.s3Key,
-        size: storageVersions.size,
-        fileCount: storageVersions.fileCount,
-      })
-      .from(storageVersions)
-      .where(eq(storageVersions.id, context.versionHash))
-      .limit(1);
-    signal.throwIfAborted();
-    const s3Key = `${storage.s3Prefix}/${context.versionHash}`;
-    if (existing && !skillVersionMatches(existing, storageId, context, s3Key)) {
-      throw new StorageVersionIdentityConflictError(context.versionHash);
-    }
-    const upload = existing
-      ? {
-          archiveBuffer: (await createSkillArchive(context.files))
-            .archiveBuffer,
-          s3Key,
-        }
-      : await set(
-          uploadSkillArchive$,
-          { context, s3Prefix: storage.s3Prefix },
-          signal,
-        );
-    signal.throwIfAborted();
-    await set(
-      commitSkillPublication$,
-      { storageId, context, upload, commitSha, timestamp },
+    const contentBundle = await set(
+      publishContentBundle$,
+      context.files.map((file) => {
+        return { path: file.path, content: file.content };
+      }),
       signal,
     );
     signal.throwIfAborted();
-
-    log.debug("Synced skill", {
-      skillName: context.skillName,
-      versionHash: context.versionHash.slice(0, 8),
-    });
+    await set(
+      commitSeedSkillPublication$,
+      { context, timestamp, contentBundle },
+      signal,
+    );
+    signal.throwIfAborted();
     return true;
-  },
-);
-
-const removeOrphanedSkills$ = command(
-  async (
-    { get, set },
-    args: {
-      readonly extractedSkills: readonly ExtractedSkill[];
-      readonly urlPrefix: string;
-    },
-    signal: AbortSignal,
-  ): Promise<number> => {
-    const { extractedSkills, urlPrefix } = args;
-    const tarballUrls = new Set(
-      extractedSkills.map((skill) => {
-        return skillUrl(skill.skillName);
-      }),
-    );
-    const existingSkills = await get(db$)
-      .select({ id: skills.id, url: skills.url, storageId: skills.storageId })
-      .from(skills)
-      .where(like(skills.url, `${urlPrefix}%`));
-    signal.throwIfAborted();
-
-    const orphans = existingSkills.filter((skill) => {
-      return !tarballUrls.has(skill.url);
-    });
-    if (orphans.length === 0) {
-      return 0;
-    }
-
-    const orphanIds = orphans.map((skill) => {
-      return skill.id;
-    });
-    const orphanStorageIds = orphans
-      .map((skill) => {
-        return skill.storageId;
-      })
-      .filter((id): id is string => {
-        return id !== null;
-      });
-
-    const db = set(writeDb$);
-    const lockedStorages = db
-      .$with("locked_orphan_storages")
-      .as(
-        db
-          .select({ id: storages.id, s3Prefix: storages.s3Prefix })
-          .from(storages)
-          .where(inArray(storages.id, orphanStorageIds))
-          .orderBy(asc(storages.id))
-          .for("update"),
-      );
-    // Exhaust the sorted parent locks before mutating any selected skill.
-    // COUNT preserves deletion when every selected storage is null or missing.
-    const erasedSkills = db.$with("erased_orphan_skills").as(
-      db
-        .delete(skills)
-        .where(
-          and(
-            inArray(skills.id, orphanIds),
-            gte(db.select({ count: count() }).from(lockedStorages), 0),
-          ),
-        )
-        .returning({ id: skills.id }),
-    );
-    // Exhaust child deletion before deleting only the captured locked parents.
-    const erasedStorages = db.$with("erased_orphan_storages").as(
-      db
-        .delete(storages)
-        .where(
-          and(
-            inArray(
-              storages.id,
-              db.select({ id: lockedStorages.id }).from(lockedStorages),
-            ),
-            gte(db.select({ count: count() }).from(erasedSkills), 0),
-          ),
-        )
-        .returning({ id: storages.id }),
-    );
-    const orphanStorages = await db
-      .with(lockedStorages, erasedSkills, erasedStorages)
-      .select({ id: lockedStorages.id, s3Prefix: lockedStorages.s3Prefix })
-      .from(lockedStorages)
-      .innerJoin(erasedStorages, eq(erasedStorages.id, lockedStorages.id))
-      .orderBy(asc(lockedStorages.id));
-
-    // The statement has committed; abort stops the remaining object cleanup.
-    signal.throwIfAborted();
-    const bucket = env("R2_USER_STORAGES_BUCKET_NAME");
-    for (const storage of orphanStorages) {
-      await tapError(
-        (async () => {
-          const objects = await get(
-            listS3ObjectsUnderPrefix(bucket, storage.s3Prefix),
-          );
-          signal.throwIfAborted();
-          if (objects.length > 0) {
-            await get(
-              deleteS3Objects(
-                bucket,
-                objects.map((object) => {
-                  return object.key;
-                }),
-              ),
-            );
-            signal.throwIfAborted();
-          }
-        })(),
-        (error) => {
-          log.warn("Failed to clean up S3 objects for removed skill", {
-            s3Prefix: storage.s3Prefix,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        },
-      );
-    }
-
-    log.debug("Removed orphaned skills", {
-      removed: orphans.length,
-      skillUrls: orphans.map((skill) => {
-        return skill.url;
-      }),
-    });
-    return orphans.length;
   },
 );
 
@@ -955,10 +351,11 @@ export const syncSkills$ = command(
     const headSha = await fetchHeadCommitSha(signal);
     signal.throwIfAborted();
 
-    const urlPrefix = OFFICIAL_SKILL_URL_ROOT;
+    const seedSkillUrls = SEED_SKILLS.map(skillUrl);
     // commitSha is a batch completion marker. A failed or interrupted attempt
     // leaves the set incomplete so the next cron run downloads the same commit
-    // and retries its missing work.
+    // and retries its missing work. Historical non-Seed rows belong to retained
+    // Registry/Run inputs and must not participate in this batch.
     const existing = await get(db$)
       .select({
         url: skills.url,
@@ -968,7 +365,7 @@ export const syncSkills$ = command(
         contentBundleSourceVersionHash: skills.contentBundleSourceVersionHash,
       })
       .from(skills)
-      .where(like(skills.url, `${urlPrefix}%`));
+      .where(inArray(skills.url, seedSkillUrls));
     signal.throwIfAborted();
 
     if (
@@ -1011,11 +408,7 @@ export const syncSkills$ = command(
       const batch = extractedSkills.slice(index, index + SYNC_BATCH_SIZE);
       const results = await Promise.allSettled(
         batch.map((extracted) => {
-          return set(
-            syncSingleSkill$,
-            { extracted, commitSha: headSha },
-            signal,
-          );
+          return set(syncSingleSkill$, extracted, signal);
         }),
       );
       signal.throwIfAborted();
@@ -1041,21 +434,15 @@ export const syncSkills$ = command(
       }
     }
 
-    const removed = await set(
-      removeOrphanedSkills$,
-      { extractedSkills, urlPrefix },
-      signal,
-    );
-    signal.throwIfAborted();
     validateSeedSkills(extractedSkills, SEED_SKILLS);
 
-    if (failed === 0) {
-      // Advance the marker only after every extracted skill completed. Updating
-      // it per skill would let one success hide another skill's failure.
+    if (failed === 0 && extractedSkills.length === SEED_SKILLS.length) {
+      // A missing Seed or failed publication must leave the batch retryable.
+      // Advance only this complete Seed set, never retained non-Seed metadata.
       await set(writeDb$)
         .update(skills)
         .set({ commitSha: headSha, updatedAt: nowDate() })
-        .where(like(skills.url, `${urlPrefix}%`));
+        .where(inArray(skills.url, seedSkillUrls));
       signal.throwIfAborted();
     }
 
@@ -1064,7 +451,7 @@ export const syncSkills$ = command(
       synced,
       skipped,
       failed,
-      removed,
+      removed: 0,
       total: extractedSkills.length,
     });
 
@@ -1073,7 +460,7 @@ export const syncSkills$ = command(
       synced,
       skipped,
       failed,
-      removed,
+      removed: 0,
       total: extractedSkills.length,
     };
   },

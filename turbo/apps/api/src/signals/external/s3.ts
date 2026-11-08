@@ -531,20 +531,6 @@ export function listS3ObjectsPage(
   });
 }
 
-/** A prefix that cannot match a sibling whose name merely starts the same way:
- * `site-1` must not reach `site-10`.
- */
-function boundedListPrefix(prefix: string): string {
-  return prefix.endsWith("/") ? prefix : `${prefix}/`;
-}
-
-export function listS3ObjectsUnderPrefix(
-  bucket: string,
-  prefix: string,
-): Computed<Promise<readonly S3Object[]>> {
-  return listS3Objects(bucket, boundedListPrefix(prefix));
-}
-
 export function deleteS3Objects(
   bucket: string,
   keys: readonly string[],
