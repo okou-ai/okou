@@ -49,7 +49,8 @@ final class ComposerVoiceInputStore {
 
   private func restore() {
     do {
-      let session = try VoiceDraftSession(client: client, storage: storage)
+      let session = try VoiceDraftSession(
+        client: client, storage: storage, activityDetection: NativeVoiceActivityDetection())
       self.session = session
       recordingID = session.restoredRecordingID
       duration = session.restoredDuration

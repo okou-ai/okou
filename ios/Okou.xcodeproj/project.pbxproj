@@ -24,6 +24,7 @@
 		000000000000000000000072 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000071 /* BeautifulMermaid */; };
 		000000000000000000000082 /* CCState in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000081 /* CCState */; };
 		000000000000000000000084 /* CCStateSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000083 /* CCStateSwiftUI */; };
+		000000000000000000000092 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000091 /* onnxruntime */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -129,6 +130,7 @@
 				000000000000000000000072 /* BeautifulMermaid in Frameworks */,
 				000000000000000000000082 /* CCState in Frameworks */,
 				000000000000000000000084 /* CCStateSwiftUI in Frameworks */,
+				000000000000000000000092 /* onnxruntime in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -210,6 +212,7 @@
 				000000000000000000000071 /* BeautifulMermaid */,
 				000000000000000000000081 /* CCState */,
 				000000000000000000000083 /* CCStateSwiftUI */,
+				000000000000000000000091 /* onnxruntime */,
 			);
 			productName = Okou;
 			productReference = 000000000000000000000009 /* Okou.app */;
@@ -315,6 +318,7 @@
 				000000000000000000000060 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				000000000000000000000070 /* XCRemoteSwiftPackageReference "beautiful-mermaid-swift" */,
 				000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */,
+				000000000000000000000090 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 000000000000000000000007 /* Products */;
@@ -620,6 +624,14 @@
 				revision = d75c85c8ff3d8c5f9ee224f852ca7b3ad851ab7c;
 			};
 		};
+		000000000000000000000090 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
+			requirement = {
+				kind = exactVersion;
+				version = 1.24.2;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -677,6 +689,11 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */;
 			productName = CCStateSwiftUI;
+		};
+		000000000000000000000091 /* onnxruntime */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000090 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
+			productName = onnxruntime;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};
