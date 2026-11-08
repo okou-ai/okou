@@ -27,11 +27,6 @@
       "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
     },
     {
-      "file": "turbo/apps/api/src/signals/routes/cron-sync-skills.ts",
-      "uses": 2,
-      "dependency": "module:turbo/apps/api/src/signals/services/cron-sync-skills.service"
-    },
-    {
       "file": "turbo/apps/api/src/signals/routes/image-io-generate.ts",
       "uses": 2,
       "dependency": "module:turbo/apps/api/src/signals/services/user-data.service"
@@ -98,23 +93,8 @@
     },
     {
       "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
-      "uses": 4,
-      "dependency": "module:turbo/apps/api/src/signals/services/pi-resource-version-index.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
-      "uses": 13,
-      "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
-      "uses": 40,
+      "uses": 17,
       "dependency": "module:turbo/packages/db/src/schema/skill"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/cron-sync-skills.service.ts",
-      "uses": 40,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {
       "file": "turbo/apps/api/src/signals/services/execution-global-model-context.service.ts",
@@ -208,12 +188,12 @@
     },
     {
       "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
-      "uses": 41,
+      "uses": 32,
       "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
     },
     {
       "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
-      "uses": 9,
+      "uses": 6,
       "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {
