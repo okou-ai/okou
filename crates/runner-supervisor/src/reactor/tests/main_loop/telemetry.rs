@@ -536,10 +536,26 @@ async fn finalizing_handoff_deadline_reports_fallback_reason() {
         )
         .unwrap();
 
-    env.handle
-        .wait_completion(run_id, Duration::from_secs(5))
-        .await
-        .expect("deadline fallback should complete");
+    let completion = env.handle.wait_completion(run_id, Duration::from_secs(5));
+    tokio::pin!(completion);
+    let completion = tokio::select! {
+        // Arm the original completion cap before advancing the grace timer.
+        biased;
+        completed = &mut completion => completed,
+        () = async {
+            while !predecessor_reuse.has_handoff_request(run_id) {
+                tokio::task::yield_now().await;
+            }
+        } => {
+            // On this current-thread runtime, the requester has yielded with
+            // its grace timer armed. Resume before scheduling real HTTP work.
+            raw_http_test_support::clock::advance_timer_phase(
+                crate::finalizing_admission::FINALIZING_HANDOFF_ACCEPTANCE_GRACE,
+            ).await;
+            completion.await
+        }
+    };
+    completion.expect("deadline fallback should complete");
 
     drop(predecessor_guard);
     shutdown(&env, run_handle).await;
