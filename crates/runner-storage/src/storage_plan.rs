@@ -258,30 +258,14 @@ pub fn build_storage_plan(
         .storages
         .iter()
         .map(|storage| {
-            // An ancestor can rewrite a child even when the child's own hash is
-            // unchanged. Keep templates in the ordered application in that case.
-            let is_ancestor = |mount: &str| {
-                Path::new(mount) != Path::new(&storage.mount_path)
-                    && Path::new(&storage.mount_path).starts_with(mount)
-            };
-            let ordered_template = storage.template_guidance.is_some()
-                && (manifest
+            let unchanged = previous.is_some_and(|fingerprints| {
+                fingerprints
                     .storages
-                    .iter()
-                    .any(|entry| is_ancestor(&entry.mount_path))
-                    || manifest
-                        .artifacts
-                        .iter()
-                        .any(|entry| is_ancestor(&entry.mount_path)));
-            let unchanged = !ordered_template
-                && previous.is_some_and(|fingerprints| {
-                    fingerprints
-                        .storages
-                        .get(&storage.mount_path)
-                        .is_some_and(|fingerprint| {
-                            fingerprint.matches(&storage.vas_storage_name, &storage.vas_version_id)
-                        })
-                });
+                    .get(&storage.mount_path)
+                    .is_some_and(|fingerprint| {
+                        fingerprint.matches(&storage.vas_storage_name, &storage.vas_version_id)
+                    })
+            });
             if unchanged {
                 reused_entries += 1;
             } else if previous.is_some() {

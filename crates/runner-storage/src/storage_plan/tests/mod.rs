@@ -120,16 +120,16 @@ fn template_guidance_retains_its_profile_through_archive_cache_and_home_reuse() 
         Some(&reference)
     );
 
-    let mut nested = source.clone();
-    nested
+    // Explicit later parent overlays remain authoritative on a warm filesystem.
+    let mut overridden = source.clone();
+    overridden
         .storages
-        .insert(0, storage("/home/user/workspace", "workspace", "v2"));
-    let ordered = build_storage_plan(&nested, Some(&previous)).unwrap();
-    assert!(matches!(
-        ordered.storages[1].action,
-        StorageAction::Download { .. }
-    ));
-    assert!(ordered.cleanup_paths.contains(&path.to_owned()));
+        .push(storage("/home/user/workspace", "workspace", "v1"));
+    let fingerprints = StorageFingerprints::from_manifest(&overridden);
+    let warm = build_storage_plan(&overridden, Some(&fingerprints)).unwrap();
+    assert!(!warm.requires_guest_work());
+    let wire = warm.into_guest_manifest();
+    assert!(wire.storages.iter().all(|entry| entry.cached));
 }
 
 #[test]
