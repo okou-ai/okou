@@ -731,7 +731,7 @@ final class WorkspaceStore {
         id: messageID,
         text: sourceComposer.text.trimmingCharacters(in: .whitespacesAndNewlines),
         createdAt: .now, attachments: sourceComposer.attachments.uploaded,
-        document: sourceComposer.value.draftUserMessage),
+        document: sourceComposer.value.draftUserMessage?.trimmingWhitespace()),
       composer: ComposerDraftStore(target: .unassigned, commands: commands, didFail: { _ in }),
       viewer: MessageAttachmentStore(
         commands: commands, didFail: { [weak self] in self?.handle($0) }),

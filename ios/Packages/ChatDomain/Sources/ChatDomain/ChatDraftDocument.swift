@@ -103,6 +103,31 @@ public struct ChatDraftDocument: Codable, Equatable, Sendable {
     }
   }
 
+  /// Trim the sent body's edges without changing spacing around inline references or quoted notes.
+  public func trimmingWhitespace() -> ChatDraftDocument {
+    var result = self
+    for leading in [true, false] {
+      let indices = leading ? Array(result.parts.indices) : Array(result.parts.indices.reversed())
+      for index in indices {
+        guard case .object(var part) = result.parts[index], let type = part["type"]?.string else {
+          break
+        }
+        // These envelopes do not render inside the message body.
+        if ["file", "source", "additional_info", "automation"].contains(type) { continue }
+        guard type == "text", let text = part["text"]?.string else { break }
+        let trimmed =
+          leading
+          ? String(text.drop(while: \.isWhitespace))
+          : String(text.reversed().drop(while: \.isWhitespace).reversed())
+        part["text"] = .string(trimmed)
+        result.parts[index] = .object(part)
+        if !trimmed.isEmpty { break }
+      }
+    }
+    result.parts.removeAll { $0["type"]?.string == "text" && $0["text"]?.string == "" }
+    return result
+  }
+
   /// Apply the text field's edit only to text spans; reference/file envelopes retain their order.
   public mutating func replaceText(_ replacement: String) {
     let old = Array(text)
