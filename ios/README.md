@@ -97,19 +97,10 @@ readback before another message can be sent.
 
 Use Xcode 27.1 (build `27A9275`, iOS 27.1 SDK) on macOS 26.6 or later, with an
 installed iOS 27 simulator runtime. Open `ios/Okou.xcodeproj` and select the shared `Okou`
-scheme and an iPhone simulator. Xcode resolves the pinned Clerk, Ably, Textual, Sentry,
-and ONNX Runtime Swift packages on first use. Keep
+scheme and an iPhone simulator. Xcode resolves the pinned Clerk, Ably, Textual, and Sentry
+Swift packages on first use. Keep
 `Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved` with the
 project when dependency versions change.
-
-Before opening Xcode, prepare the pinned voice activity model. This fetches the
-same model as the PWA, verifies its size and SHA-256, and makes it available
-offline in the app. The generated model is excluded from Git; test and archive
-scripts perform the same preparation automatically.
-
-```sh
-python3 ios/scripts/prepare-voice-activity-model.py
-```
 
 The app's minimum deployment target remains iOS 26.0. Validate UI changes on
 both iOS 26 and iOS 27: the build SDK and device runtime independently affect

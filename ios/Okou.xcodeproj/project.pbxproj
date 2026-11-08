@@ -24,8 +24,6 @@
 		000000000000000000000072 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000071 /* BeautifulMermaid */; };
 		000000000000000000000082 /* CCState in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000081 /* CCState */; };
 		000000000000000000000084 /* CCStateSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000083 /* CCStateSwiftUI */; };
-		000000000000000000000092 /* onnxruntime in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000091 /* onnxruntime */; };
-		000000000000000000000093 /* silero-vad-v5-2623a2953f6f.onnx in Resources */ = {isa = PBXBuildFile; fileRef = 000000000000000000000094 /* silero-vad-v5-2623a2953f6f.onnx */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -63,7 +61,6 @@
 		000000000000000000000009 /* Okou.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Okou.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		00000000000000000000000A /* OkouTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = OkouTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
 		000000000000000000000049 /* OkouNotificationService.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = OkouNotificationService.appex; sourceTree = BUILT_PRODUCTS_DIR; };
-		000000000000000000000094 /* silero-vad-v5-2623a2953f6f.onnx */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Okou/Resources/VoiceActivity/silero-vad-v5-2623a2953f6f.onnx"; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
@@ -71,7 +68,6 @@
 			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
 			membershipExceptions = (
 				Resources/Info.plist,
-				Resources/VoiceActivity/silero-vad-v5-2623a2953f6f.onnx,
 			);
 			target = 000000000000000000000002 /* Okou */;
 		};
@@ -133,7 +129,6 @@
 				000000000000000000000072 /* BeautifulMermaid in Frameworks */,
 				000000000000000000000082 /* CCState in Frameworks */,
 				000000000000000000000084 /* CCStateSwiftUI in Frameworks */,
-				000000000000000000000092 /* onnxruntime in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -179,7 +174,6 @@
 				000000000000000000000044 /* NotificationExtension */,
 				000000000000000000000055 /* Push */,
 				000000000000000000000007 /* Products */,
-				000000000000000000000094 /* silero-vad-v5-2623a2953f6f.onnx */,
 			);
 			sourceTree = "<group>";
 		};
@@ -216,7 +210,6 @@
 				000000000000000000000071 /* BeautifulMermaid */,
 				000000000000000000000081 /* CCState */,
 				000000000000000000000083 /* CCStateSwiftUI */,
-				000000000000000000000091 /* onnxruntime */,
 			);
 			productName = Okou;
 			productReference = 000000000000000000000009 /* Okou.app */;
@@ -322,7 +315,6 @@
 				000000000000000000000060 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				000000000000000000000070 /* XCRemoteSwiftPackageReference "beautiful-mermaid-swift" */,
 				000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */,
-				000000000000000000000090 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 000000000000000000000007 /* Products */;
@@ -341,7 +333,6 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				000000000000000000000093 /* silero-vad-v5-2623a2953f6f.onnx in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -629,14 +620,6 @@
 				revision = d75c85c8ff3d8c5f9ee224f852ca7b3ad851ab7c;
 			};
 		};
-		000000000000000000000090 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */ = {
-			isa = XCRemoteSwiftPackageReference;
-			repositoryURL = "https://github.com/microsoft/onnxruntime-swift-package-manager";
-			requirement = {
-				kind = exactVersion;
-				version = 1.24.2;
-			};
-		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -694,11 +677,6 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */;
 			productName = CCStateSwiftUI;
-		};
-		000000000000000000000091 /* onnxruntime */ = {
-			isa = XCSwiftPackageProductDependency;
-			package = 000000000000000000000090 /* XCRemoteSwiftPackageReference "onnxruntime-swift-package-manager" */;
-			productName = onnxruntime;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

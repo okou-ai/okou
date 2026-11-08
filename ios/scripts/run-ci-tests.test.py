@@ -1,15 +1,11 @@
 #!/usr/bin/env python3
 """Exercise real CI scripts with controlled external compiler/simulator processes."""
 
-import hashlib
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-import json
 import os
 import shutil
 import signal
 import subprocess
 import tempfile
-import threading
 import time
 import unittest
 from pathlib import Path
@@ -128,7 +124,6 @@ class CIProcessTests(unittest.TestCase):
         for name in (
             "ci-test.sh",
             "prepare-package-sources.py",
-            "prepare-voice-activity-model.py",
             "ci-package-test.sh",
             "preboot-simulator.py",
             "run-ci-tests.sh",
@@ -141,16 +136,6 @@ class CIProcessTests(unittest.TestCase):
         )
         resolved.parent.mkdir(parents=True)
         resolved.write_text('{"pins": []}\n')
-        models = self.repo / "ios/Okou/Resources/VoiceActivity"
-        models.mkdir(parents=True)
-        model = b"prepared fixture model"
-        (models / "fixture.onnx").write_bytes(model)
-        (models / "model.json").write_text(json.dumps({
-            "filename": "fixture.onnx",
-            "url": "https://model.example.invalid/fixture.onnx",
-            "sha256": hashlib.sha256(model).hexdigest(),
-            "size": len(model),
-        }))
         self.state = self.root / "state"
         self.state.mkdir()
         mock = self.root / "bin"
@@ -331,90 +316,6 @@ class CIProcessTests(unittest.TestCase):
         )
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertTrue((self.state / "prepare-finished").exists())
-
-
-class VoiceModelPreparationTests(unittest.TestCase):
-    def setUp(self):
-        temporary = tempfile.TemporaryDirectory()
-        self.addCleanup(temporary.cleanup)
-        self.root = Path(temporary.name)
-        self.source = self.root / "source.bin"
-        self.data = b"model artifact supplied by the external source"
-        self.source.write_bytes(self.data)
-        source = self.source
-
-        class ModelSource(BaseHTTPRequestHandler):
-            def do_GET(self):
-                if not source.exists():
-                    self.send_error(404)
-                    return
-                data = source.read_bytes()
-                self.send_response(200)
-                self.send_header("Content-Length", str(len(data)))
-                self.end_headers()
-                self.wfile.write(data)
-
-            def log_message(self, *args):
-                pass
-
-        server = ThreadingHTTPServer(("127.0.0.1", 0), ModelSource)
-        thread = threading.Thread(target=server.serve_forever)
-        thread.start()
-
-        def close_source():
-            server.shutdown()
-            server.server_close()
-            thread.join()
-
-        self.addCleanup(close_source)
-        self.output = self.root / "fixture.onnx"
-        self.manifest = self.root / "model.json"
-        self.manifest.write_text(json.dumps({
-            "filename": self.output.name,
-            "url": f"http://127.0.0.1:{server.server_port}/fixture.onnx",
-            "sha256": hashlib.sha256(self.data).hexdigest(),
-            "size": len(self.data),
-        }))
-
-    def prepare(self):
-        return subprocess.run(
-            ["python3", str(SCRIPTS / "prepare-voice-activity-model.py"),
-             "--manifest", str(self.manifest)],
-            text=True,
-            capture_output=True,
-            timeout=5,
-            check=False,
-        )
-
-    def test_verified_model_is_reusable_without_the_download_source(self):
-        result = self.prepare()
-        self.assertEqual(result.returncode, 0, result.stderr)
-        self.assertEqual(self.output.read_bytes(), self.data)
-        self.source.unlink()
-        cached = self.prepare()
-        self.assertEqual(cached.returncode, 0, cached.stderr)
-        self.assertEqual(self.output.read_bytes(), self.data)
-
-    def test_corrupted_download_is_not_published(self):
-        self.source.write_bytes(b"different artifact of the same length".ljust(len(self.data), b"!"))
-        result = self.prepare()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(self.output.exists())
-        self.assertEqual(set(self.root.iterdir()), {self.source, self.manifest})
-
-    def test_missing_source_fails_without_publishing_a_model(self):
-        self.source.unlink()
-        result = self.prepare()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(self.output.exists())
-
-    def test_file_urls_cannot_be_used_as_a_download_source(self):
-        manifest = json.loads(self.manifest.read_text())
-        manifest["url"] = self.source.as_uri()
-        self.manifest.write_text(json.dumps(manifest))
-        result = self.prepare()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertFalse(self.output.exists())
 
 
 if __name__ == "__main__":

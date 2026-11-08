@@ -4,4 +4,3 @@ DerivedData/
 *.xcuserstate
 xcuserdata/
 Config/Local.xcconfig
-Okou/Resources/VoiceActivity/*.onnx

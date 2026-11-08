@@ -1,13 +1,13 @@
+import AVFoundation
 import ChatData
 import Foundation
-import OnnxRuntimeBindings
+import SoundAnalysis
+import Synchronization
 
-/// Matches the PWA's silero-v5-conservative-1 policy and its pinned model.
-/// Model SHA-256: 2623a2953f6ff3d2c1e61740c6cdb7168133479b267dfef114a4a3cc5bdd788f.
-/// A session and recurrent state belong to one analysis, off the UI actor.
+/// Apple's built-in classifier stays on the OS; no model or inference runtime is bundled.
+/// Only confident silence across all new audio can suppress an upload.
 actor NativeVoiceActivityDetection: VoiceActivityDetection {
-  nonisolated let policyVersion = "silero-v5-conservative-1"
-  private static let frameSamples = 512
+  nonisolated let policyVersion = "sound-analysis-v1-conservative-1"
 
   func mayContainSpeech(_ pcm: Data) throws -> Bool {
     try Task.checkCancellation()
@@ -15,80 +15,108 @@ actor NativeVoiceActivityDetection: VoiceActivityDetection {
       throw DetectionError.invalidAudio
     }
     if pcm.allSatisfy({ $0 == 0 }) { return false }
-    let sampleCount = pcm.count / 2
-    // A short word or onset is insufficient evidence to discard speech.
-    if sampleCount < Self.frameSamples { return true }
-    guard
-      let model = Bundle.main.url(
-        forResource: "silero-vad-v5-2623a2953f6f", withExtension: "onnx")
-    else { throw DetectionError.missingModel }
-    let inference = try SileroInference(model: model)
-    let samples = pcm.withUnsafeBytes { bytes in
-      stride(from: 0, to: pcm.count, by: 2).map {
-        Float(Int16(littleEndian: bytes.loadUnaligned(fromByteOffset: $0, as: Int16.self))) / 32_768
-      }
+    // Preserve short words and onsets without asking a one-second classifier.
+    let samples = pcm.count / 2
+    if samples < VoiceDraftSession.sampleRate { return true }
+    let request = try SNClassifySoundRequest(classifierIdentifier: .version1)
+    let voiceLabels = [
+      "speech", "whispering", "shout", "yell", "singing", "rapping", "chatter", "babble",
+    ]
+    guard Set(voiceLabels + ["silence"]).isSubset(of: Set(request.knownClassifications)) else {
+      return true
     }
-    for offset in stride(from: 0, to: sampleCount, by: Self.frameSamples) {
-      try Task.checkCancellation()
-      var frame = [Float](repeating: 0, count: Self.frameSamples)
-      let end = min(offset + Self.frameSamples, sampleCount)
-      frame.replaceSubrange(0..<(end - offset), with: samples[offset..<end])
-      let probability = try inference.probability(frame)
-      guard probability.isFinite, (0...1).contains(probability) else {
-        throw DetectionError.invalidOutput
-      }
-      // PWA passes both speech (>= 0.5) and uncertain (> 0.1) unchanged.
-      if Double(probability) > 0.1 { return true }
-    }
+    request.windowDuration = CMTime(seconds: 1, preferredTimescale: 16_000)
+    request.overlapFactor = 0.5
+    let url = FileManager.default.temporaryDirectory
+      .appendingPathComponent("voice-analysis-\(UUID().uuidString).wav")
+    defer { try? FileManager.default.removeItem(at: url) }
+    try writeAudio(pcm, to: url)
+    let analyzer = try SNAudioFileAnalyzer(url: url)
+    defer { analyzer.removeAllRequests() }
+    let observer = SilenceObserver(voiceLabels: voiceLabels)
+    try analyzer.add(request, withObserver: observer)
+    // Synchronous file analysis owns all callbacks until completion, off MainActor.
+    analyzer.analyze()
     try Task.checkCancellation()
-    return false
+    return try observer.mayContainSpeech(duration: Double(samples) / 16_000)
+  }
+
+  private func writeAudio(_ pcm: Data, to url: URL) throws {
+    guard let format = AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1),
+      let buffer = AVAudioPCMBuffer(
+        pcmFormat: format, frameCapacity: AVAudioFrameCount(pcm.count / 2)),
+      let channel = buffer.floatChannelData?[0]
+    else { throw DetectionError.invalidAudio }
+    buffer.frameLength = buffer.frameCapacity
+    pcm.withUnsafeBytes { bytes in
+      for sample in 0..<Int(buffer.frameLength) {
+        channel[sample] =
+          Float(
+            Int16(littleEndian: bytes.loadUnaligned(fromByteOffset: sample * 2, as: Int16.self)))
+          / 32_768
+      }
+    }
+    let file = try AVAudioFile(forWriting: url, settings: format.settings)
+    try file.write(from: buffer)
+    try FileManager.default.setAttributes(
+      [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], atPath: url.path)
   }
 
   private enum DetectionError: Error {
-    case invalidAudio, missingModel, invalidOutput
+    case invalidAudio, invalidResult
   }
 
-  private final class SileroInference {
-    private let environment: ORTEnv
-    private let session: ORTSession
-    private let sampleRate: ORTValue
-    private var state: ORTValue
-    private var context = [Float](repeating: 0, count: 64)
-
-    init(model: URL) throws {
-      environment = try ORTEnv(loggingLevel: .warning)
-      let options = try ORTSessionOptions()
-      try options.setIntraOpNumThreads(1)
-      session = try ORTSession(env: environment, modelPath: model.path, sessionOptions: options)
-      sampleRate = try Self.tensor([Int64(16_000)], type: .int64, shape: [1])
-      state = try Self.tensor([Float](repeating: 0, count: 256), type: .float, shape: [2, 1, 128])
+  private final class SilenceObserver: NSObject, SNResultsObserving, Sendable {
+    private struct State: Sendable {
+      var coveredUntil: Double = 0
+      var uncertain = false
+      var completed = false
+      var failure: (any Error)?
     }
+    private let state = Mutex(State())
+    private let voiceLabels: [String]
 
-    func probability(_ frame: [Float]) throws -> Float {
-      // Match vad-web 0.0.31's 64-sample context window, including zero padding
-      // of the last partial frame. State resets for every new-audio analysis.
-      let input = context + frame
-      let result = try session.run(
-        withInputs: [
-          "input": Self.tensor(input, type: .float, shape: [1, NSNumber(value: input.count)]),
-          "state": state,
-          "sr": sampleRate,
-        ], outputNames: ["output", "stateN"], runOptions: nil)
-      guard let output = result["output"], let nextState = result["stateN"] else {
-        throw DetectionError.invalidOutput
+    init(voiceLabels: [String]) { self.voiceLabels = voiceLabels }
+
+    func request(_ request: any SNRequest, didProduce result: any SNResult) {
+      state.withLock { state in
+        guard let result = result as? SNClassificationResult,
+          let silence = result.classification(forIdentifier: "silence"),
+          silence.confidence.isFinite,
+          voiceLabels.allSatisfy({ label in
+            guard let voice = result.classification(forIdentifier: label) else { return false }
+            return voice.confidence.isFinite && voice.confidence <= 0.01
+          }), silence.confidence >= 0.95
+        else {
+          state.uncertain = true
+          return
+        }
+        let start = result.timeRange.start.seconds
+        let end = CMTimeRangeGetEnd(result.timeRange).seconds
+        guard start.isFinite, end.isFinite, start <= state.coveredUntil + 1.0 / 16_000,
+          end > start
+        else {
+          state.uncertain = true
+          return
+        }
+        state.coveredUntil = max(state.coveredUntil, end)
       }
-      let bytes = try output.tensorData() as Data
-      guard bytes.count == MemoryLayout<Float>.size else { throw DetectionError.invalidOutput }
-      state = nextState
-      context = Array(frame.suffix(64))
-      return bytes.withUnsafeBytes { $0.loadUnaligned(as: Float.self) }
     }
 
-    private static func tensor<T>(
-      _ values: [T], type: ORTTensorElementDataType, shape: [NSNumber]
-    ) throws -> ORTValue {
-      let bytes = values.withUnsafeBufferPointer { Data(buffer: $0) }
-      return try ORTValue(tensorData: NSMutableData(data: bytes), elementType: type, shape: shape)
+    func request(_ request: any SNRequest, didFailWithError error: any Error) {
+      state.withLock { $0.failure = error }
+    }
+
+    func requestDidComplete(_ request: any SNRequest) {
+      state.withLock { $0.completed = true }
+    }
+
+    func mayContainSpeech(duration: Double) throws -> Bool {
+      try state.withLock { state in
+        if let failure = state.failure { throw failure }
+        guard state.completed else { throw DetectionError.invalidResult }
+        return state.uncertain || state.coveredUntil + 1.0 / 16_000 < duration
+      }
     }
   }
 }

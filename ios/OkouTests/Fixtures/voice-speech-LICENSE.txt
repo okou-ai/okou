@@ -1,3 +1,7 @@
+voice-speech.wav is a one-second excerpt (1–2 seconds) from tests/data/test.wav
+in https://github.com/snakers4/silero-vad at commit
+066409f3d9db45a30d21dfcbf9147826ffdd7052, used only by the test target.
+
 MIT License
 
 Copyright (c) 2020-present Silero Team
