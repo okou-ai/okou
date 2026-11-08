@@ -159,15 +159,21 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
             if let Some(extra) = overflow {
                 assert_eq!(expected.len(), LIMIT + extra);
             }
-            let expected_json = (collaboration && overflow == Some(1))
-                .then(|| serde_json::from_str::<Value>(&expected).unwrap());
+            // Only non-message structure is compared after content reduction.
+            let expected_event = (collaboration && overflow == Some(1)).then(|| {
+                let mut expected = empty;
+                expected["item"]["agents_states"]["status"]["message"] = Value::Null;
+                expected
+            });
+            let expected_body = (overflow != Some(1)).then_some(expected);
             let server = MockServer::start_async().await;
             let request = server.mock(|when, then| {
                 when.method(POST)
                     .path("/api/webhooks/agent/events")
                     .is_true(move |request| {
                         if overflow != Some(1) {
-                            return request.body_ref() == expected.as_bytes();
+                            return request.body_ref()
+                                == expected_body.as_ref().unwrap().as_bytes();
                         }
                         let mut payload: Value =
                             serde_json::from_slice(request.body_ref()).unwrap();
@@ -176,13 +182,10 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
                                 .contains("bytes truncated for delivery")
                             && payload["events"][0]["sequenceNumber"] == 19
                             && (!collaboration || {
-                                let expected_json = expected_json.as_ref().unwrap();
-                                let mut restored = std::mem::take(&mut payload["events"][0]);
-                                restored["item"]["agents_states"]["status"]["message"] =
-                                        expected_json["events"][0]["item"]["agents_states"]
-                                            ["status"]["message"]
-                                            .clone();
-                                restored == expected_json["events"][0]
+                                let expected_event = expected_event.as_ref().unwrap();
+                                let mut actual = std::mem::take(&mut payload["events"][0]);
+                                actual["item"]["agents_states"]["status"]["message"] = Value::Null;
+                                actual == *expected_event
                             })
                     });
                 then.status(200);
