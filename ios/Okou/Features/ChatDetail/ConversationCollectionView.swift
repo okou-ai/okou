@@ -14,7 +14,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   case failure(
     ChatMessage, AssistantFailureState, topSpacing: CGFloat, providerMessage: String? = nil)
   case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
-  case usage(runID: String, state: ConversationRunUsageState)
+  case usage(runID: String)
 
   static let messageHorizontalInset: CGFloat = 20
   static let assistantLeadingInset: CGFloat = 6
@@ -27,7 +27,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     case .footer: "conversation-bottom"
     case .failure(let message, _, _, _): message.id
     case .followups: "conversation-followups"
-    case .usage(let runID, _): "usage:\(runID)"
+    case .usage(let runID): "usage:\(runID)"
     }
   }
 
