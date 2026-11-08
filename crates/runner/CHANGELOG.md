@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.43](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.42...runner-rs-v0.244.43) (2026-11-08)
+
+
+### Refactoring
+
+* **python:** share iterable wrapper recognition in metadata linting ([#45959](https://github.com/okou-ai/okou/issues/45959)) ([570245d](https://github.com/okou-ai/okou/commit/570245d6e74d5d7fad03ce460758481a48eaaeaf))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.42](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.41...runner-rs-v0.244.42) (2026-11-08)
 
 ### Release Dependencies
