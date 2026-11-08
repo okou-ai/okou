@@ -10,6 +10,27 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.54.3](https://github.com/okou-ai/okou/compare/api-v2.54.2...api-v2.54.3) (2026-11-08)
+
+
+### Bug Fixes
+
+* **api:** auto-continue chats after execution timeouts ([#45953](https://github.com/okou-ai/okou/issues/45953)) ([bcd58fe](https://github.com/okou-ai/okou/commit/bcd58fe38493ceb6b84ecc1ed890782d322b7fa6))
+
+
+### Performance Improvements
+
+* **api:** reuse codex account identity during run preparation ([#45966](https://github.com/okou-ai/okou/issues/45966)) ([5ba48dc](https://github.com/okou-ai/okou/commit/5ba48dc21548f89d90dc4707d1af428d5455df31))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.2
+    * @okouai/db bumped to 2.24.2
+    * @okouai/pi-agent-runtime bumped to 1.51.86
+
 ## [2.54.2](https://github.com/okou-ai/okou/compare/api-v2.54.1...api-v2.54.2) (2026-11-08)
 
 
