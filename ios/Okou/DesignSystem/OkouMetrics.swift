@@ -160,10 +160,6 @@ enum OkouMotion {
   /// The web's `okou-skeleton-pulse`, a skeleton's motion under Reduce Motion: one breath, and
   /// how far it dims.
   static let skeletonPulse: Double = 2
-  /// The transcript's extra edge blur (`OkouEdgeBlurView`): the length over which it fades to
-  /// clear inside its band, and how much of the page colour washes over the material.
-  static let edgeBlurFade: CGFloat = 16
-  static let edgeBlurWash: CGFloat = 0.3
   static let skeletonDim: Double = 0.7
   /// Web `--duration-running-indicator`; list rows trail by 1/12 of a cycle each.
   static let runningCycle: Double = 2.4

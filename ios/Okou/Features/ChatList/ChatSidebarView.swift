@@ -104,9 +104,10 @@ struct ChatSidebarView: View {
     .scrollContentBackground(.hidden)
     // The workspace title sits directly over chat titles: soft let them read through it, and
     // the system's hard edge draws a white band on the warm sidebar. The header instead takes
-    // the sidebar's own colour, with a short fade where rows pass under it.
+    // the sidebar's own colour, with a short fade where rows pass under it. The bottom has no
+    // edge effect, as everywhere in the app: rows pass plainly under the footer's glass.
     .scrollEdgeEffectHidden(true, for: .top)
-    .scrollEdgeEffectStyle(.soft, for: .bottom)
+    .scrollEdgeEffectHidden(true, for: .bottom)
     .safeAreaBar(edge: .top, spacing: 0) {
       VStack(spacing: 0) {
         // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
