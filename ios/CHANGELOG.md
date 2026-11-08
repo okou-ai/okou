@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.1](https://github.com/okou-ai/okou/compare/ios-v0.29.0...ios-v0.29.1) (2026-11-08)
+
+
+### Refactoring
+
+* **ios:** separate subscription resources and native presentation ([#45965](https://github.com/okou-ai/okou/issues/45965)) ([0f71f7f](https://github.com/okou-ai/okou/commit/0f71f7f1dbf7b37ae6e452c81abf587a10817475))
+
 ## [0.29.0](https://github.com/okou-ai/okou/compare/ios-v0.28.11...ios-v0.29.0) (2026-11-08)
 
 
