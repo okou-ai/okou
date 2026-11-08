@@ -59,7 +59,8 @@ actor NativeVoiceActivityDetection: VoiceActivityDetection {
     let file = try AVAudioFile(forWriting: url, settings: format.settings)
     try file.write(from: buffer)
     try FileManager.default.setAttributes(
-      [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], atPath: url.path)
+      [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+      ofItemAtPath: url.path)
   }
 
   private enum DetectionError: Error {
