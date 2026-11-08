@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -12,13 +13,11 @@ final class ChatModelStore {
   let connectorAuthorization: ChatConnectorService
   let subscriptions: PersonalSubscriptionStore
   private(set) var configuration: ChatModelConfiguration?
-  private(set) var error: String?
-  private(set) var isLoading = false
   private(set) var active = false
-  private var revision = 0
   private var closed = false
   private var reportingCatalog: ModelCatalog?
-  private var loadTask: Task<Void, Never>?
+  @ObservationIgnored private var publication: Task<ChatModelConfiguration, Error>?
+  private let lifetime = CCState.State(true)
   private let resources: WorkspaceResources
   private let ownsResources: Bool
   let readRetrySleep: @Sendable (Duration) async throws -> Void
@@ -47,50 +46,50 @@ final class ChatModelStore {
     }
   }
 
-  /// Reading from another composer or sheet reuses the graph's existing Tasks.
+  var stateStore: CCState.Store { resources.store }
+
+  /// The graph owns the request and publishes one confirmed snapshot for send admission.
+  /// Views observe this Task directly; they do not mirror its loading or error state here.
+  @ObservationIgnored lazy var configurationValue = Computed<Task<ChatModelConfiguration, Error>> {
+    [weak self] get, options in
+    guard let self, try get(lifetime), !closed else { throw CancellationError() }
+    let pending = try get(resources.configuration)
+    let signal = options.signal
+    let task = Task.immediate { @MainActor [weak self] in
+      do {
+        let value = try await pending.value
+        try signal.checkCancellation()
+        try Task.checkCancellation()
+        guard let self, !closed else { throw CancellationError() }
+        configuration = value
+        return value
+      } catch {
+        if !Task.isCancelled, !signal.isCancelled { self?.report(error) }
+        throw error
+      }
+    }
+    publication = task
+    signal.onCancel { task.cancel() }
+    return task
+  }
+
+  /// Non-view consumers await the same graph Task as every SwiftUI subscriber.
   func load() async {
     guard !closed, !Task.isCancelled else { return }
     active = true
-    if let loadTask {
-      await loadTask.value
-      return
-    }
-    revision += 1
-    let request = revision
-    isLoading = true
-    // Publication belongs to the workspace, not whichever transient view awaits it.
-    let task = Task { [weak self] in
-      guard let self else { return }
-      defer {
-        if request == revision {
-          isLoading = false
-          loadTask = nil
-        }
-      }
-      do {
-        let result = try await resources.load().value
-        guard !closed, !Task.isCancelled, request == revision else { return }
-        configuration = result
-        error = nil
-      } catch is CancellationError {
-      } catch {
-        guard !closed, request == revision else { return }
-        self.error = ChatRequestFailure.message(for: error)
-        didFail(error)
-      }
-    }
-    loadTask = task
-    await task.value
+    do {
+      _ = try resources.load()
+      let task = try stateStore.get(configurationValue)
+      // The graph reports a failure once; every consumer can inspect the original result.
+      _ = await task.result
+    } catch is CancellationError {
+    } catch { report(error) }
   }
 
   func refresh(_ changes: Set<ChatInvalidation> = [.reconnected]) async {
     guard !closed, !Task.isCancelled else { return }
-    // A restored subscription must read after attachment to cover its missed-event window.
     do {
       try resources.invalidate(changes)
-      revision += 1
-      loadTask?.cancel()
-      loadTask = nil
     } catch {
       report(error)
       return
@@ -120,22 +119,21 @@ final class ChatModelStore {
   }
   func applyPreference(_ preference: ModelPreference) {
     guard !closed, let configuration else { return }
-    revision += 1
-    loadTask?.cancel()
-    loadTask = nil
-    isLoading = false
+    publication?.cancel()
     self.configuration = configuration.withPreference(preference)
   }
   func close() {
     closed = true
-    revision += 1
-    loadTask?.cancel()
-    loadTask = nil
+    publication?.cancel()
+    publication = nil
     configuration = nil
+    do { try stateStore.set(lifetime, false) } catch { didFail(error) }
     if ownsResources { resources.close() }
     reportingCatalog = nil
     subscriptions.close()
   }
+
+  isolated deinit { publication?.cancel() }
 }
 
 /// Changes commit before becoming sendable. Opening a sheet only reads metadata.
@@ -228,7 +226,7 @@ final class ChatModelSelectionStore {
 
   func open() async {
     if models.configuration == nil {
-      if models.error == nil { await models.load() } else { await models.refresh() }
+      await models.load()
     }
     if models.configuration != nil { await refresh() }
     // Usage never delays the model list; the separate task is cancelled with the sheet.
