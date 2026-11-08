@@ -94,6 +94,9 @@ Textual Markdown uses `OkouMarkdownStyle` for links, code surfaces, headings, qu
   List/Form rows; sheets reach it only through `okouGroupedBackground()`.
 - System-owned dismiss/disclosure glyphs and third-party internals are outside
   the product Lucide replacement boundary.
+- App Shortcuts use `AppShortcut.systemImageName`, which accepts only SF Symbols.
+  This exception is limited to the system's shortcut presentation; in-app icons
+  remain Lucide.
 
 ## Native foundations
 
