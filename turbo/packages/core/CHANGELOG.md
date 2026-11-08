@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.824.2](https://github.com/okou-ai/okou/compare/core-v8.824.1...core-v8.824.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* **api:** auto-continue chats after execution timeouts ([#45953](https://github.com/okou-ai/okou/issues/45953)) ([bcd58fe](https://github.com/okou-ai/okou/commit/bcd58fe38493ceb6b84ecc1ed890782d322b7fa6))
+
 ## [8.824.1](https://github.com/okou-ai/okou/compare/core-v8.824.0...core-v8.824.1) (2026-11-08)
 
 
