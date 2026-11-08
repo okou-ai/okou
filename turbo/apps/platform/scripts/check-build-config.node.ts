@@ -1,12 +1,20 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import {
+  clearTimeout as nodeClearTimeout,
+  setTimeout as nodeSetTimeout,
+} from "node:timers";
 import { URL } from "node:url";
-import { runInNewContext } from "node:vm";
+import { createContext, runInContext, runInNewContext } from "node:vm";
 
 import { build, loadConfigFromFile } from "vite";
+import type {
+  PdfWorkerRequest,
+  PdfWorkerResponse,
+} from "../src/lib/message-pdf/types.ts";
 
 import { applicationResourcePriorityHtmlPlugin } from "./app-resource-priority-html.ts";
 import {
@@ -138,6 +146,126 @@ await test("built runtime supports resource scopes and URLs with missing or nati
     assert.equal(url.canParse("https://example.com:65536"), false);
     assert.equal(url.canParse("/page"), false);
     assert.equal(url.canParse("https://example.com", "invalid base"), false);
+  }
+});
+
+await test("built PDF worker exports grapheme text and links with missing or native APIs", async () => {
+  const result = await build({
+    configFile: false,
+    logLevel: "silent",
+    build: {
+      write: false,
+      rolldownOptions: {
+        input: new URL(
+          "../src/lib/message-pdf/message-pdf-worker.ts",
+          import.meta.url,
+        ).pathname,
+        output: { format: "iife" },
+      },
+    },
+  });
+  assert.ok("output" in result);
+  const entry = result.output.find((output) => {
+    return output.type === "chunk" && output.isEntry;
+  });
+  assert.ok(entry?.type === "chunk");
+  assert.ok(Buffer.byteLength(entry.code) <= MESSAGE_PDF_WORKER_LIMIT_BYTES);
+  const font = async (filename: string) => {
+    return Uint8Array.from(
+      await readFile(
+        new URL(
+          `../test-fixtures/message-pdf-fonts/${filename}`,
+          import.meta.url,
+        ),
+      ),
+    ).buffer;
+  };
+  const request: PdfWorkerRequest = {
+    baseUrl: "https://app.okou.ai/",
+    tree: {
+      type: "root",
+      children: [
+        {
+          type: "element",
+          tagName: "p",
+          properties: {},
+          children: [
+            { type: "text", value: "Compatibility e\u0301 👩‍💻 " },
+            {
+              type: "element",
+              tagName: "a",
+              properties: { href: "https://example.com/reference" },
+              children: [{ type: "text", value: "Reference" }],
+            },
+          ],
+        },
+      ],
+    },
+    assets: { images: new Map(), diagrams: new Map() },
+    regularFont: await font("NotoSansCJKsc-Regular.otf"),
+    boldFont: await font("NotoSansCJKsc-Bold.otf"),
+    emojiFont: await font("noto-emoji-emoji-400-normal.woff"),
+  };
+  for (const native of [false, true]) {
+    const workerIntl = runInNewContext("Intl") as typeof Intl;
+    const nativeSegmenter = workerIntl.Segmenter;
+    if (!native) {
+      Reflect.deleteProperty(workerIntl, "Segmenter");
+    }
+    class WorkerURL extends URL {}
+    Object.defineProperty(WorkerURL, "canParse", {
+      configurable: true,
+      writable: true,
+      value: native ? URL.canParse : undefined,
+    });
+    const delivery: {
+      listener?: (event: { data: PdfWorkerRequest }) => Promise<void>;
+      response?: PdfWorkerResponse;
+    } = {};
+    const workerScope = createContext({
+      Intl: workerIntl,
+      URL: WorkerURL,
+      Blob,
+      AbortController,
+      AbortSignal,
+      DOMException,
+      navigator: { userAgent: "Mozilla/5.0" },
+      TextEncoder,
+      TextDecoder,
+      setTimeout: nodeSetTimeout,
+      clearTimeout: nodeClearTimeout,
+      queueMicrotask,
+      atob,
+      btoa,
+      addEventListener(_type: string, listener: typeof delivery.listener) {
+        delivery.listener = listener;
+      },
+      postMessage(response: PdfWorkerResponse) {
+        delivery.response = response;
+      },
+    });
+    runInContext("globalThis.self = globalThis", workerScope);
+    runInContext(entry.code, workerScope);
+    assert.ok(delivery.listener);
+    await delivery.listener({ data: request });
+    const response = delivery.response;
+    assert.ok(response?.ok);
+    assert.equal(response.blob.type, "application/pdf");
+    const pdf = Buffer.from(await response.blob.arrayBuffer()).toString(
+      "latin1",
+    );
+    assert.ok(pdf.startsWith("%PDF-"));
+    assert.ok(pdf.includes("https://example.com/reference"));
+    assert.deepEqual(
+      Array.from(new workerIntl.Segmenter().segment("e\u0301👩‍💻"), (part) => {
+        return part.segment;
+      }),
+      ["e\u0301", "👩‍💻"],
+    );
+    if (native) {
+      assert.equal(workerIntl.Segmenter, nativeSegmenter);
+      assert.equal(WorkerURL.canParse, URL.canParse);
+    }
   }
 });
 
