@@ -172,12 +172,14 @@ final class ThreadListStore {
     return task
   }
 
-  @ObservationIgnored lazy var pinnedAgentsValue: Computed<Task<[AgentRecord], Error>> = computedTask {
-    [agentsValue, preferencesValue] get, _ in
-    let agents = try get(agentsValue)
-    let preferences = try get(preferencesValue)
-    return try await ThreadListStore.pinnedAgents(agents: agents.value, preferences: preferences.value)
-  }
+  @ObservationIgnored lazy var pinnedAgentsValue: Computed<Task<[AgentRecord], Error>> =
+    computedTask {
+      [agentsValue, preferencesValue] get, _ in
+      let agents = try get(agentsValue)
+      let preferences = try get(preferencesValue)
+      return try await ThreadListStore.pinnedAgents(
+        agents: agents.value, preferences: preferences.value)
+    }
 
   func refreshNavigation() async {
     guard !closed, !blocked, !Task.isCancelled else { return }

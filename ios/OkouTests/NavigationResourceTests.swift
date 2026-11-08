@@ -20,13 +20,14 @@ final class NavigationResourceTests: XCTestCase {
         await gate.wait()
         return navigationPreferences(pinned: true)
       case "/api/chat-threads/snapshot":
-        return ChatHTTPResponse(body: """
-          {"chatThreads":[{"id":"50000000-0000-4000-8000-000000000003",\
-          "agentId":"\(navigationAgent)","title":"Ready before preferences",\
-          "sortAt":"2026-11-08T00:00:00Z","createdAt":"2026-11-08T00:00:00Z",\
-          "updatedAt":"2026-11-08T00:00:00Z","archived":false}],\
-          "latestEventId":null,"latestSeqId":null}
-          """)
+        return ChatHTTPResponse(
+          body: """
+            {"chatThreads":[{"id":"50000000-0000-4000-8000-000000000003",\
+            "agentId":"\(navigationAgent)","title":"Ready before preferences",\
+            "sortAt":"2026-11-08T00:00:00Z","createdAt":"2026-11-08T00:00:00Z",\
+            "updatedAt":"2026-11-08T00:00:00Z","archived":false}],\
+            "latestEventId":null,"latestSeqId":null}
+            """)
       case "/api/indicators":
         return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
       case "/api/chat-threads/events":
@@ -54,7 +55,8 @@ final class NavigationResourceTests: XCTestCase {
     XCTAssertEqual(store.newChatDraft, "Keep the draft entered before navigation")
     gate.open()
     await navigation.value
-    XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [navigationAgent, navigationPinned])
+    XCTAssertEqual(
+      store.list.visiblePinnedAgents.map(\.agentId), [navigationAgent, navigationPinned])
     XCTAssertEqual(store.newChatDraft, "Keep the draft entered before navigation")
   }
 
