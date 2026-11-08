@@ -57,7 +57,9 @@
               ForEach(["menu", "chevrons-right"], id: \.self) { icon in
                 Button {
                 } label: {
-                  OkouToolbarIcon(icon).modifier(OkouGlassControl(shape: .circle))
+                  OkouToolbarIcon(icon)
+                    .modifier(OkouGlassControl(shape: .circle))
+                    .modifier(OkouUnreadBadge(isVisible: icon == "menu"))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(icon)
