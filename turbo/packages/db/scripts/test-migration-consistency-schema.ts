@@ -3161,6 +3161,14 @@ async function main(): Promise<void> {
       ),
     );
 
+    console.log("=== Frozen template guidance backfill CLI ===");
+    console.log(
+      execCommand(
+        "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
+        { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
+      ),
+    );
+
     console.log("=== Presentation template copy CLI ===");
     console.log(
       execCommand(
