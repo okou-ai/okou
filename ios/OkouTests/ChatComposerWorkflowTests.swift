@@ -364,7 +364,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let body = try XCTUnwrap(fixture.state.value.withLock { $0.messages.first })
     let sent = try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: body)
     XCTAssertEqual(sent.userMessage.parts.map(\.type), ["text"])
-    XCTAssertEqual(sent.userMessage.parts.first?.text, "Summarize /morning-brief ")
+    XCTAssertEqual(sent.userMessage.parts.first?.text, "Summarize /morning-brief")
   }
 
   func testCandidateGraphSharesHTTPAcrossQueriesAndRetriesOriginalFailure() async throws {
