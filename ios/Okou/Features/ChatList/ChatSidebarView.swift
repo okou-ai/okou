@@ -478,7 +478,7 @@ struct ChatSidebarView: View {
   }
 }
 
-/// Request status belongs to the workspace graph; closing the sidebar only releases observation.
+/// The rail observes workspace Tasks without tying their lifetime to sidebar visibility.
 private struct SidebarPinnedAgents: View {
   @Bindable var workspace: WorkspaceStore
   let newChat: (String?) -> Void
