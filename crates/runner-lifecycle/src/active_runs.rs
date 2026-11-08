@@ -198,6 +198,15 @@ impl ActiveRunReusePublisher {
         lock_handoff(&self.handoff).signal.clone()
     }
 
+    /// Observe this successor's request without accepting or cancelling it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn has_handoff_request(&self, successor_run_id: RunId) -> bool {
+        lock_handoff(&self.handoff)
+            .delivery
+            .as_ref()
+            .is_some_and(|delivery| delivery.successor_run_id == successor_run_id)
+    }
+
     pub fn deliver_exact_handoff(
         &self,
         candidate: IdleParkCandidate,
