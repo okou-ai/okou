@@ -532,7 +532,8 @@ private struct SidebarPinnedAgents: View {
       .listRowInsets(EdgeInsets())
       .listRowSeparator(.hidden)
       .listRowBackground(Color.clear)
-      if isLoading {
+      // Refreshing usable content must not insert a row and move the chat list.
+      if visible.isEmpty && isLoading {
         OkouLoadingRow("Loading pinned Agents…")
           .listRowInsets(.horizontal, rowInset)
           .listRowSeparator(.hidden)
