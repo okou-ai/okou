@@ -59,6 +59,7 @@ final class AuthenticationHTTPFixture: Sendable {
   let host = "startup-" + UUID().uuidString.lowercased() + ".example.invalid"
   var publishableKey: String { "pk_test_" + Data((host + "$").utf8).base64EncodedString() }
 
+  @MainActor private var configuredClerk: Clerk?
   private let listener: NWListener
   private let connections = Mutex<[NWConnection]>([])
   private let tasks = Mutex<[Task<Void, Never>]>([])
@@ -108,6 +109,7 @@ final class AuthenticationHTTPFixture: Sendable {
       return snapshot
     }
     let clerk = Clerk.configure(publishableKey: publishableKey, options: options)
+    configuredClerk = clerk
     if resetPersistedIdentity { try await Clerk.clearAllKeychainItemsAndWait() }
     _ = try await clerk.auth.signInWithPassword(
       identifier: "startup@example.invalid", password: "synthetic-password")
@@ -146,6 +148,7 @@ final class AuthenticationHTTPFixture: Sendable {
       keychainConfig: .init(service: "ai.okou.tests." + host, accessGroup: restoredAccessGroup),
       proxyUrl: url.absoluteString)
     let restored = Clerk.configure(publishableKey: publishableKey, options: restoredOptions)
+    configuredClerk = restored
     XCTAssertEqual(
       restored.session?.id, snapshot.signedOut ? nil : snapshot.sessionID,
       "The SDK must restore the committed session in its configured access group")
@@ -230,6 +233,7 @@ final class AuthenticationHTTPFixture: Sendable {
     await memberships.finishObservations()
     await activation.finishObservations()
     await clientReads.finishObservations()
+    await closeIdentity()
     listener.cancel()
     connections.withLock {
       for connection in $0 { connection.cancel() }
@@ -242,6 +246,22 @@ final class AuthenticationHTTPFixture: Sendable {
     }
     for task in pending { task.cancel() }
     for task in pending { await task.value }
+  }
+
+  @MainActor
+  private func closeIdentity() async {
+    guard let clerk = configuredClerk else { return }
+    configuredClerk = nil
+    // End SDK-owned session work while its HTTP provider can still answer it.
+    // Clear only this fixture's currently configured identity, after queued writes drain.
+    guard Clerk.shared === clerk else { return }
+    identityOverride.withLock { $0 = nil }
+    do {
+      if clerk.session != nil { try await clerk.auth.signOut() }
+      try await Clerk.clearAllKeychainItemsAndWait()
+    } catch {
+      XCTFail("Cannot close the fixture's Clerk session: \(error)")
+    }
   }
 
   func response(_ request: URLRequest) async throws -> ChatHTTPResponse {
