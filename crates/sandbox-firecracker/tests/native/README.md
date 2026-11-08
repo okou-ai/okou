@@ -57,6 +57,19 @@ These tests do not execute Firecracker/KVM or prove in-flight native cancellatio
 
 ## Native execution
 
+The selected `guest_rpc` test also verifies Home backing-file replacement in
+the same fresh and snapshot-restored VMM. It retains two real factory-owned,
+equal-sized ext4 images, uses clean Guest unmounts and actual drive PATCHes,
+and remounts through the fixed production Home helper. Distinct contents,
+post-switch writes, backing generation and subsequent RPC/park/reassignment
+must remain correct. The consumer VM is destroyed before the alternate image
+owner, including on failure. A known rejected backend update must leave the
+original filesystem usable; uncertain transport completion is never retried.
+
+`HOME_REBIND_PHASE` output is diagnostic timing on a shared native host, not a
+benchmark or an `api_to_spawn` improvement claim. This fixture does not activate
+blank-plus-Home admission or implement production cache custody/Guest detach.
+
 `runner-behavior-host-cpu-fairness.sh` executes the `host_cpu_fairness` integration
 target. `runner-behavior-guest-rpc.sh` executes the `guest_rpc` target. Their names
 describe the host fixture; the binary targets and test ownership belong to this

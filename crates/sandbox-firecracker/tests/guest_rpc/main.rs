@@ -12,6 +12,8 @@ use sandbox::{
 use sandbox_firecracker::FirecrackerRuntime;
 use serde_json::{Value, json, value::RawValue};
 
+mod home_rebind;
+
 type TestResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -43,6 +45,7 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
         } else {
             None
         };
+        let factory_base = base.join(if restored { "restored" } else { "fresh" });
         let mut factory = runtime
             .create_factory(FactoryConfig {
                 home_drive_pressure: None,
@@ -50,30 +53,48 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
                 binary_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_FIRECRACKER")?),
                 kernel_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_KERNEL")?),
                 rootfs_path: PathBuf::from(std::env::var("OKOU_TEST_RPC_ROOTFS")?),
-                base_dir: base.join(if restored { "restored" } else { "fresh" }),
+                base_dir: factory_base.clone(),
                 snapshot,
             })
             .await?;
         // Match the vm0/default image selected by runner-test-prepare in metal CI.
-        let created = factory
-            .create(SandboxConfig {
-                id: sandbox::SandboxId::new_v4(),
-                resources: ResourceLimits {
-                    cpu_count: 2,
-                    memory_mb: 4096,
-                },
-                device_rate_limits: None,
-                home_drive: Some(HomeDriveConfig {
-                    space_reserve: sandbox::HomeDriveSpaceReserve::default(),
-                    size_mb: 16384,
-                    seed_image: None,
-                }),
-            })
-            .await;
+        let config = SandboxConfig {
+            id: sandbox::SandboxId::new_v4(),
+            resources: ResourceLimits {
+                cpu_count: 2,
+                memory_mb: 4096,
+            },
+            device_rate_limits: None,
+            home_drive: Some(HomeDriveConfig {
+                space_reserve: sandbox::HomeDriveSpaceReserve::default(),
+                size_mb: 16384,
+                seed_image: None,
+            }),
+        };
+        let created = factory.create(config.clone()).await;
         let result = match created {
             Ok(mut sandbox) => {
-                let result = exercise_sandbox(&mut *sandbox).await;
+                let alternate = factory
+                    .create(SandboxConfig {
+                        id: sandbox::SandboxId::new_v4(),
+                        ..config
+                    })
+                    .await;
+                let (result, alternate) = match alternate {
+                    Ok(alternate) => {
+                        let images =
+                            home_rebind::Images::new(&factory_base, sandbox.id(), alternate.id());
+                        let result = exercise_sandbox(&mut *sandbox, &images).await;
+                        (result, Some(alternate))
+                    }
+                    Err(error) => (Err(error.into()), None),
+                };
+                // A failed switch can leave the consumer using the alternate
+                // image. Retire that VM before releasing either image owner.
                 factory.destroy(sandbox).await;
+                if let Some(alternate) = alternate {
+                    factory.destroy(alternate).await;
+                }
                 result
             }
             Err(error) => Err(error.into()),
@@ -85,10 +106,14 @@ async fn exercise_factories(runtime: &FirecrackerRuntime, base: PathBuf) -> Test
     Ok(())
 }
 
-async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
+async fn exercise_sandbox(
+    sandbox: &mut dyn Sandbox,
+    images: &home_rebind::Images,
+) -> TestResult<()> {
     let run = uuid::Uuid::new_v4().to_string();
     sandbox.bind_run_control(&run)?;
     sandbox.start().await?;
+    home_rebind::exercise(sandbox, images).await?;
     exercise_requests(sandbox, &run).await?;
     let stale = sandbox
         .guest_rpc(&run)
@@ -99,6 +124,7 @@ async fn exercise_sandbox(sandbox: &mut dyn Sandbox) -> TestResult<()> {
     let next_run = uuid::Uuid::new_v4().to_string();
     sandbox.bind_run_control(&next_run)?;
     sandbox.unpark().await?;
+    home_rebind::verify_cached_home(sandbox).await?;
     if tokio::time::timeout(Duration::from_secs(5), stale.accept())
         .await?
         .is_ok()

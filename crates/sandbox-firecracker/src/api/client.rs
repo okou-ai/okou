@@ -325,6 +325,31 @@ impl ApiClient {
             .await
     }
 
+    /// Replace a running drive's backing file via PATCH /drives/{drive_id}.
+    ///
+    /// This is a low-level device operation, not a filesystem or image-ownership
+    /// transaction. The caller must exclusively retain both images, settle guest
+    /// IO and unmount the old filesystem before dispatch, then validate the new
+    /// mount. A transport error can leave the selected backend uncertain; callers
+    /// must retain the VM and images through reconciliation or destruction.
+    pub async fn patch_drive_path(
+        &self,
+        drive_id: &str,
+        path_on_host: &str,
+    ) -> Result<(), ApiError> {
+        let path = format!("/drives/{drive_id}");
+        self.send_json(
+            Method::PATCH,
+            &path,
+            &serde_json::json!({
+                "drive_id": drive_id,
+                "path_on_host": path_on_host,
+            }),
+            REQUEST_TIMEOUT,
+        )
+        .await
+    }
+
     /// Update a drive rate limiter via PATCH /drives/{drive_id}.
     pub async fn patch_drive_rate_limiter(
         &self,
