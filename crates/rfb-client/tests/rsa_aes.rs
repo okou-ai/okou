@@ -67,27 +67,28 @@ struct Peer {
 impl Peer {
     async fn send(&mut self, plain: &[u8], corrupt: bool) -> TestResult {
         let header = (plain.len() as u16).to_be_bytes();
-        let mut data = plain.to_vec();
+        let mut frame = Vec::with_capacity(header.len() + plain.len() + 16);
+        frame.extend_from_slice(&header);
+        frame.extend_from_slice(plain);
+        let (_, data) = frame.split_at_mut(header.len());
         let nonce: Nonce<U16> = self.write_count.to_le_bytes().into();
         let tag = if self.write_key.len() == 16 {
             Eax::<Aes128>::new_from_slice(&self.write_key)?.encrypt_inout_detached(
                 &nonce,
                 &header,
-                data.as_mut_slice().into(),
+                data.into(),
             )
         } else {
             Eax::<Aes256>::new_from_slice(&self.write_key)?.encrypt_inout_detached(
                 &nonce,
                 &header,
-                data.as_mut_slice().into(),
+                data.into(),
             )
         }?;
         let mut tag: [u8; 16] = tag.into();
         if corrupt {
             tag[0] ^= 1;
         }
-        let mut frame = header.to_vec();
-        frame.extend_from_slice(&data);
         frame.extend_from_slice(&tag);
         // Deliberate fragmentation is a peer condition, not a timer/sleep.
         for chunk in frame.chunks(3) {
