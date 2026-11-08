@@ -7,23 +7,24 @@ import UIKit
 final class ComposerWorkflowSuggestions {
   private(set) var query: String?
   private(set) var selectedIndex = -1
-  private(set) var isLoading = false
-  private(set) var error: String?
-  private var workflows: [ComposerWorkflow] = []
-  private var recent: [String] = []
+  @ObservationIgnored let resources = ComposerWorkflowResources()
   private var source: ComposerWorkflowSource?
   private var agentID: String?
   @ObservationIgnored private weak var view: ComposerTextView?
   @ObservationIgnored private var range: NSRange?
   @ObservationIgnored private var dismissed: String?
-  @ObservationIgnored private var task: Task<Void, Never>?
-  @ObservationIgnored private var requestID = UUID()
+  @ObservationIgnored private weak var rowsOwner: AnyObject?
+  @ObservationIgnored private var displayedResult: () -> ComposerWorkflowResources.Matches? = {
+    nil
+  }
   @ObservationIgnored private var isCurrent: @MainActor () -> Bool = { false }
   @ObservationIgnored private var focusRequested: @MainActor () -> Void = {}
 
   var matches: [ComposerWorkflow] {
-    guard let query, source?.isClosed == false else { return [] }
-    return ComposerWorkflowSearch.matches(workflows, query: query, recent: recent)
+    guard query != nil, source?.isClosed == false, isCurrent(),
+      let result = displayedResult(), resources.owns(result)
+    else { return [] }
+    return result.values
   }
 
   func configure(source: ComposerWorkflowSource?, agentID: String?) {
@@ -56,7 +57,7 @@ final class ComposerWorkflowSuggestions {
     let opening = self.query == nil
     if self.query != query || self.view !== view || self.range != range {
       selectedIndex = query.isEmpty ? -1 : 0
-      recent = source?.recentIDs() ?? []
+      resources.update(query: query, recent: source?.recentIDs() ?? [])
     }
     self.view = view
     self.range = range
@@ -68,26 +69,22 @@ final class ComposerWorkflowSuggestions {
 
   func reload() {
     guard query != nil, let source, !source.isClosed, let agentID else { return }
-    task?.cancel()
-    let request = UUID()
-    requestID = request
-    workflows = []
-    isLoading = true
-    error = nil
-    task = Task { [weak self] in
-      do {
-        let result = try await source.load(agentID: agentID)
-        guard let self, !Task.isCancelled, requestID == request, isCurrent() else { return }
-        workflows = result
-        isLoading = false
-        task = nil
-      } catch {
-        guard let self, !Task.isCancelled, requestID == request, isCurrent() else { return }
-        self.error = error.localizedDescription
-        isLoading = false
-        task = nil
-      }
-    }
+    resources.reload(source: source, agentID: agentID)
+  }
+
+  /// Keyboard activation reads the same native table snapshot that a tap can activate.
+  /// Request phases remain in the graph; this bridge neither observes nor copies them.
+  func registerRows(
+    _ owner: AnyObject, result: @escaping () -> ComposerWorkflowResources.Matches?
+  ) {
+    rowsOwner = owner
+    displayedResult = result
+  }
+
+  func unregisterRows(_ owner: AnyObject) {
+    guard rowsOwner === owner else { return }
+    rowsOwner = nil
+    displayedResult = { nil }
   }
 
   func dismiss() {
@@ -102,15 +99,12 @@ final class ComposerWorkflowSuggestions {
   }
 
   private func clear() {
-    task?.cancel()
-    task = nil
-    requestID = UUID()
+    resources.dismiss()
+    rowsOwner = nil
+    displayedResult = { nil }
     view = nil
     range = nil
     query = nil
-    workflows = []
-    isLoading = false
-    error = nil
     selectedIndex = -1
   }
 
