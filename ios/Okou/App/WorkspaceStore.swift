@@ -94,7 +94,9 @@ final class WorkspaceStore {
   @ObservationIgnored lazy var list = ThreadListStore(
     client: client, sync: sync, commands: commands, resources: resources,
     didRefresh: { [weak self] in self?.applyThreads($0) },
-    didFail: { [weak self] in self?.handle($0) }, readRetrySleep: readRetrySleep)
+    didFail: { [weak self] in self?.handle($0) },
+    didLoadAgents: { [weak self] in self?.selectDefaultAgent(from: $0) },
+    readRetrySleep: readRetrySleep)
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
   @ObservationIgnored private var lastUse: [String: UInt64] = [:]
   private var clock: UInt64 = 0
@@ -163,9 +165,7 @@ final class WorkspaceStore {
     }
     await list.restoreCached()
     guard canContinueStartup(generation) else { return }
-    if selectedAgentID == nil {
-      selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
-    }
+    selectDefaultAgent(from: list.agents)
     await withTaskCancellationHandler {
       async let navigation: Void = refreshNavigation()
       let realtime = RealtimeService(
@@ -196,10 +196,13 @@ final class WorkspaceStore {
 
   func refreshNavigation() async {
     await list.refreshNavigation()
-    guard !closed, !Task.isCancelled else { return }
-    if selectedAgentID == nil {
-      selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
-    }
+  }
+
+  private func selectDefaultAgent(from agents: [AgentRecord]) {
+    guard !closed, !needsUpgrade, !Task.isCancelled,
+      selectedAgentID == nil, selectedThreadID == nil
+    else { return }
+    selectedAgentID = agents.first(where: \.isDefaultAgent)?.agentId
   }
 
   var currentAgentName: String {

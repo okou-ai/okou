@@ -380,7 +380,14 @@ final class AttachmentDraftTests: XCTestCase {
   }
 
   func testFirstSendBeforeAgentNavigationCannotRestoreTheOldAgentDraftAfterward() async throws {
-    let fixture = AttachmentFlowFixture()
+    let creating = expectation(description: "Server-default first chat is being created")
+    let gate = AsyncStream<Void>.makeStream()
+    defer { gate.continuation.finish() }
+    let fixture = AttachmentFlowFixture(creation: {
+      creating.fulfill()
+      for await _ in gate.stream {}
+      return true
+    })
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let storage = ChatDraftStorage(
@@ -399,7 +406,18 @@ final class AttachmentDraftTests: XCTestCase {
     store.setForeground(true)
     XCTAssertNil(store.selectedAgentID)
     store.newChatDraft = "First message before navigation finishes"
-    await store.sendNewChat()
+    let sending = Task { await store.sendNewChat() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      sending.cancel()
+      gate.continuation.finish()
+      await sending.value
+    }
+    await fulfillment(of: [creating], timeout: 3)
+    // Navigation can now select the default Agent before the first creation returns.
+    await store.refreshNavigation()
+    gate.continuation.finish()
+    await sending.value
     await store.newComposer.synchronize()
     XCTAssertEqual(store.selectedThreadID, AttachmentFlowFixture.threadID)
     XCTAssertEqual(store.newChatDraft, "")

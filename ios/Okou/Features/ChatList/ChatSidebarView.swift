@@ -1,3 +1,5 @@
+import CCStateSwiftUI
+import ChatData
 import ChatDomain
 import SwiftUI
 
@@ -35,8 +37,6 @@ struct ChatSidebarView: View {
 
   @State private var menuLogos = OkouWorkspaceMenuLogos()
   @Namespace private var searchTransition
-  /// One caption2 line of Geist under each pinned agent's avatar.
-  @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
   /// One leading edge for the header, every heading, row content and the footer buttons.
   private let rowInset = OkouControl.pageInset
 
@@ -222,35 +222,10 @@ struct ChatSidebarView: View {
     }
   }
 
-  /// Pinned agents as one sideways row of avatars, so pinning many never pushes the chats
-  /// down; the first avatar sits on the list's text edge.
   private var pinnedAgentsSection: some View {
-    let agents = store.list.visiblePinnedAgents
-    return Section {
-      scrollingSectionHeading("Pinned Agents")
-      OkouChipRail(inset: rowInset - (OkouControl.agentTile - OkouAvatarSize.rail) / 2) {
-        ForEach(agents, id: \.agentId) { agent in
-          Button {
-            newChat(agent.agentId)
-          } label: {
-            OkouAgentTile(
-              avatarURL: agent.avatarUrl, name: agent.displayName ?? "Okou",
-              isDefault: agent.isDefaultAgent,
-              isSelected: store.selectedThreadID == nil
-                && store.selectedAgentID == agent.agentId,
-              hasUnread: store.list.unreadAgentIDs.contains(agent.agentId))
-          }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("agent-\(agent.agentId)")
-        }
-      }
-      // A List row does not size a sideways scroll view to its content; give it the tile's.
-      .frame(
-        height: OkouSpace.sm * 2 + OkouAvatarSize.rail + OkouSpace.six + agentNameLine
-      )
-      .listRowInsets(EdgeInsets())
-      .listRowSeparator(.hidden)
-      .listRowBackground(Color.clear)
+    StoreProvider(store.list.stateStore) {
+      SidebarPinnedAgents(workspace: store, newChat: newChat)
+        .id(ObjectIdentifier(store.list))
     }
   }
 
@@ -457,17 +432,6 @@ struct ChatSidebarView: View {
     .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAgentRead)
   }
 
-  private func scrollingSectionHeading(_ title: LocalizedStringKey) -> some View {
-    Text(title)
-      .font(.okou(.subheadline).weight(.semibold))
-      .foregroundStyle(OkouColor.mutedForeground)
-      .lineLimit(1)
-      .accessibilityAddTraits(.isHeader)
-      .listRowInsets(EdgeInsets(top: 14, leading: rowInset, bottom: 8, trailing: rowInset))
-      .listRowSeparator(.hidden)
-      .listRowBackground(Color.clear)
-  }
-
   /// Thumb-reach bar: the account (settings) on the left, search in the middle, and the one
   /// primary action, a new chat, on the right.
   private var footer: some View {
@@ -511,5 +475,86 @@ struct ChatSidebarView: View {
     .frame(height: ChatComposerView.compactHeight)
     .padding(.horizontal, rowInset)
     .padding(.top, OkouSpace.sm)
+  }
+}
+
+/// Request status belongs to the workspace graph; closing the sidebar only releases observation.
+private struct SidebarPinnedAgents: View {
+  @Bindable var workspace: WorkspaceStore
+  let newChat: (String?) -> Void
+  @LoadableValue private var agents: Loadable<[AgentRecord]>
+  @LoadableValue private var preferences: Loadable<SidebarPreferences>
+  @ResolvedValue private var pinnedAgents: [AgentRecord]?
+  /// One caption2 line of Geist under each avatar.
+  @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
+  private let rowInset = OkouControl.pageInset
+
+  init(workspace: WorkspaceStore, newChat: @escaping (String?) -> Void) {
+    self.workspace = workspace
+    self.newChat = newChat
+    _agents = LoadableValue(task: workspace.list.agentsValue)
+    _preferences = LoadableValue(task: workspace.list.preferencesValue)
+    _pinnedAgents = ResolvedValue(task: workspace.list.pinnedAgentsValue)
+  }
+
+  private var isLoading: Bool { agents.state == .loading || preferences.state == .loading }
+
+  var body: some View {
+    Section {
+      Text("Pinned Agents")
+        .font(.okou(.subheadline).weight(.semibold))
+        .foregroundStyle(OkouColor.mutedForeground)
+        .lineLimit(1)
+        .accessibilityAddTraits(.isHeader)
+        .listRowInsets(EdgeInsets(top: 14, leading: rowInset, bottom: 8, trailing: rowInset))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+      // The confirmed snapshot also supplies cached/partially refreshed content on failure.
+      // Agents can publish the default tile before the preference-dependent task settles.
+      let visible = pinnedAgents ?? workspace.list.visiblePinnedAgents
+      OkouChipRail(inset: rowInset - (OkouControl.agentTile - OkouAvatarSize.rail) / 2) {
+        ForEach(visible, id: \.agentId) { agent in
+          Button {
+            newChat(agent.agentId)
+          } label: {
+            OkouAgentTile(
+              avatarURL: agent.avatarUrl, name: agent.displayName ?? "Okou",
+              isDefault: agent.isDefaultAgent,
+              isSelected: workspace.selectedThreadID == nil
+                && workspace.selectedAgentID == agent.agentId,
+              hasUnread: workspace.list.unreadAgentIDs.contains(agent.agentId))
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("agent-\(agent.agentId)")
+        }
+      }
+      .frame(height: OkouSpace.sm * 2 + OkouAvatarSize.rail + OkouSpace.six + agentNameLine)
+      .listRowInsets(EdgeInsets())
+      .listRowSeparator(.hidden)
+      .listRowBackground(Color.clear)
+      if isLoading {
+        OkouLoadingRow("Loading pinned Agents…")
+          .listRowInsets(.horizontal, rowInset)
+          .listRowSeparator(.hidden)
+          .listRowBackground(Color.clear)
+      }
+      if let error = agents.error {
+        failureRow(error, subject: String(localized: "Agents"))
+      }
+      if let error = preferences.error {
+        failureRow(error, subject: String(localized: "Pinned Agents"))
+      }
+    }
+  }
+
+  private func failureRow(_ error: Error, subject: String) -> some View {
+    OkouLoadErrorRow(
+      message: "\(subject): \(ChatRequestFailure.message(for: error))",
+      isRetrying: isLoading,
+      retry: { await workspace.refreshNavigation() }
+    )
+    .listRowInsets(.horizontal, rowInset)
+    .listRowSeparator(.hidden)
+    .listRowBackground(Color.clear)
   }
 }

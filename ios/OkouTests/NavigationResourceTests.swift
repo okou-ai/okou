@@ -8,6 +8,102 @@ import XCTest
 
 @MainActor
 final class NavigationResourceTests: XCTestCase {
+  func testDefaultAgentChatsAndDraftAreAvailableBeforePreferencesFinish() async throws {
+    let pending = expectation(description: "Preferences are pending")
+    let gate = NavigationResponseGate()
+    defer { gate.open() }
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/agents": return navigationAgents(name: "Current assistant")
+      case "/api/user-preferences":
+        pending.fulfill()
+        await gate.wait()
+        return navigationPreferences(pinned: true)
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(body: """
+          {"chatThreads":[{"id":"50000000-0000-4000-8000-000000000003",\
+          "agentId":"\(navigationAgent)","title":"Ready before preferences",\
+          "sortAt":"2026-11-08T00:00:00Z","createdAt":"2026-11-08T00:00:00Z",\
+          "updatedAt":"2026-11-08T00:00:00Z","archived":false}],\
+          "latestEventId":null,"latestSeqId":null}
+          """)
+      case "/api/indicators":
+        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    store.newChatDraft = "Keep the draft entered before navigation"
+    let navigation = Task { await store.refreshNavigation() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      navigation.cancel()
+      gate.open()
+      await navigation.value
+    }
+    await fulfillment(of: [pending], timeout: 3)
+    await store.list.refresh()
+    try await waitForBusinessResult { store.selectedAgentID == navigationAgent }
+    XCTAssertEqual(
+      store.list.threads(agentID: store.selectedAgentID, archived: false).map(\.title),
+      ["Ready before preferences"])
+    XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [navigationAgent])
+    XCTAssertEqual(store.newChatDraft, "Keep the draft entered before navigation")
+    gate.open()
+    await navigation.value
+    XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [navigationAgent, navigationPinned])
+    XCTAssertEqual(store.newChatDraft, "Keep the draft entered before navigation")
+  }
+
+  func testFreshPreferencesUpdateCachedRailWhileAgentsArePendingWithoutReplacingSelection()
+    async throws
+  {
+    let pending = expectation(description: "Agent refresh is pending")
+    let gate = NavigationResponseGate()
+    defer { gate.open() }
+    let refreshing = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      let fresh = refreshing.withLock { $0 }
+      switch request.url?.path {
+      case "/api/agents":
+        if fresh {
+          pending.fulfill()
+          await gate.wait()
+        }
+        return navigationAgents(name: fresh ? "Fresh assistant" : "Cached assistant")
+      case "/api/user-preferences": return navigationPreferences(pinned: !fresh)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    await store.refreshNavigation()
+    store.startNewChat(agentID: navigationPinned)
+    store.newChatDraft = "The user selected this Agent"
+    refreshing.withLock { $0 = true }
+    let navigation = Task { await store.refreshNavigation() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      navigation.cancel()
+      gate.open()
+      await navigation.value
+    }
+    await fulfillment(of: [pending], timeout: 3)
+    try await waitForBusinessResult {
+      store.list.visiblePinnedAgents.map(\.agentId) == [navigationAgent]
+    }
+    XCTAssertEqual(store.selectedAgentID, navigationPinned)
+    XCTAssertEqual(store.newChatDraft, "The user selected this Agent")
+    gate.open()
+    await navigation.value
+    XCTAssertEqual(store.list.agents.first?.displayName, "Fresh assistant")
+    XCTAssertEqual(store.selectedAgentID, navigationPinned)
+    XCTAssertEqual(store.newChatDraft, "The user selected this Agent")
+  }
+
   func testNavigationLoadsAgentsAndPreferencesTogether() async {
     let started = expectation(description: "Both navigation responses are pending")
     started.expectedFulfillmentCount = 2
