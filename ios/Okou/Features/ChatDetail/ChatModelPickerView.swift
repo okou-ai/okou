@@ -273,7 +273,7 @@ private struct ChatModelPickerContent: View {
             }
           }
         }
-        if let error = selection.error ?? modelError ?? subscriptions.error {
+        if let error = selection.error ?? modelError {
           Section {
             Text(error).foregroundStyle(OkouColor.destructive)
             Button("Refresh model settings") {
@@ -283,6 +283,11 @@ private struct ChatModelPickerContent: View {
               }
             }
             .disabled(selection.isBusy)
+          }
+        }
+        if let error = subscriptions.error {
+          Section {
+            OkouLoadErrorRow(message: error) { _ = await subscriptions.refresh(force: true) }
           }
         }
       }

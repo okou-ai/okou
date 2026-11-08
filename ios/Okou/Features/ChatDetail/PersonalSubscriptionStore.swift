@@ -100,6 +100,8 @@ final class PersonalSubscriptionStore {
   func readAccounts(force: Bool) async throws -> [PersonalSubscription] {
     let accounts = try await resources.read(force: force)
     if !isMutating {
+      // Explicit readback acknowledges the displayed error without confirming or replaying a write.
+      if force, case .failed = mutation { mutation = .idle }
       resetOutcomes = [:]
       if case .confirmed(let notice, _) = mutation {
         mutation = .confirmed(notice: notice, refreshError: nil)

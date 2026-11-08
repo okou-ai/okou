@@ -78,6 +78,29 @@ final class PersonalSubscriptionResourceTests: XCTestCase {
     XCTAssertEqual(writes.withLock { $0 }, 1)
   }
 
+  func testExplicitReadbackAcknowledgesActionFailureWithoutRepeatingTheWrite() async throws {
+    let writes = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      if request.httpMethod == "POST" {
+        writes.withLock { $0 += 1 }
+        return ChatHTTPResponse(
+          status: 503, body: "{\"error\":{\"message\":\"Response unavailable\"}}")
+      }
+      return try XCTUnwrap(ModelHTTPFixtures.response(request.url!.path))
+    }
+    let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
+    defer { store.close() }
+    await store.refresh()
+    let account = try XCTUnwrap(store.accounts.first)
+    await store.activate(account)
+    XCTAssertNotNil(store.error)
+    let refreshed = await store.refresh(force: true)
+    XCTAssertTrue(refreshed)
+    XCTAssertNil(store.error)
+    XCTAssertEqual(store.accounts.first?.id, ModelHTTPFixtures.accountID)
+    XCTAssertEqual(writes.withLock { $0 }, 1)
+  }
+
   func testClosingWorkspaceCancelsOriginalSubscriptionHTTPAndRejectsItsResult() async throws {
     let began = expectation(description: "Account HTTP began")
     let cancelled = expectation(description: "Original HTTP observed cancellation")
