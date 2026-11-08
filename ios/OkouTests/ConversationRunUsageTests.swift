@@ -387,15 +387,15 @@ private final class UsageResponseGate: Sendable {
 }
 
 /// Observe the same public Task signals as the native label and details, without mounting UI.
-@MainActor
+@MainActor @Observable
 private final class RunUsageProbe {
   private let usage: ConversationRunUsageStore
   private(set) var states: [String: ConversationRunUsageState] = [:]
-  private var subscriptions: [String: Subscription] = [:]
-  private var watched: [String: ConversationRunUsageResource] = [:]
-  private var tasks: [String: Task<Void, Never>] = [:]
-  private var revisions: [String: UUID] = [:]
-  private var stopped = false
+  @ObservationIgnored private var subscriptions: [String: Subscription] = [:]
+  @ObservationIgnored private var watched: [String: ConversationRunUsageResource] = [:]
+  @ObservationIgnored private var tasks: [String: Task<Void, Never>] = [:]
+  @ObservationIgnored private var revisions: [String: UUID] = [:]
+  @ObservationIgnored private var stopped = false
 
   init(_ usage: ConversationRunUsageStore, owner: XCTestCase) {
     self.usage = usage
