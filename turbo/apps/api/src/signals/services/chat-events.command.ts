@@ -97,7 +97,10 @@ import {
   resolveRunSelectionModel,
   type ModelSelectionBootstrap,
 } from "./model-selection.service";
-import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
+import {
+  queuedChatThreadPublicationPlan,
+  type PublishedChatThreadLease,
+} from "./queued-chat-thread.service";
 import { mcpClientDisplayName } from "./mcp-client-display-name.service";
 
 import {
@@ -1488,6 +1491,9 @@ const normalSendPublicationRowSchema = object({
   id: uuid().nullable(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
   seqId: pgInt8ToSafeIntegerSchema.nullable(),
+  claimId: uuid().nullable(),
+  claimExpiresAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
+  queuedAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
   atomicGuard: literal(0),
 });
 interface NormalSendPublicationFailure {
@@ -1940,6 +1946,7 @@ function normalSendAssetWrites(
 function normalSendFinalWrites(
   args: NormalSendArgs,
   input: NormalInputPlan,
+  claimId: string,
   previous?: string,
 ) {
   const event = input.event;
@@ -1961,7 +1968,10 @@ function normalSendFinalWrites(
     });
     after = "normal_send_get_started";
   }
-  const queue = queuedChatThreadEnqueuePlan(input.queueInput);
+  const queue = queuedChatThreadPublicationPlan({
+    ...input.queueInput,
+    claimId,
+  });
   writes.push({
     name: "normal_send_queue",
     statement: normalChatInputInsertSql(
@@ -1973,6 +1983,7 @@ function normalSendFinalWrites(
         [queue.conflict.target],
         queue.conflict.set,
       ),
+      sql`claim_id, claim_expires_at, queued_at`,
     ),
   });
   return writes;
@@ -1982,6 +1993,7 @@ function normalSendPreparedPublication(
   input: NormalInputPlan,
   target: readonly zInfer<typeof chatEventReplacementTargetSchema>[] | null,
   snapshots: readonly NormalInputAssetSnapshot[],
+  claimId: string,
 ) {
   const thread = input.thread;
   const base = normalSendBasePublication(args, input, target);
@@ -2014,7 +2026,7 @@ function normalSendPreparedPublication(
       writes: [
         ...selection.writes,
         ...assets.writes,
-        ...normalSendFinalWrites(args, input, assets.after),
+        ...normalSendFinalWrites(args, input, claimId, assets.after),
       ],
       guards: [...base.guards, ...assets.guards],
     },
@@ -2081,11 +2093,13 @@ const appendNormalSendInput$ = command(
       }
     }
     const snapshots = normalSendAssetSnapshots(input.attachments, owners);
+    const claimId = randomUUID();
     const prepared = normalSendPreparedPublication(
       args,
       input,
       target,
       snapshots,
+      claimId,
     );
     const created = prepared.createdPlan;
     const query = normalChatInputPublicationSql({
@@ -2125,9 +2139,25 @@ const appendNormalSendInput$ = command(
     if (row.createdAt === null || row.seqId === null) {
       throw new Error("Normal chat input publication is incomplete");
     }
+    const enqueueCommit = { eventId: row.id, committedAt: now() };
+    let publishedLease: PublishedChatThreadLease | undefined;
+    if (row.claimId === claimId) {
+      if (row.claimExpiresAt === null || row.queuedAt === null) {
+        throw new Error("Normal chat publication lease receipt is incomplete");
+      }
+      publishedLease = {
+        ...input.queueInput,
+        userId: args.userId,
+        agentId: args.body.agentId,
+        claimId: row.claimId,
+        claimExpiresAt: row.claimExpiresAt,
+        queuedAt: row.queuedAt,
+      };
+    }
     return {
       inserted: { id: row.id, createdAt: row.createdAt, seqId: row.seqId },
-      enqueueCommit: { eventId: row.id, committedAt: now() },
+      enqueueCommit,
+      publishedLease,
     };
   },
 );
@@ -2248,13 +2278,21 @@ const publishEnqueuedNormalSend$ = command(
       readonly thread: SendThread;
       readonly touchedAt: Date;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
+      readonly publishedLease?: PublishedChatThreadLease;
       readonly context: AgentRunContextSignals;
       readonly requestFacts: ChatThreadRequestFacts;
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const { args, thread, touchedAt, enqueueCommit, context, requestFacts } =
-      input;
+    const {
+      args,
+      thread,
+      touchedAt,
+      enqueueCommit,
+      publishedLease,
+      context,
+      requestFacts,
+    } = input;
     if (
       thread.kind === "existing" &&
       thread.computerAccess.computerUseHostId !==
@@ -2270,6 +2308,7 @@ const publishEnqueuedNormalSend$ = command(
           orgId: args.orgId,
           chatThreadId: thread.threadId,
           ...(enqueueCommit ? { enqueueCommit } : {}),
+          ...(publishedLease ? { publishedLease } : {}),
           context,
           requestFacts,
         },
@@ -2277,9 +2316,9 @@ const publishEnqueuedNormalSend$ = command(
       ),
     );
     signal.throwIfAborted();
-    // A claimed lease proves the thread had no active run, so no running run
-    // can steer this input: a launch consumes it and a full organization
-    // leaves it queued. Otherwise a running run may hold the lease.
+    // The pick reobserves active Runs after publication. A busy thread returns
+    // none so its running Run is notified; a launch consumes the input and an
+    // idle thread at full organization capacity leaves it queued.
     const claimed =
       picked.ok &&
       (picked.value.kind === "launched" || picked.value.kind === "org-full");
@@ -2594,6 +2633,7 @@ export const sendNormalEvent$ = command(
         const {
           inserted: { createdAt },
           enqueueCommit,
+          publishedLease,
         } = committed;
         // Schedule before observing abort; touch, realtime and the running-run
         // notice follow this pick's outcome.
@@ -2605,6 +2645,7 @@ export const sendNormalEvent$ = command(
               thread,
               touchedAt: createdAt,
               ...(enqueueCommit ? { enqueueCommit } : {}),
+              ...(publishedLease ? { publishedLease } : {}),
               context,
               requestFacts: normalSendRequestFacts(
                 args,

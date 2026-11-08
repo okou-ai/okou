@@ -1246,6 +1246,7 @@ interface RejectedQueueHead {
 
 /** The Thread child's public surface: input readiness and run start. */
 export interface ThreadClaimRunObjects {
+  readonly threadHasActiveRun$: Computed<Promise<boolean>>;
   readonly hasFirstPickableChatEvent$: Computed<Promise<boolean>>;
   readonly orgHasCapacity$: Computed<Promise<boolean>>;
   readonly startRun$: Command<Promise<string | null>, [signal: AbortSignal]>;
@@ -1343,6 +1344,9 @@ export function createThreadClaimRunObjects(
   );
   const orgHasCapacity$ = computed(async (get) => {
     return (await get(preparation$)).hasCapacity;
+  });
+  const threadHasActiveRun$ = computed(async (get) => {
+    return (await get(preparation$)).threadHasActiveRun;
   });
   const pickedEvent$ = computed(async (get) => {
     return (await get(preparation$)).pickedEvent;
@@ -4252,7 +4256,12 @@ export function createThreadClaimRunObjects(
       return pending.runId;
     },
   );
-  return { hasFirstPickableChatEvent$, orgHasCapacity$, startRun$ };
+  return {
+    threadHasActiveRun$,
+    hasFirstPickableChatEvent$,
+    orgHasCapacity$,
+    startRun$,
+  };
 }
 
 type AgentRunRecord = AgentRunRequestAgent;
