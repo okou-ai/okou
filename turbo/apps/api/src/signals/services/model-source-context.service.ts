@@ -149,7 +149,11 @@ export function memberAccountSourceFromSnapshot(
     return null;
   }
   return {
-    identity: { kind: "member", accountId },
+    identity: {
+      kind: "member",
+      accountId,
+      externalAccountId: first.account.externalAccountId,
+    },
     configuration: {
       providerType: first.account.type,
       authMethod: first.account.authMethod,

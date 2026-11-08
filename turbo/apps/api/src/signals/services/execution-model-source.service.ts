@@ -1,6 +1,10 @@
 export type ModelSourceIdentity =
   | { readonly kind: "built-in"; readonly modelKeyId: string }
-  | { readonly kind: "member"; readonly accountId: string };
+  | {
+      readonly kind: "member";
+      readonly accountId: string;
+      readonly externalAccountId: string | null;
+    };
 export type ModelSourceCredential =
   EncryptedModelCredential | ManagedModelKeyReference;
 export interface ManagedModelKeyReference {

@@ -102,13 +102,12 @@ function deferredCredentialReferences(
 /**
  * A ChatGPT account's credentials stay server-side: firewall auth resolves
  * its stored token rows by name, so only rows of its own auth method become
- * references. A non-Pi run decrypts just CHATGPT_ACCOUNT_ID, which
- * workspace routing compares with the account check; it is not a credential.
+ * references. Native workspace routing uses the same account's captured
+ * identity after all required credential references have been checked.
  */
-async function codexAccountCredentials(
+function codexAccountCredentialReferences(
   source: ModelSourceSnapshot,
-  piExecution: boolean | undefined,
-): Promise<ModelCredentialValues | null> {
+): ModelCredentialValues | null {
   const method = source.configuration.authMethod;
   const rules = method
     ? getSecretsForAuthMethod("codex-oauth-token", method)
@@ -122,19 +121,7 @@ async function codexAccountCredentials(
       return credential.name in rules;
     }),
   };
-  const references = deferredCredentialReferences(own);
-  if (piExecution) {
-    return references;
-  }
-  const account = await resolveModelCredentialValues({
-    ...own,
-    credentials: own.credentials.filter((credential) => {
-      return credential.name === "CHATGPT_ACCOUNT_ID";
-    }),
-  });
-  return account?.CHATGPT_ACCOUNT_ID
-    ? { ...references, CHATGPT_ACCOUNT_ID: account.CHATGPT_ACCOUNT_ID }
-    : null;
+  return deferredCredentialReferences(own);
 }
 
 async function resolveModelCredentialValues(
@@ -163,7 +150,7 @@ async function resolveModelCredentialValues(
 }
 
 /** Exact subscription account source → resolved credentials → runtime. */
-export async function prepareSubscriptionModelEnvironment(
+export function prepareSubscriptionModelEnvironment(
   source: ModelSourceSnapshot,
   selectedModel: string,
   options: {
@@ -172,7 +159,7 @@ export async function prepareSubscriptionModelEnvironment(
     readonly sourceId: string;
     readonly piExecution: boolean | undefined;
   },
-): Promise<ResolvedModelProviderEnvironment | null> {
+): ResolvedModelProviderEnvironment | null {
   const { catalog, userId, sourceId, piExecution } = options;
   const type = source.configuration.providerType;
   if (
@@ -184,15 +171,22 @@ export async function prepareSubscriptionModelEnvironment(
   const accountId = source.identity.accountId;
   // Subscription credentials are firewall-injected and stay encrypted: the
   // runtime only sees their secret references.
-  const credentials =
+  let credentials =
     type === "codex-oauth-token"
-      ? await codexAccountCredentials(source, piExecution)
+      ? codexAccountCredentialReferences(source)
       : deferredCredentialReferences(source);
   if (!credentials) {
     return null;
   }
   if (!modelCredentialsAreUsable(source, type, credentials)) {
     return null;
+  }
+  if (type === "codex-oauth-token" && !piExecution) {
+    const identity = source.identity.externalAccountId;
+    if (!identity) {
+      throw new Error("Codex account routing identity is missing");
+    }
+    credentials = { ...credentials, CHATGPT_ACCOUNT_ID: identity };
   }
   const upstreamModel = catalogSubscriptionUpstreamModel(
     catalog,

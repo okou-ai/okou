@@ -133,48 +133,42 @@ describe("Pi Codex subscription admission", () => {
 });
 
 describe("ChatGPT subscription credentials at launch", () => {
-  it.each([
-    ["gpt-6-luna", 0],
-    ["gpt-6-astra", 1],
-  ] as const)(
-    "launches %s with %i stored-secret decrypts",
-    async (selectedModel, decrypts) => {
+  it.each(["gpt-6-luna", "gpt-6-astra"] as const)(
+    "launches %s when stored-secret decryption is unavailable",
+    async (selectedModel) => {
       const f = await fixture();
       await api.updateUserModelPreference(f.actor, selectedModel);
-      // The tokens stay behind firewall auth; only native Codex workspace
-      // routing reads the plain account id.
-      const kms = useSecretKmsProbe();
+      // Routing uses account metadata; tokens stay behind firewall auth.
+      useSecretKmsProbe(undefined, () => {
+        return Promise.reject(new Error("KMS decryption unavailable"));
+      });
       const run = await sendChatRun(f.actor, {
         agentId: f.agentId,
         model: selectedModel,
         prompt: "launch with the connected ChatGPT account",
       });
       expect(run.runId).toStrictEqual(expect.any(String));
-      expect(kms.decryptCalls).toBe(decrypts);
     },
     30_000,
   );
 });
 
 describe("ChatGPT auth.json credentials at launch", () => {
-  it.each([
-    ["gpt-6-luna", 0],
-    ["gpt-6-astra", 1],
-  ] as const)(
-    "launches %s with %i stored-secret decrypts beside a connected Claude subscription",
-    async (selectedModel, decrypts) => {
+  it.each(["gpt-6-luna", "gpt-6-astra"] as const)(
+    "launches %s with KMS decryption unavailable beside a connected Claude subscription",
+    async (selectedModel) => {
       const f = await memberAuthJsonFixture(`ws_acct_${randomUUID()}`);
       await api.updateUserModelPreference(f.actor, selectedModel);
-      // Only native Codex workspace routing reads the plain account id; the
-      // member's Claude subscription token is never decrypted for this source.
-      const kms = useSecretKmsProbe();
+      // Neither routing identity nor the unrelated Claude token needs decryption.
+      useSecretKmsProbe(undefined, () => {
+        return Promise.reject(new Error("KMS decryption unavailable"));
+      });
       const run = await sendChatRun(f.actor, {
         agentId: f.agentId,
         model: selectedModel,
         prompt: "launch with the ChatGPT auth.json account",
       });
       expect(run.runId).toStrictEqual(expect.any(String));
-      expect(kms.decryptCalls).toBe(decrypts);
     },
     30_000,
   );
