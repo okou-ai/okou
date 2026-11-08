@@ -601,30 +601,6 @@ pub async fn activate_reserved_idle(
     };
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
 
-    let prefer_home_cache = if reservation_kind == IdleSandboxKind::Blank {
-        let started_at = Instant::now();
-        let possible = ctx.home_cache.is_some()
-            && requested_reuse_key.is_some_and(|key| {
-                ctx.home_cache_snapshot
-                    .has_compatible_home_hint(key, profile_name)
-            });
-        pre_spawn_timing
-            .record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
-        possible
-    } else {
-        false
-    };
-    if prefer_home_cache {
-        return cleanup_reserved_for_fresh_fallback(
-            reservation.into_destroy_job(),
-            fallback_reuse_result,
-            "reserved_blank_home_cache_priority",
-            ctx,
-        )
-        .await
-        .into();
-    }
-
     if reservation.profile_name() != profile_name
         || reservation.rootfs_hash() != rootfs_hash
         || reservation.device_rate_limits() != device_rate_limits
@@ -907,7 +883,7 @@ pub async fn try_reuse_from_pool(
     };
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::IdleReuseLookup, started_at);
     let started_at = Instant::now();
-    let prefer_home_cache = exact.is_none()
+    let home_cache_possible = exact.is_none()
         && (required_home_source_run_id.is_some()
             || ctx.home_cache.is_some()
                 && reuse_key.is_some_and(|key| {
@@ -917,11 +893,15 @@ pub async fn try_reuse_from_pool(
     pre_spawn_timing.record_phase_elapsed(RunnerPreSpawnPhase::HomeCacheStateLookup, started_at);
     let (taken, blank_pool_selection) = match exact {
         Some(exact) => (Some(exact), None),
-        None if !prefer_home_cache => {
+        None => {
             let mut pool = ctx.idle_pool.lock().await;
-            let exact = reuse_key
-                .and_then(|reuse_key| pool.take_reserved(reuse_key))
-                .map(|entry| (entry, pool.status_snapshot()));
+            let exact = if required_home_source_run_id.is_some() {
+                None
+            } else {
+                reuse_key
+                    .and_then(|reuse_key| pool.take_reserved(reuse_key))
+                    .map(|entry| (entry, pool.status_snapshot()))
+            };
             if exact.is_some() {
                 (exact, None)
             } else {
@@ -952,13 +932,12 @@ pub async fn try_reuse_from_pool(
                 }
             }
         }
-        None => (None, None),
     };
     if let Some(selection) = blank_pool_selection {
         pre_spawn_timing.record_blank_pool_selection(selection);
     }
     let took_idle_session = taken.is_some();
-    let needs_reuse_state_refresh = took_idle_session || prefer_home_cache;
+    let needs_reuse_state_refresh = took_idle_session || home_cache_possible;
     match taken {
         Some((entry, snapshot))
             if entry.profile_name() == profile_name
@@ -1201,7 +1180,7 @@ pub async fn try_reuse_from_pool(
                     run_id = %run_id,
                     reuse_key_fingerprint = %diagnostic_reuse_key_fingerprint(reuse_key),
                     reuse_key_kind = reuse_key_kind(reuse_key),
-                    home_cache_possible = prefer_home_cache,
+                    home_cache_possible,
                     "no compatible idle sandbox found for reuse key"
                 ),
                 None => info!(run_id = %run_id, "no compatible blank sandbox found"),

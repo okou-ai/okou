@@ -368,12 +368,20 @@ async fn assert_home_selection(
         candidate_kind,
         HomeCandidate::Ordinary | HomeCandidate::FirstRun | HomeCandidate::UnknownOtherHostExpected
     );
+    let replacements = overrides.home_drive_replacements();
     if restore {
-        assert_eq!(created.len(), 1);
-        let seed = created[0]
-            .home_drive
-            .as_ref()
-            .unwrap()
+        let drive = if blank_available {
+            assert!(
+                created.is_empty(),
+                "cached Home must retain the available blank VM"
+            );
+            assert_eq!(replacements.len(), 1);
+            &replacements[0]
+        } else {
+            assert_eq!(created.len(), 1);
+            created[0].home_drive.as_ref().unwrap()
+        };
+        let seed = drive
             .seed_image
             .as_ref()
             .expect("evidenced Home must supply its physical seed");
@@ -401,9 +409,7 @@ async fn assert_home_selection(
     execution.release_one();
     let completed = env.handle.wait_completion(successor, WAIT).await.unwrap();
     assert_eq!(completed.exit_code, 0);
-    if restore {
-        assert_ne!(completed.sandbox_id, blank_id);
-    } else if blank_available {
+    if blank_available {
         assert_eq!(completed.sandbox_id, blank_id);
     }
     shutdown(&env, runner).await;

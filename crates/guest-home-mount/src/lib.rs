@@ -50,6 +50,37 @@ pub fn mount_home_drive() -> io::Result<()> {
     )
 }
 
+/// Normally unmount the verified whole Home filesystem. Busy mounts fail;
+/// lazy and forced detach are never allowed when replacing the backend.
+pub fn unmount_home_drive() -> io::Result<()> {
+    let directory = Path::new(HOME_DIR);
+    let device = Path::new(HOME_DEVICE);
+    reject_symlink_components(directory)?;
+    reject_symlink_components(device)?;
+    let metadata = fs::symlink_metadata(device)?;
+    if !metadata.file_type().is_block_device() {
+        return Err(invalid("home device is not a block device"));
+    }
+    let expected = (libc::major(metadata.rdev()), libc::minor(metadata.rdev()));
+    let mounts = parse_mountinfo(&fs::read(MOUNTINFO_PATH)?)?;
+    let (mount, target_device) = visible_mount(directory, &mounts)?
+        .ok_or_else(|| invalid("home mount unavailable before unmount"))?;
+    if mount.target != directory.as_os_str().as_bytes() {
+        return Err(invalid("home path is not the visible mountpoint"));
+    }
+    validate_home_mount(mount, target_device, expected)?;
+    let directory = CString::new(HOME_DIR).map_err(|_| invalid("invalid fixed home path"))?;
+    // SAFETY: the fixed path is NUL-terminated and live for this syscall.
+    if unsafe { libc::umount2(directory.as_ptr(), 0) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    let mounts = parse_mountinfo(&fs::read(MOUNTINFO_PATH)?)?;
+    if mounts.iter().any(|mount| mount.device == expected) {
+        return Err(invalid("home device remains mounted after unmount"));
+    }
+    Ok(())
+}
+
 fn validate_account(home: &Path, uid: u32, primary_gid: u32, gid: u32) -> io::Result<()> {
     if home != Path::new(HOME_DIR) || uid == 0 || gid == 0 || primary_gid != gid {
         return Err(invalid(

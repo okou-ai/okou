@@ -407,3 +407,31 @@ fn complete_after_close_returns_unknown_and_preserves_state() {
     ));
     assert_eq!(tracker.readiness(), NormalOperationReadiness::Closed);
 }
+
+#[test]
+fn fixed_home_requests_keep_competing_operations_fenced() {
+    let tracker = NormalOperationTracker::new();
+    let fence = fence(&tracker);
+    let foreign = NormalOperationTracker::new();
+    assert!(foreign.reserve_under_fence(&fence).is_err());
+    for _ in 0..2 {
+        let token = tracker.reserve_under_fence(&fence).unwrap();
+        assert!(tracker.reserve().is_err());
+        assert!(tracker.reserve_under_fence(&fence).is_err());
+        token.complete().unwrap();
+        assert!(tracker.reserve().is_err());
+    }
+    drop(fence);
+    assert_eq!(tracker.readiness(), NormalOperationReadiness::Idle);
+}
+
+#[test]
+fn abandoned_home_replacement_cannot_reopen_admission() {
+    let tracker = NormalOperationTracker::new();
+    let fence = fence(&tracker);
+    fence.invalidate();
+    drop(fence);
+    assert_eq!(tracker.readiness(), NormalOperationReadiness::NotParkable);
+    assert!(tracker.reserve().is_err());
+    assert!(tracker.try_fence().is_err());
+}

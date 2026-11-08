@@ -32,7 +32,7 @@ pub(super) struct ReusedSandboxRun<'a> {
 }
 
 pub(super) async fn execute_reused_sandbox(
-    run: ReusedSandboxRun<'_>,
+    mut run: ReusedSandboxRun<'_>,
     context: &ExecutionContext,
     config: &ExecutorConfig,
     start: RunStart<'_>,
@@ -53,6 +53,49 @@ pub(super) async fn execute_reused_sandbox(
     let network_log_session = match prepared_storage {
         Ok(storage) => {
             inputs.controls.prepared_storage = storage;
+            // Validate all storage inputs before consuming a selected Home.
+            // The same lease retains source pins, fingerprints and history proof.
+            if run.kind == IdleSandboxKind::Blank
+                && let Some(lease) = run.home_image.as_mut().filter(|lease| lease.is_cache_hit())
+            {
+                let started = Instant::now();
+                let replacement = async {
+                    let drive = lease
+                        .home_drive_config()
+                        .await
+                        .map_err(|error| error.to_string())?
+                        .ok_or_else(|| "cached Home has no drive configuration".to_string())?;
+                    run.sandbox
+                        .replace_home_drive(&drive)
+                        .await
+                        .map_err(|error| error.to_string())
+                }
+                .await;
+                telemetry.record(
+                    "runner_blank_home_rebind",
+                    started.elapsed(),
+                    replacement.is_ok(),
+                    replacement
+                        .as_ref()
+                        .err()
+                        .map(|_| "blank_home_rebind_failed"),
+                );
+                if let Err(error) = replacement {
+                    cancel_prepared_storage(&mut inputs.controls, telemetry).await;
+                    telemetry.record(
+                        "runner_reused_sandbox_prepare",
+                        prepare_started.elapsed(),
+                        false,
+                        Some("blank_home_rebind_failed"),
+                    );
+                    return ExecuteOutcome::reused_sandbox_failure(
+                        ExecutionFailure::from_error(error),
+                        run.sandbox,
+                        run.source_ip,
+                        None,
+                    );
+                }
+            }
             // Time required registration separately from storage preparation;
             // addon receipt completion is not awaited.
             let proxy_register_started = Instant::now();

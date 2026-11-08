@@ -766,10 +766,13 @@ impl ConnectionDispatcher {
         if reject_operation_if_quiescing(&self.operation_state, msg.seq, &self.writer)? {
             return Ok(());
         }
-        if let Err(error) = guest_control_proto::decode_home_drive_mount_request(msg.payload) {
-            send_error_response(msg.seq, &error.to_string(), &self.writer)?;
-            return Ok(());
-        }
+        let operation = match guest_control_proto::decode_home_drive_mount_request(msg.payload) {
+            Ok(operation) => operation,
+            Err(error) => {
+                send_error_response(msg.seq, &error.to_string(), &self.writer)?;
+                return Ok(());
+            }
+        };
         let Some(admission) = self.home_drive_mount_worker.try_admit() else {
             send_error_response(
                 msg.seq,
@@ -785,7 +788,7 @@ impl ConnectionDispatcher {
         };
         match self
             .home_drive_mount_worker
-            .submit(msg.seq, operation_guard, admission)
+            .submit(msg.seq, operation, operation_guard, admission)
         {
             Ok(()) => Ok(()),
             Err(HomeDriveMountSubmitError::Busy) => send_error_response(

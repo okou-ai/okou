@@ -766,7 +766,7 @@ async fn incompatible_profile_fresh_creates_without_consuming_blank_inventory() 
 }
 
 #[tokio::test(start_paused = true)]
-async fn home_cache_hit_takes_priority_over_compatible_blank_inventory() {
+async fn home_cache_hit_combines_with_compatible_blank_inventory() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -805,7 +805,8 @@ async fn home_cache_hit_takes_priority_over_compatible_blank_inventory() {
         .expect("job should complete");
 
     assert_eq!(completion.exit_code, 0);
-    assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
+    assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
+    assert_eq!(overrides.home_drive_replacements().len(), 1);
     let launches = overrides.start_agent_process_calls();
     assert_eq!(launches.len(), 1);
     assert_eq!(
@@ -815,13 +816,21 @@ async fn home_cache_hit_takes_priority_over_compatible_blank_inventory() {
         }),
         Some("home")
     );
-    assert_eq!(idle_pool.lock().await.blank_len(), 1);
+    assert!(
+        idle_pool
+            .lock()
+            .await
+            .status_snapshot()
+            .blank_sandboxes
+            .iter()
+            .all(|entry| entry.sandbox_id != blank_sandbox_id)
+    );
 
     shutdown(&env, run_handle).await;
 }
 
 #[tokio::test]
-async fn claimed_home_cache_metadata_takes_priority_over_reserved_blank() {
+async fn claimed_home_cache_metadata_combines_with_reserved_blank() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 16;
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
@@ -861,10 +870,11 @@ async fn claimed_home_cache_metadata_takes_priority_over_reserved_blank() {
         .handle
         .wait_completion(run_id, Duration::from_secs(5))
         .await
-        .expect("claimed workspace metadata should override the reserved blank");
+        .expect("claimed workspace metadata should be attached to the reserved blank");
 
     assert_eq!(completion.exit_code, 0);
-    assert_ne!(completion.sandbox_id, Some(blank_sandbox_id));
+    assert_eq!(completion.sandbox_id, Some(blank_sandbox_id));
+    assert_eq!(overrides.home_drive_replacements().len(), 1);
     let launches = overrides.start_agent_process_calls();
     assert_eq!(launches.len(), 1);
     assert_eq!(

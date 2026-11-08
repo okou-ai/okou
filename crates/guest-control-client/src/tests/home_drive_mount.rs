@@ -187,3 +187,38 @@ async fn dropping_home_drive_mount_after_write_abandons_connection_for_parking()
     release_tx.send(()).unwrap();
     guest.await.unwrap();
 }
+
+#[tokio::test]
+async fn fixed_home_requests_retain_one_fence_across_detach_and_mount() {
+    use guest_control_proto::HomeDriveOperation::{Mount, Unmount};
+    let (host_stream, guest_stream) = make_pair();
+    let (release_tx, release_rx) = oneshot::channel();
+    let guest = tokio::spawn(async move {
+        let mut guest = MockGuest::new(guest_stream);
+        guest.complete_handshake().await;
+        for operation in [Unmount, Mount] {
+            let request = guest.expect_message(MSG_HOME_DRIVE_MOUNT).await;
+            assert_eq!(
+                guest_control_proto::decode_home_drive_mount_request(&request.payload).unwrap(),
+                operation
+            );
+            guest
+                .send_response(MSG_HOME_DRIVE_MOUNT_RESULT, request.seq, &success_payload())
+                .await;
+        }
+        release_rx.await.unwrap();
+    });
+    let host = host_from_stream(host_stream).await.unwrap();
+    let fence = host.try_fence_normal_operations().unwrap();
+    for operation in [Unmount, Mount] {
+        assert!(host.reserve_external_operation().is_err());
+        host.home_drive_operation_with_fence(&fence, operation, Duration::from_secs(1))
+            .await
+            .unwrap();
+        assert!(host.reserve_external_operation().is_err());
+    }
+    drop(fence);
+    assert!(host.reserve_external_operation().is_ok());
+    release_tx.send(()).unwrap();
+    guest.await.unwrap();
+}
