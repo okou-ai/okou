@@ -23,6 +23,7 @@ data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/dat
 official_workflow_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/official-workflow-bundle-reader")
 registry_archive_reader_floor=$(<"${repo_root}/.github/rollback-floors/registry-archive-reader")
 template_guidance_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/template-guidance-bundle-reader")
+template_guidance_bundle_writer_floor=$(<"${repo_root}/.github/rollback-floors/template-guidance-bundle-writer")
 content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/content-bundle-reference-only-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
@@ -47,6 +48,12 @@ case "${1:-}" in
       [ "${MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7373737373737373737373737373737373737373" ]; then
       [ "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "$MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR" ] || [ "${3:-}" = "6363636363636363636363636363636363636363" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_ON_MAIN:-1}" = "1" ]
@@ -443,6 +450,11 @@ case "${1:-}" in
       printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_RUNNER_COMMIT-beefbeefbeefbeefbeefbeefbeefbeefbeefbeef}"
       exit 0
     fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/template-guidance-bundle-writer" ]; then
+      [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_COMMIT-$MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/template-guidance-bundle-reader" ]; then
       [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_COMMIT-$MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR}"
@@ -590,6 +602,7 @@ run_resolver() {
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
     MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
+    MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR="$template_guidance_bundle_writer_floor" \
     MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR="$content_bundle_reference_api_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
@@ -2217,6 +2230,20 @@ for official_bundle_case in \
   [ ! -s "${tmp_dir}/official-workflow-bundle.output" ] || fail "incompatible Official bundle API must not publish rollback outputs"
   if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
     fail "Official bundle reader floor must reject before provider or host access"
+  fi
+done
+
+for template_writer_case in \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_AVAILABLE=0|Cannot read the template guidance bundle writer rollback floor from main" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_COMMIT=invalid|Missing or invalid template guidance bundle writer rollback floor" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_ON_MAIN=0|Template guidance bundle writer rollback floor is not on main" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_VALID=0|Rollback target predates bundle-only template publication"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${template_writer_case#*|}" \
+    run_resolver "${tmp_dir}/template-writer.output" "${template_writer_case%%|*}"
+  [ ! -s "${tmp_dir}/template-writer.output" ] || fail "legacy template writer must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "template writer floor must reject before provider or host access"
   fi
 done
 

@@ -1,4 +1,4 @@
-name: Copy Production Presentation Templates
+name: Production Template Package Operators
 
 run-name: ${{ inputs.mode }} production presentation templates by @${{ github.actor }}
 
@@ -8,9 +8,17 @@ on:
       mode:
         description: Inspect only, or copy after a successful inspection
         type: choice
-        options: [dry-run, copy]
+        options: [dry-run, copy, capture-guidance]
         default: dry-run
         required: true
+      frozen_inventory:
+        description: Reviewed template-guidance-sources-v1 JSON; capture-guidance only
+        type: string
+        required: false
+      recipient_public_key:
+        description: RSA public key for encrypted capture; never supply a private key
+        type: string
+        required: false
 
 permissions:
   contents: read
@@ -28,7 +36,7 @@ defaults:
 
 jobs:
   copy:
-    if: github.ref == 'refs/heads/main'
+    if: github.ref == 'refs/heads/main' && inputs.mode != 'capture-guidance'
     runs-on: ubuntu-latest
     container: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     timeout-minutes: 30
@@ -143,3 +151,52 @@ jobs:
           path: ${{ runner.temp }}/presentation-template-copy-receipts
           if-no-files-found: warn
           retention-days: 30
+
+  capture-guidance:
+    if: github.ref == 'refs/heads/main' && inputs.mode == 'capture-guidance'
+    runs-on: ubuntu-latest
+    container: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
+    timeout-minutes: 30
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: ./.github/actions/toolchain-init
+      - name: Verify fixed source bytes and encrypt the rehearsal copy
+        working-directory: turbo/packages/db
+        env:
+          FROZEN_INVENTORY: ${{ inputs.frozen_inventory }}
+          RECIPIENT_PUBLIC_KEY: ${{ inputs.recipient_public_key }}
+          R2_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_USER_STORAGES_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$R2_USER_STORAGES_BUCKET_NAME" == vm0-s3-user-storages-prod ]]
+          request_dir=$(mktemp -d)
+          trap 'rm -rf "$request_dir"' EXIT
+          export C03_REQUEST_DIR="$request_dir"
+          node --input-type=module <<'JS'
+          import { writeFile } from 'node:fs/promises';
+          import { join } from 'node:path';
+          await writeFile(join(process.env.C03_REQUEST_DIR, 'inventory.json'), process.env.FROZEN_INVENTORY, { mode: 0o600 });
+          await writeFile(join(process.env.C03_REQUEST_DIR, 'recipient.pem'), process.env.RECIPIENT_PUBLIC_KEY, { mode: 0o600 });
+          JS
+          node --import tsx scripts/migrations/029-template-guidance-bundles/capture.ts \
+            --inventory "$request_dir/inventory.json" --public-key "$request_dir/recipient.pem" \
+            --output "$RUNNER_TEMP/template-guidance-capture" --commit "$GITHUB_SHA"
+      - name: Retain only the encrypted payload and metadata receipt
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: template-guidance-capture-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/template-guidance-capture/report.json
+            ${{ runner.temp }}/template-guidance-capture/envelope.json
+            ${{ runner.temp }}/template-guidance-capture/payload.enc
+          if-no-files-found: warn
+          retention-days: 1

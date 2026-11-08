@@ -133,6 +133,7 @@ readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly REGISTRY_ARCHIVE_READER_PATH=.github/rollback-floors/registry-archive-reader
 readonly TEMPLATE_GUIDANCE_BUNDLE_READER_PATH=.github/rollback-floors/template-guidance-bundle-reader
+readonly TEMPLATE_GUIDANCE_BUNDLE_WRITER_PATH=.github/rollback-floors/template-guidance-bundle-writer
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
@@ -1018,6 +1019,21 @@ if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" orig
 fi
 if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates template guidance bundle readers: ${template_guidance_bundle_reader_commit}."
+fi
+
+# Frozen template sources must not acquire a legacy publisher again. This is an
+# API-only floor; the separately checked Runner reader floor stays unchanged.
+if ! template_guidance_bundle_writer_commit=$(git show "origin/main:${TEMPLATE_GUIDANCE_BUNDLE_WRITER_PATH}"); then
+  fail "Cannot read the template guidance bundle writer rollback floor from main."
+fi
+if [[ ! "$template_guidance_bundle_writer_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid template guidance bundle writer rollback floor."
+fi
+if ! git merge-base --is-ancestor "$template_guidance_bundle_writer_commit" origin/main; then
+  fail "Template guidance bundle writer rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$template_guidance_bundle_writer_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates bundle-only template publication: ${template_guidance_bundle_writer_commit}."
 fi
 
 # Reference-only claims require the corrected archive reader. Keep the API
