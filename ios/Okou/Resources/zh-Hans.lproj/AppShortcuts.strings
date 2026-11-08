@@ -1,0 +1,2 @@
+/* Opens the new chat composer without a request parameter. */
+"New ${applicationName} chat" = "新建 ${applicationName} 聊天";
