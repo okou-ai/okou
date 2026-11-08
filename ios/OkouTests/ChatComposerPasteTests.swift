@@ -161,10 +161,8 @@ final class ChatComposerPasteTests: XCTestCase {
     }
     let pasted = expectation(
       forNotification: UITextView.textDidChangeNotification, object: input
-    ) { notification in
-      MainActor.assumeIsolated {
-        (notification.object as? UITextView)?.text.contains("late text") == true
-      }
+    ) { _ in
+      MainActor.assumeIsolated { input.text.contains("late text") }
     }
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
