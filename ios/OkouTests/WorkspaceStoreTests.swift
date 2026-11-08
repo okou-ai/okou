@@ -483,8 +483,16 @@ final class WorkspaceStoreTests: XCTestCase {
       await startup.value
     }
     await fulfillment(of: [started], timeout: 3)
+    try await waitForBusinessResult {
+      store.list.visiblePinnedAgents.map(\.agentId) == [storeAgentID]
+    }
     XCTAssertEqual(store.currentAgentName, "Cached assistant")
-    XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [storeAgentID, otherAgent])
+    // Preferences publish independently, but a partial refresh cannot replace the disk snapshot.
+    let reader = cacheDirectory.cache(scope: scope)
+    let held = try await reader.loadNavigation()
+    XCTAssertEqual(held?.agents.first?.displayName, "Cached assistant")
+    XCTAssertEqual(held?.preferences.pinnedAgentIds, [otherAgent])
+    await reader.close()
     XCTAssertEqual(
       store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Cached chat"])
     gate.open()

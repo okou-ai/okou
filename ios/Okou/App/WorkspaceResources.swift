@@ -80,6 +80,9 @@ final class WorkspaceResources {
     return (agents, preferences)
   }
 
+  var agentRecords: Computed<Task<[AgentRecord], Error>> { agents.value }
+  var pinnedPreferences: Computed<Task<SidebarPreferences, Error>> { sidebarPreferences.value }
+
   func invalidate(_ changes: Set<ChatInvalidation>) throws {
     let reload = Command<Void, Void> { context in
       if changes.contains(.reconnected) || changes.contains(.modelPreference) {
