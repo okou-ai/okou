@@ -25,9 +25,10 @@ final class ComposerVoiceInputTests: XCTestCase {
     await voice.start()
     // Nonzero microphone offset exercises the system classifier, rather than only
     // the exact-digital-silence shortcut.
-    capture.record(Data(repeating: 1, count: 32_000))
+    // The duration also leaves an incomplete final classifier window.
+    capture.record(Data(repeating: 1, count: 35_200))
     await voice.finish()
-    XCTAssertEqual(voice.duration, 1)
+    XCTAssertEqual(voice.duration, 1.1, accuracy: 0.0001)
     XCTAssertEqual(composer.text, "Keep these notes")
     XCTAssertEqual(voice.phase, .idle)
     XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
@@ -108,6 +109,25 @@ final class ComposerVoiceInputTests: XCTestCase {
     print("SoundAnalysis quiet speech finish: \(started.duration(to: .now))")
     XCTAssertEqual(composer.text, "spoken words")
     XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [32_000])
+  }
+
+  func testQuietWordInTheIncompleteFinalWindowIsPreserved() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    capture.record(Data(repeating: 0, count: 64_000))
+    capture.speak(seconds: 1, attenuation: 16, sampleLimit: 4_000)
+    await voice.finish()
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [72_000])
   }
 
   func testVoiceReplacesSelectionPreservesReferencesAndSupportsUndoWithoutSending() async throws {
@@ -613,7 +633,7 @@ private final class VoiceCaptureFixture: VoiceAudioCapture {
     self.continuation = continuation
     return stream
   }
-  func speak(seconds: Int, attenuation: Int16 = 1) {
+  func speak(seconds: Int, attenuation: Int16 = 1, sampleLimit: Int? = nil) {
     guard
       let url = Bundle(for: ComposerVoiceInputTests.self)
         .url(forResource: "voice-speech", withExtension: "wav"),
@@ -633,7 +653,7 @@ private final class VoiceCaptureFixture: VoiceAudioCapture {
     }
     var audio = Data()
     for _ in 0..<seconds { audio.append(pcm) }
-    record(audio)
+    record(sampleLimit.map { Data(audio.prefix($0 * 2)) } ?? audio)
   }
   func record(_ pcm: Data) {
     continuation?.yield(VoiceAudioChunk(pcm: pcm, level: 0.3))

@@ -5,9 +5,9 @@ import SoundAnalysis
 import Synchronization
 
 /// Apple's built-in classifier stays on the OS; no model or inference runtime is bundled.
-/// Only confident silence across all new audio can suppress an upload.
+/// Only consistently low voice confidence across all new audio can suppress an upload.
 actor NativeVoiceActivityDetection: VoiceActivityDetection {
-  nonisolated let policyVersion = "sound-analysis-v1-conservative-1"
+  nonisolated let policyVersion = "sound-analysis-v1-conservative-2"
 
   func mayContainSpeech(_ pcm: Data) throws -> Bool {
     try Task.checkCancellation()
@@ -22,23 +22,41 @@ actor NativeVoiceActivityDetection: VoiceActivityDetection {
     let voiceLabels = [
       "speech", "whispering", "shout", "yell", "singing", "rapping", "chatter", "babble",
     ]
-    guard Set(voiceLabels + ["silence"]).isSubset(of: Set(request.knownClassifications)) else {
+    guard Set(voiceLabels).isSubset(of: Set(request.knownClassifications)) else {
       return true
     }
     request.windowDuration = CMTime(seconds: 1, preferredTimescale: 16_000)
     request.overlapFactor = 0.5
+    guard let covered = try noSpeechCoverage(pcm, request: request, voiceLabels: voiceLabels) else {
+      return true
+    }
+    let duration = Double(samples) / 16_000
+    if covered + 1.0 / 16_000 >= duration { return false }
+    // File analysis omits an incomplete trailing window. Classify the final
+    // full second of original audio so a short word at the end cannot be lost.
+    guard covered > 0, covered + 1 >= duration,
+      let tail = try noSpeechCoverage(
+        Data(pcm.suffix(32_000)), request: request, voiceLabels: voiceLabels)
+    else { return true }
+    return tail + 1.0 / 16_000 < 1
+  }
+
+  private func noSpeechCoverage(
+    _ pcm: Data, request: SNClassifySoundRequest, voiceLabels: [String]
+  ) throws -> Double? {
+    try Task.checkCancellation()
     let url = FileManager.default.temporaryDirectory
       .appendingPathComponent("voice-analysis-\(UUID().uuidString).wav")
     defer { try? FileManager.default.removeItem(at: url) }
     try writeAudio(pcm, to: url)
     let analyzer = try SNAudioFileAnalyzer(url: url)
     defer { analyzer.removeAllRequests() }
-    let observer = SilenceObserver(voiceLabels: voiceLabels)
+    let observer = SpeechObserver(voiceLabels: voiceLabels)
     try analyzer.add(request, withObserver: observer)
     // Synchronous file analysis owns all callbacks until completion, off MainActor.
     analyzer.analyze()
     try Task.checkCancellation()
-    return try observer.mayContainSpeech(duration: Double(samples) / 16_000)
+    return try observer.noSpeechCoverage()
   }
 
   private func writeAudio(_ pcm: Data, to url: URL) throws {
@@ -67,7 +85,7 @@ actor NativeVoiceActivityDetection: VoiceActivityDetection {
     case invalidAudio, invalidResult
   }
 
-  private final class SilenceObserver: NSObject, SNResultsObserving, Sendable {
+  private final class SpeechObserver: NSObject, SNResultsObserving, Sendable {
     private struct State: Sendable {
       var coveredUntil: Double = 0
       var uncertain = false
@@ -82,12 +100,10 @@ actor NativeVoiceActivityDetection: VoiceActivityDetection {
     func request(_ request: any SNRequest, didProduce result: any SNResult) {
       state.withLock { state in
         guard let result = result as? SNClassificationResult,
-          let silence = result.classification(forIdentifier: "silence"),
-          silence.confidence.isFinite,
           voiceLabels.allSatisfy({ label in
             guard let voice = result.classification(forIdentifier: label) else { return false }
-            return voice.confidence.isFinite && voice.confidence <= 0.01
-          }), silence.confidence >= 0.95
+            return voice.confidence.isFinite && (0...0.01).contains(voice.confidence)
+          })
         else {
           state.uncertain = true
           return
@@ -112,11 +128,11 @@ actor NativeVoiceActivityDetection: VoiceActivityDetection {
       state.withLock { $0.completed = true }
     }
 
-    func mayContainSpeech(duration: Double) throws -> Bool {
+    func noSpeechCoverage() throws -> Double? {
       try state.withLock { state in
         if let failure = state.failure { throw failure }
         guard state.completed else { throw DetectionError.invalidResult }
-        return state.uncertain || state.coveredUntil + 1.0 / 16_000 < duration
+        return state.uncertain ? nil : state.coveredUntil
       }
     }
   }
