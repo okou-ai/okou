@@ -386,7 +386,8 @@ private struct WorkspaceRootView: View {
     }
     .modifier(
       NewChatNavigation(
-        workspace: store, isAuthenticated: !authentication.isLoading, didOpen: closeSidebar))
+        workspace: store, isAuthenticated: !authentication.isLoading,
+        didOpen: closeSidebar))
     .onDisappear {
       sidebar.cancelDrag()
       store.close()
