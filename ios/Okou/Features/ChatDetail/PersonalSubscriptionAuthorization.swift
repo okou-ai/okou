@@ -102,7 +102,8 @@ final class PersonalSubscriptionAuthorization {
   }
   private lazy var retryCommand = Command<Void, Void> { [weak self] _ in self?.retryFlow() }
   private lazy var cancelCommand = Command<Void, Void> { [weak self] _ in self?.cancelFlow() }
-  private lazy var submitCommand: Command<Task<Void, Error>, Void> = asyncCommand { [weak self] _ in
+  private lazy var submitCommand: Command<Task<Void, Error>, Void> = asyncCommand {
+    [weak self] _, _ in
     await self?.submitCode()
   }
   func start(type: PersonalSubscriptionType, accountID: String? = nil) {

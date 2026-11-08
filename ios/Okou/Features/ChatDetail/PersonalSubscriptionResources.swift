@@ -39,37 +39,41 @@ final class PersonalSubscriptionResources {
     reload = Command { context in try context.set(revision, update: { $0 + 1 }) }
   }
 
-  @ObservationIgnored lazy var value = Computed<Task<[PersonalSubscription], Error>> {
-    [weak self] get, options in
-    guard let self, try get(lifetime), !closed else { throw CancellationError() }
-    _ = try get(revision)
-    let signal = options.signal
-    let id = UUID()
-    pending = true
-    // Failure reporting may close the workspace, so it runs after graph evaluation.
-    let task = Task<[PersonalSubscription], Error> { @MainActor [weak self, service] in
-      do {
-        try Task.checkCancellation()
-        let accounts = try await service.list()
-        try Task.checkCancellation()
-        try signal.checkCancellation()
-        guard let self, !closed, request?.id == id else { throw CancellationError() }
-        self.accounts = accounts
-        accountRevision += 1
-        lastRead = now()
-        pending = false
-        return accounts
-      } catch {
-        if let self, !closed, request?.id == id {
+  @ObservationIgnored lazy var value = makeValue()
+
+  private func makeValue() -> Computed<Task<[PersonalSubscription], Error>> {
+    Computed {
+      [weak self] get, options in
+      guard let self, try get(lifetime), !closed else { throw CancellationError() }
+      _ = try get(revision)
+      let signal = options.signal
+      let id = UUID()
+      pending = true
+      // Failure reporting may close the workspace, so it runs after graph evaluation.
+      let task = Task<[PersonalSubscription], Error> { @MainActor [weak self, service] in
+        do {
+          try Task.checkCancellation()
+          let accounts = try await service.list()
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          guard let self, !closed, request?.id == id else { throw CancellationError() }
+          self.accounts = accounts
+          accountRevision += 1
+          lastRead = now()
           pending = false
-          if !Task.isCancelled, !signal.isCancelled { didFail(error) }
+          return accounts
+        } catch {
+          if let self, !closed, request?.id == id {
+            pending = false
+            if !Task.isCancelled, !signal.isCancelled { didFail(error) }
+          }
+          throw error
         }
-        throw error
       }
+      request = (id, task)
+      signal.onCancel { task.cancel() }
+      return task
     }
-    request = (id, task)
-    signal.onCancel { task.cancel() }
-    return task
   }
 
   @ObservationIgnored lazy var groups: Computed<Task<[Group], Error>> = computedTask {
