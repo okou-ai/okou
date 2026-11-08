@@ -1,7 +1,6 @@
 //! Oversized Codex app-server events must retain a bounded webhook
 //! representation without changing the complete local normalized event.
 
-use cli_test_support::json_fixture::parse_json_lines;
 use common::delivery_image;
 use guest_agent_tests as common;
 
@@ -10,7 +9,7 @@ use guest_agent::masker::SecretMasker;
 use serde::{Serialize, ser::SerializeMap as _};
 use serde_json::Value;
 use std::{
-    io::{BufWriter, Read, Write},
+    io::{BufRead, BufReader, BufWriter, Read, Write},
     time::Duration,
 };
 
@@ -696,5 +695,12 @@ fn delivered_items<'a>(events: &'a [Value], item_id: &str) -> Vec<&'a Value> {
 }
 
 fn read_jsonl(path: &str) -> Result<Vec<Value>, Box<dyn std::error::Error>> {
-    parse_json_lines(&std::fs::read_to_string(path)?).map_err(Into::into)
+    let mut reader = BufReader::new(std::fs::File::open(path)?);
+    let mut line = String::new();
+    let mut events = Vec::new();
+    while reader.read_line(&mut line)? != 0 {
+        events.push(serde_json::from_str(&line)?);
+        line.clear();
+    }
+    Ok(events)
 }
