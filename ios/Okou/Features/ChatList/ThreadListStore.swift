@@ -11,6 +11,9 @@ final class ThreadListStore {
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
+  var hasUnreadThreads: Bool {
+    threads.contains { !$0.isMuted && $0.indicator == .unread }
+  }
   var onlyUnread = false
   private(set) var markingAgentRead = false
   private var readRevision = 0

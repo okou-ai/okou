@@ -13,11 +13,15 @@ struct ChatWorkspaceHeader: View {
   var modelSelection: ChatModelSelectionStore? = nil
 
   var body: some View {
+    let hasUnread = store.list.hasUnreadThreads
     HStack(spacing: OkouSpace.sm) {
       Button(action: openSidebar) {
-        OkouToolbarIcon("menu").modifier(OkouGlassControl(shape: .circle))
+        OkouToolbarIcon("menu")
+          .modifier(OkouUnreadBadge(isVisible: hasUnread))
+          .modifier(OkouGlassControl(shape: .circle))
       }
       .accessibilityLabel("Open sidebar")
+      .accessibilityValue(hasUnread ? Text("Unread") : Text(verbatim: ""))
       .accessibilityIdentifier("open-sidebar")
       if let modelSelection {
         ChatModelPickerButton(selection: modelSelection)
