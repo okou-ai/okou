@@ -62,62 +62,23 @@ final class ComposerDraftStore {
     let blockID: UUID
   }
 
-  private var quoteIDs: [UUID] = []
-  private var textIDs: [UUID] = [UUID()]
-  private(set) var focusRequest: EditorFocusRequest?
-  private(set) var editorGeneration = UUID()
-  var editorBlocks: [EditorBlock] {
-    guard document.isSupported else { return [] }
-    var blocks: [EditorBlock] = []
-    var start = 0
-    var ordinal = 0
-    for (index, part) in document.parts.enumerated() where part["type"]?.string == "feedback" {
-      blocks.append(
-        EditorBlock(
-          id: textIDs[ordinal], indices: start..<index, quote: nil,
-          content: ChatDraftDocument(parts: Array(document.parts[start..<index]))))
-      guard let quote = part["quote"]?.string, case .array(let note) = part["note"] else {
-        return []
-      }
-      blocks.append(
-        EditorBlock(
-          id: quoteIDs[ordinal], indices: index..<(index + 1), quote: quote,
-          content: ChatDraftDocument(parts: note)))
-      ordinal += 1
-      start = index + 1
-    }
-    blocks.append(
-      EditorBlock(
-        id: textIDs[ordinal], indices: start..<document.parts.count, quote: nil,
-        content: ChatDraftDocument(parts: Array(document.parts[start...]))))
-    return blocks
-  }
+  let signals = ComposerDraftSignals()
+  var focusRequest: EditorFocusRequest? { signals.snapshot.focusRequest }
+  var editorGeneration: UUID { signals.snapshot.generation }
+  var editorBlocks: [EditorBlock] { signals.editorBlocks }
 
   private func resetEditors() {
     editor.dismissMentions()
     editor.workflows.dismiss()
-    quoteIDs = document.parts.filter { $0["type"]?.string == "feedback" }.map { _ in UUID() }
-    textIDs = (0...quoteIDs.count).map { _ in UUID() }
-    focusRequest = nil
-    editorGeneration = UUID()
+    signals.resetEditors()
   }
 
-  func requestEditorFocus(_ id: UUID) {
-    guard !closed, editorBlocks.contains(where: { $0.id == id }) else { return }
-    focusRequest = EditorFocusRequest(blockID: id)
-  }
+  func requestEditorFocus(_ id: UUID) { signals.requestFocus(id) }
 
-  func consumeFocusRequest(_ request: EditorFocusRequest) {
-    if focusRequest == request { focusRequest = nil }
-  }
+  func consumeFocusRequest(_ request: EditorFocusRequest) { signals.consumeFocus(request) }
 
   @discardableResult func addFeedback(_ selection: ChatFeedbackSelection) -> UUID? {
-    guard !closed, document.isSupported else { return nil }
-    document.parts.append(selection.part)
-    let id = UUID()
-    quoteIDs.append(id)
-    textIDs.append(UUID())
-    focusRequest = EditorFocusRequest(blockID: id)
+    guard let id = signals.addFeedback(selection) else { return nil }
     changed()
     return id
   }
@@ -132,41 +93,19 @@ final class ComposerDraftStore {
   }
 
   func editBlock(_ id: UUID, document content: ChatDraftDocument) {
-    guard !closed, let block = editorBlocks.first(where: { $0.id == id }),
-      content != block.content, content.isSupported
-    else { return }
-    if block.isFeedback, case .object(var part) = document.parts[block.indices.lowerBound] {
-      part["note"] = .array(content.parts)
-      document.parts[block.indices.lowerBound] = .object(part)
-    } else {
-      document.parts.replaceSubrange(block.indices, with: content.parts)
-    }
-    changed()
+    if signals.editBlock(id, document: content) { changed() }
   }
 
   func removeFeedback(_ id: UUID) {
-    guard !closed, let ordinal = quoteIDs.firstIndex(of: id) else { return }
+    guard !closed, editorBlocks.contains(where: { $0.id == id }) else { return }
     let focusedID = editor.prepareForFeedbackRemoval(id)
-    let blocks = editorBlocks
-    guard let block = blocks.first(where: { $0.id == id }) else { return }
-    // Removing a block between text sections leaves two paragraphs, as on the web.
-    let separatesParagraphs =
-      blocks[ordinal * 2].hasParagraph && blocks[ordinal * 2 + 2].hasParagraph
-    document.parts.replaceSubrange(
-      block.indices,
-      with: separatesParagraphs
-        ? [.object(["type": .string("text"), "text": .string("\n")])] : [])
-    // Keep the native first responder when its note or adjacent text gaps merge.
-    if let focusedID, [textIDs[ordinal], id, textIDs[ordinal + 1]].contains(focusedID) {
-      textIDs[ordinal] = focusedID
-    }
-    quoteIDs.remove(at: ordinal)
-    textIDs.remove(at: ordinal + 1)
-    focusRequest = focusedID.map { EditorFocusRequest(blockID: $0) }
-    changed()
+    if signals.removeFeedback(id, focusedID: focusedID) { changed() }
   }
 
-  private(set) var document = ChatDraftDocument()
+  private(set) var document: ChatDraftDocument {
+    get { signals.snapshot.document }
+    set { signals.replaceDocument(newValue) }
+  }
   let attachments: AttachmentDraftStore
   let editor = ComposerEditor()
   let voice: ComposerVoiceInputStore?
@@ -244,7 +183,7 @@ final class ComposerDraftStore {
   private var cleared = false
   private var revision = 0
   private var applying = false
-  private var closed = false
+  private var closed: Bool { signals.snapshot.closed }
   private var isForeground = true
   private var syncGeneration = UUID()
   private var debounceTask: Task<Void, Never>?
@@ -515,7 +454,7 @@ final class ComposerDraftStore {
     persist()
     editor.dismissKeyboard()
     editor.mentionSource = nil
-    closed = true
+    signals.close()
     debounceTask?.cancel()
     syncTask?.cancel()
     attachments.close(preserveFiles: storage != nil)

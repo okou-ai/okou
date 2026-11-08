@@ -159,6 +159,13 @@ final class ChatComposerPasteTests: XCTestCase {
         callback(Data("late text".utf8), nil)
       }
     }
+    let pasted = expectation(
+      forNotification: UITextView.textDidChangeNotification, object: input
+    ) { notification in
+      MainActor.assumeIsolated {
+        (notification.object as? UITextView)?.text.contains("late text") == true
+      }
+    }
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
     workspace.startNewChat(agentID: "another-agent")
@@ -168,8 +175,9 @@ final class ChatComposerPasteTests: XCTestCase {
     // The draft switch retires the input owner; UIKit teardown is not a prerequisite
     // for delivering the old paste and checking that the new draft stays isolated.
     delivery.release()
-    // Wait until UIKit has resolved the old paste, rather than waiting a fixed delay.
-    try await eventually { input.text.contains("late text") }
+    // UIKit's completion event is the causal boundary, independent of display frames.
+    await fulfillment(of: [pasted], timeout: 3)
+    XCTAssertTrue(input.text.contains("late text"))
     XCTAssertEqual(workspace.newChatDraft, "")
     XCTAssertFalse(workspace.newAttachmentDraft.hasAttachments)
   }
