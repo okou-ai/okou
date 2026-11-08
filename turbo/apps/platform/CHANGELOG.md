@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1102.2](https://github.com/okou-ai/okou/compare/app-v0.1102.1...app-v0.1102.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* **app:** align browser floors and pdf worker polyfills ([#45939](https://github.com/okou-ai/okou/issues/45939)) ([0b39244](https://github.com/okou-ai/okou/commit/0b3924465055e62283bb8cb70a414b7f3339a12d))
+
 ## [0.1102.1](https://github.com/okou-ai/okou/compare/app-v0.1102.0...app-v0.1102.1) (2026-11-08)
 
 

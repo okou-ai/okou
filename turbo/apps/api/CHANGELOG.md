@@ -10,6 +10,13 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.54.1](https://github.com/okou-ai/okou/compare/api-v2.54.0...api-v2.54.1) (2026-11-08)
+
+
+### Bug Fixes
+
+* **api:** deliver ios alerts independently of web presence ([#45944](https://github.com/okou-ai/okou/issues/45944)) ([6b3f7b6](https://github.com/okou-ai/okou/commit/6b3f7b664e5daead6d590105878d2f2a94dff4d6))
+
 ## [2.54.0](https://github.com/okou-ai/okou/compare/api-v2.53.2...api-v2.54.0) (2026-11-08)
 
 

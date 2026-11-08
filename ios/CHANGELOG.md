@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.11](https://github.com/okou-ai/okou/compare/ios-v0.28.10...ios-v0.28.11) (2026-11-08)
+
+
+### Bug Fixes
+
+* **ios:** keep sidebar layout stable during navigation refresh ([#45947](https://github.com/okou-ai/okou/issues/45947)) ([aa7c849](https://github.com/okou-ai/okou/commit/aa7c849327d96aba1bbb3f2c08963bda829d4e95))
+
 ## [0.28.10](https://github.com/okou-ai/okou/compare/ios-v0.28.9...ios-v0.28.10) (2026-11-08)
 
 
