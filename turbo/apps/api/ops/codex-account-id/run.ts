@@ -19,12 +19,22 @@ const client = new Client({
   connectionTimeoutMillis: 20_000,
   statement_timeout: 30_000,
 });
+let phase = "connect";
+let decrypted = 0;
+async function decrypt(encrypted: string) {
+  phase = "decrypt";
+  const value = await decryptStoredSecretValue(encrypted);
+  decrypted++;
+  phase = "audit";
+  return value;
+}
 try {
   if (!process.env.DATABASE_URL) {
     throw new BackfillError("DatabaseRequired");
   }
   await client.connect();
-  const before = await audit(client, decryptStoredSecretValue);
+  phase = "audit";
+  const before = await audit(client, decrypt);
   process.stdout.write(
     JSON.stringify({
       mode: "dry-run",
@@ -38,8 +48,10 @@ try {
     if (expected !== before.planSha256) {
       throw new BackfillError("PlanChanged");
     }
+    phase = "apply";
     const updated = await apply(client, before.candidates);
-    const after = await audit(client, decryptStoredSecretValue);
+    phase = "post-audit";
+    const after = await audit(client, decrypt);
     if (after.candidates.length !== 0) {
       throw new BackfillError("NotConverged");
     }
@@ -58,7 +70,36 @@ try {
   // Raw PostgreSQL/KMS diagnostics can contain an account ID or credential.
   const reason =
     error instanceof BackfillError ? error.message : "OperatorFailed";
-  process.stderr.write(JSON.stringify({ status: "failed", reason }) + "\n");
+  const rawCode = error instanceof Error && "code" in error ? error.code : "";
+  const code =
+    typeof rawCode === "string" &&
+    (/^[0-9A-Z]{5}$/.test(rawCode) ||
+      ["ENOTFOUND", "ECONNRESET", "ETIMEDOUT", "ECONNREFUSED"].includes(
+        rawCode,
+      ))
+      ? rawCode
+      : "Other";
+  const errorType =
+    error instanceof Error &&
+    [
+      "ZodError",
+      "AccessDeniedException",
+      "InvalidCiphertextException",
+      "UnrecognizedClientException",
+      "CredentialsProviderError",
+    ].includes(error.name)
+      ? error.name
+      : "Other";
+  process.stderr.write(
+    JSON.stringify({
+      status: "failed",
+      reason,
+      phase,
+      decrypted,
+      code,
+      errorType,
+    }) + "\n",
+  );
   process.exitCode = 1;
 } finally {
   await client.end().catch(() => {

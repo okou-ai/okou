@@ -217,9 +217,11 @@ jobs:
           set +x
           API_VALIDATED_ENV="$(sed -n 's/^API_VALIDATED_ENV=//p' "$API_ENV_FILE")"
           test -n "$API_VALIDATED_ENV"
-          AWS_ACCESS_KEY_ID="$(jq -r '.AWS_ACCESS_KEY_ID // empty' <<< "$API_VALIDATED_ENV")"
-          AWS_SECRET_ACCESS_KEY="$(jq -r '.AWS_SECRET_ACCESS_KEY // empty' <<< "$API_VALIDATED_ENV")"
-          AWS_REGION="$(jq -r '.AWS_REGION // empty' <<< "$API_VALIDATED_ENV")"
+          # AWS SDK settings are raw runtime variables, outside the validated schema.
+          AWS_ACCESS_KEY_ID="$(sed -n 's/^AWS_ACCESS_KEY_ID=//p' "$API_ENV_FILE")"
+          AWS_SECRET_ACCESS_KEY="$(sed -n 's/^AWS_SECRET_ACCESS_KEY=//p' "$API_ENV_FILE")"
+          AWS_REGION="$(sed -n 's/^AWS_REGION=//p' "$API_ENV_FILE")"
+          test -n "$AWS_ACCESS_KEY_ID" && test -n "$AWS_SECRET_ACCESS_KEY" && test -n "$AWS_REGION"
           export API_VALIDATED_ENV AWS_ACCESS_KEY_ID AWS_SECRET_ACCESS_KEY AWS_REGION
           args=()
           if [[ "$BACKFILL_APPLY" == true ]]; then
