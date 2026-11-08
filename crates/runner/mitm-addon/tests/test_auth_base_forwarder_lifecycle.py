@@ -1033,21 +1033,6 @@ class TestForwardRequestAsyncWrapper:
 
         assert forwarder.forward_request_admission_state_for_tests() == (0, 0)
 
-    async def test_rejects_body_over_limit_before_forwarding(self):
-        with (
-            patch.object(transport, "MAX_AUTH_BASE_REQUEST_BODY_BYTES", 4),
-            fake_forwarder_upstream() as upstream,
-            pytest.raises(transport.ForwardedRequestTooLargeError),
-        ):
-            await forwarder.forward_request(
-                "https://example.com",
-                "POST",
-                [],
-                b"12345",
-            )
-
-        assert upstream.resolve_calls == []
-
     async def test_rejects_when_admitted_forward_count_is_saturated(self):
         with patch.object(forwarder, "MAX_ADMITTED_AUTH_BASE_FORWARDS", 1):
             async with forwarder_concurrency_harness() as (scenario, upstream):

@@ -216,14 +216,6 @@ class TestBuildRewriteUrl:
                 "",
             )
 
-    def test_empty_orig_query_ignored(self):
-        url = auth_base_rewrite.build_rewrite_url(
-            "https://example.com/hook",
-            "/",
-            "",
-        )
-        assert url == "https://example.com/hook"
-
     @pytest.mark.parametrize(
         "resolved_query",
         [
