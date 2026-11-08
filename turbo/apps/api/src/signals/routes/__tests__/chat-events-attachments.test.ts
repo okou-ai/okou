@@ -1727,7 +1727,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(startedHeads).toBe(0);
   }, 30_000);
 
-  it("resolves attachment metadata in ordered waves of four", async () => {
+  it("refills attachment lookup slots while preserving order and concurrency four", async () => {
     const { actor, agentId } = await entitledChatActor();
     const files = Array.from({ length: 5 }, (_, index) => {
       return {
@@ -1756,6 +1756,8 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
     const firstWaveStarted = createDeferredPromise<void>(context.signal);
     const releaseFirstWave = createDeferredPromise<void>(context.signal);
+    const releaseSecond = createDeferredPromise<void>(context.signal);
+    const fifthStarted = createDeferredPromise<void>(context.signal);
     let matchingListRequests = 0;
     let startedHeads = 0;
     let activeHeads = 0;
@@ -1795,7 +1797,12 @@ describe("CHAT-02: generation templates and attachments", () => {
           if (startedHeads === 4) {
             firstWaveStarted.resolve(undefined);
           }
-          await releaseFirstWave.promise;
+          if (startedHeads === 5) {
+            fifthStarted.resolve(undefined);
+          }
+          await (object === objects[1]
+            ? releaseSecond.promise
+            : releaseFirstWave.promise);
           activeHeads -= 1;
           return {
             ContentLength: object.size,
@@ -1838,6 +1845,9 @@ describe("CHAT-02: generation templates and attachments", () => {
       [201],
     );
     onTestFinished(async () => {
+      if (!releaseSecond.settled()) {
+        releaseSecond.resolve(undefined);
+      }
       if (!releaseFirstWave.settled()) {
         releaseFirstWave.resolve(undefined);
       }
@@ -1848,6 +1858,9 @@ describe("CHAT-02: generation templates and attachments", () => {
     expect(startedHeads).toBe(4);
     expect(activeHeads).toBe(4);
     expect(peakActiveHeads).toBe(4);
+    releaseSecond.resolve(undefined);
+    await fifthStarted.promise;
+    expect(activeHeads).toBe(4);
     releaseFirstWave.resolve(undefined);
 
     const sent = await send;
@@ -1879,7 +1892,7 @@ describe("CHAT-02: generation templates and attachments", () => {
     );
 
     // An attachment is not a catalog artifact, so each one is read back at the
-    // address the App resolves for it: the bounded waves must leave every file
+    // address the App resolves for it: bounded scheduling must leave every file
     // pointing at its own stored object rather than a neighbour's.
     for (const file of files) {
       const resolved = await chat.resolveWebFileUrl(actor, file.id);
@@ -2246,23 +2259,47 @@ describe("CHAT-02: generation templates and attachments", () => {
 
   it("accepts repeated references to one uploaded file in the same input", async () => {
     const { actor, agentId } = await entitledChatActor();
-    const fileId = randomUUID();
     const filename = "repeated attachment.png";
-    chat.mockCompletedUploadObject(actor, fileId, filename, 42);
+    const fixture = installS3Fixture(context);
+    const fileId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename, contentType: "image/png" },
+      Buffer.alloc(42),
+    );
+    const originalSend = context.mocks.s3.send.getMockImplementation();
+    if (!originalSend) {
+      throw new Error("Expected the external object store");
+    }
+    let heads = 0;
+    context.mocks.s3.send.mockImplementation(async (request: unknown) => {
+      if (request instanceof HeadObjectCommand) {
+        heads += 1;
+      }
+      return await originalSend(request);
+    });
     const file = {
       type: "file" as const,
       fileId,
       filenameSnapshot: filename,
       contentType: "image/png",
     };
+    const otherSnapshot = { ...file, contentType: "application/octet-stream" };
     const run = await sendChatRun(actor, {
       agentId,
       prompt: "compare both references",
       userMessage: {
         version: 1,
-        parts: [file, { type: "text", text: "compare both references" }, file],
+        parts: [
+          file,
+          { type: "text", text: "compare both references" },
+          otherSnapshot,
+          file,
+        ],
       },
     });
+    expect(heads).toBe(1);
     const messages = await waitForThreadMessages(
       actor,
       run.threadId,
@@ -2282,9 +2319,18 @@ describe("CHAT-02: generation templates and attachments", () => {
       input.userMessage.parts.filter((part) => {
         return part.type === "file";
       }),
-    ).toStrictEqual([file, file]);
+    ).toStrictEqual([file, otherSnapshot, file]);
     expect((await api.readRun(actor, run.runId)).prompt).toContain(filename);
     await cancelChatRun(actor, run.runId);
+
+    const next = await sendChatRun(actor, {
+      agentId,
+      prompt: "resolve the object again in a new send",
+      userMessage: { version: 1, parts: [file] },
+    });
+    expect(heads).toBe(2);
+    expect((await api.readRun(actor, next.runId)).prompt).toContain(filename);
+    await cancelChatRun(actor, next.runId);
   }, 60_000);
 
   it("projects one structured annotated file through its rendered derivative", async () => {
