@@ -43,7 +43,8 @@ import {
   withPgQueryExecutionCapture,
 } from "../../lib/db-instrumentation";
 import { db$, writeDb$ } from "../external/db";
-import type { RunnerReusePreferenceTiming } from "./runner-reuse-timing.service";
+import { settleIncludingAbort } from "../utils";
+import { RunnerReusePreferenceTiming } from "./runner-reuse-timing.service";
 
 const RUNNER_REUSE_ROUTING_WINDOW_MS = 2000;
 const RUNNER_EXACT_SANDBOX_ROUTING_WINDOW_MS = Math.min(
@@ -111,6 +112,30 @@ function runnerThreadPredecessor(args: {
           args.reuseKey,
           sql`'thread:' || cast(${currentRun.chatThreadId} as text)`,
         ),
+      ),
+    )
+    .as("reuse_pred");
+}
+
+interface PendingRunnerThread {
+  readonly threadId: string;
+  readonly userId: string;
+  readonly orgId: string;
+  readonly predecessorRunId: string | null;
+}
+
+/** Final publication independently fences this captured owned Thread binding. */
+function pendingRunnerThreadPredecessor(args: PendingRunnerThread) {
+  return new QueryBuilder()
+    .select({ id: chatThreads.frameworkSessionRunId })
+    .from(chatThreads)
+    .innerJoin(agents, eq(agents.id, chatThreads.agentId))
+    .where(
+      and(
+        eq(chatThreads.id, args.threadId),
+        eq(chatThreads.userId, args.userId),
+        eq(agents.orgId, args.orgId),
+        sql`${chatThreads.frameworkSessionRunId} IS NOT DISTINCT FROM ${args.predecessorRunId}::uuid`,
       ),
     )
     .as("reuse_pred");
@@ -680,6 +705,7 @@ export function runnerPreferenceTelemetryDimensions(
 
 interface RunnerReuseCandidate {
   readonly runnerIdentity: PositiveRunnerPreference["runnerIdentity"];
+  readonly heartbeatSequence: number;
   readonly hasAdvertisedPredecessorSandbox: boolean;
   readonly hasLocalFinalizingPredecessor: boolean;
   readonly predecessorHomeEvidence:
@@ -689,6 +715,10 @@ interface RunnerReuseCandidate {
   readonly hasReusableSandbox: boolean;
   readonly predecessorCompletedAt: Date | null;
   readonly predecessorRunId: string | null;
+  readonly predecessorStatus: (typeof agentRuns.$inferSelect)["status"] | null;
+  readonly predecessorRunnerId: string | null;
+  readonly predecessorHeartbeatGeneration: number | null;
+  readonly predecessorHeartbeatSequence: number | null;
 }
 
 function advertisedReuseConditions(
@@ -733,11 +763,14 @@ function runnerReuseCandidatePlan(args: {
   readonly shouldLookUpGenericReuse: boolean;
   readonly finalizingCompletedAfter: Date;
   readonly shouldLookUpFinalizingProducer: boolean;
+  readonly pendingThread?: PendingRunnerThread;
 }) {
-  const predecessor = runnerThreadPredecessor({
-    runId: sql.param(args.runId),
-    reuseKey: sql.param(args.reuseKey),
-  });
+  const predecessor = args.pendingThread
+    ? pendingRunnerThreadPredecessor(args.pendingThread)
+    : runnerThreadPredecessor({
+        runId: sql.param(args.runId),
+        reuseKey: sql.param(args.reuseKey),
+      });
   const predecessorRunId = predecessor.id;
   const {
     reusableCondition,
@@ -796,6 +829,7 @@ function runnerReuseCandidatePlan(args: {
     fields: {
       runnerId: runnerState.runnerId,
       heartbeatGeneration: runnerState.heartbeatGeneration,
+      heartbeatSequence: runnerState.heartbeatSequence,
       hasAdvertisedPredecessorSandbox: sql`${exactSandboxCondition}`.mapWith(
         pgBooleanDecoder,
       ),
@@ -816,6 +850,11 @@ function runnerReuseCandidatePlan(args: {
       ),
       hasReusableSandbox: sql`${reusableCondition}`.mapWith(pgBooleanDecoder),
       predecessorCompletedAt: predecessorRun.completedAt,
+      predecessorStatus: predecessorRun.status,
+      predecessorRunnerId: predecessorRunnerState.runnerId,
+      predecessorHeartbeatGeneration:
+        predecessorRunnerState.heartbeatGeneration,
+      predecessorHeartbeatSequence: predecessorRunnerState.heartbeatSequence,
       // Ready sandbox/home provenance survives deletion of the settled Run.
       predecessorRunId,
     },
@@ -854,11 +893,146 @@ interface RunnerReusePreferenceResolution {
   readonly waitBudgetSource?: "active_producer" | "completion_bridge";
 }
 
+export interface RunnerReusePreparation {
+  readonly selection:
+    | {
+        readonly ok: true;
+        readonly value: {
+          readonly thread: PendingRunnerThread;
+          readonly candidate: RunnerReuseCandidate | null;
+        };
+      }
+    | { readonly ok: false; readonly error: unknown };
+  readonly operations: ReturnType<RunnerReusePreferenceTiming["operations"]>;
+}
+
+function preparedReuseUnchanged(
+  args: RunnerReusePreferenceArgs,
+  prepared: Extract<RunnerReusePreparation["selection"], { ok: true }>["value"],
+): SQL {
+  const predecessor = runnerThreadPredecessor({
+    runId: sql.param(args.runId),
+    reuseKey: sql.param(args.reuseKey),
+  });
+  const predecessorUnchanged = sql`(SELECT ${predecessor.id} FROM ${predecessor}) IS NOT DISTINCT FROM ${prepared.thread.predecessorRunId}::uuid`;
+  const conditions: SQL[] = [predecessorUnchanged];
+  const candidate = prepared.candidate;
+  if (!candidate) {
+    return predecessorUnchanged;
+  }
+  conditions.push(
+    exists(
+      new QueryBuilder()
+        .select({ id: runnerState.runnerId })
+        .from(runnerState)
+        .where(
+          and(
+            eq(runnerState.runnerId, candidate.runnerIdentity.runnerId),
+            eq(runnerState.runnerGroup, args.runnerGroup),
+            eq(runnerState.mode, "running"),
+            gt(runnerState.lastSeenAt, runnerReuseStateFreshAfter(nowDate())),
+            eq(
+              runnerState.heartbeatGeneration,
+              candidate.runnerIdentity.heartbeatGeneration,
+            ),
+            eq(runnerState.heartbeatSequence, candidate.heartbeatSequence),
+          ),
+        ),
+    ),
+  );
+  if (
+    !candidate.hasAdvertisedPredecessorSandbox &&
+    (candidate.hasLocalFinalizingPredecessor ||
+      candidate.predecessorHomeEvidence !== null) &&
+    candidate.predecessorStatus !== null &&
+    candidate.predecessorRunId
+  ) {
+    conditions.push(
+      exists(
+        new QueryBuilder()
+          .select({ id: predecessorRun.id })
+          .from(predecessorRun)
+          .where(
+            and(
+              eq(predecessorRun.id, candidate.predecessorRunId),
+              eq(predecessorRun.status, candidate.predecessorStatus),
+              sql`${predecessorRun.completedAt} IS NOT DISTINCT FROM ${sql.param(candidate.predecessorCompletedAt, predecessorRun.completedAt)}`,
+            ),
+          ),
+      ),
+    );
+  }
+  if (
+    !candidate.hasAdvertisedPredecessorSandbox &&
+    !candidate.hasLocalFinalizingPredecessor &&
+    candidate.predecessorHomeEvidence === "expected" &&
+    candidate.predecessorRunnerHasActiveProducer &&
+    candidate.predecessorRunnerId !== null &&
+    candidate.predecessorHeartbeatGeneration !== null &&
+    candidate.predecessorHeartbeatSequence !== null
+  ) {
+    conditions.push(
+      exists(
+        new QueryBuilder()
+          .select({ id: predecessorRunnerState.runnerId })
+          .from(predecessorRunnerState)
+          .where(
+            and(
+              eq(
+                predecessorRunnerState.runnerId,
+                candidate.predecessorRunnerId,
+              ),
+              eq(
+                predecessorRunnerState.heartbeatGeneration,
+                candidate.predecessorHeartbeatGeneration,
+              ),
+              eq(
+                predecessorRunnerState.heartbeatSequence,
+                candidate.predecessorHeartbeatSequence,
+              ),
+              gt(
+                predecessorRunnerState.lastSeenAt,
+                runnerReuseStateFreshAfter(nowDate()),
+              ),
+            ),
+          ),
+      ),
+    );
+  }
+  return sql`(${and(...conditions)})`;
+}
+
+function preparedCompletionBridgeExpired(
+  candidate: RunnerReuseCandidate | null,
+): boolean {
+  if (
+    !candidate ||
+    candidate.hasAdvertisedPredecessorSandbox ||
+    candidate.predecessorCompletedAt === null
+  ) {
+    return false;
+  }
+  const requiresBridge = candidate.hasLocalFinalizingPredecessor
+    ? !candidate.candidateRunnerHasActiveProducer
+    : candidate.predecessorHomeEvidence === "expected" &&
+      !candidate.predecessorRunnerHasActiveProducer;
+  return (
+    requiresBridge &&
+    candidate.predecessorCompletedAt.getTime() +
+      RUNNER_FINALIZING_COMPLETION_BRIDGE_MS <=
+      nowDate().getTime()
+  );
+}
+
 const startRunnerJobDiscovery$ = command(
   async (
     { set },
-    args: { readonly runId: string; readonly runnerGroup: string },
-  ): Promise<Date | null> => {
+    args: RunnerReusePreferenceArgs,
+    prepared?: Extract<
+      RunnerReusePreparation["selection"],
+      { ok: true }
+    >["value"],
+  ) => {
     // Both poll and notification can discover the committed row first. Keep
     // their original winner's time even when they race or publication retries.
     const [row] = await set(writeDb$)
@@ -876,14 +1050,23 @@ const startRunnerJobDiscovery$ = command(
           gt(runnerJobQueue.expiresAt, sql`now()`),
         ),
       )
-      .returning({ discoveryStartedAt: runnerJobQueue.discoveryStartedAt });
+      .returning({
+        discoveryStartedAt: runnerJobQueue.discoveryStartedAt,
+        preparedUnchanged:
+          sql`${prepared ? preparedReuseUnchanged(args, prepared) : sql`true`}`.mapWith(
+            pgBooleanDecoder,
+          ),
+      });
     if (!row) {
       return null;
     }
     if (row.discoveryStartedAt === null) {
       throw new Error("Discovered runner job is missing its start time");
     }
-    return row.discoveryStartedAt;
+    return {
+      discoveryStartedAt: row.discoveryStartedAt,
+      preparedUnchanged: row.preparedUnchanged,
+    };
   },
 );
 
@@ -929,6 +1112,7 @@ const findRunnerReuseCandidate$ = command(
       readonly shouldLookUpGenericReuse: boolean;
       readonly shouldLookUpExactSandbox: boolean;
       readonly shouldLookUpFinalizingProducer: boolean;
+      readonly pendingThread?: PendingRunnerThread;
     },
   ): Promise<RunnerReuseCandidate | null> => {
     const currentDate = nowDate();
@@ -957,6 +1141,7 @@ const findRunnerReuseCandidate$ = command(
             runnerId: row.runnerId,
             heartbeatGeneration: row.heartbeatGeneration,
           },
+          heartbeatSequence: row.heartbeatSequence,
           hasAdvertisedPredecessorSandbox: row.hasAdvertisedPredecessorSandbox,
           hasLocalFinalizingPredecessor: row.hasLocalFinalizingPredecessor,
           predecessorHomeEvidence: row.predecessorHomeEvidence,
@@ -967,8 +1152,83 @@ const findRunnerReuseCandidate$ = command(
           hasReusableSandbox: row.hasReusableSandbox,
           predecessorCompletedAt: row.predecessorCompletedAt,
           predecessorRunId: row.predecessorRunId,
+          predecessorStatus: row.predecessorStatus,
+          predecessorRunnerId: row.predecessorRunnerId,
+          predecessorHeartbeatGeneration: row.predecessorHeartbeatGeneration,
+          predecessorHeartbeatSequence: row.predecessorHeartbeatSequence,
         }
       : null;
+  },
+);
+
+const selectRunnerReuseCandidate$ = command(
+  async (
+    { set },
+    args: Omit<
+      Parameters<typeof runnerReuseCandidatePlan>[0],
+      "freshAfter" | "finalizingCompletedAfter"
+    >,
+    timing: RunnerReusePreferenceTiming | undefined,
+    phase: "holder_select" | "holder_reselect",
+  ) => {
+    const select = () => {
+      return set(findRunnerReuseCandidate$, args);
+    };
+    const capture = timing?.start();
+    return await (capture
+      ? withPgPoolAcquisitionCapture(capture.pool, async () => {
+          const result = await withPgQueryExecutionCapture(
+            capture.queries,
+            select,
+          );
+          capture.success = true;
+          return result;
+        }).finally(() => {
+          timing?.record(phase, capture);
+        })
+      : select());
+  },
+);
+
+/** The publication owner joins this read even when its guarded write loses. */
+export const prepareRunnerReusePreference$ = command(
+  async (
+    { set },
+    args: {
+      readonly runId: string;
+      readonly runnerGroup: string;
+      readonly profile: string;
+      readonly reuseKey: string;
+      readonly thread: PendingRunnerThread;
+    },
+  ): Promise<RunnerReusePreparation> => {
+    if (args.reuseKey !== `thread:${args.thread.threadId}`) {
+      throw new Error("Prepared reuse key must match its owned Thread");
+    }
+    const timing = new RunnerReusePreferenceTiming();
+    const currentDate = nowDate();
+    const selection = await settleIncludingAbort(async () => {
+      return {
+        thread: args.thread,
+        candidate: await set(
+          selectRunnerReuseCandidate$,
+          {
+            ...args,
+            pendingThread: args.thread,
+            ...runnerReuseLookupStages(
+              { discoveryStartedAt: null },
+              currentDate,
+            ),
+          },
+          timing,
+          "holder_select",
+        ),
+      };
+    });
+    return {
+      selection,
+      operations: timing.operations({ runId: args.runId, dimensions: {} }),
+    };
   },
 );
 
@@ -977,13 +1237,23 @@ export const resolveRunnerReusePreference$ = command(
     { set },
     args: RunnerReusePreferenceArgs,
     timing?: RunnerReusePreferenceTiming,
+    prepared?: RunnerReusePreparation,
   ): Promise<RunnerReusePreferenceResolution> => {
     if (!args.reuseKey) {
       return {
         preference: { kind: "noPreference", reason: "noReuseKey" },
       };
     }
-    const lookupStages = runnerReuseLookupStages(args, nowDate());
+    if (prepared && !prepared.selection.ok) {
+      throw prepared.selection.error;
+    }
+    const preparedSelection = prepared?.selection.ok
+      ? prepared.selection.value
+      : undefined;
+    const lookupStages = runnerReuseLookupStages(
+      preparedSelection ? { discoveryStartedAt: null } : args,
+      nowDate(),
+    );
     if (runnerReuseLookupExpired(lookupStages)) {
       return {
         preference: { kind: "noPreference", reason: "expired" },
@@ -995,53 +1265,46 @@ export const resolveRunnerReusePreference$ = command(
       profile: args.profile,
       reuseKey: args.reuseKey,
     };
-    const selectCandidate = () => {
-      return set(findRunnerReuseCandidate$, {
-        ...lookupArgs,
-        ...lookupStages,
-      });
-    };
-    const selectionCapture = timing?.start();
-    let candidate = await (selectionCapture
-      ? withPgPoolAcquisitionCapture(selectionCapture.pool, async () => {
-          const result = await withPgQueryExecutionCapture(
-            selectionCapture.queries,
-            selectCandidate,
-          );
-          selectionCapture.success = true;
-          return result;
-        }).finally(() => {
-          timing?.record("holder_select", selectionCapture);
-        })
-      : selectCandidate());
+    let candidate = preparedSelection
+      ? preparedSelection.candidate
+      : await set(
+          selectRunnerReuseCandidate$,
+          { ...lookupArgs, ...lookupStages },
+          timing,
+          "holder_select",
+        );
 
     // Prepare the candidate before starting a new window. Both delivery paths
     // await this write before returning a poll result or publishing to Ably.
     const startDiscovery = () => {
-      return set(startRunnerJobDiscovery$, args);
+      return set(startRunnerJobDiscovery$, args, preparedSelection);
     };
-    const discoveryStartedAt =
-      args.discoveryStartedAt ??
-      (await (async () => {
-        const discoveryCapture = timing?.start();
-        return await (discoveryCapture
-          ? withPgPoolAcquisitionCapture(discoveryCapture.pool, async () => {
-              const result = await withPgQueryExecutionCapture(
-                discoveryCapture.queries,
-                startDiscovery,
-              );
-              discoveryCapture.success = true;
-              return result;
-            }).finally(() => {
-              timing?.record("discovery_persist", discoveryCapture);
-            })
-          : startDiscovery());
-      })());
-    if (discoveryStartedAt === null) {
+    const discovery = args.discoveryStartedAt
+      ? {
+          discoveryStartedAt: args.discoveryStartedAt,
+          preparedUnchanged: preparedSelection === undefined,
+        }
+      : await (async () => {
+          const discoveryCapture = timing?.start();
+          return await (discoveryCapture
+            ? withPgPoolAcquisitionCapture(discoveryCapture.pool, async () => {
+                const result = await withPgQueryExecutionCapture(
+                  discoveryCapture.queries,
+                  startDiscovery,
+                );
+                discoveryCapture.success = true;
+                return result;
+              }).finally(() => {
+                timing?.record("discovery_persist", discoveryCapture);
+              })
+            : startDiscovery());
+        })();
+    if (discovery === null) {
       return {
         preference: { kind: "noPreference", reason: "noViableHolder" },
       };
     }
+    const { discoveryStartedAt } = discovery;
     const savedStages = runnerReuseLookupStages(
       {
         discoveryStartedAt,
@@ -1054,6 +1317,9 @@ export const resolveRunnerReusePreference$ = command(
       };
     }
     if (
+      !discovery.preparedUnchanged ||
+      (preparedSelection !== undefined &&
+        preparedCompletionBridgeExpired(candidate)) ||
       lookupStages.shouldLookUpExactSandbox !==
         savedStages.shouldLookUpExactSandbox ||
       lookupStages.shouldLookUpFinalizingProducer !==
@@ -1063,25 +1329,12 @@ export const resolveRunnerReusePreference$ = command(
     ) {
       // A competing discovery or the lookup itself may have consumed a stage.
       // Select using the saved deadline without renewing it or retrying writes.
-      const reselectCandidate = () => {
-        return set(findRunnerReuseCandidate$, {
-          ...lookupArgs,
-          ...savedStages,
-        });
-      };
-      const reselectionCapture = timing?.start();
-      candidate = await (reselectionCapture
-        ? withPgPoolAcquisitionCapture(reselectionCapture.pool, async () => {
-            const result = await withPgQueryExecutionCapture(
-              reselectionCapture.queries,
-              reselectCandidate,
-            );
-            reselectionCapture.success = true;
-            return result;
-          }).finally(() => {
-            timing?.record("holder_reselect", reselectionCapture);
-          })
-        : reselectCandidate());
+      candidate = await set(
+        selectRunnerReuseCandidate$,
+        { ...lookupArgs, ...savedStages },
+        timing,
+        "holder_reselect",
+      );
     }
     return runnerReusePreferenceResult({
       candidate,

@@ -10,6 +10,7 @@ import {
   runnerReuseKeyTelemetryKind,
   runnerReusePreferenceLookupError,
   resolveRunnerReusePreference$,
+  type RunnerReusePreparation,
 } from "./runner-reuse-preference";
 import { tapError } from "../utils";
 import { RunnerReusePreferenceTiming } from "./runner-reuse-timing.service";
@@ -23,6 +24,7 @@ export interface RunnerJobNotification {
   readonly reuseKey: string | null;
   readonly cliAgentSessionId: string | null;
   readonly createdAt: Date;
+  readonly reusePreparation?: RunnerReusePreparation;
 }
 
 export type RunnerJobPreActivationTiming =
@@ -126,6 +128,18 @@ function runnerNotificationAttributionEvents(
   });
 }
 
+function preparedReuseOperations(
+  prepared: RunnerReusePreparation | undefined,
+  dimensions: Readonly<Record<string, string>>,
+) {
+  return (prepared?.operations ?? []).map((operation) => {
+    return {
+      ...operation,
+      dimensions: { ...operation.dimensions, ...dimensions },
+    };
+  });
+}
+
 /** The activation caller checks cancellation after publication and attribution. */
 export const notifyRunnerJob$ = command(
   async (
@@ -147,6 +161,7 @@ export const notifyRunnerJob$ = command(
           discoveryStartedAt: null,
         },
         reuseTiming,
+        args.reusePreparation,
       ),
       (error) => {
         preferenceLookupSucceeded = false;
@@ -200,6 +215,11 @@ export const notifyRunnerJob$ = command(
     // Queue-relative actions are cumulative boundaries. Preference lookup and
     // publish durations are nested children and must not be added to them.
     recordSandboxOperations([
+      ...preparedReuseOperations(args.reusePreparation, {
+        ...attributionDimensions,
+        runner_preference_resolution:
+          preferenceDimensions.runner_preference_resolution,
+      }),
       ...reuseTiming.operations({
         runId: args.runId,
         dimensions: {
