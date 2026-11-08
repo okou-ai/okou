@@ -237,7 +237,7 @@ private struct ChatModelPickerContent: View {
                       Task { showsAuth = await subscriptions.reconnect(type: type) }
                     }
                     .disabled(
-                      !configuration.canLinkSubscriptions || subscriptions.isLoading
+                      !configuration.canLinkSubscriptions || subscriptions.isMutating
                         || selection.isBusy)
                   }
                 } else {
@@ -275,7 +275,7 @@ private struct ChatModelPickerContent: View {
             }
           }
         }
-        if let error = selection.error ?? modelError ?? subscriptions.error {
+        if let error = selection.error ?? modelError {
           Section {
             Text(error).foregroundStyle(OkouColor.destructive)
             Button("Refresh model settings") {
@@ -285,6 +285,11 @@ private struct ChatModelPickerContent: View {
               }
             }
             .disabled(selection.isBusy)
+          }
+        }
+        if let error = subscriptions.error {
+          Section {
+            OkouLoadErrorRow(message: error) { _ = await subscriptions.refresh(force: true) }
           }
         }
       }
@@ -303,7 +308,6 @@ private struct ChatModelPickerContent: View {
       .task {
         if modelStatus != .loading && !selection.isLoading { await selection.open() }
       }
-      .task { await subscriptions.refresh() }
       .sheet(isPresented: $showsAuth, onDismiss: subscriptions.cancelAuth) {
         SubscriptionAuthorizationView(store: subscriptions)
       }

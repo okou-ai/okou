@@ -115,6 +115,7 @@ final class ConversationStore {
   private(set) var isRecoveringFailure = false
   private var failureAccountsReadyID: String?
   private var failureAccountBaseline: Int?
+  private var failureAccountError: String?
   private var failureContextRevision = UUID()
   private var failureAccountsRequestedID: String?
   private var failureAccountsTask: Task<Void, Never>?
@@ -449,7 +450,7 @@ final class ConversationStore {
           && failureAccountBaseline.map {
             (modelSelection?.models.subscriptions.accountRevision ?? 0) > $0
           } == true),
-      busy: isRecoveringFailure || isSending)
+      busy: isRecoveringFailure || isSending, accountsError: failureAccountError)
     if state.isCurrent {
       state.billing = failureBilling
       state.billingError = failureBillingError
@@ -467,6 +468,7 @@ final class ConversationStore {
     let request = UUID()
     failureContextRevision = request
     failureAccountsReadyID = nil
+    failureAccountError = nil
     if let failure = messages.first(where: { $0.id == id })?.failure,
       failure.recovery(personalFramework: nil).kind == .billing
     {
@@ -491,11 +493,19 @@ final class ConversationStore {
       failure.recovery(personalFramework: nil).kind == .usage
     else { return }
     failureAccountBaseline = modelSelection.models.subscriptions.accountRevision
-    let succeeded = await modelSelection.models.subscriptions.refresh(force: true)
-    guard succeeded, !closed, !Task.isCancelled, history?.latestFailureID == id,
-      failureContextRevision == request
-    else { return }
-    failureAccountsReadyID = id
+    do {
+      _ = try await modelSelection.models.subscriptions.readAccounts(force: true)
+      guard !closed, !Task.isCancelled, history?.latestFailureID == id,
+        failureContextRevision == request
+      else { return }
+      failureAccountsReadyID = id
+      failureAccountError = nil
+    } catch is CancellationError {} catch {
+      guard !closed, !Task.isCancelled, history?.latestFailureID == id,
+        failureContextRevision == request
+      else { return }
+      failureAccountError = ChatRequestFailure.message(for: error)
+    }
   }
 
   /// Execution recovery appends a new input. Uncertain delivery still uses retry(_:).
