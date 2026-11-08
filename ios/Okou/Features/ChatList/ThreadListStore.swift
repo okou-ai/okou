@@ -206,12 +206,18 @@ final class ThreadListStore {
     guard !closed, !blocked, !Task.isCancelled else { return }
     navigationRevision += 1
     do {
-      _ = try resources.navigation(refresh: navigationRevision > 1)
+      let reads = try resources.navigation(refresh: navigationRevision > 1)
       let agents = try stateStore.get(agentsValue)
       let preferences = try stateStore.get(preferencesValue)
       // Each publication settles independently, even while this caller awaits both.
-      let agentResult = await agents.result
-      let preferenceResult = await preferences.result
+      let (agentResult, preferenceResult) = await withTaskCancellationHandler {
+        (await agents.result, await preferences.result)
+      } onCancel: {
+        agents.cancel()
+        preferences.cancel()
+        reads.agents.cancel()
+        reads.preferences.cancel()
+      }
       guard !closed, !blocked, !Task.isCancelled else { return }
       var failure: Error?
       if case .failure(let error) = agentResult { failure = error }
