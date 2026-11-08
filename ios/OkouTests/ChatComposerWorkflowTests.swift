@@ -129,7 +129,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     workflows.insert(numeric)
     try await waitForBusinessResult { conversation.draft == "/report-12 " }
     try await type("/r14", in: input, conversation: conversation)
-    try await waitForBusinessResult { !workflows.isLoading }
+    _ = try await workflows.resources.store.get(workflows.resources.matches).value
     input.insertText("\n")
     XCTAssertEqual(conversation.draft, "/r14\n")
   }
@@ -364,6 +364,117 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let sent = try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: body)
     XCTAssertEqual(sent.userMessage.parts.map(\.type), ["text"])
     XCTAssertEqual(sent.userMessage.parts.first?.text, "Summarize /morning-brief ")
+  }
+
+  func testCandidateGraphSharesHTTPAcrossQueriesAndRetriesOriginalFailure() async throws {
+    let gate = WorkflowGate()
+    let started = expectation(description: "Candidate HTTP read started")
+    let attempts = WorkflowCounter()
+    let fixture = AttachmentFlowFixture(workflows: { _ in
+      let attempt = attempts.value.withLock {
+        $0 += 1
+        return $0
+      }
+      if attempt == 1 {
+        started.fulfill()
+        await gate.wait()
+      }
+      if attempt == 2 {
+        return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Try again"}}"#)
+      }
+      return ChatHTTPResponse(body: workflowResponse)
+    })
+    let source = ComposerWorkflowSource(
+      client: fixture.http.client, storage: nil, didFail: { _ in })
+    let resources = ComposerWorkflowResources()
+    defer {
+      resources.dismiss()
+      source.close()
+      gate.open()
+    }
+    resources.update(query: "rel", recent: [])
+    resources.reload(source: source, agentID: AttachmentFlowFixture.agentID)
+    let first = try resources.store.get(resources.matches)
+    addTeardownBlock { @MainActor in
+      resources.dismiss()
+      gate.open()
+      _ = await first.result
+    }
+    await fulfillment(of: [started], timeout: 2)
+    resources.update(query: "morning", recent: [])
+    let latest = try resources.store.get(resources.matches)
+    gate.open()
+    let matches = try await latest.value
+    XCTAssertEqual(matches.values.map(\.id), ["morning"])
+    XCTAssertEqual(attempts.value.withLock { $0 }, 1)
+    resources.reload(source: source, agentID: AttachmentFlowFixture.agentID)
+    do {
+      _ = try await resources.store.get(resources.matches).value
+      XCTFail("The candidate resource must preserve its HTTP failure")
+    } catch let error as APIClientError {
+      XCTAssertEqual(error.statusCode, 503)
+    }
+    resources.reload(source: source, agentID: AttachmentFlowFixture.agentID)
+    let recovered = try await resources.store.get(resources.matches).value
+    XCTAssertEqual(recovered.values.map(\.id), ["morning"])
+  }
+
+  func testCandidateReplacementAndDismissalCancelTheirOriginalHTTP() async throws {
+    let gate = WorkflowGate()
+    let started = expectation(description: "Original candidate request reached HTTP")
+    let dismissedStarted = expectation(description: "Dismissed candidate request reached HTTP")
+    let pendingCount = WorkflowCounter()
+    let cancelled = expectation(description: "Original HTTP observed cancellation")
+    cancelled.expectedFulfillmentCount = 2
+    let fixture = AttachmentFlowFixture(workflows: { request in
+      let agent = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+        .first { $0.name == "agentId" }?.value
+      if agent == "pending-agent" {
+        let attempt = pendingCount.value.withLock {
+          $0 += 1
+          return $0
+        }
+        if attempt == 1 { started.fulfill() } else { dismissedStarted.fulfill() }
+        await gate.wait()
+        XCTAssertTrue(Task.isCancelled)
+        cancelled.fulfill()
+      }
+      return ChatHTTPResponse(body: workflowResponse)
+    })
+    let source = ComposerWorkflowSource(
+      client: fixture.http.client, storage: nil, didFail: { _ in })
+    let resources = ComposerWorkflowResources()
+    defer {
+      resources.dismiss()
+      source.close()
+      gate.open()
+    }
+    resources.update(query: "rel", recent: [])
+    resources.reload(source: source, agentID: "pending-agent")
+    let old = try resources.store.get(resources.matches)
+    addTeardownBlock { @MainActor in
+      resources.dismiss()
+      gate.open()
+      _ = await old.result
+    }
+    await fulfillment(of: [started], timeout: 2)
+    // A current Agent can resolve independently of its retired candidate request.
+    resources.reload(source: source, agentID: AttachmentFlowFixture.agentID)
+    let fresh = try await resources.store.get(resources.matches).value
+    XCTAssertEqual(fresh.values.first?.id, "rel")
+    resources.reload(source: source, agentID: "pending-agent")
+    let dismissed = try resources.store.get(resources.matches)
+    addTeardownBlock { @MainActor in
+      resources.dismiss()
+      gate.open()
+      _ = await dismissed.result
+    }
+    await fulfillment(of: [dismissedStarted], timeout: 2)
+    resources.dismiss()
+    await fulfillment(of: [cancelled], timeout: 2)
+    XCTAssertFalse(resources.owns(fresh))
+    let empty = try await resources.store.get(resources.matches).value
+    XCTAssertTrue(empty.values.isEmpty)
   }
 
   private func workflowFixture(failSend: Bool = false) -> AttachmentFlowFixture {
