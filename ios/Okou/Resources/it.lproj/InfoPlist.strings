@@ -12,3 +12,6 @@
 
 /* Privacy - Photo Library Usage Description */
 "NSPhotoLibraryUsageDescription" = "Okou mostra le tue foto recenti per consentirti di allegarle a un messaggio.";
+
+/* Home Screen quick action */
+"New chat" = "Nuova chat";

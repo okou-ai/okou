@@ -12,3 +12,6 @@
 
 /* Privacy - Photo Library Usage Description */
 "NSPhotoLibraryUsageDescription" = "Okou 会显示你最近的照片，方便你附加到消息中。";
+
+/* Home Screen quick action */
+"New chat" = "新建聊天";

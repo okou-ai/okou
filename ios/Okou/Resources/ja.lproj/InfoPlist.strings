@@ -12,3 +12,6 @@
 
 /* Privacy - Photo Library Usage Description */
 "NSPhotoLibraryUsageDescription" = "Okou は最近の写真を表示し、メッセージに添付できるようにします。";
+
+/* Home Screen quick action */
+"New chat" = "新しいチャット";

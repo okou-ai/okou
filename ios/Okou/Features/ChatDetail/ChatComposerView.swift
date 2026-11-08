@@ -44,6 +44,7 @@ struct ChatComposerView: View {
   @State private var mountedVoice: ComposerVoiceInputStore?
   @Environment(\.scenePhase) private var scenePhase
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
+  @Environment(\.newChatActivation) private var newChatActivation
   private let actionSize = OkouControl.minimumTarget
 
   private var cornerRadius: CGFloat { Self.compactHeight / 2 }
@@ -323,6 +324,15 @@ struct ChatComposerView: View {
     }
     .onChange(of: scenePhase) { _, phase in
       if phase == .background { mountedVoice?.suspend() }
+    }
+    .onChange(of: newChatActivation) { _, _ in
+      pendingAdd = nil
+      showsAddSheet = false
+      showsConnectors = false
+      showsCamera = false
+      showsScanner = false
+      showsPhotos = false
+      showsFiles = false
     }
     .onDisappear {
       draftState?.editor.workflows.dismiss()

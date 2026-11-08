@@ -12,3 +12,6 @@
 
 /* Privacy - Photo Library Usage Description */
 "NSPhotoLibraryUsageDescription" = "Okou menampilkan foto terbaru Anda agar Anda dapat melampirkannya ke pesan.";
+
+/* Home Screen quick action */
+"New chat" = "Chat baru";

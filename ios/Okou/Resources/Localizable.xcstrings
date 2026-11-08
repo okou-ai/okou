@@ -14378,40 +14378,40 @@
         }
       }
     },
-    "Opens a new Okou chat with your request in the message box, ready to review and send.": {
+    "Opens a new chat with the keyboard ready for typing.": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Öffnet einen neuen Okou-Chat mit Ihrer Anfrage im Nachrichtenfeld, bereit zum Prüfen und Senden." }
+          "stringUnit": { "state": "translated", "value": "Öffnet einen neuen Chat mit eingeblendeter Tastatur." }
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "Abre un nuevo chat de Okou con tu petición en el cuadro de mensaje, lista para revisar y enviar." }
+          "stringUnit": { "state": "translated", "value": "Abre un nuevo chat con el teclado listo para escribir." }
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "Ouvre une nouvelle discussion Okou avec votre demande dans le champ de message, prête à être vérifiée et envoyée." }
+          "stringUnit": { "state": "translated", "value": "Ouvre une nouvelle discussion avec le clavier prêt à saisir du texte." }
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "नई Okou चैट खोलता है और आपका अनुरोध संदेश बॉक्स में रखता है, ताकि आप उसे देखकर भेज सकें।" }
+          "stringUnit": { "state": "translated", "value": "टाइप करने के लिए तैयार कीबोर्ड के साथ नई चैट खोलता है।" }
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Membuka chat Okou baru dengan permintaan Anda di kolom pesan, siap ditinjau dan dikirim." }
+          "stringUnit": { "state": "translated", "value": "Membuka chat baru dengan papan ketik yang siap digunakan." }
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "Apre una nuova chat Okou con la tua richiesta nel campo del messaggio, pronta da controllare e inviare." }
+          "stringUnit": { "state": "translated", "value": "Apre una nuova chat con la tastiera pronta per scrivere." }
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "新しい Okou チャットを開き、リクエストをメッセージ欄に入力します。内容を確認してから送信できます。" }
+          "stringUnit": { "state": "translated", "value": "キーボードを表示して新しいチャットを開きます。" }
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "요청이 메시지 입력창에 입력된 새 Okou 채팅을 엽니다. 검토 후 보낼 수 있습니다." }
+          "stringUnit": { "state": "translated", "value": "키보드가 표시된 새 채팅을 엽니다." }
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Abre uma nova conversa no Okou com seu pedido no campo de mensagem, pronto para revisar e enviar." }
+          "stringUnit": { "state": "translated", "value": "Abre uma nova conversa com o teclado pronto para digitar." }
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "新建一个 Okou 聊天，并将你的请求填入输入框，供你检查后发送。" }
+          "stringUnit": { "state": "translated", "value": "打开新聊天并弹出键盘，方便直接输入。" }
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "開啟新的 Okou 聊天，並將你的請求填入輸入框，讓你檢查後傳送。" }
+          "stringUnit": { "state": "translated", "value": "開啟新聊天並顯示鍵盤，方便直接輸入。" }
         }
       }
     },
@@ -16706,43 +16706,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "重新命名" }
-        }
-      }
-    },
-    "Request": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Anfrage" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Solicitud" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Demande" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "अनुरोध" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Permintaan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Richiesta" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "リクエスト" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "요청" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Solicitação" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "请求" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "請求" }
         }
       }
     },
