@@ -17,8 +17,8 @@ struct ChatWorkspaceHeader: View {
     HStack(spacing: OkouSpace.sm) {
       Button(action: openSidebar) {
         OkouToolbarIcon("menu")
-          .modifier(OkouGlassControl(shape: .circle))
           .modifier(OkouUnreadBadge(isVisible: hasUnread))
+          .modifier(OkouGlassControl(shape: .circle))
       }
       .accessibilityLabel("Open sidebar")
       .accessibilityValue(hasUnread ? Text("Unread") : Text(verbatim: ""))

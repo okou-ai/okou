@@ -58,8 +58,8 @@
                 Button {
                 } label: {
                   OkouToolbarIcon(icon)
-                    .modifier(OkouGlassControl(shape: .circle))
                     .modifier(OkouUnreadBadge(isVisible: icon == "menu"))
+                    .modifier(OkouGlassControl(shape: .circle))
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(icon)
