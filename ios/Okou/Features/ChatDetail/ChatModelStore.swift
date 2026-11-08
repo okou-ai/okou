@@ -38,7 +38,8 @@ final class ChatModelStore {
     ownsResources = resources == nil
     connectorAccess = ChatComposerAccess(client: client)
     connectorAuthorization = ChatConnectorService(client: client)
-    subscriptions = PersonalSubscriptionStore(client: client, didFail: didFail)
+    subscriptions = PersonalSubscriptionStore(
+      client: client, stateStore: self.resources.store, didFail: didFail)
     self.didFail = didFail
     // Connecting a subscription can also change the server's default model.
     subscriptions.didMutate = { [weak self] in

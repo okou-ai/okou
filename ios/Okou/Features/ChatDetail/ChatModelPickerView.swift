@@ -235,7 +235,7 @@ private struct ChatModelPickerContent: View {
                       Task { showsAuth = await subscriptions.reconnect(type: type) }
                     }
                     .disabled(
-                      !configuration.canLinkSubscriptions || subscriptions.isLoading
+                      !configuration.canLinkSubscriptions || subscriptions.isMutating
                         || selection.isBusy)
                   }
                 } else {
@@ -301,7 +301,6 @@ private struct ChatModelPickerContent: View {
       .task {
         if modelStatus != .loading && !selection.isLoading { await selection.open() }
       }
-      .task { await subscriptions.refresh() }
       .sheet(isPresented: $showsAuth, onDismiss: subscriptions.cancelAuth) {
         SubscriptionAuthorizationView(store: subscriptions)
       }

@@ -31,7 +31,7 @@ struct AssistantFailureState: Equatable {
 
   @MainActor static func make(
     failure: ChatFailure, current: Bool, selection: ChatModelSelectionStore?,
-    accountsReady: Bool, busy: Bool
+    accountsReady: Bool, busy: Bool, accountsError: String? = nil
   ) -> Self {
     let route = selection?.models.configuration?.row(
       for: selection?.selection ?? ChatModelSelection())?
@@ -76,12 +76,12 @@ struct AssistantFailureState: Equatable {
     return Self(
       failure: failure, recovery: recovery, isCurrent: current,
       isBusy: busy || selection?.isMutating == true || subscriptions?.isMutating == true
-        || (readsAccount && !accountsReady && subscriptions?.error == nil),
+        || (readsAccount && !accountsReady && accountsError == nil),
       canSend: selection?.canSendConfirmedSelection != false,
       accountLabel: account?.accountEmail ?? account?.workspaceName,
       disconnected: readsAccount && accountsReady && account == nil,
       resetDetails: details.isEmpty ? recovery.resetLabel.map { ["Resets \($0)"] } ?? [] : details,
       resetAccountID: resetAllowed ? account?.id : nil, resetsRemaining: resets,
-      accountError: readsAccount && !accountsReady ? subscriptions?.error : nil)
+      accountError: readsAccount && !accountsReady ? accountsError : nil)
   }
 }
