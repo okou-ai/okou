@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from enum import Enum, auto
 from typing import Literal, Protocol, TypeVar, cast
 
+from .json_limits import validate_positive_int
+
 
 class _PathMarker(Enum):
     UNKNOWN_KEY = auto()
@@ -112,13 +114,6 @@ _JSON_CONTAINER_OR_QUOTE_RE = re.compile(rb'["{}\[\]]')
 _JSON_STRING_ESCAPE_OR_QUOTE_RE = re.compile(rb'["\\]')
 
 
-def _validate_positive_int(name: str, value: int) -> None:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise TypeError(f"{name} must be an integer")
-    if value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
-
-
 def json_nesting_within_limit(body: bytes, *, max_depth: int = _DEFAULT_MAX_DEPTH) -> bool:
     """Return whether JSON container nesting stays within ``max_depth``.
 
@@ -129,7 +124,7 @@ def json_nesting_within_limit(body: bytes, *, max_depth: int = _DEFAULT_MAX_DEPT
     and constant auxiliary memory. Callers must still parse the body to
     validate it.
     """
-    _validate_positive_int("max_depth", max_depth)
+    validate_positive_int("max_depth", max_depth)
     if body.count(b"{") + body.count(b"[") <= max_depth:
         return True
 
@@ -179,7 +174,7 @@ class ScalarField:
     def __post_init__(self) -> None:
         if self.kind not in ("string", "int", "bool"):
             raise ValueError("scalar field kind must be 'string', 'int', or 'bool'")
-        _validate_positive_int("scalar field max_bytes", self.max_bytes)
+        validate_positive_int("scalar field max_bytes", self.max_bytes)
         if self.overflow_policy not in ("error", "discard"):
             raise ValueError("scalar field overflow_policy must be 'error' or 'discard'")
         if self.kind != "string" and self.overflow_policy == "discard":
@@ -187,7 +182,7 @@ class ScalarField:
         if self.max_int_value is not None:
             if self.kind != "int":
                 raise ValueError("scalar field max_int_value requires an integer field")
-            _validate_positive_int("scalar field max_int_value", self.max_int_value)
+            validate_positive_int("scalar field max_int_value", self.max_int_value)
 
 
 @dataclass
@@ -1333,9 +1328,9 @@ def _validate_extractor_config(
         ("max_number_bytes", max_number_bytes),
         ("max_wildcard_keys", max_wildcard_keys),
     ):
-        _validate_positive_int(name, value)
+        validate_positive_int(name, value)
     if max_work_units is not None:
-        _validate_positive_int("max_work_units", max_work_units)
+        validate_positive_int("max_work_units", max_work_units)
 
     for scalar_field in scalar_fields.values():
         if not isinstance(scalar_field, ScalarField):
