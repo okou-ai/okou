@@ -4,6 +4,8 @@ import json
 from dataclasses import dataclass
 from typing import Literal
 
+from .json_limits import validate_positive_int
+
 TopLevelStringFieldProbeStatus = Literal[
     "found",
     "not_found",
@@ -94,9 +96,9 @@ def probe_top_level_string_field(
     target field from being reached and returns ``bound_exceeded``.
     """
 
-    _validate_positive_int("max_depth", max_depth)
-    _validate_positive_int("max_key_bytes", max_key_bytes)
-    _validate_positive_int("max_string_bytes", max_string_bytes)
+    validate_positive_int("max_depth", max_depth)
+    validate_positive_int("max_key_bytes", max_key_bytes)
+    validate_positive_int("max_string_bytes", max_string_bytes)
 
     i = _skip_json_whitespace(body, 0)
     if i >= len(body):
@@ -161,13 +163,6 @@ def probe_top_level_string_field(
             return TopLevelStringFieldProbeResult("incomplete")
 
     return TopLevelStringFieldProbeResult("incomplete")
-
-
-def _validate_positive_int(name: str, value: int) -> None:
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise TypeError(f"{name} must be an integer")
-    if value <= 0:
-        raise ValueError(f"{name} must be a positive integer")
 
 
 def _skip_json_whitespace(body: bytes, i: int) -> int:
