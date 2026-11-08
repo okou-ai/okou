@@ -1593,6 +1593,13 @@ function normalSendPublicAssetWrite(
 
 type NormalInputPlan = ReturnType<typeof normalSendInputPlan>;
 type NormalInputAsset = NormalInputPlan["attachments"][number];
+const NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE = 1000;
+type NormalInputAssetOwnerRead =
+  | {
+      readonly ok: true;
+      readonly value: typeof runUploadedFiles.$inferSelect | undefined;
+    }
+  | { readonly ok: false; readonly error: unknown };
 interface NormalInputAssetSnapshot {
   readonly index: number;
   readonly asset: NormalInputAsset;
@@ -1606,6 +1613,39 @@ interface NormalInputAssetSnapshot {
       }
     | { readonly ok: false; readonly error: unknown }
     | null;
+}
+function normalSendAssetSnapshots(
+  attachments: readonly NormalInputAsset[],
+  owners: ReadonlyMap<string, NormalInputAssetOwnerRead>,
+): NormalInputAssetSnapshot[] {
+  return attachments.map((asset, index) => {
+    if (asset.plan) {
+      return { index, asset, loaded: null };
+    }
+    const owner = owners.get(asset.owner.file.id.toLowerCase());
+    if (!owner) {
+      throw new Error("Private attachment owner read is missing");
+    }
+    if (!owner.ok) {
+      // Preparation failures still belong to the input-insertion SQL guard.
+      return { index, asset, loaded: owner };
+    }
+    const loaded = safeSync(() => {
+      const owned = owner.value;
+      return {
+        owned,
+        plan: canonicalPrivateWebInputPlan({ ...asset.owner, owned }),
+      };
+    });
+    return {
+      index,
+      asset,
+      loaded:
+        "ok" in loaded
+          ? { ok: true, value: loaded.ok }
+          : { ok: false, error: loaded.error },
+    };
+  });
 }
 type NormalPreparedEvent =
   | { readonly ok: true; readonly value: ReturnType<typeof prepareChatEvent> }
@@ -1962,28 +2002,45 @@ const appendNormalSendInput$ = command(
           : null
         : [input.replacementTarget];
     signal.throwIfAborted();
-    const snapshots: NormalInputAssetSnapshot[] = [];
-    for (const [index, asset] of input.attachments.entries()) {
-      if (asset.plan) {
-        snapshots.push({ index, asset, loaded: null });
-        continue;
-      }
+    // Match PostgreSQL's UUID spelling without changing the input references.
+    const privateIds = [
+      ...new Set(
+        input.attachments.flatMap((asset) => {
+          return asset.plan ? [] : [asset.owner.file.id.toLowerCase()];
+        }),
+      ),
+    ];
+    const owners = new Map<string, NormalInputAssetOwnerRead>();
+    for (
+      let offset = 0;
+      offset < privateIds.length;
+      offset += NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE
+    ) {
+      const ids = privateIds.slice(
+        offset,
+        offset + NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE,
+      );
       const loaded = await settle(
         (async () => {
-          const [owned] = await db
+          return await db
             .select()
             .from(runUploadedFiles)
-            .where(eq(runUploadedFiles.id, asset.owner.file.id))
-            .limit(1);
-          return {
-            owned,
-            plan: canonicalPrivateWebInputPlan({ ...asset.owner, owned }),
-          };
+            .where(inArray(runUploadedFiles.id, ids));
         })(),
       );
       signal.throwIfAborted();
-      snapshots.push({ index, asset, loaded });
+      const rows = new Map(
+        loaded.ok
+          ? loaded.value.map((row) => {
+              return [row.id, row] as const;
+            })
+          : [],
+      );
+      for (const id of ids) {
+        owners.set(id, loaded.ok ? { ok: true, value: rows.get(id) } : loaded);
+      }
     }
+    const snapshots = normalSendAssetSnapshots(input.attachments, owners);
     const prepared = normalSendPreparedPublication(
       args,
       input,
