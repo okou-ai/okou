@@ -65,6 +65,7 @@ final class ComposerConnectorStore {
   }
 
   var canSend: Bool { !isSaving && !uncertain }
+  var isUpdatingAccounts: Bool { accountWrite != nil }
 
   func canConfigurePermissions(slug: String?) -> Bool {
     guard let slug, let connector = connectors.first(where: { $0.target == .builtin(slug) }),

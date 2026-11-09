@@ -59,7 +59,8 @@ private struct ComposerConnectorAccountsContent: View {
   }
 
   private var busy: Bool {
-    status == .loading || paginationStatus == .loading || store.isSaving || store.uncertain
+    status == .loading || paginationStatus == .loading || store.isSaving
+      || store.isUpdatingAccounts || store.uncertain
   }
 
   var body: some View {
