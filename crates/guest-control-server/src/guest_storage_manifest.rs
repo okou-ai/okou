@@ -421,20 +421,26 @@ struct ReadinessMode {
     check_only: bool,
 }
 
+fn readiness_mode(bytes: &[u8]) -> Option<ReadinessMode> {
+    let manifest = if bytes.starts_with(guest_contracts::storage_files::INPUT_MAGIC) {
+        guest_contracts::storage_files::split_input(bytes).ok()?.0
+    } else {
+        bytes
+    };
+    // This projection selects resources only. The actual operation still owns
+    // full canonical validation, including malformed mode/framing failures.
+    serde_json::from_slice::<ManifestMode>(manifest)
+        .ok()?
+        .readiness
+}
+
 fn eligibility_query(
     bytes: &[u8],
     runtime: &Path,
     timeout_ms: u32,
     cancelled: &AtomicBool,
     started: Instant,
-) -> Option<GuestStorageManifestOutput> {
-    if !serde_json::from_slice::<ManifestMode>(bytes)
-        .ok()
-        .and_then(|mode| mode.readiness)
-        .is_some_and(|mode| mode.check_only)
-    {
-        return None;
-    }
+) -> GuestStorageManifestOutput {
     let control = || {
         if cancelled.load(Ordering::Acquire) {
             Err(io::Error::new(
@@ -468,7 +474,7 @@ fn eligibility_query(
             })?;
         guest_telemetry::storage_eligibility::eligible(&manifest, Some(runtime), control)
     })();
-    Some(match result {
+    match result {
         Ok(eligible) => GuestStorageManifestOutput {
             termination: ExecTermination::Exited { exit_code: 0 },
             duration_ms: elapsed_ms(started),
@@ -497,7 +503,7 @@ fn eligibility_query(
             started,
             format!("Guest archive eligibility check failed: {error}"),
         ),
-    })
+    }
 }
 
 fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
@@ -517,20 +523,27 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         notifications,
     } = input;
     let started = Instant::now();
+    let readiness = if instruction_operation.is_none()
+        && matches!(program, GuestStorageManifestProgram::Production)
+    {
+        readiness_mode(&manifest_json)
+    } else {
+        None
+    };
     // The fixed query is pure admission and stays on this single-active worker.
     // Application, instruction and external programs retain their process owner.
     if instruction_operation.is_none()
         && matches!(program, GuestStorageManifestProgram::Production)
         && !manifest_json.starts_with(guest_contracts::storage_files::INPUT_MAGIC)
-        && let Some(output) = eligibility_query(
+        && readiness.as_ref().is_some_and(|mode| mode.check_only)
+    {
+        return eligibility_query(
             &manifest_json,
             Path::new(runtime_dir),
             timeout_ms,
             connection_cancel,
             started,
-        )
-    {
-        return output;
+        );
     }
     let drain_cancel = match DrainCancellation::new() {
         Ok(cancel) => Arc::new(cancel),
@@ -568,9 +581,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
     // Only the fixed production storage helper understands this private stdin
     // bootstrap. Instruction and external test programs retain their pipe input.
     #[cfg(target_os = "linux")]
-    let notification_lease = if instruction_operation.is_none()
-        && matches!(program, GuestStorageManifestProgram::Production)
-    {
+    let notification_lease = if readiness.as_ref().is_some_and(|mode| !mode.check_only) {
         match notifications.lease() {
             Ok(lease) => Some(lease),
             Err(error) => {
