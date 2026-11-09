@@ -3,6 +3,8 @@ use super::*;
 const SCENARIO_ENV: &str = "OKOU_TEST_UNINSTALL_SHUTDOWN_SCENARIO";
 const INVOCATIONS_ENV: &str = "OKOU_TEST_UNINSTALL_SHUTDOWN_INVOCATIONS";
 const CHILD_TEST: &str = "cmd::service::tests::teardown::uninstall_shutdown_child";
+const UNIT_CONTENT: &[u8] =
+    b"[Service]\nExecStart=/opt/okou/runner start\n# uninstall retention sentinel\n";
 const SYSTEMCTL: &str = r#"#!/bin/sh
 set -eu
 printf '%s\n' "$1" >> "$OKOU_TEST_UNINSTALL_SHUTDOWN_INVOCATIONS"
@@ -57,11 +59,14 @@ async fn uninstall_shutdown_child() {
     if !ignored_child_test_env_guard_enabled((SCENARIO_ENV, &scenario)) {
         return;
     }
-    // No global unit files are created. The production code must return before
-    // touching this process-specific unit's files or systemd reload locks.
-    let unit =
-        RunnerServiceUnit::from_suffix(&format!("test-uninstall-{}", std::process::id())).unwrap();
-    assert!(!unit.unit_file_path().exists());
+    let dir = tempfile::tempdir().unwrap();
+    // Exercise the real uninstall entry with an installed unit, without writing
+    // to the host's systemd directory.
+    let unit = RunnerServiceUnit::from_suffix(&format!("test-uninstall-{}", std::process::id()))
+        .unwrap()
+        .with_unit_file_dir_for_test(dir.path());
+    std::fs::write(unit.unit_file_path(), UNIT_CONTENT).unwrap();
+
     let error = uninstall_service_unit(&unit).await.unwrap_err().to_string();
     assert!(error.contains(unit.unit_name()), "{error}");
     assert!(error.contains("refusing to remove unit files"), "{error}");
@@ -71,4 +76,10 @@ async fn uninstall_shutdown_child() {
         "unknown" => assert!(error.contains("could not verify it is inactive"), "{error}"),
         unexpected => panic!("unexpected uninstall scenario: {unexpected}"),
     }
+    assert_eq!(
+        std::fs::read(unit.unit_file_path())
+            .expect("refused uninstall must retain the installed unit file"),
+        UNIT_CONTENT,
+        "{scenario}: refused uninstall changed the installed unit"
+    );
 }
