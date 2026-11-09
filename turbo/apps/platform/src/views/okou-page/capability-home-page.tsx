@@ -267,7 +267,9 @@ function ExploreBlogCard() {
       className="flex h-full flex-col overflow-hidden rounded-3xl border border-surface-border bg-card bg-linear-to-br from-[#fff4ee] via-card to-card p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:from-[#cf947c]/10"
     >
       <div className="flex items-center gap-2">
-        <h2 className="min-w-0 text-xl font-medium tracking-tight">{title}</h2>
+        <h2 className="min-w-0 text-base font-medium tracking-tight @2xl:text-xl">
+          {title}
+        </h2>
         <svg
           viewBox="0 0 24 24"
           fill="none"
