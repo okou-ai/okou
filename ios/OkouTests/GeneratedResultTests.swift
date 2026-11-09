@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
@@ -127,12 +128,16 @@ final class GeneratedResultTests: XCTestCase {
     viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
     try await waitForBusinessResult { viewer.preview?.file != nil }
     let file = try XCTUnwrap(viewer.preview?.file)
-    XCTAssertNotNil(viewer.catalogWarning)
+    let failedCatalog = await (try viewer.reads.store.get(viewer.reads.catalog)).result
+    XCTAssertThrowsError(try failedCatalog.get()) { error in
+      XCTAssertEqual((error as? APIClientError)?.statusCode, 503)
+    }
     let requests = fixture.state.storageRequests.withLock { $0.count }
     let resolutions = fixture.state.resolutions.withLock { $0 }
     fixture.state.catalogUnavailable.withLock { $0 = false }
     await viewer.refreshDetails()
-    XCTAssertNil(viewer.catalogWarning)
+    let recoveredCatalog = try await viewer.reads.store.get(viewer.reads.catalog).value
+    XCTAssertFalse(recoveredCatalog.isEmpty)
     XCTAssertEqual(viewer.preview?.file?.url, file.url)
     XCTAssertEqual(viewer.preview?.artifact.filename, "Notes.txt")
     XCTAssertEqual(fixture.state.storageRequests.withLock { $0.count }, requests)
