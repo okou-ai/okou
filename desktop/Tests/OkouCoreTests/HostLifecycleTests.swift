@@ -1733,6 +1733,10 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
   }
 
   func testPresenceHostWaitsForNotificationRecoveryBeforeDispatching() async throws {
+    func trace(_ step: String) {
+      FileHandle.standardError.write(Data("presence-recovery: \(step)\n".utf8))
+    }
+    trace("entered")
     let unavailable = expectation(description: "Notification failure is shown as unavailable")
     let reported = expectation(description: "Recovery claims and reports the pending command")
     let claims = RequestCount()
@@ -1773,13 +1777,20 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         }
       })
     await runtime.start()
+    trace("registered")
     await fulfillment(of: [streamStarted], timeout: 3)
+    trace("stream-started")
     await notifications.unavailable()
+    trace("unavailable-emitted")
     await fulfillment(of: [unavailable], timeout: 3)
+    trace("unavailable-observed")
     XCTAssertEqual(claims.value, 0)
     await notifications.reconnect()
+    trace("recovery-emitted")
     await fulfillment(of: [reported], timeout: 4)
+    trace("completion-observed")
     await runtime.stop()
+    trace("stopped")
   }
 
   func testPresenceHostPublishesPermissionChangesMadeDuringRegistration() async throws {
