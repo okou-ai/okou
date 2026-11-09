@@ -306,6 +306,7 @@ private struct ConnectorDirectoryRead<Value: Sendable, Content: View>: View {
 private struct ComposerConnectorDetail: View {
   let store: ComposerConnectorStore
   let connector: ChatCatalogConnector
+  @State private var permissionDestination: ComposerConnectorPermissionResources?
 
   private var added: Bool {
     store.connectors.contains { $0.target.connectorSlug == connector.slug }
@@ -327,6 +328,7 @@ private struct ComposerConnectorDetail: View {
     .okouGroupedBackground(OkouColor.background)
     .navigationTitle("")
     .navigationBarTitleDisplayMode(.inline)
+    .connectorPermissionDestination(store: store, destination: $permissionDestination)
   }
 
   private var hero: some View {
@@ -360,7 +362,8 @@ private struct ComposerConnectorDetail: View {
           && (!store.chatAccountAccess || store.canConfigurePermissions(slug: connector.slug))
         {
           Button {
-            store.openPermissions(slug: connector.slug, label: connector.label)
+            permissionDestination = store.openPermissions(
+              slug: connector.slug, label: connector.label)
           } label: {
             OkouCompactButtonLabel("Permissions", icon: "shield-check")
           }

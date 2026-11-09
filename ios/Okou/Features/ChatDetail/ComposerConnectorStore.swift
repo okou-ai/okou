@@ -407,11 +407,13 @@ final class ComposerConnectorStore {
     directory = nil
   }
 
-  func openPermissions(slug: String, label: String) {
-    guard !closed, let agentID else { return }
+  @discardableResult
+  func openPermissions(slug: String, label: String) -> ComposerConnectorPermissionResources? {
+    guard !closed, let agentID else { return nil }
     closePermissions()
     permissions = ComposerConnectorPermissionResources(
       composer: self, agentID: agentID, slug: slug, label: label, didFail: didFail)
+    return permissions
   }
 
   func closePermissions() {

@@ -5,6 +5,7 @@ struct ComposerConnectorSheet: View {
   @Bindable var store: ComposerConnectorStore
   @State private var search = ""
   @State private var destination: ConnectorDestination?
+  @State private var permissionDestination: ComposerConnectorPermissionResources?
   @State private var savingConnectorID: String?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
@@ -92,16 +93,7 @@ struct ComposerConnectorSheet: View {
             .id(ObjectIdentifier(resources))
         }
       }
-      .navigationDestination(
-        isPresented: Binding(
-          get: { store.permissions != nil },
-          set: { if !$0 { store.closePermissions() } })
-      ) {
-        if let resources = store.permissions {
-          ComposerConnectorPermissions(store: store, resources: resources)
-            .id(ObjectIdentifier(resources))
-        }
-      }
+      .connectorPermissionDestination(store: store, destination: $permissionDestination)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
       .alert(
         "Could not open connector",
@@ -199,7 +191,7 @@ struct ComposerConnectorSheet: View {
       if connector.authorized && connector.hasPermissions, let slug = connector.target.connectorSlug
       {
         rowAction("sliders-horizontal", label: "Permissions for \(connector.label)") {
-          store.openPermissions(slug: slug, label: connector.label)
+          permissionDestination = store.openPermissions(slug: slug, label: connector.label)
         }
       }
       Toggle(

@@ -295,6 +295,7 @@ final class PermissionEditorFixture: Sendable {
     var writeStatus = 200
     var loseWriteResponse = false
     var grants: [String: Edit] = [:]
+    var expirations: [String: String] = [:]
     var agentID = PermissionEditorFixture.agentID
     var requests: [URLRequest] = []
   }
@@ -332,9 +333,23 @@ final class PermissionEditorFixture: Sendable {
               body: #"{"error":{"message":"Permission change rejected"}}"#)
           }
           let body = try JSONDecoder().decode(Write.self, from: chatRequestBody(request))
-          if body.mode == "replace" { value.grants = [:] }
+          if body.mode == "replace" {
+            value.grants = [:]
+            value.expirations = [:]
+          }
           if let agent = body.agentId { value.agentID = agent }
-          for edit in body.grants { value.grants[edit.permission] = edit }
+          for edit in body.grants {
+            value.grants[edit.permission] = edit
+            let seconds: [String: TimeInterval] = ["1h": 3600, "24h": 86400, "7d": 604800]
+            if edit.action == "allow", let duration = edit.expiresIn,
+              let interval = seconds[duration]
+            {
+              value.expirations[edit.permission] = Date.now.addingTimeInterval(interval).formatted(
+                .iso8601)
+            } else {
+              value.expirations[edit.permission] = nil
+            }
+          }
           if value.loseWriteResponse {
             value.loseWriteResponse = false
             return ChatHTTPResponse(
@@ -381,8 +396,7 @@ final class PermissionEditorFixture: Sendable {
       guard let edit = state.grants[name] else { return nil }
       var result: [String: Any] = [
         "permission": edit.permission, "action": edit.action,
-        "expiresAt": edit.action == "allow" && edit.expiresIn != "always"
-          ? "2099-01-01T00:00:00Z" : NSNull(),
+        "expiresAt": state.expirations[edit.permission].map { $0 as Any } ?? NSNull(),
       ]
       if !state.memberScoped {
         result["agentId"] = state.agentID

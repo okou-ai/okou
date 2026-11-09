@@ -3,6 +3,39 @@ import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
+extension View {
+  func connectorPermissionDestination(
+    store: ComposerConnectorStore,
+    destination: Binding<ComposerConnectorPermissionResources?>
+  ) -> some View {
+    modifier(ConnectorPermissionDestination(store: store, destination: destination))
+  }
+}
+
+/// Each entry owns its navigation binding; the composer owns the resource lifetime.
+private struct ConnectorPermissionDestination: ViewModifier {
+  let store: ComposerConnectorStore
+  @Binding var destination: ComposerConnectorPermissionResources?
+
+  func body(content: Content) -> some View {
+    content.navigationDestination(
+      isPresented: Binding(
+        get: { destination != nil && store.permissions === destination },
+        set: { presented in
+          if !presented {
+            if store.permissions === destination { store.closePermissions() }
+            destination = nil
+          }
+        })
+    ) {
+      if let resources = destination, store.permissions === resources {
+        ComposerConnectorPermissions(store: store, resources: resources)
+          .id(ObjectIdentifier(resources))
+      }
+    }
+  }
+}
+
 struct ComposerConnectorPermissions: View {
   let store: ComposerConnectorStore
   let resources: ComposerConnectorPermissionResources
