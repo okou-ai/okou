@@ -23,6 +23,7 @@ mod control;
 mod create_custody;
 mod dns_readiness;
 mod error;
+mod exec_env;
 mod factory;
 mod guest_rpc;
 pub mod helper_exec;
@@ -50,6 +51,7 @@ pub use error::{
     SandboxInitializationPhase, SandboxInvalidStateContext, SandboxOperation,
     SandboxOperationReason, SandboxOperationTimeoutStage, SandboxOperationWriteStage,
 };
+pub use exec_env::validate_exec_env_keys;
 pub use factory::{
     SandboxCreateObserver, SandboxCreateStage, SandboxFactory, SandboxNbdCowCreateOutcome,
     SandboxNbdCowCreateStage, SandboxNbdNetlinkConnectStage,
