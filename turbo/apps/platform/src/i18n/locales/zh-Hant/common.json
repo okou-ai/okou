@@ -7223,6 +7223,45 @@
       "title": "工作流",
       "viewAutomations": "檢視自動化"
     },
+    "migration": {
+      "accountConflict": {
+        "confirm": "使用這個帳號",
+        "connectedToOkou": "已連結到你的 Okou",
+        "description": "{{workflow}} 原本以 {{agent}} 的身分執行，它連結的 {{connector}} 帳號和你的 Okou 不同。選擇之前，這項自動化會略過執行。",
+        "later": "稍後",
+        "open": "為 {{title}} 選擇帳號",
+        "title": "選擇一個 {{connector}} 帳號",
+        "usedByAgent": "{{agent}} 使用的帳號"
+      },
+      "fromAgent": "來自 Agent",
+      "fromNamedAgent": "來自 {{agent}}",
+      "howItWorks": {
+        "automateBody": "新增排程或觸發條件（例如收到新郵件），Okou 會替你執行。",
+        "automateTitle": "讓它自動執行",
+        "description": "Workflow 是一項設定一次的工作，Okou 每次都以相同方式完成。",
+        "migratedBody_one": "{{agents}} 現在是 Workflow，它的自動化照常執行。",
+        "migratedBody_other": "{{agents}} 現在都是 Workflow，它們的自動化照常執行。",
+        "shareBody": "Public Workflow 在 workspace 內共享，Private Workflow 只有你自己能用。",
+        "shareTitle": "共享或自用",
+        "title": "Workflow 怎麼用",
+        "useBody": "輸入 / 選擇一個 Workflow，再補充這次不同的地方。",
+        "useTitle": "在任何對話中使用"
+      },
+      "includes": {
+        "description": "這個 Workflow 原本以 {{agent}} 的身分執行，所以仍會帶上該 Agent 的 Instructions。不需要時可以移除。",
+        "label": "包含",
+        "remove": "移除",
+        "removeAria": "不再包含 /{{slug}}"
+      },
+      "notice": {
+        "description_one": "{{agents}} 已轉為 Workflow，它執行的 Workflow 也一併轉過來了。自動化的時間和擁有者不變。在對話中輸入 /{{slug}} 即可使用，或了解 Workflow 怎麼用。",
+        "description_other": "{{agents}} 已轉為 Workflow，它們執行的 Workflow 也一併轉過來了。自動化的時間和擁有者不變。在對話中輸入 /{{slug}} 即可使用，或了解 Workflow 怎麼用。",
+        "gotIt": "知道了",
+        "seeHow": "了解用法",
+        "title": "你的 Agent 已轉為 Workflow"
+      },
+      "renamedFrom": "Agent 轉為 Workflow 時由 /{{slug}} 改名。"
+    },
     "skillImport": {
       "action": "匯入技能",
       "description": "在你的技能所在的地方執行這段提示詞。每個技能都會成為一個私人工作流程。",

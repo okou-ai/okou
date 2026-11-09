@@ -7223,6 +7223,45 @@
       "title": "ワークフロー",
       "viewAutomations": "オートメーションを表示する"
     },
+    "migration": {
+      "accountConflict": {
+        "confirm": "このアカウントを使う",
+        "connectedToOkou": "Okou に接続済み",
+        "description": "{{workflow}} は以前 {{agent}} として実行されており、Okou とは別の {{connector}} アカウントに接続されていました。選択するまで、この自動化はスキップされます。",
+        "later": "あとで",
+        "open": "{{title}} のアカウントを選択",
+        "title": "{{connector}} アカウントを選択",
+        "usedByAgent": "{{agent}} が使用"
+      },
+      "fromAgent": "エージェントから",
+      "fromNamedAgent": "{{agent}} から",
+      "howItWorks": {
+        "automateBody": "スケジュールや新着メールなどのトリガーを追加すると、Okou が代わりに実行します。",
+        "automateTitle": "自動で実行する",
+        "description": "ワークフローは一度設定する仕事です。Okou は毎回同じやり方で進めます。",
+        "migratedBody_one": "{{agents}} はワークフローになりました。自動化はそのまま実行されます。",
+        "migratedBody_other": "{{agents}} はワークフローになりました。自動化はそのまま実行されます。",
+        "shareBody": "Public ワークフローはワークスペースで共有されます。Private はあなただけが使えます。",
+        "shareTitle": "共有するか、自分用にするか",
+        "title": "ワークフローの使い方",
+        "useBody": "/ を入力してワークフローを選び、今回の違いを書き足します。",
+        "useTitle": "どのチャットでも使える"
+      },
+      "includes": {
+        "description": "このワークフローは以前 {{agent}} として実行されていたため、そのエージェントの指示を引き続き使います。不要なら削除してください。",
+        "label": "含まれるもの",
+        "remove": "削除",
+        "removeAria": "/{{slug}} を含めない"
+      },
+      "notice": {
+        "description_one": "{{agents}} は、実行していたワークフローとあわせてワークフローになりました。自動化のスケジュールと所有者は変わりません。チャットで /{{slug}} と入力して使うか、ワークフローの使い方をご覧ください。",
+        "description_other": "{{agents}} は、実行していたワークフローとあわせてワークフローになりました。自動化のスケジュールと所有者は変わりません。チャットで /{{slug}} と入力して使うか、ワークフローの使い方をご覧ください。",
+        "gotIt": "OK",
+        "seeHow": "使い方を見る",
+        "title": "エージェントはワークフローになりました"
+      },
+      "renamedFrom": "エージェントがワークフローになった際に /{{slug}} から名前が変わりました。"
+    },
     "skillImport": {
       "action": "スキルをインポート",
       "description": "スキルがある環境でこのプロンプトを実行してください。各スキルは非公開のワークフローになります。",

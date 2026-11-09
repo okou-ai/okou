@@ -64,6 +64,17 @@ export const workflowAutomationsContract: ClientDescriptor<
       404: true,
     },
   },
+  resolveAccountConflict: {
+    method: "POST",
+    path: "/api/workflow-automations/:id/account-conflict",
+    statuses: {
+      200: true,
+      400: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   update: {
     method: "PATCH",
     path: "/api/workflow-automations/:id",
@@ -219,6 +230,16 @@ export const workflowsDetailContract: ClientDescriptor<
   get: {
     method: "GET",
     path: "/api/workflows/:workflowId",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
+  removeInclude: {
+    method: "DELETE",
+    path: "/api/workflows/:workflowId/includes/:includeName",
     statuses: {
       200: true,
       401: true,

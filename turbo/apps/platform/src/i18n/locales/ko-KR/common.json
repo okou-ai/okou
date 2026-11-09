@@ -7223,6 +7223,45 @@
       "title": "워크플로",
       "viewAutomations": "자동화 보기"
     },
+    "migration": {
+      "accountConflict": {
+        "confirm": "이 계정 사용",
+        "connectedToOkou": "내 Okou에 연결됨",
+        "description": "{{workflow}}은(는) 원래 {{agent}}(으)로 실행되었고, Okou와 다른 {{connector}} 계정에 연결되어 있었습니다. 선택하기 전까지 이 자동화는 건너뜁니다.",
+        "later": "나중에",
+        "open": "{{title}}의 계정 선택",
+        "title": "{{connector}} 계정 선택",
+        "usedByAgent": "{{agent}}이(가) 사용"
+      },
+      "fromAgent": "에이전트에서",
+      "fromNamedAgent": "{{agent}}에서",
+      "howItWorks": {
+        "automateBody": "일정이나 새 이메일 같은 트리거를 추가하면 Okou가 대신 실행합니다.",
+        "automateTitle": "자동으로 실행",
+        "description": "워크플로는 한 번 설정하는 작업입니다. Okou가 매번 같은 방식으로 처리합니다.",
+        "migratedBody_one": "{{agents}}이(가) 이제 워크플로입니다. 자동화는 계속 실행됩니다.",
+        "migratedBody_other": "{{agents}}이(가) 이제 워크플로입니다. 자동화는 계속 실행됩니다.",
+        "shareBody": "Public 워크플로는 워크스페이스에 공유됩니다. Private 워크플로는 나만 사용합니다.",
+        "shareTitle": "공유하거나 혼자 쓰기",
+        "title": "워크플로 사용법",
+        "useBody": "/를 입력해 워크플로를 고른 뒤 이번에 다른 점을 덧붙이세요.",
+        "useTitle": "어느 채팅에서나 사용"
+      },
+      "includes": {
+        "description": "이 워크플로는 원래 {{agent}}(으)로 실행되었기 때문에 그 에이전트의 지침을 계속 사용합니다. 필요 없으면 제거하세요.",
+        "label": "포함",
+        "remove": "제거",
+        "removeAria": "/{{slug}} 포함 해제"
+      },
+      "notice": {
+        "description_one": "{{agents}}이(가) 실행하던 워크플로와 함께 워크플로가 되었습니다. 자동화의 일정과 소유자는 그대로입니다. 채팅에서 /{{slug}}을(를) 입력해 사용하거나 워크플로 사용법을 확인하세요.",
+        "description_other": "{{agents}}이(가) 실행하던 워크플로와 함께 워크플로가 되었습니다. 자동화의 일정과 소유자는 그대로입니다. 채팅에서 /{{slug}}을(를) 입력해 사용하거나 워크플로 사용법을 확인하세요.",
+        "gotIt": "확인",
+        "seeHow": "사용법 보기",
+        "title": "에이전트가 이제 워크플로입니다"
+      },
+      "renamedFrom": "에이전트가 워크플로로 바뀔 때 /{{slug}}에서 이름이 바뀌었습니다."
+    },
     "skillImport": {
       "action": "스킬 가져오기",
       "description": "스킬이 있는 곳에서 이 프롬프트를 실행하세요. 각 스킬은 비공개 워크플로가 됩니다.",

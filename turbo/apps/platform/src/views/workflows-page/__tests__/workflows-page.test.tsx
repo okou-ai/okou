@@ -45,6 +45,7 @@ import {
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
 import { pathname, search } from "../../../signals/location.ts";
+import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "../../okou-page/__tests__/chat-test-helpers.ts";
 import {
@@ -782,6 +783,7 @@ function summary(workflow: WorkflowDetailResponse): WorkflowSummary {
     shadowedBy: workflow.shadowedBy,
     official: workflow.official,
     importSource: workflow.importSource,
+    migration: workflow.migration,
   };
 }
 
@@ -4592,5 +4594,229 @@ test("creates a workspace Workflow with the default Okou without choosing an Age
   click(buttonByText("Create workflow", dialog));
   await waitFor(() => {
     expect(pathname()).toBe("/");
+  });
+});
+
+const MIGRATION_TEST_NOW = Date.parse("2026-11-09T08:00:00.000Z");
+
+function daysAgo(days: number): string {
+  return new Date(
+    MIGRATION_TEST_NOW - days * 24 * 60 * 60 * 1000,
+  ).toISOString();
+}
+
+function migratedAgentWorkflow(): WorkflowDetailResponse {
+  return {
+    ...salesResearch(),
+    id: OPS_WORKFLOW_ID,
+    name: "research-analyst",
+    displayName: "Research analyst",
+    automations: [],
+    migration: {
+      source: "agent",
+      agentDisplayName: "Research analyst",
+      migratedAt: daysAgo(1),
+      renamedFrom: null,
+      includes: [],
+    },
+  };
+}
+
+function migratedAgentChildWorkflow(): WorkflowDetailResponse {
+  return {
+    ...salesResearch(),
+    name: "research-analyst-weekly-report",
+    displayName: "Weekly report",
+    migration: {
+      source: "agent-workflow",
+      agentDisplayName: "Research analyst",
+      migratedAt: daysAgo(1),
+      renamedFrom: "weekly-report",
+      includes: ["research-analyst"],
+    },
+  };
+}
+
+test("Migrated members see agent-to-workflow labels and a one-time notice", async () => {
+  mockNow(MIGRATION_TEST_NOW, context.signal);
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
+  mockAgentPageApis();
+  mockChatLifecycle(context);
+  const expired: WorkflowDetailResponse = {
+    ...migratedAgentWorkflow(),
+    id: CHECKLIST_WORKFLOW_ID,
+    name: "brand-writer",
+    displayName: "Brand writer",
+    migration: {
+      source: "agent",
+      agentDisplayName: "Brand writer",
+      migratedAt: daysAgo(31),
+      renamedFrom: null,
+      includes: [],
+    },
+  };
+  mockWorkflowApis([
+    migratedAgentChildWorkflow(),
+    migratedAgentWorkflow(),
+    expired,
+  ]);
+  await setupPage({
+    context,
+    path: "/workflows",
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  const notice = await screen.findByRole("status");
+  expect(notice).toHaveTextContent("Your agents are now workflows");
+  expect(notice).toHaveTextContent(
+    "Brand writer and Research analyst are now workflows, along with the workflows they ran.",
+  );
+  expect(notice).toHaveTextContent("Type /brand-writer in chat");
+  expect(screen.getByText("From agent")).toBeInTheDocument();
+  expect(screen.getByText("From Research analyst")).toBeInTheDocument();
+  // Labels stop showing once the migration is more than 30 days old.
+  expect(screen.getAllByText(/^From /u)).toHaveLength(2);
+
+  click(buttonByText("See how", notice));
+  const dialog = await screen.findByRole("dialog", {
+    name: "How workflows work",
+  });
+  expect(dialog).toHaveTextContent("Use one in any chat");
+  expect(dialog).toHaveTextContent(
+    "Brand writer and Research analyst are workflows now.",
+  );
+  click(buttonByText("Got it", dialog));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  expect(screen.getByRole("status")).toBeInTheDocument();
+
+  click(buttonByText("Got it", screen.getByRole("status")));
+  await waitFor(() => {
+    expect(screen.queryByRole("status")).not.toBeInTheDocument();
+  });
+});
+
+test("Workflows without the single-Okou switch show no migration UI", async () => {
+  mockWorkflowApis([migratedAgentChildWorkflow(), migratedAgentWorkflow()]);
+  await setupPage({ context, path: "/workflows" });
+
+  await waitFor(() => {
+    expect(linkByAriaLabel("Open Research analyst")).toBeInTheDocument();
+  });
+  expect(screen.queryByText("Your agents are now workflows")).toBeNull();
+  expect(screen.queryByText("From agent")).toBeNull();
+});
+
+test("Choose the account for an automation left with two connector accounts", async () => {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
+  mockAgentPageApis();
+  mockChatLifecycle(context);
+  const [automation] = workflowAutomations();
+  if (!automation) {
+    throw new Error("Expected the automation fixture");
+  }
+  const workflow: WorkflowDetailResponse = {
+    ...migratedAgentChildWorkflow(),
+    automations: [
+      {
+        ...automation,
+        accountConflict: {
+          connectorLabel: "Gmail",
+          agentDisplayName: "Research analyst",
+          options: [
+            {
+              connectionId: "connection-agent",
+              accountLabel: "alex@acme.com",
+              source: "agent",
+            },
+            {
+              connectionId: "connection-okou",
+              accountLabel: "alex.personal@gmail.com",
+              source: "okou",
+            },
+          ],
+        },
+      },
+    ],
+  };
+  mockWorkflowApis([workflow]);
+  const resolved = vi.fn<(id: string, connectionId: string) => void>();
+  context.mocks.api(
+    workflowAutomationsContract.resolveAccountConflict,
+    ({ params, body, respond }) => {
+      resolved(params.id, body.connectionId);
+      return respond(200, automation);
+    },
+  );
+  await setupPage({
+    context,
+    path: "/workflows",
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  click(
+    await waitFor(() => {
+      return buttonByText("Action required");
+    }),
+  );
+  click(
+    await waitFor(() => {
+      return buttonByText("Choose an account for Weekly report");
+    }),
+  );
+  const dialog = await screen.findByRole("dialog", {
+    name: "Choose a Gmail account",
+  });
+  expect(dialog).toHaveTextContent(
+    "Weekly report used to run as Research analyst, which was connected to a different Gmail account than your Okou. Until you choose one, this automation is skipped.",
+  );
+  expect(dialog).toHaveTextContent("Used by Research analyst");
+  click(within(dialog).getByRole("radio", { name: /alex\.personal/u }));
+  click(buttonByText("Use this account", dialog));
+
+  await waitFor(() => {
+    expect(resolved).toHaveBeenCalledWith(automation.id, "connection-okou");
+  });
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+});
+
+test("Migrated workflow settings show the old slug and the included agent workflow", async () => {
+  context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
+  mockAgentPageApis();
+  mockChatLifecycle(context);
+  mockWorkflowApis([migratedAgentChildWorkflow()]);
+  const removed = vi.fn<(workflowId: string, includeName: string) => void>();
+  context.mocks.api(
+    workflowsDetailContract.removeInclude,
+    ({ params, respond }) => {
+      removed(params.workflowId, params.includeName);
+      return respond(200, summary(migratedAgentChildWorkflow()));
+    },
+  );
+  await setupWorkflowDetailPage(workflowDetailPath("info"), {
+    [FeatureSwitchKey.SingleAgent]: true,
+  });
+
+  const metadata = await screen.findByLabelText("Workflow metadata");
+  await waitFor(() => {
+    expect(
+      within(metadata).getByText(
+        "Renamed from /weekly-report when agents became workflows.",
+      ),
+    ).toBeInTheDocument();
+  });
+  expect(within(metadata).getByText("/research-analyst")).toBeInTheDocument();
+  expect(
+    within(metadata).getByText(
+      "This workflow used to run as Research analyst, so it still runs with that agent's instructions. Remove it if you don't need them.",
+    ),
+  ).toBeInTheDocument();
+
+  click(buttonByText("Stop including /research-analyst", metadata));
+  await waitFor(() => {
+    expect(removed).toHaveBeenCalledWith(SALES_WORKFLOW_ID, "research-analyst");
   });
 });

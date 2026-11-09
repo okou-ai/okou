@@ -678,6 +678,27 @@ export type WorkflowSchedule = zInfer<typeof workflowScheduleSchema>;
  * automations no longer carry an agentId. Detail responses only ever list the
  * caller's own automations.
  */
+/**
+ * A connector account choice left open when legacy agents became workflows:
+ * the automation's former agent and the owner's Okou were connected to
+ * different accounts of the same connector. The automation skips runs until
+ * its owner picks one. Absent when there is nothing to resolve.
+ */
+const workflowAutomationAccountConflictSchema = object({
+  connectorLabel: string(),
+  agentDisplayName: string(),
+  options: array(
+    object({
+      connectionId: string(),
+      accountLabel: string(),
+      source: zEnum(["agent", "okou"]),
+    }),
+  ).min(2),
+});
+export type WorkflowAutomationAccountConflict = zInfer<
+  typeof workflowAutomationAccountConflictSchema
+>;
+
 const workflowAutomationSummaryBaseSchema = object({
   id: string(),
   ownerUserId: string(),
@@ -685,6 +706,9 @@ const workflowAutomationSummaryBaseSchema = object({
   chatThreadId: string().nullable(),
   nextRunAt: iso.datetime().nullable(),
   lastRunAt: iso.datetime().nullable(),
+  accountConflict: workflowAutomationAccountConflictSchema
+    .nullable()
+    .optional(),
   official: object({
     blueprintKey: officialWorkflowBlueprintKeySchema,
     appliedFingerprint: string().regex(/^[0-9a-f]{64}$/),
@@ -1340,6 +1364,22 @@ export type WorkflowAutomationUpdateRequest = zInfer<
  * `canManage` reflects the caller's effective rights (agent write-permission
  * for public workflows; ownership for private ones).
  */
+/**
+ * How a workflow arrived from a legacy agent. `agent` marks the workflow the
+ * agent itself became; `agent-workflow` marks a workflow that used to belong
+ * to that agent. `renamedFrom` is set when the slug was prefixed to stay
+ * unique, and `includes` lists workflows still loaded on every run to keep the
+ * former agent's instructions in effect. Absent for workflows that were not
+ * migrated.
+ */
+const workflowMigrationSchema = object({
+  source: zEnum(["agent", "agent-workflow"]),
+  agentDisplayName: string(),
+  migratedAt: iso.datetime(),
+  renamedFrom: workflowNameSchema.nullable(),
+  includes: array(workflowNameSchema),
+});
+
 export const workflowSummarySchema = object({
   id: uuid(),
   agentId: uuid(),
@@ -1369,6 +1409,7 @@ export const workflowSummarySchema = object({
     .nullable()
     .optional(),
   importSource: workflowImportSourceSchema.nullable(),
+  migration: workflowMigrationSchema.nullable().optional(),
 });
 
 export const workflowDetailResponseSchema = workflowSummarySchema.extend({
@@ -1532,6 +1573,21 @@ export const workflowsDetailContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Get a workflow with its instruction and files",
+  },
+  removeInclude: {
+    method: "DELETE",
+    path: "/api/workflows/:workflowId/includes/:includeName",
+    headers: authHeadersSchema,
+    pathParams: workflowIdParams.extend({ includeName: workflowNameSchema }),
+    body: c.noBody(),
+    responses: {
+      200: workflowSummarySchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "Stop loading a former agent's workflow on every run of a migrated workflow",
   },
   update: {
     method: "PATCH",
@@ -1730,6 +1786,22 @@ export const workflowAutomationsContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Get a workflow automation",
+  },
+  resolveAccountConflict: {
+    method: "POST",
+    path: "/api/workflow-automations/:id/account-conflict",
+    headers: authHeadersSchema,
+    pathParams: automationIdParams,
+    body: object({ connectionId: string() }),
+    responses: {
+      200: workflowAutomationSummarySchema,
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "Choose the connector account a migrated automation runs with and resume it",
   },
   update: {
     method: "PATCH",

@@ -7322,6 +7322,47 @@
       "title": "Flussi di lavoro",
       "viewAutomations": "Visualizza le automazioni"
     },
+    "migration": {
+      "accountConflict": {
+        "confirm": "Usa questo account",
+        "connectedToOkou": "Collegato al tuo Okou",
+        "description": "{{workflow}} veniva eseguito come {{agent}}, collegato a un account {{connector}} diverso da quello del tuo Okou. Finché non ne scegli uno, questa automazione viene saltata.",
+        "later": "Più tardi",
+        "open": "Scegli un account per {{title}}",
+        "title": "Scegli un account {{connector}}",
+        "usedByAgent": "Usato da {{agent}}"
+      },
+      "fromAgent": "Da agente",
+      "fromNamedAgent": "Da {{agent}}",
+      "howItWorks": {
+        "automateBody": "Aggiungi una pianificazione o un trigger, come una nuova email, e Okou lo esegue per te.",
+        "automateTitle": "Fallo eseguire da solo",
+        "description": "Un workflow è un lavoro che imposti una volta. Okou lo svolge sempre allo stesso modo.",
+        "migratedBody_one": "{{agents}} ora è un workflow. Le sue automazioni continuano a funzionare.",
+        "migratedBody_many": "",
+        "migratedBody_other": "{{agents}} ora sono workflow. Le loro automazioni continuano a funzionare.",
+        "shareBody": "I workflow pubblici sono condivisi con il tuo workspace. Quelli privati sono solo per te.",
+        "shareTitle": "Condividilo o tienilo per te",
+        "title": "Come funzionano i workflow",
+        "useBody": "Digita / e scegli un workflow, poi aggiungi cosa cambia questa volta.",
+        "useTitle": "Usalo in qualsiasi chat"
+      },
+      "includes": {
+        "description": "Questo workflow veniva eseguito come {{agent}}, quindi usa ancora le istruzioni di quell'agente. Rimuovilo se non ti servono.",
+        "label": "Include",
+        "remove": "Rimuovi",
+        "removeAria": "Non includere più /{{slug}}"
+      },
+      "notice": {
+        "description_one": "{{agents}} ora è un workflow, insieme ai workflow che eseguiva. Le automazioni mantengono pianificazione e proprietario. Digita /{{slug}} in chat per usarlo oppure scopri come funzionano i workflow.",
+        "description_many": "",
+        "description_other": "{{agents}} ora sono workflow, insieme ai workflow che eseguivano. Le automazioni mantengono pianificazione e proprietario. Digita /{{slug}} in chat per usarne uno oppure scopri come funzionano i workflow.",
+        "gotIt": "Ho capito",
+        "seeHow": "Scopri come",
+        "title": "I tuoi agenti ora sono workflow"
+      },
+      "renamedFrom": "Rinominato da /{{slug}} quando gli agenti sono diventati workflow."
+    },
     "skillImport": {
       "action": "Importa skill",
       "description": "Esegui questo prompt dove si trovano le tue skill. Ognuna diventa un workflow privato.",
