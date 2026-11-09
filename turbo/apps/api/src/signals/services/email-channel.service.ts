@@ -642,6 +642,20 @@ function isAutomatedEmail(headers: Readonly<Record<string, string>>): boolean {
   );
 }
 
+function isAuthenticatedSender(
+  authentication: {
+    readonly dmarc: string;
+    readonly dkim: string;
+  } | null,
+): boolean {
+  // Resend reports DMARC gray for p=none/missing policies; DKIM pass still
+  // verifies a signature whose signing domain matches the From domain.
+  return (
+    authentication?.dmarc === "pass" ||
+    (authentication?.dmarc === "gray" && authentication.dkim === "pass")
+  );
+}
+
 export const handleReceivedChannelEmail$ = command(
   async ({ set }, providerEmailId: string, signal: AbortSignal) => {
     const id = uuid().parse(providerEmailId);
@@ -664,7 +678,7 @@ export const handleReceivedChannelEmail$ = command(
       }) ||
       !sender ||
       sender === EMAIL_CHANNEL_ADDRESS ||
-      received.authentication?.dmarc !== "pass"
+      !isAuthenticatedSender(received.authentication)
     ) {
       return;
     }

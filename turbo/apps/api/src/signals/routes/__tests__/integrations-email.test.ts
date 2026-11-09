@@ -89,6 +89,11 @@ function incoming(options: {
   readonly text?: string;
   readonly inReplyTo?: string;
   readonly authenticated?: boolean;
+  readonly authentication?: {
+    readonly spf: string;
+    readonly dkim: string;
+    readonly dmarc: string;
+  };
 }) {
   const id = randomUUID();
   const messageId = options.messageId ?? `<${randomUUID()}@sender.example>`;
@@ -105,7 +110,7 @@ function incoming(options: {
         headers: options.inReplyTo
           ? { "In-Reply-To": options.inReplyTo, References: options.inReplyTo }
           : {},
-        authentication: {
+        authentication: options.authentication ?? {
           spf: "pass",
           dkim: "pass",
           dmarc: options.authenticated === false ? "fail" : "pass",
@@ -410,6 +415,43 @@ describe("Email integration", () => {
       ).body.emails,
     ).toStrictEqual([]);
     expect(sentEmails()).toStrictEqual([]);
+  });
+
+  it("accepts aligned DKIM for a DMARC monitoring policy but rejects SPF-only gray authentication", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const { actor } = await entitledActor();
+    await incoming({
+      sender: actor.email,
+      authentication: { spf: "pass", dkim: "gray", dmarc: "gray" },
+    }).send();
+    await expect(createdThreads(actor)).resolves.toStrictEqual({
+      chatThreads: [],
+    });
+    expect(
+      (
+        await accept(
+          emailClient().getLinkStatus({ headers: authHeaders() }),
+          [200],
+        )
+      ).body.emails,
+    ).toStrictEqual([]);
+    await incoming({
+      sender: actor.email,
+      authentication: { spf: "gray", dkim: "pass", dmarc: "gray" },
+    }).send();
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+    expect(
+      (
+        await accept(
+          emailClient().getLinkStatus({ headers: authHeaders() }),
+          [200],
+        )
+      ).body.emails,
+    ).toStrictEqual([actor.email]);
   });
 
   it("auto-connects registered senders, separates independent emails, keeps replies in their original chat, and deduplicates webhook retries", async () => {
