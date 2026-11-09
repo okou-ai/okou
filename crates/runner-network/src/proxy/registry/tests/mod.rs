@@ -1482,11 +1482,29 @@ async fn near_limit_registry_preserves_fail_closed_capacity() {
             .contains(&format!("exceeds {PROXY_REGISTRY_MAX_BYTES} bytes")),
         "unexpected error: {error}"
     );
-    assert_eq!(
-        tokio::fs::read(harness.registry_path()).await.unwrap(),
-        before_patch,
-        "a policy update that consumes fail-closed capacity must be rejected"
-    );
+    let registry_path = harness.registry_path().to_path_buf();
+    // Compare every original byte and EOF with bounded observation storage.
+    tokio::task::spawn_blocking(move || {
+        use std::io::Read as _;
+
+        let mut file = File::open(registry_path).unwrap();
+        let mut actual = [0; 64 * 1024];
+        for expected in before_patch.chunks(actual.len()) {
+            file.read_exact(&mut actual[..expected.len()]).unwrap();
+            assert_eq!(
+                &actual[..expected.len()],
+                expected,
+                "a policy update that consumes fail-closed capacity must be rejected"
+            );
+        }
+        assert_eq!(
+            file.read(&mut actual[..1]).unwrap(),
+            0,
+            "registry file grew"
+        );
+    })
+    .await
+    .unwrap();
 
     let outcomes = harness
         .handle
