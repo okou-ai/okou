@@ -24,6 +24,8 @@ final class VoiceInputNavigationTests: XCTestCase {
     _ = try await VoiceInputIntent().perform()
     XCTAssertFalse(requests.open(in: workspace))
     await workspace.refreshNavigation()
+    await workspace.list.refresh()
+    XCTAssertNil(workspace.list.error)
     workspace.setForeground(true)
     workspace.newChatDraft = "Existing notes: "
     await workspace.newComposer.synchronize()
@@ -163,8 +165,11 @@ final class VoiceInputNavigationTests: XCTestCase {
     let workspace = fixture.workspace(capture: VoiceCaptureFixture())
     addTeardownBlock { @MainActor in workspace.close() }
     await workspace.refreshNavigation()
+    await workspace.list.refresh()
+    XCTAssertNil(workspace.list.error)
     workspace.setForeground(true)
     workspace.selectChat(AttachmentFlowFixture.threadID)
+    XCTAssertEqual(workspace.selectedThreadID, AttachmentFlowFixture.threadID)
     workspace.newChatDraft = "Keep the pending draft"
     let voice = try XCTUnwrap(workspace.newComposer.voice)
     addTeardownBlock { @MainActor in await voice.discard() }
@@ -219,6 +224,28 @@ private final class VoiceEntryFixture: Sendable {
           return ChatHTTPResponse(body: #"{"transcript":"spoken words","language":"en"}"#)
         case "/api/voice-io/polish/segments":
           return ChatHTTPResponse(body: #"{"text":"spoken words"}"#)
+        default: throw URLError(.unsupportedURL)
+        }
+      },
+      threadList: { request in
+        switch request.url?.path {
+        case "/api/chat-threads/snapshot":
+          return ChatHTTPResponse(
+            body: """
+              {"chatThreads":[{
+                "id":"\(AttachmentFlowFixture.threadID)",
+                "agentId":"\(AttachmentFlowFixture.agentID)",
+                "title":"Existing conversation",
+                "createdAt":"2026-11-09T00:00:00Z",
+                "updatedAt":"2026-11-09T00:00:00Z",
+                "sortAt":"2026-11-09T00:00:00Z",
+                "archived":false,"hidden":false,"pinnedAt":null,"pinOrder":null
+              }],"latestEventId":null,"latestSeqId":0}
+              """)
+        case "/api/chat-threads/events":
+          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+        case "/api/indicators":
+          return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
         default: throw URLError(.unsupportedURL)
         }
       })

@@ -70,14 +70,15 @@ struct NewChatNavigation: ViewModifier {
   func body(content: Content) -> some View {
     content
       .environment(\.newChatActivation, requests.openedID)
-      .onChange(
-        of: Readiness(
+      .task(
+        id: Readiness(
           requestID: requests.pendingID, isActive: scenePhase == .active,
-          isAuthenticated: isAuthenticated, canOpen: workspace.canOpenNewChatFromSystem),
-        initial: true
-      ) { _, readiness in
-        guard readiness.requestID != nil, readiness.isActive, readiness.isAuthenticated,
-          readiness.canOpen
+          isAuthenticated: isAuthenticated, canOpen: workspace.canOpenNewChatFromSystem)
+      ) {
+        // Retire requests outside SwiftUI's update so a second system entry can
+        // replace voice startup without exhausting onChange's per-frame limit.
+        guard !Task.isCancelled, requests.pendingID != nil, scenePhase == .active,
+          isAuthenticated, workspace.canOpenNewChatFromSystem
         else { return }
         UIApplication.shared.sendAction(
           #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
