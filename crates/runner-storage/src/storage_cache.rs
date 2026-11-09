@@ -16,7 +16,7 @@
 //! after ordinary ready inputs are staged, while the same population owner
 //! finishes admitted fresh sources. Operation-bound readiness publishes only
 //! complete staged archives. Both owners settle before Agent launch; ordinary
-//! all-cache attempts retain the all-prepared application path.
+//! warm attempts can also hand off before their last bounded staging batch.
 //!
 //! Production source preparation first selects admissible extracted-file hits
 //! and pins their owned bytes in the plan. Those identities bypass archive
@@ -1372,6 +1372,20 @@ pub struct PreparedStorage {
     pub delivery: FreshArchiveDelivery,
 }
 
+impl PreparedStorage {
+    /// A cheap opportunity check after classification, not a readiness proof.
+    /// Population alone decides which actual bytes are staged or still pending.
+    pub fn may_overlap_warm_staging(&self) -> bool {
+        self.delivery.groups.as_ref().is_some_and(|groups| {
+            let mut archives = groups
+                .iter()
+                .filter(|group| !group_has_decoded(group, &self.plan));
+            archives.next().is_some()
+                && (self.plan.decoded_mount_count() > 0 || archives.next().is_some())
+        })
+    }
+}
+
 impl Drop for FreshArchiveDelivery {
     fn drop(&mut self) {
         self.cancel.cancel();
@@ -1387,8 +1401,8 @@ impl Drop for FreshArchiveDelivery {
 }
 
 impl FreshArchiveDelivery {
-    /// Resolve the existing classification before deciding whether Guest overlap is useful.
-    /// All-cache callers retain the ordinary population/application path.
+    /// Resolve cold admission before choosing the population/application owner.
+    /// Warm overlap still requires actual source preparation, not metadata hints.
     pub async fn has_owned_sources(&mut self, telemetry: &mut JobTelemetry) -> RunnerResult<bool> {
         if let Err(error) = self.finish_classification(telemetry).await {
             self.cancel_and_drain(telemetry).await;
@@ -1743,6 +1757,7 @@ impl GuestStageWrite {
 #[derive(Default)]
 struct GuestStageBatch {
     writes: Vec<GuestStageWrite>,
+    groups: Vec<CacheTargetGroup>,
     content_bytes: usize,
 }
 
@@ -2098,9 +2113,10 @@ impl GuestStageBatch {
         )
     }
 
-    fn push(&mut self, write: GuestStageWrite) {
+    fn push(&mut self, write: GuestStageWrite, group: &CacheTargetGroup) {
         self.content_bytes += write.bytes.len();
         self.writes.push(write);
+        self.groups.push(group.clone());
     }
 
     fn should_flush_after_push(&self) -> bool {
@@ -2195,6 +2211,7 @@ async fn flush_guest_stage_batch(
     );
     result?;
     batch.writes.clear();
+    batch.groups.clear();
     batch.content_bytes = 0;
     Ok(())
 }
@@ -2202,12 +2219,13 @@ async fn flush_guest_stage_batch(
 async fn push_guest_stage_write(
     batch: &mut GuestStageBatch,
     write: GuestStageWrite,
+    group: &CacheTargetGroup,
     stage: &mut GuestStageRecorder<'_>,
 ) -> RunnerResult<()> {
     if batch.should_flush_before(&write) {
         flush_guest_stage_batch(batch, stage).await?;
     }
-    batch.push(write);
+    batch.push(write, group);
     if batch.should_flush_after_push() {
         flush_guest_stage_batch(batch, stage).await?;
     }
@@ -2323,7 +2341,7 @@ async fn stage_processed_group(
         stage_write,
     } = processed;
     if let Some(stage_write) = stage_write {
-        push_guest_stage_write(stage_batch, stage_write, stage).await?;
+        push_guest_stage_write(stage_batch, stage_write, &group, stage).await?;
     }
     outcomes.push((group, outcome));
     Ok(())
@@ -2492,7 +2510,6 @@ async fn populate_cache_inner(
                             application,
                             plan,
                             owned_groups: &owned_groups,
-                            decoded_outcomes: &decoded_outcomes,
                         }),
                 )
                 .await?;
@@ -2506,10 +2523,24 @@ async fn populate_cache_inner(
         } else {
             Vec::new()
         };
+        let warm_application = if owned_keys.is_empty() {
+            application
+                .as_deref_mut()
+                .map(|application| (application, &*plan))
+        } else {
+            None
+        };
         outcomes.extend(decoded_outcomes);
         outcomes.extend(
-            population::prepare_ordinary(target_groups, home, CONCURRENCY, None, &mut stage)
-                .await?,
+            population::prepare_ordinary(
+                target_groups,
+                home,
+                CONCURRENCY,
+                fresh_delivery.as_ref().map(|delivery| &delivery.cancel),
+                &mut stage,
+                warm_application,
+            )
+            .await?,
         );
         Ok(outcomes)
     }

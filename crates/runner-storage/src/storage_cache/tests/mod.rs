@@ -13,6 +13,7 @@ mod large_selection;
 mod mixed_preparation;
 mod phase_diagnostics;
 mod rejected_observation;
+mod warm_application;
 
 use async_trait::async_trait;
 use httpmock::Method::{GET, HEAD};

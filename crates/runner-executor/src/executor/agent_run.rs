@@ -1565,7 +1565,7 @@ async fn prepare_guest_storage(
                         Some(STORAGE_CACHE_POPULATE_FAILED),
                     );
                 }
-                if owned_sources? {
+                if owned_sources? || prepared.may_overlap_warm_staging() {
                     let deferred = apply_prepared_storage(
                         sandbox, context, config, prepared, telemetry, cache_started,
                     )

@@ -77,13 +77,19 @@ impl GuestApplication {
         sandbox: &dyn Sandbox,
         plan: &StoragePlan,
         pending: &[CacheTargetGroup],
-        decoded: &[(CacheTargetGroup, TargetOutcome)],
         ordinary: &[(CacheTargetGroup, TargetOutcome)],
     ) -> RunnerResult<()> {
-        let archive_ready = ordinary
-            .iter()
-            .any(|(_, outcome)| matches!(outcome, TargetOutcome::Hit));
-        if pending.is_empty() || (!archive_ready && decoded.is_empty()) {
+        if pending.is_empty() {
+            return Ok(());
+        }
+        let archive_ready = ordinary.iter().any(|(group, outcome)| {
+            matches!(outcome, TargetOutcome::Hit)
+                && !pending.iter().any(|pending| {
+                    pending.representative.name == group.representative.name
+                        && pending.representative.version == group.representative.version
+                })
+        });
+        if !archive_ready && plan.decoded_mount_count() == 0 {
             return Ok(());
         }
 

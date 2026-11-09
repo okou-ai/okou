@@ -4,7 +4,6 @@ pub(super) struct EarlyApplication<'a> {
     pub(super) application: &'a mut GuestApplication,
     pub(super) plan: &'a StoragePlan,
     pub(super) owned_groups: &'a [CacheTargetGroup],
-    pub(super) decoded_outcomes: &'a [(CacheTargetGroup, TargetOutcome)],
 }
 
 /// Both futures stay borrowed by the population call. An error cancels the
@@ -26,7 +25,14 @@ pub(super) async fn prepare_mixed(
     let result = {
         let sandbox = stage.sandbox;
         let fresh = delivery.resolve_inner(home, &mut metrics);
-        let ordinary = prepare_ordinary(groups, home, concurrency, Some(&cancel_ordinary), stage);
+        let ordinary = prepare_ordinary(
+            groups,
+            home,
+            concurrency,
+            Some(&cancel_ordinary),
+            stage,
+            None,
+        );
         tokio::pin!(fresh, ordinary);
         tokio::select! {
             resolved = &mut fresh => match resolved {
@@ -49,7 +55,6 @@ pub(super) async fn prepare_mixed(
                                 sandbox,
                                 early.plan,
                                 early.owned_groups,
-                                early.decoded_outcomes,
                                 &prepared,
                             ).await
                         } else {
@@ -83,6 +88,7 @@ pub(super) async fn prepare_ordinary(
     concurrency: usize,
     cancel: Option<&CancellationToken>,
     stage: &mut GuestStageRecorder<'_>,
+    application: Option<(&mut GuestApplication, &StoragePlan)>,
 ) -> RunnerResult<Vec<(CacheTargetGroup, TargetOutcome)>> {
     let mut groups = JoinSet::new();
     let mut outcomes = Vec::new();
@@ -122,6 +128,14 @@ pub(super) async fn prepare_ordinary(
                 .await?;
         }
         check_cancel(cancel)?;
+        // Every source decision is now fixed. Earlier batches are readable;
+        // this bounded residual batch still owns the exact pending bytes.
+        if let Some((application, plan)) = application {
+            application
+                .start_if_useful(stage.sandbox, plan, &batch.groups, &outcomes)
+                .await?;
+            check_cancel(cancel)?;
+        }
         // A ready partial batch belongs to this owner, not the cold response.
         flush_guest_stage_batch(&mut batch, stage).await?;
         Ok(outcomes)
