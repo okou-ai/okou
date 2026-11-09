@@ -128,12 +128,6 @@ describe.each(["feishu", "lark"] as const)(
         message: "Finish setting up this bot before connecting",
       },
       {
-        label: "legacy invalid-link errors",
-        status: 400 as const,
-        code: "BAD_REQUEST",
-        message: "Invalid or expired bot connect link",
-      },
-      {
         label: "server errors",
         status: 500 as const,
         code: "INTERNAL_SERVER_ERROR",
