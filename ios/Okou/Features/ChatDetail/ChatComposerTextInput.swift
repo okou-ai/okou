@@ -18,6 +18,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
   var document: Binding<ChatDraftDocument>? = nil
   var searchableRanges: (@MainActor () -> [NSRange])? = nil
   var focusRequested: (@MainActor () -> Void)? = nil
+  var inputReady: (@MainActor () -> Void)? = nil
   var placeholder = String(localized: "Message Okou")
   var identifier = "message-input"
   var expanded = false
@@ -55,6 +56,9 @@ struct ChatComposerTextInput: UIViewRepresentable {
         focusRequested: { [weak coordinator] in coordinator?.input.focusRequested?() })
     }
     view.isCurrent = isCurrent
+    view.inputReady = { [weak coordinator = context.coordinator] in
+      coordinator?.input.inputReady?()
+    }
     view.usesStructuredDocument = document != nil
     editor?.register(
       view, blockID: editorBlockID, order: editorOrder, canAppend: isAppendTarget,
@@ -108,6 +112,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.placeholder.isHidden = !view.text.isEmpty
     container.expandsOnTap = isEnabled && !isFocused && !expanded
     view.setFocused(isFocused)
+    view.notifyInputReady()
   }
 
   func sizeThatFits(_ proposal: ProposedViewSize, uiView: ComposerInputContainer, context: Context)
@@ -133,6 +138,7 @@ struct ChatComposerTextInput: UIViewRepresentable {
     view.pasteDelegate = nil
     view.pasteImages = { _ in }
     view.isCurrent = { false }
+    view.inputReady = nil
     view.mentionEditor = nil
     view.workflowSuggestions?.unregister(view)
     view.workflowSuggestions = nil
@@ -248,6 +254,7 @@ final class ComposerTextView: UITextView {
   var usesStructuredDocument = false
   var isApplyingDocument = false
   var isCurrent: @MainActor () -> Bool = { true }
+  var inputReady: (@MainActor () -> Void)?
   weak var mentionEditor: ComposerEditor?
   private(set) var isSettlingComposition = false
   private var wantsFocus = false
@@ -376,6 +383,7 @@ final class ComposerTextView: UITextView {
       refreshAppearance()
       mentionEditor?.updateMention(in: self)
       updateWorkflows(false)
+      notifyInputReady()
     }
   }
 
@@ -423,6 +431,18 @@ final class ComposerTextView: UITextView {
     super.didMoveToWindow()
     if window != nil { refreshAppearance() }
     reconcileFocus()
+    notifyInputReady()
+  }
+
+  func notifyInputReady() {
+    // UIKit can attach the editor after SwiftUI has prepared it. Recheck the
+    // actual native attachment after the current representable update finishes.
+    DispatchQueue.main.async { [weak self] in
+      guard let self, window != nil, isEditable, isCurrent(),
+        markedTextRange == nil, !isSettlingComposition
+      else { return }
+      inputReady?()
+    }
   }
 
   private func refreshAppearance() {

@@ -78,6 +78,7 @@ struct ChatFeedbackComposer: View {
                     state.editorBlocks.first(where: { $0.id == block.id })?.searchableRanges ?? []
                   },
                   focusRequested: { state.requestEditorFocus(block.id) },
+                  inputReady: { state.voice?.startRequestedInputIfReady() },
                   placeholder: block.isFeedback
                     ? String(localized: "Ask or comment on this quote") : placeholder,
                   identifier: block.isFeedback ? "feedback-note-\(block.id)" : "message-input",
@@ -105,6 +106,13 @@ struct ChatFeedbackComposer: View {
       }
       .onChange(of: state.editorGeneration) { _, _ in
         focusedBlock = isFocused ? state.editorBlocks.last?.id : nil
+      }
+      .onChange(of: state.voice?.phase, initial: true) { _, phase in
+        guard phase == state.voice?.phase else { return }
+        if phase == .starting || phase == .recording {
+          focusedBlock = nil
+          isFocused = false
+        }
       }
       .onAppear {
         if let request = state.focusRequest {

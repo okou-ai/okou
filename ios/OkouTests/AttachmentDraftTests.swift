@@ -674,6 +674,7 @@ final class AttachmentFlowFixture: Sendable {
     sending: @escaping @Sendable () async -> Void = {},
     draftRead: @escaping @Sendable () async -> Void = {},
     workflows: (@Sendable (URLRequest) async throws -> ChatHTTPResponse)? = nil,
+    voiceInput: ChatHTTPFixture.Handler? = nil,
     attachment: ChatAttachment? = nil,
     threadList: ChatHTTPFixture.Handler? = nil
   ) {
@@ -697,6 +698,10 @@ final class AttachmentFlowFixture: Sendable {
           body: String(decoding: try JSONEncoder().encode(draft), as: UTF8.self))
       }
       switch path {
+      case "/api/voice-io/quota", "/api/voice-io/transcribe/segment",
+        "/api/voice-io/polish/segments":
+        guard let voiceInput else { throw URLError(.unsupportedURL) }
+        return try await voiceInput(request)
       case "/api/chat-threads/snapshot", "/api/chat-threads/events", "/api/indicators":
         if let threadList { return try await threadList(request) }
         switch path {
