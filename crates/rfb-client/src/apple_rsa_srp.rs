@@ -78,7 +78,10 @@ fn parse_rsa_key(reply: &[u8; KEY_REPLY_LEN]) -> Result<RsaPublicKey, Error> {
     }
     let der = reply.get(6..6 + KEY_DER_LEN).ok_or_else(invalid)?;
     let key = RsaPublicKey::from_public_key_der(der).map_err(|_| invalid())?;
-    if key.n().bits() != 2048 || key.e() != &BoxedUint::from(65537u32) || key.size() != RSA_BYTES {
+    if key.n().bit_width() != 2048
+        || key.e() != &BoxedUint::from(65537u32)
+        || key.size() != RSA_BYTES
+    {
         return Err(invalid());
     }
     let canonical = key.to_public_key_der().map_err(|_| invalid())?;

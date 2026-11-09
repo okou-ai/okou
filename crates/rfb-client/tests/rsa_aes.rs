@@ -30,7 +30,7 @@ static CRYPTO_TEST_LOCK: Mutex<()> = Mutex::const_new(());
 type TestResult<T = ()> = Result<T, Box<dyn std::error::Error + Send + Sync>>;
 fn wire(key: &RsaPublicKey) -> Vec<u8> {
     let size = key.size();
-    let mut b = key.n().bits().to_be_bytes().to_vec();
+    let mut b = key.n().bit_width().to_be_bytes().to_vec();
     for x in [key.n().as_ref(), key.e()] {
         let v = x.to_be_bytes();
         b.resize(b.len() + size - v.len(), 0);
