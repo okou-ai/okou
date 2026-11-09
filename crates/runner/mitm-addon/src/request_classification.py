@@ -19,7 +19,7 @@ from typing import Literal, Protocol
 
 from mitmproxy import http
 
-import auth
+import aws_sigv4_flow
 import connection_endpoints
 import connector_intent
 import flow_metadata
@@ -82,7 +82,7 @@ def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallReque
     exceeding either bound makes AWS rule inspection unavailable and therefore
     fail-closed without affecting non-AWS path rules.
     """
-    if len(flow.request.data.path) > auth.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES:
+    if len(flow.request.data.path) > aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES:
         return matching.FirewallRequestContext(
             body=flow.request.raw_content,
             aws_inspection_available=False,
@@ -91,9 +91,9 @@ def _aws_firewall_request_context(flow: http.HTTPFlow) -> matching.FirewallReque
     raw_fields = flow.request.headers.fields
     if not http_header_syntax.raw_header_list_within_budget(
         raw_fields,
-        max_fields=auth.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS,
-        max_bytes=auth.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES,
-        field_overhead_bytes=auth.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES,
+        max_fields=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS,
+        max_bytes=aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES,
+        field_overhead_bytes=aws_sigv4_flow.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES,
     ):
         return matching.FirewallRequestContext(
             body=flow.request.raw_content,
