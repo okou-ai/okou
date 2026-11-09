@@ -797,7 +797,7 @@ function ConnectorAccountManagerHeader({
   const chatAccess =
     useGet(featureSwitch$)[FeatureSwitchKey.ConnectorChatAccountAccess];
   return (
-    <DialogHeader className="min-w-0 shrink-0 gap-2 pr-8 text-left">
+    <DialogHeader className="min-w-0 shrink-0 pr-8 text-left">
       <div className="flex items-center gap-3">
         <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
           {icon}

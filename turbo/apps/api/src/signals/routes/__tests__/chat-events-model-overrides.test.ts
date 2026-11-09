@@ -59,10 +59,10 @@ describe("CHAT-02: run-level model overrides", () => {
     const stored = await api.readRun(actor, run.runId);
     const appended = stored.appendSystemPrompt ?? "";
     expect(appended).toContain(
-      `okou chat messages --thread-id ${run.threadId} --output-dir threads`,
+      `okou chat messages --thread-id ${run.threadId} --output-dir /tmp/okou-chat-history`,
     );
     expect(appended).toContain(
-      `rg -n '"seqId":<SEQ_ID>' threads/${run.threadId}/`,
+      `rg -n '"seqId":<SEQ_ID>' /tmp/okou-chat-history/${run.threadId}/`,
     );
 
     await api.requestCancelRun(actor, run.runId, [200]);

@@ -143,7 +143,7 @@ export async function applyPendingMigrations(
 
     const file = requiredMigrationFile(migrationFiles, migration.folderMillis);
     // Preserve shipped SQL and journal identity. 1462 replays recoverable DDL
-    // outside a transaction; 1534 defers its chat_events scan to migration 1535.
+    // outside a transaction; 1534 defers its chat_events scan to migration 1536.
     // Retire these replays with their migrations in a future history squash.
     const statements = REPLAYED_MIGRATIONS.includes(file)
       ? readFileSync(

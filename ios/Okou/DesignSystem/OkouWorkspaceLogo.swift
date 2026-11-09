@@ -40,6 +40,25 @@ struct OkouWorkspaceLogo: View {
   }
 }
 
+/// A workspace's logo as a glass control, the sidebar's workspace button. The logo is round
+/// so it sits concentric in the 44 pt glass circle, the same circle as the bar's other glass
+/// buttons.
+struct OkouWorkspaceGlassLogo: View {
+  let workspaceID: String
+  let name: String
+  var imageURL: URL? = nil
+  var hasImage = false
+
+  var body: some View {
+    OkouWorkspaceLogo(
+      workspaceID: workspaceID, name: name, imageURL: imageURL, hasImage: hasImage,
+      size: OkouAvatarSize.glassControl
+    )
+    .clipShape(Circle())
+    .modifier(OkouGlassControl(shape: .circle))
+  }
+}
+
 /// Workspace logos for the system menu, which draws images, not views: each tile is drawn once
 /// with the logo's own rounded corners, as the web's switcher puts a logo on every row. An
 /// uploaded logo shows a neutral tile until it has loaded, as `OkouWorkspaceLogo` does.

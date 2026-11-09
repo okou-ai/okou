@@ -1,5 +1,5 @@
 -- Preserve 1534's SQL/hash in migration history, but avoid scanning chat_events
--- while holding ACCESS EXCLUSIVE. Migration 1535 validates after this commits.
+-- while holding ACCESS EXCLUSIVE. Migration 1536 validates after this commits.
 CREATE TABLE "chat_email_context" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"chat_thread_id" uuid NOT NULL,

@@ -105,7 +105,7 @@ describe("CHAT-02: model-first routing", () => {
             expect(claim.claim.nativeContinuation?.recoveryPrompt).toBeNull();
           } else {
             expect(claim.claim.nativeContinuation?.recoveryPrompt).toContain(
-              "okou chat messages --output-dir threads",
+              "okou chat messages --output-dir /tmp/okou-chat-history",
             );
           }
           expect(claim.claim.appendSystemPrompt).not.toContain(

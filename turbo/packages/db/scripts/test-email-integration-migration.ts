@@ -35,7 +35,7 @@ export async function validateEmailIntegrationMigration(databaseUrl: string) {
     return entry.tag === "1534_email_integration";
   });
   const validation = journal.entries.find((entry) => {
-    return entry.tag === "1535_validate_email_context_type";
+    return entry.tag === "1536_validate_email_context_type";
   });
   assert(preparation && validation);
   const originalSql = await fs.readFile(

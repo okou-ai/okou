@@ -519,9 +519,9 @@ function AgentSuggestionComposerDialog({
     >
       <DialogContent
         smMaxWidth="xl"
-        contentClassName="grid-cols-[minmax(0,1fr)] gap-0 overflow-hidden p-0"
+        contentClassName="grid-cols-[minmax(0,1fr)] gap-4 overflow-hidden p-5"
       >
-        <DialogHeader className="min-w-0 px-5 pb-3 pt-5">
+        <DialogHeader className="min-w-0">
           <DialogTitle className="min-w-0 overflow-hidden pr-8 text-base font-semibold">
             <span className="flex min-w-0 items-center gap-2">
               {agentId ? (
@@ -541,11 +541,11 @@ function AgentSuggestionComposerDialog({
           </DialogDescription>
         </DialogHeader>
         {composer.state === "hasData" ? (
-          <div className="w-full min-w-0 p-5" data-chat-composer>
+          <div className="w-full min-w-0" data-chat-composer>
             <ChatComposer signals={composer.data} showPendingItems={false} />
           </div>
         ) : composer.state === "hasError" ? (
-          <p role="alert" className="px-5 pb-5 text-sm text-muted-foreground">
+          <p role="alert" className="text-sm text-muted-foreground">
             {composer.error instanceof Error
               ? composer.error.message
               : t(($) => {
