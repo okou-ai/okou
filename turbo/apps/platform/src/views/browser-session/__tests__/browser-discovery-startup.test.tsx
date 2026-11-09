@@ -20,6 +20,7 @@ import {
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockMonotonicNow, mockNow } from "../../../lib/time.ts";
+import { openQualityInput } from "./browser-settings-test-helpers.ts";
 
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
@@ -789,11 +790,9 @@ test("A capture change finishes when background membership is revalidated", asyn
   await ready();
 
   const stop = browser.holdNext("Page.stopScreencast");
-  click(screen.getByLabelText("Browser settings"));
-  const quality = await screen.findByRole("spinbutton", {
-    name: "Image quality",
-  });
+  const quality = await openQualityInput();
   fireEvent.change(quality, { target: { value: "60" } });
+  fireEvent.blur(quality);
   await stop.received;
   const proof = browser.holdNextMembership("own-first");
   act(() => {
@@ -822,12 +821,10 @@ test("Capture preferences chosen during membership validation are applied after 
     });
   });
   await proof.received;
-  click(screen.getByLabelText("Browser settings"));
-  const quality = await screen.findByRole("spinbutton", {
-    name: "Image quality",
-  });
+  const quality = await openQualityInput();
   expect(quality).toBeEnabled();
   fireEvent.change(quality, { target: { value: "60" } });
+  fireEvent.blur(quality);
   await act(proof.release);
   await waitFor(() => {
     expect(browser.captures.at(-1)).toMatchObject({ quality: 60 });
@@ -842,11 +839,9 @@ test("Automatic capture recovery survives membership validation", async () => {
   await ready();
   browser.failNext("Page.startScreencast", "The capture could not be started");
   const capture = browser.holdNext("Page.startScreencast");
-  click(screen.getByLabelText("Browser settings"));
-  const quality = await screen.findByRole("spinbutton", {
-    name: "Image quality",
-  });
+  const quality = await openQualityInput();
   fireEvent.change(quality, { target: { value: "60" } });
+  fireEvent.blur(quality);
   await capture.received;
   await userEvent.keyboard("{Escape}");
   const proof = browser.holdNextMembership("own-first");
@@ -883,11 +878,9 @@ test("Moving a tab retires its capture change before selecting a scoped survivor
   await screen.findByLabelText("Later own tab");
   await ready();
   const stop = browser.holdNext("Page.stopScreencast");
-  click(screen.getByLabelText("Browser settings"));
-  const quality = await screen.findByRole("spinbutton", {
-    name: "Image quality",
-  });
+  const quality = await openQualityInput();
   fireEvent.change(quality, { target: { value: "60" } });
+  fireEvent.blur(quality);
   await stop.received;
   const proof = browser.holdNextMembership("own-first");
   act(() => {

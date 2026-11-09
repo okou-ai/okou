@@ -11,6 +11,7 @@ import type { ImageRecovery } from "./viewer/image-recovery.ts";
 import type { BrowserRecoveryResult } from "./recovery.ts";
 import type { layoutTabs } from "./viewer/tab-layout.ts";
 import type { TabStripMotion } from "./tab-strip.ts";
+import type { CaptureQualitySignals } from "./capture-quality.ts";
 import type {
   NavigationReceipt,
   ViewerCaptureOptions,
@@ -124,6 +125,7 @@ export interface BrowserSignals {
   readonly controls$: Computed<BrowserControls>;
   readonly proxyType$: Computed<"text" | "password">;
   readonly capture$: Computed<ViewerCaptureOptions>;
+  readonly quality: CaptureQualitySignals;
   readonly transport$: Computed<ViewerTransport>;
   readonly windowSizeSync$: Computed<WindowSizeSync>;
   readonly display$: Computed<DisplayState>;

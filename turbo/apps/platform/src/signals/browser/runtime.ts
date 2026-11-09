@@ -33,6 +33,7 @@ import { createTabStripLayout, type TabStripMotion } from "./tab-strip.ts";
 import { createBrowserController } from "./viewer/controller.ts";
 import { diagnostic } from "./viewer/diagnostic.ts";
 import { createViewerSignals } from "./viewer/model.ts";
+import { createCaptureQualitySignals } from "./capture-quality.ts";
 import {
   createViewerRecovery,
   sameRecoveryBinding,
@@ -1741,6 +1742,10 @@ export function createBrowserRuntime(
     address$: model.address$,
     imageRecovery$: model.imageRecovery$,
     capture$: model.capture$,
+    quality: createCaptureQualitySignals(
+      model.capture$,
+      configurationActions.changeCapture$,
+    ),
     transport$: model.transport$,
     windowSizeSync$: model.windowSizeSync$,
     clipboardRecovery$: graph.native.recovery$,
