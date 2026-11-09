@@ -1,3 +1,4 @@
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import {
   computerUseAuthorizationRequestsContract as contract,
   type ComputerUseHost,
@@ -16,6 +17,8 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { onlineComputerUseHost } from "./chat-list-test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
+import { mockAuthorizationCallbackThread } from "./authorization-callback-test-helpers.ts";
+
 const context = testContext();
 const THREAD_ID = "20000000-0000-4000-8000-000000000001";
 const HOST_ID = "30000000-0000-4000-8000-000000000001";
@@ -28,7 +31,6 @@ function mockRequest(
     hosts?: ComputerUseHost[];
     threadId?: string;
     completed?: boolean;
-    blockedReason?: "run_active" | "chat_busy" | "request_superseded" | null;
   } = {},
 ) {
   let completed = options.completed ?? false;
@@ -36,9 +38,7 @@ function mockRequest(
   context.mocks.api(contract.get, ({ respond }) => {
     return respond(200, {
       source: "chat",
-      ...(options.blockedReason !== undefined
-        ? { continuation: { blockedReason: options.blockedReason } }
-        : {}),
+      id: "10000000-0000-4000-8000-000000000001",
       chatThreadId: options.threadId ?? THREAD_ID,
       expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
       completedAt: completed ? new Date(now()).toISOString() : null,
@@ -58,15 +58,22 @@ function mockRequest(
   };
 }
 
-async function setupChat() {
+async function setupChat(
+  content = AUTHORIZATION_URL,
+  onSend?: (prompt: string) => void,
+) {
+  mockAuthorizationCallbackThread(context, THREAD_ID);
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Computer authorization",
+    onSendRequest: ({ prompt }) => {
+      onSend?.(prompt);
+    },
     chatEvents: [
       {
         id: "computer-request",
         role: "assistant",
-        content: AUTHORIZATION_URL,
+        content,
         runId: "computer-request-run",
         createdAt: "2026-11-06T08:00:00.000Z",
       },
@@ -111,7 +118,9 @@ test("A user authorizes the only online computer directly in the chat", async ()
     expect(button(card, "Authorized")).toBeDisabled();
   });
   expect(
-    within(card).getByText("Computer access enabled for this chat."),
+    within(card).getByText(
+      "Computer access enabled for future runs in this chat.",
+    ),
   ).toBeInTheDocument();
 });
 
@@ -201,9 +210,9 @@ test("An authorization failure stays visible without claiming access was enabled
   });
   click(button(card, "Authorize"));
   await within(card).findByText(
-    "Could not authorize this computer. Refresh the chat to try again.",
+    "Could not authorize this computer. Try again.",
   );
-  expect(button(card, "Authorize")).toBeDisabled();
+  expect(button(card, "Authorize")).toBeEnabled();
 });
 
 test("A request from another chat cannot authorize a computer from this card", async () => {
@@ -228,6 +237,7 @@ test("An older API response without chat scope cannot offer inline authorization
   context.mocks.api(oldGetContract, ({ respond }) => {
     return respond(200, {
       source: "chat",
+      id: "10000000-0000-4000-8000-000000000001",
       expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
       completedAt: null,
       computerUseHostId: null,
@@ -262,49 +272,90 @@ test("Completed requests remain authorized when the chat is reopened", async () 
   });
 });
 
-test("Web authorization promises continuation and waits for the source Run", async () => {
-  mockRequest({ blockedReason: "run_active" });
-  const card = await setupChat();
-  await waitFor(() => {
-    return expect(button(card, "Authorize and continue")).toBeDisabled();
-  });
-  expect(
-    within(card).getByText(
-      "Wait for the requesting Run to finish before approving.",
-    ),
-  ).toBeInTheDocument();
+test.each([false, true])(
+  "Computer authorization resumes only with an explicit callback (%s)",
+  async (callback) => {
+    const request = mockRequest();
+    let grants = 0;
+    const sends: string[] = [];
+    context.mocks.api(contract.apply, ({ respond }) => {
+      grants++;
+      request.complete();
+      return respond(200, {
+        ok: true,
+        source: "chat",
+        computerUseHostId: HOST_ID,
+      });
+    });
+    const prompt = "Recheck computer access and continue";
+    const url = callback
+      ? `${AUTHORIZATION_URL}?threadId=${THREAD_ID}&callbackPrompt=${encodeURIComponent(prompt)}`
+      : AUTHORIZATION_URL;
+    const card = await setupChat(url, (text) => {
+      sends.push(text);
+    });
+    await waitFor(() => {
+      expect(button(card, "Authorize")).toBeEnabled();
+    });
+    click(button(card, "Authorize"));
+    await waitFor(() => {
+      expect(button(card, "Authorized")).toBeDisabled();
+    });
+    expect(grants).toBe(1);
+    await waitFor(() => {
+      expect(sends).toStrictEqual(callback ? [prompt] : []);
+    });
+  },
+);
+
+test("A computer callback for another chat cannot authorize from this card", async () => {
+  mockRequest();
+  const card = await setupChat(
+    `${AUTHORIZATION_URL}?threadId=20000000-0000-4000-8000-000000000099&callbackPrompt=Continue`,
+  );
+  await within(card).findByText(
+    "This Computer Use authorization link is invalid, expired, or not available for this workspace.",
+  );
+  expect(queryAllByRoleFast("button", card)).toHaveLength(0);
 });
 
-test("An obsolete authorization card asks for a fresh request", async () => {
-  mockRequest({ blockedReason: "request_superseded" });
-  const card = await setupChat();
-  await waitFor(() => {
-    return expect(button(card, "Authorize and continue")).toBeDisabled();
-  });
-  expect(
-    within(card).getByText(
-      "This chat has a newer task. Ask for a new Computer Use request.",
-    ),
-  ).toBeInTheDocument();
-});
-
-test("Web authorization refreshes the card after the server enqueues continuation", async () => {
-  const request = mockRequest({ blockedReason: null });
+test("A failed computer callback retries the same input without reauthorizing", async () => {
+  const request = mockRequest();
+  let grants = 0;
   context.mocks.api(contract.apply, ({ respond }) => {
+    grants++;
     request.complete();
     return respond(200, {
       ok: true,
       source: "chat",
       computerUseHostId: HOST_ID,
-      continuationEnqueued: true,
     });
   });
-  const card = await setupChat();
-  await waitFor(() => {
-    return expect(button(card, "Authorize and continue")).toBeEnabled();
+  const card = await setupChat(
+    `${AUTHORIZATION_URL}?threadId=${THREAD_ID}&callbackPrompt=Continue`,
+  );
+  const inputIds: (string | undefined)[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    inputIds.push(body.clientEventId);
+    return inputIds.length === 1
+      ? respond(503, { error: { code: "UNAVAILABLE", message: "Try again" } })
+      : respond(201, { threadId: THREAD_ID });
   });
-  click(button(card, "Authorize and continue"));
   await waitFor(() => {
-    return expect(button(card, "Authorized")).toBeDisabled();
+    expect(button(card, "Authorize")).toBeEnabled();
   });
+  click(button(card, "Authorize"));
+  await within(card).findByText(
+    "Access enabled, but the conversation could not continue. Try again.",
+  );
+  expect(button(card, "Authorize")).toBeEnabled();
+  click(button(card, "Authorize"));
+  await waitFor(() => {
+    expect(button(card, "Authorized")).toBeDisabled();
+  });
+  expect(grants).toBe(1);
+  expect(inputIds).toStrictEqual([
+    "10000000-0000-4000-8000-000000000001",
+    "10000000-0000-4000-8000-000000000001",
+  ]);
 });

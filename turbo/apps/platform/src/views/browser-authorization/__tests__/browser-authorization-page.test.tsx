@@ -1,3 +1,5 @@
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
 import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/contracts/browser";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
@@ -94,3 +96,43 @@ test("A user can enable the cloud browser for one conversation", async () => {
   });
   expect(applyCount).toBe(1);
 });
+
+test.each([false, true])(
+  "The standalone Browser page honors the optional callback (%s)",
+  async (callback) => {
+    const threadId = "b0000000-0000-4000-a000-000000000001";
+    mockPendingAuthorization();
+    mockAuthorizationCallbackThread(context, threadId);
+    let grants = 0;
+    const prompts: string[] = [];
+    context.mocks.api(
+      browserAuthorizationRequestsContract.apply,
+      ({ respond }) => {
+        grants++;
+        return respond(200, { ok: true, cloudBrowserEnabled: true });
+      },
+    );
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(grants).toBe(1);
+      expect(body.clientEventId).toBe("a0000000-0000-4000-a000-000000000001");
+      if (body.prompt) {
+        prompts.push(body.prompt);
+      }
+      return respond(201, { threadId });
+    });
+    await setupPage({
+      context,
+      path: `/browser/authorize/${REQUEST_TOKEN}${callback ? `?threadId=${threadId}&callbackPrompt=Continue` : ""}`,
+      host: "app.okou.ai",
+    });
+    await waitFor(() => {
+      expect(getButton("Enable for this thread")).toBeEnabled();
+    });
+    click(getButton("Enable for this thread"));
+    await waitFor(() => {
+      expect(getButton("Cloud browser enabled")).toBeDisabled();
+    });
+    expect(grants).toBe(1);
+    expect(prompts).toStrictEqual(callback ? ["Continue"] : []);
+  },
+);

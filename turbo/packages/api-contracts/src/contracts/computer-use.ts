@@ -446,24 +446,12 @@ export const computerUseAuthorizationRequestCreateResponseSchema = object({
   expiresAt: string(),
 });
 
-const computerUseAuthorizationContinuationSchema = object({
-  blockedReason: zEnum([
-    "run_active",
-    "chat_busy",
-    "request_superseded",
-  ]).nullable(),
-});
-
-export type ComputerUseAuthorizationContinuation = zInfer<
-  typeof computerUseAuthorizationContinuationSchema
->;
-
 export const computerUseAuthorizationRequestResponseSchema = object({
+  id: uuid(),
   source: computerUseAuthorizationSourceSchema,
   chatThreadId: uuid().nullable(),
   expiresAt: string(),
   completedAt: string().nullable(),
-  continuation: computerUseAuthorizationContinuationSchema.optional(),
   computerUseHostId: uuid().nullable(),
   hosts: array(computerUseHostSchema),
 });
@@ -474,7 +462,6 @@ const computerUseAuthorizationRequestApplyBodySchema = object({
 
 export const computerUseAuthorizationRequestApplyResponseSchema = object({
   ok: literal(true),
-  continuationEnqueued: boolean().optional(),
   source: computerUseAuthorizationSourceSchema,
   computerUseHostId: uuid(),
 });
@@ -611,7 +598,6 @@ export const computerUseAuthorizationRequestsContract = c.router({
       401: apiErrorSchema,
       403: apiErrorSchema,
       404: apiErrorSchema,
-      409: apiErrorSchema,
       410: apiErrorSchema,
     },
     summary: "Bind a Computer Use host for a delegated authorization request",

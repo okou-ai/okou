@@ -1,4 +1,3 @@
-import { subscribeComputerUseAuthorization$ } from "./computer-use-authorization.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
 import { i18n } from "../../i18n/index.ts";
@@ -9,7 +8,6 @@ import { updatePage$ } from "../react-router.ts";
 
 export const setupComputerUseAuthorizationPage$ = command(
   async ({ set }, signal: AbortSignal) => {
-    set(subscribeComputerUseAuthorization$, signal);
     set(updatePage$, createElement(ComputerUseAuthorizationPage), "standalone");
     set(
       updateDocumentTitle$,

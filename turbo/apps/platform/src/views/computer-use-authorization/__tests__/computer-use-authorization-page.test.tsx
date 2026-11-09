@@ -1,3 +1,5 @@
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
+import { mockAuthorizationCallbackThread } from "../../okou-page/__tests__/authorization-callback-test-helpers.ts";
 import {
   computerUseAuthorizationRequestsContract,
   type ComputerUseAuthorizationSource,
@@ -56,6 +58,7 @@ function mockAuthorizationRequest({
     ({ respond }) => {
       return respond(200, {
         source,
+        id: "10000000-0000-4000-8000-000000000001",
         chatThreadId:
           source === "chat" ? "20000000-0000-4000-8000-000000000001" : null,
         expiresAt: "2099-09-01T10:00:00.000Z",
@@ -171,57 +174,47 @@ test("A user with no online computer receives setup guidance", async () => {
   );
 });
 
-test("The standalone Web authorization follows Run readiness and authorizes once", async () => {
-  const host = computerUseHost(
-    "30000000-0000-4000-8000-000000000001",
-    "Test Mac",
-  );
-  let ready = false;
-  let completed = false;
-  context.mocks.api(
-    computerUseAuthorizationRequestsContract.get,
-    ({ respond }) => {
-      return respond(200, {
-        source: "chat",
-        chatThreadId: "20000000-0000-4000-8000-000000000001",
-        expiresAt: "2099-09-01T10:00:00.000Z",
-        completedAt: completed ? "2026-11-09T04:00:00.000Z" : null,
-        computerUseHostId: completed ? host.id : null,
-        hosts: [host],
-        continuation: { blockedReason: ready ? null : "run_active" },
-      });
-    },
-  );
-  context.mocks.api(
-    computerUseAuthorizationRequestsContract.apply,
-    ({ respond }) => {
-      completed = true;
-      return respond(200, {
-        ok: true,
-        source: "chat",
-        computerUseHostId: host.id,
-        continuationEnqueued: true,
-      });
-    },
-  );
-  await setupPage({
-    context,
-    path: `/computer-use/authorize/${REQUEST_TOKEN}`,
-    host: "app.okou.ai",
-  });
-  await waitFor(() => {
-    return expect(getButton("Authorize and continue")).toBeDisabled();
-  });
-  expect(
-    screen.getByText("Wait for the requesting Run to finish before approving."),
-  ).toBeInTheDocument();
-  ready = true;
-  context.mocks.ably.trigger("desktopShellAuthorizationChanged");
-  await waitFor(() => {
-    return expect(getButton("Authorize and continue")).toBeEnabled();
-  });
-  click(getButton("Authorize and continue"));
-  await waitFor(() => {
-    return expect(getButton("Authorized")).toBeDisabled();
-  });
-});
+test.each([false, true])(
+  "The standalone computer page honors the optional callback (%s)",
+  async (callback) => {
+    const threadId = "20000000-0000-4000-8000-000000000001";
+    const hostId = "30000000-0000-4000-8000-000000000001";
+    mockAuthorizationRequest({ hosts: [computerUseHost(hostId, "Work Mac")] });
+    mockAuthorizationCallbackThread(context, threadId);
+    let grants = 0;
+    const prompts: string[] = [];
+    context.mocks.api(
+      computerUseAuthorizationRequestsContract.apply,
+      ({ respond }) => {
+        grants++;
+        return respond(200, {
+          ok: true,
+          source: "chat",
+          computerUseHostId: hostId,
+        });
+      },
+    );
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(grants).toBe(1);
+      expect(body.clientEventId).toBe("10000000-0000-4000-8000-000000000001");
+      if (body.prompt) {
+        prompts.push(body.prompt);
+      }
+      return respond(201, { threadId });
+    });
+    await setupPage({
+      context,
+      path: `/computer-use/authorize/${REQUEST_TOKEN}${callback ? `?threadId=${threadId}&callbackPrompt=Continue` : ""}`,
+      host: "app.okou.ai",
+    });
+    await waitFor(() => {
+      expect(getButton("Authorize")).toBeEnabled();
+    });
+    click(getButton("Authorize"));
+    await waitFor(() => {
+      expect(getButton("Authorized")).toBeDisabled();
+    });
+    expect(grants).toBe(1);
+    expect(prompts).toStrictEqual(callback ? ["Continue"] : []);
+  },
+);
