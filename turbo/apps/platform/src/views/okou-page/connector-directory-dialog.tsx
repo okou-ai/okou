@@ -669,7 +669,7 @@ function DirectoryToolbar({
   const { t } = useTranslation();
   return (
     <>
-      <DialogHeader className="shrink-0 space-y-0 px-6 pt-6">
+      <DialogHeader className="shrink-0 px-6 pt-6">
         <DialogTitle className="text-lg">
           {t(($) => {
             return $.chat.connectors.title;

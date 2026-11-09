@@ -186,7 +186,7 @@ export function FriendReferralDialog({
       {trigger}
       <DialogContent smMaxWidth="lg" contentClassName="gap-5">
         <ReferralFigure />
-        <DialogHeader className="space-y-1 sm:text-center">
+        <DialogHeader className="gap-1 sm:text-center">
           <DialogTitle>
             {t(($) => {
               return $.friendReferrals.dialogTitle;

@@ -174,7 +174,7 @@ export function ComputerUseDownloadDialog({
         scrollable={false}
         contentClassName="flex flex-col gap-0 p-0"
       >
-        <DialogHeader className="shrink-0 space-y-4 px-6 pt-6 pb-5 text-left">
+        <DialogHeader className="shrink-0 gap-4 px-6 pt-6 pb-5 text-left">
           <div className="flex items-center justify-between gap-4 pr-10">
             <DialogTitle className="min-w-0 text-xl leading-7">
               {copy.title}

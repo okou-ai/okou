@@ -418,7 +418,7 @@ function ConnectorAccessDialog({
         height={720}
         contentClassName="flex flex-col overflow-hidden"
       >
-        <DialogHeader className="shrink-0 gap-2">
+        <DialogHeader className="shrink-0">
           <div className="flex items-center gap-3">
             <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-muted">
               {headerIcon}
