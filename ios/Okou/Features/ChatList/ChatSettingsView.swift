@@ -188,19 +188,22 @@ struct ChatSettingsView: View {
     ) {
       OkouProfileAvatar(
         imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-        size: OkouAvatarSize.account)
+        size: OkouAvatarSize.account,
+        cachedImage: authentication.presentation?.image("profile"), usesSharedImage: true)
     }
   }
 
   @ViewBuilder private var workspaceRow: some View {
-    if let workspace = authentication.workspaces.first(where: {
-      $0.id == authentication.activeWorkspaceID
-    }) {
+    if let id = authentication.presentationWorkspaceID,
+      let workspace = authentication.workspacePresentation(id)
+    {
       OkouRowLabel(Text(workspace.name), slot: OkouAvatarSize.account) {
         OkouWorkspaceLogo(
           workspaceID: workspace.id, name: workspace.name,
           imageURL: workspace.imageURL, hasImage: workspace.hasImage,
-          size: OkouAvatarSize.account)
+          size: OkouAvatarSize.account,
+          cachedImage: authentication.presentation?.image("workspace:" + workspace.id),
+          usesSharedImage: true)
       }
     }
   }

@@ -36,10 +36,9 @@ struct ChatSidebarView: View {
   @Environment(\.colorScheme) private var colorScheme
 
   private var workspaceName: String {
-    authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
+    authentication.workspacePresentation(workspaceID)?.name ?? "Workspace"
   }
 
-  @State private var menuLogos = OkouWorkspaceMenuLogos()
   @Namespace private var searchTransition
   /// One leading edge for the header, every heading, row content and the footer buttons.
   private let rowInset = OkouControl.pageInset
@@ -150,6 +149,7 @@ struct ChatSidebarView: View {
     HStack(spacing: OkouSpace.md) {
       workspaceSwitcher
       Text(workspaceName)
+        .redacted(reason: authentication.workspacePresentation(workspaceID) == nil ? .placeholder : [])
         .font(.okou(.headline))
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -176,9 +176,9 @@ struct ChatSidebarView: View {
           Label {
             Text(workspace.name)
           } icon: {
-            menuLogos.image(
-              workspaceID: workspace.id, imageURL: workspace.imageURL,
-              hasImage: workspace.hasImage)
+            OkouWorkspaceMenuLogos.image(
+              workspaceID: workspace.id, hasImage: workspace.hasImage,
+              cachedImage: authentication.presentation?.image("workspace:" + workspace.id))
           }
           .tag(workspace.id)
         }
@@ -186,22 +186,18 @@ struct ChatSidebarView: View {
       .pickerStyle(.inline)
       .labelsHidden()
     } label: {
-      let workspace = authentication.workspaces.first(where: { $0.id == workspaceID })
+      let workspace = authentication.workspacePresentation(workspaceID)
       OkouWorkspaceGlassLogo(
         workspaceID: workspaceID, name: workspaceName,
-        imageURL: workspace?.imageURL, hasImage: workspace?.hasImage ?? false
+        imageURL: workspace?.imageURL, hasImage: workspace?.hasImage ?? false,
+        cachedImage: authentication.presentation?.image("workspace:" + workspaceID),
+        usesSharedImage: true, metadataKnown: workspace != nil
       )
       .accessibilityHidden(true)
     }
     .buttonStyle(.plain)
     .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
     .accessibilityLabel("Workspace: \(workspaceName)")
-    .task(id: authentication.workspaces) {
-      for workspace in authentication.workspaces {
-        await menuLogos.load(
-          workspaceID: workspace.id, imageURL: workspace.imageURL, hasImage: workspace.hasImage)
-      }
-    }
   }
 
   private var workspaceSelection: Binding<String> {
@@ -428,7 +424,8 @@ struct ChatSidebarView: View {
         let profile = authentication.profile
         OkouProfileAvatar(
           imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-          size: OkouControl.minimumTarget)
+          size: OkouControl.minimumTarget,
+          cachedImage: authentication.presentation?.image("profile"), usesSharedImage: true)
       }
       .accessibilityLabel("Settings")
       .accessibilityIdentifier("settings")
