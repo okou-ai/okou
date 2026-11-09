@@ -779,6 +779,7 @@ export function CapabilityHomeContent({
   const { t } = useTranslation();
   const selected = useGet(signals.taskChips.home.task$);
   const close = useSet(signals.taskChips.home.close$);
+  const pageSignal = useGet(pageSignal$);
   const closeButton = (
     <Button
       variant="quiet"
@@ -789,7 +790,7 @@ export function CapabilityHomeContent({
       })}
       className="shrink-0 text-muted-foreground"
       onClick={() => {
-        close();
+        detach(close(pageSignal), Reason.DomCallback);
       }}
     >
       <X aria-hidden />

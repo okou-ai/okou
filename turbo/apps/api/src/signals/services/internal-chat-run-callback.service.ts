@@ -1977,6 +1977,7 @@ const handleFailedChatCallback$ = command(
         chatThreadId: args.chatThread.chatThreadId,
         runId: args.runId,
         errorMessage: args.errorMessage,
+        externalSurface: hasExternalNotificationDeliveryChannel(args),
       },
       signal,
     );

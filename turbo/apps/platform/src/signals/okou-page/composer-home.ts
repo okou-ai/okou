@@ -8,7 +8,7 @@ import type {
 export type HomeWorkflowKind = "scheduled" | "triggers" | "advanced";
 export type HomeExploreKind = "search" | "research";
 
-/** Discovery is local to each composer; dismissing it keeps the draft intact. */
+/** Discovery and its injected prompts are local to each composer. */
 export function createComposerHomeSignals(
   selectedTask$: Computed<ComposerTask | null>,
   openTask$: Command<void, [ComposerTask]>,
@@ -31,11 +31,16 @@ export function createComposerHomeSignals(
     set(internalVisible$, true);
     set(internalExploreKind$, null);
   });
-  const close$ = command(({ set }) => {
+  const close$ = command(async ({ set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
     set(internalVisible$, false);
     set(closeWorkflow$);
+    const cleared = set(actions.clearPrompt$);
     // The initiating capability control has unmounted; the composer remains.
     set(actions.focusEditor$);
+    if (cleared) {
+      await set(actions.saveDraft$, signal);
+    }
   });
   const openWorkflow$ = command(({ set }, kind: HomeWorkflowKind) => {
     set(internalWorkflowKind$, kind);

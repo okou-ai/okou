@@ -964,8 +964,7 @@
       "actionFailed": "未能继续。",
       "allow": "允许",
       "allowed": "已允许",
-      "callbackPrompt": "浏览器已启用，请继续完成刚才的任务。",
-      "cardDescription": "为当前聊天启用云浏览器并自动继续任务。这会断开电脑操作。",
+      "cardDescription": "在此聊天中使用云端浏览器。这将断开 Computer Use。",
       "description": "{{assistantName}} 会在这个聊天会话中使用独立的云端浏览器环境。启用后，该会话的 Computer Use 会断开。",
       "enable": "为这个会话启用",
       "enabled": "云端浏览器已启用",
@@ -974,8 +973,9 @@
       "unavailableDescription": "这个云端浏览器授权链接无效、已过期，或不适用于当前工作区。",
       "unavailableTitle": "授权链接不可用"
     },
+    "callbackFailed": "访问已启用，但对话未能继续。请重试。",
     "computerUse": {
-      "actionFailed": "未能授权这台电脑，请刷新聊天后重试。",
+      "actionFailed": "无法授权此电脑。请重试。",
       "authorize": "授权",
       "authorized": "已授权",
       "authorizedDescription": "已为此聊天的后续运行启用电脑访问。",
@@ -5080,8 +5080,10 @@
     "newChat": "新建聊天",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
+    "project": "Project",
     "projects": "Projects",
     "remove": "移出 Project",
+    "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
     "save": "保存",
@@ -5854,6 +5856,16 @@
           "title": "IndexedDB 存储",
           "unavailable": "IndexedDB 存储不可用。"
         },
+        "learning": {
+          "description": "立即回顾近期活动并更新个人记忆，不改变夜间执行计划。",
+          "notInstalled": "请先在偏好设置中开启学习，再在此运行。",
+          "queued": "学习已加入队列。",
+          "requestFailed": "无法确认请求结果。",
+          "run": "运行学习",
+          "starting": "正在启动…",
+          "title": "学习",
+          "unavailable": "学习暂时不可用。"
+        },
         "morningBrief": {
           "description": "立即运行一次账号已开启的晨间简报。它可能更新建议并发送真实邮件，每日执行时间保持不变。",
           "openChat": "打开对话",
@@ -6427,6 +6439,28 @@
       "thread_one": "{{value}} 个会话",
       "thread_other": "{{value}} 个会话"
     }
+  },
+  "userNotifications": {
+    "close": "关闭",
+    "countUnavailable": "未读数量暂不可用",
+    "detailFailed": "未能加载这条通知",
+    "empty": "暂无通知",
+    "emptyDescription": "Okou 的更新会显示在这里。",
+    "loadFailed": "未能加载通知",
+    "loading": "正在加载通知",
+    "loadMore": "查看更早的通知",
+    "nextPage": "下一页",
+    "pageNavigation": "消息中的页面",
+    "pageOf": "第 {{current}} / {{total}} 页",
+    "previousPage": "上一页",
+    "readAll": "全部已读",
+    "readFailed": "未能标记为已读",
+    "retry": "重试",
+    "sender": "Okou 团队",
+    "title": "通知",
+    "unread": "未读",
+    "unreadCount_one": "{{count}} 条未读通知",
+    "unreadCount_other": "{{count}} 条未读通知"
   },
   "vnc": {
     "add": "添加主机",

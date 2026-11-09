@@ -966,8 +966,7 @@
       "actionFailed": "जारी नहीं रखा जा सका।",
       "allow": "अनुमति दें",
       "allowed": "अनुमति दी गई",
-      "callbackPrompt": "क्लाउड ब्राउज़र चालू हो गया है। कृपया पिछला कार्य जारी रखें।",
-      "cardDescription": "इस चैट के लिए क्लाउड ब्राउज़र चालू करें और कार्य अपने आप जारी रखें। इससे कंप्यूटर का कनेक्शन हट जाएगा।",
+      "cardDescription": "इस चैट के लिए क्लाउड ब्राउज़र का उपयोग करें। इससे Computer Use डिस्कनेक्ट हो जाएगा।",
       "description": "{{assistantName}} इस चैट थ्रेड के लिए एक पृथक क्लाउड ब्राउज़र प्रोफ़ाइल का उपयोग करेगा। इसे सक्षम करने से थ्रेड के लिए कंप्यूटर का उपयोग डिस्कनेक्ट हो जाता है।",
       "enable": "इस थ्रेड के लिए सक्षम करें",
       "enabled": "क्लाउड ब्राउज़र सक्षम किया गया",
@@ -976,8 +975,9 @@
       "unavailableDescription": "यह क्लाउड ब्राउज़र प्राधिकरण लिंक अमान्य है, समाप्त हो गया है, या इस वर्कस्पेस के लिए उपलब्ध नहीं है।",
       "unavailableTitle": "प्राधिकरण लिंक अनुपलब्ध है"
     },
+    "callbackFailed": "एक्सेस चालू है, लेकिन बातचीत जारी नहीं हो सकी। फिर से कोशिश करें।",
     "computerUse": {
-      "actionFailed": "इस कंप्यूटर को अनुमति नहीं दी जा सकी। फिर से कोशिश करने के लिए चैट रीफ़्रेश करें।",
+      "actionFailed": "इस कंप्यूटर को अधिकृत नहीं किया जा सका। फिर से कोशिश करें।",
       "authorize": "अधिकृत",
       "authorized": "अधिकृत",
       "authorizedDescription": "इस चैट में आगे के रन के लिए कंप्यूटर ऐक्सेस चालू है।",
@@ -5098,8 +5098,10 @@
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
+    "project": "Project",
     "projects": "Projects",
     "remove": "Remove from Project",
+    "removeFromNewChat": "{{name}} हटाएँ",
     "rename": "Rename",
     "renameProject": "Rename Project",
     "save": "Save",
@@ -5873,6 +5875,16 @@
           "title": "IndexedDB स्टोरेज",
           "unavailable": "IndexedDB स्टोरेज उपलब्ध नहीं है।"
         },
+        "learning": {
+          "description": "हाल की गतिविधि की समीक्षा करें और अपनी निजी मेमोरी एक बार अपडेट करें। रात का शेड्यूल नहीं बदलेगा।",
+          "notInstalled": "यहाँ चलाने से पहले प्राथमिकताओं में लर्निंग चालू करें।",
+          "queued": "लर्निंग कतार में है।",
+          "requestFailed": "अनुरोध की पुष्टि नहीं हो सकी।",
+          "run": "लर्निंग चलाएँ",
+          "starting": "शुरू हो रहा है…",
+          "title": "लर्निंग",
+          "unavailable": "लर्निंग अभी उपलब्ध नहीं है।"
+        },
         "morningBrief": {
           "description": "अपने खाते के सक्रिय वर्कफ़्लो से ब्रीफ़ एक बार चलाएँ। इससे सुझाव अपडेट हो सकते हैं और वास्तविक ईमेल भेजा जा सकता है। दैनिक समय-सारणी नहीं बदलेगी।",
           "openChat": "बातचीत खोलें",
@@ -6448,6 +6460,29 @@
       "thread_one": "{{value}} थ्रेड",
       "thread_other": "{{value}} थ्रेड"
     }
+  },
+  "userNotifications": {
+    "close": "बंद करें",
+    "countUnavailable": "अपठित सूचनाओं की संख्या उपलब्ध नहीं",
+    "detailFailed": "यह सूचना लोड नहीं हो सकी",
+    "empty": "अभी कोई सूचना नहीं",
+    "emptyDescription": "Okou के अपडेट यहाँ दिखाई देंगे।",
+    "loadFailed": "सूचनाएँ लोड नहीं हो सकीं",
+    "loading": "सूचनाएँ लोड हो रही हैं",
+    "loadMore": "पुरानी सूचनाएँ दिखाएँ",
+    "nextPage": "अगला पेज",
+    "pageNavigation": "इस संदेश के पृष्ठ",
+    "pageOf": "पेज {{current}} / {{total}}",
+    "previousPage": "पिछला पेज",
+    "readAll": "सभी को पढ़ा हुआ चिह्नित करें",
+    "readFailed": "पढ़ा हुआ चिह्नित नहीं हो सका",
+    "retry": "फिर कोशिश करें",
+    "sender": "Okou टीम",
+    "title": "सूचनाएँ",
+    "unread": "अपठित",
+    "unreadCount_one": "{{count}} अपठित सूचना",
+    "unreadCount_many": "{{count}} अपठित सूचनाएँ",
+    "unreadCount_other": "{{count}} अपठित सूचनाएँ"
   },
   "vnc": {
     "add": "होस्ट जोड़ें",

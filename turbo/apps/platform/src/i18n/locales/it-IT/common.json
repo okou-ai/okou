@@ -984,8 +984,7 @@
       "actionFailed": "Impossibile continuare.",
       "allow": "Consenti",
       "allowed": "Consentito",
-      "callbackPrompt": "Il browser cloud è attivo. Continua l’attività precedente.",
-      "cardDescription": "Attiva il browser cloud per questa chat e continua automaticamente. Il controllo del computer verrà disconnesso.",
+      "cardDescription": "Usa un browser cloud per questa chat. Questo disconnette Computer Use.",
       "description": "{{assistantName}} utilizzerà un profilo browser cloud isolato per questo thread di chat. Abilitandolo, Computer Use verrà disconnesso dal thread.",
       "enable": "Abilita per questo thread",
       "enabled": "Browser cloud abilitato",
@@ -994,8 +993,9 @@
       "unavailableDescription": "Questo collegamento di autorizzazione del browser cloud non è valido, è scaduto o non è disponibile per questa area di lavoro.",
       "unavailableTitle": "Collegamento di autorizzazione non disponibile"
     },
+    "callbackFailed": "Accesso abilitato, ma non è stato possibile continuare la conversazione. Riprova.",
     "computerUse": {
-      "actionFailed": "Impossibile autorizzare questo computer. Aggiorna la chat per riprovare.",
+      "actionFailed": "Impossibile autorizzare questo computer. Riprova.",
       "authorize": "Autorizza",
       "authorized": "Autorizzato",
       "authorizedDescription": "Accesso al computer abilitato per le prossime esecuzioni in questa chat.",
@@ -5155,8 +5155,10 @@
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
+    "project": "Project",
     "projects": "Projects",
     "remove": "Remove from Project",
+    "removeFromNewChat": "Rimuovi {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
     "save": "Save",
@@ -5938,6 +5940,16 @@
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
         },
+        "learning": {
+          "description": "Esamina le attività recenti e aggiorna la memoria personale una volta. La pianificazione notturna non cambia.",
+          "notInstalled": "Attiva l'apprendimento nelle Preferenze prima di eseguirlo qui.",
+          "queued": "Apprendimento in coda.",
+          "requestFailed": "Non è stato possibile confermare la richiesta.",
+          "run": "Esegui apprendimento",
+          "starting": "Avvio…",
+          "title": "Apprendimento",
+          "unavailable": "L'apprendimento non è al momento disponibile."
+        },
         "morningBrief": {
           "description": "Esegue una volta il workflow attivo del tuo account. Può aggiornare i suggerimenti e inviare una vera email. La pianificazione giornaliera resta invariata.",
           "openChat": "Apri conversazione",
@@ -6517,6 +6529,29 @@
       "thread_many": "{{value}} conversazioni",
       "thread_other": "{{value}} conversazioni"
     }
+  },
+  "userNotifications": {
+    "close": "Chiudi",
+    "countUnavailable": "Conteggio delle notifiche da leggere non disponibile",
+    "detailFailed": "Impossibile caricare questa notifica",
+    "empty": "Nessuna notifica per ora",
+    "emptyDescription": "Le novità di Okou appariranno qui.",
+    "loadFailed": "Impossibile caricare le notifiche",
+    "loading": "Caricamento delle notifiche",
+    "loadMore": "Mostra precedenti",
+    "nextPage": "Pagina successiva",
+    "pageNavigation": "Pagine di questo messaggio",
+    "pageOf": "Pagina {{current}} di {{total}}",
+    "previousPage": "Pagina precedente",
+    "readAll": "Segna tutte come lette",
+    "readFailed": "Impossibile segnare come letto",
+    "retry": "Riprova",
+    "sender": "Team Okou",
+    "title": "Notifiche",
+    "unread": "Da leggere",
+    "unreadCount_one": "{{count}} notifica da leggere",
+    "unreadCount_many": "",
+    "unreadCount_other": "{{count}} notifiche da leggere"
   },
   "vnc": {
     "add": "Aggiungi host",

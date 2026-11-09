@@ -4,9 +4,11 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  UserNotifications = "userNotifications",
   EmailIntegration = "emailIntegration",
   HomeCapabilities = "homeCapabilities",
   PastedTextAttachments = "pastedTextAttachments",
+  ComposerMediaPreviews = "composerMediaPreviews",
   SingleAgent = "singleAgent",
   FriendReferrals = "friendReferrals",
   Projects = "projects",
@@ -34,7 +36,6 @@ export enum FeatureSwitchKey {
   WechatIntegration = "wechatIntegration",
   WhatsappIntegration = "whatsappIntegration",
   CodexExecution = "_codexExecution",
-  AutoContinueBusyChats = "_autoContinueBusyChats",
   PresentationConvert = "presentationConvert",
   GoogleSlidesConversion = "googleSlidesConversion",
   BrowserNativeInput = "browserNativeInput",

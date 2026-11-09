@@ -108,7 +108,6 @@ function serviceEnvSchema() {
     R2_MARKETING_HANDOFF_BUCKET_NAME: string().min(1).optional(),
     R2_MARKETING_HANDOFF_ACCESS_KEY_ID: string().min(1).optional(),
     R2_MARKETING_HANDOFF_SECRET_ACCESS_KEY: string().min(1).optional(),
-    MARKETING_HANDOFF_PUBLISH_TOKEN: string().min(32).optional(),
     R2_PRIVATE_ARTIFACTS_BUCKET_NAME: string().min(1).optional(),
     R2_PRIVATE_ARTIFACTS_ACCESS_KEY_ID: string().min(1).optional(),
     R2_PRIVATE_ARTIFACTS_SECRET_ACCESS_KEY: string().min(1).optional(),

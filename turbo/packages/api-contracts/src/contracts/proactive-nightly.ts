@@ -3,8 +3,10 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { proactivePreferenceSchema } from "./proactive";
 
-export const PROACTIVE_LEARNING_DEFINITION_NAME = "proactive-learning";
-export const PROACTIVE_LEARNING_BLUEPRINT_KEY = "nightly-learning";
+export {
+  PROACTIVE_LEARNING_DEFINITION_NAME,
+  PROACTIVE_LEARNING_BLUEPRINT_KEY,
+} from "./proactive";
 
 const c = initContract();
 const responses = {

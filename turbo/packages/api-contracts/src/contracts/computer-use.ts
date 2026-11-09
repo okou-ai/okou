@@ -448,6 +448,7 @@ export const computerUseAuthorizationRequestCreateResponseSchema = object({
 });
 
 export const computerUseAuthorizationRequestResponseSchema = object({
+  id: uuid(),
   source: computerUseAuthorizationSourceSchema,
   chatThreadId: uuid().nullable(),
   expiresAt: string(),

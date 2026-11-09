@@ -25,6 +25,10 @@ import {
   type ComposerConnectorActions,
 } from "./composer-connector-actions.ts";
 import { ComposerTaskControls } from "./composer-create.tsx";
+import {
+  ComposerProjectControl,
+  useComposerProjectMenuItem,
+} from "../projects/composer-project.tsx";
 import { useCustomTemplateRecommendations } from "./use-custom-template-recommendations.ts";
 import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
@@ -5625,8 +5629,9 @@ function VoiceDraftFooter({
 }
 
 /**
- * Group attachments and templates separately from importing skills, which
- * brings workflows in from the user's Claude Code or Codex.
+ * Group attachments, the new chat's Project and templates separately from
+ * importing skills, which brings workflows in from the user's Claude Code or
+ * Codex.
  *
  * Starting a presentation, image, website or visualization deliberately
  * stays out: the task chips sit directly under the composer and already reach
@@ -5640,6 +5645,7 @@ function useComposerAddMenuGroups(
   const fileInput = useGet(signals.draft.composerFileInput$);
   const template = useTemplatePickerTrigger(signals);
   const openSkillImportDialog = useSet(openSkillImportDialog$);
+  const project = useComposerProjectMenuItem(signals);
   return [
     [
       {
@@ -5652,6 +5658,7 @@ function useComposerAddMenuGroups(
           fileInput?.showPicker();
         },
       },
+      ...(project ? [project] : []),
       {
         id: "template",
         Icon: SwatchBook,
@@ -6881,6 +6888,7 @@ function ComposerIdleControls({
         <ComposerAddMenuSlot signals={signals} />
         <ComposerTemplatePickerSlot signals={signals} />
         <ComposerConnectorsSlot signals={signals} actions={connectorActions} />
+        <ComposerProjectControl signals={signals} />
         <ComposerTaskControls signals={signals} />
       </div>
       <div className="ml-auto flex shrink-0 items-center gap-1 composer-wide:gap-2">

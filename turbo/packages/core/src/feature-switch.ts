@@ -46,6 +46,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ComposerMediaPreviews]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Composer media previews",
+    description:
+      "Show image and video thumbnails during upload, then enable preview.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.EmailIntegration]: {
     maintainer: "yuma@okou.ai",
     displayName: "Email integration",
@@ -324,14 +332,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
-  [FeatureSwitchKey.AutoContinueBusyChats]: {
-    maintainer: "bingjie@okou.ai",
-    displayName: "Auto-continue busy chats",
-    description:
-      "Continue chats interrupted by a busy or rate-limited model or an execution time limit after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
-    enabled: false,
-    enabledUserHashes: ["032a75d8"],
-  },
   [FeatureSwitchKey.Projects]: {
     maintainer: "lancy@okou.ai",
     description:
@@ -347,6 +347,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.UserNotifications]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "In-app notifications",
+    description: "Receive personal announcements from the Okou team.",
+    enabled: false,
   },
 };
 

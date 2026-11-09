@@ -278,11 +278,6 @@ impl PollWakeups {
         self.request_deferred_poll_capped_at(now + delay, now + DEFERRED_POLL_MAX);
     }
 
-    pub(super) fn request_deferred_poll_until(&self, deadline: StdInstant) {
-        let now = tokio::time::Instant::now();
-        self.request_deferred_poll_capped_at(deadline.into(), now + DEFERRED_POLL_MAX);
-    }
-
     fn request_deferred_poll_capped_at(
         &self,
         at: tokio::time::Instant,

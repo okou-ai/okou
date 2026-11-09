@@ -33,8 +33,9 @@ function serializeCallbackActionUrl(
   const finalizedUrl = new URL(actionUrl.toString());
   finalizedUrl.searchParams.delete("threadId");
   finalizedUrl.searchParams.delete("callbackPrompt");
-  finalizedUrl.searchParams.append("threadId", threadId);
   finalizedUrl.searchParams.append("callbackPrompt", callbackPrompt);
+  // End in the UUID so chat autolinking preserves prompt punctuation.
+  finalizedUrl.searchParams.append("threadId", threadId);
   return finalizedUrl.toString();
 }
 

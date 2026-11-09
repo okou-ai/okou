@@ -788,7 +788,7 @@ function createComputerAuthorizationBlock(
   if (browserAuthorization) {
     return {
       type: "browser-authorization",
-      resourceKey: browserAuthorization.requestToken,
+      resourceKey: browserAuthorization.originalUrl,
       descriptor: browserAuthorization,
     };
   }
@@ -797,7 +797,7 @@ function createComputerAuthorizationBlock(
   if (desktopShellAuthorization) {
     return {
       type: "desktop-shell-authorization",
-      resourceKey: desktopShellAuthorization.id,
+      resourceKey: desktopShellAuthorization.originalUrl,
       descriptor: desktopShellAuthorization,
     };
   }

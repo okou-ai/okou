@@ -105,6 +105,13 @@ impl RunnerServiceUnit {
         &self.unit_file_path
     }
 
+    /// Relocate the unit file for isolated filesystem fixtures, keeping its service identity.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn with_unit_file_dir_for_test(mut self, dir: &std::path::Path) -> Self {
+        self.unit_file_path = dir.join(self.service_name());
+        self
+    }
+
     /// Return the lifecycle-lock filename `service-vm0-runner-<suffix>.lock`.
     pub fn lock_file_name(&self) -> &str {
         &self.lock_file_name

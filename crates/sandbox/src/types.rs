@@ -877,22 +877,36 @@ pub struct GuestAgentProcessHandle {
 }
 
 /// Provider-neutral timing captured at the controlled Agent readiness boundary.
+///
+/// The `Instant` fields mark Host observations, not reconstructed timestamps of
+/// when the events occurred on the Guest. Notification delivery and Host dispatch
+/// can delay these observations. The interval between them is therefore not an
+/// isolated measurement of the Guest's bootstrap readiness wait.
+///
+/// The four `Duration` fields are Guest-reported component measurements,
+/// independent of the Host observation timestamps.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct GuestAgentStartTiming {
-    /// Host monotonic instant when the guest controlled process was spawned.
+    /// Host monotonic instant when controlled-process start was observed.
+    ///
+    /// Firecracker records this while handling `MSG_EXEC_STARTED`, after the
+    /// Guest has spawned the controlled process.
     pub shell_started_at: Instant,
-    /// Host monotonic instant when Agent runtime placement was confirmed.
+    /// Host monotonic instant when confirmed Agent runtime placement was observed.
+    ///
+    /// Firecracker records this while handling `MSG_EXEC_AGENT_READY`, after the
+    /// Guest has confirmed runtime placement.
     pub ready_at: Instant,
-    /// Guest time spent creating the per-exec process containment hierarchy.
+    /// Guest-reported time spent creating the per-exec process containment hierarchy.
     pub containment_create: Duration,
-    /// Guest time spent creating workload and tool placement brokers.
+    /// Guest-reported time spent creating workload and tool placement brokers.
     pub placement_broker_setup: Duration,
-    /// Guest time spent launching the controlled process.
+    /// Guest-reported time spent launching the controlled process.
     ///
     /// The `shell_spawn` name remains stable for timing-series compatibility;
     /// direct Agent launch does not execute a shell.
     pub shell_spawn: Duration,
-    /// Guest time from controlled-process launch through confirmed placement.
+    /// Guest-reported time from controlled-process launch through confirmed placement.
     pub bootstrap_ready_wait: Duration,
 }
 

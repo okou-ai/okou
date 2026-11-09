@@ -966,8 +966,7 @@
       "actionFailed": "Fortfahren fehlgeschlagen.",
       "allow": "Zulassen",
       "allowed": "Zugelassen",
-      "callbackPrompt": "Der Cloud-Browser ist aktiviert. Bitte setzen Sie die vorherige Aufgabe fort.",
-      "cardDescription": "Aktivieren Sie den Cloud-Browser für diesen Chat und fahren Sie automatisch fort. Die Computersteuerung wird getrennt.",
+      "cardDescription": "Verwende einen Cloud-Browser für diesen Chat. Dadurch wird Computer Use getrennt.",
       "description": "{{assistantName}} wird für diesen Chat-Thread ein isoliertes Cloud-Browser-Profil verwenden. Durch die Aktivierung wird die Computernutzung für den Thread getrennt.",
       "enable": "Für diesen Thread aktivieren",
       "enabled": "Cloud-Browser aktiviert",
@@ -976,8 +975,9 @@
       "unavailableDescription": "Dieser Cloud-Browser-Autorisierungslink ist ungültig, abgelaufen oder für diesen Arbeitsbereich nicht verfügbar.",
       "unavailableTitle": "Autorisierungslink nicht verfügbar"
     },
+    "callbackFailed": "Der Zugriff ist aktiviert, aber die Unterhaltung konnte nicht fortgesetzt werden. Versuche es erneut.",
     "computerUse": {
-      "actionFailed": "Dieser Computer konnte nicht autorisiert werden. Lade den Chat neu, um es erneut zu versuchen.",
+      "actionFailed": "Dieser Computer konnte nicht autorisiert werden. Versuche es erneut.",
       "authorize": "Autorisieren",
       "authorized": "Autorisiert",
       "authorizedDescription": "Computerzugriff für zukünftige Ausführungen in diesem Chat aktiviert.",
@@ -5098,8 +5098,10 @@
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
+    "project": "Project",
     "projects": "Projects",
     "remove": "Remove from Project",
+    "removeFromNewChat": "{{name}} entfernen",
     "rename": "Rename",
     "renameProject": "Rename Project",
     "save": "Save",
@@ -5873,6 +5875,16 @@
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
         },
+        "learning": {
+          "description": "Prüfe die letzten Aktivitäten und aktualisiere deinen persönlichen Speicher einmalig. Dein nächtlicher Zeitplan bleibt unverändert.",
+          "notInstalled": "Aktiviere Lernen zuerst in den Einstellungen.",
+          "queued": "Lernen wurde eingereiht.",
+          "requestFailed": "Die Anfrage konnte nicht bestätigt werden.",
+          "run": "Lernen starten",
+          "starting": "Wird gestartet…",
+          "title": "Lernen",
+          "unavailable": "Lernen ist derzeit nicht verfügbar."
+        },
         "morningBrief": {
           "description": "Führe das aktivierte Morgenbriefing deines Kontos einmal aus. Dabei können Vorschläge aktualisiert und echte E-Mails versendet werden. Dein täglicher Zeitplan bleibt unverändert.",
           "openChat": "Gespräch öffnen",
@@ -6448,6 +6460,28 @@
       "thread_one": "{{value}} Thread",
       "thread_other": "{{value}} Threads"
     }
+  },
+  "userNotifications": {
+    "close": "Schließen",
+    "countUnavailable": "Anzahl ungelesener Benachrichtigungen nicht verfügbar",
+    "detailFailed": "Diese Benachrichtigung konnte nicht geladen werden",
+    "empty": "Noch keine Benachrichtigungen",
+    "emptyDescription": "Neuigkeiten von Okou erscheinen hier.",
+    "loadFailed": "Benachrichtigungen konnten nicht geladen werden",
+    "loading": "Benachrichtigungen werden geladen",
+    "loadMore": "Ältere anzeigen",
+    "nextPage": "Nächste Seite",
+    "pageNavigation": "Seiten dieser Nachricht",
+    "pageOf": "Seite {{current}} von {{total}}",
+    "previousPage": "Vorherige Seite",
+    "readAll": "Alle als gelesen markieren",
+    "readFailed": "Konnte nicht als gelesen markiert werden",
+    "retry": "Erneut versuchen",
+    "sender": "Okou-Team",
+    "title": "Benachrichtigungen",
+    "unread": "Ungelesen",
+    "unreadCount_one": "{{count}} ungelesene Benachrichtigung",
+    "unreadCount_other": "{{count}} ungelesene Benachrichtigungen"
   },
   "vnc": {
     "add": "Host hinzufügen",

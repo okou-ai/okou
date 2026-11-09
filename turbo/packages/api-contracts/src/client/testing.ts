@@ -692,6 +692,8 @@ import { userExportContract as OriginalUserExportContract } from "../contracts/u
 import { userExportContract } from "./user-export";
 import { userModelPreferenceContract as OriginalUserModelPreferenceContract } from "../contracts/user-model-preference";
 import { userModelPreferenceContract } from "./user-model-preference";
+import { userNotificationsContract as OriginalUserNotificationsContract } from "../contracts/user-notifications";
+import { userNotificationsContract } from "./user-notifications";
 import { userPermissionGrantsContract as OriginalUserPermissionGrantsContract } from "../contracts/user-permission-grants";
 import { userPermissionGrantsContract } from "./user-permission-grants";
 import { userPreferencesContract as OriginalUserPreferencesContract } from "../contracts/user-preferences";
@@ -1306,6 +1308,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [userBuiltinConnectorsContract, OriginalUserBuiltinConnectorsContract],
   [userExportContract, OriginalUserExportContract],
   [userModelPreferenceContract, OriginalUserModelPreferenceContract],
+  [userNotificationsContract, OriginalUserNotificationsContract],
   [userPermissionGrantsContract, OriginalUserPermissionGrantsContract],
   [userPreferencesContract, OriginalUserPreferencesContract],
   [userTemplatesContract, OriginalUserTemplatesContract],
