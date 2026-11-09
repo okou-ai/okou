@@ -388,9 +388,11 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   - Never draw an edge blur by hand. A `UIVisualEffectView` has one radius for the whole
     band, so masking it to fade reads as a hard, opaque strip, and every blur style tints
     a dark page grey. Only the system edge effect blurs progressively.
-  - The warm sidebar hides the system top edge and paints its header in `sidebar`
-    with a 16 pt fade; the system hard band is white and read as a separate block. Its
-    bottom edge is hidden like the rest, so rows pass plainly under the footer.
+  - The sidebar's top is the system's `.soft` edge under its header bar, as Slack draws
+    it: rows blur away under the glass buttons. The workspace name would sit over chat
+    titles there, so it fades out (`OkouMotion.transition`) as soon as rows scroll under
+    the bar and comes back at the top. Its bottom edge is hidden like the rest, so rows
+    pass plainly under the footer.
     Verify both themes with text scrolled under each bar after changing either.
 - Do not replace native Glass, Blur or safe-area bars with opaque cards, arbitrary
   opacity fills or custom outlines. Follow Reduce Transparency and Reduce Motion.
@@ -450,7 +452,10 @@ single floating line, and colour is a small accent for status only.
   (`OkouMotion.sidebarFeather`). Neither page slides as a card, so no edge, corner or
   shadow ever crosses the screen.
 - **Sidebar layout**: the workspace switcher top left and "back to chat" (»,
-  `chevrons-right`) top right. The switcher opens the system menu with every workspace's
+  `chevrons-right`) top right, both 44 pt glass circles. The switcher is the workspace's
+  logo as a glass button (`OkouWorkspaceGlassLogo`: the logo round at 28 pt,
+  `OkouAvatarSize.glassControl`, so it sits concentric in the circle), with the workspace
+  name beside it and no arrow, as in Slack. The switcher opens the system menu with every workspace's
   logo beside its name and the system check on the current one, as the web's switcher
   lists them; a menu draws images, not views, so `OkouWorkspaceMenuLogos` draws each
   tile once (28 pt, `OkouAvatarSize.menu`) with the logo's own rounded corners. A thumb-reach bottom bar: the account's own photo
@@ -659,6 +664,7 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouAgentTile`                                                               | An agent in a sideways avatar rail: 56 pt avatar, one 11 pt line of name ending in "…", selected tile, unread dot                                                                                                                |
 | `OkouResultCard` / `OkouResultTile` / `OkouPreviewState`                      | A result in the transcript: card heading over a 16:9 cover (website, slides, document) or a fixed 200 × 180 tile with the whole picture; loading pulse, picture, or the kind's glyph                                             |
 | `OkouWorkspaceMenuLogos`                                                      | Workspace logos for a system menu: each tile drawn once at 28 pt (`OkouAvatarSize.menu`) with the logo's own corners; a neutral tile until an upload loads                                                                       |
+| `OkouWorkspaceGlassLogo`                                                      | A workspace's logo as a 44 pt glass circle (the sidebar's switcher): the logo round at 28 pt (`OkouAvatarSize.glassControl`), concentric with the circle                                                                         |
 | `ResultStylesGallery`                                                         | Debug page of every result style and state in a chat, with covers from the real pipeline; in the catalog, or on its own with `--result-styles`                                                                                   |
 | `OkouLiveWaveform`                                                            | Dictation waveform: one bar per level sample, gliding every frame, newest growing in at the trailing edge, baseline dots before audio; static under Reduce Motion                                                                |
 | `OkouChip` / `OkouChipRail`                                                   | Filter capsules in the web's colours, in a sideways-scrolling row starting on the content edge; selected takes `state-selected`                                                                                                  |

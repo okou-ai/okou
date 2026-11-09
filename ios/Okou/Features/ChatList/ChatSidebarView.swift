@@ -30,6 +30,8 @@ struct ChatSidebarView: View {
   @State private var showArchived = false
   @State private var showMuted = false
   @State private var showsSettings = false
+  /// Rows have scrolled under the top bar, so the workspace name gives way to them.
+  @State private var isScrolled = false
   @Environment(\.newChatActivation) private var newChatActivation
   /// The scheme the page behind the Settings sheet resolved: the chosen one, or the system's.
   @Environment(\.colorScheme) private var colorScheme
@@ -105,29 +107,20 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    // The workspace title sits directly over chat titles: soft let them read through it, and
-    // the system's hard edge draws a white band on the warm sidebar. The header instead takes
-    // the sidebar's own colour, with a short fade where rows pass under it. The bottom has no
-    // edge effect, as everywhere in the app: rows pass plainly under the footer's glass.
-    .scrollEdgeEffectHidden(true, for: .top)
+    // The top is the system's soft edge (the app's default): rows blur away under the glass
+    // buttons. The workspace name would sit over chat titles there, so it leaves as soon as
+    // rows scroll under the bar, as Slack's does. The bottom has no edge effect, as
+    // everywhere in the app: rows pass plainly under the footer's glass.
     .scrollEdgeEffectHidden(true, for: .bottom)
+    .onScrollGeometryChange(for: Bool.self) { geometry in
+      geometry.contentOffset.y + geometry.contentInsets.top > OkouSpace.xs
+    } action: { _, scrolled in
+      isScrolled = scrolled
+    }
     .safeAreaBar(edge: .top, spacing: 0) {
       VStack(spacing: 0) {
         // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
         header.padding(.horizontal, rowInset)
-      }
-      .background {
-        OkouColor.sidebar
-          .ignoresSafeArea(edges: .top)
-          .overlay(alignment: .bottom) {
-            LinearGradient(
-              colors: [OkouColor.sidebar, OkouColor.sidebar.opacity(0)], startPoint: .top,
-              endPoint: .bottom
-            )
-            .frame(height: OkouSpace.lg)
-            .offset(y: OkouSpace.lg)
-            .allowsHitTesting(false)
-          }
       }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
@@ -156,10 +149,20 @@ struct ChatSidebarView: View {
     }
   }
 
-  /// The workspace on the left; on the right the way back to the chat the sidebar covers.
+  /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
+  /// beside it with no arrow, and on the right the way back to the chat the sidebar covers.
+  /// The name leaves once rows scroll under the bar; the glass buttons stay.
   private var header: some View {
-    HStack {
-      workspaceSwitcher.frame(maxWidth: .infinity, alignment: .leading)
+    HStack(spacing: OkouSpace.md) {
+      workspaceSwitcher
+      Text(workspaceName)
+        .font(.okou(.headline))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(isScrolled ? 0 : 1)
+        .animation(OkouMotion.transition, value: isScrolled)
+        // The switcher's label already names the workspace.
+        .accessibilityHidden(true)
       Button(action: close) {
         OkouToolbarIcon("chevrons-right").modifier(OkouGlassControl(shape: .circle))
       }
@@ -189,20 +192,12 @@ struct ChatSidebarView: View {
       .pickerStyle(.inline)
       .labelsHidden()
     } label: {
-      HStack(spacing: OkouSpace.sm) {
-        let workspace = authentication.workspaces.first(where: { $0.id == workspaceID })
-        OkouWorkspaceLogo(
-          workspaceID: workspaceID, name: workspaceName,
-          imageURL: workspace?.imageURL, hasImage: workspace?.hasImage ?? false
-        )
-        .accessibilityHidden(true)
-        Text(workspaceName)
-          .font(.okou(.headline))
-          .lineLimit(1)
-        OkouIcon("chevron-down", size: OkouIconSize.inline)
-          .foregroundStyle(OkouColor.mutedForeground)
-      }
-      .contentShape(Rectangle())
+      let workspace = authentication.workspaces.first(where: { $0.id == workspaceID })
+      OkouWorkspaceGlassLogo(
+        workspaceID: workspaceID, name: workspaceName,
+        imageURL: workspace?.imageURL, hasImage: workspace?.hasImage ?? false
+      )
+      .accessibilityHidden(true)
     }
     .buttonStyle(.plain)
     .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)

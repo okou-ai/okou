@@ -131,6 +131,9 @@ enum OkouAvatarSize {
   static let account: CGFloat = 40
   /// A workspace in the workspace menu, beside its name.
   static let menu: CGFloat = 28
+  /// A logo inside a 44 pt glass circle (the sidebar's workspace button), with 8 pt of glass
+  /// around it.
+  static let glassControl: CGFloat = 28
 }
 
 enum OkouMotion {
