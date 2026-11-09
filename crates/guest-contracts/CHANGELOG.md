@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.32.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.32.0...guest-contracts-v0.32.1) (2026-11-09)
+
+
+### Documentation
+
+* **rust:** correct reuse home-mount failure ordering ([#46089](https://github.com/okou-ai/okou/issues/46089)) ([465e509](https://github.com/okou-ai/okou/commit/465e509c2ad37d1183d22baf02f3483857a7ce45))
+
 ## [0.32.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.31.1...guest-contracts-v0.32.0) (2026-11-08)
 
 

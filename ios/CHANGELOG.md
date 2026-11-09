@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.1](https://github.com/okou-ai/okou/compare/ios-v0.30.0...ios-v0.30.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **ios:** reset workflow picker scroll for each search ([#46075](https://github.com/okou-ai/okou/issues/46075)) ([792f418](https://github.com/okou-ai/okou/commit/792f41859e14a10535387d0fcdff8d84cc874ede))
+
+
+### Refactoring
+
+* **ios:** move connector account pages to ccstate ([#46041](https://github.com/okou-ai/okou/issues/46041)) ([d9017ed](https://github.com/okou-ai/okou/commit/d9017ed8610cdc20b1498cc8f5156f455e33d188))
+
 ## [0.30.0](https://github.com/okou-ai/okou/compare/ios-v0.29.3...ios-v0.30.0) (2026-11-09)
 
 
