@@ -3,13 +3,27 @@ import {
   mkdtemp,
   readFile,
   readdir,
+  realpath,
   rename,
   rm,
   writeFile,
 } from "node:fs/promises";
-import { join } from "node:path";
+import {
+  basename,
+  dirname,
+  isAbsolute,
+  join,
+  relative,
+  resolve,
+  sep,
+} from "node:path";
 
 import { chatEventRowSchema } from "@okouai/api-contracts/contracts/chat-event-rows";
+import {
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  CANONICAL_PI_MEMORY_MOUNT_PATH,
+} from "@okouai/api-contracts/contracts/runners";
 import {
   CURRENT_CHAT_EVENT_SCHEMA_VERSION,
   type ChatEventCursor,
@@ -25,6 +39,14 @@ const THREAD_START_SEQ_ID = 0;
 const SNAPSHOT_FILE_PATTERN = /^snapshot-to-(\d+)\.ndjson$/;
 const EVENT_FILE_PATTERN = /^event-SEQ_ID_(\d+)\.json$/;
 const CACHE_FORMAT_FILE = ".okou-chat-event-schema-version";
+const CHAT_HISTORY_OUTPUT_EXAMPLE = "/tmp/okou-chat-history";
+// Every Run saves these roots as the member's memory, so raw history synced
+// into one would be persisted and reloaded as memory in later Runs.
+const AGENT_MEMORY_ROOTS = [
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  CANONICAL_PI_MEMORY_MOUNT_PATH,
+] as const;
 
 function cacheFormatBody(): string {
   return `${CURRENT_CHAT_EVENT_SCHEMA_VERSION.toString()}\n`;
@@ -100,6 +122,51 @@ async function listManagedHistoryFiles(
 
 function isNodeError(error: unknown): error is NodeJS.ErrnoException {
   return error instanceof Error && "code" in error;
+}
+
+/** Resolves symlinks through the nearest existing ancestor of `path`. */
+async function canonicalPath(path: string): Promise<string> {
+  const absolute = resolve(path);
+  const missingSegments: string[] = [];
+  let existing = absolute;
+  for (;;) {
+    try {
+      return join(await realpath(existing), ...missingSegments);
+    } catch (error) {
+      if (!isNodeError(error) || error.code !== "ENOENT") {
+        throw error;
+      }
+      const parent = dirname(existing);
+      if (parent === existing) {
+        return absolute;
+      }
+      missingSegments.unshift(basename(existing));
+      existing = parent;
+    }
+  }
+}
+
+function isSameOrInside(path: string, root: string): boolean {
+  const fromRoot = relative(root, path);
+  return (
+    fromRoot === "" ||
+    (!isAbsolute(fromRoot) && fromRoot.split(sep)[0] !== "..")
+  );
+}
+
+async function assertOutsideAgentMemory(
+  outputDirectory: string,
+): Promise<void> {
+  const target = await canonicalPath(outputDirectory);
+  for (const root of AGENT_MEMORY_ROOTS) {
+    if (isSameOrInside(target, await canonicalPath(root))) {
+      throw new Error(
+        `Chat history output directory ${target} is inside the agent memory directory ${root}. ` +
+          "Memory is saved after every run, so synced history would persist as memory. " +
+          `Choose a directory outside memory, for example: okou chat messages --output-dir ${CHAT_HISTORY_OUTPUT_EXAMPLE}`,
+      );
+    }
+  }
 }
 
 async function hasCurrentCacheFormat(directory: string): Promise<boolean> {
@@ -445,6 +512,7 @@ export async function syncRawChatHistory(args: {
   readonly threadId: string;
   readonly outputDirectory: string;
 }): Promise<RawChatHistorySyncResult> {
+  await assertOutsideAgentMemory(args.outputDirectory);
   await mkdir(args.outputDirectory, { recursive: true });
   const threadDirectory = join(args.outputDirectory, args.threadId);
   await mkdir(threadDirectory, { recursive: true });
