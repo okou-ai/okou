@@ -7,6 +7,7 @@ export enum FeatureSwitchKey {
   EmailIntegration = "emailIntegration",
   HomeCapabilities = "homeCapabilities",
   PastedTextAttachments = "pastedTextAttachments",
+  ComposerMediaPreviews = "composerMediaPreviews",
   SingleAgent = "singleAgent",
   FriendReferrals = "friendReferrals",
   Projects = "projects",
