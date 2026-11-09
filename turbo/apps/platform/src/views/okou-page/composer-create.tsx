@@ -1,7 +1,13 @@
 import { ComposerPresentationOptions } from "./composer-presentation-options.tsx";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { ChartNoAxesCombined, Globe, Route, X } from "lucide-react";
+import {
+  ChartNoAxesCombined,
+  Globe,
+  Route,
+  X,
+  type LucideIcon,
+} from "lucide-react";
 import { Button } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { cn } from "@okouai/ui/lib/utils";
@@ -34,30 +40,25 @@ const TASK_ICONS = {
   visualization: ChartNoAxesCombined,
 } as const;
 
-function ComposerSelectedTask({
-  signals,
+/**
+ * A choice the footer carries, as one control rather than a label plus a
+ * button. The chip is the exit: its leading icon becomes the cross on hover,
+ * so nothing operable is visible while the choice is just a state, and the hit
+ * area is the whole chip rather than a 28px square.
+ */
+export function ComposerChoiceChip({
+  Icon,
+  label,
+  labelClassName,
+  removeLabel,
+  onRemove,
 }: {
-  readonly signals: ComposerSignals;
+  readonly Icon: LucideIcon;
+  readonly label: string;
+  readonly labelClassName: string;
+  readonly removeLabel: string;
+  readonly onRemove: () => void;
 }) {
-  const { t } = useTranslation();
-  const task = useGet(signals.taskChips.task$);
-  const selectTask = useSet(signals.taskChips.selectTask$);
-  const labels = t(
-    ($) => {
-      return $.chat.taskChips.tasks;
-    },
-    { returnObjects: true },
-  );
-  if (!task) {
-    return null;
-  }
-  const Icon = TASK_ICONS[task];
-  /*
-    One control, not a label plus a button. The chip is the exit: its leading
-    type icon becomes the cross on hover, so nothing operable is visible while
-    the selection is just a state, and the hit area is the whole chip rather
-    than a 28px square.
-  */
   return (
     <Button
       type="button"
@@ -67,15 +68,8 @@ function ComposerSelectedTask({
         TASK_CONTROL_SHAPE,
         CREATE_CONTROL_FOCUS,
       )}
-      aria-label={t(
-        ($) => {
-          return $.chat.taskChips.removeTask;
-        },
-        { task: labels[task] },
-      )}
-      onClick={() => {
-        selectTask(null);
-      }}
+      aria-label={removeLabel}
+      onClick={onRemove}
     >
       {/*
         Both glyphs share one box and cross-fade, so the chip's width does not
@@ -93,8 +87,43 @@ function ComposerSelectedTask({
           aria-hidden
         />
       </span>
-      <span className={TASK_CONTROL_LABEL}>{labels[task]}</span>
+      <span className={labelClassName}>{label}</span>
     </Button>
+  );
+}
+
+function ComposerSelectedTask({
+  signals,
+}: {
+  readonly signals: ComposerSignals;
+}) {
+  const { t } = useTranslation();
+  const task = useGet(signals.taskChips.task$);
+  const selectTask = useSet(signals.taskChips.selectTask$);
+  const labels = t(
+    ($) => {
+      return $.chat.taskChips.tasks;
+    },
+    { returnObjects: true },
+  );
+  if (!task) {
+    return null;
+  }
+  return (
+    <ComposerChoiceChip
+      Icon={TASK_ICONS[task]}
+      label={labels[task]}
+      labelClassName={TASK_CONTROL_LABEL}
+      removeLabel={t(
+        ($) => {
+          return $.chat.taskChips.removeTask;
+        },
+        { task: labels[task] },
+      )}
+      onRemove={() => {
+        selectTask(null);
+      }}
+    />
   );
 }
 

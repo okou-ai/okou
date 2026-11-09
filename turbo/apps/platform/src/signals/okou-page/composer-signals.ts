@@ -57,6 +57,7 @@ import {
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
+import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
   createComposerConnectorCompletion,
   createComposerDraftActions,
@@ -261,6 +262,8 @@ export interface ComposerSignals {
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
   readonly threadId?: string;
+  /** Present on a new chat's page composer, which can start it in a Project. */
+  readonly project?: ComposerProjectSignals;
   readonly remoteAccess$: ReturnType<typeof threadRemoteAccess$>;
   readonly pendingRemoteAccess: ReturnType<
     typeof createPendingRemoteAccessSignals
@@ -304,6 +307,7 @@ interface CreateComposerSignalsOptions {
     "sending$" | "hasEvents$" | "queuedEvents$" | "runningModelSelection$"
   >;
   readonly threadId?: string;
+  readonly project?: ComposerProjectSignals;
   readonly pendingRemoteAccess?: ReturnType<
     typeof createPendingRemoteAccessSignals
   >;
@@ -825,6 +829,10 @@ function createComposerPrimaryActionSignal(args: {
       return "disabled";
     }
     if ((await get(args.voiceState$)).status !== "idle") {
+      return "disabled";
+    }
+    // A chat can start in a just-created Project once the server has it.
+    if (options.project && get(options.project.pending$)) {
       return "disabled";
     }
 

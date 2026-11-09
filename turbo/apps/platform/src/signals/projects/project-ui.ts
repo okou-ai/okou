@@ -4,6 +4,8 @@ export type ProjectDialog =
       readonly kind: "editor";
       readonly projectId?: string;
       readonly fromThreadId?: string;
+      /** A new chat's composer asked for it, so the new Project opens. */
+      readonly fromComposer?: boolean;
       readonly open: boolean;
     }
   | {
@@ -84,6 +86,7 @@ export const openProjectEditor$ = command(
     options: {
       readonly projectId?: string;
       readonly fromThreadId?: string;
+      readonly fromComposer?: boolean;
     } = {},
     name = "",
   ) => {

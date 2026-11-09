@@ -13,8 +13,7 @@ import type { TFunction } from "i18next";
 import { useTranslation } from "react-i18next";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { user$ } from "../../signals/auth.ts";
-import { FolderOpen, Pin } from "lucide-react";
-import type { Project } from "@okouai/api-contracts/validators/projects";
+import { Pin } from "lucide-react";
 import {
   Button,
   Tooltip,
@@ -450,32 +449,15 @@ function LegacyChatAgentAvatar({
   );
 }
 
-function ProjectComposerHeading({ project }: { project: Project }) {
-  return (
-    <div
-      data-testid="project-page-heading"
-      className="flex max-w-full items-center gap-3"
-    >
-      <FolderOpen
-        aria-hidden="true"
-        className="size-7 shrink-0 text-muted-foreground"
-      />
-      <h2 className="min-w-0 truncate text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-        {project.name}
-      </h2>
-    </div>
-  );
-}
-
 /**
- * The new-chat page of an Agent, or of a Project when one is given: the
- * Project's heading takes the greeting's place above the same composer. A
- * Project that is still loading reserves the heading row.
+ * The new-chat page of an Agent, or of a Project when `projectPage` is set.
+ * A Project's page keeps the greeting: the conversation is still with Okou,
+ * and the composer's toolbar names the Project the chat starts in.
  */
 export function AgentComposerPage({
-  project,
+  projectPage = false,
 }: {
-  project?: Project | null;
+  projectPage?: boolean;
 } = {}) {
   const currentChatAgentId = useLastResolved(currentChatAgentId$);
 
@@ -498,9 +480,7 @@ export function AgentComposerPage({
 
   const switches = useGet(featureSwitch$);
   const heading =
-    project !== undefined ? (
-      project && <ProjectComposerHeading project={project} />
-    ) : currentChatAgentId === undefined || tagline === "" ? null : (
+    currentChatAgentId === undefined || tagline === "" ? null : (
       <div
         key={greetingIdentity}
         data-slot="chat-greeting"
@@ -532,7 +512,7 @@ export function AgentComposerPage({
         </h2>
       </div>
     );
-  if (project === undefined && switches[FeatureSwitchKey.HomeCapabilities]) {
+  if (!projectPage && switches[FeatureSwitchKey.HomeCapabilities]) {
     return (
       <CapabilityHomePage
         signals={composerSignals}
