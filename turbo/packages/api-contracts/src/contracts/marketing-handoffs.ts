@@ -12,8 +12,16 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 import { artifactUrlSchema } from "./artifact-references";
 
-export const MARKETING_HANDOFF_MAX_FILE_BYTES = 10 * 1024 * 1024;
-export const MARKETING_HANDOFF_MAX_FILES = 10;
+import {
+  MARKETING_HANDOFF_PROMPT_MAX_CHARS,
+  MARKETING_HANDOFF_MAX_FILE_BYTES,
+  MARKETING_HANDOFF_MAX_FILES,
+} from "../validators/marketing-handoffs";
+export {
+  MARKETING_HANDOFF_PROMPT_MAX_CHARS,
+  MARKETING_HANDOFF_MAX_FILE_BYTES,
+  MARKETING_HANDOFF_MAX_FILES,
+} from "../validators/marketing-handoffs";
 export const marketingContentHashSchema = string().regex(/^[a-f0-9]{64}$/u);
 const marketingHandoffShortHashSchema = string().regex(/^[a-f0-9]{12}$/u);
 const marketingHandoffHashSchema = string().regex(
@@ -53,7 +61,7 @@ export const marketingHandoffOptionsSchema = object({
 
 export const marketingHandoffManifestSchema = object({
   version: literal(1),
-  prompt: string().max(20000),
+  prompt: string().max(MARKETING_HANDOFF_PROMPT_MAX_CHARS),
   options: marketingHandoffOptionsSchema,
   files: array(marketingHandoffFileSchema).max(MARKETING_HANDOFF_MAX_FILES),
 })

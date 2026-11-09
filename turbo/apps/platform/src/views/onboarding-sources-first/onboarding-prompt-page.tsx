@@ -1,12 +1,28 @@
-import { useGet, useSet } from "ccstate-react";
+import type { ClipboardEvent } from "react";
+import type { Computed } from "ccstate";
+import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
-import { Textarea, cn } from "@okouai/ui";
+import { Button, IconButton, Textarea, cn } from "@okouai/ui";
+import { X } from "lucide-react";
+import {
+  MARKETING_HANDOFF_MAX_FILES,
+  MARKETING_HANDOFF_PROMPT_MAX_CHARS,
+} from "@okouai/api-contracts/validators/marketing-handoffs";
 import { useTranslation } from "react-i18next";
 import { runPromptOnboarding$ } from "../../signals/onboarding/onboarding-actions.ts";
 import { onboardingMakeConnectorSlugs$ } from "../../signals/onboarding/onboarding-connector-items.ts";
 import {
   editOnboardingPrompt$,
+  hasUnresolvedOnboardingPastedFiles$,
   onboardingDraft$,
+  onboardingPasteRejection$,
+  onboardingPastedFileUploads$,
+  onboardingPromptCharacterCount$,
+  onboardingPromptTooLong$,
+  pasteOnboardingText$,
+  removeOnboardingFile$,
+  removeOnboardingPastedFile$,
+  retryOnboardingPastedFile$,
   selectOnboardingPromptOutput$,
 } from "../../signals/onboarding/onboarding-state.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -34,6 +50,29 @@ function usePromptOnboarding() {
   const [runLoadable, runPrompt] = useLoadableSet(runPromptOnboarding$);
   const pageSignal = useGet(pageSignal$);
   const connectorSlugs = useGet(onboardingMakeConnectorSlugs$);
+  const unresolvedFiles = useGet(hasUnresolvedOnboardingPastedFiles$);
+  const tooLong = useGet(onboardingPromptTooLong$);
+  const pasteText = useSet(pasteOnboardingText$);
+
+  const paste = (event: ClipboardEvent<HTMLTextAreaElement>): void => {
+    const clipboard = event.clipboardData;
+    const hasFileItems =
+      clipboard.files.length > 0 ||
+      Array.from(clipboard.items).some((item) => {
+        return item.kind === "file";
+      });
+    const operation = pasteText(
+      clipboard.getData("text/plain"),
+      hasFileItems,
+      pageSignal,
+    );
+    if (operation) {
+      // Native paste is replaced only after the complete text has been retained
+      // as an uploadable File. Size/count rejections keep the native paste.
+      event.preventDefault();
+      detach(operation, Reason.DomCallback);
+    }
+  };
 
   const run = (): void => {
     detach(runPrompt(pageSignal), Reason.DomCallback);
@@ -46,9 +85,200 @@ function usePromptOnboarding() {
     setPrompt,
     selectOutput,
     connectorSlugs,
+    unresolvedFiles,
+    tooLong,
+    paste,
     run,
+    runError:
+      runLoadable.state === "hasError" && runLoadable.error instanceof Error
+        ? runLoadable.error.message
+        : null,
     busy: runLoadable.state === "loading",
   };
+}
+
+function OnboardingPastedFile({
+  file,
+  result$,
+}: {
+  readonly file: File;
+  readonly result$: Computed<Promise<void>>;
+}) {
+  const { t } = useTranslation();
+  const result = useLoadable(result$);
+  const pageSignal = useGet(pageSignal$);
+  const retry = useSet(retryOnboardingPastedFile$);
+  const remove = useSet(removeOnboardingPastedFile$);
+  return (
+    <li className="flex items-start gap-2">
+      <div className="min-w-0 flex-1">
+        <p className="break-words">{file.name}</p>
+        {result.state === "loading" && (
+          <p role="status" className="text-xs text-muted-foreground">
+            {t(
+              ($) => {
+                return $.chat.attachments.loadingFile;
+              },
+              { filename: file.name },
+            )}
+          </p>
+        )}
+        {result.state === "hasError" && (
+          <p role="alert" className="text-xs text-destructive">
+            {t(
+              ($) => {
+                return $.onboarding.sourcesFirst.prompt.uploadFailed;
+              },
+              { filename: file.name },
+            )}
+          </p>
+        )}
+      </div>
+      {result.state === "hasError" && (
+        <Button
+          type="button"
+          variant="quiet"
+          size="sm"
+          onClick={() => {
+            detach(retry(file, pageSignal), Reason.DomCallback);
+          }}
+        >
+          {t(($) => {
+            return $.artifacts.actions.retry;
+          })}
+        </Button>
+      )}
+      <IconButton
+        type="button"
+        aria-label={t(
+          ($) => {
+            return $.chat.attachments.remove;
+          },
+          { filename: file.name },
+        )}
+        onClick={() => {
+          remove(file);
+        }}
+      >
+        <X className="size-4" aria-hidden="true" />
+      </IconButton>
+    </li>
+  );
+}
+
+function OnboardingPromptFeedback({
+  runError,
+}: {
+  readonly runError: string | null;
+}) {
+  const { t } = useTranslation();
+  const characterCount = useGet(onboardingPromptCharacterCount$);
+  const tooLong = useGet(onboardingPromptTooLong$);
+  const pasteRejection = useGet(onboardingPasteRejection$);
+  return (
+    <>
+      <p
+        id="onboarding-prompt-count"
+        role="status"
+        className={cn(
+          "text-xs text-muted-foreground",
+          tooLong && "text-destructive",
+        )}
+      >
+        {t(
+          ($) => {
+            return $.onboarding.sourcesFirst.prompt.characterCount;
+          },
+          { current: characterCount, max: MARKETING_HANDOFF_PROMPT_MAX_CHARS },
+        )}
+      </p>
+      {tooLong && (
+        <p
+          id="onboarding-prompt-error"
+          role="alert"
+          className="text-sm text-destructive"
+        >
+          {t(($) => {
+            return $.onboarding.sourcesFirst.prompt.tooLong;
+          })}
+        </p>
+      )}
+      {pasteRejection && (
+        <p role="alert" className="text-sm text-destructive">
+          {t(
+            ($) => {
+              return pasteRejection.reason === "size"
+                ? $.onboarding.sourcesFirst.prompt.fileTooLarge
+                : $.onboarding.sourcesFirst.prompt.tooManyFiles;
+            },
+            {
+              filename: pasteRejection.filename,
+              max: MARKETING_HANDOFF_MAX_FILES,
+            },
+          )}
+        </p>
+      )}
+      {runError && (
+        <p role="alert" className="text-sm text-destructive">
+          {runError}
+        </p>
+      )}
+    </>
+  );
+}
+
+function OnboardingPromptAttachments({ busy }: { readonly busy: boolean }) {
+  const { t } = useTranslation();
+  const { files } = useGet(onboardingDraft$);
+  const pastedFiles = useGet(onboardingPastedFileUploads$);
+  const removeFile = useSet(removeOnboardingFile$);
+  const fileLabels = [
+    ...new Map(
+      files.map((file) => {
+        return [`${file.hash}:${file.filename}`, file] as const;
+      }),
+    ).values(),
+  ];
+  if (files.length === 0 && pastedFiles.length === 0) {
+    return null;
+  }
+  return (
+    <ul
+      aria-label={t(($) => {
+        return $.chat.attachments.title;
+      })}
+      className="space-y-1 text-sm text-muted-foreground"
+    >
+      {fileLabels.map((file) => {
+        return (
+          <li
+            key={`${file.hash}:${file.filename}`}
+            className="flex items-center gap-2"
+          >
+            <span className="min-w-0 flex-1 break-words">{file.filename}</span>
+            <IconButton
+              type="button"
+              disabled={busy}
+              aria-label={t(
+                ($) => {
+                  return $.chat.attachments.remove;
+                },
+                { filename: file.filename },
+              )}
+              onClick={() => {
+                removeFile(file);
+              }}
+            >
+              <X className="size-4" aria-hidden="true" />
+            </IconButton>
+          </li>
+        );
+      })}
+      {pastedFiles.map((upload) => {
+        return <OnboardingPastedFile key={upload.file.name} {...upload} />;
+      })}
+    </ul>
+  );
 }
 
 /**
@@ -67,17 +297,13 @@ export function OnboardingSourcesFirstPromptPage() {
     setPrompt,
     selectOutput,
     connectorSlugs,
+    unresolvedFiles,
+    tooLong,
+    paste,
     run,
+    runError,
     busy,
   } = usePromptOnboarding();
-
-  const fileLabels = [
-    ...new Map(
-      files.map((file) => {
-        return [`${file.hash}:${file.filename}`, file] as const;
-      }),
-    ).values(),
-  ];
   const promptInput = (
     <Textarea
       id="onboarding-prompt"
@@ -85,6 +311,14 @@ export function OnboardingSourcesFirstPromptPage() {
         return $.onboarding.make.promptLabel;
       })}
       value={prompt}
+      disabled={busy}
+      aria-invalid={tooLong || undefined}
+      aria-describedby={
+        tooLong
+          ? "onboarding-prompt-count onboarding-prompt-error"
+          : "onboarding-prompt-count"
+      }
+      onPaste={paste}
       onChange={(event) => {
         setPrompt(event.target.value);
       }}
@@ -117,7 +351,9 @@ export function OnboardingSourcesFirstPromptPage() {
           : $.onboarding.common.next;
       })}
       onPrimary={run}
-      primaryDisabled={!prompt.trim() && files.length === 0}
+      primaryDisabled={
+        tooLong || unresolvedFiles || (!prompt.trim() && files.length === 0)
+      }
       primaryBusy={busy}
     >
       <div className="mx-auto flex w-full max-w-[520px] flex-col gap-3">
@@ -127,15 +363,8 @@ export function OnboardingSourcesFirstPromptPage() {
           <ProductBrandMark decorative size="hero" />
         </div>
         {promptInput}
-        {files.length > 0 && (
-          <ul className="space-y-1 text-sm text-muted-foreground">
-            {fileLabels.map((file) => {
-              return (
-                <li key={`${file.hash}:${file.filename}`}>{file.filename}</li>
-              );
-            })}
-          </ul>
-        )}
+        <OnboardingPromptFeedback runError={runError} />
+        <OnboardingPromptAttachments busy={busy} />
         <section
           aria-labelledby="onboarding-prompt-connectors-title"
           className="mt-3 space-y-3"

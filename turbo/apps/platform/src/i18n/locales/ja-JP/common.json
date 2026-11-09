@@ -1652,7 +1652,9 @@
       "fileTooLarge": "{{filename}} が 512 MB の制限を超えています",
       "imageUnavailable": "[画像は利用できません: {{filename}}]",
       "loadingFile": "{{filename}} をロードしています",
+      "pastedText": "貼り付けたテキスト",
       "previewFile": "{{filename}} のプレビュー",
+      "remove": "{{filename}} を削除",
       "title": "添付ファイル",
       "unavailable": "{{filename}} は利用できなくなりました。送信するにはもう一度アップロードしてください。",
       "unavailableCount_other": "{{count}} 件の添付ファイルは利用できなくなりました。送信するにはもう一度アップロードしてください。",
@@ -4648,9 +4650,14 @@
         "tooLong": "別の形式を選ぶには、タスクを短くしてください。"
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} 文字（出力指示を含む）",
         "connectorsDescription": "アプリを接続すると、Okou があなたの仕事をより深く理解できます。",
         "connectorsTitle": "仕事で使うツールを接続",
-        "intro": "アプリを接続してより良い成果につなげ、出力形式を選びましょう。"
+        "fileTooLarge": "{{filename}} は 10 MB の上限を超えています。貼り付けたテキストはプロンプトに残っています。",
+        "intro": "アプリを接続してより良い成果につなげ、出力形式を選びましょう。",
+        "tooLong": "続けるには、プロンプトを短くするか、出力形式の選択を解除してください。文字数の上限には出力指示も含まれます。",
+        "tooManyFiles": "添付できるファイルは最大 {{max}} 件です。貼り付けたテキストはプロンプトに残っています。",
+        "uploadFailed": "{{filename}} をアップロードできませんでした。貼り付けたテキストは添付ファイルとして保持されています。続ける前に再試行するか、添付ファイルを削除してください。"
       },
       "skills": {
         "copied": "コピーしました",

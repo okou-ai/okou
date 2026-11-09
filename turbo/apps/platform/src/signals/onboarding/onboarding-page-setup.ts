@@ -11,7 +11,10 @@ import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { promptHandoffParams } from "./onboarding-actions.ts";
-import { hydrateOnboardingRoute$ } from "./onboarding-state.ts";
+import {
+  hydrateOnboardingRoute$,
+  resetOnboardingDraft$,
+} from "./onboarding-state.ts";
 import { capturePaidOnboardingStepViewed$ } from "../bootstrap/paid-funnel-telemetry.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { sendEvent$ } from "../marketing/events.ts";
@@ -48,6 +51,13 @@ export const setupOnboardingPromptPage$ = command(
     const handoff = await set(loadMarketingHandoff$, signal);
     signal.throwIfAborted();
     set(hydrateOnboardingRoute$, searchParams, handoff?.manifest);
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(resetOnboardingDraft$);
+      },
+      { once: true },
+    );
 
     const title = i18n.t(
       ($) => {

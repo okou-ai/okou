@@ -4,6 +4,10 @@ import {
   saveMarketingHandoff$,
 } from "../prompt-page/marketing-handoff.ts";
 import { billingRedeemCodeContract } from "@okouai/api-contracts/client/billing";
+import type {
+  MarketingHandoffFile,
+  MarketingHandoffManifest,
+} from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { onboardingCompleteContract } from "@okouai/api-contracts/client/onboarding";
 import { orgContract } from "@okouai/api-contracts/client/org-routes";
 import { runModelsMainContract } from "@okouai/api-contracts/client/run-models";
@@ -30,8 +34,16 @@ import {
   clearSourcesFirstDraft$,
   sourcesFirstDraft$,
 } from "./onboarding-sources-first-state.ts";
-import { onboardingDraft$ } from "./onboarding-state.ts";
-import type { StartingPromptOutput } from "./onboarding-output-format.ts";
+import {
+  hasUnresolvedOnboardingPastedFiles$,
+  onboardingDraft$,
+  onboardingPromptOutput$,
+} from "./onboarding-state.ts";
+import {
+  onboardingOutputSuffix,
+  type StartingPromptOutput,
+} from "./onboarding-output-format.ts";
+import { MARKETING_HANDOFF_PROMPT_MAX_CHARS } from "@okouai/api-contracts/validators/marketing-handoffs";
 
 const ONBOARDING_TRANSIENT_PARAMS = [
   "choice",
@@ -132,6 +144,40 @@ export const skipPreviewOnboarding$ = command(
   },
 );
 
+const saveOnboardingRequestHandoff$ = command(
+  async (
+    { get, set },
+    request: {
+      readonly prompt: string;
+      readonly files: MarketingHandoffFile[];
+      readonly template: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    const searchParams = get(searchParams$);
+    const handoff = searchParams.get("handoff")
+      ? (get(marketingHandoff$) ?? (await set(loadMarketingHandoff$, signal)))
+      : null;
+    if (searchParams.get("handoff") && !handoff) {
+      throw new Error("Marketing handoff has not been loaded");
+    }
+    const manifest: MarketingHandoffManifest = {
+      version: 1,
+      prompt: request.prompt,
+      files: request.files,
+      options: {
+        ...(handoff?.manifest.options ?? {
+          model: searchParams.get("model")?.trim() || undefined,
+          connector: searchParams.get("connector")?.trim() || undefined,
+          showcase: searchParams.get("showcase") || undefined,
+        }),
+        template: request.template ?? undefined,
+      },
+    };
+    return await set(saveMarketingHandoff$, manifest, signal);
+  },
+);
+
 /**
  * Leaves onboarding for its first request. Finishing the flow is what marks
  * onboarding complete, so the request goes out after it: otherwise
@@ -147,36 +193,30 @@ export const runOnboardingRequest$ = command(
     output: StartingPromptOutput | null,
     signal: AbortSignal,
   ): Promise<void> => {
-    let outputSuffix = output?.suffix ?? "";
-    if (output?.format === "report") {
-      const documentSuffix = `\n\n${i18n.t(($) => {
-        return $.onboarding.sourcesFirst.outputFormats.options.report
-          .instruction;
-      })}`;
-      // Older drafts can contain custom report instructions. Preserve those
-      // while applying Document's artifact delivery contract at submission.
-      if (outputSuffix !== documentSuffix) {
-        outputSuffix += documentSuffix;
-      }
+    signal.throwIfAborted();
+    const prompt = request + onboardingOutputSuffix(output);
+    // Guard the command as well as the controls, before resolving, saving or
+    // completing anything. Output instructions count toward the wire limit.
+    if (prompt.length > MARKETING_HANDOFF_PROMPT_MAX_CHARS) {
+      throw new Error(
+        i18n.t(($) => {
+          return $.onboarding.sourcesFirst.prompt.tooLong;
+        }),
+      );
+    }
+    if (get(hasUnresolvedOnboardingPastedFiles$)) {
+      return;
     }
     const searchParams = get(searchParams$);
     const handoffParams = promptHandoffParams(searchParams);
-    if (searchParams.get("handoff")) {
-      const handoff =
-        get(marketingHandoff$) ?? (await set(loadMarketingHandoff$, signal));
-      if (!handoff) {
-        throw new Error("Marketing handoff has not been loaded");
-      }
+    const files =
+      searchParams.has("handoff") || searchParams.has("prompt")
+        ? get(onboardingDraft$).files
+        : [];
+    if (searchParams.get("handoff") || files.length > 0) {
       const hash = await set(
-        saveMarketingHandoff$,
-        {
-          ...handoff.manifest,
-          prompt: request + outputSuffix,
-          options: {
-            ...handoff.manifest.options,
-            template: template ?? undefined,
-          },
-        },
+        saveOnboardingRequestHandoff$,
+        { prompt, files, template },
         signal,
       );
       handoffParams.delete("prompt");
@@ -190,7 +230,7 @@ export const runOnboardingRequest$ = command(
       pending.set("handoff", hash);
       set(replaceSearchParams$, pending);
     } else {
-      handoffParams.set("prompt", request + outputSuffix);
+      handoffParams.set("prompt", prompt);
       if (template) {
         handoffParams.set("template", template);
       } else {
@@ -215,24 +255,11 @@ export const runOnboardingRequest$ = command(
  */
 export const runPromptOnboarding$ = command(
   async ({ get, set }, signal: AbortSignal): Promise<void> => {
-    const { prompt, output } = get(onboardingDraft$);
-    const copy = i18n.t(
-      ($) => {
-        return $.onboarding.sourcesFirst.outputFormats;
-      },
-      { returnObjects: true },
-    );
+    const { prompt } = get(onboardingDraft$);
+    const output = get(onboardingPromptOutput$);
     const template = get(searchParams$).get("handoff")
       ? (get(marketingHandoff$)?.manifest.options.template ?? null)
       : get(searchParams$).get("template")?.trim() || null;
-    await set(
-      runOnboardingRequest$,
-      prompt,
-      template,
-      output
-        ? { format: output, suffix: `\n\n${copy.options[output].instruction}` }
-        : null,
-      signal,
-    );
+    await set(runOnboardingRequest$, prompt, template, output, signal);
   },
 );

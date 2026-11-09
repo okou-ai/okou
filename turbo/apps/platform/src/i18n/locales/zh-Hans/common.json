@@ -1652,7 +1652,9 @@
       "fileTooLarge": "{{filename}} 超过 512 MB 上限",
       "imageUnavailable": "[图片不可用：{{filename}}]",
       "loadingFile": "正在加载 {{filename}}",
+      "pastedText": "粘贴的文本",
       "previewFile": "预览 {{filename}}",
+      "remove": "移除 {{filename}}",
       "title": "附件",
       "unavailable": "{{filename}} 已不可用。重新上传后才能发送。",
       "unavailableCount_other": "有 {{count}} 个附件已不可用。重新上传后才能发送。",
@@ -4648,9 +4650,14 @@
         "tooLong": "请缩短任务内容，以选择其他产出形式。"
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} 个字符（含输出指令）",
         "connectorsDescription": "连接应用，让 Okou 更了解你的工作。",
         "connectorsTitle": "连接你的工作工具",
-        "intro": "连接应用，让结果更贴合需求，并选择输出格式。"
+        "fileTooLarge": "{{filename}} 超过 10 MB 上限。粘贴的文本仍保留在提示词中。",
+        "intro": "连接应用，让结果更贴合需求，并选择输出格式。",
+        "tooLong": "请缩短提示词或取消选择输出格式后继续。输出指令也计入字符数上限。",
+        "tooManyFiles": "最多可添加 {{max}} 个文件。粘贴的文本仍保留在提示词中。",
+        "uploadFailed": "无法上传 {{filename}}。粘贴的文本已保留为附件。请重试或移除该附件后继续。"
       },
       "skills": {
         "copied": "已复制",

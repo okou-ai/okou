@@ -1679,7 +1679,9 @@
       "fileTooLarge": "{{filename}} excede o limite de 512 MB",
       "imageUnavailable": "[Imagem indisponível: {{filename}}]",
       "loadingFile": "Carregando {{filename}}",
+      "pastedText": "Texto colado",
       "previewFile": "Visualizar {{filename}}",
+      "remove": "Remover {{filename}}",
       "title": "Anexos",
       "unavailable": "{{filename}} não está mais disponível. Faça o upload novamente para enviar.",
       "unavailableCount_one": "{{count}} anexo não está mais disponível. Faça o upload novamente para enviar.",
@@ -4721,9 +4723,14 @@
         "tooLong": "Encurte a tarefa para escolher outro formato."
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} caracteres (incluindo instruções de saída)",
         "connectorsDescription": "Conecte seus aplicativos para ajudar o Okou a entender melhor seu trabalho.",
         "connectorsTitle": "Conecte suas ferramentas de trabalho",
-        "intro": "Conecte seus aplicativos para obter melhores resultados e escolha um formato."
+        "fileTooLarge": "{{filename}} excede o limite de 10 MB. O texto colado permanece no prompt.",
+        "intro": "Conecte seus aplicativos para obter melhores resultados e escolha um formato.",
+        "tooLong": "Encurte seu prompt ou desmarque o formato de saída para continuar. O limite inclui as instruções de saída.",
+        "tooManyFiles": "Você pode anexar até {{max}} arquivos. O texto colado permanece no prompt.",
+        "uploadFailed": "Não foi possível enviar {{filename}}. O texto colado é mantido como anexo. Tente novamente ou remova-o antes de continuar."
       },
       "skills": {
         "copied": "Copiado",
