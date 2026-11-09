@@ -145,6 +145,7 @@ final class AuthenticationService {
 
   func preparePresentation() async {
     guard let clerk, let userID, let workspaceID = presentationWorkspaceID else { return }
+    let scope = presentationScopeID
     if presentation?.userID != userID {
       let previous = presentation
       presentation = IdentityPresentation(
@@ -158,10 +159,11 @@ final class AuthenticationService {
         })
       await previous?.close(removeFiles: false)
     }
-    guard let presentation, presentation.userID == userID else { return }
+    guard let presentation, presentation.userID == userID, presentationScopeID == scope else { return }
     if workspacesSessionID == clerk.session?.id, workspacesUserID == userID {
       await presentation.replaceWorkspaces(workspaces, activeID: workspaceID)
     }
+    guard presentationScopeID == scope, !Task.isCancelled else { return }
     await presentation.restore(
       workspaceID: workspaceID, profileURL: profile?.imageURL,
       hasProfileImage: profile?.hasImage ?? false)
