@@ -320,7 +320,6 @@ struct ChatSidebarView: View {
     .accessibilityValue(thread.pinnedAt != nil ? "Pinned" : "")
     .contextMenu {
       if !thread.isMuted {
-        readAction(thread, read: true)
         readAction(thread, read: false)
       }
       Button(
