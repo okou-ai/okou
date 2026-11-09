@@ -595,7 +595,15 @@ describe("Email integration", () => {
       emailClient().connect({ headers: authHeaders(), body }),
       [403],
     );
-    const { actor } = await entitledActor(sender);
+    const actor = bdd.user({
+      email: sender,
+      orgId: createUniqueStaffOrgIdFixture(),
+    });
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const group = runs.configureRunnerGroup();
+    verifiedDirectory(actor);
     await accept(
       emailClient().connect({
         headers: authHeaders(),
@@ -631,5 +639,49 @@ describe("Email integration", () => {
         )
       ).body.emails,
     ).toStrictEqual([sender]);
+    await runs.heartbeatRunner(group);
+    const polled = await runs.pollRunner(group);
+    const runId = polled.body.job?.runId;
+    if (!runId) {
+      throw new Error(
+        "Expected the first email to run before browser onboarding",
+      );
+    }
+    const claim = await runs.claimRunnerJob(runId);
+    expect(claim.prompt).toContain("Please handle this after signup");
+    await webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [
+          {
+            type: "result",
+            sequenceNumber: 0,
+            result: "Your original request is complete",
+          },
+        ],
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId,
+        exitCode: 0,
+        lastEventSequence: 0,
+        completion: {
+          cliAgentType: claim.cliAgentType,
+          cliAgentSessionId: claim.piSessionId ?? `email-signup-${runId}`,
+          cliAgentSessionHistoryDisposition: "native_only",
+        },
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(
+      sentEmails().filter((email) => {
+        return email.text === "Your original request is complete";
+      }),
+    ).toMatchObject([{ to: sender }]);
   });
 });

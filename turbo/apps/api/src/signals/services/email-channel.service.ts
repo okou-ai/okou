@@ -28,6 +28,8 @@ import { publishUserSignal } from "../external/realtime";
 import { waitUntil } from "../context/wait-until";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { resolveOrgDefaultComposeId$ } from "./agentphone-shared.service";
+import { ensureOrgLimitedFreeBootstrap$ } from "./org-limited-free-bootstrap.service";
+import { initializeMemberMemory$ } from "./member-memory-initialization.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
@@ -421,6 +423,35 @@ function emailInputFiles(
   return files;
 }
 
+const initializeEmailWorkspace$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly isAdmin: boolean;
+    },
+    signal: AbortSignal,
+  ) => {
+    if (args.isAdmin && !(await set(resolveOrgDefaultComposeId$, args.orgId))) {
+      // Signup can reach this continuation before Clerk's organization webhook.
+      // Reuse the idempotent bootstrap without completing browser onboarding.
+      await set(
+        ensureOrgLimitedFreeBootstrap$,
+        { orgId: args.orgId, ownerUserId: args.userId },
+        signal,
+      );
+      signal.throwIfAborted();
+    }
+    await set(
+      initializeMemberMemory$,
+      { orgId: args.orgId, userId: args.userId },
+      signal,
+    );
+    signal.throwIfAborted();
+  },
+);
+
 export const processEmailChannelMessage$ = command(
   async (
     { get, set },
@@ -466,6 +497,16 @@ export const processEmailChannelMessage$ = command(
     if (!isFeatureEnabled(FeatureSwitchKey.EmailIntegration, features)) {
       return;
     }
+    await set(
+      initializeEmailWorkspace$,
+      {
+        orgId: link.orgId,
+        userId: link.userId,
+        isAdmin: role.role === "admin",
+      },
+      signal,
+    );
+    signal.throwIfAborted();
     const db = set(writeDb$);
     const route = await set(resolveEmailMessageRoute$, args, signal);
     signal.throwIfAborted();
