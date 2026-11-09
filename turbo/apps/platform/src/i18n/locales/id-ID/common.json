@@ -1876,11 +1876,11 @@
         "scheduled": {
           "description": "Jalankan pada waktu yang tepat.",
           "items": {
-            "daily": "Rutinitas harian",
-            "once": "Pengingat sekali",
-            "weekly": "Tinjauan mingguan"
+            "once": "Jalankan sekali pada waktu tertentu",
+            "recurring": "Ulangi sesuai jadwal"
           },
-          "prompt": "Bantu saya menyiapkan: {{task}}. Tanyakan tugas, waktu pelaksanaan, dan zona waktu yang digunakan.",
+          "prompt": "{{task}}. Tanyakan tugas, waktu pelaksanaan, dan zona waktu yang digunakan.",
+          "setupTitle": "Jadwalkan tugas",
           "title": "Tugas terjadwal"
         },
         "suggestions": "Mulai dari saran, lalu sesuaikan dengan kebutuhan Anda.",

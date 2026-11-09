@@ -1881,11 +1881,11 @@
         "scheduled": {
           "description": "Run at just the right time.",
           "items": {
-            "daily": "Daily routine",
-            "once": "One-time reminder",
-            "weekly": "Weekly check-in"
+            "once": "Run once at a set time",
+            "recurring": "Repeat on a schedule"
           },
-          "prompt": "Help me set up {{task}}. Ask what I want done, when it should run, and which time zone to use.",
+          "prompt": "{{task}}. Ask what I want done, when it should run, and which time zone to use.",
+          "setupTitle": "Schedule a task",
           "title": "Scheduled tasks"
         },
         "suggestions": "Start with a suggestion, then make it yours.",

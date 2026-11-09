@@ -1910,11 +1910,11 @@
         "scheduled": {
           "description": "Exécutez au bon moment.",
           "items": {
-            "daily": "Routine quotidienne",
-            "once": "Rappel ponctuel",
-            "weekly": "Bilan hebdomadaire"
+            "once": "Exécuter une fois à une heure précise",
+            "recurring": "Répéter selon un planning"
           },
-          "prompt": "Aide-moi à configurer : {{task}}. Demande ce que je veux faire, à quel moment et dans quel fuseau horaire.",
+          "prompt": "{{task}}. Demande ce que je veux faire, à quel moment et dans quel fuseau horaire.",
+          "setupTitle": "Planifier une tâche",
           "title": "Tâches planifiées"
         },
         "suggestions": "Partez d’une suggestion et adaptez-la à vos besoins.",

@@ -1876,11 +1876,11 @@
         "scheduled": {
           "description": "在合適的時間自動執行。",
           "items": {
-            "daily": "每日例行任務",
-            "once": "一次性提醒",
-            "weekly": "每週回顧"
+            "once": "在指定時間執行一次",
+            "recurring": "按計畫重複執行"
           },
-          "prompt": "幫我設定{{task}}。先確認要做什麼、執行時間和時區。",
+          "prompt": "{{task}}。先確認要做什麼、執行時間和時區。",
+          "setupTitle": "安排任務",
           "title": "定時任務"
         },
         "suggestions": "從一條建議開始，按你的需要調整。",

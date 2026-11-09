@@ -4,13 +4,25 @@ import { useTranslation } from "react-i18next";
 import {
   ArrowUpRight,
   BookOpenCheck,
+  Building2,
+  CalendarClock,
   ChartNoAxesCombined,
   Clock3,
   Files,
   GitBranch,
   Globe,
+  Handshake,
   Image,
+  Link2,
+  Megaphone,
+  MicVocal,
+  Network,
+  Package,
+  Podcast,
   Presentation,
+  Repeat2,
+  Search,
+  SlidersHorizontal,
   Users,
   X,
   Zap,
@@ -39,14 +51,6 @@ import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
 import { ComposerTemplatePickerButton } from "./composer-template-picker-button.tsx";
 import { WorkflowTile } from "./composer-workflow-recommendations.tsx";
 import { ComposerRail } from "./composer-rail.tsx";
-import {
-  PEOPLE_SUGGESTION_COVERS,
-  RESEARCH_SUGGESTION_COVERS,
-} from "./capability-suggestion-cover.tsx";
-import {
-  AutomationPreview,
-  SCHEDULE_SUGGESTIONS,
-} from "./automation-suggestion-cover.tsx";
 import {
   TRIGGER_EXAMPLES,
   TriggerSuggestionCover,
@@ -119,6 +123,29 @@ const WORKFLOW_KINDS = [
     color:
       "border-[#e5ddfa] bg-[#f4f0ff] text-[#9480cf] dark:border-[#9480cf]/25 dark:bg-[#9480cf]/10 dark:text-[#c3b6ee]",
   },
+] as const;
+
+const PEOPLE_SUGGESTIONS = [
+  { id: "customers", Icon: Building2 },
+  { id: "creators", Icon: Handshake },
+  { id: "decisionMakers", Icon: Network },
+  { id: "speakers", Icon: MicVocal },
+  { id: "podcasts", Icon: Podcast },
+  { id: "affiliates", Icon: Link2 },
+] as const;
+
+const RESEARCH_SUGGESTIONS = [
+  { id: "traffic", Icon: ChartNoAxesCombined },
+  { id: "searchOpportunities", Icon: Search },
+  { id: "ads", Icon: Megaphone },
+  { id: "products", Icon: Package },
+  { id: "topic", Icon: BookOpenCheck },
+  { id: "tools", Icon: SlidersHorizontal },
+] as const;
+
+const SCHEDULE_SUGGESTIONS = [
+  { id: "once", Icon: CalendarClock },
+  { id: "recurring", Icon: Repeat2 },
 ] as const;
 
 function CapabilityIcon({
@@ -396,6 +423,34 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
   );
 }
 
+function HomeActionCard({
+  title,
+  Icon,
+  onClick,
+}: {
+  readonly title: string;
+  readonly Icon: LucideIcon;
+  readonly onClick: () => void;
+}) {
+  return (
+    <Button
+      variant="quiet"
+      iconSize="lg"
+      aria-label={title}
+      className={surfaceVariants({
+        radius: "compact",
+        interactive: true,
+        className:
+          "h-auto min-h-16 min-w-0 justify-start gap-3 p-4 text-left whitespace-normal text-foreground hover:bg-card active:bg-card motion-reduce:transition-none @xl:min-h-28 @xl:flex-col @xl:items-start @xl:justify-between @xl:gap-5",
+      })}
+      onClick={onClick}
+    >
+      <Icon strokeWidth={1.8} className="text-muted-foreground" aria-hidden />
+      <span className="min-w-0 text-sm font-medium leading-6">{title}</span>
+    </Button>
+  );
+}
+
 function HomeSuggestionCard({
   title,
   preview,
@@ -463,11 +518,11 @@ function HomeExploreSuggestions({
   const pageSignal = useGet(pageSignal$);
   const suggestions =
     kind === "search"
-      ? PEOPLE_SUGGESTION_COVERS.map(({ id, Preview }) => {
-          return { id, title: copy.search.items[id], preview: <Preview /> };
+      ? PEOPLE_SUGGESTIONS.map(({ id, Icon }) => {
+          return { id, title: copy.search.items[id], Icon };
         })
-      : RESEARCH_SUGGESTION_COVERS.map(({ id, Preview }) => {
-          return { id, title: copy.research.items[id], preview: <Preview /> };
+      : RESEARCH_SUGGESTIONS.map(({ id, Icon }) => {
+          return { id, title: copy.research.items[id], Icon };
         });
   return (
     <section
@@ -479,12 +534,12 @@ function HomeExploreSuggestions({
         {headerAction}
       </div>
       <div className="grid gap-3 @xl:grid-cols-2 @2xl:grid-cols-3">
-        {suggestions.map(({ id, title, preview }) => {
+        {suggestions.map(({ id, title, Icon }) => {
           return (
-            <HomeSuggestionCard
+            <HomeActionCard
               key={id}
               title={title}
-              preview={preview}
+              Icon={Icon}
               onClick={() => {
                 detach(
                   prepare(
@@ -525,12 +580,12 @@ function HomeAutomationSuggestions({
   const pageSignal = useGet(pageSignal$);
   const suggestions =
     kind === "scheduled"
-      ? SCHEDULE_SUGGESTIONS.map((id) => {
+      ? SCHEDULE_SUGGESTIONS.map(({ id, Icon }) => {
           const title = copy.workflow.scheduled.items[id];
           return {
             id,
             title,
-            preview: <AutomationPreview kind={id} />,
+            Icon,
             prompt: t(
               ($) => {
                 return $.chat.capabilityHome.workflow.scheduled.prompt;
@@ -566,24 +621,38 @@ function HomeAutomationSuggestions({
           };
         });
   return (
-    <div className="grid gap-3 @xl:grid-cols-2 @2xl:grid-cols-3">
+    <div
+      className={cn(
+        "grid gap-3 @xl:grid-cols-2",
+        kind === "triggers" && "@2xl:grid-cols-3",
+      )}
+    >
       {suggestions.map((suggestion) => {
-        const { id, title, preview, prompt } = suggestion;
+        const { id, title, prompt } = suggestion;
+        const onClick = () => {
+          detach(
+            prepareWorkflow({ template: null, prompt }, pageSignal),
+            Reason.DomCallback,
+          );
+        };
+        if ("Icon" in suggestion) {
+          return (
+            <HomeActionCard
+              key={id}
+              title={title}
+              Icon={suggestion.Icon}
+              onClick={onClick}
+            />
+          );
+        }
         return (
           <HomeSuggestionCard
             key={id}
             title={title}
-            preview={preview}
-            description={
-              "description" in suggestion ? suggestion.description : undefined
-            }
-            titlePosition={kind === "triggers" ? "top" : "bottom"}
-            onClick={() => {
-              detach(
-                prepareWorkflow({ template: null, prompt }, pageSignal),
-                Reason.DomCallback,
-              );
-            }}
+            preview={suggestion.preview}
+            description={suggestion.description}
+            titlePosition="top"
+            onClick={onClick}
           />
         );
       })}
@@ -617,13 +686,14 @@ function HomeWorkflowSuggestions({
   const prepareWorkflow = useSet(signals.taskChips.home.prepareWorkflow$);
   const browse = useSet(signals.taskChips.workflows.browse$);
   const pageSignal = useGet(pageSignal$);
+  const title =
+    kind === "scheduled"
+      ? copy.workflow.scheduled.setupTitle
+      : copy.workflow[kind].title;
   return (
-    <section
-      aria-label={copy.workflow[kind].title}
-      className="flex min-w-0 flex-col gap-5"
-    >
+    <section aria-label={title} className="flex min-w-0 flex-col gap-5">
       <div className="flex min-w-0 items-center justify-between gap-3">
-        <h2 className="text-lg font-medium">{copy.workflow[kind].title}</h2>
+        <h2 className="text-lg font-medium">{title}</h2>
         <div className="flex shrink-0 items-center gap-2">
           <ComposerTemplatePickerButton
             onClick={() => {

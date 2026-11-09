@@ -203,10 +203,10 @@ test("Scheduled tasks and triggers prepare their own editable automation request
   await fill(editor, "Use my work account.");
   click(button("Scheduled tasks", capabilities()));
   const scheduled = await screen.findByRole("region", {
-    name: "Scheduled tasks",
+    name: "Schedule a task",
   });
-  click(button("Daily routine", scheduled));
-  expect(editor).toHaveTextContent("Help me set up Daily routine.");
+  click(button("Repeat on a schedule", scheduled));
+  expect(editor).toHaveTextContent("Repeat on a schedule.");
   expect(editor).toHaveTextContent("which time zone to use");
   expect(editor).toHaveFocus();
   click(button("All capabilities", scheduled));

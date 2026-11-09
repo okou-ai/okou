@@ -1910,11 +1910,11 @@
         "scheduled": {
           "description": "Ejecuta en el momento adecuado.",
           "items": {
-            "daily": "Rutina diaria",
-            "once": "Recordatorio puntual",
-            "weekly": "Revisión semanal"
+            "once": "Ejecutar una vez a una hora concreta",
+            "recurring": "Repetir según un horario"
           },
-          "prompt": "Ayúdame a configurar: {{task}}. Pregunta qué quiero hacer, cuándo debe ejecutarse y en qué zona horaria.",
+          "prompt": "{{task}}. Pregunta qué quiero hacer, cuándo debe ejecutarse y en qué zona horaria.",
+          "setupTitle": "Programar una tarea",
           "title": "Tareas programadas"
         },
         "suggestions": "Empieza con una sugerencia y adáptala a ti.",

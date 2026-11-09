@@ -1910,11 +1910,11 @@
         "scheduled": {
           "description": "Esegui al momento giusto.",
           "items": {
-            "daily": "Routine quotidiana",
-            "once": "Promemoria singolo",
-            "weekly": "Riepilogo settimanale"
+            "once": "Esegui una volta a un orario specifico",
+            "recurring": "Ripeti secondo una pianificazione"
           },
-          "prompt": "Aiutami a configurare: {{task}}. Chiedi cosa voglio fare, quando eseguirlo e quale fuso orario usare.",
+          "prompt": "{{task}}. Chiedi cosa voglio fare, quando eseguirlo e quale fuso orario usare.",
+          "setupTitle": "Pianifica un'attività",
           "title": "Attività pianificate"
         },
         "suggestions": "Parti da un suggerimento e adattalo alle tue esigenze.",
