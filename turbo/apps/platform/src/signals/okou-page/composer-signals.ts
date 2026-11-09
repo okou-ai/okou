@@ -69,6 +69,7 @@ import {
 } from "./image-annotation.ts";
 import {
   openImageLightbox$,
+  openVideoLightbox$,
   type AnnotationImage,
 } from "./attachment-chips.ts";
 
@@ -283,7 +284,7 @@ export interface ComposerSignals {
   readonly queue: ComposerQueueSignals;
   readonly template: ComposerTemplateSignals;
   readonly imageAnnotation: ImageAnnotationSignals;
-  /** Previews a draft image in the lightbox, where it can be marked up. */
+  /** Previews draft media; images can also be marked up in the lightbox. */
   readonly openAttachmentPreview$: Command<
     void,
     [ChatAttachment, AnnotationImage]
@@ -570,6 +571,7 @@ export function createComposerSignals(
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
     insertPrompt$: workflowComposer.replacePromptText$,
+    clearPrompt$: workflowComposer.clearUnchangedPrompt$,
     openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
@@ -737,12 +739,19 @@ function createComposerAttachmentAnnotation(
       // A pending upload is not an artifact yet, so checking it must not take
       // over an open artifact sidebar. An attachment is the user's own input,
       // not a published artifact, so it carries no sharing controls.
-      set(openImageLightbox$, {
+      const input = {
         url: image.url,
         filename: attachment.filename,
         ...(image.preview ? { preview: image.preview } : {}),
         shareAvailable: false,
         splitViewAvailable: false,
+      };
+      if (attachment.contentType.startsWith("video/")) {
+        set(openVideoLightbox$, input);
+        return;
+      }
+      set(openImageLightbox$, {
+        ...input,
         annotationTarget: { attachment, annotate$: annotateAttachment$ },
       });
     },

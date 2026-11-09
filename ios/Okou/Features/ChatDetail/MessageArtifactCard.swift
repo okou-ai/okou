@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 
@@ -13,77 +14,107 @@ struct MessageArtifactCard: View {
   let imageSources: [String]
   let viewer: MessageArtifactStore
   let loadsContent: Bool
-  private struct LoadKey: Hashable {
-    let resource: ChatArtifact
-    let owner: ObjectIdentifier
-    let enabled: Bool
-    let retry: Int
+
+  fileprivate var needsThumbnail: Bool {
+    resource.kind == .image || resource.kind == .video || resource.hasCover
   }
-  private struct Prepared {
-    let key: LoadKey
-    let card: MessageArtifactStore.Card?
-    let picture: UIImage?
-    let error: String?
-    /// The result is gone or not this person's: the card keeps its heading only.
-    var unavailable = false
+
+  var body: some View {
+    let reads = viewer.reads
+    StoreProvider(reads.store) {
+      if loadsContent {
+        MessageArtifactCardValue(card: self, reads: reads)
+      } else {
+        MessageArtifactCardContent(card: self, value: .loading, retry: nil)
+      }
+    }
+    .id(ObjectIdentifier(reads))
   }
+}
+
+private struct MessageArtifactCardValue: View {
+  let card: MessageArtifactCard
+  let reads: MessageArtifactResources
+  private let read: MessageArtifactCardRead
+  @LoadableValue private var value: Loadable<MessageArtifactStore.Card>
+
+  init(card: MessageArtifactCard, reads: MessageArtifactResources) {
+    self.card = card
+    self.reads = reads
+    let read = reads.card(card.resource, thumbnail: card.needsThumbnail)
+    self.read = read
+    _value = LoadableValue(task: read.value)
+  }
+
+  var body: some View {
+    MessageArtifactCardContent(card: card, value: value, retry: { reads.retry(read) })
+  }
+}
+
+private struct MessageArtifactCardContent: View {
+  let card: MessageArtifactCard
+  let value: Loadable<MessageArtifactStore.Card>
+  let retry: (() -> Void)?
   private enum Layout { case tile, cover, header }
-  @State private var prepared: Prepared?
-  @State private var retry = 0
   @Environment(\.openURL) private var openURL
 
-  private var loadKey: LoadKey {
-    LoadKey(
-      resource: resource, owner: ObjectIdentifier(viewer), enabled: loadsContent, retry: retry)
+  private var unavailable: Bool {
+    value.error.flatMap(MessageArtifactStore.cardStatus(for:)) != nil
   }
-  private var current: Prepared? { prepared?.key == loadKey ? prepared : nil }
-  private var error: String? { current?.error }
-  private var artifact: ChatArtifact { current?.card?.artifact ?? resource }
+  private var error: String? {
+    guard let error = value.error else { return nil }
+    if let status = MessageArtifactStore.cardStatus(for: error) { return status }
+    return ChatRequestFailure.isTransient(error)
+      ? String(localized: "Tap to load preview") : MessageArtifactStore.message(for: error)
+  }
+  private var artifact: ChatArtifact { value.data?.artifact ?? card.resource }
   private var layout: Layout {
-    if resource.kind == .image || resource.kind == .video { return .tile }
-    return resource.hasCover ? .cover : .header
+    if card.resource.kind == .image || card.resource.kind == .video { return .tile }
+    return card.resource.hasCover ? .cover : .header
   }
   private var title: String {
-    let text = label.trimmingCharacters(in: .whitespacesAndNewlines)
+    let text = card.label.trimmingCharacters(in: .whitespacesAndNewlines)
     // A bare link names the result by its address; the page's own title or the file's name
     // reads better.
     if text.isEmpty || text == "\u{fffc}" || URL(string: text)?.scheme != nil {
-      return current?.card?.title ?? artifact.filename
+      return value.data?.title ?? artifact.filename
     }
     return text
   }
   private var detail: String {
-    if current?.unavailable == true, let error {
+    if unavailable, let error {
       return artifact.subtitle(showsAddress: false) + " · " + error
     }
     return error ?? artifact.subtitle(showsAddress: title != artifact.filename)
   }
   private var preview: OkouPreviewState {
-    if let picture = current?.picture { return .image(picture) }
-    if error == nil, loadsContent, current == nil { return .loading }
+    if let picture = value.data?.thumbnail.flatMap(UIImage.init(data:)) { return .image(picture) }
+    if card.loadsContent, value.state == .loading { return .loading }
     return .placeholder(icon: artifact.symbol)
   }
 
   var body: some View {
     Button {
-      if let destination {
+      if let destination = card.destination {
         openURL(destination)
       } else {
-        viewer.open(artifact, images: images, imageSources: imageSources)
+        card.viewer.open(
+          artifact, images: card.images, imageSources: card.imageSources,
+          thumbnail: value.data?.thumbnail)
       }
     } label: {
       switch layout {
       case .tile:
-        OkouResultTile(state: preview, isVideo: resource.kind == .video)
+        OkouResultTile(state: preview, isVideo: card.resource.kind == .video)
       case .cover:
         // Nothing will ever fill the cover of a deleted result, so the card closes to its
         // heading rather than keep an empty frame; a passing failure keeps it, to retry.
-        if current?.unavailable == true {
+        if unavailable {
           OkouResultCard(title: title, detail: detail, icon: artifact.symbol)
         } else {
           OkouResultCard(
             title: title, detail: detail, icon: artifact.symbol, cover: preview,
-            shape: resource.coverShape)
+            shape: card.resource.coverShape)
         }
       case .header:
         OkouResultCard(title: title, detail: detail, icon: artifact.symbol)
@@ -95,28 +126,7 @@ struct MessageArtifactCard: View {
     .accessibilityHint(detail)
     .accessibilityIdentifier("generated-result-card")
     .contextMenu {
-      if error != nil { Button("Retry preview") { retry += 1 } }
-    }
-    .task(id: loadKey) {
-      guard loadsContent else { return }
-      let key = loadKey
-      do {
-        let value = try await viewer.card(resource, thumbnail: layout != .header)
-        guard !Task.isCancelled else { return }
-        prepared = Prepared(
-          key: key, card: value, picture: value.thumbnail.flatMap(UIImage.init(data:)), error: nil)
-      } catch {
-        guard !Task.isCancelled else { return }
-        if let status = MessageArtifactStore.cardStatus(for: error) {
-          prepared = Prepared(key: key, card: nil, picture: nil, error: status, unavailable: true)
-        } else {
-          prepared = Prepared(
-            key: key, card: nil, picture: nil,
-            error: ChatRequestFailure.isTransient(error)
-              ? String(localized: "Tap to load preview")
-              : MessageArtifactStore.message(for: error))
-        }
-      }
+      if error != nil, let retry { Button("Retry preview", action: retry) }
     }
   }
 }

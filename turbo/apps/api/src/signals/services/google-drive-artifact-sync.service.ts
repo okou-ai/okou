@@ -44,6 +44,7 @@ import { and, eq, isNull } from "drizzle-orm";
 import {
   array,
   boolean,
+  enum as zEnum,
   record,
   string,
   object as zObject,
@@ -52,6 +53,7 @@ import {
 } from "zod";
 
 import { env, optionalEnv } from "../../lib/env";
+import { logger } from "../../lib/log";
 import {
   badRequestMessage,
   isBadRequestResponse,
@@ -66,6 +68,8 @@ import { downloadHostedSitesS3Buffer, downloadS3Buffer } from "../external/s3";
 import {
   createDeferredPromise,
   onRejection,
+  readBoundedResponseText,
+  safeJsonParse,
   safeSync,
   settle,
   tapError,
@@ -95,6 +99,8 @@ import {
   artifactGoogleDriveAccount$,
 } from "./artifact-google-drive-authorization.service";
 
+const log = logger("api:google-drive-artifact-sync");
+
 const GOOGLE_DRIVE_FILES_URL = "https://www.googleapis.com/drive/v3/files";
 const GOOGLE_DRIVE_UPLOAD_URL =
   "https://www.googleapis.com/upload/drive/v3/files";
@@ -119,6 +125,27 @@ const driveFileSchema = zObject({
   mimeType: string().optional(),
 });
 const driveFileListSchema = zObject({ files: array(driveFileSchema) });
+const driveErrorDetailSchema = zObject({ reason: zUnknown().optional() });
+const workspaceImportErrorResponseSchema = zObject({
+  error: zObject({
+    errors: array(driveErrorDetailSchema).optional(),
+    details: array(driveErrorDetailSchema).optional(),
+  }),
+});
+const driveErrorReasonSchema = zEnum([
+  "authError",
+  "badRequest",
+  "invalid",
+  "dailyLimitExceeded",
+  "domainPolicy",
+  "insufficientFilePermissions",
+  "insufficientPermissions",
+  "rateLimitExceeded",
+  "userRateLimitExceeded",
+  "backendError",
+  "notFound",
+  "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+]);
 
 interface DriveSyncResult {
   readonly id: string;
@@ -1574,14 +1601,50 @@ type SlidesTargetResolution =
   | { readonly kind: "target"; readonly mimeType: string | undefined }
   | { readonly kind: "rejected"; readonly response: BadRequestResponse };
 
+async function readWorkspaceImportErrorReasons(
+  response: Response,
+  signal: AbortSignal,
+): Promise<readonly string[]> {
+  // Diagnostics must not wait indefinitely after Drive has already rejected the lookup.
+  const readSignal = AbortSignal.any([signal, AbortSignal.timeout(1000)]);
+  const body = await settle(
+    readBoundedResponseText(response, 16 * 1024, readSignal),
+    signal,
+  );
+  const parsed = workspaceImportErrorResponseSchema.safeParse(
+    body.ok && body.value.kind === "text"
+      ? safeJsonParse(body.value.text)
+      : undefined,
+  );
+  if (!parsed.success) {
+    return ["unavailable"];
+  }
+
+  // Provider messages, locations and unknown reason values can contain secrets.
+  const reasons = new Set(
+    [
+      ...(parsed.data.error.errors ?? []),
+      ...(parsed.data.error.details ?? []),
+    ].map((detail) => {
+      if (detail.reason === undefined) {
+        return "unavailable";
+      }
+      const reason = driveErrorReasonSchema.safeParse(detail.reason);
+      return reason.success ? reason.data : "unrecognized";
+    }),
+  );
+  return reasons.size > 0 ? [...reasons] : ["unavailable"];
+}
+
 /** Reuse an existing editable copy after a retry or a stale preview refresh. */
 async function findWorkspaceImport(
   args: {
     readonly accessToken: string;
     readonly fileId: string;
     readonly target: GoogleWorkspaceTarget;
+    readonly attempt: "initial" | "after_refresh";
   },
-  _signal: AbortSignal,
+  signal: AbortSignal,
 ): Promise<
   | DriveTokenResult<zInfer<typeof driveFileSchema> | null>
   | { readonly type: "unavailable"; readonly httpStatus: number }
@@ -1605,6 +1668,7 @@ async function findWorkspaceImport(
     accept(
       fetch(url, {
         headers: { Authorization: `Bearer ${args.accessToken}` },
+        signal,
       }),
       [200],
     ),
@@ -1624,6 +1688,11 @@ async function findWorkspaceImport(
     return { type: "unauthorized" };
   }
   if (!response.ok) {
+    log.warn("Google Drive previous conversion lookup failed", {
+      providerStatus: response.status,
+      providerReasons: await readWorkspaceImportErrorReasons(response, signal),
+      attempt: args.attempt,
+    });
     return { type: "unavailable", httpStatus: response.status };
   }
   const files = driveFileListSchema.parse(await response.json()).files;
@@ -1997,7 +2066,11 @@ const reuseWorkspaceImport$ = command(
       target: conversionTarget,
     };
     let previous = await findWorkspaceImport(
-      { ...lookupArgs, accessToken: uploadTokens.accessToken },
+      {
+        ...lookupArgs,
+        accessToken: uploadTokens.accessToken,
+        attempt: "initial",
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -2020,7 +2093,11 @@ const reuseWorkspaceImport$ = command(
       }
       uploadTokens = { ...tokens, accessToken: refreshed.accessToken };
       previous = await findWorkspaceImport(
-        { ...lookupArgs, accessToken: uploadTokens.accessToken },
+        {
+          ...lookupArgs,
+          accessToken: uploadTokens.accessToken,
+          attempt: "after_refresh",
+        },
         signal,
       );
       signal.throwIfAborted();

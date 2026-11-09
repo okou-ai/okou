@@ -144,7 +144,11 @@ function printComputerUseAuthorizationLink(args: {
   );
 }
 
-async function printComputerUsePermissionRequestMessage(): Promise<void> {
+async function printComputerUsePermissionRequestMessage(
+  callbackPrompt: string | undefined,
+  agentId: string | undefined,
+): Promise<void> {
+  finalizeActionUrl(new URL("https://app.okou.ai"), callbackPrompt, agentId);
   if (!getOkouToken()) {
     printComputerUsePermissionGuidance();
     return;
@@ -153,9 +157,14 @@ async function printComputerUsePermissionRequestMessage(): Promise<void> {
   try {
     const request = await createComputerUseAuthorizationRequest();
     printComputerUseAuthorizationLink({
-      authorizationUrl: request.authorizationUrl,
+      authorizationUrl: finalizeActionUrl(
+        new URL(request.authorizationUrl),
+        callbackPrompt,
+        agentId,
+      ),
       expiresAt: request.expiresAt,
     });
+    if (callbackPrompt !== undefined) printCallbackTurnInstruction();
   } catch (error) {
     if (error instanceof ApiRequestError) {
       console.log(
@@ -186,14 +195,26 @@ function printBrowserAuthorizationLink(args: {
   );
 }
 
-async function printBrowserPermissionRequestMessage(): Promise<void> {
+async function printBrowserPermissionRequestMessage(
+  callbackPrompt: string | undefined,
+  agentId: string | undefined,
+): Promise<void> {
+  finalizeActionUrl(new URL("https://app.okou.ai"), callbackPrompt, agentId);
   if (!getOkouToken()) {
     printBrowserPermissionGuidance();
     return;
   }
   try {
     const request = await createBrowserAuthorizationRequest();
-    printBrowserAuthorizationLink(request);
+    printBrowserAuthorizationLink({
+      ...request,
+      authorizationUrl: finalizeActionUrl(
+        new URL(request.authorizationUrl),
+        callbackPrompt,
+        agentId,
+      ),
+    });
+    if (callbackPrompt !== undefined) printCallbackTurnInstruction();
   } catch (error) {
     if (error instanceof ApiRequestError) {
       console.log(
@@ -247,7 +268,7 @@ const callbackPromptExample = callbackPromptAvailable
   ? '  okou connector permission-request github --permission contents:write --url https://api.github.com/repos/okou-ai/okou --method POST --callback-prompt "Re-check the permission, then continue the previous task"\n'
   : "";
 const callbackPromptNotes = callbackPromptAvailable
-  ? `  - Use --callback-prompt for one single permission action or one batch link covering this turn's permissions\n  - ${CALLBACK_PROMPT_GUIDANCE}\n`
+  ? `  - Use --callback-prompt only for this turn's single access action: one permission, Browser, Computer Use, or one batch permission link\n  - ${CALLBACK_PROMPT_GUIDANCE}\n`
   : "";
 
 export const permissionRequestCommand = addAwsDiagnosticOptions(
@@ -454,12 +475,10 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
             permission: opts.permission,
           })
         ) {
-          if (opts.callbackPrompt !== undefined) {
-            throw new Error(
-              "--callback-prompt is not supported for cloud browser authorization requests",
-            );
-          }
-          await printBrowserPermissionRequestMessage();
+          await printBrowserPermissionRequestMessage(
+            opts.callbackPrompt,
+            agentId,
+          );
           return;
         }
         if (
@@ -468,12 +487,10 @@ accounts never resets permissions. Browser/Computer Use consent remains separate
             permission: opts.permission,
           })
         ) {
-          if (opts.callbackPrompt !== undefined) {
-            throw new Error(
-              "--callback-prompt is not supported for Computer Use authorization requests",
-            );
-          }
-          await printComputerUsePermissionRequestMessage();
+          await printComputerUsePermissionRequestMessage(
+            opts.callbackPrompt,
+            agentId,
+          );
           return;
         }
 

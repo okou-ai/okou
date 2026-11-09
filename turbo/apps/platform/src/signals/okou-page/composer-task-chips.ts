@@ -121,7 +121,11 @@ export function createComposerTaskChipsSignals(
    * footer chip and the composer's Backspace clear the same way.
    */
   const selectTask$ = command(({ get, set }, task: ComposerTask | null) => {
-    set(applyTask$, get(task$) === task ? null : task);
+    const nextTask = get(task$) === task ? null : task;
+    if (nextTask === null) {
+      set(workflowActions.clearPrompt$);
+    }
+    set(applyTask$, nextTask);
   });
   /**
    * Opens a task without the chip's toggle. A caller outside the row states

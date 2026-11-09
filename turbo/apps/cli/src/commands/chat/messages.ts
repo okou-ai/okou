@@ -33,6 +33,7 @@ Examples:
 Notes:
   - --output-dir is required and receives grep-friendly raw history files
   - Chat history files are temporary caches. Store them under /tmp, outside personal memory. If removed, synchronize again.
+  - An --output-dir inside the agent memory directory is rejected, because every run saves that directory as memory
   - Repeated synchronization resumes from the latest local sequence ID
   - Reads a thread the current user owns, including one another agent run wrote into
   - This is a point-in-time read/sync. Repeated calls are polling; they do not wait for a run or emit terminal completion

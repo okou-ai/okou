@@ -7,6 +7,10 @@ import { now } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { detach, Reason, resetSignal } from "../utils.ts";
+import {
+  authorizationChatCallback,
+  runAuthorizationChatCallback$,
+} from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
 
@@ -41,6 +45,7 @@ export function createDesktopShellAuthorizationSignals(
     if (result.status !== 200) {
       return null;
     }
+    authorizationChatCallback(descriptor.originalUrl, result.body.chatThreadId);
     return threadId === undefined || result.body.chatThreadId === threadId
       ? result.body
       : null;
@@ -101,7 +106,7 @@ export function createDesktopShellAuthorizationSignals(
   });
   const act$ = command(
     async (
-      { get },
+      { get, set },
       action: "approve" | "deny" | "revoke",
       signal: AbortSignal,
     ) => {
@@ -118,9 +123,20 @@ export function createDesktopShellAuthorizationSignals(
           fetchOptions: { signal },
         }),
         [200],
+        signal,
       );
-      signal.throwIfAborted();
-      return result.body;
+      set(refresh$);
+      if (action === "approve" && result.body.status === "approved") {
+        await set(
+          runAuthorizationChatCallback$,
+          {
+            originalUrl: descriptor.originalUrl,
+            chatThreadId: request.chatThreadId,
+            authorizationId: request.id,
+          },
+          signal,
+        );
+      }
     },
   );
   const invalidate$ = command(({ set }) => {
@@ -155,7 +171,7 @@ export function createDesktopShellAuthorizationCardSignalsRegistry(
 ) {
   return createCardSignalsRegistry(
     (descriptor: DesktopShellAuthorizationDescriptor) => {
-      return descriptor.id;
+      return descriptor.originalUrl;
     },
     (descriptor) => {
       return createDesktopShellAuthorizationSignals(descriptor, threadId);

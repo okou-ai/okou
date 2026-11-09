@@ -259,9 +259,17 @@ export function ComputerUseAuthorizationPage() {
                 <HostOption
                   key={host.id}
                   host={host}
-                  disabled={applying || completed}
+                  disabled={
+                    applying ||
+                    (completed &&
+                      (applyLoadable.state !== "hasError" ||
+                        selectedHostId !== host.id))
+                  }
                   applying={applying}
-                  applied={selectedHostId === host.id}
+                  applied={
+                    selectedHostId === host.id &&
+                    applyLoadable.state !== "hasError"
+                  }
                   onAuthorize={() => {
                     detach(
                       applyAuthorization(host, pageSignal),
@@ -272,6 +280,16 @@ export function ComputerUseAuthorizationPage() {
               );
             })}
           </div>
+        )}
+
+        {applyLoadable.state === "hasError" && (
+          <p className="text-sm text-destructive" role="alert">
+            {t(($) => {
+              return completed
+                ? $.authorization.callbackFailed
+                : $.authorization.computerUse.actionFailed;
+            })}
+          </p>
         )}
 
         <div className="flex flex-col gap-3 border-t border-border pt-5">

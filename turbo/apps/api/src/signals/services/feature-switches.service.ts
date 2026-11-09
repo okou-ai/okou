@@ -2,11 +2,9 @@ import { computerUseCommands } from "@okouai/db/schema/computer-use-host";
 import { command, computed, type Computed } from "ccstate";
 import {
   getAllFeatureStates,
-  isFeatureEnabled,
   type FeatureSwitchContext,
 } from "@okouai/core/feature-switch";
 import { userFeatureSwitches } from "@okouai/db/schema/user-feature-switches";
-import { backgroundJobs } from "@okouai/db/schema/background-job";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
 import { db$, writeDb$ } from "../external/db";
@@ -155,28 +153,6 @@ const retireQueuedShellCommands$ = command(
   },
 );
 
-const cancelPendingBusyRetries$ = command(
-  async ({ set }, identity: UserFeatureSwitchIdentity, signal: AbortSignal) => {
-    const cancelledAt = nowDate();
-    await set(writeDb$)
-      .update(backgroundJobs)
-      .set({
-        status: "cancelled",
-        completedAt: cancelledAt,
-        updatedAt: cancelledAt,
-      })
-      .where(
-        and(
-          eq(backgroundJobs.kind, FeatureSwitchKey.AutoContinueBusyChats),
-          eq(backgroundJobs.orgId, identity.orgId),
-          eq(backgroundJobs.userId, identity.userId),
-          eq(backgroundJobs.status, "pending"),
-        ),
-      );
-    signal.throwIfAborted();
-  },
-);
-
 export const updateUserFeatureSwitches$ = command(
   async (
     { set },
@@ -224,9 +200,6 @@ export const updateUserFeatureSwitches$ = command(
     if (args.switches[FeatureSwitchKey.DesktopShell] === false) {
       await set(retireQueuedShellCommands$, args, signal);
     }
-    if (args.switches[FeatureSwitchKey.AutoContinueBusyChats] === false) {
-      await set(cancelPendingBusyRetries$, args, signal);
-    }
     const context = await set(
       loadUserFeatureSwitchContext$,
       args.orgId,
@@ -271,8 +244,5 @@ export const deleteUserFeatureSwitches$ = command(
       .where(and(orgCondition, eq(userFeatureSwitches.switches, {})));
     signal.throwIfAborted();
     await set(retireQueuedShellCommands$, args, signal);
-    if (!isFeatureEnabled(FeatureSwitchKey.AutoContinueBusyChats, args)) {
-      await set(cancelPendingBusyRetries$, args, signal);
-    }
   },
 );

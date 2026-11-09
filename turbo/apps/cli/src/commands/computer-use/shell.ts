@@ -1,4 +1,9 @@
 import { stripVTControlCharacters } from "node:util";
+import { getOkouAgentId } from "../../lib/okou-env";
+import {
+  finalizeActionUrl,
+  printCallbackTurnInstruction,
+} from "../connector/action-url";
 import { Command } from "commander";
 import {
   desktopShellRequestSchema,
@@ -186,7 +191,7 @@ An observation returning running is not command completion. Never replay uncerta
 Use the returned nextCursor to observe more output. list/status do not renew the 15-minute idle timer.
 Output and background jobs do not prevent idle closure. Desktop Stop, logout and Shell Access off close sessions.
 All Shell operations also require one-hour approval for this chat and computer.
-Use request-access, share its link, and end this Run. Approval starts the next chat round.
+Use request-access, share its link, and end this Run. Add --callback-prompt only when Shell approval is the only access action in this turn; approval then starts the next round.
 Expiry or revocation blocks new operations without closing PTYs; existing idle cleanup still applies.
 
 Examples:
@@ -208,13 +213,35 @@ Examples:
           "--reason <text>",
           "Why the current task needs terminal access",
         )
+        .option(
+          "--callback-prompt <prompt>",
+          "Continue this web chat after approval when this is the turn's only access action",
+        )
         .option("--json", "Structured application and authorization state")
         .action(
           withErrorHandler(
-            async (options: { reason: string; json?: boolean }) => {
-              const result = await requestDesktopShellAccess(
+            async (options: {
+              reason: string;
+              json?: boolean;
+              callbackPrompt?: string;
+            }) => {
+              // Validate callback context before creating a request.
+              finalizeActionUrl(
+                new URL("https://app.okou.ai"),
+                options.callbackPrompt,
+                getOkouAgentId(),
+              );
+              const requested = await requestDesktopShellAccess(
                 options.reason,
               ).catch(throwShellAuthorizationGuidanceError);
+              const result = {
+                ...requested,
+                authorizationUrl: finalizeActionUrl(
+                  new URL(requested.authorizationUrl),
+                  options.callbackPrompt,
+                  getOkouAgentId(),
+                ),
+              };
               if (options.json) {
                 console.log(JSON.stringify(result));
                 return;
@@ -229,6 +256,8 @@ Examples:
                 `Shell access request for ${result.computerName}: ${result.status}`,
               );
               console.log(result.authorizationUrl);
+              if (options.callbackPrompt !== undefined)
+                printCallbackTurnInstruction();
               if (result.status !== "pending") {
                 console.log(
                   "This request is closed and grants no Shell access. End this Run; request access from a new chat round if the task still needs it.",

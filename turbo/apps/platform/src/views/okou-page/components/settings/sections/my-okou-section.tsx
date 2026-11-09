@@ -1,27 +1,29 @@
-import { DetailPageShell } from "./components/detail-page-layout.tsx";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Button } from "@okouai/ui";
-import { myOkouSignals$, type MyOkouSignals } from "../signals/my-okou.ts";
-import { pageSignal$ } from "../signals/page-signal.ts";
-import { detach, Reason } from "../signals/utils.ts";
-import { TiptapInstructionsEditor } from "./okou-page/tiptap-instructions-editor.tsx";
-import { UnsavedBar } from "./okou-page/unsaved-bar.tsx";
-import { AvatarFromUrl } from "./okou-page/sidebar-shared.tsx";
-import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
-import { InstructionsConflict } from "./okou-page/instructions-conflict.tsx";
+import {
+  myOkouSignals$,
+  myOkouSectionRef$,
+  type MyOkouSignals,
+} from "../../../../../signals/my-okou.ts";
+import { settingsActionSignal$ } from "../../../../../signals/okou-page/settings/settings-dialog.ts";
+import { detach, Reason } from "../../../../../signals/utils.ts";
+import { TiptapInstructionsEditor } from "../../../tiptap-instructions-editor.tsx";
+import { UnsavedBar } from "../../../unsaved-bar.tsx";
+import { InstructionsConflict } from "../../../instructions-conflict.tsx";
 
-export function MyOkouPage() {
+export function MyOkouSection() {
   const signals = useLoadable(myOkouSignals$);
+  const sectionRef = useSet(myOkouSectionRef$);
   return (
-    <DetailPageShell>
+    <section ref={sectionRef}>
       {signals.state === "hasData" ? (
         <PersonalInstructions signals={signals.data} />
       ) : (
         <LoadingInstructions />
       )}
-    </DetailPageShell>
+    </section>
   );
 }
 
@@ -39,65 +41,24 @@ function PersonalInstructions({
   const { t } = useTranslation();
   const saved = useLastLoadable(signals.saved$);
   const draft = useGet(signals.draft$);
-  const revision = useGet(signals.revision$);
   const saveConflict = useGet(signals.conflict$);
   const conflict =
     saveConflict ||
     (draft !== null &&
       saved.state === "hasData" &&
       draft.version !== saved.data.version);
-  const edit = useSet(signals.edit$);
   const discard = useSet(signals.discard$);
-  const retry = useSet(signals.retry$);
-  const signal = useGet(pageSignal$);
+  const signal = useGet(settingsActionSignal$);
   const [result, save] = useLoadableSet(signals.save$);
   const [reloadResult, reloadLatest] = useLoadableSet(signals.reloadLatest$);
   const saving = result.state === "loading" || reloadResult.state === "loading";
   const dirty = draft !== null;
-  const content =
-    draft?.content ?? (saved.state === "hasData" ? saved.data.content : "");
+  if (!signal) {
+    return null;
+  }
   return (
-    <main className="mx-auto w-full max-w-[964px] px-4 pt-8 pb-32 sm:px-8 sm:pt-12">
-      <MyOkouHeader />
-      {saved.state === "loading" ? (
-        <LoadingInstructions />
-      ) : saved.state === "hasError" ? (
-        <div role="alert" className="space-y-3 text-sm text-destructive">
-          <p>
-            {t(($) => {
-              return $.myOkou.loadError;
-            })}
-          </p>
-          <Button
-            variant="outline"
-            onClick={() => {
-              retry();
-            }}
-          >
-            {t(($) => {
-              return $.myOkou.retry;
-            })}
-          </Button>
-        </div>
-      ) : (
-        <TiptapInstructionsEditor
-          key={`${revision}:${draft?.version ?? saved.data.version}`}
-          initialContent={content}
-          onChange={(value) => {
-            edit(value, saved.data);
-          }}
-          disabled={saving}
-          ariaLabel={t(($) => {
-            return $.myOkou.instructions;
-          })}
-          placeholder={t(($) => {
-            return $.myOkou.placeholder;
-          })}
-          footerHint={t(($) => {
-            return $.myOkou.markdown;
-          })}
-        />
-      )}
+    <div className="flex flex-col">
+      <PersonalInstructionsEditor signals={signals} disabled={saving} />
       {draft !== null &&
         (result.state === "hasError" || reloadResult.state === "hasError") && (
           <p role="alert" className="mt-3 text-sm text-destructive">
@@ -117,9 +78,9 @@ function PersonalInstructions({
       <InstructionsHints dirty={dirty} />
       {(dirty || saving) && (
         <UnsavedBar
+          pinning="scrollport"
           saving={saving}
           saveDisabled={conflict || saved.state !== "hasData"}
-          saveClassName="bg-foreground text-background hover:bg-foreground/90"
           onDiscard={() => {
             if (conflict) {
               detach(reloadLatest(signal), Reason.DomCallback);
@@ -147,33 +108,66 @@ function PersonalInstructions({
           })}
         />
       )}
-    </main>
+    </div>
   );
 }
 
-function MyOkouHeader() {
+function PersonalInstructionsEditor({
+  signals,
+  disabled,
+}: {
+  readonly signals: MyOkouSignals;
+  readonly disabled: boolean;
+}) {
   const { t } = useTranslation();
+  const saved = useLastLoadable(signals.saved$);
+  const draft = useGet(signals.draft$);
+  const revision = useGet(signals.revision$);
+  const edit = useSet(signals.edit$);
+  const retry = useSet(signals.retry$);
+  const content =
+    draft?.content ?? (saved.state === "hasData" ? saved.data.content : "");
   return (
     <>
-      <header className="mb-8 flex items-center gap-4">
-        <AvatarFromUrl
-          avatarUrl={DEFAULT_AGENT_AVATAR_URL}
-          alt=""
-          className="h-14 w-14 rounded-xl object-cover object-top"
-        />
-        <div>
-          <h1 className="text-2xl font-semibold text-foreground">
+      {saved.state === "loading" ? (
+        <LoadingInstructions />
+      ) : saved.state === "hasError" ? (
+        <div role="alert" className="space-y-3 text-sm text-destructive">
+          <p>
             {t(($) => {
-              return $.myOkou.title;
-            })}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t(($) => {
-              return $.myOkou.description;
+              return $.myOkou.loadError;
             })}
           </p>
+          <Button
+            variant="outline"
+            onClick={() => {
+              retry();
+            }}
+          >
+            {t(($) => {
+              return $.myOkou.retry;
+            })}
+          </Button>
         </div>
-      </header>
+      ) : (
+        <TiptapInstructionsEditor
+          key={`${revision}:${draft?.version ?? saved.data.version}`}
+          initialContent={content}
+          onChange={(value) => {
+            edit(value, saved.data);
+          }}
+          disabled={disabled}
+          ariaLabel={t(($) => {
+            return $.myOkou.instructions;
+          })}
+          placeholder={t(($) => {
+            return $.myOkou.placeholder;
+          })}
+          footerHint={t(($) => {
+            return $.myOkou.markdown;
+          })}
+        />
+      )}
     </>
   );
 }

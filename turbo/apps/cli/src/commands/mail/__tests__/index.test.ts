@@ -359,8 +359,8 @@ describe("okou mail", () => {
     expect(Array.from(reviewUrl.searchParams.entries())).toStrictEqual([
       ["source", "gmail"],
       ["agentId", AGENT_ID],
-      ["threadId", THREAD_ID],
       ["callbackPrompt", "Confirm the email was sent"],
+      ["threadId", THREAD_ID],
     ]);
     expect(output).toContain("end the current turn");
     expect(output).toContain("exact callback URL above verbatim");

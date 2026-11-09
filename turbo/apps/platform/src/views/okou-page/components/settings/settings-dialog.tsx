@@ -23,6 +23,7 @@ import {
   MessageCircle,
   ReceiptText,
   SlidersHorizontal,
+  UserRound,
   Users,
   Wrench,
   Wallet,
@@ -56,6 +57,7 @@ import { PeopleSection } from "./sections/people-section.tsx";
 import { PreferenceSection } from "./sections/preference-section.tsx";
 import { WalletSection } from "./sections/wallet-section.tsx";
 import { UsageRecordsSection } from "./sections/usage-records-section.tsx";
+import { MyOkouSection } from "./sections/my-okou-section.tsx";
 
 type NavIcon = (props: { size?: number; className?: string }) => ReactNode;
 
@@ -78,6 +80,7 @@ interface SidebarGroup {
 
 const SECTION_COMPONENTS = {
   preference: PreferenceSection,
+  "my-okou": MyOkouSection,
   chat: ChatSection,
   tools: ToolsSection,
   model: ModelSection,
@@ -157,8 +160,17 @@ function SettingsDialog({
   const isAdmin =
     isAdminLoadable.state === "hasData" ? isAdminLoadable.data : false;
   const showDebug = features[FeatureSwitchKey.OkouDebug] ?? false;
+  const singleAgent = features[FeatureSwitchKey.SingleAgent];
 
   const sectionMeta = {
+    "my-okou": {
+      title: t(($) => {
+        return $.myOkou.title;
+      }),
+      description: t(($) => {
+        return $.myOkou.description;
+      }),
+    },
     preference: {
       title: t(($) => {
         return $.settings.dialog.sections.preference.title;
@@ -263,6 +275,11 @@ function SettingsDialog({
       icon: SlidersHorizontal,
     },
     {
+      id: "my-okou",
+      label: sectionMeta["my-okou"].title,
+      icon: UserRound,
+    },
+    {
       id: "chat",
       label: sectionMeta.chat.title,
       icon: MessageCircle,
@@ -273,13 +290,21 @@ function SettingsDialog({
       icon: Wrench,
     },
     { id: "debug", label: sectionMeta.debug.title, icon: Bug },
+    {
+      id: "wallet",
+      label: sectionMeta.wallet.title,
+      icon: Wallet,
+    },
   ];
   const personalGroup: SidebarGroup = {
     label: t(($) => {
       return $.settings.dialog.groups.personal;
     }),
     items: personalItems.filter((item) => {
-      return item.id !== "debug" || showDebug;
+      return (
+        (item.id !== "debug" || showDebug) &&
+        (item.id !== "my-okou" || singleAgent)
+      );
     }),
   };
   const workspaceGroup: SidebarGroup = {
@@ -330,11 +355,6 @@ function SettingsDialog({
             },
           ]
         : []),
-      {
-        id: "wallet" as const,
-        label: sectionMeta.wallet.title,
-        icon: Wallet,
-      },
     ],
   };
   const sidebarGroups: readonly SidebarGroup[] = [
@@ -353,6 +373,7 @@ function SettingsDialog({
   // If the user lost admin while the dialog is open, fall back to a safe section
   const availableSection = resolveAvailableSettingsSection(activeSection, {
     isAdmin,
+    singleAgent,
   });
   const resolvedSection: SettingsSection =
     !showDebug && availableSection === "debug"

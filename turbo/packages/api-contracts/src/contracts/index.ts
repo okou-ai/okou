@@ -1486,4 +1486,8 @@ export { iosPushRegistrationsContract } from "./ios-push-registrations";
 export { iosNotificationsContract } from "./ios-notifications";
 export { runConnectorAccountsContract } from "./run-connector-accounts";
 
-export { integrationsEmailContract } from "./integrations-email";
+export {
+  integrationsEmailContract,
+  integrationsEmailUploadContract,
+  MAX_EMAIL_ATTACHMENT_SIZE_BYTES,
+} from "./integrations-email";

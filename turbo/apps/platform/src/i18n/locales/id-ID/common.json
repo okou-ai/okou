@@ -964,8 +964,7 @@
       "actionFailed": "Tidak dapat melanjutkan.",
       "allow": "Izinkan",
       "allowed": "Diizinkan",
-      "callbackPrompt": "Browser cloud telah diaktifkan. Silakan lanjutkan tugas sebelumnya.",
-      "cardDescription": "Aktifkan browser cloud untuk chat ini dan lanjutkan secara otomatis. Ini memutus akses komputer.",
+      "cardDescription": "Gunakan browser cloud untuk chat ini. Ini memutuskan Computer Use.",
       "description": "{{assistantName}} akan menggunakan profil browser cloud terisolasi untuk thread chat ini. Mengaktifkannya akan memutus Computer Use untuk thread ini.",
       "enable": "Aktifkan untuk thread ini",
       "enabled": "Browser cloud diaktifkan",
@@ -974,8 +973,9 @@
       "unavailableDescription": "Tautan otorisasi browser cloud ini tidak valid, kedaluwarsa, atau tidak tersedia untuk ruang kerja ini.",
       "unavailableTitle": "Tautan otorisasi tidak tersedia"
     },
+    "callbackFailed": "Akses diaktifkan, tetapi percakapan tidak dapat dilanjutkan. Coba lagi.",
     "computerUse": {
-      "actionFailed": "Tidak dapat mengizinkan komputer ini. Muat ulang obrolan untuk mencoba lagi.",
+      "actionFailed": "Komputer ini tidak dapat diotorisasi. Coba lagi.",
       "authorize": "Otorisasi",
       "authorized": "Diotorisasi",
       "authorizedDescription": "Akses komputer diaktifkan untuk proses berikutnya dalam obrolan ini.",
@@ -5857,6 +5857,16 @@
           "stores": "penyimpanan objek",
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
+        },
+        "learning": {
+          "description": "Tinjau aktivitas terbaru dan perbarui memori pribadi sekali. Jadwal malam Anda tetap sama.",
+          "notInstalled": "Aktifkan pembelajaran di Preferensi sebelum menjalankannya di sini.",
+          "queued": "Pembelajaran masuk antrean.",
+          "requestFailed": "Permintaan belum dapat dikonfirmasi.",
+          "run": "Jalankan pembelajaran",
+          "starting": "Memulai…",
+          "title": "Pembelajaran",
+          "unavailable": "Pembelajaran saat ini tidak tersedia."
         },
         "morningBrief": {
           "description": "Jalankan sekali alur kerja yang aktif di akunmu. Ini dapat memperbarui saran dan mengirim email sungguhan. Jadwal harianmu tidak berubah.",

@@ -966,8 +966,7 @@
       "actionFailed": "Couldn't continue.",
       "allow": "Allow",
       "allowed": "Allowed",
-      "callbackPrompt": "The cloud browser is enabled. Please continue the previous task.",
-      "cardDescription": "Use a cloud browser for this chat and continue automatically. This disconnects Computer Use.",
+      "cardDescription": "Use a cloud browser for this chat. This disconnects Computer Use.",
       "description": "{{assistantName}} will use an isolated cloud browser profile for this chat thread. Enabling it disconnects Computer Use for the thread.",
       "enable": "Enable for this thread",
       "enabled": "Cloud browser enabled",
@@ -976,8 +975,9 @@
       "unavailableDescription": "This cloud browser authorization link is invalid, expired, or not available for this workspace.",
       "unavailableTitle": "Authorization link unavailable"
     },
+    "callbackFailed": "Access enabled, but the conversation could not continue. Try again.",
     "computerUse": {
-      "actionFailed": "Could not authorize this computer. Refresh the chat to try again.",
+      "actionFailed": "Could not authorize this computer. Try again.",
       "authorize": "Authorize",
       "authorized": "Authorized",
       "authorizedDescription": "Computer access enabled for future runs in this chat.",
@@ -5874,6 +5874,16 @@
           "stores": "object stores",
           "title": "IndexedDB storage",
           "unavailable": "IndexedDB storage is unavailable."
+        },
+        "learning": {
+          "description": "Review recent activity and update your personal memory once. Your nightly schedule stays unchanged.",
+          "notInstalled": "Enable Learning in Preferences before running it here.",
+          "queued": "Learning queued.",
+          "requestFailed": "The request could not be confirmed.",
+          "run": "Run learning",
+          "starting": "Starting…",
+          "title": "Learning",
+          "unavailable": "Learning is unavailable right now."
         },
         "morningBrief": {
           "description": "Run Morning Brief once using your account’s enabled workflow. This can update suggestions and send a real email. Your daily schedule stays unchanged.",

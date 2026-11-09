@@ -277,15 +277,20 @@ const REFERENCED_THREAD = {
 } as const;
 interface SentInput {
   readonly threadId?: string;
+  readonly title?: string;
   readonly userMessage?: UserMessageDocument;
 }
 // Resolves with the chat input home sends while the page stays in place.
 function captureSend(): Promise<SentInput> {
   const sent = context.mocks.deferred<SentInput>();
+  let title: string | undefined;
   mockChatLifecycle(context, {
+    onThreadCreate: (body) => {
+      title = body.title;
+    },
     onSendRequest: ({ threadId: sentThreadId, userMessage }) => {
       if (!sent.settled()) {
-        sent.resolve({ threadId: sentThreadId, userMessage });
+        sent.resolve({ threadId: sentThreadId, title, userMessage });
       }
     },
   });
@@ -742,7 +747,9 @@ test("Choosing an action sends it to a new thread and keeps home and its draft",
       { id: suggestion.id, optionId: selected.id },
     ]);
   });
-  const { threadId: sentThreadId, userMessage: message } = await sent;
+  const { threadId: sentThreadId, title, userMessage: message } = await sent;
+  expect(title).toBe(suggestion.title);
+  expect(link(`/chats/${sentThreadId}`)).toHaveTextContent(suggestion.title);
   expect(openChatLink()).toHaveAttribute("href", `/chats/${sentThreadId}`);
   expect(message?.parts).toContainEqual(REFERENCED_THREAD);
   expect(JSON.stringify(message)).not.toContain("Unselected action");
@@ -1482,7 +1489,9 @@ test("The custom direction dialog sends the background files without the home dr
   });
   click(button("Send", "button", dialog));
   await screen.findByText(SENT);
-  const message = (await sent).userMessage;
+  const { threadId: sentThreadId, title, userMessage: message } = await sent;
+  expect(title).toBe(suggestion.title);
+  expect(link(`/chats/${sentThreadId}`)).toHaveTextContent(suggestion.title);
   expect(message?.parts).toContainEqual(
     expect.objectContaining({ type: "file", fileId: incoming.id }),
   );

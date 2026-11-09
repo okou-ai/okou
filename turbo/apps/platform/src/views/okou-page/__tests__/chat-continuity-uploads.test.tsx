@@ -1,10 +1,10 @@
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { CLIENT_TYPE_HEADER } from "@okouai/api-contracts/contracts/client-headers";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -49,6 +49,39 @@ function uploadUrl(caseId: number, filename: string): string {
   return `https://uploads.vm7.test/${caseId}/${encodeURIComponent(filename)}`;
 }
 
+function captureStorageTransfers(): XMLHttpRequestUpload[] {
+  const uploads: XMLHttpRequestUpload[] = [];
+  const addListener = XMLHttpRequestUpload.prototype.addEventListener;
+  // MSW wraps upload targets in a proxy whose dispatchEvent is a no-op.
+  vi.spyOn(
+    XMLHttpRequestUpload.prototype,
+    "addEventListener",
+  ).mockImplementation(function (
+    this: XMLHttpRequestUpload,
+    type,
+    listener,
+    options,
+  ) {
+    if (type === "progress") {
+      uploads.push(this);
+    }
+    addListener.call(this, type, listener, options);
+  });
+  return uploads;
+}
+
+function reportSentBytes(
+  upload: XMLHttpRequestUpload,
+  loaded: number,
+  total: number,
+): void {
+  act(() => {
+    upload.dispatchEvent(
+      new ProgressEvent("progress", { loaded, total, lengthComputable: true }),
+    );
+  });
+}
+
 function installSimpleUploads(
   caseId: number,
   captured: Map<string, string>,
@@ -90,7 +123,7 @@ async function setupAttachmentInputMethods() {
   });
   const contentTypes = new Map<string, string>();
   const transferCredentials: {
-    credentials: RequestCredentials;
+    cookie: string | null;
     authorization: string | null;
     clientType: string | null;
     previewBypass: string | null;
@@ -98,7 +131,7 @@ async function setupAttachmentInputMethods() {
   installSimpleUploads(9, contentTypes);
   context.mocks.http.put("https://uploads.vm7.test/9/*", ({ request }) => {
     transferCredentials.push({
-      credentials: request.credentials,
+      cookie: request.headers.get("Cookie"),
       authorization: request.headers.get("Authorization"),
       clientType: request.headers.get(CLIENT_TYPE_HEADER),
       previewBypass: request.headers.get("X-Vercel-Protection-Bypass"),
@@ -129,13 +162,13 @@ test("Attach supported files with the file picker", async () => {
   expect(contentTypes.get("sample.uncommon")).toBe("application/octet-stream");
   expect(transferCredentials).toStrictEqual([
     {
-      credentials: "omit",
+      cookie: null,
       authorization: null,
       clientType: null,
       previewBypass: null,
     },
     {
-      credentials: "omit",
+      cookie: null,
       authorization: null,
       clientType: null,
       previewBypass: null,
@@ -272,6 +305,79 @@ test("Keep successful attachments after another upload fails", async () => {
 
 const PART_BYTES = 5 * 1024 * 1024;
 
+test("Show byte progress while a single PUT is still transferring", async () => {
+  const thread = continuityThread(38, 1, "Single upload progress");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 38,
+    threads: [thread],
+  });
+  const id = uploadId(38, 1);
+  const url = "http://localhost/artifacts/abc123def4.bin";
+  const transferStarted = createDeferredPromise<void>(context.signal);
+  const transferred = createDeferredPromise<void>(context.signal);
+  const finalized = createDeferredPromise<void>(context.signal);
+  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+    expect(body.multipart).toBeUndefined();
+    return respond(200, {
+      id,
+      filename: body.filename,
+      contentType: body.contentType,
+      size: body.size,
+      url,
+      uploadUrl: uploadUrl(38, body.filename),
+      uploadHeaders: {},
+    });
+  });
+  context.mocks.http.put(uploadUrl(38, "single.bin"), async () => {
+    transferStarted.resolve();
+    await transferred.promise;
+    return new HttpResponse(null, { status: 200 });
+  });
+  context.mocks.api(uploadsContract.complete, async ({ respond }) => {
+    await finalized.promise;
+    return respond(200, {
+      id,
+      filename: "single.bin",
+      contentType: "application/octet-stream",
+      size: 4 * 1024 * 1024,
+      url,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+  await messageComposer();
+  const requests = captureStorageTransfers();
+  const bytes = 4 * 1024 * 1024;
+  await userEvent.upload(
+    composerFileInput(),
+    new File([new Uint8Array(bytes)], "single.bin"),
+  );
+  await transferStarted.promise;
+  const progress = await screen.findByRole("progressbar", {
+    name: "Loading single.bin",
+  });
+  expect(progress).toHaveAttribute("aria-valuenow", "0");
+  expect(requests).toHaveLength(1);
+  for (const percent of [25, 50, 75]) {
+    reportSentBytes(requests[0]!, (bytes * percent) / 100, bytes);
+    await waitFor(() => {
+      expect(progress).toHaveAttribute("aria-valuenow", String(percent));
+    });
+  }
+  transferred.resolve();
+  await waitFor(() => {
+    expect(progress).toHaveAttribute("aria-valuenow", "99");
+  });
+  finalized.resolve();
+  await waitFor(() => {
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(fastButton("Remove single.bin")).toBeInTheDocument();
+  });
+});
+
 async function setupMultipartUpload(
   caseId: number,
   complete: () => Promise<void> = async () => {},
@@ -339,6 +445,7 @@ test("Bound concurrent parts and show byte progress until finalization succeeds"
       return new HttpResponse(null, { status: 200 });
     },
   );
+  const requests = captureStorageTransfers();
   await userEvent.upload(
     composerFileInput(),
     new File([new Uint8Array(4 * PART_BYTES + 1)], "recording.mp4", {
@@ -352,9 +459,13 @@ test("Bound concurrent parts and show byte progress until finalization succeeds"
     expect(parts.size).toBe(4);
   });
   expect(progress).toHaveAttribute("aria-valuenow", "0");
+  reportSentBytes(requests[0]!, PART_BYTES / 2, PART_BYTES);
+  await waitFor(() => {
+    expect(progress).toHaveAttribute("aria-valuenow", "12");
+  });
   parts.get(2)?.resolve();
   await waitFor(() => {
-    expect(progress).toHaveAttribute("aria-valuenow", "24");
+    expect(progress).toHaveAttribute("aria-valuenow", "37");
     expect(parts.size).toBe(5);
   });
   for (const [number, part] of parts) {
@@ -371,6 +482,71 @@ test("Bound concurrent parts and show byte progress until finalization succeeds"
     expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
     expect(fastButton("Remove recording.mp4")).toBeInTheDocument();
   });
+});
+
+test("Preserve partial byte progress across a retry without double counting", async () => {
+  await setupMultipartUpload(39);
+  const firstFailed = createDeferredPromise<void>(context.signal);
+  const retryTransferred = createDeferredPromise<void>(context.signal);
+  const otherTransferred = createDeferredPromise<void>(context.signal);
+  const attempts = new Map<string, number>();
+  context.mocks.http.put(
+    "https://uploads.vm7.test/39/part-:part",
+    async ({ params }) => {
+      const part = String(params.part);
+      const attempt = (attempts.get(part) ?? 0) + 1;
+      attempts.set(part, attempt);
+      if (part === "1" && attempt === 1) {
+        await firstFailed.promise;
+        return HttpResponse.error();
+      }
+      await (part === "1"
+        ? retryTransferred.promise
+        : otherTransferred.promise);
+      return new HttpResponse(null, { status: 200 });
+    },
+  );
+  const requests = captureStorageTransfers();
+  await userEvent.upload(
+    composerFileInput(),
+    new File([new Uint8Array(2 * PART_BYTES)], "recording.mp4", {
+      type: "video/mp4",
+    }),
+  );
+  await waitFor(() => {
+    expect(attempts.size).toBe(2);
+  });
+  const progress = await screen.findByRole("progressbar", {
+    name: "Loading recording.mp4",
+  });
+  reportSentBytes(requests[0]!, 2 * 1024 * 1024, PART_BYTES);
+  await waitFor(() => {
+    expect(progress).toHaveAttribute("aria-valuenow", "20");
+  });
+  firstFailed.resolve();
+  await waitFor(() => {
+    expect(attempts.get("1")).toBe(2);
+    expect(requests).toHaveLength(3);
+  });
+  reportSentBytes(requests[2]!, 1024 * 1024, PART_BYTES);
+  expect(progress).toHaveAttribute("aria-valuenow", "20");
+  reportSentBytes(requests[2]!, 3 * 1024 * 1024, PART_BYTES);
+  await waitFor(() => {
+    expect(progress).toHaveAttribute("aria-valuenow", "30");
+  });
+  retryTransferred.resolve();
+  await waitFor(() => {
+    expect(progress).toHaveAttribute("aria-valuenow", "50");
+  });
+  otherTransferred.resolve();
+  await waitFor(() => {
+    expect(fastButton("Remove recording.mp4")).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+  expect(attempts.get("2")).toBe(1);
+  expect(
+    screen.queryByText("Failed to upload recording.mp4."),
+  ).not.toBeInTheDocument();
 });
 
 test("Retry transient part failures without retransferring successful parts", async () => {
