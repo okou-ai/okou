@@ -130,7 +130,7 @@ final class ChatComposerMentionTests: XCTestCase {
     input.unmarkText()
     input.insertText("\n")
     try await waitForBusinessResult { workspace.newChatDraft.contains("研究\n") }
-    XCTAssertFalse(workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" })
+    XCTAssertTrue(workspace.newComposer.document.parts.allSatisfy { $0["type"]?.string == "text" })
     input.insertText("@")
     let target = try XCTUnwrap(
       workspace.mentionTestSource.suggestions(for: "").first {
