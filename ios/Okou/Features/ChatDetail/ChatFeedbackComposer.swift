@@ -108,6 +108,7 @@ struct ChatFeedbackComposer: View {
         focusedBlock = isFocused ? state.editorBlocks.last?.id : nil
       }
       .onChange(of: state.voice?.phase, initial: true) { _, phase in
+        guard phase == state.voice?.phase else { return }
         if phase == .starting || phase == .recording {
           focusedBlock = nil
           isFocused = false
