@@ -112,6 +112,7 @@ async fn decoded_storage_batch_memory_child() {
     result.unwrap();
     let calls = sandbox.storage_manifest_calls();
     assert_complete_delivery(&calls, &expected, b"content");
+    drop(calls);
     eprintln!("aggregate: source bytes={source_bytes}, largest allocation={largest}");
     // Individual requests only, not RSS or an aggregate final-batch bound.
     assert!(
