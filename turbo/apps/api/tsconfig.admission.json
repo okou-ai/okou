@@ -211,7 +211,11 @@
     "src/signals/services/wechat-message-send.service.ts",
     "src/signals/services/wechat-message-identity.ts",
     "src/signals/services/teams-workspace-identity.service.ts",
-    "src/signals/services/teams-delivery-access.service.ts"
+    "src/signals/services/teams-delivery-access.service.ts",
+    "src/signals/services/email-chat-callback-payload.ts",
+    "src/signals/services/email-queued-launch-context.service.ts",
+    "src/signals/services/internal-email-chat-run-callback.service.ts",
+    "src/signals/services/email-channel-delivery.service.ts"
   ],
   "references": [
     {

@@ -8,6 +8,11 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 const ENTRIES = [
   {
+    name: "Email",
+    entry:
+      "/settings/email?message=00000000-0000-4000-8000-000000000001&expires=1784880000&signature=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  },
+  {
     name: "AgentPhone",
     entry:
       "/settings/agentphone?handle=%2B15555550123&agent=agt_test&ts=1784880000&sig=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa&channel=imessage&context=one&context=two",

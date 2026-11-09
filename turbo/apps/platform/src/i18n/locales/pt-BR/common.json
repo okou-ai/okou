@@ -7372,6 +7372,19 @@
       "unconfigured": "O Discord ainda não está configurado para esta organização."
     },
     "documentTitle": "Integrações",
+    "email": {
+      "connected": "E-mail conectado",
+      "description": "Envie um e-mail ao Okou e mantenha cada conversa em seu próprio chat",
+      "healthNotice": "Não use esta integração para informações de pacientes reguladas pela HIPAA.",
+      "instructions": "Envie uma mensagem pelo e-mail da sua conta. Novos e-mails iniciam novos chats; respostas mantêm a mesma conversa. Se você for novo, ajudaremos com o cadastro e continuaremos sua solicitação.",
+      "invalidLink": "Este link de conexão é inválido. Envie um novo e-mail ao Okou.",
+      "loadError": "Não foi possível carregar sua conexão de e-mail",
+      "manage": "Gerenciar",
+      "open": "Abrir e-mail",
+      "resumed": "{{email}} está conectado. Sua solicitação original será respondida na mesma conversa por e-mail.",
+      "title": "E-mail",
+      "unavailable": "O e-mail ainda não está disponível neste espaço de trabalho"
+    },
     "feishuConnected": "Feishu conectado com sucesso",
     "github": {
       "adminInstall": "Peça a um administrador da organização para instalar o app do GitHub",

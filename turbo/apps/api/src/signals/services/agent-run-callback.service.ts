@@ -33,6 +33,7 @@ const INLINE_ONLY_INTEGRATION_DELIVERY_CALLBACK_KINDS = [
   "feishu:chat",
   "teams:chat",
   "telegram:chat",
+  "email:chat",
   "agentphone:chat",
   "github:chat",
   "slack:org",
@@ -96,6 +97,12 @@ const dispatchInternalCallback$ = command(
     signal: AbortSignal,
   ): Promise<InternalRunCallbackDispatchResult> => {
     switch (input.kind) {
+      case "email:chat": {
+        return {
+          success: false,
+          error: "Email chat delivery callbacks are inline-only",
+        };
+      }
       case "agentphone:chat": {
         return {
           success: false,

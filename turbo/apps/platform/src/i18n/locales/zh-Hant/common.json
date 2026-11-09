@@ -7273,6 +7273,19 @@
       "unconfigured": "此組織尚未設定 Discord。"
     },
     "documentTitle": "工作渠道",
+    "email": {
+      "connected": "信箱已連線",
+      "description": "寄信給 Okou，每個郵件會話對應一個獨立對話",
+      "healthNotice": "請勿透過此整合處理受 HIPAA 監管的患者資訊。",
+      "instructions": "從帳戶的信箱地址寄信。新郵件開啟新對話，郵件內的回覆保留上下文。新使用者完成註冊後，我們會繼續處理原始請求。",
+      "invalidLink": "連線連結無效，請重新寄信給 Okou。",
+      "loadError": "無法載入信箱連線",
+      "manage": "管理",
+      "open": "開啟郵件",
+      "resumed": "{{email}} 已連線，原始請求將繼續在同一個郵件會話中回覆。",
+      "title": "郵件",
+      "unavailable": "此工作區尚未開放郵件整合"
+    },
     "feishuConnected": "飛書連線成功",
     "github": {
       "adminInstall": "請組織管理員安裝 GitHub App",

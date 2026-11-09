@@ -1,3 +1,4 @@
+import { integrationsEmailRoutes } from "./routes/integrations-email";
 import { marketingHandoffsRoutes } from "./routes/marketing-handoffs";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
@@ -364,6 +365,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...connectorPermissionsRoutes,
   ...customConnectorsRoutes,
   ...emailInboundRoutes,
+  ...integrationsEmailRoutes,
   ...featureSwitchesRoutes,
   ...featureGuidesRoutes,
   ...hostRoutes,

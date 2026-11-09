@@ -36,6 +36,7 @@ function isInlineOnlyCanonicalDeliveryCallback(
   internalKind: string | null,
 ): boolean {
   return (
+    internalKind === "email:chat" ||
     internalKind === "agentphone:chat" ||
     internalKind === "slack:chat" ||
     internalKind === "wechat:chat" ||

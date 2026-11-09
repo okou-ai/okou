@@ -143,7 +143,7 @@ describe("chat event row context", () => {
     }
     expect(
       chatEventRowSchema.safeParse(
-        projectableRowWith("output.message", { contextType: "email" }),
+        projectableRowWith("output.message", { contextType: "calendar" }),
       ).success,
     ).toBe(false);
   });

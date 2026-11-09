@@ -1,3 +1,4 @@
+import { setupEmailConnectPage$ } from "./okou-page/email-connect-page.ts";
 import {
   captureFriendReferral$,
   registerFriendReferral$,
@@ -450,6 +451,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.telegramConnect,
     setup: setupAuthPageWrapper(setupTelegramConnectPage$),
+  },
+  {
+    path: ROUTES.settingsEmail,
+    setup: setupAuthSidebarPageWrapper(setupEmailConnectPage$),
   },
   {
     path: ROUTES.settingsAgentPhone,

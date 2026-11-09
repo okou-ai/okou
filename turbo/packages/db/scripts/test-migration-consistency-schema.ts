@@ -699,6 +699,7 @@ async function validateChatEventContextPointerConstraints(
       "agentphone",
       "automation",
       "discord",
+      "email",
       "feishu",
       "slack",
       "teams",
@@ -796,6 +797,15 @@ async function validateChatEventContextPointerConstraints(
             '00000000-0000-4000-8000-000000074506',
             '{"userMessage":{"version":1,"parts":[{"type":"text","text":"Discord input"},{"type":"source","kind":"discord"}]}}'::jsonb,
             6
+          ),
+          (
+            '00000000-0000-4000-8000-000000074599',
+            $1,
+            'input.prompt',
+            'email',
+            '00000000-0000-4000-8000-000000074507',
+            '{"userMessage":{"version":1,"parts":[{"type":"text","text":"Email input"}]}}'::jsonb,
+            7
           )
         RETURNING
           "context_type" AS "contextType",
@@ -814,6 +824,10 @@ async function validateChatEventContextPointerConstraints(
       {
         contextId: "00000000-0000-4000-8000-000000074506",
         contextType: "discord",
+      },
+      {
+        contextId: "00000000-0000-4000-8000-000000074507",
+        contextType: "email",
       },
     ]);
 

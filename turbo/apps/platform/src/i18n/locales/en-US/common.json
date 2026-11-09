@@ -7294,6 +7294,19 @@
       "unconfigured": "Discord is not configured for this organization yet."
     },
     "documentTitle": "Works",
+    "email": {
+      "connected": "Email connected",
+      "description": "Email your Okou and keep each conversation in its own thread",
+      "healthNotice": "Do not use this integration for HIPAA-regulated patient information.",
+      "instructions": "Send a message from your account email address. New emails start new chats; replies keep the same conversation. If you are new, we will help you register and continue your request.",
+      "invalidLink": "This connection link is invalid. Send a new email to Okou.",
+      "loadError": "Unable to load your email connection",
+      "manage": "Manage",
+      "open": "Open email",
+      "resumed": "{{email}} is connected. Your original request will be answered in the same email conversation.",
+      "title": "Email",
+      "unavailable": "Email is not available for this workspace yet"
+    },
     "feishuConnected": "Feishu connected successfully",
     "github": {
       "adminInstall": "Ask an organization admin to install the GitHub App",

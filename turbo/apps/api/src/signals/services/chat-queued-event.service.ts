@@ -20,6 +20,7 @@ export type QueuedUserMessageTriggerSource =
   | "lark"
   | "teams"
   | "telegram"
+  | "email"
   | "agentphone"
   | "automation-schedule";
 

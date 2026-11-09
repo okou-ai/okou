@@ -1,5 +1,6 @@
 import { deleteTeamsOwnerAccounts$ } from "./teams-workspace-identity.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
+import { deleteEmailOwnerData$ } from "./email-channel-maintenance.service";
 import { orgMembersCache } from "@okouai/db/schema/org-members-cache";
 import { orgMembersMetadata } from "@okouai/db/runtime/org-members-metadata";
 import { userDisabledPaidTools } from "@okouai/db/schema/user-disabled-paid-tools";
@@ -76,6 +77,18 @@ const disableDepartedMemberAutomations$ = command(
   },
 );
 
+const cleanupMemberMessageIntegrations$ = command(
+  async ({ set }, args: OrgMemberCleanupInput, signal: AbortSignal) => {
+    await set(eraseMailNotifications$, args, signal);
+    signal.throwIfAborted();
+    await set(deleteTeamsOwnerAccounts$, { kind: "owner", ...args }, signal);
+    await set(deleteDiscordOrgMemberData$, args, signal);
+    await set(deleteWechatOwnerData$, { kind: "owner", ...args }, signal);
+    await set(deleteEmailOwnerData$, { kind: "owner", ...args }, signal);
+    signal.throwIfAborted();
+  },
+);
+
 /** `onSlotsReleased` receives the slots the revoked runs released as soon as
  * the revocation commits, before any other effect of this cleanup. */
 export const cleanupOrgMemberResources$ = command(
@@ -101,12 +114,7 @@ export const cleanupOrgMemberResources$ = command(
       { kind: "owner", orgId: args.orgId, userId: args.userId },
       signal,
     );
-    await set(eraseMailNotifications$, args, signal);
-    signal.throwIfAborted();
-    await set(deleteTeamsOwnerAccounts$, { kind: "owner", ...args }, signal);
-    await set(deleteDiscordOrgMemberData$, args, signal);
-    await set(deleteWechatOwnerData$, { kind: "owner", ...args }, signal);
-    signal.throwIfAborted();
+    await set(cleanupMemberMessageIntegrations$, args, signal);
     const currentTime = nowDate();
     // Automations execute as their owner. Only the schedule poller gates on
     // membership, and it does so lazily, at an automation's next due time; event

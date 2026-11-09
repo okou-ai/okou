@@ -7273,6 +7273,19 @@
       "unconfigured": "이 조직에는 아직 Discord가 구성되지 않았습니다."
     },
     "documentTitle": "작업",
+    "email": {
+      "connected": "이메일 연결됨",
+      "description": "Okou에 이메일을 보내고 각 대화를 별도 채팅으로 유지하세요",
+      "healthNotice": "HIPAA 규제 대상 환자 정보에는 이 연동을 사용하지 마세요.",
+      "instructions": "계정 이메일 주소로 메시지를 보내세요. 새 이메일은 새 채팅을 시작하고 답장은 같은 대화를 이어갑니다. 처음 이용하시면 가입을 도와드린 후 요청을 처리합니다.",
+      "invalidLink": "연결 링크가 유효하지 않습니다. Okou에 새 이메일을 보내 주세요.",
+      "loadError": "이메일 연결을 불러올 수 없습니다",
+      "manage": "관리",
+      "open": "이메일 열기",
+      "resumed": "{{email}} 연결이 완료되었습니다. 원래 요청은 같은 이메일 대화에서 답변됩니다.",
+      "title": "이메일",
+      "unavailable": "이 워크스페이스에서는 아직 이메일을 사용할 수 없습니다"
+    },
     "feishuConnected": "Feishu가 성공적으로 연결되었습니다",
     "github": {
       "adminInstall": "조직 관리자에게 GitHub 앱 설치를 요청하세요",

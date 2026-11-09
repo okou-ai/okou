@@ -1,3 +1,4 @@
+import { loadEmailQueuedLaunchMaterial$ } from "./email-queued-launch-context.service";
 import {
   loadWechatQueuedLaunchMaterial$,
   WechatLaunchUnavailableError,
@@ -58,6 +59,7 @@ type ContextBackedContextType =
   | "teams"
   | "discord"
   | "telegram"
+  | "email"
   | "agentphone";
 
 interface ActiveInputPromptEvent {
@@ -80,6 +82,7 @@ const CONTEXT_BACKED_CONTEXT_TYPES: readonly ContextBackedContextType[] = [
   "discord",
   "wechat",
   "telegram",
+  "email",
   "agentphone",
 ];
 
@@ -250,6 +253,9 @@ const loadIntegrationPromptMaterial$ = command(
       }
       case "telegram": {
         return await set(loadTelegramQueuedLaunchMaterial$, loaderArgs);
+      }
+      case "email": {
+        return await set(loadEmailQueuedLaunchMaterial$, loaderArgs);
       }
       case "agentphone": {
         return await set(loadAgentPhoneQueuedLaunchMaterial$, loaderArgs);
