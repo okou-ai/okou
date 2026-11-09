@@ -27,7 +27,11 @@ export function ScrollBar({
       )}
       {...props}
     >
+      {/* A span, so the bar can sit in phrasing content such as a Markdown
+          `pre` when the caller renders the bar itself as a span. It is a
+          flex item of the bar, which blockifies it either way. */}
       <ScrollAreaPrimitive.Thumb
+        render={<span />}
         data-slot="scroll-area-thumb"
         className="relative flex-1 rounded-full bg-border"
       />
