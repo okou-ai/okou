@@ -386,6 +386,8 @@
         "blurComposer": "Tirar o foco do campo de mensagem",
         "changeIcon": "Alterar ícone",
         "clearIcon": "Remover ícone",
+        "collapseProject": "Recolher Project",
+        "expandProject": "Expandir Project",
         "newChat": "Novo chat",
         "nextAgent": "Próximo agente",
         "nextThread": "Próxima conversa",

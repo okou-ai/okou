@@ -11,11 +11,18 @@ import { i18n } from "../../i18n/index.ts";
 import { ShortcutHelpDialog } from "../components/shortcut-help-dialog.tsx";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
+import {
+  COLLAPSE_PROJECT_SHORTCUT,
+  EXPAND_PROJECT_SHORTCUT,
+} from "../../lib/project-fold-shortcuts.ts";
+import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 
 type ShortcutLabelId =
   | "blurComposer"
   | "changeIcon"
   | "clearIcon"
+  | "collapseProject"
+  | "expandProject"
   | "movePinDown"
   | "movePinUp"
   | "newChat"
@@ -67,6 +74,11 @@ const GLOBAL_NAVIGATION_SHORTCUTS = [
   { key: "ctrl+shift+]", labelId: "nextAgent" },
 ] as const satisfies readonly ShortcutDefinition[];
 
+const PROJECT_FOLD_SHORTCUTS = [
+  { key: COLLAPSE_PROJECT_SHORTCUT, labelId: "collapseProject" },
+  { key: EXPAND_PROJECT_SHORTCUT, labelId: "expandProject" },
+] as const satisfies readonly ShortcutDefinition[];
+
 const COMPOSER_SHORTCUT_SECTION = {
   titleId: "composer",
   shortcuts: [
@@ -115,6 +127,7 @@ const CHAT_THREAD_SHORTCUT_SECTIONS = [
       { key: "mod+arrowdown", labelId: "scrollBottom" },
       { key: "mod+shift+arrowup", labelId: "previousThread" },
       { key: "mod+shift+arrowdown", labelId: "nextThread" },
+      ...PROJECT_FOLD_SHORTCUTS,
     ],
   },
   PINNED_SHORTCUT_SECTION,
@@ -133,6 +146,14 @@ const AGENT_CHAT_SHORTCUT_SECTIONS = [
   COMPOSER_SHORTCUT_SECTION,
 ] as const satisfies readonly ShortcutSectionDefinition[];
 
+const PROJECT_SHORTCUT_SECTIONS = [
+  {
+    titleId: "global",
+    shortcuts: [...GLOBAL_NAVIGATION_SHORTCUTS, ...PROJECT_FOLD_SHORTCUTS],
+  },
+  PINNED_SHORTCUT_SECTION,
+] as const satisfies readonly ShortcutSectionDefinition[];
+
 const SIDEBAR_SHORTCUT_SECTIONS = [
   { titleId: "global", shortcuts: GLOBAL_NAVIGATION_SHORTCUTS },
   PINNED_SHORTCUT_SECTION,
@@ -146,6 +167,9 @@ function shortcutSectionsForRoute(
   }
   if (route === "agentChat" || route === "home") {
     return AGENT_CHAT_SHORTCUT_SECTIONS;
+  }
+  if (route === "project") {
+    return PROJECT_SHORTCUT_SECTIONS;
   }
   return SIDEBAR_SHORTCUT_SECTIONS;
 }
@@ -179,6 +203,12 @@ function translatedShortcutLabels(): Readonly<Record<ShortcutLabelId, string>> {
     }),
     clearIcon: i18n.t(($) => {
       return $.appShell.shortcutHelp.shortcuts.clearIcon;
+    }),
+    collapseProject: i18n.t(($) => {
+      return $.appShell.shortcutHelp.shortcuts.collapseProject;
+    }),
+    expandProject: i18n.t(($) => {
+      return $.appShell.shortcutHelp.shortcuts.expandProject;
     }),
     movePinDown: i18n.t(($) => {
       return $.chat.sidebar.movePinDown;
@@ -240,9 +270,22 @@ function translatedShortcutLabels(): Readonly<Record<ShortcutLabelId, string>> {
   };
 }
 
+function shortcutListed(
+  labelId: ShortcutLabelId,
+  { singleAgent, projects }: { singleAgent: boolean; projects: boolean },
+): boolean {
+  if (labelId === "previousAgent" || labelId === "nextAgent") {
+    return !singleAgent;
+  }
+  if (labelId === "collapseProject" || labelId === "expandProject") {
+    return projects;
+  }
+  return true;
+}
+
 function localizeShortcutSections(
   sections: readonly ShortcutSectionDefinition[],
-  singleAgent: boolean,
+  listing: { singleAgent: boolean; projects: boolean },
 ) {
   const sectionTitles = translatedSectionTitles();
   const shortcutLabels = translatedShortcutLabels();
@@ -251,11 +294,7 @@ function localizeShortcutSections(
       title: sectionTitles[section.titleId],
       shortcuts: section.shortcuts
         .filter((shortcut) => {
-          return (
-            !singleAgent ||
-            (shortcut.labelId !== "previousAgent" &&
-              shortcut.labelId !== "nextAgent")
-          );
+          return shortcutListed(shortcut.labelId, listing);
         })
         .map((shortcut) => {
           return {
@@ -270,12 +309,13 @@ function localizeShortcutSections(
 export function ChatShortcutHelpDialog() {
   const { t } = useTranslation();
   const singleAgent = useGet(singleAgentEnabled$);
+  const projects = useGet(projectsEnabled$);
   const shortcutHelpOpen = useGet(chatShortcutHelpOpen$);
   const setShortcutHelpOpen = useSet(setChatShortcutHelpOpen$);
   const activeRoute = useGet(activeRoute$);
   const shortcutSections = localizeShortcutSections(
     shortcutSectionsForRoute(activeRoute),
-    singleAgent,
+    { singleAgent, projects },
   );
 
   return (

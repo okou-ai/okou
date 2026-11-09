@@ -642,6 +642,69 @@ test("A Project page moves down into its chats when unfolded and past them when 
   });
   expect(threadLink(a1.id)).toHaveAttribute("aria-current", "page");
 });
+function pressProjectFold(direction: "ArrowLeft" | "ArrowRight") {
+  return userEvent
+    .setup({ delay: null })
+    .keyboard(`{Control>}{Shift>}{${direction}}{/Shift}{/Control}`);
+}
+
+test("Project fold shortcuts fold and unfold the open chat's Project unless the composer holds text", async () => {
+  const { a } = await setupProjectNavigation(116, "/chats/:a");
+  await waitFor(() => {
+    expect(threadLink(a.id)).toHaveAttribute("aria-current", "page");
+  });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  composer.focus();
+
+  await pressProjectFold("ArrowLeft");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(activeListItem()).toBeNull();
+  expect(location.pathname).toBe(`/chats/${a.id}`);
+
+  await pressProjectFold("ArrowRight");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(threadLink(a.id)).toHaveAttribute("aria-current", "page");
+
+  // Typed text keeps the keys for selecting to the line edge.
+  await userEvent.setup({ delay: null }).type(composer, "Draft");
+  await pressProjectFold("ArrowLeft");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(composer).toHaveTextContent("Draft");
+});
+
+test("A Project page folds its own Project, and a chat outside Projects folds none", async () => {
+  const { b } = await setupProjectNavigation(117, `/projects/${id}`);
+  await waitFor(() => {
+    expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
+  });
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  (await screen.findByRole("textbox", { name: "Message" })).focus();
+
+  await pressProjectFold("ArrowRight");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  await pressProjectFold("ArrowLeft");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+
+  fireEvent.keyDown(document.body, { key: "?", code: "Slash", shiftKey: true });
+  const dialog = (await screen.findByText("Keyboard Shortcuts")).closest(
+    '[role="dialog"]',
+  );
+  expect(dialog).toHaveTextContent("Collapse Project");
+  expect(dialog).toHaveTextContent("Expand Project");
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByText("Keyboard Shortcuts")).toBeNull();
+  });
+
+  await pressChatNavigation("ArrowDown");
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${b.id}`);
+  });
+  (await screen.findByRole("textbox", { name: "Message" })).focus();
+  await pressProjectFold("ArrowRight");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+});
+
 test("ordinary lists hide assigned chats and @Project inserts captured identity without navigating", async () => {
   const ordinary = continuityThread(91, 1, "Ordinary chat");
   const member = {

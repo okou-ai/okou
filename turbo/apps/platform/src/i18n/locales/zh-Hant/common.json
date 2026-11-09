@@ -372,6 +372,8 @@
         "blurComposer": "退出輸入框",
         "changeIcon": "更換圖示",
         "clearIcon": "清除圖示",
+        "collapseProject": "收合 Project",
+        "expandProject": "展開 Project",
         "newChat": "新建聊天",
         "nextAgent": "下一個智能體",
         "nextThread": "下一個會話",

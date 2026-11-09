@@ -386,6 +386,8 @@
         "blurComposer": "Retirer le focus de la zone de saisie",
         "changeIcon": "Changer d'icône",
         "clearIcon": "Effacer l'icône",
+        "collapseProject": "Replier le Project",
+        "expandProject": "Déplier le Project",
         "newChat": "Nouvelle discussion",
         "nextAgent": "Agent suivant",
         "nextThread": "Fil suivant",

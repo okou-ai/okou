@@ -372,6 +372,8 @@
         "blurComposer": "Blur composer",
         "changeIcon": "Change icon",
         "clearIcon": "Clear icon",
+        "collapseProject": "Collapse Project",
+        "expandProject": "Expand Project",
         "newChat": "New chat",
         "nextAgent": "Next agent",
         "nextThread": "Next thread",

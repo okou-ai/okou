@@ -372,6 +372,8 @@
         "blurComposer": "Eingabefeld verlassen",
         "changeIcon": "Symbol ändern",
         "clearIcon": "Symbol löschen",
+        "collapseProject": "Project einklappen",
+        "expandProject": "Project ausklappen",
         "newChat": "Neuer Chat",
         "nextAgent": "Nächster Agent",
         "nextThread": "Nächster Thread",

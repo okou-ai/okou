@@ -386,6 +386,8 @@
         "blurComposer": "Rimuovi il focus dall'editor",
         "changeIcon": "Cambia icona",
         "clearIcon": "Rimuovi icona",
+        "collapseProject": "Comprimi Project",
+        "expandProject": "Espandi Project",
         "newChat": "Nuova chat",
         "nextAgent": "Il prossimo agente",
         "nextThread": "Thread successivo",

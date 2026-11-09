@@ -372,6 +372,8 @@
         "blurComposer": "コンポーザーからフォーカスを外す",
         "changeIcon": "アイコンの変更",
         "clearIcon": "クリアアイコン",
+        "collapseProject": "Project を折りたたむ",
+        "expandProject": "Project を展開",
         "newChat": "新しいチャット",
         "nextAgent": "次のエージェント",
         "nextThread": "次のスレッド",

@@ -10,10 +10,17 @@ import {
 } from "./chat-thread-pane-navigation.ts";
 import {
   projectIdOfRowKey,
+  projectRowKey,
   threadIdOfRowKey,
   threadRowKey,
 } from "./chat-thread-list-rows.ts";
+import { eventDrivenChatThreads$ } from "./chat-thread-event-sourcing.ts";
 import { scrollToChatListRow$ } from "./sidebar-chat-thread-scroll.ts";
+import { projects$ } from "../projects/projects.ts";
+import {
+  collapseProject$,
+  expandProject$,
+} from "../projects/project-expansion.ts";
 
 type ChatListNavigationDirection = "prev" | "next";
 
@@ -119,6 +126,48 @@ export const navigateChatList$ = command(
         align: request.direction === "next" ? "bottom" : "top",
       },
       get(rootSignal$),
+    );
+  },
+);
+
+/**
+ * Folds or unfolds the Project that holds the current Project page or chat.
+ * Folding hides the current chat, so the Project's row comes into view in its
+ * place.
+ */
+export const setCurrentChatListProjectExpanded$ = command(
+  async (
+    { get, set },
+    request: {
+      /** The row key of the current Project or chat. */
+      readonly currentKey: string;
+      readonly expanded: boolean;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const threadId = threadIdOfRowKey(request.currentKey);
+    const projectId =
+      projectIdOfRowKey(request.currentKey) ??
+      get(eventDrivenChatThreads$).find((thread) => {
+        return thread.id === threadId;
+      })?.projectId;
+    if (
+      !projectId ||
+      !get(projects$).some((project) => {
+        return project.id === projectId;
+      })
+    ) {
+      return;
+    }
+    if (request.expanded) {
+      set(expandProject$, projectId);
+      return;
+    }
+    set(collapseProject$, projectId);
+    await set(
+      scrollToChatListRow$,
+      { key: projectRowKey(projectId), align: "top" },
+      signal,
     );
   },
 );
