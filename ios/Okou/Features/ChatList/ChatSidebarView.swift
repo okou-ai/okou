@@ -150,7 +150,8 @@ struct ChatSidebarView: View {
       workspaceSwitcher
       Text(workspaceName)
         .redacted(
-          reason: authentication.workspacePresentation(workspaceID) == nil ? .placeholder : [])
+          reason: authentication.workspacePresentation(workspaceID) == nil ? .placeholder : []
+        )
         .font(.okou(.headline))
         .lineLimit(1)
         .frame(maxWidth: .infinity, alignment: .leading)
