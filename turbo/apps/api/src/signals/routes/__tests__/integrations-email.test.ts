@@ -4,12 +4,14 @@ import { beforeEach, describe, expect, it } from "vitest";
 import { http, HttpResponse } from "msw";
 import { object, string, record } from "zod";
 import { integrationsEmailContract } from "@okouai/api-contracts/contracts/integrations-email";
+import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsEmailRoutes } from "../integrations-email";
+import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
@@ -172,6 +174,78 @@ function sentEmails() {
 }
 
 describe("Email integration", () => {
+  it("keeps email chats readable through both installed-iOS event endpoints", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const { actor } = await entitledActor();
+    await incoming({ sender: actor.email }).send();
+    const threads = await createdThreads(actor);
+    const threadId = threads.chatThreads[0]?.id;
+    if (!threadId) {
+      throw new Error("Expected an email chat");
+    }
+    const client = setupApp({ context, routes: chatThreadRoutes })(
+      chatThreadEventsContract,
+    );
+    const extraHeaders = {
+      "X-Client-Type": "iOS",
+      "X-Client-Version": "99.0.0",
+    };
+    const rows = await accept(
+      client.rows({
+        headers: authHeaders(),
+        extraHeaders,
+        params: { threadId },
+        query: { sinceSeqId: 0 },
+      }),
+      [200],
+    );
+    expect(
+      rows.body.rows.some((row) => {
+        return row.eventType === "input.prompt" && row.contextType === "web";
+      }),
+    ).toBeTruthy();
+    expect(
+      rows.body.rows.some((row) => {
+        return row.contextType === "email";
+      }),
+    ).toBeFalsy();
+    const catchUp = await accept(
+      client.catchUp({
+        headers: authHeaders(),
+        extraHeaders,
+        body: [[threadId, 0]],
+      }),
+      [200],
+    );
+    expect(
+      catchUp.body.events[threadId]?.some((row) => {
+        return row.eventType === "input.prompt" && row.contextType === "web";
+      }),
+    ).toBeTruthy();
+    expect(
+      catchUp.body.events[threadId]?.some((row) => {
+        return row.contextType === "email";
+      }),
+    ).toBeFalsy();
+    const current = await accept(
+      client.rows({
+        headers: authHeaders(),
+        params: { threadId },
+        query: { sinceSeqId: 0 },
+      }),
+      [200],
+    );
+    expect(
+      current.body.rows.some((row) => {
+        return row.contextType === "email";
+      }),
+    ).toBeTruthy();
+  });
+
   it("revokes pending reply delivery when its sender disconnects", async () => {
     await setupApp({
       context,
