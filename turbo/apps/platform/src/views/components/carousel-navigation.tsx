@@ -27,7 +27,7 @@ export function CarouselNavigation({
     <DialogFooter
       role="group"
       aria-label={label}
-      className="flex-row items-center justify-between gap-2 border-t border-border pt-3 sm:justify-between"
+      className="shrink-0 flex-row items-center justify-between gap-2 border-t border-border pt-3 sm:justify-between"
     >
       <IconButton
         aria-label={previousLabel}

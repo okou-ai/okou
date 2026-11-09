@@ -1,7 +1,7 @@
 # Notification preview samples
 
-Temporary, opt-in data migration for the notification UI preview. Delivers one
-text message, one illustrated message and one three-page carousel to explicitly
+Temporary, opt-in data migration for the notification UI preview. Delivers 45
+messages covering text, illustrations, three/five-page carousels and long content to explicitly
 named, verified users in the **test Clerk instance**. Requires `ENV=preview` and
 a test Clerk secret. It does not enable the global or staff feature switch.
 
@@ -31,3 +31,7 @@ delivery is once per recipient and delivery key in the current database.
 Remove the label when this preview is accepted, then retire this temporary
 operator and its workflow invocation. No database schema or migration journal
 changes are needed for these sample rows.
+
+Samples have distinct creation times one minute apart, newest first. Their count
+exercises three API pages (20 + 20 + 5) and repeated infinite scroll loads. Existing
+deliveries retain their timestamps and read receipts on rerun.

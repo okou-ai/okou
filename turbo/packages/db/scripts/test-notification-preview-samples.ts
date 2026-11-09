@@ -4,6 +4,7 @@ import { createServer } from "node:http";
 import { once } from "node:events";
 import { Client } from "pg";
 import { deliverPreviewSamples } from "./migrations/030-notification-preview-samples/backfill";
+import { samples } from "./migrations/030-notification-preview-samples/samples";
 
 /** Exercise the operator against real PostgreSQL and an HTTP Clerk peer. */
 export async function validateNotificationPreviewSamples(databaseUrl: string) {
@@ -113,7 +114,7 @@ export async function validateNotificationPreviewSamples(databaseUrl: string) {
       await assert.rejects(deliverPreviewSamples(invalid));
     }
     const dryRun = await deliverPreviewSamples(options);
-    assert.equal(dryRun.planned, 3);
+    assert.equal(dryRun.planned, samples.length);
     assert.equal(dryRun.recipients[0]!.stored, 0);
     const unchanged = await client.query(
       "SELECT switches->'userNotifications' AS enabled FROM user_feature_switches WHERE user_id=$1",
@@ -122,8 +123,20 @@ export async function validateNotificationPreviewSamples(databaseUrl: string) {
     assert.equal(unchanged.rows[0].enabled, false);
 
     const first = await deliverPreviewSamples({ ...options, migrate: true });
-    assert.equal(first.inserted, 3);
-    assert.equal(first.recipients[0]!.unread, 3);
+    assert.equal(first.inserted, samples.length);
+    assert.equal(first.recipients[0]!.unread, samples.length);
+    const ordered = await client.query(
+      "SELECT delivery_key FROM user_notifications WHERE user_id=$1 ORDER BY created_at DESC, id DESC",
+      [userId],
+    );
+    assert.deepEqual(
+      ordered.rows.map((row) => {
+        return row.delivery_key;
+      }),
+      samples.map((sample) => {
+        return sample.delivery_key;
+      }),
+    );
     assert.equal(first.recipients[0]!.organizations, 2);
     const flags = await client.query(
       "SELECT switches FROM user_feature_switches WHERE user_id=$1 ORDER BY org_id",
@@ -137,15 +150,15 @@ export async function validateNotificationPreviewSamples(databaseUrl: string) {
     assert.deepEqual(flags.rows[1].switches, { userNotifications: true });
 
     await client.query(
-      "UPDATE user_notifications SET read_at='2026-11-06 00:00:00' WHERE user_id=$1 AND payload->>'type'='carousel'",
+      "UPDATE user_notifications SET read_at='2026-11-06 00:00:00' WHERE user_id=$1 AND delivery_key='notifications-demo-20261106-carousel'",
       [userId],
     );
     const repeated = await deliverPreviewSamples({ ...options, migrate: true });
     assert.equal(repeated.inserted, 0);
-    assert.equal(repeated.recipients[0]!.stored, 3);
-    assert.equal(repeated.recipients[0]!.unread, 2);
+    assert.equal(repeated.recipients[0]!.stored, samples.length);
+    assert.equal(repeated.recipients[0]!.unread, samples.length - 1);
     const receipt = await client.query(
-      "SELECT read_at FROM user_notifications WHERE user_id=$1 AND payload->>'type'='carousel'",
+      "SELECT read_at FROM user_notifications WHERE user_id=$1 AND delivery_key='notifications-demo-20261106-carousel'",
       [userId],
     );
     assert.deepEqual(receipt.rows[0].read_at, new Date("2026-11-06T00:00:00Z"));

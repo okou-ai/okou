@@ -271,21 +271,77 @@ test("List failures can be retried without being presented as an empty inbox", a
   await screen.findByText(first.title);
 });
 
-test("Older pages append to the existing list", async () => {
+test("Scrolling to the bottom appends successive older pages in order", async () => {
   mockInbox();
+  const third = {
+    ...second,
+    id: "33333333-3333-4333-8333-333333333333",
+    title: "An earlier update",
+    createdAt: "2026-11-04T03:00:00.000Z",
+  };
   context.mocks.api(userNotificationsContract.list, ({ query, respond }) => {
-    return query.beforeId
-      ? respond(200, { items: [second], nextCursor: null })
-      : respond(200, {
-          items: [first],
-          nextCursor: { id: first.id, createdAt: first.createdAt },
-        });
+    return query.beforeId === second.id
+      ? respond(200, { items: [third], nextCursor: null })
+      : query.beforeId
+        ? respond(200, {
+            items: [second],
+            nextCursor: { id: second.id, createdAt: second.createdAt },
+          })
+        : respond(200, {
+            items: [first],
+            nextCursor: { id: first.id, createdAt: first.createdAt },
+          });
   });
   await openInbox();
   await screen.findByText(first.title);
-  click(button("Show older"));
+  const list = row(first.title).parentElement!;
+  Object.defineProperties(list, {
+    clientHeight: { value: 300 },
+    scrollHeight: { value: 1200 },
+  });
+  list.scrollTop = 900;
+  fireEvent.scroll(list);
   await screen.findByText(second.title);
-  expect(screen.getByText(first.title)).toBeInTheDocument();
+  await waitFor(() => {
+    expect(button("Show older")).toBeEnabled();
+  });
+  fireEvent.scroll(list);
+  await screen.findByText(third.title);
+  const titles = [
+    ...list.querySelectorAll<HTMLElement>("button[data-notification-id]"),
+  ].map((entry) => {
+    return entry.dataset.notificationId;
+  });
+  expect(titles).toStrictEqual([first.id, second.id, third.id]);
+});
+
+test("Failed scroll loading preserves existing messages and offers an explicit retry", async () => {
+  mockInbox();
+  let fail = true;
+  context.mocks.api(userNotificationsContract.list, ({ query, respond }) => {
+    if (!query.beforeId) {
+      return respond(200, {
+        items: [first],
+        nextCursor: { id: first.id, createdAt: first.createdAt },
+      });
+    }
+    if (fail) {
+      return respond(500, {
+        error: { code: "INTERNAL_ERROR", message: "Try again" },
+      });
+    }
+    return respond(200, { items: [second], nextCursor: null });
+  });
+  await openInbox();
+  await screen.findByText(first.title);
+  const list = row(first.title).parentElement!;
+  fireEvent.scroll(list);
+  await screen.findByText("Couldn’t load notifications");
+  expect(row(first.title)).toBeInTheDocument();
+  fail = false;
+  click(button("Try again", list));
+  await screen.findByText(second.title);
+  expect(row(first.title)).toBeInTheDocument();
 });
 
 test("The notification entry is absent when its switch is off", async () => {
@@ -477,4 +533,42 @@ test("Carousel swipes cycle pages without intercepting reading or links", async 
   const returned = await within(dialog).findByText("Start with an idea");
   swipe(returned, { x: 340, y: 105 });
   await within(dialog).findByText("Make it happen");
+});
+
+test("Carousel supports mouse dragging while vertical drags and cancelled gestures preserve the page", async () => {
+  mockInbox([carouselEntry], carouselNotification);
+  await openInbox();
+  await screen.findByText(carouselEntry.title);
+  click(row(carouselEntry.title));
+  const dialog = await screen.findByRole("dialog", {
+    name: carouselEntry.title,
+  });
+  await within(dialog).findByText("Start with an idea");
+  const surface = within(dialog).getByRole("region").parentElement!;
+  Object.defineProperty(surface, "setPointerCapture", {
+    value: () => {
+      return undefined;
+    },
+  });
+  const start = {
+    pointerId: 1,
+    pointerType: "mouse",
+    isPrimary: true,
+    button: 0,
+    clientX: 200,
+    clientY: 100,
+  };
+  fireEvent.pointerDown(surface, start);
+  fireEvent.pointerUp(surface, { ...start, clientX: 80, clientY: 105 });
+  const page = await within(dialog).findByText("Bring your context");
+  fireEvent.pointerDown(surface, start);
+  fireEvent.pointerUp(surface, { ...start, clientX: 195, clientY: 240 });
+  expect(page).toBeInTheDocument();
+  fireEvent.pointerDown(surface, start);
+  fireEvent.pointerCancel(surface, start);
+  fireEvent.pointerUp(surface, { ...start, clientX: 340, clientY: 105 });
+  expect(page).toBeInTheDocument();
+  fireEvent.pointerDown(surface, start);
+  fireEvent.pointerUp(surface, { ...start, clientX: 340, clientY: 105 });
+  await within(dialog).findByText("Start with an idea");
 });

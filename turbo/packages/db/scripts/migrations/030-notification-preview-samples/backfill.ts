@@ -173,9 +173,10 @@ export async function deliverPreviewSamples(options: PreviewOptions) {
     let inserted = 0;
     if (options.migrate) {
       const deliveries = recipients.flatMap((recipient) => {
-        return samples.map((sample) => {
+        return samples.map((sample, index) => {
           return {
             user_id: recipient.userId,
+            age_minutes: index,
             ...sample,
           };
         });
@@ -193,10 +194,10 @@ export async function deliverPreviewSamples(options: PreviewOptions) {
       const result = array(object({ inserted: number() })).parse(
         await sql`
         WITH delivered AS (
-          INSERT INTO user_notifications (user_id, title, summary, payload, delivery_key)
-          SELECT user_id, title, summary, payload, delivery_key
+          INSERT INTO user_notifications (user_id, title, summary, payload, delivery_key, created_at)
+          SELECT user_id, title, summary, payload, delivery_key, now() - age_minutes * interval '1 minute'
           FROM jsonb_to_recordset(${sql.json(deliveries)})
-            AS sample(user_id text, title text, summary text, payload jsonb, delivery_key text)
+            AS sample(user_id text, title text, summary text, payload jsonb, delivery_key text, age_minutes int)
           ON CONFLICT (user_id, delivery_key) DO NOTHING
           RETURNING id
         ), enabled AS (
@@ -268,8 +269,6 @@ async function main() {
   const result = await deliverPreviewSamples({
     databaseUrl: process.env.DATABASE_URL ?? "",
     clerkKey: process.env.CLERK_SECRET_KEY ?? "",
-    // This operator runs directly through tsx, outside Turbo's cached tasks.
-    // eslint-disable-next-line turbo/no-undeclared-env-vars
     environment: process.env.ENV ?? "",
     emails: values["recipient-email"] ?? [],
     migrate: values.migrate,

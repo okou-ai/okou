@@ -195,7 +195,14 @@ function createInboxNavigation(inbox: InboxState, queries: InboxQueries) {
       { showErrorToast: false },
     );
     signal.throwIfAborted();
-    if (revision !== get(revision$)) {
+    const committedCursor = get(nextOlderCursor$);
+    if (
+      revision !== get(revision$) ||
+      (committedCursor !== undefined &&
+        (committedCursor === null ||
+          committedCursor.id !== cursor.id ||
+          committedCursor.createdAt !== cursor.createdAt))
+    ) {
       return;
     }
     set(olderPages$, (items) => {

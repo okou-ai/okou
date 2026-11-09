@@ -1,4 +1,12 @@
-import type { UserNotification } from "@okouai/api-contracts/contracts/user-notifications";
+import type {
+  PointerEvent as ReactPointerEvent,
+  TouchEvent as ReactTouchEvent,
+  DragEvent as ReactDragEvent,
+} from "react";
+import type {
+  UserNotification,
+  UserNotificationSummary,
+} from "@okouai/api-contracts/contracts/user-notifications";
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -71,7 +79,7 @@ function ReadError({ inbox }: { readonly inbox: NotificationInbox }) {
   return (
     <div
       role="status"
-      className="flex items-center justify-between gap-3 text-sm text-destructive"
+      className="flex shrink-0 items-center justify-between gap-3 text-sm text-destructive"
     >
       <p>
         {t(($) => {
@@ -96,7 +104,7 @@ function ReadError({ inbox }: { readonly inbox: NotificationInbox }) {
 function NotificationHeader({ item }: { readonly item: UserNotification }) {
   const { t } = useTranslation();
   return (
-    <DialogHeader className="space-y-3 pr-7 text-left">
+    <DialogHeader className="shrink-0 space-y-3 pr-7 text-left">
       <DialogDescription>
         {t(($) => {
           return $.userNotifications.sender;
@@ -125,14 +133,16 @@ function RichTextNotification({
   const mounted = useSet(inbox.detailRef$);
   return (
     <>
-      <div ref={mounted} className="min-w-0 space-y-5">
+      <div ref={mounted} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
         <NotificationHeader item={item} />
-        <Markdown
-          source={markdown}
-          escapeHtml
-          mediaPreview={false}
-          className="text-sm! leading-relaxed!"
-        />
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
+          <Markdown
+            source={markdown}
+            escapeHtml
+            mediaPreview={false}
+            className="text-sm! leading-relaxed!"
+          />
+        </div>
       </div>
       <ReadError inbox={inbox} />
     </>
@@ -143,6 +153,110 @@ type CarouselPages = Extract<
   UserNotification["payload"],
   { type: "carousel" }
 >["pages"];
+
+function isCarouselControl(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    target.closest(
+      "button, a, input, select, textarea, video, audio, [contenteditable]",
+    )
+  );
+}
+
+function useCarouselGestures(inbox: NotificationInbox, itemCount: number) {
+  const selection = useGet(inbox.pageSelection$);
+  const beginSwipe = useSet(selection.beginSwipe$);
+  const endSwipe = useSet(selection.endSwipe$);
+  return {
+    onPointerDown: (event: ReactPointerEvent<HTMLDivElement>) => {
+      // Touch keeps its multi-touch cancellation path below. Pointer
+      // capture lets mouse/pen drags finish outside the page surface.
+      if (event.pointerType === "touch") {
+        return;
+      }
+      if (
+        !event.isPrimary ||
+        event.button !== 0 ||
+        isCarouselControl(event.target)
+      ) {
+        beginSwipe(null);
+        return;
+      }
+      event.currentTarget.setPointerCapture(event.pointerId);
+      beginSwipe({
+        identifier: event.pointerId,
+        x: event.clientX,
+        y: event.clientY,
+      });
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType === "touch") {
+        return;
+      }
+      // Selecting copy is reading, rather than a request to change pages.
+      if (window.getSelection()?.isCollapsed === false) {
+        beginSwipe(null);
+        return;
+      }
+      endSwipe(
+        {
+          identifier: event.pointerId,
+          x: event.clientX,
+          y: event.clientY,
+        },
+        itemCount,
+      );
+    },
+    onPointerCancel: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType !== "touch") {
+        beginSwipe(null);
+      }
+    },
+    onLostPointerCapture: (event: ReactPointerEvent<HTMLDivElement>) => {
+      if (event.pointerType !== "touch") {
+        beginSwipe(null);
+      }
+    },
+    onDragStart: (event: ReactDragEvent<HTMLDivElement>) => {
+      // Native image dragging consumes the pointer-up needed by this
+      // carousel. Linked images keep the browser's own drag behavior.
+      if (
+        event.target instanceof HTMLImageElement &&
+        !isCarouselControl(event.target)
+      ) {
+        event.preventDefault();
+      }
+    },
+    onTouchStart: (event: ReactTouchEvent<HTMLDivElement>) => {
+      const touch = event.touches[0];
+      beginSwipe(
+        event.touches.length === 1 && touch && !isCarouselControl(event.target)
+          ? {
+              identifier: touch.identifier,
+              x: touch.clientX,
+              y: touch.clientY,
+            }
+          : null,
+      );
+    },
+    onTouchEnd: (event: ReactTouchEvent<HTMLDivElement>) => {
+      const touch = event.changedTouches[0];
+      endSwipe(
+        event.touches.length === 0 && event.changedTouches.length === 1 && touch
+          ? {
+              identifier: touch.identifier,
+              x: touch.clientX,
+              y: touch.clientY,
+            }
+          : null,
+        itemCount,
+      );
+    },
+    onTouchCancel: () => {
+      beginSwipe(null);
+    },
+  };
+}
 
 function CarouselNotification({
   inbox,
@@ -157,9 +271,8 @@ function CarouselNotification({
   const selection = useGet(inbox.pageSelection$);
   const index = useGet(selection.index$);
   const selectPage = useSet(selection.select$);
-  const beginSwipe = useSet(selection.beginSwipe$);
-  const endSwipe = useSet(selection.endSwipe$);
   const mounted = useSet(inbox.detailRef$);
+  const gestures = useCarouselGestures(inbox, pages.length);
   const page = pages[index];
   if (!page) {
     throw new Error("Notification page is outside the selected message");
@@ -168,45 +281,11 @@ function CarouselNotification({
   const bodyId = `${inbox.descriptionId}-page-body`;
   return (
     <>
-      <div ref={mounted} className="min-w-0 space-y-4">
+      <div ref={mounted} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
         <NotificationHeader item={item} />
         <div
-          className="touch-pan-y touch-pinch-zoom"
-          onTouchStart={(event) => {
-            const touch = event.touches[0];
-            const interactive =
-              event.target instanceof Element &&
-              event.target.closest(
-                "button, a, input, select, textarea, video, audio, [contenteditable]",
-              );
-            beginSwipe(
-              event.touches.length === 1 && touch && !interactive
-                ? {
-                    identifier: touch.identifier,
-                    x: touch.clientX,
-                    y: touch.clientY,
-                  }
-                : null,
-            );
-          }}
-          onTouchEnd={(event) => {
-            const touch = event.changedTouches[0];
-            endSwipe(
-              event.touches.length === 0 &&
-                event.changedTouches.length === 1 &&
-                touch
-                ? {
-                    identifier: touch.identifier,
-                    x: touch.clientX,
-                    y: touch.clientY,
-                  }
-                : null,
-              pages.length,
-            );
-          }}
-          onTouchCancel={() => {
-            beginSwipe(null);
-          }}
+          className="flex min-h-0 flex-1 touch-pan-y touch-pinch-zoom flex-col overflow-hidden"
+          {...gestures}
         >
           <span id={counterId} aria-live="polite" className="sr-only">
             {t(
@@ -224,12 +303,13 @@ function CarouselNotification({
             id={bodyId}
             role="region"
             aria-labelledby={counterId}
+            className="min-h-0 flex-1 overflow-y-auto overscroll-contain"
           >
             <Markdown
               source={page.markdown}
               escapeHtml
               mediaPreview={false}
-              className="text-sm! leading-relaxed! [&_img]:aspect-video [&_img]:w-full [&_img]:rounded-xl [&_img]:bg-gray-50 [&_img]:object-contain"
+              className="text-sm! leading-relaxed! [&_img]:aspect-video [&_img]:max-h-64 [&_img]:w-full [&_img]:select-none [&_img]:rounded-xl [&_img]:bg-gray-50 [&_img]:object-contain"
             />
           </div>
         </div>
@@ -355,6 +435,62 @@ function NotificationDetail({ inbox }: { readonly inbox: NotificationInbox }) {
   }
 }
 
+function NotificationListItem({
+  item,
+  onSelect,
+}: {
+  readonly item: UserNotificationSummary;
+  readonly onSelect: (id: string) => void;
+}) {
+  const { t } = useTranslation();
+  return (
+    <button
+      type="button"
+      data-notification-id={item.id}
+      className="group flex min-h-22 w-full items-start gap-2.5 rounded-lg px-3 py-3 text-left outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+      onClick={() => {
+        onSelect(item.id);
+      }}
+    >
+      <span className="mt-1.5 flex w-1.5 shrink-0">
+        {!item.readAt && (
+          <>
+            <span className="size-1.5 rounded-full bg-red-500" />
+            <span className="sr-only">
+              {t(($) => {
+                return $.userNotifications.unread;
+              })}
+            </span>
+          </>
+        )}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            "line-clamp-2 text-sm leading-5",
+            !item.readAt && "font-semibold",
+          )}
+        >
+          {item.title}
+        </span>
+        <span className="mt-1 block truncate text-xs text-muted-foreground">
+          {item.summary}
+        </span>
+        <time
+          dateTime={item.createdAt}
+          className="mt-1.5 block text-xs text-muted-foreground"
+        >
+          {formatRelativeTimestamp(item.createdAt)}
+        </time>
+      </span>
+      <ChevronRight
+        className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
+        aria-hidden="true"
+      />
+    </button>
+  );
+}
+
 function InboxList({ inbox }: { readonly inbox: NotificationInbox }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
@@ -406,54 +542,25 @@ function InboxList({ inbox }: { readonly inbox: NotificationInbox }) {
     );
   }
   return (
-    <div ref={listRef} className="max-h-112 min-h-0 overflow-y-auto p-1">
+    <div
+      ref={listRef}
+      className="max-h-112 min-h-0 overflow-y-auto overscroll-contain p-1"
+      onScroll={(event) => {
+        const list = event.currentTarget;
+        if (
+          more.state !== "loading" &&
+          more.state !== "hasError" &&
+          cursor.state === "hasData" &&
+          cursor.data &&
+          list.scrollHeight - list.clientHeight - list.scrollTop <= 96
+        ) {
+          detach(loadMore(signal), Reason.DomCallback);
+        }
+      }}
+    >
       {items.data.map((item) => {
         return (
-          <button
-            type="button"
-            key={item.id}
-            data-notification-id={item.id}
-            className="group flex min-h-22 w-full items-start gap-2.5 rounded-lg px-3 py-3 text-left outline-none transition-colors hover:bg-state-hover focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-            onClick={() => {
-              select(item.id);
-            }}
-          >
-            <span className="mt-1.5 flex w-1.5 shrink-0">
-              {!item.readAt && (
-                <>
-                  <span className="size-1.5 rounded-full bg-red-500" />
-                  <span className="sr-only">
-                    {t(($) => {
-                      return $.userNotifications.unread;
-                    })}
-                  </span>
-                </>
-              )}
-            </span>
-            <span className="min-w-0 flex-1">
-              <span
-                className={cn(
-                  "line-clamp-2 text-sm leading-5",
-                  !item.readAt && "font-semibold",
-                )}
-              >
-                {item.title}
-              </span>
-              <span className="mt-1 block truncate text-xs text-muted-foreground">
-                {item.summary}
-              </span>
-              <time
-                dateTime={item.createdAt}
-                className="mt-1.5 block text-xs text-muted-foreground"
-              >
-                {formatRelativeTimestamp(item.createdAt)}
-              </time>
-            </span>
-            <ChevronRight
-              className="mt-1 size-3.5 shrink-0 text-muted-foreground opacity-0 group-hover:opacity-100 group-focus-visible:opacity-100"
-              aria-hidden="true"
-            />
-          </button>
+          <NotificationListItem key={item.id} item={item} onSelect={select} />
         );
       })}
       {more.state === "hasError" && (
@@ -473,9 +580,13 @@ function InboxList({ inbox }: { readonly inbox: NotificationInbox }) {
             detach(loadMore(signal), Reason.DomCallback);
           }}
         >
-          {t(($) => {
-            return $.userNotifications.loadMore;
-          })}
+          {more.state === "hasError"
+            ? t(($) => {
+                return $.userNotifications.retry;
+              })
+            : t(($) => {
+                return $.userNotifications.loadMore;
+              })}
         </Button>
       )}
     </div>
@@ -622,7 +733,9 @@ function NotificationInboxView() {
       >
         <DialogContent
           maxWidth="2xl"
-          contentClassName="auto-rows-max grid-cols-1"
+          height={600}
+          scrollable={false}
+          contentClassName="flex min-h-0 flex-1 flex-col"
           closeLabel={t(($) => {
             return $.userNotifications.close;
           })}
