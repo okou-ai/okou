@@ -6,7 +6,7 @@ import type {
   Suggestion,
   SuggestionFeedbackRequest,
 } from "@okouai/api-contracts/contracts/suggestions";
-import { toast } from "@okouai/ui/components/ui/sonner";
+import { TEXT_TOAST_ACTION, toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
@@ -15,7 +15,7 @@ import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { onRef, resetSignal } from "../utils.ts";
+import { onDomEventFn, onRef, resetSignal } from "../utils.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 
 type FeedbackKind =
@@ -272,6 +272,9 @@ function createSuggestionSession() {
     entries$,
     listItems$,
     settled$,
+    previewId$: state<string | null>(null),
+    detailId$: state<string | null>(null),
+    detailQueue$: state<readonly AgentSuggestionEntry[] | null>(null),
     // The handled card whose feedback reason is being edited.
     reasonOpen$: state<AgentSuggestionEntry | null>(null),
   };
@@ -288,6 +291,120 @@ export const agentSuggestionEntries$ = computed((get) => {
 export const agentSuggestionListItems$ = computed((get) => {
   return get(get(session$).listItems$);
 });
+export const homeSuggestionCard$ = computed(async (get) => {
+  const session = get(session$);
+  const items = await get(session.listItems$);
+  const waiting = items.filter(({ outcome }) => {
+    return outcome === null;
+  });
+  const index = Math.max(
+    0,
+    waiting.findIndex(({ entry }) => {
+      return entry.item.id === get(session.previewId$);
+    }),
+  );
+  const queue = get(session.detailQueue$);
+  const detailId = get(session.detailId$);
+  return {
+    count: waiting.length,
+    index,
+    item: waiting[index]?.entry.item,
+    detail: items.find(({ entry }) => {
+      return entry.item.id === detailId;
+    }),
+    detailsOpen: queue !== null,
+    complete: queue !== null && detailId === null,
+    detailCount: queue?.length ?? 0,
+    detailIndex:
+      queue?.findIndex((entry) => {
+        return entry.item.id === detailId;
+      }) ?? -1,
+  };
+});
+export const moveHomeSuggestion$ = command(
+  async ({ get, set }, step: -1 | 1, signal: AbortSignal) => {
+    const session = get(session$);
+    const items = (await get(session.listItems$)).filter(({ outcome }) => {
+      return outcome === null;
+    });
+    signal.throwIfAborted();
+    const index = Math.max(
+      0,
+      items.findIndex(({ entry }) => {
+        return entry.item.id === get(session.previewId$);
+      }),
+    );
+    const next = items[index + step];
+    if (next) {
+      set(session.previewId$, next.entry.item.id);
+    }
+  },
+);
+export const setHomeSuggestionDetailsOpen$ = command(
+  async ({ get, set }, open: boolean, signal: AbortSignal) => {
+    const session = get(session$);
+    if (!open) {
+      set(session.detailId$, null);
+      set(session.detailQueue$, null);
+      return;
+    }
+    const card = await get(homeSuggestionCard$);
+    signal.throwIfAborted();
+    const items = await get(session.listItems$);
+    signal.throwIfAborted();
+    if (!card.item) {
+      return;
+    }
+    set(
+      session.detailQueue$,
+      items
+        .filter(({ outcome }) => {
+          return outcome === null;
+        })
+        .map(({ entry }) => {
+          return entry;
+        }),
+    );
+    set(session.detailId$, card.item?.id ?? null);
+  },
+);
+
+/** A replaced review heading is the keyboard destination for the next card. */
+export const focusSuggestionTitleOnRef$ = onRef<HTMLHeadingElement>(
+  command((_context, title: HTMLHeadingElement) => {
+    title.focus({ preventScroll: true });
+  }),
+);
+
+/** Keep the open review's order and move only after the current action succeeds. */
+export const advanceHomeSuggestion$ = command(
+  ({ get, set }, entry: AgentSuggestionEntry) => {
+    const session = get(session$);
+    const queue = get(session.detailQueue$);
+    if (
+      !queue ||
+      get(session.detailId$) !== entry.item.id ||
+      !queue.includes(entry) ||
+      (!get(entry.hidden$) && !get(entry.unavailable$))
+    ) {
+      return;
+    }
+    const index = queue.indexOf(entry);
+    const remaining = [
+      ...queue.slice(index + 1),
+      ...queue.slice(0, index).reverse(),
+    ];
+    const next = remaining.find((candidate) => {
+      return (
+        !get(candidate.hidden$) &&
+        !get(candidate.unavailable$) &&
+        getSuggestionExpiresAt(candidate.item) > now()
+      );
+    });
+    set(session.detailId$, next?.item.id ?? null);
+    set(session.previewId$, next?.item.id ?? null);
+  },
+);
 export const suggestionFeedbackReasonOpen$ = computed((get) => {
   return get(get(session$).reasonOpen$);
 });
@@ -361,6 +478,12 @@ const refreshAfterUnavailableSuggestion$ = command(
         (offeredIds.has(candidate.item.id) || get(candidate.acted$))
       );
     });
+    // The open review retains its original entries and must skip removed cards.
+    for (const candidate of loaded) {
+      if (!kept.includes(candidate)) {
+        set(candidate.unavailable$, true);
+      }
+    }
     const keptIds = new Set(
       kept.map((candidate) => {
         return candidate.item.id;
@@ -382,6 +505,8 @@ export const retryAgentSuggestion$ = command(
   async ({ set }, entry: AgentSuggestionEntry, pageSignal: AbortSignal) => {
     await set(entry.retry$, pageSignal);
     await set(refreshAfterUnavailableSuggestion$, entry, pageSignal);
+    pageSignal.throwIfAborted();
+    set(advanceHomeSuggestion$, entry);
   },
 );
 
@@ -428,6 +553,7 @@ const updateSettledSuggestion$ = command(
 export const linkAgentSuggestionThread$ = command(
   ({ set }, entry: AgentSuggestionEntry, threadId: string) => {
     set(updateSettledSuggestion$, entry, { type: "sent", threadId });
+    set(advanceHomeSuggestion$, entry);
   },
 );
 
@@ -444,6 +570,10 @@ export const restoreAgentSuggestion$ = command(
     );
     if (get(session.reasonOpen$) === entry) {
       set(session.reasonOpen$, null);
+    }
+    if (get(session.detailQueue$)?.includes(entry)) {
+      set(session.detailId$, entry.item.id);
+      set(session.previewId$, entry.item.id);
     }
   },
 );
@@ -518,6 +648,8 @@ export const submitAgentSuggestionFeedback$ = command(
       get(rootSignal$),
     );
     await set(refreshAfterUnavailableSuggestion$, entry, pageSignal);
+    pageSignal.throwIfAborted();
+    set(advanceHomeSuggestion$, entry);
   },
 );
 export const undoSuggestionFeedback$ = command(
@@ -545,6 +677,57 @@ export const undoSuggestionFeedback$ = command(
       },
       get(rootSignal$),
     );
+  },
+);
+
+/** Homepage feedback keeps the preview compact and offers the existing Undo. */
+export const submitHomeSuggestionFeedback$ = command(
+  async (
+    { get, set },
+    suggestionId: string,
+    kind: FeedbackKind,
+    signal: AbortSignal,
+  ) => {
+    const session = get(session$);
+    const entry = (await get(session.entries$)).find((candidate) => {
+      return candidate.item.id === suggestionId;
+    });
+    signal.throwIfAborted();
+    if (!entry) {
+      return;
+    }
+    await set(submitAgentSuggestionFeedback$, suggestionId, kind, signal);
+    signal.throwIfAborted();
+    if (
+      get(entry.unavailable$) ||
+      !settledFeedback(get(session.settled$), entry)
+    ) {
+      return;
+    }
+    const messages = i18n.t(
+      ($) => {
+        return $.chat.agentSuggestions;
+      },
+      { returnObjects: true },
+    );
+    const message = {
+      dismissed: messages.dismissRecorded,
+      already_done: messages.doneRecorded,
+      not_planned: messages.notPlannedRecorded,
+      less_like_this: messages.lessRecorded,
+    }[kind];
+    toast.success(message, {
+      ...TEXT_TOAST_ACTION,
+      id: "home-suggestion-feedback",
+      action: {
+        label: messages.undoFeedback,
+        onClick: onDomEventFn(async () => {
+          signal.throwIfAborted();
+          set(session.previewId$, entry.item.id);
+          await set(undoSuggestionFeedback$, entry, signal);
+        }),
+      },
+    });
   },
 );
 export const saveSuggestionFeedbackReason$ = command(

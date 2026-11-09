@@ -1643,6 +1643,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "Tout est à jour",
+        "emptyTitle": "Aucune nouvelle suggestion",
+        "feedback": "Actions de la suggestion",
+        "loading": "Chargement des suggestions",
+        "navigation": "Parcourir les suggestions",
+        "next": "Suggestion suivante",
+        "previous": "Suggestion précédente",
+        "retry": "Réessayer"
+      },
       "label": "Suggestions",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1911,17 +1921,19 @@
       "workflow": {
         "advanced": {
           "description": "Reliez vos outils et vos étapes.",
+          "shortTitle": "Avancé",
           "title": "Workflows avancés"
         },
         "description": "Un peu de configuration. Beaucoup de temps gagné.",
         "scheduled": {
           "description": "Exécutez au bon moment.",
           "items": {
-            "daily": "Routine quotidienne",
-            "once": "Rappel ponctuel",
-            "weekly": "Bilan hebdomadaire"
+            "once": "Exécuter une fois à une heure précise",
+            "recurring": "Répéter selon un planning"
           },
-          "prompt": "Aide-moi à configurer : {{task}}. Demande ce que je veux faire, à quel moment et dans quel fuseau horaire.",
+          "prompt": "{{task}}. Demande ce que je veux faire, à quel moment et dans quel fuseau horaire.",
+          "setupTitle": "Planifier une tâche",
+          "shortTitle": "Planifié",
           "title": "Tâches planifiées"
         },
         "suggestions": "Partez d’une suggestion et adaptez-la à vos besoins.",
@@ -1967,6 +1979,7 @@
             }
           },
           "monitorPrompt": "Aide-moi à configurer {{task}} avec {{source}}. Étapes : {{event}} → {{action}} → {{result}}. Demande les flux, sujets ou comptes à suivre, la fréquence et où enregistrer le résumé. Vérifie périodiquement, ignore les éléments déjà traités et confirme la configuration avant de l’activer.",
+          "shortTitle": "Événements",
           "title": "Déclencheurs"
         }
       }
