@@ -30,7 +30,7 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskTemplates } from "./composer-task-chips.tsx";
-import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
+import { CapabilityHomeCompliance } from "./chat-home-compliance.tsx";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
 import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
 import { localizedWorkflowTemplate } from "./workflow-template-copy.ts";
@@ -701,6 +701,7 @@ export function CapabilityHomeContent({
               </div>
             )}
             <CapabilityCards signals={signals} />
+            <CapabilityHomeCompliance />
           </div>
         ) : (
           <div className="flex flex-1 flex-col justify-end py-4">
@@ -752,7 +753,6 @@ export function CapabilityHomePage({
           </div>
         </footer>
       </div>
-      <ChatHomeCompliance />
     </div>
   );
 }
