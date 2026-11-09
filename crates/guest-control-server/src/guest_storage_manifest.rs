@@ -453,7 +453,19 @@ fn eligibility_query(
     let result = (|| {
         control()?;
         let manifest = serde_json::from_slice::<guest_contracts::storage_manifest::Manifest>(bytes)
-            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+            .map_err(|error| {
+                // Serde messages can quote sensitive manifest values. Preserve
+                // only the same bounded metadata as the ordinary helper parser.
+                io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    format!(
+                        "category={:?} line={} column={}",
+                        error.classify(),
+                        error.line(),
+                        error.column()
+                    ),
+                )
+            })?;
         guest_telemetry::storage_eligibility::eligible(&manifest, Some(runtime), control)
     })();
     Some(match result {

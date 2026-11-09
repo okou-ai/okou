@@ -42,6 +42,7 @@ fn direct_production_query_preserves_read_only_admission_and_failures() {
         "input-alias",
         "runtime-alias",
         "invalid-binding",
+        "malformed-mount",
     ] {
         let root = tempfile::tempdir().unwrap();
         let sentinel = root.path().join("sentinel");
@@ -58,6 +59,9 @@ fn direct_production_query_preserves_read_only_admission_and_failures() {
         }
         if case == "invalid-binding" {
             input["archiveReadiness"]["sources"] = json!(["file:///tmp/unbound.tar.gz"]);
+        }
+        if case == "malformed-mount" {
+            input["storageMounts"] = json!("sensitive-manifest-value");
         }
         let (output, resources) = query(root.path(), input, 1000, false).unwrap();
         assert!(
@@ -77,6 +81,7 @@ fn direct_production_query_preserves_read_only_admission_and_failures() {
         assert_eq!(std::fs::read(&sentinel).unwrap(), b"unchanged");
         assert!(!root.path().join("input").exists());
         assert!(!root.path().join("runtime/archive-readiness").exists());
+        assert!(!output.diagnostic.contains("sensitive-manifest-value"));
     }
 }
 
