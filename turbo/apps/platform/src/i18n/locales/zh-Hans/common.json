@@ -6198,7 +6198,7 @@
       "title": "哎呀，出了点小问题"
     },
     "forceUpgrade": {
-      "description": "当前版本的 {{brandName}} 已不再支持。",
+      "description": "{{brandName}} 上线了新功能，刷新即可使用最新版本。",
       "title": "需要更新"
     },
     "mermaid": {
