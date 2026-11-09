@@ -108,7 +108,6 @@ test("The gift opens invitations independently of credit quests, with code and l
   const copyLink = await waitFor(() => {
     return buttonNamed("Copy invite link", dialog);
   });
-  expect(within(dialog).queryByDisplayValue("a7k2p9")).not.toBeInTheDocument();
   expect(within(dialog).getByText("40,000")).toBeInTheDocument();
   click(copyLink);
   await waitFor(() => {

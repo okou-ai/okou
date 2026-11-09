@@ -127,7 +127,7 @@ function FriendReferralDetails({
           className="w-full"
           disabled={copyState.state === "loading"}
           onClick={() => {
-            detach(copy(data.code, "link", signal), Reason.DomCallback);
+            detach(copy(data.code, signal), Reason.DomCallback);
           }}
         >
           {copied ? <Check className="size-4" /> : <Link className="size-4" />}
@@ -215,13 +215,12 @@ export function FriendReferralDialog({
           </div>
         )}
         {!loading && !failed && data && <FriendReferralDetails data={data} />}
-        <div className="border-t border-gray-200 pt-5">
-          <p className="text-center text-xs leading-relaxed text-gray-700">
-            {t(($) => {
-              return $.friendReferrals.terms;
-            })}
-          </p>
-        </div>
+        <div className="h-px bg-divider" />
+        <p className="text-center text-xs leading-relaxed text-gray-700">
+          {t(($) => {
+            return $.friendReferrals.terms;
+          })}
+        </p>
       </DialogContent>
     </Dialog>
   );

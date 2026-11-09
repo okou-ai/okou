@@ -121,16 +121,9 @@ export function friendReferralUrl(code: string): string {
 }
 
 export const copyFriendReferral$ = command(
-  async (
-    _context,
-    code: string,
-    target: "code" | "link",
-    signal: AbortSignal,
-  ) => {
-    const copied = await writeToClipboard(
-      target === "code" ? code : friendReferralUrl(code),
-    );
+  async (_context, code: string, signal: AbortSignal) => {
+    const copied = await writeToClipboard(friendReferralUrl(code));
     signal.throwIfAborted();
-    return { target, copied };
+    return { copied };
   },
 );
