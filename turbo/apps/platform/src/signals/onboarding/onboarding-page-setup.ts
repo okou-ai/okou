@@ -12,8 +12,8 @@ import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { promptHandoffParams } from "./onboarding-actions.ts";
 import {
+  clearOnboardingPasteState$,
   hydrateOnboardingRoute$,
-  resetOnboardingDraft$,
 } from "./onboarding-state.ts";
 import { capturePaidOnboardingStepViewed$ } from "../bootstrap/paid-funnel-telemetry.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
@@ -54,7 +54,9 @@ export const setupOnboardingPromptPage$ = command(
     signal.addEventListener(
       "abort",
       () => {
-        set(resetOnboardingDraft$);
+        // Route cancellation can precede the next screen's first paint. Release
+        // retained upload Files without blanking the still-visible draft.
+        set(clearOnboardingPasteState$);
       },
       { once: true },
     );

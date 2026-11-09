@@ -231,10 +231,14 @@ export const selectOnboardingPromptOutput$ = command(
   },
 );
 
-export const resetOnboardingDraft$ = command(({ set }) => {
-  set(internalOnboardingDraft$, emptyOnboardingDraft());
+export const clearOnboardingPasteState$ = command(({ set }) => {
   set(pastedFileUploads$, []);
   set(pasteRejection$, null);
+});
+
+export const resetOnboardingDraft$ = command(({ set }) => {
+  set(internalOnboardingDraft$, emptyOnboardingDraft());
+  set(clearOnboardingPasteState$);
 });
 
 /** Select a task-shaped default once, independently of the editable task. */
