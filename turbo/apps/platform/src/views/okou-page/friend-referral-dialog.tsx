@@ -119,7 +119,7 @@ function FriendReferralDetails({
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const [copyState, copy] = useLoadableSet(copyFriendReferral$);
-  const copied = copyState.state === "hasData" && copyState.data.copied;
+  const copied = copyState.state === "hasData" && copyState.data;
   return (
     <>
       <div className="grid gap-2">
@@ -139,7 +139,7 @@ function FriendReferralDetails({
                 return $.friendReferrals.copyLink;
               })}
         </Button>
-        {copyState.state === "hasData" && !copyState.data.copied && (
+        {copyState.state === "hasData" && !copyState.data && (
           <p className="text-center text-xs text-destructive" role="alert">
             {t(($) => {
               return $.friendReferrals.copyFailed;

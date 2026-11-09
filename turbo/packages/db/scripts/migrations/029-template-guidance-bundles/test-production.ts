@@ -29,12 +29,15 @@ const context = contextSchema.parse({
   writersDrained: true,
 });
 const readonlyPermissions = {
+  login: "RO",
   role: "RO",
   readonly: true,
   selectUser: true,
   selectPresentation: true,
   writableUser: false,
   writablePresentation: false,
+  updateUserBundle: false,
+  updatePresentationBundle: false,
 };
 validateRolePermissions(readonlyPermissions, "RO", false);
 for (const changed of [
@@ -43,13 +46,38 @@ for (const changed of [
   { selectPresentation: false },
   { writableUser: true },
   { writablePresentation: true },
-  { role: "foreign" },
+  { login: "foreign" },
 ])
   assert.throws(() => {
     return validateRolePermissions(
       { ...readonlyPermissions, ...changed },
       "RO",
       false,
+    );
+  }, /ProductionRolePrivilegesRejected/u);
+const applyPermissions = {
+  ...readonlyPermissions,
+  login: "neondb_owner",
+  role: "database_effective_owner",
+  writableUser: true,
+  writablePresentation: true,
+  updateUserBundle: true,
+  updatePresentationBundle: true,
+};
+validateRolePermissions(applyPermissions, "neondb_owner", true);
+for (const changed of [
+  { login: "foreign" },
+  { readonly: false },
+  { selectUser: false },
+  { selectPresentation: false },
+  { updateUserBundle: false },
+  { updatePresentationBundle: false },
+])
+  assert.throws(() => {
+    return validateRolePermissions(
+      { ...applyPermissions, ...changed },
+      "neondb_owner",
+      true,
     );
   }, /ProductionRolePrivilegesRejected/u);
 const host = "ep-production.us-west-2.aws.neon.tech";

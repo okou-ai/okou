@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.824.3](https://github.com/okou-ai/okou/compare/core-v8.824.2...core-v8.824.3) (2026-11-09)
+
+
+### Bug Fixes
+
+* **core:** enable single agent for staff organizations ([#46046](https://github.com/okou-ai/okou/issues/46046)) ([7ac09ab](https://github.com/okou-ai/okou/commit/7ac09abc90aec538104dc0e0327fef8240ada955))
+
 ## [8.824.2](https://github.com/okou-ai/okou/compare/core-v8.824.1...core-v8.824.2) (2026-11-08)
 
 

@@ -1977,8 +1977,13 @@ function AttachmentChip({
 }) {
   const { t } = useTranslation();
   const infoLoadable = useLoadable(attachment.fileInfo$);
+  const uploadedBytes = useGet(attachment.uploadedBytes$);
   const preview = useLastResolved(attachment.preview$) ?? null;
   const uploading = infoLoadable.state === "loading";
+  const uploadPercent = Math.min(
+    99,
+    Math.floor((uploadedBytes / Math.max(1, attachment.size)) * 100),
+  );
   const url =
     infoLoadable.state === "hasData" && infoLoadable.data
       ? canonicalUserMessageFileUrl(infoLoadable.data.id)
@@ -2018,8 +2023,43 @@ function AttachmentChip({
         </span>
       )}
       {uploading && (
-        <span className="absolute -top-1 -left-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background">
-          <Loader2 size={10} className="animate-spin text-muted-foreground" />
+        <span
+          role="progressbar"
+          aria-label={t(
+            ($) => {
+              return $.chat.attachments.loadingFile;
+            },
+            { filename: attachment.filename },
+          )}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuenow={uploadPercent}
+          className="absolute -top-1 -left-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background"
+        >
+          <svg
+            viewBox="0 0 12 12"
+            className="h-2.5 w-2.5 -rotate-90"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle
+              cx="6"
+              cy="6"
+              r="4"
+              strokeWidth="2"
+              className="stroke-muted-foreground/20"
+            />
+            <circle
+              cx="6"
+              cy="6"
+              r="4"
+              pathLength="100"
+              strokeWidth="2"
+              strokeDasharray="100"
+              strokeDashoffset={100 - uploadPercent}
+              className="stroke-primary"
+            />
+          </svg>
         </span>
       )}
       <IconTooltipButton

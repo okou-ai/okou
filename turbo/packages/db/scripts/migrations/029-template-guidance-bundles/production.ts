@@ -190,17 +190,30 @@ async function main() {
       },
       onnotice() {},
     });
+    await db`SET default_transaction_read_only = on`;
     const [permissions] = array(rolePermissionsSchema).parse(
       await db`
-      SELECT current_user AS role, current_setting('transaction_read_only') = 'on' AS readonly,
+      SELECT session_user AS login, current_user AS role, current_setting('transaction_read_only') = 'on' AS readonly,
         has_table_privilege(current_user, 'public.user_templates', 'SELECT') AS "selectUser",
         has_table_privilege(current_user, 'public.presentation_templates', 'SELECT') AS "selectPresentation",
         (has_table_privilege(current_user, 'public.user_templates', 'INSERT,UPDATE,DELETE,TRUNCATE') OR
           has_any_column_privilege(current_user, 'public.user_templates', 'INSERT,UPDATE')) AS "writableUser",
         (has_table_privilege(current_user, 'public.presentation_templates', 'INSERT,UPDATE,DELETE,TRUNCATE') OR
-          has_any_column_privilege(current_user, 'public.presentation_templates', 'INSERT,UPDATE')) AS "writablePresentation"`,
+          has_any_column_privilege(current_user, 'public.presentation_templates', 'INSERT,UPDATE')) AS "writablePresentation",
+        has_column_privilege(current_user, 'public.user_templates', 'guidance_bundle', 'UPDATE') AS "updateUserBundle",
+        has_column_privilege(current_user, 'public.presentation_templates', 'guidance_bundle', 'UPDATE') AS "updatePresentationBundle"`,
     );
-    validateRolePermissions(permissions, target.role, applying);
+    try {
+      validateRolePermissions(permissions, target.role, applying);
+    } catch (error) {
+      await writeFile(
+        join(output, "preflight.json"),
+        JSON.stringify({ context, scope: target.scope, permissions }, null, 2) +
+          "\n",
+        { mode: 0o600, flag: "wx" },
+      );
+      throw error;
+    }
     const load = async () => {
       const rows = [];
       for (const ownerKind of [
@@ -246,6 +259,7 @@ async function main() {
         branch: BRANCH,
         endpointId: target.endpointId,
         scope: target.scope,
+        preflight: permissions,
         startedAt: new Date().toISOString(),
       });
       await write("owners-before.json", before);

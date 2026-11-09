@@ -12,7 +12,6 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
-import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
@@ -3575,7 +3574,6 @@ function ChatThreadBody({ thread }: { thread: ChatPanelSignals }) {
           <ChatThreadBottomBar thread={thread} />
         </div>
       </div>
-      {showCapabilities && <ChatHomeCompliance />}
       <ChatThreadFeedbackSlot thread={thread} />
     </>
   );

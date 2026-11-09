@@ -60,6 +60,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Use personal Instructions and workspace Workflows with one Okou experience.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.FriendReferrals]: {
     maintainer: "yuma@okou.ai",

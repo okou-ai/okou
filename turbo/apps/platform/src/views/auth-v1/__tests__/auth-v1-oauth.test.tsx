@@ -2,9 +2,8 @@ import { buildPublishableKey } from "@clerk/shared/keys";
 import { screen, waitFor } from "@testing-library/react";
 import { expect, test, vi } from "vitest";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
-import { click, setupPage, startPage } from "../../../__tests__/page-helper.ts";
+import { setupPage, startPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
-import { signupControl } from "./signup-test-helpers.ts";
 
 const context = testContext();
 const previewApp = "https://app.vm7.ai";
@@ -74,7 +73,7 @@ test("Sign-in preserves the consent query when Clerk moves the return into its h
   );
 });
 
-test("Signup preserves the consent query in OAuth and sign-in navigation from its hash", async () => {
+test("Hosted signup preserves the consent return and sign-in navigation from its hash", async () => {
   const target = consentUrl();
   await setupPage({
     context,
@@ -84,23 +83,15 @@ test("Signup preserves the consent query in OAuth and sign-in navigation from it
     env: clerkEnvironment(),
   });
 
+  const signUp = screen.getByTestId("clerk-sign-up");
+  expect(signUp).toHaveAttribute("data-clerk-force-redirect-url", target);
   const switchUrl = new URL(
-    signupControl("link", "Sign in").getAttribute("href") ?? "",
+    signUp.dataset.clerkSignInUrl ?? "",
     location.origin,
   );
   expect(new URLSearchParams(switchUrl.hash.slice(3)).get("redirect_url")).toBe(
     target,
   );
-  click(signupControl("button", "Google"));
-  await waitFor(() => {
-    expect(
-      mockedClerk.client.signUp.authenticateWithRedirect,
-    ).toHaveBeenCalledWith({
-      strategy: "oauth_google",
-      redirectUrl: `${previewApp}/sign-up/sso-callback?redirect_url=${encodeURIComponent(target)}`,
-      redirectUrlComplete: target,
-    });
-  });
 });
 
 test.each([

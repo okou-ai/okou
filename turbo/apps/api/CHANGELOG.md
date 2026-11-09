@@ -10,6 +10,31 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.54.5](https://github.com/okou-ai/okou/compare/api-v2.54.4...api-v2.54.5) (2026-11-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.3
+    * @okouai/db bumped to 2.24.4
+    * @okouai/pi-agent-runtime bumped to 1.51.87
+
+## [2.54.4](https://github.com/okou-ai/okou/compare/api-v2.54.3...api-v2.54.4) (2026-11-09)
+
+
+### Bug Fixes
+
+* retire thread-list indicator refresh fallback ([#46009](https://github.com/okou-ai/okou/issues/46009)) ([3696606](https://github.com/okou-ai/okou/commit/36966068cf7f6465fddc6dde6fde2574b95f4c1c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.24.3
+
 ## [2.54.3](https://github.com/okou-ai/okou/compare/api-v2.54.2...api-v2.54.3) (2026-11-08)
 
 
