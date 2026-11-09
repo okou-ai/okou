@@ -16,7 +16,7 @@ async fn claude_code_event_delivery_byte_overload_keeps_recent_events()
 -> Result<(), Box<dyn std::error::Error>> {
     let mock_cli = common::build_and_locate_mock()?;
     let tmp = tempfile::tempdir()?;
-    let mut server = common::ControlledHttpServer::start().await?;
+    let mut server = common::ControlledHttpServer::start_without_recording().await?;
     // One in-flight payload plus fifteen queued payloads crosses the byte budget;
     // fifteen queued payloads alone do not. This distinguishes queued-plus-in-flight
     // accounting from a queue-only implementation.
