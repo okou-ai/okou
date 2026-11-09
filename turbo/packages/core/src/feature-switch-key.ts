@@ -5,6 +5,7 @@
  */
 export enum FeatureSwitchKey {
   HomeCapabilities = "homeCapabilities",
+  PastedTextAttachments = "pastedTextAttachments",
   SingleAgent = "singleAgent",
   FriendReferrals = "friendReferrals",
   Projects = "projects",

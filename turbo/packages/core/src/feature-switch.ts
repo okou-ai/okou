@@ -54,6 +54,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.PastedTextAttachments]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Long pasted text attachments",
+    description:
+      "Turn plain-text pastes over 10,000 characters into text attachments in chat and onboarding.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",
