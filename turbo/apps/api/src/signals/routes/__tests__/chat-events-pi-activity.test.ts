@@ -354,7 +354,7 @@ describe("CHAT-02: model-first routing", () => {
       sessionId: null,
       generationRunId: null,
       recoveryPrompt: expect.stringContaining(
-        "okou chat messages --output-dir threads",
+        "okou chat messages --output-dir /tmp/okou-chat-history",
       ),
     });
     const recoveryHistory = (
@@ -459,7 +459,7 @@ describe("CHAT-02: model-first routing", () => {
       generationRunId: null,
     });
     expect(explicitResumeClaim.nativeContinuation?.recoveryPrompt).toContain(
-      "okou chat messages --output-dir threads",
+      "okou chat messages --output-dir /tmp/okou-chat-history",
     );
     await cancelChatRun(actor, explicitResume.runId, {
       authorization: `Bearer ${explicitResumeClaim.sandboxToken}`,

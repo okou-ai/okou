@@ -161,7 +161,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       generationRunId: null,
     });
     expect(firstCodexClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
-      "okou chat messages --output-dir threads",
+      "okou chat messages --output-dir /tmp/okou-chat-history",
     );
     chatCallbacks.mockChatOutputEvents([assistantEvent(0, firstCodexAnswer)]);
     await own(async () => {
@@ -202,7 +202,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       generationRunId: null,
     });
     expect(returnedPiClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
-      "okou chat messages --output-dir threads",
+      "okou chat messages --output-dir /tmp/okou-chat-history",
     );
     const returnedPiRun = await api.readRun(actor, returnedPi.runId);
     for (const prior of [
@@ -332,7 +332,7 @@ describe("CHAT-02: personal subscription model selection", () => {
       generationRunId: null,
     });
     expect(repeatedPiClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
-      "okou chat messages --output-dir threads",
+      "okou chat messages --output-dir /tmp/okou-chat-history",
     );
     await own(async () => {
       return await completeSandboxFirstPiRun({
