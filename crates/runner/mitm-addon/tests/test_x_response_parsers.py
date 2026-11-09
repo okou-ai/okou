@@ -200,7 +200,7 @@ class TestNdjsonExtractor:
         [
             pytest.param(
                 b'{"data":{"id":"blocked"},"includes":{"users":[{},{},{}]},'
-                b'"matching_rules":[' + b",".join([b"0"] * 40_000) + b"]}",
+                b'"matching_rules":[' + (b"0," * 40_000)[:-1] + b"]}",
                 id="dense-array",
             ),
             pytest.param(

@@ -707,7 +707,7 @@ async def test_websocket_diagnostic_exhaustion_preserves_accounting_and_recovery
         # Correlation and accounting still inspect this frame after all four
         # diagnostics have been spent on a different error kind.
         completion = feed_websocket_server_message(
-            flow, b'{"padding":[' + b",".join([b"0"] * 40_000) + b"]}"
+            flow, b'{"padding":[' + (b"0," * 40_000)[:-1] + b"]}"
         )
         assert completion is not None
         await completion
