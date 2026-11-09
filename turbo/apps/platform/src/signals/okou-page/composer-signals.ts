@@ -624,7 +624,6 @@ export function createComposerSignals(
   return {
     agentId: options.agentId,
     threadId: options.threadId,
-    ...(options.project ? { project: options.project } : {}),
     /** Starts the composer's owner-scoped work under its owner's signal. */
     setup$: command(({ set }, signal: AbortSignal) => {
       set(voice.setup$, signal);

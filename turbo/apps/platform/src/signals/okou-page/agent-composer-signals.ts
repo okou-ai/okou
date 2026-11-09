@@ -197,18 +197,14 @@ function createAgentComposerSignalsWithDraft(
     options,
   );
 
-  return createComposerSignals({
+  // A dialog composer sends from its own draft without leaving the page, so
+  // only the page's own composer can move its chat into a Project.
+  const project = options.inPlace
+    ? undefined
+    : createComposerProjectSignals(agentId, options.projectId ?? null);
+  const composer = createComposerSignals({
     agentId,
-    // A dialog composer sends from its own draft without leaving the page, so
-    // only the page's own composer can move its chat into a Project.
-    ...(options.inPlace
-      ? {}
-      : {
-          project: createComposerProjectSignals(
-            agentId,
-            options.projectId ?? null,
-          ),
-        }),
+    ...(project ? { project } : {}),
     connector,
     pendingRemoteAccess,
     draft: {
@@ -234,6 +230,7 @@ function createAgentComposerSignalsWithDraft(
     removeQueuedMessage$: noOpEventAction$,
     removeAutomationEvent$: noOpEventAction$,
   });
+  return project ? { ...composer, project } : composer;
 }
 
 export function createForwardAgentComposerSignals(
