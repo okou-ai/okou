@@ -1,3 +1,4 @@
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import { command } from "ccstate";
 import { and, countDistinct, eq, isNull, or } from "drizzle-orm";
 import { agents } from "@okouai/db/schema/agent";
@@ -13,7 +14,10 @@ import { logger } from "../../lib/log";
 import { db$ } from "../external/db";
 import { discordClient } from "../external/discord-client";
 import { settle } from "../utils";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventError,
+} from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import { requireDiscordOutputAccess$ } from "./discord-output-destination.service";
 import type { DiscordDeliveryTarget } from "./discord-chat-callback-payload";
@@ -222,6 +226,7 @@ export const sendDiscordChatReply$ = command(
         const [event] = await db
           .select({
             content: canonicalChatEventContent(),
+            error: canonicalChatEventError(),
             runId: chatEvents.runId,
             agentId: agents.id,
           })
@@ -295,9 +300,19 @@ export const sendDiscordChatReply$ = command(
           signal,
         );
         signal.throwIfAborted();
+        const message = await set(
+          formatIntegrationChatMessage$,
+          {
+            orgId: request.orgId,
+            userId: request.userId,
+            content: event.content,
+            error: event.error,
+          },
+          signal,
+        );
         const content = presentation.footerText
-          ? `${event.content}\n\n_${presentation.footerText}_`
-          : event.content;
+          ? `${message}\n\n_${presentation.footerText}_`
+          : message;
         await postParts(
           access.botToken,
           request.target.channelId,

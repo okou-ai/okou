@@ -1,3 +1,4 @@
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -33,7 +34,10 @@ import {
   type TelegramOwnerLink,
 } from "./telegram-chat-ingress.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventError,
+} from "./canonical-chat-event-read.service";
 import { storeTelegramBotMessage$ } from "./telegram-callback-persistence.service";
 
 const L = logger("InternalCallbacksTelegramChat");
@@ -146,7 +150,10 @@ const loadTelegramChatDeliveryContext$ = command(
     };
 
     const [event] = await db
-      .select({ content: canonicalChatEventContent() })
+      .select({
+        content: canonicalChatEventContent(),
+        error: canonicalChatEventError(),
+      })
       .from(chatEvents)
       .where(
         and(
@@ -207,7 +214,12 @@ const loadTelegramChatDeliveryContext$ = command(
         );
         const routeBindsRun = route !== undefined;
         if (!routeBindsRun) {
-          return { payload, run: runContext, messageContent: event.content };
+          return {
+            payload,
+            run: runContext,
+            messageContent: event.content,
+            messageError: event.error,
+          };
         }
       }
     }
@@ -215,6 +227,7 @@ const loadTelegramChatDeliveryContext$ = command(
       payload,
       run: runContext,
       messageContent: event.content,
+      messageError: event.error,
       binding,
     };
   },
@@ -394,7 +407,7 @@ const deliverClaimedTelegramChatCallback$ = command(
     },
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
-    const { payload, run, messageContent, binding } = await set(
+    const { payload, run, messageContent, messageError, binding } = await set(
       loadTelegramChatDeliveryContext$,
       args,
       signal,
@@ -412,13 +425,23 @@ const deliverClaimedTelegramChatCallback$ = command(
       sendChatAction(binding.botToken, payload.chatId, "typing"),
       signal,
     );
+    const content = await set(
+      formatIntegrationChatMessage$,
+      {
+        orgId: run.orgId,
+        userId: run.userId,
+        content: messageContent,
+        error: messageError,
+      },
+      signal,
+    );
     const responseText =
       args.status === "completed" ? messageContent : undefined;
     const sent = await sendTelegramCompletionMessages(
       {
         botToken: binding.botToken,
         target: payload,
-        htmlOutput: buildTelegramResponse(messageContent),
+        htmlOutput: buildTelegramResponse(content),
       },
       signal,
     );

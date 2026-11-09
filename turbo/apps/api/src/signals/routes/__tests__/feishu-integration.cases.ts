@@ -6446,6 +6446,46 @@ export function registerFeishuIntegrationTests(
 
     // oxlint-disable-next-line vitest/no-conditional-tests -- The entrypoint selects this group before collection.
     if (group === "conversation") {
+      it("offers billing recovery when a running task runs out of credits", async () => {
+        const fixture = await setupFeishuRunFixture();
+        const { actor, runnerGroup, appId, callbackUrl } = fixture;
+        await connectFixtureUser(fixture);
+        const prompt = `finish before credits run out ${randomUUID()}`;
+        await own(() => {
+          return postEvent(
+            callbackUrl,
+            directMessage(appId, prompt, "ou_feishu_user"),
+            { encrypted: true },
+          );
+        });
+        await own(flushWaitUntilForTest);
+        const run = await findRun(actor, prompt);
+        await own(() => {
+          return runsApi.heartbeatRunner(runnerGroup);
+        });
+        const claim = await claimRun(run.id);
+        fixtureState.outboundMessages = [];
+        await own(() => {
+          return webhooksApi.requestAgentComplete(
+            {
+              runId: run.id,
+              exitCode: 1,
+              error: "insufficient_credits",
+              failureReason: "insufficient_credits",
+            },
+            { authorization: `Bearer ${claim.sandboxToken}` },
+            [200],
+          );
+        });
+        await own(flushWaitUntilForTest);
+        expect(
+          fixtureState.outboundMessages.some((message) => {
+            return messageContent(message).includes("/?settings=billing");
+          }),
+        ).toBeTruthy();
+        await removeFeishuInstallation(fixture);
+      });
+
       it("retains platform run history when a model change starts a fresh session", async () => {
         const fixture = await setupFeishuRunFixture();
         const { actor, runnerGroup, appId, callbackUrl, defaultAgentId } =

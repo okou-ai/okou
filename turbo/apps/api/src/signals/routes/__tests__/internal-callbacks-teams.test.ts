@@ -1442,56 +1442,63 @@ describe("Teams chat callbacks", () => {
     });
   });
 
-  it("posts readable failed run replies without persisting a thread session", async () => {
-    const teams = await setupConnectedTeamsActor();
-    const teamsApi = teamsApiMocks({ fixture: teams.fixture });
-    const activityId = teamsFixtureExternalId(
-      teams.fixture,
-      "activity-failed-1",
-    );
-    const threadId = teamsFixtureExternalId(teams.fixture, "root-failed");
-    const runId = await dispatchTeamsRun({
-      fixture: teams.fixture,
-      activityId,
-      threadId,
-      text: "fail this task",
-    });
-    const claim = await claimTeamsRun({
-      runnerGroup: teams.runnerGroup,
-      runId,
-    });
-    clearTeamsApiCalls(teamsApi);
-
-    await completeSandboxRun({
-      runId,
-      sandboxToken: claim.sandboxToken,
-      exitCode: 1,
+  it.each([
+    {
       error: "Cannot continue session from history",
-    });
-
-    expect(teamsApi.postedActivities).toHaveLength(1);
-    expect(teamsApi.postedActivities[0]?.text).toContain(
-      "Cannot continue session from history",
-    );
-    expect(teamsApi.reactionRequests).toStrictEqual([
-      {
-        method: "DELETE",
-        conversationId: teams.fixture.teamsConversationId,
-        activityId,
-        reactionType: "1f4ad_thoughtballoon",
-      },
-    ]);
-
-    await claimFollowUpInThread({
-      fixture: teams.fixture,
-      runnerGroup: teams.runnerGroup,
-      threadId,
-      activityId: teamsFixtureExternalId(
+      expected: "Cannot continue session from history",
+    },
+    { error: "insufficient_credits", expected: "/?settings=billing" },
+  ])(
+    "posts readable failed run replies for $error without persisting a thread session",
+    async ({ error, expected }) => {
+      const teams = await setupConnectedTeamsActor();
+      const teamsApi = teamsApiMocks({ fixture: teams.fixture });
+      const activityId = teamsFixtureExternalId(
         teams.fixture,
-        "activity-failed-follow-up",
-      ),
-    });
-  });
+        "activity-failed-1",
+      );
+      const threadId = teamsFixtureExternalId(teams.fixture, "root-failed");
+      const runId = await dispatchTeamsRun({
+        fixture: teams.fixture,
+        activityId,
+        threadId,
+        text: "fail this task",
+      });
+      const claim = await claimTeamsRun({
+        runnerGroup: teams.runnerGroup,
+        runId,
+      });
+      clearTeamsApiCalls(teamsApi);
+
+      await completeSandboxRun({
+        runId,
+        sandboxToken: claim.sandboxToken,
+        exitCode: 1,
+        error,
+      });
+
+      expect(teamsApi.postedActivities).toHaveLength(1);
+      expect(teamsApi.postedActivities[0]?.text).toContain(expected);
+      expect(teamsApi.reactionRequests).toStrictEqual([
+        {
+          method: "DELETE",
+          conversationId: teams.fixture.teamsConversationId,
+          activityId,
+          reactionType: "1f4ad_thoughtballoon",
+        },
+      ]);
+
+      await claimFollowUpInThread({
+        fixture: teams.fixture,
+        runnerGroup: teams.runnerGroup,
+        threadId,
+        activityId: teamsFixtureExternalId(
+          teams.fixture,
+          "activity-failed-follow-up",
+        ),
+      });
+    },
+  );
 
   it("does not post replies when the Teams installation is missing", async () => {
     const teams = await setupConnectedTeamsActor();

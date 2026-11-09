@@ -1,3 +1,4 @@
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { agents } from "@okouai/db/schema/agent";
@@ -35,7 +36,10 @@ import {
 } from "./feishu-chat-callback-payload";
 import { resolveIntegrationAgentResponsePresentation$ } from "./integration-agent-response-presentation.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventError,
+} from "./canonical-chat-event-read.service";
 import {
   feishuInstallationAvailabilityReadPlan,
   feishuInstallationEnabledFromRows,
@@ -125,7 +129,10 @@ const loadFeishuChatDeliveryContext$ = command(
     }
 
     const [event] = await db
-      .select({ content: canonicalChatEventContent() })
+      .select({
+        content: canonicalChatEventContent(),
+        error: canonicalChatEventError(),
+      })
       .from(chatEvents)
       .where(
         and(
@@ -179,7 +186,13 @@ const loadFeishuChatDeliveryContext$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return { payload, run, messageContent: event.content, binding };
+    return {
+      payload,
+      run,
+      messageContent: event.content,
+      messageError: event.error,
+      binding,
+    };
   },
 );
 
@@ -393,7 +406,7 @@ const deliverClaimedFeishuChatCallback$ = command(
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
     const db = set(writeDb$);
-    const { payload, run, messageContent, binding } = await set(
+    const { payload, run, messageContent, messageError, binding } = await set(
       loadFeishuChatDeliveryContext$,
       args,
       signal,
@@ -422,9 +435,13 @@ const deliverClaimedFeishuChatCallback$ = command(
       },
       signal,
     );
-    signal.throwIfAborted();
+    const content = await set(
+      formatIntegrationChatMessage$,
+      { ...run, content: messageContent, error: messageError },
+      signal,
+    );
     const message = buildFeishuAgentResponseMessage({
-      text: messageContent,
+      text: content,
       footerText: presentation.footerText,
     });
     if (payload.replyInThread) {
