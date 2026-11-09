@@ -362,7 +362,8 @@ const startChatThreadIndicatorsRefresh$ = command(({ get, set }): void => {
 
 /**
  * Indicators change only on the server's explicit signals: Run start, Run
- * terminal markers, mute or delete (`chatIndicatorsChanged`), and read cursors.
+ * terminal markers, mute, hide or delete (`chatIndicatorsChanged`), and read
+ * cursors.
  * Run output does not refetch them. Run-state signals share the throttle; a
  * user's own read-cursor change refreshes immediately.
  */
