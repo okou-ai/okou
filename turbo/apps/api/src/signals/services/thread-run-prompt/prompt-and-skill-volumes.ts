@@ -86,7 +86,10 @@ function createIntegrationPrompts(
       threadContext.telegramContext$,
       featureSwitches$,
     ),
-    email: createEmailThreadPrompt(threadContext.emailContext$),
+    email: createEmailThreadPrompt(
+      threadContext.emailContext$,
+      featureSwitches$,
+    ),
     agentphone: createAgentPhoneThreadPrompt(
       pickedEvent$,
       threadContext.agentPhoneContext$,

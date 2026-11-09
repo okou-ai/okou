@@ -11,7 +11,10 @@ import { i18n } from "../../i18n/index.ts";
 export const setupAgentsPage$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     if (get(singleAgentEnabled$)) {
-      set(detachedNavigateTo$, "/my-okou", { replace: true });
+      set(detachedNavigateTo$, "/", {
+        searchParams: new URLSearchParams({ settings: "my-okou" }),
+        replace: true,
+      });
       return;
     }
     set(updatePage$, createElement(AgentsPageTabs), "sidebar");

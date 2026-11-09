@@ -8,12 +8,7 @@ import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf } from "../context/request";
-import { waitUntil } from "../context/wait-until";
-import {
-  publishThreadListChanged,
-  publishChatThreadMessageCreatedSafely,
-  publishUserSignal,
-} from "../external/realtime";
+import { publishUserSignal } from "../external/realtime";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   createDesktopShellAuthorization$,
@@ -21,9 +16,6 @@ import {
   approveDesktopShellAuthorization$,
   retireDesktopShellAuthorization$,
 } from "../services/desktop-shell-authorization.service";
-import { pickEnqueuedChatThread$ } from "../services/chat-thread-queue-drain.service";
-import { touchSentChatThreadSort$ } from "../services/chat-event-shared.service";
-import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 
 function error<T extends 400 | 403 | 404 | 409 | 410>(
@@ -193,9 +185,6 @@ function actionHandler(action: "approve" | "deny" | "revoke") {
         current,
         signal,
       );
-      if (applied.status === "model_unavailable") {
-        return error(400, "BAD_REQUEST", applied.message);
-      }
       if (applied.status !== "approved") {
         return error(
           409,
@@ -203,33 +192,6 @@ function actionHandler(action: "approve" | "deny" | "revoke") {
           "Shell authorization changed; refresh before retrying",
         );
       }
-      waitUntil(
-        set(
-          pickEnqueuedChatThread$,
-          { orgId: auth.orgId, chatThreadId: state.chatThreadId },
-          signal,
-        ),
-      );
-      await set(
-        touchSentChatThreadSort$,
-        {
-          orgId: auth.orgId,
-          userId: auth.userId,
-          threadId: state.chatThreadId,
-          agentId: current.thread.agentId,
-          eventId: state.id,
-          touchedAt: nowDate(),
-        },
-        signal,
-      );
-      await publishChatThreadMessageCreatedSafely({
-        userId: auth.userId,
-        orgId: auth.orgId,
-        threadId: state.chatThreadId,
-      });
-      signal.throwIfAborted();
-      await publishThreadListChanged(auth);
-      signal.throwIfAborted();
     } else if (action !== "approve") {
       const failure = await set(retireAction$, auth, state, action, signal);
       if (failure) {

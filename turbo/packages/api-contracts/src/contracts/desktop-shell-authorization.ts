@@ -86,7 +86,7 @@ export const desktopShellAuthorizationContract = c.router({
   approve: {
     ...action,
     path: "/api/computer-use/shell/authorizations/:id/approve",
-    summary: "Approve one hour and enqueue the next chat round atomically",
+    summary: "Approve one hour of Shell access for this chat and computer",
   },
   deny: {
     ...action,

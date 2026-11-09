@@ -2,59 +2,41 @@ import ChatData
 import ChatDomain
 import SwiftUI
 
-/// Workspace navigation snapshots, independent of the sidebar's Agent/filter selection.
+/// Workspace chat references, independent of the sidebar's current filter.
 struct ComposerMentionSource: Equatable {
   let agentID: String?
   let agents: [AgentRecord]
   let threads: [ChatThread]
 
   func suggestions(for query: String) -> [ComposerMentionSuggestion] {
-    guard let agentID else { return [] }
+    guard agentID != nil else { return [] }
     let query = query.lowercased()
-    let matchingAgents = agents.filter {
-      $0.agentId != agentID
-        && (query.isEmpty || ($0.displayName ?? $0.agentId).lowercased().contains(query))
-    }
-    let agentSuggestions = (query.isEmpty ? Array(matchingAgents.prefix(3)) : matchingAgents).map {
-      ComposerMentionSuggestion(
-        kind: .agent, referenceID: $0.agentId, title: $0.displayName ?? $0.agentId,
-        avatarURL: $0.isDefaultAgent ? OkouAgentAvatar.defaultURL : $0.avatarUrl)
-    }
     // The PWA reducer orders pinned chats first, then activity and ID; it does
     // not apply the sidebar's fractional pin ranking to mention suggestions.
     let chats = ChatThreadReplay.replay(snapshot: threads, events: []).filter {
       !$0.title.isEmpty && (query.isEmpty || $0.title.lowercased().contains(query))
     }.prefix(25).map { thread in
       ComposerMentionSuggestion(
-        kind: .chat, referenceID: thread.id, title: thread.title,
+        referenceID: thread.id, title: thread.title,
         avatarURL: {
           let agent = agents.first(where: { $0.agentId == thread.agentID })
           return agent?.isDefaultAgent == true ? OkouAgentAvatar.defaultURL : agent?.avatarUrl
         }())
     }
-    return agentSuggestions + chats
+    return chats
   }
 }
 
 struct ComposerMentionSuggestion: Equatable, Identifiable {
-  enum Kind { case agent, chat }
-  let kind: Kind
   let referenceID: String
   let title: String
   let avatarURL: String?
-  var id: String { "\(kind)-\(referenceID)" }
+  var id: String { "chat-\(referenceID)" }
   var part: MessageJSON {
-    switch kind {
-    case .agent:
-      .object([
-        "type": .string("agent"), "agentId": .string(referenceID), "nameSnapshot": .string(title),
-      ])
-    case .chat:
-      .object([
-        "type": .string("chat_thread"), "threadId": .string(referenceID),
-        "titleSnapshot": .string(title),
-      ])
-    }
+    .object([
+      "type": .string("chat_thread"), "threadId": .string(referenceID),
+      "titleSnapshot": .string(title),
+    ])
   }
 }
 
@@ -100,9 +82,8 @@ private struct ComposerMentionTable: UIViewRepresentable {
     let changed = coordinator.suggestions != suggestions
     coordinator.suggestions = suggestions
     if changed { table.reloadData() }
-    guard suggestions.indices.contains(selectedIndex),
-      let path = coordinator.path(for: selectedIndex)
-    else { return }
+    guard suggestions.indices.contains(selectedIndex) else { return }
+    let path = IndexPath(row: selectedIndex, section: 0)
     table.selectRow(at: path, animated: false, scrollPosition: .none)
     if coordinator.selectedIndex != selectedIndex {
       table.scrollToRow(at: path, at: .none, animated: false)
@@ -120,37 +101,24 @@ private struct ComposerMentionTable: UIViewRepresentable {
     weak var editor: ComposerEditor?
     var suggestions: [ComposerMentionSuggestion] = []
     var selectedIndex = 0
-    private var sections: [ComposerMentionSuggestion.Kind] {
-      [.agent, .chat].filter { kind in suggestions.contains { $0.kind == kind } }
-    }
-    private func rows(_ section: Int) -> [ComposerMentionSuggestion] {
-      suggestions.filter { $0.kind == sections[section] }
-    }
-    func path(for index: Int) -> IndexPath? {
-      let value = suggestions[index]
-      guard let section = sections.firstIndex(of: value.kind),
-        let row = rows(section).firstIndex(of: value)
-      else { return nil }
-      return IndexPath(row: row, section: section)
-    }
-    func numberOfSections(in tableView: UITableView) -> Int { sections.count }
+    func numberOfSections(in tableView: UITableView) -> Int { suggestions.isEmpty ? 0 : 1 }
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
-      rows(section).count
+      suggestions.count
     }
     func tableView(_ tableView: UITableView, titleForHeaderInSection section: Int) -> String? {
-      sections[section] == .agent ? "Agents" : "Chats"
+      "Chats"
     }
     func tableView(_ tableView: UITableView, cellForRowAt indexPath: IndexPath) -> UITableViewCell {
       let cell = tableView.dequeueReusableCell(withIdentifier: "mention", for: indexPath)
       guard let cell = cell as? MentionCell else {
         preconditionFailure("Mention cells must use the registered MentionCell class")
       }
-      let value = rows(indexPath.section)[indexPath.row]
+      let value = suggestions[indexPath.row]
       cell.configure(value) { [weak self] in self?.editor?.insertMention(value) }
       return cell
     }
     func tableView(_ tableView: UITableView, didSelectRowAt indexPath: IndexPath) {
-      editor?.insertMention(rows(indexPath.section)[indexPath.row])
+      editor?.insertMention(suggestions[indexPath.row])
     }
   }
 
@@ -168,7 +136,7 @@ private struct ComposerMentionTable: UIViewRepresentable {
       }.margins(.all, OkouSpace.sm)
       backgroundColor = .clear
       isAccessibilityElement = true
-      accessibilityLabel = (value.kind == .agent ? "Agent: " : "Chat: ") + value.title
+      accessibilityLabel = "Chat: " + value.title
       accessibilityTraits = .button
       accessibilityIdentifier = "mention-" + value.id
     }

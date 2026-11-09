@@ -10,6 +10,7 @@ final class MessageArtifactStore {
     let id = UUID()
     var artifact: ChatArtifact
     var images: [ChatArtifact]
+    let loadsMetadata: Bool
     var file: ChatAttachmentFile?
     var thumbnail: Data?
     var contentURL: URL?
@@ -36,7 +37,7 @@ final class MessageArtifactStore {
 
   private(set) var preview: Preview?
   private(set) var sharing: Share?
-  private(set) var catalogWarning: String?
+  private(set) var reads: MessageArtifactResources
   private let service: ChatArtifacts
   /// The chat whose artifact list supplies names and sizes; nil for a result opened from
   /// workspace search, which arrives with its own title.
@@ -45,10 +46,6 @@ final class MessageArtifactStore {
   let webURL: URL
   var apiURL: URL { service.apiURL }
   private let didFail: @MainActor (Error) -> Void
-  private var catalog: [ChatArtifact]?
-  /// Covers drawn this visit, so a row scrolled back into view does not fetch its file again.
-  private var cards: [ChatArtifact.Source: Card] = [:]
-  private var catalogTask: Task<[ChatArtifact], Error>?
   private var operations: [UUID: @MainActor () -> Void] = [:]
   private var previewTask: Task<Void, Never>?
   private var saveTask: Task<Void, Never>?
@@ -64,6 +61,8 @@ final class MessageArtifactStore {
     self.webURL = webURL
     self.markdown = markdown
     self.didFail = didFail
+    reads = MessageArtifactResources(
+      service: service, threadID: threadID, webURL: webURL, didFail: didFail)
   }
 
   func resource(_ value: String) -> ChatArtifact? {
@@ -71,69 +70,37 @@ final class MessageArtifactStore {
   }
 
   func card(_ resource: ChatArtifact, thumbnail: Bool) async throws -> Card {
-    if thumbnail, let card = cards[resource.id] { return card }
-    try await loadCatalog()
-    let artifact = metadata(resource)
-    let service = service
-    let webURL = webURL
-    let card = try await perform {
-      if thumbnail {
-        let (resolved, file) = try await service.thumbnail(artifact, webURL: webURL)
-        var data: Data?
-        if let file {
-          data = await AttachmentFileImporter.shared.thumbnail(file.url, maximumPixelSize: 800)
-        } else {
-          data = nil
-        }
-        if data == nil, resolved.kind == .video {
-          let playback = try await service.resolve(resolved)
-          data = try await ArtifactVideoPoster.shared.thumbnail(playback.contentURL)
-        }
-        if data == nil, resolved.kind == .html {
-          // No server preview: draw the page's first screen, as the web's card shows the live
-          // page scaled into its frame.
-          let page = try await service.resolve(resolved)
-          let snapshot = await SitePreviewSnapshotter.shared.snapshot(page.contentURL)
-          return Card(artifact: resolved, thumbnail: snapshot?.image, title: snapshot?.title)
-        }
-        if data == nil, resolved.hasCover {
-          // No server preview: draw the first page or slide from the file itself, as Files
-          // does. A cover is a nicety, so a file too large or unreadable keeps the glyph.
-          if let (_, document) = try? await service.download(
-            resolved, maximumSize: Self.coverDownloadLimit)
-          {
-            data = await AttachmentFileImporter.shared.documentCover(document.url)
-          }
-        }
-        return Card(artifact: resolved, thumbnail: data)
-      }
-      let resolved = try await service.resolve(artifact)
-      return Card(artifact: resolved.artifact, thumbnail: nil)
-    }
-    if thumbnail, card.thumbnail != nil { cards[resource.id] = card }
-    return card
+    try Task.checkCancellation()
+    guard !closed else { throw CancellationError() }
+    let owner = reads
+    let read = owner.card(resource, thumbnail: thumbnail)
+    let result = try await owner.store.get(read.value).value
+    try Task.checkCancellation()
+    guard !closed, reads === owner else { throw CancellationError() }
+    return result
   }
-
-  /// The largest file the transcript downloads only to draw its cover.
-  private static let coverDownloadLimit = 25 * 1024 * 1024
 
   func open(
     _ resource: ChatArtifact, images: [ChatArtifact] = [], imageSources: [String] = [],
-    renewedHTMLSignature: Bool = false
+    renewedHTMLSignature: Bool = false, thumbnail: Data? = nil
   ) {
     guard !closed else { return }
     dismiss()
-    var item = Preview(artifact: metadata(resource), images: images)
-    item.thumbnail = cards[resource.id]?.thumbnail
-    item.file = service.uploadedFile(resource)
+    let artifact = metadata(resource)
+    let file = service.uploadedFile(resource)
+    let loadsMetadata = file == nil || artifact.kind != .image || !imageSources.isEmpty
+    var item = Preview(artifact: artifact, images: images, loadsMetadata: loadsMetadata)
+    // The clicked card hands its resolved cover to the preview; there is no second cover cache.
+    item.thumbnail = thumbnail
+    item.file = file
     item.renewedHTMLSignature = renewedHTMLSignature
     let previewID = item.id
     preview = item
-    if item.file != nil, item.artifact.kind == .image, imageSources.isEmpty { return }
+    if !loadsMetadata { return }
     previewTask = Task { [weak self] in
       guard let self else { return }
       do {
-        try await loadCatalog()
+        try await reads.prepareMetadata()
         let artifact = metadata(resource)
         let service = service
         let resolved = try await perform { try await service.resolve(artifact) }
@@ -233,9 +200,9 @@ final class MessageArtifactStore {
 
   func refreshDetails() async {
     guard !closed, let id = preview?.id else { return }
-    catalog = nil
     do {
-      try await loadCatalog()
+      try reads.refreshCatalog()
+      try await reads.prepareMetadata()
       guard !closed, !Task.isCancelled, preview?.id == id, let artifact = preview?.artifact else {
         return
       }
@@ -249,8 +216,8 @@ final class MessageArtifactStore {
 
   func retry() {
     guard let preview else { return }
-    catalog = nil
-    open(preview.artifact, images: preview.images)
+    do { try reads.refreshCatalog() } catch { didFail(error) }
+    open(preview.artifact, images: preview.images, thumbnail: preview.thumbnail)
   }
 
   func dismiss() {
@@ -265,10 +232,11 @@ final class MessageArtifactStore {
   func deactivate() {
     generation = UUID()
     dismiss()
-    catalogTask?.cancel()
-    catalogTask = nil
-    catalog = nil
-    catalogWarning = nil
+    reads.close()
+    if !closed {
+      reads = MessageArtifactResources(
+        service: service, threadID: threadID, webURL: webURL, didFail: didFail)
+    }
     for cancel in operations.values { cancel() }
     operations.removeAll()
   }
@@ -279,48 +247,7 @@ final class MessageArtifactStore {
   }
 
   private func metadata(_ artifact: ChatArtifact) -> ChatArtifact {
-    guard let value = catalog?.first(where: { $0.id == artifact.id }) else { return artifact }
-    return ChatArtifact(
-      source: artifact.source, filename: value.filename, contentType: value.contentType,
-      size: value.size, artifactKind: value.artifactKind)
-  }
-
-  private func loadCatalog() async throws {
-    guard !closed else { throw CancellationError() }
-    if catalog != nil { return }
-    guard let threadID else {
-      catalog = []
-      return
-    }
-    let scope = generation
-    let task: Task<[ChatArtifact], Error>
-    if let existing = catalogTask {
-      task = existing
-    } else {
-      let service = service
-      let threadID = threadID
-      let webURL = webURL
-      task = Task { try await service.list(threadID: threadID, webURL: webURL) }
-      catalogTask = task
-    }
-    do {
-      let values = try await task.value
-      try Task.checkCancellation()
-      guard !closed, generation == scope else { throw CancellationError() }
-      catalog = values
-      catalogWarning = nil
-      catalogTask = nil
-    } catch {
-      guard !closed, generation == scope, !Task.isCancelled else { throw CancellationError() }
-      catalogTask = nil
-      if let status = (error as? APIClientError)?.statusCode, [401, 426].contains(status) {
-        didFail(error)
-        throw error
-      }
-      // Catalog labels/sizes are supplementary; the resource authority still decides access.
-      catalog = []
-      catalogWarning = "Some file details could not be loaded."
-    }
+    reads.metadata(artifact)
   }
 
   private func perform<T: Sendable>(_ operation: @escaping @Sendable () async throws -> T)

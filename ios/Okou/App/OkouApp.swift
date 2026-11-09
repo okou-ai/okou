@@ -288,9 +288,9 @@ private struct WorkspaceRootView: View {
                   modelSelection: store.newModelSelection,
                   connectorSelection: store.newModelSelection.connectors,
                   mentionSource: ComposerMentionSource(
-                    agentID: store.selectedAgentID, agents: store.list.agents,
+                    agentID: store.defaultAgentID, agents: store.list.agents,
                     threads: store.list.threads),
-                  workflowSource: store.composerWorkflows, agentID: store.selectedAgentID,
+                  workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
                   placeholder: String(localized: "Message \(store.currentAgentName)"))
               }
               .animation(
@@ -432,7 +432,7 @@ private struct WorkspaceRootView: View {
   }
 
   private var newChatHome: some View {
-    let agent = store.list.agents.first(where: { $0.agentId == store.selectedAgentID })
+    let agent = store.list.agents.first(where: { $0.agentId == store.defaultAgentID })
     return VStack(spacing: OkouSpace.xxl) {
       Spacer(minLength: 24)
       // Background restoration keeps the entrance; user navigation starts a fresh greeting.
@@ -442,17 +442,6 @@ private struct WorkspaceRootView: View {
         text: greetingText
       )
       .id(taglineIndex)
-      // A custom agent says what it is for under its greeting.
-      if agent?.isDefaultAgent == false,
-        let description = agent?.description?.trimmingCharacters(in: .whitespacesAndNewlines),
-        !description.isEmpty
-      {
-        Text(description)
-          .font(.okou(.subheadline))
-          .foregroundStyle(OkouColor.mutedForeground)
-          .multilineTextAlignment(.center)
-          .lineLimit(4)
-      }
       Spacer(minLength: 24)
     }
     .frame(maxWidth: 440)
@@ -500,10 +489,10 @@ private struct WorkspaceRootView: View {
     }
   }
 
-  private func startNewChat(_ agentID: String? = nil) {
+  private func startNewChat() {
     UIApplication.shared.sendAction(
       #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
-    store.startNewChat(agentID: agentID)
+    store.startNewChat()
     closeSidebar()
   }
 }

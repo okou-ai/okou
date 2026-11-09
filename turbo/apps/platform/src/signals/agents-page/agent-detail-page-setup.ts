@@ -27,8 +27,14 @@ export const setupAgentDetailPage$ = command(
       const tab = get(searchParams$).get("tab");
       set(
         detachedNavigateTo$,
-        tab === "authorization" || tab === null ? "/connectors" : "/my-okou",
-        { replace: true },
+        tab === "authorization" || tab === null ? "/connectors" : "/",
+        {
+          searchParams:
+            tab === "authorization" || tab === null
+              ? undefined
+              : new URLSearchParams({ settings: "my-okou" }),
+          replace: true,
+        },
       );
       return;
     }

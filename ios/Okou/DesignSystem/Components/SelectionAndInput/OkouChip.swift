@@ -26,8 +26,8 @@ struct OkouChip: View {
   }
 }
 
-/// A sideways-scrolling row of chips or tiles (filters, pinned agents). Its first chip starts on the page's content edge and
-/// the row scrolls out to the screen edges instead of being clipped at the inset.
+/// A sideways-scrolling row of filter chips. Its first chip starts on the page's content edge
+/// and the row scrolls out to the screen edges instead of being clipped at the inset.
 struct OkouChipRail<Content: View>: View {
   var inset: CGFloat = OkouSpace.lg
   @ViewBuilder let content: Content

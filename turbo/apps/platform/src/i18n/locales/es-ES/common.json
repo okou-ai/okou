@@ -984,8 +984,7 @@
       "actionFailed": "No se pudo continuar.",
       "allow": "Permitir",
       "allowed": "Permitido",
-      "callbackPrompt": "El navegador en la nube está activado. Continúa con la tarea anterior.",
-      "cardDescription": "Activa el navegador en la nube para este chat y continúa automáticamente. Esto desconecta el uso del ordenador.",
+      "cardDescription": "Usa un navegador en la nube para este chat. Esto desconecta Computer Use.",
       "description": "{{assistantName}} usará un perfil aislado de navegador en la nube para este hilo de chat. Activarlo desconecta el uso del ordenador para el hilo.",
       "enable": "Habilitar este hilo",
       "enabled": "Navegador en la nube habilitado",
@@ -994,8 +993,9 @@
       "unavailableDescription": "Este enlace de autorización para navegador en la nube es inválido, caducado o no está disponible para este espacio de trabajo.",
       "unavailableTitle": "Enlace de autorización no disponible"
     },
+    "callbackFailed": "Acceso habilitado, pero la conversación no pudo continuar. Inténtalo de nuevo.",
     "computerUse": {
-      "actionFailed": "No se pudo autorizar este ordenador. Actualiza el chat para volver a intentarlo.",
+      "actionFailed": "No se pudo autorizar este equipo. Inténtalo de nuevo.",
       "authorize": "Autorizar",
       "authorized": "Autorizado",
       "authorizedDescription": "Acceso al ordenador activado para futuras ejecuciones en este chat.",
@@ -1643,6 +1643,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "Todo al día",
+        "emptyTitle": "No hay sugerencias nuevas",
+        "feedback": "Acciones de sugerencia",
+        "loading": "Cargando sugerencias",
+        "navigation": "Explorar sugerencias",
+        "next": "Siguiente sugerencia",
+        "previous": "Sugerencia anterior",
+        "retry": "Reintentar"
+      },
       "label": "Sugerencias",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1911,17 +1921,19 @@
       "workflow": {
         "advanced": {
           "description": "Conecta tus herramientas y pasos.",
+          "shortTitle": "Avanzado",
           "title": "Flujos de trabajo avanzados"
         },
         "description": "Una pequeña configuración. Mucho menos trabajo.",
         "scheduled": {
           "description": "Ejecuta en el momento adecuado.",
           "items": {
-            "daily": "Rutina diaria",
-            "once": "Recordatorio puntual",
-            "weekly": "Revisión semanal"
+            "once": "Ejecutar una vez a una hora concreta",
+            "recurring": "Repetir según un horario"
           },
-          "prompt": "Ayúdame a configurar: {{task}}. Pregunta qué quiero hacer, cuándo debe ejecutarse y en qué zona horaria.",
+          "prompt": "{{task}}. Pregunta qué quiero hacer, cuándo debe ejecutarse y en qué zona horaria.",
+          "setupTitle": "Programar una tarea",
+          "shortTitle": "Programar",
           "title": "Tareas programadas"
         },
         "suggestions": "Empieza con una sugerencia y adáptala a ti.",
@@ -1967,6 +1979,7 @@
             }
           },
           "monitorPrompt": "Ayúdame a configurar {{task}} con {{source}}. Flujo: {{event}} → {{action}} → {{result}}. Pregunta qué fuentes, temas o cuentas seguir, con qué frecuencia y dónde guardar el resumen. Revisa periódicamente, omite los elementos ya procesados y confirma la configuración antes de activarlo.",
+          "shortTitle": "Eventos",
           "title": "Activadores"
         }
       }
@@ -5926,6 +5939,16 @@
           "stores": "almacenes de objetos",
           "title": "Almacenamiento de IndexedDB",
           "unavailable": "El almacenamiento de IndexedDB no está disponible."
+        },
+        "learning": {
+          "description": "Revisa la actividad reciente y actualiza tu memoria personal una vez. La programación nocturna no cambia.",
+          "notInstalled": "Activa el aprendizaje en Preferencias antes de ejecutarlo aquí.",
+          "queued": "Aprendizaje en cola.",
+          "requestFailed": "No se pudo confirmar la solicitud.",
+          "run": "Ejecutar aprendizaje",
+          "starting": "Iniciando…",
+          "title": "Aprendizaje",
+          "unavailable": "El aprendizaje no está disponible en este momento."
         },
         "morningBrief": {
           "description": "Ejecuta una vez el flujo activado de tu cuenta. Puede actualizar sugerencias y enviar un correo real. Tu horario diario no cambia.",

@@ -1056,7 +1056,7 @@ export const clientContractImportManifest = [
   },
   {
     module: "integrations-email",
-    contracts: ["integrationsEmailContract"],
+    contracts: ["integrationsEmailContract", "integrationsEmailUploadContract"],
     bindings: [],
   },
   {
@@ -1349,7 +1349,18 @@ export const clientContractImportManifest = [
   {
     module: "proactive-nightly",
     contracts: ["proactiveLearningContract"],
-    bindings: [],
+    bindings: [
+      {
+        name: "PROACTIVE_LEARNING_BLUEPRINT_KEY",
+        source: "contracts/proactive",
+        imported: "PROACTIVE_LEARNING_BLUEPRINT_KEY",
+      },
+      {
+        name: "PROACTIVE_LEARNING_DEFINITION_NAME",
+        source: "contracts/proactive",
+        imported: "PROACTIVE_LEARNING_DEFINITION_NAME",
+      },
+    ],
   },
   {
     module: "proactive-suggestions",

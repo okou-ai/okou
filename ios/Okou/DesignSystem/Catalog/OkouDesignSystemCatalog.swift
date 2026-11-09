@@ -152,7 +152,7 @@
       case .content: "Markdown, transcript cards, media tiles and results in a chat."
       case .identity: "Agents, people, workspaces and partner logos."
       case .chat: "The chat header, composer, dictation, Add to chat and the greeting."
-      case .sidebar: "Workspace switcher, pinned agents with chats, and the bottom bar."
+      case .sidebar: "Workspace switcher, chats, and the bottom bar."
       case .signInAndAccount: "The one sign-in screen and the Settings account card."
       case .connectors: "The connector directory: segments, category chips and cards."
       }
@@ -260,7 +260,6 @@
     static let chats = [
       "Trip to Kyoto", "Quarterly report", "Launch checklist", "Brand colours", "Weekly sync notes",
     ]
-    static let agents = ["Okou", "Okou Illustrator", "Travel Master", "Vlog 剪辑师"]
   }
 
   #Preview("Mobile / Light") {

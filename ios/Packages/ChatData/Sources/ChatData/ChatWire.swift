@@ -183,14 +183,6 @@ public struct AgentRecord: Codable, Equatable, Sendable {
   public var visibility: String? = nil
 }
 
-public struct SidebarPreferences: Codable, Sendable {
-  public let pinnedAgentIds: [String]
-
-  public init(pinnedAgentIds: [String]) {
-    self.pinnedAgentIds = pinnedAgentIds
-  }
-}
-
 public struct SidebarFeatureSwitches: Codable, Sendable {
   public let effectiveSwitches: [String: Bool]
 }

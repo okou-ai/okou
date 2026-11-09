@@ -964,8 +964,7 @@
       "actionFailed": "続行できませんでした。",
       "allow": "許可",
       "allowed": "許可済み",
-      "callbackPrompt": "クラウドブラウザーが有効になりました。前のタスクを続行してください。",
-      "cardDescription": "このチャットでクラウドブラウザーを有効にして、タスクを自動的に続行します。コンピューター操作は切断されます。",
+      "cardDescription": "このチャットでクラウドブラウザーを使用します。Computer Use は切断されます。",
       "description": "{{assistantName}} は、このチャット スレッドに分離されたクラウド ブラウザ プロファイルを使用します。これを有効にすると、スレッドのコンピューターの使用が切断されます。",
       "enable": "このスレッドに対して有効にする",
       "enabled": "クラウドブラウザが有効になっている",
@@ -974,8 +973,9 @@
       "unavailableDescription": "このクラウド ブラウザ認証リンクは無効であるか、期限切れであるか、このワークスペースでは使用できません。",
       "unavailableTitle": "認証リンクは使用できません"
     },
+    "callbackFailed": "アクセスは有効になりましたが、会話を続行できませんでした。もう一度お試しください。",
     "computerUse": {
-      "actionFailed": "このコンピューターを承認できませんでした。チャットを再読み込みして再試行してください。",
+      "actionFailed": "このコンピューターを承認できませんでした。もう一度お試しください。",
       "authorize": "承認する",
       "authorized": "認可された",
       "authorizedDescription": "このチャットの今後の実行でコンピューターへのアクセスが有効になりました。",
@@ -1616,6 +1616,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "すべて確認しました",
+        "emptyTitle": "新しい提案はありません",
+        "feedback": "提案への操作",
+        "loading": "提案を読み込み中",
+        "navigation": "提案を切り替える",
+        "next": "次の提案",
+        "previous": "前の提案",
+        "retry": "再試行"
+      },
       "label": "提案",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1877,17 +1887,19 @@
       "workflow": {
         "advanced": {
           "description": "ツールと手順をつなげます。",
+          "shortTitle": "高度な設定",
           "title": "高度なワークフロー"
         },
         "description": "少しの設定で、日々の作業をもっと楽に。",
         "scheduled": {
           "description": "ちょうどよいタイミングで実行。",
           "items": {
-            "daily": "毎日のルーティン",
-            "once": "一度きりのリマインダー",
-            "weekly": "毎週の振り返り"
+            "once": "指定した日時に一度だけ実行",
+            "recurring": "スケジュールに沿って繰り返す"
           },
-          "prompt": "{{task}}の設定を手伝ってください。実行する内容、日時、タイムゾーンを確認してください。",
+          "prompt": "{{task}}。実行する内容、日時、タイムゾーンを確認してください。",
+          "setupTitle": "タスクを予約",
+          "shortTitle": "定期実行",
           "title": "定期タスク"
         },
         "suggestions": "提案を選んで、自分に合うように調整しましょう。",
@@ -1933,6 +1945,7 @@
             }
           },
           "monitorPrompt": "{{source}} を使って「{{task}}」を設定してください。流れ：{{event}} → {{action}} → {{result}}。対象のフィード、テーマまたはアカウント、確認頻度、要約の保存先を確認してください。定期的に確認し、処理済みの項目を除外し、設定を確認してから有効にしてください。",
+          "shortTitle": "トリガー",
           "title": "トリガー"
         }
       }
@@ -5842,6 +5855,16 @@
           "stores": "オブジェクトストア",
           "title": "IndexedDB ストレージ",
           "unavailable": "IndexedDB ストレージを利用できません。"
+        },
+        "learning": {
+          "description": "最近の活動を確認し、個人メモリを一度更新します。夜間の実行スケジュールは変わりません。",
+          "notInstalled": "先に環境設定で学習を有効にしてください。",
+          "queued": "学習をキューに追加しました。",
+          "requestFailed": "リクエストの結果を確認できませんでした。",
+          "run": "学習を実行",
+          "starting": "開始中…",
+          "title": "学習",
+          "unavailable": "現在、学習を利用できません。"
         },
         "morningBrief": {
           "description": "アカウントで有効なワークフローを使って一度実行します。提案の更新や実際のメール送信が行われる場合があります。毎日のスケジュールは変わりません。",

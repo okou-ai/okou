@@ -200,7 +200,7 @@
             }
           ) {
             OkouChipRail(inset: OkouSpace.lg) {
-              ForEach(["All", "Chats", "Agents"], id: \.self) { name in
+              ForEach(["All", "Chats", "Messages"], id: \.self) { name in
                 OkouChip(title: Text(name), isSelected: filter == name) {
                   filter = name
                 }
@@ -351,17 +351,6 @@
               OkouAgentAvatar(avatarURL: nil, name: name, size: OkouAvatarSize.greeting)
             }
           }
-        }
-        OkouCatalogSection("Agent tiles") {
-          // One line always; a long name ends in "…" (Instagram's tray does the same).
-          HStack(spacing: OkouSpace.sm) {
-            ForEach(Array(OkouCatalogSamples.agents.enumerated()), id: \.offset) { index, name in
-              OkouAgentTile(
-                avatarURL: nil, name: name, isDefault: index == 0, isSelected: index == 0,
-                hasUnread: index == 1)
-            }
-          }
-          .background(OkouColor.sidebar)
         }
         OkouCatalogSection("People") {
           HStack(spacing: OkouSpace.md) {

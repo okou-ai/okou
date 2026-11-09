@@ -13,7 +13,7 @@ import {
   sql,
 } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
-import { boolean, object, uuid } from "zod";
+import { object, uuid } from "zod";
 import type { DesktopShellAuthorization } from "@okouai/api-contracts/contracts/desktop-shell-authorization";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
@@ -22,16 +22,11 @@ import { desktopShellAuthorizations } from "@okouai/db/schema/desktop-shell-auth
 import { computerUseCommands } from "@okouai/db/schema/computer-use-host";
 import { agents } from "@okouai/db/schema/agent";
 import { activeAgentRuns } from "@okouai/db/schema/active-agent-run";
-import { queuedChatThreads } from "@okouai/db/schema/queued-chat-thread";
 import { env } from "../../lib/env";
 import { parseRawRows } from "../../lib/db-raw-rows";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { resolveChatInputModelSelection$ } from "./chat-input-model.service";
-import { canonicalChatEventAppendCtes } from "./chat-event-append.service";
-import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
-import { webChatContextId } from "./web-chat-queue-context.service";
 import {
   queuedShellCommandCondition,
   queuedShellGrantDeniedValues,
@@ -70,14 +65,7 @@ export const readDesktopShellAuthorization$ = command(
       .select({
         row: desktopShellAuthorizations,
         computerName: computerUseHosts.displayName,
-        thread: {
-          id: chatThreads.id,
-          agentId: agents.id,
-          selectedModel: chatThreads.selectedModel,
-          modelSettings: chatThreads.modelSettings,
-          codexServiceTier: chatThreads.codexServiceTier,
-          computerUseHostId: chatThreads.computerUseHostId,
-        },
+        computerUseHostId: chatThreads.computerUseHostId,
         sourceRunStatus: agentRuns.status,
         chatBusy: exists(
           new QueryBuilder()
@@ -128,7 +116,7 @@ export const readDesktopShellAuthorization$ = command(
     if (!context) {
       return null;
     }
-    const { row, thread, sourceRunStatus, chatBusy } = context;
+    const { row, computerUseHostId, sourceRunStatus, chatBusy } = context;
     const status = effectiveStatus(row, nowDate());
     const approvalBlockedReason: DesktopShellAuthorization["approvalBlockedReason"] =
       status !== "pending"
@@ -139,7 +127,7 @@ export const readDesktopShellAuthorization$ = command(
                 sourceRunStatus,
               )
             ? "run_active"
-            : thread.computerUseHostId !== row.computerUseHostId
+            : computerUseHostId !== row.computerUseHostId
               ? "computer_changed"
               : chatBusy
                 ? "chat_busy"
@@ -158,7 +146,7 @@ export const readDesktopShellAuthorization$ = command(
       approvalBlockedReason,
       authorizationUrl: `${env("APP_URL")}/computer-use/shell/authorize/${row.id}`,
     };
-    return { authorization, thread };
+    return { authorization };
   },
 );
 
@@ -320,86 +308,26 @@ function pendingApprovalCondition(
 
 export const approveDesktopShellAuthorization$ = command(
   async ({ set }, owner: Owner, context: Context, signal: AbortSignal) => {
-    const { authorization, thread } = context;
+    const { authorization } = context;
     if (
       authorization.status !== "pending" ||
       authorization.approvalBlockedReason !== null
     ) {
       return { status: "conflict" as const };
     }
-    const model = await set(
-      resolveChatInputModelSelection$,
-      {
-        ...owner,
-        selectedModel: thread.selectedModel,
-        codexServiceTier: thread.codexServiceTier,
-        modelSettings: thread.modelSettings,
-      },
-      signal,
-    );
-    if ("status" in model) {
-      return {
-        status: "model_unavailable" as const,
-        message: model.body.error.message,
-      };
-    }
     const now = nowDate();
-    const expires = new Date(now.getTime() + HOUR_MS);
-    const prompt = `Shell access was approved for this chat's selected computer until ${expires.toISOString()}. Recheck access and continue the previous task. Do not replay uncertain command input.`;
-    const db = set(writeDb$);
-    const approved = db
+    const [approved] = await set(writeDb$)
       .update(desktopShellAuthorizations)
       .set({
         status: "approved",
         approvedAt: now,
-        grantExpiresAt: expires,
+        grantExpiresAt: new Date(now.getTime() + HOUR_MS),
         updatedAt: now,
       })
       .where(pendingApprovalCondition(owner, authorization, now))
       .returning({ id: desktopShellAuthorizations.id });
-    const input = canonicalChatEventAppendCtes(
-      [
-        {
-          id: authorization.id,
-          chatThreadId: authorization.chatThreadId,
-          eventType: "input.prompt",
-          runId: null,
-          contextType: "web",
-          contextId: webChatContextId(),
-          payload: {
-            userMessage: {
-              version: 1,
-              parts: [{ type: "text", text: prompt }],
-            },
-          },
-          modelSelection: model,
-          createdAt: now,
-        },
-      ],
-      "none",
-      sql`EXISTS (SELECT 1 FROM approved)`,
-    );
-    const enqueue = queuedChatThreadEnqueuePlan({
-      chatThreadId: authorization.chatThreadId,
-      orgId: owner.orgId,
-    });
-    const [result] = parseRawRows(
-      object({ applied: boolean() }),
-      await db.execute(sql`
-      WITH approved AS (${approved.getSQL()}), ${input}, enqueued AS (
-        INSERT INTO ${queuedChatThreads} (chat_thread_id, org_id, queued_at)
-        SELECT ${authorization.chatThreadId}::uuid, ${owner.orgId}, ${enqueue.values.queuedAt.toISOString()}::timestamp FROM inserted
-        ON CONFLICT (chat_thread_id) DO UPDATE SET queued_at = greatest(EXCLUDED.queued_at, ${queuedChatThreads.queuedAt} + interval '1 millisecond')
-      ) SELECT EXISTS (SELECT 1 FROM approved) AS applied
-    `),
-    );
     signal.throwIfAborted();
-    if (!result) {
-      throw new Error("Shell approval returned no outcome");
-    }
-    return {
-      status: result.applied ? ("approved" as const) : ("conflict" as const),
-    };
+    return { status: approved ? ("approved" as const) : ("conflict" as const) };
   },
 );
 

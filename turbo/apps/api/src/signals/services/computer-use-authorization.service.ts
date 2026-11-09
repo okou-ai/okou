@@ -55,6 +55,7 @@ type CreateComputerUseAuthorizationRequestResult =
 type ReadComputerUseAuthorizationRequestResult =
   | {
       readonly status: "found";
+      readonly id: string;
       readonly source: ComputerUseAuthorizationSource;
       readonly chatThreadId: string | null;
       readonly expiresAt: string;
@@ -613,6 +614,7 @@ export const readComputerUseAuthorizationRequest$ = command(
 
     return {
       status: "found",
+      id: loaded.request.id,
       source: loaded.request.source as ComputerUseAuthorizationSource,
       chatThreadId:
         loaded.request.source === "chat"

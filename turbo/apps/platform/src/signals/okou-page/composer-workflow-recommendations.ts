@@ -7,6 +7,7 @@ import type { WorkflowComposerSignals } from "./tiptap-workflow-composer.ts";
 export interface WorkflowRecommendationActions {
   readonly insertTemplate$: WorkflowComposerSignals["insertTemplate$"];
   readonly insertPrompt$: WorkflowComposerSignals["replacePromptText$"];
+  readonly clearPrompt$: WorkflowComposerSignals["clearUnchangedPrompt$"];
   readonly openTemplatePicker$: WorkflowComposerSignals["openTemplatePicker$"];
   readonly focusEditor$: WorkflowComposerSignals["focus$"];
   readonly saveDraft$: Command<Promise<void>, [AbortSignal]>;

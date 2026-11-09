@@ -81,7 +81,7 @@ export function BrowserAuthorizationPage() {
 
         <Button
           type="button"
-          disabled={applying || enabled}
+          disabled={applying || (enabled && applyLoadable.state !== "hasError")}
           onClick={() => {
             detach(applyAuthorization(pageSignal), Reason.DomCallback);
           }}
@@ -89,12 +89,12 @@ export function BrowserAuthorizationPage() {
         >
           {applying ? (
             <Loader2 size={16} className="animate-spin" />
-          ) : enabled ? (
+          ) : enabled && applyLoadable.state !== "hasError" ? (
             <Check size={16} />
           ) : (
             <Globe size={16} />
           )}
-          {enabled
+          {enabled && applyLoadable.state !== "hasError"
             ? t(($) => {
                 return $.authorization.browser.enabled;
               })
@@ -102,6 +102,16 @@ export function BrowserAuthorizationPage() {
                 return $.authorization.browser.enable;
               })}
         </Button>
+
+        {applyLoadable.state === "hasError" && (
+          <p className="text-sm text-destructive" role="alert">
+            {t(($) => {
+              return enabled
+                ? $.authorization.callbackFailed
+                : $.authorization.browser.actionFailed;
+            })}
+          </p>
+        )}
 
         <div className="border-t border-border pt-5 text-xs text-muted-foreground">
           {t(

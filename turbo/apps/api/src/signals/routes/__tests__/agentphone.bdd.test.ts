@@ -2923,6 +2923,47 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(run.prompt).toBe("/unrecognized_command");
   });
 
+  it.each([
+    { model: "gpt-6-astra", label: "ChatGPT (Codex)" },
+    { model: "claude-fable-5-1", label: "Claude" },
+  ] as const)(
+    "offers personal subscription recovery for $label in iMessage",
+    async ({ model, label }) => {
+      const { actor, ap, phone, runnerGroup, sends } =
+        await entitledLinkedActor();
+      await createBddIntegrationApi(context).configureNativeSubscriptionModels(
+        actor,
+      );
+      await createRunsApi(context).updateUserModelPreference(actor, model);
+      await ap.postAgentPhoneInboundMessage({
+        channel: "imessage",
+        from: phone,
+        body: "Finish my report",
+        conversationId: uniqueConversationId(),
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      const beforeCompletion = sends.messages.length;
+      const nativeMessage =
+        "You've hit your usage limit. Try again at 6:17 AM (Asia/Shanghai).";
+      await createWebhookCallbackApi(context).requestAgentComplete(
+        {
+          runId: run.runId,
+          exitCode: 1,
+          error: nativeMessage,
+          failureReason: "usage_limit",
+        },
+        { authorization: `Bearer ${run.sandboxToken}` },
+        [200],
+      );
+      await waitForSendCount(sends, beforeCompletion + 1);
+      const reply = lastSend(sends).body;
+      expect(reply).toContain(`Your ${label} subscription`);
+      expect(reply).toContain(nativeMessage);
+      expect(reply).toContain("?settings=model");
+      expect(reply).toContain('reply "continue"');
+    },
+  );
+
   it("replies to failed linked iMessage runs", async () => {
     const ap = createAgentPhoneBddApi(context);
     const { actor, phone, runnerGroup, sends } = await entitledLinkedActor();

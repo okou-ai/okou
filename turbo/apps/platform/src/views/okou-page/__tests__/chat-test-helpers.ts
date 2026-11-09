@@ -387,6 +387,7 @@ export function mockChatLifecycle(
     }) => void;
     onThreadCreate?: (body: {
       clientThreadId?: string;
+      title?: string;
       eventId?: string;
       model?: string | null;
       modelSelection: ModelSelectionRequest | null;
@@ -872,6 +873,7 @@ export function mockChatLifecycle(
   });
   context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
     threadId = body.clientThreadId ?? threadId;
+    threadTitle = body.title ?? null;
     const modelSelection = modelSelectionFromBody(body);
     if (modelSelection === undefined) {
       throw new Error("Expected chat thread create to include model");
@@ -886,6 +888,7 @@ export function mockChatLifecycle(
     }
     options?.onThreadCreate?.({
       clientThreadId: body.clientThreadId,
+      title: body.title,
       eventId: body.eventId,
       model: body.model,
       modelSelection,
@@ -896,7 +899,7 @@ export function mockChatLifecycle(
     });
     return respond(201, {
       id: threadId,
-      title: null,
+      title: threadTitle,
       createdAt: "2026-03-10T00:00:00Z",
       // The response names the run model; an Auto thread runs on Auto's.
       selectedModel: selectedModel ?? AUTO_RUN_MODEL,

@@ -113,20 +113,20 @@ palette and the device color scheme.
 All geometry is measured in points. Values are Mobile design choices; they are
 not copied from CSS and are not all mandated by Apple.
 
-| Foundation   | Rule                                                                                                                                                                                                                                                                                                                                             |
-| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| Typeface     | Geist for UI, Geist Mono for code; system fallback covers unsupported scripts                                                                                                                                                                                                                                                                    |
-| Type scale   | Large title 34, title 28, title2 22, title3 20, body/headline 17, callout 16, subheadline 15, footnote 13, caption 12, caption2 11                                                                                                                                                                                                               |
-| Text scaling | Use `Font.okou(.body)` and corresponding named styles. A fixed `size:` is only for already scaled measurements or constrained artwork; ordinary body text uses Dynamic Type                                                                                                                                                                      |
-| Spacing      | Prefer 4, 8, 12, 16, 20, 24, 32, 40, 48 via `OkouSpace`; smaller named steps serve tight component internals                                                                                                                                                                                                                                     |
-| Radius       | Inline code 4, thumbnail 6, small 8, control 14, chat 16, card 20, sheet 28; circles/capsules remain native shapes                                                                                                                                                                                                                               |
-| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote/caption for supporting text. Never shrink a control label below callout to make it fit                                                                                                                                |
-| Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48 / agent row 50; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
-| Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                                        |
-| Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                                      |
-| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 50 ms waveform sample, 25 % sidebar parallax)                                                                                                          |
-| Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                                |
-| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                                              |
+| Foundation   | Rule                                                                                                                                                                                                                                                                                                                              |
+| ------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Typeface     | Geist for UI, Geist Mono for code; system fallback covers unsupported scripts                                                                                                                                                                                                                                                     |
+| Type scale   | Large title 34, title 28, title2 22, title3 20, body/headline 17, callout 16, subheadline 15, footnote 13, caption 12, caption2 11                                                                                                                                                                                                |
+| Text scaling | Use `Font.okou(.body)` and corresponding named styles. A fixed `size:` is only for already scaled measurements or constrained artwork; ordinary body text uses Dynamic Type                                                                                                                                                       |
+| Spacing      | Prefer 4, 8, 12, 16, 20, 24, 32, 40, 48 via `OkouSpace`; smaller named steps serve tight component internals                                                                                                                                                                                                                      |
+| Radius       | Inline code 4, thumbnail 6, small 8, control 14, chat 16, card 20, sheet 28; circles/capsules remain native shapes                                                                                                                                                                                                                |
+| Type roles   | One surface uses at most three sizes: body 17 for content and input, callout 16 for controls inside the composer, footnote/caption for supporting text. Never shrink a control label below callout to make it fit                                                                                                                 |
+| Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
+| Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
+| Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
+| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 50 ms waveform sample, 25 % sidebar parallax)                                                                                           |
+| Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
+| Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                               |
 
 An icon inside a `Label` is decorative: its text names the action. Icon-only
 buttons require an explicit accessible label. Errors appear next to the owning
@@ -192,7 +192,7 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
 - **Floating panels** over the transcript (slash workflows, @mentions) use
   `OkouFloatingPanelStyle`: the same card, card radius, plus the floating shadow.
   Not `.regularMaterial` — a grey material block did not match the rest of the UI.
-- **Grouped sheets** (Settings, models, connectors, agent, subscriptions,
+- **Grouped sheets** (Settings, models, connectors, subscriptions,
   usage) all use `okouGroupedBackground()`, which owns everything a grouped sheet
   shares, so no sheet can drift:
   - the system grouped background with the system's white rows (the product grey ramp
@@ -353,19 +353,18 @@ Reusable views, grouped by what they do. Each group is a folder in
     over the list, centred in what is left of the screen: under the filters and above the
     keyboard, recentring as the keyboard goes down. A section shows only when it has rows,
     so no title stands over an empty one.
-  The field and the filter row sit on a solid page-coloured header (`.hard` top scroll
-  edge, the filter row in a `safeAreaBar` with the page colour), so results end cleanly
-  under it instead of blurring through, as ChatGPT, Claude and Perplexity draw search.
-  Section titles are the first row of their section, not pinned `header:`s, so they
-  scroll away with their rows instead of sitting over them.
-  Under the field is the web's filter row (`ThreeColumnSearchDialog`) as `OkouChip`s on
-  the field's 16 pt edge: All, Chats, Messages, Agents, Workflows, Artifacts. Without a
-  query, All and Chats show recent chats, Agents and Workflows list everything, and
-  Messages and Artifacts ask for a word (both are searched on the server). A chat or message
-  opens its chat; an agent starts its new chat, as its pinned tile does; a workflow starts
-  its agent's new chat with `/name` in the draft, as the composer's `/` menu does; an
-  artifact opens in the app's own preview, or on the web's Artifacts page when the app
-  cannot read its address.
+    The field and the filter row sit on a solid page-coloured header (`.hard` top scroll
+    edge, the filter row in a `safeAreaBar` with the page colour), so results end cleanly
+    under it instead of blurring through, as ChatGPT, Claude and Perplexity draw search.
+    Section titles are the first row of their section, not pinned `header:`s, so they
+    scroll away with their rows instead of sitting over them.
+    Under the field is the web's filter row (`ThreeColumnSearchDialog`) as `OkouChip`s on
+    the field's 16 pt edge: All, Chats, Messages, Workflows, Artifacts. Without a
+    query, All and Chats show recent chats, Workflows lists everything, and
+    Messages and Artifacts ask for a word (both are searched on the server). A chat or message
+    opens its chat; a workflow opens a new chat with `/name` in the draft, as the composer's
+    `/` menu does; an artifact opens in the app's own preview, or on the web's Artifacts page when the app
+    cannot read its address.
 
 ### Status and feedback
 
@@ -471,7 +470,7 @@ Textual Markdown uses `OkouMarkdownStyle` for links, code surfaces, headings, qu
 
 #### Agent artwork
 
-`OkouAgentAvatar` is shared by pinned rows, the new-chat greeting, assistant
+`OkouAgentAvatar` is shared by chat rows, the new-chat greeting, assistant
 messages, and mention suggestions. The default agent uses the canonical Okou
 avatar. Other agents show an uploaded bitmap image or a neutral tile with their
 name's initial. Keep the existing typography, semantic colors, native sizing,
@@ -584,7 +583,6 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | Component                              | Use / states                                                                                                                                               |
 | -------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OkouAgentAvatar`, `OkouWorkspaceLogo` | Shared avatar and workspace artwork with native sizing                                                                                                     |
-| `OkouAgentTile`                        | An agent in a sideways avatar rail: 56 pt avatar, one 11 pt line of name ending in "…", selected tile, unread dot                                          |
 | `OkouProfileAvatar`                    | The signed-in person's photo in a circle with a hairline; account glyph without a photo (sidebar Settings, Settings profile row)                           |
 | `OkouWorkspaceMenuLogos`               | Workspace logos for a system menu: each tile drawn once at 28 pt (`OkouAvatarSize.menu`) with the logo's own corners; a neutral tile until an upload loads |
 | `OkouWorkspaceGlassLogo`               | A workspace's logo as a 44 pt glass circle (the sidebar's switcher): the logo round at 28 pt (`OkouAvatarSize.glassControl`), concentric with the circle   |
@@ -640,11 +638,10 @@ feature; the catalog shows each one.
   short release; the waveform draws 3 pt bars with 2 pt gaps that glide one bar per
   sample, the newest growing in at the trailing edge and the oldest fading out at the
   leading one; slots with no audio yet are baseline dots.
-- **New-chat greeting** (`NewChatGreeting`) is stacked and centred: agent avatar,
-  then the tagline, then a custom agent's description (the default agent shows nothing more). Avatar and
-  words enter like the web — opacity, 8 pt blur and 14 pt rise over 720 ms
+- **New-chat greeting** (`NewChatGreeting`) is stacked and centred: Okou's avatar,
+  then the tagline. Avatar and words enter like the web — opacity, 8 pt blur and 14 pt rise over 720 ms
   (cubic-bezier 0.22, 1, 0.36, 1), each word 70 ms after the previous, whole words
-  wrapping onto centred lines. It replays for each agent and each return home, and
+  wrapping onto centred lines. It replays for each return home, and
   rotates through the web's 16 taglines (7 without a name), translated from the
   web's locale files. Reduce Motion shows it at rest.
 
@@ -667,22 +664,13 @@ feature; the catalog shows each one.
   tile once (28 pt, `OkouAvatarSize.menu`) with the logo's own rounded corners. A thumb-reach bottom bar: the account's own photo
   (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a search capsule fills the
   middle, and new chat is the prominent circle on the right.
-- **Sidebar order**: the Pinned Agents rail, always at the top so the avatars never move;
-  the chat filter (the
-  web's Inbox — All chats without archiving — / Unread / Archived / Muted, then Mark
-  all read); the selected agent's chats grouped Pinned / Today / Yesterday / Previous
-  7 days / Earlier. Everything starts on the `pageInset` edge.
-- **Pinned agents** are one sideways rail of `OkouAgentTile`s, proportioned on Instagram's
-  story tray (measured 2026-11 from its App Store frames: ~79 pt photo in a 91 pt ring,
-  ~11.5 pt name in one line, about ten characters then "…", ~4.5 visible): a 76 pt tile with
-  a 56 pt avatar over its name in one 11 pt (caption2) line that ends in "…" when long, the
-  selected agent on a `state-selected` tile, a blue dot for unread chats. Names never take two
-  lines: the rail scrolls, so a long name further along would make every tile taller. The
-  first avatar sits on the list's text edge.
+- **Sidebar order**: the chat filter (the web's Inbox — All chats without archiving — /
+  Unread / Archived / Muted, then Mark all read); chats grouped Pinned / Today / Yesterday /
+  Previous 7 days / Earlier. Everything starts on the `pageInset` edge.
 - **Swipes move between pages.** A right swipe anywhere in a chat opens the full-screen
   sidebar and a left swipe anywhere in the sidebar closes it; content that scrolls
-  sideways (a code block, a table, the pinned agents rail) keeps the finger, and from
-  there the chat still opens the sidebar from its leading edge (`SidebarGesturePolicy`).
+  sideways (a code block or a table) keeps the finger, and from there the chat still opens
+  the sidebar from its leading edge (`SidebarGesturePolicy`).
   A page swipe never also taps the row under it. Chat rows keep their actions on the
   right swipe — Mark as read/unread, Archive — so they never compete with closing.
 

@@ -34,7 +34,9 @@ function AuthorizationDescription({
   const desktopApplicationName = useGet(computerUseProductName$);
   const description = failed
     ? t(($) => {
-        return $.authorization.computerUse.actionFailed;
+        return completed
+          ? $.authorization.callbackFailed
+          : $.authorization.computerUse.actionFailed;
       })
     : unavailable
       ? t(($) => {
@@ -92,7 +94,7 @@ function AuthorizationControls({
         <Select
           value={selectedHost?.id ?? null}
           onValueChange={selectHost}
-          disabled={loading || busy || failed || hosts.length === 0}
+          disabled={loading || busy || hosts.length === 0}
           items={hosts.map((host) => {
             return { value: host.id, label: host.displayName };
           })}
@@ -124,16 +126,21 @@ function AuthorizationControls({
       <Button
         variant="secondary"
         pending={busy}
-        disabled={loading || completed || failed || !selectedHost}
+        disabled={
+          loading ||
+          busy ||
+          (completed && !failed) ||
+          (!completed && !selectedHost)
+        }
         className="shrink-0"
         onClick={onAuthorize}
       >
         {loading ? (
           <Loader2 className="animate-spin" />
-        ) : completed ? (
+        ) : completed && !failed ? (
           <Check />
         ) : null}
-        {completed
+        {completed && !failed
           ? t(($) => {
               return $.authorization.computerUse.authorized;
             })

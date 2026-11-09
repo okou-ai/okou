@@ -294,6 +294,8 @@ export interface WorkflowComposerSignals {
   readonly selectOrAppendText$: Command<void, [string]>;
   /** Rewrites the prompt this composer inserted last instead of stacking. */
   readonly replacePromptText$: Command<void, [string]>;
+  /** Restores the draft before injection only while it remains unchanged. */
+  readonly clearUnchangedPrompt$: Command<boolean, []>;
   readonly readInputForSubmission$: Command<
     Promise<WorkflowComposerSubmissionSnapshot>,
     [AbortSignal]
@@ -2783,6 +2785,15 @@ function createInsertTextCommands(editor: Editor) {
       .run();
   });
 
+  return {
+    readVoiceContext$,
+    insertText$,
+    insertPromptMarkdown$,
+    ...createPromptTextCommands(editor),
+  };
+}
+
+function createPromptTextCommands(editor: Editor) {
   const findText = (value: string): { from: number; to: number } | null => {
     const text = value.trim();
     if (!text) {
@@ -2850,12 +2861,23 @@ function createInsertTextCommands(editor: Editor) {
    * to selecting or appending.
    */
   const insertedPrompt$ = state("");
+  const promptDocuments$ = state<{
+    readonly before: ProseMirrorNode;
+    readonly after: ProseMirrorNode;
+  } | null>(null);
   const replacePromptText$ = command(({ get, set }, value: string) => {
     const text = value.trim();
     if (!text) {
       return;
     }
     const inserted = findText(get(insertedPrompt$));
+    const documents = get(promptDocuments$);
+    const current = editor.state.doc;
+    const before = documents?.after.eq(current)
+      ? documents.before
+      : inserted
+        ? editor.state.tr.delete(inserted.from, inserted.to).doc
+        : current;
     if (inserted) {
       editor
         .chain()
@@ -2866,15 +2888,27 @@ function createInsertTextCommands(editor: Editor) {
     } else if (!selectText(text)) {
       appendText(text);
     }
-    set(insertedPrompt$, text);
+    const after = editor.state.doc;
+    if (!current.eq(after)) {
+      set(insertedPrompt$, text);
+      set(promptDocuments$, { before, after });
+    }
+  });
+  const clearUnchangedPrompt$ = command(({ get, set }) => {
+    const documents = get(promptDocuments$);
+    set(promptDocuments$, null);
+    set(insertedPrompt$, "");
+    if (!documents?.after.eq(editor.state.doc)) {
+      return false;
+    }
+    editor.commands.setContent(documents.before);
+    return true;
   });
 
   return {
-    readVoiceContext$,
-    insertText$,
-    insertPromptMarkdown$,
     selectOrAppendText$,
     replacePromptText$,
+    clearUnchangedPrompt$,
   };
 }
 

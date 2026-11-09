@@ -122,23 +122,13 @@
             }
           }
         }
-        OkouCatalogSection("Pinned agents and chats") {
-          VStack(alignment: .leading, spacing: OkouSpace.sm) {
-            HStack(spacing: OkouSpace.sm) {
-              ForEach(Array(OkouCatalogSamples.agents.enumerated()), id: \.offset) {
-                index, name in
-                OkouAgentTile(
-                  avatarURL: nil, name: name, isDefault: index == 0, isSelected: index == 0,
-                  hasUnread: index == 1)
-              }
+        OkouCatalogSection("Chats") {
+          VStack(spacing: 0) {
+            OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
+              OkouChatStatusMark(emoji: "✅")
             }
-            VStack(spacing: 0) {
-              OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
-                OkouChatStatusMark(emoji: "✅")
-              }
-              OkouChatRowLabel("Design tokens review", trailing: .running(phase: 0)) {
-                OkouChatStatusMark(emoji: nil)
-              }
+            OkouChatRowLabel("Design tokens review", trailing: .running(phase: 0)) {
+              OkouChatStatusMark(emoji: nil)
             }
           }
           .background(OkouColor.sidebar)

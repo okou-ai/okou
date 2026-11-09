@@ -80,6 +80,8 @@ import {
 } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
+import type { TemplateUsageIdentity } from "../../lib/template-usage-identity";
+import { recordTemplateUsage } from "../../lib/template-usage-log";
 
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
@@ -1031,6 +1033,7 @@ type ClaimLaunchRecord =
   | {
       readonly kind: "prompt";
       readonly context: QueuedPromptLaunchContext;
+      readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
       readonly timing: ChatCallbackPreCreateTimingCollector;
     }
   | {
@@ -1180,6 +1183,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
   return {
     kind: "prompt",
     timing: record.timing,
+    templateUsageIdentities: record.templateUsageIdentities,
     context: {
       userId: record.context.userId,
       titled: record.context.titled,
@@ -1681,7 +1685,13 @@ export function createThreadClaimRunObjects(
   const promptRunInputRunInput$ = computed(
     async (
       get,
-    ): Promise<CreateQueuedChatRunInput | QueuedMessageAdmissionFailure> => {
+    ): Promise<
+      | {
+          readonly runInput: CreateQueuedChatRunInput;
+          readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
+        }
+      | QueuedMessageAdmissionFailure
+    > => {
       const [args, launch, model, session, host, capture, features, templates] =
         await Promise.all([
           get(promptArgsArgs$),
@@ -1731,16 +1741,19 @@ export function createThreadClaimRunObjects(
       if (!session) {
         throw new Error("A valid prompt model is missing session preparation");
       }
-      return queuedPromptRunInput({
-        input: args,
-        launch,
-        promptAndSkills,
-        model,
-        session,
-        host,
-        capture,
-        features,
-      });
+      return {
+        runInput: queuedPromptRunInput({
+          input: args,
+          launch,
+          promptAndSkills,
+          model,
+          session,
+          host,
+          capture,
+          features,
+        }),
+        templateUsageIdentities: templates.templateUsageIdentities,
+      };
     },
   );
   const internalEarlyAssembly$ = computed(
@@ -1815,13 +1828,14 @@ export function createThreadClaimRunObjects(
       if (!prepared.ok) {
         return queuedPromptPreparationRejection(prepared.error, head);
       }
-      const runInput = prepared.value;
-      if ("kind" in runInput) {
+      const preparedInput = prepared.value;
+      if ("kind" in preparedInput) {
         return {
           kind: "rejected",
-          rejection: queuedMessageRejection(runInput),
+          rejection: queuedMessageRejection(preparedInput),
         };
       }
+      const { runInput, templateUsageIdentities } = preparedInput;
       return {
         kind: "assembled",
         run: {
@@ -1833,6 +1847,7 @@ export function createThreadClaimRunObjects(
         launchRecord: {
           kind: "prompt",
           timing,
+          templateUsageIdentities,
           context: {
             userId: head.userId,
             titled: threadTitled((await get(pickedEvent$))?.thread),
@@ -4119,6 +4134,23 @@ export function createThreadClaimRunObjects(
         );
         if ("kind" in result && result.kind === "pending") {
           set(internalCommittedRunId$, result.run.id);
+          const launched = context.launchRecord;
+          if (launched.kind === "prompt") {
+            // Creation is durable even if cancellation or activation fails next.
+            recordTemplateUsage(
+              {
+                runId: result.run.id,
+                sourceEventId: context.head.id,
+                orgId: context.head.orgId,
+                userId: context.head.userId,
+                chatThreadId: context.head.chatThreadId,
+                dispatchPath: "queued-claim",
+                triggerSource: launched.context.runInput.triggerSource,
+                usedAt: new Date(result.publicationReturnedAt),
+              },
+              launched.templateUsageIdentities,
+            );
+          }
         }
         const transactionReturnedAt =
           "kind" in result && result.kind === "pending"

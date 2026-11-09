@@ -1802,8 +1802,8 @@ describe("okou connector check command", () => {
       expect(callbackUrl.pathname).toBe("/connectors/github/authorize");
       expect(Array.from(callbackUrl.searchParams.entries())).toStrictEqual([
         ["agentId", AGENT_ID],
-        ["threadId", "thread-abc-123"],
         ["callbackPrompt", "SOMETHING_AGENT_WANT_TO_BE_CALLBACK"],
+        ["threadId", "thread-abc-123"],
       ]);
     });
 

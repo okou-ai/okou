@@ -74,6 +74,10 @@ async function approveAndResume(
     "desktopShellAuthorizationChanged",
     null,
   );
+  const beforeApproval = await createChatFilesBddApi(context).listThreadEvents(
+    actor,
+    initial.threadId,
+  );
   mockNow(now() + 1000);
   const decisions = await Promise.all([
     api.actDesktopShellAccess(actor, request.id, "approve", [200, 409]),
@@ -92,10 +96,31 @@ async function approveAndResume(
   });
   await scenario.run(flushWaitUntilForTest);
   await api.actDesktopShellAccess(actor, request.id, "approve");
-  const { events } = await createChatFilesBddApi(context).listThreadEvents(
-    actor,
-    initial.threadId,
+  const chat = createChatFilesBddApi(context);
+  const afterApproval = await chat.listThreadEvents(actor, initial.threadId);
+  expect(
+    afterApproval.events.filter((event) => {
+      return event.eventType === "input.prompt";
+    }),
+  ).toStrictEqual(
+    beforeApproval.events.filter((event) => {
+      return event.eventType === "input.prompt";
+    }),
   );
+  const { agentId } = await scenario.prepareActor(actor);
+  await chat.requestSendEvent(
+    actor,
+    {
+      agentId,
+      threadId: initial.threadId,
+      clientEventId: request.id,
+      prompt:
+        "Recheck Shell access and continue the task. Do not replay uncertain input.",
+    },
+    [201],
+  );
+  await scenario.run(flushWaitUntilForTest);
+  const { events } = await chat.listThreadEvents(actor, initial.threadId);
   expect(
     events.filter((event) => {
       return (
@@ -110,7 +135,7 @@ async function approveAndResume(
     );
   });
   if (!launched?.runId) {
-    throw new Error("Approval must launch the next Run");
+    throw new Error("The explicit callback must launch the next Run");
   }
   const claim = await scenario.claimExisting(actor, launched.runId);
   const token = claim.platformEnvironment.OKOU_TOKEN;

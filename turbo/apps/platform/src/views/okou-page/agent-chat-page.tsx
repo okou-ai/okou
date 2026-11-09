@@ -34,6 +34,7 @@ import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
 import {
   AgentSuggestions,
+  HomeSuggestionsCard,
   SuggestionSaveErrors,
 } from "./agent-suggestions.tsx";
 import { suggestionsEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
@@ -536,9 +537,7 @@ export function AgentComposerPage({
       <CapabilityHomePage
         signals={composerSignals}
         heading={heading}
-        suggestions={
-          showSuggestions ? <AgentSuggestions className="mt-4" /> : null
-        }
+        suggestions={showSuggestions ? <HomeSuggestionsCard /> : null}
       />
     );
   }

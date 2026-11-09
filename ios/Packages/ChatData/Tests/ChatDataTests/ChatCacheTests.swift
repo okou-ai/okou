@@ -126,7 +126,6 @@ final class ChatCacheTests: XCTestCase {
     let persistedNavigation = try await directory.cache(scope: scope)
       .loadNavigation()
     XCTAssertEqual(persistedNavigation?.agents.first?.displayName, "Assistant")
-    XCTAssertEqual(persistedNavigation?.preferences.pinnedAgentIds, ["agent-a"])
     let loaded = try await reopened.loadThreadList()
     let stored = try XCTUnwrap(loaded)
     XCTAssertEqual(stored.snapshot, snapshot)

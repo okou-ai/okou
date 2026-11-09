@@ -165,34 +165,41 @@ impl ActiveRunConnectorRuntimeState {
             .map(|task| task.handle)
     }
 
-    fn record_account_binding(
+    fn record_account_bindings<'a>(
         &mut self,
-        target: &ConnectorSyncTarget,
-        binding: &ConnectorRuntimeAccountBinding,
+        bindings: impl Iterator<Item = (&'a ConnectorSyncTarget, &'a ConnectorRuntimeAccountBinding)>,
     ) -> Result<(), ProviderError> {
-        let connector = self.current_target_mut(target).ok_or_else(|| {
-            ProviderError::Internal(
-                "published connector changed under its publication guard".to_string(),
-            )
-        })?;
-        match &mut connector.registration {
-            ConnectorRuntimeTargetRegistration::Builtin {
-                source_id,
-                base_url_vars,
-                ..
-            } => {
-                *source_id = Some(binding.connection_id.clone());
-                *base_url_vars = Some(binding.base_url_vars.clone());
+        let mut recorded = false;
+        for (target, binding) in bindings {
+            let connector = self.current_target_mut(target).ok_or_else(|| {
+                ProviderError::Internal(
+                    "published connector changed under its publication guard".to_string(),
+                )
+            })?;
+            match &mut connector.registration {
+                ConnectorRuntimeTargetRegistration::Builtin {
+                    source_id,
+                    base_url_vars,
+                    ..
+                } => {
+                    *source_id = Some(binding.connection_id.clone());
+                    *base_url_vars = Some(binding.base_url_vars.clone());
+                }
+                ConnectorRuntimeTargetRegistration::Custom {
+                    source_id,
+                    base_url_vars,
+                    ..
+                } => {
+                    *source_id = Some(binding.connection_id.clone());
+                    *base_url_vars = binding.base_url_vars.clone();
+                }
             }
-            ConnectorRuntimeTargetRegistration::Custom {
-                source_id,
-                base_url_vars,
-                ..
-            } => {
-                *source_id = Some(binding.connection_id.clone());
-                *base_url_vars = binding.base_url_vars.clone();
-            }
+            recorded = true;
         }
+        if !recorded {
+            return Ok(());
+        }
+        // Publish the final batch context without rebuilding it for each binding.
         let context = account_context(
             self.connectors
                 .values()
@@ -1337,18 +1344,18 @@ impl ConnectorRuntimeSyncCore {
                             .await
                             .and_then(|publication| {
                                 if let Some(result) = &publication {
-                                    for (prepared, published) in
-                                        prepared_publications.iter().zip(&result.outcomes)
-                                    {
-                                        if *published
-                                            && let Some(binding) = &prepared.account_binding
-                                        {
-                                            active.record_account_binding(
-                                                &prepared.target,
-                                                binding,
-                                            )?;
-                                        }
-                                    }
+                                    active.record_account_bindings(
+                                        prepared_publications
+                                            .iter()
+                                            .zip(&result.outcomes)
+                                            .filter(|(_, published)| **published)
+                                            .filter_map(|(prepared, _)| {
+                                                prepared
+                                                    .account_binding
+                                                    .as_ref()
+                                                    .map(|binding| (&prepared.target, binding))
+                                            }),
+                                    )?;
                                 }
                                 Ok(publication)
                             });

@@ -6,6 +6,10 @@ import { now } from "../../lib/time.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { detach, Reason } from "../utils.ts";
+import {
+  authorizationChatCallback,
+  runAuthorizationChatCallback$,
+} from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import { chatActionIdMatches } from "./chat-action-context.ts";
 import { parseTrustedPlatformActionUrl } from "./platform-action-url.ts";
@@ -30,7 +34,7 @@ export function parseComputerUseAuthorizationUrl(
     return null;
   }
 
-  const href = `/computer-use/authorize/${encodeURIComponent(requestToken)}`;
+  const href = `/computer-use/authorize/${encodeURIComponent(requestToken)}${url.search}`;
   return {
     requestToken,
     originalUrl: value,
@@ -56,6 +60,12 @@ function createComputerUseAuthorizationSignals(
       }),
       [200, 403, 404, 410],
     );
+    if (result.status === 200 && result.body.chatThreadId) {
+      authorizationChatCallback(
+        descriptor.originalUrl,
+        result.body.chatThreadId,
+      );
+    }
     return result.status === 200 &&
       result.body.source === "chat" &&
       result.body.chatThreadId !== null &&
@@ -71,17 +81,11 @@ function createComputerUseAuthorizationSignals(
       request?.hosts.filter((host) => {
         return host.status === "online";
       }) ?? [];
-    if (chosen !== null) {
-      return (
-        hosts.find((host) => {
-          return host.id === chosen;
-        }) ?? null
-      );
-    }
+    const preferred = chosen ?? request?.computerUseHostId;
     return (
       hosts.find((host) => {
-        return host.id === request?.computerUseHostId;
-      }) ?? (hosts.length === 1 ? hosts[0] : null)
+        return host.id === preferred;
+      }) ?? (chosen === null && hosts.length === 1 ? hosts[0] : null)
     );
   });
   const selectHost$ = command(({ set }, id: string | null) => {
@@ -99,23 +103,33 @@ function createComputerUseAuthorizationSignals(
     signal.throwIfAborted();
     if (
       !request ||
-      request.completedAt ||
-      !host ||
+      (!host && !request.completedAt) ||
       Date.parse(request.expiresAt) <= now()
     ) {
       throw new Error("Computer Use authorization is unavailable in this chat");
     }
-    const result = await accept(
-      get(apiClient$)(computerUseAuthorizationRequestsContract).apply({
-        params: { requestToken: descriptor.requestToken },
-        body: { computerUseHostId: host.id },
-        fetchOptions: { signal },
-      }),
-      [200],
+    if (!request.completedAt && host) {
+      await accept(
+        get(apiClient$)(computerUseAuthorizationRequestsContract).apply({
+          params: { requestToken: descriptor.requestToken },
+          body: { computerUseHostId: host.id },
+          fetchOptions: { signal },
+        }),
+        [200],
+        signal,
+      );
+    }
+    set(refresh$);
+    await set(
+      runAuthorizationChatCallback$,
+      {
+        originalUrl: descriptor.originalUrl,
+        chatThreadId: threadId,
+        authorizationId: request.id,
+      },
       signal,
     );
     set(refresh$);
-    return result.body;
   });
   const armExpiration$ = command(async ({ get, set }, signal: AbortSignal) => {
     const request = await get(request$);
