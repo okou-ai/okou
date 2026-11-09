@@ -257,6 +257,8 @@ async function openFeedFromHome(draft: string): Promise<void> {
   click(link("/feed"));
 }
 const SENT = "Sent to a new chat";
+const SUGGESTION_UNAVAILABLE =
+  "That suggestion is no longer available. Suggestions have been refreshed.";
 const MESSAGE_SENT = "Message sent";
 const REFERENCED_THREAD = {
   type: "chat_thread",
@@ -1322,9 +1324,7 @@ test("Feedback on a card that left the pool refreshes the suggestions with a not
       screen.getByRole("article", { name: items[1].title }),
     ),
   );
-  await screen.findByText(
-    "That suggestion is no longer available. Suggestions have been refreshed.",
-  );
+  await screen.findByText(SUGGESTION_UNAVAILABLE);
   await screen.findByRole("article", { name: offered.title });
   // Every card that left goes; the card handled earlier keeps its row.
   expect(feedItemLabels()).toStrictEqual([
@@ -1335,6 +1335,43 @@ test("Feedback on a card that left the pool refreshes the suggestions with a not
   expect(
     screen.queryByText(/Refresh your suggestions/),
   ).not.toBeInTheDocument();
+  // The earlier card is still part of the visit, so Undo restores it.
+  click(button("Undo"));
+  await screen.findByRole("article", { name: items[0].title });
+  expect(feedItemLabels()).toStrictEqual([items[0].title, offered.title]);
+});
+
+test("Retrying feedback for a card that has since left the pool refreshes the suggestions", async () => {
+  const item = makeSuggestion();
+  const pool = mockPool([item]);
+  let failing = true;
+  context.mocks.api(suggestionsContract.feedback, ({ respond }) => {
+    if (failing) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Feedback could not be saved",
+        },
+      });
+    }
+    return respond(409, {
+      error: {
+        code: "CONFLICT",
+        message: "Suggestion is no longer available. Refresh your suggestions.",
+      },
+    });
+  });
+  await openFeed();
+  await screen.findByText(item.title);
+  click(button("Already done"));
+  const error = await screen.findByRole("alert");
+  // The card leaves the pool before the member retries.
+  pool.withdrawAll();
+  failing = false;
+  click(button("Try again", "button", error));
+  await screen.findByText(SUGGESTION_UNAVAILABLE);
+  await screen.findByText(EMPTY_FEED);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
 test("Slow feedback leaves other cards usable and Undo restores the original card in order", async () => {
