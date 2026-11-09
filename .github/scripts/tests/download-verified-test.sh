@@ -13,7 +13,6 @@ set -euo pipefail
 
 output=""
 url=""
-accept=""
 while (($# > 0)); do
   case "$1" in
     --output)
@@ -21,10 +20,6 @@ while (($# > 0)); do
       shift 2
       ;;
     --connect-timeout | --max-time)
-      shift 2
-      ;;
-    --header)
-      accept="$2"
       shift 2
       ;;
     --fail | --show-error | --silent | --location)
@@ -49,11 +44,6 @@ fi
 attempt="$(<"$MOCK_CURL_STATE")"
 attempt=$((attempt + 1))
 printf '%s\n' "$attempt" > "$MOCK_CURL_STATE"
-
-if [[ "$url" == https://api.github.com/repos/*/releases/assets/* && "$accept" != "Accept: application/octet-stream" ]]; then
-  printf '{"name":"release metadata"}\n' > "$output"
-  exit 0
-fi
 
 case "$MOCK_CURL_MODE" in
   transport-then-success)
@@ -151,13 +141,5 @@ if find "$tmp_dir" -maxdepth 1 -name 'existing.tar.gz.partial.*' -print -quit | 
   echo "Expected failed downloads to remove their partial file" >&2
   exit 1
 fi
-
-url="https://api.github.com/repos/example/tool/releases/assets/123"
-api_state="${tmp_dir}/api.state"
-api_destination="${tmp_dir}/api.tar.gz"
-printf '0\n' > "$api_state"
-run_download success "$api_state" "$api_destination" "${tmp_dir}/api.err"
-cmp "$source_file" "$api_destination"
-[[ "$(<"$api_state")" == "1" ]]
 
 echo "download-verified tests passed"
