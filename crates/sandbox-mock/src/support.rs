@@ -34,26 +34,6 @@ fn mock_copy_file_error(message: impl Into<String>) -> SandboxError {
     mock_file_operation_error(SandboxOperation::CopyFile, message)
 }
 
-fn mock_exec_env_error(operation: SandboxOperation, key: &str) -> SandboxError {
-    SandboxError::Operation {
-        operation,
-        reason: SandboxOperationReason::Other,
-        message: format!("invalid environment variable name: {}", key.escape_debug()),
-    }
-}
-
-pub(crate) fn validate_mock_exec_env_keys(
-    operation: SandboxOperation,
-    env: &[(&str, &str)],
-) -> Result<()> {
-    for (key, _) in env {
-        if !guest_contracts::env::is_shell_identifier_env_key(key) {
-            return Err(mock_exec_env_error(operation, key));
-        }
-    }
-    Ok(())
-}
-
 pub(crate) fn validate_mock_guest_file_path(
     operation: SandboxOperation,
     operation_name: &str,

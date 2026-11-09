@@ -19,7 +19,7 @@ use crate::lifecycle::{MockLifecycleGate, wait_lifecycle_gate};
 use crate::overrides::{ExecMatcherOutcome, GuestStateRestoreBehavior, MockSandboxOverrides};
 use crate::support::{
     LockIgnoringPoison, MOCK_COPY_FILE_MAX_BYTES, validate_mock_copy_host_path,
-    validate_mock_exec_env_keys, validate_mock_guest_file_path,
+    validate_mock_guest_file_path,
 };
 
 /// A mock [`Sandbox`] that succeeds on all operations by default.
@@ -901,7 +901,7 @@ impl Sandbox for MockSandbox {
     }
 
     async fn exec(&self, request: &ExecRequest<'_>) -> Result<ExecResult> {
-        validate_mock_exec_env_keys(SandboxOperation::Exec, request.env)?;
+        validate_exec_env_keys(SandboxOperation::Exec, request.env)?;
         let call = ExecCall {
             cmd: request.cmd.to_string(),
             timeout: request.timeout,
@@ -1001,6 +1001,25 @@ impl Sandbox for MockSandbox {
                 }
             })?;
         Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_1_MIB))
+    }
+
+    async fn replace_home_drive(&mut self, config: &HomeDriveConfig) -> Result<()> {
+        if let Some(overrides) = &self.overrides {
+            overrides
+                .exec
+                .home_drive_replacements
+                .lock_ignoring_poison()
+                .push(config.clone());
+        }
+        let result = self.mount_home_drive().await?;
+        if result.termination != (ExecTermination::Exited { exit_code: 0 }) {
+            return Err(SandboxError::Operation {
+                operation: SandboxOperation::MountHomeDrive,
+                reason: SandboxOperationReason::Other,
+                message: "mock Home replacement failed".into(),
+            });
+        }
+        Ok(())
     }
 
     async fn mount_home_drive(&self) -> Result<ExecResult> {
@@ -1407,7 +1426,7 @@ impl Sandbox for MockSandbox {
             wait_lifecycle_gate(&overrides.process.start_process_lifecycle_gate).await;
         }
         let operation = SandboxOperation::StartProcess;
-        validate_mock_exec_env_keys(operation, request.env)?;
+        validate_exec_env_keys(operation, request.env)?;
         request.output.validate(operation)?;
         if let Some(overrides) = &self.overrides {
             overrides
@@ -1440,7 +1459,7 @@ impl Sandbox for MockSandbox {
             wait_lifecycle_gate(&overrides.process.start_process_lifecycle_gate).await;
         }
         let operation = SandboxOperation::StartAgentProcess;
-        validate_mock_exec_env_keys(operation, request.env)?;
+        validate_exec_env_keys(operation, request.env)?;
         request.output.validate(operation)?;
         if let Some(overrides) = &self.overrides {
             overrides

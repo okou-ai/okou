@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "사이드바",
       "chat": "채팅",
-      "feedWaiting_other": "대기 중 {{count}}개",
       "hideChatList": "채팅 목록 숨기기",
       "mobile": {
         "invite": "초대",
@@ -402,7 +401,6 @@
         "agents": "에이전트",
         "artifacts": "아티팩트",
         "connectors": "커넥터",
-        "feed": "피드",
         "settings": "설정",
         "workflows": "워크플로",
         "works": "{{agentName}}가(이) 작업하는 곳"
@@ -414,6 +412,7 @@
       "resizeChatList": "채팅 목록 크기 조절",
       "searchWorkspace": "워크스페이스 검색",
       "showChatList": "채팅 목록 표시",
+      "suggestionsWaiting_other": "대기 중 {{count}}개",
       "workspaceSwitcher": {
         "create": "워크스페이스 만들기",
         "creating": "만드는 중…",
@@ -954,27 +953,6 @@
     },
     "homeLink": "{{brandName}} 홈으로 이동",
     "loading": "인증 중",
-    "signup": {
-      "alreadyHaveAccount": "계정이 있으신가요?",
-      "apple": "Apple",
-      "continue": "계속",
-      "email": "이메일 주소",
-      "emailPlaceholder": "이메일 주소를 입력하세요",
-      "failed": "요청 실패",
-      "google": "Google",
-      "hidePassword": "비밀번호 숨기기",
-      "legalAnd": "및",
-      "legalPrefix": "다음 내용에 동의합니다:",
-      "or": "또는",
-      "password": "비밀번호",
-      "passwordPlaceholder": "비밀번호를 입력하세요",
-      "privacy": "개인정보 처리방침",
-      "showPassword": "비밀번호 표시",
-      "signIn": "로그인하기",
-      "subtitle": "환영해요! 아래 정보를 입력해 주세요.",
-      "terms": "서비스 약관",
-      "title": "계정 만들기"
-    },
     "theme": {
       "darkEnabled": "어두운 테마가 켜졌습니다",
       "lightEnabled": "밝은 테마가 켜졌습니다"
@@ -1459,6 +1437,11 @@
     "operationFailed": "브라우저 작업을 완료하지 못했습니다. 다시 시도하기 전에 브라우저를 확인하세요.",
     "paused": "화면 일시 중지됨",
     "quality": "이미지 품질",
+    "qualityBalanced": "균형",
+    "qualityInvalid": "0부터 100까지의 정수를 입력하세요",
+    "qualityLossless": "무손실",
+    "qualitySaver": "데이터 절약",
+    "qualitySharper": "선명",
     "reconnect": "다시 연결",
     "reconnecting": "다시 연결 중…",
     "reload": "새로고침",
@@ -1644,15 +1627,18 @@
       "saveReason": "Save",
       "sending": "보내는 중…",
       "sent": "새 채팅으로 보냈습니다",
+      "unavailable": "이 제안은 더 이상 사용할 수 없습니다. 제안을 새로고침했습니다.",
       "undoFeedback": "Undo",
       "useSuggestion": "제안 사용"
     },
     "attachments": {
       "attach": "첨부",
-      "fileTooLarge": "{{filename}} 파일이 512MB 제한을 초과했습니다",
+      "fileTooLarge": "{{filename}} 파일이 5GB 제한을 초과했습니다",
       "imageUnavailable": "[이미지 없음: {{filename}}]",
       "loadingFile": "{{filename}} 불러오는 중",
+      "pastedText": "붙여넣은 텍스트",
       "previewFile": "{{filename}} 미리보기",
+      "remove": "{{filename}} 제거",
       "title": "첨부파일",
       "unavailable": "{{filename}}을(를) 더 이상 사용할 수 없습니다. 보내려면 다시 업로드하세요.",
       "unavailableCount_other": "첨부파일 {{count}}개를 더 이상 사용할 수 없습니다. 보내려면 다시 업로드하세요.",
@@ -4198,31 +4184,20 @@
     "previousFeature": "이전 기능",
     "tryPrompt": "이 작업 시작하기"
   },
-  "feed": {
-    "description": "최근 작업을 바탕으로 제안된 다음 단계입니다.",
-    "emptyDescription": "새로운 제안이 여기에 표시됩니다.",
-    "emptyTitle": "모두 확인했어요",
-    "title": "피드"
-  },
   "friendReferrals": {
-    "checkingCode": "초대 코드 확인 중…",
-    "codeApplied": "초대 코드가 적용되었습니다",
-    "codeCheckFailed": "코드를 확인하지 못했습니다. 다시 시도하거나 비워 두고 계속하세요.",
-    "codeLabel": "내 초대 코드",
-    "codeUnavailable": "사용할 수 없는 초대 코드입니다. 확인하거나 비워 두고 계속하세요.",
     "copied": "복사됨",
-    "copyCode": "코드 복사",
     "copyFailed": "복사하지 못했습니다. 다시 시도해 주세요.",
     "copyLink": "링크 복사",
-    "description": "친구가 내 초대 코드로 가입하고 usage pack을 구매하여 Pro 이상으로 업그레이드하면 $20 상당의 credits를 받을 수 있습니다.",
+    "description": "친구가 3단계를 모두 완료하면 $20 상당의 credits를 받습니다",
+    "dialogTitle": "친구 초대하고 1명당 $20 받기",
     "earned": "받은 크레딧",
-    "invalidCode": "영문 또는 숫자 6자리를 입력하거나 비워 두고 계속하세요.",
-    "loadFailed": "초대 코드를 불러오지 못했습니다. 다시 시도해 주세요.",
-    "loading": "초대 코드를 가져오는 중…",
+    "loadFailed": "초대 링크를 불러오지 못했습니다. 다시 시도해 주세요.",
+    "loading": "초대 링크를 가져오는 중…",
     "registered": "가입한 친구",
     "retry": "다시 시도",
-    "signupLabel": "초대 코드(선택)",
-    "signupPlaceholder": "초대 코드 입력",
+    "stepSignUp": "초대 링크로 가입",
+    "stepUpgrade": "Pro 이상으로 업그레이드",
+    "stepUsagePack": "usage pack 구매",
     "terms": "신규 사용자만 해당하며 친구 1명당 한 번만 보상해요. 이 워크스페이스의 개인 잔액으로 지급되며 지급 후 1개월 뒤 만료돼요.",
     "title": "친구 초대"
   },
@@ -4648,9 +4623,14 @@
         "tooLong": "다른 형식을 선택하려면 작업 내용을 줄여 주세요."
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}}자 (출력 지침 포함)",
         "connectorsDescription": "앱을 연결하면 Okou가 업무를 더 잘 이해할 수 있어요.",
         "connectorsTitle": "업무 도구 연결",
-        "intro": "앱을 연결해 더 나은 결과를 얻고, 원하는 형식을 선택하세요."
+        "fileTooLarge": "{{filename}} 파일이 10MB 제한을 초과했습니다. 붙여넣은 텍스트는 프롬프트에 남아 있어요.",
+        "intro": "앱을 연결해 더 나은 결과를 얻고, 원하는 형식을 선택하세요.",
+        "tooLong": "계속하려면 프롬프트를 줄이거나 출력 형식 선택을 해제하세요. 제한에는 출력 지침도 포함돼요.",
+        "tooManyFiles": "파일은 최대 {{max}}개까지 첨부할 수 있어요. 붙여넣은 텍스트는 프롬프트에 남아 있어요.",
+        "uploadFailed": "{{filename}} 파일을 업로드하지 못했어요. 붙여넣은 텍스트는 첨부파일로 유지돼요. 계속하기 전에 다시 시도하거나 해당 첨부파일을 제거하세요."
       },
       "skills": {
         "copied": "복사됨",
@@ -6198,7 +6178,7 @@
       "title": "앗! 문제가 발생했습니다"
     },
     "forceUpgrade": {
-      "description": "이 버전의 {{brandName}}은 더 이상 지원되지 않습니다.",
+      "description": "{{brandName}}에 새로운 기능이 추가되었습니다. 새로고침하여 최신 버전을 사용하세요.",
       "title": "업데이트 필요"
     },
     "mermaid": {
@@ -7315,6 +7295,19 @@
       "unconfigured": "이 조직에는 아직 Discord가 구성되지 않았습니다."
     },
     "documentTitle": "작업",
+    "email": {
+      "connected": "이메일 연결됨",
+      "description": "Okou에 이메일을 보내고 각 대화를 별도 채팅으로 유지하세요",
+      "healthNotice": "HIPAA 규제 대상 환자 정보에는 이 연동을 사용하지 마세요.",
+      "instructions": "계정 이메일 주소로 메시지를 보내세요. 새 이메일은 새 채팅을 시작하고 답장은 같은 대화를 이어갑니다. 처음 이용하시면 가입을 도와드린 후 요청을 처리합니다.",
+      "invalidLink": "연결 링크가 유효하지 않습니다. Okou에 새 이메일을 보내 주세요.",
+      "loadError": "이메일 연결을 불러올 수 없습니다",
+      "manage": "관리",
+      "open": "이메일 열기",
+      "resumed": "{{email}} 연결이 완료되었습니다. 원래 요청은 같은 이메일 대화에서 답변됩니다.",
+      "title": "이메일",
+      "unavailable": "이 워크스페이스에서는 아직 이메일을 사용할 수 없습니다"
+    },
     "feishuConnected": "Feishu가 성공적으로 연결되었습니다",
     "github": {
       "adminInstall": "조직 관리자에게 GitHub 앱 설치를 요청하세요",

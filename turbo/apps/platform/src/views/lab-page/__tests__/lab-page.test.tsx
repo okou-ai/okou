@@ -103,6 +103,11 @@ test("Lab groups active feature switches", async () => {
   }
   expect(screen.getAllByRole("switch")).toHaveLength(keys.length);
   expect(
+    within(featureSwitchRow(FeatureSwitchKey.PastedTextAttachments)).getByRole(
+      "switch",
+    ),
+  ).toHaveAttribute("aria-checked", "true");
+  expect(
     within(featureSwitchGroup("Alpha")).getByText(FeatureSwitchKey.Banking),
   ).toBeVisible();
   expect(
@@ -121,6 +126,26 @@ test("Lab groups active feature switches", async () => {
       "switch",
     ),
   ).toHaveAttribute("aria-checked", "false");
+});
+
+test("External members cannot opt into long pasted text attachments in Lab", async () => {
+  await setupPage({
+    context,
+    path: "/_/lab",
+    featureSwitches: {
+      [FeatureSwitchKey.Lab]: true,
+      [FeatureSwitchKey.Banking]: true,
+      [FeatureSwitchKey.PastedTextAttachments]: true,
+    },
+  });
+
+  await screen.findByRole("heading", { name: "Lab" });
+  expect(
+    within(featureSwitchRow(FeatureSwitchKey.Banking)).getByRole("switch"),
+  ).toHaveAttribute("aria-checked", "true");
+  expect(
+    screen.queryByText("Long pasted text attachments"),
+  ).not.toBeInTheDocument();
 });
 
 test("Bingjie can turn automatic busy recovery off in Lab", async () => {

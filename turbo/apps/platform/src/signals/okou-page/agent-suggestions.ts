@@ -122,7 +122,7 @@ const suggestionComposerGraph$ = computed((get) => {
   };
 });
 
-/** The card whose custom direction is being written in the Feed dialog. */
+/** The card whose custom direction is being written in its dialog. */
 export const agentSuggestionComposerItem$ = computed((get) => {
   return get(internalSuggestionComposer$)?.entry.item ?? null;
 });
@@ -134,7 +134,7 @@ export const closeAgentSuggestionComposer$ = command(({ set }) => {
 
 /**
  * The API consumes the card when it accepts the custom follow-up, before the
- * optimistic thread is published; the Feed then moves the card below the
+ * optimistic thread is published; the list then moves the card below the
  * waiting ones as a link to that thread.
  */
 const finishAgentSuggestionComposer$ = command(
@@ -158,7 +158,7 @@ const finishAgentSuggestionComposer$ = command(
 );
 
 /**
- * Opens the custom direction composer for the default Agent over the Feed and
+ * Opens the custom direction composer for the default Agent over home and
  * installs the card's background before the composer mounts. The session owns
  * its completion: an accepted send closes the dialog and settles the card.
  */
@@ -205,7 +205,7 @@ export const openAgentSuggestionComposer$ = command(
       },
     };
     set(internalSuggestionComposer$, session);
-    // Leaving the Feed or opening another card's dialog ends this session.
+    // Leaving home or opening another card's dialog ends this session.
     signal.addEventListener(
       "abort",
       () => {
@@ -236,8 +236,8 @@ export const openAgentSuggestionComposer$ = command(
 );
 
 /**
- * Starts the chosen action in a new thread of the default Agent and keeps the
- * Feed in place. The card is consumed once its input is accepted.
+ * Starts the chosen action in a new thread of the default Agent and keeps
+ * home in place. The card is consumed once its input is accepted.
  */
 const sendAgentSuggestionOption$ = command(
   async (
@@ -356,7 +356,7 @@ export const startAgentSuggestion$ = command(
     if (!agentId) {
       throw new Error("Suggestion target is unavailable");
     }
-    // The send and the recorded choice outlive the Feed visit.
+    // The send and the recorded choice outlive the home visit.
     const signal = get(rootSignal$);
     if (option.threadId === null) {
       // The card moves below the waiting ones at once and links its thread

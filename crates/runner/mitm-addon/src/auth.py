@@ -1,8 +1,10 @@
 """Firewall auth flow orchestration and request mutation.
 
-This module keeps mitmproxy HTTPFlow metadata, header/query injection,
-auth.base forwarding, local failure responses, and AWS SigV4 signing together.
-Cache state and platform API calls live in dedicated owner modules.
+This module owns header/query injection, auth.base forwarding, local failure
+policy and credential resolution. Flow-local SigV4 request preparation and
+signing writeback live in aws_sigv4_flow. Cache state and platform API calls
+live in dedicated owner modules. auth_base_transport owns raw forwarded-response
+materialization and representation metadata.
 """
 
 import asyncio
@@ -17,11 +19,11 @@ from typing import Literal
 from mitmproxy import http
 
 import aws_sigv4_body_admission
+import aws_sigv4_flow
 import aws_sigv4_hash_executor
 import firewall_auth_config
 import flow_metadata
 import flow_metadata_keys as metadata_keys
-import http_header_syntax
 import http_local_responses
 import matching
 from auth_base_forwarder import (
@@ -44,15 +46,13 @@ from auth_base_transport import (
     forwarded_auth_base_client_header_pairs,
     header_pairs,
     resolved_auth_header_pairs,
+    set_forwarded_response,
 )
 from aws_sigv4 import (
     AwsSigV4BodyHash,
     AwsSigV4Credentials,
-    AwsSigV4RequestInspection,
     AwsSigV4SigningError,
     hash_request_body,
-    inspect_request,
-    sign_request,
 )
 from firewall_auth_cache import (
     FIREWALL_AUTH_REGISTRY_GENERATION_ATTRIBUTE,
@@ -71,7 +71,6 @@ from firewall_auth_client import (
 from firewall_auth_failure import project_firewall_auth_failure
 from logging_utils import log_proxy_entry
 from request_authority import custom_http_auth_is_allowed
-from runtime_url_parsing import split_runtime_url
 from url_syntax import has_unsafe_runtime_url_syntax
 
 
@@ -103,11 +102,6 @@ class _FirewallAuthPlanFailure(Enum):
 type CurrentFirewallAuthorizationGuard = Callable[[], bool]
 
 
-_HTTP_STATUS_INFORMATIONAL_MIN = 100
-_HTTP_STATUS_SUCCESS_MIN = 200
-_HTTP_STATUS_NO_CONTENT = 204
-_HTTP_STATUS_RESET_CONTENT = 205
-_HTTP_STATUS_NOT_MODIFIED = 304
 _HTTP_STATUS_CLIENT_ERROR_MIN = 400
 _HTTP_STATUS_SERVER_ERROR_MIN = 500
 _HTTP_STATUS_BAD_GATEWAY = 502
@@ -120,17 +114,7 @@ AWS_SIGV4_REQUEST_BODY_TOO_LARGE_ERROR = "aws_sigv4_request_body_too_large"
 # behavior can evolve independently, while the shared 64 KiB scale remains well
 # above ordinary connector request targets.
 MAX_AUTH_BASE_REQUEST_TARGET_BYTES = 64 * 1024
-# Managed SigV4 request inspection uses the pinned HTTP/2 stack's 64 KiB
-# decompressed header-list policy. HPACK accounts for 32 bytes of overhead per
-# field; using the same formula also bounds HTTP/1 header count before decoding.
-MAX_AWS_SIGV4_REQUEST_TARGET_BYTES = 64 * 1024
-MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES = 64 * 1024
-AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES = 32
-MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS = (
-    MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES // AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
-)
 _FIREWALL_AUTH_IDENTITY_CACHE_KEY = "_firewallAuthIdentityCache"
-_MISSING_AWS_SIGV4_ORIGINAL_URL = object()
 
 
 @dataclass(frozen=True)
@@ -156,45 +140,6 @@ class _FirewallAuthIdentityCache:
     entries: dict[tuple[int, str, str], _FirewallAuthIdentityCacheEntry] = field(
         default_factory=dict
     )
-
-
-@dataclass(frozen=True)
-class _AwsSigV4FlowRepresentationIdentity:
-    """Immutable raw objects that identify one flow request representation."""
-
-    original_url: object = field(repr=False)
-    raw_path: bytes = field(repr=False)
-    raw_header_fields: tuple[tuple[bytes, bytes], ...] = field(repr=False)
-
-    def is_current(self, other: _AwsSigV4FlowRepresentationIdentity) -> bool:
-        return (
-            self.original_url is other.original_url
-            and self.raw_path is other.raw_path
-            and self.raw_header_fields is other.raw_header_fields
-        )
-
-
-@dataclass(frozen=True)
-class _AwsSigV4RequestInput:
-    """Bounded decoded input passed to the low-level SigV4 boundary."""
-
-    url: str = field(repr=False)
-    headers: tuple[tuple[str, str], ...] = field(repr=False)
-
-
-@dataclass(frozen=True)
-class _AwsSigV4FlowInspection:
-    """Flow-local inspection result for one immutable raw representation."""
-
-    identity: _AwsSigV4FlowRepresentationIdentity = field(repr=False)
-    request_input: _AwsSigV4RequestInput | None = field(repr=False)
-    inspection: AwsSigV4RequestInspection | None = field(repr=False)
-
-    @property
-    def requires_body(self) -> bool:
-        if self.inspection is None:
-            return True
-        return self.inspection.requires_body
 
 
 @dataclass(frozen=True)
@@ -515,7 +460,7 @@ def _auth_config_uses_body_dependent_auth(
         return True
     return firewall_auth_config.uses_aws_sigv4(
         auth_config
-    ) and aws_sigv4_request_requires_body_for_signing(flow)
+    ) and aws_sigv4_flow.requires_body_for_signing(flow)
 
 
 def _build_firewall_auth_plan(
@@ -677,149 +622,10 @@ def _apply_header_query_injection(
         flow.request.query = merged_query
 
 
-def _trusted_aws_sigv4_url(flow: http.HTTPFlow) -> str:
-    url = flow.metadata.get(metadata_keys.ORIGINAL_URL)
-    if not isinstance(url, str):
-        raise AwsSigV4SigningError("AWS request URL is unavailable")
-    if has_unsafe_runtime_url_syntax(url, allow_backslash=True):
-        raise AwsSigV4SigningError("AWS request URL is malformed")
-
-    try:
-        original = split_runtime_url(url)
-    except ValueError as e:
-        raise AwsSigV4SigningError("AWS request URL is malformed") from e
-
-    if has_unsafe_runtime_url_syntax(flow.request.path, allow_backslash=True):
-        raise AwsSigV4SigningError("AWS request URL is malformed")
-    try:
-        current_query = split_runtime_url(flow.request.path).query
-    except ValueError as e:
-        raise AwsSigV4SigningError("AWS request URL is malformed") from e
-    if current_query == original.query:
-        return url
-    return urllib.parse.urlunsplit(
-        (original.scheme, original.netloc, original.path, current_query, original.fragment)
-    )
-
-
-def _aws_sigv4_flow_representation_identity(
-    flow: http.HTTPFlow,
-) -> _AwsSigV4FlowRepresentationIdentity:
-    return _AwsSigV4FlowRepresentationIdentity(
-        original_url=flow.metadata.get(
-            metadata_keys.ORIGINAL_URL,
-            _MISSING_AWS_SIGV4_ORIGINAL_URL,
-        ),
-        raw_path=flow.request.data.path,
-        raw_header_fields=flow.request.headers.fields,
-    )
-
-
-def _bounded_aws_sigv4_request_input(flow: http.HTTPFlow) -> _AwsSigV4RequestInput:
-    raw_path = flow.request.data.path
-    if len(raw_path) > MAX_AWS_SIGV4_REQUEST_TARGET_BYTES:
-        raise AwsSigV4SigningError("AWS request target is too large")
-
-    raw_header_fields = flow.request.headers.fields
-    if not http_header_syntax.raw_header_list_within_budget(
-        raw_header_fields,
-        max_fields=MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS,
-        max_bytes=MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES,
-        field_overhead_bytes=AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES,
-    ):
-        raise AwsSigV4SigningError("AWS request headers are too large")
-
-    return _AwsSigV4RequestInput(
-        url=_trusted_aws_sigv4_url(flow),
-        headers=tuple(header_pairs(flow.request.headers)),
-    )
-
-
-def _inspect_aws_sigv4_flow(flow: http.HTTPFlow) -> _AwsSigV4FlowInspection:
-    identity = _aws_sigv4_flow_representation_identity(flow)
-    cached = flow.metadata.get(metadata_keys.AWS_SIGV4_REQUEST_INSPECTION)
-    if isinstance(cached, _AwsSigV4FlowInspection):
-        if cached.identity.is_current(identity):
-            return cached
-        # Restoration or reclassification may replace immutable containers with
-        # equal values. Value comparison is safe only after the cached input passed
-        # the target/header bounds; rebind once so later consumers use the O(1) path.
-        if cached.request_input is not None and cached.identity == identity:
-            rebound = _AwsSigV4FlowInspection(
-                identity=identity,
-                request_input=cached.request_input,
-                inspection=cached.inspection,
-            )
-            flow.metadata[metadata_keys.AWS_SIGV4_REQUEST_INSPECTION] = rebound
-            return rebound
-
-    try:
-        request_input = _bounded_aws_sigv4_request_input(flow)
-    except AwsSigV4SigningError:
-        result = _AwsSigV4FlowInspection(
-            identity=identity,
-            request_input=None,
-            inspection=None,
-        )
-    else:
-        try:
-            inspection = inspect_request(
-                url=request_input.url,
-                headers=list(request_input.headers),
-            )
-        except AwsSigV4SigningError:
-            inspection = None
-        result = _AwsSigV4FlowInspection(
-            identity=identity,
-            request_input=request_input,
-            inspection=inspection,
-        )
-    flow.metadata[metadata_keys.AWS_SIGV4_REQUEST_INSPECTION] = result
-    return result
-
-
-def release_aws_sigv4_request_inspection(flow: http.HTTPFlow) -> None:
-    """Release reusable SigV4 request state from one flow."""
-    flow.metadata.pop(metadata_keys.AWS_SIGV4_REQUEST_INSPECTION, None)
-
-
-def aws_sigv4_request_requires_body_for_signing(flow: http.HTTPFlow) -> bool:
-    """Conservatively classify whether a configured SigV4 request needs its body."""
-    return _inspect_aws_sigv4_flow(flow).requires_body
-
-
 def _request_path_query(flow: http.HTTPFlow) -> str:
     if has_unsafe_runtime_url_syntax(flow.request.path, allow_backslash=True):
         raise ValueError("unsafe request target")
     return urllib.parse.urlparse(flow.request.path).query
-
-
-def _sign_flow_request_with_aws_sigv4(
-    flow: http.HTTPFlow,
-    credentials: AwsSigV4Credentials,
-    *,
-    precomputed_body_hash: AwsSigV4BodyHash | None = None,
-) -> None:
-    state = _inspect_aws_sigv4_flow(flow)
-    try:
-        if state.inspection is not None and state.requires_body:
-            aws_sigv4_body_admission.require_from_flow(flow)
-        request_input = state.request_input or _bounded_aws_sigv4_request_input(flow)
-        signed_url, signed_headers = sign_request(
-            method=flow.request.method,
-            url=request_input.url,
-            headers=list(request_input.headers),
-            body=flow.request.raw_content,
-            credentials=credentials,
-            precomputed_body_hash=precomputed_body_hash,
-            inspection=state.inspection,
-        )
-        flow.request.url = signed_url
-        flow.request.headers = http.Headers(
-            [(name.encode(), value.encode()) for name, value in signed_headers]
-        )
-    finally:
-        release_aws_sigv4_request_inspection(flow)
 
 
 async def _precompute_aws_sigv4_body_hash(
@@ -832,7 +638,7 @@ async def _precompute_aws_sigv4_body_hash(
         return None
     if resolved_auth.aws_sigv4 is None:
         return None
-    flow_inspection = _inspect_aws_sigv4_flow(flow)
+    flow_inspection = aws_sigv4_flow.inspect_flow(flow)
     if flow_inspection.inspection is None or not flow_inspection.requires_body:
         return None
 
@@ -1231,7 +1037,7 @@ def _preflight_firewall_auth(
     body = flow.request.raw_content
     if (
         plan.uses_aws_sigv4
-        and aws_sigv4_request_requires_body_for_signing(flow)
+        and aws_sigv4_flow.requires_body_for_signing(flow)
         and body is not None
         and len(body) > aws_sigv4_body_admission.MAX_AWS_SIGV4_REQUEST_BODY_BYTES
     ):
@@ -1320,7 +1126,7 @@ def _preflight_firewall_auth(
         return FirewallAuthHandlingResult.LOCAL_RESPONSE
 
     if plan.uses_aws_sigv4 and not plan.uses_auth_base:
-        inspection = _inspect_aws_sigv4_flow(flow)
+        inspection = aws_sigv4_flow.inspect_flow(flow)
         if inspection.inspection is not None and inspection.requires_body:
             aws_sigv4_body_admission.require_from_flow(flow)
 
@@ -1546,36 +1352,7 @@ async def _apply_url_rewrite(
             admission=admission,
             pre_submit_guard=revalidate_current_firewall_authorization,
         )
-        is_head_representation = flow.request.method == "HEAD" and not (
-            _HTTP_STATUS_INFORMATIONAL_MIN <= status < _HTTP_STATUS_SUCCESS_MIN
-            or status in (_HTTP_STATUS_NO_CONTENT, _HTTP_STATUS_RESET_CONTENT)
-        )
-        preserves_representation_length = is_head_representation or (
-            flow.request.method == "GET" and status == _HTTP_STATUS_NOT_MODIFIED
-        )
-        representation_content_length: str | None = None
-        if preserves_representation_length:
-            content_lengths = resp_headers.get_all("Content-Length")
-            if len(content_lengths) == 1:
-                candidate = content_lengths[0].strip(" \t")
-                if candidate.isascii() and candidate.isdigit():
-                    representation_content_length = candidate
-        content_encodings = [
-            value
-            for name, value in header_pairs(resp_headers)
-            if name.lower() == "content-encoding"
-        ]
-        if content_encodings:
-            del resp_headers["Content-Encoding"]
-        # The forwarder returns representation bytes, but Response.make expects
-        # decoded content. Hide the codings while it normalizes response framing.
-        flow.response = http.Response.make(status, resp_raw_content, resp_headers)
-        if preserves_representation_length:
-            del flow.response.headers["Content-Length"]
-            if representation_content_length is not None:
-                flow.response.headers["Content-Length"] = representation_content_length
-        if content_encodings:
-            flow.response.headers.set_all("Content-Encoding", content_encodings)
+        set_forwarded_response(flow, status, resp_raw_content, resp_headers)
     except ForwardRequestPreSubmitRejectedError:
         return FirewallAuthHandlingResult.LOCAL_RESPONSE
     except ForwardedRequestTooLargeError:
@@ -1665,7 +1442,7 @@ async def _apply_resolved_firewall_auth(
 
     if resolved_auth.aws_sigv4 is not None:
         try:
-            _sign_flow_request_with_aws_sigv4(
+            aws_sigv4_flow.sign_flow_request(
                 flow,
                 resolved_auth.aws_sigv4,
                 precomputed_body_hash=aws_sigv4_body_hash,
@@ -1876,7 +1653,7 @@ async def try_apply_stream_safe_firewall_auth_for_requestheaders(
             resolved_query=resolved_auth.query,
         )
         if resolved_auth.aws_sigv4 is not None:
-            _sign_flow_request_with_aws_sigv4(flow, resolved_auth.aws_sigv4)
+            aws_sigv4_flow.sign_flow_request(flow, resolved_auth.aws_sigv4)
     except Exception:
         _restore_header_phase_probe_state(
             flow,

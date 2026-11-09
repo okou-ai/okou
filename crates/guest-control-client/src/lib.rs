@@ -272,6 +272,13 @@ pub struct NormalOperationFence {
     _inner: operation_tracker::NormalOperationFence,
 }
 
+impl NormalOperationFence {
+    /// Permanently reject normal operations after an uncertain lifecycle transition.
+    pub fn invalidate(&self) {
+        self._inner.invalidate();
+    }
+}
+
 /// Owned reservation for an operation on a separate provider-owned transport.
 ///
 /// This shares the normal-operation tracker with generic guest operations, so

@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.109.57](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.56...guest-agent-v0.109.57) (2026-11-09)
+
+## [0.109.56](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.55...guest-agent-v0.109.56) (2026-11-09)
+
+
+### Refactoring
+
+* **guest-agent:** own cli stdio workers across cancellation ([#46071](https://github.com/okou-ai/okou/issues/46071)) ([1720ef2](https://github.com/okou-ai/okou/commit/1720ef22266e2ec9714ffe45e500cfe4fc7f461b))
+
+## [0.109.55](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.54...guest-agent-v0.109.55) (2026-11-09)
+
+## [0.109.54](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.53...guest-agent-v0.109.54) (2026-11-09)
+
 ## [0.109.53](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.52...guest-agent-v0.109.53) (2026-11-08)
 
 ## [0.109.52](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.51...guest-agent-v0.109.52) (2026-11-07)

@@ -406,9 +406,6 @@
     "sidebar": {
       "ariaLabel": "Barre latérale",
       "chat": "Chat",
-      "feedWaiting_one": "{{count}} en attente",
-      "feedWaiting_many": "{{count}} en attente",
-      "feedWaiting_other": "{{count}} en attente",
       "hideChatList": "Masquer la liste des chats",
       "mobile": {
         "invite": "Inviter",
@@ -418,7 +415,6 @@
         "agents": "Agents",
         "artifacts": "Artéfacts",
         "connectors": "Connecteurs",
-        "feed": "Fil",
         "settings": "Paramètres",
         "workflows": "Workflows",
         "works": "Où {{agentName}} travaille"
@@ -430,6 +426,9 @@
       "resizeChatList": "Redimensionner la liste des chats",
       "searchWorkspace": "Rechercher dans l’espace de travail",
       "showChatList": "Afficher la liste des chats",
+      "suggestionsWaiting_one": "{{count}} en attente",
+      "suggestionsWaiting_many": "{{count}} en attente",
+      "suggestionsWaiting_other": "{{count}} en attente",
       "workspaceSwitcher": {
         "create": "Créer un espace de travail",
         "creating": "Création…",
@@ -974,27 +973,6 @@
     },
     "homeLink": "Accéder à l'accueil de {{brandName}}",
     "loading": "Chargement de l'authentification",
-    "signup": {
-      "alreadyHaveAccount": "Vous avez déjà un compte ?",
-      "apple": "Apple",
-      "continue": "Continuer",
-      "email": "Adresse e-mail",
-      "emailPlaceholder": "Adresse e-mail",
-      "failed": "La requête a échoué",
-      "google": "Google",
-      "hidePassword": "Masquer le mot de passe",
-      "legalAnd": "et la",
-      "legalPrefix": "J’accepte les",
-      "or": "ou",
-      "password": "Mot de passe",
-      "passwordPlaceholder": "Mot de passe",
-      "privacy": "Politique de confidentialité",
-      "showPassword": "Afficher le mot de passe",
-      "signIn": "Se connecter",
-      "subtitle": "pour continuer vers {{applicationName}}",
-      "terms": "Conditions d’utilisation",
-      "title": "Créez votre compte"
-    },
     "theme": {
       "darkEnabled": "Thème sombre activé",
       "lightEnabled": "Thème clair activé"
@@ -1486,6 +1464,11 @@
     "operationFailed": "L’action du navigateur n’a pas pu aboutir. Vérifiez le navigateur avant de réessayer.",
     "paused": "Vue en pause",
     "quality": "Qualité de l’image",
+    "qualityBalanced": "Équilibrée",
+    "qualityInvalid": "Saisissez un nombre entier de 0 à 100",
+    "qualityLossless": "Sans perte",
+    "qualitySaver": "Économe",
+    "qualitySharper": "Nette",
     "reconnect": "Reconnecter",
     "reconnecting": "Reconnexion…",
     "reload": "Actualiser",
@@ -1671,15 +1654,18 @@
       "saveReason": "Save",
       "sending": "Envoi…",
       "sent": "Envoyé dans une nouvelle discussion",
+      "unavailable": "Cette suggestion n’est plus disponible. Les suggestions ont été actualisées.",
       "undoFeedback": "Undo",
       "useSuggestion": "Utiliser la suggestion"
     },
     "attachments": {
       "attach": "Joindre",
-      "fileTooLarge": "{{filename}} dépasse la limite de 512 Mo",
+      "fileTooLarge": "{{filename}} dépasse la limite de 5 Go",
       "imageUnavailable": "[Image non disponible : {{filename}}]",
       "loadingFile": "Chargement de {{filename}}",
+      "pastedText": "Texte collé",
       "previewFile": "Aperçu de {{filename}}",
+      "remove": "Supprimer {{filename}}",
       "title": "Pièces jointes",
       "unavailable": "{{filename}} n'est plus disponible. Importez-le à nouveau pour l'envoyer.",
       "unavailableCount_one": "{{count}} pièce jointe n'est plus disponible. Importez-la à nouveau pour l'envoyer.",
@@ -4267,31 +4253,20 @@
     "previousFeature": "Fonctionnalité précédente",
     "tryPrompt": "Essayer cette tâche"
   },
-  "feed": {
-    "description": "Prochaines étapes suggérées d’après votre travail récent.",
-    "emptyDescription": "Les nouvelles suggestions apparaîtront ici.",
-    "emptyTitle": "Vous êtes à jour",
-    "title": "Fil"
-  },
   "friendReferrals": {
-    "checkingCode": "Vérification du code…",
-    "codeApplied": "Code d’invitation appliqué",
-    "codeCheckFailed": "Impossible de vérifier le code. Réessayez ou laissez vide pour continuer.",
-    "codeLabel": "Votre code d’invitation",
-    "codeUnavailable": "Ce code n’est pas disponible. Vérifiez-le ou laissez vide pour continuer.",
     "copied": "Copié",
-    "copyCode": "Copier le code",
     "copyFailed": "Échec de la copie. Réessayez.",
     "copyLink": "Copier le lien",
-    "description": "Gagnez $20 en crédits lorsqu’un ami s’inscrit avec votre code d’invitation, achète un usage pack et passe à Pro ou supérieur.",
+    "description": "Vous recevez $20 de crédits dès qu’un ami termine les 3 étapes",
+    "dialogTitle": "Invitez vos amis, gagnez $20 chacun",
     "earned": "Crédits gagnés",
-    "invalidCode": "Utilisez 6 lettres ou chiffres, ou laissez vide pour continuer.",
-    "loadFailed": "Impossible de charger votre code d’invitation. Réessayez.",
-    "loading": "Chargement de votre code d’invitation…",
+    "loadFailed": "Impossible de charger votre lien d’invitation. Réessayez.",
+    "loading": "Chargement de votre lien d’invitation…",
     "registered": "Amis inscrits",
     "retry": "Réessayer",
-    "signupLabel": "Code d’invitation (facultatif)",
-    "signupPlaceholder": "Saisissez le code d’invitation",
+    "stepSignUp": "S’inscrit avec votre lien d’invitation",
+    "stepUpgrade": "Passe à Pro ou supérieur",
+    "stepUsagePack": "Achète un usage pack",
     "terms": "Réservé aux nouveaux utilisateurs. Une récompense par ami. Les crédits sont versés sur votre solde personnel dans cet espace et expirent un mois après leur attribution.",
     "title": "Inviter vos amis"
   },
@@ -4721,9 +4696,14 @@
         "tooLong": "Raccourcissez la tâche pour choisir un autre format."
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} caractères (instructions de sortie incluses)",
         "connectorsDescription": "Connectez vos applications pour aider Okou à mieux comprendre votre travail.",
         "connectorsTitle": "Connectez vos outils de travail",
-        "intro": "Connectez vos applications pour de meilleurs résultats et choisissez un format."
+        "fileTooLarge": "{{filename}} dépasse la limite de 10 Mo. Le texte collé reste dans le prompt.",
+        "intro": "Connectez vos applications pour de meilleurs résultats et choisissez un format.",
+        "tooLong": "Raccourcissez votre prompt ou désélectionnez le format de sortie pour continuer. La limite inclut les instructions de sortie.",
+        "tooManyFiles": "Vous pouvez joindre jusqu’à {{max}} fichiers. Le texte collé reste dans le prompt.",
+        "uploadFailed": "Impossible d’importer {{filename}}. Le texte collé est conservé en pièce jointe. Réessayez ou supprimez-la avant de continuer."
       },
       "skills": {
         "copied": "Copié",
@@ -6282,7 +6262,7 @@
       "title": "Oups ! Quelque chose a mal tourné"
     },
     "forceUpgrade": {
-      "description": "Cette version de {{brandName}} n'est plus prise en charge.",
+      "description": "Nous avons publié de nouvelles fonctionnalités dans {{brandName}}. Actualisez pour profiter de la dernière version.",
       "title": "Mise à jour requise"
     },
     "mermaid": {
@@ -7415,6 +7395,19 @@
       "unconfigured": "Discord n’est pas encore configuré pour cette organisation."
     },
     "documentTitle": "Fonctionne",
+    "email": {
+      "connected": "E-mail connecté",
+      "description": "Écrivez à Okou et gardez chaque conversation dans son propre fil",
+      "healthNotice": "N’utilisez pas cette intégration pour des informations de patients soumises à HIPAA.",
+      "instructions": "Envoyez un message depuis l’adresse e-mail de votre compte. Les nouveaux e-mails créent de nouveaux chats ; les réponses gardent la même conversation. Nous aidons les nouveaux utilisateurs à s’inscrire avant de poursuivre leur demande.",
+      "invalidLink": "Ce lien de connexion est invalide. Envoyez un nouvel e-mail à Okou.",
+      "loadError": "Impossible de charger votre connexion e-mail",
+      "manage": "Gérer",
+      "open": "Ouvrir l’e-mail",
+      "resumed": "{{email}} est connecté. Votre demande initiale recevra une réponse dans la même conversation par e-mail.",
+      "title": "E-mail",
+      "unavailable": "L’e-mail n’est pas encore disponible pour cet espace de travail"
+    },
     "feishuConnected": "Feishu connecté avec succès",
     "github": {
       "adminInstall": "Demandez à un administrateur de l’organisation d’installer l’application GitHub",

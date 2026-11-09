@@ -1,3 +1,4 @@
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import { command } from "ccstate";
 import { and, eq } from "drizzle-orm";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
@@ -298,10 +299,16 @@ export const handleFeishuOrgInternalCallback$ = command(
       signal,
     );
     signal.throwIfAborted();
-    const responseText =
-      callback.status === "failed"
-        ? (errorText ?? "Agent execution failed.")
-        : (output ?? "Task completed successfully.");
+    const responseText = await set(
+      formatIntegrationChatMessage$,
+      {
+        orgId: run.orgId,
+        userId: run.userId,
+        content: errorText ?? output ?? "Task completed successfully.",
+        error: errorText ?? null,
+      },
+      signal,
+    );
     const responseMessage = buildFeishuAgentResponseMessage({
       text: responseText,
       footerText: presentation.footerText,

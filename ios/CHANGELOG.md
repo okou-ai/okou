@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.30.1](https://github.com/okou-ai/okou/compare/ios-v0.30.0...ios-v0.30.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **ios:** reset workflow picker scroll for each search ([#46075](https://github.com/okou-ai/okou/issues/46075)) ([792f418](https://github.com/okou-ai/okou/commit/792f41859e14a10535387d0fcdff8d84cc874ede))
+
+
+### Refactoring
+
+* **ios:** move connector account pages to ccstate ([#46041](https://github.com/okou-ai/okou/issues/46041)) ([d9017ed](https://github.com/okou-ai/okou/commit/d9017ed8610cdc20b1498cc8f5156f455e33d188))
+
+## [0.30.0](https://github.com/okou-ai/okou/compare/ios-v0.29.3...ios-v0.30.0) (2026-11-09)
+
+
+### Features
+
+* **ios:** add voice input home screen and app shortcuts ([#46037](https://github.com/okou-ai/okou/issues/46037)) ([ffc5932](https://github.com/okou-ai/okou/commit/ffc59321492cdb183cd3ea80a4cf1b2218484c0b))
+
+
+### Bug Fixes
+
+* **ios:** persist unread indicators across notification prefetch and app launches ([#46005](https://github.com/okou-ai/okou/issues/46005)) ([b20437b](https://github.com/okou-ai/okou/commit/b20437beaffe414c9605ed6675d32e9b85ddd2ef))
+
+## [0.29.3](https://github.com/okou-ai/okou/compare/ios-v0.29.2...ios-v0.29.3) (2026-11-09)
+
+
+### Refactoring
+
+* **ios:** move connector permissions to ccstate ([#46007](https://github.com/okou-ai/okou/issues/46007)) ([843fdd5](https://github.com/okou-ai/okou/commit/843fdd5a8454ac5a5ba8975957e2f51ac3e75028))
+
 ## [0.29.2](https://github.com/okou-ai/okou/compare/ios-v0.29.1...ios-v0.29.2) (2026-11-09)
 
 

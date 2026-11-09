@@ -27,15 +27,15 @@ APPROVED_ACTIONS = {
     "docker/login-action": "81c6f93d4bc991e510b342a00b419b3bb4efc5c6",  # v4.7.0
     "docker/setup-buildx-action": "f87e5991a6d7451dcb8d9637bfbc97413f497069",  # v4.4.1
     "dopplerhq/secrets-fetch-action": "451892f16195f9ac360e1a5bcbf0b5fd0e957534",  # v2.0.0
-    "github/codeql-action/analyze": "9b3254085494b55a0f7c4c2b3d2d52cc712ce370",  # v4.39.1
-    "github/codeql-action/init": "9b3254085494b55a0f7c4c2b3d2d52cc712ce370",  # v4.39.1
-    "github/codeql-action/upload-sarif": "9b3254085494b55a0f7c4c2b3d2d52cc712ce370",  # v4.39.1
+    "github/codeql-action/analyze": "33d7b85da1a04171e211befe2c739303b9a4c066",  # v4.39.3
+    "github/codeql-action/init": "33d7b85da1a04171e211befe2c739303b9a4c066",  # v4.39.3
+    "github/codeql-action/upload-sarif": "33d7b85da1a04171e211befe2c739303b9a4c066",  # v4.39.3
     "marocchino/sticky-pull-request-comment": "5770ad5eb8f42dd2c4f34da00c94c5381e49af88",  # v3.0.5
     "okou-ai/release-please-action": "9d88edc37d41b22dcc46ab3fb56f19aec0e8b3d2",  # v5.0.0-okou
-    "pnpm/action-setup": "ea17c68df8912ef543352723c149a84f56e3d413",  # v6.1.0
+    "pnpm/action-setup": "73e46992e05b19abd31f2f3c20e0e7370d762115",  # v6.1.1
     "slackapi/slack-github-action": "dcb1066f776dd043e64d0e8ba94ca15cc7e1875d",  # v4.0.0
     "swatinem/rust-cache": "d1527c8f67ef9af357290475d4af4b0fab8f12e0",  # v2.9.3
-    "taiki-e/install-action": "86f7a0ffb25f40114606501a311ebcfaf882ea32",  # v2.88.0
+    "taiki-e/install-action": "c509219cf42fba86913069efd0ade2458c59337b",  # v2.90.1
 }
 SHA_PATTERN = re.compile(r"[0-9a-f]{40}")
 

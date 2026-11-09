@@ -50,6 +50,13 @@ public enum ApiRoutes {
       path: "/api/computer-use/hosts/\(pathSegment(hostId))/realtime-token")
   }
 
+  /// Report a host notification transition without changing liveness
+  public static func computerUseHostConnectionEvent(hostId: String) -> ApiRoute {
+    ApiRoute(
+      method: "POST",
+      path: "/api/computer-use/hosts/\(pathSegment(hostId))/connection-events")
+  }
+
   /// Stop the current session's computer-use host connection
   public static func computerUseHostStop(hostId: String) -> ApiRoute {
     ApiRoute(

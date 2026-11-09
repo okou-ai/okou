@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "侧边栏",
       "chat": "聊天",
-      "feedWaiting_other": "{{count}} 条待处理",
       "hideChatList": "隐藏聊天列表",
       "mobile": {
         "invite": "邀请",
@@ -402,7 +401,6 @@
         "agents": "智能体",
         "artifacts": "成果",
         "connectors": "连接器",
-        "feed": "动态",
         "settings": "设置",
         "workflows": "工作流",
         "works": "{{agentName}} 的工作渠道"
@@ -414,6 +412,7 @@
       "resizeChatList": "调整聊天列表宽度",
       "searchWorkspace": "搜索工作区",
       "showChatList": "显示聊天列表",
+      "suggestionsWaiting_other": "{{count}} 条待处理",
       "workspaceSwitcher": {
         "create": "创建工作区",
         "creating": "创建中…",
@@ -954,27 +953,6 @@
     },
     "homeLink": "前往 {{brandName}} 首页",
     "loading": "正在加载身份验证",
-    "signup": {
-      "alreadyHaveAccount": "已经有账户了？",
-      "apple": "Apple",
-      "continue": "继续",
-      "email": "电子邮件地址",
-      "emailPlaceholder": "请输入您的电子邮件地址",
-      "failed": "请求失败",
-      "google": "Google",
-      "hidePassword": "隐藏密码",
-      "legalAnd": "和",
-      "legalPrefix": "我同意",
-      "or": "或者",
-      "password": "密码",
-      "passwordPlaceholder": "创建密码",
-      "privacy": "隐私政策",
-      "showPassword": "显示密码",
-      "signIn": "登录",
-      "subtitle": "继续使用 {{applicationName}}",
-      "terms": "服务条款",
-      "title": "创建您的账户"
-    },
     "theme": {
       "darkEnabled": "已开启深色主题",
       "lightEnabled": "已开启浅色主题"
@@ -1459,6 +1437,11 @@
     "operationFailed": "浏览器操作未能完成。请检查浏览器当前状态后再试。",
     "paused": "画面已暂停",
     "quality": "图像质量",
+    "qualityBalanced": "均衡",
+    "qualityInvalid": "请输入 0–100 的整数",
+    "qualityLossless": "无损",
+    "qualitySaver": "省流",
+    "qualitySharper": "清晰",
     "reconnect": "重新连接",
     "reconnecting": "正在重连…",
     "reload": "刷新",
@@ -1644,15 +1627,18 @@
       "saveReason": "保存",
       "sending": "正在发送…",
       "sent": "已发送到新聊天",
+      "unavailable": "这条建议已不可用，建议列表已刷新。",
       "undoFeedback": "撤销",
       "useSuggestion": "使用建议"
     },
     "attachments": {
       "attach": "添加附件",
-      "fileTooLarge": "{{filename}} 超过 512 MB 上限",
+      "fileTooLarge": "{{filename}} 超过 5 GB 上限",
       "imageUnavailable": "[图片不可用：{{filename}}]",
       "loadingFile": "正在加载 {{filename}}",
+      "pastedText": "粘贴的文本",
       "previewFile": "预览 {{filename}}",
+      "remove": "移除 {{filename}}",
       "title": "附件",
       "unavailable": "{{filename}} 已不可用。重新上传后才能发送。",
       "unavailableCount_other": "有 {{count}} 个附件已不可用。重新上传后才能发送。",
@@ -4198,31 +4184,20 @@
     "previousFeature": "上一个功能",
     "tryPrompt": "试试这个任务"
   },
-  "feed": {
-    "description": "根据你最近的工作推荐的下一步。",
-    "emptyDescription": "新的建议会显示在这里。",
-    "emptyTitle": "已全部处理",
-    "title": "动态"
-  },
   "friendReferrals": {
-    "checkingCode": "正在验证邀请码…",
-    "codeApplied": "邀请码已生效",
-    "codeCheckFailed": "无法验证邀请码，请重试或留空继续。",
-    "codeLabel": "你的邀请码",
-    "codeUnavailable": "此邀请码不可用，请检查或留空继续。",
     "copied": "已复制",
-    "copyCode": "复制邀请码",
     "copyFailed": "复制失败，请重试。",
     "copyLink": "复制邀请链接",
-    "description": "朋友使用你的邀请码注册、购买 usage pack 并升级至 Pro 或以上后，你将获得价值 $20 的 credits。",
+    "description": "朋友完成以下 3 步后，你将获得价值 $20 的 credits",
+    "dialogTitle": "邀请朋友，每位得 $20",
     "earned": "累计获得的 credits",
-    "invalidCode": "请输入 6 位字母或数字，也可留空继续。",
-    "loadFailed": "无法加载邀请码，请重试。",
-    "loading": "正在获取你的邀请码…",
+    "loadFailed": "无法加载邀请链接，请重试。",
+    "loading": "正在获取你的邀请链接…",
     "registered": "已注册的朋友",
     "retry": "重试",
-    "signupLabel": "邀请码（选填）",
-    "signupPlaceholder": "输入邀请码",
+    "stepSignUp": "通过你的邀请链接注册",
+    "stepUpgrade": "升级至 Pro 或以上",
+    "stepUsagePack": "购买 usage pack",
     "terms": "仅限新用户，每位朋友仅奖励一次。奖励将发至你在此工作区的个人余额，并于到账 1 个月后过期。",
     "title": "邀请朋友"
   },
@@ -4648,9 +4623,14 @@
         "tooLong": "请缩短任务内容，以选择其他产出形式。"
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} 个字符（含输出指令）",
         "connectorsDescription": "连接应用，让 Okou 更了解你的工作。",
         "connectorsTitle": "连接你的工作工具",
-        "intro": "连接应用，让结果更贴合需求，并选择输出格式。"
+        "fileTooLarge": "{{filename}} 超过 10 MB 上限。粘贴的文本仍保留在提示词中。",
+        "intro": "连接应用，让结果更贴合需求，并选择输出格式。",
+        "tooLong": "请缩短提示词或取消选择输出格式后继续。输出指令也计入字符数上限。",
+        "tooManyFiles": "最多可添加 {{max}} 个文件。粘贴的文本仍保留在提示词中。",
+        "uploadFailed": "无法上传 {{filename}}。粘贴的文本已保留为附件。请重试或移除该附件后继续。"
       },
       "skills": {
         "copied": "已复制",
@@ -6198,7 +6178,7 @@
       "title": "哎呀，出了点小问题"
     },
     "forceUpgrade": {
-      "description": "当前版本的 {{brandName}} 已不再支持。",
+      "description": "{{brandName}} 上线了新功能，刷新即可使用最新版本。",
       "title": "需要更新"
     },
     "mermaid": {
@@ -7315,6 +7295,19 @@
       "unconfigured": "此组织尚未配置 Discord。"
     },
     "documentTitle": "工作渠道",
+    "email": {
+      "connected": "邮箱已连接",
+      "description": "给 Okou 发邮件，每个邮件会话对应一个独立对话",
+      "healthNotice": "请勿通过此集成处理受 HIPAA 监管的患者信息。",
+      "instructions": "从账户的邮箱地址发送邮件。新邮件开启新对话，邮件内的回复保留上下文。新用户完成注册后，我们会继续处理原始请求。",
+      "invalidLink": "连接链接无效，请重新给 Okou 发邮件。",
+      "loadError": "无法加载邮箱连接",
+      "manage": "管理",
+      "open": "打开邮件",
+      "resumed": "{{email}} 已连接，原始请求将继续在同一个邮件会话中回复。",
+      "title": "邮件",
+      "unavailable": "此工作区暂未开放邮件集成"
+    },
     "feishuConnected": "飞书连接成功",
     "github": {
       "adminInstall": "请组织管理员安装 GitHub App",

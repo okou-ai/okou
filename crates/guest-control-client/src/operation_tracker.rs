@@ -44,6 +44,29 @@ impl NormalOperationTracker {
         }
     }
 
+    pub(crate) fn reserve_under_fence(
+        &self,
+        fence: &NormalOperationFence,
+    ) -> Result<NormalOperationToken, NormalOperationRejection> {
+        let mut inner = self.inner();
+        if !Arc::ptr_eq(&self.inner, &fence.inner)
+            || !matches!(inner.state, TrackerState::Fenced { id } if id == fence.id)
+            || !inner.operations.is_empty()
+        {
+            return Err(NormalOperationRejection::Fenced);
+        }
+        let id = NormalOperationId(inner.next_operation_id);
+        inner.next_operation_id += 1;
+        inner
+            .operations
+            .insert(id, OperationPhase::ReservedBeforeWrite);
+        Ok(NormalOperationToken {
+            id,
+            inner: Arc::clone(&self.inner),
+            released: false,
+        })
+    }
+
     pub(crate) fn try_fence(&self) -> Result<NormalOperationFence, NormalOperationFenceRejection> {
         let mut inner = self.inner();
         match inner.state {
@@ -341,6 +364,14 @@ impl Drop for NormalOperationToken {
 pub(crate) struct NormalOperationFence {
     id: NormalOperationFenceId,
     inner: Arc<Mutex<Inner>>,
+}
+
+impl NormalOperationFence {
+    pub(crate) fn invalidate(&self) {
+        let mut inner = lock_inner(&self.inner);
+        inner.state = TrackerState::NotParkable;
+        inner.operations.clear();
+    }
 }
 
 impl Drop for NormalOperationFence {

@@ -1065,7 +1065,7 @@ fn home_image_prepare_error(result: HomeCacheCheckoutResult) -> Option<&'static 
     }
 }
 
-fn final_home_reuse_result(
+pub(super) fn final_home_reuse_result(
     checkout_result: Option<HomeCacheCheckoutResult>,
     used_home_fallback: bool,
 ) -> HomeReuseResult {

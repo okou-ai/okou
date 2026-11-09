@@ -1,6 +1,6 @@
 {
   "name": "@okouai/db",
-  "version": "2.24.2",
+  "version": "2.24.6",
   "private": true,
   "type": "module",
   "exports": {
@@ -77,7 +77,8 @@
     "test:registry-resource-inventory": "node --import tsx scripts/migrations/028-registry-resource-bundles/test-inventory.ts",
     "test:registry-resource-backfill": "node --import tsx scripts/migrations/028-registry-resource-bundles/test-backfill.ts",
     "test:registry-resource-publication": "node scripts/test-registry-publication.mjs",
-    "test:template-guidance-backfill": "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts"
+    "test:template-guidance-backfill": "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
+    "test:template-guidance-production": "node --import tsx scripts/migrations/029-template-guidance-bundles/test-production.ts"
   },
   "dependencies": {
     "@okouai/api-contracts": "workspace:*",
@@ -87,7 +88,7 @@
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.1159.0",
+    "@aws-sdk/client-s3": "^3.1162.0",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
@@ -102,7 +103,7 @@
     "tar": "^7.5.19",
     "tsx": "^4.21.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.5",
+    "vitest": "^5.1.0",
     "zod": "^4.5.4"
   }
 }

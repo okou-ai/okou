@@ -30,7 +30,7 @@ use sandbox::{
     SandboxInvalidStateContext, SandboxOperation, SandboxOperationReason,
     SandboxParkNonReusableReason, SandboxParkOutcome, SandboxStartObserver, SandboxStartStage,
     SevereMemoryRetentionDiagnostics, StartAgentProcessRequest, StartProcessRequest,
-    StorageManifestRequest, WriteFileEntry,
+    StorageManifestRequest, WriteFileEntry, validate_exec_env_keys,
 };
 use tokio::io::AsyncRead;
 use tokio::sync::{mpsc, watch};
@@ -74,6 +74,7 @@ use crate::snapshot_mount_namespace::{BindMount, SnapshotMountMode, build_comman
 
 mod guest_connection_timing;
 mod guest_readiness;
+mod home_rebind;
 mod park_attempt;
 mod snapshot_restore;
 mod state;
@@ -842,26 +843,6 @@ impl FirecrackerSandbox {
             reason,
             message: error.to_string(),
         }
-    }
-
-    fn invalid_env_key_error(operation: SandboxOperation, key: &str) -> SandboxError {
-        SandboxError::Operation {
-            operation,
-            reason: SandboxOperationReason::Other,
-            message: format!("invalid environment variable name: {}", key.escape_debug()),
-        }
-    }
-
-    fn validate_exec_env_keys(
-        operation: SandboxOperation,
-        env: &[(&str, &str)],
-    ) -> sandbox::Result<()> {
-        for (key, _) in env {
-            if !guest_contracts::env::is_shell_identifier_env_key(key) {
-                return Err(Self::invalid_env_key_error(operation, key));
-            }
-        }
-        Ok(())
     }
 
     fn operation_gate_closed_error(
@@ -2193,7 +2174,7 @@ impl FirecrackerSandbox {
         control: SupervisedExecControl,
     ) -> sandbox::Result<(GuestProcessHandle, SupervisedExecStartTiming)> {
         let vsock = self.begin_guest_operation(operation).await?;
-        Self::validate_exec_env_keys(operation, request.env)?;
+        validate_exec_env_keys(operation, request.env)?;
         request.output.validate(operation)?;
 
         let start_future = async move {
@@ -2291,7 +2272,7 @@ impl FirecrackerSandbox {
         }
 
         let operation = SandboxOperation::Exec;
-        Self::validate_exec_env_keys(operation, request.env)?;
+        validate_exec_env_keys(operation, request.env)?;
         let timeout_ms = request.timeout_ms();
         validate_exec_capture_timeout(timeout_ms)
             .map_err(|error| Self::operation_error(operation, error, self.has_backend_crashed()))?;
@@ -3074,7 +3055,7 @@ impl Sandbox for FirecrackerSandbox {
 
         self.run_bounded_guest_operation_with_validation(
             operation,
-            || Self::validate_exec_env_keys(operation, request.env),
+            || validate_exec_env_keys(operation, request.env),
             |guest| async move {
                 validate_exec_capture_timeout(timeout_ms)?;
                 guest
@@ -3101,6 +3082,13 @@ impl Sandbox for FirecrackerSandbox {
         *timing = sandbox::StorageManifestTiming::default();
         self.apply_storage_manifest_observed(request, Some(timing))
             .await
+    }
+
+    async fn replace_home_drive(
+        &mut self,
+        config: &sandbox::HomeDriveConfig,
+    ) -> sandbox::Result<()> {
+        self.replace_blank_home(config).await
     }
 
     async fn mount_home_drive(&self) -> sandbox::Result<ExecResult> {

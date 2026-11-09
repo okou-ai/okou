@@ -63,6 +63,8 @@ pub(crate) struct ExecOverrideState {
     pub(crate) storage_manifest_results: Mutex<VecDeque<Result<ExecResult>>>,
     /// FIFO results for fixed home-drive mount operations.
     pub(crate) home_drive_mount_results: Mutex<VecDeque<Result<ExecResult>>>,
+    /// Recorded Home backend replacements.
+    pub(crate) home_drive_replacements: Mutex<Vec<sandbox::HomeDriveConfig>>,
     /// Total fixed home-drive mount calls across attached sandboxes.
     pub(crate) home_drive_mount_calls: Mutex<u32>,
     /// Wakes tests after a fixed home-drive mount call is recorded.
@@ -329,6 +331,14 @@ impl MockSandboxOverrides {
             process: ProcessOverrideState::default(),
             factory: FactoryOverrideState::default(),
         }
+    }
+
+    /// Return selected Home image configurations passed to existing VMs.
+    pub fn home_drive_replacements(&self) -> Vec<sandbox::HomeDriveConfig> {
+        self.exec
+            .home_drive_replacements
+            .lock_ignoring_poison()
+            .clone()
     }
 
     /// Queue one ordinary-write result shared by attached sandboxes.

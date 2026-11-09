@@ -1,3 +1,4 @@
+import { trace } from "@opentelemetry/api";
 import { HTTPException } from "hono/http-exception";
 import { providerUnavailable } from "../../lib/error";
 import { setTimeout as delay } from "node:timers/promises";
@@ -54,16 +55,17 @@ import { desktopMinimumSupportedVersion } from "../../lib/desktop-compatibility"
 import { isUniqueViolation } from "../../lib/pg-errors";
 import { env } from "../../lib/env";
 import { logger } from "../../lib/log";
-import { nowDate } from "../../lib/time";
+import { nowDate, nowDateSql } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishUserSignal,
   computerUseHostIsPresent,
   publishComputerUseCommandsChangedSafely,
+  publishComputerUseCommandsChanged,
   publishComputerUseResultChangedSafely,
 } from "../external/realtime";
 import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
-import { joinAll, settle } from "../utils";
+import { joinAll, settle, settleIncludingAbort, tapError } from "../utils";
 import {
   verifyClerkComputerUseSession,
   clerkRateLimit,
@@ -139,12 +141,18 @@ type CreateComputerUseCommandResult =
       readonly status: "created";
       readonly commandId: string;
       readonly commandStatus: "queued";
+      readonly notifyHosts: readonly ComputerUseCommandNotificationHost[];
     }
   | { readonly status: "no_host" }
   | { readonly status: "host_ambiguous" }
   | { readonly status: "host_offline" }
   | { readonly status: "host_unsupported" }
   | { readonly status: "shell_authorization_required" };
+
+type ComputerUseCommandNotificationHost = Pick<
+  ComputerUseHostRow,
+  "id" | "userId" | "orgId" | "connectionGeneration" | "livenessMode"
+>;
 
 type ResolveComputerUseCommandTargetsResult =
   | {
@@ -160,7 +168,7 @@ interface StartComputerUseHostResult {
   readonly status: "started";
   readonly hostId: string;
   readonly connectionGeneration: number;
-  readonly livenessMode: "heartbeat" | "presence";
+  readonly livenessMode: "heartbeat" | "presence" | "presence-only";
 }
 
 type HeartbeatComputerUseHostResult =
@@ -356,19 +364,66 @@ export const computerUseHostIsOnline$ = command(
     if (authorized === null) {
       return false;
     }
-    const presence = await settle(
-      computerUseHostIsPresent(host, signal),
-      signal,
-    );
-    // A received queue-wait request is independent proof of HTTP reachability.
-    // Preserve the previous 90-second recovery window if Ably is unavailable.
-    if (computerUseHostIsOnline(host, now)) {
-      return true;
+    const span = trace
+      .getTracer("computer-use")
+      .startSpan("computer_use.host.availability", {
+        attributes: {
+          "computer_use.host_id": host.id,
+          "computer_use.connection_generation": host.connectionGeneration,
+          "computer_use.liveness_mode": host.livenessMode,
+        },
+      });
+    const result = await settleIncludingAbort(async () => {
+      const presence = await settle(
+        computerUseHostIsPresent(host, signal),
+        signal,
+      );
+      span.setAttribute(
+        "computer_use.presence.outcome",
+        presence.ok ? (presence.value ? "present" : "absent") : "unavailable",
+      );
+      // A received queue-wait request is independent proof of HTTP reachability.
+      // Preserve the previous 90-second recovery window if Ably is unavailable.
+      if (
+        host.livenessMode === "presence" &&
+        computerUseHostIsOnline(host, now)
+      ) {
+        span.setAttributes({
+          "computer_use.availability.source": "legacy_http",
+          "computer_use.online": true,
+        });
+        L.debug("Computer-use host availability evaluated", {
+          hostId: host.id,
+          connectionGeneration: host.connectionGeneration,
+          mode: host.livenessMode,
+          source: "legacy_http",
+          online: true,
+        });
+        return true;
+      }
+      span.setAttribute("computer_use.availability.source", "ably_presence");
+      if (!presence.ok) {
+        throw presence.error;
+      }
+      span.setAttribute("computer_use.online", presence.value);
+      L.debug("Computer-use host availability evaluated", {
+        hostId: host.id,
+        connectionGeneration: host.connectionGeneration,
+        mode: host.livenessMode,
+        source: "ably_presence",
+        online: presence.value,
+      });
+      return presence.value;
+    });
+    if (signal.aborted) {
+      span.end();
+      signal.throwIfAborted();
     }
-    if (!presence.ok) {
-      throw presence.error;
+    span.end();
+    if (!result.ok) {
+      throw result.error;
     }
-    return presence.value;
+    return result.value;
   },
 );
 
@@ -809,6 +864,20 @@ function runningCommandHasTimedOut(
   return now.getTime() - row.claimedAt.getTime() > row.timeoutMs;
 }
 
+function queuedCommandHasTimedOut(
+  row: ComputerUseCommandRow,
+  at: Date,
+): boolean {
+  return (
+    row.status === "queued" &&
+    at.getTime() - row.createdAt.getTime() > row.timeoutMs
+  );
+}
+
+function queuedCommandIsUnexpired() {
+  return sql`${computerUseCommands.createdAt} + ${computerUseCommands.timeoutMs} * interval '1 millisecond' >= ${nowDateSql()}`;
+}
+
 function timeoutErrorForCommand(
   row: ComputerUseCommandRow,
 ): ComputerUseCommandError {
@@ -893,8 +962,8 @@ const insertComputerUseCommandAuditEvent$ = command(
 );
 
 /**
- * Fail one running command that is past its timeout. The UPDATE is a
- * single-row compare-and-set on `status = 'running'`, so of several concurrent
+ * Fail one queued or running command past its deadline. The UPDATE is a
+ * single-row compare-and-set on the observed status, so of several concurrent
  * readers, pollers and completions exactly one wins; only the winner writes
  * the audit event. Returns the failed row, or null when another writer got
  * there first.
@@ -919,7 +988,7 @@ const failTimedOutComputerUseCommand$ = command(
       .where(
         and(
           eq(computerUseCommands.id, commandRow.id),
-          eq(computerUseCommands.status, "running"),
+          eq(computerUseCommands.status, commandRow.status),
         ),
       )
       .returning();
@@ -996,6 +1065,7 @@ export const startComputerUseHost$ = command(
     params: ComputerUseSessionIdentity & {
       readonly installationId: string;
       readonly livenessMode?: "presence";
+      readonly presenceOnly?: boolean;
       readonly hostName: string;
       readonly appVersion: string;
       readonly osVersion: string;
@@ -1017,6 +1087,11 @@ export const startComputerUseHost$ = command(
       params.supportedCapabilities,
     );
     const now = nowDate();
+    const livenessMode = params.livenessMode
+      ? params.presenceOnly
+        ? "presence-only"
+        : "presence"
+      : "heartbeat";
     if (!(await verifyClerkComputerUseSession(params, signal))) {
       return { status: "invalid_session" };
     }
@@ -1041,7 +1116,7 @@ export const startComputerUseHost$ = command(
         osVersion,
         supportedCapabilities,
         permissions: params.permissions,
-        livenessMode: params.livenessMode ?? "heartbeat",
+        livenessMode,
         status: "online",
         lastSeenAt: now,
         createdAt: now,
@@ -1066,7 +1141,7 @@ export const startComputerUseHost$ = command(
           osVersion,
           supportedCapabilities,
           permissions: params.permissions,
-          livenessMode: params.livenessMode ?? "heartbeat",
+          livenessMode,
           status: "online",
           lastSeenAt: now,
           updatedAt: now,
@@ -1086,7 +1161,7 @@ export const startComputerUseHost$ = command(
       status: "started",
       hostId: host.id,
       connectionGeneration: host.connectionGeneration,
-      livenessMode: params.livenessMode ?? "heartbeat",
+      livenessMode,
     };
   },
 );
@@ -1166,6 +1241,7 @@ export const heartbeatComputerUseHost$ = command(
                 eq(computerUseCommands.userId, host.userId),
                 eq(computerUseCommands.hostId, host.id),
                 eq(computerUseCommands.status, "queued"),
+                queuedCommandIsUnexpired(),
                 inArray(computerUseCommands.kind, claimableKinds),
               ),
             )
@@ -1242,6 +1318,7 @@ export const waitForComputerUseHostCommands$ = command(
             eq(computerUseCommands.orgId, host.orgId),
             eq(computerUseCommands.userId, host.userId),
             eq(computerUseCommands.status, "queued"),
+            queuedCommandIsUnexpired(),
             inArray(
               computerUseCommands.kind,
               COMPUTER_USE_COMMANDS.filter((kind) => {
@@ -1328,6 +1405,116 @@ export const listComputerUseHosts$ = command(
         }),
       ),
     };
+  },
+);
+
+// This finite delivery owner exists only for a newly queued command. Successful
+// publication ends it; failed publication retries within the request background
+// budget. A later result read or reconnect can repair delivery after that window.
+const deliverQueuedComputerUseCommand$ = command(
+  async ({ get, set }, commandId: string, signal: AbortSignal) => {
+    const db = get(db$);
+    const deliveryDeadline = performance.now() + 20_000;
+    let deadline: number | undefined;
+    let attempt = 0;
+    while (true) {
+      signal.throwIfAborted();
+      const [row] = await db
+        .select()
+        .from(computerUseCommands)
+        .where(eq(computerUseCommands.id, commandId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!row || row.status !== "queued") {
+        return;
+      }
+      const at = nowDate();
+      deadline ??=
+        performance.now() +
+        Math.max(0, row.createdAt.getTime() + row.timeoutMs - at.getTime());
+      if (queuedCommandHasTimedOut(row, at) || performance.now() >= deadline) {
+        await set(failTimedOutComputerUseCommand$, row, at, signal);
+        return;
+      }
+      if (performance.now() >= deliveryDeadline) {
+        L.warn("Computer-use notification retry window exhausted", {
+          commandId,
+        });
+        return;
+      }
+      const [host] = await db
+        .select()
+        .from(computerUseHosts)
+        .where(eq(computerUseHosts.id, row.hostId))
+        .limit(1);
+      signal.throwIfAborted();
+      if (!host || host.status !== "online" || host.revokedAt !== null) {
+        return;
+      }
+      const published = await settle(
+        publishComputerUseCommandsChanged({
+          userId: host.userId,
+          orgId: host.orgId,
+          hostId: host.id,
+          connectionGeneration: host.connectionGeneration,
+        }),
+      );
+      signal.throwIfAborted();
+      if (published.ok) {
+        return;
+      }
+      attempt += 1;
+      L.debug("Retrying queued computer-use command notification", {
+        hostId: host.id,
+        commandId,
+        attempt,
+      });
+      const remaining =
+        Math.min(deadline, deliveryDeadline) - performance.now();
+      if (remaining <= 0) {
+        continue;
+      }
+      await delay(
+        Math.min(1000 * 2 ** Math.min(attempt - 1, 3), remaining),
+        undefined,
+        { signal },
+      );
+    }
+  },
+);
+
+export const notifyQueuedComputerUseCommand$ = command(
+  async (
+    { set },
+    commandId: string,
+    hosts: readonly ComputerUseCommandNotificationHost[],
+    signal: AbortSignal,
+  ) => {
+    // The command queue is authoritative. Result reads repair lost wakeups;
+    // legacy Desktop clients also recover through heartbeat pending-work hints.
+    if (
+      hosts.some((host) => {
+        return host.livenessMode === "presence-only";
+      })
+    ) {
+      return await tapError(
+        set(deliverQueuedComputerUseCommand$, commandId, signal),
+        (error) => {
+          L.warn("Unable to deliver queued computer-use notification", {
+            commandId,
+            error,
+          });
+        },
+      );
+    }
+    for (const host of hosts) {
+      publishComputerUseCommandsChangedSafely({
+        userId: host.userId,
+        orgId: host.orgId,
+        hostId: host.id,
+        connectionGeneration: host.connectionGeneration,
+      });
+    }
   },
 );
 
@@ -1448,21 +1635,11 @@ export const createComputerUseCommand$ = command(
       }
       throw new Error("Failed to create computer-use command");
     }
-    // The command queue is authoritative. Result reads repair lost wakeups;
-    // legacy Desktop clients also recover through heartbeat pending-work hints.
-    for (const host of target.notifyHosts) {
-      publishComputerUseCommandsChangedSafely({
-        userId: host.userId,
-        orgId: host.orgId,
-        hostId: host.id,
-        connectionGeneration: host.connectionGeneration,
-      });
-    }
-    signal.throwIfAborted();
     return {
       status: "created",
       commandId: row.id,
       commandStatus: "queued",
+      notifyHosts: target.notifyHosts,
     };
   },
 );
@@ -1542,7 +1719,10 @@ export const getComputerUseCommand$ = command(
 
     let commandRow = row;
     const now = nowDate();
-    if (row.status === "running" && runningCommandHasTimedOut(row, now)) {
+    if (
+      queuedCommandHasTimedOut(row, now) ||
+      (row.status === "running" && runningCommandHasTimedOut(row, now))
+    ) {
       // A loser keeps the row it read; the next poll sees the winner's state.
       commandRow =
         (await set(failTimedOutComputerUseCommand$, row, now, signal)) ?? row;
@@ -1556,7 +1736,8 @@ export const getComputerUseCommand$ = command(
     signal.throwIfAborted();
     if (
       commandRow.status === "queued" &&
-      host?.livenessMode === "presence" &&
+      host &&
+      host.livenessMode !== "heartbeat" &&
       host.status === "online" &&
       host.revokedAt === null
     ) {
@@ -1766,6 +1947,7 @@ export const claimNextComputerUseHostCommand$ = command(
           eq(computerUseCommands.userId, host.userId),
           eq(computerUseCommands.status, "queued"),
           eq(computerUseCommands.hostId, host.id),
+          queuedCommandIsUnexpired(),
           inArray(computerUseCommands.kind, COMPUTER_USE_COMMANDS),
         ),
       )
@@ -1800,6 +1982,7 @@ export const claimNextComputerUseHostCommand$ = command(
           and(
             eq(computerUseCommands.id, row.id),
             eq(computerUseCommands.status, "queued"),
+            queuedCommandIsUnexpired(),
             or(
               sql`${computerUseCommands.kind} NOT LIKE 'shell.%'`,
               computerUseCommandHasShellGrant(nowDate()),

@@ -28,7 +28,7 @@ final class AblyCommandNotifications: CommandNotifications {
     self.subscription = subscription
     self.tokenProvider = tokenProvider
     let stream = AsyncStream<CommandNotificationEvent>.makeStream(
-      bufferingPolicy: .bufferingNewest(1))
+      bufferingPolicy: .unbounded)
     continuation = stream.continuation
     connect()
     return stream.stream
@@ -82,6 +82,7 @@ final class AblyCommandNotifications: CommandNotifications {
     channel.on { [weak self] change in
       let state = change.current
       let message = change.reason?.message
+      let code = change.reason?.code
       Task { @MainActor [weak self] in
         guard let self, generation == expected else { return }
         switch state {
@@ -89,10 +90,10 @@ final class AblyCommandNotifications: CommandNotifications {
           // Covers initial attachment, reattachment, and UPDATE continuity gaps.
           refreshWhenReady()
         case .failed:
-          unavailable(message ?? "Command notification subscription failed")
+          unavailable(message ?? "Command notification subscription failed", code: code)
           recover(generation: expected)
         case .suspended, .detached:
-          unavailable(message ?? "Command notifications are temporarily unavailable")
+          unavailable(message ?? "Command notifications are temporarily unavailable", code: code)
         default: break
         }
       }
@@ -100,17 +101,18 @@ final class AblyCommandNotifications: CommandNotifications {
     realtime.connection.on { [weak self] change in
       let state = change.current
       let message = change.reason?.message
+      let code = change.reason?.code
       Task { @MainActor [weak self] in
         guard let self, generation == expected else { return }
         switch state {
         case .connected: refreshWhenReady()
         case .failed:
-          unavailable(message ?? "Command notification connection failed")
+          unavailable(message ?? "Command notification connection failed", code: code)
           recover(generation: expected)
         case .disconnected, .suspended:
           presenceReady = false
           enteringPresence = false
-          unavailable(message ?? "Command notifications are temporarily unavailable")
+          unavailable(message ?? "Command notifications are temporarily unavailable", code: code)
         default: break
         }
       }
@@ -130,11 +132,12 @@ final class AblyCommandNotifications: CommandNotifications {
       let expected = generation
       realtime.channels.get(subscription.channelName).presence.enter(nil) { [weak self] error in
         let message = error?.message
+        let code = error?.code
         Task { @MainActor [weak self] in
           guard let self, generation == expected else { return }
           enteringPresence = false
           if let message {
-            unavailable(message)
+            unavailable(message, code: code)
             recover(generation: expected)
             return
           }
@@ -155,10 +158,12 @@ final class AblyCommandNotifications: CommandNotifications {
     continuation?.yield(.ready)
   }
 
-  private func unavailable(_ message: String) {
+  private func unavailable(_ message: String, code: Int? = nil) {
+    presenceReady = false
+    enteringPresence = false
     guard lastUnavailable != message else { return }
     lastUnavailable = message
-    continuation?.yield(.unavailable(message))
+    continuation?.yield(.unavailable(message, code: code))
   }
 
   private func recover(generation expected: UUID) {

@@ -22,7 +22,7 @@ export function resetMockProactiveSuggestions(): void {
   learning = { enabled: false, status: "paused", unavailableReason: null };
 }
 export const apiProactiveSuggestionsHandlers = [
-  // The chat list's Okou row counts the Feed whenever Suggestions are on.
+  // The chat list's Okou row counts waiting cards whenever Suggestions are on.
   mockApi(suggestionsContract.list, ({ respond }) =>
     respond(200, { suggestions: [] }),
   ),

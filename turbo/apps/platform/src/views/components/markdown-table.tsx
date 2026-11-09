@@ -33,15 +33,16 @@ import {
 } from "../../signals/markdown-table-export.ts";
 import { cancelBuiltinConnectorConnection$ } from "../../signals/okou-page/settings/connectors.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { MarkdownHorizontalScroll } from "./markdown-horizontal-scroll.tsx";
 
 type TableProps = ComponentPropsWithoutRef<"table"> & { node?: Element };
 
 export function MarkdownTable({ node, children, ...props }: TableProps) {
   if (!node) {
     return (
-      <div className="overflow-x-auto">
+      <MarkdownHorizontalScroll>
         <table {...props}>{children}</table>
-      </div>
+      </MarkdownHorizontalScroll>
     );
   }
   return (
@@ -74,11 +75,11 @@ function ExportableTable({
   };
   return (
     <Card className="my-3 min-w-0 rounded-3xl p-2">
-      <div className="overflow-x-auto rounded-2xl">
+      <MarkdownHorizontalScroll className="rounded-2xl">
         <table {...props} className={cn("m-0! min-w-max border-0!", className)}>
           {children}
         </table>
-      </div>
+      </MarkdownHorizontalScroll>
       <div
         data-markdown-ui
         className="mt-1 flex items-center justify-between gap-3 px-0.5"

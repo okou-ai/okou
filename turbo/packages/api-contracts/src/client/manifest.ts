@@ -400,6 +400,10 @@ export const clientDescriptorManifest = [
     contracts: ["integrationsDiscordContract"],
   },
   {
+    module: "integrations-email",
+    contracts: ["integrationsEmailContract"],
+  },
+  {
     module: "integrations-github",
     contracts: ["integrationsGithubContract"],
   },

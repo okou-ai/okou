@@ -1,29 +1,103 @@
+import CCState
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
+extension View {
+  func connectorPermissionDestination(
+    store: ComposerConnectorStore,
+    destination: Binding<ComposerConnectorPermissionResources?>
+  ) -> some View {
+    modifier(ConnectorPermissionDestination(store: store, destination: destination))
+  }
+}
+
+/// Each entry owns its navigation binding; the composer owns the resource lifetime.
+private struct ConnectorPermissionDestination: ViewModifier {
+  let store: ComposerConnectorStore
+  @Binding var destination: ComposerConnectorPermissionResources?
+
+  func body(content: Content) -> some View {
+    content.navigationDestination(
+      isPresented: Binding(
+        get: { destination != nil && store.permissions === destination },
+        set: { presented in
+          if !presented {
+            if store.permissions === destination { store.closePermissions() }
+            destination = nil
+          }
+        })
+    ) {
+      if let resources = destination, store.permissions === resources {
+        ComposerConnectorPermissions(store: store, resources: resources)
+          .id(ObjectIdentifier(resources))
+      }
+    }
+  }
+}
+
 struct ComposerConnectorPermissions: View {
   let store: ComposerConnectorStore
-  let slug: String
-  let label: String
-  @State private var state: ChatConnectorPermissionState?
-  @State private var search = ""
-  @State private var duration = "1h"
-  @State private var category = ""
-  @State private var error: String?
-  @State private var loading = false
-  @State private var confirmsReset = false
+  let resources: ComposerConnectorPermissionResources
 
   var body: some View {
-    List {
-      if let error {
-        ConnectorLoadError(error: error, isLoading: loading || store.isLoading) {
-          await store.refresh()
-          await load()
+    StoreProvider(resources.store) {
+      ComposerConnectorPermissionsContent(store: store, resources: resources)
+    }
+  }
+}
+
+private struct ComposerConnectorPermissionsContent: View {
+  let store: ComposerConnectorStore
+  let resources: ComposerConnectorPermissionResources
+  @LoadableValue private var page: Loadable<ComposerConnectorPermissionResources.Page>
+  @LoadableValue private var controls: Loadable<ComposerConnectorPermissionResources.Controls>
+  @LoadableStatus<ComposerConnectorPermissionResources.Page> private var status: LoadableState
+  @State private var confirmsReset = false
+
+  init(store: ComposerConnectorStore, resources: ComposerConnectorPermissionResources) {
+    self.store = store
+    self.resources = resources
+    _page = LoadableValue(task: resources.page, keepLast: true)
+    _status = LoadableStatus(task: resources.page)
+    _controls = LoadableValue(resources.controls)
+  }
+
+  private var loading: Bool { status == .loading || store.isSaving }
+  private var busy: Bool { loading || store.uncertain }
+
+  var body: some View {
+    switch controls {
+    case .hasData(let value): content(value)
+    case .loading: OkouLoadingRow("Loading permissions…")
+    case .hasError(let error):
+      ConnectorLoadError(error: ChatRequestFailure.message(for: error)) { await resources.retry() }
+    }
+  }
+
+  private func content(_ controls: ComposerConnectorPermissionResources.Controls) -> some View {
+    let selection = controls.selection
+    return List {
+      if let failure = controls.confirmationFailure {
+        ConnectorLoadError(error: failure, isLoading: loading || store.isRefreshing) {
+          await resources.retry()
         }
       }
-      if let state {
+      if case .hasError(let error) = page {
+        ConnectorLoadError(
+          error: ChatRequestFailure.message(for: error), isLoading: loading || store.isRefreshing
+        ) {
+          await resources.retry()
+        }
+      }
+      if case .hasData(let value) = page {
+        let state = value.state
         Section {
-          Picker("Allow for", selection: $duration) {
+          Picker(
+            "Allow for",
+            selection: Binding(
+              get: { selection.duration }, set: { resources.update(duration: $0) })
+          ) {
             Text("1 hour").tag("1h")
             Text("24 hours").tag("24h")
             Text("7 days").tag("7d")
@@ -31,7 +105,11 @@ struct ComposerConnectorPermissions: View {
           }
           .okouValuePicker()
           if let categories = state.metadata.categories {
-            Picker("Category", selection: $category) {
+            Picker(
+              "Category",
+              selection: Binding(
+                get: { selection.category }, set: { resources.update(category: $0) })
+            ) {
               Text("All categories").tag("")
               ForEach(categories.displayOrder, id: \.self) { Text($0).tag($0) }
             }
@@ -39,23 +117,13 @@ struct ComposerConnectorPermissions: View {
           }
           Menu("Set listed permissions") {
             Button("Allow all") {
-              Task {
-                await save(
-                  filteredPermissions(state.metadata).map {
-                    ChatPermissionEdit(permission: $0.name, action: "allow", expiresIn: duration)
-                  })
-              }
+              Task { await resources.apply(.allowListed) }
             }
             Button("Deny all") {
-              Task {
-                await save(
-                  filteredPermissions(state.metadata).map {
-                    ChatPermissionEdit(permission: $0.name, action: "deny")
-                  })
-              }
+              Task { await resources.apply(.denyListed) }
             }
           }.disabled(
-            store.isSaving || store.uncertain || filteredPermissions(state.metadata).isEmpty)
+            busy || value.permissions.isEmpty)
         } footer: {
           Text(
             state.connectorScoped
@@ -65,9 +133,7 @@ struct ComposerConnectorPermissions: View {
           .okouSectionNote()
         }
         Section {
-          ForEach(
-            filteredPermissions(state.metadata), id: \.name
-          ) { permission in
+          ForEach(value.permissions, id: \.name) { permission in
             permissionRow(permission.name, description: permission.description, state: state)
           }
         } header: {
@@ -81,7 +147,7 @@ struct ComposerConnectorPermissions: View {
         }
         Section {
           Button("Reset to defaults", role: .destructive) { confirmsReset = true }.disabled(
-            store.isSaving || store.uncertain)
+            busy)
         } footer: {
           Group {
             Text(
@@ -96,32 +162,30 @@ struct ComposerConnectorPermissions: View {
     .okouGroupedBackground()
     .listSectionSpacing(OkouSpace.lg)
     .overlay {
-      if loading && state == nil && error == nil {
+      if case .loading = page {
         ChatSettingsLoadingView(title: "Loading permissions…")
       }
     }
-    .navigationTitle(label + " permissions")
+    .navigationTitle(resources.label + " permissions")
     .navigationBarTitleDisplayMode(.inline)
-    .searchable(text: $search, prompt: "Find permissions")
-    .task { await load() }
+    .searchable(
+      text: Binding(get: { selection.search }, set: { resources.update(search: $0) }),
+      prompt: "Find permissions"
+    )
     .confirmationDialog(
-      state?.connectorScoped == true
+      connectorScoped
         ? "Reset this connector's permissions?"
         : "Reset this connector's permissions for this Agent?", isPresented: $confirmsReset
     ) {
-      Button("Reset to defaults", role: .destructive) { Task { await save([], reset: true) } }
-        .disabled(store.isSaving || store.uncertain)
+      Button("Reset to defaults", role: .destructive) { Task { await resources.apply(.reset) } }
+        .disabled(busy)
     }
   }
-  private func filteredPermissions(_ metadata: ChatPermissionMetadata)
-    -> [ChatPermissionMetadata.Permission]
-  {
-    metadata.permissions.filter {
-      (category.isEmpty || metadata.categories?.categories[$0.name] == category)
-        && (search.isEmpty || $0.name.localizedCaseInsensitiveContains(search)
-          || $0.description?.localizedCaseInsensitiveContains(search) == true)
-    }
+  private var connectorScoped: Bool {
+    if case .hasData(let value) = page { return value.state.connectorScoped }
+    return false
   }
+
   private func permissionRow(
     _ name: String, description: String?, state: ChatConnectorPermissionState
   ) -> some View {
@@ -143,39 +207,14 @@ struct ComposerConnectorPermissions: View {
       Spacer()
       Menu {
         Button("Allow") {
-          Task {
-            await save([ChatPermissionEdit(permission: name, action: "allow", expiresIn: duration)])
-          }
+          Task { await resources.apply(.allow(name)) }
         }
         Button("Deny") {
-          Task { await save([ChatPermissionEdit(permission: name, action: "deny")]) }
+          Task { await resources.apply(.deny(name)) }
         }
       } label: {
         Text(policy.rawValue.capitalized).frame(minHeight: OkouControl.minimumTarget)
-      }.disabled(store.isSaving || store.uncertain || loading)
-    }
-  }
-  private func load() async {
-    guard let agentID = store.agentID else { return }
-    loading = true
-    defer { loading = false }
-    do {
-      let result = try await store.service.permissions(slug: slug, agentID: agentID)
-      guard !Task.isCancelled else { return }
-      state = result
-      error = nil
-    } catch is CancellationError {
-    } catch { self.error = ChatRequestFailure.message(for: error) }
-  }
-  private func save(_ edits: [ChatPermissionEdit], reset: Bool = false) async {
-    guard let agentID = store.agentID else { return }
-    await store.perform {
-      try await store.service.savePermissions(
-        slug: slug, agentID: agentID, edits: edits, reset: reset)
-    }
-    await load()
-    if store.uncertain {
-      error = store.error ?? "Refresh Connectors to confirm the saved permissions."
+      }.disabled(busy)
     }
   }
 }

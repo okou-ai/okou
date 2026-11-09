@@ -153,6 +153,7 @@ const computerUseRuntimeBodySchema = object({
 const computerUseHostStartBodySchema = computerUseRuntimeBodySchema.extend({
   installationId: hostInstallationIdSchema,
   livenessMode: literal("presence").optional(),
+  presenceOnly: boolean().optional(),
 });
 
 const computerUseCommandTargetShape = {
@@ -774,6 +775,7 @@ export const computerUseSessionHostsContract = c.router({
         hostId: uuid(),
         commandNotifications: computerUseCommandNotificationsSchema,
         livenessMode: zEnum(["heartbeat", "presence"]).optional(),
+        presenceOnly: boolean().optional(),
       }),
       426: desktopUpgradeRequiredSchema,
       ...sessionHostResponses,
@@ -832,6 +834,18 @@ export const computerUseSessionHostsContract = c.router({
     body: sessionHostGenerationSchema,
     responses: { 200: ablyTokenRequestSchema, ...sessionHostResponses },
     summary: "Issue realtime credentials for this authorized host generation",
+  },
+  connectionEvent: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/connection-events",
+    headers: authHeadersSchema,
+    pathParams: sessionHostPathParamsSchema,
+    body: sessionHostGenerationSchema.extend({
+      event: zEnum(["ready", "unavailable"]),
+      reasonCode: number().int().optional(),
+    }),
+    responses: { 204: c.noBody(), ...sessionHostResponses },
+    summary: "Report a host notification transition without changing liveness",
   },
   stop: {
     method: "POST",

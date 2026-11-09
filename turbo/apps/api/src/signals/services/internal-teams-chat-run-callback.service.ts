@@ -1,3 +1,4 @@
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import { teamsDeliveryAccess$ } from "./teams-delivery-access.service";
 import { teamsAccountOwnerCondition } from "./teams-workspace-identity.service";
 import { agentRunCallbacks } from "@okouai/db/schema/agent-run-callback";
@@ -22,7 +23,10 @@ import { now, nowDate } from "../../lib/time";
 import { settleIncludingAbort } from "../utils";
 import { integrationAgentResponsePresentation } from "./integration-agent-response-presentation.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventError,
+} from "./canonical-chat-event-read.service";
 import {
   teamsChatCallbackPayloadSchema,
   type TeamsDeliveryTarget,
@@ -85,7 +89,10 @@ const loadTeamsChatDeliveryContext$ = command(
     }
 
     const [event] = await db
-      .select({ content: canonicalChatEventContent() })
+      .select({
+        content: canonicalChatEventContent(),
+        error: canonicalChatEventError(),
+      })
       .from(chatEvents)
       .where(
         and(
@@ -137,7 +144,13 @@ const loadTeamsChatDeliveryContext$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return { payload, run, messageContent: event.content, binding };
+    return {
+      payload,
+      run,
+      messageContent: event.content,
+      messageError: event.error,
+      binding,
+    };
   },
 );
 
@@ -243,7 +256,7 @@ const deliverClaimedTeamsChatCallback$ = command(
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
     const db = get(db$);
-    const { payload, run, messageContent, binding } = await set(
+    const { payload, run, messageContent, messageError, binding } = await set(
       loadTeamsChatDeliveryContext$,
       args,
       signal,
@@ -305,6 +318,16 @@ const deliverClaimedTeamsChatCallback$ = command(
     if (!serviceUrl) {
       throw new Error("Microsoft Teams serviceUrl is missing");
     }
+    const content = await set(
+      formatIntegrationChatMessage$,
+      {
+        orgId: run.orgId,
+        userId: run.userId,
+        content: messageContent,
+        error: messageError,
+      },
+      signal,
+    );
     const result = await sendTeamsMessageReply(
       {
         serviceUrl,
@@ -312,7 +335,7 @@ const deliverClaimedTeamsChatCallback$ = command(
         activityId: payload.activityId ?? undefined,
         tenantId: payload.tenantId,
         text: buildTeamsResponseText({
-          mainText: messageContent,
+          mainText: content,
           footerText: presentation.footerText,
         }),
       },

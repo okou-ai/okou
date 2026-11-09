@@ -7,28 +7,49 @@ import UIKit
 final class NewChatRequests {
   static let shared = NewChatRequests()
   static let shortcutType = "ai.okou.new-chat"
-  private(set) var pendingID: UUID?
+  static let voiceShortcutType = "ai.okou.voice-input"
+  private struct Request {
+    let id = UUID()
+    let startsVoiceInput: Bool
+  }
+  private var pending: Request?
+  var pendingID: UUID? { pending?.id }
+  // Consumption retires pending work without changing the UI task's identity.
+  private(set) var requestedID: UUID?
   private(set) var openedID: UUID?
 
-  func request() { pendingID = UUID() }
+  func request(startVoiceInput: Bool = false) {
+    let request = Request(startsVoiceInput: startVoiceInput)
+    pending = request
+    requestedID = request.id
+  }
 
   @discardableResult
   func receive(_ shortcut: UIApplicationShortcutItem) -> Bool {
-    guard shortcut.type == Self.shortcutType else { return false }
-    request()
+    switch shortcut.type {
+    case Self.shortcutType: request()
+    case Self.voiceShortcutType: request(startVoiceInput: true)
+    default: return false
+    }
     return true
   }
 
   @discardableResult
   func open(in workspace: WorkspaceStore) -> Bool {
-    guard let pendingID, workspace.openNewChatFromSystem() else { return false }
-    openedID = pendingID
-    consume(pendingID)
+    guard let pending,
+      workspace.openNewChatFromSystem(startVoiceInput: pending.startsVoiceInput)
+    else { return false }
+    openedID = pending.id
+    consume(pending.id)
     return true
   }
 
   func consume(_ id: UUID) {
-    if pendingID == id { pendingID = nil }
+    if pending?.id == id { pending = nil }
+  }
+
+  func cancelPendingVoiceInput() {
+    if pending?.startsVoiceInput == true { pending = nil }
   }
 }
 
@@ -53,14 +74,15 @@ struct NewChatNavigation: ViewModifier {
   func body(content: Content) -> some View {
     content
       .environment(\.newChatActivation, requests.openedID)
-      .onChange(
-        of: Readiness(
-          requestID: requests.pendingID, isActive: scenePhase == .active,
-          isAuthenticated: isAuthenticated, canOpen: workspace.canOpenNewChatFromSystem),
-        initial: true
-      ) { _, readiness in
-        guard readiness.requestID != nil, readiness.isActive, readiness.isAuthenticated,
-          readiness.canOpen
+      .task(
+        id: Readiness(
+          requestID: requests.requestedID, isActive: scenePhase == .active,
+          isAuthenticated: isAuthenticated, canOpen: workspace.canOpenNewChatFromSystem)
+      ) {
+        // Retire requests outside SwiftUI's update so a second system entry can
+        // replace voice startup without exhausting onChange's per-frame limit.
+        guard !Task.isCancelled, requests.pendingID != nil, scenePhase == .active,
+          isAuthenticated, workspace.canOpenNewChatFromSystem
         else { return }
         UIApplication.shared.sendAction(
           #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
@@ -71,6 +93,10 @@ struct NewChatNavigation: ViewModifier {
 
 /// SwiftUI's window scene receives both cold-launch and running-app quick actions.
 final class NewChatSceneDelegate: NSObject, UIWindowSceneDelegate {
+  func sceneDidEnterBackground(_ scene: UIScene) {
+    NewChatRequests.shared.cancelPendingVoiceInput()
+  }
+
   func scene(
     _ scene: UIScene, willConnectTo session: UISceneSession,
     options connectionOptions: UIScene.ConnectionOptions

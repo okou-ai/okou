@@ -53,10 +53,8 @@ final class NotificationExtensionSession {
     let sync = ChatSync(client: client, cache: cache)
     let started = ContinuousClock.now
     do {
-      let receipt = try await sync.prefetchHistoryTail(
-        threadID: destination.threadId, runID: destination.runId)
-      try Task.checkCancellation()
-      try await sync.prefetchThreadList()
+      let receipt = try await sync.prefetchNotification(
+        threadID: destination.threadId, runID: destination.runId, tailOnly: true)
       try Task.checkCancellation()
       let elapsed = started.duration(to: .now).components
       try await cache.savePrefetchReport(

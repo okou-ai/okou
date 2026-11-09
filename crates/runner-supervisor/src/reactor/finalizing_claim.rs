@@ -327,6 +327,7 @@ async fn run_finalizing_claim(request: FinalizingClaimRequest, ctx: SpawnContext
                 reservation,
                 ReservedActivationRequest {
                     run_id,
+                    required_home_source_run_id: None,
                     profile_name: &profile_name,
                     device_rate_limits: &device_rate_limits,
                     home_disk_mb,

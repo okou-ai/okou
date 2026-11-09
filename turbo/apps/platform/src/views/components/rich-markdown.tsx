@@ -51,6 +51,7 @@ import {
 } from "../okou-page/attachment-preview.tsx";
 import { ChatThreadLinkChip } from "./chat-thread-link-chip.tsx";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
+import { MarkdownCodeBlock } from "./markdown-code-block.tsx";
 import { MarkdownColorPreview } from "./markdown-color-preview.tsx";
 import { MarkdownTable } from "./markdown-table.tsx";
 import { MarkdownFrame } from "./markdown-frame.tsx";
@@ -66,6 +67,7 @@ type MarkdownTimeProps = ComponentPropsWithoutRef<"time"> & MarkdownNodeProp;
 type MarkdownDivProps = ComponentPropsWithoutRef<"div"> & {
   node?: Element;
 };
+type MarkdownPreProps = ComponentPropsWithoutRef<"pre"> & MarkdownNodeProp;
 
 function omitMarkdownNodeProp<Props extends object>(
   props: Props,
@@ -753,8 +755,13 @@ function MarkdownDivRenderer(props: MarkdownDivProps) {
   return <div {...omitMarkdownNodeProp(rest)}>{children}</div>;
 }
 
+function MarkdownPreRenderer(props: MarkdownPreProps) {
+  return <MarkdownCodeBlock {...omitMarkdownNodeProp(props)} />;
+}
+
 const PLAIN_MARKDOWN_COMPONENTS = {
   table: MarkdownTable,
+  pre: MarkdownPreRenderer,
   a: PlainLinkRenderer,
   img: PlainImageRenderer,
   span: MarkdownSpanRenderer,
@@ -764,6 +771,7 @@ const PLAIN_MARKDOWN_COMPONENTS = {
 
 const MEDIA_MARKDOWN_COMPONENTS = {
   table: MarkdownTable,
+  pre: MarkdownPreRenderer,
   p: MediaParagraphRenderer,
   a: MediaLinkRenderer,
   img: MediaImageRenderer,

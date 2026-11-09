@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "サイドバー",
       "chat": "チャット",
-      "feedWaiting_other": "{{count}} 件が対応待ち",
       "hideChatList": "チャットリストを非表示",
       "mobile": {
         "invite": "招待する",
@@ -402,7 +401,6 @@
         "agents": "エージェント",
         "artifacts": "アーティファクト",
         "connectors": "コネクター",
-        "feed": "フィード",
         "settings": "設定",
         "workflows": "ワークフロー",
         "works": "{{agentName}}の連携先"
@@ -414,6 +412,7 @@
       "resizeChatList": "チャットリストのサイズを変更する",
       "searchWorkspace": "ワークスペースを検索",
       "showChatList": "チャットリストを表示",
+      "suggestionsWaiting_other": "{{count}} 件が対応待ち",
       "workspaceSwitcher": {
         "create": "ワークスペースの作成",
         "creating": "作成中…",
@@ -954,27 +953,6 @@
     },
     "homeLink": "{{brandName}} のホームに移動",
     "loading": "認証を読み込み中",
-    "signup": {
-      "alreadyHaveAccount": "アカウントをお持ちですか？",
-      "apple": "Apple",
-      "continue": "続ける",
-      "email": "メールアドレス",
-      "emailPlaceholder": "メールアドレスを入力",
-      "failed": "リクエストが失敗しました",
-      "google": "Google",
-      "hidePassword": "パスワードを非表示",
-      "legalAnd": "および",
-      "legalPrefix": "次の内容に同意します：",
-      "or": "または",
-      "password": "パスワード",
-      "passwordPlaceholder": "パスワードを入力",
-      "privacy": "プライバシーポリシー",
-      "showPassword": "パスワードを表示",
-      "signIn": "サインイン",
-      "subtitle": "ようこそ！始めるには詳細を入力してください",
-      "terms": "利用規約",
-      "title": "アカウントを作成"
-    },
     "theme": {
       "darkEnabled": "ダークテーマを有効にしました",
       "lightEnabled": "ライトテーマを有効にしました"
@@ -1459,6 +1437,11 @@
     "operationFailed": "ブラウザーの操作を完了できませんでした。ブラウザーの状態を確認してから再試行してください。",
     "paused": "表示を一時停止中",
     "quality": "画質",
+    "qualityBalanced": "バランス",
+    "qualityInvalid": "0～100 の整数を入力してください",
+    "qualityLossless": "ロスレス",
+    "qualitySaver": "データ節約",
+    "qualitySharper": "鮮明",
     "reconnect": "再接続",
     "reconnecting": "再接続中…",
     "reload": "再読み込み",
@@ -1644,15 +1627,18 @@
       "saveReason": "Save",
       "sending": "送信中…",
       "sent": "新しいチャットに送信しました",
+      "unavailable": "この提案は利用できなくなりました。提案を更新しました。",
       "undoFeedback": "Undo",
       "useSuggestion": "提案を使う"
     },
     "attachments": {
       "attach": "添付する",
-      "fileTooLarge": "{{filename}} が 512 MB の制限を超えています",
+      "fileTooLarge": "{{filename}} が 5 GB の制限を超えています",
       "imageUnavailable": "[画像は利用できません: {{filename}}]",
       "loadingFile": "{{filename}} をロードしています",
+      "pastedText": "貼り付けたテキスト",
       "previewFile": "{{filename}} のプレビュー",
+      "remove": "{{filename}} を削除",
       "title": "添付ファイル",
       "unavailable": "{{filename}} は利用できなくなりました。送信するにはもう一度アップロードしてください。",
       "unavailableCount_other": "{{count}} 件の添付ファイルは利用できなくなりました。送信するにはもう一度アップロードしてください。",
@@ -4198,31 +4184,20 @@
     "previousFeature": "前の機能",
     "tryPrompt": "このタスクを試す"
   },
-  "feed": {
-    "description": "最近の作業をもとにした、次のステップの提案です。",
-    "emptyDescription": "新しい提案はここに表示されます。",
-    "emptyTitle": "すべて確認済みです",
-    "title": "フィード"
-  },
   "friendReferrals": {
-    "checkingCode": "招待コードを確認中…",
-    "codeApplied": "招待コードを適用しました",
-    "codeCheckFailed": "コードを確認できませんでした。再試行するか、空欄のまま続行してください。",
-    "codeLabel": "あなたの招待コード",
-    "codeUnavailable": "この招待コードは利用できません。確認するか、空欄のまま続行してください。",
     "copied": "コピー済み",
-    "copyCode": "コードをコピー",
     "copyFailed": "コピーできませんでした。もう一度お試しください。",
     "copyLink": "リンクをコピー",
-    "description": "友達があなたの招待コードで登録し、usage pack を購入して Pro 以上にアップグレードすると、$20 分の credits を獲得できます。",
+    "description": "友達が3つのステップをすべて完了すると、$20 分の credits を獲得できます",
+    "dialogTitle": "友達を招待して、1人につき $20",
     "earned": "獲得クレジット",
-    "invalidCode": "6 桁の英数字を入力するか、空欄のまま続行してください。",
-    "loadFailed": "招待コードを読み込めませんでした。もう一度お試しください。",
-    "loading": "招待コードを取得中…",
+    "loadFailed": "招待リンクを読み込めませんでした。もう一度お試しください。",
+    "loading": "招待リンクを取得中…",
     "registered": "登録した友達",
     "retry": "再試行",
-    "signupLabel": "招待コード（任意）",
-    "signupPlaceholder": "招待コードを入力",
+    "stepSignUp": "招待リンクから登録",
+    "stepUpgrade": "Pro 以上にアップグレード",
+    "stepUsagePack": "usage pack を購入",
     "terms": "新規ユーザーのみ対象です。友達1人につき報酬は1回です。このワークスペースの個人残高に付与され、付与から1か月後に失効します。",
     "title": "友達を招待"
   },
@@ -4648,9 +4623,14 @@
         "tooLong": "別の形式を選ぶには、タスクを短くしてください。"
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} 文字（出力指示を含む）",
         "connectorsDescription": "アプリを接続すると、Okou があなたの仕事をより深く理解できます。",
         "connectorsTitle": "仕事で使うツールを接続",
-        "intro": "アプリを接続してより良い成果につなげ、出力形式を選びましょう。"
+        "fileTooLarge": "{{filename}} は 10 MB の上限を超えています。貼り付けたテキストはプロンプトに残っています。",
+        "intro": "アプリを接続してより良い成果につなげ、出力形式を選びましょう。",
+        "tooLong": "続けるには、プロンプトを短くするか、出力形式の選択を解除してください。文字数の上限には出力指示も含まれます。",
+        "tooManyFiles": "添付できるファイルは最大 {{max}} 件です。貼り付けたテキストはプロンプトに残っています。",
+        "uploadFailed": "{{filename}} をアップロードできませんでした。貼り付けたテキストは添付ファイルとして保持されています。続ける前に再試行するか、添付ファイルを削除してください。"
       },
       "skills": {
         "copied": "コピーしました",
@@ -6198,7 +6178,7 @@
       "title": "問題が発生しました"
     },
     "forceUpgrade": {
-      "description": "このバージョンの {{brandName}} はサポートされなくなりました。",
+      "description": "{{brandName}} に新機能が追加されました。再読み込みして最新バージョンをご利用ください。",
       "title": "アップデートが必要です"
     },
     "mermaid": {
@@ -7315,6 +7295,19 @@
       "unconfigured": "この組織では、Discord がまだ設定されていません。"
     },
     "documentTitle": "連携先",
+    "email": {
+      "connected": "メールを接続しました",
+      "description": "Okou にメールを送り、会話ごとに個別のチャットでやり取りできます",
+      "healthNotice": "HIPAA の対象となる患者情報には、この連携を使用しないでください。",
+      "instructions": "アカウントのメールアドレスから送信してください。新しいメールは新しいチャットになり、返信は同じ会話で続きます。初めての方には登録をご案内し、その後に依頼を処理します。",
+      "invalidLink": "この接続リンクは無効です。Okou に新しいメールを送ってください。",
+      "loadError": "メール接続を読み込めませんでした",
+      "manage": "管理",
+      "open": "メールを開く",
+      "resumed": "{{email}} を接続しました。元の依頼には同じメールの会話内で返信します。",
+      "title": "メール",
+      "unavailable": "このワークスペースではメールをまだ利用できません"
+    },
     "feishuConnected": "Feishu は正常に接続されました",
     "github": {
       "adminInstall": "組織管理者に GitHub App のインストールを依頼してください",

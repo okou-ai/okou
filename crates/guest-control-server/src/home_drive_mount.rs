@@ -72,7 +72,7 @@ impl HomeDriveMountProgram {
         }
     }
 
-    fn spawn(&self) -> io::Result<Child> {
+    fn spawn(&self, operation: guest_control_proto::HomeDriveOperation) -> io::Result<Child> {
         // This fixed-layout typed operation fixes every execution choice. An owned
         // process group keeps timeout, disconnect, and pre-reap descendant
         // cleanup without creating a generic workload cgroup for each mount.
@@ -80,6 +80,10 @@ impl HomeDriveMountProgram {
             Self::Production => Command::new(HOME_MOUNT_PATH),
             Self::Test { program, .. } => Command::new(program.path()),
         };
+        command.current_dir("/");
+        if operation == guest_control_proto::HomeDriveOperation::Unmount {
+            command.arg("--unmount");
+        }
         command
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -91,6 +95,7 @@ impl HomeDriveMountProgram {
 
 struct HomeDriveMountRequest {
     seq: u32,
+    operation: guest_control_proto::HomeDriveOperation,
     operation_guard: OperationGuard,
     admission: SingleActivePermit,
 }
@@ -134,11 +139,13 @@ impl HomeDriveMountWorker {
     pub(crate) fn submit(
         &self,
         seq: u32,
+        operation: guest_control_proto::HomeDriveOperation,
         operation_guard: OperationGuard,
         admission: SingleActivePermit,
     ) -> Result<(), HomeDriveMountSubmitError> {
         self.inner.try_submit_with(move || HomeDriveMountRequest {
             seq,
+            operation,
             operation_guard,
             admission,
         })
@@ -177,10 +184,12 @@ fn handle_request(
 ) -> io::Result<()> {
     let HomeDriveMountRequest {
         seq,
+        operation,
         operation_guard,
         admission,
     } = request;
     let output = run_mount(RunMountInput {
+        operation,
         program,
         connection_cancel,
         drain_deadline,
@@ -206,6 +215,7 @@ fn handle_request(
 }
 
 struct RunMountInput<'a> {
+    operation: guest_control_proto::HomeDriveOperation,
     program: &'a HomeDriveMountProgram,
     connection_cancel: &'a AtomicBool,
     drain_deadline: Duration,
@@ -213,6 +223,7 @@ struct RunMountInput<'a> {
 
 fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
     let RunMountInput {
+        operation,
         program,
         connection_cancel,
         drain_deadline,
@@ -228,7 +239,7 @@ fn run_mount(input: RunMountInput<'_>) -> HomeDriveMountOutput {
             );
         }
     };
-    let mut child = match program.spawn() {
+    let mut child = match program.spawn(operation) {
         Ok(spawned) => spawned,
         Err(error) => {
             return failed_output(

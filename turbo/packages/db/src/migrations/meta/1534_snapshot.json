@@ -1,5 +1,5 @@
 {
-  "id": "4829fcf3-e9e2-4158-85b2-0bb3770fcd45",
+  "id": "59946497-e67b-480a-a64c-701fc4d69d48",
   "prevId": "027f969f-e18e-48db-86bf-575832e759a9",
   "version": "7",
   "dialect": "postgresql",
@@ -7925,7 +7925,7 @@
         },
         "chat_events_context_type_check": {
           "name": "chat_events_context_type_check",
-          "value": "\"chat_events\".\"context_type\" IN (\n          'web',\n          'slack',\n          'discord', 'wechat',\n          'feishu',\n          'teams',\n          'telegram',\n          'agentphone',\n          'automation',\n          'agent_run'\n        )"
+          "value": "\"chat_events\".\"context_type\" IN (\n          'web',\n          'slack',\n          'discord', 'wechat',\n          'feishu',\n          'teams',\n          'telegram',\n          'agentphone',\n          'email',\n          'automation',\n          'agent_run'\n        )"
         },
         "chat_events_input_context_type_check": {
           "name": "chat_events_input_context_type_check",
@@ -14825,6 +14825,446 @@
           "onUpdate": "no action"
         }
       },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.chat_email_context": {
+      "name": "chat_email_context",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_link_id": {
+          "name": "user_link_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "email_message_id": {
+          "name": "email_message_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_text": {
+          "name": "message_text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "chat_email_context_thread_idx": {
+          "name": "chat_email_context_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "chat_email_context_chat_thread_id_chat_threads_id_fk": {
+          "name": "chat_email_context_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "chat_email_context",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_channel_messages": {
+      "name": "email_channel_messages",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "provider_email_id": {
+          "name": "provider_email_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "sender": {
+          "name": "sender",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "message_id": {
+          "name": "message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "subject": {
+          "name": "subject",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "text": {
+          "name": "text",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "in_reply_to": {
+          "name": "in_reply_to",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "references": {
+          "name": "references",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "attachment_names": {
+          "name": "attachment_names",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "attachment_ids": {
+          "name": "attachment_ids",
+          "type": "text[]",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "'{}'"
+        },
+        "authenticated": {
+          "name": "authenticated",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "route_id": {
+          "name": "route_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "email_channel_messages_provider_unique": {
+          "name": "email_channel_messages_provider_unique",
+          "columns": [
+            {
+              "expression": "provider_email_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "email_channel_messages_sender_message_unique": {
+          "name": "email_channel_messages_sender_message_unique",
+          "columns": [
+            {
+              "expression": "sender",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "email_channel_messages_route_idx": {
+          "name": "email_channel_messages_route_idx",
+          "columns": [
+            {
+              "expression": "route_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "email_channel_messages_route_id_email_chat_thread_routes_id_fk": {
+          "name": "email_channel_messages_route_id_email_chat_thread_routes_id_fk",
+          "tableFrom": "email_channel_messages",
+          "tableTo": "email_chat_thread_routes",
+          "columnsFrom": [
+            "route_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_chat_thread_routes": {
+      "name": "email_chat_thread_routes",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "user_link_id": {
+          "name": "user_link_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "root_message_id": {
+          "name": "root_message_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "chat_thread_id": {
+          "name": "chat_thread_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "email_chat_thread_routes_sender_root_unique": {
+          "name": "email_chat_thread_routes_sender_root_unique",
+          "columns": [
+            {
+              "expression": "user_link_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "root_message_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "email_chat_thread_routes_thread_idx": {
+          "name": "email_chat_thread_routes_thread_idx",
+          "columns": [
+            {
+              "expression": "chat_thread_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {
+        "email_chat_thread_routes_user_link_id_email_user_links_id_fk": {
+          "name": "email_chat_thread_routes_user_link_id_email_user_links_id_fk",
+          "tableFrom": "email_chat_thread_routes",
+          "tableTo": "email_user_links",
+          "columnsFrom": [
+            "user_link_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        },
+        "email_chat_thread_routes_chat_thread_id_chat_threads_id_fk": {
+          "name": "email_chat_thread_routes_chat_thread_id_chat_threads_id_fk",
+          "tableFrom": "email_chat_thread_routes",
+          "tableTo": "chat_threads",
+          "columnsFrom": [
+            "chat_thread_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {},
+      "isRLSEnabled": false
+    },
+    "public.email_user_links": {
+      "name": "email_user_links",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "email_address": {
+          "name": "email_address",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "user_id": {
+          "name": "user_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "org_id": {
+          "name": "org_id",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "disconnected_at": {
+          "name": "disconnected_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "email_user_links_address_unique": {
+          "name": "email_user_links_address_unique",
+          "columns": [
+            {
+              "expression": "email_address",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "email_user_links_member_idx": {
+          "name": "email_user_links_member_idx",
+          "columns": [
+            {
+              "expression": "user_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "org_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
@@ -34264,153 +34704,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.user_notifications": {
-      "name": "user_notifications",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "delivery_key": {
-          "name": "delivery_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "read_at": {
-          "name": "read_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_user_notifications_inbox": {
-          "name": "idx_user_notifications_inbox",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_user_notifications_unread": {
-          "name": "idx_user_notifications_unread",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"user_notifications\".\"read_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_user_notifications_delivery": {
-          "name": "uq_user_notifications_delivery",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "delivery_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_user_notification_title": {
-          "name": "chk_user_notification_title",
-          "value": "length(trim(\"user_notifications\".\"title\")) BETWEEN 1 AND 200"
-        },
-        "chk_user_notification_summary": {
-          "name": "chk_user_notification_summary",
-          "value": "length(\"user_notifications\".\"summary\") <= 500"
-        },
-        "chk_user_notification_payload": {
-          "name": "chk_user_notification_payload",
-          "value": "(jsonb_typeof(\"user_notifications\".\"payload\") = 'object' AND CASE\n    WHEN \"user_notifications\".\"payload\"->>'type' = 'rich_text' THEN (\n      jsonb_typeof(\"user_notifications\".\"payload\"->'markdown') = 'string'\n      AND length(\"user_notifications\".\"payload\"->>'markdown') BETWEEN 1 AND 50000\n    )\n    WHEN \"user_notifications\".\"payload\"->>'type' = 'carousel' AND jsonb_typeof(\"user_notifications\".\"payload\"->'pages') = 'array' THEN (\n      jsonb_array_length(\"user_notifications\".\"payload\"->'pages') BETWEEN 2 AND 10\n      AND ((\"user_notifications\".\"payload\"->'pages'->0) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->0)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->0)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->0)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->1) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->1)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->1)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->1)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->2) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->2)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->2)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->2)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->3) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->3)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->3)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->3)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->4) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->4)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->4)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->4)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->5) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->5)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->5)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->5)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->6) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->6)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->6)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->6)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->7) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->7)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->7)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->7)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->8) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->8)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->8)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->8)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->9) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->9)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->9)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->9)->>'markdown') BETWEEN 1 AND 50000\n    ))\n    )\n    ELSE false END) IS TRUE"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.user_permission_grants": {

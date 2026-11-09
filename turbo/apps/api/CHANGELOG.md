@@ -10,6 +10,70 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.54.7](https://github.com/okou-ai/okou/compare/api-v2.54.6...api-v2.54.7) (2026-11-09)
+
+
+### Bug Fixes
+
+* **desktop:** use presence without idle queue polling ([#46068](https://github.com/okou-ai/okou/issues/46068)) ([eb45eb5](https://github.com/okou-ai/okou/commit/eb45eb52ab1d2b40517d452df22dae6e7270c7c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.45.1
+    * @okouai/core bumped to 8.824.5
+    * @okouai/db bumped to 2.24.6
+    * @okouai/pi-agent-runtime bumped to 1.51.89
+
+## [2.54.6](https://github.com/okou-ai/okou/compare/api-v2.54.5...api-v2.54.6) (2026-11-09)
+
+
+### Bug Fixes
+
+* **api:** guide integration credit recovery by plan ([#46045](https://github.com/okou-ai/okou/issues/46045)) ([9a9dfa3](https://github.com/okou-ai/okou/commit/9a9dfa333cd34c9faf4a2e44e9145c001523e3a8))
+* **api:** make suggestions a conservative maintenance loop ([#46035](https://github.com/okou-ai/okou/issues/46035)) ([8376e57](https://github.com/okou-ai/okou/commit/8376e57861eb08b5472d0f671147f72b7b6c3829))
+
+
+### Refactoring
+
+* **api:** retire template guidance storage fallback ([#46072](https://github.com/okou-ai/okou/issues/46072)) ([1fcf82a](https://github.com/okou-ai/okou/commit/1fcf82a3b88713b5d959146aff4455618056ac12))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.4
+    * @okouai/db bumped to 2.24.5
+    * @okouai/pi-agent-runtime bumped to 1.51.88
+
+## [2.54.5](https://github.com/okou-ai/okou/compare/api-v2.54.4...api-v2.54.5) (2026-11-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.3
+    * @okouai/db bumped to 2.24.4
+    * @okouai/pi-agent-runtime bumped to 1.51.87
+
+## [2.54.4](https://github.com/okou-ai/okou/compare/api-v2.54.3...api-v2.54.4) (2026-11-09)
+
+
+### Bug Fixes
+
+* retire thread-list indicator refresh fallback ([#46009](https://github.com/okou-ai/okou/issues/46009)) ([3696606](https://github.com/okou-ai/okou/commit/36966068cf7f6465fddc6dde6fde2574b95f4c1c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.24.3
+
 ## [2.54.3](https://github.com/okou-ai/okou/compare/api-v2.54.2...api-v2.54.3) (2026-11-08)
 
 

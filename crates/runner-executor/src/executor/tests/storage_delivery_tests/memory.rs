@@ -26,10 +26,31 @@ async fn decoded_storage_batches_bound_allocations_and_release_completed_inputs(
     eprintln!("{}", output.stderr);
 }
 
-fn assert_complete_delivery(sandbox: &MockSandbox, expected: &serde_json::Value, content: &[u8]) {
+#[derive(Default)]
+struct ByteCounter(usize);
+
+impl std::io::Write for ByteCounter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 = self
+            .0
+            .checked_add(bytes.len())
+            .ok_or_else(|| std::io::Error::other("serialized manifest length overflow"))?;
+        Ok(bytes.len())
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        Ok(())
+    }
+}
+
+fn assert_complete_delivery(
+    calls: &[sandbox_mock::StorageManifestCall],
+    expected: &serde_json::Value,
+    content: &[u8],
+) {
     let mut mounts = Vec::new();
     let mut delivered = 0;
-    for call in sandbox.storage_manifest_calls() {
+    for call in calls {
         let (json, payload) = storage_files::split_input(&call.manifest_json).unwrap();
         assert!(json.len() <= storage_files::MAX_MANIFEST_BYTES);
         let manifest: Manifest = serde_json::from_slice(json).unwrap();
@@ -74,7 +95,9 @@ async fn decoded_storage_batch_memory_child() {
     let sandbox = MockSandbox::new("large-decoded-manifest");
     let (manifest, files) = fixture.prepare(&sandbox).await;
     let expected = serde_json::to_value(&manifest).unwrap();
-    let source_bytes = serde_json::to_vec(&manifest).unwrap().len();
+    let mut source_bytes = ByteCounter::default();
+    serde_json::to_writer(&mut source_bytes, &manifest).unwrap();
+    let source_bytes = source_bytes.0;
     assert!(source_bytes > 8 * 1024 * 1024);
     assert_eq!(files.len(), 256);
     let context = minimal_context();
@@ -87,7 +110,9 @@ async fn decoded_storage_batch_memory_child() {
     fixture.shutdown().await;
 
     result.unwrap();
-    assert_complete_delivery(&sandbox, &expected, b"content");
+    let calls = sandbox.storage_manifest_calls();
+    assert_complete_delivery(&calls, &expected, b"content");
+    drop(calls);
     eprintln!("aggregate: source bytes={source_bytes}, largest allocation={largest}");
     // Individual requests only, not RSS or an aggregate final-batch bound.
     assert!(
@@ -136,8 +161,8 @@ async fn encoded_payloads_follow_the_current_guest_operation() {
     fixture.shutdown().await;
 
     result.unwrap();
-    assert_complete_delivery(&sandbox, &expected, &content);
     let calls = sandbox.storage_manifest_calls();
+    assert_complete_delivery(&calls, &expected, &content);
     assert_eq!(calls.len(), 3);
     for call in &calls {
         assert!(call.manifest_json.len() > PAYLOAD_THRESHOLD);
@@ -204,7 +229,8 @@ async fn mixed_decoded_mounts_preserve_the_canonical_manifest_boundary() {
         fixture.shutdown().await;
 
         result.unwrap();
-        assert_complete_delivery(&sandbox, &expected, b"content");
-        assert_eq!(sandbox.storage_manifest_calls().len(), 1 + overflow);
+        let calls = sandbox.storage_manifest_calls();
+        assert_complete_delivery(&calls, &expected, b"content");
+        assert_eq!(calls.len(), 1 + overflow);
     }
 }

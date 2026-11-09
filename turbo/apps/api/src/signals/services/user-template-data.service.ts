@@ -1,15 +1,11 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
-import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
 import type {
   UserTemplateKind,
   UserTemplateSummary,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { getUserTemplateStorageName } from "@okouai/core/storage-names";
-import { userTemplateDirectory } from "@okouai/core/user-template-selection";
 import type { userTemplates } from "@okouai/db/schema/user-template";
 import { createHash } from "node:crypto";
 import { uuid } from "zod";
-import type { PresentationTemplateVolume } from "./presentation-template-data.service";
 
 export type UserTemplateRow = typeof userTemplates.$inferSelect;
 
@@ -222,22 +218,4 @@ export function selectedUserTemplateIds(
     }
   }
   return [...templateIds];
-}
-
-/**
- * The storage volumes that carry those templates' packages.
- *
- * Mounted under the working directory rather than the skills root because the
- * skills root is chosen per framework inside run creation, while the prompt
- * naming this path is built before a framework exists.
- */
-export function userTemplateVolumes(
-  mounted: readonly MountedUserTemplate[],
-): readonly PresentationTemplateVolume[] {
-  return mounted.map((template) => {
-    return {
-      name: getUserTemplateStorageName(template.templateId),
-      mountPath: `${CANONICAL_WORKING_DIR}/${userTemplateDirectory(template.templateId)}`,
-    };
-  });
 }

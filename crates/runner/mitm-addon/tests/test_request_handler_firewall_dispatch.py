@@ -218,9 +218,7 @@ def _observe_local_response_parser_inputs() -> Iterator[list[str]]:
         yield parsed_urls
 
 
-async def test_firewall_match_calls_handler(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
-):
+async def test_firewall_match_calls_handler(tmp_path, real_flow, mitm_ctx, fake_firewall_headers):
     """When URL matches a firewall rule, handle_firewall_request is called."""
     reg_path = _write_github_firewall_registry(tmp_path)
 
@@ -491,7 +489,7 @@ async def test_ambiguous_response_discards_large_fragment_before_url_parsing(
     assert body["url"] == retained_url
 
 
-async def test_firewall_permission_blocks_unmatched(tmp_path, real_flow, mitm_ctx, headers):
+async def test_firewall_permission_blocks_unmatched(tmp_path, real_flow, mitm_ctx):
     """Firewall with permissions but no matching rule returns 403."""
     reg_path = _write_registry(
         tmp_path,
@@ -804,9 +802,7 @@ async def test_asterisk_form_policy_allow_still_enforces_public_destination(
     assert "Authorization" not in flow.request.headers
 
 
-async def test_firewall_malformed_config_block_reports_reason(
-    tmp_path, real_flow, mitm_ctx, headers
-):
+async def test_firewall_malformed_config_block_reports_reason(tmp_path, real_flow, mitm_ctx):
     """Malformed firewall config blocks fail closed with an explicit reason."""
     reg_path = _write_registry(
         tmp_path,
@@ -852,9 +848,7 @@ async def test_firewall_malformed_config_block_reports_reason(
     assert proxy_log_entry["reason"] == "malformed_firewall_config"
 
 
-async def test_firewall_malformed_auth_config_block_reports_reason(
-    tmp_path, real_flow, mitm_ctx, headers
-):
+async def test_firewall_malformed_auth_config_block_reports_reason(tmp_path, real_flow, mitm_ctx):
     """Malformed auth config blocks before the auth handler runs."""
     reg_path = _write_registry(
         tmp_path,
@@ -901,7 +895,7 @@ async def test_firewall_malformed_auth_config_block_reports_reason(
 
 
 async def test_firewall_malformed_network_policy_block_reports_reason(
-    tmp_path, real_flow, mitm_ctx, headers
+    tmp_path, real_flow, mitm_ctx
 ):
     """Malformed network policy blocks fail closed instead of raising."""
     sandbox_info = _single_firewall_sandbox(
@@ -950,7 +944,7 @@ async def test_firewall_malformed_network_policy_block_reports_reason(
 
 
 async def test_firewall_top_level_malformed_network_policy_block_reports_reason(
-    tmp_path, real_flow, mitm_ctx, headers
+    tmp_path, real_flow, mitm_ctx
 ):
     """Top-level malformed network policy blocks fail closed after base match."""
     sandbox_info = _single_firewall_sandbox(
@@ -998,9 +992,7 @@ async def test_firewall_top_level_malformed_network_policy_block_reports_reason(
     assert "networkPolicies" not in proxy_log_entry
 
 
-async def test_firewall_permission_denied_block_reports_reason(
-    tmp_path, real_flow, mitm_ctx, headers
-):
+async def test_firewall_permission_denied_block_reports_reason(tmp_path, real_flow, mitm_ctx):
     """Denied permission blocks include the explicit runtime reason."""
     reg_path = _write_registry(
         tmp_path,
@@ -1053,7 +1045,7 @@ async def test_firewall_permission_denied_block_reports_reason(
 
 
 async def test_firewall_block_response_url_preserves_raw_encoded_path_without_query(
-    tmp_path, real_flow, mitm_ctx, headers
+    tmp_path, real_flow, mitm_ctx
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -1104,7 +1096,7 @@ async def test_firewall_block_response_url_preserves_raw_encoded_path_without_qu
 
 
 async def test_firewall_block_response_url_joins_base_path_without_double_slash(
-    tmp_path, real_flow, mitm_ctx, headers
+    tmp_path, real_flow, mitm_ctx
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -1149,7 +1141,7 @@ async def test_firewall_block_response_url_joins_base_path_without_double_slash(
 
 
 async def test_firewall_block_response_url_uses_runtime_url_for_parameterized_base(
-    tmp_path, real_flow, mitm_ctx, headers
+    tmp_path, real_flow, mitm_ctx
 ):
     reg_path = _write_registry(
         tmp_path,
@@ -1194,7 +1186,7 @@ async def test_firewall_block_response_url_uses_runtime_url_for_parameterized_ba
 
 
 async def test_firewall_permission_allows_matched(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
 ):
     """Firewall with permissions and matching rule calls handler with allow result."""
     reg_path = _write_registry(
@@ -1307,7 +1299,7 @@ async def test_non_auth_base_requestheaders_ignores_auth_base_body_contract(
 
 
 async def test_firewall_unknown_policy_allow_writes_empty_permission_metadata(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
 ):
     """Unknown-endpoint allow keeps legacy empty permission metadata."""
     reg_path = _write_registry(
@@ -1384,7 +1376,7 @@ async def test_firewall_unknown_policy_allow_writes_empty_permission_metadata(
     ],
 )
 async def test_firewall_unsafe_path_blocks_before_auth_injection(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers, path
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, path
 ):
     """Unsafe paths block before trusted auth is injected."""
     reg_path = _write_registry(
@@ -1446,7 +1438,7 @@ async def test_firewall_unsafe_path_blocks_before_auth_injection(
 
 
 async def test_unsafe_firewall_base_still_blocks_before_auth_injection(
-    tmp_path, real_flow, mitm_ctx, fake_firewall_headers, headers
+    tmp_path, real_flow, mitm_ctx, fake_firewall_headers
 ):
     """Unsafe request paths take precedence over malformed base configuration."""
     unsafe_base = "https://api.github.com/repos/%2e%2e"

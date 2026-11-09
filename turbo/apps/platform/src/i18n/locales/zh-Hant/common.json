@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "側邊欄",
       "chat": "聊天",
-      "feedWaiting_other": "{{count}} 則待處理",
       "hideChatList": "隱藏聊天列表",
       "mobile": {
         "invite": "邀請",
@@ -402,7 +401,6 @@
         "agents": "智能體",
         "artifacts": "成果",
         "connectors": "連接器",
-        "feed": "動態",
         "settings": "設定",
         "workflows": "工作流",
         "works": "{{agentName}} 的工作渠道"
@@ -414,6 +412,7 @@
       "resizeChatList": "調整聊天列表寬度",
       "searchWorkspace": "搜尋工作區",
       "showChatList": "顯示聊天列表",
+      "suggestionsWaiting_other": "{{count}} 則待處理",
       "workspaceSwitcher": {
         "create": "建立工作區",
         "creating": "建立中…",
@@ -954,27 +953,6 @@
     },
     "homeLink": "前往 {{brandName}} 首頁",
     "loading": "正在載入身份驗證",
-    "signup": {
-      "alreadyHaveAccount": "已經有帳戶了嗎？",
-      "apple": "Apple",
-      "continue": "繼續",
-      "email": "電子郵件地址",
-      "emailPlaceholder": "輸入您的電子郵件地址",
-      "failed": "請求失敗",
-      "google": "Google",
-      "hidePassword": "隱藏密碼",
-      "legalAnd": "和",
-      "legalPrefix": "我同意",
-      "or": "或者",
-      "password": "密碼",
-      "passwordPlaceholder": "輸入您的密碼",
-      "privacy": "隱私權政策",
-      "showPassword": "顯示密碼",
-      "signIn": "登入",
-      "subtitle": "以繼續前往 {{applicationName}}",
-      "terms": "服務條款",
-      "title": "建立您的帳戶"
-    },
     "theme": {
       "darkEnabled": "已開啟深色主題",
       "lightEnabled": "已開啟淺色主題"
@@ -1459,6 +1437,11 @@
     "operationFailed": "瀏覽器操作未能完成。請檢查瀏覽器目前的狀態後再試。",
     "paused": "畫面已暫停",
     "quality": "影像品質",
+    "qualityBalanced": "均衡",
+    "qualityInvalid": "請輸入 0–100 的整數",
+    "qualityLossless": "無損",
+    "qualitySaver": "省流",
+    "qualitySharper": "清晰",
     "reconnect": "重新連線",
     "reconnecting": "正在重新連線…",
     "reload": "重新整理",
@@ -1644,15 +1627,18 @@
       "saveReason": "儲存",
       "sending": "正在傳送…",
       "sent": "已傳送到新聊天",
+      "unavailable": "這則建議已無法使用，建議清單已重新整理。",
       "undoFeedback": "復原",
       "useSuggestion": "使用建議"
     },
     "attachments": {
       "attach": "新增附件",
-      "fileTooLarge": "{{filename}} 超過 512 MB 上限",
+      "fileTooLarge": "{{filename}} 超過 5 GB 上限",
       "imageUnavailable": "[圖片不可用：{{filename}}]",
       "loadingFile": "正在載入 {{filename}}",
+      "pastedText": "貼上的文字",
       "previewFile": "預覽 {{filename}}",
+      "remove": "移除 {{filename}}",
       "title": "附件",
       "unavailable": "{{filename}} 已不可用。重新上傳後才能傳送。",
       "unavailableCount_other": "有 {{count}} 個附件已不可用。重新上傳後才能傳送。",
@@ -4198,31 +4184,20 @@
     "previousFeature": "上一個功能",
     "tryPrompt": "試試這個任務"
   },
-  "feed": {
-    "description": "根據你最近的工作推薦的下一步。",
-    "emptyDescription": "新的建議會顯示在這裡。",
-    "emptyTitle": "已全部處理",
-    "title": "動態"
-  },
   "friendReferrals": {
-    "checkingCode": "正在驗證邀請碼…",
-    "codeApplied": "邀請碼已生效",
-    "codeCheckFailed": "無法驗證邀請碼，請重試或留空繼續。",
-    "codeLabel": "你的邀請碼",
-    "codeUnavailable": "此邀請碼無法使用，請檢查或留空繼續。",
     "copied": "已複製",
-    "copyCode": "複製邀請碼",
     "copyFailed": "複製失敗，請重試。",
     "copyLink": "複製邀請連結",
-    "description": "朋友使用你的邀請碼註冊、購買 usage pack 並升級至 Pro 或以上後，你將獲得價值 $20 的 credits。",
+    "description": "朋友完成以下 3 步後，你將獲得價值 $20 的 credits",
+    "dialogTitle": "邀請朋友，每位得 $20",
     "earned": "累計獲得的 credits",
-    "invalidCode": "請輸入 6 位字母或數字，也可留空繼續。",
-    "loadFailed": "無法載入邀請碼，請重試。",
-    "loading": "正在取得你的邀請碼…",
+    "loadFailed": "無法載入邀請連結，請重試。",
+    "loading": "正在取得你的邀請連結…",
     "registered": "已註冊的朋友",
     "retry": "重試",
-    "signupLabel": "邀請碼（選填）",
-    "signupPlaceholder": "輸入邀請碼",
+    "stepSignUp": "透過你的邀請連結註冊",
+    "stepUpgrade": "升級至 Pro 或以上",
+    "stepUsagePack": "購買 usage pack",
     "terms": "僅限新用戶，每位朋友僅獎勵一次。獎勵將發至你在此工作區的個人餘額，並於到帳 1 個月後到期。",
     "title": "邀請朋友"
   },
@@ -4648,9 +4623,14 @@
         "tooLong": "請縮短任務內容，以選擇其他產出形式。"
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} 個字元（含輸出指示）",
         "connectorsDescription": "連接應用程式，讓 Okou 更了解你的工作。",
         "connectorsTitle": "連接你的工作工具",
-        "intro": "連接應用程式，讓成果更符合需求，並選擇輸出格式。"
+        "fileTooLarge": "{{filename}} 超過 10 MB 上限。貼上的文字仍保留在提示詞中。",
+        "intro": "連接應用程式，讓成果更符合需求，並選擇輸出格式。",
+        "tooLong": "請縮短提示詞或取消選取輸出格式後繼續。輸出指示也會計入字元數上限。",
+        "tooManyFiles": "最多可新增 {{max}} 個檔案。貼上的文字仍保留在提示詞中。",
+        "uploadFailed": "無法上傳 {{filename}}。貼上的文字已保留為附件。請重試或移除該附件後繼續。"
       },
       "skills": {
         "copied": "已複製",
@@ -6198,7 +6178,7 @@
       "title": "哎呀，出了點小問題"
     },
     "forceUpgrade": {
-      "description": "當前版本的 {{brandName}} 已不再支援。",
+      "description": "{{brandName}} 推出了新功能，重新整理即可使用最新版本。",
       "title": "需要更新"
     },
     "mermaid": {
@@ -7315,6 +7295,19 @@
       "unconfigured": "此組織尚未設定 Discord。"
     },
     "documentTitle": "工作渠道",
+    "email": {
+      "connected": "信箱已連線",
+      "description": "寄信給 Okou，每個郵件會話對應一個獨立對話",
+      "healthNotice": "請勿透過此整合處理受 HIPAA 監管的患者資訊。",
+      "instructions": "從帳戶的信箱地址寄信。新郵件開啟新對話，郵件內的回覆保留上下文。新使用者完成註冊後，我們會繼續處理原始請求。",
+      "invalidLink": "連線連結無效，請重新寄信給 Okou。",
+      "loadError": "無法載入信箱連線",
+      "manage": "管理",
+      "open": "開啟郵件",
+      "resumed": "{{email}} 已連線，原始請求將繼續在同一個郵件會話中回覆。",
+      "title": "郵件",
+      "unavailable": "此工作區尚未開放郵件整合"
+    },
     "feishuConnected": "飛書連線成功",
     "github": {
       "adminInstall": "請組織管理員安裝 GitHub App",

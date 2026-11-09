@@ -31,10 +31,9 @@ export type PresentationTemplateVisibility =
  * the user watches the analysis, and an abandoned analysis simply never
  * inserts.
  *
- * A non-null guidance_bundle selects immutable package bytes. During reader
- * preparation, null retains the legacy `presentation-template@{id}` publication.
- * Publishers remain legacy until the separate activation; successful legacy
- * replacements invalidate the previously captured bundle pointer.
+ * Current publishers and the catalog copy operator require immutable guidance
+ * bundles. Run preparation validates this descriptor without a Storage fallback.
+ * Physical nullability is retained for the staged schema rollout.
  *
  * `source_storage_key` and `page_keys` reference independently owned objects
  * created by the normal private upload route. URLs remain a read-time
@@ -55,7 +54,7 @@ export const presentationTemplates = pgTable(
       .notNull()
       .default("private"),
     title: text("title").notNull(),
-    /** Reader preparation only; publishers remain legacy until the rollout gate. */
+    /** Immutable guidance identity; validated at publication and Run preparation. */
     guidanceBundle: jsonb("guidance_bundle").$type<TemplateGuidanceBundle>(),
     /** Private artifact object key assigned by the normal upload route. */
     sourceStorageKey: text("source_storage_key").notNull(),

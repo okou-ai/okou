@@ -4921,9 +4921,11 @@ test("Capture controls apply the selected format to the remote browser", async (
     expect(browser.captures.at(-1)).toMatchObject({ format: "png" });
   });
   await userEvent.click(screen.getByLabelText("Browser settings"));
-  await expect(
-    screen.findByRole("spinbutton", { name: "Image quality" }),
-  ).resolves.toBeDisabled();
+  const lossless = await screen.findByText("Lossless");
+  expect(lossless.closest('[role="menuitem"]')).toHaveAttribute(
+    "aria-disabled",
+    "true",
+  );
   expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
 });
 

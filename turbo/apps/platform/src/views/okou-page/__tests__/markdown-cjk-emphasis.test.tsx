@@ -186,7 +186,7 @@ test("CJK boundary repair preserves code, escapes, link destinations, math sourc
     "**转义闭合：**后",
   );
   expect(screen.getByText("*中!*后").textContent).toBe("*中!*后");
-  expect(screen.getByText("前**（原文）**后").tagName).toBe("PRE");
+  expect(screen.getByText("前**（原文）**后").closest("pre")).not.toBeNull();
   expect(
     screen.getByText("前：**后", { selector: "code" }).closest("strong"),
   ).toBeNull();

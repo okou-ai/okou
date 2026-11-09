@@ -885,6 +885,17 @@ pub trait Sandbox: Send + Sync + Any {
         self.apply_storage_manifest(request).await
     }
 
+    /// Replace the fixed Home backend of an idle, exclusively owned blank VM.
+    /// A provider must reject competing Guest operations and prevent reuse after
+    /// any failed, cancelled or uncertain transition.
+    async fn replace_home_drive(&mut self, _config: &crate::HomeDriveConfig) -> Result<()> {
+        Err(SandboxError::Operation {
+            operation: crate::SandboxOperation::MountHomeDrive,
+            reason: crate::SandboxOperationReason::Other,
+            message: "Home drive replacement is unsupported".into(),
+        })
+    }
+
     /// Mount the fixed home drive through the provider's typed guest
     /// operation.
     ///

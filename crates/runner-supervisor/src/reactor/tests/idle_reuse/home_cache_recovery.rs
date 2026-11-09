@@ -284,7 +284,7 @@ async fn uncontended_home_cache_update_uses_one_probe_and_leaves_no_idle_polling
 }
 
 #[tokio::test]
-async fn bootstrap_home_cache_recovery_supplies_the_image_instead_of_an_available_blank() {
+async fn bootstrap_home_cache_recovery_attaches_the_image_to_an_available_blank() {
     let overrides = Arc::new(sandbox_mock::MockSandboxOverrides::new());
     let mut profiles = test_profiles();
     profiles.get_mut(PROFILE).unwrap().home_disk_mb = 1;
@@ -325,20 +325,18 @@ async fn bootstrap_home_cache_recovery_supplies_the_image_instead_of_an_availabl
     );
     assert_eq!(cache.held_state_root_scan_count(), scans);
     let gate = sandbox_mock::MockLifecycleGate::new();
-    overrides.set_create_lifecycle_gate(gate.clone());
+    overrides.set_wait_process_lifecycle_gate(gate.clone());
     let run_id = RunId::new_v4();
     let mut context = minimal_context(run_id);
     context.reuse_key = Some(reuse_key.into());
     push_job(&env, run_id, PROFILE, Some(context));
     gate.wait_entered(1, Duration::from_secs(5))
         .await
-        .expect("the recovered home must use fresh creation instead of the blank");
-    let configs = overrides.create_configs();
-    let created = configs.last().unwrap();
-    let Some(sandbox::HomeDriveSeedImage::Move(source)) =
-        &created.home_drive.as_ref().unwrap().seed_image
-    else {
-        panic!("the new sandbox must receive the recovered immutable image");
+        .expect("the recovered Home must reach Agent execution in the retained blank");
+    let replacements = overrides.home_drive_replacements();
+    assert_eq!(replacements.len(), 1);
+    let Some(sandbox::HomeDriveSeedImage::Move(source)) = &replacements[0].seed_image else {
+        panic!("the retained blank must receive the recovered immutable image");
     };
     assert_eq!(
         source.file_name().unwrap().to_str().unwrap(),
@@ -357,7 +355,6 @@ async fn bootstrap_home_cache_recovery_supplies_the_image_instead_of_an_availabl
             .exists(),
         "the real checkout must revoke the selected commit"
     );
-    assert_ne!(created.id, blank_id);
     gate.release_one();
     let completion = env
         .handle
@@ -365,6 +362,6 @@ async fn bootstrap_home_cache_recovery_supplies_the_image_instead_of_an_availabl
         .await
         .expect("cache-backed run must complete");
     assert_eq!(completion.exit_code, 0);
-    assert_ne!(completion.sandbox_id, Some(blank_id));
+    assert_eq!(completion.sandbox_id, Some(blank_id));
     shutdown(&env, run_handle).await;
 }

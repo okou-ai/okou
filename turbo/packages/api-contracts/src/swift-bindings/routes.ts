@@ -30,6 +30,8 @@ export const swiftRouteBindings = [
     swiftName: "computerUseHostHeartbeat",
     route: computerUseSessionHostsContract.heartbeat,
   },
+  // Retain the installed 0.56.1 route in the compatibility inventory until the
+  // supported Desktop floor excludes it; the current native runtime never waits.
   {
     swiftName: "computerUseHostCommandWait",
     route: computerUseSessionHostsContract.wait,
@@ -41,6 +43,10 @@ export const swiftRouteBindings = [
   {
     swiftName: "computerUseHostRealtimeToken",
     route: computerUseSessionHostsContract.realtimeToken,
+  },
+  {
+    swiftName: "computerUseHostConnectionEvent",
+    route: computerUseSessionHostsContract.connectionEvent,
   },
   {
     swiftName: "computerUseHostStop",

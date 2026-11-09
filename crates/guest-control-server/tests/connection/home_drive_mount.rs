@@ -363,3 +363,28 @@ fn home_drive_mount_validates_paired_layout_and_obeys_quiesce_gate() {
 
     finish_guest_connection(handle, host_stream);
 }
+
+#[test]
+fn home_drive_unmount_uses_only_the_fixed_option_and_root_cwd() {
+    let (_directory, program) = create_program(
+        r#"
+[ "$#" -eq 1 ]
+[ "$1" = --unmount ]
+[ "$PWD" = / ]
+printf 'detached\n'
+"#,
+    );
+    let (handle, mut host) = start_guest_connection_with_home_drive_mount_program(program, 1_000);
+    let mut frame = Vec::new();
+    guest_control_proto::encode_home_drive_operation_frame_into(
+        &mut frame,
+        601,
+        guest_control_proto::HomeDriveOperation::Unmount,
+    )
+    .unwrap();
+    host.write_all(&frame).unwrap();
+    let result = read_result(&mut host, 601);
+    assert_eq!(result.termination, ExecTermination::Exited { exit_code: 0 });
+    assert_eq!(result.stdout, b"detached\n");
+    finish_guest_connection(handle, host);
+}

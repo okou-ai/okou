@@ -11,7 +11,10 @@ import { updatePage$ } from "../react-router.ts";
 import { detachedNavigateTo$, searchParams$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { promptHandoffParams } from "./onboarding-actions.ts";
-import { hydrateOnboardingRoute$ } from "./onboarding-state.ts";
+import {
+  clearOnboardingPasteState$,
+  hydrateOnboardingRoute$,
+} from "./onboarding-state.ts";
 import { capturePaidOnboardingStepViewed$ } from "../bootstrap/paid-funnel-telemetry.ts";
 import { onboardingStatus$ } from "../okou-page/onboarding.ts";
 import { sendEvent$ } from "../marketing/events.ts";
@@ -48,6 +51,15 @@ export const setupOnboardingPromptPage$ = command(
     const handoff = await set(loadMarketingHandoff$, signal);
     signal.throwIfAborted();
     set(hydrateOnboardingRoute$, searchParams, handoff?.manifest);
+    signal.addEventListener(
+      "abort",
+      () => {
+        // Route cancellation can precede the next screen's first paint. Release
+        // retained upload Files without blanking the still-visible draft.
+        set(clearOnboardingPasteState$);
+      },
+      { once: true },
+    );
 
     const title = i18n.t(
       ($) => {

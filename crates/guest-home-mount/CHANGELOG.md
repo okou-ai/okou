@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.2.63](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.62...guest-home-mount-v0.2.63) (2026-11-09)
+
+## [0.2.62](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.61...guest-home-mount-v0.2.62) (2026-11-09)
+
+
+### Performance Improvements
+
+* **runner:** combine prewarmed blanks with cached homes ([#45982](https://github.com/okou-ai/okou/issues/45982)) ([1f635c4](https://github.com/okou-ai/okou/commit/1f635c4ff9baa72a4203a727dde742058d8def9f))
+
 ## [0.2.61](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.60...guest-home-mount-v0.2.61) (2026-11-08)
 
 ## [0.2.60](https://github.com/okou-ai/okou/compare/guest-home-mount-v0.2.59...guest-home-mount-v0.2.60) (2026-11-07)

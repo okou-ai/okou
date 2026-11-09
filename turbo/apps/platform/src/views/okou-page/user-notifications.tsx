@@ -414,24 +414,6 @@ function NotificationDetail({ inbox }: { readonly inbox: NotificationInbox }) {
         />
       );
     }
-    default: {
-      // A newer API can add a type while this browser still has older assets.
-      // Unsupported content must not gain a renderer or read receipt.
-      return (
-        <>
-          <DialogTitle>
-            {t(($) => {
-              return $.userNotifications.title;
-            })}
-          </DialogTitle>
-          <DialogDescription>
-            {t(($) => {
-              return $.userNotifications.detailFailed;
-            })}
-          </DialogDescription>
-        </>
-      );
-    }
   }
 }
 

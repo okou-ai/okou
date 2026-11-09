@@ -375,20 +375,13 @@ async fn claim_with_local_admission(
     let resource = match resource {
         Some(resource) => resource,
         None => {
-            let allow_compatible_blank = !(ctx.home_cache.is_some()
-                && candidate.reuse_key().is_some_and(|key| {
-                    ctx.home_cache_snapshot
-                        .has_compatible_home_hint(key, profile_name)
-                }));
             let Some((resource, selection)) = acquire_local_admission_resource(
                 &candidate,
                 profile_name,
                 job_vcpu,
                 job_memory,
                 device_rate_limits,
-                AdmissionReusePolicy::Compatible {
-                    allow_blank: allow_compatible_blank,
-                },
+                AdmissionReusePolicy::Compatible { allow_blank: true },
                 ctx,
             )
             .await
@@ -883,7 +876,7 @@ async fn prepare_ranked_preference_candidate(
             job_vcpu,
             job_memory,
             device_rate_limits,
-            AdmissionReusePolicy::Compatible { allow_blank: false },
+            AdmissionReusePolicy::RequiredHomeSource,
             ctx,
         )
         .await
@@ -1089,8 +1082,8 @@ async fn acquire_local_admission_resource(
 ) -> Option<(LocalAdmissionResource, Option<BlankPoolSelection>)> {
     let (reuse_key, allow_compatible_blank) = match reuse_policy {
         AdmissionReusePolicy::Compatible { allow_blank } => (candidate.reuse_key(), allow_blank),
-        // Reserve fresh capacity so another idle VM cannot displace the selected home.
-        AdmissionReusePolicy::RequiredHomeSource => (None, false),
+        // Exact VMs cannot displace a selected Home source; a blank can host it.
+        AdmissionReusePolicy::RequiredHomeSource => (None, true),
     };
     let IdlePressureOutcome {
         selection,

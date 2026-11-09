@@ -790,6 +790,16 @@ scroll-position ownership; they do not add scrollbar width, color, or offset
 overrides. The documented `scroll-area-viewport`, `scroll-area-scrollbar`, and
 `scroll-area-thumb` slots identify the shared parts for browser verification.
 
+Markdown code blocks and tables scroll sideways through
+`MarkdownHorizontalScroll`, which composes the same parts with a horizontal
+`ScrollBar`. A native `overflow-x: auto` block would grow by its scrollbar's
+thickness when a line starts to overflow wherever the OS shows scroll bars
+permanently; the overlaid scrollbar keeps the block's height independent of
+its overflow. Inside a `pre`, which admits phrasing content only, its
+`phrasing` option renders every part, the bar and its thumb as block-level
+`span`s. Its root clips to the caller's radius, because the bar is placed
+against the root's box rather than inside the rounded viewport.
+
 ### Icon controls and dialog bodies
 
 `IconButton` from `@okouai/ui` owns a neutral 36px square control, the shared
@@ -810,11 +820,13 @@ The default `DialogContent` inner container also uses `DialogBody`, preserving
 its `dialog-inner` slot and its protected vertical scrolling.
 
 Scrollbar styling is private to `DialogBody`, not an exported class-name API.
-Tailwind arbitrary variants address WebKit pseudo-elements. The component owns
-the 6px width, 3px thumb radius, 4px vertical track inset, transparent track,
-and neutral thumb colors, including hover. All default dialog bodies use this
-treatment, including the existing workflow-recommendation detail body; artifact
-previews retain their own clipping and internal scroll ownership.
+The component owns a thin scrollbar with a neutral thumb on a transparent
+track, through the standard `scrollbar-width` and `scrollbar-color` properties
+only: an element that sets either has its `::-webkit-scrollbar` rules ignored
+in Chrome 121+ and Safari 18.2+, so WebKit pseudo-element utilities beside them
+would be dead. All default dialog bodies use this treatment, including the
+existing workflow-recommendation detail body; artifact previews retain their
+own clipping and internal scroll ownership.
 
 `IconTooltip` merges its disabled-child wrapper's utilities with `cn()`, and the
 Mermaid diagram box passes its own `wrapperClassName` into that slot.
@@ -1552,12 +1564,14 @@ styling one.
 
 ### Table header rules and the global scrollbar treatment
 
-The App stylesheet applies the scrollbar treatment — `scrollbar-width`,
-`scrollbar-color`, and the four `::-webkit-scrollbar*` rules — to `*`, and
-`@okouai/ui` is consumed only by the App, which imports that stylesheet. Do not
-restate those declarations on a surface. Reach for the scrollbar utilities only
-where a surface wants something other than the global treatment, as `DialogBody`
-does.
+The App stylesheet applies the scrollbar treatment — `scrollbar-width` and
+`scrollbar-color` — to `*`, and `@okouai/ui` is consumed only by the App, which
+imports that stylesheet. Do not restate those declarations on a surface. There
+are no global `::-webkit-scrollbar` rules: Chrome 121+ and Safari 18.2+ ignore
+them on any element that sets either standard property, and older WebKit turns
+them into classic scrollbars that take layout space even where macOS overlays
+scrollbars. Reach for the scrollbar utilities only where a surface wants
+something other than the global treatment, as `DialogBody` does.
 
 `TableHeader` writes `border-b border-b-border [&_tr]:border-b-0` for the header
 separator and its suppression on the header row. Tailwind's Preflight sets

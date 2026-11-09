@@ -39,7 +39,6 @@ import { click, fill } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import {
   changeChatIndicators,
-  changeChatThreadList,
   changeChatThreadReadCursor,
 } from "../../../mocks/mock-helpers.ts";
 import { mockNow } from "../../../lib/time.ts";
@@ -487,7 +486,7 @@ test.each(["agent", "thread"] as const)(
   },
 );
 
-test.each(["indicator", "read cursor", "pre-#45712 API thread list"] as const)(
+test.each(["indicator", "read cursor"] as const)(
   "Refresh the running indicator after the %s notification without warming chats",
   async (notification) => {
     prepareDefaultAgent();
@@ -522,9 +521,6 @@ test.each(["indicator", "read cursor", "pre-#45712 API thread list"] as const)(
     const changeIndicator = () => {
       if (notification === "indicator") {
         changeChatIndicators();
-      } else if (notification === "pre-#45712 API thread list") {
-        // Rollout fallback (#45719): an API without chatIndicatorsChanged.
-        changeChatThreadList();
       } else {
         changeChatThreadReadCursor({
           threadId: EXISTING_THREAD_ID,

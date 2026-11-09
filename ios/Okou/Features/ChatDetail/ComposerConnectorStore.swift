@@ -16,10 +16,7 @@ final class ComposerConnectorStore {
   private(set) var threadAccess: ChatThreadRemoteAccess?
   private(set) var currentComputerAccess: ChatComputerAccess?
   private(set) var vncConnections: [ChatVncConnection] = []
-  private(set) var connectorError: String?
-  private(set) var remoteError: String?
   private(set) var error: String?
-  private(set) var isLoading = false
   private(set) var isSaving = false
   private(set) var uncertain = false
   private(set) var notice: String?
@@ -29,6 +26,8 @@ final class ComposerConnectorStore {
   private let authorizationService: ChatConnectorService
   private let didFail: @MainActor (Error) -> Void
   private var generation = UUID()
+  private(set) var resources: ComposerConnectorResources?
+  private var refreshTask: Task<Void, Never>?
   private var refreshAgain = false
   private var confirmationRevision = 0
   private var closed = false
@@ -39,6 +38,10 @@ final class ComposerConnectorStore {
   }
   var webDestination: WebDestination?
   private(set) var directory: ComposerConnectorDirectoryResources?
+  private(set) var permissions: ComposerConnectorPermissionResources?
+  private var permissionWrite: Task<Void, Never>?
+  private var accountPages: [ComposerConnectorAccountResources] = []
+  private var accountWrite: Task<Void, Never>?
   @ObservationIgnored lazy var authorization = ConnectorActionStore(
     service: authorizationService,
     didContinue: { [weak self] in await self?.refresh() }, didFail: didFail)
@@ -58,9 +61,13 @@ final class ComposerConnectorStore {
     threadID = thread?.id
     agentID = thread?.agentID
     self.didFail = didFail
+    resources = makeResources()
   }
 
   var canSend: Bool { !isSaving && !uncertain }
+  // This Task owns write-confirmation orchestration, not the Views’ resource phase.
+  var isRefreshing: Bool { refreshTask != nil }
+  var isUpdatingAccounts: Bool { accountWrite != nil }
 
   func canConfigurePermissions(slug: String?) -> Bool {
     guard let slug, let connector = connectors.first(where: { $0.target == .builtin(slug) }),
@@ -73,7 +80,16 @@ final class ComposerConnectorStore {
     guard !closed, self.agentID != agentID else { return }
     if threadID == nil, let previous = self.agentID { pendingByAgent[previous] = pendingOptions }
     generation = UUID()
+    resources?.close()
+    refreshTask?.cancel()
+    refreshTask = nil
     closeDirectory()
+    closeAccounts()
+    accountWrite?.cancel()
+    accountWrite = nil
+    closePermissions()
+    permissionWrite?.cancel()
+    permissionWrite = nil
     authorization.cancel()
     authorization.activationError = nil
     webDestination = nil
@@ -85,123 +101,83 @@ final class ComposerConnectorStore {
     threadAccess = nil
     currentComputerAccess = nil
     vncConnections = []
-    connectorError = nil
-    remoteError = nil
     error = nil
     notice = nil
     uncertain = false
     isSaving = false
-    isLoading = false
     refreshAgain = false
+    resources = makeResources()
   }
 
+  /// One owned confirmation cycle can serve several refresh callers.
   func refresh() async {
-    guard !closed, !Task.isCancelled, let agentID else { return }
-    if isLoading {
+    guard !closed, !Task.isCancelled, let resources else { return }
+    if refreshTask != nil {
+      // A write or foreground refresh needs a read newer than the current snapshot.
       refreshAgain = true
       return
     }
     let request = generation
-    isLoading = true
-    defer { if request == generation { isLoading = false } }
-    repeat {
-      refreshAgain = false
-      let readRevision = confirmationRevision
-      async let connected = loadConnectors(agentID: agentID, request: request)
-      async let remote = loadRemotes(request: request)
-      let (connectorsLoaded, remotesLoaded) = await (connected, remote)
-      guard !closed, !Task.isCancelled, request == generation else { return }
-      // A write requested another read; this older snapshot cannot confirm it.
-      if refreshAgain { continue }
-      guard readRevision == confirmationRevision, connectorsLoaded, remotesLoaded else { return }
-      uncertain = false
-      error = nil
-    } while refreshAgain
-  }
-
-  private func loadConnectors(agentID: String, request: UUID) async -> Bool {
-    do {
-      let (enabled, values) = try await read(request: request) {
-        try await service.validate(agentID: agentID, threadID: threadID)
-        let enabled = try await service.chatAccountAccessEnabled()
-        let values = try await service.connectors(
-          agentID: agentID, chatAccountAccess: enabled, threadID: threadID, options: pendingOptions)
-        return (enabled, values)
-      }
-      guard !closed, !Task.isCancelled, request == generation else { return false }
-      connectors = values
-      chatAccountAccess = enabled
-      pendingOptions.chatAccountAccess = enabled
-      if enabled, threadID == nil {
-        let touched = Set(
-          pendingOptions.connectorSelections.map { $0.target.key }
-            + pendingOptions.initialConnectorAccessOverrides.map { $0.target.key })
-        for connector in values where touched.contains(connector.target.key) {
-          updatePendingAccess(target: connector.target)
+    let task = Task { @MainActor [weak self, resources] in
+      guard let self else { return }
+      defer { if request == generation { refreshTask = nil } }
+      repeat {
+        refreshAgain = false
+        let readRevision = confirmationRevision
+        do {
+          try resources.invalidate(options: pendingOptions)
+          let pending = try resources.requests()
+          let (connected, remote) = await (pending.connected.result, pending.remote.result)
+          guard !closed, !Task.isCancelled, request == generation else { return }
+          if refreshAgain {
+            continue
+          }
+          // A pre-write read can publish data, but it cannot confirm a newer mutation.
+          guard readRevision == confirmationRevision else { return }
+          if case .success = connected, case .success = remote {
+            uncertain = false
+            error = nil
+          }
+        } catch {
+          guard !closed, !Task.isCancelled, request == generation else { return }
+          didFail(error)
         }
-      }
-      connectorError = nil
-      return true
-    } catch {
-      guard !closed, !Task.isCancelled, request == generation else { return false }
-      connectorError =
-        isCancellation(error)
-        ? "Could not load connectors. Try again." : ChatRequestFailure.message(for: error)
-      didFail(error)
-      return false
+      } while refreshAgain
     }
+    refreshTask = task
+    await task.value
   }
 
-  private func loadRemotes(request: UUID) async -> Bool {
-    do {
-      let (overview, access, computer, connections) = try await read(request: request) {
-        let overview = try await service.remotes()
-        var access: ChatThreadRemoteAccess?
-        var computer: ChatComputerAccess?
-        if let threadID {
-          access = try await service.remoteAccess(threadID: threadID)
-          computer = try await service.computerAccess(threadID: threadID)
+  private func makeResources() -> ComposerConnectorResources? {
+    guard let agentID else { return nil }
+    let request = generation
+    return ComposerConnectorResources(
+      service: service, agentID: agentID, threadID: threadID, options: pendingOptions,
+      sleep: readRetrySleep,
+      didLoadConnected: { [weak self] value in
+        guard let self, !closed, request == generation else { return }
+        if chatAccountAccess != value.chatAccountAccess { closeAccounts() }
+        // Confirmed business values are also consumed by drafts and account actions.
+        connectors = value.connectors
+        chatAccountAccess = value.chatAccountAccess
+        pendingOptions.chatAccountAccess = value.chatAccountAccess
+        if chatAccountAccess, threadID == nil {
+          let touched = Set(
+            pendingOptions.connectorSelections.map { $0.target.key }
+              + pendingOptions.initialConnectorAccessOverrides.map { $0.target.key })
+          for connector in connectors where touched.contains(connector.target.key) {
+            updatePendingAccess(target: connector.target)
+          }
         }
-        var connections: [ChatVncConnection] = []
-        if !overview.vncHosts.isEmpty { connections = try await service.vncConnections() }
-        return (overview, access, computer, connections)
-      }
-      guard !closed, !Task.isCancelled, request == generation else { return false }
-      remotes = overview
-      threadAccess = access
-      currentComputerAccess = computer
-      vncConnections = connections
-      remoteError = nil
-      return true
-    } catch {
-      guard !closed, !Task.isCancelled, request == generation else { return false }
-      remoteError =
-        isCancellation(error)
-        ? "Could not load remote access. Try again." : ChatRequestFailure.message(for: error)
-      didFail(error)
-      return false
-    }
-  }
-
-  /// Only repeat reads cancelled by the transport while their owner is still active.
-  private func read<Value: Sendable>(
-    request: UUID, _ body: @MainActor () async throws -> Value
-  ) async throws -> Value {
-    return try await ChatReadRecovery.read("connector settings", sleep: readRetrySleep) {
-      guard !closed, !Task.isCancelled, request == generation else { throw CancellationError() }
-      do {
-        return try await body()
-      } catch {
-        guard !closed, !Task.isCancelled, request == generation, isCancellation(error) else {
-          throw error
-        }
-        return try await body()
-      }
-    }
-  }
-
-  private func isCancellation(_ error: Error) -> Bool {
-    error is CancellationError || (error as? URLError)?.code == .cancelled
+        for page in accountPages { page.reconcile() }
+      },
+      didLoadRemote: { [weak self] value in
+        guard let self, !closed, request == generation else { return }
+        remotes = value.overview
+        threadAccess = value.access
+        currentComputerAccess = value.computer
+        vncConnections = value.connections
+      }, didFail: didFail)
   }
 
   func perform(_ operation: @MainActor () async throws -> Void) async {
@@ -220,7 +196,6 @@ final class ComposerConnectorStore {
       confirmationRevision += 1
       uncertain = true
       await refresh()
-      if connectorError != nil || remoteError != nil { uncertain = true }
     } catch {
       guard !closed, request == generation else { return }
       confirmationRevision += 1
@@ -402,8 +377,113 @@ final class ComposerConnectorStore {
     directory = nil
   }
 
+  @discardableResult
+  func openPermissions(slug: String, label: String) -> ComposerConnectorPermissionResources? {
+    guard !closed, let agentID else { return nil }
+    closePermissions()
+    permissions = ComposerConnectorPermissionResources(
+      composer: self, agentID: agentID, slug: slug, label: label, didFail: didFail)
+    return permissions
+  }
+
+  func closePermissions() {
+    permissions?.close()
+    permissions = nil
+  }
+
+  func applyPermissions(
+    owner: ComposerConnectorPermissionResources, edits: [ChatPermissionEdit], reset: Bool
+  ) async {
+    guard !closed, permissions === owner, agentID == owner.agentID,
+      permissionWrite == nil, !isSaving, !uncertain
+    else { return }
+    let request = generation
+    // Dismissing the read surface is not a rollback of a committed permission change.
+    let task = Task { @MainActor [self] in
+      defer { if request == generation { permissionWrite = nil } }
+      await perform {
+        try await service.savePermissions(
+          slug: owner.slug, agentID: owner.agentID, edits: edits, reset: reset)
+      }
+      guard !closed, !Task.isCancelled, request == generation else { return }
+      if let presented = permissions,
+        presented.agentID == owner.agentID, presented.slug == owner.slug
+      {
+        await presented.refresh()
+      }
+    }
+    permissionWrite = task
+    await task.value
+  }
+
+  func openAccounts(
+    _ connector: ChatComposerConnector, managesDefaults: Bool = false
+  ) -> ComposerConnectorAccountResources? {
+    guard !closed, let agentID else { return nil }
+    let page = ComposerConnectorAccountResources(
+      composer: self, connector: connector, agentID: agentID,
+      managesDefaults: managesDefaults, didFail: didFail)
+    accountPages.append(page)
+    return page
+  }
+
+  func retireAccounts(_ page: ComposerConnectorAccountResources) {
+    accountPages.removeAll { $0 === page }
+  }
+
+  func closeAccounts() {
+    for page in accountPages { page.close() }
+    accountPages = []
+  }
+
+  func applyAccountAction(
+    owner: ComposerConnectorAccountResources, action: ComposerConnectorAccountResources.Action
+  ) async {
+    guard !closed, !owner.isClosed, accountPages.contains(where: { $0 === owner }),
+      owner.agentID == agentID, owner.chatAccountAccess == chatAccountAccess,
+      connectors.contains(where: { $0.target == owner.connector.target }),
+      accountWrite == nil, !isSaving, !uncertain
+    else { return }
+    let request = generation
+    let target = owner.connector.target
+    let task = Task { @MainActor [self] in
+      defer { if request == generation { accountWrite = nil } }
+      guard !closed, !Task.isCancelled, request == generation,
+        owner.chatAccountAccess == chatAccountAccess
+      else { return }
+      switch action {
+      case .select(let id): await selectAccount(target: target, connectionID: id)
+      case .access(let id, let enabled):
+        await setAccountAccess(target: target, connectionID: id, enabled: enabled)
+      case .defaultAccount(let id):
+        await perform { try await service.setDefaultAccount(target: target, connectionID: id) }
+      case .defaultEnabled(let id, let enabled):
+        await perform {
+          try await service.setDefaultEnabled(target: target, connectionID: id, enabled: enabled)
+        }
+      }
+      guard !closed, !Task.isCancelled, request == generation else { return }
+      // The current destinations, including one reopened during the write, need readback.
+      for page in accountPages where page.connector.target == target {
+        await page.refresh()
+      }
+    }
+    accountWrite = task
+    await task.value
+  }
+
   func close() {
+    resources?.close()
+    resources = nil
+    refreshTask?.cancel()
+    refreshTask = nil
     closeDirectory()
+    closeAccounts()
+    accountWrite?.cancel()
+    accountWrite = nil
+    closePermissions()
+    permissionWrite?.cancel()
+    permissionWrite = nil
     closed = true
     generation = UUID()
     authorization.close()

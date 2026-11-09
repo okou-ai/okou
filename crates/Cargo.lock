@@ -1065,7 +1065,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.95"
+version = "0.22.96"
 dependencies = [
  "api-contracts",
  "cli-test-support",
@@ -1122,7 +1122,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "codex-mock"
-version = "0.12.56"
+version = "0.12.57"
 dependencies = [
  "chrono",
  "clap",
@@ -1244,9 +1244,9 @@ checksum = "460fbee9c2c2f33933d720630a6a0bac33ba7053db5344fac858d4b8952d77d5"
 
 [[package]]
 name = "crypto-bigint"
-version = "0.7.10"
+version = "0.7.11"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "9c035cb64cba03dad2fb921f3e218785e8cf9a41790da5eb3a1400f62fa2be11"
+checksum = "914c195c4d7fbc5ed7f88d14cbf85914d5c664967658d43404b263913a477e82"
 dependencies = [
  "cpubits",
  "ctutils",
@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.53"
+version = "0.109.57"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2057,7 +2057,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.162"
+version = "0.1.166"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2083,7 +2083,7 @@ dependencies = [
 
 [[package]]
 name = "guest-contracts"
-version = "0.32.0"
+version = "0.32.1"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2097,7 +2097,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-client"
-version = "0.23.82"
+version = "0.23.85"
 dependencies = [
  "guest-contracts",
  "guest-control-proto",
@@ -2115,7 +2115,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-proto"
-version = "0.22.64"
+version = "0.22.66"
 dependencies = [
  "guest-contracts",
  "proptest",
@@ -2123,7 +2123,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.86"
+version = "0.24.88"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.154"
+version = "0.12.157"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2158,7 +2158,7 @@ dependencies = [
 
 [[package]]
 name = "guest-home-mount"
-version = "0.2.61"
+version = "0.2.63"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2170,7 +2170,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.72"
+version = "0.20.74"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -2182,7 +2182,7 @@ dependencies = [
 
 [[package]]
 name = "guest-state-restore"
-version = "0.4.5"
+version = "0.4.6"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2191,7 +2191,7 @@ dependencies = [
 
 [[package]]
 name = "guest-storage-apply"
-version = "0.31.0"
+version = "0.31.1"
 dependencies = [
  "cli-test-support",
  "flate2",
@@ -2214,7 +2214,7 @@ dependencies = [
 
 [[package]]
 name = "guest-task-exec"
-version = "0.2.60"
+version = "0.2.61"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -2224,7 +2224,7 @@ dependencies = [
 
 [[package]]
 name = "guest-telemetry"
-version = "0.3.193"
+version = "0.3.194"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2237,7 +2237,7 @@ dependencies = [
 
 [[package]]
 name = "guest-tool-exec"
-version = "0.3.63"
+version = "0.3.64"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2250,7 +2250,7 @@ dependencies = [
 
 [[package]]
 name = "guest-write-file"
-version = "0.1.283"
+version = "0.1.285"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2761,15 +2761,15 @@ dependencies = [
 
 [[package]]
 name = "itoa"
-version = "1.0.18"
+version = "1.0.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8f42a60cbdf9a97f5d2305f08a87dc4e09308d1276d28c869c684d7777685682"
+checksum = "3bd1574e617a9a6c1f8f8181bd7e841e1f20e4277607ef28945765188d6284d4"
 
 [[package]]
 name = "jiff"
-version = "0.2.40"
+version = "0.2.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "14ed8250fe4472173a765b89fea4b46f2c4aa12adc12a3e310f1dc6c108e041b"
+checksum = "fcefdcefac59ac8f8401852e3427d55610481fc41e6625c39bac62d2d771623a"
 dependencies = [
  "jiff-core",
  "jiff-static",
@@ -2783,18 +2783,18 @@ dependencies = [
 
 [[package]]
 name = "jiff-core"
-version = "0.1.3"
+version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ecfc96f3a325d3a9b0ee6db9a81a83b40b94e781021c044a0a7f4c4630a1e482"
+checksum = "77a24020db0ee88d1c681d677681bd31f9f4ea189a455425223d52ce4f1508aa"
 dependencies = [
  "log",
 ]
 
 [[package]]
 name = "jiff-static"
-version = "0.2.40"
+version = "0.2.41"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "e9522de39a5298859d9e844b660eb7d5e6fd1b63b9953f51535408a62f2d31b3"
+checksum = "203edf9b0ce4083ec8fbf4adc823eac89768ea994b4953fc0dab1b90083234dd"
 dependencies = [
  "jiff-core",
  "proc-macro2",
@@ -3609,7 +3609,7 @@ dependencies = [
 
 [[package]]
 name = "process-control-ipc"
-version = "0.5.60"
+version = "0.5.61"
 dependencies = [
  "guest-contracts",
  "libc",
@@ -4053,7 +4053,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.45"
+version = "0.244.49"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4127,7 +4127,7 @@ dependencies = [
 
 [[package]]
 name = "runner-executor"
-version = "0.21.0"
+version = "0.21.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4175,7 +4175,7 @@ dependencies = [
 
 [[package]]
 name = "runner-host"
-version = "0.10.40"
+version = "0.10.43"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -4200,7 +4200,7 @@ dependencies = [
 
 [[package]]
 name = "runner-lifecycle"
-version = "0.17.80"
+version = "0.17.83"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4231,7 +4231,7 @@ dependencies = [
 
 [[package]]
 name = "runner-network"
-version = "0.5.0"
+version = "0.5.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4263,7 +4263,7 @@ dependencies = [
 
 [[package]]
 name = "runner-provider"
-version = "0.17.0"
+version = "0.17.3"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4307,7 +4307,7 @@ dependencies = [
 
 [[package]]
 name = "runner-remote"
-version = "0.31.28"
+version = "0.31.31"
 dependencies = [
  "ably-subscriber",
  "api-contracts",
@@ -4408,7 +4408,7 @@ dependencies = [
 
 [[package]]
 name = "runner-storage"
-version = "0.10.0"
+version = "0.10.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4453,7 +4453,7 @@ dependencies = [
 
 [[package]]
 name = "runner-supervisor"
-version = "0.22.0"
+version = "0.22.3"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4493,7 +4493,7 @@ dependencies = [
 
 [[package]]
 name = "runner-types"
-version = "0.13.0"
+version = "0.13.3"
 dependencies = [
  "api-contracts",
  "guest-contracts",
@@ -4762,7 +4762,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox"
-version = "0.28.15"
+version = "0.28.18"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -4778,7 +4778,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.81"
+version = "0.53.84"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4816,7 +4816,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-mock"
-version = "0.17.49"
+version = "0.17.52"
 dependencies = [
  "async-trait",
  "guest-contracts",
@@ -6426,9 +6426,9 @@ checksum = "3a3b425286980a367278453f3b6d28cdcb134b574e5a35824a6ff5eebad50bb6"
 
 [[package]]
 name = "uuid"
-version = "1.29.1"
+version = "1.29.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4a06f08a856b009bc7bbaf7d3e79808595d032dd19074c0c2ef26e49e03e6bdc"
+checksum = "bed99139f7dac9b5cfe5f17be4d66dc7079a34dee1d74bcc77217119240e267c"
 dependencies = [
  "getrandom 0.4.3",
  "js-sys",

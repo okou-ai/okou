@@ -14,8 +14,10 @@ import { organizationAuthContext$ } from "../auth/auth-context";
 import { authRoute } from "../auth/auth-route";
 import { bodyResultOf, pathParamsOf, queryOf } from "../context/request";
 import { setResHeader$ } from "../context/hono";
+import { waitUntil } from "../context/wait-until";
 import {
   createComputerUseCommand$,
+  notifyQueuedComputerUseCommand$,
   getComputerUseCommand$,
   getComputerUseCommandScreenshotUrl$,
   computerUseAuditEvents,
@@ -121,6 +123,14 @@ const commandCreateInner$ = command(
     if (result.status === "shell_authorization_required") {
       return shellAuthorizationRequired;
     }
+    waitUntil(
+      set(
+        notifyQueuedComputerUseCommand$,
+        result.commandId,
+        result.notifyHosts,
+        signal,
+      ),
+    );
     const realtime = bodyResult.data.realtime
       ? await createComputerUseResultSubscription(
           {
@@ -194,6 +204,14 @@ const writeCommandCreateInner$ = command(
     if (result.status === "shell_authorization_required") {
       return shellAuthorizationRequired;
     }
+    waitUntil(
+      set(
+        notifyQueuedComputerUseCommand$,
+        result.commandId,
+        result.notifyHosts,
+        signal,
+      ),
+    );
     const realtime = bodyResult.data.realtime
       ? await createComputerUseResultSubscription(
           {
@@ -304,6 +322,14 @@ const shellCreateInner$ = command(async ({ get, set }, signal: AbortSignal) => {
   if (result.status === "shell_authorization_required") {
     return shellAuthorizationRequired;
   }
+  waitUntil(
+    set(
+      notifyQueuedComputerUseCommand$,
+      result.commandId,
+      result.notifyHosts,
+      signal,
+    ),
+  );
   const realtime = body.realtime
     ? await createComputerUseResultSubscription(
         {

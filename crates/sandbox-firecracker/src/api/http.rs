@@ -29,6 +29,9 @@ pub(super) fn build_client(socket_path: &Path) -> Result<reqwest::Client, ApiErr
         .retry(reqwest::retry::never())
         .no_proxy()
         .pool_max_idle_per_host(0)
+        // This fixed plaintext Unix-socket transport never uses TLS. Avoid
+        // loading platform trust roots for every VMM operation's client.
+        .tls_certs_only(std::iter::empty())
         .build()
         .map_err(map_transport_error)
 }

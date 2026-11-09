@@ -61,22 +61,61 @@ impl GuestControlClient {
         )
         .await?;
 
-        validate_fixed_helper_response(&response, MSG_HOME_DRIVE_MOUNT_RESULT, "home drive mount")?;
-
-        let decoded =
-            decode_home_drive_mount_result(&response.payload).map_err(protocol_invalid_data)?;
-        let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "stdout")?;
-        let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "stderr")?;
-        Ok(HomeDriveMountResult {
-            termination: decoded.termination,
-            duration_ms: decoded.duration_ms,
-            stdout,
-            stderr,
-            stdout_truncated,
-            stderr_truncated,
-            diagnostic: decoded.diagnostic.to_owned(),
-        })
+        decode_result(response)
     }
+
+    /// Run only a fixed Home filesystem operation while retaining exclusive
+    /// normal-operation admission. The fence must belong to this connection.
+    pub async fn home_drive_operation_with_fence(
+        &self,
+        fence: &crate::NormalOperationFence,
+        operation: guest_control_proto::HomeDriveOperation,
+        request_timeout: Duration,
+    ) -> io::Result<HomeDriveMountResult> {
+        let token = self
+            .shared
+            .normal_operations
+            .reserve_under_fence(&fence._inner)
+            .map_err(|error| {
+                io::Error::other(format!("home operation fence rejected: {error:?}"))
+            })?;
+        let mut tracked = crate::CompositeNormalOperation::from_token(token);
+        let response =
+            crate::request_on_shared_with_composite_operation_and_observer_frame_builder(
+                &self.shared,
+                TERMINAL_MSG_TYPES,
+                request_timeout,
+                &mut tracked,
+                FrameWriteObserver::noop(),
+                |seq, frame| {
+                    guest_control_proto::encode_home_drive_operation_frame_into(
+                        frame, seq, operation,
+                    )
+                    .map_err(protocol_invalid_input)
+                },
+            )
+            .await?;
+        tracked.complete()?;
+        decode_result(response)
+    }
+}
+
+fn decode_result(response: guest_control_proto::RawMessage) -> io::Result<HomeDriveMountResult> {
+    validate_fixed_helper_response(&response, MSG_HOME_DRIVE_MOUNT_RESULT, "home drive mount")?;
+
+    let decoded =
+        decode_home_drive_mount_result(&response.payload).map_err(protocol_invalid_data)?;
+    let (stdout, stdout_truncated) = owned_capture(decoded.stdout, "stdout")?;
+    let (stderr, stderr_truncated) = owned_capture(decoded.stderr, "stderr")?;
+    Ok(HomeDriveMountResult {
+        termination: decoded.termination,
+        duration_ms: decoded.duration_ms,
+        stdout,
+        stderr,
+        stdout_truncated,
+        stderr_truncated,
+        diagnostic: decoded.diagnostic.to_owned(),
+    })
 }
 
 fn owned_capture(output: ExecCapturedOutput<'_>, name: &str) -> io::Result<(Vec<u8>, bool)> {

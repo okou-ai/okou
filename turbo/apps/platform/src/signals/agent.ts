@@ -87,6 +87,22 @@ export const currentAgentId$ = computed((get) => {
   return typeof agentId === "string" ? agentId : null;
 });
 
+/**
+ * The default Agent's new-chat page: `/` under My Okou, otherwise that Agent's
+ * own chat page. Home's suggestion list belongs to this page.
+ */
+export const defaultAgentChatPageActive$ = computed(async (get) => {
+  const route = get(activeRoute$);
+  if (route === "home") {
+    return get(singleAgentEnabled$);
+  }
+  const agentId = get(currentAgentId$);
+  if (route !== "agentChat" || agentId === null) {
+    return false;
+  }
+  return agentId === (await get(defaultAgentId$));
+});
+
 export const currentAgent$ = computed((get) => {
   const agentId = get(currentAgentId$);
   if (!agentId) {

@@ -3,6 +3,7 @@ use super::*;
 use crate::home_image_cache::{
     HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImagePrepareRequest,
 };
+use crate::idle_pool::test_support::ParkedIdleCandidateBuilder;
 use crate::idle_pool::{ParkResult, ParkedIdleCandidate};
 use sandbox_mock::{MockLifecycleGate, MockSandbox, MockSandboxFactory, MockSandboxOverrides};
 
@@ -17,6 +18,7 @@ enum HomeCandidate {
     PredecessorLocation,
     PredecessorAdvertised,
     GenericAdvertised,
+    GenericAdvertisedExactDuringClaim,
     OtherHostLocation,
     OtherHostExpected,
     UnknownOtherHostExpected,
@@ -55,6 +57,18 @@ async fn selected_home_advertisement_consumes_home_missing_from_local_inventory(
 #[tokio::test]
 async fn selected_generic_home_advice_retains_verified_source_through_claim() {
     assert_home_selection(false, HomeCandidate::GenericAdvertised, true).await;
+}
+
+#[tokio::test]
+async fn selected_home_source_cannot_be_displaced_by_exact_vm_that_parks_during_claim() {
+    for blank_available in [false, true] {
+        assert_home_selection(
+            false,
+            HomeCandidate::GenericAdvertisedExactDuringClaim,
+            blank_available,
+        )
+        .await;
+    }
 }
 
 #[tokio::test]
@@ -271,6 +285,7 @@ async fn assert_home_selection(
     if known_local {
         publish_home(&publisher, &paths, key, source).await;
     }
+    let rootfs_hash = config.runner.profiles["vm0/default"].rootfs_hash.clone();
     let runner = tokio::spawn(run(config));
     wait_discover_entered(&env, WAIT).await;
     // Remove general watcher progress through a real filesystem lifecycle;
@@ -286,17 +301,23 @@ async fn assert_home_selection(
         context.is_first_run = Some(true);
     }
     env.provider.set_claim_result(successor, Some(context));
-    if during_claim {
+    let exact_during_claim = matches!(
+        candidate_kind,
+        HomeCandidate::GenericAdvertisedExactDuringClaim
+    );
+    if during_claim || exact_during_claim {
         env.handle.block_claim(successor);
     }
     let candidate = match candidate_kind {
-        HomeCandidate::GenericAdvertised => ranked_candidate(
-            successor,
-            Some(key),
-            runner_provider::RunnerPreferenceTarget::HomeCache,
-            TEST_RUNNER_ID,
-            TEST_HEARTBEAT_GENERATION,
-        ),
+        HomeCandidate::GenericAdvertised | HomeCandidate::GenericAdvertisedExactDuringClaim => {
+            ranked_candidate(
+                successor,
+                Some(key),
+                runner_provider::RunnerPreferenceTarget::HomeCache,
+                TEST_RUNNER_ID,
+                TEST_HEARTBEAT_GENERATION,
+            )
+        }
         HomeCandidate::PredecessorLocation | HomeCandidate::PredecessorAdvertised => {
             ranked_candidate(
                 successor,
@@ -357,9 +378,28 @@ async fn assert_home_selection(
         assert_eq!(budget.allocated(), (0, 0, 0));
         return;
     }
-    if during_claim {
+    if during_claim || exact_during_claim {
         assert!(env.handle.wait_run_claim_in_flight(successor, WAIT).await);
-        publish_home(&publisher, &paths, key, source).await;
+        if during_claim {
+            publish_home(&publisher, &paths, key, source).await;
+        }
+        if exact_during_claim {
+            let candidate = ParkedIdleCandidateBuilder::new(
+                key,
+                ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap(),
+            )
+            .with_profile_name("vm0/default")
+            .with_rootfs_hash(rootfs_hash)
+            .with_sandbox(Box::new(MockSandbox::with_overrides(
+                SandboxId::new_v4().to_string(),
+                overrides.clone(),
+            )))
+            .build();
+            assert!(matches!(
+                env.idle_pool.lock().await.park(candidate),
+                ParkResult::Parked
+            ));
+        }
         env.handle.unblock_claim(successor);
     }
     execution.wait_entered(1, WAIT).await.unwrap();
@@ -368,12 +408,20 @@ async fn assert_home_selection(
         candidate_kind,
         HomeCandidate::Ordinary | HomeCandidate::FirstRun | HomeCandidate::UnknownOtherHostExpected
     );
+    let replacements = overrides.home_drive_replacements();
     if restore {
-        assert_eq!(created.len(), 1);
-        let seed = created[0]
-            .home_drive
-            .as_ref()
-            .unwrap()
+        let drive = if blank_available {
+            assert!(
+                created.is_empty(),
+                "cached Home must retain the available blank VM"
+            );
+            assert_eq!(replacements.len(), 1);
+            &replacements[0]
+        } else {
+            assert_eq!(created.len(), 1);
+            created[0].home_drive.as_ref().unwrap()
+        };
+        let seed = drive
             .seed_image
             .as_ref()
             .expect("evidenced Home must supply its physical seed");
@@ -401,9 +449,7 @@ async fn assert_home_selection(
     execution.release_one();
     let completed = env.handle.wait_completion(successor, WAIT).await.unwrap();
     assert_eq!(completed.exit_code, 0);
-    if restore {
-        assert_ne!(completed.sandbox_id, blank_id);
-    } else if blank_available {
+    if blank_available {
         assert_eq!(completed.sandbox_id, blank_id);
     }
     shutdown(&env, runner).await;

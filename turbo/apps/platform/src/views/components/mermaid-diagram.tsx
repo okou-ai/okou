@@ -9,13 +9,14 @@ import type {
 } from "../../signals/mermaid-diagram.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { CodeBlockCopyButton } from "./code-block-copy-button.tsx";
+import { MarkdownCodeBlock } from "./markdown-code-block.tsx";
 
 function MermaidCodeBlock({ signals }: { signals: MermaidDiagramSignals }) {
   return (
-    <pre>
+    <MarkdownCodeBlock>
       <code>{signals.code}</code>
       <CodeBlockCopyButton code={signals.code} />
-    </pre>
+    </MarkdownCodeBlock>
   );
 }
 
@@ -121,9 +122,9 @@ export function MermaidDiagramView({
         {/* The Markdown adapter gives every `pre` a 14px block margin from an
             unlayered rule, so the tighter gap under the summary has to be
             important rather than merely more specific. */}
-        <pre className="mt-2!">
+        <MarkdownCodeBlock className="mt-2!">
           <code>{signals.code}</code>
-        </pre>
+        </MarkdownCodeBlock>
       </details>
     </div>,
   );

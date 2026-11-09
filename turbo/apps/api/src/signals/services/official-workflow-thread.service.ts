@@ -20,7 +20,10 @@ import {
 } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
-import { publishThreadListChangedSafely } from "../external/realtime";
+import {
+  publishChatIndicatorsChangedSafely,
+  publishThreadListChangedSafely,
+} from "../external/realtime";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import { metadataCommitWithEventsSql } from "./chat-thread-metadata-write-plan";
 import { readAcceptedOfficialWorkflowCatalog$ } from "./official-workflow-catalog-read.service";
@@ -266,6 +269,14 @@ export const synchronizeOfficialWorkflowThread$ = command(
     }
     if (visibilityChanged || modelChanged) {
       await publishThreadListChangedSafely({
+        userId: owner.userId,
+        orgId: owner.orgId,
+      });
+      signal.throwIfAborted();
+    }
+    if (visibilityChanged) {
+      // Indicators exclude hidden threads.
+      await publishChatIndicatorsChangedSafely({
         userId: owner.userId,
         orgId: owner.orgId,
       });

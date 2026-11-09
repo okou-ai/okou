@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "Bilah samping",
       "chat": "Chat",
-      "feedWaiting_other": "{{count}} menunggu",
       "hideChatList": "Sembunyikan daftar chat",
       "mobile": {
         "invite": "Undang",
@@ -402,7 +401,6 @@
         "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
-        "feed": "Feed",
         "settings": "Pengaturan",
         "workflows": "Alur kerja",
         "works": "Tempat {{agentName}} bekerja"
@@ -414,6 +412,7 @@
       "resizeChatList": "Ubah ukuran daftar chat",
       "searchWorkspace": "Cari ruang kerja",
       "showChatList": "Tampilkan daftar chat",
+      "suggestionsWaiting_other": "{{count}} menunggu",
       "workspaceSwitcher": {
         "create": "Buat ruang kerja",
         "creating": "Membuat…",
@@ -954,27 +953,6 @@
     },
     "homeLink": "Buka beranda {{brandName}}",
     "loading": "Memuat autentikasi",
-    "signup": {
-      "alreadyHaveAccount": "Sudah punya akun?",
-      "apple": "Apple",
-      "continue": "Lanjutkan",
-      "email": "Alamat email",
-      "emailPlaceholder": "Masukkan alamat email Anda",
-      "failed": "Permintaan gagal",
-      "google": "Google",
-      "hidePassword": "Sembunyikan kata sandi",
-      "legalAnd": "dan",
-      "legalPrefix": "Saya menyetujui",
-      "or": "atau",
-      "password": "Kata sandi",
-      "passwordPlaceholder": "Buat kata sandi",
-      "privacy": "Kebijakan Privasi",
-      "showPassword": "Tampilkan kata sandi",
-      "signIn": "Masuk",
-      "subtitle": "Selamat datang! Silakan isi detail untuk memulai.",
-      "terms": "Ketentuan Layanan",
-      "title": "Buat akun Anda"
-    },
     "theme": {
       "darkEnabled": "Tema gelap diaktifkan",
       "lightEnabled": "Tema terang diaktifkan"
@@ -1459,6 +1437,11 @@
     "operationFailed": "Tindakan browser tidak dapat diselesaikan. Periksa browser sebelum mencoba lagi.",
     "paused": "Tampilan dijeda",
     "quality": "Kualitas gambar",
+    "qualityBalanced": "Seimbang",
+    "qualityInvalid": "Masukkan bilangan bulat dari 0 hingga 100",
+    "qualityLossless": "Tanpa kehilangan kualitas",
+    "qualitySaver": "Hemat data",
+    "qualitySharper": "Tajam",
     "reconnect": "Hubungkan kembali",
     "reconnecting": "Menghubungkan ulang…",
     "reload": "Muat ulang",
@@ -1644,15 +1627,18 @@
       "saveReason": "Save",
       "sending": "Mengirim…",
       "sent": "Dikirim ke chat baru",
+      "unavailable": "Saran itu sudah tidak tersedia. Daftar saran telah diperbarui.",
       "undoFeedback": "Undo",
       "useSuggestion": "Gunakan saran"
     },
     "attachments": {
       "attach": "Lampirkan",
-      "fileTooLarge": "{{filename}} melebihi batas 512 MB",
+      "fileTooLarge": "{{filename}} melebihi batas 5 GB",
       "imageUnavailable": "[Gambar tidak tersedia: {{filename}}]",
       "loadingFile": "Memuat {{filename}}",
+      "pastedText": "Teks yang ditempel",
       "previewFile": "Pratinjau {{filename}}",
+      "remove": "Hapus {{filename}}",
       "title": "Lampiran",
       "unavailable": "{{filename}} tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
       "unavailableCount_other": "{{count}} lampiran tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
@@ -4198,31 +4184,20 @@
     "previousFeature": "Fitur sebelumnya",
     "tryPrompt": "Coba tugas ini"
   },
-  "feed": {
-    "description": "Langkah berikutnya yang disarankan berdasarkan pekerjaan terbaru Anda.",
-    "emptyDescription": "Saran baru akan muncul di sini.",
-    "emptyTitle": "Semua sudah terkini",
-    "title": "Feed"
-  },
   "friendReferrals": {
-    "checkingCode": "Memeriksa kode undangan…",
-    "codeApplied": "Kode undangan diterapkan",
-    "codeCheckFailed": "Kode tidak dapat diperiksa. Coba lagi atau kosongkan untuk melanjutkan.",
-    "codeLabel": "Kode undangan Anda",
-    "codeUnavailable": "Kode undangan ini tidak tersedia. Periksa atau kosongkan untuk melanjutkan.",
     "copied": "Disalin",
-    "copyCode": "Salin kode",
     "copyFailed": "Gagal menyalin. Coba lagi.",
     "copyLink": "Salin tautan",
-    "description": "Dapatkan credits senilai $20 saat teman mendaftar dengan kode undangan Anda, membeli usage pack, dan meningkatkan ke Pro atau lebih tinggi.",
+    "description": "Anda mendapat credits senilai $20 setelah teman menyelesaikan ketiga langkah",
+    "dialogTitle": "Undang teman, dapatkan $20 per teman",
     "earned": "Kredit diperoleh",
-    "invalidCode": "Gunakan 6 huruf atau angka, atau kosongkan untuk melanjutkan.",
-    "loadFailed": "Kode undangan tidak dapat dimuat. Coba lagi.",
-    "loading": "Mengambil kode undangan Anda…",
+    "loadFailed": "Tautan undangan tidak dapat dimuat. Coba lagi.",
+    "loading": "Mengambil tautan undangan Anda…",
     "registered": "Teman terdaftar",
     "retry": "Coba lagi",
-    "signupLabel": "Kode undangan (opsional)",
-    "signupPlaceholder": "Masukkan kode undangan",
+    "stepSignUp": "Mendaftar dengan tautan undangan Anda",
+    "stepUpgrade": "Meningkatkan ke Pro atau lebih tinggi",
+    "stepUsagePack": "Membeli usage pack",
     "terms": "Hanya untuk pengguna baru. Satu hadiah per teman. Kredit masuk ke saldo pribadi Anda di ruang kerja ini dan kedaluwarsa satu bulan setelah diberikan.",
     "title": "Undang teman Anda"
   },
@@ -4648,9 +4623,14 @@
         "tooLong": "Persingkat tugas untuk memilih format lain."
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} karakter (termasuk instruksi output)",
         "connectorsDescription": "Hubungkan aplikasi Anda agar Okou lebih memahami pekerjaan Anda.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
-        "intro": "Hubungkan aplikasi Anda untuk hasil yang lebih baik dan pilih format."
+        "fileTooLarge": "{{filename}} melebihi batas 10 MB. Teks yang Anda tempel tetap ada di prompt.",
+        "intro": "Hubungkan aplikasi Anda untuk hasil yang lebih baik dan pilih format.",
+        "tooLong": "Persingkat prompt atau hapus pilihan format output untuk melanjutkan. Batas ini mencakup instruksi output.",
+        "tooManyFiles": "Anda dapat melampirkan hingga {{max}} file. Teks yang Anda tempel tetap ada di prompt.",
+        "uploadFailed": "{{filename}} tidak dapat diunggah. Teks yang Anda tempel tetap tersedia sebagai lampiran. Coba lagi atau hapus lampiran sebelum melanjutkan."
       },
       "skills": {
         "copied": "Tersalin",
@@ -6198,7 +6178,7 @@
       "title": "Ups! Ada yang salah"
     },
     "forceUpgrade": {
-      "description": "Versi {{brandName}} ini tidak lagi didukung.",
+      "description": "Kami telah merilis fitur baru di {{brandName}}. Muat ulang untuk menggunakan versi terbaru.",
       "title": "Pembaruan diperlukan"
     },
     "mermaid": {
@@ -7315,6 +7295,19 @@
       "unconfigured": "Discord belum dikonfigurasi untuk organisasi ini."
     },
     "documentTitle": "Berfungsi",
+    "email": {
+      "connected": "Email terhubung",
+      "description": "Kirim email ke Okou dan simpan setiap percakapan di chat tersendiri",
+      "healthNotice": "Jangan gunakan integrasi ini untuk informasi pasien yang diatur oleh HIPAA.",
+      "instructions": "Kirim pesan dari alamat email akun Anda. Email baru memulai chat baru; balasan melanjutkan percakapan yang sama. Jika Anda pengguna baru, kami akan membantu pendaftaran lalu melanjutkan permintaan Anda.",
+      "invalidLink": "Tautan koneksi ini tidak valid. Kirim email baru ke Okou.",
+      "loadError": "Tidak dapat memuat koneksi email Anda",
+      "manage": "Kelola",
+      "open": "Buka email",
+      "resumed": "{{email}} terhubung. Permintaan awal Anda akan dijawab dalam percakapan email yang sama.",
+      "title": "Email",
+      "unavailable": "Email belum tersedia untuk ruang kerja ini"
+    },
     "feishuConnected": "Feishu berhasil terhubung",
     "github": {
       "adminInstall": "Minta admin organisasi untuk menginstal aplikasi GitHub",

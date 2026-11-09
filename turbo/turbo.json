@@ -2,7 +2,6 @@
   "$schema": "https://turborepo.com/schema.json",
   "ui": "tui",
   "globalEnv": [
-    "ENV",
     "CHROMIUM_EXECUTABLE",
     "HOME",
     "PATH",

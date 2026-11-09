@@ -8,6 +8,7 @@ import {
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockNow, now } from "../../../lib/time";
+import { createDeferredPromise } from "../../utils";
 import { computerUseRoutes } from "../computer-use";
 import { channelsPublishedTo } from "./helpers/realtime-publications";
 const context = testContext();
@@ -51,14 +52,19 @@ function authenticate() {
   return actor;
 }
 
-async function scenario() {
+async function scenario(presenceOnly = false) {
   const api = await setupApp({ context, routes: computerUseRoutes });
   const actor = authenticate();
   const installationId = randomUUID();
   const registered = await accept(
     api(hosts).register({
       headers,
-      body: { ...runtime, installationId, livenessMode: "presence" },
+      body: {
+        ...runtime,
+        installationId,
+        livenessMode: "presence",
+        presenceOnly,
+      },
     }),
     [200],
   );
@@ -339,5 +345,177 @@ describe("Desktop host presence", () => {
         .realtimeToken({ headers, params: s.params, body: s.generation }),
       [409],
     );
+  });
+});
+
+describe("Presence-only Desktop", () => {
+  it("uses presence for a fresh host and reports an unavailable provider explicitly", async () => {
+    const s = await scenario(true);
+    expect(s.registered.body).toMatchObject({
+      livenessMode: "presence",
+      presenceOnly: true,
+    });
+    context.mocks.ably.presenceGet.mockRejectedValue(
+      new Error("Ably unavailable"),
+    );
+    const unavailable = await accept(s.api(directory).list({ headers }), [503]);
+    expect(unavailable.body.error.code).toBe("PROVIDER_UNAVAILABLE");
+    context.mocks.ably.presenceGet.mockResolvedValue({ items: [] });
+    await accept(
+      s.api(hosts).state({
+        headers,
+        params: s.params,
+        body: { ...runtime, ...s.generation },
+      }),
+      [200],
+    );
+    const offline = await accept(s.api(directory).list({ headers }), [200]);
+    expect(offline.body.hosts).toContainEqual(
+      expect.objectContaining({
+        id: s.params.hostId,
+        status: "offline",
+      }),
+    );
+  });
+
+  it("accepts only the current connection's diagnostics without granting online status", async () => {
+    const s = await scenario(true);
+    await accept(
+      s.api(hosts).connectionEvent({
+        headers,
+        params: s.params,
+        body: { ...s.generation, event: "ready" },
+      }),
+      [204],
+    );
+    await accept(
+      s.api(hosts).connectionEvent({
+        headers,
+        params: s.params,
+        body: {
+          connectionGeneration: s.generation.connectionGeneration + 1,
+          event: "unavailable",
+          reasonCode: 80_003,
+        },
+      }),
+      [409],
+    );
+    context.mocks.ably.presenceGet.mockResolvedValue({ items: [] });
+    const listed = await accept(s.api(directory).list({ headers }), [200]);
+    expect(listed.body.hosts).toContainEqual(
+      expect.objectContaining({
+        id: s.params.hostId,
+        status: "offline",
+      }),
+    );
+  });
+
+  it("expires an unclaimed operation and still admits a fresh command", async () => {
+    const s = await scenario(true);
+    const expired = await accept(
+      s
+        .api(commands)
+        .create({ headers, body: { kind: "apps.list", timeoutMs: 1000 } }),
+      [200],
+    );
+    mockNow(now() + 1001);
+    const idle = await accept(
+      s.api(hosts).next({
+        headers,
+        params: s.params,
+        body: {
+          ...s.generation,
+          supportedCapabilities: runtime.supportedCapabilities,
+        },
+      }),
+      [200],
+    );
+    expect(idle.body.status).toBe("idle");
+    const observed = await accept(
+      s
+        .api(commands)
+        .get({ headers, params: { commandId: expired.body.commandId } }),
+      [200],
+    );
+    expect(observed.body).toMatchObject({
+      status: "failed",
+      error: { code: "timeout" },
+    });
+    const fresh = await accept(
+      s
+        .api(commands)
+        .create({ headers, body: { kind: "apps.list", timeoutMs: 1000 } }),
+      [200],
+    );
+    const claim = await accept(
+      s.api(hosts).next({
+        headers,
+        params: s.params,
+        body: {
+          ...s.generation,
+          supportedCapabilities: runtime.supportedCapabilities,
+        },
+      }),
+      [200],
+    );
+    expect(claim.body).toMatchObject({
+      status: "command",
+      command: { id: fresh.body.commandId },
+    });
+    await accept(
+      s.api(hosts).complete({
+        headers,
+        params: { ...s.params, commandId: fresh.body.commandId },
+        body: { ...s.generation, status: "succeeded", result: { apps: [] } },
+      }),
+      [200],
+    );
+  });
+
+  it("repairs failed publication without a result reader or idle Desktop polling", async () => {
+    const s = await scenario(true);
+    const delivered = createDeferredPromise<void>(context.signal);
+    context.mocks.ably.publish
+      .mockRejectedValueOnce(new Error("first publish failed"))
+      .mockRejectedValueOnce(new Error("retry failed"))
+      .mockImplementation(() => {
+        delivered.resolve();
+        return Promise.resolve(undefined);
+      });
+    const created = await accept(
+      s.api(commands).create({ headers, body: { kind: "apps.list" } }),
+      [200],
+    );
+    await delivered.promise;
+    const claim = await accept(
+      s.api(hosts).next({
+        headers,
+        params: s.params,
+        body: {
+          ...s.generation,
+          supportedCapabilities: runtime.supportedCapabilities,
+        },
+      }),
+      [200],
+    );
+    expect(claim.body).toMatchObject({
+      status: "command",
+      command: { id: created.body.commandId },
+    });
+    await accept(
+      s.api(hosts).complete({
+        headers,
+        params: { ...s.params, commandId: created.body.commandId },
+        body: { ...s.generation, status: "succeeded", result: { apps: [] } },
+      }),
+      [200],
+    );
+    const result = await accept(
+      s
+        .api(commands)
+        .get({ headers, params: { commandId: created.body.commandId } }),
+      [200],
+    );
+    expect(result.body.status).toBe("succeeded");
   });
 });

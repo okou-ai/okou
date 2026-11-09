@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { Field } from "@base-ui/react/field";
 import { flushSync } from "react-dom";
 import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
@@ -21,6 +22,7 @@ import {
   cn,
   IconButton,
   Input,
+  Slider,
   LayoutCommit,
   RequestCommit,
   Textarea,
@@ -47,6 +49,7 @@ import {
 import { NavigationFault } from "../../signals/browser/navigation/action.ts";
 import type { DisplayModeResult } from "../../signals/browser/display/sync.ts";
 import { captureResolutions } from "../../signals/browser/viewer/capture.ts";
+import { captureQualityPresets } from "../../signals/browser/capture-quality.ts";
 import type {
   ViewerCaptureOptions,
   ViewerTransport,
@@ -95,6 +98,9 @@ function BrowserSettings({
   const [captureOperation, changeCapture] = useLoadableSet(
     signals.changeCapture$,
   );
+  const qualityOperation = useLoadable(signals.quality.operation$);
+  const applyQuality = useSet(signals.quality.apply$);
+  const closeQuality = useSet(signals.quality.close$);
   const [transportOperation, changeTransport] = useLoadableSet(
     signals.changeTransport$,
   );
@@ -103,17 +109,32 @@ function BrowserSettings({
   );
   const [syncOperation, syncDisplay] = useLoadableSet(signals.syncDisplay$);
   // Transport replacement uses the root recovery pipeline and its current error.
-  const failures = [captureOperation, windowOperation, syncOperation].filter(
-    (operation) => {
-      return (
-        operation.state === "hasError" &&
-        isBrowserOperationFailure(operation.error)
-      );
-    },
-  );
+  const capturePending =
+    captureOperation.state === "loading" ||
+    qualityOperation.state === "loading";
+  const failures = [
+    captureOperation,
+    qualityOperation,
+    windowOperation,
+    syncOperation,
+  ].filter((operation) => {
+    return (
+      operation.state === "hasError" &&
+      isBrowserOperationFailure(operation.error)
+    );
+  });
   return (
     <>
-      <DropdownMenu>
+      <DropdownMenu
+        onOpenChange={(open, details) => {
+          if (!open) {
+            detach(
+              closeQuality(details.reason === "escape-key", pageSignal),
+              Reason.DomCallback,
+            );
+          }
+        }}
+      >
         <DropdownMenuTrigger
           render={
             <IconButton
@@ -137,14 +158,20 @@ function BrowserSettings({
         >
           <CaptureSettingsMenu
             signals={signals}
-            pending={captureOperation.state === "loading"}
+            pending={capturePending}
             onChange={(value) => {
               return changeCapture(value, pageSignal);
+            }}
+            onApplyQuality={(value) => {
+              return applyQuality(value, pageSignal);
+            }}
+            onCloseQuality={(cancel) => {
+              return closeQuality(cancel, pageSignal);
             }}
           />
           <ResolutionSettingsMenu
             signals={signals}
-            pending={captureOperation.state === "loading"}
+            pending={capturePending}
             onChange={(value) => {
               return changeCapture(value, pageSignal);
             }}
@@ -181,16 +208,17 @@ function CaptureSettingsMenu({
   signals,
   pending,
   onChange,
+  onApplyQuality,
+  onCloseQuality,
 }: {
   readonly signals: BrowserSignals;
   readonly pending: boolean;
   readonly onChange: (value: ViewerCaptureOptions) => Promise<void>;
+  readonly onApplyQuality: (value: number | "draft") => Promise<void>;
+  readonly onCloseQuality: (cancel: boolean) => Promise<void>;
 }) {
   const { t } = useTranslation();
   const capture = useGet(signals.capture$);
-  const qualityLabel = t(($) => {
-    return $.browserViewer.quality;
-  });
   return (
     <>
       <DropdownMenuSub>
@@ -235,25 +263,207 @@ function CaptureSettingsMenu({
           </DropdownMenuRadioGroup>
         </DropdownMenuSubContent>
       </DropdownMenuSub>
-      <label className="flex items-center justify-between gap-3 px-2 py-1 text-sm">
-        {qualityLabel}
+      <QualitySettingsMenu
+        signals={signals}
+        pending={pending}
+        onApply={onApplyQuality}
+        onClose={onCloseQuality}
+      />
+    </>
+  );
+}
+
+function QualitySettingsMenu({
+  signals,
+  pending,
+  onApply,
+  onClose,
+}: {
+  readonly signals: BrowserSignals;
+  readonly pending: boolean;
+  readonly onApply: (value: number | "draft") => Promise<void>;
+  readonly onClose: (cancel: boolean) => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const capture = useGet(signals.capture$);
+  const values = useGet(signals.quality.values$);
+  const begin = useSet(signals.quality.begin$);
+  const reset = useSet(signals.quality.reset$);
+  const qualityLabel = t(($) => {
+    return $.browserViewer.quality;
+  });
+  return (
+    <DropdownMenuSub
+      onOpenChange={(open, details) => {
+        if (open) {
+          begin();
+        } else {
+          detach(onClose(details.reason === "escape-key"), Reason.DomCallback);
+        }
+      }}
+    >
+      <DropdownMenuSubTrigger disabled={pending || capture.format === "png"}>
+        <span className="flex-1">{qualityLabel}</span>
+        {capture.format === "png" && (
+          <span className="text-muted-foreground">
+            {t(($) => {
+              return $.browserViewer.qualityLossless;
+            })}
+          </span>
+        )}
+      </DropdownMenuSubTrigger>
+      <DropdownMenuSubContent
+        side="left"
+        className="w-64 max-w-[var(--available-width)]"
+        onKeyDown={(event) => {
+          if (
+            event.target instanceof HTMLInputElement &&
+            (event.nativeEvent.isComposing ||
+              event.keyCode === 229 ||
+              (event.key !== "Escape" && event.key !== "Tab"))
+          ) {
+            // Text/range controls own editing keys, not menu typeahead/navigation.
+            event.preventBaseUIHandler();
+          }
+        }}
+      >
+        <DropdownMenuRadioGroup
+          value={values.preset}
+          className="m-2 flex gap-1 rounded-lg bg-gray-50 p-1"
+        >
+          {captureQualityPresets.map((quality) => {
+            return (
+              <DropdownMenuRadioItem
+                closeOnClick={false}
+                key={quality}
+                value={String(quality)}
+                disabled={pending}
+                className="min-w-0 flex-1 justify-center px-1 text-center text-xs data-checked:bg-card"
+                onPointerDown={reset}
+                onClick={() => {
+                  detach(onApply(quality), Reason.DomCallback);
+                }}
+              >
+                {quality === 40
+                  ? t(($) => {
+                      return $.browserViewer.qualitySaver;
+                    })
+                  : quality === 70
+                    ? t(($) => {
+                        return $.browserViewer.qualityBalanced;
+                      })
+                    : t(($) => {
+                        return $.browserViewer.qualitySharper;
+                      })}
+              </DropdownMenuRadioItem>
+            );
+          })}
+        </DropdownMenuRadioGroup>
+        <QualityControls
+          signals={signals}
+          pending={pending}
+          onApply={onApply}
+        />
+      </DropdownMenuSubContent>
+    </DropdownMenuSub>
+  );
+}
+
+function QualityControls({
+  signals,
+  pending,
+  onApply,
+}: {
+  readonly signals: BrowserSignals;
+  readonly pending: boolean;
+  readonly onApply: (value: number | "draft") => Promise<void>;
+}) {
+  const { t } = useTranslation();
+  const values = useGet(signals.quality.values$);
+  const edit = useSet(signals.quality.edit$);
+  const reset = useSet(signals.quality.reset$);
+  const qualityLabel = t(($) => {
+    return $.browserViewer.quality;
+  });
+  return (
+    <Field.Root invalid={values.invalid} className="space-y-2 px-2 pb-2">
+      <div className="flex items-start gap-3">
+        <div className="min-w-0 flex-1 space-y-2 pt-2">
+          <Slider
+            min={0}
+            max={100}
+            step={1}
+            aria-label={qualityLabel}
+            value={values.slider}
+            aria-busy={pending || undefined}
+            onMouseDown={(event) => {
+              if (event.button === 0) {
+                // Let Base UI focus the range input; a track's native focus
+                // would blur the numeric field and commit before release.
+                event.preventDefault();
+              }
+            }}
+            onValueChange={(value, details) => {
+              if (pending) {
+                // Keep keyboard focus while a capture change is still settling.
+                details.cancel();
+                return;
+              }
+              edit(String(value));
+            }}
+            onValueCommitted={() => {
+              detach(onApply("draft"), Reason.DomCallback);
+            }}
+          />
+          <Field.Description className="flex justify-between text-xs text-muted-foreground">
+            <span>0</span>
+            <span>100</span>
+          </Field.Description>
+        </div>
         <Input
-          type="number"
+          type="text"
+          inputMode="numeric"
           aria-label={qualityLabel}
-          min={0}
-          max={100}
-          value={capture.quality ?? 70}
-          disabled={pending || capture.format === "png"}
-          className="h-8 w-20"
+          value={values.text}
+          readOnly={pending}
+          aria-busy={pending || undefined}
+          className="h-8 w-16 shrink-0 text-center tabular-nums"
           onChange={(event) => {
-            const quality = event.currentTarget.valueAsNumber;
-            if (Number.isInteger(quality) && quality >= 0 && quality <= 100) {
-              detach(onChange({ ...capture, quality }), Reason.DomCallback);
+            edit(event.currentTarget.value);
+          }}
+          onBlur={(event) => {
+            // Moving to the slider replaces the draft at its commit boundary.
+            if (
+              !(event.relatedTarget instanceof HTMLInputElement) ||
+              event.relatedTarget.type !== "range"
+            ) {
+              detach(onApply("draft"), Reason.DomCallback);
+            }
+          }}
+          onKeyDown={(event) => {
+            if (event.nativeEvent.isComposing || event.keyCode === 229) {
+              return;
+            }
+            if (event.key === "Escape") {
+              reset();
+            } else if (event.key === "Enter") {
+              // Apply this field without activating the highlighted menu item.
+              event.preventDefault();
+              detach(onApply("draft"), Reason.DomCallback);
             }
           }}
         />
-      </label>
-    </>
+      </div>
+      <Field.Error
+        match={values.invalid}
+        role="alert"
+        className="text-xs text-destructive"
+      >
+        {t(($) => {
+          return $.browserViewer.qualityInvalid;
+        })}
+      </Field.Error>
+    </Field.Root>
   );
 }
 

@@ -52,6 +52,15 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Receive personal announcements from the Okou team.",
     enabled: false,
   },
+  [FeatureSwitchKey.EmailIntegration]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Email integration",
+    description:
+      "Email Okou and continue each email conversation in its own chat.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabledEmailHashes: [fnv1a("yuma@vm0.ai")],
+  },
   [FeatureSwitchKey.HomeCapabilities]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Home capabilities",
@@ -60,12 +69,22 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
+  [FeatureSwitchKey.PastedTextAttachments]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Long pasted text attachments",
+    description:
+      "Turn plain-text pastes over 10,000 characters into text attachments in chat and onboarding.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    restrictOverridesToAudience: true,
+  },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
     displayName: "My Okou",
     description:
       "Use personal Instructions and workspace Workflows with one Okou experience.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.FriendReferrals]: {
     maintainer: "yuma@okou.ai",

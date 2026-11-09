@@ -9,7 +9,10 @@ import {
 } from "zod";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
-import { userNotificationPayloadSchema } from "../validators/user-notifications";
+import {
+  userNotificationPayloadSchema,
+  userNotificationTypeSchema,
+} from "../validators/user-notifications";
 
 const c = initContract();
 
@@ -20,8 +23,7 @@ export const userNotificationCursorSchema = object({
 
 export const userNotificationSummarySchema = object({
   id: uuid(),
-  // Older clients can list newer message types; detail decoding owns rendering.
-  type: string().min(1),
+  type: userNotificationTypeSchema,
   title: string().min(1).max(200),
   summary: string().max(500),
   createdAt: iso.datetime(),

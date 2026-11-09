@@ -593,11 +593,8 @@ final class NotificationService {
     let generation = generation
     let started = ContinuousClock.now
     do {
-      let receipt = try await workspace.sync.prefetchHistory(
+      let receipt = try await workspace.sync.prefetchNotification(
         threadID: destination.threadId, runID: destination.runId)
-      try Task.checkCancellation()
-      // Cache metadata as well, so a notification for a new chat can open offline.
-      try await workspace.sync.prefetchThreadList()
       try Task.checkCancellation()
       guard self.generation == generation else { return false }
       didSynchronize?(destination.threadId)

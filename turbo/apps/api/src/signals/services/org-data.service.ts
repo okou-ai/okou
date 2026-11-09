@@ -1,5 +1,6 @@
 import { deletePersonalInstructions$ } from "./personal-instructions.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
+import { deleteEmailOwnerData$ } from "./email-channel-maintenance.service";
 import { eraseRemoteOwnerData$ } from "./remote-owner-erasure.service";
 import { usagePackUsdSchema } from "@okouai/api-contracts/contracts/billing";
 import {
@@ -662,6 +663,11 @@ export const deleteOrg$ = command(
     );
     signal.throwIfAborted();
     await set(deleteDiscordOrgData$, args.orgId, signal);
+    await set(
+      deleteEmailOwnerData$,
+      { kind: "organization", orgId: args.orgId },
+      signal,
+    );
     await set(
       deleteWechatOwnerData$,
       { kind: "organization", orgId: args.orgId },

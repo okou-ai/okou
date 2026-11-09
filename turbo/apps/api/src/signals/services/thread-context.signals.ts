@@ -1,3 +1,4 @@
+import { createEmailThreadContext } from "./email-queued-launch-context.service";
 import { AUTO_SELECTED_MODEL } from "@okouai/core/auto-run-model";
 import { createWechatThreadContext } from "./wechat-context.service";
 import { randomUUID } from "node:crypto";
@@ -66,6 +67,7 @@ export interface ThreadContext extends ThreadWorkflowContext {
   readonly feishuContext$: ReturnType<typeof createFeishuThreadContext>;
   readonly teamsContext$: ReturnType<typeof createTeamsThreadContext>;
   readonly telegramContext$: ReturnType<typeof createTelegramThreadContext>;
+  readonly emailContext$: ReturnType<typeof createEmailThreadContext>;
   readonly agentPhoneContext$: ReturnType<typeof createAgentPhoneThreadContext>;
   readonly wechatContext$: ReturnType<typeof createWechatThreadContext>;
   readonly discordContext$: ReturnType<typeof createDiscordThreadContext>;
@@ -112,6 +114,7 @@ export function createThreadContext(
   );
   const teamsContext$ = createTeamsThreadContext(pickedEvent$, orgId);
   const telegramContext$ = createTelegramThreadContext(pickedEvent$, orgId);
+  const emailContext$ = createEmailThreadContext(pickedEvent$, orgId);
   const agentPhoneContext$ = createAgentPhoneThreadContext(pickedEvent$, orgId);
   const wechatContext$ = createWechatThreadContext(
     pickedEvent$,
@@ -188,6 +191,7 @@ export function createThreadContext(
     feishuContext$,
     teamsContext$,
     telegramContext$,
+    emailContext$,
     agentPhoneContext$,
     wechatContext$,
     discordContext$,

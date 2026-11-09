@@ -623,12 +623,14 @@ final class ComposerVoiceInputTests: XCTestCase {
 }
 
 @MainActor
-private final class VoiceCaptureFixture: VoiceAudioCapture {
+final class VoiceCaptureFixture: VoiceAudioCapture {
   var finalSeconds = 0
   var startGate: VoiceResponseGate?
+  var startFailure: Error?
   private var continuation: AsyncThrowingStream<VoiceAudioChunk, Error>.Continuation?
   func start() async throws -> AsyncThrowingStream<VoiceAudioChunk, Error> {
     if let startGate { await startGate.wait() }
+    if let startFailure { throw startFailure }
     let (stream, continuation) = AsyncThrowingStream<VoiceAudioChunk, Error>.makeStream()
     self.continuation = continuation
     return stream
@@ -761,7 +763,7 @@ private final class VoiceComposerFixture: Sendable {
   }
 }
 
-private final class VoiceResponseGate: Sendable {
+final class VoiceResponseGate: Sendable {
   private struct State: Sendable {
     var released = false
     var continuation: CheckedContinuation<Void, Never>?

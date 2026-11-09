@@ -31,6 +31,8 @@ struct ChatSidebarView: View {
   @State private var showMuted = false
   @State private var showsSettings = false
   @Environment(\.newChatActivation) private var newChatActivation
+  /// The scheme the page behind the Settings sheet resolved: the chosen one, or the system's.
+  @Environment(\.colorScheme) private var colorScheme
 
   private var workspaceName: String {
     authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
@@ -455,6 +457,10 @@ struct ChatSidebarView: View {
           accountError: $accountError
         )
         .okouSheetBackground()
+        // The appearance is picked in this sheet while it is open. A sheet keeps the scheme
+        // it opened with, and `preferredColorScheme(nil)` for System does not clear it, so
+        // the sheet takes the scheme the page behind it resolved and switches with it.
+        .preferredColorScheme(colorScheme)
       }
       Button {
         store.search.present()

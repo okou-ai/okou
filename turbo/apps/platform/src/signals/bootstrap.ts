@@ -1,3 +1,4 @@
+import { setupEmailConnectPage$ } from "./okou-page/email-connect-page.ts";
 import {
   captureFriendReferral$,
   registerFriendReferral$,
@@ -54,8 +55,6 @@ import { setupMyOkouPage$ } from "./my-okou-page-setup.ts";
 import { setupAgentsPage$ } from "./agents-page/agents-page-setup.ts";
 import { setupAgentDetailPage$ } from "./agents-page/agent-detail-page-setup.ts";
 import { setupArtifactsPage$ } from "./artifacts-page/artifacts-page-setup.ts";
-import { setupFeedPage$ } from "./feed-page/feed-page-setup.ts";
-import { suggestionFeedEnabled$ } from "./okou-page/agent-suggestion-session.ts";
 import { setupWorkflowsPage$ } from "./workflows-page/workflows-page-setup.ts";
 import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-setup.ts";
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
@@ -194,15 +193,6 @@ function setupAuthSidebarPageWrapper(
 
 const setupAuthenticatedPwaMePage$ =
   setupAuthSidebarPageWrapper(setupPwaMePage$);
-
-const setupFeedRoute$ = setupAuthSidebarPageWrapper(
-  command(async ({ get, set }, signal: AbortSignal) => {
-    await set(
-      get(suggestionFeedEnabled$) ? setupFeedPage$ : setupNotFoundPage$,
-      signal,
-    );
-  }),
-);
 
 // My Okou renders its chat page at `/`, which applies its own settings param;
 // otherwise `/` forwards to the default agent's chat.
@@ -422,10 +412,6 @@ const ROUTE_CONFIG = [
     setup: setupAuthSidebarPageWrapper(setupArtifactsPage$),
   },
   {
-    path: ROUTES.feed,
-    setup: setupFeedRoute$,
-  },
-  {
     path: ROUTES.settingsSlack,
     setup: setupAuthSidebarPageWrapper(setupSlackConnectPage$),
   },
@@ -465,6 +451,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.telegramConnect,
     setup: setupAuthPageWrapper(setupTelegramConnectPage$),
+  },
+  {
+    path: ROUTES.settingsEmail,
+    setup: setupAuthSidebarPageWrapper(setupEmailConnectPage$),
   },
   {
     path: ROUTES.settingsAgentPhone,

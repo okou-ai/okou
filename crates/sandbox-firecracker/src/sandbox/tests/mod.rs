@@ -2313,48 +2313,6 @@ fn operation_error_classifies_non_timeout_as_guest() {
     assert_operation_error(err, SandboxOperation::Exec, SandboxOperationReason::Guest);
 }
 
-#[test]
-fn invalid_exec_env_key_returns_operation_error() {
-    let err =
-        FirecrackerSandbox::validate_exec_env_keys(SandboxOperation::Exec, &[("BAD-NAME", "x")])
-            .unwrap_err();
-
-    match err {
-        SandboxError::Operation {
-            operation,
-            reason,
-            message,
-        } => {
-            assert_eq!(operation, SandboxOperation::Exec);
-            assert_eq!(reason, SandboxOperationReason::Other);
-            assert!(message.contains("BAD-NAME"), "got: {message}");
-        }
-        other => panic!("expected operation error, got {other:?}"),
-    }
-}
-
-#[test]
-fn invalid_start_process_env_key_returns_operation_error() {
-    let err = FirecrackerSandbox::validate_exec_env_keys(
-        SandboxOperation::StartProcess,
-        &[("1BAD", "x")],
-    )
-    .unwrap_err();
-
-    match err {
-        SandboxError::Operation {
-            operation,
-            reason,
-            message,
-        } => {
-            assert_eq!(operation, SandboxOperation::StartProcess);
-            assert_eq!(reason, SandboxOperationReason::Other);
-            assert!(message.contains("1BAD"), "got: {message}");
-        }
-        other => panic!("expected operation error, got {other:?}"),
-    }
-}
-
 #[tokio::test]
 async fn start_process_output_rejects_invalid_stream_configuration() {
     let sandbox = test_sandbox_with_state(SandboxState::Running);
@@ -7994,4 +7952,42 @@ async fn park_small_vm_pause_failure_leaves_flag_false() {
             ),
         ]
     );
+}
+
+#[tokio::test]
+async fn cancelled_home_replacement_rejects_future_operations_and_parking() {
+    let workspace = tempfile::tempdir().unwrap();
+    let mut sandbox = test_sandbox_with_state(SandboxState::Running);
+    sandbox.sandbox_paths = SandboxPaths::new(workspace.path().to_owned());
+    let source = workspace.path().join("selected.ext4");
+    let file = std::fs::File::create(&source).unwrap();
+    file.set_len(1024 * 1024).unwrap();
+    let config = sandbox::HomeDriveConfig {
+        size_mb: 1,
+        space_reserve: sandbox::HomeDriveSpaceReserve::default(),
+        seed_image: Some(sandbox::HomeDriveSeedImage::Move(source)),
+    };
+    sandbox.config.home_drive = Some(config.clone());
+    let mut peer = attach_mock_shutdown_guest(&sandbox).await;
+    let guest = sandbox.guest.lock().await.as_ref().unwrap().clone();
+    {
+        let replacement = sandbox.replace_home_drive(&config);
+        tokio::pin!(replacement);
+        tokio::select! {
+            result = &mut replacement => panic!("replacement unexpectedly completed: {result:?}"),
+            request = read_vsock_message(&mut peer) => {
+                assert_eq!(guest_control_proto::decode_home_drive_mount_request(&request.payload).unwrap(),
+                    guest_control_proto::HomeDriveOperation::Unmount);
+                assert!(guest.reserve_external_operation().is_err());
+            }
+        }
+    }
+    assert!(guest.reserve_external_operation().is_err());
+    assert!(
+        sandbox
+            .begin_guest_operation(SandboxOperation::Exec)
+            .await
+            .is_err()
+    );
+    assert!(sandbox.park().await.is_err());
 }

@@ -205,26 +205,48 @@ public actor ChatCommands {
     await acquireReadState()
     defer { releaseReadState() }
     try Task.checkCancellation()
-    let state: ThreadReadState = try await client.request(
-      "/api/chat-threads/\(threadID)/mark-read", method: "POST")
-    return state.lastReadAt
+    await sync.changeReadState(.invalidated)
+    do {
+      let state: ThreadReadState = try await client.request(
+        "/api/chat-threads/\(threadID)/mark-read", method: "POST")
+      await sync.changeReadState(.read(threadID: threadID, through: state.lastReadAt))
+      return state.lastReadAt
+    } catch {
+      await sync.changeReadState(.invalidated)
+      throw error
+    }
   }
 
   public func markUnread(threadID: String) async throws {
     await acquireReadState()
     defer { releaseReadState() }
     try Task.checkCancellation()
-    let _: ThreadReadState = try await client.request(
-      "/api/chat-threads/\(threadID)/mark-unread", method: "POST")
+    await sync.changeReadState(.invalidated)
+    do {
+      let _: ThreadReadState = try await client.request(
+        "/api/chat-threads/\(threadID)/mark-unread", method: "POST")
+      await sync.changeReadState(.unread(threadID: threadID))
+    } catch {
+      await sync.changeReadState(.invalidated)
+      throw error
+    }
   }
 
   public func markAgentRead(agentID: String) async throws {
     await acquireReadState()
     defer { releaseReadState() }
     try Task.checkCancellation()
-    try await client.data(
-      "/api/chat-thread-unreads/mark-read", method: "POST",
-      body: JSONEncoder().encode(["agentId": agentID]))
+    let baseline = await sync.cachedIndicators()
+    await sync.changeReadState(.invalidated)
+    do {
+      try await client.data(
+        "/api/chat-thread-unreads/mark-read", method: "POST",
+        body: JSONEncoder().encode(["agentId": agentID]))
+      await sync.changeReadState(.agentRead(agentID: agentID, baseline: baseline))
+    } catch {
+      await sync.changeReadState(.invalidated)
+      throw error
+    }
   }
 
   // Actor reentrancy must not let an automatic read finish after a manual unread.

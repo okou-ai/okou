@@ -1,7 +1,6 @@
 #!/usr/bin/env tsx
 
 import { validateUserNotificationStorage } from "./test-user-notification-storage-permanent";
-import { validateNotificationPreviewSamples } from "./test-notification-preview-samples";
 
 import { validatePermanentProjectStorage } from "./test-project-storage-permanent";
 
@@ -702,6 +701,7 @@ async function validateChatEventContextPointerConstraints(
       "agentphone",
       "automation",
       "discord",
+      "email",
       "feishu",
       "slack",
       "teams",
@@ -799,6 +799,15 @@ async function validateChatEventContextPointerConstraints(
             '00000000-0000-4000-8000-000000074506',
             '{"userMessage":{"version":1,"parts":[{"type":"text","text":"Discord input"},{"type":"source","kind":"discord"}]}}'::jsonb,
             6
+          ),
+          (
+            '00000000-0000-4000-8000-000000074599',
+            $1,
+            'input.prompt',
+            'email',
+            '00000000-0000-4000-8000-000000074507',
+            '{"userMessage":{"version":1,"parts":[{"type":"text","text":"Email input"}]}}'::jsonb,
+            7
           )
         RETURNING
           "context_type" AS "contextType",
@@ -817,6 +826,10 @@ async function validateChatEventContextPointerConstraints(
       {
         contextId: "00000000-0000-4000-8000-000000074506",
         contextType: "discord",
+      },
+      {
+        contextId: "00000000-0000-4000-8000-000000074507",
+        contextType: "email",
       },
     ]);
 
@@ -3167,6 +3180,12 @@ async function main(): Promise<void> {
     console.log("=== Frozen template guidance backfill CLI ===");
     console.log(
       execCommand(
+        "node --import tsx scripts/migrations/029-template-guidance-bundles/test-production.ts",
+        { cwd: PACKAGE_DIR },
+      ),
+    );
+    console.log(
+      execCommand(
         "node --import tsx scripts/migrations/029-template-guidance-bundles/test-backfill.ts",
         { cwd: PACKAGE_DIR, env: { DATABASE_URL: dbUrl1 } },
       ),
@@ -3213,7 +3232,6 @@ async function main(): Promise<void> {
     await validatePermanentChatThreadStorage(dbUrl1);
     await validatePermanentProjectStorage(dbUrl1);
     await validateUserNotificationStorage(dbUrl1);
-    await validateNotificationPreviewSamples(dbUrl1);
     await validatePermanentStorageLineage(dbUrl1);
     await validatePermanentAgentInstructions(dbUrl1);
     await validatePermanentMemberMetadata(dbUrl1);
@@ -3264,7 +3282,6 @@ async function main(): Promise<void> {
     await validatePermanentChatThreadStorage(dbUrl2);
     await validatePermanentProjectStorage(dbUrl2);
     await validateUserNotificationStorage(dbUrl2);
-    await validateNotificationPreviewSamples(dbUrl2);
     await validatePermanentStorageLineage(dbUrl2);
     await validatePermanentAgentInstructions(dbUrl2);
     await validateBillingRunLifecycle(dbUrl2);

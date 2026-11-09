@@ -1,4 +1,5 @@
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -176,6 +177,32 @@ test("Mark all as read preserves messages and disables the batch action", async 
   expect(
     within(row(second.title)).queryByText("Unread"),
   ).not.toBeInTheDocument();
+});
+
+test("Keyboard activation and Escape restore focus through the inbox and detail dialog", async () => {
+  mockInbox();
+  const user = userEvent.setup({ delay: null });
+  await openInbox();
+  await screen.findByText(first.title);
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(button("Notifications")).toHaveFocus();
+  });
+  await user.keyboard("{Enter}");
+  await screen.findByText(first.title);
+  row(first.title).focus();
+  await user.keyboard("{Enter}");
+  const dialog = await screen.findByRole("dialog", { name: first.title });
+  await within(dialog).findByText("Everything in context");
+  await user.keyboard("{Escape}");
+  await screen.findByText(first.title);
+  await waitFor(() => {
+    expect(row(first.title)).toHaveFocus();
+  });
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(button("Notifications")).toHaveFocus();
+  });
 });
 
 test("A failed read receipt keeps the message unread and can be retried in the detail", async () => {

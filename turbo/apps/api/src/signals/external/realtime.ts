@@ -66,6 +66,7 @@ export async function computerUseHostIsPresent(
   signal: AbortSignal,
 ): Promise<boolean> {
   signal.throwIfAborted();
+  const started = performance.now();
   const request = async () => {
     const members = await ablyClient()
       .channels.get(
@@ -77,7 +78,15 @@ export async function computerUseHostIsPresent(
         ),
       )
       .presence.get({ clientId: target.userId, limit: 1 });
-    return members.items.length > 0;
+    const present = members.items.length > 0;
+    L.debug("Computer-use presence queried", {
+      hostId: target.id,
+      connectionGeneration: target.connectionGeneration,
+      outcome: "ok",
+      present,
+      durationMs: performance.now() - started,
+    });
+    return present;
   };
   const result = await settleIncludingAbort(
     awaitWithSignal(
@@ -87,6 +96,12 @@ export async function computerUseHostIsPresent(
   );
   signal.throwIfAborted();
   if (!result.ok) {
+    L.warn("Computer-use presence unavailable", {
+      hostId: target.id,
+      connectionGeneration: target.connectionGeneration,
+      outcome: "unavailable",
+      durationMs: performance.now() - started,
+    });
     throw new HTTPException(503, {
       res: Response.json(
         {
@@ -203,6 +218,22 @@ async function publishComputerUseCommandsChangedNow(
       .channels.get(channelName)
       .publish(computerUseCommandsChangedEvent, null);
   }
+}
+
+export function publishComputerUseCommandsChanged(target: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly hostId: string;
+  readonly connectionGeneration: number;
+}): Promise<void> {
+  return publishComputerUseCommandsChangedNow(
+    computerUseHostChannelName(
+      target.userId,
+      target.orgId,
+      target.hostId,
+      target.connectionGeneration,
+    ),
+  );
 }
 
 export function publishComputerUseCommandsChangedSafely(target: {
@@ -441,7 +472,8 @@ export async function publishThreadListChangedSafely(target: {
 /**
  * Fire the per-user-org signal that an input of `GET /api/indicators` changed:
  * a Run became pending, a Run terminal marker committed, or a thread was muted,
- * unmuted or deleted. Read-cursor changes use `chatThreadReadCursorUpdated`.
+ * unmuted, hidden or deleted. Read-cursor changes use
+ * `chatThreadReadCursorUpdated`.
  * The SharedWorker refreshes indicators only on these two topics, so Run output
  * does not refetch them. Publish only after the change commits; the payload is
  * empty because the server is authoritative.

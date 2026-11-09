@@ -6,14 +6,16 @@ import type {
   Suggestion,
   SuggestionFeedbackRequest,
 } from "@okouai/api-contracts/contracts/suggestions";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
-import { defaultAgentId$ } from "../agent.ts";
+import { defaultAgentChatPageActive$, defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { rootSignal$ } from "../root-signal.ts";
-import { onRef } from "../utils.ts";
+import { onRef, resetSignal } from "../utils.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 
 type FeedbackKind =
@@ -27,18 +29,34 @@ function createSuggestionEntry(item: Suggestion) {
   const mutations$ = state<readonly SuggestionMutation[]>([]);
   const acknowledged$ = state(0);
   const result$ = state<Promise<void> | undefined>(undefined);
+  // The server no longer offers this card, so nothing was recorded for it and
+  // its remaining writes have no target. None of them is sent or retried.
+  const unavailable$ = state(false);
+  // The member acted on this card during the visit: it was handled, or it has
+  // writes, such as a restored card's Undo.
+  const acted$ = computed((get) => {
+    return get(hidden$) || get(mutations$).length > 0;
+  });
 
   // Each card has its own ordered outbox. A reason or Undo must follow its
   // feedback, while another card can save independently. Keep the accepted
   // prefix so an explicit retry reuses the remaining request identities.
   const persist$ = command(async ({ get, set }, signal: AbortSignal) => {
     const mutations = get(mutations$);
-    for (let index = get(acknowledged$); index < mutations.length; index++) {
+    for (
+      let index = get(acknowledged$);
+      index < mutations.length && !get(unavailable$);
+      index++
+    ) {
       signal.throwIfAborted();
       const mutation = mutations[index];
       const client = get(apiClient$)(suggestionsContract);
       if (mutation.type === "feedback") {
-        await accept(
+        const { kind } = mutation.request;
+        // A first response conflicts once the card has left the pool: a
+        // background check consumed or withdrew it, or another session
+        // handled it. Undo and a reason target that recorded response.
+        const result = await accept(
           client.feedback({
             params: { id: item.id },
             body: {
@@ -47,9 +65,12 @@ function createSuggestionEntry(item: Suggestion) {
             },
             fetchOptions: { signal },
           }),
-          [200],
+          kind === "undo" || kind === "reason" ? [200] : [200, 409],
           signal,
         );
+        if (result.status === 409) {
+          set(unavailable$, true);
+        }
       } else {
         // The cached option has already prepared a draft. Another session
         // consuming the card does not invalidate that member-owned draft.
@@ -101,7 +122,17 @@ function createSuggestionEntry(item: Suggestion) {
   const optionDraft = createDraftSignals();
   // The chosen action's send, whose progress and failure its sent row shows.
   const sending$ = state<Promise<void> | undefined>(undefined);
-  return { item, hidden$, result$, enqueue$, retry$, optionDraft, sending$ };
+  return {
+    item,
+    hidden$,
+    unavailable$,
+    acted$,
+    result$,
+    enqueue$,
+    retry$,
+    optionDraft,
+    sending$,
+  };
 }
 export type AgentSuggestionEntry = ReturnType<typeof createSuggestionEntry>;
 
@@ -121,22 +152,22 @@ interface SuggestionSentOutcome {
 export type SuggestionOutcome =
   SuggestionFeedbackOutcome | SuggestionSentOutcome;
 
-/** A Feed row: a waiting card, or a handled one below every waiting card. */
-interface AgentSuggestionFeedItem {
+/** A listed row: a waiting card, or a handled one below every waiting card. */
+interface AgentSuggestionListItem {
   readonly entry: AgentSuggestionEntry;
   readonly outcome: SuggestionOutcome | null;
 }
-interface SettledSuggestion extends AgentSuggestionFeedItem {
+interface SettledSuggestion extends AgentSuggestionListItem {
   readonly outcome: SuggestionOutcome;
 }
 
-/** The Feed page and its sidebar entry follow the Suggestions rollout. */
-export const suggestionFeedEnabled$ = computed((get) => {
+/** Home's suggestion list and its chat-list row follow the Suggestions rollout. */
+export const suggestionsEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] === true;
 });
 
 const agentSuggestionsEnabled$ = computed(async (get) => {
-  if (!get(suggestionFeedEnabled$)) {
+  if (!get(suggestionsEnabled$)) {
     return false;
   }
   // A new-chat option starts in the default agent.
@@ -160,14 +191,14 @@ const readAgentSuggestions$ = command(
   },
 );
 
-const feedWaitingCountVersion$ = state(0);
+const waitingSuggestionCountVersion$ = state(0);
 /**
- * The cards waiting in the Feed, counted on its chat-list row. The row reads
- * the server's actionable cards rather than a Feed visit's snapshot, so it
- * follows every committed change, including those made on the Feed itself.
+ * The cards waiting on home, counted on its chat-list row. The row reads the
+ * server's actionable cards rather than a home visit's snapshot, so it follows
+ * every committed change, including those made on home itself.
  */
-export const feedWaitingCount$ = computed(async (get) => {
-  get(feedWaitingCountVersion$);
+export const waitingSuggestionCount$ = computed(async (get) => {
+  get(waitingSuggestionCountVersion$);
   if (!(await get(agentSuggestionsEnabled$))) {
     return 0;
   }
@@ -184,8 +215,8 @@ export const feedWaitingCount$ = computed(async (get) => {
     return getSuggestionExpiresAt(item) > now();
   }).length;
 });
-const reloadFeedWaitingCount$ = command(({ set }) => {
-  set(feedWaitingCountVersion$, (version) => {
+const reloadWaitingSuggestionCount$ = command(({ set }) => {
+  set(waitingSuggestionCountVersion$, (version) => {
     return version + 1;
   });
 });
@@ -194,14 +225,14 @@ const reloadFeedWaitingCount$ = command(({ set }) => {
  * while its row is shown. Each subscription reads it once more, so a row that
  * returns does not show a count from before it left.
  */
-export const followFeedWaitingCountOnRef$ = onRef(
+export const followWaitingSuggestionCountOnRef$ = onRef(
   command(({ set }, _row: HTMLElement, signal: AbortSignal) => {
     set(
       setAblyInvalidationLoop$,
       {
         scope: "credential",
         topic: "agentSuggestionsChanged",
-        invalidations: [reloadFeedWaitingCount$],
+        invalidations: [reloadWaitingSuggestionCount$],
         options: { runOnSubscribe: true },
       },
       signal,
@@ -210,34 +241,36 @@ export const followFeedWaitingCountOnRef$ = onRef(
 );
 
 function createSuggestionSession() {
-  // A visit owns one snapshot, independent of reactive metadata invalidations.
-  const snapshot$ = state<
-    readonly Suggestion[] | Promise<readonly Suggestion[]>
+  // A visit owns its cards, independent of reactive metadata invalidations.
+  // They are read again only when a write finds that a card has left the pool.
+  const entries$ = state<
+    readonly AgentSuggestionEntry[] | Promise<readonly AgentSuggestionEntry[]>
   >([]);
-  const entries$ = computed(async (get) => {
-    return (await get(snapshot$)).map(createSuggestionEntry);
-  });
   // Handled cards, in the order the member handled them.
   const settled$ = state<readonly SettledSuggestion[]>([]);
-  const feedItems$ = computed(
-    async (get): Promise<readonly AgentSuggestionFeedItem[]> => {
+  const listItems$ = computed(
+    async (get): Promise<readonly AgentSuggestionListItem[]> => {
       const entries = await get(entries$);
       const waiting = entries
         .filter((entry) => {
           return (
-            !get(entry.hidden$) && getSuggestionExpiresAt(entry.item) > now()
+            !get(entry.hidden$) &&
+            !get(entry.unavailable$) &&
+            getSuggestionExpiresAt(entry.item) > now()
           );
         })
         .map((entry) => {
           return { entry, outcome: null };
         });
-      return [...waiting, ...get(settled$)];
+      const settled = get(settled$).filter(({ entry }) => {
+        return !get(entry.unavailable$);
+      });
+      return [...waiting, ...settled];
     },
   );
   return {
-    snapshot$,
     entries$,
-    feedItems$,
+    listItems$,
     settled$,
     // The handled card whose feedback reason is being edited.
     reasonOpen$: state<AgentSuggestionEntry | null>(null),
@@ -252,18 +285,103 @@ const session$ = computed((get) => {
 export const agentSuggestionEntries$ = computed((get) => {
   return get(get(session$).entries$);
 });
-export const agentSuggestionFeedItems$ = computed((get) => {
-  return get(get(session$).feedItems$);
+export const agentSuggestionListItems$ = computed((get) => {
+  return get(get(session$).listItems$);
 });
 export const suggestionFeedbackReasonOpen$ = computed((get) => {
   return get(get(session$).reasonOpen$);
 });
-export const enterAgentSuggestions$ = command(
-  ({ get, set }, signal: AbortSignal) => {
+const loadAgentSuggestionEntries$ = command(
+  async ({ set }, signal: AbortSignal) => {
+    return (await set(readAgentSuggestions$, signal)).map(
+      createSuggestionEntry,
+    );
+  },
+);
+/**
+ * The default Agent's new-chat page lists the cards, because their options
+ * start chats in that Agent. Each visit reads one snapshot.
+ */
+export const enterHomeSuggestions$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!get(suggestionsEnabled$)) {
+      return;
+    }
+    const active = await get(defaultAgentChatPageActive$);
+    signal.throwIfAborted();
+    if (!active) {
+      return;
+    }
     set(visit$, get(visit$) + 1);
-    const snapshot = set(readAgentSuggestions$, signal);
-    set(get(session$).snapshot$, snapshot);
-    return snapshot;
+    const entries = set(loadAgentSuggestionEntries$, signal);
+    set(get(session$).entries$, entries);
+    await entries;
+  },
+);
+
+const SUGGESTION_UNAVAILABLE_TOAST_ID = "agent-suggestion-unavailable";
+const resetSuggestionRefresh$ = resetSignal();
+/**
+ * A card that has left the pool leaves the visit with a short notice rather
+ * than the API's conflict, and the visit reads the pool again so the cards
+ * that left with it go too. Cards the member acted on keep their rows and
+ * writes; newly offered cards follow the loaded ones.
+ */
+const refreshAfterUnavailableSuggestion$ = command(
+  async (
+    { get, set },
+    entry: AgentSuggestionEntry,
+    pageSignal: AbortSignal,
+  ) => {
+    if (!get(entry.unavailable$)) {
+      return;
+    }
+    pageSignal.throwIfAborted();
+    // Cards found gone together share one notice.
+    toast.info(
+      i18n.t(($) => {
+        return $.chat.agentSuggestions.unavailable;
+      }),
+      { id: SUGGESTION_UNAVAILABLE_TOAST_ID },
+    );
+    // The latest read replaces an earlier one, which could drop its cards.
+    const signal = set(resetSuggestionRefresh$, pageSignal);
+    const session = get(session$);
+    const offered = await set(readAgentSuggestions$, signal);
+    const loaded = await get(session.entries$);
+    signal.throwIfAborted();
+    const offeredIds = new Set(
+      offered.map((item) => {
+        return item.id;
+      }),
+    );
+    const kept = loaded.filter((candidate) => {
+      return (
+        !get(candidate.unavailable$) &&
+        (offeredIds.has(candidate.item.id) || get(candidate.acted$))
+      );
+    });
+    const keptIds = new Set(
+      kept.map((candidate) => {
+        return candidate.item.id;
+      }),
+    );
+    set(session.entries$, [
+      ...kept,
+      ...offered
+        .filter((item) => {
+          return !keptIds.has(item.id);
+        })
+        .map(createSuggestionEntry),
+    ]);
+  },
+);
+
+/** Sends a card's unsaved writes again with their original identities. */
+export const retryAgentSuggestion$ = command(
+  async ({ set }, entry: AgentSuggestionEntry, pageSignal: AbortSignal) => {
+    await set(entry.retry$, pageSignal);
+    await set(refreshAfterUnavailableSuggestion$, entry, pageSignal);
   },
 );
 
@@ -340,7 +458,7 @@ function settledFeedback(
   return found?.outcome.type === "feedback" ? found.outcome : null;
 }
 
-/** Clears a handled card from the Feed; the card stays handled. */
+/** Clears a handled card from the list; the card stays handled. */
 export const closeSettledSuggestion$ = command(
   ({ get, set }, entry: AgentSuggestionEntry) => {
     const session = get(session$);
@@ -399,6 +517,7 @@ export const submitAgentSuggestionFeedback$ = command(
       },
       get(rootSignal$),
     );
+    await set(refreshAfterUnavailableSuggestion$, entry, pageSignal);
   },
 );
 export const undoSuggestionFeedback$ = command(

@@ -1,4 +1,8 @@
 import { chatThreadEventRows } from "../services/chat-event-row-read.service";
+import {
+  iosEmailChatRowsTransform,
+  iosEmailChatCatchUpTransform,
+} from "@okouai/api-contracts/client-transforms/email-chat-context";
 import { chatThreadUsageRoutes } from "./chat-threads-usage";
 import { chatRelationsRoutes } from "./chat-relations";
 import { chatThreadActivitySummaryRoutes } from "./chat-threads-activity-summary";
@@ -412,6 +416,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadEventsContract.catchUp,
+    responseTransforms: [iosEmailChatCatchUpTransform],
     handler: authRoute(
       {
         requireOrganization: true,
@@ -430,6 +435,7 @@ export const chatThreadRoutes: readonly RouteEntry[] = [
   },
   {
     route: chatThreadEventsContract.rows,
+    responseTransforms: [iosEmailChatRowsTransform],
     handler: authRoute(
       { requiredCapability: "chat-event:read", oauthScope: "okou:chat:read" },
       listChatEventRowsInner$,

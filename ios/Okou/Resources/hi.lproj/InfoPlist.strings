@@ -15,3 +15,6 @@
 
 /* Home Screen quick action */
 "New chat" = "नई चैट";
+
+/* Home Screen voice input quick action */
+"Voice Input" = "वॉइस इनपुट";

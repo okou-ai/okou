@@ -1584,7 +1584,7 @@ async function findWorkspaceImport(
   _signal: AbortSignal,
 ): Promise<
   | DriveTokenResult<zInfer<typeof driveFileSchema> | null>
-  | { readonly type: "unavailable" }
+  | { readonly type: "unavailable"; readonly httpStatus: number }
 > {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
   url.searchParams.set(
@@ -1624,7 +1624,7 @@ async function findWorkspaceImport(
     return { type: "unauthorized" };
   }
   if (!response.ok) {
-    return { type: "unavailable" };
+    return { type: "unavailable", httpStatus: response.status };
   }
   const files = driveFileListSchema.parse(await response.json()).files;
   const existing = files.find((file) => {
@@ -2029,7 +2029,7 @@ const reuseWorkspaceImport$ = command(
       return badRequestMessage(
         previous.type === "unauthorized"
           ? "Reconnect Google Drive before converting this file"
-          : "Google Drive could not check previous conversions. Try again.",
+          : `Google Drive could not check previous conversions (HTTP ${String(previous.httpStatus)}). Try again.`,
       );
     }
     if (previous.value) {

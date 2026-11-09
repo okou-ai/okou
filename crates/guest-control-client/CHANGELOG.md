@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.23.85](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.84...guest-control-client-v0.23.85) (2026-11-09)
+
+## [0.23.84](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.83...guest-control-client-v0.23.84) (2026-11-09)
+
+## [0.23.83](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.82...guest-control-client-v0.23.83) (2026-11-09)
+
+
+### Performance Improvements
+
+* **runner:** combine prewarmed blanks with cached homes ([#45982](https://github.com/okou-ai/okou/issues/45982)) ([1f635c4](https://github.com/okou-ai/okou/commit/1f635c4ff9baa72a4203a727dde742058d8def9f))
+
 ## [0.23.82](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.81...guest-control-client-v0.23.82) (2026-11-08)
 
 ## [0.23.81](https://github.com/okou-ai/okou/compare/guest-control-client-v0.23.80...guest-control-client-v0.23.81) (2026-11-07)

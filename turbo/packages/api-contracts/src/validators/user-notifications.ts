@@ -1,6 +1,7 @@
 import {
   array,
   discriminatedUnion,
+  enum as enumType,
   literal,
   object,
   string,
@@ -9,6 +10,7 @@ import {
 
 const MAX_NOTIFICATION_PAGES = 10;
 const markdownSchema = string().min(1).max(50_000);
+export const userNotificationTypeSchema = enumType(["rich_text", "carousel"]);
 
 /** Reading a notification is a receipt, never an approval or other business action. */
 export const userNotificationPayloadSchema = discriminatedUnion("type", [

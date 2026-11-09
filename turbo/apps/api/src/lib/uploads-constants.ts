@@ -1,6 +1,7 @@
 import { MIMEType } from "node:util";
 import { isAllowedUploadType } from "@okouai/core/upload-content-type";
 import { safeSync } from "../signals/utils";
+import { MAX_ATTACHMENT_UPLOAD_BYTES } from "@okouai/core/upload-limits";
 
 export { isAllowedUploadType };
 
@@ -8,12 +9,12 @@ export { isAllowedUploadType };
  * Upload limits shared by the presigned-URL prepare endpoint and its callers.
  *
  * The file body never passes through the api runtime — the browser /
- * CLI PUTs straight to R2 using the presigned URL, so we can go all the way
- * up to R2's 5 GB single-PUT ceiling. 1 GB is the policy cap we chose.
+ * CLI PUTs straight to R2 using the presigned URL. Large browser attachments
+ * use multipart uploads with a bounded part count.
  */
 
-export const MAX_UPLOAD_SIZE_BYTES = 1024 * 1024 * 1024;
-export const MAX_UPLOAD_SIZE_LABEL = "1 GB";
+export const MAX_UPLOAD_SIZE_BYTES = MAX_ATTACHMENT_UPLOAD_BYTES;
+export const MAX_UPLOAD_SIZE_LABEL = "5 GB";
 const GENERIC_UPLOAD_CONTENT_TYPE = "application/octet-stream";
 
 /**

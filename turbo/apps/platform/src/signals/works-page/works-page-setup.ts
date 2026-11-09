@@ -1,4 +1,5 @@
 import { watchWhatsappConnection$ } from "../okou-page/whatsapp.ts";
+import { watchEmailConnection$ } from "../okou-page/email.ts";
 import { initWechat$, wechatStatus$ } from "../okou-page/wechat.ts";
 import { command } from "ccstate";
 import { createElement } from "react";
@@ -98,6 +99,7 @@ export const setupWorksPage$ = command(
         set(watchTelegramConnection$, signal),
         set(watchAgentPhoneConnection$, signal),
         set(watchWhatsappConnection$, signal),
+        set(watchEmailConnection$, signal),
       ]),
       async () => {
         await set(hideAppSkeleton$, signal);

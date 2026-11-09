@@ -165,17 +165,17 @@ final class HostRequestDiagnosticsTests: XCTestCase {
     XCTAssertEqual(failure["level"].string, "error")
     XCTAssertFalse(failure.formatted.contains("private-decoder-error"))
   }
-  func testQueueWaitDiagnosticsPreserveTheActualRouteAndCorrelateRecovery() throws {
+  func testStateDiagnosticsPreserveTheActualRouteAndCorrelateRecovery() throws {
     let collector = try SentryHTTPCollector()
     addTeardownBlock { try await collector.close() }
-    var diagnostics = HostRequestDiagnostics(request: .queueWait)
+    var diagnostics = HostRequestDiagnostics(request: .state)
     diagnostics.failed(error: URLError(.networkConnectionLost), requests: [], retryDelay: 2)
     diagnostics.finish(outcome: .recovered)
     let events = try collector.events()
     XCTAssertEqual(events.count, 2)
     let recovered = try XCTUnwrap(events.first { $0["tags"]["hostRequestOutcome"].string == "recovered" })
     XCTAssertEqual(recovered["contexts"]["hostRequest"]["pathTemplate"].string,
-      "/api/computer-use/hosts/:hostId/commands/wait")
+      "/api/computer-use/hosts/:hostId/state")
     XCTAssertEqual(Set(events.compactMap { $0["tags"]["hostRequestEpisodeId"].string }).count, 1)
   }
 
