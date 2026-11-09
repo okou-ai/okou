@@ -59,6 +59,12 @@ if command == 'xcodebuild':
         print('compiler stdout', flush=True)
         print('compiler stderr', file=sys.stderr, flush=True)
         sys.exit(65)
+    elif scenario == 'test-startup':
+        print('Command line invocation:', flush=True)
+        wait_for(lambda: event_exists('observation', 'iostat'))
+        print("Test Suite 'All tests' started at fixture time", flush=True)
+        wait_for(lambda: event_exists('observer_stopped'))
+        print("Test Suite 'All tests' passed at fixture time", flush=True)
     else:
         wait_for(lambda: (state / 'sample-finished').exists())
         wait_for(lambda: event_exists('observation', 'iostat'))
@@ -71,6 +77,8 @@ elif command == 'ps':
     wait_for(lambda: (state / 'xcodebuild-started').exists())
     pid = (state / 'xcodebuild-started').read_text()
     print(pid + ' 1 80.0 1.0 1024 R 0:01.00 /Applications/Xcode/xcodebuild')
+    if scenario == 'test-startup':
+        print('987654 1 60.0 1.0 1024 S 0:01.00 /Library/DTServiceHub')
 elif command == 'sample':
     mark('sample-started')
     if scenario == 'cancel':
@@ -82,6 +90,8 @@ elif command == 'sample':
     target.write_text('Thread_0 startup_wait\n' + ('x' * 300000))
     mark('sample-finished')
 else:
+    if command == 'iostat' and scenario == 'test-startup':
+        wait_for(lambda: event_exists('command_banner'))
     print(command + ' controlled observation')
 """
 
@@ -162,11 +172,9 @@ class StartupSamplingTests(unittest.TestCase):
         self.assertIsNotNone(self.summary()["command_banner_seconds"])
         events = self.events()
         names = [event["event"] for event in events]
+        self.assertLess(names.index("command_banner"), names.index("observer_stopped"))
         self.assertLess(
-            names.index("command_banner"), names.index("observer_stopped")
-        )
-        self.assertLess(
-            names.index("observer_stopped"), names.index("compiler_finished")
+            names.index("observer_stopped"), names.index("command_finished")
         )
         self.assertTrue(
             all("utc" in event and "elapsed_seconds" in event for event in events)
@@ -176,6 +184,21 @@ class StartupSamplingTests(unittest.TestCase):
         self.assertIn("startup_wait", report.read_text())
         self.assertLessEqual(report.stat().st_size, 256 * 1024)
         self.assertIn("report_truncated", names)
+
+    def test_test_startup_keeps_observing_services_after_the_command_banner(self):
+        self.env["SAMPLING_TEST_SCENARIO"] = "test-startup"
+        result = self.invoke("--phase", "test")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        names = [event["event"] for event in self.events()]
+        self.assertLess(
+            names.index("command_banner"), names.index("test_suite_started")
+        )
+        self.assertLess(
+            names.index("test_suite_started"), names.index("observer_stopped")
+        )
+        self.assertIn("test_suite_finished", names)
+        self.assertTrue(list(self.reports.glob("*-DTServiceHub-*.sample.txt")))
+        self.assertIsNotNone(self.summary()["test_suite_started_seconds"])
 
     def test_diagnostic_failure_is_visible_without_failing_the_compiler(self):
         self.env["SAMPLING_TEST_SCENARIO"] = "unavailable"

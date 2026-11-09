@@ -36,7 +36,13 @@ wait "$ios_phase_pid"
 ios_phase_pid=""
 
 ios_boot_started=$SECONDS
-python3 ios/scripts/preboot-simulator.py &
+if [[ "${IOS_XCODE_STARTUP_SAMPLING:-false}" == true ]]; then
+  python3 ios/scripts/sample-xcode-startup.py --phase simulator \
+    "$RUNNER_TEMP/okou-ios-ci/startup-samples/simulator" -- \
+    python3 ios/scripts/preboot-simulator.py &
+else
+  python3 ios/scripts/preboot-simulator.py &
+fi
 ios_preboot_pid=$!
 wait "$ios_preboot_pid"
 ios_preboot_pid=""

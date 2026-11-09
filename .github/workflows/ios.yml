@@ -9,7 +9,7 @@ on:
   workflow_dispatch:
     inputs:
       sample_xcode_startup:
-        description: Sample the compile-phase Xcode startup
+        description: Sample compilation, simulator preparation, and test startup
         type: boolean
         default: false
       archive_cache_experiment:
@@ -216,6 +216,7 @@ jobs:
           mkdir "$IOS_ARCHIVE_DIR"
           python3 ios/scripts/archive-promotion.py toolchain "$IOS_ARCHIVE_DIR/toolchain.json"
           python3 ios/scripts/archive-promotion.py inputs --toolchain "$IOS_ARCHIVE_DIR/toolchain.json" --output "$IOS_ARCHIVE_DIR/inputs.json"
+          cat "$IOS_ARCHIVE_DIR/inputs.json"
       - name: Classify the whole merge group
         id: release-only
         if: github.event_name == 'merge_group'

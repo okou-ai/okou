@@ -183,6 +183,7 @@ class CIProcessTests(unittest.TestCase):
     def test_resolution_and_compilation_finish_before_boot_and_the_complete_suite(
         self,
     ):
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
         packages = self.invoke("ci-package-test.sh")
         self.assertEqual(packages.returncode, 0, packages.stderr)
         result = self.invoke()
@@ -234,6 +235,7 @@ class CIProcessTests(unittest.TestCase):
 
     def test_native_failure_preserves_its_status_and_result_bundle(self):
         self.env["CI_PROCESS_SCENARIO"] = "test-failure"
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
         result = self.invoke()
         self.assertEqual(result.returncode, 65, result.stderr)
         bundle = self.root / "work/okou-ios-ci/Tests.xcresult"
@@ -277,6 +279,7 @@ class CIProcessTests(unittest.TestCase):
 
     def test_cancellation_retires_simulator_startup_after_compilation(self):
         self.env["CI_PROCESS_SCENARIO"] = "cancel-boot"
+        self.env["IOS_XCODE_STARTUP_SAMPLING"] = "true"
         with subprocess.Popen(
             self.command(),
             cwd=self.repo,

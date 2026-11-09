@@ -9,6 +9,44 @@ readiness failures fail CI.
 import json
 import os
 import subprocess
+import time
+from datetime import datetime, timezone
+
+
+def simctl(phase, *arguments, capture=False):
+    started = time.monotonic()
+    print(
+        "iOS simulator event: "
+        + json.dumps(
+            {
+                "phase": phase,
+                "event": "started",
+                "utc": datetime.now(timezone.utc).isoformat(),
+            }
+        ),
+        flush=True,
+    )
+    result = subprocess.run(
+        ["xcrun", "simctl", *arguments],
+        text=True,
+        stdout=subprocess.PIPE if capture else None,
+        check=False,
+    )
+    print(
+        "iOS simulator event: "
+        + json.dumps(
+            {
+                "phase": phase,
+                "event": "finished",
+                "utc": datetime.now(timezone.utc).isoformat(),
+                "seconds": round(time.monotonic() - started, 3),
+                "exit_code": result.returncode,
+            }
+        ),
+        flush=True,
+    )
+    result.check_returncode()
+    return result.stdout
 
 
 def main():
@@ -24,9 +62,7 @@ def main():
         ".", "-"
     )
     inventory = json.loads(
-        subprocess.check_output(
-            ["xcrun", "simctl", "list", "devices", "available", "--json"], text=True
-        )
+        simctl("inventory", "list", "devices", "available", "--json", capture=True)
     )
     devices = [
         device
@@ -37,14 +73,14 @@ def main():
         raise ValueError("Expected one available simulator matching the CI name and OS")
     device = devices[0]
     print(
-        f"Prebooting {device['name']} ({destination['OS']}): {device['udid']}",
+        f"Prebooting {device['name']} ({destination['OS']}): {device['udid']}; initial state: {device['state']}",
         flush=True,
     )
     if device["state"] == "Shutdown":
-        subprocess.run(["xcrun", "simctl", "boot", device["udid"]], check=True)
+        simctl("boot", "boot", device["udid"])
     elif device["state"] != "Booted":
         raise ValueError(f"Simulator cannot start from state {device['state']}")
-    subprocess.run(["xcrun", "simctl", "bootstatus", device["udid"]], check=True)
+    simctl("bootstatus", "bootstatus", device["udid"])
 
 
 if __name__ == "__main__":
