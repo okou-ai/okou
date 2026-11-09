@@ -5,6 +5,145 @@ const ACCOUNT_B: &str = "550e8400-e29b-41d4-a716-446655440002";
 const CUSTOM_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
 
 #[tokio::test]
+async fn batch_account_bindings_publish_only_accepted_accounts_and_suppress_unchanged_context() {
+    let server = MockServer::start();
+    let run_id = RunId::new_v4();
+    let (core, _requests) = core_without_worker(&server);
+    let vars = HashMap::from([("workspace".to_string(), "account-b".to_string())]);
+    // Deliberately register out of reporting order, including a built-in without
+    // a firewall whose available result the registry must reject.
+    let registrations = vec![
+        ConnectorRuntimeTargetRegistration::Custom {
+            custom_connector_id: CUSTOM_ID.into(),
+            source_id: Some(ACCOUNT_A.into()),
+            base_url_vars: HashMap::new(),
+        },
+        ConnectorRuntimeTargetRegistration::Builtin {
+            connector_slug: "slack".into(),
+            source_id: Some(ACCOUNT_A.into()),
+            base_url_vars: None,
+        },
+        ConnectorRuntimeTargetRegistration::Builtin {
+            connector_slug: "github".into(),
+            source_id: Some(ACCOUNT_A.into()),
+            base_url_vars: None,
+        },
+    ];
+    let firewall_a = custom_runtime_firewall_with_source(CUSTOM_ID, Some(ACCOUNT_A));
+    let firewall_b = custom_runtime_firewall_with_source(CUSTOM_ID, Some(ACCOUNT_B));
+    let (_dir, registry, path) = registered_runtime_registry_with_targets(
+        run_id,
+        &[
+            firewall_a,
+            FirewallEntry::Builtin {
+                name: "slack".into(),
+                source_id: Some(ACCOUNT_A.into()),
+                base_url_vars: None,
+            },
+        ],
+        &HashMap::new(),
+        &registrations,
+    )
+    .await;
+    core.register_run(ConnectorRuntimeSyncRegistration {
+        run_id,
+        source_ip: "10.200.0.2",
+        registry,
+        targets: &registrations,
+        refreshes: None,
+    })
+    .await;
+    let mut context = core.inner.active_runs.lock().await[&run_id]
+        .account_context
+        .subscribe();
+    let targets = registrations
+        .iter()
+        .map(|registration| ConnectorSyncTarget {
+            target: registration.target(),
+            generation: 0,
+        })
+        .collect::<Vec<_>>();
+    let policy = json!({"allow": ["read"], "deny": [], "ask": [], "unknownPolicy": "deny"});
+    let reply = server.mock(|when, then| {
+        when.method(POST)
+            .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"));
+        then.status(200).json_body(json!({"results": [
+            {
+                "target": registrations[2].target(), "state": "available",
+                "networkPolicy": policy,
+                "accountBinding": {"connectionId": ACCOUNT_B, "baseUrlVars": vars}
+            },
+            {
+                "target": registrations[0].target(), "state": "available",
+                "networkPolicy": policy, "firewall": firewall_b, "baseUrlVars": vars,
+                "accountBinding": {"connectionId": ACCOUNT_B, "baseUrlVars": vars}
+            },
+            {
+                "target": registrations[1].target(), "state": "available",
+                "networkPolicy": policy,
+                "accountBinding": {"connectionId": ACCOUNT_B, "baseUrlVars": vars}
+            }
+        ]}));
+    });
+
+    assert!(
+        core.sync_connector_runtime_batch_now(run_id, &targets)
+            .await
+    );
+    assert!(context.has_changed().unwrap());
+    let expected = vec![
+        registrations[2].account_context_target(),
+        ConnectorRuntimeTargetRegistration::Builtin {
+            connector_slug: "slack".into(),
+            source_id: Some(ACCOUNT_B.into()),
+            base_url_vars: Some(vars.clone()),
+        }
+        .account_context_target(),
+        ConnectorRuntimeTargetRegistration::Custom {
+            custom_connector_id: CUSTOM_ID.into(),
+            source_id: Some(ACCOUNT_B.into()),
+            base_url_vars: vars.clone(),
+        }
+        .account_context_target(),
+    ];
+    assert_eq!(context.borrow_and_update().targets, expected);
+    let before_repeat = tokio::fs::read(&path).await.unwrap();
+    let published: serde_json::Value = serde_json::from_slice(&before_repeat).unwrap();
+    let sandbox = &published["sandboxes"]["10.200.0.2"];
+    assert_eq!(
+        sandbox["firewalls"],
+        json!([
+            firewall_b,
+            FirewallEntry::Builtin {
+                name: "slack".into(),
+                source_id: Some(ACCOUNT_B.into()),
+                base_url_vars: Some(vars.clone()),
+            }
+        ])
+    );
+    assert_eq!(
+        sandbox["connectorRoutingVariables"]["builtin:slack"],
+        json!(vars)
+    );
+    assert_eq!(
+        sandbox["connectorRoutingVariables"][registrations[0].target().log_identity()],
+        json!(vars)
+    );
+
+    // Accepted no-op registry outcomes must still be safe to record, while a
+    // rejected sibling must never change the reporting context.
+    assert!(
+        core.sync_connector_runtime_batch_now(run_id, &targets)
+            .await
+    );
+    reply.assert_calls(2);
+    assert_eq!(context.borrow().targets, expected);
+    assert!(!context.has_changed().unwrap());
+    assert_eq!(tokio::fs::read(&path).await.unwrap(), before_repeat);
+    core.unregister_run(run_id).await;
+}
+
+#[tokio::test]
 async fn mismatched_custom_account_binding_keeps_the_published_account() {
     let server = MockServer::start();
     let run_id = RunId::new_v4();
