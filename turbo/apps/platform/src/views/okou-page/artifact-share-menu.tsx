@@ -489,7 +489,16 @@ function ShareSessionMenu({
     >
       <PopoverTrigger
         aria-label={ariaLabel ?? title}
-        render={<Button variant="quiet" size="icon-sm" className={className} />}
+        render={
+          <Button
+            variant="quiet"
+            size="icon-sm"
+            className={cn(
+              "data-popup-open:bg-state-hover data-popup-open:text-foreground",
+              className,
+            )}
+          />
+        }
       >
         <Share2 size={iconSize} />
       </PopoverTrigger>
