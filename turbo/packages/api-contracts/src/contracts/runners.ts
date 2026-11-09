@@ -1000,9 +1000,6 @@ const storedExecutionContextObjectSchema = object({
   firewalls: executionFirewallsSchema.optional(),
   // Per-firewall network policies: which permissions are granted + unknownPolicy
   networkPolicies: networkPoliciesSchema.optional(),
-  // Per-connector runtime network policy refresh deadlines. Used by runners to refresh
-  // active sandbox policy when temporary allow grants expire.
-  networkPolicyRefreshes: networkPolicyRefreshesSchema.optional(),
   // Stable connector targets pinned for this run. The runner owns this list
   // after claim independently of whether each target is currently available.
   connectorRuntimeTargets: connectorRuntimeTargetsSchema,
@@ -1012,7 +1009,8 @@ const storedExecutionContextObjectSchema = object({
   tools: array(string()).optional(),
   // Settings JSON to pass to Claude CLI (passed as --settings)
   settings: string().optional(),
-  // Feature flags evaluated at job creation time (all switch states for user/org)
+  // Captured Claim decisions: singleAgent and connectorChatAccountAccess.
+  // Retained contexts may contain additional flags; those are not execution input.
   featureFlags: record(string(), boolean()).optional(),
   billableFirewalls: array(string()).optional(),
   // Provider the proxy reports model token usage under: a Built-in route's

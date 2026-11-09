@@ -251,11 +251,13 @@ import {
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import {
   type FeatureSwitchContext,
-  getAllFeatureStates,
   isFeatureEnabled,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { DEFAULT_DISALLOWED_TOOLS } from "./run-execution-defaults";
+import {
+  DEFAULT_DISALLOWED_TOOLS,
+  runPlatformEnvironment,
+} from "./run-execution-defaults";
 
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
@@ -2758,11 +2760,6 @@ export function createThreadClaimRunObjects(
   const prepared = { environment$ };
   const workflow = createOfficialWorkflowSignals(pickedEvent$, threadContext);
   const { officialWorkflow$ } = workflow;
-  const userTimezone$ = computed(async (get) => {
-    return (
-      (await get(bootstrap.memberMetadata$)).preferences?.timezone ?? undefined
-    );
-  });
   const shared = {
     ...resources,
     ...model,
@@ -2770,7 +2767,6 @@ export function createThreadClaimRunObjects(
     ...prepared,
     ...workflow,
     bodyEnvironment$: preCreateBodyEnvironmentEnvironment$,
-    userTimezone$: userTimezone$,
   };
   const graph = {
     input$: preCreateInput$,
@@ -2950,11 +2946,6 @@ export function createThreadClaimRunObjects(
     };
   });
   const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
-  const runContextUserTimezone$ = computed(async (get) => {
-    return selectedRunContextShared
-      ? get(selectedRunContextShared.userTimezone$)
-      : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
-  });
   const imageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
   });
@@ -2971,22 +2962,15 @@ export function createThreadClaimRunObjects(
     if (gate) {
       return gate;
     }
-    const [
-      bodyResult,
-      runtimeResult,
-      timezoneResult,
-      imageResult,
-      workflowResult,
-    ] = await Promise.all([
-      get(bodyContext$),
-      get(runtimeContext$),
-      get(runContextUserTimezone$),
-      get(imageModel$),
-      get(runContextOfficialWorkflow$),
-    ]);
+    const [bodyResult, runtimeResult, imageResult, workflowResult] =
+      await Promise.all([
+        get(bodyContext$),
+        get(runtimeContext$),
+        get(imageModel$),
+        get(runContextOfficialWorkflow$),
+      ]);
     const bodyContext = bodyResult;
     const runtimeContext = runtimeResult;
-    const userTimezone = timezoneResult;
     const selectedImageModel = imageResult;
     const officialWorkflowRun = workflowResult;
     if (isRouteError(bodyContext)) {
@@ -3032,7 +3016,6 @@ export function createThreadClaimRunObjects(
       officialWorkflowFacts: await get(
         selectedRunContextShared.officialWorkflowFacts$,
       ),
-      userTimezone,
       featureSwitchContext: bodyContext.featureSwitchContext,
       selectedImageModel,
     };
@@ -5349,7 +5332,6 @@ function buildStoredExecutionContextDraft(
     readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
     readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
     readonly platformEnvironment: Record<string, string> | undefined;
-    readonly userTimezone: string | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly includeOkouTokenSecret: boolean | undefined;
   },
@@ -5430,14 +5412,22 @@ function buildStoredExecutionContextDraft(
       realAgentInPreview: args.body.realAgentInPreview || undefined,
       captureNetworkBodies: args.body.captureNetworkBodies || undefined,
       apiStartTime: args.apiStartTime,
-      userTimezone: args.userTimezone,
       firewalls: permissions?.firewalls,
       networkPolicies: permissions?.networkPolicies,
       connectorRuntimeTargets: [...args.environment.runtimeTargets],
       disallowedTools: args.body.disallowedTools,
       tools: args.body.tools,
       settings: args.body.settings,
-      featureFlags: getAllFeatureStates(args.featureSwitchContext),
+      featureFlags: {
+        [FeatureSwitchKey.SingleAgent]: isFeatureEnabled(
+          FeatureSwitchKey.SingleAgent,
+          args.featureSwitchContext,
+        ),
+        [FeatureSwitchKey.ConnectorChatAccountAccess]: isFeatureEnabled(
+          FeatureSwitchKey.ConnectorChatAccountAccess,
+          args.featureSwitchContext,
+        ),
+      },
       ...modelUsageExecutionFields(args),
       codexRuntimeConfig: args.modelProvider?.codexRuntimeConfig ?? null,
     },
@@ -5505,7 +5495,6 @@ interface BuildRunnerJobPayloadInput {
   readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly chatThreadId: string | undefined;
-  readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;
 }
@@ -5995,6 +5984,59 @@ type CreateRunBody = Omit<
   readonly triggerSource: TriggerSource;
 };
 
+/** Keep complete preparation for registration and diagnostics, then persist
+ * only inputs that Claim cannot derive from the admitted Run or its defaults. */
+function queuedExecutionContext(
+  context: StoredExecutionContext,
+  run: Parameters<typeof runPlatformEnvironment>[0],
+) {
+  const {
+    cliAgentType: _cliAgentType,
+    connectorRuntimeTargets,
+    piLaunchConfig: _piLaunchConfig,
+    userTimezone: _userTimezone,
+    disallowedTools,
+    networkPolicies,
+    platformEnvironment,
+    ...queued
+  } = context;
+  const builtinSlugs = new Set(
+    connectorRuntimeTargets.flatMap((target) => {
+      return target.kind === "builtin" ? [target.connectorSlug] : [];
+    }),
+  );
+  const capturedPolicies = Object.entries(networkPolicies ?? {}).filter(
+    ([slug]) => {
+      return !builtinSlugs.has(slug);
+    },
+  );
+  const platformDefaults = runPlatformEnvironment(run);
+  const maskingKeys = new Set(context.secretValueEnvironmentKeys ?? []);
+  const capturedPlatform = Object.entries(platformEnvironment).filter(
+    ([key, value]) => {
+      return (
+        maskingKeys.has(key) ||
+        !Object.hasOwn(platformDefaults, key) ||
+        platformDefaults[key] !== value
+      );
+    },
+  );
+  const defaultTools =
+    disallowedTools?.length === DEFAULT_DISALLOWED_TOOLS.length &&
+    disallowedTools.every((tool, index) => {
+      return tool === DEFAULT_DISALLOWED_TOOLS[index];
+    });
+  return {
+    ...queued,
+    disallowedTools: defaultTools ? undefined : disallowedTools,
+    networkPolicies:
+      capturedPolicies.length > 0
+        ? Object.fromEntries(capturedPolicies)
+        : undefined,
+    platformEnvironment: Object.fromEntries(capturedPlatform),
+  };
+}
+
 interface RunnerJobPayload {
   readonly runnerGroup: string;
   readonly profile: string;
@@ -6349,7 +6391,13 @@ function pendingAtomicLaunchPlan(
           profile: args.payload.profile,
           cliAgentSessionId: args.payload.cliAgentSessionId,
           reuseKey: args.payload.reuseKey,
-          executionContext: args.payload.executionContext,
+          executionContext: queuedExecutionContext(
+            args.payload.executionContext,
+            {
+              agentId: context.rowsArgs.resolved.agentId,
+              chatThreadId: context.rowsArgs.chatThreadId ?? null,
+            },
+          ),
           ...timestamps,
         },
         ["runId", "createdAt"],

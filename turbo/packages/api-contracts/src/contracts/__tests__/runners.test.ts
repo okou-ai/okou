@@ -188,41 +188,55 @@ describe("runner claim response contract", () => {
     expect(context).not.toHaveProperty("experimentalProfile");
   });
 
-  it("round-trips canonical trusted environments through stored contexts", () => {
-    const storedContext = storedExecutionContextSchema.parse({
-      storageMounts: [],
-      seedSkillBundles: [],
-      connectorRuntimeTargets: [],
-      environment: {
+  it.each([
+    { featureFlags: { singleAgent: true, connectorChatAccountAccess: false } },
+    {
+      featureFlags: {
+        singleAgent: false,
+        connectorChatAccountAccess: true,
+        retainedDiagnosticFlag: true,
+      },
+    },
+  ])(
+    "round-trips trusted environments and captured Claim decisions",
+    ({ featureFlags }) => {
+      const storedContext = storedExecutionContextSchema.parse({
+        storageMounts: [],
+        seedSkillBundles: [],
+        connectorRuntimeTargets: [],
+        environment: {
+          USER_VALUE: "user-value",
+        },
+        platformEnvironment: { OKOU_AGENT_ID: "stored-agent-id" },
+        secretValueEnvironmentKeys: null,
+        nativeContinuation: {
+          sessionId: null,
+          generationRunId: null,
+          recoveryPrompt: null,
+        },
+        encryptedSecrets: null,
+        cliAgentType: "claude-code",
+        featureFlags,
+      });
+      const roundTripped = storedExecutionContextSchema.parse(
+        JSON.parse(JSON.stringify(storedContext)),
+      );
+
+      expect(roundTripped.platformEnvironment).toStrictEqual({
+        OKOU_AGENT_ID: "stored-agent-id",
+      });
+      expect(roundTripped.environment).toStrictEqual({
         USER_VALUE: "user-value",
-      },
-      platformEnvironment: { OKOU_AGENT_ID: "stored-agent-id" },
-      secretValueEnvironmentKeys: null,
-      nativeContinuation: {
-        sessionId: null,
-        generationRunId: null,
-        recoveryPrompt: null,
-      },
-      encryptedSecrets: null,
-      cliAgentType: "claude-code",
-    });
-    const roundTripped = storedExecutionContextSchema.parse(
-      JSON.parse(JSON.stringify(storedContext)),
-    );
+      });
+      expect(roundTripped.featureFlags).toStrictEqual(featureFlags);
 
-    expect(roundTripped.platformEnvironment).toStrictEqual({
-      OKOU_AGENT_ID: "stored-agent-id",
-    });
-    expect(roundTripped.environment).toStrictEqual({
-      USER_VALUE: "user-value",
-    });
-
-    const emptyTrustedContext = storedExecutionContextSchema.parse({
-      ...storedContext,
-      platformEnvironment: {},
-    });
-    expect(emptyTrustedContext.platformEnvironment).toStrictEqual({});
-  });
+      const emptyTrustedContext = storedExecutionContextSchema.parse({
+        ...storedContext,
+        platformEnvironment: {},
+      });
+      expect(emptyTrustedContext.platformEnvironment).toStrictEqual({});
+    },
+  );
 });
 
 describe("stored Seed Skill bundle contract", () => {

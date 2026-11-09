@@ -1565,7 +1565,7 @@ const readClaimCurrentNetworkPolicyRefreshes$ = command(
       readonly timing: ClaimRouteTimingCollector;
     },
   ): Promise<
-    Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
+    Pick<ExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
   > => {
     const { scope, builtinConnectorSlugs } = args;
     const plan = connectorRuntimeAuthSelectionReadPlan({
@@ -1654,7 +1654,7 @@ const readClaimNetworkPolicyRefreshes$ = command(
       readonly timing: ClaimRouteTimingCollector;
     },
   ): Promise<
-    Pick<StoredExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
+    Pick<ExecutionContext, "networkPolicies" | "networkPolicyRefreshes">
   > => {
     const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
     assertClaimConnectorIdentity(args.run, args.storedContext);
@@ -1682,7 +1682,7 @@ const readClaimNetworkPolicyRefreshes$ = command(
     const result = await settle(
       (async (): Promise<{
         readonly value: Pick<
-          StoredExecutionContext,
+          ExecutionContext,
           "networkPolicies" | "networkPolicyRefreshes"
         >;
         readonly path: ClaimNetworkPolicyRefreshPath;
@@ -1750,7 +1750,7 @@ function claimResponseBody(args: {
   readonly storedContext: StoredExecutionContext;
   readonly secretValues: ExecutionContext["secretValues"];
   readonly refreshedPolicies: Pick<
-    StoredExecutionContext,
+    ExecutionContext,
     "networkPolicies" | "networkPolicyRefreshes"
   >;
 }): BaseClaimResponse {
@@ -1761,6 +1761,7 @@ function claimResponseBody(args: {
     seedSkillBundles: _seedSkillBundles,
     templateGuidanceBundles: _templateGuidanceBundles,
     storageMounts: _storedStorageMounts,
+    featureFlags: _featureFlags,
     ...runnerStoredContext
   } = args.storedContext;
   return {
@@ -1806,7 +1807,7 @@ const prepareClaimResponse$ = command(
   ): Promise<{
     readonly secretValues: ExecutionContext["secretValues"];
     readonly refreshedPolicies: Pick<
-      StoredExecutionContext,
+      ExecutionContext,
       "networkPolicies" | "networkPolicyRefreshes"
     >;
   }> => {
