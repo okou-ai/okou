@@ -185,7 +185,7 @@ final class ChatConnectorAccessTests: XCTestCase {
     let client = fixture.http.client
     let commands = ChatCommands(client: client, sync: ChatSync(client: client))
     let thread = try await commands.createThread(
-      agentID: F.agentID, modelSelection: ChatModelSelection(), composerOptions: options())
+      modelSelection: ChatModelSelection(), composerOptions: options())
     _ = try await commands.send(thread: thread, text: "Use my selected account")
     let access = try await ChatComposerAccess(client: client).connectorAccess(
       target: .builtin("slack"), threadID: thread.id)

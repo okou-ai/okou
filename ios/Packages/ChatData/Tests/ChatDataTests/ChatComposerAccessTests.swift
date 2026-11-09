@@ -181,7 +181,7 @@ final class ChatComposerAccessTests: XCTestCase {
     }
     let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
     let thread = try await commands.createThread(
-      agentID: F.agentID, modelSelection: ChatModelSelection(), composerOptions: options)
+      modelSelection: ChatModelSelection(), composerOptions: options)
     XCTAssertEqual(thread.id, F.threadID)
   }
 }

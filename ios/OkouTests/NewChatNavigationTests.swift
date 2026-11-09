@@ -13,9 +13,10 @@ final class NewChatNavigationTests: XCTestCase {
     defer { workspace.close() }
     workspace.setForeground(true)
     workspace.newChatDraft = "Keep the next chat's draft"
-    workspace.selectChat(AttachmentFlowFixture.threadID)
+    workspace.selectChat(MentionNavigationFixture.thread(31))
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     conversation.draft = "Keep this conversation's draft"
+    XCTAssertEqual(conversation.thread.agentID, MentionNavigationFixture.agent(1))
     let requests = NewChatRequests()
 
     XCTAssertTrue(
@@ -25,12 +26,13 @@ final class NewChatNavigationTests: XCTestCase {
 
     XCTAssertNil(workspace.selectedThreadID)
     XCTAssertNil(workspace.selectedConversation)
+    XCTAssertEqual(workspace.selectedAgentID, AttachmentFlowFixture.agentID)
     XCTAssertEqual(workspace.newChatDraft, "Keep the next chat's draft")
     XCTAssertEqual(conversation.draft, "Keep this conversation's draft")
 
-    workspace.selectChat(AttachmentFlowFixture.threadID)
+    workspace.selectChat(MentionNavigationFixture.thread(31))
     XCTAssertFalse(requests.open(in: workspace))
-    XCTAssertEqual(workspace.selectedThreadID, AttachmentFlowFixture.threadID)
+    XCTAssertEqual(workspace.selectedThreadID, MentionNavigationFixture.thread(31))
   }
 
   func testShortcutAndHomeScreenActionsFocusThePreservedDraftOnlyWhenReady() async throws {
@@ -95,6 +97,7 @@ final class NewChatNavigationTests: XCTestCase {
     let reopened = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
+    await reopened.refreshNavigation()
     XCTAssertEqual(reopened.newChatDraft, saved + " 继续")
   }
 }

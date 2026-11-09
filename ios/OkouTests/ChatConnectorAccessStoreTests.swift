@@ -23,7 +23,7 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
       target: .builtin("slack"), connectionID: F.siblingID, enabled: true)
     let commands = ChatCommands(client: client, sync: ChatSync(client: client))
     let thread = try await commands.createThread(
-      agentID: F.agentID, modelSelection: ChatModelSelection(),
+      modelSelection: ChatModelSelection(),
       composerOptions: store.pendingOptions)
     let access = try await ChatComposerAccess(client: client).connectorAccess(
       target: .builtin("slack"), threadID: thread.id)
@@ -71,7 +71,8 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     let fixture = makeFixture(state)
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { workspace.close() }
-    workspace.startNewChat(agentID: F.agentID)
+    await workspace.refreshNavigation()
+    workspace.startNewChat()
     workspace.newChatDraft = "Keep this message"
     let store = workspace.newModelSelection.connectors
     store.configure(agentID: F.agentID)

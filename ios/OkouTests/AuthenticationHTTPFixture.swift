@@ -31,8 +31,6 @@ final class AuthenticationHTTPFixture: Sendable {
     switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
     case ("GET", "/api/agents"):
       return ChatHTTPResponse(body: "[]")
-    case ("GET", "/api/user-preferences"):
-      return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
     case ("GET", "/api/feature-switches"):
       return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
     case ("GET", "/api/chat-threads/snapshot"):

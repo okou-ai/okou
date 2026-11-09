@@ -9,17 +9,8 @@ struct ComposerMentionSource: Equatable {
   let threads: [ChatThread]
 
   func suggestions(for query: String) -> [ComposerMentionSuggestion] {
-    guard let agentID else { return [] }
+    guard agentID != nil else { return [] }
     let query = query.lowercased()
-    let matchingAgents = agents.filter {
-      $0.agentId != agentID
-        && (query.isEmpty || ($0.displayName ?? $0.agentId).lowercased().contains(query))
-    }
-    let agentSuggestions = (query.isEmpty ? Array(matchingAgents.prefix(3)) : matchingAgents).map {
-      ComposerMentionSuggestion(
-        kind: .agent, referenceID: $0.agentId, title: $0.displayName ?? $0.agentId,
-        avatarURL: $0.isDefaultAgent ? OkouAgentAvatar.defaultURL : $0.avatarUrl)
-    }
     // The PWA reducer orders pinned chats first, then activity and ID; it does
     // not apply the sidebar's fractional pin ranking to mention suggestions.
     let chats = ChatThreadReplay.replay(snapshot: threads, events: []).filter {
@@ -32,7 +23,7 @@ struct ComposerMentionSource: Equatable {
           return agent?.isDefaultAgent == true ? OkouAgentAvatar.defaultURL : agent?.avatarUrl
         }())
     }
-    return agentSuggestions + chats
+    return chats
   }
 }
 

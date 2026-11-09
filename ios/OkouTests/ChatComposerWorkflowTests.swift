@@ -9,7 +9,7 @@ import XCTest
 
 @MainActor
 final class ChatComposerWorkflowTests: XCTestCase {
-  func testWorkflowInsertionAndUndoPreserveNativeAgentAndChatReferences() async throws {
+  func testWorkflowInsertionAndUndoPreserveNativeChatReferences() async throws {
     let fixture = MentionNavigationFixture(workflows: { _ in
       ChatHTTPResponse(body: workflowResponse)
     })
@@ -21,14 +21,14 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
     input.insertText("Before @")
-    let agent = try XCTUnwrap(
-      workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .agent })
+    let firstChat = try XCTUnwrap(
+      workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .chat })
     try await waitForBusinessResult {
-      workspace.newComposer.editor.mentionSuggestions.contains(agent)
+      workspace.newComposer.editor.mentionSuggestions.contains(firstChat)
     }
-    workspace.newComposer.editor.insertMention(agent)
+    workspace.newComposer.editor.insertMention(firstChat)
     let references = workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }
-    XCTAssertEqual(references.map { $0["type"]?.string }, ["agent"])
+    XCTAssertEqual(references.map { $0["type"]?.string }, ["chat_thread"])
     input.insertText(" /rel after")
     let slash = (input.text as NSString).range(of: "/rel")
     input.selectedRange = NSRange(location: NSMaxRange(slash), length: 0)
@@ -56,7 +56,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }.map {
         $0["type"]?.string
-      }, ["agent", "chat_thread"])
+      }, ["chat_thread", "chat_thread"])
     XCTAssertTrue(input.text.contains("/release after"))
     XCTAssertNil(workflowTable(in: host.view))
     XCTAssertTrue(input.isFirstResponder)
@@ -211,7 +211,6 @@ final class ChatComposerWorkflowTests: XCTestCase {
       _ = try? await old.value
     }
     await fulfillment(of: [started], timeout: 3)
-    workspace.startNewChat(agentID: "other-agent")
     do {
       _ = try await source.load(agentID: "other-agent")
       XCTFail("The HTTP failure must remain visible to the caller")
@@ -247,19 +246,22 @@ final class ChatComposerWorkflowTests: XCTestCase {
     try await focusMentionInput(old)
     old.insertText("/rel")
     let retired = try await workflowCell("release", in: host.view)
-    workspace.startNewChat(agentID: "other-agent")
+    let replacement = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { replacement.close() }
+    await replacement.refreshNavigation()
+    host.rootView = WorkflowNewChatHost(workspace: replacement)
     try await eventually { self.inputs(in: host.view).first !== old }
     let current = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(current)
     current.insertText("/")
-    let fresh = try await workflowCell("fresh", in: host.view)
+    let fresh = try await workflowCell("release", in: host.view)
     XCTAssertTrue(retired.accessibilityActivate())
     XCTAssertEqual(current.text, "/")
-    XCTAssertEqual(workspace.newComposer.text, "/")
-    workspace.close()
+    XCTAssertEqual(replacement.newComposer.text, "/")
+    replacement.close()
     XCTAssertTrue(fresh.accessibilityActivate())
     XCTAssertEqual(current.text, "/")
-    XCTAssertEqual(workspace.newComposer.text, "/")
+    XCTAssertEqual(replacement.newComposer.text, "/")
   }
 
   func testRecentUseIsRecordedAfterSuccessfulRetryAndPersistsWithinWorkspaceOnly() async throws {
@@ -356,6 +358,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let reopened = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
+    await reopened.refreshNavigation()
     XCTAssertEqual(reopened.newChatDraft, "Summarize /morning-brief ")
     XCTAssertTrue(reopened.composerWorkflows.recentIDs().isEmpty)
     await reopened.sendNewChat()
