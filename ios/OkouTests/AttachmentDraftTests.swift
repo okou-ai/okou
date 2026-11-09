@@ -698,7 +698,8 @@ final class AttachmentFlowFixture: Sendable {
           body: String(decoding: try JSONEncoder().encode(draft), as: UTF8.self))
       }
       switch path {
-      case "/api/voice-io/quota", "/api/voice-io/transcribe/segment", "/api/voice-io/polish/segments":
+      case "/api/voice-io/quota", "/api/voice-io/transcribe/segment",
+        "/api/voice-io/polish/segments":
         guard let voiceInput else { throw URLError(.unsupportedURL) }
         return try await voiceInput(request)
       case "/api/chat-threads/snapshot", "/api/chat-threads/events", "/api/indicators":
