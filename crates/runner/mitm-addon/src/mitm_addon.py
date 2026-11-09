@@ -802,9 +802,7 @@ def _requestheaders_after_authority(
             raise
         if isinstance(bounded_classification, request_classification.FirewallInvalidInput):
             _start_request_timing(flow)
-            http_local_responses.set_firewall_invalid_input_response(
-                flow, bounded_classification.firewall_invalid_input
-            )
+            http_local_responses.block_request_classification(flow, bounded_classification)
             _mark_local_requestheaders_response(flow)
             return None
         if bounded_classification is not None and _admit_managed_openrouter_from_headers(
@@ -862,14 +860,12 @@ def _requestheaders_after_authority(
         return None
     if classification.kind == "firewall_invalid_input":
         _start_request_timing(flow)
-        http_local_responses.set_firewall_invalid_input_response(
-            flow, classification.firewall_invalid_input
-        )
+        http_local_responses.block_request_classification(flow, classification)
         _mark_local_requestheaders_response(flow)
         return None
     if classification.kind == "public_destination_denied":
         _start_request_timing(flow)
-        _block_public_destination_denied(
+        http_local_responses.block_public_destination_denied(
             flow,
             classification.public_destination_denial,
             send_response=False,
@@ -1442,23 +1438,6 @@ async def _try_firewall_request_stream_from_headers(
         raise
 
 
-def _block_public_destination_denied(
-    flow: http.HTTPFlow,
-    denial: request_classification.PublicDestinationDenial,
-    *,
-    send_response: bool = True,
-) -> None:
-    http_local_responses.block_public_destination_denied(
-        flow,
-        name=denial.name,
-        base=denial.base,
-        destination_host=denial.destination_host,
-        trusted_authority_host=denial.trusted_authority_host,
-        reason=denial.reason,
-        send_response=send_response,
-    )
-
-
 def _revalidate_current_firewall_authorization_for_request(
     flow: http.HTTPFlow,
     allow: matching.FirewallAllow,
@@ -1590,50 +1569,6 @@ def _clear_stale_firewall_authorization_metadata(flow: http.HTTPFlow) -> None:
         flow.metadata.pop(key, None)
 
 
-def _block_request_classification(
-    flow: http.HTTPFlow,
-    classification: request_classification.BlockingRequestClassification,
-) -> None:
-    if classification.kind == "registry_unavailable":
-        http_local_responses.block_registry_unavailable(flow, classification.registry_unavailable)
-        return
-    if classification.kind == "stale_tls_admission":
-        http_local_responses.block_stale_tls_admission(flow, reason=classification.stale_tls_reason)
-        return
-    if classification.kind == "invalid_registry_sandbox":
-        http_local_responses.block_invalid_registry_sandbox(flow, classification.invalid_sandbox)
-        return
-    if classification.kind == "authority_denied":
-        http_local_responses.block_authority_validation_error(flow, classification.authority_error)
-        return
-    if classification.kind == "platform_path_denied":
-        http_local_responses.block_platform_path_denied(flow)
-        return
-    if classification.kind == "outlook_send_blocked":
-        http_local_responses.block_outlook_send(flow)
-        return
-    if classification.kind == "gmail_send_blocked":
-        http_local_responses.block_gmail_send(flow)
-        return
-    if classification.kind == "firewall_ambiguous":
-        http_local_responses.set_firewall_ambiguous_response(
-            flow, classification.firewall_ambiguous
-        )
-        return
-    if classification.kind == "firewall_invalid_input":
-        http_local_responses.set_firewall_invalid_input_response(
-            flow, classification.firewall_invalid_input
-        )
-        return
-    if classification.kind == "firewall_block":
-        http_local_responses.set_firewall_block_response(flow, classification.firewall_block)
-        return
-    if classification.kind == "public_destination_denied":
-        _block_public_destination_denied(flow, classification.public_destination_denial)
-        return
-    _unhandled_request_classification(classification)
-
-
 def _block_current_firewall_authorization(
     flow: http.HTTPFlow,
     classification: request_classification.RequestClassification,
@@ -1642,7 +1577,7 @@ def _block_current_firewall_authorization(
     try:
         _clear_stale_firewall_authorization_metadata(flow)
         if isinstance(classification, request_classification.BlockingRequestClassification):
-            _block_request_classification(flow, classification)
+            http_local_responses.block_request_classification(flow, classification)
             return
         http_local_responses.block_firewall_authorization_changed(
             flow,
@@ -1770,7 +1705,7 @@ async def request(flow: http.HTTPFlow) -> None:
         if isinstance(classification, request_classification.BlockingRequestClassification):
             if isinstance(classification, request_classification.PublicDestinationDenied):
                 terminal_usage.release_tracked_flow(flow)
-            _block_request_classification(flow, classification)
+            http_local_responses.block_request_classification(flow, classification)
             return
         if classification.kind == "native_rejected":
             return
