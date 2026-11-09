@@ -14,6 +14,7 @@ import http_network_log
 import matching
 import registry
 from logging_utils import log_proxy_entry
+from path_language import MAX_PATH_CHARACTERS
 from request_authority import AuthorityValidationError
 from runtime_url_parsing import split_runtime_url, strip_url_query_and_fragment
 
@@ -25,6 +26,17 @@ _STALE_TLS_ADMISSION_ERROR: Final = "stale_tls_admission"
 _UNSAFE_PLATFORM_PATH_ERROR: Final = "unsafe_platform_path"
 _UPSTREAM_DESTINATION_UNBOUND_ERROR: Final = "upstream_destination_unbound"
 _HTTP_STATUS_CONFLICT = 409
+# Bound each rejected diagnostic, including its marker. Twice the matcher path
+# budget leaves room for an ordinary authority plus any within-budget path.
+_MAX_REJECTED_DIAGNOSTIC_CHARACTERS: Final = 2 * MAX_PATH_CHARACTERS
+_DIAGNOSTIC_TRUNCATION_MARKER: Final = "...[truncated]"
+
+
+def _bounded_rejected_diagnostic(value: str) -> str:
+    if len(value) <= _MAX_REJECTED_DIAGNOSTIC_CHARACTERS:
+        return value
+    prefix_length = _MAX_REJECTED_DIAGNOSTIC_CHARACTERS - len(_DIAGNOSTIC_TRUNCATION_MARKER)
+    return value[:prefix_length] + _DIAGNOSTIC_TRUNCATION_MARKER
 
 
 def _diagnostic_url_without_query_or_fragment(original_url: str) -> str:
@@ -420,9 +432,9 @@ def set_firewall_invalid_input_response(
             "reason": "unsafe_path",
             "message": "Request blocked: unsafe path",
             "method": result.method,
-            "path": result.path,
+            "path": _bounded_rejected_diagnostic(result.path),
             "url": _diagnostic_url_without_query_or_fragment(
-                flow.metadata[metadata_keys.ORIGINAL_URL]
+                _bounded_rejected_diagnostic(flow.metadata[metadata_keys.ORIGINAL_URL])
             ),
             "permissions": [],
         },
