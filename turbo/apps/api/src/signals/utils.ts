@@ -177,10 +177,11 @@ function startResponseBodyCancel(
   }
 }
 
-/** Read an HTTP response body without allowing its byte size to exceed a limit. */
+/** Read a byte-limited HTTP body, cancelling pending reads if the optional signal aborts. */
 export async function readBoundedResponseText(
   response: Response,
   maxBytes: number,
+  signal?: AbortSignal,
 ): Promise<BoundedResponseTextResult> {
   if (responseContentLengthExceeds(response, maxBytes)) {
     startResponseBodyCancel(response.body);
@@ -197,7 +198,13 @@ export async function readBoundedResponseText(
   let bytesRead = 0;
 
   while (true) {
-    const { done, value } = await reader.read();
+    const read = reader.read();
+    const { done, value } = await onRejection(
+      signal ? awaitWithSignal(read, signal) : read,
+      () => {
+        startUntrackedBestEffortCleanup(reader.cancel());
+      },
+    );
     if (done) {
       break;
     }

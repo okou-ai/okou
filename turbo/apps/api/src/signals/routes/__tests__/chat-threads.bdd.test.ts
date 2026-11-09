@@ -4140,19 +4140,39 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   }, 120_000);
 
   it.each([
-    { providerStatus: 403, afterRefresh: false },
-    { providerStatus: 429, afterRefresh: false },
-    { providerStatus: 500, afterRefresh: false },
-    { providerStatus: 503, afterRefresh: false },
-    { providerStatus: 503, afterRefresh: true },
+    {
+      providerStatus: 403,
+      afterRefresh: false,
+      providerReason: "insufficientPermissions",
+    },
+    {
+      providerStatus: 429,
+      afterRefresh: false,
+      providerReason: "rateLimitExceeded",
+    },
+    {
+      providerStatus: 500,
+      afterRefresh: false,
+      providerReason: "backendError",
+    },
+    {
+      providerStatus: 503,
+      afterRefresh: false,
+      providerReason: "backendError",
+    },
+    {
+      providerStatus: 503,
+      afterRefresh: true,
+      providerReason: "backendError",
+    },
   ] as const)(
     "workspace conversion reports Google HTTP $providerStatus without creating another file (after refresh: $afterRefresh)",
-    async ({ providerStatus, afterRefresh }) => {
+    async ({ providerStatus, afterRefresh, providerReason }) => {
       const fixture = await publicOfficeConversionSource(
         docsImportFixture(),
         "docx",
       );
-      mockGoogleDriveConnectorOAuth({
+      const oauth = mockGoogleDriveConnectorOAuth({
         refreshOutcome: {
           type: "ok",
           accessToken: "drive-preflight-refreshed",
@@ -4163,7 +4183,7 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
         name: "report",
         mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
       });
-      mockGoogleDriveFilesList((request) => {
+      const lookup = mockGoogleDriveFilesList((request) => {
         if (
           afterRefresh &&
           request.headers.get("authorization") !==
@@ -4178,6 +4198,18 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
               code: providerStatus,
               message:
                 "Cannot inspect private-file-id for owner@example.test: https://drive.google.com/file/private-file-id?access_token=private-token",
+              errors: [
+                {
+                  reason: providerReason,
+                  location: "private-file-id",
+                },
+              ],
+              details: [
+                {
+                  reason: "ACCESS_TOKEN_SCOPE_INSUFFICIENT",
+                  metadata: { account: "owner@example.test" },
+                },
+              ],
             },
           }),
         };
@@ -4190,10 +4222,114 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           message: `Google Drive could not check previous conversions (HTTP ${String(providerStatus)}). Try again.`,
         },
       });
+      expect(oauth.refreshBodies).toHaveLength(afterRefresh ? 1 : 0);
+      expect(lookup.queries).toHaveLength(afterRefresh ? 2 : 1);
       expect(upload.metadata).toHaveLength(0);
       expect(upload.bodies).toHaveLength(0);
     },
     120_000,
+  );
+
+  it.each([
+    { scenario: "empty body", body: "" },
+    { scenario: "invalid JSON", body: "<html>private-provider-message</html>" },
+    { scenario: "missing reason", body: JSON.stringify({ error: {} }) },
+    {
+      scenario: "unknown reason",
+      body: JSON.stringify({
+        error: {
+          errors: [{ reason: "owner@example.test?token=private-token" }],
+        },
+      }),
+    },
+    {
+      scenario: "invalid reason type",
+      body: JSON.stringify({
+        error: { details: [{ reason: { token: "private-token" } }] },
+      }),
+    },
+    {
+      scenario: "invalid error envelope",
+      body: JSON.stringify({ error: { errors: "private-provider-message" } }),
+    },
+    {
+      scenario: "oversized body",
+      body: JSON.stringify({
+        error: {
+          message: "x".repeat(16 * 1024),
+          errors: [{ reason: "backendError" }],
+        },
+      }),
+    },
+  ])(
+    "workspace conversion keeps the fail-closed response for a preflight $scenario",
+    async ({ body }) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+      });
+      mockGoogleDriveFilesList(() => {
+        return { status: 503, body };
+      });
+      const response = await fixture.upload("google", [400]);
+      expect(response.status).toBe(400);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message:
+            "Google Drive could not check previous conversions (HTTP 503). Try again.",
+        },
+      });
+      expect(upload.metadata).toHaveLength(0);
+      expect(upload.bodies).toHaveLength(0);
+    },
+    120_000,
+  );
+
+  it.each(["stalled", "unreadable"] as const)(
+    "workspace conversion keeps the fail-closed response for a preflight %s stream",
+    async (scenario) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+      });
+      mockGoogleDriveFilesList(() => {
+        return {
+          status: 503,
+          body: new ReadableStream<Uint8Array>({
+            start(controller) {
+              if (scenario === "unreadable") {
+                controller.error(new Error("private-provider-message"));
+              } else {
+                controller.enqueue(new TextEncoder().encode('{"error":'));
+              }
+            },
+          }),
+        };
+      });
+      const response = await fixture.upload("google", [400]);
+      expect(response.status).toBe(400);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message:
+            "Google Drive could not check previous conversions (HTTP 503). Try again.",
+        },
+      });
+      expect(upload.metadata).toHaveLength(0);
+      expect(upload.bodies).toHaveLength(0);
+    },
+    10_000,
   );
 
   it("workspace conversion reuses a completed editable copy when the caller retries", async () => {
