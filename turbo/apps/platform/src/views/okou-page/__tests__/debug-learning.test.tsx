@@ -144,15 +144,8 @@ test("runs the official Learning automation while its nightly schedule is paused
     expect(run).toBeEnabled();
   });
   click(run);
-  await screen.findByText(
-    "Learning queued. Open the chat to follow its progress.",
-  );
+  await screen.findByText("Learning queued.");
   expect(run).toBeDisabled();
-  const card = screen.getByRole("region", { name: "Learning" });
-  const link = queryAllByRoleFast("link", card).find((candidate) => {
-    return candidate.textContent?.trim() === "Open chat";
-  });
-  expect(link).toHaveAttribute("href", `/chats/${THREAD_ID}`);
 });
 
 test("explains the installation prerequisite instead of running a same-name custom workflow", async () => {

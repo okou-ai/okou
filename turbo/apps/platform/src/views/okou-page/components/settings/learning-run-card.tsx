@@ -12,7 +12,6 @@ import {
 } from "../../../../signals/okou-page/settings/debug-learning.ts";
 import { settingsActionSignal$ } from "../../../../signals/okou-page/settings/settings-dialog.ts";
 import { detach, isAbortError, Reason } from "../../../../signals/utils.ts";
-import { Link } from "../../../router/link.tsx";
 
 export function LearningRunCard() {
   const { t } = useTranslation();
@@ -25,7 +24,7 @@ export function LearningRunCard() {
     return null;
   }
   const target = automation.state === "hasData" ? automation.data : null;
-  const response = starting.state === "hasData" ? starting.data : null;
+  const queued = starting.state === "hasData";
   const error = starting.state === "hasError" ? starting.error : undefined;
 
   return (
@@ -89,23 +88,12 @@ export function LearningRunCard() {
           })}
         </p>
       )}
-      {response && (
-        <>
-          <p role="status" className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.settings.preferences.debug.learning.queued;
-            })}
-          </p>
-          <Link
-            pathname="/chats/:threadId"
-            options={{ pathParams: { threadId: response.chatThreadId } }}
-            className="text-sm text-primary hover:underline"
-          >
-            {t(($) => {
-              return $.settings.preferences.debug.learning.openChat;
-            })}
-          </Link>
-        </>
+      {queued && (
+        <p role="status" className="text-sm text-muted-foreground">
+          {t(($) => {
+            return $.settings.preferences.debug.learning.queued;
+          })}
+        </p>
       )}
       {error !== undefined && !isAbortError(error) && (
         <p role="alert" className="text-sm text-destructive">

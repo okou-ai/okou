@@ -5930,9 +5930,8 @@
         "learning": {
           "description": "Revisa la actividad reciente y actualiza tu memoria personal una vez. La programación nocturna no cambia.",
           "notInstalled": "Activa el aprendizaje en Preferencias antes de ejecutarlo aquí.",
-          "openChat": "Abrir conversación",
-          "queued": "Aprendizaje en cola. Abre la conversación para ver el progreso.",
-          "requestFailed": "No se pudo confirmar la solicitud. Revisa la conversación de aprendizaje antes de volver a intentarlo.",
+          "queued": "Aprendizaje en cola.",
+          "requestFailed": "No se pudo confirmar la solicitud.",
           "run": "Ejecutar aprendizaje",
           "starting": "Iniciando…",
           "title": "Aprendizaje",

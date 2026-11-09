@@ -5846,9 +5846,8 @@
         "learning": {
           "description": "立即回顾近期活动并更新个人记忆，不改变夜间执行计划。",
           "notInstalled": "请先在偏好设置中开启学习，再在此运行。",
-          "openChat": "打开对话",
-          "queued": "学习已加入队列，可打开对话查看进度。",
-          "requestFailed": "无法确认请求结果，请先查看学习对话再重试。",
+          "queued": "学习已加入队列。",
+          "requestFailed": "无法确认请求结果。",
           "run": "运行学习",
           "starting": "正在启动…",
           "title": "学习",

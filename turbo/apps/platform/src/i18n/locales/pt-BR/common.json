@@ -5930,9 +5930,8 @@
         "learning": {
           "description": "Revise a atividade recente e atualize sua memória pessoal uma vez. O agendamento noturno permanece igual.",
           "notInstalled": "Ative o aprendizado nas Preferências antes de executá-lo aqui.",
-          "openChat": "Abrir conversa",
-          "queued": "Aprendizado na fila. Abra a conversa para acompanhar o progresso.",
-          "requestFailed": "Não foi possível confirmar a solicitação. Confira a conversa de aprendizado antes de tentar novamente.",
+          "queued": "Aprendizado na fila.",
+          "requestFailed": "Não foi possível confirmar a solicitação.",
           "run": "Executar aprendizado",
           "starting": "Iniciando…",
           "title": "Aprendizado",

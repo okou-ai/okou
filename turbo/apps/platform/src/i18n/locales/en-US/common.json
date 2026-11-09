@@ -5863,9 +5863,8 @@
         "learning": {
           "description": "Review recent activity and update your personal memory once. Your nightly schedule stays unchanged.",
           "notInstalled": "Enable Learning in Preferences before running it here.",
-          "openChat": "Open chat",
-          "queued": "Learning queued. Open the chat to follow its progress.",
-          "requestFailed": "The request could not be confirmed. Check the Learning chat before trying again.",
+          "queued": "Learning queued.",
+          "requestFailed": "The request could not be confirmed.",
           "run": "Run learning",
           "starting": "Starting…",
           "title": "Learning",
