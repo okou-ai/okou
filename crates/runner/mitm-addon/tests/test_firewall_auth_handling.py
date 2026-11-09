@@ -156,9 +156,7 @@ def _sandbox_info(
 
 
 class TestHandleFirewallRequest:
-    async def test_success_injects_headers_and_audit_metadata(
-        self, real_flow, headers, mitm_ctx, tmp_path
-    ):
+    async def test_success_injects_headers_and_audit_metadata(self, real_flow, mitm_ctx, tmp_path):
         flow = _firewall_flow(real_flow)
         proxy_log_path = tmp_path / "proxy.jsonl"
         flow.metadata[metadata_keys.SANDBOX_PROXY_LOG_PATH] = str(proxy_log_path)
@@ -511,7 +509,6 @@ class TestHandleFirewallRequest:
     async def test_standard_auth_filters_unsafe_resolved_headers(
         self,
         real_flow,
-        headers,
         mitm_ctx,
         tmp_path,
         hook_phase: HookPhase,
@@ -978,9 +975,7 @@ class TestHandleFirewallRequest:
         assert body["permission"] == "github"
         assert body["base"] == "https://api.github.com"
 
-    async def test_empty_billable_firewalls_is_not_billable(
-        self, real_flow, headers, mitm_ctx, tmp_path
-    ):
+    async def test_empty_billable_firewalls_is_not_billable(self, real_flow, mitm_ctx, tmp_path):
         flow = _firewall_flow(real_flow)
         api_entry = _api_entry(api_id="run-1:0")
         sandbox_info = _sandbox_info(tmp_path)
@@ -1043,7 +1038,7 @@ class TestHandleFirewallRequest:
         assert encrypted_secrets not in log_text
         assert sandbox_token not in log_text
 
-    async def test_failure_returns_502(self, real_flow, headers, mitm_ctx, tmp_path):
+    async def test_failure_returns_502(self, real_flow, mitm_ctx, tmp_path):
         flow = _firewall_flow(real_flow)
         api_entry = _api_entry()
         sandbox_info = _sandbox_info(tmp_path)
@@ -1658,7 +1653,7 @@ class TestHandleFirewallRequest:
         log_text = await asyncio.to_thread(read_jsonl_text_after_flush, proxy_log_path)
         assert "invalid expiresAt" in log_text
 
-    async def test_no_response_set_on_success(self, real_flow, headers, mitm_ctx):
+    async def test_no_response_set_on_success(self, real_flow, mitm_ctx):
         """On success, flow.response should remain None (request continues to origin)."""
         flow = _firewall_flow(real_flow)
         api_entry = _api_entry()
@@ -1681,9 +1676,7 @@ class TestHandleFirewallRequest:
 
         assert flow.response is None
 
-    async def test_connector_not_configured_returns_424(
-        self, real_flow, headers, mitm_ctx, tmp_path
-    ):
+    async def test_connector_not_configured_returns_424(self, real_flow, mitm_ctx, tmp_path):
         """When connector is enabled but not linked, return 424 with missing secrets."""
         flow = _firewall_flow(real_flow)
         api_entry = _api_entry()
@@ -1719,7 +1712,7 @@ class TestHandleFirewallRequest:
         assert body["permission"] == "github"
         assert body["base"] == "https://api.github.com"
 
-    async def test_insufficient_credits_returns_402(self, real_flow, headers, mitm_ctx, tmp_path):
+    async def test_insufficient_credits_returns_402(self, real_flow, mitm_ctx, tmp_path):
         """Billable firewall auth denied for credits returns 402 and blocks usage."""
         flow = _firewall_flow(real_flow)
         api_entry = _api_entry()
@@ -1752,7 +1745,7 @@ class TestHandleFirewallRequest:
         assert "connectors" not in body
 
     async def test_connector_not_configured_without_name_omits_connectors(
-        self, real_flow, headers, mitm_ctx, tmp_path
+        self, real_flow, mitm_ctx, tmp_path
     ):
         """Connector slugs are only returned when the firewall name is known."""
         flow = _firewall_flow(real_flow)
@@ -1786,7 +1779,7 @@ class TestHandleFirewallRequest:
         assert body["base"] == "https://api.github.com"
         assert "connectors" not in body
 
-    async def test_missing_vars_only_returns_424(self, real_flow, headers, mitm_ctx, tmp_path):
+    async def test_missing_vars_only_returns_424(self, real_flow, mitm_ctx, tmp_path):
         """When connector is not configured, return 424 with its slug."""
         flow = _firewall_flow(real_flow)
         api_entry = _api_entry(base="https://hcti.io")
@@ -1815,7 +1808,7 @@ class TestHandleFirewallRequest:
         assert body["connectors"] == ["htmlcsstoimage"]
         assert body["base"] == "https://hcti.io"
 
-    async def test_missing_encrypted_secrets_returns_502(self, real_flow, headers, mitm_ctx):
+    async def test_missing_encrypted_secrets_returns_502(self, real_flow, mitm_ctx):
         """When encryptedSecrets is missing from sandbox_info, return 502."""
         flow = _firewall_flow(real_flow)
         api_entry = _api_entry(

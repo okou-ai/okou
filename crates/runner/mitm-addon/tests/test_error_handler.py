@@ -459,7 +459,7 @@ class TestErrorHandler:
         assert metadata_keys.REQUEST_STREAM_BUFFER_STATE not in flow.metadata
 
     def test_error_does_not_bill_partial_x_json_response(
-        self, tmp_path, real_flow, mitm_ctx, sync_usage_executor, usage_webhook_api
+        self, tmp_path, real_flow, sync_usage_executor, usage_webhook_api
     ):
         """Interrupted non-stream JSON must not be billed via request-hint fallback."""
         flow = real_flow(with_response=False, host="api.x.com", path="/2/tweets?ids=1,2,3")
@@ -775,7 +775,7 @@ class TestErrorHandler:
         assert len(serialized_proxy_entry.encode()) < 1_000
 
     def test_error_without_network_log_reports_model_usage(
-        self, tmp_path, real_flow, mitm_ctx, sync_usage_executor, usage_webhook_api
+        self, tmp_path, real_flow, sync_usage_executor, usage_webhook_api
     ):
         """Integration: error() -> _maybe_report -> _enqueue -> _retry -> webhook.
 

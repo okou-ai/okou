@@ -112,7 +112,7 @@ async def test_mitm_allowed_passes_through(registry_file, real_flow, mitm_ctx):
     assert flow.metadata.get(metadata_keys.ORIGINAL_URL) == "https://api.anthropic.com/v1/messages"
 
 
-async def test_firewall_no_base_match_passes_through(tmp_path, real_flow, mitm_ctx, headers):
+async def test_firewall_no_base_match_passes_through(tmp_path, real_flow, mitm_ctx):
     """URL not matching any firewall base → pass-through (not block)."""
     reg_path = _write_registry(
         tmp_path,
