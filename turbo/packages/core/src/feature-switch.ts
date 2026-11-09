@@ -46,6 +46,14 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.ComposerMediaPreviews]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "Composer media previews",
+    description:
+      "Show image and video thumbnails during upload, then enable preview.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.EmailIntegration]: {
     maintainer: "yuma@okou.ai",
     displayName: "Email integration",

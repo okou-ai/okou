@@ -39,6 +39,9 @@ import {
 } from "../attachment-resource-url.ts";
 import { canonicalUserMessageFileUrl } from "../chat-page/user-message-files.ts";
 import { isAnnotationMeaningful } from "./image-annotation.ts";
+import { createObjectUrlResource } from "../object-url-resource.ts";
+import { featureSwitch$ } from "../external/feature-switch.ts";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 // ---------------------------------------------------------------------------
 // Attachment types
@@ -492,6 +495,10 @@ function createAttachmentAnnotationSignals(args: {
   };
 }
 
+interface ComposerAttachmentPreview extends AttachmentPreviewSignals {
+  readonly url: string;
+}
+
 export interface ChatAttachment {
   /** Stable identity for this attachment inside its owning composer. */
   key: string;
@@ -507,7 +514,7 @@ export interface ChatAttachment {
   fileInfo$: Computed<Promise<FileInfo | null>>;
   /** Native transfer progress, including active parts; fileInfo$ owns completion. */
   uploadedBytes$: Computed<number>;
-  preview$: Computed<Promise<AttachmentPreviewSignals | null>>;
+  preview$: Computed<Promise<ComposerAttachmentPreview | null>>;
   /** Whether the annotated derivative required by a send is available. */
   annotationReady$: Computed<boolean>;
   /** Cancel the in-flight upload. Always safe to call (no-op if already completed). */
@@ -525,22 +532,17 @@ export interface ChatAttachment {
 }
 
 function createComposerAttachmentPreview(
-  fileInfo$: Computed<Promise<FileInfo | null>>,
-) {
-  return computed(async (get) => {
-    const file = await get(fileInfo$);
-    return file
-      ? createAttachmentPreviewSignals(canonicalUserMessageFileUrl(file.id), {
-          contentType: file.contentType,
-        })
-      : null;
-  });
+  url: string,
+  contentType: string,
+): ComposerAttachmentPreview {
+  return { url, ...createAttachmentPreviewSignals(url, { contentType }) };
 }
 
 function createChatAttachment(file: File): ChatAttachment {
   const contentType = inferUploadContentType(file);
   const imageLoad = createImageLoadSignals();
   const resetSignal$ = resetSignal();
+  const localPreview$ = state<ComposerAttachmentPreview | null>(null);
   const uploadedBytes$ = state(0);
   const internalUpload$ = state<Promise<FileInfo | null>>(
     Promise.resolve(null),
@@ -557,12 +559,27 @@ function createChatAttachment(file: File): ChatAttachment {
     set(annotation.cancelAnnotationUpload$);
   });
 
-  const upload$ = command(async ({ set }, parentSignal: AbortSignal) => {
+  const upload$ = command(async ({ get, set }, parentSignal: AbortSignal) => {
     const signal = set(resetSignal$, parentSignal);
+    const localResource =
+      get(featureSwitch$)[FeatureSwitchKey.ComposerMediaPreviews] &&
+      (contentType.startsWith("image/") || contentType.startsWith("video/"))
+        ? createObjectUrlResource(file, signal)
+        : null;
+    set(
+      localPreview$,
+      localResource
+        ? createComposerAttachmentPreview(localResource.url, contentType)
+        : null,
+    );
     set(uploadedBytes$, 0);
     const promise = set(uploadFileToStorage$, file, uploadedBytes$, signal);
     set(internalUpload$, promise);
-    await promise;
+    const [result] = await Promise.allSettled([promise]);
+    if (result.status === "rejected") {
+      localResource?.release();
+      throw result.reason;
+    }
   });
 
   return {
@@ -576,7 +593,21 @@ function createChatAttachment(file: File): ChatAttachment {
     uploadedBytes$: computed((get) => {
       return get(uploadedBytes$);
     }),
-    preview$: createComposerAttachmentPreview(fileInfo$),
+    preview$: computed(async (get) => {
+      // Keep the local source through completion; switching to a remote
+      // thumbnail would decode it again and flash the uploading preview.
+      const local = get(localPreview$);
+      if (local) {
+        return local;
+      }
+      const info = await get(fileInfo$);
+      return info
+        ? createComposerAttachmentPreview(
+            canonicalUserMessageFileUrl(info.id),
+            info.contentType,
+          )
+        : null;
+    }),
     cancel$,
     upload$,
     ...annotation,
@@ -754,7 +785,13 @@ export function createRestoredAttachment(
       return persisted.size;
     }),
     preview$: computed(async (get) => {
-      return (await get(restored$))?.preview ?? null;
+      const restored = await get(restored$);
+      return restored
+        ? {
+            url: canonicalUserMessageFileUrl(persisted.id),
+            ...restored.preview,
+          }
+        : null;
     }),
     cancel$,
     upload$,
