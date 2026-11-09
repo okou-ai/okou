@@ -6,6 +6,7 @@
 
 mod api;
 mod api_ably_supervisor;
+mod api_admission_deferrals;
 mod api_cancellation_reconciliation;
 mod api_claim_cooldowns;
 mod api_claim_in_flight;
@@ -1050,10 +1051,15 @@ pub trait JobProvider: Send + Sync {
     /// publishing running; all callers retain the future for lifecycle ordering.
     async fn heartbeat(&self, state: &HeartbeatState) -> ProviderResult<()>;
 
-    /// Defer the next API-backed poll until the immutable preference deadline
-    /// allows normal compatible-runner claiming.
-    /// Default no-op — only relevant for API-backed providers.
-    async fn defer_poll_until(&self, _deadline: Instant) {}
+    /// Exclude only this run from rediscovery until its immutable preference deadline.
+    /// Local retained admission may still retry it; unrelated discovery keeps progressing.
+    async fn defer_candidate_until(&self, _run_id: RunId, _deadline: Instant) {}
+
+    /// Release a locally retained candidate's discovery exclusion.
+    async fn release_candidate_deferral(&self, _run_id: RunId) {}
+
+    /// Admission stopped; volatile discovery holds must not survive a later resume.
+    async fn clear_candidate_deferrals(&self) {}
 
     /// Stop provider-owned discovery work and release its resources.
     ///

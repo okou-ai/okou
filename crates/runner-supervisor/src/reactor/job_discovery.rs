@@ -214,7 +214,7 @@ pub(super) struct DiscoveredJobContext<'a> {
 
 pub(super) struct DiscoveredJobResult {
     pub(super) needs_reuse_state_refresh: bool,
-    pub(super) pending_candidate: Option<JobCandidate>,
+    pub(super) pending_candidate: Option<(JobCandidate, super::pending_candidate::PendingRetry)>,
     prepared: Option<Box<ClaimedActivationGuard>>,
 }
 
@@ -227,10 +227,13 @@ impl DiscoveredJobResult {
         }
     }
 
-    pub(super) fn pending(candidate: JobCandidate) -> Self {
+    pub(super) fn pending(
+        candidate: JobCandidate,
+        retry: super::pending_candidate::PendingRetry,
+    ) -> Self {
         Self {
             needs_reuse_state_refresh: false,
-            pending_candidate: Some(candidate),
+            pending_candidate: Some((candidate, retry)),
             prepared: None,
         }
     }

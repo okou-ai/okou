@@ -830,7 +830,7 @@ impl JobProvider for MockJobProvider {
         }
     }
 
-    async fn defer_poll_until(&self, deadline: Instant) {
+    async fn defer_candidate_until(&self, _run_id: RunId, deadline: Instant) {
         self.deferred_poll_deadlines
             .lock()
             .unwrap_or_else(|e| e.into_inner())

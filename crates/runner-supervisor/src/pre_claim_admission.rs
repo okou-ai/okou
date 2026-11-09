@@ -159,77 +159,6 @@ pub enum PreClaimOutcome {
     Deferred,
 }
 
-/// The one unclaimed finalizing candidate retained between reactor wakeups.
-///
-/// Admission owns the candidate's original preference and the decision to
-/// recheck it. Runner still owns discovery, timer and reuse-notification wiring.
-#[derive(Default)]
-pub struct PendingFinalizingCandidate {
-    candidate: Option<JobCandidate>,
-}
-
-impl PendingFinalizingCandidate {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// A rediscovery of the same run must not replace its original deadline.
-    pub fn for_admission(&mut self, candidate: JobCandidate) -> JobCandidate {
-        if let Some(pending) = self
-            .candidate
-            .take_if(|pending| pending.run_id() == candidate.run_id())
-        {
-            info!(
-                run_id = %candidate.run_id(),
-                "duplicate finalizing candidate rechecks retained admission state"
-            );
-            pending
-        } else {
-            candidate
-        }
-    }
-
-    /// Keep the first pending candidate without blocking unrelated ready work.
-    pub fn retain(&mut self, candidate: JobCandidate) {
-        if self.candidate.is_none() {
-            self.candidate = Some(candidate);
-        } else {
-            info!(
-                run_id = %candidate.run_id(),
-                "finalizing candidate not retained because the pending slot is occupied"
-            );
-        }
-    }
-
-    pub fn is_some(&self) -> bool {
-        self.candidate.is_some()
-    }
-
-    pub fn deadline(&self) -> Option<Instant> {
-        self.candidate
-            .as_ref()
-            .and_then(JobCandidate::runner_preference)
-            .map(runner_provider::ActiveRunnerPreference::deadline)
-    }
-
-    /// Retry on a reuse-state notification, preserving the selected preference.
-    pub fn take(&mut self) -> Option<JobCandidate> {
-        self.candidate.take()
-    }
-
-    /// Retry after the timer fired with the original preference expired.
-    pub fn take_expired(&mut self) -> Option<JobCandidate> {
-        self.take().map(|candidate| {
-            candidate.without_runner_preference(RunnerPreferenceRemovalReason::Expired)
-        })
-    }
-
-    /// Draining or stopping cannot retain unclaimed preference state.
-    pub fn clear(&mut self) {
-        self.candidate = None;
-    }
-}
-
 struct PreparedCandidate {
     required_home_source_run_id: Option<RunId>,
     home_readiness_wait: Option<HomeReadinessWait>,
@@ -708,6 +637,11 @@ async fn prepare_ranked_preference_candidate(
 
     let selected_finalizing =
         advertised_tier == RunnerPreferenceTier::FinalizingPredecessor && selected;
+    // Exact advice identifies the source even if its sandbox has just retired.
+    // Only a ready Home of that identical predecessor can continue this path.
+    let selected_exact_home = selected
+        && advertised_tier == RunnerPreferenceTier::ExactSandbox
+        && ctx.home_cache.is_some();
     let selected_predecessor_home_evidence = match preference.target() {
         runner_provider::RunnerPreferenceTarget::PredecessorHome(_, home) if selected => Some(home),
         _ => None,
@@ -733,6 +667,7 @@ async fn prepare_ranked_preference_candidate(
 
     let predecessor_home_probe = if let Some(predecessor) = predecessor_run_id
         && (selected_finalizing
+            || selected_exact_home
             || selected_predecessor_home_evidence.is_some()
             || ctx
                 .home_cache_snapshot
@@ -757,8 +692,8 @@ async fn prepare_ranked_preference_candidate(
         None
     };
 
-    if let Some((predecessor, HomeCacheProbe::Ready { .. })) = predecessor_home_probe
-        && let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
+    if let Some((predecessor, HomeCacheProbe::Ready { .. })) = predecessor_home_probe {
+        if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
             &candidate,
             profile_name,
             job_vcpu,
@@ -768,14 +703,26 @@ async fn prepare_ranked_preference_candidate(
             ctx,
         )
         .await
-    {
-        return PreferencePreparation::Ready(PreparedCandidate {
-            required_home_source_run_id: Some(predecessor),
-            candidate,
-            resource: Some(resource),
-            home_readiness_wait: None,
-            blank_pool_selection,
-        });
+        {
+            return PreferencePreparation::Ready(PreparedCandidate {
+                required_home_source_run_id: Some(predecessor),
+                candidate,
+                resource: Some(resource),
+                home_readiness_wait: None,
+                blank_pool_selection,
+            });
+        }
+        if selected {
+            return defer_preference_candidate(
+                candidate,
+                preference,
+                reuse_key,
+                ctx,
+                true,
+                "capacity_exhausted",
+            )
+            .await;
+        }
     }
 
     if (selected_finalizing
@@ -869,6 +816,7 @@ async fn prepare_ranked_preference_candidate(
     } else {
         None
     };
+    let ready_home = matches!(home_probe, Some(HomeCacheProbe::Ready { .. }));
     let reason = if let Some(HomeCacheProbe::Ready { source_run_id }) = home_probe {
         if let Some((resource, blank_pool_selection)) = acquire_local_admission_resource(
             &candidate,
@@ -901,7 +849,7 @@ async fn prepare_ranked_preference_candidate(
         preference,
         reuse_key,
         ctx,
-        selected_finalizing,
+        selected_finalizing || selected_exact_home || selected && ready_home,
         reason,
     )
     .await
@@ -1031,7 +979,9 @@ async fn defer_preference_candidate(
         retained = retain,
         "runner preference admission deferred"
     );
-    ctx.provider.defer_poll_until(preference.deadline()).await;
+    ctx.provider
+        .defer_candidate_until(candidate.run_id(), preference.deadline())
+        .await;
     if retain {
         PreferencePreparation::Pending(candidate)
     } else {

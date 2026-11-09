@@ -61,6 +61,22 @@ teardown path and are returned as terminal errors. Ordinary optional GC or statu
 retry errors remain warnings. Runtime task ownership does not make an individual
 filesystem or network operation infinitely fast or cancellation-safe.
 
+Unclaimed preference waits own bounded candidate metadata, not a sandbox,
+resource lease, cache lock or claim transaction. A metadata slot travels through
+an independently scheduled recheck so new arrivals cannot displace its owner.
+Observation generations are captured before admission and returned with its
+result; a readiness change during that work remains eligible after retention.
+State changes and bounded safety rechecks allow progress without blocking the
+reactor. Original absolute expiry and inactive modes release local protection,
+including when every claim transaction slot is occupied.
+
+Discovery exclusions are scoped to the waiting Run ID. They suppress duplicate
+hints and raced poll results while unrelated work progresses. Candidate expiry
+cannot be extended by another candidate's deadline. These volatile observations
+do not confer execution authority: actual resource admission, source-bound
+checkout and the authoritative provider claim remain required. An accepted
+claim keeps its existing completion and rollback owner after routing expiry.
+
 Memory-triggered idle maintenance has one independently scheduled observation or
 cleanup at a time. It accepts selected cleanup with `IdleDestroyTracker` before
 awaiting status publication, then observes the original backing's exit and reads

@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use super::api_ably_supervisor::{
     AblySupervisor, AblySupervisorConfig, PollDue, PollOutcome, PollReason, PollWakeups,
 };
+use super::api_admission_deferrals::{AdmissionDeferralRecord, AdmissionDeferrals};
 use super::api_cancellation_reconciliation::CancellationReconciliation;
 use super::api_claim_cooldowns::{ClaimCooldownRecord, ClaimCooldowns};
 use super::api_claim_in_flight::InFlightClaims;
@@ -380,6 +381,7 @@ pub struct ApiProvider {
     direct_candidates: Arc<DirectCandidateInbox>,
     /// Runs temporarily ineligible for this runner after a failed claim.
     claim_cooldowns: ClaimCooldowns,
+    admission_deferrals: AdmissionDeferrals,
     /// Requests whose queued Run may still be visible before claim settlement.
     in_flight_claims: InFlightClaims,
     /// Background Ably control-plane task.
@@ -454,6 +456,7 @@ impl ApiProvider {
             poll_wakeups,
             direct_candidates,
             claim_cooldowns: ClaimCooldowns::new(CLAIM_COOLDOWN_CAPACITY),
+            admission_deferrals: AdmissionDeferrals::new(),
             in_flight_claims: InFlightClaims::default(),
             ably_supervisor: Mutex::new(None),
             cancel_tokens,
@@ -483,6 +486,13 @@ impl ApiProvider {
             }
             let candidate = outcome.candidate?;
             let run_id = candidate.run_id();
+            if self.admission_deferrals.contains(run_id) {
+                if self.cancel.is_cancelled() {
+                    return None;
+                }
+                self.poll_wakeups.request_immediate_poll();
+                continue;
+            }
             let Some(retry_after) = self.claim_cooldowns.remaining(run_id).await else {
                 return Some(candidate);
             };
@@ -503,7 +513,10 @@ impl ApiProvider {
         let snapshot = self.claim_cooldowns.snapshot().await;
         if let Some(retry_after) = snapshot.retry_after {
             self.poll_wakeups.request_deferred_poll_after(retry_after);
-        } else if polled_with_exclusions && self.in_flight_claims.is_empty() {
+        } else if polled_with_exclusions
+            && self.in_flight_claims.is_empty()
+            && self.admission_deferrals.snapshot().run_ids.is_empty()
+        {
             // Every exclusion expired or settled while the HTTP poll was in flight.
             // Pending claims wake polling on settlement; do not spin on an empty
             // poll that correctly excluded them.
@@ -604,11 +617,15 @@ impl ApiProvider {
     }
 
     async fn wait_for_discovery_wakeup(&self) -> Option<DiscoveryWakeup> {
+        // Subscribe before reading deadlines; a newly recorded/released hold
+        // must interrupt an existing wait without postponing unrelated polls.
+        let mut admission_changed = self.admission_deferrals.subscribe();
         loop {
             if let Some(candidate) = self.try_recv_direct_candidate().await {
                 return Some(DiscoveryWakeup::Direct(Box::new(candidate)));
             }
 
+            let admission_deadline = self.admission_deferrals.snapshot().next_deadline;
             tokio::select! {
                 biased;
                 () = self.cancel.cancelled() => {
@@ -621,6 +638,16 @@ impl ApiProvider {
                 }
                 due = self.poll_wakeups.wait_for_poll_due(&self.cancel, POLL_SLOW, POLL_FAST) => {
                     return due.map(DiscoveryWakeup::Poll);
+                }
+                _ = admission_changed.changed() => {}
+                () = async {
+                    if let Some(deadline) = admission_deadline {
+                        tokio::time::sleep_until(deadline).await;
+                    } else {
+                        std::future::pending::<()>().await;
+                    }
+                } => {
+                    self.poll_wakeups.request_immediate_poll();
                 }
             }
         }
@@ -745,7 +772,10 @@ impl JobProvider for ApiProvider {
             let reason = due.reason();
             let poll_due_started_at = Instant::now();
             let cooldowns = self.claim_cooldowns.snapshot().await;
-            let excluded_run_ids = self.in_flight_claims.poll_exclusions(&cooldowns.run_ids);
+            let admission = self.admission_deferrals.snapshot();
+            let excluded_run_ids = self
+                .in_flight_claims
+                .poll_exclusions(&admission.run_ids, &cooldowns.run_ids);
 
             let poll_result = tokio::select! {
                 biased;
@@ -787,7 +817,9 @@ impl JobProvider for ApiProvider {
                     job: Some(job),
                     http_request_elapsed,
                 }) => {
-                    if self.in_flight_claims.contains(job.run_id) {
+                    if self.in_flight_claims.contains(job.run_id)
+                        || self.admission_deferrals.contains(job.run_id)
+                    {
                         // Locally reject an outstanding claim even if an API
                         // ignores exclusions or this poll raced registration.
                         self.poll_wakeups.record_poll_result(
@@ -894,6 +926,7 @@ impl JobProvider for ApiProvider {
     async fn claim(&self, candidate: JobCandidate) -> Option<ClaimedJob> {
         let run_id = candidate.run_id();
         let _in_flight = self.in_flight_claims.register(run_id, &self.poll_wakeups);
+        self.admission_deferrals.release(run_id);
         let cancellation_lookup_started_at = Instant::now();
         let cancellation = self.cancel_tokens.handle(run_id).await;
         info!(
@@ -1032,8 +1065,27 @@ impl JobProvider for ApiProvider {
         result
     }
 
-    async fn defer_poll_until(&self, deadline: Instant) {
-        self.poll_wakeups.request_deferred_poll_until(deadline);
+    async fn defer_candidate_until(&self, run_id: RunId, deadline: Instant) {
+        match self.admission_deferrals.defer(run_id, deadline) {
+            AdmissionDeferralRecord::Changed => self.poll_wakeups.request_immediate_poll(),
+            AdmissionDeferralRecord::Unchanged => {}
+            AdmissionDeferralRecord::Saturated => {
+                warn!(%run_id, "admission discovery exclusion capacity reached");
+                self.poll_wakeups.request_deferred_poll_after(POLL_FAST);
+            }
+        }
+    }
+
+    async fn release_candidate_deferral(&self, run_id: RunId) {
+        if self.admission_deferrals.release(run_id) {
+            self.poll_wakeups.request_immediate_poll();
+        }
+    }
+
+    async fn clear_candidate_deferrals(&self) {
+        if self.admission_deferrals.clear() {
+            self.poll_wakeups.request_immediate_poll();
+        }
     }
 
     async fn shutdown(&self) {
