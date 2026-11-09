@@ -1631,7 +1631,7 @@
     },
     "attachments": {
       "attach": "Anhängen",
-      "fileTooLarge": "{{filename}} überschreitet die 512-MB-Grenze",
+      "fileTooLarge": "{{filename}} überschreitet die 5-GB-Grenze",
       "imageUnavailable": "[Bild nicht verfügbar: {{filename}}]",
       "loadingFile": "{{filename}} wird geladen",
       "previewFile": "Vorschau von {{filename}}",

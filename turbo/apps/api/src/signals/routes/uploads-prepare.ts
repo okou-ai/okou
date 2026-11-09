@@ -107,6 +107,11 @@ const prepareUploadInner$ = command(
     const uploadHeaders = s3MetadataHeaders(metadata);
 
     if (multipart && size >= MULTIPART_PART_SIZE_BYTES) {
+      // Completion and ListParts accept at most 1000 parts. Preserve 5 MiB
+      // parts for smaller files and grow them for the full 5 GiB boundary.
+      const partSize =
+        Math.ceil(size / (1000 * MULTIPART_PART_SIZE_BYTES)) *
+        MULTIPART_PART_SIZE_BYTES;
       let uploadId: string | undefined;
       return await onRejection(
         (async () => {
@@ -120,7 +125,7 @@ const prepareUploadInner$ = command(
             ),
           );
           signal.throwIfAborted();
-          const partCount = Math.ceil(size / MULTIPART_PART_SIZE_BYTES);
+          const partCount = Math.ceil(size / partSize);
           const signedParts: {
             partNumber: number;
             uploadUrl: string;
@@ -152,7 +157,7 @@ const prepareUploadInner$ = command(
               url,
               multipart: {
                 uploadId,
-                partSize: MULTIPART_PART_SIZE_BYTES,
+                partSize,
                 parts: signedParts,
               },
             },

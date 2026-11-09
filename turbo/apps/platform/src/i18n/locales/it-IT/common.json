@@ -1655,7 +1655,7 @@
     },
     "attachments": {
       "attach": "Allega",
-      "fileTooLarge": "{{filename}} supera il limite di 512 MB",
+      "fileTooLarge": "{{filename}} supera il limite di 5 GB",
       "imageUnavailable": "[Immagine non disponibile: {{filename}}]",
       "loadingFile": "Caricamento in corso {{filename}}",
       "previewFile": "Anteprima {{filename}}",

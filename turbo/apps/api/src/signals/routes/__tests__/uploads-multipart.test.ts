@@ -176,6 +176,61 @@ describe("multipart user artifact uploads", () => {
     });
   });
 
+  it("prepares and completes a 5 GiB attachment within the 1000-part contract", async () => {
+    const userId = `user_${randomUUID()}`;
+    const orgId = `org_${randomUUID()}`;
+    mocks.clerk.session(userId, orgId);
+    const size = 5 * 1024 * 1024 * 1024;
+    const uploadedParts = Array.from({ length: 512 }, (_, index) => {
+      return { PartNumber: index + 1, ETag: `"etag-${index + 1}"` };
+    });
+    context.mocks.s3.send.mockImplementation((command: unknown) => {
+      if (command instanceof CreateMultipartUploadCommand) {
+        return Promise.resolve({ UploadId: "five-gib-upload" });
+      }
+      if (command instanceof ListPartsCommand) {
+        return Promise.resolve({ Parts: uploadedParts });
+      }
+      if (command instanceof HeadObjectCommand) {
+        return Promise.resolve({ ContentLength: size });
+      }
+      return Promise.resolve({});
+    });
+    const prepared = await accept(
+      apiClient().prepare({
+        headers: authHeaders(),
+        body: {
+          filename: "long-recording.mp4",
+          contentType: "video/mp4",
+          size,
+          multipart: true,
+        },
+      }),
+      [200],
+    );
+    if (!("multipart" in prepared.body)) {
+      throw new Error("Expected a multipart upload");
+    }
+    expect(prepared.body.multipart.partSize).toBe(10 * 1024 * 1024);
+    expect(prepared.body.multipart.parts).toHaveLength(512);
+    const completed = await accept(
+      apiClient().completeMultipart({
+        headers: authHeaders(),
+        body: {
+          id: prepared.body.id,
+          filename: prepared.body.filename,
+          uploadId: prepared.body.multipart.uploadId,
+          partCount: prepared.body.multipart.parts.length,
+        },
+      }),
+      [200],
+    );
+    expect(completed.body).toStrictEqual({
+      id: prepared.body.id,
+      url: prepared.body.url,
+    });
+  });
+
   it("stores the declared text charset when preparing a multipart artifact", async () => {
     useOrganizationlessUploads(`user_${randomUUID()}`);
     context.mocks.s3.send.mockImplementation((command) => {

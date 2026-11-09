@@ -1628,7 +1628,7 @@
     },
     "attachments": {
       "attach": "添付する",
-      "fileTooLarge": "{{filename}} が 512 MB の制限を超えています",
+      "fileTooLarge": "{{filename}} が 5 GB の制限を超えています",
       "imageUnavailable": "[画像は利用できません: {{filename}}]",
       "loadingFile": "{{filename}} をロードしています",
       "previewFile": "{{filename}} のプレビュー",
