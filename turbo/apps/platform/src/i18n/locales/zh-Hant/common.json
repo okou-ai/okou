@@ -5843,6 +5843,17 @@
           "title": "IndexedDB 儲存",
           "unavailable": "IndexedDB 儲存不可用。"
         },
+        "learning": {
+          "description": "立即回顧近期活動並更新個人記憶，不變更夜間執行排程。",
+          "notInstalled": "請先在偏好設定中開啟學習，再於此執行。",
+          "openChat": "開啟對話",
+          "queued": "學習已加入佇列，可開啟對話查看進度。",
+          "requestFailed": "無法確認請求結果，請先查看學習對話再重試。",
+          "run": "執行學習",
+          "starting": "正在啟動…",
+          "title": "學習",
+          "unavailable": "學習暫時無法使用。"
+        },
         "morningBrief": {
           "description": "立即執行一次帳號已開啟的晨間簡報。它可能更新建議並寄送實際郵件，每日執行時間保持不變。",
           "openChat": "開啟對話",

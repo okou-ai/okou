@@ -5927,6 +5927,17 @@
           "title": "Armazenamento do IndexedDB",
           "unavailable": "O armazenamento do IndexedDB não está disponível."
         },
+        "learning": {
+          "description": "Revise a atividade recente e atualize sua memória pessoal uma vez. O agendamento noturno permanece igual.",
+          "notInstalled": "Ative o aprendizado nas Preferências antes de executá-lo aqui.",
+          "openChat": "Abrir conversa",
+          "queued": "Aprendizado na fila. Abra a conversa para acompanhar o progresso.",
+          "requestFailed": "Não foi possível confirmar a solicitação. Confira a conversa de aprendizado antes de tentar novamente.",
+          "run": "Executar aprendizado",
+          "starting": "Iniciando…",
+          "title": "Aprendizado",
+          "unavailable": "O aprendizado não está disponível no momento."
+        },
         "morningBrief": {
           "description": "Execute uma vez o fluxo ativado da sua conta. Ele pode atualizar sugestões e enviar um email real. Seu horário diário não muda.",
           "openChat": "Abrir conversa",

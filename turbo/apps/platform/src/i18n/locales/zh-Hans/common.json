@@ -5843,6 +5843,17 @@
           "title": "IndexedDB 存储",
           "unavailable": "IndexedDB 存储不可用。"
         },
+        "learning": {
+          "description": "立即回顾近期活动并更新个人记忆，不改变夜间执行计划。",
+          "notInstalled": "请先在偏好设置中开启学习，再在此运行。",
+          "openChat": "打开对话",
+          "queued": "学习已加入队列，可打开对话查看进度。",
+          "requestFailed": "无法确认请求结果，请先查看学习对话再重试。",
+          "run": "运行学习",
+          "starting": "正在启动…",
+          "title": "学习",
+          "unavailable": "学习暂时不可用。"
+        },
         "morningBrief": {
           "description": "立即运行一次账号已开启的晨间简报。它可能更新建议并发送真实邮件，每日执行时间保持不变。",
           "openChat": "打开对话",

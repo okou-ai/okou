@@ -5862,6 +5862,17 @@
           "title": "IndexedDB-Speicher",
           "unavailable": "IndexedDB-Speicher ist nicht verfügbar."
         },
+        "learning": {
+          "description": "Prüfe die letzten Aktivitäten und aktualisiere deinen persönlichen Speicher einmalig. Dein nächtlicher Zeitplan bleibt unverändert.",
+          "notInstalled": "Aktiviere Lernen zuerst in den Einstellungen.",
+          "openChat": "Chat öffnen",
+          "queued": "Lernen wurde eingereiht. Öffne den Chat, um den Fortschritt zu verfolgen.",
+          "requestFailed": "Die Anfrage konnte nicht bestätigt werden. Prüfe vor einem erneuten Versuch den Lern-Chat.",
+          "run": "Lernen starten",
+          "starting": "Wird gestartet…",
+          "title": "Lernen",
+          "unavailable": "Lernen ist derzeit nicht verfügbar."
+        },
         "morningBrief": {
           "description": "Führe das aktivierte Morgenbriefing deines Kontos einmal aus. Dabei können Vorschläge aktualisiert und echte E-Mails versendet werden. Dein täglicher Zeitplan bleibt unverändert.",
           "openChat": "Gespräch öffnen",

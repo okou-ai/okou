@@ -5927,6 +5927,17 @@
           "title": "Spazio IndexedDB",
           "unavailable": "Lo spazio IndexedDB non è disponibile."
         },
+        "learning": {
+          "description": "Esamina le attività recenti e aggiorna la memoria personale una volta. La pianificazione notturna non cambia.",
+          "notInstalled": "Attiva l'apprendimento nelle Preferenze prima di eseguirlo qui.",
+          "openChat": "Apri chat",
+          "queued": "Apprendimento in coda. Apri la chat per seguirne l'avanzamento.",
+          "requestFailed": "Non è stato possibile confermare la richiesta. Controlla la chat di apprendimento prima di riprovare.",
+          "run": "Esegui apprendimento",
+          "starting": "Avvio…",
+          "title": "Apprendimento",
+          "unavailable": "L'apprendimento non è al momento disponibile."
+        },
         "morningBrief": {
           "description": "Esegue una volta il workflow attivo del tuo account. Può aggiornare i suggerimenti e inviare una vera email. La pianificazione giornaliera resta invariata.",
           "openChat": "Apri conversazione",
