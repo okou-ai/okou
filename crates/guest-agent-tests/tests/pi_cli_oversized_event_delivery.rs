@@ -695,7 +695,7 @@ async fn deliver_pi_rpc_with_skips(
         })
         .await??
     };
-    let requests = server.requests()?;
+    let requests = server.take_requests()?;
     let mut delivered = Vec::new();
     for request in &requests {
         assert!(request.body.len() <= LIMIT);
