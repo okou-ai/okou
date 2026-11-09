@@ -38,6 +38,7 @@ final class ComposerConnectorStore {
     let url: URL
   }
   var webDestination: WebDestination?
+  private(set) var directory: ComposerConnectorDirectoryResources?
   @ObservationIgnored lazy var authorization = ConnectorActionStore(
     service: authorizationService,
     didContinue: { [weak self] in await self?.refresh() }, didFail: didFail)
@@ -72,6 +73,7 @@ final class ComposerConnectorStore {
     guard !closed, self.agentID != agentID else { return }
     if threadID == nil, let previous = self.agentID { pendingByAgent[previous] = pendingOptions }
     generation = UUID()
+    closeDirectory()
     authorization.cancel()
     authorization.activationError = nil
     webDestination = nil
@@ -389,7 +391,19 @@ final class ComposerConnectorStore {
     pendingByAgent[agentID] = nil
     if self.agentID == agentID { pendingOptions = ChatComposerOptions() }
   }
+  func openDirectory() {
+    guard !closed else { return }
+    closeDirectory()
+    directory = ComposerConnectorDirectoryResources(service: service, didFail: didFail)
+  }
+
+  func closeDirectory() {
+    directory?.close()
+    directory = nil
+  }
+
   func close() {
+    closeDirectory()
     closed = true
     generation = UUID()
     authorization.close()
