@@ -69,14 +69,15 @@ struct ComposerChatConnectorAccounts: View {
       }
       Section {
         if let slug = connector.target.connectorSlug, store.canConfigurePermissions(slug: slug) {
-          NavigationLink {
-            ComposerConnectorPermissions(
-              store: store, slug: slug, label: connector.label)
+          Button {
+            store.openPermissions(slug: slug, label: connector.label)
           } label: {
-            Label {
-              Text("Permissions").foregroundStyle(.primary)
-            } icon: {
-              Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary)
+            HStack {
+              OkouRowLabel("Permissions", okouSymbol: "sliders-horizontal")
+              Spacer(minLength: OkouSpace.sm)
+              OkouIcon("chevron-right", size: OkouIconSize.inline)
+                .foregroundStyle(OkouColor.mutedForeground)
+                .accessibilityHidden(true)
             }
           }
         }

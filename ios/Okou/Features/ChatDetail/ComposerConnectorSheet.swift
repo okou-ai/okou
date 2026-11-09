@@ -92,6 +92,16 @@ struct ComposerConnectorSheet: View {
             .id(ObjectIdentifier(resources))
         }
       }
+      .navigationDestination(
+        isPresented: Binding(
+          get: { store.permissions != nil },
+          set: { if !$0 { store.closePermissions() } })
+      ) {
+        if let resources = store.permissions {
+          ComposerConnectorPermissions(store: store, resources: resources)
+            .id(ObjectIdentifier(resources))
+        }
+      }
       .toolbar { OkouCloseToolbarItem { dismiss() } }
       .alert(
         "Could not open connector",
@@ -123,6 +133,7 @@ struct ComposerConnectorSheet: View {
     .onDisappear {
       store.authorization.cancel()
       store.closeDirectory()
+      store.closePermissions()
     }
   }
 
@@ -185,9 +196,10 @@ struct ComposerConnectorSheet: View {
           destination = .accounts(connector.id)
         }
       }
-      if connector.authorized && connector.hasPermissions && connector.target.connectorSlug != nil {
+      if connector.authorized && connector.hasPermissions, let slug = connector.target.connectorSlug
+      {
         rowAction("sliders-horizontal", label: "Permissions for \(connector.label)") {
-          destination = .permissions(connector.id)
+          store.openPermissions(slug: slug, label: connector.label)
         }
       }
       Toggle(
@@ -235,10 +247,6 @@ struct ComposerConnectorSheet: View {
       switch destination {
       case .accounts:
         ComposerConnectorAccounts(store: store, connector: connector)
-      case .permissions:
-        if let slug = connector.target.connectorSlug {
-          ComposerConnectorPermissions(store: store, slug: slug, label: connector.label)
-        }
       }
     } else {
       OkouEmptyState(
@@ -249,11 +257,10 @@ struct ComposerConnectorSheet: View {
 
   private enum ConnectorDestination: Hashable {
     case accounts(String)
-    case permissions(String)
 
     var connectorID: String {
       switch self {
-      case .accounts(let id), .permissions(let id): id
+      case .accounts(let id): id
       }
     }
   }

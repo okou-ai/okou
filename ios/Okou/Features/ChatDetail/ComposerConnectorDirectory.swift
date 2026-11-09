@@ -359,8 +359,8 @@ private struct ComposerConnectorDetail: View {
         if connector.permissionSummary.hasPermissions
           && (!store.chatAccountAccess || store.canConfigurePermissions(slug: connector.slug))
         {
-          NavigationLink {
-            ComposerConnectorPermissions(store: store, slug: connector.slug, label: connector.label)
+          Button {
+            store.openPermissions(slug: connector.slug, label: connector.label)
           } label: {
             OkouCompactButtonLabel("Permissions", icon: "shield-check")
           }
