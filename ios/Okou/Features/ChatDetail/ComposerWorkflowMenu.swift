@@ -14,6 +14,11 @@ struct ComposerWorkflowMenu: View {
 }
 
 private struct ComposerWorkflowContent: View {
+  private struct ResultIdentity: Hashable {
+    let requestID: UUID?
+    let query: String?
+  }
+
   let suggestions: ComposerWorkflowSuggestions
   let availableHeight: CGFloat
   @LoadableValue private var results: Loadable<ComposerWorkflowResources.Matches>
@@ -85,6 +90,8 @@ private struct ComposerWorkflowContent: View {
       ComposerWorkflowTable(
         suggestions: suggestions, result: result, selectedIndex: suggestions.selectedIndex
       )
+      // A new search owns fresh native scroll and self-sizing state.
+      .id(ResultIdentity(requestID: result.requestID, query: result.query))
       .frame(
         height: max(
           0,
@@ -120,16 +127,17 @@ private struct ComposerWorkflowTable: UIViewRepresentable {
     let coordinator = context.coordinator
     coordinator.suggestions = suggestions
     let values = result.values
-    let previous = coordinator.values
+    let previous = coordinator.result
     coordinator.result = result
     suggestions.registerRows(coordinator) { [weak coordinator] in coordinator?.result }
-    if previous != values {
+    if previous?.values != values {
       table.reloadData()
     }
     if values.indices.contains(selectedIndex) {
       let path = IndexPath(row: selectedIndex, section: 0)
       table.selectRow(at: path, animated: false, scrollPosition: .none)
-      if coordinator.selectedIndex != selectedIndex {
+      // Initial selection must not scroll a table that has not been laid out.
+      if previous != nil, coordinator.selectedIndex != selectedIndex {
         table.scrollToRow(at: path, at: .none, animated: false)
       }
     } else if let path = table.indexPathForSelectedRow {
