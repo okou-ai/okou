@@ -139,6 +139,7 @@ final class ComposerConnectorStore {
         return (enabled, values)
       }
       guard !closed, !Task.isCancelled, request == generation else { return false }
+      if chatAccountAccess != enabled { closeAccounts() }
       connectors = values
       chatAccountAccess = enabled
       pendingOptions.chatAccountAccess = enabled
@@ -476,14 +477,17 @@ final class ComposerConnectorStore {
     owner: ComposerConnectorAccountResources, action: ComposerConnectorAccountResources.Action
   ) async {
     guard !closed, !owner.isClosed, accountPages.contains(where: { $0 === owner }),
-      owner.agentID == agentID, connectors.contains(where: { $0.target == owner.connector.target }),
+      owner.agentID == agentID, owner.chatAccountAccess == chatAccountAccess,
+      connectors.contains(where: { $0.target == owner.connector.target }),
       accountWrite == nil, !isSaving, !uncertain
     else { return }
     let request = generation
     let target = owner.connector.target
     let task = Task { @MainActor [self] in
       defer { if request == generation { accountWrite = nil } }
-      guard !closed, !Task.isCancelled, request == generation else { return }
+      guard !closed, !Task.isCancelled, request == generation,
+        owner.chatAccountAccess == chatAccountAccess
+      else { return }
       switch action {
       case .select(let id): await selectAccount(target: target, connectionID: id)
       case .access(let id, let enabled):

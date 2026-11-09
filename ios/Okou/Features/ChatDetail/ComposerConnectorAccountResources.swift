@@ -54,6 +54,7 @@ final class ComposerConnectorAccountResources {
   private let service: ChatComposerAccess
   private let didFail: @MainActor (Error) -> Void
   @ObservationIgnored private weak var composer: ComposerConnectorStore?
+  // Native navigation observes retirement; all request phases remain in the resource Tasks.
   private(set) var isClosed = false
   @ObservationIgnored private var generation = UUID()
   @ObservationIgnored private var firstTask: Task<ChatConnectorAccounts, Error>?
@@ -134,16 +135,16 @@ final class ComposerConnectorAccountResources {
       let task = Task<Details, Error> {
         @MainActor [weak self, service, managesDefaults, chatAccountAccess] in
         do {
-        try Task.checkCancellation()
-        var value = Details()
-        if managesDefaults {
-          value.defaults = try await service.accountDefaults(target: target)
-        } else if !chatAccountAccess, let threadID {
-          value.preferences = try await service.preferences(threadID: threadID)
-        }
-        try Task.checkCancellation()
-        try signal.checkCancellation()
-        return value
+          try Task.checkCancellation()
+          var value = Details()
+          if managesDefaults {
+            value.defaults = try await service.accountDefaults(target: target)
+          } else if !chatAccountAccess, let threadID {
+            value.preferences = try await service.preferences(threadID: threadID)
+          }
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          return value
         } catch {
           if let self, !isClosed, !Task.isCancelled, !signal.isCancelled { didFail(error) }
           throw error
@@ -178,7 +179,9 @@ final class ComposerConnectorAccountResources {
       try options.signal.checkCancellation()
       var accounts = result.connections + (tail?.accounts ?? [])
       let selected = settings.preferences?.selections.first { $0.target == connector.target }
-      let selectedID = chatAccountAccess ? current.access?.currentConnectionId
+      let selectedID =
+        chatAccountAccess
+        ? current.access?.currentConnectionId
         : (settings.preferences == nil ? pending?.connectionId : selected?.connectionId)
       let explicit = settings.preferences?.selectedConnections.first { $0.id == selectedID }
       let pinned = chatAccountAccess ? (search.isEmpty ? current.currentAccount : nil) : explicit
@@ -232,25 +235,33 @@ final class ComposerConnectorAccountResources {
 
   func loadMore() async {
     guard !isClosed, !Task.isCancelled else { return }
-    if let moreTask { _ = await moreTask.result; return }
+    if let moreTask {
+      _ = await moreTask.result
+      return
+    }
     let request = generation
     do {
       let value = try await store.get(page).value
       guard !isClosed, !Task.isCancelled, request == generation, moreTask == nil,
-        let cursor = value.nextCursor else { return }
+        let cursor = value.nextCursor
+      else { return }
       let search = try store.get(keyword)
       let previous = try store.get(tail)?.accounts ?? []
+      let base = try await store.get(first).value
+      guard !isClosed, !Task.isCancelled, request == generation else { return }
+      let existing = Set((base.connections + previous).map(\.id))
       let target = connector.target
       let task = Task<Void, Error> { @MainActor [weak self, service] in
         do {
-        try Task.checkCancellation()
-        let result = try await service.accounts(target: target, search: search, cursor: cursor)
-        try Task.checkCancellation()
-        guard let self, !isClosed, request == generation else { throw CancellationError() }
-        let existing = Set(value.accounts.map(\.id))
-        try store.set(append, Tail(
-          accounts: previous + result.connections.filter { !existing.contains($0.id) },
-          nextCursor: result.nextCursor))
+          try Task.checkCancellation()
+          let result = try await service.accounts(target: target, search: search, cursor: cursor)
+          try Task.checkCancellation()
+          guard let self, !isClosed, request == generation else { throw CancellationError() }
+          try store.set(
+            append,
+            Tail(
+              accounts: previous + result.connections.filter { !existing.contains($0.id) },
+              nextCursor: result.nextCursor))
         } catch {
           if let self, !isClosed, !Task.isCancelled, request == generation { didFail(error) }
           throw error

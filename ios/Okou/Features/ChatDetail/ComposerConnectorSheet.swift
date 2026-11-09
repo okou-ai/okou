@@ -134,6 +134,7 @@ struct ComposerConnectorSheet: View {
   private func connectorRow(_ connector: ChatComposerConnector) -> some View {
     if store.chatAccountAccess {
       Button {
+        accountDestination?.close()
         accountDestination = store.openAccounts(connector)
       } label: {
         HStack(spacing: OkouSpace.md) {
@@ -189,6 +190,7 @@ struct ComposerConnectorSheet: View {
       }
       if connector.authorized && !connector.managed {
         rowAction("circle-user-round", label: "Account for \(connector.label)") {
+          accountDestination?.close()
           accountDestination = store.openAccounts(connector)
         }
       }

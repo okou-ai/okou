@@ -63,6 +63,15 @@ private struct ComposerConnectorAccountsContent: View {
   }
 
   var body: some View {
+    switch search {
+    case .hasData(let search): content(search)
+    case .loading: OkouLoadingRow("Loading accounts…")
+    case .hasError(let error):
+      ConnectorLoadError(error: ChatRequestFailure.message(for: error)) { await resources.retry() }
+    }
+  }
+
+  private func content(_ search: String) -> some View {
     List {
       if let error = store.error ?? store.connectorError {
         ConnectorLoadError(error: error, isLoading: store.isLoading) { await resources.retry() }
@@ -70,13 +79,16 @@ private struct ComposerConnectorAccountsContent: View {
       switch page {
       case .loading: EmptyView()
       case .hasError(let error):
-        ConnectorLoadError(error: ChatRequestFailure.message(for: error)) { await resources.retry() }
+        ConnectorLoadError(
+          error: ChatRequestFailure.message(for: error),
+          isLoading: status == .loading || store.isLoading
+        ) { await resources.retry() }
       case .hasData(let value):
         if resources.managesDefaults {
           ComposerConnectorDefaults(store: store, resources: resources, page: value, busy: busy)
         } else if resources.chatAccountAccess {
           ComposerChatConnectorAccounts(
-            store: store, resources: resources, page: value, busy: busy,
+            store: store, resources: resources, page: value, busy: busy, search: search,
             openPermissions: {
               if let slug = resources.connector.target.connectorSlug {
                 permissionDestination = store.openPermissions(
@@ -84,10 +96,11 @@ private struct ComposerConnectorAccountsContent: View {
               }
             },
             openManagement: {
+              accountDestination?.close()
               accountDestination = store.openAccounts(resources.connector, managesDefaults: true)
             })
         } else {
-          legacy(value)
+          legacy(value, search: search)
         }
       }
       if case .hasError(let error) = pagination {
@@ -102,30 +115,38 @@ private struct ComposerConnectorAccountsContent: View {
       if case .loading = page { ChatSettingsLoadingView(title: "Loading accounts…") }
     }
     .okouGroupedBackground()
-    .navigationTitle(resources.managesDefaults ? "Manage accounts" : resources.connector.label)
+    .navigationTitle(
+      resources.managesDefaults
+        ? Text("Manage accounts") : Text(verbatim: resources.connector.label)
+    )
     .navigationBarTitleDisplayMode(.inline)
     .connectorPermissionDestination(store: store, destination: $permissionDestination)
     .connectorAccountDestination(store: store, destination: $accountDestination)
     .searchable(
       text: Binding(
-        get: { if case .hasData(let value) = search { return value }; return "" },
-        set: { resources.update(search: $0) }), prompt: "Find accounts")
+        get: { search },
+        set: { resources.update(search: $0) }), prompt: "Find accounts"
+    )
     .refreshable { await resources.retry() }
     .onChange(of: store.authorization.active?.id) { _, flowID in
       if flowID == nil { Task { await resources.refresh() } }
     }
   }
 
-  private func legacy(_ page: ComposerConnectorAccountResources.Page) -> some View {
+  private func legacy(_ page: ComposerConnectorAccountResources.Page, search: String) -> some View {
     Section {
-      Button { Task { await resources.apply(.select(nil)) } } label: {
+      Button {
+        Task { await resources.apply(.select(nil)) }
+      } label: {
         accountLabel(
           "Use default", detail: page.defaultAccount?.label ?? "No usable default account",
           checked: page.selectedID == nil)
       }.disabled(busy)
       ForEach(page.accounts) { account in
         VStack(alignment: .leading, spacing: OkouSpace.six) {
-          Button { Task { await resources.apply(.select(account.id)) } } label: {
+          Button {
+            Task { await resources.apply(.select(account.id)) }
+          } label: {
             accountLabel(
               account.label, detail: account.ready ? "Connected" : "Reconnect required",
               checked: page.selectedID == account.id)
@@ -141,7 +162,7 @@ private struct ComposerConnectorAccountsContent: View {
         Text("The selected account is unavailable. Choose an account or use default.")
           .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
       }
-      if page.accounts.isEmpty {
+      if page.accounts.isEmpty, !search.isEmpty {
         Text("No accounts found").foregroundStyle(OkouColor.mutedForeground)
       }
       accountActions(page: page)

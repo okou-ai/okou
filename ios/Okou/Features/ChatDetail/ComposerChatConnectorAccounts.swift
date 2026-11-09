@@ -20,6 +20,7 @@ struct ComposerChatConnectorAccounts: View {
   let resources: ComposerConnectorAccountResources
   let page: ComposerConnectorAccountResources.Page
   let busy: Bool
+  let search: String
   let openPermissions: () -> Void
   let openManagement: () -> Void
 
@@ -31,7 +32,8 @@ struct ComposerChatConnectorAccounts: View {
         }
       }
       if page.accounts.isEmpty {
-        Text("No accounts found").foregroundStyle(OkouColor.mutedForeground)
+        Text(search.isEmpty ? "No saved accounts" : "No accounts found").foregroundStyle(
+          OkouColor.mutedForeground)
       }
       if page.nextCursor != nil {
         Button("Load more") { Task { await resources.loadMore() } }.disabled(busy)
@@ -44,7 +46,9 @@ struct ComposerChatConnectorAccounts: View {
       Text("Choose the current account and which accounts this chat can use.").okouSectionNote()
     }
     Section {
-      if let slug = resources.connector.target.connectorSlug, store.canConfigurePermissions(slug: slug) {
+      if let slug = resources.connector.target.connectorSlug,
+        store.canConfigurePermissions(slug: slug)
+      {
         Button(action: openPermissions) {
           destinationLabel("Permissions", icon: "sliders-horizontal")
         }
@@ -68,7 +72,9 @@ struct ComposerChatConnectorAccounts: View {
     -> some View
   {
     HStack(spacing: OkouSpace.md) {
-      Button { Task { await resources.apply(.select(account.id)) } } label: {
+      Button {
+        Task { await resources.apply(.select(account.id)) }
+      } label: {
         HStack(spacing: OkouSpace.sm) {
           OkouIcon(page.selectedID == account.id ? "circle-check" : "circle")
             .accessibilityHidden(true)
@@ -119,7 +125,9 @@ struct ComposerConnectorDefaults: View {
       ForEach(page.accounts) { account in
         if let choice = page.defaults.first(where: { $0.connectionId == account.id }) {
           HStack(spacing: OkouSpace.md) {
-            Button { Task { await resources.apply(.defaultAccount(account.id)) } } label: {
+            Button {
+              Task { await resources.apply(.defaultAccount(account.id)) }
+            } label: {
               HStack(spacing: OkouSpace.sm) {
                 OkouIcon(choice.isDefault ? "circle-check" : "circle").accessibilityHidden(true)
                 VStack(alignment: .leading, spacing: OkouSpace.three) {
@@ -153,8 +161,10 @@ struct ComposerConnectorDefaults: View {
     } header: {
       Text("Saved accounts").okouSectionHeader()
     } footer: {
-      Text("Enabled accounts are available to chats by default. Choose one enabled default account.")
-        .okouSectionNote()
+      Text(
+        "Enabled accounts are available to chats by default. Choose one enabled default account."
+      )
+      .okouSectionNote()
     }
   }
 }

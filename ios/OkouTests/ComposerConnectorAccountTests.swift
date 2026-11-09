@@ -17,9 +17,9 @@ final class ComposerConnectorAccountTests: XCTestCase {
     let composer = await makeComposer(fixture)
     defer { composer.close() }
     let resources = try open(composer)
-    async let first = resources.store.get(resources.page).value
-    async let second = resources.store.get(resources.page).value
-    let values = try await (first, second)
+    let first = try resources.store.get(resources.page)
+    let second = try resources.store.get(resources.page)
+    let values = try await (first.value, second.value)
     XCTAssertEqual(values.0.accounts.map(\.id), [F.accountID])
     XCTAssertEqual(values.1.defaultAccount?.id, F.accountID)
     XCTAssertEqual(fixture.pageRequests.count, 1)
@@ -56,7 +56,9 @@ final class ComposerConnectorAccountTests: XCTestCase {
     let recovered = try await resources.store.get(resources.page).value
     XCTAssertEqual(recovered.accounts.map(\.id), [F.accountID, F.siblingID])
     XCTAssertNil(recovered.nextCursor)
-    XCTAssertEqual(fixture.pageRequests.suffix(2).map { AccountPageFixture.query("cursor", $0) }, ["second", "second"])
+    XCTAssertEqual(
+      fixture.pageRequests.suffix(2).map { AccountPageFixture.query("cursor", $0) },
+      ["second", "second"])
   }
 
   func testChangingSearchCancelsOriginalPaginationAndRejectsItsLateResult() async throws {
@@ -68,14 +70,23 @@ final class ComposerConnectorAccountTests: XCTestCase {
       await withTaskCancellationHandler {
         started.fulfill()
         await gate.wait()
-      } onCancel: { cancelled.fulfill() }
+      } onCancel: {
+        cancelled.fulfill()
+      }
     }
     let composer = await makeComposer(fixture)
-    defer { composer.close(); gate.open() }
+    defer {
+      composer.close()
+      gate.open()
+    }
     let resources = try open(composer)
     _ = try await resources.store.get(resources.page).value
     let pending = Task { await resources.loadMore() }
-    addTeardownBlock { pending.cancel(); gate.open(); await pending.value }
+    addTeardownBlock {
+      pending.cancel()
+      gate.open()
+      await pending.value
+    }
     await fulfillment(of: [started], timeout: 3)
     resources.update(search: "Personal")
     await fulfillment(of: [cancelled], timeout: 3)
@@ -95,15 +106,25 @@ final class ComposerConnectorAccountTests: XCTestCase {
     let fixture = AccountPageFixture { request in
       guard AccountPageFixture.query("search", request) == "hold" else { return }
       await withTaskCancellationHandler {
-        started.fulfill(); await gate.wait()
-      } onCancel: { cancelled.fulfill() }
+        started.fulfill()
+        await gate.wait()
+      } onCancel: {
+        cancelled.fulfill()
+      }
     }
     let composer = await makeComposer(fixture)
-    defer { composer.close(); gate.open() }
+    defer {
+      composer.close()
+      gate.open()
+    }
     let old = try open(composer)
     old.update(search: "hold")
     let pending = try old.store.get(old.page)
-    addTeardownBlock { pending.cancel(); gate.open(); _ = await pending.result }
+    addTeardownBlock {
+      pending.cancel()
+      gate.open()
+      _ = await pending.result
+    }
     await fulfillment(of: [started], timeout: 3)
     composer.configure(agentID: F.attemptID)
     await fulfillment(of: [cancelled], timeout: 3)
@@ -148,7 +169,8 @@ final class ComposerConnectorAccountTests: XCTestCase {
     XCTAssertEqual(current.selectedID, F.accountID)
     await management.apply(.defaultEnabled(F.siblingID, false))
     let disabled = try await management.store.get(management.page).value
-    XCTAssertEqual(disabled.defaults.first { $0.connectionId == F.siblingID }?.defaultEnabled, false)
+    XCTAssertEqual(
+      disabled.defaults.first { $0.connectionId == F.siblingID }?.defaultEnabled, false)
   }
 
   func testDismissedSelectionCompletesAndRefreshesAReopenedDestination() async throws {
@@ -156,13 +178,21 @@ final class ComposerConnectorAccountTests: XCTestCase {
     let started = expectation(description: "Selection reached HTTP")
     let fixture = AccountPageFixture { request in
       guard request.url?.path.hasSuffix("/connector-current") == true else { return }
-      started.fulfill(); await gate.wait()
+      started.fulfill()
+      await gate.wait()
     }
     let composer = await makeComposer(fixture, thread: true)
-    defer { composer.close(); gate.open() }
+    defer {
+      composer.close()
+      gate.open()
+    }
     let resources = try open(composer)
     let write = Task { await resources.apply(.select(F.siblingID)) }
-    addTeardownBlock { write.cancel(); gate.open(); await write.value }
+    addTeardownBlock {
+      write.cancel()
+      gate.open()
+      await write.value
+    }
     await fulfillment(of: [started], timeout: 3)
     composer.closeAccounts()
     let reopened = try open(composer)
@@ -204,11 +234,13 @@ final class ComposerConnectorAccountTests: XCTestCase {
     await resources.apply(.select(F.siblingID))
     let selected = try await resources.store.get(resources.page).value
     XCTAssertEqual(selected.selectedID, F.siblingID)
-    XCTAssertTrue(fixture.pageRequests.allSatisfy {
-      AccountPageFixture.query("customConnectorId", $0) == F.customID
-    })
+    XCTAssertTrue(
+      fixture.pageRequests.allSatisfy {
+        AccountPageFixture.query("customConnectorId", $0) == F.customID
+      })
     let request = try XCTUnwrap(fixture.writes.last)
-    let body = try XCTUnwrap(JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
+    let body = try XCTUnwrap(
+      JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: Any])
     let target = try XCTUnwrap(body["target"] as? [String: String])
     XCTAssertEqual(target["customConnectorId"], F.customID)
   }
@@ -247,13 +279,91 @@ final class ComposerConnectorAccountTests: XCTestCase {
     XCTAssertEqual(fixture.pageRequests.count, 2)
   }
 
+  func testAnOffPageCurrentAccountDoesNotReplaceLoadedPaginationData() async throws {
+    let fixture = AccountPageFixture()
+    let composer = await makeComposer(fixture, thread: true)
+    defer { composer.close() }
+    try await composer.service.setCurrentAccount(
+      target: .builtin("slack"), connectionID: F.siblingID, threadID: F.threadID)
+    await composer.refresh()
+    let resources = try open(composer)
+    let pinned = try await resources.store.get(resources.page).value
+    XCTAssertEqual(pinned.accounts.map(\.id), [F.siblingID, F.accountID])
+    await resources.loadMore()
+    try await composer.service.setCurrentAccount(
+      target: .builtin("slack"), connectionID: F.accountID, threadID: F.threadID)
+    await composer.refresh()
+    let loaded = try await resources.store.get(resources.page).value
+    XCTAssertEqual(loaded.accounts.map(\.id), [F.accountID, F.siblingID])
+    XCTAssertNil(loaded.nextCursor)
+  }
+
+  func testRapidSearchRoundTripDoesNotReuseACancelledRead() async throws {
+    let gate = ModelResponseGate()
+    let started = expectation(description: "Initial search reached HTTP")
+    let first = Mutex(true)
+    let fixture = AccountPageFixture { request in
+      guard AccountPageFixture.query("search", request) == "Personal",
+        first.withLock({ value in
+          let previous = value
+          value = false
+          return previous
+        })
+      else { return }
+      started.fulfill()
+      await gate.wait()
+    }
+    let composer = await makeComposer(fixture)
+    defer {
+      composer.close()
+      gate.open()
+    }
+    let resources = try open(composer)
+    resources.update(search: "Personal")
+    let old = try resources.store.get(resources.page)
+    addTeardownBlock {
+      old.cancel()
+      gate.open()
+      _ = await old.result
+    }
+    await fulfillment(of: [started], timeout: 3)
+    resources.update(search: "Personalx")
+    resources.update(search: "Personal")
+    let current = try await resources.store.get(resources.page).value
+    XCTAssertEqual(current.accounts.map(\.id), [F.siblingID])
+    gate.open()
+    if case .success = await old.result { XCTFail("A cancelled account search returned data") }
+    XCTAssertEqual(fixture.pageRequests.count, 2)
+  }
+
+  func testAccountScopeChangeRetiresTheOldEditorBeforeAnotherAction() async throws {
+    let fixture = AccountPageFixture()
+    let composer = await makeComposer(fixture, thread: true)
+    defer { composer.close() }
+    let old = try open(composer)
+    _ = try await old.store.get(old.page).value
+    fixture.state.withLock { $0.modern = false }
+    await composer.refresh()
+    await old.apply(.select(F.siblingID))
+    XCTAssertTrue(old.isClosed)
+    XCTAssertTrue(fixture.writes.isEmpty)
+    let reopened = try open(composer)
+    await reopened.apply(.select(F.siblingID))
+    let value = try await reopened.store.get(reopened.page).value
+    XCTAssertEqual(value.selectedID, F.siblingID)
+    XCTAssertEqual(
+      fixture.writes.last?.url?.path, "/api/chat-threads/\(F.threadID)/connector-selections")
+  }
+
   private func makeComposer(_ fixture: AccountPageFixture, thread: Bool = false) async
     -> ComposerConnectorStore
   {
-    let value = thread ? ChatThread(
-      id: F.threadID, agentID: F.agentID, title: "Accounts", selectedModel: nil,
-      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
-      pinnedAt: nil, pinOrder: nil, indicator: nil) : nil
+    let value =
+      thread
+      ? ChatThread(
+        id: F.threadID, agentID: F.agentID, title: "Accounts", selectedModel: nil,
+        createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
+        pinnedAt: nil, pinOrder: nil, indicator: nil) : nil
     let composer = ComposerConnectorStore(
       service: ChatComposerAccess(client: fixture.http.client),
       authorizationService: ChatConnectorService(client: fixture.http.client),
@@ -275,6 +385,7 @@ final class ComposerConnectorAccountTests: XCTestCase {
 final class AccountPageFixture: Sendable {
   private typealias F = ConnectorHTTPFixtures
   struct State: Sendable {
+    var modern = true
     var failMore = false
     var failFirst = false
     var requests: [URLRequest] = []
@@ -293,64 +404,105 @@ final class AccountPageFixture: Sendable {
     state.withLock { $0.requests.filter { $0.url?.path == "/api/connector-accounts/connections" } }
   }
   var writes: [URLRequest] {
-    state.withLock { $0.requests.filter { ["PUT", "POST", "DELETE"].contains($0.httpMethod ?? "") } }
+    state.withLock {
+      $0.requests.filter { ["PUT", "POST", "DELETE"].contains($0.httpMethod ?? "") }
+    }
   }
 
-  init(modern: Bool = true, custom: Bool = false,
-       before: @escaping @Sendable (URLRequest) async -> Void = { _ in }) {
+  init(
+    modern: Bool = true, custom: Bool = false,
+    before: @escaping @Sendable (URLRequest) async -> Void = { _ in }
+  ) {
     var initial = ConnectorAccessHTTPFixture.State()
     initial.custom = custom
     initial.enabled[F.siblingID] = true
     let backend = ConnectorAccessHTTPFixture(initial: initial, onUnhandledRequest: { XCTFail($0) })
     self.backend = backend
     let state = state
+    state.withLock { $0.modern = modern }
     http = ChatHTTPFixture { request in
       var request = request
       request.httpBody = chatRequestBody(request)
       state.withLock { $0.requests.append(request) }
       await before(request)
       let path = request.url!.path
-      if !modern, path == "/api/feature-switches" { return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#) }
+      if path == "/api/feature-switches" {
+        return ChatHTTPResponse(
+          body:
+            "{\"effectiveSwitches\":{\"connectorChatAccountAccess\":\(state.withLock { $0.modern })}}"
+        )
+      }
       if path.hasPrefix("/api/agents/"), path.hasSuffix("/connector-access") {
-        return ChatHTTPResponse(body: #"{"enabledConnectorSlugs":["slack"],"customConnectorIds":[]}"#)
+        return ChatHTTPResponse(
+          body: #"{"enabledConnectorSlugs":["slack"],"customConnectorIds":[]}"#)
       }
       if path.hasSuffix("/connector-selections") {
         let thread = request.url!.deletingLastPathComponent().lastPathComponent
         let method = request.httpMethod ?? "GET"
         if method != "GET" {
-          let body = try JSONSerialization.jsonObject(with: chatRequestBody(request)) as! [String: Any]
-          state.withLock { $0.selections[thread] = method == "DELETE" ? nil : body["connectionId"] as? String }
+          let body =
+            try JSONSerialization.jsonObject(with: chatRequestBody(request)) as! [String: Any]
+          state.withLock {
+            $0.selections[thread] = method == "DELETE" ? nil : body["connectionId"] as? String
+          }
           return ChatHTTPResponse(status: method == "DELETE" ? 204 : 200, body: "{}")
         }
         let selected = state.withLock { $0.selections[thread] }
-        let target = custom ? "{\"kind\":\"custom\",\"customConnectorId\":\"\(F.customID)\"}"
+        let target =
+          custom
+          ? "{\"kind\":\"custom\",\"customConnectorId\":\"\(F.customID)\"}"
           : #"{"kind":"builtin","connectorSlug":"slack"}"#
-        let selections = selected.map { "[{\"target\":\(target),\"connectionId\":\"\($0)\"}]" } ?? "[]"
-        let connections = selected.map { "[" + F.account(id: $0, custom: custom, isDefault: false, label: "Personal account") + "]" } ?? "[]"
-        return ChatHTTPResponse(body: "{\"selections\":\(selections),\"selectedConnections\":\(connections)}")
+        let selections =
+          selected.map { "[{\"target\":\(target),\"connectionId\":\"\($0)\"}]" } ?? "[]"
+        let connections =
+          selected.map {
+            "[" + F.account(id: $0, custom: custom, isDefault: false, label: "Personal account")
+              + "]"
+          } ?? "[]"
+        return ChatHTTPResponse(
+          body: "{\"selections\":\(selections),\"selectedConnections\":\(connections)}")
       }
       if path == "/api/connector-accounts/connections" {
         let cursor = Self.query("cursor", request)
         let search = Self.query("search", request) ?? ""
         if state.withLock({ cursor == nil ? $0.failFirst : $0.failMore }) {
-          return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Accounts temporarily unavailable"}}"#)
+          return ChatHTTPResponse(
+            status: 503, body: #"{"error":{"message":"Accounts temporarily unavailable"}}"#)
         }
-        let first = F.account(custom: custom)
-        let second = F.account(id: F.siblingID, custom: custom, isDefault: false, label: "Personal account")
+        let defaultID = backend.state.withLock { $0.defaultID }
+        let first = F.account(custom: custom, isDefault: defaultID == F.accountID)
+        let second = F.account(
+          id: F.siblingID, custom: custom, isDefault: defaultID == F.siblingID,
+          label: "Personal account")
+        let defaultAccount = defaultID.map { $0 == F.accountID ? first : second } ?? "null"
         let values: [String]
-        if !search.isEmpty { values = [first, second].filter { $0.localizedCaseInsensitiveContains(search) } }
-        else { values = cursor == nil ? [first] : [second] }
+        if !search.isEmpty {
+          values = [("Work account", first), ("Personal account", second)].filter {
+            $0.0.localizedCaseInsensitiveContains(search)
+          }.map(\.1)
+        } else {
+          values = cursor == nil ? [first] : [second]
+        }
         let next = search.isEmpty && cursor == nil ? #""second""# : "null"
-        return ChatHTTPResponse(body: "{\"connections\":[\(values.joined(separator: ","))],\"defaultConnection\":\(first),\"nextCursor\":\(next)}")
+        return ChatHTTPResponse(
+          body:
+            "{\"connections\":[\(values.joined(separator: ","))],\"defaultConnection\":\(defaultAccount),\"nextCursor\":\(next)}"
+        )
       }
       var forwarded = request
-      forwarded.url = URL(string: request.url!.path + (request.url!.query.map { "?" + $0 } ?? ""), relativeTo: backend.http.baseURL)!
+      forwarded.url = URL(
+        string: request.url!.path + (request.url!.query.map { "?" + $0 } ?? ""),
+        relativeTo: backend.http.baseURL)!
       let (data, response) = try await backend.http.session.data(for: forwarded)
-      return ChatHTTPResponse(status: (response as! HTTPURLResponse).statusCode, body: String(decoding: data, as: UTF8.self))
+      return ChatHTTPResponse(
+        status: (response as! HTTPURLResponse).statusCode,
+        body: String(decoding: data, as: UTF8.self))
     }
   }
 
   static func query(_ name: String, _ request: URLRequest) -> String? {
-    URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first { $0.name == name }?.value
+    URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?.first {
+      $0.name == name
+    }?.value
   }
 }
