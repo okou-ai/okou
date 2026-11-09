@@ -343,10 +343,10 @@ test("mounts both template owner kinds once when selections repeat", async () =>
       throw new Error("Expected each selected template in the claim");
     }
     expect(
-      readTemplateGuidanceBundle(
-        fixture.readSignedObject(bundle.downloadUrl),
-        bundle,
-      ).map((file) => {
+      readTemplateGuidanceBundle(fixture.readSignedObject(bundle.downloadUrl), {
+        sha256: bundle.sha256,
+        archiveBytes: bundle.archiveBytes,
+      }).map((file) => {
         return { path: file.path, content: file.content.toString("utf8") };
       }),
     ).toStrictEqual(item.files);

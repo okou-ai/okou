@@ -335,7 +335,7 @@ try {
     const before = await snapshot(fixture.orgId);
     const writesBefore = putCount;
     await assert.rejects(run(fixture.id, "--migrate"), (error: unknown) => {
-      const failed = zObject({ code: literal(1), stdout: string() }).safeParse(
+      const failed = zObject({ code: literal(1), stderr: string() }).safeParse(
         error,
       );
       return (
@@ -343,7 +343,7 @@ try {
         zObject({
           result: literal("failed"),
           classification: literal("ZodError"),
-        }).safeParse(JSON.parse(failed.data.stdout.trim())).success
+        }).safeParse(JSON.parse(failed.data.stderr.trim())).success
       );
     });
     assert.deepEqual(await snapshot(fixture.orgId), before);
