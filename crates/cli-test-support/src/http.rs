@@ -267,6 +267,17 @@ impl ControlledHttpServer {
             .map(|requests| requests.clone())
             .map_err(|_| "controlled HTTP request mutex poisoned".to_string())
     }
+
+    /// Transfer the recorded requests without closing the server or response gates.
+    /// Subsequent reads contain only requests recorded after this transfer.
+    pub fn take_requests(&self) -> Result<Vec<RecordedRequest>, String> {
+        self.recorded_requests
+            .as_ref()
+            .ok_or("controlled HTTP server request recording is disabled")?
+            .lock()
+            .map(|mut requests| std::mem::take(&mut *requests))
+            .map_err(|_| "controlled HTTP request mutex poisoned".to_string())
+    }
 }
 
 async fn read_http_request(socket: &mut tokio::net::TcpStream) -> Result<RecordedRequest, String> {
