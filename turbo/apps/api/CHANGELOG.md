@@ -10,6 +10,29 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.55.2](https://github.com/okou-ai/okou/compare/api-v2.55.1...api-v2.55.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **api:** require ios 0.31.0 or later ([#46186](https://github.com/okou-ai/okou/issues/46186)) ([f75796f](https://github.com/okou-ai/okou/commit/f75796fa0745e3ef000478d9cd62f7307e3ea127))
+* **api:** start runner reuse windows after final candidate selection ([#46164](https://github.com/okou-ai/okou/issues/46164)) ([51eec70](https://github.com/okou-ai/okou/commit/51eec707a38a2fed444c7dbf7f01d8bb8bcf16e3))
+
+
+### Refactoring
+
+* **api:** prepare optional runner context readers ([#46173](https://github.com/okou-ai/okou/issues/46173)) ([200a124](https://github.com/okou-ai/okou/commit/200a12489fb62c0b86da3da27d9a9936d0d4463a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.1
+    * @okouai/core bumped to 8.825.1
+    * @okouai/db bumped to 2.24.9
+    * @okouai/pi-agent-runtime bumped to 1.51.91
+
 ## [2.55.1](https://github.com/okou-ai/okou/compare/api-v2.55.0...api-v2.55.1) (2026-11-09)
 
 

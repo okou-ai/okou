@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.31.2](https://github.com/okou-ai/okou/compare/ios-v0.31.1...ios-v0.31.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **ios:** match the unread badge outline to the glass control ([#46177](https://github.com/okou-ai/okou/issues/46177)) ([900254b](https://github.com/okou-ai/okou/commit/900254bfb2e1ec5f6a791db74599fb4d4b79c637))
+
+
+### Refactoring
+
+* **ios:** share attachment thumbnails through ccstate ([#46183](https://github.com/okou-ai/okou/issues/46183)) ([9cda004](https://github.com/okou-ai/okou/commit/9cda004a8462176541f2dc0f3e1312256c34a813))
+
 ## [0.31.1](https://github.com/okou-ai/okou/compare/ios-v0.31.0...ios-v0.31.1) (2026-11-09)
 
 
