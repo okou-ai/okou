@@ -8,14 +8,42 @@ import flow_metadata_keys as metadata_keys
 from tests.jsonl_log_helpers import jsonl_exists_after_flush, read_jsonl_entries_after_flush
 
 
-def test_skips_on_server_error(x_usage, tmp_path, real_flow):
-    flow = x_usage.make_flow(real_flow, tmp_path, status=500)
-    assert x_usage.call_and_get_billing(flow) == []
+@pytest.mark.parametrize(
+    ("body", "quantity"),
+    [
+        pytest.param(b'{"data":[{"id":"1"},{"id":"2"}]}', 2, id="response-count"),
+        pytest.param(b"not json", 3, id="request-hints"),
+    ],
+)
+@pytest.mark.parametrize(
+    "status",
+    [
+        pytest.param(200, id="success"),
+        pytest.param(429, id="rate-limit"),
+        pytest.param(500, id="server-error"),
+    ],
+)
+def test_get_billing_requires_success_status(x_usage, tmp_path, real_flow, body, quantity, status):
+    flow = x_usage.make_flow(real_flow, tmp_path, status=status, query="ids=1,2,3", body=body)
 
+    events = x_usage.call_and_get_billing(flow)
 
-def test_skips_on_rate_limit(x_usage, tmp_path, real_flow):
-    flow = x_usage.make_flow(real_flow, tmp_path, status=429)
-    assert x_usage.call_and_get_billing(flow) == []
+    if status != 200:
+        assert events == []
+        return
+
+    [event] = events
+    assert {
+        "kind": event["kind"],
+        "provider": event["provider"],
+        "category": event["category"],
+        "quantity": event["quantity"],
+    } == {
+        "kind": "connector",
+        "provider": "x",
+        "category": "posts.read",
+        "quantity": quantity,
+    }
 
 
 def test_skips_on_empty_permission(x_usage, tmp_path, real_flow):
