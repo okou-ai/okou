@@ -355,23 +355,29 @@
             ResultStylesGallery()
           }
           section("Workspace menu") {
-            // The sidebar's switcher: each workspace's logo beside its name, a check on the
-            // current one.
-            Menu {
-              Picker("Workspace", selection: $catalogWorkspace) {
-                ForEach(Self.sampleWorkspaces, id: \.id) { workspace in
-                  Label {
-                    Text(verbatim: workspace.name)
-                  } icon: {
-                    menuLogos.image(workspaceID: workspace.id, imageURL: nil, hasImage: false)
+            // The sidebar's switcher: the workspace's logo as a glass button, its name beside
+            // it with no arrow; the menu lists each workspace's logo beside its name, a check
+            // on the current one.
+            let name = Self.sampleWorkspaces.first { $0.id == catalogWorkspace }?.name ?? ""
+            HStack(spacing: OkouSpace.md) {
+              Menu {
+                Picker("Workspace", selection: $catalogWorkspace) {
+                  ForEach(Self.sampleWorkspaces, id: \.id) { workspace in
+                    Label {
+                      Text(verbatim: workspace.name)
+                    } icon: {
+                      menuLogos.image(workspaceID: workspace.id, imageURL: nil, hasImage: false)
+                    }
+                    .tag(workspace.id)
                   }
-                  .tag(workspace.id)
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
+              } label: {
+                OkouWorkspaceGlassLogo(workspaceID: catalogWorkspace, name: name)
               }
-              .pickerStyle(.inline)
-              .labelsHidden()
-            } label: {
-              Text(verbatim: "Open the workspace menu")
+              .buttonStyle(.plain)
+              Text(verbatim: name).font(.okou(.headline))
             }
             .task {
               for workspace in Self.sampleWorkspaces {
