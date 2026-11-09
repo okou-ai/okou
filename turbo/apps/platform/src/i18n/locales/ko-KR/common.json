@@ -1611,6 +1611,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "모두 확인했어요",
+        "emptyTitle": "새 제안이 없습니다",
+        "feedback": "제안 작업",
+        "loading": "제안 불러오는 중",
+        "navigation": "제안 둘러보기",
+        "next": "다음 제안",
+        "previous": "이전 제안",
+        "retry": "다시 시도"
+      },
       "label": "제안",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1870,6 +1880,7 @@
       "workflow": {
         "advanced": {
           "description": "도구와 작업 단계를 연결하세요.",
+          "shortTitle": "고급",
           "title": "고급 워크플로"
         },
         "description": "간단한 설정으로 반복 작업을 줄이세요.",
@@ -1881,6 +1892,7 @@
           },
           "prompt": "{{task}}. 할 일, 실행 시각, 시간대를 먼저 확인해 주세요.",
           "setupTitle": "작업 예약",
+          "shortTitle": "예약",
           "title": "예약 작업"
         },
         "suggestions": "추천 작업을 선택하고 필요에 맞게 조정하세요.",
@@ -1926,6 +1938,7 @@
             }
           },
           "monitorPrompt": "{{source}}로 {{task}} 설정을 도와주세요. 흐름: {{event}} → {{action}} → {{result}}. 확인할 피드, 주제 또는 계정, 확인 주기, 요약 저장 위치를 물어보세요. 정기적으로 확인하고 이미 처리한 항목은 제외하며, 설정을 확인한 후 활성화해 주세요.",
+          "shortTitle": "트리거",
           "title": "트리거"
         }
       }

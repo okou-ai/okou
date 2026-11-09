@@ -1638,6 +1638,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "Todo al día",
+        "emptyTitle": "No hay sugerencias nuevas",
+        "feedback": "Acciones de sugerencia",
+        "loading": "Cargando sugerencias",
+        "navigation": "Explorar sugerencias",
+        "next": "Siguiente sugerencia",
+        "previous": "Sugerencia anterior",
+        "retry": "Reintentar"
+      },
       "label": "Sugerencias",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1904,6 +1914,7 @@
       "workflow": {
         "advanced": {
           "description": "Conecta tus herramientas y pasos.",
+          "shortTitle": "Avanzado",
           "title": "Flujos de trabajo avanzados"
         },
         "description": "Una pequeña configuración. Mucho menos trabajo.",
@@ -1915,6 +1926,7 @@
           },
           "prompt": "{{task}}. Pregunta qué quiero hacer, cuándo debe ejecutarse y en qué zona horaria.",
           "setupTitle": "Programar una tarea",
+          "shortTitle": "Programar",
           "title": "Tareas programadas"
         },
         "suggestions": "Empieza con una sugerencia y adáptala a ti.",
@@ -1960,6 +1972,7 @@
             }
           },
           "monitorPrompt": "Ayúdame a configurar {{task}} con {{source}}. Flujo: {{event}} → {{action}} → {{result}}. Pregunta qué fuentes, temas o cuentas seguir, con qué frecuencia y dónde guardar el resumen. Revisa periódicamente, omite los elementos ya procesados y confirma la configuración antes de activarlo.",
+          "shortTitle": "Eventos",
           "title": "Activadores"
         }
       }

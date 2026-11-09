@@ -1614,6 +1614,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "Alles erledigt",
+        "emptyTitle": "Keine neuen Vorschläge",
+        "feedback": "Vorschlagsaktionen",
+        "loading": "Vorschläge werden geladen",
+        "navigation": "Vorschläge durchsehen",
+        "next": "Nächster Vorschlag",
+        "previous": "Vorheriger Vorschlag",
+        "retry": "Erneut versuchen"
+      },
       "label": "Vorschläge",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1875,6 +1885,7 @@
       "workflow": {
         "advanced": {
           "description": "Verbinde deine Tools und Arbeitsschritte.",
+          "shortTitle": "Erweitert",
           "title": "Erweiterte Workflows"
         },
         "description": "Einmal einrichten. Viel Arbeit sparen.",
@@ -1886,6 +1897,7 @@
           },
           "prompt": "{{task}}. Frage nach der Aufgabe, dem Ausführungszeitpunkt und der Zeitzone.",
           "setupTitle": "Eine Aufgabe planen",
+          "shortTitle": "Geplant",
           "title": "Geplante Aufgaben"
         },
         "suggestions": "Starte mit einem Vorschlag und passe ihn an.",
@@ -1931,6 +1943,7 @@
             }
           },
           "monitorPrompt": "Hilf mir, {{task}} mit {{source}} einzurichten. Ablauf: {{event}} → {{action}} → {{result}}. Frage nach Feeds, Themen oder Konten, Prüfintervall und Speicherort. Prüfe regelmäßig, überspringe bereits verarbeitete Einträge und bestätige die Einrichtung vor der Aktivierung.",
+          "shortTitle": "Trigger",
           "title": "Auslöser"
         }
       }

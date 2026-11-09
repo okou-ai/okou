@@ -1611,6 +1611,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "Semua beres",
+        "emptyTitle": "Belum ada saran baru",
+        "feedback": "Tindakan saran",
+        "loading": "Memuat saran",
+        "navigation": "Jelajahi saran",
+        "next": "Saran berikutnya",
+        "previous": "Saran sebelumnya",
+        "retry": "Coba lagi"
+      },
       "label": "Saran",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1870,6 +1880,7 @@
       "workflow": {
         "advanced": {
           "description": "Hubungkan alat dan langkah kerja Anda.",
+          "shortTitle": "Lanjutan",
           "title": "Alur kerja lanjutan"
         },
         "description": "Sedikit pengaturan. Banyak pekerjaan terselesaikan.",
@@ -1881,6 +1892,7 @@
           },
           "prompt": "{{task}}. Tanyakan tugas, waktu pelaksanaan, dan zona waktu yang digunakan.",
           "setupTitle": "Jadwalkan tugas",
+          "shortTitle": "Terjadwal",
           "title": "Tugas terjadwal"
         },
         "suggestions": "Mulai dari saran, lalu sesuaikan dengan kebutuhan Anda.",
@@ -1926,6 +1938,7 @@
             }
           },
           "monitorPrompt": "Bantu saya menyiapkan {{task}} menggunakan {{source}}. Alur: {{event}} → {{action}} → {{result}}. Tanyakan feed, topik atau akun yang dipantau, frekuensi pemeriksaan, dan lokasi ringkasan. Periksa secara berkala, lewati item yang sudah diproses, dan konfirmasi pengaturan sebelum mengaktifkannya.",
+          "shortTitle": "Pemicu",
           "title": "Pemicu"
         }
       }

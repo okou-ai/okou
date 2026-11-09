@@ -1638,6 +1638,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "Tutto fatto",
+        "emptyTitle": "Nessun nuovo suggerimento",
+        "feedback": "Azioni del suggerimento",
+        "loading": "Caricamento suggerimenti",
+        "navigation": "Sfoglia suggerimenti",
+        "next": "Suggerimento successivo",
+        "previous": "Suggerimento precedente",
+        "retry": "Riprova"
+      },
       "label": "Suggerimenti",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1904,6 +1914,7 @@
       "workflow": {
         "advanced": {
           "description": "Collega i tuoi strumenti e passaggi.",
+          "shortTitle": "Avanzati",
           "title": "Flussi di lavoro avanzati"
         },
         "description": "Poche impostazioni. Molto lavoro in meno.",
@@ -1915,6 +1926,7 @@
           },
           "prompt": "{{task}}. Chiedi cosa voglio fare, quando eseguirlo e quale fuso orario usare.",
           "setupTitle": "Pianifica un'attività",
+          "shortTitle": "Pianificati",
           "title": "Attività pianificate"
         },
         "suggestions": "Parti da un suggerimento e adattalo alle tue esigenze.",
@@ -1960,6 +1972,7 @@
             }
           },
           "monitorPrompt": "Aiutami a impostare {{task}} con {{source}}. Flusso: {{event}} → {{action}} → {{result}}. Chiedi quali feed, argomenti o account seguire, con quale frequenza e dove salvare il riepilogo. Controlla periodicamente, ignora gli elementi già elaborati e conferma prima di attivarlo.",
+          "shortTitle": "Trigger",
           "title": "Trigger"
         }
       }

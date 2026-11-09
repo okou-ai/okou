@@ -1614,6 +1614,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "सब पूरा हो गया",
+        "emptyTitle": "कोई नया सुझाव नहीं",
+        "feedback": "सुझाव के विकल्प",
+        "loading": "सुझाव लोड हो रहे हैं",
+        "navigation": "सुझाव देखें",
+        "next": "अगला सुझाव",
+        "previous": "पिछला सुझाव",
+        "retry": "फिर कोशिश करें"
+      },
       "label": "सुझाव",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1875,6 +1885,7 @@
       "workflow": {
         "advanced": {
           "description": "अपने टूल और चरणों को जोड़ें।",
+          "shortTitle": "उन्नत",
           "title": "उन्नत वर्कफ़्लो"
         },
         "description": "थोड़ा-सा सेटअप। बहुत-सा काम आसान।",
@@ -1886,6 +1897,7 @@
           },
           "prompt": "{{task}}। पहले पूछें कि क्या करना है, कब चलाना है और कौन सा समय क्षेत्र इस्तेमाल करना है।",
           "setupTitle": "कार्य शेड्यूल करें",
+          "shortTitle": "निर्धारित",
           "title": "निर्धारित कार्य"
         },
         "suggestions": "एक सुझाव से शुरू करें और उसे अपनी ज़रूरत के मुताबिक बदलें।",
@@ -1931,6 +1943,7 @@
             }
           },
           "monitorPrompt": "{{source}} के साथ {{task}} सेट करने में मदद करें। क्रम: {{event}} → {{action}} → {{result}}। फ़ीड, विषय या खाते, जाँच की आवृत्ति और सारांश सहेजने का स्थान पूछें। नियमित रूप से जाँचें, पहले संसाधित सामग्री छोड़ दें और चालू करने से पहले सेटिंग की पुष्टि करें।",
+          "shortTitle": "ट्रिगर",
           "title": "ट्रिगर"
         }
       }

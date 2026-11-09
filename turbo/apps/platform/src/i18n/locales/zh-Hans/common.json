@@ -1611,6 +1611,16 @@
       "dismissRecorded": "已收起这条建议",
       "doneRecorded": "已记下，这件事已经处理了",
       "editReason": "修改原因",
+      "homeCard": {
+        "completeTitle": "全部处理完了",
+        "emptyTitle": "暂时没有新建议",
+        "feedback": "建议操作",
+        "loading": "正在加载建议",
+        "navigation": "切换建议",
+        "next": "下一条建议",
+        "previous": "上一条建议",
+        "retry": "重试"
+      },
       "label": "建议",
       "lessLikeThis": "少推荐这类内容",
       "lessRecorded": "会少推荐类似的建议",
@@ -1870,6 +1880,7 @@
       "workflow": {
         "advanced": {
           "description": "串联工具与多个步骤。",
+          "shortTitle": "高级",
           "title": "高级工作流"
         },
         "description": "简单设置，让琐事自动完成。",
@@ -1881,6 +1892,7 @@
           },
           "prompt": "{{task}}。先确认要做什么、执行时间和时区。",
           "setupTitle": "安排任务",
+          "shortTitle": "定时",
           "title": "定时任务"
         },
         "suggestions": "从一条建议开始，按你的需要调整。",
@@ -1926,6 +1938,7 @@
             }
           },
           "monitorPrompt": "帮我使用 {{source}} 设置「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先确认要关注的订阅源、主题或账号、检查频率和摘要保存位置。定期检查，只处理未处理过的新内容，确认设置后再启用。",
+          "shortTitle": "触发",
           "title": "触发器"
         }
       }

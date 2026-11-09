@@ -1611,6 +1611,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "すべて確認しました",
+        "emptyTitle": "新しい提案はありません",
+        "feedback": "提案への操作",
+        "loading": "提案を読み込み中",
+        "navigation": "提案を切り替える",
+        "next": "次の提案",
+        "previous": "前の提案",
+        "retry": "再試行"
+      },
       "label": "提案",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1870,6 +1880,7 @@
       "workflow": {
         "advanced": {
           "description": "ツールと手順をつなげます。",
+          "shortTitle": "高度な設定",
           "title": "高度なワークフロー"
         },
         "description": "少しの設定で、日々の作業をもっと楽に。",
@@ -1881,6 +1892,7 @@
           },
           "prompt": "{{task}}。実行する内容、日時、タイムゾーンを確認してください。",
           "setupTitle": "タスクを予約",
+          "shortTitle": "定期実行",
           "title": "定期タスク"
         },
         "suggestions": "提案を選んで、自分に合うように調整しましょう。",
@@ -1926,6 +1938,7 @@
             }
           },
           "monitorPrompt": "{{source}} を使って「{{task}}」を設定してください。流れ：{{event}} → {{action}} → {{result}}。対象のフィード、テーマまたはアカウント、確認頻度、要約の保存先を確認してください。定期的に確認し、処理済みの項目を除外し、設定を確認してから有効にしてください。",
+          "shortTitle": "トリガー",
           "title": "トリガー"
         }
       }

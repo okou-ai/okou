@@ -158,7 +158,7 @@ function CapabilityIcon({
   return (
     <span
       className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-xl border duration-150 group-hover:border-current/40 group-hover:brightness-95 group-focus-visible:border-current/40 motion-safe:transition-[border-color,filter] dark:group-hover:brightness-110 @2xl:size-12 @2xl:rounded-2xl",
+        "flex size-10 shrink-0 items-center justify-center rounded-xl border duration-150 group-hover:border-current/40 group-hover:brightness-95 group-focus-visible:border-current/40 motion-safe:transition-[border-color,filter] dark:group-hover:brightness-110",
         color,
       )}
     >
@@ -188,10 +188,11 @@ function ExploreCapabilityCard({
   return (
     <Button
       variant="quiet"
+      iconSize="lg"
       aria-label={copy.title}
       className={cn(
         surfaceVariants({ interactive: true }),
-        "group h-auto min-h-16 min-w-0 items-center justify-start gap-2 bg-linear-to-br via-card to-card p-3 text-left whitespace-normal text-foreground hover:bg-card active:bg-card motion-reduce:transition-none @2xl:min-h-22 @2xl:gap-3 @2xl:p-5 [&_svg]:size-5 @2xl:[&_svg]:size-6",
+        "group h-auto min-h-16 min-w-0 items-center justify-start gap-3 bg-linear-to-br via-card to-card p-3 text-left whitespace-normal text-foreground hover:bg-card active:bg-card motion-reduce:transition-none @2xl:min-h-22 @2xl:p-5",
         surface,
       )}
       onClick={() => {
@@ -199,7 +200,7 @@ function ExploreCapabilityCard({
       }}
     >
       <CapabilityIcon Icon={Icon} color={color} />
-      <span className="min-w-0 text-sm font-medium tracking-tight @2xl:text-lg">
+      <span className="min-w-0 text-base font-medium leading-6 tracking-tight">
         {copy.title}
       </span>
     </Button>
@@ -303,9 +304,21 @@ function ExploreBlogCard() {
           "group flex h-full flex-col overflow-hidden bg-linear-to-br from-[#fff4ee]/50 via-card to-card p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:from-[#cf947c]/5",
       })}
     >
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="min-w-0 text-base font-medium tracking-tight @2xl:text-lg">
-          {title}
+      <div className="flex min-h-7 items-center justify-between gap-3">
+        <h2 className="flex min-w-0 items-center gap-1.5 text-base font-medium leading-6 tracking-tight">
+          <span className="min-w-0">{title}</span>
+          <svg
+            aria-hidden
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth={1.5}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            className="size-4 shrink-0 text-amber-400"
+          >
+            <path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2-2a2 2 0 0 1-2-2a2 2 0 0 1-2 2m0-12a2 2 0 0 1 2 2a2 2 0 0 1 2-2a2 2 0 0 1-2-2a2 2 0 0 1-2 2m-7 12a6 6 0 0 1 6-6a6 6 0 0 1-6-6a6 6 0 0 1-6 6a6 6 0 0 1 6 6" />
+          </svg>
         </h2>
         <ArrowUpRight
           strokeWidth={1.8}
@@ -320,7 +333,13 @@ function ExploreBlogCard() {
   );
 }
 
-function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
+function CapabilityCards({
+  signals,
+  suggestions,
+}: {
+  readonly signals: ComposerSignals;
+  readonly suggestions?: ReactNode;
+}) {
   const { t } = useTranslation();
   const copy = t(
     ($) => {
@@ -353,7 +372,7 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
         })}
         aria-label={copy.create.title}
       >
-        <h2 className="text-base font-medium tracking-tight @2xl:text-lg">
+        <h2 className="flex min-h-7 items-center text-base font-medium leading-6 tracking-tight">
           {copy.create.title}
         </h2>
         <div className="mt-3 grid flex-1 grid-cols-3 content-center gap-1 @2xl:mt-5 @2xl:grid-cols-5 @2xl:gap-y-3">
@@ -362,14 +381,15 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
               <Button
                 key={task}
                 variant="quiet"
+                iconSize="lg"
                 aria-label={tasks[task]}
-                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-2xl px-0 py-2 text-xs font-medium hover:bg-transparent active:bg-transparent motion-reduce:transition-none @2xl:gap-2.5 @2xl:text-sm [&_svg]:size-5 @2xl:[&_svg]:size-6"
+                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-xl px-0 py-2 font-medium hover:bg-transparent active:bg-transparent motion-reduce:transition-none"
                 onClick={() => {
                   openTask(task);
                 }}
               >
                 <CapabilityIcon Icon={Icon} color={color} />
-                <span className="max-w-full text-xs leading-5 break-words whitespace-normal @2xl:text-action">
+                <span className="max-w-full text-sm leading-5 break-words whitespace-normal">
                   {tasks[task]}
                 </span>
               </Button>
@@ -387,29 +407,32 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
       </section>
       <section
         className={surfaceVariants({
-          className:
-            "bg-linear-to-br from-[#f2f7ff]/50 via-card to-card p-4 dark:from-[#7b9fd3]/5 @2xl:col-span-8 @2xl:p-5",
+          className: cn(
+            "flex flex-col bg-linear-to-br from-[#f2f7ff]/50 via-card to-card p-4 dark:from-[#7b9fd3]/5 @2xl:p-5",
+            suggestions ? "@2xl:col-span-4" : "@2xl:col-span-8",
+          ),
         })}
         aria-label={tasks.workflow}
       >
-        <h2 className="text-base font-medium tracking-tight @2xl:text-lg">
+        <h2 className="flex min-h-7 items-center text-base font-medium leading-6 tracking-tight">
           {tasks.workflow}
         </h2>
-        <div className="mt-3 grid grid-cols-3 gap-1 @2xl:gap-3">
+        <div className="mt-3 grid flex-1 grid-cols-3 content-center gap-1">
           {WORKFLOW_KINDS.map(({ kind, Icon, color }) => {
             return (
               <Button
                 key={kind}
                 variant="quiet"
+                iconSize="lg"
                 aria-label={copy.workflow[kind].title}
-                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-2xl px-1 py-2 text-center whitespace-normal hover:bg-transparent active:bg-transparent motion-reduce:transition-none @2xl:gap-2.5 [&_svg]:size-5 @2xl:[&_svg]:size-6"
+                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-xl px-0 py-2 text-center whitespace-normal hover:bg-transparent active:bg-transparent motion-reduce:transition-none"
                 onClick={() => {
                   openWorkflow(kind);
                 }}
               >
                 <CapabilityIcon Icon={Icon} color={color} />
-                <span className="max-w-full text-xs font-medium leading-5 break-words @2xl:text-action @2xl:leading-6">
-                  {copy.workflow[kind].title}
+                <span className="max-w-full text-sm font-medium leading-5 hyphens-auto whitespace-normal">
+                  {copy.workflow[kind].shortTitle}
                 </span>
               </Button>
             );
@@ -419,6 +442,9 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
       <div className="@2xl:col-span-4">
         <ExploreBlogCard />
       </div>
+      {suggestions && (
+        <div className="min-w-0 @2xl:col-span-4">{suggestions}</div>
+      )}
     </div>
   );
 }
@@ -739,7 +765,7 @@ function HomeWorkflowSuggestions({
 
 /**
  * Shared discovery and template surface; the host owns its composer and
- * header, and may list suggestions under the capability cards.
+ * header, and may include a suggestion card in the capability grid.
  */
 export function CapabilityHomeContent({
   signals,
@@ -778,19 +804,30 @@ export function CapabilityHomeContent({
         heading === undefined && selected === null
           ? "pt-24 md:pt-14"
           : selected === null
-            ? "pt-6 md:pt-8"
+            ? "pt-6 md:pt-20"
             : "pt-6 md:pt-10",
       )}
     >
-      <div className="@container mx-auto flex w-full max-w-[900px] flex-1 flex-col">
+      <div
+        className={cn(
+          "@container mx-auto w-full max-w-[900px] flex-1",
+          heading !== undefined && selected === null
+            ? "grid grid-rows-[minmax(0,2fr)_auto_minmax(0,3fr)]"
+            : "flex flex-col",
+        )}
+      >
         {selected === null ? (
-          <div className="mt-auto mb-1 flex min-w-0 shrink-0 flex-col gap-5">
+          <div
+            className={cn(
+              "mb-1 flex min-w-0 shrink-0 flex-col gap-5",
+              heading === undefined ? "mt-auto" : "row-start-2",
+            )}
+          >
             {heading !== undefined && (
               <div className="flex min-h-14 justify-start">{heading}</div>
             )}
-            <CapabilityCards signals={signals} />
+            <CapabilityCards signals={signals} suggestions={suggestions} />
             <CapabilityHomeCompliance />
-            {suggestions}
           </div>
         ) : (
           <div className="flex flex-1 flex-col justify-end py-4">

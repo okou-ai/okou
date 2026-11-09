@@ -1614,6 +1614,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "All caught up",
+        "emptyTitle": "No new suggestions",
+        "feedback": "Suggestion actions",
+        "loading": "Loading suggestions",
+        "navigation": "Browse suggestions",
+        "next": "Next suggestion",
+        "previous": "Previous suggestion",
+        "retry": "Retry"
+      },
       "label": "Suggestions",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1875,6 +1885,7 @@
       "workflow": {
         "advanced": {
           "description": "Connect your tools and steps.",
+          "shortTitle": "Advanced",
           "title": "Advanced workflows"
         },
         "description": "A little setup. A lot off your plate.",
@@ -1886,6 +1897,7 @@
           },
           "prompt": "{{task}}. Ask what I want done, when it should run, and which time zone to use.",
           "setupTitle": "Schedule a task",
+          "shortTitle": "Scheduled",
           "title": "Scheduled tasks"
         },
         "suggestions": "Start with a suggestion, then make it yours.",
@@ -1931,6 +1943,7 @@
             }
           },
           "monitorPrompt": "Help me set up {{task}} using {{source}}. Flow: {{event}} → {{action}} → {{result}}. Ask which feeds, topics or accounts to follow, how often to check, and where to save the summary. Check periodically, skip items already processed, and confirm the setup before enabling it.",
+          "shortTitle": "Triggers",
           "title": "Triggers"
         }
       }
