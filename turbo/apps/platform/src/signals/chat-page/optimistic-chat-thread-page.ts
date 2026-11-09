@@ -85,6 +85,8 @@ export const newChatThreadDisabled$ = computed(() => {
 
 interface SendNewThreadMessageRequest {
   agentId: string;
+  /** A prepared title skips automatic title generation. */
+  title?: string;
   /** The Project the new thread starts in. */
   projectId?: string;
   draft?: DraftSignals;
@@ -356,6 +358,7 @@ const mintOptimisticThreadWithEvent$ = command(
       readonly eventId: string;
       readonly agentId: string;
       readonly projectId?: string;
+      readonly title?: string;
       readonly selectedModel: string | null;
       readonly serviceTier: "priority" | null;
       readonly modelSettings: ModelSettings;
@@ -375,6 +378,7 @@ const mintOptimisticThreadWithEvent$ = command(
       chatThreadId: args.threadId,
       agentId: args.agentId,
       projectId: args.projectId,
+      title: args.title ?? null,
       selectedModel: args.selectedModel,
       modelSettings: args.modelSettings,
       serviceTier: args.serviceTier,
@@ -584,7 +588,11 @@ const mintNewThreadSubmission$ = command(
     { set },
     request: Pick<
       SendNewThreadMessageRequest,
-      "agentId" | "projectId" | "computerUseHostId" | "cloudBrowserEnabled"
+      | "agentId"
+      | "projectId"
+      | "title"
+      | "computerUseHostId"
+      | "cloudBrowserEnabled"
     >,
     identity: Omit<PendingThreadIdentity, "intent">,
     submission: {
@@ -612,6 +620,7 @@ const mintNewThreadSubmission$ = command(
         eventId: identity.chatThreadEventId,
         agentId: request.agentId,
         projectId: request.projectId,
+        title: request.title,
         selectedModel: modelSelection.selectedModel,
         modelSettings: modelSelection.modelSettings ?? {},
         serviceTier: apiServiceTierFromSelection(modelSelection),
@@ -682,6 +691,7 @@ const reserveNewThreadSubmissionIdentity$ = command(
           JSON.stringify({
             agentId: request.agentId,
             projectId: request.projectId,
+            title: request.title,
             userMessage,
             modelSelection,
             computerUseHostId: request.computerUseHostId,
@@ -744,7 +754,7 @@ function newThreadRecordOptions(args: {
     createClient,
     agentId: request.agentId,
     projectId: request.projectId,
-    title: undefined,
+    title: request.title,
     clientThreadId: identity.threadId,
     eventId: identity.chatThreadEventId,
     modelSelection: resolved.modelSelection,
