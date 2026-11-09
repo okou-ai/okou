@@ -751,7 +751,7 @@ class TestGetFirewallHeaders:
         # Verify cache was updated with new entry
         assert require_cached_headers(cache_key).headers == fresh_headers
 
-    async def test_expired_cache_entry_is_retained_when_refetch_fails(self, headers):
+    async def test_expired_cache_entry_is_retained_when_refetch_fails(self):
         """Expired headers are not served, but a failed refetch retains the stored entry."""
         cache_key = auth_cache_key()
         stale_headers = {"Authorization": "Bearer stale-token"}
@@ -941,7 +941,7 @@ class TestGetFirewallHeaders:
             )
         assert cached_headers(cache_key) is None
 
-    async def test_cache_hit_includes_base_when_present(self, headers):
+    async def test_cache_hit_includes_base_when_present(self):
         """Cached entry with 'base' returns it on cache hit."""
         cache_key = auth_cache_key()
         set_cached_headers(
@@ -1027,7 +1027,7 @@ class TestGetFirewallHeaders:
         assert cached.base == cached_base
         assert cached.query == cached_query
 
-    async def test_cache_hit_omits_base_when_absent(self, headers):
+    async def test_cache_hit_omits_base_when_absent(self):
         """Cached entry without 'base' does not include it in result."""
         cache_key = auth_cache_key()
         set_cached_headers(
@@ -1049,7 +1049,7 @@ class TestGetFirewallHeaders:
         assert "base" not in result
         assert result["cache_hit"] is True
 
-    async def test_force_refresh_marker_triggers_forced_fetch(self, headers):
+    async def test_force_refresh_marker_triggers_forced_fetch(self):
         """When a force-refresh marker is set, the next fetch passes
         force_refresh=True, the marker is cleared, and the consume timestamp
         is recorded so the cooldown can suppress re-marking (#9860)."""
@@ -1070,7 +1070,7 @@ class TestGetFirewallHeaders:
         # Consume timestamp recorded for cooldown enforcement
         assert require_last_force_refresh_monotonic_at(cache_key) >= before
 
-    async def test_force_refresh_fetch_failure_still_consumes_marker(self, headers):
+    async def test_force_refresh_fetch_failure_still_consumes_marker(self):
         """A failed forced refresh burns the cooldown and does not cache headers."""
         cache_key = auth_cache_key()
         mark_force_refresh(cache_key)
@@ -1098,7 +1098,7 @@ class TestGetFirewallHeaders:
 
         assert force_refresh_pending(cache_key)
 
-    def test_force_refresh_inside_monotonic_cooldown_is_suppressed(self, headers):
+    def test_force_refresh_inside_monotonic_cooldown_is_suppressed(self):
         """Repeated 401s inside the process-local cooldown do not re-mark."""
         cache_key = auth_cache_key()
         set_last_force_refresh_monotonic_at(cache_key, 1000.0)
@@ -1108,7 +1108,7 @@ class TestGetFirewallHeaders:
 
         assert not force_refresh_pending(cache_key)
 
-    def test_force_refresh_after_monotonic_cooldown_is_allowed(self, headers):
+    def test_force_refresh_after_monotonic_cooldown_is_allowed(self):
         """A 401 after the monotonic cooldown elapsed can re-mark."""
         cache_key = auth_cache_key()
         set_last_force_refresh_monotonic_at(cache_key, 1000.0)
@@ -1118,7 +1118,7 @@ class TestGetFirewallHeaders:
 
         assert force_refresh_pending(cache_key)
 
-    async def test_force_refresh_records_monotonic_timestamp_before_fetch_returns(self, headers):
+    async def test_force_refresh_records_monotonic_timestamp_before_fetch_returns(self):
         """The cooldown is burned before awaiting the forced auth fetch."""
         cache_key = auth_cache_key()
         mark_force_refresh(cache_key)
@@ -1136,7 +1136,7 @@ class TestGetFirewallHeaders:
 
         assert require_last_force_refresh_monotonic_at(cache_key) == 1234.0
 
-    async def test_non_forced_fetch_does_not_cache_if_marker_appears_in_flight(self, headers):
+    async def test_non_forced_fetch_does_not_cache_if_marker_appears_in_flight(self):
         """A 401 marker during a non-forced fetch must win over the cache write."""
         cache_key = auth_cache_key()
         fetch_entered = asyncio.Event()
@@ -1192,7 +1192,7 @@ class TestGetFirewallHeaders:
         assert require_last_force_refresh_monotonic_at(cache_key) >= before_forced
         assert require_cached_headers(cache_key).headers == forced_headers
 
-    async def test_waiting_request_force_refreshes_after_in_flight_marker(self, headers):
+    async def test_waiting_request_force_refreshes_after_in_flight_marker(self):
         """A same-key waiter must not reuse headers from the stale-prone leader fetch."""
         cache_key = auth_cache_key()
         first_fetch_entered = asyncio.Event()
@@ -1240,7 +1240,7 @@ class TestGetFirewallHeaders:
         assert require_cached_headers(cache_key).headers == {"Authorization": "Bearer refreshed"}
         assert not force_refresh_pending(cache_key)
 
-    async def test_force_refresh_absent_passes_false(self, headers):
+    async def test_force_refresh_absent_passes_false(self):
         """Without a marker, fetch is called with force_refresh=False (#9860)."""
         cache_key = auth_cache_key(api_id="api-2")
         mock_fetch = AsyncMock(return_value=firewall_auth_success(headers={}))
@@ -1251,7 +1251,7 @@ class TestGetFirewallHeaders:
         # No consume timestamp written when force-refresh didn't happen
         assert last_force_refresh_monotonic_at(cache_key) is None
 
-    async def test_replacement_identity_does_not_inherit_force_refresh_marker(self, headers):
+    async def test_replacement_identity_does_not_inherit_force_refresh_marker(self):
         old_key = auth_cache_key(auth_identity="old-auth")
         new_key = auth_cache_key(auth_identity="new-auth")
         mark_force_refresh(old_key)
@@ -1264,7 +1264,7 @@ class TestGetFirewallHeaders:
         assert not has_auth_state(old_key)
         assert not force_refresh_pending(new_key)
 
-    async def test_force_refresh_marker_ignored_on_cache_hit(self, headers):
+    async def test_force_refresh_marker_ignored_on_cache_hit(self):
         """Fast-path cache hit does NOT consume the force-refresh marker —
         marker survives until the next actual fetch (#9860)."""
         cache_key = auth_cache_key()

@@ -216,7 +216,7 @@ class TestBodylessModelResponseParserAdmission:
 class TestResponseHeadersSseParser:
     """Tests for SSE parser setup in responseheaders()."""
 
-    def test_sets_up_sse_parser_for_model_provider(self, real_flow, headers):
+    def test_sets_up_sse_parser_for_model_provider(self, real_flow):
         flow = real_flow(with_response=False, host="api.anthropic.com")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
@@ -290,7 +290,7 @@ class TestResponseHeadersSseParser:
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["model"] == "gpt-5.5"
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.output"] == 7
 
-    def test_sets_up_openai_sse_parser_for_openai_model_provider(self, real_flow, headers):
+    def test_sets_up_openai_sse_parser_for_openai_model_provider(self, real_flow):
         flow = real_flow(with_response=False, host="openrouter.ai")
         flow.response = tutils.tresp(
             status_code=200,
@@ -365,7 +365,7 @@ class TestResponseHeadersSseParser:
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["model"] == "claude-sonnet-4-6"
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.input"] == 42
 
-    def test_decompresses_gzip_sse_before_parsing(self, real_flow, headers):
+    def test_decompresses_gzip_sse_before_parsing(self, real_flow):
         """Compressed SSE streams must be decompressed before usage extraction."""
         flow = real_flow(with_response=False, host="api.anthropic.com")
         flow.response = tutils.tresp(
@@ -398,7 +398,7 @@ class TestResponseHeadersSseParser:
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["model"] == "claude-sonnet-4-6"
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.input"] == 99
 
-    def test_no_sse_parser_for_non_model_provider(self, real_flow, headers):
+    def test_no_sse_parser_for_non_model_provider(self, real_flow):
         flow = real_flow(with_response=False, host="api.github.com")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
@@ -412,7 +412,7 @@ class TestResponseHeadersSseParser:
         assert "model_json_usage_finish" not in flow.metadata
         assert "model_sse_usage_finish" not in flow.metadata
 
-    def test_billable_json_response_uses_json_parser(self, real_flow, headers):
+    def test_billable_json_response_uses_json_parser(self, real_flow):
         flow = real_flow(with_response=False, host="openrouter.ai", path="/api/v1/responses")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "application/json"})
@@ -426,7 +426,7 @@ class TestResponseHeadersSseParser:
         assert "model_json_usage_finish" in flow.metadata
         assert "model_sse_usage_finish" not in flow.metadata
 
-    def test_billable_sse_parser_does_not_require_model_usage_provider(self, real_flow, headers):
+    def test_billable_sse_parser_does_not_require_model_usage_provider(self, real_flow):
         flow = real_flow(with_response=False, host="openrouter.ai", path="/api/v1/responses")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
@@ -440,7 +440,7 @@ class TestResponseHeadersSseParser:
         assert isinstance(flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE], dict)
         assert "model_sse_usage_finish" in flow.metadata
 
-    def test_non_billable_model_provider_extracts_sse_usage(self, real_flow, headers):
+    def test_non_billable_model_provider_extracts_sse_usage(self, real_flow):
         flow = real_flow(with_response=False, host="api.anthropic.com")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
@@ -456,7 +456,7 @@ class TestResponseHeadersSseParser:
         assert response_stream(flow)(data) == data
         assert flow.metadata[metadata_keys.MODEL_PROVIDER_USAGE]["tokens.output"] == 7
 
-    def test_no_sse_parser_without_firewall_name(self, real_flow, headers):
+    def test_no_sse_parser_without_firewall_name(self, real_flow):
         flow = real_flow(with_response=False, host="api.anthropic.com")
         flow.response = tutils.tresp(
             status_code=200, headers=header_map({"content-type": "text/event-stream"})
