@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.4](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.3...runner-provider-v0.17.4) (2026-11-09)
+
+
+### Performance Improvements
+
+* **runner:** rebuild connector account context once per sync batch ([#46140](https://github.com/okou-ai/okou/issues/46140)) ([44ea685](https://github.com/okou-ai/okou/commit/44ea6855ace257905f63cb7853f0da91a5016713))
+
 ## [0.17.3](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.2...runner-provider-v0.17.3) (2026-11-09)
 
 ## [0.17.2](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.1...runner-provider-v0.17.2) (2026-11-09)

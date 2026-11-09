@@ -1,5 +1,23 @@
 # Changelog
 
+## [0.31.0](https://github.com/okou-ai/okou/compare/ios-v0.30.1...ios-v0.31.0) (2026-11-09)
+
+
+### Features
+
+* **ios:** glass workspace button and soft top edge in the sidebar ([#46114](https://github.com/okou-ai/okou/issues/46114)) ([54cdfbd](https://github.com/okou-ai/okou/commit/54cdfbdd87dfb6664a3c81b167e4163e22e50d00))
+
+
+### Bug Fixes
+
+* **ios:** use the default agent for new chats ([#46082](https://github.com/okou-ai/okou/issues/46082)) ([4cb7f33](https://github.com/okou-ai/okou/commit/4cb7f33d55158fad276d4c647c8ba7c4cf96408e))
+
+
+### Refactoring
+
+* **ios:** remove retired agent selection ui ([#46144](https://github.com/okou-ai/okou/issues/46144)) ([7e8c2e5](https://github.com/okou-ai/okou/commit/7e8c2e5055de575b46d5f26810f34315d75ad34f))
+* **ios:** share artifact card reads through ccstate ([#46116](https://github.com/okou-ai/okou/issues/46116)) ([091601a](https://github.com/okou-ai/okou/commit/091601a6e23546f96700e926499accb51d36dd1f))
+
 ## [0.30.1](https://github.com/okou-ai/okou/compare/ios-v0.30.0...ios-v0.30.1) (2026-11-09)
 
 
