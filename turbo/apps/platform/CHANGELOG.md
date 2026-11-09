@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1106.0](https://github.com/okou-ai/okou/compare/app-v0.1105.0...app-v0.1106.0) (2026-11-09)
+
+
+### Features
+
+* **app:** track artifact download, drive sync, and banner intent ([#46185](https://github.com/okou-ai/okou/issues/46185)) ([2d4b454](https://github.com/okou-ai/okou/commit/2d4b454b4b25a8107cd1a26c0de2a997e9403b5c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.1
+    * @okouai/core bumped to 8.825.1
+
 ## [0.1105.0](https://github.com/okou-ai/okou/compare/app-v0.1104.0...app-v0.1105.0) (2026-11-09)
 
 
