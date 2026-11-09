@@ -1,6 +1,6 @@
 import { env } from "../../lib/env";
 
-/** Product-owned Claude restrictions, shared by admission and Claim. */
+/** Product-owned Claude restrictions, applied when Claim prepares execution. */
 export const DEFAULT_DISALLOWED_TOOLS = [
   "CronCreate",
   "CronList",

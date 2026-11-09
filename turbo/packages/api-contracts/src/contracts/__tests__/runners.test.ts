@@ -1,7 +1,6 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { unknown as zUnknown } from "zod";
 
 import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
@@ -31,6 +30,7 @@ import {
   storageMountEntrySchema,
   storageManifestSchema,
   storedExecutionContextSchema,
+  preparedExecutionContextSchema,
   homeReuseResultSchema as runnersHomeReuseResultSchema,
 } from "../runners";
 import {
@@ -203,7 +203,6 @@ describe("runner claim response contract", () => {
       const storedContext = storedExecutionContextSchema.parse({
         storageMounts: [],
         seedSkillBundles: [],
-        connectorRuntimeTargets: [],
         environment: {
           USER_VALUE: "user-value",
         },
@@ -215,7 +214,6 @@ describe("runner claim response contract", () => {
           recoveryPrompt: null,
         },
         encryptedSecrets: null,
-        cliAgentType: "claude-code",
         featureFlags,
       });
       const roundTripped = storedExecutionContextSchema.parse(
@@ -681,7 +679,7 @@ describe("Pi sandbox execution contract", () => {
     },
   ])("rejects $name without a Sandbox compatibility path", (fixture) => {
     expect(
-      storedExecutionContextSchema.safeParse({
+      preparedExecutionContextSchema.safeParse({
         ...storedContext,
         ...piStoredContext,
         piLaunchConfig: fixture.launchConfig,
@@ -690,13 +688,13 @@ describe("Pi sandbox execution contract", () => {
   });
 
   it.each(["piSessionId", "piLaunchConfig", "piModelConfig"])(
-    "rejects a stored Pi context without %s",
+    "rejects a prepared Pi context without %s",
     (missingField) => {
       const incompleteContext: Record<string, unknown> = { ...piStoredContext };
       Reflect.deleteProperty(incompleteContext, missingField);
 
       expect(
-        storedExecutionContextSchema.safeParse({
+        preparedExecutionContextSchema.safeParse({
           ...storedContext,
           ...incompleteContext,
         }).success,
@@ -704,14 +702,14 @@ describe("Pi sandbox execution contract", () => {
     },
   );
 
-  it("rejects a stored Pi framework without the entire hard-cut bundle", () => {
-    expect(storedExecutionContextSchema.safeParse(storedContext).success).toBe(
-      false,
-    );
+  it("rejects a prepared Pi framework without the entire hard-cut bundle", () => {
+    expect(
+      preparedExecutionContextSchema.safeParse(storedContext).success,
+    ).toBe(false);
   });
 
   it.each(["piLaunchConfig", "piModelConfig"] as const)(
-    "rejects stored %s without piSessionId",
+    "rejects prepared %s for another framework",
     (field) => {
       const invalidStoredContext = {
         ...storedContext,
@@ -720,7 +718,7 @@ describe("Pi sandbox execution contract", () => {
       };
 
       expect(
-        storedExecutionContextSchema.safeParse(invalidStoredContext).success,
+        preparedExecutionContextSchema.safeParse(invalidStoredContext).success,
       ).toBe(false);
     },
   );
@@ -1110,7 +1108,6 @@ describe("runner storage manifest contract", () => {
   const storedContext = {
     storageMounts: [],
     seedSkillBundles: [],
-    connectorRuntimeTargets: [],
     environment: null,
     platformEnvironment: {},
     secretValueEnvironmentKeys: null,
@@ -1120,17 +1117,16 @@ describe("runner storage manifest contract", () => {
       recoveryPrompt: null,
     },
     encryptedSecrets: null,
-    cliAgentType: "codex",
   };
 
-  it("keeps prepared readers compatible with omitted stored fields", () => {
-    const preparedStoredExecutionContextSchema =
-      storedExecutionContextSchema.extend({
-        storageManifest: zUnknown().nullable().optional(),
-      });
-
-    expect(preparedStoredExecutionContextSchema.parse(storedContext)).toEqual(
-      storedContext,
+  it("shares persisted mounts between compact and prepared contexts", () => {
+    const preparedContext = {
+      ...storedContext,
+      cliAgentType: "codex",
+      connectorRuntimeTargets: [],
+    };
+    expect(preparedExecutionContextSchema.parse(preparedContext)).toEqual(
+      preparedContext,
     );
     expect(storedExecutionContextSchema.parse(storedContext)).toEqual(
       storedContext,

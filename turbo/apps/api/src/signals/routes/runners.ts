@@ -23,7 +23,7 @@ import {
   type RunnerInstalledVersions,
   type RunnerPreference,
   type RunnerPreferenceClaimState,
-  type StoredExecutionContext,
+  type PreparedExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import {
   runStatusSchema,
@@ -1218,9 +1218,9 @@ interface ClaimedContentBundlesInput {
   readonly responseBody: BaseClaimResponse;
   readonly claim: ClaimedTransitionResult;
   readonly workflowInput: WorkflowClaimInput;
-  readonly officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"];
-  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
-  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+  readonly officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"];
+  readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
+  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly bundleUrlCache: ContentBundleUrlCacheContext;
   readonly timing: ClaimRouteTimingCollector;
 }
@@ -1500,7 +1500,7 @@ type PreparedSecretValuesResult =
     };
 
 function preparedSecretValuesForRunner(
-  storedContext: StoredExecutionContext,
+  storedContext: PreparedExecutionContext,
 ): PreparedSecretValuesResult {
   const keys = storedContext.secretValueEnvironmentKeys;
   if (keys === null) {
@@ -1526,7 +1526,7 @@ function preparedSecretValuesForRunner(
 }
 
 async function secretValuesForRunner(
-  storedContext: StoredExecutionContext,
+  storedContext: PreparedExecutionContext,
   timing: ClaimRouteTimingCollector,
 ): Promise<string[] | null> {
   const prepared = preparedSecretValuesForRunner(storedContext);
@@ -1560,7 +1560,7 @@ const readClaimCurrentNetworkPolicyRefreshes$ = command(
     { get, set },
     args: {
       readonly scope: { orgId: string; userId: string; agentId: string };
-      readonly storedContext: StoredExecutionContext;
+      readonly storedContext: PreparedExecutionContext;
       readonly builtinConnectorSlugs: readonly string[];
       readonly timing: ClaimRouteTimingCollector;
     },
@@ -1650,7 +1650,7 @@ const readClaimNetworkPolicyRefreshes$ = command(
     { set },
     args: {
       readonly run: ClaimedRun;
-      readonly storedContext: StoredExecutionContext;
+      readonly storedContext: PreparedExecutionContext;
       readonly timing: ClaimRouteTimingCollector;
     },
   ): Promise<
@@ -1732,7 +1732,7 @@ const readClaimNetworkPolicyRefreshes$ = command(
 
 function assertClaimConnectorIdentity(
   run: ClaimedRun,
-  storedContext: StoredExecutionContext,
+  storedContext: PreparedExecutionContext,
 ): void {
   if (
     run.agentId === null &&
@@ -1747,7 +1747,7 @@ function assertClaimConnectorIdentity(
 function claimResponseBody(args: {
   readonly run: ClaimedRun;
   readonly reuseKey: string | null;
-  readonly storedContext: StoredExecutionContext;
+  readonly storedContext: PreparedExecutionContext;
   readonly secretValues: ExecutionContext["secretValues"];
   readonly refreshedPolicies: Pick<
     ExecutionContext,
@@ -1800,7 +1800,7 @@ const prepareClaimResponse$ = command(
     { set },
     args: {
       readonly run: ClaimedRun;
-      readonly storedContext: StoredExecutionContext;
+      readonly storedContext: PreparedExecutionContext;
       readonly timing: ClaimRouteTimingCollector;
     },
     signal: AbortSignal,
@@ -1954,7 +1954,7 @@ function scheduleUnavailableClaimTiming(
 function scheduleSuccessfulClaimSideEffects(args: {
   readonly jobWithRun: ClaimableJob;
   readonly authType: RunnerAuthContext["type"];
-  readonly storedContext: StoredExecutionContext;
+  readonly storedContext: PreparedExecutionContext;
   readonly claimRequestStartedAtMs: number;
   readonly claimResult: ClaimedTransitionResult;
   readonly telemetry: ClaimTimingTelemetry | undefined;

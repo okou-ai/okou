@@ -7,6 +7,7 @@ import {
   type PiLaunchConfig,
   type PiModelConfig,
   type SecretConnectorMetadata,
+  type PreparedExecutionContext,
   type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -254,10 +255,7 @@ import {
   isFeatureEnabled,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import {
-  DEFAULT_DISALLOWED_TOOLS,
-  runPlatformEnvironment,
-} from "./run-execution-defaults";
+import { runPlatformEnvironment } from "./run-execution-defaults";
 
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
@@ -3848,7 +3846,7 @@ export function createThreadClaimRunObjects(
         return { kind: "rejected" as const, assembly: launch.assembly };
       }
       const [input, storage, runnerInput] = launch.runner;
-      const contextDraft = claimRunStoredContextDraft(runnerInput, encrypted);
+      const contextDraft = claimRunPreparedContextDraft(runnerInput, encrypted);
       return {
         kind: "prepared" as const,
         resources: [
@@ -4646,9 +4644,9 @@ function bestEffortTelemetry(record: () => unknown): void {
 
 function ingestRunContextSnapshot(
   snapshot: RunContextAxiomSnapshot,
-  officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"],
-  seedSkillBundles: StoredExecutionContext["seedSkillBundles"],
-  templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"],
+  officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"],
+  seedSkillBundles: PreparedExecutionContext["seedSkillBundles"],
+  templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"],
 ): void {
   bestEffortTelemetry(() => {
     return ingestToAxiom(getDatasetName("run-context"), [
@@ -5172,11 +5170,11 @@ interface StoredExecutionSecrets {
   > | null;
 }
 
-type BuiltStoredExecutionContextDraft = Omit<
-  BuiltStoredExecutionContext,
+type BuiltPreparedExecutionContextDraft = Omit<
+  BuiltPreparedExecutionContext,
   "context" | "persistedStorageMounts"
 > & {
-  readonly context: Omit<StoredExecutionContext, "storageMounts">;
+  readonly context: Omit<PreparedExecutionContext, "storageMounts">;
 };
 
 function buildStoredPlatformEnvironment(args: {
@@ -5216,7 +5214,7 @@ function modelUsageExecutionFields(args: {
   readonly modelUsageProvider: string | undefined;
   readonly modelUsageLongContextMinTotalInputTokens: number;
 }): Pick<
-  StoredExecutionContext,
+  PreparedExecutionContext,
   | "billableFirewalls"
   | "modelUsageProvider"
   | "modelUsageLongContextMinTotalInputTokens"
@@ -5229,11 +5227,11 @@ function modelUsageExecutionFields(args: {
   };
 }
 
-/** The stored execution context draft from the runner input and its encrypted secrets. */
-function claimRunStoredContextDraft<
+/** Prepare full launch input before projecting the final persisted snapshot. */
+function claimRunPreparedContextDraft<
   TEncrypted extends {
     readonly encryptedSecrets: Parameters<
-      typeof buildStoredExecutionContextDraft
+      typeof buildPreparedExecutionContextDraft
     >[1];
   },
 >(
@@ -5247,7 +5245,7 @@ function claimRunStoredContextDraft<
     return encrypted;
   }
   const { args, body, platformEnvironment } = input;
-  return buildStoredExecutionContextDraft(
+  return buildPreparedExecutionContextDraft(
     {
       ...args,
       body,
@@ -5277,9 +5275,9 @@ function capturedMountContextFields(args: {
   readonly additionalVolumes:
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
-  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
 }): Pick<
-  StoredExecutionContext,
+  PreparedExecutionContext,
   "customWorkflowSelection" | "templateGuidanceBundles"
 > {
   return {
@@ -5309,7 +5307,7 @@ function capturedMountContextFields(args: {
   };
 }
 
-function buildStoredExecutionContextDraft(
+function buildPreparedExecutionContextDraft(
   args: {
     readonly runId: string;
     readonly workflowAutomationId: string | null;
@@ -5329,14 +5327,14 @@ function buildStoredExecutionContextDraft(
     readonly additionalVolumes:
       readonly AgentRunCreateAdditionalVolume[] | undefined;
     readonly additionalVolumeSources: AdditionalVolumeSources;
-    readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
-    readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+    readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
+    readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
     readonly platformEnvironment: Record<string, string> | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly includeOkouTokenSecret: boolean | undefined;
   },
-  encryptedSecrets: BuiltStoredExecutionContextDraft["context"]["encryptedSecrets"],
-): BuiltStoredExecutionContextDraft {
+  encryptedSecrets: BuiltPreparedExecutionContextDraft["context"]["encryptedSecrets"],
+): BuiltPreparedExecutionContextDraft {
   const permissions = environmentPermissionManifest(args.environment);
   const executionSecrets = buildStoredExecutionSecrets(
     args.environment,
@@ -5415,7 +5413,6 @@ function buildStoredExecutionContextDraft(
       firewalls: permissions?.firewalls,
       networkPolicies: permissions?.networkPolicies,
       connectorRuntimeTargets: [...args.environment.runtimeTargets],
-      disallowedTools: args.body.disallowedTools,
       tools: args.body.tools,
       settings: args.body.settings,
       featureFlags: {
@@ -5436,10 +5433,10 @@ function buildStoredExecutionContextDraft(
   };
 }
 
-function resolveBuiltStoredExecutionContext(
+function resolveBuiltPreparedExecutionContext(
   preparedStorage: PreparedAgentRunStorage,
-  builtContextDraft: BuiltStoredExecutionContextDraft,
-): BuiltStoredExecutionContext {
+  builtContextDraft: BuiltPreparedExecutionContextDraft,
+): BuiltPreparedExecutionContext {
   return {
     ...builtContextDraft,
     persistedStorageMounts: [...preparedStorage.persistedStorageMounts],
@@ -5491,8 +5488,8 @@ interface BuildRunnerJobPayloadInput {
   readonly additionalVolumes:
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
-  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
-  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+  readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
+  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly chatThreadId: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
@@ -5516,14 +5513,14 @@ function assembleRunnerLaunch(args: {
   readonly runnerGroup: string;
   readonly body: CreateRunBody;
   readonly preparedStorage: PreparedAgentRunStorage;
-  readonly contextDraft: BuiltStoredExecutionContextDraft;
+  readonly contextDraft: BuiltPreparedExecutionContextDraft;
   readonly piResources: PreparedPiLaunchResources | undefined;
 }): PreparedRunnerLaunch {
-  const builtContext = resolveBuiltStoredExecutionContext(
+  const builtContext = resolveBuiltPreparedExecutionContext(
     args.preparedStorage,
     args.contextDraft,
   );
-  const storedContext = storedExecutionContextWithPiResources(
+  const storedContext = preparedExecutionContextWithPiResources(
     builtContext.context,
     args.piResources,
     args.launchSnapshot.framework,
@@ -5587,7 +5584,7 @@ interface MaterializedRunnerStorage {
 
 function finalizedMaterializedLaunch(
   storage: MaterializedRunnerStorage,
-  contextDraft: BuiltStoredExecutionContextDraft,
+  contextDraft: BuiltPreparedExecutionContextDraft,
 ): PreparedRunnerLaunch {
   const { args, group, body } = storage.input;
   return assembleRunnerLaunch({
@@ -5787,7 +5784,6 @@ function createRunBody(args: {
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
     appendSystemPrompt: args.prompt.appendedSystemPrompt,
-    disallowedTools: [...DEFAULT_DISALLOWED_TOOLS],
   };
 }
 
@@ -5987,15 +5983,15 @@ type CreateRunBody = Omit<
 /** Keep complete preparation for registration and diagnostics, then persist
  * only inputs that Claim cannot derive from the admitted Run or its defaults. */
 function queuedExecutionContext(
-  context: StoredExecutionContext,
+  context: PreparedExecutionContext,
   run: Parameters<typeof runPlatformEnvironment>[0],
-) {
+): StoredExecutionContext {
   const {
     cliAgentType: _cliAgentType,
     connectorRuntimeTargets,
     piLaunchConfig: _piLaunchConfig,
     userTimezone: _userTimezone,
-    disallowedTools,
+    disallowedTools: _disallowedTools,
     networkPolicies,
     platformEnvironment,
     ...queued
@@ -6021,14 +6017,8 @@ function queuedExecutionContext(
       );
     },
   );
-  const defaultTools =
-    disallowedTools?.length === DEFAULT_DISALLOWED_TOOLS.length &&
-    disallowedTools.every((tool, index) => {
-      return tool === DEFAULT_DISALLOWED_TOOLS[index];
-    });
   return {
     ...queued,
-    disallowedTools: defaultTools ? undefined : disallowedTools,
     networkPolicies:
       capturedPolicies.length > 0
         ? Object.fromEntries(capturedPolicies)
@@ -6042,7 +6032,7 @@ interface RunnerJobPayload {
   readonly profile: string;
   readonly cliAgentSessionId: string | null;
   readonly reuseKey: string | null;
-  readonly executionContext: StoredExecutionContext;
+  readonly executionContext: PreparedExecutionContext;
 }
 
 function runnerJobPayload(args: {
@@ -6050,7 +6040,7 @@ function runnerJobPayload(args: {
   readonly profile: string;
   readonly cliAgentSessionId: string | null;
   readonly reuseKey: string | null;
-  readonly executionContext: StoredExecutionContext;
+  readonly executionContext: PreparedExecutionContext;
 }): RunnerJobPayload {
   return {
     runnerGroup: args.runnerGroup,
@@ -6065,8 +6055,8 @@ function runnerJobPayload(args: {
 
 // --- Private implementation: Runner payload ---
 
-interface BuiltStoredExecutionContext {
-  readonly context: StoredExecutionContext;
+interface BuiltPreparedExecutionContext {
+  readonly context: PreparedExecutionContext;
   readonly persistedStorageMounts: readonly PersistedStorageMount[];
   readonly secretNames: readonly string[];
   // Plain secret values used for run-context redaction; values, not names.
@@ -6108,7 +6098,7 @@ function buildRunContextSnapshot(args: {
   readonly runId: string;
   readonly userId: string;
   readonly body: Pick<CreateRunBody, "prompt" | "appendSystemPrompt">;
-  readonly builtContext: BuiltStoredExecutionContext;
+  readonly builtContext: BuiltPreparedExecutionContext;
 }): RunContextAxiomSnapshot {
   const storedContext = args.builtContext.context;
   const sanitizedEnvironment = sanitizeEnvironment(
@@ -6153,11 +6143,11 @@ function buildRunContextSnapshot(args: {
   return snapshot;
 }
 
-function storedExecutionContextWithPiResources(
-  context: StoredExecutionContext,
+function preparedExecutionContextWithPiResources(
+  context: PreparedExecutionContext,
   resources: PreparedPiLaunchResources | undefined,
   launchFramework: AgentRunFullLaunchSnapshot["framework"],
-): StoredExecutionContext {
+): PreparedExecutionContext {
   const finalizedContext = { ...context, cliAgentType: launchFramework };
   if (resources === undefined) {
     return finalizedContext;
