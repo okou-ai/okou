@@ -15,6 +15,10 @@ type DbMigration = {
 export const NON_TRANSACTIONAL_MIGRATION_MARKER = "-- okou:non-transactional";
 export const UUID_BATCH_MIGRATION_MARKER = "-- okou:batch-by-uuid";
 const EXPLAIN_ON_TIMEOUT_MIGRATION_MARKER = "-- okou:explain-on-timeout";
+const REPLAYED_MIGRATIONS = [
+  "1462_browser_owner_windows.sql",
+  "1534_email_integration.sql",
+];
 
 const batchCursorSchema = tuple([object({ next_cursor: guid().nullable() })]);
 
@@ -138,19 +142,15 @@ export async function applyPendingMigrations(
     }
 
     const file = requiredMigrationFile(migrationFiles, migration.folderMillis);
-    // Keep shipped 1462 bytes/journal identity, but execute its canonical,
-    // replayable DDL outside the migration transaction. Retire with 1462 in a
-    // future history squash.
-    const statements =
-      file === "1462_browser_owner_windows.sql"
-        ? readFileSync(
-            new URL(
-              "./migration-replays/1462_browser_owner_windows.sql",
-              import.meta.url,
-            ),
-            "utf8",
-          ).split("--> statement-breakpoint")
-        : migration.sql;
+    // Preserve shipped SQL and journal identity. 1462 replays recoverable DDL
+    // outside a transaction; 1534 defers its chat_events scan to migration 1535.
+    // Retire these replays with their migrations in a future history squash.
+    const statements = REPLAYED_MIGRATIONS.includes(file)
+      ? readFileSync(
+          new URL(`./migration-replays/${file}`, import.meta.url),
+          "utf8",
+        ).split("--> statement-breakpoint")
+      : migration.sql;
     const startedAt = performance.now();
     const nonTransactional = statements.some((statement) => {
       return statement.includes(NON_TRANSACTIONAL_MIGRATION_MARKER);
