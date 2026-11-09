@@ -109,10 +109,20 @@ const OUTBOX_EXPIRED_BEFORE_PROVIDER_ERROR =
 export const CREDIT_LOW_BALANCE_EMAIL_SUBJECT =
   "Your credit balance is running low";
 
-const emailTemplateSchema = discriminatedUnion("template", [
+const emailAttachmentSchema = object({
+  filename: string(),
+  contentType: string(),
+  path: zUrl(),
+}).strict();
+
+export const emailTemplateSchema = discriminatedUnion("template", [
   object({
     template: literal("email-channel"),
-    props: object({ text: string(), userLinkId: string().optional() }).strict(),
+    props: object({
+      text: string(),
+      userLinkId: string().optional(),
+      attachments: array(emailAttachmentSchema).max(1).optional(),
+    }).strict(),
   }).strict(),
   debugMorningBriefEmailTemplateSchema,
   object({
@@ -184,6 +194,7 @@ const providerRequestSchema = object({
   tags: array(object({ name: string(), value: string() })).optional(),
   html: string(),
   text: string().optional(),
+  attachments: array(emailAttachmentSchema).optional(),
 }).strict();
 type ProviderRequest = output<typeof providerRequestSchema>;
 
@@ -371,6 +382,10 @@ function buildProviderRequest(row: OutboxRow): ProviderRequest {
       : {}),
     html: rendered.html,
     ...(rendered.text === undefined ? {} : { text: rendered.text }),
+    ...(row.template.template === "email-channel" &&
+    row.template.props.attachments
+      ? { attachments: row.template.props.attachments }
+      : {}),
   };
 }
 
@@ -403,6 +418,7 @@ async function sendProviderRequest(
       html: request.html,
       ...(request.tags ? { tags: request.tags } : {}),
       ...(request.text === undefined ? {} : { text: request.text }),
+      ...(request.attachments ? { attachments: request.attachments } : {}),
       ...(request.cc === undefined
         ? {}
         : {

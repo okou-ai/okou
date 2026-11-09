@@ -1,3 +1,4 @@
+import { chatEventsContract } from "@okouai/api-contracts/contracts/chat-event-send";
 import {
   desktopShellAuthorizationContract as contract,
   type DesktopShellAuthorization,
@@ -13,6 +14,8 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockNow, now } from "../../../lib/time.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
+
+import { mockAuthorizationCallbackThread } from "./authorization-callback-test-helpers.ts";
 
 const context = testContext();
 const ID = "10000000-0000-4000-8000-000000000001";
@@ -62,10 +65,15 @@ function authorization(
 async function setupChat(
   content: string,
   sharedWorkerTestTransport?: "message-port",
+  onSend?: (prompt: string) => void,
 ) {
+  mockAuthorizationCallbackThread(context, THREAD_ID);
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Shell approval",
+    onSendRequest: ({ prompt }) => {
+      onSend?.(prompt);
+    },
     chatEvents: [
       {
         id: "shell-access-request",
@@ -239,8 +247,8 @@ test("The card disables both actions during approval and shows an approval failu
   expect(button(card, "Deny")).toBeDisabled();
   response.resolve();
   await within(card).findByText("Could not update authorization.");
-  expect(button(card, "Allow for 1 hour")).toBeDisabled();
-  expect(button(card, "Deny")).toBeDisabled();
+  expect(button(card, "Allow for 1 hour")).toBeEnabled();
+  expect(button(card, "Deny")).toBeEnabled();
 });
 
 test("Attaching realtime does not refetch a shell card, but a shell event updates its status", async () => {
@@ -569,3 +577,110 @@ test("An external URL with the same path remains an ordinary link", async () => 
   });
   expect(screen.queryByTestId("desktop-shell-authorization-card")).toBeNull();
 });
+
+test.each([false, true])(
+  "Shell approval resumes only with an explicit callback (%s)",
+  async (callback) => {
+    let current = authorization();
+    const sends: string[] = [];
+    context.mocks.api(contract.get, ({ respond }) => {
+      return respond(200, current);
+    });
+    context.mocks.api(contract.approve, ({ respond }) => {
+      current = approvedAuthorization();
+      context.mocks.ably.trigger(SHELL_TOPIC);
+      return respond(200, current);
+    });
+    const prompt = "Recheck Shell access and continue without replaying input";
+    const url = callback
+      ? `${URL}?threadId=${THREAD_ID}&callbackPrompt=${encodeURIComponent(prompt)}`
+      : URL;
+    await setupChat(url, undefined, (text) => {
+      sends.push(text);
+    });
+    const card = await screen.findByTestId("desktop-shell-authorization-card");
+    await waitFor(() => {
+      expect(button(card, "Allow for 1 hour")).toBeEnabled();
+    });
+    click(button(card, "Allow for 1 hour"));
+    await waitFor(() => {
+      expect(button(card, "Revoke")).toBeEnabled();
+    });
+    await waitFor(() => {
+      expect(sends).toStrictEqual(callback ? [prompt] : []);
+    });
+  },
+);
+
+test("A failed Shell callback can retry without extending the grant", async () => {
+  let current = authorization();
+  let grants = 0;
+  context.mocks.api(contract.get, ({ respond }) => {
+    return respond(200, current);
+  });
+  context.mocks.api(contract.approve, ({ respond }) => {
+    if (current.status === "pending") {
+      grants++;
+      current = approvedAuthorization();
+    }
+    return respond(200, current);
+  });
+  await setupChat(`${URL}?threadId=${THREAD_ID}&callbackPrompt=Continue`);
+  const inputIds: (string | undefined)[] = [];
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    inputIds.push(body.clientEventId);
+    return inputIds.length === 1
+      ? respond(503, { error: { code: "UNAVAILABLE", message: "Try again" } })
+      : respond(201, { threadId: THREAD_ID });
+  });
+  const card = await screen.findByTestId("desktop-shell-authorization-card");
+  await waitFor(() => {
+    expect(button(card, "Allow for 1 hour")).toBeEnabled();
+  });
+  click(button(card, "Allow for 1 hour"));
+  await within(card).findByText("Could not update authorization.");
+  expect(button(card, "Allow for 1 hour")).toBeEnabled();
+  click(button(card, "Allow for 1 hour"));
+  await waitFor(() => {
+    expect(button(card, "Revoke")).toBeEnabled();
+  });
+  expect(grants).toBe(1);
+  expect(inputIds).toStrictEqual([ID, ID]);
+});
+
+test.each([false, true])(
+  "The standalone Shell page honors the optional callback (%s)",
+  async (callback) => {
+    let current = authorization();
+    const prompts: string[] = [];
+    context.mocks.api(contract.get, ({ respond }) => {
+      return respond(200, current);
+    });
+    context.mocks.api(contract.approve, ({ respond }) => {
+      current = approvedAuthorization();
+      return respond(200, current);
+    });
+    mockAuthorizationCallbackThread(context, THREAD_ID);
+    context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+      expect(current.status).toBe("approved");
+      if (body.prompt) {
+        prompts.push(body.prompt);
+      }
+      return respond(201, { threadId: THREAD_ID });
+    });
+    await setupPage({
+      context,
+      path: `${PATH}${callback ? `?threadId=${THREAD_ID}&callbackPrompt=Continue` : ""}`,
+      host: "app.okou.ai",
+    });
+    const card = await screen.findByTestId("desktop-shell-authorization-card");
+    await waitFor(() => {
+      expect(button(card, "Allow for 1 hour")).toBeEnabled();
+    });
+    click(button(card, "Allow for 1 hour"));
+    await waitFor(() => {
+      expect(button(card, "Revoke")).toBeEnabled();
+    });
+    expect(prompts).toStrictEqual(callback ? ["Continue"] : []);
+  },
+);

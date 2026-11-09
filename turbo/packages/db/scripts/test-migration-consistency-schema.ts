@@ -75,6 +75,7 @@ import { validatePermanentPlatformGenerationReceipts } from "./test-platform-gen
 import { validatePermanentRunnerStateStorage } from "./test-runner-state-storage-permanent";
 import { validatePermanentBrowserOwnerStorage } from "./test-browser-owner-storage-permanent";
 import { validateBrowserOwnerDdlReplay } from "./test-browser-owner-ddl-replay";
+import { validateEmailIntegrationMigration } from "./test-email-integration-migration";
 import { validatePermanentSshStorage } from "./test-ssh-storage-permanent";
 import { validatePermanentStorageLineage } from "./test-storage-lineage-permanent";
 import { validatePermanentNativeVncStorage } from "./test-vnc-native-storage-permanent";
@@ -3123,6 +3124,7 @@ async function main(): Promise<void> {
     await validateLatestSnapshotAccuracy();
 
     await validateBrowserOwnerDdlReplay(dbUrl.href);
+    await validateEmailIntegrationMigration(dbUrl.href);
 
     // Step 1: Test with existing migrations
     console.log("=== Phase 2: Test existing migrations ===\n");

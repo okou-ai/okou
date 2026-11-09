@@ -964,8 +964,7 @@
       "actionFailed": "계속할 수 없습니다.",
       "allow": "허용",
       "allowed": "허용됨",
-      "callbackPrompt": "클라우드 브라우저가 활성화되었습니다. 이전 작업을 계속해 주세요.",
-      "cardDescription": "이 채팅에서 클라우드 브라우저를 활성화하고 작업을 자동으로 계속합니다. 컴퓨터 사용 연결이 해제됩니다.",
+      "cardDescription": "이 채팅에 클라우드 브라우저를 사용합니다. Computer Use 연결이 해제됩니다.",
       "description": "{{assistantName}}는 이 채팅 스레드에 대해 격리된 클라우드 브라우저 프로필을 사용합니다. 활성화하면 스레드의 컴퓨터 사용이 연결 해제됩니다.",
       "enable": "이 스레드에 대해 활성화",
       "enabled": "클라우드 브라우저 활성화됨",
@@ -974,8 +973,9 @@
       "unavailableDescription": "이 클라우드 브라우저 인증 링크는 유효하지 않거나 만료되었거나 이 워크스페이스에서 사용할 수 없습니다.",
       "unavailableTitle": "인증 링크를 사용할 수 없음"
     },
+    "callbackFailed": "접근이 활성화되었지만 대화를 계속할 수 없습니다. 다시 시도해 주세요.",
     "computerUse": {
-      "actionFailed": "이 컴퓨터를 승인하지 못했습니다. 채팅을 새로고침한 후 다시 시도하세요.",
+      "actionFailed": "이 컴퓨터를 승인할 수 없습니다. 다시 시도해 주세요.",
       "authorize": "승인",
       "authorized": "승인됨",
       "authorizedDescription": "이 채팅의 향후 실행을 위해 컴퓨터 액세스가 활성화되었습니다.",
@@ -1616,6 +1616,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "모두 확인했어요",
+        "emptyTitle": "새 제안이 없습니다",
+        "feedback": "제안 작업",
+        "loading": "제안 불러오는 중",
+        "navigation": "제안 둘러보기",
+        "next": "다음 제안",
+        "previous": "이전 제안",
+        "retry": "다시 시도"
+      },
       "label": "제안",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1877,17 +1887,19 @@
       "workflow": {
         "advanced": {
           "description": "도구와 작업 단계를 연결하세요.",
+          "shortTitle": "고급",
           "title": "고급 워크플로"
         },
         "description": "간단한 설정으로 반복 작업을 줄이세요.",
         "scheduled": {
           "description": "알맞은 시간에 실행하세요.",
           "items": {
-            "daily": "매일 반복 작업",
-            "once": "일회성 알림",
-            "weekly": "주간 점검"
+            "once": "지정한 시간에 한 번 실행",
+            "recurring": "일정에 따라 반복 실행"
           },
-          "prompt": "{{task}} 설정을 도와주세요. 할 일, 실행 시각, 시간대를 먼저 확인해 주세요.",
+          "prompt": "{{task}}. 할 일, 실행 시각, 시간대를 먼저 확인해 주세요.",
+          "setupTitle": "작업 예약",
+          "shortTitle": "예약",
           "title": "예약 작업"
         },
         "suggestions": "추천 작업을 선택하고 필요에 맞게 조정하세요.",
@@ -1933,6 +1945,7 @@
             }
           },
           "monitorPrompt": "{{source}}로 {{task}} 설정을 도와주세요. 흐름: {{event}} → {{action}} → {{result}}. 확인할 피드, 주제 또는 계정, 확인 주기, 요약 저장 위치를 물어보세요. 정기적으로 확인하고 이미 처리한 항목은 제외하며, 설정을 확인한 후 활성화해 주세요.",
+          "shortTitle": "트리거",
           "title": "트리거"
         }
       }

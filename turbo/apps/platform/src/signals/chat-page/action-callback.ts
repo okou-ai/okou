@@ -1,4 +1,6 @@
 import { command, computed } from "ccstate";
+import { chatThreadMetadataContract } from "@okouai/api-contracts/client/chat-threads";
+import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { searchParams$ } from "../route.ts";
 import { textToMessageDocument } from "../okou-page/user-message-document-codec.ts";
@@ -20,7 +22,7 @@ export interface ChatActionCallbackIds {
 
 export function chatActionCallbackFromUrl(
   url: URL,
-  context: ChatActionContext,
+  context: Pick<ChatActionContext, "threadId">,
 ): ChatActionCallback | null {
   const callbackPrompt = url.searchParams.get("callbackPrompt");
   const threadId = url.searchParams.get("threadId");
@@ -75,6 +77,63 @@ export const runChatActionCallback$ = command(
         clientEventId: args.callbackIds?.clientEventId ?? crypto.randomUUID(),
         chatThreadSortEventId:
           args.callbackIds?.chatThreadSortEventId ?? crypto.randomUUID(),
+      },
+      signal,
+    );
+  },
+);
+
+/** Bind an authorization link's optional callback to its server-owned chat. */
+export function authorizationChatCallback(
+  originalUrl: string,
+  threadId: string,
+): ChatActionCallback {
+  const callback = chatActionCallbackFromUrl(
+    new URL(originalUrl, "https://app.okou.ai"),
+    { threadId },
+  );
+  if (!callback) {
+    throw new Error("Authorization callback does not belong to this chat");
+  }
+  return callback;
+}
+
+/** Permission, Computer Use, Shell and Browser all publish ordinary chat input. */
+export const runAuthorizationChatCallback$ = command(
+  async (
+    { get, set },
+    args: {
+      readonly originalUrl: string;
+      readonly chatThreadId: string;
+      readonly authorizationId: string;
+    },
+    signal: AbortSignal,
+  ): Promise<void> => {
+    const callback = authorizationChatCallback(
+      args.originalUrl,
+      args.chatThreadId,
+    );
+    if (!callback.callbackPrompt) {
+      return;
+    }
+    const thread = await accept(
+      get(apiClient$)(chatThreadMetadataContract).get({
+        params: { id: args.chatThreadId },
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+    );
+    await set(
+      runChatActionCallback$,
+      {
+        agentId: thread.body.agentId,
+        threadId: args.chatThreadId,
+        callbackPrompt: callback.callbackPrompt,
+        callbackIds: {
+          clientEventId: args.authorizationId,
+          chatThreadSortEventId: args.authorizationId,
+        },
       },
       signal,
     );

@@ -212,15 +212,6 @@ export const mobileBreadcrumb$ = computed(
       }
     }
 
-    if (route === "myOkou") {
-      return {
-        section: i18n.t(($) => {
-          return $.myOkou.title;
-        }),
-        sectionPath: ROUTES.myOkou,
-      };
-    }
-
     // Chat-related routes
     if (
       route !== "home" &&

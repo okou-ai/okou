@@ -180,8 +180,8 @@ describe("okou connector account switch-request command", () => {
     expect(Array.from(url.searchParams.entries())).toStrictEqual([
       ["kind", "builtin"],
       ["connectorSlug", "github"],
-      ["threadId", THREAD_ID],
       ["callbackPrompt", "Continue with the selected account & finish"],
+      ["threadId", THREAD_ID],
     ]);
   });
 
@@ -227,8 +227,8 @@ describe("okou connector account switch-request command", () => {
     ).toStrictEqual([
       ["kind", "custom"],
       ["customConnectorId", CUSTOM_CONNECTOR_ID],
-      ["threadId", THREAD_ID],
       ["callbackPrompt", "Continue the search"],
+      ["threadId", THREAD_ID],
     ]);
     expect(output).toContain("exact callback URL above verbatim");
   });

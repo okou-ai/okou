@@ -124,7 +124,10 @@ const setupChatPageForAgent$ = command(
       // My Okou's only chat page is this one, so another agent's chat would
       // route straight back here; its settings page is the usable surface.
       if (get(singleAgentEnabled$)) {
-        set(detachedNavigateTo$, ROUTES.myOkou, { replace: true });
+        set(detachedNavigateTo$, ROUTES.connectors, {
+          searchParams: new URLSearchParams({ settings: "my-okou" }),
+          replace: true,
+        });
         return;
       }
       // The URL names an agent this user cannot reach: it was deleted, it
@@ -240,7 +243,10 @@ export const setupHomeChatPage$ = command(
     const defaultAgentId = await get(defaultAgentId$);
     signal.throwIfAborted();
     if (!defaultAgentId) {
-      set(detachedNavigateTo$, ROUTES.myOkou, { replace: true });
+      set(detachedNavigateTo$, ROUTES.connectors, {
+        searchParams: new URLSearchParams({ settings: "my-okou" }),
+        replace: true,
+      });
       return;
     }
     await set(setupChatPageForAgent$, defaultAgentId, signal);

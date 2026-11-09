@@ -158,17 +158,10 @@ function useManageNavItems() {
       }
     }
   };
-  return MANAGE_NAV.map((item) => {
-    return item.id === "agents" && singleAgent
-      ? {
-          ...item,
-          pathname: ROUTES.myOkou,
-          activeKeys: ["myOkou"] as readonly RouteKey[],
-          label: t(($) => {
-            return $.myOkou.title;
-          }),
-        }
-      : { ...item, label: manageLabel(item.id) };
+  return MANAGE_NAV.filter((item) => {
+    return !singleAgent || item.id !== "agents";
+  }).map((item) => {
+    return { ...item, label: manageLabel(item.id) };
   });
 }
 

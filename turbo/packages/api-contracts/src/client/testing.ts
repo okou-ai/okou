@@ -385,8 +385,14 @@ import { integrationsDiscordReadContract as OriginalIntegrationsDiscordReadContr
 import { integrationsDiscordReadContract } from "./integrations-discord-read";
 import { integrationsDiscordContract as OriginalIntegrationsDiscordContract } from "../contracts/integrations-discord";
 import { integrationsDiscordContract } from "./integrations-discord";
-import { integrationsEmailContract as OriginalIntegrationsEmailContract } from "../contracts/integrations-email";
-import { integrationsEmailContract } from "./integrations-email";
+import {
+  integrationsEmailContract as OriginalIntegrationsEmailContract,
+  integrationsEmailUploadContract as OriginalIntegrationsEmailUploadContract,
+} from "../contracts/integrations-email";
+import {
+  integrationsEmailContract,
+  integrationsEmailUploadContract,
+} from "./integrations-email";
 import { integrationsGithubContract as OriginalIntegrationsGithubContract } from "../contracts/integrations-github";
 import { integrationsGithubContract } from "./integrations-github";
 import { integrationsSlackReadContract as OriginalIntegrationsSlackReadContract } from "../contracts/integrations-slack-read";
@@ -1067,6 +1073,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [integrationsDiscordReadContract, OriginalIntegrationsDiscordReadContract],
   [integrationsDiscordContract, OriginalIntegrationsDiscordContract],
   [integrationsEmailContract, OriginalIntegrationsEmailContract],
+  [integrationsEmailUploadContract, OriginalIntegrationsEmailUploadContract],
   [integrationsGithubContract, OriginalIntegrationsGithubContract],
   [integrationsSlackReadContract, OriginalIntegrationsSlackReadContract],
   [integrationsSlackContract, OriginalIntegrationsSlackContract],

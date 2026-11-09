@@ -103,7 +103,8 @@ function currentIntegration(
     case "teams":
     case "telegram":
     case "wechat":
-    case "discord": {
+    case "discord":
+    case "email": {
       return contextType;
     }
     default: {

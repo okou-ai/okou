@@ -26,7 +26,7 @@ import addon_process_logging
 
 # --- Sub-module imports ---
 #
-# auth_base_forwarder/body_capture/connector_diagnostics/connector_intent/content_length/
+# auth_base_forwarder/body_capture/connector_diagnostics/connector_intent/
 # matching/model_websocket_usage/
 # response_encoding_negotiation/
 # response_streaming/
@@ -37,7 +37,6 @@ import addon_process_logging
 #   1. Cross-module calls read as ``auth_base_forwarder.X(...)`` /
 #      ``body_capture.X(...)`` / ``connector_diagnostics.X(...)`` /
 #      ``connector_intent.X(...)`` /
-#      ``content_length.X(...)`` /
 #      ``matching.X(...)`` / ``model_websocket_usage.X(...)`` /
 #      ``response_streaming.X(...)`` / ``runner_flush_lifecycle.X(...)`` /
 #      ``terminal_usage.X(...)`` /
@@ -58,7 +57,6 @@ import codex_model_catalog_cache
 import connection_endpoints
 import connector_diagnostics
 import connector_intent
-import content_length
 import custom_http
 import data_router
 import firewall_auth_config
@@ -115,8 +113,6 @@ from firewall_auth_cache import (
 )
 from generated.data_router import DATA_ROUTER_REQUEST_BODY_MAX_BYTES
 from logging_utils import (
-    NETWORK_LOG_MAX_SAFE_SIZE,
-    add_firewall_metadata,
     elapsed_ms,
     log_http_network_entry,
     log_proxy_entry,
@@ -637,45 +633,6 @@ def _restore_request_headers_probe_metadata(
         snapshot,
         extra_keys=connector_intent.REQUEST_HEADERS_PROBE_METADATA_KEYS,
     )
-
-
-def _http_network_log_entry(
-    flow: http.HTTPFlow,
-    *,
-    action: str,
-    status_code: int,
-    latency_ms: int,
-    request_size: int,
-    response_size: int,
-) -> tuple[dict, str]:
-    url, host, port = http_network_log.target(flow)
-    entry = {
-        "type": "http",
-        "action": action,
-        "host": host,
-        "port": port,
-        "method": flow.request.method,
-        "status": status_code,
-        "latency_ms": latency_ms,
-        "request_size": request_size,
-        "response_size": response_size,
-    }
-    firewall_error = flow_metadata.firewall_error(flow.metadata)
-    if firewall_error is not None:
-        entry["firewall_error"] = firewall_error
-    connector_route_reason = flow_metadata.connector_route_reason(flow.metadata)
-    if connector_route_reason is not None:
-        entry["connector_route_reason"] = connector_route_reason
-    connector_route_candidates = flow_metadata.connector_route_candidates(flow.metadata)
-    if connector_route_candidates:
-        entry["connector_route_candidates"] = connector_route_candidates
-    entry.update(upstream_admission.upstream_binding_log_fields(flow))
-    if flow.metadata.get(metadata_keys.BROWSER_USER_AGENT):
-        entry["browser_user_agent"] = True
-    if flow_metadata.firewall_base(flow.metadata):
-        add_firewall_metadata(flow, entry)
-    codex_model_catalog_cache.add_network_log_fields(flow, entry)
-    return entry, url
 
 
 def _block_upstream_destination_unbound(
@@ -2053,30 +2010,6 @@ def websocket_message(flow: http.HTTPFlow) -> Awaitable[None] | None:
     return websocket_inspection.inspect_message(flow)
 
 
-def _response_size(flow: http.HTTPFlow) -> int:
-    if flow.response is None:
-        return 0
-
-    streamed_size = response_streaming.streamed_response_size(flow)
-    if streamed_size is not None:
-        return streamed_size
-
-    parsed_content_length = content_length.parse(
-        flow.response.headers.get_all("Content-Length"),
-        max_value=NETWORK_LOG_MAX_SAFE_SIZE,
-    )
-    if parsed_content_length.kind != "valid":
-        return 0
-    return parsed_content_length.value
-
-
-def _request_size(flow: http.HTTPFlow) -> int:
-    streamed_size = request_streaming.streamed_request_size(flow)
-    if streamed_size is not None:
-        return streamed_size
-    return len(flow.request.raw_content or b"")
-
-
 def _release_terminal_flow_state(
     flow: http.HTTPFlow,
     *,
@@ -2268,7 +2201,7 @@ def _finish_response_handling(
     firewall_action: str,
 ) -> None:
 
-    request_size = _request_size(flow)
+    request_size = http_network_log.request_size(flow)
     status_code = flow.response.status_code if flow.response else 0
 
     # Log HTTP network entry for this run. DNS/kmsg rows are produced by the
@@ -2277,8 +2210,8 @@ def _finish_response_handling(
     network_log_path = flow_metadata.network_log_path(flow.metadata)
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     if network_log_path:
-        response_size = _response_size(flow)
-        log_entry, raw_url = _http_network_log_entry(
+        response_size = http_network_log.response_size(flow)
+        log_entry, raw_url = http_network_log.build_entry(
             flow,
             action=firewall_action,
             status_code=status_code,
@@ -2407,12 +2340,12 @@ def _finish_error_handling(flow: http.HTTPFlow, *, latency_ms: int) -> None:
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     original_url = flow.metadata[metadata_keys.ORIGINAL_URL]
     firewall_action = flow_metadata.firewall_action(flow.metadata)
-    request_size = _request_size(flow)
+    request_size = http_network_log.request_size(flow)
     error_msg = project_connection_error_for_log(flow.error.msg if flow.error else "unknown error")
 
     if network_log_path:
         # [NETWORK_LOG_FIELDS] — HTTP error fields; api-contracts is the shared schema boundary.
-        log_entry, raw_url = _http_network_log_entry(
+        log_entry, raw_url = http_network_log.build_entry(
             flow,
             action=firewall_action,
             status_code=0,

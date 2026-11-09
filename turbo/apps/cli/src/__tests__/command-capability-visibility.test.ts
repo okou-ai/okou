@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest";
 import { Command, Help } from "commander";
 import { buildHelpText, registerCommands } from "../okou";
 import { createGenerateCommand } from "../commands/generate";
+import { createEmailCommand } from "../commands/email";
 import { decodeSandboxTokenPayload } from "../lib/api/sandbox-token";
 
 const generateCommand = createGenerateCommand();
@@ -984,4 +985,34 @@ describe("okou generate command visibility", () => {
       ]),
     );
   });
+});
+
+describe("Email upload command visibility", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+  it.each([
+    { capabilities: ["file:write"], visible: false },
+    { capabilities: ["file:write", "email:write"], visible: true },
+  ])(
+    "shows the Email channel only with its capability ($visible)",
+    ({ capabilities, visible }) => {
+      vi.stubEnv(
+        "OKOU_TOKEN",
+        buildOkouToken({
+          userId: "user-email",
+          orgId: "org-email",
+          runId: "run-email",
+          scope: "okou",
+          capabilities,
+          iat: 1000,
+          exp: 2000,
+        }),
+      );
+      const program = new Command();
+      registerCommands(program, [createEmailCommand()]);
+      expect(visibleCommandNames(program).includes("email")).toBe(visible);
+      expect(buildHelpText().includes("okou email upload-file")).toBe(visible);
+    },
+  );
 });

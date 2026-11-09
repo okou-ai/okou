@@ -1056,7 +1056,7 @@ export const clientContractImportManifest = [
   },
   {
     module: "integrations-email",
-    contracts: ["integrationsEmailContract"],
+    contracts: ["integrationsEmailContract", "integrationsEmailUploadContract"],
     bindings: [],
   },
   {
