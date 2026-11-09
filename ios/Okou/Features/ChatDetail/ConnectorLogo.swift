@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
@@ -8,9 +9,50 @@ struct ConnectorLogo: View {
   var fallback = "plug"
   var pointSize = OkouIconSize.partnerLogo
   @ScaledMetric(relativeTo: .body) private var scale: CGFloat = 1
-  @Environment(\.colorScheme) private var colorScheme
 
-  @State private var image: UIImage?
+  var body: some View {
+    let resources = ConnectorIconResources.shared
+    StoreProvider(resources.store) {
+      if let icon {
+        ConnectorLogoValue(icon: icon, fallback: fallback, resources: resources)
+      } else {
+        ConnectorLogoContent(icon: nil, image: nil, fallback: fallback)
+      }
+    }
+    .id(icon?.url)
+    .frame(width: pointSize * scale, height: pointSize * scale)
+    .clipShape(RoundedRectangle(cornerRadius: OkouRadius.thumbnail))
+    .accessibilityHidden(true)
+  }
+}
+
+private struct ConnectorLogoValue: View {
+  let icon: ChatConnectorIcon
+  let fallback: String
+  let resources: ConnectorIconResources
+  private let read: ConnectorIconRead
+  @LoadableValue private var image: Loadable<UIImage>
+
+  init(icon: ChatConnectorIcon, fallback: String, resources: ConnectorIconResources) {
+    self.icon = icon
+    self.fallback = fallback
+    self.resources = resources
+    let read = resources.icon(icon.url)
+    self.read = read
+    _image = LoadableValue(task: read.value)
+  }
+
+  var body: some View {
+    ConnectorLogoContent(icon: icon, image: image.data, fallback: fallback)
+      .onAppear { resources.retryIfNeeded(read) }
+  }
+}
+
+private struct ConnectorLogoContent: View {
+  let icon: ChatConnectorIcon?
+  let image: UIImage?
+  let fallback: String
+  @Environment(\.colorScheme) private var colorScheme
 
   var body: some View {
     Group {
@@ -21,17 +63,6 @@ struct ConnectorLogo: View {
       } else {
         placeholder
       }
-    }
-    .frame(width: pointSize * scale, height: pointSize * scale)
-    .clipShape(RoundedRectangle(cornerRadius: OkouRadius.thumbnail))
-    .accessibilityHidden(true)
-    .task(id: icon?.url) {
-      guard let url = icon?.url else {
-        image = nil
-        return
-      }
-      image = ConnectorIconLoader.shared.cachedImage(for: url)
-      if image == nil { image = await ConnectorIconLoader.shared.image(for: url) }
     }
   }
 

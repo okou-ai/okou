@@ -2,45 +2,45 @@ import UIKit
 import WebKit
 
 /// Partner logos come from the connector catalog CDN as PNG or SVG. UIKit decodes PNG;
-/// SVG is rasterised once in an offscreen WebKit view. Results are cached in memory and on
-/// disk, keyed by the content-addressed URL, so each logo renders at most once per install.
+/// SVG is rasterised in an offscreen WebKit view. The resource graph owns shared Tasks and
+/// memory retention; this adapter owns disk bytes and the serial native renderer.
 @MainActor
 final class ConnectorIconLoader: NSObject, WKNavigationDelegate {
-  static let shared = ConnectorIconLoader()
-
-  private let memory = NSCache<NSURL, UIImage>()
-  private var loads: [URL: Task<UIImage?, Never>] = [:]
+  private let cacheDirectory: URL
   private var renders: Task<Void, Never>?
   private var renderer: WKWebView?
   private var navigation: CheckedContinuation<Void, Never>?
+  private var closed = false
   private static let side: CGFloat = 64
 
-  func cachedImage(for url: URL) -> UIImage? { memory.object(forKey: url as NSURL) }
-
-  func image(for url: URL) async -> UIImage? {
-    if let cached = cachedImage(for: url) { return cached }
-    if let load = loads[url] { return await load.value }
-    let load = Task { await self.load(url) }
-    loads[url] = load
-    let image = await load.value
-    loads[url] = nil
-    if let image { memory.setObject(image, forKey: url as NSURL) }
-    return image
+  init(
+    cacheDirectory: URL = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+      .appending(path: "ConnectorIcons")
+  ) {
+    self.cacheDirectory = cacheDirectory
+    super.init()
   }
 
-  private func load(_ url: URL) async -> UIImage? {
-    let file = Self.cacheFile(for: url)
+  func load(_ url: URL) async throws -> UIImage {
+    try Task.checkCancellation()
+    guard !closed else { throw CancellationError() }
+    let file = cacheFile(for: url)
     if let data = try? Data(contentsOf: file), let image = UIImage(data: data) { return image }
-    guard let (data, response) = try? await URLSession.shared.data(from: url),
-      (response as? HTTPURLResponse)?.statusCode == 200
-    else { return nil }
+    let (data, response) = try await URLSession.shared.data(from: url)
+    guard (response as? HTTPURLResponse)?.statusCode == 200 else {
+      throw URLError(.badServerResponse)
+    }
+    try Task.checkCancellation()
     let image: UIImage?
     if url.pathExtension.lowercased() == "svg" {
       image = await rasterize(svg: data)
     } else {
       image = UIImage(data: data)
     }
-    if let image, let png = image.pngData() {
+    try Task.checkCancellation()
+    guard !closed else { throw CancellationError() }
+    guard let image else { throw CocoaError(.fileReadCorruptFile) }
+    if let png = image.pngData() {
       try? FileManager.default.createDirectory(
         at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
       try? png.write(to: file, options: .atomic)
@@ -48,11 +48,21 @@ final class ConnectorIconLoader: NSObject, WKNavigationDelegate {
     return image
   }
 
+  func close() {
+    closed = true
+    renderer?.stopLoading()
+    resumeNavigation()
+    renderer = nil
+    renders?.cancel()
+    renders = nil
+  }
+
   /// One renderer, one logo at a time.
   private func rasterize(svg: Data) async -> UIImage? {
     let previous = renders
     let render = Task { () -> UIImage? in
       await previous?.value
+      guard !self.closed else { return nil }
       return await self.render(svg)
     }
     renders = Task { _ = await render.value }
@@ -74,6 +84,7 @@ final class ConnectorIconLoader: NSObject, WKNavigationDelegate {
       navigation = continuation
       web.loadHTMLString(html, baseURL: nil)
     }
+    guard !closed else { return nil }
     let configuration = WKSnapshotConfiguration()
     configuration.rect = CGRect(x: 0, y: 0, width: side, height: side)
     configuration.afterScreenUpdates = true
@@ -111,9 +122,8 @@ final class ConnectorIconLoader: NSObject, WKNavigationDelegate {
     navigation = nil
   }
 
-  private static func cacheFile(for url: URL) -> URL {
+  private func cacheFile(for url: URL) -> URL {
     let name = url.lastPathComponent.replacingOccurrences(of: ".svg", with: "") + ".png"
-    return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
-      .appending(path: "ConnectorIcons/\(name)")
+    return cacheDirectory.appending(path: name)
   }
 }
