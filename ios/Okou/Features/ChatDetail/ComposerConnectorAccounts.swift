@@ -1,98 +1,163 @@
+import CCState
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
-struct ComposerConnectorAccounts: View {
-  let store: ComposerConnectorStore
-  let connector: ChatComposerConnector
-  var body: some View {
-    if store.chatAccountAccess {
-      ComposerChatConnectorAccounts(store: store, connector: connector)
-    } else {
-      LegacyComposerConnectorAccounts(store: store, connector: connector)
+extension View {
+  func connectorAccountDestination(
+    store: ComposerConnectorStore,
+    destination: Binding<ComposerConnectorAccountResources?>
+  ) -> some View {
+    navigationDestination(
+      isPresented: Binding(
+        get: { destination.wrappedValue.map { !$0.isClosed } ?? false },
+        set: { presented in
+          if !presented {
+            destination.wrappedValue?.close()
+            destination.wrappedValue = nil
+          }
+        })
+    ) {
+      if let resources = destination.wrappedValue, !resources.isClosed {
+        ComposerConnectorAccounts(store: store, resources: resources)
+          .id(ObjectIdentifier(resources))
+      }
     }
   }
 }
 
-private struct LegacyComposerConnectorAccounts: View {
+struct ComposerConnectorAccounts: View {
   let store: ComposerConnectorStore
-  let connector: ChatComposerConnector
-  @State private var accounts: [ChatConnectorAccount] = []
-  @State private var defaultAccount: ChatConnectorAccount?
-  @State private var selection: String?
-  @State private var cursor: String?
-  @State private var search = ""
-  @State private var error: String?
-  @State private var loading = false
-  @State private var requestID = UUID()
+  let resources: ComposerConnectorAccountResources
+
+  var body: some View {
+    StoreProvider(resources.store) {
+      ComposerConnectorAccountsContent(store: store, resources: resources)
+    }
+  }
+}
+
+private struct ComposerConnectorAccountsContent: View {
+  let store: ComposerConnectorStore
+  let resources: ComposerConnectorAccountResources
+  @State private var permissionDestination: ComposerConnectorPermissionResources?
+  @State private var accountDestination: ComposerConnectorAccountResources?
+  @LoadableValue private var page: Loadable<ComposerConnectorAccountResources.Page>
+  @LoadableValue private var search: Loadable<String>
+  @LoadableValue private var pagination: Loadable<Void>
+  @LoadableStatus<ComposerConnectorAccountResources.Page> private var status: LoadableState
+  @LoadableStatus<Void> private var paginationStatus: LoadableState
+
+  init(store: ComposerConnectorStore, resources: ComposerConnectorAccountResources) {
+    self.store = store
+    self.resources = resources
+    _page = LoadableValue(task: resources.page, keepLast: true)
+    _search = LoadableValue(resources.search)
+    _pagination = LoadableValue(task: resources.pagination)
+    _status = LoadableStatus(task: resources.page)
+    _paginationStatus = LoadableStatus(task: resources.pagination)
+  }
+
+  private var busy: Bool {
+    status == .loading || paginationStatus == .loading || store.isSaving || store.uncertain
+  }
 
   var body: some View {
     List {
-      if let error {
-        ConnectorLoadError(error: error, isLoading: loading || store.isLoading) {
-          await store.refresh()
-          await load()
+      if let error = store.error ?? store.connectorError {
+        ConnectorLoadError(error: error, isLoading: store.isLoading) { await resources.retry() }
+      }
+      switch page {
+      case .loading: EmptyView()
+      case .hasError(let error):
+        ConnectorLoadError(error: ChatRequestFailure.message(for: error)) { await resources.retry() }
+      case .hasData(let value):
+        if resources.managesDefaults {
+          ComposerConnectorDefaults(store: store, resources: resources, page: value, busy: busy)
+        } else if resources.chatAccountAccess {
+          ComposerChatConnectorAccounts(
+            store: store, resources: resources, page: value, busy: busy,
+            openPermissions: {
+              if let slug = resources.connector.target.connectorSlug {
+                permissionDestination = store.openPermissions(
+                  slug: slug, label: resources.connector.label)
+              }
+            },
+            openManagement: {
+              accountDestination = store.openAccounts(resources.connector, managesDefaults: true)
+            })
+        } else {
+          legacy(value)
         }
       }
-      Section {
-        Button {
-          Task { await choose(nil) }
-        } label: {
-          accountLabel(
-            "Use default", detail: defaultAccount?.label ?? "No usable default account",
-            checked: selection == nil)
-        }.disabled(store.isSaving || store.uncertain || loading)
-        ForEach(accounts) { account in
-          VStack(alignment: .leading, spacing: OkouSpace.six) {
-            Button {
-              Task { await choose(account.id) }
-            } label: {
-              accountLabel(
-                account.label,
-                detail: account.ready ? "Connected" : "Reconnect required",
-                checked: selection == account.id)
-            }.disabled(store.isSaving || store.uncertain || loading)
-            if !account.ready {
-              Button("Reconnect this account") {
-                store.connect(target: connector.target, accountID: account.id)
-              }
-              .font(.okou(.footnote)).disabled(store.isSaving)
-            }
-          }
+      if case .hasError(let error) = pagination {
+        ConnectorLoadError(error: ChatRequestFailure.message(for: error), isLoading: busy) {
+          await resources.loadMore()
         }
-        if !loading, selection != nil, !accounts.contains(where: { $0.id == selection }) {
-          Text("The selected account is unavailable. Choose an account or use default.")
-            .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-        }
-        if !loading, accounts.isEmpty, !search.isEmpty {
-          Text("No accounts found").foregroundStyle(OkouColor.mutedForeground)
-        }
-        if let cursor {
-          Button("Load more") { Task { await load(cursor: cursor) } }.disabled(
-            loading || store.isSaving)
-        }
-        Button("Add account") { store.connect(target: connector.target) }.disabled(store.isSaving)
-      } footer: {
-        Group {
-          Text("This account choice applies to this chat. The default account stays unchanged.")
-
-        }
-        .okouSectionNote()
+      } else if paginationStatus == .loading {
+        OkouLoadingRow("Loading more accounts…")
       }
     }
     .overlay {
-      if loading && accounts.isEmpty && defaultAccount == nil && error == nil {
-        ChatSettingsLoadingView(title: "Loading accounts…")
-      }
+      if case .loading = page { ChatSettingsLoadingView(title: "Loading accounts…") }
     }
-    .searchable(text: $search, prompt: "Find accounts")
     .okouGroupedBackground()
-    .navigationTitle(connector.label)
+    .navigationTitle(resources.managesDefaults ? "Manage accounts" : resources.connector.label)
     .navigationBarTitleDisplayMode(.inline)
-    .task(id: search) { await load() }
-    .refreshable { await load() }
+    .connectorPermissionDestination(store: store, destination: $permissionDestination)
+    .connectorAccountDestination(store: store, destination: $accountDestination)
+    .searchable(
+      text: Binding(
+        get: { if case .hasData(let value) = search { return value }; return "" },
+        set: { resources.update(search: $0) }), prompt: "Find accounts")
+    .refreshable { await resources.retry() }
     .onChange(of: store.authorization.active?.id) { _, flowID in
-      if flowID == nil { Task { await load() } }
+      if flowID == nil { Task { await resources.refresh() } }
     }
+  }
+
+  private func legacy(_ page: ComposerConnectorAccountResources.Page) -> some View {
+    Section {
+      Button { Task { await resources.apply(.select(nil)) } } label: {
+        accountLabel(
+          "Use default", detail: page.defaultAccount?.label ?? "No usable default account",
+          checked: page.selectedID == nil)
+      }.disabled(busy)
+      ForEach(page.accounts) { account in
+        VStack(alignment: .leading, spacing: OkouSpace.six) {
+          Button { Task { await resources.apply(.select(account.id)) } } label: {
+            accountLabel(
+              account.label, detail: account.ready ? "Connected" : "Reconnect required",
+              checked: page.selectedID == account.id)
+          }.disabled(busy)
+          if !account.ready {
+            Button("Reconnect this account") {
+              store.connect(target: resources.connector.target, accountID: account.id)
+            }.font(.okou(.footnote)).disabled(busy)
+          }
+        }
+      }
+      if let selectedID = page.selectedID, !page.accounts.contains(where: { $0.id == selectedID }) {
+        Text("The selected account is unavailable. Choose an account or use default.")
+          .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
+      }
+      if page.accounts.isEmpty {
+        Text("No accounts found").foregroundStyle(OkouColor.mutedForeground)
+      }
+      accountActions(page: page)
+    } footer: {
+      Text("This account choice applies to this chat. The default account stays unchanged.")
+        .okouSectionNote()
+    }
+  }
+
+  @ViewBuilder private func accountActions(page: ComposerConnectorAccountResources.Page)
+    -> some View
+  {
+    if page.nextCursor != nil {
+      Button("Load more") { Task { await resources.loadMore() } }.disabled(busy)
+    }
+    Button("Add account") { store.connect(target: resources.connector.target) }.disabled(busy)
   }
 
   private func accountLabel(_ label: String, detail: String, checked: Bool) -> some View {
@@ -104,48 +169,5 @@ private struct LegacyComposerConnectorAccounts: View {
       Spacer()
       if checked { OkouIcon("check").foregroundStyle(.tint) }
     }.contentShape(Rectangle())
-  }
-
-  private func load(cursor: String? = nil) async {
-    guard !store.isSaving else { return }
-    let request = UUID()
-    requestID = request
-    loading = true
-    defer { if requestID == request { loading = false } }
-    do {
-      let page = try await store.service.accounts(
-        target: connector.target, search: search, cursor: cursor)
-      let selected: ChatConnectorSelection?
-      var explicitAccount: ChatConnectorAccount?
-      if let threadID = store.threadID {
-        let preferences = try await store.service.preferences(threadID: threadID)
-        selected = preferences.selections.first { $0.target == connector.target }
-        explicitAccount = preferences.selectedConnections.first { $0.id == selected?.connectionId }
-      } else {
-        selected = store.pendingOptions.connectorSelections.first { $0.target == connector.target }
-      }
-      guard !Task.isCancelled, requestID == request else { return }
-      var values = cursor == nil ? page.connections : accounts + page.connections
-      if let explicitAccount, !values.contains(where: { $0.id == explicitAccount.id }) {
-        values.insert(explicitAccount, at: 0)
-      }
-      accounts = values
-      defaultAccount = page.defaultConnection
-      self.cursor = page.nextCursor
-      selection = selected?.connectionId
-      error = nil
-    } catch is CancellationError {
-    } catch {
-      guard requestID == request else { return }
-      self.error = ChatRequestFailure.message(for: error)
-    }
-  }
-  private func choose(_ id: String?) async {
-    await store.selectAccount(target: connector.target, connectionID: id)
-    if !store.uncertain {
-      await load()
-    } else {
-      error = store.error ?? "Refresh Connectors to confirm the saved choice."
-    }
   }
 }
