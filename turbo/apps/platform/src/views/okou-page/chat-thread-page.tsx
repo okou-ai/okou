@@ -543,7 +543,7 @@ export function ChatThreadHeaderTitle({
 }
 
 const CHAT_THREAD_HEADER_CLASS =
-  "flex h-14 shrink-0 items-center justify-between bg-transparent px-6";
+  "@container flex h-14 shrink-0 items-center justify-between bg-transparent px-6";
 
 function ChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);

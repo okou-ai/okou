@@ -1,3 +1,4 @@
+import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   workflowAutomationsContract,
@@ -185,7 +186,7 @@ async function openAutomationBrowser(): Promise<
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  click(await findButton("Automations"));
+  await selectDesktopHeaderAction("Automations");
   const automationSidebar = await screen.findByRole("complementary", {
     name: "Automations",
   });
@@ -285,7 +286,7 @@ test("Refresh the automation list when the thread's automations change", async (
   await setupPage({ context, path: RUN_PATH });
 
   await readyChat();
-  click(await findButton("Automations"));
+  await selectDesktopHeaderAction("Automations");
   const automationSidebar = await screen.findByRole("complementary", {
     name: "Automations",
   });

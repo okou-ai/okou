@@ -252,6 +252,7 @@ export function DesktopChatThreadMoreMenu({
       <DropdownMenu>
         <ChatHeaderIconButton
           ref={anchorRef}
+          compactLabel
           thread={thread}
           icon={<Ellipsis size={18} />}
           label={t(($) => {
