@@ -37,25 +37,28 @@ export function LearningRunCard() {
         className: "flex flex-col gap-3 p-4",
       })}
     >
-      <div className="flex flex-wrap items-center gap-4">
-        <Brain size={22} className="shrink-0 text-muted-foreground" />
-        <div className="flex min-w-0 flex-1 flex-col gap-1">
-          <h3
-            id="learning-run-title"
-            className="text-sm font-medium text-foreground"
-          >
-            {t(($) => {
-              return $.settings.preferences.debug.learning.title;
-            })}
-          </h3>
-          <p className="text-sm text-muted-foreground">
-            {t(($) => {
-              return $.settings.preferences.debug.learning.description;
-            })}
-          </p>
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+        <div className="flex min-w-0 flex-1 items-center gap-4">
+          <Brain size={22} className="shrink-0 text-muted-foreground" />
+          <div className="flex min-w-0 flex-1 flex-col gap-1">
+            <h3
+              id="learning-run-title"
+              className="text-sm font-medium text-foreground"
+            >
+              {t(($) => {
+                return $.settings.preferences.debug.learning.title;
+              })}
+            </h3>
+            <p className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.settings.preferences.debug.learning.description;
+              })}
+            </p>
+          </div>
         </div>
         <Button
           type="button"
+          className="self-end sm:self-auto"
           disabled={!signal || !target || starting.state !== "idle"}
           onClick={() => {
             if (signal && target) {
