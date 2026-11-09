@@ -224,30 +224,56 @@ async fn non_cloneable_body_disables_replay_even_for_a_safe_method() {
 
 #[tokio::test]
 async fn recovery_shares_the_original_overridden_deadline() {
+    async fn advance_to(target: tokio::time::Instant) {
+        // Arm an earlier barrier so the driver processes timers without
+        // auto-advancing beyond the instant whose result we want to inspect.
+        let barrier = tokio::time::sleep_until(target - Duration::from_millis(1));
+        tokio::pin!(barrier);
+        assert!(futures_util::poll!(&mut barrier).is_pending());
+        tokio::time::advance(target - tokio::time::Instant::now()).await;
+        barrier.await;
+        assert_eq!(tokio::time::Instant::now(), target);
+    }
+
     let mut server = RawHttpTestServer::spawn(vec![
         RawHttpAction::ResetConnection,
         RawHttpAction::WaitForDisconnect,
     ])
     .await;
     let http = client(&server.url());
-    let started = tokio::time::Instant::now();
-    let deadline = started + Duration::from_secs(1);
-    let pending = tokio::spawn(
-        http.authenticated_request(reqwest::Method::GET, server.url(), "token")
-            .timeout(Duration::from_secs(1))
-            .send("read"),
-    );
-    server.next_request("first attempt").await;
-    server.next_request("recovery attempt").await;
+    let pending = http
+        .authenticated_request(reqwest::Method::GET, server.url(), "token")
+        .timeout(Duration::from_secs(1))
+        .send("read");
+    tokio::pin!(pending);
+
+    // Arm the request at the measured instant, before any real I/O waits.
     tokio::time::pause();
-    tokio::time::advance(
-        deadline.saturating_duration_since(tokio::time::Instant::now()) + Duration::from_millis(1),
-    )
-    .await;
-    let result = pending.await.unwrap();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(1);
+    assert!(futures_util::poll!(&mut pending).is_pending());
     tokio::time::resume();
+
+    for description in ["first attempt", "recovery attempt"] {
+        tokio::select! {
+            result = &mut pending => panic!("request finished before {description}: {result:?}"),
+            _ = server.next_request(description) => {}
+        }
+    }
+
+    // Drive only timers while the send stays owned and unpolled.
+    tokio::time::pause();
+    advance_to(deadline - Duration::from_millis(1)).await;
+    assert!(futures_util::poll!(&mut pending).is_pending());
+    // The sampled remaining budget becomes a relative reqwest timeout, which
+    // Tokio then rounds up. Allow one timer tick for each boundary.
+    let latest = deadline + Duration::from_millis(2);
+    advance_to(latest).await;
+    let result = futures_util::poll!(&mut pending);
+    tokio::time::resume();
+
     assert!(
-        matches!(result, Err(ProviderError::ApiTransport(error)) if error.failure_cause == ApiTransportCause::Timeout)
+        matches!(&result, std::task::Poll::Ready(Err(ProviderError::ApiTransport(error))) if error.failure_cause == ApiTransportCause::Timeout),
+        "request must time out within its original budget: {result:?}"
     );
     server.assert_finished().await;
 }

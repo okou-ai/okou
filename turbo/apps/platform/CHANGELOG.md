@@ -13,6 +13,20 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1102.6](https://github.com/okou-ai/okou/compare/app-v0.1102.5...app-v0.1102.6) (2026-11-09)
+
+
+### Bug Fixes
+
+* **core:** enable single agent for staff organizations ([#46046](https://github.com/okou-ai/okou/issues/46046)) ([7ac09ab](https://github.com/okou-ai/okou/commit/7ac09abc90aec538104dc0e0327fef8240ada955))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.3
+
 ## [0.1102.5](https://github.com/okou-ai/okou/compare/app-v0.1102.4...app-v0.1102.5) (2026-11-09)
 
 

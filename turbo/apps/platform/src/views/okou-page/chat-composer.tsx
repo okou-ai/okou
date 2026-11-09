@@ -153,7 +153,7 @@ import type {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
-import { CHAT_UPLOAD_MAX_FILE_SIZE } from "../../lib/chat-upload.ts";
+import { MAX_ATTACHMENT_UPLOAD_BYTES } from "@okouai/core/upload-limits";
 import {
   COMPOSER_VOICE_INPUT_ARIA_KEY_SHORTCUTS,
   COMPOSER_VOICE_INPUT_SHORTCUT,
@@ -5819,7 +5819,7 @@ function useComposerFileUpload(
   const rootSignal = useGet(rootSignal$);
   const { t } = useTranslation();
   return (file) => {
-    if (file.size > CHAT_UPLOAD_MAX_FILE_SIZE) {
+    if (file.size > MAX_ATTACHMENT_UPLOAD_BYTES) {
       toast.error(
         t(
           ($) => {
