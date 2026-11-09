@@ -41,6 +41,8 @@ final class ComposerConnectorStore {
   private(set) var directory: ComposerConnectorDirectoryResources?
   private(set) var permissions: ComposerConnectorPermissionResources?
   private var permissionWrite: Task<Void, Never>?
+  private var accountPages: [ComposerConnectorAccountResources] = []
+  private var accountWrite: Task<Void, Never>?
   @ObservationIgnored lazy var authorization = ConnectorActionStore(
     service: authorizationService,
     didContinue: { [weak self] in await self?.refresh() }, didFail: didFail)
@@ -63,6 +65,7 @@ final class ComposerConnectorStore {
   }
 
   var canSend: Bool { !isSaving && !uncertain }
+  var isUpdatingAccounts: Bool { accountWrite != nil }
 
   func canConfigurePermissions(slug: String?) -> Bool {
     guard let slug, let connector = connectors.first(where: { $0.target == .builtin(slug) }),
@@ -76,6 +79,9 @@ final class ComposerConnectorStore {
     if threadID == nil, let previous = self.agentID { pendingByAgent[previous] = pendingOptions }
     generation = UUID()
     closeDirectory()
+    closeAccounts()
+    accountWrite?.cancel()
+    accountWrite = nil
     closePermissions()
     permissionWrite?.cancel()
     permissionWrite = nil
@@ -134,6 +140,7 @@ final class ComposerConnectorStore {
         return (enabled, values)
       }
       guard !closed, !Task.isCancelled, request == generation else { return false }
+      if chatAccountAccess != enabled { closeAccounts() }
       connectors = values
       chatAccountAccess = enabled
       pendingOptions.chatAccountAccess = enabled
@@ -145,6 +152,7 @@ final class ComposerConnectorStore {
           updatePendingAccess(target: connector.target)
         }
       }
+      for page in accountPages { page.reconcile() }
       connectorError = nil
       return true
     } catch {
@@ -446,8 +454,67 @@ final class ComposerConnectorStore {
     await task.value
   }
 
+  func openAccounts(
+    _ connector: ChatComposerConnector, managesDefaults: Bool = false
+  ) -> ComposerConnectorAccountResources? {
+    guard !closed, let agentID else { return nil }
+    let page = ComposerConnectorAccountResources(
+      composer: self, connector: connector, agentID: agentID,
+      managesDefaults: managesDefaults, didFail: didFail)
+    accountPages.append(page)
+    return page
+  }
+
+  func retireAccounts(_ page: ComposerConnectorAccountResources) {
+    accountPages.removeAll { $0 === page }
+  }
+
+  func closeAccounts() {
+    for page in accountPages { page.close() }
+    accountPages = []
+  }
+
+  func applyAccountAction(
+    owner: ComposerConnectorAccountResources, action: ComposerConnectorAccountResources.Action
+  ) async {
+    guard !closed, !owner.isClosed, accountPages.contains(where: { $0 === owner }),
+      owner.agentID == agentID, owner.chatAccountAccess == chatAccountAccess,
+      connectors.contains(where: { $0.target == owner.connector.target }),
+      accountWrite == nil, !isSaving, !uncertain
+    else { return }
+    let request = generation
+    let target = owner.connector.target
+    let task = Task { @MainActor [self] in
+      defer { if request == generation { accountWrite = nil } }
+      guard !closed, !Task.isCancelled, request == generation,
+        owner.chatAccountAccess == chatAccountAccess
+      else { return }
+      switch action {
+      case .select(let id): await selectAccount(target: target, connectionID: id)
+      case .access(let id, let enabled):
+        await setAccountAccess(target: target, connectionID: id, enabled: enabled)
+      case .defaultAccount(let id):
+        await perform { try await service.setDefaultAccount(target: target, connectionID: id) }
+      case .defaultEnabled(let id, let enabled):
+        await perform {
+          try await service.setDefaultEnabled(target: target, connectionID: id, enabled: enabled)
+        }
+      }
+      guard !closed, !Task.isCancelled, request == generation else { return }
+      // The current destinations, including one reopened during the write, need readback.
+      for page in accountPages where page.connector.target == target {
+        await page.refresh()
+      }
+    }
+    accountWrite = task
+    await task.value
+  }
+
   func close() {
     closeDirectory()
+    closeAccounts()
+    accountWrite?.cancel()
+    accountWrite = nil
     closePermissions()
     permissionWrite?.cancel()
     permissionWrite = nil

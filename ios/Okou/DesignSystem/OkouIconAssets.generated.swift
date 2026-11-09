@@ -23,6 +23,7 @@ enum OkouIconAssets {
     "chevron-right",
     "chevron-up",
     "chevrons-right",
+    "circle",
     "circle-alert",
     "circle-arrow-down",
     "circle-check",
