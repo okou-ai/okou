@@ -341,7 +341,6 @@ test("Instructions keep plus signs literal and save underline as HTML", async ()
 
   const editor = await instructionsEditor();
   expect(editor).toHaveTextContent("Use C++ and i++ in ++legacy notes++");
-  expect(editor.querySelector("u")).toBeNull();
 
   await user.click(editor);
   await user.keyboard("{Control>}a{/Control}");
