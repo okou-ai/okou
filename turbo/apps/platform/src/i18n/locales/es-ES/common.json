@@ -1658,7 +1658,9 @@
       "fileTooLarge": "{{filename}} supera el límite de 5 GB",
       "imageUnavailable": "[Imagen no disponible: {{filename}}]",
       "loadingFile": "Cargando {{filename}}",
+      "pastedText": "Texto pegado",
       "previewFile": "Vista previa de {{filename}}",
+      "remove": "Elimina {{filename}}",
       "title": "Archivos adjuntos",
       "unavailable": "{{filename}} ya no está disponible. Vuelve a subirlo para enviarlo.",
       "unavailableCount_one": "{{count}} archivo adjunto ya no está disponible. Vuelve a subirlo para enviarlo.",
@@ -4689,9 +4691,14 @@
         "tooLong": "Acorta la tarea para elegir otro formato."
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} caracteres (incluidas las instrucciones de salida)",
         "connectorsDescription": "Conecta tus aplicaciones para que Okou entienda mejor tu trabajo.",
         "connectorsTitle": "Conecta tus herramientas de trabajo",
-        "intro": "Conecta tus aplicaciones para obtener mejores resultados y elige un formato."
+        "fileTooLarge": "{{filename}} supera el límite de 10 MB. El texto pegado permanece en el prompt.",
+        "intro": "Conecta tus aplicaciones para obtener mejores resultados y elige un formato.",
+        "tooLong": "Acorta tu prompt o desmarca el formato de salida para continuar. El límite incluye las instrucciones de salida.",
+        "tooManyFiles": "Puedes adjuntar hasta {{max}} archivos. El texto pegado permanece en el prompt.",
+        "uploadFailed": "No se pudo subir {{filename}}. El texto pegado se conserva como archivo adjunto. Vuelve a intentarlo o elimínalo antes de continuar."
       },
       "skills": {
         "copied": "Copiado",

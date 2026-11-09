@@ -1634,7 +1634,9 @@
       "fileTooLarge": "{{filename}} überschreitet die 5-GB-Grenze",
       "imageUnavailable": "[Bild nicht verfügbar: {{filename}}]",
       "loadingFile": "{{filename}} wird geladen",
+      "pastedText": "Eingefügter Text",
       "previewFile": "Vorschau von {{filename}}",
+      "remove": "{{filename}} entfernen",
       "title": "Anhänge",
       "unavailable": "{{filename}} ist nicht mehr verfügbar. Laden Sie die Datei erneut hoch, um sie zu senden.",
       "unavailableCount_one": "{{count}} Anhang ist nicht mehr verfügbar. Laden Sie ihn erneut hoch, um ihn zu senden.",
@@ -4633,9 +4635,14 @@
         "tooLong": "Kürze deine Aufgabe, um ein anderes Format zu wählen."
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} Zeichen (einschließlich Ausgabeanweisungen)",
         "connectorsDescription": "Verbinde deine Apps, damit Okou deine Arbeit besser versteht.",
         "connectorsTitle": "Verbinde deine Arbeitstools",
-        "intro": "Verbinde deine Apps für bessere Ergebnisse und wähle ein Format."
+        "fileTooLarge": "{{filename}} überschreitet die 10-MB-Grenze. Dein eingefügter Text bleibt im Prompt.",
+        "intro": "Verbinde deine Apps für bessere Ergebnisse und wähle ein Format.",
+        "tooLong": "Kürze deinen Prompt oder hebe die Auswahl des Ausgabeformats auf, um fortzufahren. Die Grenze umfasst auch Ausgabeanweisungen.",
+        "tooManyFiles": "Du kannst bis zu {{max}} Dateien anhängen. Dein eingefügter Text bleibt im Prompt.",
+        "uploadFailed": "{{filename}} konnte nicht hochgeladen werden. Dein eingefügter Text bleibt als Anhang erhalten. Versuche es erneut oder entferne den Anhang, bevor du fortfährst."
       },
       "skills": {
         "copied": "Kopiert",

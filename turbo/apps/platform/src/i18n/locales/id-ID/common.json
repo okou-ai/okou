@@ -1631,7 +1631,9 @@
       "fileTooLarge": "{{filename}} melebihi batas 5 GB",
       "imageUnavailable": "[Gambar tidak tersedia: {{filename}}]",
       "loadingFile": "Memuat {{filename}}",
+      "pastedText": "Teks yang ditempel",
       "previewFile": "Pratinjau {{filename}}",
+      "remove": "Hapus {{filename}}",
       "title": "Lampiran",
       "unavailable": "{{filename}} tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
       "unavailableCount_other": "{{count}} lampiran tidak lagi tersedia. Unggah ulang untuk mengirimnya.",
@@ -4616,9 +4618,14 @@
         "tooLong": "Persingkat tugas untuk memilih format lain."
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} karakter (termasuk instruksi output)",
         "connectorsDescription": "Hubungkan aplikasi Anda agar Okou lebih memahami pekerjaan Anda.",
         "connectorsTitle": "Hubungkan alat kerja Anda",
-        "intro": "Hubungkan aplikasi Anda untuk hasil yang lebih baik dan pilih format."
+        "fileTooLarge": "{{filename}} melebihi batas 10 MB. Teks yang Anda tempel tetap ada di prompt.",
+        "intro": "Hubungkan aplikasi Anda untuk hasil yang lebih baik dan pilih format.",
+        "tooLong": "Persingkat prompt atau hapus pilihan format output untuk melanjutkan. Batas ini mencakup instruksi output.",
+        "tooManyFiles": "Anda dapat melampirkan hingga {{max}} file. Teks yang Anda tempel tetap ada di prompt.",
+        "uploadFailed": "{{filename}} tidak dapat diunggah. Teks yang Anda tempel tetap tersedia sebagai lampiran. Coba lagi atau hapus lampiran sebelum melanjutkan."
       },
       "skills": {
         "copied": "Tersalin",

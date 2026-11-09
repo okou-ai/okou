@@ -209,6 +209,7 @@ import { matchesConnectorSearch } from "../../signals/okou-page/settings/connect
 import type { ComposerTemplateAttachment } from "../../signals/okou-page/tiptap-workflow-composer.ts";
 import { shouldUseUserMessage } from "../../signals/okou-page/user-message-document-codec.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { pastedTextFile$ } from "../../signals/pasted-text.ts";
 import { locale$ } from "../../signals/locale.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { sendMode$ } from "../../signals/send-mode.ts";
@@ -5905,6 +5906,7 @@ function ComposerInputSlot({
   const focusEditor = useSet(signals.editor.focus$);
   const insertPromptMarkdown = useSet(signals.editor.insertPromptMarkdown$);
   const insertUserMessage = useSet(signals.editor.insertUserMessage$);
+  const pastedTextFile = useSet(pastedTextFile$);
   const uploadFile = useComposerFileUpload(signals);
   const handlePaste = (event: ComposerPasteEvent) => {
     if (
@@ -5923,11 +5925,25 @@ function ComposerInputSlot({
     ) {
       return;
     }
-    const items = event.clipboardData?.items;
-    if (!items) {
+    const clipboardData = event.clipboardData;
+    if (!clipboardData) {
       return;
     }
-    const plainText = event.clipboardData?.getData("text/plain") ?? "";
+    const items = Array.from(clipboardData.items);
+    const plainText =
+      clipboardData.getData("text/plain") || clipboardData.getData("text");
+    const textFile = pastedTextFile(
+      plainText,
+      items.some((item) => {
+        return item.kind === "file";
+      }) || clipboardData.files.length > 0,
+    );
+    if (textFile && uploadFile(textFile)) {
+      // The attachment owns this paste; leave the editor and its selection intact.
+      event.preventDefault();
+      notifyDraftChanged();
+      return;
+    }
     let pastedPlainText = false;
     let uploaded = false;
     const applyPlainText = () => {

@@ -1144,7 +1144,23 @@ export const clientContractImportManifest = [
   {
     module: "marketing-handoffs",
     contracts: ["marketingHandoffsContract"],
-    bindings: [],
+    bindings: [
+      {
+        name: "MARKETING_HANDOFF_MAX_FILES",
+        source: "validators/marketing-handoffs",
+        imported: "MARKETING_HANDOFF_MAX_FILES",
+      },
+      {
+        name: "MARKETING_HANDOFF_MAX_FILE_BYTES",
+        source: "validators/marketing-handoffs",
+        imported: "MARKETING_HANDOFF_MAX_FILE_BYTES",
+      },
+      {
+        name: "MARKETING_HANDOFF_PROMPT_MAX_CHARS",
+        source: "validators/marketing-handoffs",
+        imported: "MARKETING_HANDOFF_PROMPT_MAX_CHARS",
+      },
+    ],
   },
   {
     module: "mcp-chat-search",

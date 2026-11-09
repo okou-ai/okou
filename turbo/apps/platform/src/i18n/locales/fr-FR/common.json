@@ -1658,7 +1658,9 @@
       "fileTooLarge": "{{filename}} dépasse la limite de 5 Go",
       "imageUnavailable": "[Image non disponible : {{filename}}]",
       "loadingFile": "Chargement de {{filename}}",
+      "pastedText": "Texte collé",
       "previewFile": "Aperçu de {{filename}}",
+      "remove": "Supprimer {{filename}}",
       "title": "Pièces jointes",
       "unavailable": "{{filename}} n'est plus disponible. Importez-le à nouveau pour l'envoyer.",
       "unavailableCount_one": "{{count}} pièce jointe n'est plus disponible. Importez-la à nouveau pour l'envoyer.",
@@ -4689,9 +4691,14 @@
         "tooLong": "Raccourcissez la tâche pour choisir un autre format."
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}} caractères (instructions de sortie incluses)",
         "connectorsDescription": "Connectez vos applications pour aider Okou à mieux comprendre votre travail.",
         "connectorsTitle": "Connectez vos outils de travail",
-        "intro": "Connectez vos applications pour de meilleurs résultats et choisissez un format."
+        "fileTooLarge": "{{filename}} dépasse la limite de 10 Mo. Le texte collé reste dans le prompt.",
+        "intro": "Connectez vos applications pour de meilleurs résultats et choisissez un format.",
+        "tooLong": "Raccourcissez votre prompt ou désélectionnez le format de sortie pour continuer. La limite inclut les instructions de sortie.",
+        "tooManyFiles": "Vous pouvez joindre jusqu’à {{max}} fichiers. Le texte collé reste dans le prompt.",
+        "uploadFailed": "Impossible d’importer {{filename}}. Le texte collé est conservé en pièce jointe. Réessayez ou supprimez-la avant de continuer."
       },
       "skills": {
         "copied": "Copié",

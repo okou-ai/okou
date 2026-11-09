@@ -1631,7 +1631,9 @@
       "fileTooLarge": "{{filename}} 파일이 5GB 제한을 초과했습니다",
       "imageUnavailable": "[이미지 없음: {{filename}}]",
       "loadingFile": "{{filename}} 불러오는 중",
+      "pastedText": "붙여넣은 텍스트",
       "previewFile": "{{filename}} 미리보기",
+      "remove": "{{filename}} 제거",
       "title": "첨부파일",
       "unavailable": "{{filename}}을(를) 더 이상 사용할 수 없습니다. 보내려면 다시 업로드하세요.",
       "unavailableCount_other": "첨부파일 {{count}}개를 더 이상 사용할 수 없습니다. 보내려면 다시 업로드하세요.",
@@ -4616,9 +4618,14 @@
         "tooLong": "다른 형식을 선택하려면 작업 내용을 줄여 주세요."
       },
       "prompt": {
+        "characterCount": "{{current}} / {{max}}자 (출력 지침 포함)",
         "connectorsDescription": "앱을 연결하면 Okou가 업무를 더 잘 이해할 수 있어요.",
         "connectorsTitle": "업무 도구 연결",
-        "intro": "앱을 연결해 더 나은 결과를 얻고, 원하는 형식을 선택하세요."
+        "fileTooLarge": "{{filename}} 파일이 10MB 제한을 초과했습니다. 붙여넣은 텍스트는 프롬프트에 남아 있어요.",
+        "intro": "앱을 연결해 더 나은 결과를 얻고, 원하는 형식을 선택하세요.",
+        "tooLong": "계속하려면 프롬프트를 줄이거나 출력 형식 선택을 해제하세요. 제한에는 출력 지침도 포함돼요.",
+        "tooManyFiles": "파일은 최대 {{max}}개까지 첨부할 수 있어요. 붙여넣은 텍스트는 프롬프트에 남아 있어요.",
+        "uploadFailed": "{{filename}} 파일을 업로드하지 못했어요. 붙여넣은 텍스트는 첨부파일로 유지돼요. 계속하기 전에 다시 시도하거나 해당 첨부파일을 제거하세요."
       },
       "skills": {
         "copied": "복사됨",
