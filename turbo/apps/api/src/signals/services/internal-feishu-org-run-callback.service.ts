@@ -282,6 +282,7 @@ export const handleFeishuOrgInternalCallback$ = command(
               runId: callback.runId,
               chatThreadId: run.chatThreadId,
               errorMessage: callback.error ?? "Agent execution failed.",
+              externalSurface: true,
             },
             signal,
           )

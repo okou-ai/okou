@@ -3452,6 +3452,132 @@ describe("CHAT-02: failed chat callbacks", () => {
     },
   );
 
+  it.each([
+    {
+      source: "slack",
+      model: "gpt-6-astra",
+      label: "ChatGPT (Codex)",
+      structured: true,
+    },
+    {
+      source: "slack",
+      model: "claude-fable-5-1",
+      label: "Claude",
+      structured: true,
+    },
+    {
+      source: "slack",
+      model: "gpt-6-astra",
+      label: "ChatGPT (Codex)",
+      structured: false,
+    },
+    {
+      source: "slack",
+      model: "claude-fable-5-1",
+      label: "Claude",
+      structured: false,
+    },
+    {
+      source: "web",
+      model: "gpt-6-astra",
+      label: "ChatGPT (Codex)",
+      structured: true,
+    },
+    {
+      source: "web",
+      model: "claude-fable-5-1",
+      label: "Claude",
+      structured: true,
+    },
+  ] as const)(
+    "keeps subscription recovery on $source for $label (structured=$structured)",
+    async ({ source, model, label, structured }) => {
+      const { actor, agentId, runnerGroup } = await entitledChatActor();
+      await integrations.configureNativeSubscriptionModels(actor);
+      await api.updateUserModelPreference(actor, model);
+      const nativeMessage =
+        model === "gpt-6-astra"
+          ? "You've hit your usage limit. Visit https://chatgpt.com/codex/settings/usage or try again at 6:17 AM (Asia/Shanghai)."
+          : "You've hit your weekly limit · resets 10am (Asia/Shanghai). Visit https://claude.ai/settings/usage.";
+      let runId: string;
+      let threadId: string;
+      let sandboxHeaders: { readonly authorization: string };
+      if (source === "web") {
+        const run = await startChatRun(actor, {
+          agentId,
+          prompt: "Finish my report",
+        });
+        runId = run.runId;
+        threadId = run.threadId;
+        sandboxHeaders = await claimChatRun(runnerGroup, runId);
+      } else {
+        integrations.configureSlackAppMocks();
+        const slackUserId = `U_${randomUUID().replaceAll("-", "")}`;
+        const { teamId, botUserId } = await integrations.installSlackWorkspace(
+          actor,
+          { installerSlackUserId: slackUserId },
+        );
+        await integrations.postSlackEvent(teamId, {
+          type: "app_mention",
+          user: slackUserId,
+          text: `<@${botUserId}> Finish my report`,
+          channel: `C_${randomUUID().replaceAll("-", "")}`,
+          ts: "4500.000100",
+        });
+        await flushWaitUntilForTest();
+        await api.heartbeatRunner(runnerGroup);
+        const queuedRunId = (await api.pollRunner(runnerGroup)).body.job?.runId;
+        if (!queuedRunId) {
+          throw new Error("Expected the Slack subscription run");
+        }
+        runId = queuedRunId;
+        const claim = await api.claimRunnerJob(runId);
+        const chatThreadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+        if (!chatThreadId) {
+          throw new Error("Expected the Slack subscription thread");
+        }
+        threadId = chatThreadId;
+        sandboxHeaders = { authorization: `Bearer ${claim.sandboxToken}` };
+        context.mocks.slack.chat.postMessage.mockClear();
+      }
+      // Recovery belongs to the captured run, even after the next model changes.
+      await api.updateUserModelPreference(
+        actor,
+        model === "gpt-6-astra" ? "claude-fable-5-1" : "gpt-6-astra",
+      );
+      await failChatRun(
+        runId,
+        sandboxHeaders,
+        nativeMessage,
+        structured ? "usage_limit" : undefined,
+      );
+      await flushWaitUntilForTest();
+      const events = await chat.listThreadEvents(actor, threadId);
+      const failure = events.events.find((event) => {
+        return event.eventType === "run.failed" && event.runId === runId;
+      });
+      if (!failure || failure.eventType !== "run.failed") {
+        throw new Error("Expected the subscription run failure");
+      }
+      if (source === "web") {
+        expect(failure.error).toBe(nativeMessage);
+      } else {
+        expect(failure.error).toContain(`Your ${label} subscription`);
+        expect(failure.error).toContain(nativeMessage);
+        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining("?settings=model"),
+          }),
+        );
+        expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+          expect.objectContaining({
+            text: expect.stringContaining('reply "continue"'),
+          }),
+        );
+      }
+    },
+  );
+
   it("formats failed-run errors and notifies, without auto-sending", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     await integrations.configureNativeSubscriptionModels(actor);
