@@ -39,6 +39,7 @@ private actor NotificationBoundary: CommandNotifications {
     return stream.stream
   }
   func refresh() { continuation?.yield(.refresh) }
+  func unavailable() { continuation?.yield(.unavailable("Notification connection unavailable", code: 80003)) }
   func reconnect() { continuation?.yield(.ready) }
   func renew() async throws -> JSONValue {
     guard let tokenProvider else { throw CancellationError() }
@@ -1679,7 +1680,6 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     let reconnected = expectation(description: "Reattachment synchronizes host state")
     let synced = RequestCount()
     let changes = RequestCount()
-    let registration = CompletionFlag()
     let notifications = NotificationBoundary()
     let session = notificationTestSession()
     defer { session.invalidateAndCancel() }
@@ -1687,7 +1687,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       let path = connection.request.url!.path
       if path.hasSuffix("/register") {
         var registration = registeredHostResponse()
-        registration["livenessMode"] = .string("presence")
+        registration["livenessMode"] = .string("presence-only")
         connection.reply(registration)
       } else if path.hasSuffix("/state") {
         switch synced.next() {
@@ -1695,8 +1695,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         default: XCTFail("Unchanged state must not cause another synchronization")
         }
         connection.reply(heartbeatResponse(pending: false))
-      } else if path.hasSuffix("/wait") {
-        // The transport remains pending until runtime.stop cancels it.
+      } else if path.hasSuffix("/connection-events") {
+        connection.reply(.object([:]))
       } else if path.hasSuffix("/realtime-token") {
         connection.reply(.object(["keyName": .string("scoped-host-key")]))
       } else if path.hasSuffix("/next") {
@@ -1710,7 +1710,6 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     }
     let runtime = notificationTestRuntime(session: session, notifications: notifications, onChange: { state in
       if state.status == "online" && state.usesPresence {
-        if !registration.value { registration.finish(); return }
         switch changes.next() {
         case 1: initial.fulfill()
         case 2: changed.fulfill()
@@ -1732,21 +1731,30 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await runtime.stop()
   }
 
-  func testPresenceHostRecoversQueuedWorkWhenRealtimeNeverAttaches() async throws {
-    let reported = expectation(description: "HTTP queue wait recovers without Ably or a result reader")
+  func testPresenceHostWaitsForNotificationRecoveryBeforeDispatching() async throws {
+    let unavailable = expectation(description: "Notification failure is shown as unavailable")
+    let reported = expectation(description: "Recovery claims and reports the pending command")
     let claims = RequestCount()
+    let streamStarted = expectation(description: "Notification stream is ready for events")
+    let notifications = NotificationBoundary(attachedOnStart: false, onStart: { streamStarted.fulfill() })
     let session = notificationTestSession()
     defer { session.invalidateAndCancel() }
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path
       if path.hasSuffix("/register") {
+        XCTAssertEqual(connection.body["presenceOnly"], .bool(true))
         var registration = registeredHostResponse()
-        registration["livenessMode"] = .string("presence")
+        registration["livenessMode"] = .string("presence-only")
         connection.reply(registration)
-      } else if path.hasSuffix("/wait") {
-        connection.reply(.object(["hasPendingCommands": .bool(true)]))
+      } else if path.hasSuffix("/connection-events") {
+        if connection.body["event"].string == "unavailable" {
+          XCTAssertEqual(connection.body["reasonCode"].number, 80003)
+        }
+        connection.reply(.object([:]))
+      } else if path.hasSuffix("/state") {
+        connection.reply(heartbeatResponse(pending: true))
       } else if path.hasSuffix("/next") {
-        connection.reply(claims.next() == 1 ? commandResponse("without-realtime") : .object(["status": .string("idle")]))
+        connection.reply(claims.next() == 1 ? commandResponse("after-notification-recovery") : .object(["status": .string("idle")]))
       } else if path.hasSuffix("/complete") {
         connection.reply(.object([:]))
         reported.fulfill()
@@ -1756,8 +1764,17 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         XCTFail("Unexpected request: \(path)")
       }
     }
-    let runtime = notificationTestRuntime(session: session, notifications: NotificationBoundary(attachedOnStart: false))
+    let runtime = notificationTestRuntime(session: session, notifications: notifications,
+      onChange: { state in
+        if state.status == "recovering" && state.lastError == "Notification connection unavailable" {
+          unavailable.fulfill()
+        }
+      })
     await runtime.start()
+    await fulfillment(of: [streamStarted], timeout: 3)
+    await notifications.unavailable()
+    await fulfillment(of: [unavailable], timeout: 3)
+    await notifications.reconnect()
     await fulfillment(of: [reported], timeout: 4)
     await runtime.stop()
   }
@@ -1777,8 +1794,6 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
         XCTAssertEqual(connection.body["permissions"]["accessibility"], .bool(true))
         connection.reply(heartbeatResponse(pending: false))
         synchronized.fulfill()
-      } else if path.hasSuffix("/wait") {
-        // Owned pending request is cancelled and joined by stop().
       } else if path.hasSuffix("/stop") {
         connection.reply(.object([:]))
       } else {

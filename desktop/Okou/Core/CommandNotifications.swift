@@ -15,7 +15,7 @@ public struct CommandNotificationSubscription: Sendable {
 public enum CommandNotificationEvent: Sendable {
   case ready
   case refresh
-  case unavailable(String)
+  case unavailable(String, code: Int? = nil)
 }
 
 /// The SDK adapter owns transport and token renewal; the runtime owns commands.

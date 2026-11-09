@@ -29,13 +29,6 @@ public enum ApiRoutes {
       path: "/api/computer-use/hosts/\(pathSegment(hostId))/heartbeat")
   }
 
-  /// Wait for queued work without claiming or executing it
-  public static func computerUseHostCommandWait(hostId: String) -> ApiRoute {
-    ApiRoute(
-      method: "POST",
-      path: "/api/computer-use/hosts/\(pathSegment(hostId))/commands/wait")
-  }
-
   /// Synchronize changed computer-use host state
   public static func computerUseHostState(hostId: String) -> ApiRoute {
     ApiRoute(
@@ -48,6 +41,13 @@ public enum ApiRoutes {
     ApiRoute(
       method: "POST",
       path: "/api/computer-use/hosts/\(pathSegment(hostId))/realtime-token")
+  }
+
+  /// Report a host notification transition without changing liveness
+  public static func computerUseHostConnectionEvent(hostId: String) -> ApiRoute {
+    ApiRoute(
+      method: "POST",
+      path: "/api/computer-use/hosts/\(pathSegment(hostId))/connection-events")
   }
 
   /// Stop the current session's computer-use host connection

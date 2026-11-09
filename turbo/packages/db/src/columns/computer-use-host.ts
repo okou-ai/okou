@@ -26,7 +26,7 @@ export function computerUseHostColumns() {
       .default({ accessibility: false, screenRecording: false })
       .notNull(),
     livenessMode: text("liveness_mode")
-      .$type<"heartbeat" | "presence">()
+      .$type<"heartbeat" | "presence" | "presence-only">()
       .default("heartbeat")
       .notNull(),
     status: text("status").default("online").notNull(),

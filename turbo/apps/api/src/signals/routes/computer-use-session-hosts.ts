@@ -1,4 +1,5 @@
 import { desktopUpgradeRequired } from "../../lib/desktop-compatibility";
+import { logger } from "../../lib/log";
 import { command, computed, type Command } from "ccstate";
 import { computerUseSessionHostsContract as contract } from "@okouai/api-contracts/contracts/computer-use";
 import { createErrorResponse } from "@okouai/api-contracts/contracts/errors";
@@ -38,6 +39,7 @@ const invalidSession = Object.freeze({
     },
   },
 });
+const L = logger("ComputerUseConnection");
 const invalidConnection = Object.freeze(
   createErrorResponse(
     "HOST_CONNECTION_INVALID",
@@ -112,8 +114,8 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     status: 200 as const,
     body: {
       hostId: result.hostId,
-      ...(result.livenessMode === "presence"
-        ? { livenessMode: "presence" as const }
+      ...(result.livenessMode !== "heartbeat"
+        ? { livenessMode: result.livenessMode }
         : {}),
       connectionGeneration: result.connectionGeneration,
       commandNotifications: {
@@ -238,6 +240,39 @@ const realtimeToken$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: token };
 });
 
+const connectionEventBody$ = bodyResultOf(contract.connectionEvent);
+const connectionEventParams$ = pathParamsOf(contract.connectionEvent);
+const connectionEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
+  const identity = get(identity$);
+  if (!identity) {
+    return invalidSession;
+  }
+  const body = await get(connectionEventBody$);
+  signal.throwIfAborted();
+  if (!body.ok) {
+    return body.response;
+  }
+  const authority = {
+    ...get(connectionEventParams$),
+    ...identity,
+    connectionGeneration: body.data.connectionGeneration,
+  };
+  const host = await set(resolveComputerUseHost$, authority, signal);
+  if (!host) {
+    return invalidConnection;
+  }
+  L.debug("Desktop notification connection transition", {
+    hostId: host.id,
+    connectionGeneration: host.connectionGeneration,
+    appVersion: host.appVersion,
+    mode: host.livenessMode,
+    source: "desktop_sdk",
+    event: body.data.event,
+    reasonCode: body.data.reasonCode,
+  });
+  return { status: 204 as const, body: undefined };
+});
+
 const stopBody$ = bodyResultOf(contract.stop);
 const stopParams$ = pathParamsOf(contract.stop);
 const stop$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -333,6 +368,7 @@ export const computerUseSessionHostRoutes: readonly RouteEntry[] = [
   { route: contract.wait, handler: sessionRoute(wait$) },
   { route: contract.state, handler: sessionRoute(state$) },
   { route: contract.realtimeToken, handler: sessionRoute(realtimeToken$) },
+  { route: contract.connectionEvent, handler: sessionRoute(connectionEvent$) },
   { route: contract.stop, handler: sessionRoute(stop$) },
   {
     route: contract.next,
