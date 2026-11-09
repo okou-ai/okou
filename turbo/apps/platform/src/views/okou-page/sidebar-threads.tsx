@@ -16,7 +16,6 @@ import {
 import { ProjectThreadDragHint } from "../projects/project-thread-drag-hint.tsx";
 import { useProjectThreadDropTarget } from "../projects/project-thread-drop-target.tsx";
 import {
-  openProjectEditor$,
   openProjectMembership$,
   projectDialog$,
   projectThreadMenuOpenChanged$,
@@ -45,8 +44,6 @@ import {
   BellOff,
   Bell,
   FolderInput,
-  FolderPlus,
-  SquarePen,
 } from "lucide-react";
 import {
   ChatThreadStateText,
@@ -1464,81 +1461,6 @@ function NewChatThreadButton() {
           <p className="text-xs">{newChatLabel}</p>
         </TooltipContent>
       </Tooltip>
-    </TooltipProvider>
-  );
-}
-
-/**
- * One + for a chat or, with Projects on, a Project. Without Projects the menu
- * would hold a single item, so the button starts the chat directly.
- */
-export function ChatThreadsNewMenu() {
-  const { t } = useTranslation();
-  const projectsEnabled = useGet(projectsEnabled$);
-  const openProjectEditor = useSet(openProjectEditor$);
-  const newChatAction = useNewChatAction();
-  if (!projectsEnabled) {
-    return <NewChatThreadButton />;
-  }
-  const label = t(($) => {
-    return $.chat.sidebar.newMenu;
-  });
-
-  return (
-    <TooltipProvider delay={200}>
-      <DropdownMenu>
-        <DropdownMenuTrigger
-          render={
-            <Button
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className="shrink-0"
-              aria-label={label}
-            />
-          }
-        >
-          <Tooltip>
-            <TooltipTrigger
-              render={
-                <span>
-                  <Plus size={18} />
-                </span>
-              }
-            />
-            <TooltipContent side="bottom">
-              <p className="text-xs">{label}</p>
-            </TooltipContent>
-          </Tooltip>
-        </DropdownMenuTrigger>
-        <DropdownMenuContent
-          align="end"
-          className={chatThreadMenuContentClassName(false)}
-        >
-          <DropdownMenuItem
-            disabled={newChatAction.disabled}
-            onClick={() => {
-              newChatAction.onSelect("main");
-            }}
-          >
-            <SquarePen size={16} className="mr-2" />
-            {t(($) => {
-              return $.chat.newChat;
-            })}
-          </DropdownMenuItem>
-          <DropdownMenuItem
-            onClick={() => {
-              openProjectEditor();
-            }}
-          >
-            <FolderPlus size={16} className="mr-2" />
-            {t(($) => {
-              return $.projects.new;
-            })}
-          </DropdownMenuItem>
-        </DropdownMenuContent>
-      </DropdownMenu>
     </TooltipProvider>
   );
 }
