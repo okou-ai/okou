@@ -88,7 +88,10 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
-import { createClaimExecutionContext } from "../services/claim-execution-context";
+import {
+  createClaimExecutionContext,
+  type ClaimExecutionContextRun,
+} from "../services/claim-execution-context";
 import {
   signClaimedContentBundle$,
   type ClaimedContentBundleSignature,
@@ -1004,11 +1007,7 @@ interface ClaimableJob {
   readonly run: ClaimedRun;
 }
 
-interface ClaimedRun {
-  readonly id: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string | null;
+interface ClaimedRun extends ClaimExecutionContextRun {
   readonly modelProvider: (typeof agentRuns.$inferSelect)["modelProvider"];
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
@@ -1098,6 +1097,8 @@ const claimableJob$ = computed(async (get): Promise<ClaimLookupResult> => {
         userId: agentRuns.userId,
         orgId: agentRuns.orgId,
         agentId: agentRuns.agentId,
+        chatThreadId: agentRuns.chatThreadId,
+        launchSnapshot: agentRuns.launchSnapshot,
         prompt: agentRuns.prompt,
         appendSystemPrompt: agentRuns.appendSystemPrompt,
         vars: agentRuns.vars,
@@ -1147,9 +1148,14 @@ const claimExecutionContext$ = createClaimExecutionContext(
       throw new Error("Claim context requires an authorized queue entry");
     }
     return {
-      runId: entry.run.id,
-      orgId: entry.run.orgId,
-      userId: entry.run.userId,
+      run: {
+        id: entry.run.id,
+        orgId: entry.run.orgId,
+        userId: entry.run.userId,
+        agentId: entry.run.agentId,
+        chatThreadId: entry.run.chatThreadId,
+        launchSnapshot: entry.run.launchSnapshot,
+      },
       executionContext: entry.job.executionContext,
     };
   }),
@@ -1652,13 +1658,6 @@ const readClaimNetworkPolicyRefreshes$ = command(
   > => {
     const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
     assertClaimConnectorIdentity(args.run, args.storedContext);
-    if (Object.keys(storedNetworkPolicies).length === 0) {
-      return {
-        networkPolicies: args.storedContext.networkPolicies,
-        networkPolicyRefreshes: undefined,
-      };
-    }
-
     const builtinConnectorSlugs = [
       ...new Set(
         args.storedContext.connectorRuntimeTargets.flatMap((target) => {
@@ -1666,6 +1665,16 @@ const readClaimNetworkPolicyRefreshes$ = command(
         }),
       ),
     ];
+
+    if (
+      builtinConnectorSlugs.length === 0 &&
+      Object.keys(storedNetworkPolicies).length === 0
+    ) {
+      return {
+        networkPolicies: args.storedContext.networkPolicies,
+        networkPolicyRefreshes: undefined,
+      };
+    }
 
     const startedAt = now();
     // Keep the whole finite read in the response owner's allSettled group.

@@ -8,7 +8,7 @@ import { FirewallBaseUrlResolutionError } from "@okouai/connectors/firewall-type
 import { expandVariables } from "@okouai/core/variable-expander";
 import { computed, type Computed } from "ccstate";
 import { dataRouterEnvironment } from "./data-router-environment";
-import { env } from "../../lib/env";
+import { runPlatformEnvironment } from "./run-execution-defaults";
 import { badRequestMessage } from "../../lib/error";
 import { VERCEL_AUTOMATION_BYPASS_ENV } from "../../lib/preview-automation-bypass";
 import { previewAutomationBypass$ } from "../context/hono";
@@ -145,14 +145,14 @@ export function createPlatformEnvironmentSignals(
     return {
       ...emptyEnvironment(),
       platformEnvironment: {
-        OKOU_APP_URL: env("APP_URL"),
-        OKOU_AGENT_ID: bootstrap.agentId,
+        ...runPlatformEnvironment({
+          agentId: bootstrap.agentId,
+          chatThreadId: event.chatThreadId,
+        }),
         ...(integration ? { OKOU_CURRENT_INTEGRATION: integration } : {}),
         ...(selection.reasoningEffort
           ? { OKOU_REASONING_EFFORT: selection.reasoningEffort }
           : {}),
-        // The in-sandbox CLI binds a newly created automation to this thread.
-        OKOU_CHAT_THREAD_ID: event.chatThreadId,
         ...(selection.codexServiceTier
           ? { OKOU_CODEX_SERVICE_TIER: selection.codexServiceTier }
           : {}),

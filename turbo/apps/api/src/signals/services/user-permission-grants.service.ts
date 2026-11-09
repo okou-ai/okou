@@ -375,12 +375,8 @@ export function mergeNetworkPolicyRefreshes(
   }
   const merged: NetworkPolicies = { ...networkPolicies };
   for (const refresh of refreshes) {
-    if (
-      networkPolicies &&
-      !Object.hasOwn(networkPolicies, refresh.connectorSlug)
-    ) {
-      continue;
-    }
+    // Refreshes are scoped to admitted builtin targets, whose captured policy
+    // entries may be omitted. Preserve unrelated captured entries as-is.
     merged[refresh.connectorSlug] = refresh.networkPolicy;
   }
   return merged;

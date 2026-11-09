@@ -231,7 +231,10 @@ describe("stored Seed Skill bundle contract", () => {
     seedSkillBundles: [],
     connectorRuntimeTargets: [],
     environment: null,
-    platformEnvironment: {},
+    platformEnvironment: {
+      OKOU_TOKEN: "captured-run-token",
+      CUSTOM_PLATFORM_VALUE: "explicit",
+    },
     secretValueEnvironmentKeys: null,
     nativeContinuation: {
       sessionId: null,
@@ -240,6 +243,8 @@ describe("stored Seed Skill bundle contract", () => {
     },
     encryptedSecrets: null,
     cliAgentType: "claude-code",
+    disallowedTools: [],
+    userTimezone: "Asia/Shanghai",
   };
 
   it.each([
