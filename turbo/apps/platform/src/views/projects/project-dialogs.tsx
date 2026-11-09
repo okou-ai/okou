@@ -43,8 +43,14 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 // A rename keeps its Project menu; deleting a Project returns to the list's
-// create control. Creating from a chat returns to that chat's surviving row.
+// create control. Creating from a chat returns to that chat's surviving row,
+// and creating from a new chat's composer returns to the message.
 function projectDialogFocusTarget(dialog: ProjectDialog) {
+  if (dialog.kind === "editor" && dialog.fromComposer) {
+    return document.querySelector<HTMLElement>(
+      '[data-slot="chat-composer-card"] [contenteditable="true"]',
+    );
+  }
   const threadId =
     dialog.kind === "membership"
       ? dialog.threadId
@@ -82,7 +88,16 @@ function ProjectEditor({ dialog }: { dialog: EditorDialog }) {
     // A newly visible Project can be used while its creation is still in flight.
     const completion = dialog.projectId
       ? rename(dialog.projectId, name, signal)
-      : create(name, dialog.fromThreadId, creationSignal);
+      : create(
+          {
+            name,
+            ...(dialog.fromThreadId
+              ? { fromThreadId: dialog.fromThreadId }
+              : {}),
+            open: dialog.fromComposer === true,
+          },
+          creationSignal,
+        );
     close(dialog);
     await completion;
   }

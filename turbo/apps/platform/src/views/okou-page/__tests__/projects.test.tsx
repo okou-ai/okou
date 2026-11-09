@@ -48,6 +48,7 @@ import {
 const context = testContext();
 const reloadedContext = createTestRuntime(context);
 const id = "30000000-0000-4000-8000-000000000071";
+const campaignId = "30000000-0000-4000-8000-000000000171";
 const at = "2026-11-02T00:00:00.000Z";
 // A Project's rows are siblings in the virtual list, so its group is the
 // ordered set of rows that carry its id.
@@ -128,6 +129,59 @@ function threadLink(threadId: string) {
     throw new Error("Chat link not found");
   }
   return link;
+}
+function composerCard() {
+  const card = document.querySelector<HTMLElement>(
+    '[data-slot="chat-composer-card"]',
+  );
+  if (!card) {
+    throw new Error("Composer not found");
+  }
+  return card;
+}
+// The chip names the Project and, like the task chip, removes it.
+function projectChip(name: string) {
+  return button(`Remove ${name}`, composerCard());
+}
+function queryProjectChip(name: string) {
+  return (
+    queryAllByRoleFast("button", composerCard()).find((item) => {
+      return item.getAttribute("aria-label") === `Remove ${name}`;
+    }) ?? null
+  );
+}
+async function openComposerProjectMenu() {
+  click(button("Add", composerCard()));
+  const menu = await screen.findByRole("menu", { name: "Add" });
+  return menu;
+}
+function menuLabels(menu: HTMLElement) {
+  return queryAllByRoleFast("menuitem", menu).map((item) => {
+    return item.textContent?.trim() ?? "";
+  });
+}
+function mockThreadCreation(created: {
+  threadId?: string;
+  projectId?: string | null;
+}) {
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    created.threadId = body.clientThreadId;
+    created.projectId = body.projectId ?? null;
+    return respond(201, {
+      id: body.clientThreadId ?? crypto.randomUUID(),
+      title: null,
+      createdAt: at,
+      selectedModel: body.model ?? null,
+      serviceTier: null,
+      projectId: body.projectId ?? null,
+    });
+  });
+  context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
+    return respond(201, {
+      threadId: body.threadId ?? crypto.randomUUID(),
+      createdAt: at,
+    });
+  });
 }
 function metadata(extra: readonly { id: string; name: string }[] = []) {
   const p = { id, name: "Launch", createdAt: at, updatedAt: at };
@@ -1573,9 +1627,11 @@ test("Project deep links open the Project page with its composer", async () => {
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  await expect(
-    screen.findByRole("heading", { name: "Launch" }),
-  ).resolves.toBeInTheDocument();
+  // The page keeps Okou's greeting; the composer names the Project.
+  await waitFor(() => {
+    expect(projectChip("Launch")).toBeVisible();
+  });
+  expect(screen.getByTestId("chat-greeting")).toBeInTheDocument();
   expect(location.pathname).toBe(`/projects/${id}`);
   expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
   expect(projectLink("Launch")).toHaveAttribute("href", `/projects/${id}`);
@@ -1621,9 +1677,9 @@ test("A message sent from the Project page starts its chat inside the Project", 
     ...workspace.pageOptions,
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
-  await expect(
-    screen.findByRole("heading", { name: "Launch" }),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(projectChip("Launch")).toBeVisible();
+  });
 
   await fill(
     await screen.findByRole("textbox", { name: "Message" }),
@@ -1652,6 +1708,196 @@ test("A message sent from the Project page starts its chat inside the Project", 
       ),
     ).toHaveAttribute("aria-current", "page");
   });
+});
+
+test("The composer's + menu starts a new chat in a Project and keeps the message", async () => {
+  const ordinary = continuityThread(117, 1, "Thread B");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 117,
+    threads: [ordinary],
+  });
+  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  metadata([{ id: campaignId, name: "Campaign" }]);
+  const created: { threadId?: string; projectId?: string | null } = {};
+  mockThreadCreation(created);
+  await setupPage({
+    context,
+    path: `/agents/${ordinary.agentId}/chat`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  await fill(
+    await screen.findByRole("textbox", { name: "Message" }),
+    "Plan the launch",
+  );
+  // Without a Project the toolbar carries no chip; the + menu offers one.
+  expect(queryProjectChip("Launch")).toBeNull();
+  const user = userEvent.setup({ delay: null });
+  const menu = await openComposerProjectMenu();
+  expect(menuLabels(menu)).toStrictEqual([
+    "Attach",
+    "Project",
+    "Template",
+    "Import skills",
+  ]);
+  await user.click(await findMenuItem("Project"));
+  const submenu = await screen.findByRole("menu", { name: "Project" });
+  expect(menuLabels(submenu)).toStrictEqual([
+    "New Project",
+    "Launch",
+    "Campaign",
+  ]);
+  click(await findMenuItem("Launch"));
+
+  // Choosing a Project opens its page with the same message.
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/projects/${id}`);
+  });
+  await waitFor(() => {
+    expect(projectChip("Launch")).toBeVisible();
+  });
+  expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
+  expect(
+    screen.getByRole("textbox", { name: "Message" }).textContent,
+  ).toContain("Plan the launch");
+
+  // The current Project is marked, and switching moves to the other one.
+  await openComposerProjectMenu();
+  await user.click(await findMenuItem("Project"));
+  const current = await findMenuItem("Launch");
+  expect(current).toHaveAttribute("aria-disabled", "true");
+  click(await findMenuItem("Campaign"));
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/projects/${campaignId}`);
+  });
+  await waitFor(() => {
+    expect(projectChip("Campaign")).toBeVisible();
+  });
+
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  click(button("Send"));
+  await waitFor(() => {
+    expect(created.threadId).toBeDefined();
+  });
+  expect(created.projectId).toBe(campaignId);
+});
+
+test("Removing the Project chip returns the message to a chat outside any Project", async () => {
+  const ordinary = continuityThread(118, 1, "Thread B");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 118,
+    threads: [ordinary],
+  });
+  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  metadata();
+  const created: { threadId?: string; projectId?: string | null } = {};
+  mockThreadCreation(created);
+  await setupPage({
+    context,
+    path: `/projects/${id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  await fill(
+    await screen.findByRole("textbox", { name: "Message" }),
+    "Outside the launch",
+  );
+  await waitFor(() => {
+    expect(projectChip("Launch")).toBeVisible();
+  });
+  click(projectChip("Launch"));
+
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/agents/${ordinary.agentId}/chat`);
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByRole("textbox", { name: "Message" }).textContent,
+    ).toContain("Outside the launch");
+  });
+  expect(queryProjectChip("Launch")).toBeNull();
+  await waitFor(() => {
+    expect(button("Send")).toBeEnabled();
+  });
+  click(button("Send"));
+  await waitFor(() => {
+    expect(created.threadId).toBeDefined();
+  });
+  expect(created.projectId).toBeNull();
+});
+
+test("A Project named from the composer's + menu opens with the message", async () => {
+  const ordinary = continuityThread(119, 1, "Thread B");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 119,
+    threads: [ordinary],
+  });
+  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  metadata();
+  let createdProjectId: string | undefined;
+  context.mocks.api(projectsContract.create, ({ body, respond }) => {
+    createdProjectId = body.id;
+    return respond(201, {
+      id: body.id,
+      name: body.name,
+      createdAt: at,
+      updatedAt: at,
+    });
+  });
+  await setupPage({
+    context,
+    path: `/agents/${ordinary.agentId}/chat`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  await fill(
+    await screen.findByRole("textbox", { name: "Message" }),
+    "Kick off the campaign",
+  );
+  const user = userEvent.setup({ delay: null });
+  await openComposerProjectMenu();
+  await user.click(await findMenuItem("Project"));
+  click(await findMenuItem("New Project"));
+  await fill(
+    await screen.findByRole("textbox", { name: "Project name" }),
+    "Campaign",
+  );
+  await user.click(button("Save"));
+
+  await waitFor(() => {
+    expect(createdProjectId).toBeDefined();
+    expect(location.pathname).toBe(`/projects/${createdProjectId}`);
+  });
+  await waitFor(() => {
+    expect(projectChip("Campaign")).toBeVisible();
+  });
+  expect(
+    screen.getByRole("textbox", { name: "Message" }).textContent,
+  ).toContain("Kick off the campaign");
+});
+
+test("Without Projects the new chat's + menu and toolbar stay as they were", async () => {
+  const ordinary = continuityThread(120, 1, "Thread B");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 120,
+    threads: [ordinary],
+  });
+  context.mocks.data.onboardingStatus({ defaultAgentId: ordinary.agentId });
+  metadata();
+  await setupPage({
+    context,
+    path: `/agents/${ordinary.agentId}/chat`,
+    ...workspace.pageOptions,
+  });
+  await screen.findByRole("textbox", { name: "Message" });
+  const menu = await openComposerProjectMenu();
+  expect(menuLabels(menu)).toStrictEqual([
+    "Attach",
+    "Template",
+    "Import skills",
+  ]);
 });
 
 test("Project new chat opens before confirmation with the default Agent", async () => {

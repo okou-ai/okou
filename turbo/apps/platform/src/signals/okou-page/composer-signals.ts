@@ -57,6 +57,7 @@ import {
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
+import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
   createComposerConnectorCompletion,
   createComposerDraftActions,
@@ -260,6 +261,8 @@ export interface ComposerSignals {
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
   readonly threadId?: string;
+  /** Present on a new chat's page composer, which can start it in a Project. */
+  readonly project?: ComposerProjectSignals;
   readonly remoteAccess$: ReturnType<typeof threadRemoteAccess$>;
   readonly pendingRemoteAccess: ReturnType<
     typeof createPendingRemoteAccessSignals
@@ -303,6 +306,7 @@ interface CreateComposerSignalsOptions {
     "sending$" | "hasEvents$" | "queuedEvents$" | "runningModelSelection$"
   >;
   readonly threadId?: string;
+  readonly project?: ComposerProjectSignals;
   readonly pendingRemoteAccess?: ReturnType<
     typeof createPendingRemoteAccessSignals
   >;
@@ -618,6 +622,7 @@ export function createComposerSignals(
   return {
     agentId: options.agentId,
     threadId: options.threadId,
+    ...(options.project ? { project: options.project } : {}),
     /** Starts the composer's owner-scoped work under its owner's signal. */
     setup$: command(({ set }, signal: AbortSignal) => {
       set(voice.setup$, signal);
