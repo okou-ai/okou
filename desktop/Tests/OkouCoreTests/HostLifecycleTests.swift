@@ -1732,6 +1732,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await runtime.stop()
   }
 
+  @MainActor
   func testPresenceHostWaitsForNotificationRecoveryBeforeDispatching() async throws {
     func trace(_ step: String) {
       FileHandle.standardError.write(Data("presence-recovery: \(step)\n".utf8))
@@ -1746,6 +1747,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     defer { session.invalidateAndCancel() }
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path
+      FileHandle.standardError.write(Data("presence-recovery request: \(path)\n".utf8))
       if path.hasSuffix("/register") {
         XCTAssertEqual(connection.body["presenceOnly"], .bool(true))
         var registration = registeredHostResponse()
@@ -1772,6 +1774,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     }
     let runtime = notificationTestRuntime(session: session, notifications: notifications,
       onChange: { state in
+        FileHandle.standardError.write(Data("presence-recovery state: \(state.status), commands: \(state.commands.count)\n".utf8))
         if state.status == "recovering" && state.lastError == "Notification connection unavailable" {
           unavailable.fulfill()
         }
