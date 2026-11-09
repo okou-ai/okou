@@ -1,3 +1,4 @@
+import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -243,19 +244,31 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   );
 });
 
-test("Report sidebar toggles as pressed and popup triggers as expanded in the desktop header", async () => {
+test("Keep primary icon actions accessible and open emails from the desktop menu", async () => {
   context.mocks.browser.matchMedia(true);
   await setupHeaderPage();
+  expect(buttonNamed("Share messages")).toHaveAccessibleName("Share messages");
+  expect(buttonNamed("Artifacts and chats")).toHaveAccessibleName(
+    "Artifacts and chats",
+  );
+  const more = buttonNamed("More actions");
+  expect(more).toHaveAccessibleName("More actions");
+  click(more);
+  await screen.findByRole("menu");
+  expect(menuItemNames()).toStrictEqual([
+    "Automations",
+    "Manage emails",
+    "Open browser",
+  ]);
+  click(menuItemNamed("Manage emails"));
+  const mail = await screen.findByRole("dialog", { name: "Emails" });
+  expect(screen.queryByRole("menu")).not.toBeInTheDocument();
+  click(buttonNamed("Close emails", mail));
   await waitFor(() => {
-    expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
+    return expect(more).toHaveFocus();
   });
-  expect(buttonNamed("Automations")).toHaveAttribute("aria-pressed", "false");
-  expect(buttonNamed("Open browser")).toHaveAttribute("aria-pressed", "false");
-  const mail = buttonNamed("Manage emails");
-  expect(mail).toHaveAttribute("aria-expanded", "false");
-  click(mail);
-  await screen.findByRole("dialog", { name: "Emails" });
-  expect(mail).toHaveAttribute("aria-expanded", "true");
+  await selectDesktopHeaderAction("Automations");
+  await screen.findByRole("complementary", { name: "Automations" });
 });
 
 test.each([

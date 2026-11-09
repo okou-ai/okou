@@ -294,8 +294,27 @@ export function createThreadMailSignals(
     pending$,
     result$,
   );
+  const menuAnchor$ = state<HTMLElement | null>(null);
   return {
     ...location,
+    menuAnchor$: computed((get) => {
+      return get(menuAnchor$);
+    }),
+    menuAnchorRef$: onRef(
+      command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+        set(menuAnchor$, element);
+        signal.addEventListener(
+          "abort",
+          () => {
+            return set(menuAnchor$, null);
+          },
+          {
+            once: true,
+          },
+        );
+      }),
+    ),
+
     prepareLocation$,
     refresh$,
     mails$,
