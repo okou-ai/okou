@@ -11,10 +11,6 @@ import { i18n } from "../../i18n/index.ts";
 import { ShortcutHelpDialog } from "../components/shortcut-help-dialog.tsx";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import {
-  COLLAPSE_PROJECT_SHORTCUT,
-  EXPAND_PROJECT_SHORTCUT,
-} from "../../lib/project-fold-shortcuts.ts";
 import { projectsEnabled$ } from "../../signals/projects/projects.ts";
 
 type ShortcutLabelId =
@@ -75,8 +71,14 @@ const GLOBAL_NAVIGATION_SHORTCUTS = [
 ] as const satisfies readonly ShortcutDefinition[];
 
 const PROJECT_FOLD_SHORTCUTS = [
-  { key: COLLAPSE_PROJECT_SHORTCUT, labelId: "collapseProject" },
-  { key: EXPAND_PROJECT_SHORTCUT, labelId: "expandProject" },
+  {
+    key: GLOBAL_KEYBOARD_SHORTCUTS.collapseProject.binding,
+    labelId: "collapseProject",
+  },
+  {
+    key: GLOBAL_KEYBOARD_SHORTCUTS.expandProject.binding,
+    labelId: "expandProject",
+  },
 ] as const satisfies readonly ShortcutDefinition[];
 
 const COMPOSER_SHORTCUT_SECTION = {

@@ -4,10 +4,7 @@ import {
   currentLeftThread$,
   currentRightThread$,
 } from "./chat-thread-panes.ts";
-import {
-  navigateChatList$,
-  setCurrentChatListProjectExpanded$,
-} from "./chat-list-navigation.ts";
+import { navigateChatList$ } from "./chat-list-navigation.ts";
 import { threadRowKey } from "./chat-thread-list-rows.ts";
 import type { ChatPanelSignals } from "./chat-panel-signals.ts";
 import { pinChatThread$, unpinChatThread$ } from "./chat-event.ts";
@@ -30,7 +27,6 @@ import {
 } from "../../lib/setup-global-shortcut.ts";
 import { COMPOSER_VOICE_INPUT_SHORTCUT } from "../../lib/composer-voice-input-shortcut.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { projectFoldShortcutBindings } from "../../lib/project-fold-shortcuts.ts";
 
 type ChatThreadPane = "main" | "side";
 
@@ -179,7 +175,6 @@ interface ChatPageShortcutActions {
   renameThread: (event: KeyboardEvent) => void | Promise<void>;
   navigateNext: () => void | Promise<void>;
   navigatePrev: () => void | Promise<void>;
-  setProjectExpanded: (expanded: boolean) => void | Promise<void>;
   scrollBottom: () => void | Promise<void>;
   scrollTop: () => void | Promise<void>;
   setEmoji: (emoji: string) => void | Promise<void>;
@@ -300,16 +295,6 @@ const setupChatPageShortcutActions$ = command(
           },
           navigatePrev: () => {
             return navigateFocusedThread("prev");
-          },
-          setProjectExpanded: async (expanded) => {
-            const thread = focusedThread();
-            if (thread) {
-              await set(
-                setCurrentChatListProjectExpanded$,
-                { currentKey: threadRowKey(thread.threadId), expanded },
-                signal,
-              );
-            }
           },
           scrollBottom: async () => {
             const thread = focusedThread();
@@ -439,7 +424,6 @@ function createChatPageShortcutBindings({
   renameThread,
   navigateNext,
   navigatePrev,
-  setProjectExpanded,
   scrollBottom,
   scrollTop,
   setEmoji,
@@ -464,7 +448,6 @@ function createChatPageShortcutBindings({
       allowInEditableTarget: true,
       run: navigateNext,
     },
-    ...projectFoldShortcutBindings(setProjectExpanded),
     [GLOBAL_KEYBOARD_SHORTCUTS.toggleChatPin.binding]: {
       allowInEditableTarget: true,
       shouldHandle: canToggleThreadState,

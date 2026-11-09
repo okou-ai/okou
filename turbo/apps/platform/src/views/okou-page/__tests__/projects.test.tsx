@@ -545,7 +545,11 @@ function activeListItem() {
       ?.querySelector('[aria-current="page"]') ?? null
   );
 }
-async function setupProjectNavigation(caseId: number, path: string) {
+async function setupProjectNavigation(
+  caseId: number,
+  path: string,
+  extraProjects: readonly { id: string; name: string }[] = [],
+) {
   // Project: A1, A, A2 (newest first); B stays outside it.
   const b = continuityThread(caseId, 1, "Thread B");
   const a2 = { ...continuityThread(caseId, 2, "Thread A2"), projectId: id };
@@ -557,7 +561,7 @@ async function setupProjectNavigation(caseId: number, path: string) {
   });
   // A Project page lists the default Agent's chats, so these belong to it.
   context.mocks.data.onboardingStatus({ defaultAgentId: b.agentId });
-  metadata();
+  metadata(extraProjects);
   await setupPage({
     context,
     path: path
@@ -703,6 +707,42 @@ test("A Project page folds its own Project, and a chat outside Projects folds no
   (await screen.findByRole("textbox", { name: "Message" })).focus();
   await pressProjectFold("ArrowRight");
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+});
+
+test("A Project's menu folds it with the shortcut shown, and the keys act on the menu's Project", async () => {
+  const campaignId = "30000000-0000-4000-8000-000000000072";
+  const { a } = await setupProjectNavigation(118, "/chats/:a", [
+    { id: campaignId, name: "Campaign" },
+  ]);
+  await waitFor(() => {
+    expect(threadLink(a.id)).toHaveAttribute("aria-current", "page");
+  });
+  const user = userEvent.setup({ delay: null });
+
+  await user.click(button("Options for Launch", projectRows()));
+  const collapse = await findMenuItem("Collapse");
+  expect(collapse).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowLeft Control+Shift+ArrowLeft",
+  );
+  expect(collapse.querySelector("kbd")).toHaveTextContent("←");
+  await user.click(collapse);
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+
+  await user.click(button("Options for Campaign", projectRows(campaignId)));
+  const expand = await findMenuItem("Expand");
+  expect(expand).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowRight Control+Shift+ArrowRight",
+  );
+  // The open menu's Project takes the keys, not the open chat's.
+  await pressProjectFold("ArrowRight");
+  expect(projectToggle("Campaign", campaignId)).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  await findMenuItem("Collapse");
 });
 
 test("ordinary lists hide assigned chats and @Project inserts captured identity without navigating", async () => {

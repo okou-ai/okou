@@ -5052,6 +5052,7 @@
   },
   "projects": {
     "close": "Close",
+    "collapse": "收起",
     "create": "创建 Project",
     "createChatError": "无法创建聊天",
     "delete": "删除",
@@ -5061,6 +5062,7 @@
     "deleteTitle": "删除 Project？",
     "description": "将不同 Agent 的相关聊天归到一起",
     "empty": "暂无聊天",
+    "expand": "展开",
     "fromChat": "从此聊天创建 Project",
     "move": "移至 Project",
     "moveError": "无法移动聊天",
