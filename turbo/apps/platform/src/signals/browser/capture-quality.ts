@@ -21,7 +21,6 @@ export function createCaptureQualitySignals(
 ) {
   const draft$ = state<string | null>(null);
   const invalid$ = state(false);
-  const expanded$ = state<boolean | null>(null);
   const operationState$ = state<Promise<void> | null>(null);
   const operation$ = computed((get) => {
     return get(operationState$);
@@ -36,7 +35,6 @@ export function createCaptureQualitySignals(
       text,
       slider: parseQuality(text) ?? quality,
       preset: preset === undefined ? "" : String(preset),
-      expanded: get(expanded$) ?? preset === undefined,
       invalid: get(invalid$),
     };
   });
@@ -47,13 +45,6 @@ export function createCaptureQualitySignals(
   const reset$ = command(({ set }) => {
     set(draft$, null);
     set(invalid$, false);
-    set(expanded$, null);
-  });
-  const toggle$ = command(({ get, set }) => {
-    const expanded = !get(values$).expanded;
-    set(draft$, null);
-    set(invalid$, false);
-    set(expanded$, expanded);
   });
   const apply$ = command(
     async ({ get, set }, selection: number | "draft", signal: AbortSignal) => {
@@ -77,9 +68,6 @@ export function createCaptureQualitySignals(
       }
       set(draft$, null);
       set(invalid$, false);
-      if (selection !== "draft") {
-        set(expanded$, false);
-      }
       if (quality !== (capture.quality ?? defaultCapture.quality)) {
         const operation = set(changeCapture$, { ...capture, quality }, signal);
         set(operationState$, operation);
@@ -93,7 +81,7 @@ export function createCaptureQualitySignals(
     set(reset$);
     return operation;
   });
-  return { values$, operation$, edit$, reset$, toggle$, apply$, close$ };
+  return { values$, operation$, edit$, reset$, apply$, close$ };
 }
 
 export type CaptureQualitySignals = ReturnType<

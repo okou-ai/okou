@@ -41,7 +41,7 @@ import {
   installChatListStream,
 } from "../../okou-page/__tests__/chat-list-test-helpers.ts";
 import {
-  openCustomQuality,
+  openQualityInput,
   openQualityMenu,
 } from "./browser-settings-test-helpers.ts";
 
@@ -308,7 +308,7 @@ test("The Okou viewer starts with WebP and lets the owner change capture setting
 
 test("Image quality can be cleared and retyped before applying with Enter or blur", async () => {
   const browser = await setupInteractiveViewer();
-  const quality = await openCustomQuality();
+  const quality = await openQualityInput();
   const menu = screen.getByRole("menu", { name: "Image quality" });
   expect(within(menu).getByText("0")).toBeInTheDocument();
   expect(within(menu).getByText("100")).toBeInTheDocument();
@@ -350,7 +350,7 @@ test("Image quality can be cleared and retyped before applying with Enter or blu
 
 test("Empty and invalid image quality edits retain the applied quality", async () => {
   const browser = await setupInteractiveViewer();
-  const quality = await openCustomQuality();
+  const quality = await openQualityInput();
 
   await fill(quality, "");
   await userEvent.type(quality, "85");
@@ -379,11 +379,13 @@ test("Empty and invalid image quality edits retain the applied quality", async (
   }
 });
 
-test("Image quality presets and custom slider keys preserve native menu dismissal", async () => {
+test("Image quality presets and slider keys preserve native menu dismissal", async () => {
   const browser = await setupInteractiveViewer();
   const menu = await openQualityMenu();
   expect(menuRadio(menu, "Balanced")).toHaveAttribute("aria-checked", "true");
-  expect(within(menu).queryByRole("textbox")).not.toBeInTheDocument();
+  const slider = within(menu).getByRole("slider", { name: "Image quality" });
+  const input = within(menu).getByRole("textbox", { name: "Image quality" });
+  expect(input).toHaveValue("70");
 
   for (const [label, quality] of [
     ["Data saver", 40],
@@ -401,9 +403,6 @@ test("Image quality presets and custom slider keys preserve native menu dismissa
     });
   }
 
-  click(within(menu).getByText("Custom"));
-  const slider = within(menu).getByRole("slider", { name: "Image quality" });
-  const input = within(menu).getByRole("textbox", { name: "Image quality" });
   await userEvent.click(slider);
   await userEvent.keyboard("{End}");
   await waitFor(() => {
@@ -437,7 +436,7 @@ test("Image quality presets and custom slider keys preserve native menu dismissa
 
 test("Choosing a quality preset replaces an unfinished custom draft", async () => {
   const browser = await setupInteractiveViewer();
-  const input = await openCustomQuality();
+  const input = await openQualityInput();
   const menu = screen.getByRole("menu", { name: "Image quality" });
   await fill(input, "");
   await userEvent.type(input, "85");

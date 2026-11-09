@@ -24,7 +24,7 @@ import {
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { initSentry } from "../../../lib/sentry.ts";
-import { openCustomQuality } from "./browser-settings-test-helpers.ts";
+import { openQualityInput } from "./browser-settings-test-helpers.ts";
 
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
@@ -651,7 +651,7 @@ test("Control loss during a split capture change does not report the retired fra
   await expectInputReady();
   await useSplitTransport();
   const capture = browser.holdNext("Page.stopScreencast");
-  const quality = await openCustomQuality();
+  const quality = await openQualityInput();
   fireEvent.change(quality, { target: { value: "60" } });
   fireEvent.blur(quality);
   await capture.received;

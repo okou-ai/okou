@@ -9,7 +9,6 @@ import {
   ArrowRight,
   Check,
   ChevronDown,
-  ChevronLeft,
   Globe,
   Loader2,
   Maximize2,
@@ -289,7 +288,6 @@ function QualitySettingsMenu({
   const capture = useGet(signals.capture$);
   const values = useGet(signals.quality.values$);
   const reset = useSet(signals.quality.reset$);
-  const toggle = useSet(signals.quality.toggle$);
   const qualityLabel = t(($) => {
     return $.browserViewer.quality;
   });
@@ -303,14 +301,12 @@ function QualitySettingsMenu({
     >
       <DropdownMenuSubTrigger disabled={pending || capture.format === "png"}>
         <span className="flex-1">{qualityLabel}</span>
-        {capture.format === "png" ? (
+        {capture.format === "png" && (
           <span className="text-muted-foreground">
             {t(($) => {
               return $.browserViewer.qualityLossless;
             })}
           </span>
-        ) : (
-          <ChevronLeft size={14} />
         )}
       </DropdownMenuSubTrigger>
       <DropdownMenuSubContent
@@ -360,35 +356,17 @@ function QualitySettingsMenu({
             );
           })}
         </DropdownMenuRadioGroup>
-        <DropdownMenuItem
-          closeOnClick={false}
-          disabled={pending}
-          aria-expanded={values.expanded}
-          onClick={toggle}
-        >
-          <span className="flex-1">
-            {t(($) => {
-              return $.browserViewer.qualityCustom;
-            })}
-          </span>
-          <ChevronDown
-            size={14}
-            className={values.expanded ? "rotate-180" : ""}
-          />
-        </DropdownMenuItem>
-        {values.expanded && (
-          <CustomQualityControls
-            signals={signals}
-            pending={pending}
-            onApply={onApply}
-          />
-        )}
+        <QualityControls
+          signals={signals}
+          pending={pending}
+          onApply={onApply}
+        />
       </DropdownMenuSubContent>
     </DropdownMenuSub>
   );
 }
 
-function CustomQualityControls({
+function QualityControls({
   signals,
   pending,
   onApply,

@@ -7,8 +7,7 @@ export async function openQualityMenu() {
   return screen.findByRole("menu", { name: "Image quality" });
 }
 
-export async function openCustomQuality() {
+export async function openQualityInput() {
   const menu = await openQualityMenu();
-  click(within(menu).getByText("Custom"));
   return within(menu).getByRole("textbox", { name: "Image quality" });
 }

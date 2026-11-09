@@ -20,7 +20,7 @@ import {
 } from "../../../__tests__/browser-cdp-fixture.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockMonotonicNow, mockNow } from "../../../lib/time.ts";
-import { openCustomQuality } from "./browser-settings-test-helpers.ts";
+import { openQualityInput } from "./browser-settings-test-helpers.ts";
 
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
@@ -790,7 +790,7 @@ test("A capture change finishes when background membership is revalidated", asyn
   await ready();
 
   const stop = browser.holdNext("Page.stopScreencast");
-  const quality = await openCustomQuality();
+  const quality = await openQualityInput();
   fireEvent.change(quality, { target: { value: "60" } });
   fireEvent.blur(quality);
   await stop.received;
@@ -821,7 +821,7 @@ test("Capture preferences chosen during membership validation are applied after 
     });
   });
   await proof.received;
-  const quality = await openCustomQuality();
+  const quality = await openQualityInput();
   expect(quality).toBeEnabled();
   fireEvent.change(quality, { target: { value: "60" } });
   fireEvent.blur(quality);
@@ -839,7 +839,7 @@ test("Automatic capture recovery survives membership validation", async () => {
   await ready();
   browser.failNext("Page.startScreencast", "The capture could not be started");
   const capture = browser.holdNext("Page.startScreencast");
-  const quality = await openCustomQuality();
+  const quality = await openQualityInput();
   fireEvent.change(quality, { target: { value: "60" } });
   fireEvent.blur(quality);
   await capture.received;
@@ -878,7 +878,7 @@ test("Moving a tab retires its capture change before selecting a scoped survivor
   await screen.findByLabelText("Later own tab");
   await ready();
   const stop = browser.holdNext("Page.stopScreencast");
-  const quality = await openCustomQuality();
+  const quality = await openQualityInput();
   fireEvent.change(quality, { target: { value: "60" } });
   fireEvent.blur(quality);
   await stop.received;
