@@ -205,6 +205,46 @@ final class MessageArtifactResourceTests: XCTestCase {
     XCTAssertEqual(fixture.state.value.withLock { $0.transfers }, 0)
   }
 
+  func testCoverWaitingForMetadataFollowsAnExplicitRefresh() async throws {
+    let entered = expectation(description: "Initial metadata read started")
+    let cancelled = expectation(description: "Superseded metadata read was cancelled")
+    let (gate, release) = AsyncStream<Void>.makeStream()
+    let first = Mutex(true)
+    let fixture = try await ArtifactReadFixture.make(
+      owner: self,
+      beforeCatalog: {
+        let holds = first.withLock { value in
+          let old = value
+          value = false
+          return old
+        }
+        if holds {
+          await withTaskCancellationHandler {
+            entered.fulfill()
+            for await _ in gate { break }
+          } onCancel: {
+            cancelled.fulfill()
+          }
+        }
+      })
+    let pending = Task { try await fixture.viewer.card(fixture.artifact(), thumbnail: true) }
+    addTeardownBlock {
+      release.finish()
+      pending.cancel()
+      _ = await pending.result
+    }
+    await fulfillment(of: [entered], timeout: 3)
+    fixture.state.value.withLock { $0.name = "Refreshed metadata.png" }
+    try fixture.viewer.reads.refreshCatalog()
+    await fulfillment(of: [cancelled], timeout: 3)
+    release.finish()
+    let card = try await pending.value
+    XCTAssertEqual(card.artifact.filename, "Refreshed metadata.png")
+    XCTAssertNotNil(card.thumbnail)
+    XCTAssertEqual(fixture.state.value.withLock { $0.catalogs }, 2)
+    XCTAssertEqual(fixture.state.value.withLock { $0.references.count }, 1)
+  }
+
   func testAuthenticationAndUpgradeMetadataFailuresStopCardAccess() async throws {
     for status in [401, 426] {
       let reports = Mutex<[Int]>([])
