@@ -18,7 +18,6 @@ import { AuthV1LoadError } from "../views/auth-v1/auth-v1-load-error.tsx";
 import { logger } from "./log.ts";
 import { settle } from "./utils.ts";
 import { createAuthV1ClerkSignals } from "./auth-v1-clerk.ts";
-import { resetSignupStart$ } from "./signup-start.ts";
 
 const L = logger("AuthV1");
 
@@ -74,15 +73,7 @@ function setupAuthV1Page(mode: AuthV1PageMode) {
       return;
     }
     const signals = createAuthV1ClerkSignals(clerk);
-    const showSignupStart =
-      mode === "sign-up" &&
-      location.pathname === "/sign-up" &&
-      !new URLSearchParams(location.search).has("__clerk_ticket");
-    set(resetSignupStart$);
-    set(
-      updatePage$,
-      createElement(AuthV1Page, { mode, signals, showSignupStart }),
-    );
+    set(updatePage$, createElement(AuthV1Page, { mode, signals }));
   });
 }
 

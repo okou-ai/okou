@@ -15,14 +15,12 @@ import { theme$ } from "../../signals/theme.ts";
 import type { AuthV1ClerkSignals } from "../../signals/auth-v1-clerk.ts";
 import { AuthV1Layout } from "./auth-v1-layout.tsx";
 import { getClerkAuthAppearance } from "./clerk-auth-appearance.ts";
-import { SignupStart } from "./signup-start.tsx";
 
 export type AuthV1PageMode = "sign-in" | "sign-up";
 
 interface AuthV1PageProps {
   readonly mode: AuthV1PageMode;
   readonly signals: AuthV1ClerkSignals;
-  readonly showSignupStart: boolean;
 }
 
 function AuthLoadingFallback() {
@@ -43,10 +41,7 @@ function AuthLoadingFallback() {
   );
 }
 
-function AuthV1PageContent({
-  mode,
-  showSignupStart,
-}: Pick<AuthV1PageProps, "mode" | "showSignupStart">) {
+function AuthV1PageContent({ mode }: Pick<AuthV1PageProps, "mode">) {
   // Once this page commits, Clerk's public fallback owns form loading.
   const authPageMountRef = useSet(hideAppSkeletonOnContentReadyRef$);
   const activeRoute = useGet(activeRoute$);
@@ -121,19 +116,15 @@ function AuthV1PageContent({
         data-testid="app-sign-up"
         ref={authPageMountRef}
       >
-        {showSignupStart ? (
-          <SignupStart signInUrl={signInUrl} />
-        ) : (
-          <SignUp
-            appearance={getClerkAuthAppearance(authBrand.homeUrl, theme)}
-            fallback={<AuthLoadingFallback />}
-            fallbackRedirectUrl={redirectUrl}
-            forceRedirectUrl={redirectUrl}
-            path="/sign-up"
-            routing="path"
-            signInUrl={signInUrl}
-          />
-        )}
+        <SignUp
+          appearance={getClerkAuthAppearance(authBrand.homeUrl, theme)}
+          fallback={<AuthLoadingFallback />}
+          fallbackRedirectUrl={redirectUrl}
+          forceRedirectUrl={redirectUrl}
+          path="/sign-up"
+          routing="path"
+          signInUrl={signInUrl}
+        />
       </div>
     </AuthV1Layout>
   );
@@ -161,14 +152,10 @@ function ClerkRuntimeBoundary({
   );
 }
 
-export function AuthV1Page({
-  mode,
-  signals,
-  showSignupStart,
-}: AuthV1PageProps) {
+export function AuthV1Page({ mode, signals }: AuthV1PageProps) {
   return (
     <ClerkRuntimeBoundary signals={signals}>
-      <AuthV1PageContent mode={mode} showSignupStart={showSignupStart} />
+      <AuthV1PageContent mode={mode} />
     </ClerkRuntimeBoundary>
   );
 }

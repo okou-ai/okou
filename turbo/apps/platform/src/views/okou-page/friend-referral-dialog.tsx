@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Check, Copy, Gift, Link } from "lucide-react";
+import { Check, Gift, Link } from "lucide-react";
 import {
   Button,
   Dialog,
@@ -11,7 +11,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  Input,
   Skeleton,
 } from "@okouai/ui";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -33,14 +32,7 @@ function FriendReferralSkeleton() {
       })}
     >
       <div className="space-y-4" aria-hidden="true">
-        <div className="space-y-2">
-          <Skeleton className="h-5 w-32" />
-          <Skeleton className="h-12 w-full" />
-          <div className="grid grid-cols-2 gap-2">
-            <Skeleton className="h-9 w-full" />
-            <Skeleton className="h-9 w-full" />
-          </div>
-        </div>
+        <Skeleton className="h-9 w-full" />
         <div className="grid grid-cols-2 gap-4 rounded-lg bg-nested-fill p-3">
           {[0, 1].map((index) => {
             return (
@@ -64,69 +56,27 @@ function FriendReferralDetails({
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
   const [copyState, copy] = useLoadableSet(copyFriendReferral$);
-  const copiedTarget =
-    copyState.state === "hasData" && copyState.data.copied
-      ? copyState.data.target
-      : null;
+  const copied = copyState.state === "hasData" && copyState.data;
   return (
     <>
       <div className="space-y-2">
-        <label
-          htmlFor="friend-referral-code"
-          className="block text-sm font-medium"
+        <Button
+          className="w-full"
+          disabled={copyState.state === "loading"}
+          onClick={() => {
+            detach(copy(data.code, signal), Reason.DomCallback);
+          }}
         >
-          {t(($) => {
-            return $.friendReferrals.codeLabel;
-          })}
-        </label>
-        <Input
-          id="friend-referral-code"
-          readOnly
-          value={data.code}
-          className="h-12 text-center font-mono text-xl tracking-widest"
-        />
-        <div className="grid grid-cols-2 gap-2">
-          <Button
-            disabled={copyState.state === "loading"}
-            onClick={() => {
-              detach(copy(data.code, "code", signal), Reason.DomCallback);
-            }}
-          >
-            {copiedTarget === "code" ? (
-              <Check className="size-4" />
-            ) : (
-              <Copy className="size-4" />
-            )}
-            {copiedTarget === "code"
-              ? t(($) => {
-                  return $.friendReferrals.copied;
-                })
-              : t(($) => {
-                  return $.friendReferrals.copyCode;
-                })}
-          </Button>
-          <Button
-            variant="outline"
-            disabled={copyState.state === "loading"}
-            onClick={() => {
-              detach(copy(data.code, "link", signal), Reason.DomCallback);
-            }}
-          >
-            {copiedTarget === "link" ? (
-              <Check className="size-4" />
-            ) : (
-              <Link className="size-4" />
-            )}
-            {copiedTarget === "link"
-              ? t(($) => {
-                  return $.friendReferrals.copied;
-                })
-              : t(($) => {
-                  return $.friendReferrals.copyLink;
-                })}
-          </Button>
-        </div>
-        {copyState.state === "hasData" && !copyState.data.copied && (
+          {copied ? <Check className="size-4" /> : <Link className="size-4" />}
+          {copied
+            ? t(($) => {
+                return $.friendReferrals.copied;
+              })
+            : t(($) => {
+                return $.friendReferrals.copyLink;
+              })}
+        </Button>
+        {copyState.state === "hasData" && !copyState.data && (
           <p className="text-sm text-destructive" role="alert">
             {t(($) => {
               return $.friendReferrals.copyFailed;
@@ -195,7 +145,7 @@ export function FriendReferralDialog({
             })}
           </DialogDescription>
         </DialogHeader>
-        <div className="min-h-50 space-y-4">
+        <div className="min-h-32 space-y-4">
           {loading && <FriendReferralSkeleton />}
           {failed && (
             <div className="space-y-3">
