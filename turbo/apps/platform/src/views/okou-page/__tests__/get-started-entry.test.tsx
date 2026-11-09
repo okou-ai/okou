@@ -69,7 +69,10 @@ test("The gift opens invitations independently of credit quests, with code and l
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.FriendReferrals]: true,
+      [FeatureSwitchKey.SingleAgent]: false,
+    },
     auth: {
       user: { id: "test-user-123", fullName: "Referral User" },
       organization: {
@@ -176,7 +179,10 @@ test("Referral link failures can be retried in the same dialog", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.FriendReferrals]: true,
+      [FeatureSwitchKey.SingleAgent]: false,
+    },
     auth: {
       user: { id: "test-user-123", fullName: "Referral User" },
       organization: {
