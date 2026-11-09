@@ -3,11 +3,13 @@ import SwiftUI
 /// A native name editor, following the chat rename alert's presentation and focus contract.
 struct OkouNameDialog: UIViewControllerRepresentable {
   struct Request: Identifiable {
-    let id = UUID()
+    var id = UUID()
     let title: String
     let placeholder: String
     var name: String
     var error: String?
+    var maximumLength: Int?
+    var accessibilityIdentifier: String?
   }
 
   let request: Request?
@@ -74,12 +76,14 @@ struct OkouNameDialog: UIViewControllerRepresentable {
       alert.addTextField { field in
         field.placeholder = request.placeholder
         field.text = request.name
-        field.accessibilityIdentifier = "project-name"
+        field.accessibilityIdentifier = request.accessibilityIdentifier
         field.returnKeyType = .done
         field.addAction(
           UIAction { [weak field, weak save] _ in
             let name = (field?.text ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-            save?.isEnabled = !name.isEmpty && name.utf16.count <= 120
+            save?.isEnabled =
+              !name.isEmpty
+              && (request.maximumLength.map { name.utf16.count <= $0 } ?? true)
           }, for: .editingChanged)
       }
       alert.addAction(

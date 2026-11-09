@@ -367,7 +367,8 @@ struct ChatSidebarView: View {
       dialog: OkouNameDialog.Request(
         title: project == nil
           ? String(localized: "New project") : String(localized: "Rename project"),
-        placeholder: String(localized: "Project name"), name: project?.name ?? ""),
+        placeholder: String(localized: "Project name"), name: project?.name ?? "",
+        maximumLength: 120, accessibilityIdentifier: "project-name"),
       projectID: project?.id, fromThreadID: fromThreadID)
   }
 
@@ -386,7 +387,8 @@ struct ChatSidebarView: View {
       projectEditor = ProjectEditor(
         dialog: OkouNameDialog.Request(
           title: request.dialog.title, placeholder: request.dialog.placeholder,
-          name: name, error: store.projects.actionError),
+          name: name, error: store.projects.actionError,
+          maximumLength: 120, accessibilityIdentifier: "project-name"),
         projectID: request.projectID, fromThreadID: request.fromThreadID)
     }
   }
