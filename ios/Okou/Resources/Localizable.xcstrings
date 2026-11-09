@@ -14378,6 +14378,43 @@
         }
       }
     },
+    "Opens a new chat and starts voice input without sending a message.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Öffnet einen neuen Chat und startet die Spracheingabe, ohne eine Nachricht zu senden." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Abre un chat nuevo e inicia la entrada de voz sin enviar ningún mensaje." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ouvre une nouvelle discussion et démarre la saisie vocale sans envoyer de message." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "नई चैट खोलता है और संदेश भेजे बिना बोलकर लिखना शुरू करता है।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Membuka chat baru dan memulai input suara tanpa mengirim pesan." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Apre una nuova chat e avvia l'input vocale senza inviare messaggi." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "新しいチャットを開き、メッセージを送信せずに音声入力を開始します。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "새 채팅을 열고 메시지를 보내지 않고 음성 입력을 시작합니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Abre uma nova conversa e inicia a entrada de voz sem enviar mensagens." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "打开新聊天并开始语音输入，不会自动发送消息。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "開啟新聊天並開始語音輸入，不會自動傳送訊息。" }
+        }
+      }
+    },
     "Opens a new chat with the keyboard ready for typing.": {
       "localizations": {
         "de": {
@@ -23632,6 +23669,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "語音/音訊" }
+        }
+      }
+    },
+    "Voice Input": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Spracheingabe" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Entrada de voz" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Saisie vocale" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "वॉइस इनपुट" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Input suara" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Input vocale" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "音声入力" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "음성 입력" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Entrada de voz" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "语音输入" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "語音輸入" }
         }
       }
     },

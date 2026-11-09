@@ -26,7 +26,7 @@ from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.registry_helpers import write_simple_registry
 
 
-def test_401_firewall_cache_invalidation(real_flow, mitm_ctx, headers):
+def test_401_firewall_cache_invalidation(real_flow, mitm_ctx):
     """401 response with firewall_base pops the cache entry and marks force-refresh (#9860)."""
     flow = real_flow(with_response=False, host="api.github.com")
     flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-conn-1"
@@ -170,7 +170,7 @@ def test_late_401_does_not_recreate_registry_evicted_auth_state(tmp_path, real_f
     assert not has_auth_state(cache_key)
 
 
-def test_401_within_cooldown_does_not_re_mark(real_flow, mitm_ctx, headers):
+def test_401_within_cooldown_does_not_re_mark(real_flow, mitm_ctx):
     """A second 401 within the force-refresh cooldown window must NOT
     re-mark — otherwise a persistent non-token 401 (scope, resource-
     level reject) would amplify into a loop of OAuth refresh calls and
@@ -203,7 +203,7 @@ def test_401_within_cooldown_does_not_re_mark(real_flow, mitm_ctx, headers):
     assert not force_refresh_pending(cache_key)
 
 
-def test_401_after_cooldown_re_marks(real_flow, mitm_ctx, headers):
+def test_401_after_cooldown_re_marks(real_flow, mitm_ctx):
     """Once the cooldown has elapsed, a subsequent 401 re-marks — the
     rate limit only throttles, it doesn't permanently lock out real
     token-invalidation recovery (#9860)."""
@@ -232,7 +232,7 @@ def test_401_after_cooldown_re_marks(real_flow, mitm_ctx, headers):
     assert force_refresh_pending(cache_key)
 
 
-def test_401_after_cooldown_re_marks_when_wall_clock_steps_back(real_flow, mitm_ctx, headers):
+def test_401_after_cooldown_re_marks_when_wall_clock_steps_back(real_flow, mitm_ctx):
     """Cooldown uses monotonic elapsed time, not wall-clock time."""
     flow = real_flow(with_response=False, host="api.github.com")
     flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-conn-skew"
@@ -262,7 +262,7 @@ def test_401_after_cooldown_re_marks_when_wall_clock_steps_back(real_flow, mitm_
     assert force_refresh_pending(cache_key)
 
 
-def test_401_without_auth_cache_key_does_not_synthesize_state(real_flow, mitm_ctx, headers):
+def test_401_without_auth_cache_key_does_not_synthesize_state(real_flow, mitm_ctx):
     """401 invalidation requires the full request auth identity cache key."""
     flow = real_flow(with_response=False, host="api.github.com")
     flow.metadata[metadata_keys.SANDBOX_RUN_ID] = "run-conn-no-key"

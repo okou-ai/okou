@@ -13,6 +13,49 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1103.0](https://github.com/okou-ai/okou/compare/app-v0.1102.6...app-v0.1103.0) (2026-11-09)
+
+
+### Features
+
+* **app:** list suggestions on home and retire the feed page ([#46056](https://github.com/okou-ai/okou/issues/46056)) ([262cfc3](https://github.com/okou-ai/okou/commit/262cfc3466f5d208d8bd6a71d23cbae439669311))
+* **platform:** redesign friend referral dialog ([#46065](https://github.com/okou-ai/okou/issues/46065)) ([b738439](https://github.com/okou-ai/okou/commit/b7384395d9c84aebfaf2f98e68fdac32a60edc06))
+
+
+### Bug Fixes
+
+* **app:** compact capability entries on mobile ([#46050](https://github.com/okou-ai/okou/issues/46050)) ([4db5b03](https://github.com/okou-ai/okou/commit/4db5b03b8fbe2e56425f873b3c6d7e1ab7fce2fc))
+* **platform:** overlay markdown scrollbars so code blocks keep their height ([#46062](https://github.com/okou-ai/okou/issues/46062)) ([02f97c4](https://github.com/okou-ai/okou/commit/02f97c4502ad848fb34f2f136721e1ec34bef22a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.4
+
+## [0.1102.6](https://github.com/okou-ai/okou/compare/app-v0.1102.5...app-v0.1102.6) (2026-11-09)
+
+
+### Bug Fixes
+
+* **core:** enable single agent for staff organizations ([#46046](https://github.com/okou-ai/okou/issues/46046)) ([7ac09ab](https://github.com/okou-ai/okou/commit/7ac09abc90aec538104dc0e0327fef8240ada955))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.3
+
+## [0.1102.5](https://github.com/okou-ai/okou/compare/app-v0.1102.4...app-v0.1102.5) (2026-11-09)
+
+
+### Bug Fixes
+
+* **app:** announce new features in the force-upgrade dialog ([#46023](https://github.com/okou-ai/okou/issues/46023)) ([ded4a6a](https://github.com/okou-ai/okou/commit/ded4a6a42b4a9236e5c2f11da6341c7663d58d02))
+* retire thread-list indicator refresh fallback ([#46009](https://github.com/okou-ai/okou/issues/46009)) ([3696606](https://github.com/okou-ai/okou/commit/36966068cf7f6465fddc6dde6fde2574b95f4c1c))
+
 ## [0.1102.4](https://github.com/okou-ai/okou/compare/app-v0.1102.3...app-v0.1102.4) (2026-11-08)
 
 

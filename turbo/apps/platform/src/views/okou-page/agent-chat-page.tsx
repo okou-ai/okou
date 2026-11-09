@@ -1,7 +1,10 @@
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { CapabilityHomePage } from "./capability-home-page.tsx";
-import { defaultAgentId$ } from "../../signals/agent.ts";
+import {
+  defaultAgentChatPageActive$,
+  defaultAgentId$,
+} from "../../signals/agent.ts";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
@@ -29,7 +32,11 @@ import {
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ComposerTaskChips } from "./composer-task-chips.tsx";
-import { SuggestionSaveErrors } from "./agent-suggestions.tsx";
+import {
+  AgentSuggestions,
+  SuggestionSaveErrors,
+} from "./agent-suggestions.tsx";
+import { suggestionsEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
 import { SCROLL_FADE_Y_END_SM } from "./scroll-fade.ts";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
@@ -482,6 +489,12 @@ export function AgentComposerPage({
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
 
+  // Suggestion options start chats in the default Agent, so only its own
+  // new-chat page lists them.
+  const suggestionsEnabled = useGet(suggestionsEnabled$);
+  const defaultAgentChatPage = useLastResolved(defaultAgentChatPageActive$);
+  const showSuggestions = suggestionsEnabled && defaultAgentChatPage === true;
+
   const switches = useGet(featureSwitch$);
   const heading =
     project !== undefined ? (
@@ -519,7 +532,15 @@ export function AgentComposerPage({
       </div>
     );
   if (project === undefined && switches[FeatureSwitchKey.HomeCapabilities]) {
-    return <CapabilityHomePage signals={composerSignals} heading={heading} />;
+    return (
+      <CapabilityHomePage
+        signals={composerSignals}
+        heading={heading}
+        suggestions={
+          showSuggestions ? <AgentSuggestions className="mt-4" /> : null
+        }
+      />
+    );
   }
 
   return (
@@ -627,6 +648,7 @@ export function AgentComposerPage({
             {/* Keep the final row clear of the scrollport's bottom edge. */}
             <div className="order-2 sm:order-none sm:pb-10">
               <ComposerTaskChips signals={composerSignals} />
+              {showSuggestions && <AgentSuggestions className="mt-10" />}
               <SuggestionSaveErrors />
             </div>
           </div>

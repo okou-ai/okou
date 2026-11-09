@@ -132,6 +132,6 @@ test("The update dialog appears only when an update is required", async () => {
     name: "Update required",
   });
   expect(dialog).toHaveTextContent(
-    "This version of Okou is no longer supported.",
+    "We've released new features in Okou. Refresh to get the latest version.",
   );
 });

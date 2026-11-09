@@ -276,11 +276,6 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
           ? { kind: "chat-thread-event" }
           : null;
     if (topic === "threadListChanged") {
-      // Rollout fallback (#45719): APIs before #45712 never publish
-      // chatIndicatorsChanged, but publish this topic at every Run start, Run
-      // terminal marker, mute and delete. Remove it once an enforced API
-      // rollback floor excludes those APIs.
-      set(startChatThreadIndicatorsRefresh$);
       set(broadcastSharedDatabaseWorkerMessage$, {
         type: "invalidate",
         dataKey: { kind: "project-event" },
@@ -367,7 +362,8 @@ const startChatThreadIndicatorsRefresh$ = command(({ get, set }): void => {
 
 /**
  * Indicators change only on the server's explicit signals: Run start, Run
- * terminal markers, mute or delete (`chatIndicatorsChanged`), and read cursors.
+ * terminal markers, mute, hide or delete (`chatIndicatorsChanged`), and read
+ * cursors.
  * Run output does not refetch them. Run-state signals share the throttle; a
  * user's own read-cursor change refreshes immediately.
  */

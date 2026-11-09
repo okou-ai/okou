@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "Bilah samping",
       "chat": "Chat",
-      "feedWaiting_other": "{{count}} menunggu",
       "hideChatList": "Sembunyikan daftar chat",
       "mobile": {
         "invite": "Undang",
@@ -402,7 +401,6 @@
         "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
-        "feed": "Feed",
         "settings": "Pengaturan",
         "workflows": "Alur kerja",
         "works": "Tempat {{agentName}} bekerja"
@@ -414,6 +412,7 @@
       "resizeChatList": "Ubah ukuran daftar chat",
       "searchWorkspace": "Cari ruang kerja",
       "showChatList": "Tampilkan daftar chat",
+      "suggestionsWaiting_other": "{{count}} menunggu",
       "workspaceSwitcher": {
         "create": "Buat ruang kerja",
         "creating": "Membuat…",
@@ -954,27 +953,6 @@
     },
     "homeLink": "Buka beranda {{brandName}}",
     "loading": "Memuat autentikasi",
-    "signup": {
-      "alreadyHaveAccount": "Sudah punya akun?",
-      "apple": "Apple",
-      "continue": "Lanjutkan",
-      "email": "Alamat email",
-      "emailPlaceholder": "Masukkan alamat email Anda",
-      "failed": "Permintaan gagal",
-      "google": "Google",
-      "hidePassword": "Sembunyikan kata sandi",
-      "legalAnd": "dan",
-      "legalPrefix": "Saya menyetujui",
-      "or": "atau",
-      "password": "Kata sandi",
-      "passwordPlaceholder": "Buat kata sandi",
-      "privacy": "Kebijakan Privasi",
-      "showPassword": "Tampilkan kata sandi",
-      "signIn": "Masuk",
-      "subtitle": "Selamat datang! Silakan isi detail untuk memulai.",
-      "terms": "Ketentuan Layanan",
-      "title": "Buat akun Anda"
-    },
     "theme": {
       "darkEnabled": "Tema gelap diaktifkan",
       "lightEnabled": "Tema terang diaktifkan"
@@ -1644,12 +1622,13 @@
       "saveReason": "Save",
       "sending": "Mengirim…",
       "sent": "Dikirim ke chat baru",
+      "unavailable": "Saran itu sudah tidak tersedia. Daftar saran telah diperbarui.",
       "undoFeedback": "Undo",
       "useSuggestion": "Gunakan saran"
     },
     "attachments": {
       "attach": "Lampirkan",
-      "fileTooLarge": "{{filename}} melebihi batas 512 MB",
+      "fileTooLarge": "{{filename}} melebihi batas 5 GB",
       "imageUnavailable": "[Gambar tidak tersedia: {{filename}}]",
       "loadingFile": "Memuat {{filename}}",
       "pastedText": "Teks yang ditempel",
@@ -4200,31 +4179,20 @@
     "previousFeature": "Fitur sebelumnya",
     "tryPrompt": "Coba tugas ini"
   },
-  "feed": {
-    "description": "Langkah berikutnya yang disarankan berdasarkan pekerjaan terbaru Anda.",
-    "emptyDescription": "Saran baru akan muncul di sini.",
-    "emptyTitle": "Semua sudah terkini",
-    "title": "Feed"
-  },
   "friendReferrals": {
-    "checkingCode": "Memeriksa kode undangan…",
-    "codeApplied": "Kode undangan diterapkan",
-    "codeCheckFailed": "Kode tidak dapat diperiksa. Coba lagi atau kosongkan untuk melanjutkan.",
-    "codeLabel": "Kode undangan Anda",
-    "codeUnavailable": "Kode undangan ini tidak tersedia. Periksa atau kosongkan untuk melanjutkan.",
     "copied": "Disalin",
-    "copyCode": "Salin kode",
     "copyFailed": "Gagal menyalin. Coba lagi.",
     "copyLink": "Salin tautan",
-    "description": "Dapatkan credits senilai $20 saat teman mendaftar dengan kode undangan Anda, membeli usage pack, dan meningkatkan ke Pro atau lebih tinggi.",
+    "description": "Anda mendapat credits senilai $20 setelah teman menyelesaikan ketiga langkah",
+    "dialogTitle": "Undang teman, dapatkan $20 per teman",
     "earned": "Kredit diperoleh",
-    "invalidCode": "Gunakan 6 huruf atau angka, atau kosongkan untuk melanjutkan.",
-    "loadFailed": "Kode undangan tidak dapat dimuat. Coba lagi.",
-    "loading": "Mengambil kode undangan Anda…",
+    "loadFailed": "Tautan undangan tidak dapat dimuat. Coba lagi.",
+    "loading": "Mengambil tautan undangan Anda…",
     "registered": "Teman terdaftar",
     "retry": "Coba lagi",
-    "signupLabel": "Kode undangan (opsional)",
-    "signupPlaceholder": "Masukkan kode undangan",
+    "stepSignUp": "Mendaftar dengan tautan undangan Anda",
+    "stepUpgrade": "Meningkatkan ke Pro atau lebih tinggi",
+    "stepUsagePack": "Membeli usage pack",
     "terms": "Hanya untuk pengguna baru. Satu hadiah per teman. Kredit masuk ke saldo pribadi Anda di ruang kerja ini dan kedaluwarsa satu bulan setelah diberikan.",
     "title": "Undang teman Anda"
   },
@@ -6205,7 +6173,7 @@
       "title": "Ups! Ada yang salah"
     },
     "forceUpgrade": {
-      "description": "Versi {{brandName}} ini tidak lagi didukung.",
+      "description": "Kami telah merilis fitur baru di {{brandName}}. Muat ulang untuk menggunakan versi terbaru.",
       "title": "Pembaruan diperlukan"
     },
     "mermaid": {

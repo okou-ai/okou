@@ -406,9 +406,6 @@
     "sidebar": {
       "ariaLabel": "Barra lateral",
       "chat": "Chat",
-      "feedWaiting_one": "{{count}} pendiente",
-      "feedWaiting_many": "{{count}} pendientes",
-      "feedWaiting_other": "{{count}} pendientes",
       "hideChatList": "Ocultar lista de chats",
       "mobile": {
         "invite": "Invitar",
@@ -418,7 +415,6 @@
         "agents": "Agentes",
         "artifacts": "Artefactos",
         "connectors": "Conectores",
-        "feed": "Feed",
         "settings": "Configuración",
         "workflows": "Flujos de trabajo",
         "works": "Dónde trabaja {{agentName}}"
@@ -430,6 +426,9 @@
       "resizeChatList": "Cambiar el tamaño de la lista de chats",
       "searchWorkspace": "Buscar en el espacio de trabajo",
       "showChatList": "Mostrar lista de chats",
+      "suggestionsWaiting_one": "{{count}} pendiente",
+      "suggestionsWaiting_many": "{{count}} pendientes",
+      "suggestionsWaiting_other": "{{count}} pendientes",
       "workspaceSwitcher": {
         "create": "Crear espacio de trabajo",
         "creating": "Creando…",
@@ -974,27 +973,6 @@
     },
     "homeLink": "Ir al inicio de {{brandName}}",
     "loading": "Cargando autenticación",
-    "signup": {
-      "alreadyHaveAccount": "¿Ya tienes una cuenta?",
-      "apple": "Apple",
-      "continue": "Continuar",
-      "email": "Correo electrónico",
-      "emailPlaceholder": "Ingrese su dirección de correo electrónico",
-      "failed": "Solicitud fallida",
-      "google": "Google",
-      "hidePassword": "Ocultar contraseña",
-      "legalAnd": "y la",
-      "legalPrefix": "Acepto los",
-      "or": "o",
-      "password": "Contraseña",
-      "passwordPlaceholder": "Ingrese su contraseña",
-      "privacy": "Política de privacidad",
-      "showPassword": "Mostrar contraseña",
-      "signIn": "Iniciar sesión",
-      "subtitle": "para continuar en {{applicationName}}",
-      "terms": "Términos del servicio",
-      "title": "Crea tu cuenta"
-    },
     "theme": {
       "darkEnabled": "Tema oscuro activado",
       "lightEnabled": "Tema claro activado"
@@ -1671,12 +1649,13 @@
       "saveReason": "Save",
       "sending": "Enviando…",
       "sent": "Enviado a un nuevo chat",
+      "unavailable": "Esa sugerencia ya no está disponible. Se han actualizado las sugerencias.",
       "undoFeedback": "Undo",
       "useSuggestion": "Usar sugerencia"
     },
     "attachments": {
       "attach": "Adjuntar",
-      "fileTooLarge": "{{filename}} supera el límite de 512 MB",
+      "fileTooLarge": "{{filename}} supera el límite de 5 GB",
       "imageUnavailable": "[Imagen no disponible: {{filename}}]",
       "loadingFile": "Cargando {{filename}}",
       "pastedText": "Texto pegado",
@@ -4269,31 +4248,20 @@
     "previousFeature": "Función anterior",
     "tryPrompt": "Probar esta tarea"
   },
-  "feed": {
-    "description": "Próximos pasos sugeridos según tu trabajo reciente.",
-    "emptyDescription": "Las nuevas sugerencias aparecerán aquí.",
-    "emptyTitle": "Estás al día",
-    "title": "Feed"
-  },
   "friendReferrals": {
-    "checkingCode": "Comprobando el código…",
-    "codeApplied": "Código de invitación aplicado",
-    "codeCheckFailed": "No se pudo comprobar el código. Reinténtalo o déjalo vacío para continuar.",
-    "codeLabel": "Tu código de invitación",
-    "codeUnavailable": "Este código no está disponible. Revísalo o déjalo vacío para continuar.",
     "copied": "Copiado",
-    "copyCode": "Copiar código",
     "copyFailed": "No se pudo copiar. Inténtalo de nuevo.",
     "copyLink": "Copiar enlace",
-    "description": "Gana $20 en créditos cuando un amigo se registre con tu código de invitación, compre un usage pack y pase a Pro o superior.",
+    "description": "Recibes $20 en créditos cuando un amigo completa los 3 pasos",
+    "dialogTitle": "Invita a tus amigos y gana $20 por cada uno",
     "earned": "Créditos ganados",
-    "invalidCode": "Usa 6 letras o números, o déjalo vacío para continuar.",
-    "loadFailed": "No se pudo cargar tu código de invitación. Inténtalo de nuevo.",
-    "loading": "Obteniendo tu código de invitación…",
+    "loadFailed": "No se pudo cargar tu enlace de invitación. Inténtalo de nuevo.",
+    "loading": "Obteniendo tu enlace de invitación…",
     "registered": "Amigos registrados",
     "retry": "Reintentar",
-    "signupLabel": "Código de invitación (opcional)",
-    "signupPlaceholder": "Introduce el código de invitación",
+    "stepSignUp": "Se registra con tu enlace de invitación",
+    "stepUpgrade": "Pasa a Pro o superior",
+    "stepUsagePack": "Compra un usage pack",
     "terms": "Solo para nuevos usuarios. Una recompensa por amigo. Los créditos se añaden a tu saldo personal en este espacio y caducan un mes después de recibirlos.",
     "title": "Invita a tus amigos"
   },
@@ -6289,7 +6257,7 @@
       "title": "¡Ups! Algo salió mal"
     },
     "forceUpgrade": {
-      "description": "Esta versión de {{brandName}} ya no es compatible.",
+      "description": "Hemos lanzado nuevas funciones en {{brandName}}. Actualiza para usar la versión más reciente.",
       "title": "Se requiere actualización"
     },
     "mermaid": {

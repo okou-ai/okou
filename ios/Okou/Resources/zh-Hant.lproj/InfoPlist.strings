@@ -15,3 +15,6 @@
 
 /* Home Screen quick action */
 "New chat" = "新建聊天";
+
+/* Home Screen voice input quick action */
+"Voice Input" = "語音輸入";

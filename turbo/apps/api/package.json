@@ -1,6 +1,6 @@
 {
   "name": "api",
-  "version": "2.54.3",
+  "version": "2.54.6",
   "private": true,
   "type": "module",
   "scripts": {
@@ -32,9 +32,9 @@
     "check-types:bootstrap-wiring": "bash scripts/check-types.sh bootstrap-wiring"
   },
   "dependencies": {
-    "@aws-sdk/client-kms": "^3.1159.0",
-    "@aws-sdk/client-s3": "^3.1159.0",
-    "@aws-sdk/s3-request-presigner": "^3.1159.0",
+    "@aws-sdk/client-kms": "^3.1162.0",
+    "@aws-sdk/client-s3": "^3.1162.0",
+    "@aws-sdk/s3-request-presigner": "^3.1162.0",
     "@axiomhq/js": "^2.0.0",
     "@axiomhq/logging": "^0.1.6",
     "@clerk/backend": "^3.13.1",
@@ -58,7 +58,7 @@
     "@t3-oss/env-core": "^0.13.11",
     "@vercel/functions": "^3.4.4",
     "@vercel/oidc": "^3.2.1",
-    "@vercel/otel": "^2.1.2",
+    "@vercel/otel": "^2.2.1",
     "ably": "^2.28.0",
     "agentkeepalive": "^4.6.0",
     "archiver": "^8.0.0",
@@ -113,6 +113,6 @@
     "tsx": "^4.19.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "^8.1.6",
-    "vitest": "^5.0.5"
+    "vitest": "^5.1.0"
   }
 }

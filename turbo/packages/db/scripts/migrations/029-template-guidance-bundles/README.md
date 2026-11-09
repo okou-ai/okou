@@ -132,10 +132,17 @@ that ancestry check.
 
 For `plan-guidance`, supply the reviewed `frozen_inventory`. The job resolves
 the exact default/protected production branch and its unique read/write endpoint,
-using `okou_readonly_access` with a read-only session. It verifies SELECT access
+using the existing `RO` login with a read-only session. It verifies SELECT access
 and absence of UPDATE privileges on both owner tables. Source operations are GET
 only. Every current NULL owner must appear in the inventory. The artifact contains
 only `plan.json`, `inventory.json` and `metadata.json`; no credentials or packages.
+
+The adapter explicitly sets its preflight session read-only before checking
+privileges. The authenticated `session_user` must match the requested login;
+privilege checks use the effective `current_user`. Apply additionally requires
+UPDATE access to each owner's `guidance_bundle` column. A rejected privilege
+preflight retains only its context, scope and privilege booleans in
+`preflight.json`, without starting the backfill operator or recording credentials.
 
 Review that complete plan, including source hashes, owner revisions, scope and
 writer/drain evidence. Then dispatch `apply-guidance` on the same main commit

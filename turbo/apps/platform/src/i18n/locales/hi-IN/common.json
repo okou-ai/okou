@@ -392,8 +392,6 @@
     "sidebar": {
       "ariaLabel": "साइड बार",
       "chat": "चैट",
-      "feedWaiting_one": "{{count}} प्रतीक्षारत",
-      "feedWaiting_other": "{{count}} प्रतीक्षारत",
       "hideChatList": "चैट सूची छिपाएं",
       "mobile": {
         "invite": "आमंत्रित करें",
@@ -403,7 +401,6 @@
         "agents": "एजेंटों",
         "artifacts": "आर्टिफ़ैक्ट्स",
         "connectors": "कनेक्टर्स",
-        "feed": "फ़ीड",
         "settings": "सेटिंग्स",
         "workflows": "वर्कफ़्लो",
         "works": "जहां {{agentName}} काम करता है"
@@ -415,6 +412,8 @@
       "resizeChatList": "चैट सूची का आकार बदलें",
       "searchWorkspace": "वर्कस्पेस खोजें",
       "showChatList": "चैट सूची दिखाएं",
+      "suggestionsWaiting_one": "{{count}} प्रतीक्षारत",
+      "suggestionsWaiting_other": "{{count}} प्रतीक्षारत",
       "workspaceSwitcher": {
         "create": "वर्कस्पेस बनाएं",
         "creating": "बनाया जा रहा है...",
@@ -956,27 +955,6 @@
     },
     "homeLink": "{{brandName}} होम पर जाएं",
     "loading": "प्रमाणीकरण लोड हो रहा है",
-    "signup": {
-      "alreadyHaveAccount": "पहले से ही खाता है?",
-      "apple": "Apple",
-      "continue": "जारी रखें",
-      "email": "ईमेल पता",
-      "emailPlaceholder": "अपना ईमेल पता दर्ज करें",
-      "failed": "अनुरोध विफल रहा",
-      "google": "Google",
-      "hidePassword": "पासवर्ड छिपाएँ",
-      "legalAnd": "और",
-      "legalPrefix": "मैं स्वीकार करता हूँ",
-      "or": "या",
-      "password": "पासवर्ड",
-      "passwordPlaceholder": "अपना पासवर्ड दर्ज करें",
-      "privacy": "गोपनीयता नीति",
-      "showPassword": "पासवर्ड दिखाएँ",
-      "signIn": "साइन इन करें",
-      "subtitle": "स्वागत है! आरंभ करने के लिए कृपया विवरण भरें।",
-      "terms": "सेवा की शर्तें",
-      "title": "अपना खाता बनाएं"
-    },
     "theme": {
       "darkEnabled": "डार्क थीम चालू है",
       "lightEnabled": "लाइट थीम चालू है"
@@ -1647,12 +1625,13 @@
       "saveReason": "Save",
       "sending": "भेजा जा रहा है…",
       "sent": "नई चैट में भेजा गया",
+      "unavailable": "यह सुझाव अब उपलब्ध नहीं है। सुझाव रीफ़्रेश कर दिए गए हैं।",
       "undoFeedback": "Undo",
       "useSuggestion": "सुझाव इस्तेमाल करें"
     },
     "attachments": {
       "attach": "अटैच करें",
-      "fileTooLarge": "{{filename}} 512 MB सीमा से अधिक है",
+      "fileTooLarge": "{{filename}} 5 GB सीमा से अधिक है",
       "imageUnavailable": "[छवि अनुपलब्ध: {{filename}}]",
       "loadingFile": "{{filename}} लोड हो रहा है",
       "pastedText": "पेस्ट किया गया टेक्स्ट",
@@ -4215,31 +4194,20 @@
     "previousFeature": "पिछली सुविधा",
     "tryPrompt": "यह काम आज़माएँ"
   },
-  "feed": {
-    "description": "आपके हाल के काम के आधार पर सुझाए गए अगले कदम।",
-    "emptyDescription": "नए सुझाव यहाँ दिखाई देंगे।",
-    "emptyTitle": "आप पूरी तरह अप टू डेट हैं",
-    "title": "फ़ीड"
-  },
   "friendReferrals": {
-    "checkingCode": "आमंत्रण कोड जाँचा जा रहा है…",
-    "codeApplied": "आमंत्रण कोड लागू किया गया",
-    "codeCheckFailed": "कोड जाँचा नहीं जा सका। फिर कोशिश करें या जारी रखने के लिए खाली छोड़ें।",
-    "codeLabel": "आपका आमंत्रण कोड",
-    "codeUnavailable": "यह कोड उपलब्ध नहीं है। इसे जाँचें या जारी रखने के लिए खाली छोड़ें।",
     "copied": "कॉपी किया गया",
-    "copyCode": "कोड कॉपी करें",
     "copyFailed": "कॉपी नहीं हो सका। फिर कोशिश करें।",
     "copyLink": "लिंक कॉपी करें",
-    "description": "जब कोई मित्र आपके आमंत्रण कोड से साइन अप करता है, usage pack खरीदता है और Pro या उससे ऊपर अपग्रेड करता है, तो $20 के क्रेडिट पाएँ।",
+    "description": "किसी दोस्त के तीनों चरण पूरे करने पर आपको $20 के क्रेडिट मिलते हैं",
+    "dialogTitle": "दोस्तों को आमंत्रित करें, हर एक पर $20 पाएं",
     "earned": "मिले हुए क्रेडिट",
-    "invalidCode": "6 अक्षर या अंक दर्ज करें, या जारी रखने के लिए खाली छोड़ें।",
-    "loadFailed": "आपका आमंत्रण कोड लोड नहीं हो सका। फिर कोशिश करें।",
-    "loading": "आपका आमंत्रण कोड लाया जा रहा है…",
+    "loadFailed": "आपका आमंत्रण लिंक लोड नहीं हो सका। फिर कोशिश करें।",
+    "loading": "आपका आमंत्रण लिंक लाया जा रहा है…",
     "registered": "साइन अप करने वाले दोस्त",
     "retry": "फिर कोशिश करें",
-    "signupLabel": "आमंत्रण कोड (वैकल्पिक)",
-    "signupPlaceholder": "आमंत्रण कोड दर्ज करें",
+    "stepSignUp": "आपके आमंत्रण लिंक से साइन अप करता है",
+    "stepUpgrade": "Pro या उससे ऊपर में अपग्रेड करता है",
+    "stepUsagePack": "usage pack खरीदता है",
     "terms": "केवल नए उपयोगकर्ताओं के लिए। हर दोस्त पर एक बार इनाम मिलता है। क्रेडिट इस कार्यक्षेत्र में आपके निजी बैलेंस में जुड़ते हैं और मिलने के एक महीने बाद समाप्त होते हैं।",
     "title": "दोस्तों को आमंत्रित करें"
   },
@@ -6224,7 +6192,7 @@
       "title": "उफ़! कुछ बग़ल में चला गया"
     },
     "forceUpgrade": {
-      "description": "{{brandName}} का यह संस्करण अब समर्थित नहीं है।",
+      "description": "हमने {{brandName}} में नई सुविधाएँ जारी की हैं। नवीनतम संस्करण पाने के लिए रीफ़्रेश करें।",
       "title": "अद्यतन आवश्यक है"
     },
     "mermaid": {

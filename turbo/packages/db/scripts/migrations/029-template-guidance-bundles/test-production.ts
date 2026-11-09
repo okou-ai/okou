@@ -29,27 +29,55 @@ const context = contextSchema.parse({
   writersDrained: true,
 });
 const readonlyPermissions = {
-  role: "okou_readonly_access",
+  login: "RO",
+  role: "RO",
   readonly: true,
   selectUser: true,
   selectPresentation: true,
   writableUser: false,
   writablePresentation: false,
+  updateUserBundle: false,
+  updatePresentationBundle: false,
 };
-validateRolePermissions(readonlyPermissions, "okou_readonly_access", false);
+validateRolePermissions(readonlyPermissions, "RO", false);
 for (const changed of [
   { readonly: false },
   { selectUser: false },
   { selectPresentation: false },
   { writableUser: true },
   { writablePresentation: true },
-  { role: "foreign" },
+  { login: "foreign" },
 ])
   assert.throws(() => {
     return validateRolePermissions(
       { ...readonlyPermissions, ...changed },
-      "okou_readonly_access",
+      "RO",
       false,
+    );
+  }, /ProductionRolePrivilegesRejected/u);
+const applyPermissions = {
+  ...readonlyPermissions,
+  login: "neondb_owner",
+  role: "database_effective_owner",
+  writableUser: true,
+  writablePresentation: true,
+  updateUserBundle: true,
+  updatePresentationBundle: true,
+};
+validateRolePermissions(applyPermissions, "neondb_owner", true);
+for (const changed of [
+  { login: "foreign" },
+  { readonly: false },
+  { selectUser: false },
+  { selectPresentation: false },
+  { updateUserBundle: false },
+  { updatePresentationBundle: false },
+])
+  assert.throws(() => {
+    return validateRolePermissions(
+      { ...applyPermissions, ...changed },
+      "neondb_owner",
+      true,
     );
   }, /ProductionRolePrivilegesRejected/u);
 const host = "ep-production.us-west-2.aws.neon.tech";
@@ -145,6 +173,7 @@ function neonPeer(
     | "none"
     | "unprotected"
     | "foreign-uri"
+    | "missing-password"
     | "multiple"
     | "query-override" = "none",
 ): typeof fetch {
@@ -182,7 +211,7 @@ function neonPeer(
     assert.equal(url.searchParams.get("pooled"), "false");
     const role = url.searchParams.get("role_name");
     return Response.json({
-      uri: `postgresql://${role}:fixture-password@${change === "foreign-uri" ? "ep-untrusted.neon.tech" : host}/neondb?sslmode=require${change === "query-override" ? "&host=untrusted" : ""}`,
+      uri: `postgresql://${role}${change === "missing-password" ? "" : ":fixture-password"}@${change === "foreign-uri" ? "ep-untrusted.neon.tech" : host}/neondb?sslmode=require${change === "query-override" ? "&host=untrusted" : ""}`,
     });
   };
 }
@@ -193,10 +222,7 @@ for (const mode of ["plan-guidance", "apply-guidance"] as const) {
     new URL(target.connection).searchParams.get("sslmode"),
     "verify-full",
   );
-  assert.equal(
-    target.role,
-    mode === "plan-guidance" ? "okou_readonly_access" : "neondb_owner",
-  );
+  assert.equal(target.role, mode === "plan-guidance" ? "RO" : "neondb_owner");
 }
 for (const changed of [
   "unprotected",
@@ -207,6 +233,10 @@ for (const changed of [
   await assert.rejects(
     resolveTarget("apply-guidance", "fixture", neonPeer(changed)),
   );
+await assert.rejects(
+  resolveTarget("plan-guidance", "fixture", neonPeer("missing-password")),
+  /ProductionConnectionPasswordRequired/u,
+);
 
 const run = {
   id: 100,

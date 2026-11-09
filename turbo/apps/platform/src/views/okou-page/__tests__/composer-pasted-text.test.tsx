@@ -5,13 +5,13 @@ import {
   type UploadCompleteResponse,
 } from "@okouai/api-contracts/contracts/uploads";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { MAX_ATTACHMENT_UPLOAD_BYTES } from "@okouai/core/upload-limits";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test, vi } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
-import { CHAT_UPLOAD_MAX_FILE_SIZE } from "../../../lib/chat-upload.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_THREAD_ID,
@@ -206,12 +206,12 @@ test("A size-rejected long paste stays inline and can be sent", async () => {
       sentMessage = userMessage;
     },
   });
-  // Exercise the browser's file metadata boundary without a 512 MiB allocation.
+  // Exercise the browser's file metadata boundary without a multi-gigabyte allocation.
   vi.spyOn(File.prototype, "size", "get").mockImplementation(function (
     this: File,
   ) {
     return this.name === FIRST_FILENAME
-      ? CHAT_UPLOAD_MAX_FILE_SIZE + 1
+      ? MAX_ATTACHMENT_UPLOAD_BYTES + 1
       : new Blob([this]).size;
   });
   const editor = await openComposer();
@@ -222,7 +222,7 @@ test("A size-rejected long paste stays inline and can be sent", async () => {
   await user.paste(textClipboard(text));
 
   await expect(
-    screen.findByText(`${FIRST_FILENAME} exceeds the 512 MB limit`),
+    screen.findByText(`${FIRST_FILENAME} exceeds the 5 GB limit`),
   ).resolves.toBeInTheDocument();
   await waitFor(() => {
     expect(editor.textContent).toBe(text);

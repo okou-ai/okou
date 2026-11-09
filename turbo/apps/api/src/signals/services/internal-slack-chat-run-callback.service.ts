@@ -1,3 +1,4 @@
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import {
   featureSwitchContextFromRows,
   userFeatureSwitchRowCondition,
@@ -27,7 +28,10 @@ import { logger } from "../../lib/log";
 import { command } from "ccstate";
 import { db$, writeDb$ } from "../external/db";
 import { chatEventTypeIn } from "./chat-event-type.service";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventError,
+} from "./canonical-chat-event-read.service";
 import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { createSlackClient } from "../external/slack-message-client";
 import { now, nowDate } from "../../lib/time";
@@ -139,7 +143,10 @@ const loadSlackChatDeliveryContext$ = command(
     }
 
     const [event] = await db
-      .select({ content: canonicalChatEventContent() })
+      .select({
+        content: canonicalChatEventContent(),
+        error: canonicalChatEventError(),
+      })
       .from(chatEvents)
       .where(
         and(
@@ -195,7 +202,7 @@ const loadSlackChatDeliveryContext$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return { payload, run, messageContent, binding };
+    return { payload, run, messageContent, messageError: event.error, binding };
   },
 );
 
@@ -312,7 +319,7 @@ const deliverClaimedSlackChatCallback$ = command(
     signal: AbortSignal,
   ): Promise<"delivered" | "skipped_revoked"> => {
     const db = get(db$);
-    const { payload, run, messageContent, binding } = await set(
+    const { payload, run, messageContent, messageError, binding } = await set(
       loadSlackChatDeliveryContext$,
       args,
       signal,
@@ -365,10 +372,20 @@ const deliverClaimedSlackChatCallback$ = command(
     ]);
     signal.throwIfAborted();
 
+    const content = await set(
+      formatIntegrationChatMessage$,
+      {
+        orgId: run.orgId,
+        userId: run.userId,
+        content: messageContent,
+        error: messageError,
+      },
+      signal,
+    );
     return await set(postSlackChatMessage$, {
       botToken,
       channelId: payload.channelId,
-      content: messageContent,
+      content,
       threadTs: payload.threadTs,
       footerText: presentation.footerText,
     });

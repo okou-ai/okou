@@ -45,6 +45,7 @@ import {
   setAgentPhoneConnectDialogOpen$,
   watchAgentPhoneConnection$,
 } from "./agentphone.ts";
+import { enterHomeSuggestions$ } from "./agent-suggestion-session.ts";
 
 const restoreMarketingAgentDraft$ = command(
   async ({ get, set }, agentDraft: EnsuredAgentDraft, signal: AbortSignal) => {
@@ -99,6 +100,12 @@ const setupChatPageForAgent$ = command(
       set(watchAgentPhoneConnection$, signal),
       Reason.Daemon,
       "get started phone link",
+    );
+    // The suggestion cards render under the page while they load.
+    detach(
+      set(enterHomeSuggestions$, signal),
+      Reason.Daemon,
+      "home suggestions",
     );
 
     await set(hideAppSkeleton$, signal);

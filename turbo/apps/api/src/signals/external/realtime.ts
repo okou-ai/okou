@@ -441,7 +441,8 @@ export async function publishThreadListChangedSafely(target: {
 /**
  * Fire the per-user-org signal that an input of `GET /api/indicators` changed:
  * a Run became pending, a Run terminal marker committed, or a thread was muted,
- * unmuted or deleted. Read-cursor changes use `chatThreadReadCursorUpdated`.
+ * unmuted, hidden or deleted. Read-cursor changes use
+ * `chatThreadReadCursorUpdated`.
  * The SharedWorker refreshes indicators only on these two topics, so Run output
  * does not refetch them. Publish only after the change commits; the payload is
  * empty because the server is authoritative.

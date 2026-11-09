@@ -1,6 +1,6 @@
 {
   "name": "@okouai/cli",
-  "version": "10.18.14",
+  "version": "10.18.16",
   "private": true,
   "description": "Okou command-line interface",
   "repository": {
@@ -64,7 +64,7 @@
     "tsup": "^8.5.1",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "undici": "^8.12.2",
-    "vitest": "^5.0.5",
+    "vitest": "^5.1.0",
     "ws": "^8.21.3",
     "yaml": "^2.9.0",
     "zod": "^4.3.6"

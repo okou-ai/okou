@@ -9,6 +9,9 @@ readonly PROVIDER_BALANCE_FAILURE_COMMIT=0367d976a87fe1251fcb9b6cfe545a8b24e4f2b
 readonly IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT=01d21f7c5857795104c27cd54e724f2ced2d683e
 # App saves now require #44980's reserved twelve-character address in responses.
 readonly MARKETING_HANDOFF_SHORT_ADDRESS_WRITER_COMMIT=046a7bac03cc5f5a94cc67394756f69be2eaf111
+# The App refreshes chat indicators only on #45712's chatIndicatorsChanged
+# signal; earlier APIs never publish it.
+readonly CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT=ac0609591b2a0a5f159afb50b7561df46a23f6a4
 # #40232 installs Pi's runtime with Runner. URL-free APIs cannot serve earlier
 # Guests during the Runner-first rollback interval, even for an older API target.
 readonly BUNDLED_ONLY_CLI_RUNNER_COMMIT=dfff1605013103371cd90962ee5b54c80fc93140
@@ -225,6 +228,9 @@ if ! git merge-base --is-ancestor "$IMMUTABLE_DEFAULT_AGENT_WRITER_COMMIT" "$TAR
 fi
 if ! git merge-base --is-ancestor "$MARKETING_HANDOFF_SHORT_ADDRESS_WRITER_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates Marketing handoff short-address responses: ${MARKETING_HANDOFF_SHORT_ADDRESS_WRITER_COMMIT}."
+fi
+if ! git merge-base --is-ancestor "$CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates chat indicator change signals: ${CHAT_INDICATORS_CHANGED_PUBLISHER_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$STRUCTURED_DISK_TELEMETRY_READER_COMMIT" "$TARGET_COMMIT"; then

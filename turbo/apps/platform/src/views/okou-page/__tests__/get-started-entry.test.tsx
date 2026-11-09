@@ -53,7 +53,7 @@ import {
 const QUEST_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const context = testContext();
 
-test("The gift opens invitations independently of credit quests, with code and link copying", async () => {
+test("The gift opens invitations independently of credit quests and copies the invitation link", async () => {
   const status = configureQuestPage(context, "admin");
   status.quests = [];
   const linkReady = context.mocks.deferred<void>();
@@ -69,7 +69,10 @@ test("The gift opens invitations independently of credit quests, with code and l
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.FriendReferrals]: true,
+      [FeatureSwitchKey.SingleAgent]: false,
+    },
     auth: {
       user: { id: "test-user-123", fullName: "Referral User" },
       organization: {
@@ -88,43 +91,34 @@ test("The gift opens invitations independently of credit quests, with code and l
   entry.focus();
   await user.keyboard("{Enter}");
   const dialog = await screen.findByRole("dialog", {
-    name: "Invite your friends",
+    name: "Invite friends, get $20 each",
   });
   expect(
     within(dialog).getByText(
-      /buys a usage pack, and upgrades to Pro or above/u,
+      "You get $20 in credits once a friend completes all 3 steps",
     ),
   ).toBeInTheDocument();
+  expect(within(dialog).getByText("Buys a usage pack")).toBeInTheDocument();
   expect(
-    within(dialog).getByText(/expire one month after they are granted/u),
+    within(dialog).getByText(/expire 1 month after they’re granted/u),
   ).toBeInTheDocument();
   await expect(
     within(dialog).findByRole("status", {
-      name: "Getting your invitation code…",
+      name: "Getting your invitation link…",
     }),
   ).resolves.toBeInTheDocument();
   linkReady.resolve();
-  const code = await within(dialog).findByLabelText("Your invitation code");
-  expect(code).toHaveValue("a7k2p9");
-  expect(
-    within(dialog).queryByDisplayValue(
-      `${location.origin}/sign-up?friend_referral=a7k2p9`,
-    ),
-  ).not.toBeInTheDocument();
-  expect(within(dialog).getByText("40,000")).toBeInTheDocument();
-  click(buttonNamed("Copy code", dialog));
   await waitFor(() => {
-    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+    return buttonNamed("Copy invite link", dialog);
   });
-  await expect(navigator.clipboard.readText()).resolves.toBe("a7k2p9");
-  click(buttonNamed("Copy link", dialog));
+  expect(within(dialog).getByText("40,000")).toBeInTheDocument();
+  click(buttonNamed("Copy invite link", dialog));
   await waitFor(() => {
     expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
   });
   await expect(navigator.clipboard.readText()).resolves.toBe(
     `${location.origin}/sign-up?friend_referral=a7k2p9`,
   );
-  expect(buttonNamed("Copy code", dialog)).toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
@@ -139,7 +133,9 @@ test("The gift opens invitations independently of credit quests, with code and l
     return buttonNamed("Invite your friends", document.body);
   });
   await user.click(reopenedEntry);
-  await screen.findByRole("dialog", { name: "Invite your friends" });
+  await screen.findByRole("dialog", {
+    name: "Invite friends, get $20 each",
+  });
   act(() => {
     window.history.forward();
   });
@@ -150,7 +146,9 @@ test("The gift opens invitations independently of credit quests, with code and l
   await waitFor(() => {
     expect(pathname()).toBe(questChatPath());
     expect(
-      screen.queryByRole("dialog", { name: "Invite your friends" }),
+      screen.queryByRole("dialog", {
+        name: "Invite friends, get $20 each",
+      }),
     ).not.toBeInTheDocument();
   });
 });
@@ -176,7 +174,10 @@ test("Referral link failures can be retried in the same dialog", async () => {
   await setupPage({
     context,
     path: questChatPath(),
-    featureSwitches: { [FeatureSwitchKey.FriendReferrals]: true },
+    featureSwitches: {
+      [FeatureSwitchKey.FriendReferrals]: true,
+      [FeatureSwitchKey.SingleAgent]: false,
+    },
     auth: {
       user: { id: "test-user-123", fullName: "Referral User" },
       organization: {
@@ -191,16 +192,16 @@ test("Referral link failures can be retried in the same dialog", async () => {
   await screen.findByTestId("get-started-entry");
   click(buttonNamed("Invite your friends", document.body));
   const dialog = await screen.findByRole("dialog", {
-    name: "Invite your friends",
+    name: "Invite friends, get $20 each",
   });
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-    "Your invitation code could not be loaded. Try again.",
+    "Your invitation link could not be loaded. Try again.",
   );
   failed = false;
   click(buttonNamed("Try again", dialog));
-  await expect(
-    within(dialog).findByLabelText("Your invitation code"),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(buttonNamed("Copy invite link", dialog)).toBeInTheDocument();
+  });
 });
 
 test("The invitation gift is hidden when friend referrals are disabled", async () => {

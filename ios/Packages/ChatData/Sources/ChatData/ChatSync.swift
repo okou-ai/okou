@@ -7,6 +7,7 @@ public actor ChatSync {
   private let chatEventSchemaVersion = 8
   private let threadEventRebaseThreshold = 100
   private let cache: ChatCache?
+  private var indicatorState = ChatIndicatorCacheState()
   private var histories: [String: CachedHistory] = [:]
   private var readingHistories = Set<String>()
   private struct HistoryWaiter {
@@ -98,6 +99,8 @@ public actor ChatSync {
     } catch is CancellationError {
       throw CancellationError()
     } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatSync")
+        .info("Keeping available unread state: \(error.localizedDescription, privacy: .public)")
       indicators = nil
     }
     let threads = result.threads.map { thread in
@@ -168,8 +171,107 @@ public actor ChatSync {
     return (current, eventIDs, state.cursor)
   }
 
+  public func cachedIndicators() async -> CachedChatIndicators? {
+    guard let cache else { return indicatorState.snapshot }
+    do {
+      return try await cache.loadIndicators()
+    } catch {
+      logIndicatorCacheFailure(error)
+      // A process-local counter cannot stand in for the shared cache revision.
+      // The mounted list already owns its last confirmed presentation.
+      return nil
+    }
+  }
+
   public func indicators() async throws -> Indicators {
-    try await client.request("/api/indicators")
+    let localRequest = indicatorState.beginRead()
+    let request: ChatIndicatorsRead?
+    do { request = try await cache?.beginIndicatorsRead() } catch {
+      logIndicatorCacheFailure(error)
+      request = nil
+    }
+    let result: Indicators = try await client.request("/api/indicators")
+    try Task.checkCancellation()
+    let threads = await cachedThreads() ?? []
+    try Task.checkCancellation()
+    guard indicatorState.accepts(localRequest) else {
+      guard let current = await cachedIndicators() else { throw CancellationError() }
+      return current.indicators
+    }
+    if let request, let cache {
+      do {
+        let saved = try await cache.saveIndicators(result, threads: threads, request: request)
+        if !saved {
+          // A newer request or confirmed mutation won in the other process.
+          guard let current = try await cache.loadIndicators() else { throw CancellationError() }
+          indicatorState.snapshot = current
+          return current.indicators
+        }
+      } catch is CancellationError {
+        throw CancellationError()
+      } catch { logIndicatorCacheFailure(error) }
+    }
+    try Task.checkCancellation()
+    guard indicatorState.save(result, threads: threads, request: localRequest) else {
+      guard let current = await cachedIndicators() else { throw CancellationError() }
+      return current.indicators
+    }
+    return result
+  }
+
+  func changeReadState(_ change: ChatReadStateChange) async {
+    // Fence the in-flight local readers before suspending for disk metadata.
+    indicatorState.change(change)
+    let threads: [ChatThread]
+    if case .invalidated = change {
+      threads = []
+    } else {
+      threads = await cachedThreads() ?? []
+    }
+    do { try await cache?.changeReadState(change, threads: threads) } catch {
+      logIndicatorCacheFailure(error)
+    }
+  }
+
+  private func logIndicatorCacheFailure(_ error: Error) {
+    Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+      .error("Unread cache unavailable: \(error.localizedDescription, privacy: .public)")
+  }
+
+  /// Both push entry points own and cancel the optional indicators read. It
+  /// starts alongside history, but cannot extend the core prefetch deadline.
+  public func prefetchNotification(threadID: String, runID: String, tailOnly: Bool = false)
+    async throws -> PrefetchReceipt
+  {
+    try await withThrowingTaskGroup(of: PrefetchReceipt?.self) { group in
+      group.addTask {
+        do { _ = try await self.indicators() } catch {
+          if !Task.isCancelled {
+            Logger(subsystem: "ai.okou.ios", category: "ChatSync")
+              .info("Push unread unavailable: \(error.localizedDescription, privacy: .public)")
+          }
+        }
+        return nil
+      }
+      group.addTask {
+        let receipt: PrefetchReceipt
+        if tailOnly {
+          receipt = try await self.prefetchHistoryTail(threadID: threadID, runID: runID)
+        } else {
+          receipt = try await self.prefetchHistory(threadID: threadID, runID: runID)
+        }
+        try Task.checkCancellation()
+        try await self.prefetchThreadList()
+        return receipt
+      }
+      while let result = try await group.next() {
+        if let result {
+          group.cancelAll()
+          return result
+        }
+      }
+      throw CancellationError()
+    }
   }
 
   private struct ThreadListState {

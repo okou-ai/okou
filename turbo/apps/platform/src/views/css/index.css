@@ -942,28 +942,13 @@ body {
     font-family: var(--font-family-mono);
   }
 
-  /* Global scrollbar styling */
+  /* Global scrollbar styling. Only the standard properties: Chrome 121+ and
+     Safari 18.2+ ignore every `::-webkit-scrollbar` rule on an element that
+     sets either of them, and in older WebKit those rules forced a classic
+     scrollbar that takes layout space even where macOS overlays scrollbars. */
   * {
     scrollbar-width: thin;
     scrollbar-color: hsl(var(--muted-foreground) / 0.2) transparent;
-  }
-
-  *::-webkit-scrollbar {
-    width: 6px;
-    height: 6px;
-  }
-
-  *::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  *::-webkit-scrollbar-thumb {
-    background-color: hsl(var(--muted-foreground) / 0.2);
-    border-radius: 3px;
-  }
-
-  *::-webkit-scrollbar-thumb:hover {
-    background-color: hsl(var(--muted-foreground) / 0.3);
   }
 }
 
@@ -1302,8 +1287,11 @@ body {
   }
 
   /* --- Code Blocks -------------------------------------------------------- */
+  /* The code scrolls inside `MarkdownHorizontalScroll`, not on `pre`; `clip`
+     keeps the overlaid scrollbar inside the rounded border without making `pre`
+     a second scroll container. */
   .wmde-markdown pre {
-    overflow-x: auto;
+    overflow: clip;
     max-width: 100%;
     width: 100%;
     box-sizing: border-box;
@@ -1315,11 +1303,6 @@ body {
   .wmde-markdown pre tt {
     background-color: transparent;
     border: 0;
-  }
-
-  /* Code block scrollbar */
-  .wmde-markdown pre > code::-webkit-scrollbar-thumb {
-    background: hsl(var(--gray-400));
   }
 
   /* --- KBD ---------------------------------------------------------------- */

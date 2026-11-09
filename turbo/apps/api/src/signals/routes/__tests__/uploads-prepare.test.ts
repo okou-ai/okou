@@ -214,7 +214,7 @@ describe("POST /api/uploads/prepare", () => {
     });
   });
 
-  it("rejects files larger than 1 GB with 400", async () => {
+  it("rejects files larger than 5 GB with 400", async () => {
     const userId = `user_${randomUUID()}`;
     const orgId = `org_${randomUUID()}`;
     mocks.clerk.session(userId, orgId);
@@ -227,7 +227,7 @@ describe("POST /api/uploads/prepare", () => {
         body: {
           filename: "big.bin",
           contentType: "application/pdf",
-          size: 1024 * 1024 * 1024 + 1,
+          size: 5 * 1024 * 1024 * 1024 + 1,
         },
         headers: { authorization: "Bearer clerk-session" },
       }),

@@ -1,4 +1,4 @@
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
@@ -87,6 +87,45 @@ test("An empty conversation offers capabilities without an avatar and sends its 
   ).toBeNull();
   expect(capture.threadCreates).toStrictEqual([]);
 });
+
+test.each([
+  ["home", `/agents/${AGENT_ID}/chat`],
+  ["empty conversation", `/chats/${THREAD_ID}`],
+])(
+  "The %s lists compliance statuses under the capabilities in the same column",
+  async (_surface, path) => {
+    mockTemplateChat();
+    await setupPage({
+      context,
+      path,
+      featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: true },
+    });
+    const discovery = await screen.findByRole("group", {
+      name: "Explore Okou capabilities",
+    });
+    const compliance = screen.getByRole("region", {
+      name: "Okou’s compliance, built for your trust",
+    });
+    expect(
+      discovery.compareDocumentPosition(compliance) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).not.toBe(0);
+    expect(compliance.closest("main")).toBe(discovery.closest("main"));
+    expect(
+      within(compliance)
+        .getAllByRole("listitem")
+        .map((item) => {
+          return item.textContent;
+        }),
+    ).toStrictEqual([
+      "SOC 2 Type IIIn progress",
+      "CCPA / CPRACompliant",
+      "GDPRCompliant",
+      "HIPAAAligned",
+      "ISO/IEC 27001Aligned",
+    ]);
+  },
+);
 
 test("Capability discovery and templates replace each other while the composer keeps the draft and template", async () => {
   mockTemplateChat();

@@ -291,6 +291,68 @@ describe.each(ownerKinds)("%s bundle publication", (kind) => {
   });
 });
 
+test("mounts both template owner kinds once when selections repeat", async () => {
+  const owner = await publicChatActor(context);
+  const fixture = await owner.run(() => {
+    return Promise.resolve(installS3Fixture(context));
+  });
+  const selections: GenerationTemplateRequest[] = [];
+  const expected = [];
+  for (const kind of ownerKinds) {
+    const files = guidance(kind);
+    const published = await owner.run(async () => {
+      return await publish(
+        kind,
+        await uploadInputs(owner.actor, fixture, tarGz(files)),
+      );
+    });
+    if (published.status !== 200) {
+      throw new Error("Expected a published template");
+    }
+    selections.push(selection(kind, published.body.id));
+    expected.push({ ownerKind: kind, templateId: published.body.id, files });
+  }
+  const run = await owner.sendChatRun(owner.actor, {
+    agentId: owner.agentId,
+    model: "claude-fable-5-1",
+    prompt: "Use both attached templates",
+    userMessage: {
+      version: 1,
+      parts: [
+        { type: "text", text: "Use both attached templates" },
+        ...[...selections, ...selections].map((template) => {
+          return {
+            type: "template" as const,
+            titleSnapshot: "Selected template",
+            template,
+          };
+        }),
+      ],
+    },
+  });
+  const { claim } = await owner.claimChatRun(owner.runnerGroup, run.runId);
+  expect(claim.contentBundles.templates).toHaveLength(expected.length);
+  for (const item of expected) {
+    const bundle = claim.contentBundles.templates?.find((candidate) => {
+      return (
+        candidate.ownerKind === item.ownerKind &&
+        candidate.templateId === item.templateId
+      );
+    });
+    if (!bundle) {
+      throw new Error("Expected each selected template in the claim");
+    }
+    expect(
+      readTemplateGuidanceBundle(fixture.readSignedObject(bundle.downloadUrl), {
+        sha256: bundle.sha256,
+        archiveBytes: bundle.archiveBytes,
+      }).map((file) => {
+        return { path: file.path, content: file.content.toString("utf8") };
+      }),
+    ).toStrictEqual(item.files);
+  }
+});
+
 test("allows package replacement and retry after a completed metadata edit", async () => {
   const owner = await publicChatActor(context);
   const fixture = await owner.run(() => {

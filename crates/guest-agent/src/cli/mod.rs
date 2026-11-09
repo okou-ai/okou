@@ -93,6 +93,7 @@ use tokio::io::{AsyncWriteExt, BufWriter};
 use tokio::sync::oneshot;
 use tokio::time::Sleep;
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 
 const LOG_TAG: &str = "sandbox:guest-agent";
 const AGENT_LOG_BUFFER_BYTES: usize = 8 * 1024;
@@ -1223,10 +1224,11 @@ async fn execute_cli_inner(
         diagnostics::CliStderrLineObserver::None
     };
     let startup_segments = pi_startup.map(PiStartupTiming::segment_observer);
-    let mut stderr_handle = tokio::spawn(async move {
+    // Keep both pipe workers owned if the execution future is abandoned.
+    let mut stderr_handle = AbortOnDropHandle::new(tokio::spawn(async move {
         diagnostics::collect_stderr_result_tail_observed(stderr, stderr_observer, startup_segments)
             .await
-    });
+    }));
 
     let (pi_rpc_response_tx, pi_rpc_response_rx) = pi_rpc::response_channel();
     let (pi_rpc_startup_tx, pi_rpc_startup_rx) = tokio::sync::oneshot::channel();
@@ -1259,7 +1261,7 @@ async fn execute_cli_inner(
         let run_id = runtime.run_id.to_string();
         let prompt = runtime.prompt.to_string();
         let pi_rpc_cancellation = pi_rpc_cancellation.clone();
-        tokio::spawn(async move {
+        AbortOnDropHandle::new(tokio::spawn(async move {
             if pi_execution {
                 pi_rpc::write_commands(
                     cli_stdin,
@@ -1275,7 +1277,7 @@ async fn execute_cli_inner(
                 drop(pi_rpc_response_rx);
                 write_claude_stream_json_to_stdin(cli_stdin, &run_id, &prompt, active_input).await
             }
-        })
+        }))
     });
 
     // Stream CLI stdout JSONL, racing against heartbeat and process exit.

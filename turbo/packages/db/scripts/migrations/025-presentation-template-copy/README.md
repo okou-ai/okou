@@ -14,6 +14,11 @@ Source uploads and page images are independently owned objects; their keys are
 preserved, along with the template UUID, organization, owner and audit fields.
 Legacy `public` maps to `organization`.
 
+Every source must have a validated immutable `guidance_bundle` descriptor. The
+copy preserves that descriptor in the destination under the same source-row
+fingerprint guard; it never creates a NULL-guidance owner. Bundle archives are
+content addressed and shared independently of the retained Storage copies.
+
 ## Run
 
 The manual **Copy Production Presentation Templates** GitHub workflow runs this

@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "사이드바",
       "chat": "채팅",
-      "feedWaiting_other": "대기 중 {{count}}개",
       "hideChatList": "채팅 목록 숨기기",
       "mobile": {
         "invite": "초대",
@@ -402,7 +401,6 @@
         "agents": "에이전트",
         "artifacts": "아티팩트",
         "connectors": "커넥터",
-        "feed": "피드",
         "settings": "설정",
         "workflows": "워크플로",
         "works": "{{agentName}}가(이) 작업하는 곳"
@@ -414,6 +412,7 @@
       "resizeChatList": "채팅 목록 크기 조절",
       "searchWorkspace": "워크스페이스 검색",
       "showChatList": "채팅 목록 표시",
+      "suggestionsWaiting_other": "대기 중 {{count}}개",
       "workspaceSwitcher": {
         "create": "워크스페이스 만들기",
         "creating": "만드는 중…",
@@ -954,27 +953,6 @@
     },
     "homeLink": "{{brandName}} 홈으로 이동",
     "loading": "인증 중",
-    "signup": {
-      "alreadyHaveAccount": "계정이 있으신가요?",
-      "apple": "Apple",
-      "continue": "계속",
-      "email": "이메일 주소",
-      "emailPlaceholder": "이메일 주소를 입력하세요",
-      "failed": "요청 실패",
-      "google": "Google",
-      "hidePassword": "비밀번호 숨기기",
-      "legalAnd": "및",
-      "legalPrefix": "다음 내용에 동의합니다:",
-      "or": "또는",
-      "password": "비밀번호",
-      "passwordPlaceholder": "비밀번호를 입력하세요",
-      "privacy": "개인정보 처리방침",
-      "showPassword": "비밀번호 표시",
-      "signIn": "로그인하기",
-      "subtitle": "환영해요! 아래 정보를 입력해 주세요.",
-      "terms": "서비스 약관",
-      "title": "계정 만들기"
-    },
     "theme": {
       "darkEnabled": "어두운 테마가 켜졌습니다",
       "lightEnabled": "밝은 테마가 켜졌습니다"
@@ -1644,12 +1622,13 @@
       "saveReason": "Save",
       "sending": "보내는 중…",
       "sent": "새 채팅으로 보냈습니다",
+      "unavailable": "이 제안은 더 이상 사용할 수 없습니다. 제안을 새로고침했습니다.",
       "undoFeedback": "Undo",
       "useSuggestion": "제안 사용"
     },
     "attachments": {
       "attach": "첨부",
-      "fileTooLarge": "{{filename}} 파일이 512MB 제한을 초과했습니다",
+      "fileTooLarge": "{{filename}} 파일이 5GB 제한을 초과했습니다",
       "imageUnavailable": "[이미지 없음: {{filename}}]",
       "loadingFile": "{{filename}} 불러오는 중",
       "pastedText": "붙여넣은 텍스트",
@@ -4200,31 +4179,20 @@
     "previousFeature": "이전 기능",
     "tryPrompt": "이 작업 시작하기"
   },
-  "feed": {
-    "description": "최근 작업을 바탕으로 제안된 다음 단계입니다.",
-    "emptyDescription": "새로운 제안이 여기에 표시됩니다.",
-    "emptyTitle": "모두 확인했어요",
-    "title": "피드"
-  },
   "friendReferrals": {
-    "checkingCode": "초대 코드 확인 중…",
-    "codeApplied": "초대 코드가 적용되었습니다",
-    "codeCheckFailed": "코드를 확인하지 못했습니다. 다시 시도하거나 비워 두고 계속하세요.",
-    "codeLabel": "내 초대 코드",
-    "codeUnavailable": "사용할 수 없는 초대 코드입니다. 확인하거나 비워 두고 계속하세요.",
     "copied": "복사됨",
-    "copyCode": "코드 복사",
     "copyFailed": "복사하지 못했습니다. 다시 시도해 주세요.",
     "copyLink": "링크 복사",
-    "description": "친구가 내 초대 코드로 가입하고 usage pack을 구매하여 Pro 이상으로 업그레이드하면 $20 상당의 credits를 받을 수 있습니다.",
+    "description": "친구가 3단계를 모두 완료하면 $20 상당의 credits를 받습니다",
+    "dialogTitle": "친구 초대하고 1명당 $20 받기",
     "earned": "받은 크레딧",
-    "invalidCode": "영문 또는 숫자 6자리를 입력하거나 비워 두고 계속하세요.",
-    "loadFailed": "초대 코드를 불러오지 못했습니다. 다시 시도해 주세요.",
-    "loading": "초대 코드를 가져오는 중…",
+    "loadFailed": "초대 링크를 불러오지 못했습니다. 다시 시도해 주세요.",
+    "loading": "초대 링크를 가져오는 중…",
     "registered": "가입한 친구",
     "retry": "다시 시도",
-    "signupLabel": "초대 코드(선택)",
-    "signupPlaceholder": "초대 코드 입력",
+    "stepSignUp": "초대 링크로 가입",
+    "stepUpgrade": "Pro 이상으로 업그레이드",
+    "stepUsagePack": "usage pack 구매",
     "terms": "신규 사용자만 해당하며 친구 1명당 한 번만 보상해요. 이 워크스페이스의 개인 잔액으로 지급되며 지급 후 1개월 뒤 만료돼요.",
     "title": "친구 초대"
   },
@@ -6205,7 +6173,7 @@
       "title": "앗! 문제가 발생했습니다"
     },
     "forceUpgrade": {
-      "description": "이 버전의 {{brandName}}은 더 이상 지원되지 않습니다.",
+      "description": "{{brandName}}에 새로운 기능이 추가되었습니다. 새로고침하여 최신 버전을 사용하세요.",
       "title": "업데이트 필요"
     },
     "mermaid": {

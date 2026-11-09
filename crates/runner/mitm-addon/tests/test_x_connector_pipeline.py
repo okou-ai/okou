@@ -39,7 +39,7 @@ class TestXConnectorResponsePipeline:
         self._usage_webhook_api = usage_webhook_api
 
     async def test_full_response_pipeline_large_x_json_uses_incremental_parser_without_buffer(
-        self, tmp_path, real_flow, mitm_ctx
+        self, tmp_path, real_flow
     ):
         """responseheaders + response bill X JSON without a body-prefix copy."""
         flow = make_x_pipeline_flow(real_flow, tmp_path, query="expansions=author_id")
@@ -208,7 +208,7 @@ class TestXConnectorResponsePipeline:
 
     @pytest.mark.parametrize("encoding_case", ["gzip", "deflate", "br", "zstd"])
     def test_full_response_pipeline_truncated_compressed_x_json_does_not_bill(
-        self, tmp_path, real_flow, mitm_ctx, encoding_case
+        self, tmp_path, real_flow, encoding_case
     ):
         flow = make_x_pipeline_flow(
             real_flow,
@@ -242,9 +242,7 @@ class TestXConnectorResponsePipeline:
         assert entry["parse_error"] == "incomplete compressed body"
         assert "connector_response_finish" not in flow.metadata
 
-    def test_full_response_pipeline_x_data_object_bills_single_resource(
-        self, tmp_path, real_flow, mitm_ctx
-    ):
+    def test_full_response_pipeline_x_data_object_bills_single_resource(self, tmp_path, real_flow):
         """Selective X JSON extraction must count a top-level data object as one resource."""
         flow = make_x_pipeline_flow(
             real_flow,
@@ -265,9 +263,7 @@ class TestXConnectorResponsePipeline:
         assert events[0]["category"] == "posts.read"
         assert events[0]["quantity"] == 1
 
-    def test_full_response_pipeline_x_soft_error_ignores_request_hints(
-        self, tmp_path, real_flow, mitm_ctx
-    ):
+    def test_full_response_pipeline_x_soft_error_ignores_request_hints(self, tmp_path, real_flow):
         """Parsed X soft errors must not fall back to URL hints and bill missing resources."""
         flow = make_x_pipeline_flow(real_flow, tmp_path, query="ids=1,2,3")
 
@@ -291,9 +287,7 @@ class TestXConnectorResponsePipeline:
 
         assert webhook.request_count == 0
 
-    def test_full_response_pipeline_x_root_array_uses_request_hints(
-        self, tmp_path, real_flow, mitm_ctx
-    ):
+    def test_full_response_pipeline_x_root_array_uses_request_hints(self, tmp_path, real_flow):
         """Non-object JSON roots stay unparsed so request-side hints still bill."""
         flow = make_x_pipeline_flow(real_flow, tmp_path, path="/2/tweets?ids=1,2,3")
 
@@ -309,7 +303,7 @@ class TestXConnectorResponsePipeline:
         assert events[0]["category"] == "posts.read"
         assert events[0]["quantity"] == 3
 
-    def test_full_streaming_pipeline_filtered_stream(self, tmp_path, real_flow, mitm_ctx, headers):
+    def test_full_streaming_pipeline_filtered_stream(self, tmp_path, real_flow):
         """Complete rows retain separate resource sources through terminal delivery."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
@@ -350,7 +344,7 @@ class TestXConnectorResponsePipeline:
         ]
 
     async def test_full_streaming_pipeline_empty_rows_preserve_resource_sources(
-        self, tmp_path, real_flow, mitm_ctx
+        self, tmp_path, real_flow
     ):
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
         with self._usage_webhook_api() as webhook:
@@ -403,7 +397,7 @@ class TestXConnectorResponsePipeline:
 
     @pytest.mark.parametrize("method", ["GET", "POST"])
     def test_full_streaming_pipeline_empty_rows_retain_write_pricing(
-        self, tmp_path, real_flow, mitm_ctx, method
+        self, tmp_path, real_flow, method
     ):
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
         flow.request.method = method
@@ -424,9 +418,7 @@ class TestXConnectorResponsePipeline:
         )
         assert len({event["idempotencyKey"] for event in events}) == len(events)
 
-    def test_full_streaming_pipeline_counts_final_line_without_newline(
-        self, tmp_path, real_flow, mitm_ctx, headers
-    ):
+    def test_full_streaming_pipeline_counts_final_line_without_newline(self, tmp_path, real_flow):
         """End-to-end: response() finalizes a complete NDJSON row without trailing newline."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
@@ -449,7 +441,7 @@ class TestXConnectorResponsePipeline:
         assert "connector_response_finish" not in flow.metadata
 
     def test_full_pipeline_compressed_stream_error_preserves_completed_rows(
-        self, tmp_path, real_flow, mitm_ctx, headers, usage_webhook_api
+        self, tmp_path, real_flow, usage_webhook_api
     ):
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
         assert flow.response is not None
@@ -485,9 +477,7 @@ class TestXConnectorResponsePipeline:
         assert len(lost_visibility_entries) == 1
         assert lost_visibility_entries[0]["parse_error"] == "incomplete compressed body"
 
-    def test_full_streaming_pipeline_ignores_malformed_include_values(
-        self, tmp_path, real_flow, mitm_ctx, headers
-    ):
+    def test_full_streaming_pipeline_ignores_malformed_include_values(self, tmp_path, real_flow):
         """Malformed include values are ignored while valid siblings still bill."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
@@ -529,7 +519,7 @@ class TestXConnectorResponsePipeline:
         ],
     )
     async def test_full_streaming_pipeline_continues_after_uninspectable_json_row(
-        self, tmp_path, real_flow, mitm_ctx, headers, failed_line
+        self, tmp_path, real_flow, failed_line
     ):
         """A hostile NDJSON row must not stop later valid rows from billing."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
@@ -555,9 +545,7 @@ class TestXConnectorResponsePipeline:
         assert len(payloads) == len(by_cat)
         assert by_cat == {"posts.read": 1, "user.read": 1}
 
-    def test_full_streaming_pipeline_accepts_many_shallow_containers(
-        self, tmp_path, real_flow, mitm_ctx, headers
-    ):
+    def test_full_streaming_pipeline_accepts_many_shallow_containers(self, tmp_path, real_flow):
         """The nesting guard does not reject a wide but shallow NDJSON row."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
@@ -587,9 +575,7 @@ class TestXConnectorResponsePipeline:
         assert payloads[0]["category"] == "posts.read"
         assert payloads[0]["quantity"] == 1
 
-    def test_full_streaming_pipeline_bounds_unknown_include_categories(
-        self, tmp_path, real_flow, mitm_ctx, headers
-    ):
+    def test_full_streaming_pipeline_bounds_unknown_include_categories(self, tmp_path, real_flow):
         """Long-lived streams fold unknown include overflow into one fallback-priced bucket."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)
 
@@ -624,7 +610,7 @@ class TestXConnectorResponsePipeline:
         assert len({event["idempotencyKey"] for event in payloads}) == 142
         assert all(len(category) <= 100 for category in by_cat)
 
-    def test_response_logs_incremental_x_json_parse_error(self, tmp_path, real_flow, mitm_ctx):
+    def test_response_logs_incremental_x_json_parse_error(self, tmp_path, real_flow):
         """Full response hook should audit parse errors from the incremental X JSON parser."""
         flow = make_x_pipeline_flow(
             real_flow,
@@ -657,7 +643,7 @@ class TestXConnectorResponsePipeline:
         assert "connector_response_finish" not in flow.metadata
 
     async def test_response_logs_x_json_parse_error_after_forensic_buffer_truncates(
-        self, tmp_path, real_flow, mitm_ctx
+        self, tmp_path, real_flow
     ):
         """The X JSON parser should stay authoritative after the forensic buffer fills."""
         flow = make_x_pipeline_flow(
@@ -693,7 +679,7 @@ class TestXConnectorResponsePipeline:
         assert "connector_response_finish" not in flow.metadata
 
     def test_response_uses_request_hints_for_incremental_x_json_parse_error(
-        self, tmp_path, real_flow, mitm_ctx
+        self, tmp_path, real_flow
     ):
         """Incremental X JSON parser failures should still bill from URL hints."""
         flow = make_x_pipeline_flow(
@@ -731,7 +717,7 @@ class TestXConnectorErrorPipeline:
         """Run delivery inline for error-pipeline behavior tests."""
 
     def test_full_pipeline_json_error_does_not_bill_request_hints(
-        self, tmp_path, real_flow, mitm_ctx, headers, usage_webhook_api
+        self, tmp_path, real_flow, usage_webhook_api
     ):
         """Interrupted ordinary JSON cannot bill from request-side hints."""
         flow = make_x_pipeline_flow(real_flow, tmp_path, query="ids=1,2,3")
@@ -792,7 +778,7 @@ class TestXConnectorErrorPipeline:
         assert flow.response.stream is False
 
     def test_full_pipeline_stream_error_without_network_log_reports_verified_rows(
-        self, tmp_path, real_flow, mitm_ctx, headers, usage_webhook_api
+        self, tmp_path, real_flow, usage_webhook_api
     ):
         """End-to-end: responseheaders -> partial chunks -> error() reports observed counts.
 
@@ -833,7 +819,7 @@ class TestXConnectorErrorPipeline:
         assert not (tmp_path / "network.jsonl").exists()
 
     def test_full_pipeline_stream_error_counts_complete_final_line_without_newline(
-        self, tmp_path, real_flow, mitm_ctx, headers, usage_webhook_api
+        self, tmp_path, real_flow, usage_webhook_api
     ):
         """Connection error finalizes a complete NDJSON row without trailing newline."""
         flow = make_x_stream_pipeline_flow(real_flow, tmp_path)

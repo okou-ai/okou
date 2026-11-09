@@ -77,6 +77,49 @@ final class NotificationTests: XCTestCase {
     }
   }
 
+  func testBackgroundPrefetchFinishesWithoutWaitingForUnreadHttp() async throws {
+    let started = expectation(description: "Unread HTTP is held")
+    let completed = expectation(description: "Core prefetch completes while unread HTTP is held")
+    let historyGate = AuthenticationRequestGate()
+    let unreadGate = AuthenticationRequestGate()
+    await historyGate.hold()
+    await unreadGate.hold()
+    addTeardownBlock {
+      await historyGate.releaseAll()
+      await unreadGate.releaseAll()
+    }
+    let fixture = ConversationHistoryFixture(
+      count: 2,
+      beforeEventRows: { _ in await historyGate.enter() },
+      indicators: { _ in
+        started.fulfill()
+        await unreadGate.enter()
+        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
+      })
+    let data = workspace(fixture)
+    let service = notifications()
+    await service.update(workspace: data)
+    let destination = try XCTUnwrap(NotificationDestination(userInfo: payload()))
+    let prefetch = Task {
+      let saved = await service.synchronize(destination)
+      completed.fulfill()
+      return saved
+    }
+    addTeardownBlock {
+      prefetch.cancel()
+      await historyGate.releaseAll()
+      await unreadGate.releaseAll()
+      _ = await prefetch.value
+    }
+    await fulfillment(of: [started], timeout: 2)
+    await historyGate.releaseAll()
+    await fulfillment(of: [completed], timeout: 3)
+    let saved = await prefetch.value
+    XCTAssertTrue(saved)
+    let history = await data.sync.cachedHistory(threadID: destination.threadId)
+    XCTAssertEqual(history?.messages.count, 2)
+  }
+
   func testBackgroundDelegatePersistsAuthoritativeHistoryForOfflineReopenWithoutMarkingRead()
     async throws
   {

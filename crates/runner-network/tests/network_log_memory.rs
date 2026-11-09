@@ -14,7 +14,6 @@ use runner_network::network_logs::{
 };
 use runner_types::ids::RunId;
 use serde_json::json;
-use sha2::{Digest, Sha256};
 
 static MEASURING: AtomicBool = AtomicBool::new(false);
 static LARGEST: AtomicUsize = AtomicUsize::new(0);
@@ -156,20 +155,31 @@ fn write_fixture(path: &Path, input: Input) -> io::Result<()> {
     file.flush()
 }
 
-fn source_digest(path: &Path) -> io::Result<Vec<u8>> {
-    let mut file = std::fs::File::open(path)?;
-    let mut digest = Sha256::new();
-    let mut chunk = [0; 8192];
+fn assert_source_matches_snapshot(path: &Path, snapshot: &Path) -> io::Result<()> {
+    use std::io::BufRead;
+
+    let mut actual = io::BufReader::new(std::fs::File::open(path)?);
+    let mut expected = io::BufReader::new(std::fs::File::open(snapshot)?);
     loop {
-        let read = file.read(&mut chunk)?;
-        if read == 0 {
-            return Ok(digest.finalize().to_vec());
+        let actual_bytes = actual.fill_buf()?;
+        let expected_bytes = expected.fill_buf()?;
+        let count = actual_bytes.len().min(expected_bytes.len());
+        if count == 0 {
+            assert!(
+                actual_bytes.is_empty() && expected_bytes.is_empty(),
+                "source file length changed: {}",
+                path.display()
+            );
+            return Ok(());
         }
-        digest.update(
-            chunk
-                .get(..read)
-                .ok_or_else(|| io::Error::other("file read exceeded its buffer"))?,
+        assert_eq!(
+            actual_bytes.split_at(count).0,
+            expected_bytes.split_at(count).0,
+            "source file content changed: {}",
+            path.display()
         );
+        actual.consume(count);
+        expected.consume(count);
     }
 }
 
@@ -185,7 +195,8 @@ async fn public_uploader_bounds_discarded_input_and_preserves_admitted_records()
     ] {
         let path = dir.path().join(format!("{input:?}.jsonl"));
         write_fixture(&path, input)?;
-        let original_digest = source_digest(&path)?;
+        let original = tempfile::NamedTempFile::new_in(dir.path())?;
+        std::fs::copy(&path, original.path())?;
         let server = MockServer::start_async().await;
         let batches = match input {
             Input::OversizedTree => vec![vec![json!({"sequence":1})], vec![json!({"sequence":3})]],
@@ -228,7 +239,7 @@ async fn public_uploader_bounds_discarded_input_and_preserves_admitted_records()
             }
         };
         assert_eq!(outcome, expected_outcome, "{input:?}");
-        assert_eq!(source_digest(&path)?, original_digest, "{input:?}");
+        assert_source_matches_snapshot(&path, original.path())?;
         eprintln!("{input:?}: largest allocation request = {largest} bytes");
         // These inputs contain only small admitted values. Their large skipped
         // or trimmed content must not allocate a full line or discarded Value.

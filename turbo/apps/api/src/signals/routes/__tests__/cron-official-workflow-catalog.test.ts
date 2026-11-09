@@ -11,6 +11,7 @@ import {
   workflowAutomationsContract,
   workflowsCollectionContract,
   workflowsDetailContract,
+  type WorkflowFileEntry,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -50,6 +51,23 @@ function expectScopeGuidance(
     expect(instruction).toContain("okou chat list --help");
     expect(instruction).not.toContain("--all-agents");
   }
+}
+
+function expectPublishingReference(
+  files: ReadonlyMap<string, Buffer>,
+  fileContents: readonly WorkflowFileEntry[] | null,
+  learning: boolean,
+) {
+  if (learning) {
+    return;
+  }
+  const reference = fileContents?.find((file) => {
+    return file.path === "references/suggestions.md";
+  });
+  if (!reference) {
+    throw new Error("Expected the suggestion publishing reference");
+  }
+  expect(files.get(reference.path)?.toString()).toBe(reference.content);
 }
 
 test("requires authentication to publish the Official Workflow catalog", async () => {
@@ -290,6 +308,7 @@ test.each([
     const files = readClaimedContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);
     expectScopeGuidance(files.get("SKILL.md")?.toString(), learning);
+    expectPublishingReference(files, detail.body.fileContents, learning);
     await owned.run(() => {
       return fixture.failChatRun(
         runId,

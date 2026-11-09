@@ -17,7 +17,7 @@ export function changeChatThreadList(): void {
   triggerChatDatabaseEvent("threadListChanged");
 }
 
-/** Simulate a Run start, Run terminal marker, mute, or delete changing indicators. */
+/** Simulate a Run start, Run terminal marker, mute, hide, or delete changing indicators. */
 export function changeChatIndicators(): void {
   triggerChatDatabaseEvent("chatIndicatorsChanged");
 }

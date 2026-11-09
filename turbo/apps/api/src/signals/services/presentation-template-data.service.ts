@@ -1,21 +1,11 @@
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
 import type { PresentationTemplateSummary } from "@okouai/api-contracts/contracts/presentation-templates";
-import { CANONICAL_WORKING_DIR } from "@okouai/api-contracts/contracts/runners";
-import {
-  parseUserPresentationTemplateId,
-  userPresentationTemplateDirectory,
-} from "@okouai/core/presentation-template-selection";
-import { getPresentationTemplateStorageName } from "@okouai/core/storage-names";
+import { parseUserPresentationTemplateId } from "@okouai/core/presentation-template-selection";
 import type { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { createHash } from "node:crypto";
 import { uuid } from "zod";
 
 export type PresentationTemplateRow = typeof presentationTemplates.$inferSelect;
-
-export interface PresentationTemplateVolume {
-  readonly name: string;
-  readonly mountPath: string;
-}
 
 const PRESENTATION_TEMPLATE_PREVIEW_ASSET_PREFIX = "ptp:";
 
@@ -86,22 +76,6 @@ export function selectedUserPresentationTemplateIds(
     }
   }
   return [...templateIds];
-}
-
-/**
- * The storage volumes that carry those templates' guidance packages.
- *
- * Template guidance uses a fixed working-directory path across runtimes.
- */
-export function userPresentationTemplateVolumes(
-  templateIds: readonly string[],
-): readonly PresentationTemplateVolume[] {
-  return templateIds.map((templateId) => {
-    return {
-      name: getPresentationTemplateStorageName(templateId),
-      mountPath: `${CANONICAL_WORKING_DIR}/${userPresentationTemplateDirectory(templateId)}`,
-    };
-  });
 }
 
 export function presentationTemplateSummary(

@@ -4,7 +4,8 @@ import SwiftUI
 struct ComposerConnectorSheet: View {
   @Bindable var store: ComposerConnectorStore
   @State private var search = ""
-  @State private var destination: ConnectorDestination?
+  @State private var accountDestination: ComposerConnectorAccountResources?
+  @State private var permissionDestination: ComposerConnectorPermissionResources?
   @State private var savingConnectorID: String?
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
@@ -79,9 +80,7 @@ struct ComposerConnectorSheet: View {
       .okouGroupedBackground()
       .navigationTitle("Connectors")
       .navigationBarTitleDisplayMode(.inline)
-      .navigationDestination(item: $destination) { destination in
-        connectorDestination(destination)
-      }
+      .connectorAccountDestination(store: store, destination: $accountDestination)
       .navigationDestination(
         isPresented: Binding(
           get: { store.directory != nil },
@@ -92,6 +91,7 @@ struct ComposerConnectorSheet: View {
             .id(ObjectIdentifier(resources))
         }
       }
+      .connectorPermissionDestination(store: store, destination: $permissionDestination)
       .toolbar { OkouCloseToolbarItem { dismiss() } }
       .alert(
         "Could not open connector",
@@ -123,6 +123,8 @@ struct ComposerConnectorSheet: View {
     .onDisappear {
       store.authorization.cancel()
       store.closeDirectory()
+      store.closeAccounts()
+      store.closePermissions()
     }
   }
 
@@ -131,8 +133,9 @@ struct ComposerConnectorSheet: View {
   @ViewBuilder
   private func connectorRow(_ connector: ChatComposerConnector) -> some View {
     if store.chatAccountAccess {
-      NavigationLink {
-        ComposerChatConnectorAccounts(store: store, connector: connector)
+      Button {
+        accountDestination?.close()
+        accountDestination = store.openAccounts(connector)
       } label: {
         HStack(spacing: OkouSpace.md) {
           ConnectorLogo(
@@ -155,8 +158,13 @@ struct ComposerConnectorSheet: View {
               .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
             }
           }
+          Spacer(minLength: OkouSpace.sm)
+          OkouIcon("chevron-right", size: OkouIconSize.inline)
+            .foregroundStyle(OkouColor.mutedForeground).accessibilityHidden(true)
         }
+        .contentShape(Rectangle())
       }
+      .buttonStyle(.plain)
       .disabled(store.isSaving)
     } else {
       legacyConnectorRow(connector)
@@ -182,12 +190,14 @@ struct ComposerConnectorSheet: View {
       }
       if connector.authorized && !connector.managed {
         rowAction("circle-user-round", label: "Account for \(connector.label)") {
-          destination = .accounts(connector.id)
+          accountDestination?.close()
+          accountDestination = store.openAccounts(connector)
         }
       }
-      if connector.authorized && connector.hasPermissions && connector.target.connectorSlug != nil {
+      if connector.authorized && connector.hasPermissions, let slug = connector.target.connectorSlug
+      {
         rowAction("sliders-horizontal", label: "Permissions for \(connector.label)") {
-          destination = .permissions(connector.id)
+          permissionDestination = store.openPermissions(slug: slug, label: connector.label)
         }
       }
       Toggle(
@@ -227,35 +237,6 @@ struct ComposerConnectorSheet: View {
     }
     .buttonStyle(.borderless)
     .accessibilityLabel(label)
-  }
-
-  @ViewBuilder
-  private func connectorDestination(_ destination: ConnectorDestination) -> some View {
-    if let connector = store.connectors.first(where: { $0.id == destination.connectorID }) {
-      switch destination {
-      case .accounts:
-        ComposerConnectorAccounts(store: store, connector: connector)
-      case .permissions:
-        if let slug = connector.target.connectorSlug {
-          ComposerConnectorPermissions(store: store, slug: slug, label: connector.label)
-        }
-      }
-    } else {
-      OkouEmptyState(
-        "Connector unavailable", icon: "plug",
-        description: Text("Return to Connectors to choose an available service."))
-    }
-  }
-
-  private enum ConnectorDestination: Hashable {
-    case accounts(String)
-    case permissions(String)
-
-    var connectorID: String {
-      switch self {
-      case .accounts(let id), .permissions(let id): id
-      }
-    }
   }
 }
 

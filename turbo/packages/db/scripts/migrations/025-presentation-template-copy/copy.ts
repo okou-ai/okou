@@ -17,6 +17,8 @@ import {
   type infer as zInfer,
 } from "zod";
 
+import { templateGuidanceBundleSchema } from "@okouai/api-contracts/contracts/template-guidance-bundle";
+
 import { computeContentHashFromHashes } from "@okouai/api-contracts/contracts/storage-content-hash";
 
 const packageSchema = zObject({
@@ -32,6 +34,7 @@ const sourceSchema = zObject({
   orgId: string(),
   ownerUserId: string(),
   fingerprint: string(),
+  guidanceBundle: templateGuidanceBundleSchema,
   package: packageSchema.nullable(),
 });
 const destinationSchema = zObject({
@@ -152,7 +155,7 @@ async function main(): Promise<void> {
     const sources = array(sourceSchema).parse(
       await db`
       SELECT p.id, p.org_id AS "orgId", p.owner_user_id AS "ownerUserId",
-        md5(to_jsonb(p)::text) AS fingerprint,
+        md5(to_jsonb(p)::text) AS fingerprint, p.guidance_bundle AS "guidanceBundle",
         CASE WHEN v.id IS NOT NULL THEN jsonb_build_object(
           'storageId', s.id, 'versionId', v.id, 's3Key', v.s3_key,
           'size', v.size, 'archiveSize', v.archive_size, 'fileCount', v.file_count) END AS package
@@ -279,10 +282,10 @@ async function main(): Promise<void> {
             FROM copied_storage RETURNING id
           )
           INSERT INTO user_templates (id, org_id, owner_user_id, visibility, title,
-            source_storage_key, source_filename, manifest, created_by, updated_by, created_at, updated_at)
+            source_storage_key, source_filename, manifest, guidance_bundle, created_by, updated_by, created_at, updated_at)
           SELECT p.id, p.org_id, p.owner_user_id, CASE p.visibility WHEN 'public' THEN 'organization' ELSE 'private' END,
             p.title, p.source_storage_key, p.source_filename,
-            jsonb_build_object('kind', 'presentation', 'pageKeys', to_jsonb(p.page_keys)),
+            jsonb_build_object('kind', 'presentation', 'pageKeys', to_jsonb(p.page_keys)), p.guidance_bundle,
             p.created_by, p.updated_by, p.created_at, p.updated_at
           FROM source p CROSS JOIN copied_version RETURNING id`;
         if (inserted.length !== 1) throw new CopyError("SourceChanged");

@@ -498,19 +498,6 @@
     {
       "file": "apps/platform/src/views/css/index.css",
       "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
-      "selector": ".wmde-markdown pre>code::-webkit-scrollbar-thumb",
-      "kind": "third-party-dom-adapter",
-      "owner": "frontend-platform",
-      "rationale": "The Markdown renderer owns these classes; the adapter applies app design tokens to generated content.",
-      "upstream": "@uiw/react-markdown-preview generated DOM",
-      "removal": "Remove when the renderer is replaced or its generated DOM can be styled through supported attributes.",
-      "parentSelectors": [
-        "@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"
-      ]
-    },
-    {
-      "file": "apps/platform/src/views/css/index.css",
-      "atRules": ["@scope ([data-slot=\"markdown\"]) to ([data-markdown-ui])"],
       "selector": ".wmde-markdown kbd",
       "kind": "third-party-dom-adapter",
       "owner": "frontend-platform",

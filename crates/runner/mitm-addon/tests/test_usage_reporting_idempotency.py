@@ -22,7 +22,7 @@ class TestUsageReportingIdempotency:
         """Run delivery inline for idempotency behavior tests."""
 
     def test_response_then_error_does_not_enqueue_model_usage_twice(
-        self, tmp_path, real_flow, mitm_ctx, usage_webhook_api
+        self, tmp_path, real_flow, usage_webhook_api
     ):
         """If mitmproxy fires both hooks for one flow, model usage reports once."""
         flow = make_model_provider_flow(
@@ -57,7 +57,7 @@ class TestUsageReportingIdempotency:
         ]
 
     def test_empty_model_usage_does_not_block_later_error_usage(
-        self, tmp_path, real_flow, mitm_ctx, usage_webhook_api
+        self, tmp_path, real_flow, usage_webhook_api
     ):
         """A no-event response pass must not mark the flow reported."""
         flow = make_model_provider_flow(
@@ -90,7 +90,7 @@ class TestUsageReportingIdempotency:
         assert [event["category"] for event in events] == ["tokens.output"]
 
     def test_reports_usage_without_provider_message_id(
-        self, tmp_path, real_flow, mitm_ctx, headers, usage_webhook_api
+        self, tmp_path, real_flow, usage_webhook_api
     ):
         log_path = str(tmp_path / "network.jsonl")
         flow = make_model_provider_flow(
@@ -125,9 +125,7 @@ class TestUsageReportingIdempotency:
         billing_key = body["events"][0]["idempotencyKey"]
         uuid.UUID(billing_key)
 
-    def test_reports_usage_with_provider_message_id(
-        self, tmp_path, real_flow, mitm_ctx, headers, usage_webhook_api
-    ):
+    def test_reports_usage_with_provider_message_id(self, tmp_path, real_flow, usage_webhook_api):
         """Provider message_id metadata must not block ordinary usage reporting."""
         log_path = str(tmp_path / "network.jsonl")
         flow = make_model_provider_flow(

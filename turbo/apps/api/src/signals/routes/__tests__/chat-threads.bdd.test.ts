@@ -4139,25 +4139,62 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
     await fixture.finish();
   }, 120_000);
 
-  it("workspace conversion does not create another file when checking previous results fails", async () => {
-    const fixture = await workspaceSource("report.txt", Buffer.from("Hello"));
-    const upload = mockGoogleDriveArtifactUpload({
-      id: "unexpected",
-      name: "report",
-      mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
-    });
-    mockGoogleDriveFilesList(() => {
-      return { status: 500 };
-    });
-    const response = await fixture.upload("google");
-    expect(response.status).toBe(400);
-    expectApiError(response.body);
-    expect(response.body.error.message).toContain(
-      "could not check previous conversions",
-    );
-    expect(upload.bodies).toHaveLength(0);
-    await fixture.finish();
-  }, 120_000);
+  it.each([
+    { providerStatus: 403, afterRefresh: false },
+    { providerStatus: 429, afterRefresh: false },
+    { providerStatus: 500, afterRefresh: false },
+    { providerStatus: 503, afterRefresh: false },
+    { providerStatus: 503, afterRefresh: true },
+  ] as const)(
+    "workspace conversion reports Google HTTP $providerStatus without creating another file (after refresh: $afterRefresh)",
+    async ({ providerStatus, afterRefresh }) => {
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
+      mockGoogleDriveConnectorOAuth({
+        refreshOutcome: {
+          type: "ok",
+          accessToken: "drive-preflight-refreshed",
+        },
+      });
+      const upload = mockGoogleDriveArtifactUpload({
+        id: "unexpected",
+        name: "report",
+        mimeType: GOOGLE_WORKSPACE_MIME_TYPES.document,
+      });
+      mockGoogleDriveFilesList((request) => {
+        if (
+          afterRefresh &&
+          request.headers.get("authorization") !==
+            "Bearer drive-preflight-refreshed"
+        ) {
+          return { status: 401 };
+        }
+        return {
+          status: providerStatus,
+          body: JSON.stringify({
+            error: {
+              code: providerStatus,
+              message:
+                "Cannot inspect private-file-id for owner@example.test: https://drive.google.com/file/private-file-id?access_token=private-token",
+            },
+          }),
+        };
+      });
+      const response = await fixture.upload("google", [400]);
+      expect(response.status).toBe(400);
+      expect(response.body).toStrictEqual({
+        error: {
+          code: "BAD_REQUEST",
+          message: `Google Drive could not check previous conversions (HTTP ${String(providerStatus)}). Try again.`,
+        },
+      });
+      expect(upload.metadata).toHaveLength(0);
+      expect(upload.bodies).toHaveLength(0);
+    },
+    120_000,
+  );
 
   it("workspace conversion reuses a completed editable copy when the caller retries", async () => {
     const fixture = await workspaceSource("report.txt", Buffer.from("Hello"));

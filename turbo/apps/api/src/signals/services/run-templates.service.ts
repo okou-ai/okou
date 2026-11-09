@@ -14,15 +14,11 @@ import {
 } from "../../lib/generation-template-prompt";
 import { db$ } from "../external/db";
 import { projectUserMessage } from "./chat-user-message.service";
-import {
-  selectedUserPresentationTemplateIds,
-  userPresentationTemplateVolumes,
-} from "./presentation-template-data.service";
+import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
 import type { RunPromptAndSkills } from "./run-prompt-and-skills";
 import type { PickedThreadInputEvent } from "./thread-run-prompt/types";
 import {
   selectedUserTemplateIds,
-  userTemplateVolumes,
   type MountedUserTemplate,
 } from "./user-template-data.service";
 
@@ -88,7 +84,14 @@ export function createRunTemplates(
     return ids.flatMap((id) => {
       const row = accessible.get(id);
       return row
-        ? [{ templateId: id, guidanceBundle: row.guidanceBundle }]
+        ? [
+            {
+              templateId: id,
+              guidanceBundle: templateGuidanceBundleSchema.parse(
+                row.guidanceBundle,
+              ),
+            },
+          ]
         : [];
     });
   });
@@ -131,7 +134,9 @@ export function createRunTemplates(
             {
               templateId: id,
               kind: row.manifest.kind,
-              guidanceBundle: row.guidanceBundle,
+              guidanceBundle: templateGuidanceBundleSchema.parse(
+                row.guidanceBundle,
+              ),
             },
           ];
     });
@@ -157,10 +162,10 @@ function buildRunTemplateGuidance(args: {
   readonly templates: readonly LiveGenerationTemplate[];
   readonly presentations: readonly {
     readonly templateId: string;
-    readonly guidanceBundle: TemplateGuidanceBundle | null;
+    readonly guidanceBundle: TemplateGuidanceBundle;
   }[];
   readonly mounted: readonly (MountedUserTemplate & {
-    readonly guidanceBundle: TemplateGuidanceBundle | null;
+    readonly guidanceBundle: TemplateGuidanceBundle;
   })[];
   readonly disabledPaidTools: readonly string[];
 }): RunTemplatesResult {
@@ -176,58 +181,33 @@ function buildRunTemplateGuidance(args: {
   if (guidance.status === "invalid") {
     return { error: { code: "BAD_REQUEST", message: guidance.message } };
   }
-  // #45716 C03: retained NULL owners use legacy Storage until the separately
-  // reviewed backfill and legacy-writer/rollback retirement are complete.
   const references: StoredTemplateGuidanceBundle[] = [
-    ...presentations.flatMap((row) => {
-      return row.guidanceBundle === null
-        ? []
-        : [
-            {
-              ownerKind: "presentation-template" as const,
-              templateId: row.templateId,
-              beforeMountPaths: [],
-              ...templateGuidanceBundleSchema.parse(row.guidanceBundle),
-            },
-          ];
+    ...presentations.map((row) => {
+      return {
+        ownerKind: "presentation-template" as const,
+        templateId: row.templateId,
+        beforeMountPaths: [],
+        ...row.guidanceBundle,
+      };
     }),
-    ...mounted.flatMap((row) => {
-      return row.guidanceBundle === null
-        ? []
-        : [
-            {
-              ownerKind: "user-template" as const,
-              templateId: row.templateId,
-              beforeMountPaths: [],
-              ...templateGuidanceBundleSchema.parse(row.guidanceBundle),
-            },
-          ];
+    ...mounted.map((row) => {
+      return {
+        ownerKind: "user-template" as const,
+        templateId: row.templateId,
+        beforeMountPaths: [],
+        ...row.guidanceBundle,
+      };
     }),
   ];
-  const bundlesByMount = new Map(
-    references.map((ref) => {
-      return [templateGuidanceMountPath(ref), ref];
-    }),
-  );
   return {
     systemPromptVariables: { generationTemplatePrompt: guidance.prompt },
     userPromptVariables: {},
-    skillVolumes: [
-      ...userPresentationTemplateVolumes(
-        presentations.map((row) => {
-          return row.templateId;
-        }),
-      ),
-      ...userTemplateVolumes(mounted),
-    ].map((volume) => {
-      const reference = bundlesByMount.get(volume.mountPath);
-      return reference
-        ? {
-            source: "request_additional_volume" as const,
-            mountPath: volume.mountPath,
-            templateGuidanceBundle: reference,
-          }
-        : { ...volume, source: "request_additional_volume" as const };
+    skillVolumes: references.map((reference) => {
+      return {
+        source: "request_additional_volume" as const,
+        mountPath: templateGuidanceMountPath(reference),
+        templateGuidanceBundle: reference,
+      };
     }),
   };
 }

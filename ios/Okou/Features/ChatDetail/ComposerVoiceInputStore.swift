@@ -5,7 +5,7 @@ import Observation
 /// Capture, transcription and insertion belong to one draft, including while its view unmounts.
 @MainActor @Observable
 final class ComposerVoiceInputStore {
-  enum Phase { case idle, starting, recording, processing, saved }
+  enum Phase: Equatable { case idle, starting, recording, processing, saved }
   private(set) var phase = Phase.idle
   private(set) var duration: Double = 0
   private(set) var levels: [Float] = []
@@ -29,6 +29,7 @@ final class ComposerVoiceInputStore {
   private var transcriptionTask: Task<Void, Never>?
   private var preparationTask: Task<String, Error>?
   private var transcriptionFailed = false
+  private var startRequested = false
 
   init(
     client: VoiceInputClient, storage: VoiceDraftStorage,
@@ -62,10 +63,32 @@ final class ComposerVoiceInputStore {
   }
 
   func start() async {
-    guard phase == .idle, let composer, composer.canEditVoice else { return }
+    startRequested = false
+    await beginStart()?.value
+  }
+
+  /// A system entry may arrive before the new draft's native editor is mounted.
+  func requestStart() {
+    startRequested = true
+    startRequestedInputIfReady()
+  }
+
+  func startRequestedInputIfReady() {
+    guard startRequested else { return }
+    guard phase == .idle, let composer, composer.canEditVoice else {
+      startRequested = false
+      return
+    }
+    guard composer.editor.voiceInsertion() != nil else { return }
+    startRequested = false
+    _ = beginStart()
+  }
+
+  private func beginStart() -> Task<Void, Never>? {
+    guard phase == .idle, let composer, composer.canEditVoice else { return nil }
     guard let target = composer.editor.voiceInsertion() else {
       error = "Finish editing before starting voice input."
-      return
+      return nil
     }
     let owner = UUID()
     generation = owner
@@ -73,15 +96,21 @@ final class ComposerVoiceInputStore {
     quotaAllowed = false
     error = nil
     microphoneDenied = false
-    let starting = Task { await begin(composer: composer, target: target, owner: owner) }
+    let starting = Task {
+      await begin(composer: composer, target: target, owner: owner)
+      if generation == owner { startingTask = nil }
+    }
     startingTask = starting
-    await starting.value
-    if generation == owner { startingTask = nil }
+    return starting
   }
 
   private func begin(
     composer: ComposerDraftStore, target: ComposerEditor.VoiceInsertion, owner: UUID
   ) async {
+    guard generation == owner, !Task.isCancelled, composer.canEditVoice else {
+      if generation == owner { phase = .idle }
+      return
+    }
     let quota = checkQuota()
     quotaTask = quota
     do {
@@ -270,6 +299,7 @@ final class ComposerVoiceInputStore {
   }
 
   func discard() async {
+    startRequested = false
     generation = UUID()
     let owner = generation
     phase = .processing
@@ -299,6 +329,7 @@ final class ComposerVoiceInputStore {
   }
 
   func suspend() {
+    startRequested = false
     generation = UUID()
     let owner = generation
     capture.stop()
