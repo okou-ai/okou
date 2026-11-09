@@ -12,7 +12,6 @@ This addon runs on the runner HOST (not inside sandboxes) and:
 """
 
 import asyncio
-import codecs
 import tempfile
 from collections.abc import Awaitable
 from pathlib import Path
@@ -133,7 +132,6 @@ _HTTP_STATUS_ERROR_MIN = 400  # inclusive: start of 4xx/5xx error range
 # Match the existing 64 KiB HTTP/2/SigV4 minimum per-field accounting budget.
 _MAX_REQUEST_HEADER_FIELDS = 2048
 _MAX_REQUEST_HEADER_NAME_BYTES = 4096
-_AWS_SIGV4_AUTHORIZATION_PREFIX_BYTES = 64
 _REQUEST_HEADERS_TERMINATED = "_request_headers_terminated"
 _FIREWALL_AUTH_APPLIED_IN_REQUESTHEADERS = "_firewall_auth_applied_in_requestheaders"
 _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
@@ -419,7 +417,7 @@ def _prebind_bounded_requestheaders_upstream_destination(
             flow,
             allowed_kinds=frozenset(("connector_auth",)),
         )
-        and not _request_may_use_aws_sigv4(flow)
+        and not aws_sigv4_flow.may_use_aws_sigv4(flow)
         # Reusing a connection skips binding work, never current path validation.
         # Managed OpenRouter still requires body admission.
         and trusted_authority.host != managed_openrouter.HOST
@@ -437,25 +435,6 @@ def _prebind_bounded_requestheaders_upstream_destination(
 
 def _start_request_timing(flow: http.HTTPFlow) -> None:
     flow_metadata.start_request_timing(flow.metadata)
-
-
-def _request_may_use_aws_sigv4(flow: http.HTTPFlow) -> bool:
-    for name, value in flow.request.headers.fields:
-        if name.lower() != b"authorization":
-            continue
-        complete = len(value) <= _AWS_SIGV4_AUTHORIZATION_PREFIX_BYTES
-        prefix = (
-            codecs.getincrementaldecoder("utf-8")("surrogateescape")
-            .decode(value[:_AWS_SIGV4_AUTHORIZATION_PREFIX_BYTES], final=complete)
-            .lstrip()
-        )
-        if prefix.startswith("AWS4-"):
-            return True
-        if not complete and "AWS4-".startswith(prefix):
-            # Unfinished Unicode whitespace or a partial scheme must still pass
-            # canonical classification and its managed request-body admission.
-            return True
-    return "X-Amz-Algorithm" in flow.request.path
 
 
 def _firewall_allow_injects_ordinary_upstream_credentials(
