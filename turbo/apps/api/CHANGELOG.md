@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.54.7](https://github.com/okou-ai/okou/compare/api-v2.54.6...api-v2.54.7) (2026-11-09)
+
+
+### Bug Fixes
+
+* **desktop:** use presence without idle queue polling ([#46068](https://github.com/okou-ai/okou/issues/46068)) ([eb45eb5](https://github.com/okou-ai/okou/commit/eb45eb52ab1d2b40517d452df22dae6e7270c7c1))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.45.1
+    * @okouai/core bumped to 8.824.5
+    * @okouai/db bumped to 2.24.6
+    * @okouai/pi-agent-runtime bumped to 1.51.89
+
 ## [2.54.6](https://github.com/okou-ai/okou/compare/api-v2.54.5...api-v2.54.6) (2026-11-09)
 
 

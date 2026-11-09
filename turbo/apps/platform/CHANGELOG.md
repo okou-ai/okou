@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1103.1](https://github.com/okou-ai/okou/compare/app-v0.1103.0...app-v0.1103.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **platform:** attach long pasted text and guard onboarding prompt size ([#46052](https://github.com/okou-ai/okou/issues/46052)) ([aa8b9da](https://github.com/okou-ai/okou/commit/aa8b9da4f253d3e899e37418ad9026303589e88b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.45.1
+    * @okouai/core bumped to 8.824.5
+
 ## [0.1103.0](https://github.com/okou-ai/okou/compare/app-v0.1102.6...app-v0.1103.0) (2026-11-09)
 
 

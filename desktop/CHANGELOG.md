@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.56.2](https://github.com/okou-ai/okou/compare/desktop-v0.56.1...desktop-v0.56.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **desktop:** use presence without idle queue polling ([#46068](https://github.com/okou-ai/okou/issues/46068)) ([eb45eb5](https://github.com/okou-ai/okou/commit/eb45eb52ab1d2b40517d452df22dae6e7270c7c1))
+
 ## [0.56.1](https://github.com/okou-ai/okou/compare/desktop-v0.56.0...desktop-v0.56.1) (2026-11-07)
 
 
