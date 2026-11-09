@@ -1,6 +1,7 @@
 import { gunzipSync } from "node:zlib";
+import { randomUUID } from "node:crypto";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished, test } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished, test } from "vitest";
 import { array, boolean, number, object, string } from "zod";
 import { encodeHTML } from "entities";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
@@ -8,12 +9,17 @@ import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cr
 import { accept, testContext } from "../../__tests__/test-context";
 import { createApp } from "../../app-factory";
 
-import { withRealAxiomLoggingForTest } from "../../__tests__/mocks";
+import {
+  mockAxiomSdkTelemetryFailure,
+  withRealAxiomLoggingForTest,
+} from "../../__tests__/mocks";
 import { setupApp } from "../../__tests__/test-helpers";
 import { server } from "../../mocks/server";
 import {
   assistantEvent,
   createChatEventsFixture,
+  userMessages,
+  userMessageWithTemplate,
 } from "../../signals/routes/__tests__/helpers/chat-events-fixture";
 import { publicChatActor } from "../../signals/routes/__tests__/helpers/public-chat-actor";
 import { useSecretKmsProbe } from "../../signals/routes/__tests__/helpers/secret-kms-probe";
@@ -24,7 +30,7 @@ import { healthRoutes } from "../../signals/routes/health";
 import { cronBrowserReconcileRoutes } from "../../signals/routes/cron-browser-reconcile";
 import { createSharedBrowserFixtures } from "../../signals/routes/__tests__/helpers/browser-shared-fixture";
 import { mockOptionalEnv } from "../env";
-import { clearMockMonotonicNow, mockMonotonicNow, mockNow } from "../time";
+import { clearMockMonotonicNow, mockMonotonicNow, mockNow, now } from "../time";
 import { withRequestRuntime } from "../request-runtime";
 
 const context = testContext();
@@ -368,6 +374,447 @@ describe("request lifecycle Axiom transport", () => {
         request_time_ms: 0,
       }),
     ]);
+  });
+});
+
+// Logger-owned template event contract, driven through normal chat and Runner
+// endpoints. Preparation and replay must not create additional usage records.
+describe("template usage Axiom transport", () => {
+  beforeEach(() => {
+    context.mocks.axiom.useRealTelemetry.mockReturnValue(true);
+  });
+
+  const templateEvent = object({
+    _time: string(),
+    type: string(),
+    runId: string(),
+    sourceEventId: string(),
+    usageEventId: string(),
+    templateUsageVersion: number(),
+    orgId: string(),
+    userId: string(),
+    chatThreadId: string(),
+    dispatchPath: string(),
+    templateCategory: string(),
+    templateId: string(),
+    templateSlug: string(),
+    templateSource: string(),
+    templateRole: string(),
+    templateIndex: number(),
+    templateCount: number(),
+  });
+
+  function templateEvents(orgId: string | null) {
+    return context.mocks.axiom.sdkIngest.mock.calls
+      .flatMap(([dataset, events]) => {
+        return dataset === "vm0-web-logs-dev"
+          ? array(
+              object({
+                type: string().optional(),
+                orgId: string().optional(),
+              }).passthrough(),
+            ).parse(events)
+          : [];
+      })
+      .filter((event) => {
+        return event.type === "template_used" && event.orgId === orgId;
+      })
+      .map((event) => {
+        return templateEvent.parse(event);
+      });
+  }
+
+  it("records each template once when an immediate queue-first run is created", async () => {
+    const owned = await publicChatActor(context);
+    await owned.run(async () => {
+      const committedAt = now();
+      mockNow(committedAt);
+      const sourceEventId = randomUUID();
+      const body = {
+        agentId: owned.agentId,
+        prompt: "Prepare an invoice and an illustration",
+        clientEventId: sourceEventId,
+        userMessage: {
+          version: 1 as const,
+          parts: [
+            { type: "text" as const, text: "Prepare an invoice " },
+            {
+              type: "template" as const,
+              titleSnapshot: "Invoice",
+              template: {
+                type: "document" as const,
+                selection: {
+                  documentTemplateId: "document-template:simple-invoice",
+                },
+              },
+            },
+            {
+              type: "template" as const,
+              titleSnapshot: "Illustration",
+              template: {
+                type: "illustration" as const,
+                selection: { illustrationStyleId: "image-style:emboss-deboss" },
+              },
+            },
+          ],
+        },
+      };
+      const run = await owned.sendChatRun(owned.actor, body);
+      await owned.requestSendEvent(
+        owned.actor,
+        { ...body, threadId: run.threadId },
+        [201],
+      );
+      await flushWaitUntilForTest();
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual([
+        expect.objectContaining({
+          _time: new Date(committedAt).toISOString(),
+          runId: run.runId,
+          sourceEventId,
+          usageEventId: `template-used:v2:${sourceEventId}:0`,
+          templateUsageVersion: 2,
+          userId: owned.actor.userId,
+          chatThreadId: run.threadId,
+          dispatchPath: "queued-claim",
+          templateCategory: "document",
+          templateId: "document-template:simple-invoice",
+          templateSlug: "simple-invoice",
+          templateSource: "builtin",
+          templateRole: "primary",
+          templateIndex: 0,
+          templateCount: 2,
+        }),
+        expect.objectContaining({
+          runId: run.runId,
+          sourceEventId,
+          usageEventId: `template-used:v2:${sourceEventId}:1`,
+          templateCategory: "illustration",
+          templateId: "image-style:emboss-deboss",
+          templateRole: "inline",
+          templateIndex: 1,
+          templateCount: 2,
+        }),
+      ]);
+    });
+  });
+
+  it("waits until a queued template input creates its run", async () => {
+    const owned = await publicChatActor(context);
+    const fixture = createChatEventsFixture(context);
+    await owned.run(async () => {
+      const anchor = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Keep the thread busy",
+      });
+      const claimed = await owned.claimChatRun(owned.runnerGroup, anchor.runId);
+      const sourceEventId = randomUUID();
+      await owned.requestSendEvent(
+        owned.actor,
+        {
+          agentId: owned.agentId,
+          threadId: anchor.threadId,
+          clientEventId: sourceEventId,
+          prompt: "Prepare an invoice",
+          userMessage: userMessageWithTemplate("Prepare an invoice", {
+            type: "document",
+            selection: {
+              documentTemplateId: "document-template:simple-invoice",
+            },
+          }),
+        },
+        [201],
+      );
+      await flushWaitUntilForTest();
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual([]);
+      fixture.chatCallbacks.mockChatOutputEvents([]);
+      await fixture.completeChatRunOk(anchor.runId, claimed.sandboxHeaders);
+      await flushWaitUntilForTest();
+      const messages = await fixture.waitForThreadMessages(
+        owned.actor,
+        anchor.threadId,
+        (items) => {
+          return userMessages(items).some((event) => {
+            return (
+              event.revokesEventId === sourceEventId && event.runId !== null
+            );
+          });
+        },
+      );
+      const consumed = userMessages(messages.events).find((event) => {
+        return event.revokesEventId === sourceEventId;
+      });
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual([
+        expect.objectContaining({
+          sourceEventId,
+          runId: consumed?.runId,
+          dispatchPath: "queued-claim",
+          templateCategory: "document",
+          templateCount: 1,
+        }),
+      ]);
+    });
+  });
+
+  it("records only the winning active-input declaration, not lookups or replay", async () => {
+    const owned = await publicChatActor(context);
+    const fixture = createChatEventsFixture(context);
+    await owned.run(async () => {
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Start without a template",
+      });
+      const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
+      const sourceEventId = randomUUID();
+      await owned.requestSendEvent(
+        owned.actor,
+        {
+          agentId: owned.agentId,
+          threadId: run.threadId,
+          clientEventId: sourceEventId,
+          prompt: "Prepare an invoice",
+          userMessage: userMessageWithTemplate("Prepare an invoice", {
+            type: "document",
+            selection: {
+              documentTemplateId: "document-template:simple-invoice",
+            },
+          }),
+        },
+        [201],
+      );
+      const next = await fixture.api.nextSteerableInput(
+        claim.sandboxToken,
+        run.runId,
+      );
+      expect(next.input?.eventId).toBe(sourceEventId);
+      expect(next.input?.prompt).toContain("Selected document template:");
+      await expect(
+        fixture.api.nextSteerableInput(claim.sandboxToken, run.runId),
+      ).resolves.toStrictEqual(next);
+      await flushWaitUntilForTest();
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual([]);
+      await Promise.all([
+        fixture.api.declareSteeredInput(
+          claim.sandboxToken,
+          run.runId,
+          sourceEventId,
+        ),
+        fixture.api.declareSteeredInput(
+          claim.sandboxToken,
+          run.runId,
+          sourceEventId,
+        ),
+      ]);
+      await fixture.api.declareSteeredInput(
+        claim.sandboxToken,
+        run.runId,
+        sourceEventId,
+      );
+      await flushWaitUntilForTest();
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual([
+        expect.objectContaining({
+          runId: run.runId,
+          sourceEventId,
+          usageEventId: `template-used:v2:${sourceEventId}:0`,
+          dispatchPath: "active-input",
+          templateCategory: "document",
+          templateSource: "builtin",
+          templateCount: 1,
+        }),
+      ]);
+    });
+  });
+
+  it("does not report a steered batch whose private template cannot be mounted", async () => {
+    const owned = await publicChatActor(context);
+    const fixture = createChatEventsFixture(context);
+    await owned.run(async () => {
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Start without template volumes",
+      });
+      const { claim } = await owned.claimChatRun(owned.runnerGroup, run.runId);
+      const sourceEventId = randomUUID();
+      await owned.requestSendEvent(
+        owned.actor,
+        {
+          agentId: owned.agentId,
+          threadId: run.threadId,
+          clientEventId: sourceEventId,
+          prompt: "Apply both templates",
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text: "Apply both templates" },
+              {
+                type: "template",
+                titleSnapshot: "Invoice",
+                template: {
+                  type: "document",
+                  selection: {
+                    documentTemplateId: "document-template:simple-invoice",
+                  },
+                },
+              },
+              {
+                type: "template",
+                titleSnapshot: "Private template",
+                template: {
+                  type: "custom",
+                  selection: { userTemplateId: randomUUID() },
+                },
+              },
+            ],
+          },
+        },
+        [201],
+      );
+      const next = await fixture.api.nextSteerableInput(
+        claim.sandboxToken,
+        run.runId,
+      );
+      expect(next.input?.eventId).toBe(sourceEventId);
+      expect(next.input?.prompt).not.toContain("Selected document template:");
+      await fixture.api.declareSteeredInput(
+        claim.sandboxToken,
+        run.runId,
+        sourceEventId,
+      );
+      await flushWaitUntilForTest();
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual([]);
+    });
+  });
+
+  it("exports committed template usage once through Worker native logs, not the SDK", async () => {
+    await setupApp({ context, routes: healthRoutes, isolatePg: true });
+    const owned = await publicChatActor(context);
+    const restoreConsole = context.mocks.console.capture();
+    onTestFinished(restoreConsole);
+    await owned.run(async () => {
+      const sourceEventId = randomUUID();
+      const run = await withRequestRuntime(
+        {
+          nativeTelemetry: true,
+          database: () => {
+            throw new Error("The API fixture owns the test database");
+          },
+          waitUntil: () => {},
+          traceQuery: (_name, _sql, execute) => {
+            return execute({ setAttributes: () => {} });
+          },
+          observeHttp: () => {},
+        },
+        async () => {
+          const created = await owned.sendChatRun(owned.actor, {
+            agentId: owned.agentId,
+            clientEventId: sourceEventId,
+            prompt: "Prepare an invoice in the Worker runtime",
+            template: {
+              type: "document",
+              selection: {
+                documentTemplateId: "document-template:simple-invoice",
+              },
+            },
+          });
+          await flushWaitUntilForTest();
+          return created;
+        },
+      );
+      const nativeEvents = array(
+        object({ type: string().optional() }).passthrough(),
+      )
+        .parse(
+          context.mocks.console.log.mock.calls.map(([record]) => {
+            return record;
+          }),
+        )
+        .filter((event) => {
+          return event.type === "template_used";
+        });
+      expect(nativeEvents).toStrictEqual([
+        expect.objectContaining({
+          axiom_dataset: "vm0-web-logs-dev",
+          okou_runtime: "cloudflare-workers",
+          runId: run.runId,
+          sourceEventId,
+          usageEventId: `template-used:v2:${sourceEventId}:0`,
+          templateCategory: "document",
+          templateCount: 1,
+        }),
+      ]);
+      expect(templateEvent.parse(nativeEvents[0]).templateUsageVersion).toBe(2);
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual([]);
+    });
+  });
+
+  it("keeps committed usage when Runner activation fails and the run is cancelled", async () => {
+    const owned = await publicChatActor(context);
+    const fixture = createChatEventsFixture(context);
+    await owned.run(async () => {
+      let notificationFailed = false;
+      context.mocks.ably.publish.mockImplementation((topic: unknown) => {
+        if (topic === "job") {
+          notificationFailed = true;
+          return Promise.reject(new Error("Runner notification unavailable"));
+        }
+        return Promise.resolve(undefined);
+      });
+      const sourceEventId = randomUUID();
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        clientEventId: sourceEventId,
+        prompt: "Prepare an invoice despite a notification outage",
+        template: {
+          type: "document",
+          selection: { documentTemplateId: "document-template:simple-invoice" },
+        },
+      });
+      await flushWaitUntilForTest();
+      expect(notificationFailed).toBeTruthy();
+      expect((await fixture.api.readRun(owned.actor, run.runId)).status).toBe(
+        "pending",
+      );
+      const expected = [
+        expect.objectContaining({
+          runId: run.runId,
+          sourceEventId,
+          dispatchPath: "queued-claim",
+          templateCategory: "document",
+        }),
+      ];
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual(expected);
+      await fixture.cancelChatRun(owned.actor, run.runId);
+      await flushWaitUntilForTest();
+      expect((await fixture.api.readRun(owned.actor, run.runId)).status).toBe(
+        "cancelled",
+      );
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual(expected);
+    });
+  });
+
+  it("preserves a created template run when Axiom ingestion fails", async () => {
+    const owned = await publicChatActor(context);
+    const fixture = createChatEventsFixture(context);
+    await owned.run(async () => {
+      mockAxiomSdkTelemetryFailure({
+        mode: "ingest",
+        datasets: ["vm0-web-logs-dev"],
+        eventTypes: ["template_used"],
+      });
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Prepare an invoice",
+        template: {
+          type: "document",
+          selection: { documentTemplateId: "document-template:simple-invoice" },
+        },
+      });
+      await flushWaitUntilForTest();
+      const persisted = await fixture.api.readRun(owned.actor, run.runId);
+      expect(persisted.status).toBe("pending");
+      expect(persisted.appendSystemPrompt).toContain(
+        "Selected document template:",
+      );
+    });
   });
 });
 

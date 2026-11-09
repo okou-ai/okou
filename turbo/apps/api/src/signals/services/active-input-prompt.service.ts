@@ -19,7 +19,7 @@ import type { SelectResultFields } from "drizzle-orm/query-builders/select.types
 import { and, eq } from "drizzle-orm";
 
 import { db$ } from "../external/db";
-import { resolveThreadGenerationTemplatePrompt } from "../../lib/thread-generation-template";
+import { resolveThreadGenerationTemplates } from "../../lib/thread-generation-template";
 import { loadAgentPhoneQueuedLaunchMaterial$ } from "./agentphone-queued-launch-context.service";
 import {
   feishuQueuedLaunchContextReadPlan,
@@ -322,7 +322,7 @@ const materializeActiveInputPrompt$ = command(
             )
             .limit(1);
     signal.throwIfAborted();
-    const templatePrompt = resolveThreadGenerationTemplatePrompt({
+    const templatePrompt = resolveThreadGenerationTemplates({
       explicit: projection.primaryTemplate,
       explicitTemplates: projection.templates,
       includeManagedImageInstructions: disabledImageGeneration === undefined,
@@ -330,7 +330,7 @@ const materializeActiveInputPrompt$ = command(
       // custom templates contribute no guidance pointing at an unmounted path.
       mountedUserPresentationTemplateIds: [],
       mountedUserTemplates: [],
-    });
+    }).prompt;
     const prompt = integration?.prompt ?? projection.agentPrompt;
     const parts = [
       integration?.appendSystemPrompt ?? "",

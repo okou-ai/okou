@@ -18,6 +18,8 @@
     "src/lib/slack-webhook-context.ts",
     "src/lib/strip-markdown.ts",
     "src/lib/telegram-format.ts",
+    "src/lib/template-usage-identity.ts",
+    "src/lib/template-usage-log.ts",
     "src/signals/auth/tokens.ts",
     "src/signals/context/hono.ts",
     "src/signals/context/system-skill-storage-resolution.ts",
