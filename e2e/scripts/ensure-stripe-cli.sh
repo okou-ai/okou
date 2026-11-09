@@ -21,10 +21,12 @@ esac
 case "$(uname -m)" in
   x86_64 | amd64)
     arch="x86_64"
+    asset_id=425574252
     sha256="35684521fc6c2d994e6461ef28330f2c77fbf7d588a7b93fee5e8d4aa52d0c65"
     ;;
   aarch64 | arm64)
     arch="arm64"
+    asset_id=425574254
     sha256="04d86663e840ec1fc71ec0f1ccceb9345a5bd783614746f590b05e4bf1f61b9b"
     ;;
   *)
@@ -38,11 +40,12 @@ trap 'rm -rf "$tmp_dir"' EXIT
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 download_script="${repo_root}/.github/scripts/download-verified.sh"
+archive="${tmp_dir}/stripe_${version}_${os}_${arch}.tar.gz"
 bash "$download_script" \
-  "https://github.com/stripe/stripe-cli/releases/download/v${version}/stripe_${version}_${os}_${arch}.tar.gz" \
+  "https://api.github.com/repos/stripe/stripe-cli/releases/assets/${asset_id}" \
   "$sha256" \
-  "$tmp_dir/stripe.tar.gz"
-tar -xzf "$tmp_dir/stripe.tar.gz" -C "$tmp_dir"
+  "$archive"
+tar -xzf "$archive" -C "$tmp_dir"
 
 install_dir="${STRIPE_CLI_INSTALL_DIR:-$HOME/.local/bin}"
 mkdir -p "$install_dir"
