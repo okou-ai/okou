@@ -37,7 +37,6 @@ import { AccountDropdown } from "./sidebar-account.tsx";
 import {
   ChatThreadDialogs,
   ChatThreadsListMenu,
-  ChatThreadsNewMenu,
   ChatThreadsSection,
   useChatThreadsFilterLabel,
 } from "./sidebar-threads.tsx";
@@ -506,8 +505,9 @@ function ChatListHeader() {
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
   // My Okou has a single chat list, so the header carries the list's actions
-  // instead of a title. An active filter still names itself beside the toggle
-  // so a filtered list never looks like the inbox.
+  // instead of a title, and New chat and New project lead the list itself. An
+  // active filter still names itself beside the toggle so a filtered list never
+  // looks like the inbox.
   const filterLabel = useChatThreadsFilterLabel();
   const searchLabel = t(($) => {
     return $.appShell.sidebar.searchWorkspace;
@@ -585,7 +585,6 @@ function ChatListHeader() {
             {filterLabel}
           </span>
           <ShortcutTooltipGroup items={[searchItem]} />
-          <ChatThreadsNewMenu />
           <ChatThreadsListMenu showMarkAllRead />
         </>
       ) : (

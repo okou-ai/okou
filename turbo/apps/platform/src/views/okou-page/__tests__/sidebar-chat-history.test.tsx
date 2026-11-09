@@ -965,20 +965,27 @@ test("Route New chat to the current agent and Chat to the default agent", async 
   });
 });
 
-test("My Okou drops the chat list title for a toggle and one New menu", async () => {
+// The New chat and New project rows lead My Okou's chat list.
+function newChatRow(list: HTMLElement): HTMLElement {
+  const found = queryAllByRoleFast("link", list).find((link) => {
+    return link.getAttribute("href") === "/";
+  });
+  if (!found) {
+    throw new Error("New chat row not found");
+  }
+  return found;
+}
+function newProjectRow(list: HTMLElement): HTMLElement | null {
+  return (
+    queryAllByRoleFast("button", list).find((item) => {
+      return item.textContent?.trim() === "New Project";
+    }) ?? null
+  );
+}
+
+test("My Okou's header keeps the toggle, search and list menu while New chat and New project lead the list", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
-  const createdAgentIds: string[] = [];
-  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
-    createdAgentIds.push(body.agentId);
-    return respond(201, {
-      id: body.clientThreadId ?? crypto.randomUUID(),
-      title: null,
-      createdAt: "2026-03-10T00:10:00Z",
-      selectedModel: body.model ?? null,
-      serviceTier: null,
-    });
-  });
 
   await setupSidebarPage({
     context,
@@ -1002,14 +1009,36 @@ test("My Okou drops the chat list title for a toggle and one New menu", async ()
   ).toStrictEqual([
     "Hide chat list",
     "Search workspace",
-    "New",
     "Open chat list menu",
   ]);
   expect(header).toHaveTextContent(/^$/);
   expect(within(list).queryByText(/^Chats with/)).not.toBeInTheDocument();
 
-  click(within(header).getByLabelText("New"));
-  click(menuItemByText("New Project"));
+  // Home is the new chat, so the row leading the list opens it.
+  const newChat = newChatRow(list);
+  expect(newChat).toHaveTextContent(/^New chat/);
+  expect(newChat).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+O Control+Shift+O",
+  );
+  await waitFor(() => {
+    expect(newChat).toHaveAttribute("aria-current", "page");
+  });
+  const chats = within(list).getByTestId("sidebar-scroll-area");
+  const newProject = newProjectRow(list);
+  if (!newProject) {
+    throw new Error("New project row not found");
+  }
+  expect(
+    newChat.compareDocumentPosition(newProject) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(
+    newProject.compareDocumentPosition(chats) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+
+  click(newProject);
   await expect(
     screen.findByRole("textbox", { name: "Project name" }),
   ).resolves.toBeInTheDocument();
@@ -1025,28 +1054,11 @@ test("My Okou drops the chat list title for a toggle and one New menu", async ()
   click(within(header).getByLabelText("Open chat list menu"));
   click(menuItemByText("Archived"));
   await expect(within(header).findByText("Archived")).resolves.toBeVisible();
-
-  click(within(header).getByLabelText("New"));
-  click(menuItemByText("New chat"));
-  await waitFor(() => {
-    expect(createdAgentIds).toStrictEqual([AGENT_ID]);
-  });
 });
 
-test("My Okou without Projects starts a chat straight from the header +", async () => {
+test("My Okou without Projects leads the chat list with New chat only", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
-  const createdAgentIds: string[] = [];
-  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
-    createdAgentIds.push(body.agentId);
-    return respond(201, {
-      id: body.clientThreadId ?? crypto.randomUUID(),
-      title: null,
-      createdAt: "2026-03-10T00:10:00Z",
-      selectedModel: body.model ?? null,
-      serviceTier: null,
-    });
-  });
 
   await setupSidebarPage({
     context,
@@ -1056,25 +1068,8 @@ test("My Okou without Projects starts a chat straight from the header +", async 
 
   const list = await screen.findByTestId("chat-list-column");
   await within(list).findByText("Release plan");
-  const header = within(list).getByLabelText("Hide chat list").closest("div");
-  if (!header) {
-    throw new Error("Chat list header not found");
-  }
-  expect(
-    queryAllByRoleFast("button", header).map((button) => {
-      return button.getAttribute("aria-label");
-    }),
-  ).toStrictEqual([
-    "Hide chat list",
-    "Search workspace",
-    "New chat",
-    "Open chat list menu",
-  ]);
-
-  click(within(header).getByLabelText("New chat"));
-  await waitFor(() => {
-    expect(createdAgentIds).toStrictEqual([AGENT_ID]);
-  });
+  expect(newChatRow(list)).toHaveTextContent(/^New chat/);
+  expect(newProjectRow(list)).toBeNull();
 });
 
 test("My Okou's Chat link and new chat shortcut open its chat page at /", async () => {

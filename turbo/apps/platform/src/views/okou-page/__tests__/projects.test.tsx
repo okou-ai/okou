@@ -171,6 +171,32 @@ function releasePageDom() {
   vi.mocked(window.history.back).mockRestore();
 }
 
+test("My Okou's Project rows carry only their menu, since New chat leads the list", async () => {
+  const thread = continuityThread(222, 1, "Ordinary chat");
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 222,
+    threads: [thread],
+  });
+  metadata();
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.Projects]: true,
+    },
+  });
+  await waitFor(() => {
+    expect(projectToggle("Launch")).toBeInTheDocument();
+  });
+  expect(
+    queryAllByRoleFast("button", projectRow()).map((item) => {
+      return item.getAttribute("aria-label");
+    }),
+  ).toStrictEqual(["Show or hide chats in Launch", "Options for Launch"]);
+});
+
 test("Cached Projects appear before chat setup and remote synchronization finish", async () => {
   const thread = continuityThread(112, 1, "Cached conversation");
   const workspace = installContinuityWorkspace(context, {
