@@ -1734,11 +1734,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
 
   @MainActor
   func testPresenceHostWaitsForNotificationRecoveryBeforeDispatching() async throws {
-    func trace(_ step: String) {
-      FileHandle.standardError.write(Data("presence-recovery: \(step)\n".utf8))
-    }
-    trace("entered")
     let unavailable = expectation(description: "Notification failure is shown as unavailable")
+    let unavailableSeen = CompletionFlag()
     let reported = expectation(description: "Recovery claims and reports the pending command")
     let claims = RequestCount()
     let streamStarted = expectation(description: "Notification stream is ready for events")
@@ -1747,7 +1744,6 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     defer { session.invalidateAndCancel() }
     URLProtocolFixture.boundary.set { connection in
       let path = connection.request.url!.path
-      FileHandle.standardError.write(Data("presence-recovery request: \(path)\n".utf8))
       if path.hasSuffix("/register") {
         XCTAssertEqual(connection.body["presenceOnly"], .bool(true))
         var registration = registeredHostResponse()
@@ -1774,26 +1770,21 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     }
     let runtime = notificationTestRuntime(session: session, notifications: notifications,
       onChange: { state in
-        FileHandle.standardError.write(Data("presence-recovery state: \(state.status), commands: \(state.commands.count)\n".utf8))
-        if state.status == "recovering" && state.lastError == "Notification connection unavailable" {
+        if state.status == "recovering" && state.lastError == "Notification connection unavailable"
+          && !unavailableSeen.value
+        {
+          unavailableSeen.finish()
           unavailable.fulfill()
         }
       })
     await runtime.start()
-    trace("registered")
     await fulfillment(of: [streamStarted], timeout: 3)
-    trace("stream-started")
     await notifications.unavailable()
-    trace("unavailable-emitted")
     await fulfillment(of: [unavailable], timeout: 3)
-    trace("unavailable-observed")
     XCTAssertEqual(claims.value, 0)
     await notifications.reconnect()
-    trace("recovery-emitted")
     await fulfillment(of: [reported], timeout: 4)
-    trace("completion-observed")
     await runtime.stop()
-    trace("stopped")
   }
 
   func testPresenceHostPublishesPermissionChangesMadeDuringRegistration() async throws {

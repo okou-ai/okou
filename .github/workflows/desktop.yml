@@ -106,29 +106,6 @@ jobs:
       - name: Test native Desktop runtime
         run: swift test --package-path desktop -j 4 --parallel --num-workers 2
 
-      - name: Capture native test crash diagnostics
-        if: failure()
-        run: |
-          python3 - <<'PY'
-          import json
-          import pathlib
-          import time
-          root = pathlib.Path.home() / 'Library/Logs/DiagnosticReports'
-          reports = [p for p in root.glob('*.ips') if ('xctest' in p.name or 'OkouDesktopPackageTests' in p.name) and p.stat().st_mtime > time.time() - 900]
-          print('Recent native crash reports:', len(reports))
-          for path in sorted(reports, key=lambda p: p.stat().st_mtime)[-3:]:
-              lines = path.read_text().splitlines()
-              payload = json.loads('\n'.join(lines[1:]))
-              print('Crash report:', path.name)
-              print('Exception:', payload.get('exception'))
-              print('Termination:', payload.get('termination'))
-              for index, thread in enumerate(payload.get('threads', [])):
-                  if thread.get('triggered'):
-                      print('Triggered thread:', index)
-                      print(json.dumps(thread, indent=2))
-              print('Images:', json.dumps(payload.get('usedImages', []), indent=2))
-          PY
-
       - name: Test Computer Use helper
         run: swift test --package-path desktop/ComputerUse -j 4 --disable-automatic-resolution
 
