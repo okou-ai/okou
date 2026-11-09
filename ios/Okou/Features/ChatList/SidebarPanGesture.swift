@@ -72,8 +72,7 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
       return true
     }
 
-    /// A code block, table or the pinned agents rail under the finger keeps its own sideways
-    /// scrolling.
+    /// A code block or table under the finger keeps its own sideways scrolling.
     private static func isInHorizontalScroller(_ view: UIView?) -> Bool {
       var current = view
       while let candidate = current {
@@ -101,8 +100,8 @@ struct SidebarPanGesture: UIGestureRecognizerRepresentable {
 
 /// Swiping moves between the chat and the full-screen sidebar like turning a page: right from
 /// anywhere in the chat opens it, left from anywhere in the sidebar closes it. Only content
-/// that scrolls sideways keeps the finger (a code block or table in the chat, the pinned agents
-/// rail in the sidebar); from there the chat still opens the sidebar from its leading edge.
+/// that scrolls sideways keeps the finger (a code block or table in the chat); from there the
+/// chat still opens the sidebar from its leading edge.
 /// Chat rows swipe right for their actions, so a left swipe on a row closes the sidebar too.
 enum SidebarGesturePolicy {
   static let leadingEdge: CGFloat = 28

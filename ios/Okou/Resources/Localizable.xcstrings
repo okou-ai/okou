@@ -1806,43 +1806,6 @@
         }
       }
     },
-    "Agents": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Agents" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Agentes" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Agents" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "एजेंट" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Agen" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Agenti" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "エージェント" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "에이전트" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Agentes" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "智能体" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "智慧代理" }
-        }
-      }
-    },
     "AI": {
       "localizations": {
         "de": {
@@ -8396,43 +8359,6 @@
         }
       }
     },
-    "Edit agent on the web": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Agent im Web bearbeiten" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Editar agente en la web" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Modifier l’agent sur le web" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "वेब पर एजेंट संपादित करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Edit agen di web" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Modifica agente sul web" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "ウェブでエージェントを編集" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "웹에서 에이전트 편집" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Editar agente na web" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "在网页版编辑智能体" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "在網頁版編輯智能體" }
-        }
-      }
-    },
     "Email address": {
       "localizations": {
         "de": {
@@ -11692,47 +11618,6 @@
       "localizations": {
         "en": {
           "stringUnit": { "state": "translated", "value": "Mark all as read" }
-        }
-      }
-    },
-    "Mark all as read for this agent": {
-      "extractionState": "manual",
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Alle für diesen Agenten als gelesen markieren" }
-        },
-        "en": {
-          "stringUnit": { "state": "translated", "value": "Mark all as read for this agent" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Marcar todo como leído para este agente" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Tout marquer comme lu pour cet agent" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "इस एजेंट के लिए सभी को पढ़ा हुआ मार्क करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tandai semua sudah dibaca untuk agen ini" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Segna tutto come letto per questo agente" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "このエージェントのチャットをすべて既読にする" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이 에이전트의 모든 채팅을 읽음으로 표시" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Marcar tudo como lido para este agente" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "将此智能体的聊天全部标为已读" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "將此智能體的聊天全部標示為已讀" }
         }
       }
     },
@@ -15184,43 +15069,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "已置頂" }
-        }
-      }
-    },
-    "Pinned Agents": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Angepinnte Agenten" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Agentes fijados" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Agents épinglés" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "पिन किए गए एजेंट" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Agen yang disematkan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Agenti in evidenza" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "ピン留めしたエージェント" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "고정된 에이전트" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Agentes fixados" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已固定的智能体" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "已固定的智能體" }
         }
       }
     },
