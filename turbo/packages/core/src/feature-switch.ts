@@ -348,6 +348,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.UserNotifications]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "In-app notifications",
+    description: "Receive personal announcements from the Okou team.",
+    enabled: false,
+  },
 };
 
 interface ResolvedHashes {

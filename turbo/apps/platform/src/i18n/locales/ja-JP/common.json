@@ -6440,6 +6440,28 @@
       "thread_other": "{{value}}件のスレッド"
     }
   },
+  "userNotifications": {
+    "close": "閉じる",
+    "countUnavailable": "未読件数を取得できません",
+    "detailFailed": "この通知を読み込めませんでした",
+    "empty": "通知はまだありません",
+    "emptyDescription": "Okou からのお知らせがここに表示されます。",
+    "loadFailed": "通知を読み込めませんでした",
+    "loading": "通知を読み込み中",
+    "loadMore": "以前の通知を表示",
+    "nextPage": "次のページ",
+    "pageNavigation": "このメッセージのページ",
+    "pageOf": "{{current}} / {{total}} ページ",
+    "previousPage": "前のページ",
+    "readAll": "すべて既読にする",
+    "readFailed": "既読にできませんでした",
+    "retry": "再試行",
+    "sender": "Okou チーム",
+    "title": "通知",
+    "unread": "未読",
+    "unreadCount_one": "未読の通知 {{count}} 件",
+    "unreadCount_other": "未読の通知 {{count}} 件"
+  },
   "vnc": {
     "add": "ホストを追加",
     "cancel": "キャンセル",

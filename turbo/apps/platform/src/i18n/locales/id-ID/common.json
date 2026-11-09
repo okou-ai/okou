@@ -6440,6 +6440,28 @@
       "thread_other": "{{value}} utas"
     }
   },
+  "userNotifications": {
+    "close": "Tutup",
+    "countUnavailable": "Jumlah notifikasi belum dibaca tidak tersedia",
+    "detailFailed": "Tidak dapat memuat notifikasi ini",
+    "empty": "Belum ada notifikasi",
+    "emptyDescription": "Pembaruan dari Okou akan muncul di sini.",
+    "loadFailed": "Tidak dapat memuat notifikasi",
+    "loading": "Memuat notifikasi",
+    "loadMore": "Tampilkan yang lebih lama",
+    "nextPage": "Halaman berikutnya",
+    "pageNavigation": "Halaman dalam pesan ini",
+    "pageOf": "Halaman {{current}} dari {{total}}",
+    "previousPage": "Halaman sebelumnya",
+    "readAll": "Tandai semua sudah dibaca",
+    "readFailed": "Tidak dapat menandai sebagai dibaca",
+    "retry": "Coba lagi",
+    "sender": "Tim Okou",
+    "title": "Notifikasi",
+    "unread": "Belum dibaca",
+    "unreadCount_one": "{{count}} notifikasi belum dibaca",
+    "unreadCount_other": "{{count}} notifikasi belum dibaca"
+  },
   "vnc": {
     "add": "Tambahkan host",
     "cancel": "Batal",
