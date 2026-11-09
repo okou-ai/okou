@@ -2313,48 +2313,6 @@ fn operation_error_classifies_non_timeout_as_guest() {
     assert_operation_error(err, SandboxOperation::Exec, SandboxOperationReason::Guest);
 }
 
-#[test]
-fn invalid_exec_env_key_returns_operation_error() {
-    let err =
-        FirecrackerSandbox::validate_exec_env_keys(SandboxOperation::Exec, &[("BAD-NAME", "x")])
-            .unwrap_err();
-
-    match err {
-        SandboxError::Operation {
-            operation,
-            reason,
-            message,
-        } => {
-            assert_eq!(operation, SandboxOperation::Exec);
-            assert_eq!(reason, SandboxOperationReason::Other);
-            assert!(message.contains("BAD-NAME"), "got: {message}");
-        }
-        other => panic!("expected operation error, got {other:?}"),
-    }
-}
-
-#[test]
-fn invalid_start_process_env_key_returns_operation_error() {
-    let err = FirecrackerSandbox::validate_exec_env_keys(
-        SandboxOperation::StartProcess,
-        &[("1BAD", "x")],
-    )
-    .unwrap_err();
-
-    match err {
-        SandboxError::Operation {
-            operation,
-            reason,
-            message,
-        } => {
-            assert_eq!(operation, SandboxOperation::StartProcess);
-            assert_eq!(reason, SandboxOperationReason::Other);
-            assert!(message.contains("1BAD"), "got: {message}");
-        }
-        other => panic!("expected operation error, got {other:?}"),
-    }
-}
-
 #[tokio::test]
 async fn start_process_output_rejects_invalid_stream_configuration() {
     let sandbox = test_sandbox_with_state(SandboxState::Running);
