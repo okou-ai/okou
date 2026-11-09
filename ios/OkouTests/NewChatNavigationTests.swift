@@ -97,6 +97,7 @@ final class NewChatNavigationTests: XCTestCase {
     let reopened = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
+    await reopened.refreshNavigation()
     XCTAssertEqual(reopened.newChatDraft, saved + " 继续")
   }
 }

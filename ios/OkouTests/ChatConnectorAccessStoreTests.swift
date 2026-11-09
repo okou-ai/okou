@@ -71,6 +71,7 @@ final class ChatConnectorAccessStoreTests: XCTestCase {
     let fixture = makeFixture(state)
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { workspace.close() }
+    await workspace.refreshNavigation()
     workspace.startNewChat()
     workspace.newChatDraft = "Keep this message"
     let store = workspace.newModelSelection.connectors

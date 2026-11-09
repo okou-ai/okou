@@ -9,7 +9,7 @@ import XCTest
 
 @MainActor
 final class ChatComposerWorkflowTests: XCTestCase {
-  func testWorkflowInsertionAndUndoPreserveNativeAgentAndChatReferences() async throws {
+  func testWorkflowInsertionAndUndoPreserveNativeChatReferences() async throws {
     let fixture = MentionNavigationFixture(workflows: { _ in
       ChatHTTPResponse(body: workflowResponse)
     })
@@ -21,14 +21,14 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let input = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(input)
     input.insertText("Before @")
-    let agent = try XCTUnwrap(
-      workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .agent })
+    let firstChat = try XCTUnwrap(
+      workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .chat })
     try await waitForBusinessResult {
-      workspace.newComposer.editor.mentionSuggestions.contains(agent)
+      workspace.newComposer.editor.mentionSuggestions.contains(firstChat)
     }
-    workspace.newComposer.editor.insertMention(agent)
+    workspace.newComposer.editor.insertMention(firstChat)
     let references = workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }
-    XCTAssertEqual(references.map { $0["type"]?.string }, ["agent"])
+    XCTAssertEqual(references.map { $0["type"]?.string }, ["chat_thread"])
     input.insertText(" /rel after")
     let slash = (input.text as NSString).range(of: "/rel")
     input.selectedRange = NSRange(location: NSMaxRange(slash), length: 0)
@@ -56,7 +56,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }.map {
         $0["type"]?.string
-      }, ["agent", "chat_thread"])
+      }, ["chat_thread", "chat_thread"])
     XCTAssertTrue(input.text.contains("/release after"))
     XCTAssertNil(workflowTable(in: host.view))
     XCTAssertTrue(input.isFirstResponder)
@@ -358,6 +358,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let reopened = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
+    await reopened.refreshNavigation()
     XCTAssertEqual(reopened.newChatDraft, "Summarize /morning-brief ")
     XCTAssertTrue(reopened.composerWorkflows.recentIDs().isEmpty)
     await reopened.sendNewChat()

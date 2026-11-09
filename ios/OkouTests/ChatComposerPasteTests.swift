@@ -132,7 +132,9 @@ final class ChatComposerPasteTests: XCTestCase {
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { workspace.close() }
     await workspace.refreshNavigation()
-    await workspace.refresh()
+    let created = await workspace.createChat()
+    let thread = try XCTUnwrap(created)
+    workspace.startNewChat()
     let originalComposer = workspace.newComposer
     let host = UIHostingController(rootView: WorkspacePasteComposerHarness(workspace: workspace))
     let window = try await mount(host)
@@ -167,7 +169,7 @@ final class ChatComposerPasteTests: XCTestCase {
     }
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
-    workspace.selectChat(AttachmentFlowFixture.threadID)
+    workspace.selectChat(thread.id)
     input.insertText("stale edit")
     XCTAssertEqual(workspace.selectedConversation?.draft, "")
     XCTAssertTrue(originalComposer.text.contains("stale edit"))
