@@ -1622,6 +1622,7 @@
       "saveReason": "Save",
       "sending": "送信中…",
       "sent": "新しいチャットに送信しました",
+      "unavailable": "この提案は利用できなくなりました。提案を更新しました。",
       "undoFeedback": "Undo",
       "useSuggestion": "提案を使う"
     },

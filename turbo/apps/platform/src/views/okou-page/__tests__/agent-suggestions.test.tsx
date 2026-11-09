@@ -178,7 +178,11 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
       });
       if (!found) {
         return respond(409, {
-          error: { code: "CONFLICT", message: "Already consumed" },
+          error: {
+            code: "CONFLICT",
+            message:
+              "Suggestion is no longer available. Refresh your suggestions.",
+          },
         });
       }
       retired.set(params.id, found);
@@ -263,6 +267,8 @@ function okouRow(): HTMLElement {
   return found;
 }
 const SENT = "Sent to a new chat";
+const SUGGESTION_UNAVAILABLE =
+  "That suggestion is no longer available. Suggestions have been refreshed.";
 const MESSAGE_SENT = "Message sent";
 const REFERENCED_THREAD = {
   type: "chat_thread",
@@ -1305,6 +1311,91 @@ test("Failed feedback keeps the local choice and can retry the same feedback ide
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
   expect(attemptedIds[1]).toBe(attemptedIds[0]);
+});
+
+test("Feedback on a card that left the pool refreshes the suggestions with a notice", async () => {
+  const items = numberedSuggestions(3);
+  const pool = mockPool(items);
+  await openHome();
+  await screen.findByText(items[0].title);
+  click(
+    button(
+      "Dismiss",
+      "button",
+      screen.getByRole("article", { name: items[0].title }),
+    ),
+  );
+  await waitFor(() => {
+    expect(pool.consumed).toStrictEqual([items[0].id]);
+  });
+  // A background check withdraws the rest of the pool and offers a new card
+  // while home still shows the cards it loaded.
+  const offered = {
+    ...makeSuggestion(),
+    id: "a0000000-0000-4000-a000-000000000009",
+    title: "Newly offered action",
+  };
+  pool.withdrawAll();
+  pool.publish(offered);
+  click(
+    button(
+      "Already done",
+      "button",
+      screen.getByRole("article", { name: items[1].title }),
+    ),
+  );
+  await screen.findByText(SUGGESTION_UNAVAILABLE);
+  await screen.findByRole("article", { name: offered.title });
+  // Every card that left goes; the card handled earlier keeps its row.
+  expect(listItemLabels()).toStrictEqual([
+    offered.title,
+    "Suggestion dismissed",
+  ]);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Refresh your suggestions/),
+  ).not.toBeInTheDocument();
+  // The earlier card is still part of the visit, so Undo restores it.
+  click(button("Undo"));
+  await screen.findByRole("article", { name: items[0].title });
+  expect(listItemLabels()).toStrictEqual([items[0].title, offered.title]);
+});
+
+test("Retrying feedback for a card that has since left the pool refreshes the suggestions", async () => {
+  const item = makeSuggestion();
+  const pool = mockPool([item]);
+  let failing = true;
+  context.mocks.api(suggestionsContract.feedback, ({ respond }) => {
+    if (failing) {
+      return respond(500, {
+        error: {
+          code: "INTERNAL_SERVER_ERROR",
+          message: "Feedback could not be saved",
+        },
+      });
+    }
+    return respond(409, {
+      error: {
+        code: "CONFLICT",
+        message: "Suggestion is no longer available. Refresh your suggestions.",
+      },
+    });
+  });
+  await openHome();
+  await screen.findByText(item.title);
+  click(button("Already done"));
+  const error = await screen.findByRole("alert");
+  // The card leaves the pool before the member retries.
+  pool.withdrawAll();
+  failing = false;
+  click(button("Try again", "button", error));
+  await screen.findByText(SUGGESTION_UNAVAILABLE);
+  await waitFor(() => {
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+  expect(
+    screen.queryByText("Noted — this is already done"),
+  ).not.toBeInTheDocument();
 });
 
 test("Slow feedback leaves other cards usable and Undo restores the original card in order", async () => {
