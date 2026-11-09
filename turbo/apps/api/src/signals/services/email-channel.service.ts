@@ -29,7 +29,8 @@ import { waitUntil } from "../context/wait-until";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { resolveOrgDefaultComposeId$ } from "./agentphone-shared.service";
 import { ensureOrgLimitedFreeBootstrap$ } from "./org-limited-free-bootstrap.service";
-import { initializeMemberMemory$ } from "./member-memory-initialization.service";
+import { completeOnboarding$ } from "./onboarding.service";
+import type { ApiOrgRole } from "../../types/auth";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { resolveDefaultModelFirstPin$ } from "./model-selection.service";
 import { loadNewChatThreadDefaults$ } from "./chat-thread-defaults.service";
@@ -69,9 +70,7 @@ const receivedChannelEmailSchema = object({
     dkim: string(),
     dmarc: string(),
   }).nullable(),
-  attachments: array(
-    object({ id: string(), filename: string().nullable() }),
-  ).default([]),
+  attachments: array(object({ id: string(), filename: string().nullable() })),
 });
 
 function normalizeMailbox(value: string): string | null {
@@ -183,6 +182,7 @@ export const linkEmailIdentity$ = command(
       readonly orgId: string;
       readonly reconnect?: boolean;
     },
+    signal: AbortSignal,
   ) => {
     const db = set(writeDb$);
     if (args.reconnect) {
@@ -222,6 +222,7 @@ export const linkEmailIdentity$ = command(
             .where(sql`true`),
         )
         .onConflictDoNothing({ target: emailUserLinks.emailAddress });
+      signal.throwIfAborted();
     }
     await db
       .insert(emailUserLinks)
@@ -231,17 +232,20 @@ export const linkEmailIdentity$ = command(
         orgId: args.orgId,
       })
       .onConflictDoNothing({ target: emailUserLinks.emailAddress });
+    signal.throwIfAborted();
     const [link] = await db
       .select()
       .from(emailUserLinks)
       .where(eq(emailUserLinks.emailAddress, args.email))
       .limit(1);
+    signal.throwIfAborted();
     if (
       link?.userId === args.userId &&
       link.orgId === args.orgId &&
       !link.disconnectedAt
     ) {
       await publishUserSignal([args.userId], "email:changed");
+      signal.throwIfAborted();
     }
     return link?.userId === args.userId &&
       link.orgId === args.orgId &&
@@ -402,9 +406,15 @@ function emailInputFiles(
 ): readonly IntegrationInputFile[] {
   const files: readonly IntegrationInputFile[] = message.attachmentIds.map(
     (id, index) => {
+      const filename = message.attachmentNames[index];
+      if (filename === undefined) {
+        throw new Error(
+          "Email attachment filename is missing from its receipt",
+        );
+      }
       return {
         sourceId: id,
-        filename: message.attachmentNames[index] ?? `attachment-${id}`,
+        filename,
         maxBytes: 10 * 1024 * 1024,
         provenance: {
           provider: "email",
@@ -429,13 +439,15 @@ const initializeEmailWorkspace$ = command(
     args: {
       readonly orgId: string;
       readonly userId: string;
-      readonly isAdmin: boolean;
+      readonly role: ApiOrgRole;
     },
     signal: AbortSignal,
   ) => {
-    if (args.isAdmin && !(await set(resolveOrgDefaultComposeId$, args.orgId))) {
+    const defaultAgentId = await set(resolveOrgDefaultComposeId$, args.orgId);
+    signal.throwIfAborted();
+    if (args.role === "admin" && !defaultAgentId) {
       // Signup can reach this continuation before Clerk's organization webhook.
-      // Reuse the idempotent bootstrap without completing browser onboarding.
+      // Reuse the same workspace bootstrap as the normal signup workflow.
       await set(
         ensureOrgLimitedFreeBootstrap$,
         { orgId: args.orgId, ownerUserId: args.userId },
@@ -444,8 +456,12 @@ const initializeEmailWorkspace$ = command(
       signal.throwIfAborted();
     }
     await set(
-      initializeMemberMemory$,
-      { orgId: args.orgId, userId: args.userId },
+      completeOnboarding$,
+      {
+        orgId: args.orgId,
+        member: { userId: args.userId, role: args.role },
+        isAdmin: args.role === "admin",
+      },
       signal,
     );
     signal.throwIfAborted();
@@ -502,7 +518,7 @@ export const processEmailChannelMessage$ = command(
       {
         orgId: link.orgId,
         userId: link.userId,
-        isAdmin: role.role === "admin",
+        role: role.role,
       },
       signal,
     );
@@ -645,11 +661,11 @@ const resolveEmailSender$ = command(
           return { kind: "ignored" } as const;
         }
         link =
-          (await set(linkEmailIdentity$, {
-            email: sender,
-            userId: user.id,
-            orgId,
-          })) ?? undefined;
+          (await set(
+            linkEmailIdentity$,
+            { email: sender, userId: user.id, orgId },
+            signal,
+          )) ?? undefined;
         signal.throwIfAborted();
       }
     }

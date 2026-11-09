@@ -1,4 +1,4 @@
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2, Mail } from "lucide-react";
 import { Button } from "@okouai/ui";
@@ -10,7 +10,6 @@ import {
   emailLinkStatus$,
   disconnectEmail$,
   connectVerifiedEmail$,
-  connectEmailOnRef$,
   type EmailLinkStatus,
 } from "../../signals/okou-page/email.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -27,12 +26,9 @@ import {
 } from "./connect-page-shell.tsx";
 
 export function EmailConnectPage() {
-  const connect = useSet(connectEmailOnRef$);
   return (
     <PageShell>
-      <div ref={connect} className="contents">
-        <EmailConnectContent />
-      </div>
+      <EmailConnectContent />
     </PageShell>
   );
 }

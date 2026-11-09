@@ -2,7 +2,12 @@ import { chatThreadEventsContract } from "../contracts/chat-threads";
 import type { ChatEventRow } from "../contracts/chat-event-rows";
 import type { ClientResponseTransform } from "./types";
 
-/** Installed native readers display the payload without an Email context reader. */
+/**
+ * Installed iOS readers cannot decode Email context on the shared chat routes.
+ * Bound these transforms when an Email-capable iOS release becomes available;
+ * remove both entries and wiring when the enforced iOS floor excludes older
+ * readers. Follow-up: #46063, using the native transform lifecycle.
+ */
 function legacyEmailContext(row: ChatEventRow): ChatEventRow {
   return row.contextType === "email"
     ? { ...row, contextType: "web", contextId: null }

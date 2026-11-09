@@ -7,7 +7,6 @@ import { accept } from "../../lib/accept.ts";
 import { searchParams$ } from "../route.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
-import { onRef } from "../utils.ts";
 
 const reload$ = state(0);
 const connectionRequest$ = state<Promise<{
@@ -63,23 +62,20 @@ const connectOriginalEmail$ = command(async ({ get }, signal: AbortSignal) => {
   signal.throwIfAborted();
   return response.body;
 });
-const connectEmailFromLink$ = command(({ get, set }, signal: AbortSignal) => {
-  if (
-    !get(featureSwitch$)[FeatureSwitchKey.EmailIntegration] ||
-    !get(emailConnectParams$)?.success
-  ) {
-    return;
-  }
-  const request = set(connectOriginalEmail$, signal);
-  set(connectionRequest$, request);
-  return request;
-});
-
-export const connectEmailOnRef$ = onRef(
-  command(async ({ set }, _element: HTMLElement, signal: AbortSignal) => {
-    await set(connectEmailFromLink$, signal);
-  }),
+export const connectEmailFromLink$ = command(
+  ({ get, set }, signal: AbortSignal) => {
+    if (
+      !get(featureSwitch$)[FeatureSwitchKey.EmailIntegration] ||
+      !get(emailConnectParams$)?.success
+    ) {
+      return;
+    }
+    const request = set(connectOriginalEmail$, signal);
+    set(connectionRequest$, request);
+    return request;
+  },
 );
+
 export const disconnectEmail$ = command(
   async ({ get }, emailAddress: string, signal: AbortSignal) => {
     await accept(

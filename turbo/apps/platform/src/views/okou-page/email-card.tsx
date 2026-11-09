@@ -1,6 +1,6 @@
 import { useLastLoadable } from "ccstate-react";
 import { CircleCheck, Mail } from "lucide-react";
-import { surfaceVariants, buttonVariants } from "@okouai/ui";
+import { Badge, surfaceVariants, buttonVariants } from "@okouai/ui";
 import { useTranslation } from "react-i18next";
 import { Link } from "../router/link.tsx";
 import { emailLinkStatus$ } from "../../signals/okou-page/email.ts";
@@ -29,10 +29,10 @@ export function EmailCard() {
           </div>
         </div>
         {email ? (
-          <span className="inline-flex min-w-0 max-w-20 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground sm:max-w-52">
-            <CircleCheck className="h-3 w-3 shrink-0 text-green-600" />
+          <Badge className="min-w-0 max-w-20 shrink-0 text-xs font-medium text-secondary-foreground sm:max-w-52">
+            <CircleCheck className="shrink-0 text-green-600" />
             <span className="truncate">{email}</span>
-          </span>
+          </Badge>
         ) : null}
         {status.state === "hasData" && status.data.configured ? (
           <Link

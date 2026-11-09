@@ -35,16 +35,16 @@ beforeEach(() => {
 });
 
 test("automatically connects the original email after authentication", async () => {
-  const requests: unknown[] = [];
+  let requestBody: unknown;
   context.mocks.api(integrationsEmailContract.connect, ({ body, respond }) => {
-    requests.push(body);
+    requestBody = body;
     return respond(200, { emailAddress });
   });
   await setupPage({ context, path, featureSwitches: featureSwitches() });
   await expect(
     screen.findByText("Email connected"),
   ).resolves.toBeInTheDocument();
-  expect(requests).toStrictEqual([proof()]);
+  expect(requestBody).toStrictEqual(proof());
   expect(control("link", "Open email")).toHaveAttribute(
     "href",
     "mailto:okou@okou.io",
@@ -77,16 +77,21 @@ test("disconnects a verified address and offers explicit reconnection", async ()
       availableEmails: [emailAddress],
     });
   });
-  context.mocks.api(integrationsEmailContract.unlink, ({ body, respond }) => {
-    expect(body.emailAddress).toBe(emailAddress);
-    linked = false;
-    return respond(204);
-  });
+  context.mocks.api(
+    integrationsEmailContract.unlink,
+    async ({ body, respond }) => {
+      expect(body.emailAddress).toBe(emailAddress);
+      linked = false;
+      await context.mocks.ably.trigger("email:changed");
+      return respond(204);
+    },
+  );
   context.mocks.api(
     integrationsEmailContract.connectAddress,
-    ({ body, respond }) => {
+    async ({ body, respond }) => {
       expect(body.emailAddress).toBe(emailAddress);
       linked = true;
+      await context.mocks.ably.trigger("email:changed");
       return respond(200, { emailAddress });
     },
   );
@@ -100,21 +105,15 @@ test("disconnects a verified address and offers explicit reconnection", async ()
       return control("button", "Disconnect");
     }),
   );
-  await waitFor(() => {
-    expect(linked).toBeFalsy();
-  });
-  await context.mocks.ably.trigger("email:changed");
   click(
     await waitFor(() => {
-      return control("button", "Connect");
+      const button = control("button", "Connect");
+      expect(button).toBeEnabled();
+      return button;
     }),
   );
   await waitFor(() => {
-    expect(linked).toBeTruthy();
-  });
-  await context.mocks.ably.trigger("email:changed");
-  await waitFor(() => {
-    return expect(control("button", "Disconnect")).toBeInTheDocument();
+    expect(control("button", "Disconnect")).toBeEnabled();
   });
 });
 

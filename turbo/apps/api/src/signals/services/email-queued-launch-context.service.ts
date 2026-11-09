@@ -108,6 +108,9 @@ export function createEmailThreadContext(
     if (event?.contextType !== "email") {
       return null;
     }
+    if (!event.contextId) {
+      throw new Error("Email input is missing its canonical context identity");
+    }
     const db = get(db$);
     const [row] = await db
       .select({
@@ -139,10 +142,7 @@ export function createEmailThreadContext(
       )
       .where(
         and(
-          eq(
-            chatEmailContext.id,
-            event.contextId ?? "00000000-0000-0000-0000-000000000000",
-          ),
+          eq(chatEmailContext.id, event.contextId),
           eq(chatEmailContext.chatThreadId, event.chatThreadId),
         ),
       )

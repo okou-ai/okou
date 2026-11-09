@@ -1,6 +1,6 @@
 import { now } from "../../../lib/time";
 import { randomUUID } from "node:crypto";
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
 import { object, string, record } from "zod";
 import { integrationsEmailContract } from "@okouai/api-contracts/contracts/integrations-email";
@@ -89,6 +89,10 @@ function incoming(options: {
   readonly text?: string;
   readonly inReplyTo?: string;
   readonly authenticated?: boolean;
+  readonly attachments?: readonly {
+    readonly id: string;
+    readonly filename: string | null;
+  }[];
   readonly authentication?: {
     readonly spf: string;
     readonly dkim: string;
@@ -115,7 +119,7 @@ function incoming(options: {
           dkim: "pass",
           dmarc: options.authenticated === false ? "fail" : "pass",
         },
-        attachments: [],
+        attachments: options.attachments ?? [],
       });
     }),
   );
@@ -179,12 +183,114 @@ function sentEmails() {
 }
 
 describe("Email integration", () => {
-  it("keeps email chats readable through both installed-iOS event endpoints", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
+  it("imports an email attachment privately without forwarding the Resend credential to its download host", async () => {
+    const { actor } = await entitledActor();
+    const attachmentId = randomUUID();
+    const receipt = incoming({
+      sender: actor.email,
+      attachments: [{ id: attachmentId, filename: "comparison.txt" }],
     });
+    const downloadUrl = `https://resend-attachments.s3.amazonaws.com/${attachmentId}/comparison.txt`;
+    server.use(
+      http.get(
+        `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
+        ({ request }) => {
+          expect(request.headers.get("authorization")).toBe(
+            "Bearer test-resend-key",
+          );
+          return HttpResponse.json({
+            id: attachmentId,
+            download_url: downloadUrl,
+          });
+        },
+      ),
+      http.get(downloadUrl, ({ request }) => {
+        expect(request.headers.get("authorization")).toBeNull();
+        return new HttpResponse("A private comparison", {
+          headers: { "Content-Type": "text/plain" },
+        });
+      }),
+    );
+    await receipt.send();
+    const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
+    if (!threadId) {
+      throw new Error("Expected an email chat with an attachment");
+    }
+    const { events } = await files.listThreadEvents(actor, threadId);
+    const prompt = events.find((event) => {
+      return event.eventType === "input.prompt";
+    });
+    if (prompt?.eventType !== "input.prompt") {
+      throw new Error("Expected the email input");
+    }
+    const attachment = prompt.userMessage.parts.find((part) => {
+      return part.type === "file";
+    });
+    if (attachment?.type !== "file") {
+      throw new Error("Expected the imported attachment");
+    }
+    expect(attachment).toMatchObject({
+      filenameSnapshot: "comparison.txt",
+      contentType: "text/plain",
+    });
+    const resolved = await files.resolveWebFileUrl(actor, attachment.fileId);
+    expect(resolved.publicUrl).toBeNull();
+    expect(resolved.url).not.toBe(downloadUrl);
+    const outsider = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+    await files.requestWebFileUrl(outsider, attachment.fileId, [404]);
+  });
+
+  it("rejects untrusted attachment download hosts while preserving the email text", async () => {
+    const { actor } = await entitledActor();
+    const attachmentId = randomUUID();
+    const receipt = incoming({
+      sender: actor.email,
+      attachments: [{ id: attachmentId, filename: "untrusted.txt" }],
+    });
+    const downloadUrl = `https://untrusted.example/${attachmentId}/untrusted.txt`;
+    let untrustedHostRequested = false;
+    server.use(
+      http.get(
+        `https://api.resend.com/emails/receiving/${receipt.id}/attachments/${attachmentId}`,
+        () => {
+          return HttpResponse.json({
+            id: attachmentId,
+            download_url: downloadUrl,
+          });
+        },
+      ),
+      http.get(downloadUrl, () => {
+        untrustedHostRequested = true;
+        return new HttpResponse("Untrusted attachment");
+      }),
+    );
+    await receipt.send();
+    const threadId = (await createdThreads(actor)).chatThreads[0]?.id;
+    if (!threadId) {
+      throw new Error("Expected the email text to remain available");
+    }
+    const { events } = await files.listThreadEvents(actor, threadId);
+    const prompt = events.find((event) => {
+      return event.eventType === "input.prompt";
+    });
+    if (prompt?.eventType !== "input.prompt") {
+      throw new Error("Expected the email input");
+    }
+    const attachment = prompt.userMessage.parts.find((part) => {
+      return part.type === "file";
+    });
+    if (attachment?.type !== "file") {
+      throw new Error("Expected the unavailable attachment reference");
+    }
+    expect(attachment.filenameSnapshot).toBe("untrusted.txt");
+    expect(prompt.userMessage.parts).toContainEqual({
+      type: "text",
+      text: expect.stringContaining("Please compare these options"),
+    });
+    expect(untrustedHostRequested).toBeFalsy();
+  });
+
+  it("keeps email chats readable through both installed-iOS event endpoints", async () => {
     const { actor } = await entitledActor();
     await incoming({ sender: actor.email }).send();
     const threads = await createdThreads(actor);
@@ -252,11 +358,6 @@ describe("Email integration", () => {
   });
 
   it("revokes pending reply delivery when its sender disconnects", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const { actor, group } = await entitledActor();
     await incoming({ sender: actor.email }).send();
     await runs.heartbeatRunner(group);
@@ -306,11 +407,6 @@ describe("Email integration", () => {
   });
 
   it("does not join another sender's chat through copied reference headers", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const { actor: firstActor } = await entitledActor();
     const first = incoming({ sender: firstActor.email });
     await first.send();
@@ -335,11 +431,6 @@ describe("Email integration", () => {
   });
 
   it("connects only verified account addresses and requires explicit reconnection after disconnect", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     verifiedDirectory(actor);
     await accept(
@@ -398,11 +489,6 @@ describe("Email integration", () => {
   });
 
   it("does not auto-connect an account from a forged sender", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     verifiedDirectory(actor);
     await incoming({ sender: actor.email, authenticated: false }).send();
@@ -418,11 +504,6 @@ describe("Email integration", () => {
   });
 
   it("accepts aligned DKIM for a DMARC monitoring policy but rejects SPF-only gray authentication", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const { actor } = await entitledActor();
     await incoming({
       sender: actor.email,
@@ -455,11 +536,6 @@ describe("Email integration", () => {
   });
 
   it("auto-connects registered senders, separates independent emails, keeps replies in their original chat, and deduplicates webhook retries", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const { actor, group } = await entitledActor();
     const first = incoming({
       sender: actor.email,
@@ -566,11 +642,6 @@ describe("Email integration", () => {
   });
 
   it("preserves the original request through signup and auto-connect, rejects another account, and resumes only once", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
     const sender = "yuma@vm0.ai";
     context.mocks.clerk.users.getUserList.mockResolvedValue({
       data: [],
@@ -599,6 +670,15 @@ describe("Email integration", () => {
       email: sender,
       orgId: createUniqueStaffOrgIdFixture(),
     });
+    onTestFinished(async () => {
+      webhooks.configureClerkWebhookSecret();
+      webhooks.verifyNextClerkWebhook({
+        type: "user.deleted",
+        data: { id: actor.userId },
+      });
+      await webhooks.requestClerkWebhook("{}", {}, [200]);
+      await flushWaitUntilForTest();
+    });
     bdd.acceptAgentStorageWrites();
     runs.acceptStorageDownloads();
     runs.acceptTelemetryIngest();
@@ -620,6 +700,12 @@ describe("Email integration", () => {
       [200],
     );
     await flushWaitUntilForTest();
+    await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
+      needsOnboarding: false,
+      onboardingComplete: true,
+      hasDefaultAgent: true,
+    });
+    verifiedDirectory(actor);
     const snapshot = await createdThreads(actor);
     expect(snapshot.chatThreads).toHaveLength(1);
     const { events } = await files.listThreadEvents(

@@ -98,12 +98,11 @@ const connectAddress$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Connect a verified email address belonging to your account.",
     );
   }
-  const link = await set(linkEmailIdentity$, {
-    email,
-    userId: auth.userId,
-    orgId: auth.orgId,
-    reconnect: true,
-  });
+  const link = await set(
+    linkEmailIdentity$,
+    { email, userId: auth.userId, orgId: auth.orgId, reconnect: true },
+    signal,
+  );
   signal.throwIfAborted();
   if (!link) {
     return conflict(
@@ -151,11 +150,11 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Sign in with the verified email address that sent the original message.",
     );
   }
-  const link = await set(linkEmailIdentity$, {
-    email: message.sender,
-    userId: auth.userId,
-    orgId: auth.orgId,
-  });
+  const link = await set(
+    linkEmailIdentity$,
+    { email: message.sender, userId: auth.userId, orgId: auth.orgId },
+    signal,
+  );
   signal.throwIfAborted();
   if (!link) {
     return conflict(
