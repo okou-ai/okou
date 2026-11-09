@@ -45,15 +45,13 @@ for (const changed of [
   { writablePresentation: true },
   { role: "foreign" },
 ])
-  assert.throws(
-    () =>
-      validateRolePermissions(
-        { ...readonlyPermissions, ...changed },
-        "okou_readonly_access",
-        false,
-      ),
-    /ProductionRolePrivilegesRejected/u,
-  );
+  assert.throws(() => {
+    return validateRolePermissions(
+      { ...readonlyPermissions, ...changed },
+      "okou_readonly_access",
+      false,
+    );
+  }, /ProductionRolePrivilegesRejected/u);
 const host = "ep-production.us-west-2.aws.neon.tech";
 const scope = {
   database: `${host}:5432/neondb`,
