@@ -8,6 +8,53 @@ import XCTest
 
 @MainActor
 final class UnreadPersistenceTests: XCTestCase {
+  func testUnreadArrivingBeforeANewChatSurvivesItsFailedForegroundRead() async throws {
+    let hasThread = Mutex(false)
+    let failing = Mutex(false)
+    let threadID = ConversationHistoryFixture.threadID
+    let agentID = ConversationHistoryFixture.agentID
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(
+          body: #"{"chatThreads":[],"latestEventId":null,"latestSeqId":null}"#)
+      case "/api/chat-threads/events":
+        let since = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+          .queryItems?.first { $0.name == "sinceSeqId" }?.value
+        let event = """
+          {"id":"67000000-0000-4000-8000-000000000001","seqId":1,"kind":"created","chatThreadId":"\(threadID)","agentId":"\(agentID)","title":"New answer","createdAt":"2026-11-09T00:00:00Z"}
+          """
+        let events = hasThread.withLock { $0 } && (since == nil || since == "0") ? event : ""
+        return ChatHTTPResponse(body: "{\"events\":[\(events)],\"hasMore\":false}")
+      case "/api/indicators":
+        if failing.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
+        return unreadPresentation(true)
+      default: throw URLError(.unsupportedURL)
+      }
+    }
+    let directory = CacheTestDirectory(owner: self)
+    let sync = ChatSync(
+      client: fixture.client,
+      cache: directory.cache(
+        scope: ChatCacheScope(
+          apiBaseURL: fixture.baseURL, userID: "user", workspaceID: "workspace")))
+    try await sync.prefetchThreadList()
+    _ = try await sync.indicators()
+    let store = WorkspaceStore(
+      client: fixture.client, webURL: fixture.baseURL, sharedSync: sync,
+      readRetrySleep: { _ in })
+    defer { store.close() }
+    await store.list.restoreCached()
+    XCTAssertTrue(store.list.threads.isEmpty)
+
+    hasThread.withLock { $0 = true }
+    failing.withLock { $0 = true }
+    await store.list.refresh()
+    XCTAssertEqual(store.list.threads.first?.indicator, .unread)
+    XCTAssertTrue(store.list.hasUnreadThreads)
+    XCTAssertNil(store.list.syncError)
+  }
+
   func testMountedAndColdListsRestoreUnreadWithoutAListEventOrForegroundNetwork() async throws {
     let unread = Mutex(false)
     let offline = Mutex(false)

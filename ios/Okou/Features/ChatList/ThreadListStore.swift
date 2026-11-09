@@ -312,6 +312,7 @@ final class ThreadListStore {
             try await sync.threadsWithIndicators()
           }
           var result = response.threads
+          let cachedUnread = response.indicators == nil ? await sync.cachedIndicators() : nil
           try Task.checkCancellation()
           guard !closed, refreshGeneration == generation else { return }
           optimisticChanges.removeAll { response.eventIDs.contains($0.id) }
@@ -325,6 +326,18 @@ final class ThreadListStore {
               let held = threads.first { $0.id == result[index].id }
               result[index].indicator = held?.indicator
               result[index].unreadAt = held?.unreadAt
+              if held == nil, revision == readRevision, !result[index].isMuted,
+                let timestamp = cachedUnread?.unreadAt[result[index].id]
+              {
+                // Indicators can reach disk before this chat's list event.
+                result[index].indicator = .unread
+                result[index].unreadAt = timestamp
+              }
+            }
+            if revision == readRevision, let cachedUnread,
+              cachedUnread.revision > appliedIndicatorsRevision
+            {
+              unreadAgentIDs = cachedUnread.unreadAgentIDs
             }
             if revision != readRevision { refreshAgain = true }
           } else {
