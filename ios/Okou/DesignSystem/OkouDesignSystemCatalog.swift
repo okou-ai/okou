@@ -37,7 +37,6 @@
     static let sampleChats = [
       "Trip to Kyoto", "Quarterly report", "Launch checklist", "Brand colours", "Weekly sync notes",
     ]
-    @State private var menuLogos = OkouWorkspaceMenuLogos()
 
     var body: some View {
       ScrollView {
@@ -354,7 +353,8 @@
                     Label {
                       Text(verbatim: workspace.name)
                     } icon: {
-                      menuLogos.image(workspaceID: workspace.id, imageURL: nil, hasImage: false)
+                      OkouWorkspaceMenuLogos.image(
+                        workspaceID: workspace.id, hasImage: false, cachedImage: nil)
                     }
                     .tag(workspace.id)
                   }
@@ -366,11 +366,6 @@
               }
               .buttonStyle(.plain)
               Text(verbatim: name).font(.okou(.headline))
-            }
-            .task {
-              for workspace in Self.sampleWorkspaces {
-                await menuLogos.load(workspaceID: workspace.id, imageURL: nil, hasImage: false)
-              }
             }
           }
           section("Agent identities") {
