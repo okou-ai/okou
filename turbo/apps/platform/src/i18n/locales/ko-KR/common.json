@@ -103,7 +103,7 @@
           "title": "제공자 일시적 사용 불가"
         }
       },
-      "fallbackAgent": "에이전트",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "소요 시간",
         "model": "모델",
@@ -321,7 +321,7 @@
       "yes": "예"
     },
     "sources": {
-      "agent": "에이전트",
+      "agent": "Okou",
       "agentphone": "iMessage",
       "automationEvent": "자동화 이벤트",
       "automationSchedule": "자동화 일정",
@@ -538,7 +538,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "에이전트가 아직 로딩 중입니다",
+      "agentLoading": "Okou를 불러오는 중입니다",
       "connect": "Google Drive 연결",
       "connectTooltip": "아티팩트 업로드를 위해 Google Drive를 연결하세요",
       "conversionNotice": "편집 가능한 사본을 만듭니다. 서식이 달라질 수 있습니다.",
@@ -1010,11 +1010,11 @@
         "twentyFourHours": "24시간"
       },
       "errors": {
-        "agentNotFound": "에이전트를 찾을 수 없음",
-        "loadAgent": "에이전트 로드 실패",
+        "agentNotFound": "이 요청은 더 이상 사용할 수 없습니다",
+        "loadAgent": "이 요청을 불러오지 못했습니다",
         "loadGrants": "권한 부여 로드 실패",
         "loadMetadata": "권한 메타데이터 로드 실패",
-        "missingAgentId": "URL 매개변수에 에이전트 ID 누락",
+        "missingAgentId": "이 링크가 불완전합니다. 채팅에서 다시 여세요.",
         "missingPermission": "URL 매개변수에 권한 누락",
         "unknownAction": "알 수 없는 권한 작업: {{action}}",
         "unknownConnector": "알 수 없는 커넥터: {{connector}}",
@@ -1061,7 +1061,8 @@
       "notNow": "나중에",
       "review": "권한 검토",
       "scopeNote": "현재 작업뿐 아니라 이 에이전트에 적용됩니다.",
-      "sharedScopeNote": "이 커넥터의 권한은 모든 채팅과 에이전트에 적용됩니다.",
+      "scopeNoteSingle": "현재 작업뿐 아니라 모든 채팅에 적용됩니다.",
+      "sharedScopeNote": "모든 채팅에서 이 커넥터에 적용됩니다.",
       "title": "다음 권한 허용"
     }
   },
@@ -1775,7 +1776,7 @@
       "repair": "복구",
       "repairRequired": "{{institution}}에 복구가 필요합니다",
       "revoke": "철회",
-      "revokeConfirm": "이 에이전트의 뱅킹 접근을 철회하시겠습니까?",
+      "revokeConfirm": "은행 액세스를 취소할까요?",
       "selectAccounts": "계좌 선택",
       "sevenDays": "7일",
       "thirtyDays": "30일",
@@ -1828,7 +1829,7 @@
       "checkingOutcomeDescription": "브라우저가 이 요청을 확인하기를 기다리고 있습니다.",
       "completed": "정보가 추가됨",
       "confirmRangeValue": "현재 값 사용",
-      "delivered": "에이전트에게 알림",
+      "delivered": "Okou에게 알렸습니다",
       "expired": "요청이 만료됨",
       "expiredDescription": "브라우저가 닫혔거나 이 요청이 더 이상 활성 상태가 아닙니다.",
       "fileLeave": "웹사이트의 파일을 변경하지 않기",
@@ -1842,14 +1843,14 @@
       "required": "(필수)",
       "site": "사이트",
       "stale": "필드가 변경됨",
-      "staleDescription": "에이전트에게 새 요청을 만들도록 요청하세요.",
+      "staleDescription": "Okou에게 새 요청을 만들도록 요청하세요.",
       "submit": "브라우저에 추가",
-      "submitDescription": "입력한 정보가 이 웹사이트에 추가됩니다. 이후 에이전트가 작업을 계속하고 결과를 확인합니다.",
+      "submitDescription": "입력한 정보가 이 웹사이트에 추가됩니다. 그런 다음 Okou가 계속 진행하고 결과를 확인합니다.",
       "submitting": "추가 중…",
       "title": "브라우저에 정보 입력",
       "unavailable": "요청을 사용할 수 없음",
       "uncertain": "브라우저를 확인하세요",
-      "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. 에이전트에게 결과를 확인해 달라고 요청하세요."
+      "uncertainDescription": "브라우저가 정보를 받았을 수 있습니다. Okou에게 결과를 확인하도록 요청하세요."
     },
     "capabilityHome": {
       "back": "모든 기능",
@@ -1968,6 +1969,7 @@
         "slideCountRange": "{{range}}장"
       },
       "mentionHint": "에이전트 또는 채팅 검색…",
+      "mentionHintSingle": "채팅 검색…",
       "message": "메시지",
       "modelForThisChat": "이 채팅의 모델",
       "placeholder": "워크플로 자동화, 작업 관리 등을 요청하세요...",
@@ -2061,7 +2063,7 @@
       "authorized": "{{connectorName}}가 연결되고 {{agentName}}에 권한이 부여되었습니다",
       "back": "뒤로",
       "configurePermissions": "{{connectorName}} 권한 구성",
-      "customAuthorizeDescription": "이 맞춤 커넥터를 검토하고 연결한 후 에이전트에 권한을 부여하세요.",
+      "customAuthorizeDescription": "이 사용자 지정 커넥터를 검토하고 연결한 뒤 승인하세요.",
       "directory": {
         "allCategories": "전체",
         "askAdmin": "관리자에게 활성화를 요청하세요",
@@ -2288,7 +2290,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "에이전트를 찾을 수 없습니다",
+      "agentNotFound": "이 요청은 더 이상 사용할 수 없습니다",
       "allow": "허용",
       "alreadyAllowed": "이미 허용됨",
       "alreadyDenied": "이미 거부됨",
@@ -3207,7 +3209,7 @@
       "accessUpdated": "{{connector}} 권한이 업데이트되었습니다",
       "clearSearch": "에이전트 검색 초기화",
       "description": "이 커넥터를 사용할 수 있는 에이전트를 선택하세요.",
-      "loading": "에이전트 불러오는 중...",
+      "loading": "액세스를 불러오는 중...",
       "managePermissions": "권한 관리",
       "managePermissionsFor": "{{agent}}에 대한 {{connector}} 권한 관리",
       "noAgents": "에이전트를 찾을 수 없습니다",
@@ -3374,8 +3376,8 @@
           "menu": "영업 및 비즈니스"
         }
       },
-      "description": "에이전트가 사용할 수 있도록 타사 서비스를 연결하세요.",
-      "descriptionWithCount": "에이전트가 사용할 수 있도록 {{value}}개의 서비스를 연결하세요.",
+      "description": "Okou가 사용할 수 있도록 서드파티 서비스를 연결하세요.",
+      "descriptionWithCount": "Okou가 사용할 수 있도록 서비스 {{value}}개를 연결하세요.",
       "directory": {
         "browse": "둘러보기",
         "builtin": "기본 제공 커넥터",
@@ -3480,7 +3482,7 @@
         "continue": "계속",
         "continueToProvider": "접근 권한 승인을 위해 제공자 페이지로 이동합니다.",
         "continueWithAutomatic": "계속하면 Okou가 이 MCP 서버의 인증 방식을 확인합니다.",
-        "description": "비밀 키는 저장 시 암호화되며 방화벽에서 아웃바운드 요청에 주입됩니다. 에이전트에 환경 변수로 노출되지 않습니다.",
+        "description": "시크릿은 저장 시 암호화되며 방화벽이 아웃바운드 요청에 삽입합니다. 환경 변수로 Okou에 노출되지 않습니다.",
         "errors": {
           "authenticationResponseInvalid": "MCP 서버가 지원되지 않는 인증 응답을 반환했습니다. MCP 엔드포인트와 인증 설정을 확인하거나 서버 관리자에게 문의하세요.",
           "authorizationUnsupported": "OAuth 제공자가 자동 인증에 필요한 권한 부여 요구 사항을 지원하지 않습니다. 호환되는 클라이언트 자격 증명을 이미 보유한 경우에만 사용자 지정 OAuth를 사용하거나 Okou 지원팀에 문의하세요.",
@@ -3554,7 +3556,7 @@
         "tokenUrl": "토큰 URL"
       },
       "delete": {
-        "description": "이 작업은 커넥터와 모든 멤버의 저장된 시크릿을 제거합니다. 이 커넥터에 권한이 부여된 에이전트는 즉시 접근 권한을 잃게 됩니다. 되돌릴 수 없습니다.",
+        "description": "커넥터와 각 멤버가 저장한 시크릿이 삭제됩니다. 모든 채팅에서 즉시 작동이 중단됩니다. 이 작업은 되돌릴 수 없습니다.",
         "title": "{{connector}} 삭제하시겠습니까?"
       },
       "edit": {
@@ -3577,12 +3579,14 @@
       }
     },
     "directed": {
+      "allowAccess": "액세스 허용",
       "authorizeAgent": "{{agent}} 권한 부여",
       "authorized": "{{connector}} 권한 부여됨",
       "authorizeDocumentTitle": "{{connector}} 권한 부여",
       "connectDocumentTitle": "{{connector}} 연결",
       "connected": "{{connector}} 연결됨",
       "needsConnector": "{{agent}}가 진행하려면 {{connector}}가 필요합니다",
+      "needsConnectorSingle": "계속하려면 Okou에 {{connector}}이(가) 필요합니다",
       "reconnecting": "다시 연결 중..."
     },
     "expiration": {
@@ -3667,13 +3671,13 @@
       },
       "github": {
         "accountFallback": "이 GitHub 계정",
-        "alreadyDescription": "{{account}}로 이미 연결되어 있습니다. GitHub 이슈나 풀 리퀘스트에서 에이전트를 언급하여 대화를 시작하세요.",
+        "alreadyDescription": "{{account}}(으)로 이미 연결되어 있습니다. GitHub 이슈나 풀 리퀘스트에서 Okou를 멘션해 대화를 시작하세요.",
         "alreadyTitle": "GitHub에 이미 연결됨",
         "back": "워크플로로 돌아가기",
         "checkingConnectionDescription": "GitHub 연결을 확인하는 중입니다. 잠시만 기다려 주세요.",
         "checkingConnectionTitle": "연결 확인 중...",
         "checkingSession": "{{brandName}} 세션을 확인하는 중입니다. 잠시만 기다려 주세요.",
-        "connectDescription": "{{brandName}} 계정을 {{account}}에 연결하면 GitHub 이슈 및 풀 리퀘스트에서 에이전트를 실행할 수 있습니다.",
+        "connectDescription": "{{brandName}} 계정을 {{account}}에 연결하면 GitHub 이슈와 풀 리퀘스트에서 Okou를 멘션할 수 있습니다.",
         "connectTitle": "GitHub에 연결하기",
         "errorFallback": "GitHub에 연결할 수 없습니다. GitHub에서 다시 시도하세요.",
         "invalidInstallation": "이 링크의 GitHub 설치가 유효하지 않습니다.",
@@ -3691,7 +3695,7 @@
         "signInCheckFailed": "로그인 확인 실패",
         "signInDescription": "이 GitHub 사용자를 연결하기 전에 {{brandName}} 계정을 사용하세요.",
         "signInTitle": "계속하려면 로그인하세요",
-        "successDescription": "{{account}}로 연결되었습니다. GitHub 이슈나 풀 리퀘스트에서 에이전트를 언급하여 대화를 시작하세요.",
+        "successDescription": "{{account}}(으)로 연결되었습니다. GitHub 이슈나 풀 리퀘스트에서 Okou를 멘션해 대화를 시작하세요.",
         "successTitle": "GitHub에 연결되었습니다!",
         "wrongOrganizationDescription": "활성 조직이 이 GitHub 설치와 일치하지 않습니다. 올바른 조직으로 전환한 후 링크를 다시 여세요.",
         "wrongOrganizationTitle": "조직 전환"
@@ -3706,7 +3710,7 @@
         "accountMismatchDescriptionWorkspace": "현재 Okou 계정은 {{workspace}}에서 Slack 계정 {{currentAccount}}을(를) 사용합니다. 이 링크를 연 계정 {{requestedAccount}}(으)로 전환할까요?",
         "accountMismatchTitle": "Slack 계정을 전환할까요?",
         "authorizationFailed": "Slack 인증이 완료되지 않았습니다. 현재 연결 상태가 아래에 표시됩니다. 다시 시도할 수 있습니다.",
-        "connectDescription": "이 Slack 워크스페이스에 계정을 연결하여 Slack에서 직접 에이전트와 상호작용하세요.",
+        "connectDescription": "계정을 이 Slack 워크스페이스에 연결하면 Slack에서 바로 Okou와 함께 일할 수 있습니다.",
         "connectTitle": "Slack에 연결하기",
         "currentConnection": "Slack에 연결됨",
         "errorFallback": "Slack 연결을 확인하거나 시작할 수 없습니다.",
@@ -3724,7 +3728,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams 승인",
-        "connectDescription": "Teams 계정을 연결하여 Microsoft Teams에서 직접 에이전트와 상호작용하세요.",
+        "connectDescription": "Teams 계정을 연결하면 Microsoft Teams에서 바로 Okou와 함께 일할 수 있습니다.",
         "connectedDescription": "Teams 계정이 연결되었습니다.",
         "connectTitle": "Microsoft Teams 연결하기",
         "identityMismatch": "요청한 Teams 계정 또는 작업 공간이 현재 연결과 일치하지 않습니다.",
@@ -3745,7 +3749,7 @@
         "checkingConnectionTitle": "연결 확인 중...",
         "conflictDescription": "현재 {{current}} 계정으로 연결되어 있지만 이 링크는 {{requested}} 계정을 요청합니다. 현재 연결을 유지하거나 연결을 직접 관리한 후 다시 시도하세요.",
         "conflictTitle": "다른 Telegram 계정이 연결되어 있습니다",
-        "connectDescription": "이 Telegram 봇에 계정을 연결하여 Telegram에서 직접 에이전트와 상호작용하세요.",
+        "connectDescription": "계정을 이 Telegram 봇에 연결하면 Telegram에서 바로 Okou와 함께 일할 수 있습니다.",
         "connectionCheckFailed": "연결을 확인하기 위해 Telegram에 접속할 수 없습니다.",
         "connectTitle": "Telegram에 연결하기",
         "continue": "Telegram으로 계속하기",
@@ -3832,7 +3836,7 @@
         "developerConsole": "Feishu 개발자 콘솔",
         "dialogAdminRequired": "조직 관리자가 앱을 구성해야 합니다. 설정 완료 후 Feishu 봇 목록에서 자신의 계정을 연결할 수 있습니다.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Feishu 메시지를 에이전트로 라우팅하려면 맞춤 앱을 추가하세요.",
+        "emptyAdmin": "사용자 지정 앱을 추가하면 Feishu 메시지가 Okou에게 전달됩니다.",
         "emptyMember": "조직 관리자에게 Feishu 봇 추가를 요청하세요.",
         "emptyTitle": "아직 Feishu 봇이 없습니다",
         "events": {
@@ -3890,7 +3894,7 @@
         "reviewGuide": "검토 가이드",
         "reviewGuideDescription": "이 Feishu 봇의 완료된 설정 단계를 검토하세요.",
         "reviewGuideTitle": "Feishu 검토 가이드",
-        "routeDescription": "Feishu 메시지를 에이전트로 라우팅",
+        "routeDescription": "Feishu에서 Okou와 채팅",
         "selectAgent": "에이전트 선택",
         "setupIncomplete": "설정 완료되지 않음",
         "steps": {
@@ -3964,7 +3968,7 @@
         "developerConsole": "Lark 개발자 콘솔",
         "dialogAdminRequired": "조직 관리자가 앱을 구성해야 합니다. 설정 완료 후 Lark 봇 목록에서 자신의 계정을 연결할 수 있습니다.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Lark 메시지를 에이전트로 라우팅하려면 맞춤 앱을 추가하세요.",
+        "emptyAdmin": "사용자 지정 앱을 추가하면 Lark 메시지가 Okou에게 전달됩니다.",
         "emptyMember": "조직 관리자에게 Lark 봇 추가를 요청하세요.",
         "emptyTitle": "아직 Lark 봇이 없습니다",
         "events": {
@@ -4023,7 +4027,7 @@
         "reviewGuide": "검토 가이드",
         "reviewGuideDescription": "이 Lark 봇의 완료된 설정 단계를 검토하세요.",
         "reviewGuideTitle": "Lark 검토 가이드",
-        "routeDescription": "Lark 메시지를 에이전트로 라우팅",
+        "routeDescription": "Lark에서 Okou와 채팅",
         "selectAgent": "에이전트 선택",
         "setupIncomplete": "설정 완료되지 않음",
         "steps": {
@@ -4116,7 +4120,7 @@
     "denied": "요청 거부됨",
     "deniedTitle": "Shell 액세스 거부됨",
     "deny": "거부",
-    "description": "에이전트가 컴퓨터에서 Shell을 사용하려면 권한이 필요합니다.",
+    "description": "Okou가 컴퓨터에서 Shell을 사용하려면 권한이 필요합니다.",
     "duration": "승인 후 1시간 동안 액세스할 수 있습니다",
     "expired": "권한 만료됨",
     "expiredTitle": "Shell 액세스 만료됨",
@@ -5063,31 +5067,31 @@
   },
   "projects": {
     "close": "Close",
-    "create": "Create Project",
+    "create": "Create project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
-    "deleteDescription": "Your chats and their histories will be kept. They return to their original Agent lists.",
-    "deleteError": "Could not delete Project",
-    "deleteProject": "Delete Project",
-    "deleteTitle": "Delete Project?",
-    "description": "Keep related chats together across Agents",
+    "deleteDescription": "Your chats and their histories will be kept. They move out of the project.",
+    "deleteError": "Could not delete project",
+    "deleteProject": "Delete project",
+    "deleteTitle": "Delete project?",
+    "description": "Keep related chats together",
     "empty": "No chats here yet",
-    "fromChat": "Create a Project from this chat",
-    "move": "Move to Project",
+    "fromChat": "Create a project from this chat",
+    "move": "Move to project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
     "moveTo": "{{name}}(으)로 이동",
     "name": "Project name",
-    "new": "New Project",
+    "new": "New project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
     "projects": "Projects",
-    "remove": "Remove from Project",
+    "remove": "Remove from project",
     "rename": "Rename",
-    "renameProject": "Rename Project",
+    "renameProject": "Rename project",
     "save": "Save",
-    "saveError": "Could not save Project",
+    "saveError": "Could not save project",
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
@@ -5125,7 +5129,7 @@
       "pro": "프로",
       "team": "팀"
     },
-    "title": "에이전트가 대기 중입니다",
+    "title": "Okou가 대기열에서 기다리고 있습니다",
     "upgrade": {
       "action": "{{plan}}으로 업그레이드",
       "features": {
@@ -5587,6 +5591,7 @@
         "chatThreads": "내 채팅 스레드",
         "filesExcluded": "아티팩트, 첨부 파일 및 워크플로 보조 파일은 포함되지 않습니다.",
         "memoryFiles": "현재 메모리 파일",
+        "personalInstructions": "내 개인 지침",
         "workflowInstructions": "접근할 수 있는 워크플로의 지침"
       },
       "status": {
@@ -5647,7 +5652,7 @@
           "reconnectTitle": "Claude 재연결",
           "signIn": "Claude로 로그인",
           "submit": "연결",
-          "usageNotice": "Claude 구독으로 로그인하여 Claude Code 기반 에이전트에서 Claude 모델을 사용하세요."
+          "usageNotice": "Claude 구독으로 로그인하면 Okou가 Claude Code를 통해 Claude 모델을 사용할 수 있습니다."
         },
         "codex": {
           "connectedToast": "ChatGPT에 연결됨",
@@ -5950,7 +5955,7 @@
       },
       "timezone": {
         "description": "표시되는 시간과 자동화 실행에 사용되는 시간입니다.",
-        "rowDescription": "에이전트가 실행 시 이 시간대를 사용합니다",
+        "rowDescription": "Okou는 실행 중에 이 시간대를 사용합니다",
         "rowTitle": "시간대",
         "sectionTitle": "시간대",
         "zones": {
@@ -6005,7 +6010,7 @@
         "title": "Link의 내 카드"
       },
       "connect": "연결",
-      "description": "에이전트가 구매를 요청하고 Link 거래를 확인할 수 있습니다. 모든 구매는 직접 승인합니다.",
+      "description": "Okou가 구매를 요청하고 Link 거래를 확인할 수 있게 합니다. 모든 구매는 직접 승인합니다.",
       "disconnect": "연결 해제",
       "loadError": "지갑을 불러오지 못했습니다.",
       "scope": "Okou가 대신 구매하고 Link 거래를 확인하도록 허용하세요.",
@@ -6266,8 +6271,8 @@
       "summary_other": "자격 증명 {{count}}개 구성됨",
       "unused": "사용 중인 호스트 없음"
     },
-    "deleteHelp": "이 호스트를 삭제할까요? 자격 증명은 유지됩니다. Agent의 호스트 목록에서 사라집니다.",
-    "description": "에이전트가 원격 명령을 실행할 SSH 호스트를 구성하세요.",
+    "deleteHelp": "이 호스트를 삭제할까요? 자격 증명은 유지됩니다. Okou의 실시간 인벤토리에 이 호스트가 더 이상 표시되지 않습니다.",
+    "description": "Okou가 원격 머신에서 명령을 실행할 수 있게 합니다.",
     "edit": "호스트 편집",
     "editHelp": "다른 자격 증명을 선택하면 이 호스트만 변경됩니다. 직접 연결 대상 변경 시 저장된 호스트 키가 지워지며, Cloudflare Access 관련 변경 시에는 유지됩니다.",
     "errors": {
@@ -6313,7 +6318,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH 인증에 실패했습니다. 시스템 사용자 이름을 확인하고, 태그가 지정된 대상에서 Tailscale SSH를 활성화한 뒤 tailnet의 SSH accept 정책에서 이 로그인을 허용하세요.",
-      "deleteHelp": "이 호스트를 삭제할까요? 에이전트의 실시간 인벤토리에 이 호스트가 더 이상 표시되지 않습니다.",
+      "deleteHelp": "이 호스트를 삭제할까요? Okou의 실시간 인벤토리에 이 호스트가 더 이상 표시되지 않습니다.",
       "sshDocs": "Tailscale SSH 공식 문서",
       "sshHelp": "선택한 Tailscale 네트워크 ID로 인증하므로 SSH 비밀번호나 개인 키가 필요하지 않습니다. 태그가 지정된 대상에서 Tailscale SSH를 활성화하고 SSH accept 정책에서 이 시스템 사용자 이름을 허용하세요.",
       "sshTitle": "Tailscale SSH",
@@ -6484,7 +6489,7 @@
       "usernamePasswordMethod": "사용자 이름 및 비밀번호"
     },
     "deleteHelp": "이 호스트를 삭제할까요? 재사용 가능한 자격 증명은 유지됩니다.",
-    "description": "Agent가 원격 데스크톱을 보고 제어하도록 허용하세요.",
+    "description": "Okou가 원격 데스크톱을 보고 제어할 수 있게 합니다.",
     "edit": "호스트 편집",
     "editHelp": "변경 사항은 이 호스트에 적용되며 현재 연결 설정을 무효화합니다.",
     "errors": {
@@ -7268,7 +7273,7 @@
       "authorizationError": "Discord 인증을 완료할 수 없습니다.",
       "cancelled": "Discord 인증이 취소되었습니다.",
       "chooseWorkspace": "워크스페이스 선택",
-      "connectDescription": "Discord 계정을 연결하여 에이전트와 대화하세요.",
+      "connectDescription": "Discord 계정을 연결해 Okou와 채팅하세요.",
       "connectedTitle": "Discord에 연결됨",
       "connectTitle": "Discord 연결",
       "defaultWorkspace": "Discord 기본 워크스페이스",
@@ -7332,7 +7337,7 @@
       "uninstallTitle": "Microsoft Teams 통합을 제거하시겠습니까?"
     },
     "telegram": {
-      "description": "Telegram 메시지를 에이전트로 라우팅",
+      "description": "Telegram에서 Okou와 채팅하세요.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7342,7 +7347,7 @@
       "connect": "연결",
       "connected": "연결됨",
       "creating": "QR 코드 생성 중…",
-      "description": "WeChat에서 에이전트와 대화하세요.",
+      "description": "WeChat에서 Okou와 채팅하세요.",
       "disconnect": "연결 해제",
       "expired": "이 QR 코드는 만료되었습니다. 새로 만드세요.",
       "failed": "WeChat에 연결하지 못했습니다.",
@@ -7356,7 +7361,7 @@
       "restoreDescription": "아래 계정과 워크스페이스에 WeChat을 다시 연결합니다.",
       "returnToWechat": "WeChat으로 돌아가 메시지를 보내 대화를 시작하세요.",
       "scanned": "스캔되었습니다. 휴대전화에서 확인하세요.",
-      "scope": "이 에이전트에게 보내는 다이렉트 메시지만 연결됩니다. 텍스트 메시지를 지원합니다.",
+      "scope": "Okou에게 보내는 다이렉트 메시지만 연결됩니다. 텍스트 메시지를 지원합니다.",
       "title": "WeChat 연결",
       "unavailable": "아직 연결이 설정되지 않았습니다.",
       "verification_blocked": "시도 횟수가 너무 많습니다. 새 QR 코드를 만드세요.",
@@ -7368,7 +7373,7 @@
     "whatsapp": {
       "codeError": "연결 코드를 생성하지 못했습니다. 다시 시도하세요.",
       "connect": "WhatsApp 연결",
-      "connectDescription": "WhatsApp 계정을 {{brandName}}에 연결하여 에이전트와 채팅하세요.",
+      "connectDescription": "WhatsApp 계정을 연결해 {{brandName}}와 채팅하세요.",
       "connected": "WhatsApp 연결됨",
       "description": "WhatsApp에서 Okou와 바로 대화하세요",
       "disconnected": "WhatsApp 연결 해제됨",

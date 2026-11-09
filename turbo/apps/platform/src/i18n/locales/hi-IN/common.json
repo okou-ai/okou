@@ -103,7 +103,7 @@
           "title": "प्रोवाइडर अस्थायी रूप से अनुपलब्ध है"
         }
       },
-      "fallbackAgent": "एजेंट",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "अवधि",
         "model": "मॉडल",
@@ -321,7 +321,7 @@
       "yes": "हाँ"
     },
     "sources": {
-      "agent": "एजेंट",
+      "agent": "Okou",
       "agentphone": "iMessage",
       "automationEvent": "ऑटोमेशन घटना",
       "automationSchedule": "ऑटोमेशन शेड्यूल",
@@ -540,7 +540,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "एजेंट अभी भी लोड हो रहा है",
+      "agentLoading": "Okou अभी लोड हो रहा है",
       "connect": "Google Drive कनेक्ट करें",
       "connectTooltip": "आर्टिफ़ैक्ट अपलोड करने के लिए Google Drive कनेक्ट करें",
       "conversionNotice": "संपादन योग्य कॉपी बनाता है; फ़ॉर्मैट बदल सकता है।",
@@ -1012,11 +1012,11 @@
         "twentyFourHours": "24 घंटे"
       },
       "errors": {
-        "agentNotFound": "एजेंट नहीं मिला",
-        "loadAgent": "एजेंट लोड करने में विफल",
+        "agentNotFound": "यह अनुरोध अब उपलब्ध नहीं है",
+        "loadAgent": "यह अनुरोध लोड नहीं हो सका",
         "loadGrants": "अनुमति अनुदान लोड करने में विफल",
         "loadMetadata": "अनुमति मेटाडेटा लोड करने में विफल",
-        "missingAgentId": "URL पैरामीटर में एजेंट ID गुम है",
+        "missingAgentId": "यह लिंक अधूरा है। इसे अपनी चैट से फिर से खोलें।",
         "missingPermission": "URL पैरामीटर्स में अनुपलब्ध अनुमति",
         "unknownAction": "अज्ञात अनुमति क्रिया: {{action}}",
         "unknownConnector": "अज्ञात कनेक्टर: {{connector}}",
@@ -1064,7 +1064,8 @@
       "notNow": "अभी नहीं",
       "review": "अनुमतियों की समीक्षा करें",
       "scopeNote": "यह इस एजेंट पर लागू होता है, केवल मौजूदा कार्य पर नहीं।",
-      "sharedScopeNote": "इस कनेक्टर की अनुमतियाँ आपकी सभी चैट और एजेंट पर लागू होती हैं।",
+      "scopeNoteSingle": "यह आपकी सभी चैट पर लागू होता है, सिर्फ़ मौजूदा काम पर नहीं।",
+      "sharedScopeNote": "आपकी सभी चैट में इस कनेक्टर पर लागू होता है।",
       "title": "निम्नलिखित अनुमतियाँ दें"
     }
   },
@@ -1780,7 +1781,7 @@
       "repair": "सुधारें",
       "repairRequired": "{{institution}} को सुधारने की आवश्यकता है",
       "revoke": "एक्सेस वापस लें",
-      "revokeConfirm": "इस एजेंट की बैंकिंग एक्सेस वापस लें?",
+      "revokeConfirm": "बैंकिंग एक्सेस रद्द करें?",
       "selectAccounts": "खाते चुनें",
       "sevenDays": "7 दिन",
       "thirtyDays": "30 दिन",
@@ -1833,7 +1834,7 @@
       "checkingOutcomeDescription": "इस अनुरोध की पुष्टि करने के लिए ब्राउज़र की प्रतीक्षा की जा रही है।",
       "completed": "जानकारी जोड़ दी गई",
       "confirmRangeValue": "मौजूदा मान इस्तेमाल करें",
-      "delivered": "एजेंट को सूचित किया गया",
+      "delivered": "Okou को सूचित किया गया",
       "expired": "अनुरोध की अवधि समाप्त",
       "expiredDescription": "ब्राउज़र बंद हो गया है या यह अनुरोध अब सक्रिय नहीं है।",
       "fileLeave": "वेबसाइट की फ़ाइलें न बदलें",
@@ -1847,14 +1848,14 @@
       "required": "(आवश्यक)",
       "site": "साइट",
       "stale": "फ़ील्ड बदल गए हैं",
-      "staleDescription": "एजेंट से नया अनुरोध बनाने के लिए कहें।",
+      "staleDescription": "Okou से नया अनुरोध बनाने के लिए कहें।",
       "submit": "ब्राउज़र में जोड़ें",
-      "submitDescription": "आपकी जानकारी इस वेबसाइट पर भरी जाएगी। फिर एजेंट आगे बढ़ेगा और परिणाम की जाँच करेगा।",
+      "submitDescription": "आपकी जानकारी इस वेबसाइट में जोड़ी जाएगी। इसके बाद Okou आगे बढ़ेगा और नतीजा जांचेगा।",
       "submitting": "जोड़ा जा रहा है…",
       "title": "ब्राउज़र में जानकारी दर्ज करें",
       "unavailable": "अनुरोध उपलब्ध नहीं है",
       "uncertain": "ब्राउज़र जाँचें",
-      "uncertainDescription": "ब्राउज़र को जानकारी मिल गई हो सकती है। एजेंट से परिणाम की जाँच करने को कहें।"
+      "uncertainDescription": "हो सकता है ब्राउज़र को जानकारी मिल गई हो। Okou से नतीजा जांचने के लिए कहें।"
     },
     "capabilityHome": {
       "back": "सभी क्षमताएँ",
@@ -1973,6 +1974,7 @@
         "slideCountRange": "{{range}} स्लाइड"
       },
       "mentionHint": "एजेंट या चैट खोजें…",
+      "mentionHintSingle": "चैट खोजें…",
       "message": "संदेश",
       "modelForThisChat": "इस चैट के लिए मॉडल",
       "placeholder": "मुझसे वर्कफ़्लो ऑटोमेट करने और टास्क मैनेज करने के लिए कहें...",
@@ -2066,7 +2068,7 @@
       "authorized": "{{connectorName}} जुड़ा हुआ है और {{agentName}} के लिए अधिकृत है",
       "back": "पीछे",
       "configurePermissions": "{{connectorName}} अनुमतियाँ कॉन्फ़िगर करें",
-      "customAuthorizeDescription": "एजेंट के लिए इस कस्टम कनेक्टर की समीक्षा करें, कनेक्ट करें और अधिकृत करें।",
+      "customAuthorizeDescription": "इस कस्टम कनेक्टर की समीक्षा करें, इसे कनेक्ट करें और अधिकृत करें।",
       "directory": {
         "allCategories": "सभी",
         "askAdmin": "इसे चालू करने के लिए एडमिन से कहें",
@@ -2296,7 +2298,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "एजेंट नहीं मिला",
+      "agentNotFound": "यह अनुरोध अब उपलब्ध नहीं है",
       "allow": "अनुमति दें",
       "alreadyAllowed": "पहले से ही अनुमति है",
       "alreadyDenied": "मना किया हुआ",
@@ -3221,7 +3223,7 @@
       "accessUpdated": "{{connector}} एक्सेस अपडेट किया गया",
       "clearSearch": "एजेंट खोज साफ़ करें",
       "description": "चुनें कि कौन से एजेंट इस कनेक्टर का उपयोग कर सकते हैं।",
-      "loading": "एजेंट लोड हो रहे हैं...",
+      "loading": "एक्सेस लोड हो रहा है...",
       "managePermissions": "अनुमतियाँ प्रबंधित करें",
       "managePermissionsFor": "{{agent}} के लिए {{connector}} अनुमतियाँ प्रबंधित करें",
       "noAgents": "कोई एजेंट नहीं मिला",
@@ -3389,8 +3391,8 @@
           "menu": "बिक्री और व्यवसाय"
         }
       },
-      "description": "अपने एजेंटों के उपयोग के लिए तृतीय-पक्ष सेवाओं को कनेक्ट करें।",
-      "descriptionWithCount": "अपने एजेंटों के उपयोग के लिए {{value}} सेवाओं को कनेक्ट करें।",
+      "description": "Okou के इस्तेमाल के लिए थर्ड-पार्टी सेवाएं कनेक्ट करें।",
+      "descriptionWithCount": "Okou के इस्तेमाल के लिए {{value}} सेवाएं कनेक्ट करें।",
       "directory": {
         "browse": "ब्राउज़ करें",
         "builtin": "बिल्ट-इन कनेक्टर",
@@ -3495,7 +3497,7 @@
         "continue": "जारी रखना",
         "continueToProvider": "पहुंच को अधिकृत करने के लिए प्रोवाइडर के पास जाना जारी रखें।",
         "continueWithAutomatic": "जारी रखें, जब तक Okou जाँचता है कि यह MCP सर्वर कैसे प्रमाणित करता है।",
-        "description": "आपका रहस्य आराम से एन्क्रिप्ट किया गया है और फ़ायरवॉल द्वारा आउटबाउंड अनुरोधों में इंजेक्ट किया गया है। यह कभी भी पर्यावरण चर के रूप में एजेंट के सामने उजागर नहीं होता है।",
+        "description": "आपका सीक्रेट स्टोर होने पर एन्क्रिप्ट रहता है और फ़ायरवॉल उसे आउटबाउंड अनुरोधों में जोड़ता है। इसे कभी भी एनवायरनमेंट वैरिएबल के रूप में Okou को नहीं दिखाया जाता।",
         "errors": {
           "authenticationResponseInvalid": "MCP सर्वर ने असमर्थित प्रमाणीकरण प्रतिक्रिया लौटाई। MCP एंडपॉइंट और उसकी प्रमाणीकरण सेटिंग जाँचें, या सर्वर व्यवस्थापक से संपर्क करें।",
           "authorizationUnsupported": "OAuth प्रदाता Automatic प्रमाणीकरण की प्राधिकरण आवश्यकताओं का समर्थन नहीं करता। Custom OAuth का उपयोग तभी करें जब आपके पास पहले से संगत क्लाइंट क्रेडेंशियल हों, या Okou सहायता से संपर्क करें।",
@@ -3569,7 +3571,7 @@
         "tokenUrl": "टोकन URL"
       },
       "delete": {
-        "description": "यह कनेक्टर और प्रत्येक सदस्य के संग्रहीत रहस्य को हटा देता है। इस कनेक्टर के लिए अधिकृत एजेंट तुरंत पहुंच खो देंगे। इसे पूर्ववत नहीं किया जा सकता.",
+        "description": "इससे कनेक्टर और हर सदस्य का सेव किया गया सीक्रेट हट जाएगा। यह सभी चैट में तुरंत काम करना बंद कर देगा। इसे वापस नहीं किया जा सकता।",
         "title": "{{connector}} हटाएं?"
       },
       "edit": {
@@ -3592,12 +3594,14 @@
       }
     },
     "directed": {
+      "allowAccess": "एक्सेस की अनुमति दें",
       "authorizeAgent": "{{agent}} को अधिकृत करें",
       "authorized": "{{connector}} अधिकृत",
       "authorizeDocumentTitle": "{{connector}} को अधिकृत करें",
       "connectDocumentTitle": "{{connector}} कनेक्ट करें",
       "connected": "{{connector}} कनेक्ट हुआ",
       "needsConnector": "{{agent}} को आगे बढ़ने के लिए {{connector}} की आवश्यकता है",
+      "needsConnectorSingle": "आगे बढ़ने के लिए Okou को {{connector}} चाहिए",
       "reconnecting": "पुनः कनेक्ट हो रहा है..."
     },
     "expiration": {
@@ -3682,13 +3686,13 @@
       },
       "github": {
         "accountFallback": "यह GitHub खाता",
-        "alreadyDescription": "आप पहले से ही {{account}} के रूप में कनेक्ट हैं। GitHub इश्यू में अपने एजेंट का उल्लेख करें या चैटिंग शुरू करने के लिए पुल रिक्वेस्ट करें।",
+        "alreadyDescription": "आप पहले से {{account}} के रूप में कनेक्ट हैं। चैट शुरू करने के लिए GitHub issues या pull requests में Okou को मेंशन करें।",
         "alreadyTitle": "पहले से ही GitHub से कनेक्ट है",
         "back": "वर्कफ़्लोज़ पर वापस जाएँ",
         "checkingConnectionDescription": "कृपया प्रतीक्षा करें जब तक हम आपके GitHub कनेक्शन की जाँच कर रहे हैं।",
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
         "checkingSession": "कृपया तब तक प्रतीक्षा करें जब तक हम आपके {{brandName}} सत्र का सत्यापन नहीं कर लेते।",
-        "connectDescription": "अपने {{brandName}} खाते को {{account}} से लिंक करें ताकि GitHub उल्लेख आपके एजेंटों को इश्यू और पुल रिक्वेस्ट से चला सके।",
+        "connectDescription": "अपने {{brandName}} खाते को {{account}} से लिंक करें, ताकि आप GitHub issues और pull requests में Okou को मेंशन कर सकें।",
         "connectTitle": "GitHub से कनेक्ट करें",
         "errorFallback": "हम GitHub कनेक्ट नहीं कर सके. GitHub से पुनः प्रयास करें।",
         "invalidInstallation": "इस लिंक पर GitHub इंस्टालेशन मान्य नहीं है.",
@@ -3706,7 +3710,7 @@
         "signInCheckFailed": "साइन-इन की जाँच नहीं की जा सकी",
         "signInDescription": "इस GitHub उपयोगकर्ता को जोड़ने से पहले अपने {{brandName}} खाते का उपयोग करें।",
         "signInTitle": "जारी रखने के लिए साइन इन करें",
-        "successDescription": "आप {{account}} के रूप में जुड़े हुए हैं। GitHub इश्यू में अपने एजेंट का उल्लेख करें या चैटिंग शुरू करने के लिए पुल रिक्वेस्ट करें।",
+        "successDescription": "आप {{account}} के रूप में कनेक्ट हैं। चैट शुरू करने के लिए GitHub issues या pull requests में Okou को मेंशन करें।",
         "successTitle": "GitHub से जुड़ा!",
         "wrongOrganizationDescription": "आपका सक्रिय संगठन इस GitHub इंस्टॉलेशन से मेल नहीं खाता है। सही संगठन पर जाएँ और लिंक को दोबारा खोलें।",
         "wrongOrganizationTitle": "संगठन बदलें"
@@ -3721,7 +3725,7 @@
         "accountMismatchDescriptionWorkspace": "आपका Okou खाता अभी {{workspace}} में Slack खाते {{currentAccount}} का उपयोग करता है। क्या इस लिंक को खोलने वाले खाते {{requestedAccount}} पर स्विच करें?",
         "accountMismatchTitle": "Slack खाता बदलें?",
         "authorizationFailed": "Slack प्राधिकरण पूरा नहीं हुआ। आपका वर्तमान कनेक्शन नीचे दिखाया गया है। आप फिर कोशिश कर सकते हैं।",
-        "connectDescription": "अपने खाते को इस Slack वर्कस्पेस से लिंक करें ताकि आप Slack से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectDescription": "अपने खाते को इस Slack वर्कस्पेस से लिंक करें, ताकि आप सीधे Slack से Okou के साथ काम कर सकें।",
         "connectTitle": "Slack से कनेक्ट करें",
         "currentConnection": "Slack कनेक्ट है",
         "errorFallback": "Slack कनेक्शन की जांच या शुरुआत नहीं हो सकी।",
@@ -3739,7 +3743,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams को अधिकृत करें",
-        "connectDescription": "अपने टीम खाते को लिंक करें ताकि आप Microsoft Teams से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectDescription": "अपना Teams खाता लिंक करें, ताकि आप सीधे Microsoft Teams से Okou के साथ काम कर सकें।",
         "connectedDescription": "आपका Teams खाता कनेक्ट है।",
         "connectTitle": "Microsoft Teams कनेक्ट करें",
         "identityMismatch": "अनुरोधित Teams खाता या कार्यक्षेत्र वर्तमान कनेक्शन से मेल नहीं खाता।",
@@ -3760,7 +3764,7 @@
         "checkingConnectionTitle": "कनेक्शन की जाँच की जा रही है...",
         "conflictDescription": "आप {{current}} के रूप में जुड़े हैं, लेकिन यह लिंक {{requested}} का अनुरोध करता है। मौजूदा कनेक्शन बनाए रखें या दोबारा कोशिश करने से पहले उसे स्वयं प्रबंधित करें।",
         "conflictTitle": "कोई दूसरा Telegram खाता जुड़ा है",
-        "connectDescription": "अपने खाते को इस Telegram बॉट से लिंक करें ताकि आप Telegram से सीधे अपने एजेंट से बातचीत कर सकें।",
+        "connectDescription": "अपने खाते को इस Telegram बॉट से लिंक करें, ताकि आप सीधे Telegram से Okou के साथ काम कर सकें।",
         "connectionCheckFailed": "कनेक्शन की जाँच करने के लिए Telegram से संपर्क नहीं हो सका।",
         "connectTitle": "Telegram से कनेक्ट करें",
         "continue": "Telegram के साथ जारी रखें",
@@ -3847,7 +3851,7 @@
         "developerConsole": "Feishu डेवलपर कंसोल",
         "dialogAdminRequired": "संगठन व्यवस्थापक को ऐप को कॉन्फ़िगर करना होगा. सेटअप पूरा होने के बाद आप Feishu बॉट सूची से अपना खाता कनेक्ट कर सकते हैं।",
         "documentTitle": "Feishu",
-        "emptyAdmin": "किसी एजेंट को Feishu संदेशों को रूट करने के लिए एक कस्टम ऐप जोड़ें।",
+        "emptyAdmin": "एक कस्टम ऐप जोड़ें, ताकि Feishu मैसेज Okou तक पहुंचें।",
         "emptyMember": "किसी संगठन व्यवस्थापक से Feishu बॉट जोड़ने के लिए कहें।",
         "emptyTitle": "अभी तक कोई Feishu बॉट नहीं है",
         "events": {
@@ -3905,7 +3909,7 @@
         "reviewGuide": "समीक्षा मार्गदर्शिका",
         "reviewGuideDescription": "इस Feishu बॉट के लिए पूर्ण सेटअप चरणों की समीक्षा करें।",
         "reviewGuideTitle": "Feishu समीक्षा मार्गदर्शिका",
-        "routeDescription": "Feishu संदेशों को एजेंटों तक रूट करें",
+        "routeDescription": "Feishu से Okou के साथ चैट करें",
         "selectAgent": "एक एजेंट चुनें",
         "setupIncomplete": "सेटअप अधूरा",
         "steps": {
@@ -3979,7 +3983,7 @@
         "developerConsole": "Lark डेवलपर कंसोल",
         "dialogAdminRequired": "संगठन व्यवस्थापक को ऐप को कॉन्फ़िगर करना होगा. सेटअप पूरा होने के बाद आप Lark बॉट सूची से अपना खाता कनेक्ट कर सकते हैं।",
         "documentTitle": "Lark",
-        "emptyAdmin": "किसी एजेंट को Lark संदेशों को रूट करने के लिए एक कस्टम ऐप जोड़ें।",
+        "emptyAdmin": "एक कस्टम ऐप जोड़ें, ताकि Lark मैसेज Okou तक पहुंचें।",
         "emptyMember": "किसी संगठन व्यवस्थापक से Lark बॉट जोड़ने के लिए कहें।",
         "emptyTitle": "अभी तक कोई Lark बॉट नहीं है",
         "events": {
@@ -4038,7 +4042,7 @@
         "reviewGuide": "समीक्षा मार्गदर्शिका",
         "reviewGuideDescription": "इस Lark बॉट के लिए पूर्ण सेटअप चरणों की समीक्षा करें।",
         "reviewGuideTitle": "Lark समीक्षा मार्गदर्शिका",
-        "routeDescription": "Lark संदेशों को एजेंटों तक रूट करें",
+        "routeDescription": "Lark से Okou के साथ चैट करें",
         "selectAgent": "एक एजेंट चुनें",
         "setupIncomplete": "सेटअप अधूरा",
         "steps": {
@@ -4131,7 +4135,7 @@
     "denied": "अनुरोध अस्वीकार किया गया",
     "deniedTitle": "Shell एक्सेस अस्वीकार किया गया",
     "deny": "अस्वीकार करें",
-    "description": "एजेंट को आपके कंप्यूटर पर Shell इस्तेमाल करने की अनुमति चाहिए।",
+    "description": "Okou को आपके कंप्यूटर पर Shell इस्तेमाल करने की अनुमति चाहिए।",
     "duration": "मंज़ूरी के बाद एक्सेस 1 घंटे तक रहता है",
     "expired": "अनुमति की समय सीमा समाप्त",
     "expiredTitle": "Shell एक्सेस की अवधि समाप्त",
@@ -5081,31 +5085,31 @@
   },
   "projects": {
     "close": "Close",
-    "create": "Create Project",
+    "create": "Create project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
-    "deleteDescription": "Your chats and their histories will be kept. They return to their original Agent lists.",
-    "deleteError": "Could not delete Project",
-    "deleteProject": "Delete Project",
-    "deleteTitle": "Delete Project?",
-    "description": "Keep related chats together across Agents",
+    "deleteDescription": "Your chats and their histories will be kept. They move out of the project.",
+    "deleteError": "Could not delete project",
+    "deleteProject": "Delete project",
+    "deleteTitle": "Delete project?",
+    "description": "Keep related chats together",
     "empty": "No chats here yet",
-    "fromChat": "Create a Project from this chat",
-    "move": "Move to Project",
+    "fromChat": "Create a project from this chat",
+    "move": "Move to project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
     "moveTo": "{{name}} में ले जाएँ",
     "name": "Project name",
-    "new": "New Project",
+    "new": "New project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
     "projects": "Projects",
-    "remove": "Remove from Project",
+    "remove": "Remove from project",
     "rename": "Rename",
-    "renameProject": "Rename Project",
+    "renameProject": "Rename project",
     "save": "Save",
-    "saveError": "Could not save Project",
+    "saveError": "Could not save project",
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
@@ -5143,7 +5147,7 @@
       "pro": "प्रो",
       "team": "टीम"
     },
-    "title": "आपका एजेंट लाइन में इंतज़ार कर रहा है",
+    "title": "Okou कतार में इंतज़ार कर रहा है",
     "upgrade": {
       "action": "{{plan}} में अपग्रेड करें",
       "features": {
@@ -5605,6 +5609,7 @@
         "chatThreads": "आपकी चैट बातचीत",
         "filesExcluded": "आर्टिफ़ैक्ट, अटैचमेंट और वर्कफ़्लो की सहायक फ़ाइलें शामिल नहीं हैं।",
         "memoryFiles": "आपकी वर्तमान मेमोरी फ़ाइलें",
+        "personalInstructions": "आपके निजी निर्देश",
         "workflowInstructions": "आपकी पहुँच वाले वर्कफ़्लो के निर्देश"
       },
       "status": {
@@ -5665,7 +5670,7 @@
           "reconnectTitle": "Claude को पुनः कनेक्ट करें",
           "signIn": "Claude के साथ साइन इन करें",
           "submit": "कनेक्ट करें",
-          "usageNotice": "Claude Code पर आधारित एजेंटों के साथ Claude मॉडल इस्तेमाल करने के लिए अपनी Claude सदस्यता से साइन इन करें।"
+          "usageNotice": "अपनी Claude सदस्यता से साइन इन करें, ताकि Okou Claude Code के ज़रिए Claude मॉडल इस्तेमाल कर सके।"
         },
         "codex": {
           "connectedToast": "ChatGPT जुड़ा",
@@ -5969,7 +5974,7 @@
       },
       "timezone": {
         "description": "समय आपको दिखाया गया है और ऑटोमेशन चलाने के लिए उपयोग किया जाता है।",
-        "rowDescription": "आपके एजेंट रन के दौरान इस समय क्षेत्र का उपयोग करेंगे",
+        "rowDescription": "Okou रन के दौरान इसी समय क्षेत्र का इस्तेमाल करता है",
         "rowTitle": "समय क्षेत्र",
         "sectionTitle": "समय क्षेत्र",
         "zones": {
@@ -6024,7 +6029,7 @@
         "title": "Link में आपके कार्ड"
       },
       "connect": "कनेक्ट करें",
-      "description": "आपके एजेंट खरीदारी का अनुरोध कर सकते हैं और Link लेनदेन देख सकते हैं। आप हर खरीदारी को मंज़ूरी देते हैं।",
+      "description": "Okou को खरीदारी का अनुरोध करने और Link लेनदेन देखने दें। आप हर खरीदारी को मंज़ूरी देते हैं।",
       "disconnect": "डिस्कनेक्ट करें",
       "loadError": "आपका वॉलेट लोड नहीं हो सका।",
       "scope": "Okou को आपके लिए खरीदारी करने और Link गतिविधि देखने दें।",
@@ -6287,8 +6292,8 @@
       "summary_other": "{{count}} क्रेडेंशियल कॉन्फ़िगर किए गए",
       "unused": "किसी होस्ट द्वारा उपयोग नहीं किया जा रहा"
     },
-    "deleteHelp": "यह होस्ट हटाएं? इसका क्रेडेंशियल बना रहेगा। Agents को यह होस्ट सूची में नहीं दिखेगा।",
-    "description": "अपने एजेंटों के लिए दूरस्थ कमांड चलाने हेतु SSH होस्ट कॉन्फ़िगर करें।",
+    "deleteHelp": "इस होस्ट को हटाएं? इसका क्रेडेंशियल रखा जाएगा। Okou को लाइव इन्वेंटरी में यह होस्ट अब नहीं दिखेगा।",
+    "description": "Okou को रिमोट मशीनों पर कमांड चलाने दें।",
     "edit": "होस्ट संपादित करें",
     "editHelp": "दूसरे क्रेडेंशियल चुनने से केवल यह होस्ट बदलता है। सीधे कनेक्शन के गंतव्य में बदलाव सहेजी गई होस्ट कुंजी हटाते हैं; Cloudflare Access से जुड़े बदलाव उसे बनाए रखते हैं।",
     "errors": {
@@ -6334,7 +6339,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH प्रमाणीकरण विफल हुआ। सिस्टम उपयोगकर्ता नाम जाँचें, टैग वाले गंतव्य पर Tailscale SSH सक्षम करें और tailnet की SSH accept नीति में इस लॉगिन को अनुमति दें।",
-      "deleteHelp": "यह होस्ट हटाएँ? एजेंटों को यह होस्ट अब लाइव इन्वेंट्री में नहीं दिखेगा।",
+      "deleteHelp": "इस होस्ट को हटाएं? Okou को लाइव इन्वेंटरी में यह होस्ट अब नहीं दिखेगा।",
       "sshDocs": "Tailscale SSH दस्तावेज़",
       "sshHelp": "चुने हुए Tailscale नेटवर्क की पहचान से प्रमाणित करता है; SSH पासवर्ड या निजी कुंजी की ज़रूरत नहीं है। टैग वाले गंतव्य पर Tailscale SSH सक्षम करें और SSH accept नीति में इस सिस्टम उपयोगकर्ता नाम को अनुमति दें।",
       "sshTitle": "Tailscale SSH",
@@ -6506,7 +6511,7 @@
       "usernamePasswordMethod": "उपयोगकर्ता नाम और पासवर्ड"
     },
     "deleteHelp": "इस सहेजे गए होस्ट को हटाएँ? इसके पुन: उपयोग योग्य क्रेडेंशियल सुरक्षित रखे जाएँगे।",
-    "description": "अपने एजेंटों को आपके रिमोट डेस्कटॉप देखने और नियंत्रित करने दें।",
+    "description": "Okou को रिमोट डेस्कटॉप देखने और नियंत्रित करने दें।",
     "edit": "होस्ट संपादित करें",
     "editHelp": "बदलाव इस सहेजे गए होस्ट पर लागू होते हैं और उसके मौजूदा कनेक्शन कॉन्फ़िगरेशन को अमान्य कर देते हैं।",
     "errors": {
@@ -7291,7 +7296,7 @@
       "authorizationError": "Discord प्राधिकरण पूरा नहीं किया जा सका।",
       "cancelled": "Discord प्राधिकरण रद्द कर दिया गया।",
       "chooseWorkspace": "वर्कस्पेस चुनें",
-      "connectDescription": "अपने एजेंट से चैट करने के लिए अपना Discord खाता कनेक्ट करें।",
+      "connectDescription": "Okou से चैट करने के लिए अपना Discord खाता कनेक्ट करें।",
       "connectedTitle": "Discord से कनेक्ट है",
       "connectTitle": "Discord से कनेक्ट करें",
       "defaultWorkspace": "Discord के लिए डिफ़ॉल्ट वर्कस्पेस",
@@ -7355,7 +7360,7 @@
       "uninstallTitle": "Microsoft Teams एकीकरण अनइंस्टॉल करें?"
     },
     "telegram": {
-      "description": "एजेंटों को Telegram संदेश रूट करें",
+      "description": "Telegram में Okou से चैट करें।",
       "title": "Telegram"
     },
     "wechat": {
@@ -7365,7 +7370,7 @@
       "connect": "कनेक्ट करें",
       "connected": "कनेक्टेड",
       "creating": "QR कोड बनाया जा रहा है…",
-      "description": "WeChat पर अपने एजेंट से चैट करें।",
+      "description": "WeChat में Okou से चैट करें।",
       "disconnect": "डिस्कनेक्ट करें",
       "expired": "इस QR कोड की समय सीमा समाप्त हो गई है। नया बनाएँ।",
       "failed": "WeChat से कनेक्ट नहीं हो सका।",
@@ -7379,7 +7384,7 @@
       "restoreDescription": "WeChat को नीचे दिए गए खाते और कार्यस्थान से फिर से कनेक्ट करें।",
       "returnToWechat": "WeChat पर वापस जाएँ और बातचीत शुरू करने के लिए संदेश भेजें।",
       "scanned": "स्कैन हो गया। अपने फ़ोन पर पुष्टि करें।",
-      "scope": "केवल इस एजेंट को भेजे गए आपके सीधे संदेश कनेक्ट होते हैं। टेक्स्ट संदेश समर्थित हैं।",
+      "scope": "सिर्फ़ Okou को भेजे गए आपके डायरेक्ट मैसेज कनेक्ट होते हैं। टेक्स्ट मैसेज समर्थित हैं।",
       "title": "WeChat कनेक्ट करें",
       "unavailable": "कनेक्शन अभी कॉन्फ़िगर नहीं किया गया है।",
       "verification_blocked": "बहुत अधिक प्रयास हुए। नया QR कोड बनाएँ।",
@@ -7391,7 +7396,7 @@
     "whatsapp": {
       "codeError": "कनेक्शन कोड नहीं बनाया जा सका। फिर से कोशिश करें।",
       "connect": "WhatsApp कनेक्ट करें",
-      "connectDescription": "अपने एजेंट से चैट करने के लिए अपना WhatsApp खाता {{brandName}} से जोड़ें।",
+      "connectDescription": "{{brandName}} से चैट करने के लिए अपना WhatsApp खाता लिंक करें।",
       "connected": "WhatsApp कनेक्ट हो गया",
       "description": "WhatsApp से सीधे Okou के साथ चैट करें",
       "disconnected": "WhatsApp डिस्कनेक्ट हो गया",

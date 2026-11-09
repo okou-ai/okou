@@ -254,7 +254,9 @@ test("Show an unavailable state for a deleted agent", async () => {
 
   await waitFor(() => {
     expect(
-      screen.getByRole("heading", { name: "Agent not found" }),
+      screen.getByRole("heading", {
+        name: "This request is no longer available",
+      }),
     ).toBeVisible();
   });
   expect(

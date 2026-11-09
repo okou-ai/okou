@@ -364,7 +364,7 @@ function ExportScopeList() {
     }),
     singleAgent
       ? t(($) => {
-          return $.myOkou.instructions;
+          return $.settings.export.scope.personalInstructions;
         })
       : t(($) => {
           return $.settings.export.scope.agentInstructions;

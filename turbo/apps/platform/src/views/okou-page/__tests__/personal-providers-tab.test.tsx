@@ -644,7 +644,7 @@ test("Start and close personal Claude login directly from its account group", as
   }
   expect(
     within(connectDialog).getByText(
-      "Sign in with your Claude subscription to use Claude models with Claude Code-backed agents.",
+      "Sign in with your Claude subscription so Okou can use Claude models through Claude Code.",
     ),
   ).toBeVisible();
   closeClaudeCodeDialogs();

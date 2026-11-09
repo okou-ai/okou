@@ -771,7 +771,7 @@ test.each([true, false])(
     expect(within(dialog).getByText(description || title)).toBeVisible();
     expect(
       within(dialog).getByText(
-        "Your information will be added to this website. The agent will then continue and check the result.",
+        "Your information will be added to this website. Okou will then continue and check the result.",
       ),
     ).toBeVisible();
     const earlyNotes = within(dialog).getByRole("textbox", { name: "Notes" });
@@ -826,7 +826,7 @@ test.each([true, false])(
     }
     click(submitButton);
 
-    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+    await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
     expect(sentPrompt).toBe(BROWSER_INPUT_CALLBACK);
     expect(buttonsByName("Enter information")).toHaveLength(0);
   },
@@ -1045,9 +1045,7 @@ test("An inline native datetime-local picker keeps a wall-clock string through c
     throw new Error("Missing date/time submission button");
   }
   click(submit);
-  await expect(
-    screen.findByText("Agent notified"),
-  ).resolves.toBeInTheDocument();
+  await expect(screen.findByText("Okou notified")).resolves.toBeInTheDocument();
 });
 
 test("An inline Browser input dialog confirms a required native checkbox", async () => {
@@ -1119,7 +1117,7 @@ test("An inline Browser input dialog confirms a required native checkbox", async
   }
   expect(submitButton).toBeEnabled();
   click(submitButton);
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   expect(window.location.href).toBe(currentUrl);
 });
 
@@ -1207,7 +1205,7 @@ test("An inline Browser slider confirms the observed website position without na
   click(confirmButton);
   expect(submitButton).toBeEnabled();
   click(submitButton);
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   expect(window.location.href).toBe(currentUrl);
 });
 
@@ -1286,7 +1284,7 @@ test("An inline Browser color picker confirms the observed website selection wit
   click(confirmButton);
   expect(submitButton).toBeEnabled();
   click(submitButton);
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   expect(window.location.href).toBe(currentUrl);
 });
 
@@ -1414,7 +1412,7 @@ test("An inline Browser file picker binds local bytes only after confirmation", 
   await waitFor(() => {
     expect(uploaded).toBeTruthy();
   });
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   expect(window.location.href).toBe(currentUrl);
 });
 
@@ -1505,7 +1503,7 @@ test("An inline Browser dialog confirms an existing radio choice and preserves t
   }
   expect(submit).toBeEnabled();
   click(submit);
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   expect(window.location.href).toBe(url);
 });
 
@@ -1535,7 +1533,7 @@ test("A pending transcript card becomes consumed when the standalone form comple
   state = "succeeded";
   context.mocks.ably.trigger(BROWSER_USER_ACTION_TOPIC);
 
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 
@@ -1714,7 +1712,7 @@ test("A freshly mounted transcript card reads accepted Browser callback delivery
   });
   await readyChat();
 
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   expect(buttonsByName("Enter information")).toHaveLength(0);
 });
 

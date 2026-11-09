@@ -103,7 +103,7 @@
           "title": "Anbieter vorübergehend nicht erreichbar"
         }
       },
-      "fallbackAgent": "Agent",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "Dauer",
         "model": "Modell",
@@ -321,7 +321,7 @@
       "yes": "Ja"
     },
     "sources": {
-      "agent": "Agent",
+      "agent": "Okou",
       "agentphone": "iMessage",
       "automationEvent": "Automatisierungsereignis",
       "automationSchedule": "Automatisierungszeitplan",
@@ -540,7 +540,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Der Agent wird noch geladen",
+      "agentLoading": "Okou wird noch geladen",
       "connect": "Verbinden Sie Google Drive",
       "connectTooltip": "Verbinden Sie Google Drive, um Artefakte hochzuladen",
       "conversionNotice": "Erstellt eine bearbeitbare Kopie; die Formatierung kann abweichen.",
@@ -1012,11 +1012,11 @@
         "twentyFourHours": "24 Stunden"
       },
       "errors": {
-        "agentNotFound": "Agent nicht gefunden",
-        "loadAgent": "Der Agent konnte nicht geladen werden",
+        "agentNotFound": "Diese Anfrage ist nicht mehr verfügbar",
+        "loadAgent": "Diese Anfrage konnte nicht geladen werden",
         "loadGrants": "Berechtigungserteilungen konnten nicht geladen werden",
         "loadMetadata": "Berechtigungsmetadaten konnten nicht geladen werden",
-        "missingAgentId": "Fehlende Agent-ID in den URL-Parametern",
+        "missingAgentId": "Dieser Link ist unvollständig. Öffne ihn erneut aus deinem Chat.",
         "missingPermission": "Fehlende Berechtigung in URL-Parametern",
         "unknownAction": "Unbekannte Berechtigungsaktion: {{action}}",
         "unknownConnector": "Unbekannter Integration: {{connector}}",
@@ -1064,7 +1064,8 @@
       "notNow": "Nicht jetzt",
       "review": "Berechtigungen prüfen",
       "scopeNote": "Gilt für diesen Agenten, nicht nur für die aktuelle Aufgabe.",
-      "sharedScopeNote": "Die Berechtigungen für diesen Connector gelten für alle deine Chats und Agenten.",
+      "scopeNoteSingle": "Gilt für alle deine Chats, nicht nur für die aktuelle Aufgabe.",
+      "sharedScopeNote": "Gilt für diesen Connector in allen deinen Chats.",
       "title": "Folgende Berechtigungen erlauben"
     }
   },
@@ -1780,7 +1781,7 @@
       "repair": "Reparieren",
       "repairRequired": "{{institution}} muss repariert werden",
       "revoke": "Widerrufen",
-      "revokeConfirm": "Banking-Zugriff dieses Agenten widerrufen?",
+      "revokeConfirm": "Banking-Zugriff widerrufen?",
       "selectAccounts": "Konten auswählen",
       "sevenDays": "7 Tage",
       "thirtyDays": "30 Tage",
@@ -1833,7 +1834,7 @@
       "checkingOutcomeDescription": "Warten auf die Bestätigung dieser Anfrage durch den Browser.",
       "completed": "Informationen hinzugefügt",
       "confirmRangeValue": "Aktuellen Wert verwenden",
-      "delivered": "Agent benachrichtigt",
+      "delivered": "Okou benachrichtigt",
       "expired": "Anfrage abgelaufen",
       "expiredDescription": "Der Browser wurde geschlossen oder diese Anfrage ist nicht mehr aktiv.",
       "fileLeave": "Dateien auf der Website unverändert lassen",
@@ -1847,14 +1848,14 @@
       "required": "(Erforderlich)",
       "site": "Website",
       "stale": "Felder wurden geändert",
-      "staleDescription": "Bitten Sie den Agenten, eine neue Anfrage zu erstellen.",
+      "staleDescription": "Bitte Okou, eine neue Anfrage zu erstellen.",
       "submit": "Zum Browser hinzufügen",
-      "submitDescription": "Deine Angaben werden auf dieser Website eingetragen. Anschließend setzt der Agent die Aufgabe fort und prüft das Ergebnis.",
+      "submitDescription": "Deine Angaben werden zu dieser Website hinzugefügt. Okou macht danach weiter und prüft das Ergebnis.",
       "submitting": "Wird hinzugefügt…",
       "title": "Informationen im Browser eingeben",
       "unavailable": "Anfrage nicht verfügbar",
       "uncertain": "Browser prüfen",
-      "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitte den Agenten, das Ergebnis zu prüfen."
+      "uncertainDescription": "Der Browser hat die Angaben möglicherweise erhalten. Bitte Okou, das Ergebnis zu prüfen."
     },
     "capabilityHome": {
       "back": "Alle Funktionen",
@@ -1973,6 +1974,7 @@
         "slideCountRange": "{{range}} Folien"
       },
       "mentionHint": "Agenten oder Chats suchen…",
+      "mentionHintSingle": "Chats suchen…",
       "message": "Nachricht",
       "modelForThisChat": "Modell für diesen Chat",
       "placeholder": "Bitten Sie mich, Workflows zu automatisieren und Aufgaben zu verwalten...",
@@ -2066,7 +2068,7 @@
       "authorized": "{{connectorName}} verbunden und autorisiert für {{agentName}}",
       "back": "Zurück",
       "configurePermissions": "Konfigurieren Sie {{connectorName}}-Berechtigungen",
-      "customAuthorizeDescription": "Prüfen und verbinden Sie diese benutzerdefinierte Integration und autorisieren Sie sie für den Agenten.",
+      "customAuthorizeDescription": "Prüfe, verbinde und autorisiere diesen benutzerdefinierten Connector.",
       "directory": {
         "allCategories": "Alle",
         "askAdmin": "Lassen Sie diese Integration von einem Admin freischalten",
@@ -2296,7 +2298,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "Agent nicht gefunden",
+      "agentNotFound": "Diese Anfrage ist nicht mehr verfügbar",
       "allow": "Erlauben",
       "alreadyAllowed": "Bereits erlaubt",
       "alreadyDenied": "Bereits abgelehnt",
@@ -3221,7 +3223,7 @@
       "accessUpdated": "{{connector}} Zugriff aktualisiert",
       "clearSearch": "Übersichtliche Agentensuche",
       "description": "Wählen Sie aus, welche Agenten diese Integration verwenden können.",
-      "loading": "Agenten werden geladen...",
+      "loading": "Zugriff wird geladen...",
       "managePermissions": "Berechtigungen verwalten",
       "managePermissionsFor": "{{connector}}-Berechtigungen für {{agent}} verwalten",
       "noAgents": "Keine Agenten gefunden",
@@ -3389,8 +3391,8 @@
           "menu": "Vertrieb und Geschäft"
         }
       },
-      "description": "Verbinden Sie Dienste von Drittanbietern, damit Ihre Agenten sie nutzen können.",
-      "descriptionWithCount": "Verbinden Sie {{value}} Dienste, damit Ihre Agenten sie nutzen können.",
+      "description": "Verbinde Dienste von Drittanbietern, damit Okou sie nutzen kann.",
+      "descriptionWithCount": "Verbinde {{value}} Dienste, damit Okou sie nutzen kann.",
       "directory": {
         "browse": "Durchsuchen",
         "builtin": "Integrierte Konnektoren",
@@ -3495,7 +3497,7 @@
         "continue": "Weitermachen",
         "continueToProvider": "Gehen Sie weiter zum Anbieter, um den Zugriff zu autorisieren.",
         "continueWithAutomatic": "Weiter, während Okou prüft, wie sich dieser MCP-Server authentifiziert.",
-        "description": "Ihr Secret wird im Ruhezustand verschlüsselt und von der Firewall in ausgehende Anfragen eingefügt. Es wird dem Agenten niemals als Umgebungsvariable angezeigt.",
+        "description": "Dein Secret wird verschlüsselt gespeichert und von der Firewall in ausgehende Anfragen eingefügt. Es wird Okou nie als Umgebungsvariable offengelegt.",
         "errors": {
           "authenticationResponseInvalid": "Der MCP-Server hat eine nicht unterstützte Authentifizierungsantwort zurückgegeben. Prüfen Sie den MCP-Endpunkt und seine Authentifizierungskonfiguration oder wenden Sie sich an den Serveradministrator.",
           "authorizationUnsupported": "Der OAuth-Anbieter unterstützt die Anforderungen der automatischen Authentifizierung nicht. Verwenden Sie benutzerdefiniertes OAuth nur, wenn Sie bereits kompatible Client-Anmeldedaten haben, oder wenden Sie sich an den Okou-Support.",
@@ -3569,7 +3571,7 @@
         "tokenUrl": "Token-URL"
       },
       "delete": {
-        "description": "Dadurch werden die Integration und die dafür gespeicherten Secrets aller Mitglieder entfernt. Agenten, die für diese Integration autorisiert sind, verlieren sofort den Zugriff. Diese Aktion kann nicht rückgängig gemacht werden.",
+        "description": "Damit werden der Connector und die gespeicherten Secrets aller Mitglieder entfernt. Er funktioniert sofort in keinem Chat mehr. Das kann nicht rückgängig gemacht werden.",
         "title": "{{connector}} löschen?"
       },
       "edit": {
@@ -3592,12 +3594,14 @@
       }
     },
     "directed": {
+      "allowAccess": "Zugriff erlauben",
       "authorizeAgent": "Autorisieren Sie {{agent}}",
       "authorized": "{{connector}} autorisiert",
       "authorizeDocumentTitle": "Autorisieren Sie {{connector}}",
       "connectDocumentTitle": "Verbinden Sie {{connector}}",
       "connected": "{{connector}} verbunden",
       "needsConnector": "{{agent}} benötigt {{connector}}, um fortzufahren",
+      "needsConnectorSingle": "Okou benötigt {{connector}}, um fortzufahren",
       "reconnecting": "Verbindung wird wieder hergestellt..."
     },
     "expiration": {
@@ -3682,13 +3686,13 @@
       },
       "github": {
         "accountFallback": "dieses GitHub-Konto",
-        "alreadyDescription": "Sie sind bereits als {{account}} verbunden. Erwähnen Sie Ihren Agenten in GitHub-Issues oder Pull-Requests, um mit dem Chatten zu beginnen.",
+        "alreadyDescription": "Du bist bereits als {{account}} verbunden. Erwähne Okou in GitHub-Issues oder Pull Requests, um zu chatten.",
         "alreadyTitle": "Bereits mit GitHub verbunden",
         "back": "Zurück zu den Workflowsn",
         "checkingConnectionDescription": "Bitte warten Sie, während wir Ihre GitHub-Verbindung überprüfen.",
         "checkingConnectionTitle": "Verbindung prüfen...",
         "checkingSession": "Bitte warten Sie, während wir Ihre {{brandName}}-Sitzung überprüfen.",
-        "connectDescription": "Verknüpfen Sie Ihr {{brandName}}-Konto mit {{account}}, damit GitHub-Erwähnungen Ihre Agenten aus Issues und Pull-Requests starten können.",
+        "connectDescription": "Verknüpfe dein {{brandName}}-Konto mit {{account}}, damit du Okou in GitHub-Issues und Pull Requests erwähnen kannst.",
         "connectTitle": "Stellen Sie eine Verbindung zu GitHub her",
         "errorFallback": "Wir konnten GitHub nicht verbinden. Versuchen Sie es erneut über GitHub.",
         "invalidInstallation": "Die GitHub-Installation unter diesem Link ist ungültig.",
@@ -3706,7 +3710,7 @@
         "signInCheckFailed": "Die Anmeldung konnte nicht überprüft werden",
         "signInDescription": "Verwenden Sie Ihr {{brandName}}-Konto, bevor Sie diesen GitHub-Benutzer verbinden.",
         "signInTitle": "Melden Sie sich an, um fortzufahren",
-        "successDescription": "Sie sind als {{account}} verbunden. Erwähnen Sie Ihren Agenten in GitHub-Issues oder Pull-Requests, um mit dem Chatten zu beginnen.",
+        "successDescription": "Du bist als {{account}} verbunden. Erwähne Okou in GitHub-Issues oder Pull Requests, um zu chatten.",
         "successTitle": "Verbunden mit GitHub!",
         "wrongOrganizationDescription": "Ihre aktive Organisation stimmt nicht mit dieser GitHub-Installation überein. Wechseln Sie zur richtigen Organisation und öffnen Sie den Link erneut.",
         "wrongOrganizationTitle": "Organisation wechseln"
@@ -3721,7 +3725,7 @@
         "accountMismatchDescriptionWorkspace": "Ihr Okou-Konto verwendet derzeit das Slack-Konto {{currentAccount}} in {{workspace}}. Möchten Sie zu {{requestedAccount}} wechseln, dem Konto, das diesen Link geöffnet hat?",
         "accountMismatchTitle": "Slack-Konto wechseln?",
         "authorizationFailed": "Die Slack-Autorisierung wurde nicht abgeschlossen. Deine aktuelle Verbindung wird unten angezeigt. Du kannst es erneut versuchen.",
-        "connectDescription": "Verknüpfen Sie Ihr Konto mit diesem Slack-Arbeitsbereich, damit Sie direkt über Slack mit Ihrem Agenten interagieren können.",
+        "connectDescription": "Verknüpfe dein Konto mit diesem Slack-Workspace, um direkt in Slack mit Okou zu arbeiten.",
         "connectTitle": "Stellen Sie eine Verbindung zu Slack her",
         "currentConnection": "Slack ist verbunden",
         "errorFallback": "Die Slack-Verbindung konnte nicht geprüft oder gestartet werden.",
@@ -3739,7 +3743,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams autorisieren",
-        "connectDescription": "Verknüpfen Sie Ihr Teams-Konto, damit Sie direkt über Microsoft Teams mit Ihrem Agenten interagieren können.",
+        "connectDescription": "Verknüpfe dein Teams-Konto, um direkt in Microsoft Teams mit Okou zu arbeiten.",
         "connectedDescription": "Ihr Teams-Konto ist verbunden.",
         "connectTitle": "Verbinden Sie Microsoft Teams",
         "identityMismatch": "Das angeforderte Teams-Konto oder der Arbeitsbereich entspricht nicht der aktuellen Verbindung.",
@@ -3760,7 +3764,7 @@
         "checkingConnectionTitle": "Verbindung prüfen...",
         "conflictDescription": "Sie sind als {{current}} verbunden, aber dieser Link fordert {{requested}} an. Behalten Sie die Verbindung bei oder verwalten Sie sie ausdrücklich, bevor Sie es erneut versuchen.",
         "conflictTitle": "Ein anderes Telegram-Konto ist verbunden",
-        "connectDescription": "Verknüpfen Sie Ihr Konto mit diesem Telegram-Bot, damit Sie direkt über Telegram mit Ihrem Agenten interagieren können.",
+        "connectDescription": "Verknüpfe dein Konto mit diesem Telegram-Bot, um direkt in Telegram mit Okou zu arbeiten.",
         "connectionCheckFailed": "Telegram konnte zur Prüfung der Verbindung nicht erreicht werden.",
         "connectTitle": "Stellen Sie eine Verbindung zu Telegram her",
         "continue": "Weiter mit Telegram",
@@ -3847,7 +3851,7 @@
         "developerConsole": "Feishu-Entwicklerkonsole",
         "dialogAdminRequired": "Ein Organisationsadministrator muss die App konfigurieren. Sie können Ihr eigenes Konto über die Feishu-Bot-Liste verbinden, nachdem die Einrichtung abgeschlossen ist.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Fügen Sie eine benutzerdefinierte App hinzu, um Feishu-Nachrichten an einen Agenten weiterzuleiten.",
+        "emptyAdmin": "Füge eine benutzerdefinierte App hinzu, damit Feishu-Nachrichten Okou erreichen.",
         "emptyMember": "Bitten Sie einen Organisationsadministrator, einen Feishu-Bot hinzuzufügen.",
         "emptyTitle": "Noch keine Feishu-Bots",
         "events": {
@@ -3905,7 +3909,7 @@
         "reviewGuide": "Review-Leitfaden",
         "reviewGuideDescription": "Sehen Sie sich die abgeschlossenen Einrichtungsschritte für diesen Feishu-Bot an.",
         "reviewGuideTitle": "Feishu-Review-Leitfaden",
-        "routeDescription": "Leiten Sie Feishu-Nachrichten an Agenten weiter",
+        "routeDescription": "Chatte aus Feishu mit Okou",
         "selectAgent": "Wählen Sie einen Agenten aus",
         "setupIncomplete": "Einrichtung unvollständig",
         "steps": {
@@ -3979,7 +3983,7 @@
         "developerConsole": "Lark-Entwicklerkonsole",
         "dialogAdminRequired": "Ein Organisationsadministrator muss die App konfigurieren. Sie können Ihr eigenes Konto über die Lark-Bot-Liste verbinden, nachdem die Einrichtung abgeschlossen ist.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Fügen Sie eine benutzerdefinierte App hinzu, um Lark-Nachrichten an einen Agenten weiterzuleiten.",
+        "emptyAdmin": "Füge eine benutzerdefinierte App hinzu, damit Lark-Nachrichten Okou erreichen.",
         "emptyMember": "Bitten Sie einen Organisationsadministrator, einen Lark-Bot hinzuzufügen.",
         "emptyTitle": "Noch keine Lark-Bots",
         "events": {
@@ -4038,7 +4042,7 @@
         "reviewGuide": "Review-Leitfaden",
         "reviewGuideDescription": "Sehen Sie sich die abgeschlossenen Einrichtungsschritte für diesen Lark-Bot an.",
         "reviewGuideTitle": "Lark-Review-Leitfaden",
-        "routeDescription": "Leiten Sie Lark-Nachrichten an Agenten weiter",
+        "routeDescription": "Chatte aus Lark mit Okou",
         "selectAgent": "Wählen Sie einen Agenten aus",
         "setupIncomplete": "Einrichtung unvollständig",
         "steps": {
@@ -4131,7 +4135,7 @@
     "denied": "Anfrage abgelehnt",
     "deniedTitle": "Shell-Zugriff abgelehnt",
     "deny": "Ablehnen",
-    "description": "Der Agent benötigt die Berechtigung, die Shell auf deinem Computer zu verwenden.",
+    "description": "Okou benötigt die Berechtigung, die Shell auf deinem Computer zu verwenden.",
     "duration": "Der Zugriff gilt nach der Genehmigung für 1 Stunde",
     "expired": "Autorisierung abgelaufen",
     "expiredTitle": "Shell-Zugriff abgelaufen",
@@ -5081,31 +5085,31 @@
   },
   "projects": {
     "close": "Close",
-    "create": "Create Project",
+    "create": "Create project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
-    "deleteDescription": "Your chats and their histories will be kept. They return to their original Agent lists.",
-    "deleteError": "Could not delete Project",
-    "deleteProject": "Delete Project",
-    "deleteTitle": "Delete Project?",
-    "description": "Keep related chats together across Agents",
+    "deleteDescription": "Your chats and their histories will be kept. They move out of the project.",
+    "deleteError": "Could not delete project",
+    "deleteProject": "Delete project",
+    "deleteTitle": "Delete project?",
+    "description": "Keep related chats together",
     "empty": "No chats here yet",
-    "fromChat": "Create a Project from this chat",
-    "move": "Move to Project",
+    "fromChat": "Create a project from this chat",
+    "move": "Move to project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
     "moveTo": "Nach {{name}} verschieben",
     "name": "Project name",
-    "new": "New Project",
+    "new": "New project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
     "projects": "Projects",
-    "remove": "Remove from Project",
+    "remove": "Remove from project",
     "rename": "Rename",
-    "renameProject": "Rename Project",
+    "renameProject": "Rename project",
     "save": "Save",
-    "saveError": "Could not save Project",
+    "saveError": "Could not save project",
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
@@ -5143,7 +5147,7 @@
       "pro": "Pro",
       "team": "Team"
     },
-    "title": "Ihr Agent wartet in der Schlange",
+    "title": "Okou wartet in der Schlange",
     "upgrade": {
       "action": "Upgrade auf {{plan}}",
       "features": {
@@ -5605,6 +5609,7 @@
         "chatThreads": "Ihre Chatverläufe",
         "filesExcluded": "Artefakte, Anhänge und zusätzliche Workflow-Dateien sind nicht enthalten.",
         "memoryFiles": "Ihre aktuellen Speicherdateien",
+        "personalInstructions": "Deine persönlichen Anweisungen",
         "workflowInstructions": "Anweisungen der Workflows, auf die Sie zugreifen können"
       },
       "status": {
@@ -5665,7 +5670,7 @@
           "reconnectTitle": "Verbinden Sie Claude erneut",
           "signIn": "Melden Sie sich mit Claude an",
           "submit": "Verbinden",
-          "usageNotice": "Melden Sie sich mit Ihrem Claude-Abo an, um Claude-Modelle mit Claude Code-basierten Agenten zu nutzen."
+          "usageNotice": "Melde dich mit deinem Claude-Abo an, damit Okou Claude-Modelle über Claude Code nutzen kann."
         },
         "codex": {
           "connectedToast": "ChatGPT verbunden",
@@ -5969,7 +5974,7 @@
       },
       "timezone": {
         "description": "Zeiten, die Ihnen angezeigt und für Automatisierungsausführungen verwendet werden.",
-        "rowDescription": "Ihre Agenten verwenden diese Zeitzone während der Ausführung",
+        "rowDescription": "Okou verwendet diese Zeitzone bei Ausführungen",
         "rowTitle": "Zeitzone",
         "sectionTitle": "Zeitzone",
         "zones": {
@@ -6024,7 +6029,7 @@
         "title": "Deine Karten bei Link"
       },
       "connect": "Verbinden",
-      "description": "Deine Agenten können Käufe anfragen und Link-Transaktionen einsehen. Du genehmigst jeden Kauf.",
+      "description": "Okou kann Käufe anfragen und Link-Transaktionen einsehen. Du genehmigst jeden Kauf.",
       "disconnect": "Trennen",
       "loadError": "Dein Wallet konnte nicht geladen werden.",
       "scope": "Lass Okou für dich einkaufen und deine Link-Transaktionen einsehen.",
@@ -6287,8 +6292,8 @@
       "summary_other": "{{count}} Zugangsdaten-Sätze konfiguriert",
       "unused": "Von keinem Host verwendet"
     },
-    "deleteHelp": "Diesen Host löschen? Seine Zugangsdaten bleiben erhalten. Agents sehen ihn nicht mehr im Inventar.",
-    "description": "Konfiguriere SSH-Hosts, auf denen deine Agents Remote-Befehle ausführen können.",
+    "deleteHelp": "Diesen Host löschen? Die Zugangsdaten bleiben erhalten. Okou sieht diesen Host nicht mehr im Live-Inventar.",
+    "description": "Okou kann Befehle auf entfernten Rechnern ausführen.",
     "edit": "Host bearbeiten",
     "editHelp": "Andere Zugangsdaten auszuwählen ändert nur diesen Host. Änderungen am direkten Endpunkt löschen den gespeicherten Hostschlüssel; Änderungen mit Cloudflare Access behalten ihn bei.",
     "errors": {
@@ -6334,7 +6339,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Die Tailscale-SSH-Authentifizierung ist fehlgeschlagen. Prüfe den Systembenutzernamen, aktiviere Tailscale SSH auf dem getaggten Zielgerät und erlaube diese Anmeldung in der SSH-accept-Richtlinie des Tailnets.",
-      "deleteHelp": "Diesen Host löschen? Agents sehen diesen Host dann nicht mehr im Live-Inventar.",
+      "deleteHelp": "Diesen Host löschen? Okou sieht diesen Host nicht mehr im Live-Inventar.",
       "sshDocs": "Tailscale SSH-Dokumentation",
       "sshHelp": "Authentifiziert über die Identität des ausgewählten Tailscale-Netzwerks, ohne SSH-Passwort oder privaten Schlüssel. Aktiviere Tailscale SSH auf einem getaggten Zielgerät und erlaube diesen Systembenutzernamen in einer SSH-accept-Richtlinie.",
       "sshTitle": "Tailscale SSH",
@@ -6506,7 +6511,7 @@
       "usernamePasswordMethod": "Benutzername und Passwort"
     },
     "deleteHelp": "Diesen gespeicherten Host löschen? Die wiederverwendbaren Zugangsdaten bleiben erhalten.",
-    "description": "Lass deine Agents deine Remote-Desktops anzeigen und steuern.",
+    "description": "Okou kann entfernte Desktops sehen und steuern.",
     "edit": "Host bearbeiten",
     "editHelp": "Änderungen gelten für diesen gespeicherten Host und machen seine aktuelle Verbindungskonfiguration ungültig.",
     "errors": {
@@ -7291,7 +7296,7 @@
       "authorizationError": "Die Discord-Autorisierung konnte nicht abgeschlossen werden.",
       "cancelled": "Die Discord-Autorisierung wurde abgebrochen.",
       "chooseWorkspace": "Workspace auswählen",
-      "connectDescription": "Verbinde dein Discord-Konto, um mit deinem Agenten zu chatten.",
+      "connectDescription": "Verbinde dein Discord-Konto, um mit Okou zu chatten.",
       "connectedTitle": "Mit Discord verbunden",
       "connectTitle": "Mit Discord verbinden",
       "defaultWorkspace": "Standard-Workspace für Discord",
@@ -7355,7 +7360,7 @@
       "uninstallTitle": "Microsoft Teams-Integration deinstallieren?"
     },
     "telegram": {
-      "description": "Leiten Sie Telegram-Nachrichten an Agenten weiter",
+      "description": "Chatte in Telegram mit Okou.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7365,7 +7370,7 @@
       "connect": "Verbinden",
       "connected": "Verbunden",
       "creating": "QR-Code wird erstellt…",
-      "description": "Chatte mit deinem Agenten in WeChat.",
+      "description": "Chatte in WeChat mit Okou.",
       "disconnect": "Trennen",
       "expired": "Dieser QR-Code ist abgelaufen. Erstelle einen neuen.",
       "failed": "Die Verbindung zu WeChat ist fehlgeschlagen.",
@@ -7379,7 +7384,7 @@
       "restoreDescription": "WeChat wieder mit dem folgenden Konto und Arbeitsbereich verbinden.",
       "returnToWechat": "Kehre zu WeChat zurück und sende eine Nachricht, um den Chat zu starten.",
       "scanned": "Gescannt. Bestätige auf deinem Smartphone.",
-      "scope": "Nur deine Direktnachrichten an diesen Agenten werden verbunden. Textnachrichten werden unterstützt.",
+      "scope": "Nur deine Direktnachrichten an Okou werden verbunden. Textnachrichten werden unterstützt.",
       "title": "WeChat verbinden",
       "unavailable": "Die Verbindung ist noch nicht eingerichtet.",
       "verification_blocked": "Zu viele Versuche. Erstelle einen neuen QR-Code.",
@@ -7391,7 +7396,7 @@
     "whatsapp": {
       "codeError": "Der Verbindungscode konnte nicht erstellt werden. Versuche es erneut.",
       "connect": "WhatsApp verbinden",
-      "connectDescription": "Verbinde dein WhatsApp-Konto mit {{brandName}}, um mit deinem Agenten zu chatten.",
+      "connectDescription": "Verknüpfe dein WhatsApp-Konto, um mit {{brandName}} zu chatten.",
       "connected": "WhatsApp verbunden",
       "description": "Direkt in WhatsApp mit Okou chatten",
       "disconnected": "WhatsApp getrennt",

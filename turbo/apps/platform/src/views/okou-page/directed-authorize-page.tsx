@@ -19,6 +19,7 @@ import {
   setDirectedAuthorizeConnectModalKey$,
 } from "../../signals/connectors-page/directed-authorize-slug.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { Check, CircleAlert, Loader2 } from "lucide-react";
 import { DirectedActionError, DirectedCardShell } from "./directed-shared.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
@@ -37,7 +38,8 @@ function AuthorizeAction({
   isAuthorized: boolean;
   isConnecting: boolean;
   disabled: boolean;
-  agentName: string;
+  /** Null under single Okou, where the member authorizes for themselves. */
+  agentName: string | null;
   onAuthorize: () => void;
 }) {
   const { t } = useTranslation();
@@ -63,12 +65,16 @@ function AuthorizeAction({
         ? t(($) => {
             return $.connectors.actions.connecting;
           })
-        : t(
-            ($) => {
-              return $.connectors.directed.authorizeAgent;
-            },
-            { agent: agentName },
-          )}
+        : agentName === null
+          ? t(($) => {
+              return $.connectors.directed.allowAccess;
+            })
+          : t(
+              ($) => {
+                return $.connectors.directed.authorizeAgent;
+              },
+              { agent: agentName },
+            )}
     </Button>
   );
 }
@@ -154,7 +160,7 @@ function directedAuthorizeTitle(
   agentMissing: boolean,
   isAuthorized: boolean,
   connectorLabel: string,
-  agentName: string,
+  agentName: string | null,
 ): string {
   if (agentMissing) {
     return t(($) => {
@@ -169,6 +175,14 @@ function directedAuthorizeTitle(
       {
         connector: connectorLabel,
       },
+    );
+  }
+  if (agentName === null) {
+    return t(
+      ($) => {
+        return $.connectors.directed.needsConnectorSingle;
+      },
+      { connector: connectorLabel },
     );
   }
   return t(
@@ -221,7 +235,8 @@ function useDirectedAuthorizeCardState() {
   const setModalKey = useSet(setDirectedAuthorizeConnectModalKey$);
   const connectorSlugForState = params?.connectorSlug ?? null;
   const agentIdForState = params?.agentId ?? null;
-  const agentName = useDirectedAuthorizeAgentName(agentIdForState);
+  const legacyAgentName = useDirectedAuthorizeAgentName(agentIdForState);
+  const agentName = useGet(singleAgentEnabled$) ? null : legacyAgentName;
   const { item, isConnected, catalogFailed, catalogLoading, unavailable } =
     useDirectedAuthorizeCatalogState(connectorSlugForState);
   const { agentMissing, isAuthorized, permissionLoading } =

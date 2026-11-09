@@ -122,7 +122,7 @@ test("Theme preferences initialize from the shared cookie", async () => {
   );
 
   await expect(
-    screen.findByText("Your agents will use this time zone during runs"),
+    screen.findByText("Okou uses this time zone during runs"),
   ).resolves.toBeVisible();
   expect(getFastRole("button", "Light")).toBeVisible();
 });

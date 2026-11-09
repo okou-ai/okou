@@ -181,7 +181,7 @@ test.each(["install", "connect"] as const)(
     });
     expect(getAction("button", "Connecting...")).toBeDisabled();
     expect(
-      screen.getByText("Connect your Discord account to chat with your agent."),
+      screen.getByText("Connect your Discord account to chat with Okou."),
     ).toBeInTheDocument();
     expect(queryAction("link", "Open Discord")).not.toBeInTheDocument();
     expect(requestBody).toStrictEqual({ guildId });

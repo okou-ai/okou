@@ -14,6 +14,7 @@ import { useLoadableSet } from "ccstate-react/experimental";
 import { useGet, useSet } from "ccstate-react";
 
 import { pageSignal$ } from "../../../../signals/page-signal.ts";
+import { singleAgentEnabled$ } from "../../../../signals/single-agent.ts";
 import {
   customConnectorPermissionDraft$,
   saveCustomConnectorPermissions$,
@@ -178,6 +179,7 @@ export function CustomConnectorPermissionsDrawer({
   readonly onClose: () => void;
 }) {
   const { t } = useTranslation();
+  const singleAgent = useGet(singleAgentEnabled$);
   return (
     <Sheet
       open
@@ -214,7 +216,9 @@ export function CustomConnectorPermissionsDrawer({
           </div>
           <SheetDescription>
             {t(($) => {
-              return $.connectors.permissions.descriptionAgent;
+              return singleAgent
+                ? $.myOkou.access
+                : $.connectors.permissions.descriptionAgent;
             })}
           </SheetDescription>
         </SheetHeader>

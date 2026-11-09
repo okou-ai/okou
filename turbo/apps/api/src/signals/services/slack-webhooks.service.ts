@@ -1,7 +1,12 @@
 import { rootSignal$ } from "../context/root";
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
-import type { FeatureSwitchContext } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { buildSingleOkouWelcomeMessage } from "../../lib/slack-connect-blocks";
 import { agents } from "@okouai/db/schema/agent";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
@@ -1225,8 +1230,17 @@ const handleMessagesTabOpened$ = command(
     if (!connection || connection.dmWelcomeSent) {
       return;
     }
+    const singleOkou =
+      installation.orgId !== null &&
+      isFeatureEnabled(FeatureSwitchKey.SingleAgent, {
+        orgId: installation.orgId,
+        userId: connection.userId,
+        overrides: await get(
+          userFeatureSwitchOverrides(installation.orgId, connection.userId),
+        ),
+      });
     let agentName: string | undefined;
-    if (installation.orgId) {
+    if (installation.orgId && !singleOkou) {
       const db = get(db$);
       const orgId = installation.orgId;
       const composeId = await (async () => {
@@ -1277,9 +1291,13 @@ const handleMessagesTabOpened$ = command(
     }
     const sent = await client.postMessage(
       args.channelId,
-      `Hi! I'm ${officialSlackBotMention(installation.botUserId)}. I can connect you to AI agents to help with your tasks.`,
+      singleOkou
+        ? `Hi! I'm ${officialSlackBotMention(installation.botUserId)}.`
+        : `Hi! I'm ${officialSlackBotMention(installation.botUserId)}. I can connect you to AI agents to help with your tasks.`,
       {
-        blocks: buildWelcomeMessage(installation.botUserId, agentName),
+        blocks: singleOkou
+          ? buildSingleOkouWelcomeMessage(installation.botUserId)
+          : buildWelcomeMessage(installation.botUserId, agentName),
       },
     );
     // A provider rejection is safe to retry; an unknown outcome retains the claim.

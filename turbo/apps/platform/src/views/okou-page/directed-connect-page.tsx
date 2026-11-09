@@ -51,6 +51,7 @@ import {
   setDirectedConnectCustomDialogKey$,
 } from "../../signals/connectors-page/directed-connect-slug.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { Check, Loader2 } from "lucide-react";
 import { DirectedActionError, DirectedCardShell } from "./directed-shared.tsx";
 import { ConnectModal } from "./components/settings/add-connection-dialog.tsx";
@@ -573,6 +574,7 @@ function DirectedConnectCardContent({
   readonly onConnect: () => void;
 }) {
   const { t } = useTranslation();
+  const singleAgent = useGet(singleAgentEnabled$);
   return (
     <DirectedCardShell
       icon={icon}
@@ -584,12 +586,19 @@ function DirectedConnectCardContent({
               },
               { connector: connectorLabel },
             )
-          : t(
-              ($) => {
-                return $.connectors.directed.needsConnector;
-              },
-              { agent: agentName, connector: connectorLabel },
-            )
+          : singleAgent
+            ? t(
+                ($) => {
+                  return $.connectors.directed.needsConnectorSingle;
+                },
+                { connector: connectorLabel },
+              )
+            : t(
+                ($) => {
+                  return $.connectors.directed.needsConnector;
+                },
+                { agent: agentName, connector: connectorLabel },
+              )
       }
       description={connectorDescription}
       isLoading={isLoading}

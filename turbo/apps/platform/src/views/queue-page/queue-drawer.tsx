@@ -38,6 +38,7 @@ import {
   startConcurrencyCheckout$,
 } from "../../signals/okou-page/billing.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { orgPlanCapabilitiesFromBilling } from "../../signals/okou-page/org-plan-capabilities.ts";
 
@@ -99,6 +100,7 @@ function formatConcurrencyMonthlyTotal(
 
 function useUpgradePath(tier: string): UpgradePath | undefined {
   const { i18n, t } = useTranslation();
+  const singleAgent = useGet(singleAgentEnabled$);
   const numberFormat = new Intl.NumberFormat(i18n.resolvedLanguage);
   const base =
     tier in UPGRADE_PATHS
@@ -142,9 +144,14 @@ function useUpgradePath(tier: string): UpgradePath | undefined {
         },
         { count: base.concurrentRuns },
       ),
-      t(($) => {
-        return $.queue.upgrade.features.unlimitedAgents;
-      }),
+      // Single Okou has no agents to count.
+      ...(singleAgent
+        ? []
+        : [
+            t(($) => {
+              return $.queue.upgrade.features.unlimitedAgents;
+            }),
+          ]),
       support,
     ],
   };

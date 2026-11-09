@@ -5,7 +5,11 @@ import { feishuOrgInstallations } from "@okouai/db/schema/feishu-org-installatio
 import { orgMetadata } from "@okouai/db/schema/org-metadata";
 import { agents } from "@okouai/db/schema/agent";
 
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+
 import { buildFeishuWelcomeMessage } from "../../lib/feishu-message-card";
+import { userFeatureSwitchOverrides } from "./feature-switches.service";
 import { deliverFeishuMessage$ } from "./feishu-message-delivery.service";
 import { db$, writeDb$ } from "../external/db";
 import { nowDate } from "../../lib/time";
@@ -30,6 +34,8 @@ export const notifyFeishuConnect$ = command(
       .select({
         agentName: agents.name,
         agentDisplayName: agents.displayName,
+        orgId: feishuOrgInstallations.orgId,
+        userId: feishuOrgConnections.userId,
         botName: feishuOrgInstallations.botName,
         platform: feishuOrgInstallations.platform,
       })
@@ -55,6 +61,14 @@ export const notifyFeishuConnect$ = command(
     if (!installation) {
       throw new Error("Feishu installation not found");
     }
+    const singleOkou = isFeatureEnabled(FeatureSwitchKey.SingleAgent, {
+      orgId: installation.orgId,
+      userId: installation.userId,
+      overrides: await get(
+        userFeatureSwitchOverrides(installation.orgId, installation.userId),
+      ),
+    });
+    signal.throwIfAborted();
     await set(
       deliverFeishuMessage$,
       {
@@ -66,6 +80,7 @@ export const notifyFeishuConnect$ = command(
           platform: installation.platform,
           agentName: installation.agentDisplayName ?? installation.agentName,
           botName: installation.botName,
+          singleOkou,
         }),
         idempotencyKey: args.connectionId,
       },

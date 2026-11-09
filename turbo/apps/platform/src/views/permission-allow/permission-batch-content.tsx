@@ -261,9 +261,14 @@ function BatchPermissionDetails({ batch }: BatchViewProps) {
       )}
       <p className="text-sm text-muted-foreground">
         {t(($) => {
-          return features.state === "hasData" &&
-            features.data[FeatureSwitchKey.ConnectorChatAccountAccess]
-            ? $.authorization.permissionBatch.sharedScopeNote
+          if (features.state !== "hasData") {
+            return $.authorization.permissionBatch.scopeNote;
+          }
+          if (features.data[FeatureSwitchKey.ConnectorChatAccountAccess]) {
+            return $.authorization.permissionBatch.sharedScopeNote;
+          }
+          return features.data[FeatureSwitchKey.SingleAgent]
+            ? $.authorization.permissionBatch.scopeNoteSingle
             : $.authorization.permissionBatch.scopeNote;
         })}
       </p>

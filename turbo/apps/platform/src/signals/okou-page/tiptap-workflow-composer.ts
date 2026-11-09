@@ -49,6 +49,7 @@ import type { VoiceIoEditorContext } from "@okouai/api-contracts/contracts/voice
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { splitPlainTextUrls } from "../../lib/plain-text-urls.ts";
 import { agents$ } from "../agent.ts";
+import { singleAgentEnabled$ } from "../single-agent.ts";
 import { currentChatAgentRecordId$ } from "../agent-chat.ts";
 import { createRecentWorkflowIds } from "./recent-workflows.ts";
 import { detach, onRef, Reason, resetSignal } from "../utils.ts";
@@ -2230,6 +2231,7 @@ function createSuggestionMenuBoundary() {
 function createSuggestionHintPlugin(
   key: PluginKey<boolean>,
   kind: "slash" | "mention",
+  singleAgent: boolean,
 ): Plugin<boolean> {
   return new Plugin<boolean>({
     key,
@@ -2270,7 +2272,10 @@ function createSuggestionHintPlugin(
                 return $.chat.composer.slashPanel.hint;
               })
             : i18n.t(($) => {
-                return $.chat.composer.mentionHint;
+                // Single Okou offers chats only; there are no agents to mention.
+                return singleAgent
+                  ? $.chat.composer.mentionHintSingle
+                  : $.chat.composer.mentionHint;
               });
         const attributes = {
           class:
@@ -2307,10 +2312,14 @@ function createSuggestionHintMenuRef(
   kind: "slash" | "mention",
 ) {
   return onRef(
-    command(({ set }, element: HTMLElement, signal: AbortSignal) => {
+    command(({ get, set }, element: HTMLElement, signal: AbortSignal) => {
       const releaseMenu = set(menuRef$, element);
       const key = new PluginKey<boolean>("composerSuggestionHint");
-      const plugin = createSuggestionHintPlugin(key, kind);
+      const plugin = createSuggestionHintPlugin(
+        key,
+        kind,
+        get(singleAgentEnabled$),
+      );
       // The suggestion menu owns the hint's lifetime, including Escape and outside
       // dismissal. Editor transactions own position.
       editor.registerPlugin(plugin);

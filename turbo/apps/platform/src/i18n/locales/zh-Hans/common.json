@@ -103,7 +103,7 @@
           "title": "提供方暂时不可用"
         }
       },
-      "fallbackAgent": "智能体",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "时长",
         "model": "模型",
@@ -321,7 +321,7 @@
       "yes": "是"
     },
     "sources": {
-      "agent": "智能体",
+      "agent": "Okou",
       "agentphone": "iMessage",
       "automationEvent": "自动化事件",
       "automationSchedule": "自动化定时任务",
@@ -538,7 +538,7 @@
       "video": "视频"
     },
     "googleDrive": {
-      "agentLoading": "智能体还在加载",
+      "agentLoading": "Okou 还在加载",
       "connect": "连接 Google Drive",
       "connectTooltip": "连接 Google Drive 后即可上传成果",
       "conversionNotice": "创建可编辑副本，格式可能有所变化。",
@@ -1010,11 +1010,11 @@
         "twentyFourHours": "24 小时"
       },
       "errors": {
-        "agentNotFound": "未找到智能体",
-        "loadAgent": "加载智能体失败",
+        "agentNotFound": "此请求已不可用",
+        "loadAgent": "无法加载此请求",
         "loadGrants": "加载权限授予失败",
         "loadMetadata": "加载权限信息失败",
-        "missingAgentId": "URL 参数中缺少智能体 ID",
+        "missingAgentId": "此链接不完整。请从你的聊天中重新打开。",
         "missingPermission": "URL 参数中缺少权限",
         "unknownAction": "未知的权限操作：{{action}}",
         "unknownConnector": "未知的连接器：{{connector}}",
@@ -1061,7 +1061,8 @@
       "notNow": "暂不允许",
       "review": "查看并授权",
       "scopeNote": "适用于此智能体，而不仅限于当前任务。",
-      "sharedScopeNote": "此连接器的权限由你的所有聊天和智能体共用。",
+      "scopeNoteSingle": "适用于你的所有聊天，而不仅限于当前任务。",
+      "sharedScopeNote": "适用于你所有聊天中的此连接器。",
       "title": "允许以下权限"
     }
   },
@@ -1775,7 +1776,7 @@
       "repair": "修复",
       "repairRequired": "{{institution}} 需要修复",
       "revoke": "撤销",
-      "revokeConfirm": "撤销这个智能体的银行访问权限？",
+      "revokeConfirm": "撤销银行访问权限？",
       "selectAccounts": "选择账户",
       "sevenDays": "7 天",
       "thirtyDays": "30 天",
@@ -1828,7 +1829,7 @@
       "checkingOutcomeDescription": "正在等待浏览器确认此请求。",
       "completed": "信息已添加",
       "confirmRangeValue": "使用当前值",
-      "delivered": "已通知 Agent",
+      "delivered": "已通知 Okou",
       "expired": "请求已过期",
       "expiredDescription": "浏览器已关闭，或这个请求已不再有效。",
       "fileLeave": "不更改网站已选文件",
@@ -1842,14 +1843,14 @@
       "required": "（必填）",
       "site": "网站",
       "stale": "字段已变化",
-      "staleDescription": "请让 Agent 创建一个新请求。",
+      "staleDescription": "请让 Okou 创建一个新请求。",
       "submit": "添加到浏览器",
-      "submitDescription": "填写的内容会填入此网站，随后 Agent 将继续操作并检查结果。",
+      "submitDescription": "你的信息将添加到此网站。之后 Okou 会继续并检查结果。",
       "submitting": "正在添加…",
       "title": "在浏览器中输入信息",
       "unavailable": "请求不可用",
       "uncertain": "请检查浏览器",
-      "uncertainDescription": "浏览器可能已收到这些信息。请让代理检查结果。"
+      "uncertainDescription": "浏览器可能已收到这些信息。请让 Okou 检查结果。"
     },
     "capabilityHome": {
       "back": "所有能力",
@@ -1968,6 +1969,7 @@
         "slideCountRange": "{{range}} 页"
       },
       "mentionHint": "搜索智能体或聊天…",
+      "mentionHintSingle": "搜索聊天…",
       "message": "消息",
       "modelForThisChat": "本次对话使用的模型",
       "placeholder": "让我自动化工作流、管理任务…",
@@ -2061,7 +2063,7 @@
       "authorized": "{{connectorName}} 已连接，并已授权给 {{agentName}}",
       "back": "返回",
       "configurePermissions": "配置 {{connectorName}} 权限",
-      "customAuthorizeDescription": "查看并连接这个自定义连接器，然后授权给智能体。",
+      "customAuthorizeDescription": "查看、连接并授权这个自定义连接器。",
       "directory": {
         "allCategories": "全部",
         "askAdmin": "请管理员开启",
@@ -2288,7 +2290,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}}{{permissionName}}",
-      "agentNotFound": "未找到智能体",
+      "agentNotFound": "此请求已不可用",
       "allow": "允许",
       "alreadyAllowed": "已允许",
       "alreadyDenied": "已拒绝",
@@ -3207,7 +3209,7 @@
       "accessUpdated": "{{connector}}访问权限已更新",
       "clearSearch": "清除智能体搜索",
       "description": "选择哪些智能体可以使用这个连接器。",
-      "loading": "正在加载智能体…",
+      "loading": "正在加载访问权限...",
       "managePermissions": "管理权限",
       "managePermissionsFor": "管理{{agent}}的{{connector}}权限",
       "noAgents": "没有找到智能体",
@@ -3374,8 +3376,8 @@
           "menu": "销售与业务"
         }
       },
-      "description": "连接第三方服务，供你的智能体使用。",
-      "descriptionWithCount": "连接 {{value}} 个服务，供你的智能体使用。",
+      "description": "连接第三方服务，供 Okou 使用。",
+      "descriptionWithCount": "连接 {{value}} 个服务，供 Okou 使用。",
       "directory": {
         "browse": "浏览",
         "builtin": "内置连接器",
@@ -3480,7 +3482,7 @@
         "continue": "继续",
         "continueToProvider": "前往服务商页面授权访问。",
         "continueWithAutomatic": "继续，Okou 会自动识别此 MCP 服务器的认证方式。",
-        "description": "你的密钥会加密存储，并由防火墙注入到对外请求中，不会以环境变量的形式暴露给智能体。",
+        "description": "你的密钥会加密存储，并由防火墙注入出站请求。它绝不会以环境变量的形式暴露给 Okou。",
         "errors": {
           "authenticationResponseInvalid": "MCP 服务器返回了不受支持的认证响应。请检查 MCP 端点及其认证配置，或联系服务器管理员。",
           "authorizationUnsupported": "该 OAuth 服务商不支持自动认证所需的授权方式。如果你已有兼容的客户端凭据，可改用自定义 OAuth，也可以联系 Okou 支持团队。",
@@ -3554,7 +3556,7 @@
         "tokenUrl": "令牌 URL"
       },
       "delete": {
-        "description": "此操作会删除该连接器，以及每位成员为它存储的密钥。已授权使用该连接器的智能体将立即失去访问权限。此操作无法撤销。",
+        "description": "这会移除此连接器以及每位成员为它保存的密钥。它会立即在所有聊天中停止工作。此操作无法撤销。",
         "title": "删除{{connector}}？"
       },
       "edit": {
@@ -3577,12 +3579,14 @@
       }
     },
     "directed": {
+      "allowAccess": "允许访问",
       "authorizeAgent": "授权{{agent}}",
       "authorized": "{{connector}}已授权",
       "authorizeDocumentTitle": "授权{{connector}}",
       "connectDocumentTitle": "连接{{connector}}",
       "connected": "{{connector}}已连接",
       "needsConnector": "{{agent}}需要{{connector}}才能继续",
+      "needsConnectorSingle": "Okou 需要 {{connector}} 才能继续",
       "reconnecting": "正在重新连接…"
     },
     "expiration": {
@@ -3667,13 +3671,13 @@
       },
       "github": {
         "accountFallback": "此 GitHub 账号",
-        "alreadyDescription": "你已以{{account}}身份连接。在 GitHub issue 或 pull request 中@你的智能体，即可开始对话。",
+        "alreadyDescription": "你已以 {{account}} 的身份连接。在 GitHub issue 或 pull request 中提及 Okou 即可开始聊天。",
         "alreadyTitle": "已连接到 GitHub",
         "back": "返回工作流",
         "checkingConnectionDescription": "我们正在检查你的 GitHub 连接，请稍候。",
         "checkingConnectionTitle": "正在检查连接…",
         "checkingSession": "我们正在验证你的 {{brandName}} 登录状态，请稍候。",
-        "connectDescription": "把你的 {{brandName}} 账号关联到{{account}}，就可以在 issue 和 pull request 中通过@提及运行你的智能体。",
+        "connectDescription": "将你的 {{brandName}} 账号关联到 {{account}}，即可在 GitHub issue 和 pull request 中提及 Okou。",
         "connectTitle": "连接到 GitHub",
         "errorFallback": "我们无法连接 GitHub。请从 GitHub 重试。",
         "invalidInstallation": "此链接中的 GitHub 安装信息无效。",
@@ -3691,7 +3695,7 @@
         "signInCheckFailed": "无法检查登录状态",
         "signInDescription": "连接此 GitHub 用户前，请先登录你的 {{brandName}} 账号。",
         "signInTitle": "登录后继续",
-        "successDescription": "你已以{{account}}身份连接。在 GitHub issue 或 pull request 中@你的智能体，即可开始对话。",
+        "successDescription": "你已以 {{account}} 的身份连接。在 GitHub issue 或 pull request 中提及 Okou 即可开始聊天。",
         "successTitle": "已连接到 GitHub！",
         "wrongOrganizationDescription": "你当前所在的组织与此 GitHub 安装不匹配。请切换到正确的组织，然后重新打开链接。",
         "wrongOrganizationTitle": "切换组织"
@@ -3706,7 +3710,7 @@
         "accountMismatchDescriptionWorkspace": "你的 Okou 账号当前在{{workspace}}使用 Slack 账号{{currentAccount}}。要切换到打开此链接的{{requestedAccount}}吗？",
         "accountMismatchTitle": "切换 Slack 账号？",
         "authorizationFailed": "Slack 授权未完成。下方显示当前连接状态，你可以重试。",
-        "connectDescription": "把你的账号关联到这个 Slack 工作区，就可以直接在 Slack 里与你的智能体交流。",
+        "connectDescription": "将你的账号关联到此 Slack 工作区，即可直接在 Slack 中与 Okou 协作。",
         "connectTitle": "连接到 Slack",
         "currentConnection": "Slack 已连接",
         "errorFallback": "无法检查或开始 Slack 连接。",
@@ -3724,7 +3728,7 @@
       },
       "teams": {
         "authorize": "授权 Microsoft Teams",
-        "connectDescription": "关联你的 Teams 账号，就可以直接在 Microsoft Teams 里与你的智能体交流。",
+        "connectDescription": "关联你的 Teams 账号，即可直接在 Microsoft Teams 中与 Okou 协作。",
         "connectedDescription": "你的 Teams 账号已连接。",
         "connectTitle": "连接 Microsoft Teams",
         "identityMismatch": "此链接指定的 Teams 账号或工作区与当前连接不一致。",
@@ -3745,7 +3749,7 @@
         "checkingConnectionTitle": "正在检查连接…",
         "conflictDescription": "当前连接的是 {{current}}，但此链接请求连接 {{requested}}。你可以保留当前连接，或先手动管理连接再重试。",
         "conflictTitle": "已连接其他 Telegram 账号",
-        "connectDescription": "把你的账号关联到这个 Telegram 机器人，就可以直接在 Telegram 里与你的智能体交流。",
+        "connectDescription": "将你的账号关联到此 Telegram 机器人，即可直接在 Telegram 中与 Okou 协作。",
         "connectionCheckFailed": "暂时无法访问 Telegram 来检查连接。",
         "connectTitle": "连接到 Telegram",
         "continue": "使用 Telegram 继续",
@@ -3832,7 +3836,7 @@
         "developerConsole": "飞书开发者后台",
         "dialogAdminRequired": "该应用需要由组织管理员配置。配置完成后，你可以在飞书机器人列表中连接自己的账号。",
         "documentTitle": "飞书",
-        "emptyAdmin": "添加自建应用，把飞书消息路由给智能体。",
+        "emptyAdmin": "添加自定义应用，让飞书消息发送给 Okou。",
         "emptyMember": "请组织管理员添加飞书机器人。",
         "emptyTitle": "还没有飞书机器人",
         "events": {
@@ -3890,7 +3894,7 @@
         "reviewGuide": "查看指南",
         "reviewGuideDescription": "查看此飞书机器人已完成的配置步骤。",
         "reviewGuideTitle": "飞书配置指南",
-        "routeDescription": "把飞书消息路由给智能体",
+        "routeDescription": "在飞书中与 Okou 聊天",
         "selectAgent": "选择智能体",
         "setupIncomplete": "配置未完成",
         "steps": {
@@ -3964,7 +3968,7 @@
         "developerConsole": "Lark 开发者后台",
         "dialogAdminRequired": "该应用需要由组织管理员配置。配置完成后，你可以在 Lark 机器人列表中连接自己的账号。",
         "documentTitle": "Lark",
-        "emptyAdmin": "添加自建应用，把 Lark 消息路由给智能体。",
+        "emptyAdmin": "添加自定义应用，让Lark消息发送给 Okou。",
         "emptyMember": "请组织管理员添加 Lark 机器人。",
         "emptyTitle": "还没有 Lark 机器人",
         "events": {
@@ -4023,7 +4027,7 @@
         "reviewGuide": "查看指南",
         "reviewGuideDescription": "查看此 Lark 机器人已完成的配置步骤。",
         "reviewGuideTitle": "Lark 配置指南",
-        "routeDescription": "把 Lark 消息路由给智能体",
+        "routeDescription": "在Lark中与 Okou 聊天",
         "selectAgent": "选择智能体",
         "setupIncomplete": "配置未完成",
         "steps": {
@@ -4116,7 +4120,7 @@
     "denied": "已拒绝申请",
     "deniedTitle": "Shell 访问已拒绝",
     "deny": "拒绝",
-    "description": "Agent 需要获得在你的电脑上使用 Shell 的权限。",
+    "description": "Okou 需要获得在你的电脑上使用 Shell 的权限。",
     "duration": "批准后可访问 1 小时",
     "expired": "授权已到期",
     "expiredTitle": "Shell 访问已过期",
@@ -5066,11 +5070,11 @@
     "create": "创建 Project",
     "createChatError": "无法创建聊天",
     "delete": "删除",
-    "deleteDescription": "聊天及其历史记录会保留，并返回原来 Agent 的列表。",
+    "deleteDescription": "聊天及其历史记录会保留，并移出这个项目。",
     "deleteError": "无法删除 Project",
     "deleteProject": "删除 Project",
     "deleteTitle": "删除 Project？",
-    "description": "将不同 Agent 的相关聊天归到一起",
+    "description": "将相关聊天归到一起",
     "empty": "暂无聊天",
     "fromChat": "从此聊天创建 Project",
     "move": "移至 Project",
@@ -5125,7 +5129,7 @@
       "pro": "Pro",
       "team": "Team"
     },
-    "title": "你的智能体正在排队",
+    "title": "Okou 正在排队",
     "upgrade": {
       "action": "升级到{{plan}}",
       "features": {
@@ -5587,6 +5591,7 @@
         "chatThreads": "你的聊天会话",
         "filesExcluded": "不包含成果、附件和工作流的相关文件。",
         "memoryFiles": "你当前的记忆文件",
+        "personalInstructions": "你的个人指令",
         "workflowInstructions": "你可访问的工作流指令"
       },
       "status": {
@@ -5647,7 +5652,7 @@
           "reconnectTitle": "重新连接 Claude",
           "signIn": "使用 Claude 登录",
           "submit": "连接",
-          "usageNotice": "使用你的 Claude 订阅登录，通过 Claude Code 驱动的智能体使用 Claude 系列模型。"
+          "usageNotice": "使用你的 Claude 订阅登录，Okou 就能通过 Claude Code 使用 Claude 模型。"
         },
         "codex": {
           "connectedToast": "ChatGPT 已连接",
@@ -5950,7 +5955,7 @@
       },
       "timezone": {
         "description": "用于界面显示时间和自动化运行时间。",
-        "rowDescription": "你的智能体在运行时会使用该时区",
+        "rowDescription": "Okou 运行时会使用这个时区",
         "rowTitle": "时区",
         "sectionTitle": "时区",
         "zones": {
@@ -6005,7 +6010,7 @@
         "title": "你的 Link 卡片"
       },
       "connect": "连接",
-      "description": "让智能体发起购买请求并查看 Link 交易。每笔购买均由你批准。",
+      "description": "让 Okou 发起购买请求并查看 Link 交易。每笔购买均由你批准。",
       "disconnect": "断开连接",
       "loadError": "无法加载钱包。",
       "scope": "让 Okou 代你购买并查看 Link 交易。",
@@ -6266,8 +6271,8 @@
       "summary_other": "已配置 {{count}} 个凭据",
       "unused": "未被任何主机使用"
     },
-    "deleteHelp": "确定删除该主机？它的凭据会保留。智能体将不再在可用主机列表中看到它。",
-    "description": "让你的智能体在远程机器上执行命令。",
+    "deleteHelp": "删除此主机？其凭据会保留。Okou 将不再在实时清单中看到此主机。",
+    "description": "让 Okou 在远程机器上执行命令。",
     "edit": "编辑主机",
     "editHelp": "选择其他凭据只会影响该主机。修改直连地址会清除已记录的主机密钥；涉及 Cloudflare Access 的修改则会保留它。",
     "errors": {
@@ -6313,7 +6318,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH 身份认证失败。请检查系统用户名，在带标签的目标设备上启用 Tailscale SSH，并在 tailnet 的 SSH accept 策略中允许此登录。",
-      "deleteHelp": "确定删除该主机？智能体将不再在可用主机列表中看到它。",
+      "deleteHelp": "删除此主机？Okou 将不再在实时清单中看到此主机。",
       "sshDocs": "Tailscale SSH 官方文档",
       "sshHelp": "使用所选 Tailscale 网络的身份认证，无需 SSH 密码或私钥。请在带标签的目标设备上启用 Tailscale SSH，并通过 SSH accept 策略允许此系统用户名。",
       "sshTitle": "Tailscale SSH",
@@ -6484,7 +6489,7 @@
       "usernamePasswordMethod": "用户名和密码"
     },
     "deleteHelp": "删除这台已保存的主机？它使用的可复用凭据会保留。",
-    "description": "让你的智能体查看和控制远程桌面。",
+    "description": "让 Okou 查看并控制远程桌面。",
     "edit": "编辑主机",
     "editHelp": "更改会应用到这台已保存的主机，并使其当前的连接配置失效。",
     "errors": {
@@ -7268,7 +7273,7 @@
       "authorizationError": "未能完成 Discord 授权。",
       "cancelled": "Discord 授权已取消。",
       "chooseWorkspace": "选择工作区",
-      "connectDescription": "连接 Discord 账号，与智能体聊天。",
+      "connectDescription": "连接你的 Discord 账号，与 Okou 聊天。",
       "connectedTitle": "已连接 Discord",
       "connectTitle": "连接 Discord",
       "defaultWorkspace": "Discord 默认工作区",
@@ -7332,7 +7337,7 @@
       "uninstallTitle": "卸载 Microsoft Teams 集成？"
     },
     "telegram": {
-      "description": "把 Telegram 消息转给智能体",
+      "description": "在 Telegram 中与 Okou 聊天。",
       "title": "Telegram"
     },
     "wechat": {
@@ -7342,7 +7347,7 @@
       "connect": "连接",
       "connected": "已连接",
       "creating": "正在生成二维码…",
-      "description": "在微信中与智能体对话。",
+      "description": "在微信中与 Okou 聊天。",
       "disconnect": "断开连接",
       "expired": "二维码已过期，请重新生成。",
       "failed": "连接微信失败。",
@@ -7356,7 +7361,7 @@
       "restoreDescription": "将微信恢复连接到以下账号和工作区。",
       "returnToWechat": "返回微信，发送消息即可开始对话。",
       "scanned": "已扫码，请在手机上确认。",
-      "scope": "只连接你与此智能体的单聊，目前支持文字消息。",
+      "scope": "只连接你与 Okou 的单聊，目前支持文字消息。",
       "title": "连接微信",
       "unavailable": "连接服务尚未配置。",
       "verification_blocked": "验证码尝试次数过多，请重新生成二维码。",
@@ -7368,7 +7373,7 @@
     "whatsapp": {
       "codeError": "无法生成连接码，请重试。",
       "connect": "连接 WhatsApp",
-      "connectDescription": "将你的 WhatsApp 账号连接到 {{brandName}}，即可与你的智能体聊天。",
+      "connectDescription": "关联你的 WhatsApp 账号，与 {{brandName}} 聊天。",
       "connected": "WhatsApp 已连接",
       "description": "在 WhatsApp 中直接与 Okou 对话",
       "disconnected": "WhatsApp 已断开",

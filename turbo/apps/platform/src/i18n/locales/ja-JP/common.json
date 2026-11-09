@@ -103,7 +103,7 @@
           "title": "モデルプロバイダーが一時的に利用できません"
         }
       },
-      "fallbackAgent": "エージェント",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "期間",
         "model": "モデル",
@@ -321,7 +321,7 @@
       "yes": "はい"
     },
     "sources": {
-      "agent": "エージェント",
+      "agent": "Okou",
       "agentphone": "iMessage",
       "automationEvent": "オートメーションイベント",
       "automationSchedule": "オートメーションスケジュール",
@@ -538,7 +538,7 @@
       "video": "ビデオ"
     },
     "googleDrive": {
-      "agentLoading": "エージェントを読み込み中",
+      "agentLoading": "Okou を読み込み中",
       "connect": "Google Drive を接続します",
       "connectTooltip": "Google Drive を接続してアーティファクトをアップロードする",
       "conversionNotice": "編集可能なコピーを作成します。書式が変わる場合があります。",
@@ -1010,11 +1010,11 @@
         "twentyFourHours": "24時間"
       },
       "errors": {
-        "agentNotFound": "エージェントが見つかりません",
-        "loadAgent": "エージェントの読み込みに失敗しました",
+        "agentNotFound": "このリクエストは利用できなくなりました",
+        "loadAgent": "このリクエストを読み込めませんでした",
         "loadGrants": "権限付与のロードに失敗しました",
         "loadMetadata": "権限メタデータのロードに失敗しました",
-        "missingAgentId": "URLパラメータにエージェントIDがありません",
+        "missingAgentId": "このリンクは不完全です。チャットからもう一度開いてください。",
         "missingPermission": "URLパラメータに権限がありません",
         "unknownAction": "不明な権限アクション: {{action}}",
         "unknownConnector": "不明なコネクタ: {{connector}}",
@@ -1061,7 +1061,8 @@
       "notNow": "今はしない",
       "review": "権限を確認",
       "scopeNote": "現在のタスクだけでなく、このエージェントに適用されます。",
-      "sharedScopeNote": "このコネクタの権限は、すべてのチャットとエージェントに適用されます。",
+      "scopeNoteSingle": "現在のタスクだけでなく、すべてのチャットに適用されます。",
+      "sharedScopeNote": "このコネクタのすべてのチャットに適用されます。",
       "title": "以下の権限を許可"
     }
   },
@@ -1775,7 +1776,7 @@
       "repair": "修復",
       "repairRequired": "{{institution}}は修復が必要です",
       "revoke": "取り消す",
-      "revokeConfirm": "このエージェントの銀行アクセスを取り消しますか？",
+      "revokeConfirm": "銀行アクセスを取り消しますか？",
       "selectAccounts": "口座を選択",
       "sevenDays": "7日間",
       "thirtyDays": "30日間",
@@ -1828,7 +1829,7 @@
       "checkingOutcomeDescription": "ブラウザーがこのリクエストを確認するのを待っています。",
       "completed": "情報を追加しました",
       "confirmRangeValue": "現在の値を使用",
-      "delivered": "エージェントに通知しました",
+      "delivered": "Okou に通知しました",
       "expired": "リクエストの有効期限が切れました",
       "expiredDescription": "ブラウザが閉じられたか、このリクエストは無効になりました。",
       "fileLeave": "ウェブサイトのファイルを変更しない",
@@ -1842,14 +1843,14 @@
       "required": "（必須）",
       "site": "サイト",
       "stale": "フィールドが変更されました",
-      "staleDescription": "エージェントに新しいリクエストの作成を依頼してください。",
+      "staleDescription": "Okou に新しいリクエストの作成を依頼してください。",
       "submit": "ブラウザに追加",
-      "submitDescription": "入力内容がこのサイトに反映されます。その後、エージェントが作業を続け、結果を確認します。",
+      "submitDescription": "入力した情報がこのウェブサイトに追加されます。その後、Okou が作業を続けて結果を確認します。",
       "submitting": "追加しています…",
       "title": "ブラウザに情報を入力",
       "unavailable": "リクエストを利用できません",
       "uncertain": "ブラウザを確認してください",
-      "uncertainDescription": "ブラウザが情報を受け取った可能性があります。エージェントに結果の確認を依頼してください。"
+      "uncertainDescription": "ブラウザが情報を受け取った可能性があります。Okou に結果の確認を依頼してください。"
     },
     "capabilityHome": {
       "back": "すべての機能",
@@ -1968,6 +1969,7 @@
         "slideCountRange": "{{range}}枚"
       },
       "mentionHint": "エージェントやチャットを検索…",
+      "mentionHintSingle": "チャットを検索…",
       "message": "メッセージ",
       "modelForThisChat": "このチャットのモデル",
       "placeholder": "ワークフローの自動化、タスクの管理を依頼してください...",
@@ -2061,7 +2063,7 @@
       "authorized": "{{connectorName}} が接続され、{{agentName}} に対して承認されました",
       "back": "戻る",
       "configurePermissions": "{{connectorName}} 権限を構成する",
-      "customAuthorizeDescription": "エージェント用のこのカスタム コネクタを確認、接続、承認します。",
+      "customAuthorizeDescription": "このカスタム コネクタを確認、接続、承認します。",
       "directory": {
         "allCategories": "すべて",
         "askAdmin": "管理者に有効化を依頼してください",
@@ -2288,7 +2290,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "エージェントが見つかりません",
+      "agentNotFound": "このリクエストは利用できなくなりました",
       "allow": "許可する",
       "alreadyAllowed": "すでに許可されています",
       "alreadyDenied": "すでに拒否されています",
@@ -3207,7 +3209,7 @@
       "accessUpdated": "{{connector}} アクセスが更新されました",
       "clearSearch": "エージェント検索をクリアする",
       "description": "このコネクタを使用できるエージェントを選択します。",
-      "loading": "エージェントをロード中...",
+      "loading": "アクセスを読み込み中...",
       "managePermissions": "権限の管理",
       "managePermissionsFor": "{{agent}} の {{connector}} 権限を管理する",
       "noAgents": "エージェントが見つかりませんでした",
@@ -3374,8 +3376,8 @@
           "menu": "販売と事業"
         }
       },
-      "description": "エージェントが使用できるようにサードパーティのサービスを接続します。",
-      "descriptionWithCount": "エージェントが使用できる{{value}}個のサービスを接続します。",
+      "description": "Okou が使えるようにサードパーティのサービスを接続します。",
+      "descriptionWithCount": "Okou が使えるように {{value}} 件のサービスを接続します。",
       "directory": {
         "browse": "参照",
         "builtin": "組み込みコネクター",
@@ -3480,7 +3482,7 @@
         "continue": "続ける",
         "continueToProvider": "プロバイダーに進み、アクセスを承認します。",
         "continueWithAutomatic": "続行すると、Okou がこの MCP サーバーの認証方法を確認します。",
-        "description": "シークレットは保存時に暗号化され、ファイアウォールによって送信リクエストに挿入されます。環境変数としてエージェントに公開されることはありません。",
+        "description": "シークレットは保存時に暗号化され、ファイアウォールによって送信リクエストに挿入されます。環境変数として Okou に公開されることはありません。",
         "errors": {
           "authenticationResponseInvalid": "MCP サーバーからサポートされていない認証レスポンスが返されました。MCP エンドポイントと認証設定を確認するか、サーバー管理者にお問い合わせください。",
           "authorizationUnsupported": "OAuth プロバイダーは自動認証で必要な認可要件をサポートしていません。互換性のあるクライアント認証情報をすでにお持ちの場合のみカスタム OAuth を使用するか、Okou サポートにお問い合わせください。",
@@ -3554,7 +3556,7 @@
         "tokenUrl": "トークンURL"
       },
       "delete": {
-        "description": "これにより、コネクタと、そのコネクタに対してすべてのメンバーが保存したシークレットが削除されます。このコネクタに対して認可されたエージェントは、すぐにアクセスできなくなります。これを元に戻すことはできません。",
+        "description": "コネクタと、各メンバーが保存したシークレットを削除します。すべてのチャットですぐに使えなくなります。この操作は元に戻せません。",
         "title": "{{connector}} を削除しますか?"
       },
       "edit": {
@@ -3577,12 +3579,14 @@
       }
     },
     "directed": {
+      "allowAccess": "アクセスを許可",
       "authorizeAgent": "{{agent}} を承認する",
       "authorized": "{{connector}} が承認されました",
       "authorizeDocumentTitle": "{{connector}} を承認する",
       "connectDocumentTitle": "{{connector}} を接続します",
       "connected": "{{connector}} が接続されました",
       "needsConnector": "{{agent}} を続行するには {{connector}} が必要です",
+      "needsConnectorSingle": "続行するには Okou に {{connector}} が必要です",
       "reconnecting": "再接続中..."
     },
     "expiration": {
@@ -3667,13 +3671,13 @@
       },
       "github": {
         "accountFallback": "この GitHub アカウント",
-        "alreadyDescription": "すでに {{account}} として接続されています。チャットを開始するには、GitHub のIssueまたはプル リクエストでエージェントに言及してください。",
+        "alreadyDescription": "{{account}} としてすでに接続されています。GitHub の Issue やプルリクエストで Okou をメンションすると会話を始められます。",
         "alreadyTitle": "すでに GitHub に接続されています",
         "back": "ワークフローに戻る",
         "checkingConnectionDescription": "GitHub 接続を確認するまでお待ちください。",
         "checkingConnectionTitle": "接続を確認しています...",
         "checkingSession": "{{brandName}} セッションを確認するまでお待ちください。",
-        "connectDescription": "{{brandName}} アカウントを {{account}} にリンクすると、GitHub メンションで問題やプル リクエストからエージェントを実行できるようになります。",
+        "connectDescription": "{{brandName}} アカウントを {{account}} にリンクすると、GitHub の Issue やプルリクエストで Okou をメンションできます。",
         "connectTitle": "GitHub に接続します",
         "errorFallback": "GitHub に接続できませんでした。 GitHub から再試行してください。",
         "invalidInstallation": "このリンク上の GitHub インストールは無効です。",
@@ -3691,7 +3695,7 @@
         "signInCheckFailed": "サインインを確認できませんでした",
         "signInDescription": "この GitHub ユーザーに接続する前に、{{brandName}} アカウントを使用してください。",
         "signInTitle": "続行するにはサインインしてください",
-        "successDescription": "{{account}} として接続されています。チャットを開始するには、GitHub のIssueまたはプル リクエストでエージェントに言及してください。",
+        "successDescription": "{{account}} として接続しました。GitHub の Issue やプルリクエストで Okou をメンションすると会話を始められます。",
         "successTitle": "GitHub に接続しました!",
         "wrongOrganizationDescription": "アクティブな組織は、この GitHub インストールと一致しません。正しい組織に切り替えて、リンクを再度開きます。",
         "wrongOrganizationTitle": "組織を切り替える"
@@ -3706,7 +3710,7 @@
         "accountMismatchDescriptionWorkspace": "現在、このOkouアカウントでは{{workspace}}でSlackアカウント{{currentAccount}}を使用しています。このリンクを開いた{{requestedAccount}}に切り替えますか？",
         "accountMismatchTitle": "Slackアカウントを切り替えますか？",
         "authorizationFailed": "Slack の認証は完了していません。現在の接続状態を以下に表示しています。もう一度お試しください。",
-        "connectDescription": "アカウントをこの Slack ワークスペースにリンクすると、Slack からエージェントと直接対話できるようになります。",
+        "connectDescription": "アカウントをこの Slack ワークスペースにリンクすると、Slack から直接 Okou と作業できます。",
         "connectTitle": "Slack に接続します",
         "currentConnection": "Slack に接続済み",
         "errorFallback": "Slack接続を確認または開始できませんでした。",
@@ -3724,7 +3728,7 @@
       },
       "teams": {
         "authorize": "Microsoft Teams を承認",
-        "connectDescription": "Teams アカウントをリンクすると、Microsoft Teams からエージェントと直接対話できるようになります。",
+        "connectDescription": "Teams アカウントをリンクすると、Microsoft Teams から直接 Okou と作業できます。",
         "connectedDescription": "Teams アカウントは接続されています。",
         "connectTitle": "Microsoft Teams を接続します",
         "identityMismatch": "指定された Teams アカウントまたはワークスペースは現在の接続と一致しません。",
@@ -3745,7 +3749,7 @@
         "checkingConnectionTitle": "接続を確認しています...",
         "conflictDescription": "現在は {{current}} として接続していますが、このリンクは {{requested}} を指定しています。現在の接続を維持するか、接続を管理してから再試行してください。",
         "conflictTitle": "別の Telegram アカウントが接続されています",
-        "connectDescription": "アカウントをこの Telegram ボットにリンクすると、Telegram からエージェントと直接対話できるようになります。",
+        "connectDescription": "アカウントをこの Telegram ボットにリンクすると、Telegram から直接 Okou と作業できます。",
         "connectionCheckFailed": "接続を確認するために Telegram にアクセスできませんでした。",
         "connectTitle": "Telegram に接続します",
         "continue": "Telegram に進みます",
@@ -3832,7 +3836,7 @@
         "developerConsole": "Feishu 開発者コンソール",
         "dialogAdminRequired": "組織管理者はアプリを構成する必要があります。セットアップが完了したら、Feishu ボット リストから自分のアカウントに接続できます。",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Feishu メッセージをエージェントにルーティングするカスタム アプリを追加します。",
+        "emptyAdmin": "カスタムアプリを追加すると、Feishu のメッセージが Okou に届きます。",
         "emptyMember": "Feishu ボットを追加するように組織管理者に依頼します。",
         "emptyTitle": "Feishu ボットはまだありません",
         "events": {
@@ -3890,7 +3894,7 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Feishu ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Feishu レビュー ガイド",
-        "routeDescription": "Feishu メッセージをエージェントにルーティングする",
+        "routeDescription": "Feishu から Okou とチャット",
         "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
@@ -3964,7 +3968,7 @@
         "developerConsole": "Lark 開発者コンソール",
         "dialogAdminRequired": "組織管理者はアプリを構成する必要があります。セットアップが完了したら、Lark ボット リストから自分のアカウントに接続できます。",
         "documentTitle": "Lark",
-        "emptyAdmin": "Lark メッセージをエージェントにルーティングするカスタム アプリを追加します。",
+        "emptyAdmin": "カスタムアプリを追加すると、Lark のメッセージが Okou に届きます。",
         "emptyMember": "Lark ボットを追加するように組織管理者に依頼します。",
         "emptyTitle": "Lark ボットはまだありません",
         "events": {
@@ -4023,7 +4027,7 @@
         "reviewGuide": "レビューガイド",
         "reviewGuideDescription": "この Lark ボットの完了したセットアップ手順を確認してください。",
         "reviewGuideTitle": "Lark レビュー ガイド",
-        "routeDescription": "Lark メッセージをエージェントにルーティングする",
+        "routeDescription": "Lark から Okou とチャット",
         "selectAgent": "エージェントを選択してください",
         "setupIncomplete": "セットアップが不完全",
         "steps": {
@@ -4116,7 +4120,7 @@
     "denied": "リクエストを拒否しました",
     "deniedTitle": "Shell アクセスは拒否されました",
     "deny": "拒否",
-    "description": "エージェントがコンピュータ上で Shell を使用するには許可が必要です。",
+    "description": "Okou がコンピュータ上で Shell を使用するには許可が必要です。",
     "duration": "承認後、1 時間アクセスできます",
     "expired": "承認の有効期限が切れました",
     "expiredTitle": "Shell アクセスの有効期限切れ",
@@ -5063,31 +5067,31 @@
   },
   "projects": {
     "close": "Close",
-    "create": "Create Project",
+    "create": "Create project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
-    "deleteDescription": "Your chats and their histories will be kept. They return to their original Agent lists.",
-    "deleteError": "Could not delete Project",
-    "deleteProject": "Delete Project",
-    "deleteTitle": "Delete Project?",
-    "description": "Keep related chats together across Agents",
+    "deleteDescription": "Your chats and their histories will be kept. They move out of the project.",
+    "deleteError": "Could not delete project",
+    "deleteProject": "Delete project",
+    "deleteTitle": "Delete project?",
+    "description": "Keep related chats together",
     "empty": "No chats here yet",
-    "fromChat": "Create a Project from this chat",
-    "move": "Move to Project",
+    "fromChat": "Create a project from this chat",
+    "move": "Move to project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
     "moveTo": "{{name}} に移動",
     "name": "Project name",
-    "new": "New Project",
+    "new": "New project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
     "projects": "Projects",
-    "remove": "Remove from Project",
+    "remove": "Remove from project",
     "rename": "Rename",
-    "renameProject": "Rename Project",
+    "renameProject": "Rename project",
     "save": "Save",
-    "saveError": "Could not save Project",
+    "saveError": "Could not save project",
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
@@ -5125,7 +5129,7 @@
       "pro": "プロ",
       "team": "チーム"
     },
-    "title": "あなたのエージェントが列に並んで待っています",
+    "title": "Okou は順番待ちです",
     "upgrade": {
       "action": "{{plan}} にアップグレードする",
       "features": {
@@ -5587,6 +5591,7 @@
         "chatThreads": "自分のチャットスレッド",
         "filesExcluded": "アーティファクト、添付ファイル、ワークフローの補助ファイルは含まれません。",
         "memoryFiles": "現在のメモリファイル",
+        "personalInstructions": "あなたの個人の指示",
         "workflowInstructions": "アクセス可能なワークフローの指示"
       },
       "status": {
@@ -5647,7 +5652,7 @@
           "reconnectTitle": "Claudeを再接続",
           "signIn": "Claude でサインインします",
           "submit": "接続する",
-          "usageNotice": "Claudeのサブスクリプションでログインすると、Claude Codeを基盤とするエージェントでClaudeモデルを利用できます。"
+          "usageNotice": "Claude サブスクリプションでサインインすると、Okou が Claude Code 経由で Claude モデルを使用できます。"
         },
         "codex": {
           "connectedToast": "ChatGPT が接続されました",
@@ -5950,7 +5955,7 @@
       },
       "timezone": {
         "description": "表示され、オートメーションの実行に使用される時間。",
-        "rowDescription": "エージェントは実行中にこのタイムゾーンを使用します",
+        "rowDescription": "Okou は実行中にこのタイムゾーンを使用します",
         "rowTitle": "タイムゾーン",
         "sectionTitle": "タイムゾーン",
         "zones": {
@@ -6005,7 +6010,7 @@
         "title": "Link のカード"
       },
       "connect": "接続",
-      "description": "エージェントが購入をリクエストし、Link の取引を確認できます。購入ごとにあなたの承認が必要です。",
+      "description": "Okou が購入をリクエストし、Link の取引を確認できるようにします。購入ごとにあなたの承認が必要です。",
       "disconnect": "接続を解除",
       "loadError": "ウォレットを読み込めませんでした。",
       "scope": "Okou が購入を代行し、Link の取引を確認します。",
@@ -6266,8 +6271,8 @@
       "summary_other": "{{count}} 件の認証情報を設定済み",
       "unused": "使用中のホストはありません"
     },
-    "deleteHelp": "このホストを削除しますか？認証情報は保持されます。Agent のホスト一覧には表示されなくなります。",
-    "description": "エージェントがリモートコマンドを実行できる SSH ホストを設定します。",
+    "deleteHelp": "このホストを削除しますか？認証情報は保持されます。Okou のライブインベントリにこのホストは表示されなくなります。",
+    "description": "Okou がリモートマシンでコマンドを実行できるようにします。",
     "edit": "ホストを編集",
     "editHelp": "別の認証情報を選ぶと、このホストだけが変更されます。直接接続先の変更は保存済みホスト鍵を消去します。Cloudflare Access が関係する変更では保持されます。",
     "errors": {
@@ -6313,7 +6318,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Tailscale SSH の認証に失敗しました。システムユーザー名を確認し、タグ付きの接続先で Tailscale SSH を有効にして、tailnet の SSH accept ポリシーでこのログインを許可してください。",
-      "deleteHelp": "このホストを削除しますか？エージェントはリアルタイムのインベントリでこのホストを確認できなくなります。",
+      "deleteHelp": "このホストを削除しますか？Okou のライブインベントリにこのホストは表示されなくなります。",
       "sshDocs": "Tailscale SSH の公式ドキュメント",
       "sshHelp": "選択した Tailscale ネットワークのマシン ID で認証するため、SSH パスワードや秘密鍵は不要です。タグ付きの接続先で Tailscale SSH を有効にし、SSH の accept ポリシーでこのシステムユーザー名を許可してください。",
       "sshTitle": "Tailscale SSH",
@@ -6484,7 +6489,7 @@
       "usernamePasswordMethod": "ユーザー名とパスワード"
     },
     "deleteHelp": "このホストを削除しますか？再利用可能な認証情報は保持されます。",
-    "description": "Agent がリモートデスクトップを表示・操作できるようにします。",
+    "description": "Okou がリモートデスクトップを表示・操作できるようにします。",
     "edit": "ホストを編集",
     "editHelp": "変更はこのホストに適用され、現在の接続設定は無効になります。",
     "errors": {
@@ -7268,7 +7273,7 @@
       "authorizationError": "Discord の認証を完了できませんでした。",
       "cancelled": "Discord の認証はキャンセルされました。",
       "chooseWorkspace": "ワークスペースを選択",
-      "connectDescription": "Discord アカウントを接続して、エージェントとチャットしましょう。",
+      "connectDescription": "Discord アカウントを接続して Okou とチャットしましょう。",
       "connectedTitle": "Discord に接続済み",
       "connectTitle": "Discord に接続",
       "defaultWorkspace": "Discord の既定のワークスペース",
@@ -7332,7 +7337,7 @@
       "uninstallTitle": "Microsoft Teams 統合をアンインストールしますか?"
     },
     "telegram": {
-      "description": "Telegram メッセージをエージェントにルーティングする",
+      "description": "Telegram で Okou とチャットします。",
       "title": "Telegram"
     },
     "wechat": {
@@ -7342,7 +7347,7 @@
       "connect": "接続",
       "connected": "接続済み",
       "creating": "QRコードを作成中…",
-      "description": "WeChatでエージェントとチャットできます。",
+      "description": "WeChat で Okou とチャットします。",
       "disconnect": "接続解除",
       "expired": "このQRコードは期限切れです。新しく作成してください。",
       "failed": "WeChatに接続できませんでした。",
@@ -7356,7 +7361,7 @@
       "restoreDescription": "以下のアカウントとワークスペースに WeChat を再接続します。",
       "returnToWechat": "WeChat に戻り、メッセージを送信して会話を始めましょう。",
       "scanned": "スキャンしました。スマートフォンで確認してください。",
-      "scope": "このエージェントへのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",
+      "scope": "Okou へのダイレクトメッセージのみが連携されます。テキストメッセージに対応しています。",
       "title": "WeChatに接続",
       "unavailable": "接続はまだ設定されていません。",
       "verification_blocked": "試行回数が多すぎます。新しいQRコードを作成してください。",
@@ -7368,7 +7373,7 @@
     "whatsapp": {
       "codeError": "接続コードを作成できませんでした。もう一度お試しください。",
       "connect": "WhatsAppを接続",
-      "connectDescription": "WhatsApp アカウントを {{brandName}} に接続して、エージェントとチャットできます。",
+      "connectDescription": "WhatsApp アカウントをリンクして {{brandName}} とチャットしましょう。",
       "connected": "WhatsAppに接続しました",
       "description": "WhatsAppから直接Okouとチャット",
       "disconnected": "WhatsAppの接続を解除しました",

@@ -1,4 +1,6 @@
 import { INTEGRATION_SETTINGS_PATHS } from "@okouai/core/integration-routes";
+import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, type Computed } from "ccstate";
 import type { SlackConnectLinkStatus } from "@okouai/api-contracts/contracts/slack-connect";
 import { BRAND_PRESENTATION } from "@okouai/core/brand-presentation";
@@ -11,6 +13,7 @@ import { and, eq, isNull, ne, or } from "drizzle-orm";
 
 import {
   buildAppHomeView,
+  buildSingleOkouWelcomeMessage,
   buildSuccessMessage,
   buildWelcomeMessage,
 } from "../../lib/slack-connect-blocks";
@@ -324,10 +327,18 @@ export const notifySlackConnect$ = command(
     signal: AbortSignal,
   ): Promise<void> => {
     const writeDb = set(writeDb$);
+    const featureContext = await get(
+      userFeatureSwitchContext(args.orgId, args.userId),
+    );
+    signal.throwIfAborted();
+    const singleOkou = isFeatureEnabled(
+      FeatureSwitchKey.SingleAgent,
+      featureContext,
+    );
     const client = createSlackClient(
       await decryptPersistentSecretValue(
         args.installation.encryptedBotToken,
-        await get(userFeatureSwitchContext(args.orgId, args.userId)),
+        featureContext,
       ),
     );
     const [connection] = await writeDb
@@ -363,7 +374,7 @@ export const notifySlackConnect$ = command(
     const { assistantName } = BRAND_PRESENTATION;
 
     const blocks = buildSuccessMessage(
-      `You're connected to ${assistantName}! :tada:\nMention ${officialSlackBotMention(args.installation.botUserId)} in any channel or send a DM to start chatting with your agent.`,
+      `You're connected to ${assistantName}! :tada:\nMention ${officialSlackBotMention(args.installation.botUserId)} in any channel or send a DM to start chatting${singleOkou ? "" : " with your agent"}.`,
     );
 
     let sentEphemeral = false;
@@ -397,7 +408,9 @@ export const notifySlackConnect$ = command(
         `Hi! I'm ${officialSlackBotMention(args.installation.botUserId)}.`,
         {
           threadTs,
-          blocks: buildWelcomeMessage(args.installation.botUserId, agentName),
+          blocks: singleOkou
+            ? buildSingleOkouWelcomeMessage(args.installation.botUserId)
+            : buildWelcomeMessage(args.installation.botUserId, agentName),
         },
       );
       signal.throwIfAborted();

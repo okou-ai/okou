@@ -1,3 +1,4 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   userExportContract,
   type UserExportStatusResponse,
@@ -87,6 +88,25 @@ function getDownloadLink(name: string): HTMLAnchorElement {
   }
   return link;
 }
+
+test("Single Okou lists personal instructions instead of agent instructions", async () => {
+  mockNow(NOW, context.signal);
+  mockCompletedExport(true);
+
+  await setupPage({
+    context,
+    path: "/export",
+    host: "app.okou.ai",
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  await expect(
+    screen.findByText("Your personal instructions"),
+  ).resolves.toBeInTheDocument();
+  expect(
+    screen.queryByText("Instructions for agents you can access"),
+  ).not.toBeInTheDocument();
+});
 
 test("A completed export shows its contents, expiry, and cooldown", async () => {
   mockNow(NOW, context.signal);

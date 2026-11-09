@@ -760,7 +760,7 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
   const user = userEvent.setup({ delay: null });
-  await user.click(button("Create Project"));
+  await user.click(button("Create project"));
   await user.type(
     await screen.findByRole("textbox", { name: "Project name" }),
     "Campaign",
@@ -793,7 +793,7 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   await user.click(button("Options for Campaign two"));
   await user.click(await findMenuItem("Delete"));
   const dialog = await screen.findByRole("dialog");
-  await user.click(button("Delete Project", dialog));
+  await user.click(button("Delete project", dialog));
   await waitFor(() => {
     return expect(
       queryAllByRoleFast("button").some((item) => {
@@ -803,7 +803,7 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   });
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
   await waitFor(() => {
-    expect(button("Create Project")).toHaveFocus();
+    expect(button("Create project")).toHaveFocus();
   });
 });
 
@@ -888,8 +888,8 @@ test("Creating a Project from a chat moves it immediately and survives navigatio
     throw new Error("Chat row missing");
   }
   await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
-  await user.click(await findMenuItem("Move to Project"));
-  await user.click(button("Create a Project from this chat"));
+  await user.click(await findMenuItem("Move to project"));
+  await user.click(button("Create a project from this chat"));
   await fill(
     await screen.findByRole("textbox", { name: "Project name" }),
     "Campaign",
@@ -1028,7 +1028,7 @@ test("A new Project accepts a new chat after its pending creation is confirmed",
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
   const user = userEvent.setup({ delay: null });
-  await user.click(button("Create Project"));
+  await user.click(button("Create project"));
   await fill(
     await screen.findByRole("textbox", { name: "Project name" }),
     "Campaign",
@@ -1112,7 +1112,7 @@ test("Thread menu searches and changes Project membership while preserving the o
     return within(row).getByTestId("chat-thread-menu-trigger");
   }
   await user.click(rowMenu());
-  await user.click(await findMenuItem("Move to Project"));
+  await user.click(await findMenuItem("Move to project"));
   await screen.findByRole("textbox", { name: "Search projects…" });
   await user.keyboard("{Escape}");
   await waitFor(() => {
@@ -1121,7 +1121,7 @@ test("Thread menu searches and changes Project membership while preserving the o
     ).toHaveFocus();
   });
   await user.click(rowMenu());
-  await user.click(await findMenuItem("Move to Project"));
+  await user.click(await findMenuItem("Move to project"));
   const search = await screen.findByRole("textbox", {
     name: "Search projects…",
   });
@@ -1145,7 +1145,7 @@ test("Thread menu searches and changes Project membership while preserving the o
     ).not.toBeInTheDocument();
   });
   await user.click(rowMenu());
-  await user.click(await findMenuItem("Move to Project"));
+  await user.click(await findMenuItem("Move to project"));
   await user.click(
     button(
       "Research",
@@ -1159,10 +1159,10 @@ test("Thread menu searches and changes Project membership while preserving the o
   });
   expect(namedLink(projectRows(), "Ordinary chat")).toBeNull();
   await user.click(rowMenu());
-  await user.click(await findMenuItem("Move to Project"));
+  await user.click(await findMenuItem("Move to project"));
   await user.click(
     button(
-      "Remove from Project",
+      "Remove from project",
       await screen.findByRole("dialog", { name: "Move chat" }),
     ),
   );
@@ -1243,7 +1243,7 @@ test("A rejected Project move does not replace a later confirmed move", async ()
       throw new Error("Thread row missing");
     }
     await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
-    await user.click(await findMenuItem("Move to Project"));
+    await user.click(await findMenuItem("Move to project"));
     await user.click(
       button(project, await screen.findByRole("dialog", { name: "Move chat" })),
     );
@@ -1408,7 +1408,7 @@ test.each(["chat row", "empty list space"] as const)(
     expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
     fireEvent.dragOver(target, { dataTransfer, clientX: 160, clientY: 240 });
     await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(
-      "Remove from Project",
+      "Remove from project",
     );
     fireEvent.drop(target, { dataTransfer });
     await waitFor(() => {
@@ -1879,7 +1879,7 @@ test.each([
     name: "leave",
     initialProjectId: id,
     projectId: null,
-    target: "Remove from Project",
+    target: "Remove from project",
     mobile: false,
   },
   {
@@ -1964,7 +1964,7 @@ test.each([
     });
     const user = userEvent.setup({ delay: null });
     await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
-    await user.click(await findMenuItem("Move to Project"));
+    await user.click(await findMenuItem("Move to project"));
     await user.click(
       button(target, await screen.findByRole("dialog", { name: "Move chat" })),
     );
@@ -2077,7 +2077,7 @@ test("PWA uses the same Projects and a bottom sheet for Thread membership", asyn
     throw new Error("Member chat missing");
   }
   await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
-  await user.click(await findMenuItem("Move to Project"));
+  await user.click(await findMenuItem("Move to project"));
   const sheet = await screen.findByRole("dialog", {
     name: "Move chat",
   });

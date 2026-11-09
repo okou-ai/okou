@@ -28,7 +28,7 @@ function openQueuePath(): string {
 
 async function visibleQueueDrawer(): Promise<HTMLElement> {
   return await screen.findByRole("dialog", {
-    name: "Your agent is waiting in line",
+    name: "Okou is waiting in line",
   });
 }
 

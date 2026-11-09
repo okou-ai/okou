@@ -303,7 +303,7 @@ test("Open the queue drawer from waiting in queue", async () => {
   click(await findButton("queue..."));
 
   const drawer = await screen.findByRole("dialog", {
-    name: "Your agent is waiting in line",
+    name: "Okou is waiting in line",
   });
   expect(
     within(drawer).getByText(

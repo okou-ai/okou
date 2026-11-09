@@ -1009,7 +1009,7 @@ test("My Okou drops the chat list title for a toggle and one New menu", async ()
   expect(within(list).queryByText(/^Chats with/)).not.toBeInTheDocument();
 
   click(within(header).getByLabelText("New"));
-  click(menuItemByText("New Project"));
+  click(menuItemByText("New project"));
   await expect(
     screen.findByRole("textbox", { name: "Project name" }),
   ).resolves.toBeInTheDocument();

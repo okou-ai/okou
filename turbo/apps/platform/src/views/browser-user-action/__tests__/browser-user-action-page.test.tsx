@@ -483,7 +483,7 @@ test.each([true, false])(
     ).toBeVisible();
     expect(
       within(form).getByText(
-        "Your information will be added to this website. The agent will then continue and check the result.",
+        "Your information will be added to this website. Okou will then continue and check the result.",
       ),
     ).toBeVisible();
     expect(
@@ -504,7 +504,7 @@ test.each([true, false])(
     await waitFor(() => {
       expect(sentPrompt).toBe(CALLBACK_PROMPT);
     });
-    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+    await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
     expect(document.title).toContain("Browser action");
   },
 );
@@ -983,7 +983,7 @@ test("A required file field can retain already selected website files", async ()
     return expect(button("Add to browser")).toBeEnabled();
   });
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("The standalone form accepts input and submission while its background check is pending", async () => {
@@ -1033,7 +1033,7 @@ test("The standalone form accepts input and submission while its background chec
     expect(applied).toBeTruthy();
   });
   releaseCheck.resolve(undefined);
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("The standalone form uses preflight's observed multiline and email controls", async () => {
@@ -1099,7 +1099,7 @@ test("The standalone form uses preflight's observed multiline and email controls
   await fill(email, "owner@example.test");
   await fill(multiline, "first line\nsecond line");
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("The standalone form uses the existing input style with live number constraints", async () => {
@@ -1142,7 +1142,7 @@ test("The standalone form uses the existing input style with live number constra
   await waitFor(() => {
     expect(applied).toBeTruthy();
   });
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test.each([
@@ -1186,7 +1186,7 @@ test.each([
       await fill(quantity, "");
     }
     click(button("Add to browser"));
-    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+    await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   },
 );
 
@@ -1230,7 +1230,7 @@ test.each([
     fireEvent.change(picker, { target: { value } });
     click(button("Add to browser"));
     await expect(
-      screen.findByText("Agent notified"),
+      screen.findByText("Okou notified"),
     ).resolves.toBeInTheDocument();
   },
 );
@@ -1273,7 +1273,7 @@ test.each([
     }
     click(button("Add to browser"));
     await expect(
-      screen.findByText("Agent notified"),
+      screen.findByText("Okou notified"),
     ).resolves.toBeInTheDocument();
   },
 );
@@ -1333,7 +1333,7 @@ test.each([
     const user = userEvent.setup({ delay: null });
     await user.click(checkbox);
     click(button("Add to browser"));
-    await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+    await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   },
 );
 
@@ -1378,7 +1378,7 @@ test("An untouched optional checkbox preserves a checked website value", async (
   });
   expect(checkbox).toBeChecked();
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("A required checked checkbox submits its valid website state", async () => {
@@ -1425,7 +1425,7 @@ test("A required checked checkbox submits its valid website state", async () => 
   expect(checkbox).toBeChecked();
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("A radio group submits an indexed choice without its duplicate value", async () => {
@@ -1480,7 +1480,7 @@ test("A radio group submits an indexed choice without its duplicate value", asyn
     .setup({ delay: null })
     .click(within(form).getByRole("radio", { name: "2. Same" }));
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("An untouched optional radio group preserves the existing selection", async () => {
@@ -1520,7 +1520,7 @@ test("An untouched optional radio group preserves the existing selection", async
   });
   await within(form).findAllByRole("radio");
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("An Agent-required radio group submits its existing valid website choice", async () => {
@@ -1568,7 +1568,7 @@ test("An Agent-required radio group submits its existing valid website choice", 
   await within(form).findAllByRole("radio");
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("The standalone form selects a required native option by index, not its website value", async () => {
@@ -1622,7 +1622,7 @@ test("The standalone form selects a required native option by index, not its web
   await user.selectOptions(region, "2");
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("A required multiple select cannot keep a disabled website choice and drops it on change", async () => {
@@ -1696,7 +1696,7 @@ test("A required multiple select cannot keep a disabled website choice and drops
   await user.selectOptions(region, "2");
   expect(button("Add to browser")).toBeEnabled();
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("An optional multiple select distinguishes untouched from an explicit clear", async () => {
@@ -1747,7 +1747,7 @@ test("An optional multiple select distinguishes untouched from an explicit clear
   expect(region).toHaveAttribute("multiple");
   await userEvent.setup({ delay: null }).deselectOptions(region, "1");
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("An optional single select clears its website selection through the native empty option", async () => {
@@ -1820,7 +1820,7 @@ test("An optional single select clears its website selection through the native 
   await userEvent.setup({ delay: null }).selectOptions(region, "");
   expect(region).toHaveValue("");
   click(button("Add to browser"));
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("Leaving and returning to a standalone form clears password and code drafts", async () => {
@@ -1892,7 +1892,7 @@ test("The standalone form records cancellation before notifying the agent", asyn
   await screen.findByRole("form", { name: "Sign in to download invoices" });
   click(button("Cancel"));
 
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
   expect(ordering).toStrictEqual(["cancel", "callback"]);
 });
 
@@ -1956,7 +1956,7 @@ test("A fresh standalone action page reads accepted callback delivery", async ()
     featureSwitches: { [FeatureSwitchKey.BrowserNativeInput]: true },
   });
 
-  await expect(screen.findByText("Agent notified")).resolves.toBeVisible();
+  await expect(screen.findByText("Okou notified")).resolves.toBeVisible();
 });
 
 test("Standalone preflight makes a confirmed changed target stale before showing fields", async () => {
@@ -1978,9 +1978,7 @@ test("Standalone preflight makes a confirmed changed target stale before showing
   });
   await expect(screen.findByText("Fields changed")).resolves.toBeVisible();
   expect(screen.queryByRole("form")).toBeNull();
-  expect(
-    screen.getByText("Ask the agent to create a new request."),
-  ).toBeVisible();
+  expect(screen.getByText("Ask Okou to create a new request.")).toBeVisible();
 });
 
 test.each(["apply", "cancel"] as const)(

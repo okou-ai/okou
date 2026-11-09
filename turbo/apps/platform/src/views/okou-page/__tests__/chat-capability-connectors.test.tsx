@@ -549,9 +549,7 @@ describe("with an active banking grant", () => {
     });
 
     click(getButton("Revoke", card));
-    expect(
-      within(card).getByText("Revoke this Agent's banking access?"),
-    ).toBeVisible();
+    expect(within(card).getByText("Revoke banking access?")).toBeVisible();
     click(getButton("Revoke", card));
 
     const accountSelection = await within(card).findByText("Select accounts");

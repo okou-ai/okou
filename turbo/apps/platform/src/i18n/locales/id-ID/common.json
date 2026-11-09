@@ -103,7 +103,7 @@
           "title": "Provider sementara tidak tersedia"
         }
       },
-      "fallbackAgent": "Agen",
+      "fallbackAgent": "Okou",
       "fields": {
         "duration": "Durasi",
         "model": "Model",
@@ -321,7 +321,7 @@
       "yes": "Ya"
     },
     "sources": {
-      "agent": "Agen",
+      "agent": "Okou",
       "agentphone": "iMessage",
       "automationEvent": "Peristiwa otomatisasi",
       "automationSchedule": "Jadwal otomatisasi",
@@ -538,7 +538,7 @@
       "video": "VID"
     },
     "googleDrive": {
-      "agentLoading": "Agen masih memuat",
+      "agentLoading": "Okou masih dimuat",
       "connect": "Hubungkan Google Drive",
       "connectTooltip": "Hubungkan Google Drive untuk mengunggah artefak",
       "conversionNotice": "Membuat salinan yang dapat diedit; format dapat berubah.",
@@ -1010,11 +1010,11 @@
         "twentyFourHours": "24 jam"
       },
       "errors": {
-        "agentNotFound": "Agen tidak ditemukan",
-        "loadAgent": "Gagal memuat agen",
+        "agentNotFound": "Permintaan ini sudah tidak tersedia",
+        "loadAgent": "Tidak dapat memuat permintaan ini",
         "loadGrants": "Gagal memuat pemberian izin",
         "loadMetadata": "Gagal memuat metadata izin",
-        "missingAgentId": "ID agen tidak ada di parameter URL",
+        "missingAgentId": "Tautan ini tidak lengkap. Buka lagi dari chat Anda.",
         "missingPermission": "Izin tidak ada di parameter URL",
         "unknownAction": "Tindakan izin tidak dikenal: {{action}}",
         "unknownConnector": "Konektor tidak dikenal: {{connector}}",
@@ -1061,7 +1061,8 @@
       "notNow": "Tidak sekarang",
       "review": "Tinjau izin",
       "scopeNote": "Berlaku untuk agen ini, bukan hanya tugas saat ini.",
-      "sharedScopeNote": "Berlaku untuk konektor ini di semua chat dan agen Anda.",
+      "scopeNoteSingle": "Berlaku untuk semua chat Anda, bukan hanya tugas saat ini.",
+      "sharedScopeNote": "Berlaku untuk konektor ini di semua chat Anda.",
       "title": "Berikan izin berikut"
     }
   },
@@ -1775,7 +1776,7 @@
       "repair": "Perbaiki",
       "repairRequired": "{{institution}} perlu diperbaiki",
       "revoke": "Cabut",
-      "revokeConfirm": "Cabut akses perbankan Agen ini?",
+      "revokeConfirm": "Cabut akses perbankan?",
       "selectAccounts": "Pilih rekening",
       "sevenDays": "7 hari",
       "thirtyDays": "30 hari",
@@ -1828,7 +1829,7 @@
       "checkingOutcomeDescription": "Menunggu browser mengonfirmasi permintaan ini.",
       "completed": "Informasi ditambahkan",
       "confirmRangeValue": "Gunakan nilai saat ini",
-      "delivered": "Agen diberi tahu",
+      "delivered": "Okou telah diberi tahu",
       "expired": "Permintaan kedaluwarsa",
       "expiredDescription": "Browser ditutup atau permintaan ini sudah tidak aktif.",
       "fileLeave": "Biarkan berkas situs web tetap sama",
@@ -1842,14 +1843,14 @@
       "required": "(Wajib)",
       "site": "Situs",
       "stale": "Kolom telah berubah",
-      "staleDescription": "Minta agen membuat permintaan baru.",
+      "staleDescription": "Minta Okou membuat permintaan baru.",
       "submit": "Tambahkan ke browser",
-      "submitDescription": "Informasi Anda akan diisikan ke situs ini. Agen kemudian akan melanjutkan dan memeriksa hasilnya.",
+      "submitDescription": "Informasi Anda akan ditambahkan ke situs web ini. Okou kemudian akan melanjutkan dan memeriksa hasilnya.",
       "submitting": "Menambahkan…",
       "title": "Masukkan informasi di browser",
       "unavailable": "Permintaan tidak tersedia",
       "uncertain": "Periksa browser",
-      "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen untuk memeriksa hasilnya."
+      "uncertainDescription": "Browser mungkin sudah menerima informasinya. Minta Okou memeriksa hasilnya."
     },
     "capabilityHome": {
       "back": "Semua kemampuan",
@@ -1968,6 +1969,7 @@
         "slideCountRange": "{{range}} slide"
       },
       "mentionHint": "Cari agen atau obrolan…",
+      "mentionHintSingle": "Cari chat…",
       "message": "Pesan",
       "modelForThisChat": "Model untuk chat ini",
       "placeholder": "Minta saya mengotomatiskan alur kerja, mengelola tugas...",
@@ -2061,7 +2063,7 @@
       "authorized": "{{connectorName}} terhubung dan diotorisasi untuk {{agentName}}",
       "back": "Kembali",
       "configurePermissions": "Konfigurasikan izin {{connectorName}}",
-      "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini untuk agen.",
+      "customAuthorizeDescription": "Tinjau, hubungkan, dan otorisasi konektor kustom ini.",
       "directory": {
         "allCategories": "Semua",
         "askAdmin": "Minta admin untuk mengaktifkan",
@@ -2288,7 +2290,7 @@
     },
     "permissions": {
       "actionDescription": "{{action}} {{permissionName}}",
-      "agentNotFound": "Agen tidak ditemukan",
+      "agentNotFound": "Permintaan ini sudah tidak tersedia",
       "allow": "Izinkan",
       "alreadyAllowed": "Sudah diizinkan",
       "alreadyDenied": "Sudah ditolak",
@@ -3207,7 +3209,7 @@
       "accessUpdated": "Akses {{connector}} diperbarui",
       "clearSearch": "Hapus pencarian agen",
       "description": "Pilih agen yang dapat menggunakan konektor ini.",
-      "loading": "Memuat agen...",
+      "loading": "Memuat akses...",
       "managePermissions": "Kelola izin",
       "managePermissionsFor": "Kelola izin {{connector}} untuk {{agent}}",
       "noAgents": "Tidak ada agen ditemukan",
@@ -3374,8 +3376,8 @@
           "menu": "Penjualan dan Bisnis"
         }
       },
-      "description": "Hubungkan layanan pihak ketiga agar agen Anda dapat menggunakannya.",
-      "descriptionWithCount": "Hubungkan {{value}} layanan agar agen Anda dapat menggunakannya.",
+      "description": "Hubungkan layanan pihak ketiga untuk digunakan Okou.",
+      "descriptionWithCount": "Hubungkan {{value}} layanan untuk digunakan Okou.",
       "directory": {
         "browse": "Jelajahi",
         "builtin": "Konektor bawaan",
@@ -3480,7 +3482,7 @@
         "continue": "Lanjut",
         "continueToProvider": "Lanjutkan ke penyedia untuk mengotorisasi akses.",
         "continueWithAutomatic": "Lanjutkan selagi Okou memeriksa cara server MCP ini melakukan autentikasi.",
-        "description": "Rahasia Anda dienkripsi saat disimpan dan disisipkan ke permintaan keluar oleh firewall. Rahasia ini tidak pernah diekspos ke agen sebagai variabel lingkungan.",
+        "description": "Rahasia Anda dienkripsi saat disimpan dan disisipkan ke permintaan keluar oleh firewall. Rahasia ini tidak pernah diekspos ke Okou sebagai variabel lingkungan.",
         "errors": {
           "authenticationResponseInvalid": "Server MCP mengembalikan respons autentikasi yang tidak didukung. Periksa endpoint MCP dan konfigurasi autentikasinya, atau hubungi administrator server.",
           "authorizationUnsupported": "Penyedia OAuth tidak mendukung persyaratan otorisasi yang digunakan oleh autentikasi Otomatis. Gunakan OAuth Kustom hanya jika Anda sudah memiliki kredensial klien yang kompatibel, atau hubungi dukungan Okou.",
@@ -3554,7 +3556,7 @@
         "tokenUrl": "URL token"
       },
       "delete": {
-        "description": "Ini akan menghapus konektor dan secret tersimpan milik setiap anggota untuk konektor ini. Agen yang berwenang untuk konektor ini akan langsung kehilangan akses. Tindakan ini tidak dapat dibatalkan.",
+        "description": "Tindakan ini menghapus konektor dan rahasia yang disimpan setiap anggota. Konektor langsung berhenti berfungsi di semua chat. Tindakan ini tidak dapat dibatalkan.",
         "title": "Hapus {{connector}}?"
       },
       "edit": {
@@ -3577,12 +3579,14 @@
       }
     },
     "directed": {
+      "allowAccess": "Izinkan akses",
       "authorizeAgent": "Otorisasi {{agent}}",
       "authorized": "{{connector}} diotorisasi",
       "authorizeDocumentTitle": "Otorisasi {{connector}}",
       "connectDocumentTitle": "Hubungkan {{connector}}",
       "connected": "{{connector}} terhubung",
       "needsConnector": "{{agent}} membutuhkan {{connector}} untuk melanjutkan",
+      "needsConnectorSingle": "Okou memerlukan {{connector}} untuk melanjutkan",
       "reconnecting": "Menyambungkan ulang..."
     },
     "expiration": {
@@ -3667,13 +3671,13 @@
       },
       "github": {
         "accountFallback": "akun GitHub ini",
-        "alreadyDescription": "Anda sudah tersambung sebagai {{account}}. Sebut agen Anda di issue atau pull request GitHub untuk mulai mengobrol.",
+        "alreadyDescription": "Anda sudah terhubung sebagai {{account}}. Sebut Okou di issue atau pull request GitHub untuk mulai chat.",
         "alreadyTitle": "Sudah tersambung ke GitHub",
         "back": "Kembali ke alur kerja",
         "checkingConnectionDescription": "Harap tunggu saat kami memeriksa koneksi GitHub Anda.",
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "checkingSession": "Harap tunggu saat kami memverifikasi sesi {{brandName}} Anda.",
-        "connectDescription": "Tautkan akun {{brandName}} Anda ke {{account}} agar mention GitHub dapat menjalankan agen Anda dari issue dan pull request.",
+        "connectDescription": "Tautkan akun {{brandName}} Anda ke {{account}} agar Anda dapat menyebut Okou di issue dan pull request GitHub.",
         "connectTitle": "Hubungkan ke GitHub",
         "errorFallback": "Kami tidak dapat menghubungkan GitHub. Coba lagi dari GitHub.",
         "invalidInstallation": "Instalasi GitHub pada tautan ini tidak valid.",
@@ -3691,7 +3695,7 @@
         "signInCheckFailed": "Tidak dapat memeriksa status masuk",
         "signInDescription": "Gunakan akun {{brandName}} Anda sebelum menghubungkan pengguna GitHub ini.",
         "signInTitle": "Masuk untuk melanjutkan",
-        "successDescription": "Anda tersambung sebagai {{account}}. Sebut agen Anda di issue atau pull request GitHub untuk mulai mengobrol.",
+        "successDescription": "Anda terhubung sebagai {{account}}. Sebut Okou di issue atau pull request GitHub untuk mulai chat.",
         "successTitle": "Berhasil tersambung ke GitHub!",
         "wrongOrganizationDescription": "Organisasi aktif Anda tidak cocok dengan instalasi GitHub ini. Pindah ke organisasi yang benar dan buka tautannya lagi.",
         "wrongOrganizationTitle": "Pindah organisasi"
@@ -3706,7 +3710,7 @@
         "accountMismatchDescriptionWorkspace": "Akun Okou Anda saat ini menggunakan akun Slack {{currentAccount}} di {{workspace}}. Beralih ke {{requestedAccount}}, akun yang membuka tautan ini?",
         "accountMismatchTitle": "Beralih akun Slack?",
         "authorizationFailed": "Otorisasi Slack belum selesai. Koneksi Anda saat ini ditampilkan di bawah. Anda dapat mencoba lagi.",
-        "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Slack.",
+        "connectDescription": "Tautkan akun Anda ke workspace Slack ini agar dapat bekerja dengan Okou langsung dari Slack.",
         "connectTitle": "Hubungkan ke Slack",
         "currentConnection": "Slack terhubung",
         "errorFallback": "Tidak dapat memeriksa atau memulai koneksi Slack.",
@@ -3724,7 +3728,7 @@
       },
       "teams": {
         "authorize": "Otorisasi Microsoft Teams",
-        "connectDescription": "Tautkan akun Teams Anda agar Anda dapat berinteraksi dengan agen Anda langsung dari Microsoft Teams.",
+        "connectDescription": "Tautkan akun Teams Anda agar dapat bekerja dengan Okou langsung dari Microsoft Teams.",
         "connectedDescription": "Akun Teams Anda terhubung.",
         "connectTitle": "Hubungkan Microsoft Teams",
         "identityMismatch": "Akun atau ruang kerja Teams yang diminta tidak cocok dengan koneksi saat ini.",
@@ -3745,7 +3749,7 @@
         "checkingConnectionTitle": "Memeriksa koneksi...",
         "conflictDescription": "Anda terhubung sebagai {{current}}, tetapi tautan ini meminta {{requested}}. Pertahankan koneksi Anda atau kelola koneksi secara manual sebelum mencoba lagi.",
         "conflictTitle": "Akun Telegram lain sedang terhubung",
-        "connectDescription": "Tautkan akun Anda ke bot Telegram ini agar Anda dapat berinteraksi dengan agen Anda langsung dari Telegram.",
+        "connectDescription": "Tautkan akun Anda ke bot Telegram ini agar dapat bekerja dengan Okou langsung dari Telegram.",
         "connectionCheckFailed": "Telegram tidak dapat dijangkau untuk memeriksa koneksi.",
         "connectTitle": "Hubungkan ke Telegram",
         "continue": "Lanjutkan dengan Telegram",
@@ -3832,7 +3836,7 @@
         "developerConsole": "Konsol developer Feishu",
         "dialogAdminRequired": "Admin organisasi harus mengonfigurasi aplikasi. Anda dapat menghubungkan akun Anda sendiri dari daftar bot Feishu setelah penyiapan selesai.",
         "documentTitle": "Feishu",
-        "emptyAdmin": "Tambahkan aplikasi kustom untuk mengarahkan pesan Feishu ke agen.",
+        "emptyAdmin": "Tambahkan aplikasi kustom agar pesan Feishu sampai ke Okou.",
         "emptyMember": "Minta admin organisasi menambahkan bot Feishu.",
         "emptyTitle": "Belum ada bot Feishu",
         "events": {
@@ -3890,7 +3894,7 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Feishu ini.",
         "reviewGuideTitle": "Panduan tinjau Feishu",
-        "routeDescription": "Arahkan pesan Feishu ke agen",
+        "routeDescription": "Chat dengan Okou dari Feishu",
         "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
@@ -3964,7 +3968,7 @@
         "developerConsole": "Konsol developer Lark",
         "dialogAdminRequired": "Admin organisasi harus mengonfigurasi aplikasi. Anda dapat menghubungkan akun Anda sendiri dari daftar bot Lark setelah penyiapan selesai.",
         "documentTitle": "Lark",
-        "emptyAdmin": "Tambahkan aplikasi kustom untuk mengarahkan pesan Lark ke agen.",
+        "emptyAdmin": "Tambahkan aplikasi kustom agar pesan Lark sampai ke Okou.",
         "emptyMember": "Minta admin organisasi menambahkan bot Lark.",
         "emptyTitle": "Belum ada bot Lark",
         "events": {
@@ -4023,7 +4027,7 @@
         "reviewGuide": "Tinjau panduan",
         "reviewGuideDescription": "Tinjau langkah-langkah penyiapan yang telah selesai untuk bot Lark ini.",
         "reviewGuideTitle": "Panduan tinjau Lark",
-        "routeDescription": "Arahkan pesan Lark ke agen",
+        "routeDescription": "Chat dengan Okou dari Lark",
         "selectAgent": "Pilih agen",
         "setupIncomplete": "Penyiapan belum selesai",
         "steps": {
@@ -4116,7 +4120,7 @@
     "denied": "Permintaan ditolak",
     "deniedTitle": "Akses Shell ditolak",
     "deny": "Tolak",
-    "description": "Agen memerlukan izin untuk menggunakan Shell di komputer Anda.",
+    "description": "Okou memerlukan izin untuk menggunakan Shell di komputer Anda.",
     "duration": "Akses berlaku selama 1 jam setelah disetujui",
     "expired": "Otorisasi kedaluwarsa",
     "expiredTitle": "Akses Shell kedaluwarsa",
@@ -5063,31 +5067,31 @@
   },
   "projects": {
     "close": "Close",
-    "create": "Create Project",
+    "create": "Create project",
     "createChatError": "Could not create chat",
     "delete": "Delete",
-    "deleteDescription": "Your chats and their histories will be kept. They return to their original Agent lists.",
-    "deleteError": "Could not delete Project",
-    "deleteProject": "Delete Project",
-    "deleteTitle": "Delete Project?",
-    "description": "Keep related chats together across Agents",
+    "deleteDescription": "Your chats and their histories will be kept. They move out of the project.",
+    "deleteError": "Could not delete project",
+    "deleteProject": "Delete project",
+    "deleteTitle": "Delete project?",
+    "description": "Keep related chats together",
     "empty": "No chats here yet",
-    "fromChat": "Create a Project from this chat",
-    "move": "Move to Project",
+    "fromChat": "Create a project from this chat",
+    "move": "Move to project",
     "moveError": "Could not move chat",
     "moveTitle": "Move chat",
     "moveTo": "Pindahkan ke {{name}}",
     "name": "Project name",
-    "new": "New Project",
+    "new": "New project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
     "projects": "Projects",
-    "remove": "Remove from Project",
+    "remove": "Remove from project",
     "rename": "Rename",
-    "renameProject": "Rename Project",
+    "renameProject": "Rename project",
     "save": "Save",
-    "saveError": "Could not save Project",
+    "saveError": "Could not save project",
     "saving": "Saving…",
     "search": "Search projects…",
     "showMore": "Show more chats",
@@ -5125,7 +5129,7 @@
       "pro": "Pro",
       "team": "Tim"
     },
-    "title": "Agen Anda sedang menunggu giliran",
+    "title": "Okou sedang menunggu antrean",
     "upgrade": {
       "action": "Upgrade ke {{plan}}",
       "features": {
@@ -5587,6 +5591,7 @@
         "chatThreads": "Percakapan chat Anda",
         "filesExcluded": "Artefak, lampiran, dan file pendukung alur kerja tidak disertakan.",
         "memoryFiles": "File memori Anda saat ini",
+        "personalInstructions": "Instruksi pribadi Anda",
         "workflowInstructions": "Instruksi alur kerja yang dapat Anda akses"
       },
       "status": {
@@ -5647,7 +5652,7 @@
           "reconnectTitle": "Hubungkan ulang Claude",
           "signIn": "Masuk dengan Claude",
           "submit": "Hubungkan",
-          "usageNotice": "Masuk dengan langganan Claude Anda untuk menggunakan model Claude dengan agen berbasis Claude Code."
+          "usageNotice": "Masuk dengan langganan Claude Anda agar Okou dapat menggunakan model Claude melalui Claude Code."
         },
         "codex": {
           "connectedToast": "ChatGPT terhubung",
@@ -5950,7 +5955,7 @@
       },
       "timezone": {
         "description": "Waktu ditampilkan kepada Anda dan digunakan untuk eksekusi otomatis.",
-        "rowDescription": "Agen Anda akan menggunakan zona waktu ini saat eksekusi",
+        "rowDescription": "Okou menggunakan zona waktu ini saat berjalan",
         "rowTitle": "Zona waktu",
         "sectionTitle": "Zona Waktu",
         "zones": {
@@ -6005,7 +6010,7 @@
         "title": "Kartu Anda di Link"
       },
       "connect": "Hubungkan",
-      "description": "Agen Anda dapat meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
+      "description": "Izinkan Okou meminta pembelian dan melihat transaksi Link. Anda menyetujui setiap pembelian.",
       "disconnect": "Putuskan",
       "loadError": "Dompet Anda tidak dapat dimuat.",
       "scope": "Izinkan Okou berbelanja dan melihat aktivitas Link Anda.",
@@ -6266,8 +6271,8 @@
       "summary_other": "{{count}} kredensial dikonfigurasi",
       "unused": "Tidak digunakan oleh host mana pun"
     },
-    "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Agent tidak lagi melihat host ini dalam inventaris.",
-    "description": "Konfigurasikan host SSH agar Agen Anda dapat menjalankan perintah jarak jauh.",
+    "deleteHelp": "Hapus host ini? Kredensialnya akan tetap disimpan. Okou tidak akan lagi melihat host ini di inventaris aktif.",
+    "description": "Izinkan Okou menjalankan perintah di mesin jarak jauh.",
     "edit": "Edit host",
     "editHelp": "Memilih kredensial lain hanya mengubah host ini. Perubahan tujuan langsung menghapus kunci host tersimpan; perubahan yang melibatkan Cloudflare Access mempertahankannya.",
     "errors": {
@@ -6313,7 +6318,7 @@
     },
     "tailscale": {
       "authenticationFailed": "Autentikasi Tailscale SSH gagal. Periksa nama pengguna sistem, aktifkan Tailscale SSH pada tujuan yang memiliki tag, dan izinkan login ini dalam kebijakan SSH accept tailnet.",
-      "deleteHelp": "Hapus host ini? Agen tidak akan lagi melihat host ini di inventaris langsung.",
+      "deleteHelp": "Hapus host ini? Okou tidak akan lagi melihat host ini di inventaris aktif.",
       "sshDocs": "Dokumentasi Tailscale SSH",
       "sshHelp": "Menggunakan identitas jaringan Tailscale yang dipilih, tanpa kata sandi SSH atau kunci privat. Aktifkan Tailscale SSH pada perangkat tujuan yang memiliki tag dan izinkan nama pengguna sistem ini dalam kebijakan SSH accept.",
       "sshTitle": "Tailscale SSH",
@@ -6484,7 +6489,7 @@
       "usernamePasswordMethod": "Nama pengguna dan kata sandi"
     },
     "deleteHelp": "Hapus host tersimpan ini? Kredensialnya yang dapat digunakan kembali akan tetap disimpan.",
-    "description": "Izinkan agen Anda melihat dan mengendalikan desktop jarak jauh Anda.",
+    "description": "Izinkan Okou melihat dan mengontrol desktop jarak jauh.",
     "edit": "Edit host",
     "editHelp": "Perubahan berlaku pada host tersimpan ini dan membatalkan konfigurasi koneksinya saat ini.",
     "errors": {
@@ -7268,7 +7273,7 @@
       "authorizationError": "Otorisasi Discord tidak dapat diselesaikan.",
       "cancelled": "Otorisasi Discord dibatalkan.",
       "chooseWorkspace": "Pilih ruang kerja",
-      "connectDescription": "Hubungkan akun Discord untuk mengobrol dengan agen Anda.",
+      "connectDescription": "Hubungkan akun Discord Anda untuk chat dengan Okou.",
       "connectedTitle": "Terhubung ke Discord",
       "connectTitle": "Hubungkan ke Discord",
       "defaultWorkspace": "Ruang kerja default untuk Discord",
@@ -7332,7 +7337,7 @@
       "uninstallTitle": "Copot pemasangan integrasi Microsoft Teams?"
     },
     "telegram": {
-      "description": "Rutekan pesan Telegram ke agen",
+      "description": "Chat dengan Okou di Telegram.",
       "title": "Telegram"
     },
     "wechat": {
@@ -7342,7 +7347,7 @@
       "connect": "Hubungkan",
       "connected": "Terhubung",
       "creating": "Membuat kode QR…",
-      "description": "Mengobrol dengan agen Anda di WeChat.",
+      "description": "Chat dengan Okou di WeChat.",
       "disconnect": "Putuskan koneksi",
       "expired": "Kode QR ini telah kedaluwarsa. Buat yang baru.",
       "failed": "Tidak dapat terhubung ke WeChat.",
@@ -7356,7 +7361,7 @@
       "restoreDescription": "Hubungkan kembali WeChat ke akun dan ruang kerja di bawah ini.",
       "returnToWechat": "Kembali ke WeChat dan kirim pesan untuk mulai mengobrol.",
       "scanned": "Berhasil dipindai. Konfirmasi di ponsel Anda.",
-      "scope": "Hanya pesan langsung Anda ke agen ini yang terhubung. Pesan teks didukung.",
+      "scope": "Hanya pesan langsung Anda ke Okou yang terhubung. Pesan teks didukung.",
       "title": "Hubungkan WeChat",
       "unavailable": "Koneksi belum dikonfigurasi.",
       "verification_blocked": "Terlalu banyak percobaan. Buat kode QR baru.",
@@ -7368,7 +7373,7 @@
     "whatsapp": {
       "codeError": "Tidak dapat membuat kode koneksi. Coba lagi.",
       "connect": "Hubungkan WhatsApp",
-      "connectDescription": "Hubungkan akun WhatsApp Anda ke {{brandName}} untuk mengobrol dengan agen Anda.",
+      "connectDescription": "Tautkan akun WhatsApp Anda untuk chat dengan {{brandName}}.",
       "connected": "WhatsApp terhubung",
       "description": "Mengobrol dengan Okou langsung dari WhatsApp",
       "disconnected": "WhatsApp terputus",

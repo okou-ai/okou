@@ -1,4 +1,6 @@
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
+import { assistantName$ } from "../../signals/branding.ts";
 // TODO(#8609): split large components to comply with max-lines-per-function (128)
 // oxlint-disable max-lines-per-function
 import type { ReactNode } from "react";
@@ -76,7 +78,11 @@ import {
   threadNumberShortcutIndex$,
 } from "../../signals/okou-page/thread-number-shortcuts.ts";
 import { ThreadNumberShortcutHint } from "./thread-number-shortcut-hint.tsx";
-import { AgentAvatarImg, ChatThreadStateText } from "./sidebar-shared.tsx";
+import {
+  AgentAvatarImg,
+  AvatarFromUrl,
+  ChatThreadStateText,
+} from "./sidebar-shared.tsx";
 import {
   threeColumnAgentSearchResults$,
   threeColumnArtifactSearchResults$,
@@ -564,6 +570,23 @@ const SPOTLIGHT_ROW_CLASS = "group w-full gap-3.5 py-2 pl-1 pr-2";
 const SPOTLIGHT_AVATAR_CLASS =
   "h-8 w-8 shrink-0 rounded-lg object-cover object-top";
 
+/**
+ * Chat and message results speak as the one Okou under single Okou, even for
+ * chats a legacy agent started; otherwise they show the chat's own agent.
+ */
+function SpotlightChatAvatar({ agentId }: { readonly agentId: string }) {
+  const singleAgent = useGet(singleAgentEnabled$);
+  return singleAgent ? (
+    <AvatarFromUrl
+      avatarUrl={DEFAULT_AGENT_AVATAR_URL}
+      alt=""
+      className={SPOTLIGHT_AVATAR_CLASS}
+    />
+  ) : (
+    <AgentAvatarImg name={agentId} alt="" className={SPOTLIGHT_AVATAR_CLASS} />
+  );
+}
+
 function SpotlightThreadCommandItem({
   thread,
   onSelect,
@@ -579,11 +602,7 @@ function SpotlightThreadCommandItem({
       onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
-      <AgentAvatarImg
-        name={thread.agentId}
-        alt=""
-        className={SPOTLIGHT_AVATAR_CLASS}
-      />
+      <SpotlightChatAvatar agentId={thread.agentId} />
       <span className="min-w-0 flex-1 truncate text-left text-sm text-foreground">
         {thread.title}
       </span>
@@ -607,7 +626,10 @@ function SpotlightMessageCommandItem({
   readonly onSelect: () => void;
   readonly shortcutNumber: number | undefined;
 }) {
-  const title = thread?.title ?? message.agentName;
+  const singleAgent = useGet(singleAgentEnabled$);
+  const assistantName = useGet(assistantName$);
+  const title =
+    thread?.title ?? (singleAgent ? assistantName : message.agentName);
 
   return (
     <CommandItem
@@ -615,11 +637,7 @@ function SpotlightMessageCommandItem({
       onClick={onSelect}
       className={SPOTLIGHT_ROW_CLASS}
     >
-      <AgentAvatarImg
-        name={thread?.agentId ?? message.agentName}
-        alt=""
-        className={SPOTLIGHT_AVATAR_CLASS}
-      />
+      <SpotlightChatAvatar agentId={thread?.agentId ?? message.agentName} />
       {/*
         A message result needs no type label: it is the only row that carries a
         second line, so the snippet already tells the two kinds apart.

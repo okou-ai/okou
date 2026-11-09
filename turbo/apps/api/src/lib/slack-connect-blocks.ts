@@ -261,6 +261,24 @@ export function buildWelcomeMessage(
   return blocks;
 }
 
+/**
+ * Welcome for members on single Okou: the bot is Okou itself, so there is no
+ * workspace agent to name.
+ */
+export function buildSingleOkouWelcomeMessage(
+  botUserId: string,
+): SlackAnyBlock[] {
+  return [
+    {
+      type: "section",
+      text: {
+        type: "mrkdwn",
+        text: `:wave: *Hi! I'm ${officialSlackBotMention(botUserId)}.*\n\nSend me a DM or mention me in any channel, and describe what you need help with.`,
+      },
+    },
+  ];
+}
+
 export function buildSuccessMessage(message: string): SlackAnyBlock[] {
   return [
     {

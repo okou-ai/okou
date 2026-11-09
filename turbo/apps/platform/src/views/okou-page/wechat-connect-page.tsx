@@ -9,6 +9,7 @@ import {
 } from "../../signals/okou-page/wechat-connect-signals.ts";
 import { connectWechat$, wechatFlow$ } from "../../signals/okou-page/wechat.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { settingsIconAssetUrl } from "./components/settings/settings-icon-assets.ts";
@@ -164,6 +165,7 @@ function ReconnectContent({
 }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
+  const singleAgent = useGet(singleAgentEnabled$);
   const [restoring, restore] = useLoadableSet(reconnectWechat$);
   return (
     <>
@@ -193,14 +195,17 @@ function ReconnectContent({
           </dt>
           <dd className="break-words">{workspace}</dd>
         </div>
-        <div>
-          <dt className="text-muted-foreground">
-            {t(($) => {
-              return $.works.wechat.agentLabel;
-            })}
-          </dt>
-          <dd className="break-words">{agent}</dd>
-        </div>
+        {/* Single Okou has one assistant, so the agent row says nothing. */}
+        {!singleAgent && (
+          <div>
+            <dt className="text-muted-foreground">
+              {t(($) => {
+                return $.works.wechat.agentLabel;
+              })}
+            </dt>
+            <dd className="break-words">{agent}</dd>
+          </div>
+        )}
       </dl>
       <ConnectErrorAlert
         error={
