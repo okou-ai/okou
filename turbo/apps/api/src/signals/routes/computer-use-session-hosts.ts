@@ -1,3 +1,4 @@
+import { trace } from "@opentelemetry/api";
 import { desktopUpgradeRequired } from "../../lib/desktop-compatibility";
 import { logger } from "../../lib/log";
 import { command, computed, type Command } from "ccstate";
@@ -263,6 +264,30 @@ const connectionEvent$ = command(async ({ get, set }, signal: AbortSignal) => {
   const host = await set(resolveComputerUseHost$, authority, signal);
   if (!host) {
     return invalidConnection;
+  }
+  const span = trace
+    .getTracer("computer-use")
+    .startSpan("computer_use.notification.transition", {
+      attributes: {
+        "computer_use.host_id": host.id,
+        "computer_use.connection_generation": host.connectionGeneration,
+        "computer_use.app_version": host.appVersion,
+        "computer_use.liveness_mode": host.livenessMode,
+        "computer_use.notification.event": body.data.event,
+        ...(body.data.reasonCode === undefined
+          ? {}
+          : { "computer_use.notification.reason_code": body.data.reasonCode }),
+      },
+    });
+  span.end();
+  if (body.data.event === "unavailable") {
+    L.warn("Desktop notification connection unavailable", {
+      hostId: host.id,
+      connectionGeneration: host.connectionGeneration,
+      appVersion: host.appVersion,
+      mode: host.livenessMode,
+      reasonCode: body.data.reasonCode,
+    });
   }
   L.debug("Desktop notification connection transition", {
     hostId: host.id,

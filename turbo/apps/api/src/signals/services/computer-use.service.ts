@@ -1,3 +1,4 @@
+import { trace } from "@opentelemetry/api";
 import { HTTPException } from "hono/http-exception";
 import { providerUnavailable } from "../../lib/error";
 import { setTimeout as delay } from "node:timers/promises";
@@ -64,7 +65,7 @@ import {
   publishComputerUseResultChangedSafely,
 } from "../external/realtime";
 import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
-import { joinAll, settle, tapError } from "../utils";
+import { joinAll, settle, settleIncludingAbort, tapError } from "../utils";
 import { waitUntil } from "../context/wait-until";
 import {
   verifyClerkComputerUseSession,
@@ -358,36 +359,66 @@ export const computerUseHostIsOnline$ = command(
     if (authorized === null) {
       return false;
     }
-    const presence = await settle(
-      computerUseHostIsPresent(host, signal),
-      signal,
-    );
-    // A received queue-wait request is independent proof of HTTP reachability.
-    // Preserve the previous 90-second recovery window if Ably is unavailable.
-    if (
-      host.livenessMode === "presence" &&
-      computerUseHostIsOnline(host, now)
-    ) {
+    const span = trace
+      .getTracer("computer-use")
+      .startSpan("computer_use.host.availability", {
+        attributes: {
+          "computer_use.host_id": host.id,
+          "computer_use.connection_generation": host.connectionGeneration,
+          "computer_use.liveness_mode": host.livenessMode,
+        },
+      });
+    const result = await settleIncludingAbort(async () => {
+      const presence = await settle(
+        computerUseHostIsPresent(host, signal),
+        signal,
+      );
+      span.setAttribute(
+        "computer_use.presence.outcome",
+        presence.ok ? (presence.value ? "present" : "absent") : "unavailable",
+      );
+      // A received queue-wait request is independent proof of HTTP reachability.
+      // Preserve the previous 90-second recovery window if Ably is unavailable.
+      if (
+        host.livenessMode === "presence" &&
+        computerUseHostIsOnline(host, now)
+      ) {
+        span.setAttributes({
+          "computer_use.availability.source": "legacy_http",
+          "computer_use.online": true,
+        });
+        L.debug("Computer-use host availability evaluated", {
+          hostId: host.id,
+          connectionGeneration: host.connectionGeneration,
+          mode: host.livenessMode,
+          source: "legacy_http",
+          online: true,
+        });
+        return true;
+      }
+      span.setAttribute("computer_use.availability.source", "ably_presence");
+      if (!presence.ok) {
+        throw presence.error;
+      }
+      span.setAttribute("computer_use.online", presence.value);
       L.debug("Computer-use host availability evaluated", {
         hostId: host.id,
         connectionGeneration: host.connectionGeneration,
         mode: host.livenessMode,
-        source: "legacy_http",
-        online: true,
+        source: "ably_presence",
+        online: presence.value,
       });
-      return true;
-    }
-    if (!presence.ok) {
-      throw presence.error;
-    }
-    L.debug("Computer-use host availability evaluated", {
-      hostId: host.id,
-      connectionGeneration: host.connectionGeneration,
-      mode: host.livenessMode,
-      source: "ably_presence",
-      online: presence.value,
+      return presence.value;
     });
-    return presence.value;
+    if (signal.aborted) {
+      span.end();
+      signal.throwIfAborted();
+    }
+    span.end();
+    if (!result.ok) {
+      throw result.error;
+    }
+    return result.value;
   },
 );
 

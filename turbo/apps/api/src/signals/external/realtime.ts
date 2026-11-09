@@ -96,7 +96,7 @@ export async function computerUseHostIsPresent(
   );
   signal.throwIfAborted();
   if (!result.ok) {
-    L.debug("Computer-use presence queried", {
+    L.warn("Computer-use presence unavailable", {
       hostId: target.id,
       connectionGeneration: target.connectionGeneration,
       outcome: "unavailable",
