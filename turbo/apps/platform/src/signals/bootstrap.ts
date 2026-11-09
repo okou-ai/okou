@@ -24,6 +24,7 @@ import { getCapturedPreviewBypassForTarget } from "../lib/preview-bypass-cookie.
 import {
   initRoutes$,
   detachedNavigateTo$,
+  navigateTo$,
   setupPageWrapper,
   setupAuthPageWrapper,
   pathParams$,
@@ -210,6 +211,18 @@ const setupLegacyHomePage$ = setupSettingsParamAfterStableRoute(setupHomePage$);
 const setupHomeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   await set(
     get(singleAgentEnabled$) ? setupHomeChatPage$ : setupLegacyHomePage$,
+    signal,
+  );
+});
+
+const setupBillingsRoute$ = command(async ({ set }, signal: AbortSignal) => {
+  await set(
+    navigateTo$,
+    "/",
+    {
+      searchParams: new URLSearchParams({ settings: "billing" }),
+      replace: true,
+    },
     signal,
   );
 });
@@ -485,6 +498,10 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.works,
     setup: setupAuthSidebarPageWrapper(setupWorksPage$),
+  },
+  {
+    path: ROUTES.billings,
+    setup: setupAuthPageWrapper(setupBillingsRoute$),
   },
   {
     path: ROUTES.settings,

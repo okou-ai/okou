@@ -48,6 +48,7 @@ export const ROUTES = {
   directedConnect: "/connectors/:connectorSlug/connect",
   directedReconnect: "/connectors/:connectorSlug/reconnect/:connectionId",
   directedAuthorize: "/connectors/:connectorSlug/authorize",
+  billings: "/billings",
   settings: "/settings",
   settingsAgentPhone: INTEGRATION_SETTINGS_PATHS.agentphone,
   settingsWhatsapp: INTEGRATION_SETTINGS_PATHS.whatsapp,

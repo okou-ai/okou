@@ -370,3 +370,12 @@ test("A billing refresh preserves configuration and keyboard focus", async () =>
   expect(within(refreshed).getByText("Step 2 of 2")).toBeInTheDocument();
   expect(within(refreshed).getByLabelText("Close")).toHaveFocus();
 });
+
+test("Open billing from an integration recovery link", async () => {
+  prepareUpgradeFlow();
+  await setupPage({ context, path: "/billings" });
+  await screen.findByRole("dialog", { name: "Settings" });
+  await expect(
+    screen.findByRole("heading", { name: "Billing" }),
+  ).resolves.toBeInTheDocument();
+});
