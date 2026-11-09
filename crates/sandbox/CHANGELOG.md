@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.16](https://github.com/okou-ai/okou/compare/sandbox-v0.28.15...sandbox-v0.28.16) (2026-11-09)
+
+
+### Performance Improvements
+
+* **runner:** combine prewarmed blanks with cached homes ([#45982](https://github.com/okou-ai/okou/issues/45982)) ([1f635c4](https://github.com/okou-ai/okou/commit/1f635c4ff9baa72a4203a727dde742058d8def9f))
+
 ## [0.28.15](https://github.com/okou-ai/okou/compare/sandbox-v0.28.14...sandbox-v0.28.15) (2026-11-08)
 
 ## [0.28.14](https://github.com/okou-ai/okou/compare/sandbox-v0.28.13...sandbox-v0.28.14) (2026-11-07)

@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.1](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.22.0...runner-supervisor-v0.22.1) (2026-11-09)
+
+
+### Performance Improvements
+
+* **runner:** combine prewarmed blanks with cached homes ([#45982](https://github.com/okou-ai/okou/issues/45982)) ([1f635c4](https://github.com/okou-ai/okou/commit/1f635c4ff9baa72a4203a727dde742058d8def9f))
+
 ## [0.22.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.53...runner-supervisor-v0.22.0) (2026-11-08)
 
 
