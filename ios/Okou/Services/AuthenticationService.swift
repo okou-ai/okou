@@ -159,7 +159,8 @@ final class AuthenticationService {
         })
       await previous?.close(removeFiles: false)
     }
-    guard let presentation, presentation.userID == userID, presentationScopeID == scope else { return }
+    guard let presentation, presentation.userID == userID, presentationScopeID == scope
+    else { return }
     if workspacesSessionID == clerk.session?.id, workspacesUserID == userID {
       await presentation.replaceWorkspaces(workspaces, activeID: workspaceID)
     }
