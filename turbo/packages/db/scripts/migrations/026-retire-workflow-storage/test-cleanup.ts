@@ -413,6 +413,7 @@ try {
   const main = await seed(true);
   const userOwned = await seed(false, "owner");
   const memory = await seed(false, "__org__", "memory");
+  const official = await seed(false, "__org__", "official-workflow@fixture");
   const sibling = `${main.prefix}-other/archive.tar.gz`;
   const newAttachment = `workflow-attachments/${orgId}/${main.workflowId}/${randomUUID()}/archive.tar.gz`;
   objects.add(sibling);
@@ -515,6 +516,7 @@ try {
   assert.equal(JSON.stringify(reviewed.plan).includes("database body"), false);
   assert.equal((await review(userOwned.id)).plan.ready.length, 0);
   assert.equal((await review(memory.id)).plan.ready.length, 0);
+  assert.equal((await review(official.id)).plan.ready.length, 0);
   await invoke(["--migrate", ...reviewedArgs(reviewed)], 1);
   await invoke(
     [
@@ -568,6 +570,8 @@ try {
   assert.equal(objects.has(newAttachment), true);
   assert.equal(await storageCount(userOwned.id), 1);
   assert.equal(await storageCount(memory.id), 1);
+  assert.equal(await storageCount(official.id), 1);
+  assert.equal(await versionCount(official.id), 1);
 
   // Pre-UUID slugs can have zero, one or multiple current namesakes. None owns
   // the captured Storage by name; current UUID Storage and Workflows survive.

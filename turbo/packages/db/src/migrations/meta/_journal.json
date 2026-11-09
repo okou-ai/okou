@@ -3193,6 +3193,13 @@
       "when": 1794197492259,
       "tag": "1534_email_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 1535,
+      "version": "7",
+      "when": 1794210473360,
+      "tag": "1535_retire_official_workflow_storage_bindings",
+      "breakpoints": true
     }
   ]
 }
