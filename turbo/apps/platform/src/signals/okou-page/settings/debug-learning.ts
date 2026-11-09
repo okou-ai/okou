@@ -7,6 +7,7 @@ import type { WorkflowAutomationSummary } from "@okouai/api-contracts/contracts/
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { command, computed, state } from "ccstate";
 import { accept } from "../../../lib/accept.ts";
+import { defaultAgentId$ } from "../../agent.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
 import { NEVER_RESOLVED_PROMISE, onRef } from "../../utils.ts";
@@ -28,6 +29,8 @@ export const debugLearningAutomation$ = computed((get) => {
 });
 
 const discoverDebugLearning$ = command(async ({ get }, signal: AbortSignal) => {
+  const defaultAgentId = await get(defaultAgentId$);
+  signal.throwIfAborted();
   const result = await accept(
     get(apiClient$)(workflowAutomationsContract).listWorkspace({
       fetchOptions: { signal },
@@ -38,6 +41,7 @@ const discoverDebugLearning$ = command(async ({ get }, signal: AbortSignal) => {
   return (
     result.body.find((entry) => {
       return (
+        entry.workflow.agentId === defaultAgentId &&
         entry.workflow.official?.definitionName ===
           PROACTIVE_LEARNING_DEFINITION_NAME &&
         entry.workflow.official.installationState === "installed" &&

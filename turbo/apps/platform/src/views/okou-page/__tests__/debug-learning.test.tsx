@@ -15,6 +15,7 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
+const DEFAULT_AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 const AUTOMATION_ID = "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
 const THREAD_ID = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb";
 
@@ -22,7 +23,7 @@ function learningEntry(): WorkflowAutomationsListEntry {
   return {
     workflow: {
       id: "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
-      agentId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+      agentId: DEFAULT_AGENT_ID,
       agentName: "okou",
       agentDisplayName: "Okou",
       name: "proactive-learning",
@@ -94,6 +95,7 @@ function runButton() {
 }
 
 async function openDebug(learning = true) {
+  context.mocks.data.onboardingStatus({ defaultAgentId: DEFAULT_AGENT_ID });
   await setupPage({
     context,
     path: "/agents?settings=debug",
@@ -105,13 +107,26 @@ async function openDebug(learning = true) {
   await screen.findByRole("heading", { name: "Debug" });
 }
 
-test("runs the official Learning automation while its nightly schedule is paused", async () => {
+test("runs the current default agent's official Learning while its nightly schedule is paused", async () => {
   const unrelated = learningEntry();
+  const formerDefault = learningEntry();
   context.mocks.api(
     workflowAutomationsContract.listWorkspace,
     ({ respond }) => {
       return respond(200, [
         customLearningEntry(),
+        {
+          ...formerDefault,
+          workflow: {
+            ...formerDefault.workflow,
+            id: "33333333-3333-4333-8333-333333333333",
+            agentId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+          },
+          automation: {
+            ...formerDefault.automation,
+            id: "44444444-4444-4444-8444-444444444444",
+          },
+        },
         {
           ...unrelated,
           workflow: {
