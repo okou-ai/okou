@@ -95,8 +95,7 @@ function MeLink({
 }: {
   readonly icon: LucideIcon;
   readonly children: ReactNode;
-  readonly pathname:
-    "/my-okou" | "/agents" | "/workflows" | "/works" | "/export";
+  readonly pathname: "/agents" | "/workflows" | "/works" | "/export";
   readonly target?: "_blank";
   readonly trailing?: ReactNode;
 }) {
@@ -239,18 +238,13 @@ function MeNavigation({
           return $.settings.accountMenu.settings;
         })}
       </MeAction>
-      <MeLink
-        icon={Users}
-        pathname={singleAgent ? ROUTES.myOkou : ROUTES.agents}
-      >
-        {singleAgent
-          ? t(($) => {
-              return $.myOkou.title;
-            })
-          : t(($) => {
-              return $.appShell.sidebar.navigation.agents;
-            })}
-      </MeLink>
+      {!singleAgent && (
+        <MeLink icon={Users} pathname={ROUTES.agents}>
+          {t(($) => {
+            return $.appShell.sidebar.navigation.agents;
+          })}
+        </MeLink>
+      )}
       <MeLink icon={Route} pathname={ROUTES.workflows}>
         {t(($) => {
           return $.appShell.sidebar.navigation.workflows;

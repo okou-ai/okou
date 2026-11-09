@@ -10,6 +10,7 @@ import { sessionStorageSignals } from "./external/session-storage.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../i18n/index.ts";
 import { watchInstructionsUpdates$ } from "./instructions-updates.ts";
+import { onRef } from "./utils.ts";
 
 const draftSchema = object({
   content: string(),
@@ -170,3 +171,23 @@ export const myOkouSignals$ = computed(async (get) => {
 });
 
 export type MyOkouSignals = ReturnType<typeof createMyOkouSignals>;
+
+export const myOkouSectionRef$ = onRef(
+  command(async ({ get, set }, _element: HTMLElement, signal: AbortSignal) => {
+    const signals = await get(myOkouSignals$);
+    signal.throwIfAborted();
+    set(signals.retry$);
+    set(signals.watch$, signal);
+    window.addEventListener(
+      "beforeunload",
+      (event) => {
+        const draft = get(signals.draft$);
+        if (draft && draft.content !== draft.savedContent) {
+          // Only the document unload can destroy this tab's retained drafts.
+          event.preventDefault();
+        }
+      },
+      { signal },
+    );
+  }),
+);

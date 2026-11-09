@@ -40,7 +40,7 @@ async function setupPersonal(content = "Use concise updates") {
   });
   await setupPage({
     context,
-    path: "/my-okou",
+    path: "/?settings=my-okou",
     featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   return await screen.findByLabelText("Instructions");
@@ -64,7 +64,11 @@ test("An ordinary enabled member edits personal Instructions and deliberately cl
     queryAllByRoleFast("link").some((link) => {
       return link.textContent?.trim() === "My Okou";
     }),
-  ).toBeTruthy();
+  ).toBeFalsy();
+  expect(screen.getByRole("dialog", { name: "Settings" })).toContainElement(
+    editor,
+  );
+  expect(button("My Okou")).toBeInTheDocument();
   await fill(editor, "");
   const bar = await screen.findByTestId("unsaved-bar");
   click(within(bar).getByTestId("save-button"));
@@ -206,29 +210,36 @@ test("Returning to the tab catches instruction updates missed while away", async
   });
 });
 
-test("Navigating away retains the draft and its original version", async () => {
+async function openPersonalSettings() {
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  click(within(rail).getByLabelText("Test User"));
+  const menu = await screen.findByRole("menu");
+  click(within(menu).getByText("Settings"));
+  await screen.findByRole("dialog", { name: "Settings" });
+  click(button("My Okou"));
+  return screen.findByLabelText("Instructions");
+}
+
+test("Settings navigation and dismissal retain the draft and its original version", async () => {
   const editor = await setupPersonal();
   await fill(editor, "Draft across navigation");
-  const workflows = queryAllByRoleFast("link").find((link) => {
-    return link.textContent?.trim() === "Workflows";
-  });
-  if (!workflows) {
-    throw new Error("Missing Workflows navigation");
-  }
-  click(workflows);
-  await screen.findByRole("heading", { name: "Workflows" });
-  const personal = queryAllByRoleFast("link").find((link) => {
-    return link.textContent?.trim() === "My Okou";
-  });
-  if (!personal) {
-    throw new Error("Missing My Okou navigation");
-  }
-  click(personal);
+  click(button("Chat"));
+  await screen.findByRole("heading", { name: "Chat" });
+  click(button("My Okou"));
   await waitFor(() => {
     expect(screen.getByLabelText("Instructions")).toHaveTextContent(
       "Draft across navigation",
     );
   });
+  const dialog = screen.getByRole("dialog", { name: "Settings" });
+  click(within(dialog).getByLabelText("Close"));
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
+  await openPersonalSettings();
+  expect(screen.getByLabelText("Instructions")).toHaveTextContent(
+    "Draft across navigation",
+  );
   expect(screen.getByTestId("unsaved-bar")).toBeInTheDocument();
 });
 
@@ -240,7 +251,7 @@ test("Fetch failure offers retry without fabricating shared Instructions", async
   });
   await setupPage({
     context,
-    path: "/my-okou",
+    path: "/?settings=my-okou",
     featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
   });
   await screen.findByText("Couldn’t load your instructions. Try again.");
@@ -273,42 +284,42 @@ test("Workspace switching isolates drafts and restores the original workspace dr
   const clerk = context.mocks.clerk();
   const editor = await setupPersonal();
   await fill(editor, "Alpha local draft");
+  click(
+    within(screen.getByRole("dialog", { name: "Settings" })).getByLabelText(
+      "Close",
+    ),
+  );
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
   context.mocks.api(instructionsContract.get, ({ respond }) => {
     return respond(200, response("Beta personal instructions", "beta-v1"));
   });
   clerk.organization({ activeOrg: { id: "org_beta", name: "Beta" } });
   clerk.stateChanged();
-  await waitFor(() => {
-    expect(location.pathname).not.toBe("/my-okou");
-  });
-  await waitFor(() => {
-    const personal = queryAllByRoleFast("link").find((link) => {
-      return link.textContent?.trim() === "My Okou";
-    });
-    expect(personal).toBeDefined();
-  });
-  const betaLink = queryAllByRoleFast("link").find((link) => {
-    return link.textContent?.trim() === "My Okou";
-  });
-  click(betaLink!);
+  await screen.findByRole("img", { name: "Beta" });
+  await openPersonalSettings();
   await waitFor(() => {
     expect(screen.getByLabelText("Instructions")).toHaveTextContent(
       "Beta personal instructions",
     );
   });
   await fill(screen.getByLabelText("Instructions"), "Beta local draft");
+  click(
+    within(screen.getByRole("dialog", { name: "Settings" })).getByLabelText(
+      "Close",
+    ),
+  );
+  await waitFor(() => {
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  });
   context.mocks.api(instructionsContract.get, ({ respond }) => {
     return respond(200, response("Use concise updates"));
   });
   clerk.organization({ activeOrg: { id: "org_default", name: "Alpha" } });
   clerk.stateChanged();
-  await waitFor(() => {
-    expect(location.pathname).not.toBe("/my-okou");
-  });
-  const alphaLink = queryAllByRoleFast("link").find((link) => {
-    return link.textContent?.trim() === "My Okou";
-  });
-  click(alphaLink!);
+  await screen.findByRole("img", { name: "Alpha" });
+  await openPersonalSettings();
   await waitFor(() => {
     expect(screen.getByLabelText("Instructions")).toHaveTextContent(
       "Alpha local draft",
@@ -328,7 +339,8 @@ test.each(["profile", "instructions"])(
       featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
     });
     await waitFor(() => {
-      expect(location.pathname).toBe("/my-okou");
+      expect(location.pathname).toBe("/");
+      expect(location.search).toBe("?settings=my-okou");
     });
     await screen.findByLabelText("Instructions");
   },
@@ -344,4 +356,27 @@ test("The default authorization link still opens account and permission controls
     expect(location.pathname).toBe("/connectors");
   });
   await screen.findByRole("heading", { name: "Connectors" });
+});
+
+test("My Okou settings are unavailable when SingleAgent is disabled", async () => {
+  await setupPage({
+    context,
+    path: "/?settings=my-okou",
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: false },
+  });
+  const dialog = await screen.findByRole("dialog", { name: "Settings" });
+  expect(
+    within(dialog).getByRole("heading", { name: "Preference" }),
+  ).toBeInTheDocument();
+  expect(
+    queryAllByRoleFast("button", dialog).find((element) => {
+      return element.textContent?.trim() === "My Okou";
+    }),
+  ).toBeUndefined();
+  expect(screen.queryByLabelText("Instructions")).not.toBeInTheDocument();
+  await waitFor(() => {
+    expect(new URLSearchParams(location.search).get("settings")).toBe(
+      "preference",
+    );
+  });
 });
