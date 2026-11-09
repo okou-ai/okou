@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.1](https://github.com/okou-ai/okou/compare/ios-v0.31.0...ios-v0.31.1) (2026-11-09)
+
+
+### Bug Fixes
+
+* **ios:** remove redundant mark as read menu item ([#46181](https://github.com/okou-ai/okou/issues/46181)) ([e78ea9a](https://github.com/okou-ai/okou/commit/e78ea9afd522dd1454d6773af8024510194db02e))
+
 ## [0.31.0](https://github.com/okou-ai/okou/compare/ios-v0.30.1...ios-v0.31.0) (2026-11-09)
 
 
