@@ -1,8 +1,26 @@
+import CCState
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
 struct ComposerConnectorSheet: View {
   @Bindable var store: ComposerConnectorStore
+
+  var body: some View {
+    if let resources = store.resources {
+      StoreProvider(resources.store) {
+        ComposerConnectorSheetContent(store: store, resources: resources)
+          .id(ObjectIdentifier(resources))
+      }
+    }
+  }
+}
+
+private struct ComposerConnectorSheetContent: View {
+  @Bindable var store: ComposerConnectorStore
+  let resources: ComposerConnectorResources
+  @LoadableValue private var connected: Loadable<ComposerConnectorResources.Connected>
+  @LoadableStatus<ComposerConnectorResources.Connected> private var status: LoadableState
   @State private var search = ""
   @State private var accountDestination: ComposerConnectorAccountResources?
   @State private var permissionDestination: ComposerConnectorPermissionResources?
@@ -10,28 +28,42 @@ struct ComposerConnectorSheet: View {
   @Environment(\.dismiss) private var dismiss
   @Environment(\.scenePhase) private var scenePhase
 
+  init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
+    self.store = store
+    self.resources = resources
+    _connected = LoadableValue(task: resources.connected, keepLast: true)
+    _status = LoadableStatus(task: resources.connected)
+  }
+
   var body: some View {
     NavigationStack {
       List {
         if let error = store.error {
-          ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
+          ConnectorLoadError(error: error, isLoading: store.isRefreshing) { await store.refresh() }
         }
         if let notice = store.notice {
           Text(notice).font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
         }
         Section {
           NavigationLink {
-            ComposerRemoteControls(store: store)
+            ComposerRemoteControls(store: store, resources: resources)
           } label: {
             OkouRowLabel("Remote control", okouSymbol: "monitor")
           }
         }
         Section {
-          if let error = store.connectorError, store.error == nil {
-            ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
-          } else if store.isLoading && store.connectors.isEmpty && store.error == nil {
+          switch connected {
+          case .loading:
             OkouLoadingRow("Loading connectors…")
-          } else {
+          case .hasError(let error):
+            if store.error == nil {
+              ConnectorLoadError(
+                error: ComposerConnectorResources.message(for: error, in: .connected),
+                isLoading: status == .loading
+              ) { await store.refresh() }
+            }
+          case .hasData:
+            // The phase comes from the Task; draft account projections remain business data.
             ForEach(
               store.connectors.filter {
                 search.isEmpty || $0.label.localizedCaseInsensitiveContains(search)
@@ -39,7 +71,7 @@ struct ComposerConnectorSheet: View {
             ) { connector in
               connectorRow(connector)
             }
-            if store.connectors.isEmpty && !store.isLoading {
+            if store.connectors.isEmpty && status != .loading {
               Text(
                 store.chatAccountAccess
                   ? "Connect a service to use it in this chat."
@@ -250,16 +282,74 @@ struct ConnectorLoadError: View {
   }
 }
 
+/// Account pages retain the parent's current read failure without mirroring it in their Store.
+struct ComposerConnectorReadError: View {
+  let store: ComposerConnectorStore
+  let retry: @MainActor () async -> Void
+
+  var body: some View {
+    if let resources = store.resources {
+      StoreProvider(resources.store) {
+        ComposerConnectorReadErrorContent(store: store, resources: resources, retry: retry)
+      }
+    }
+  }
+}
+
+private struct ComposerConnectorReadErrorContent: View {
+  let store: ComposerConnectorStore
+  let retry: @MainActor () async -> Void
+  @LoadableValue private var connected: Loadable<ComposerConnectorResources.Connected>
+
+  init(
+    store: ComposerConnectorStore, resources: ComposerConnectorResources,
+    retry: @escaping @MainActor () async -> Void
+  ) {
+    self.store = store
+    self.retry = retry
+    _connected = LoadableValue(task: resources.connected, keepLast: true)
+  }
+
+  var body: some View {
+    if let error = store.error {
+      ConnectorLoadError(error: error, isLoading: store.isRefreshing, retry: retry)
+    } else if case .hasError(let error) = connected {
+      ConnectorLoadError(
+        error: ComposerConnectorResources.message(for: error, in: .connected),
+        isLoading: store.isRefreshing, retry: retry)
+    }
+  }
+}
+
 private struct ComposerRemoteControls: View {
   @Bindable var store: ComposerConnectorStore
+  @LoadableValue private var remote: Loadable<ComposerConnectorResources.Remote>
+  @LoadableStatus<ComposerConnectorResources.Remote> private var status: LoadableState
   @State private var showsDesktopSetup = false
+
+  init(store: ComposerConnectorStore, resources: ComposerConnectorResources) {
+    self.store = store
+    _remote = LoadableValue(task: resources.remote, keepLast: true)
+    _status = LoadableStatus(task: resources.remote)
+  }
 
   var body: some View {
     Form {
-      if let error = store.error ?? store.remoteError {
-        ConnectorLoadError(error: error, isLoading: store.isLoading) { await store.refresh() }
+      if let error = store.error {
+        ConnectorLoadError(error: error, isLoading: store.isRefreshing) { await store.refresh() }
       }
-      if let remotes = store.remotes, store.remoteError == nil {
+      switch remote {
+      case .loading:
+        OkouLoadingRow("Loading remote access…")
+      case .hasError(let error):
+        if store.error == nil {
+          ConnectorLoadError(
+            error: ComposerConnectorResources.message(for: error, in: .remote),
+            isLoading: status == .loading
+          ) { await store.refresh() }
+        }
+      case .hasData(let value):
+        let remotes = value.overview
         Section {
           Toggle(
             "Cloud Browser",
@@ -348,8 +438,6 @@ private struct ComposerRemoteControls: View {
             Text(verbatim: proto.rawValue.uppercased()).okouSectionHeader()
           }
         }
-      } else if store.isLoading {
-        OkouLoadingRow("Loading remote access…")
       }
     }
     .okouGroupedBackground()
