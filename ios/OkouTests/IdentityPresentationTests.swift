@@ -18,7 +18,7 @@ final class IdentityPresentationTests: XCTestCase {
     let server = try ChatFileHTTPServer { _ in
       ChatFileHTTPServer.Response(headers: ["Content-Type": "image/png"], body: png)
     }
-    addTeardownBlock { await server.close() }
+    addTeardownBlock { await server.stop() }
     let baseURL = try await server.start()
     let url = baseURL.appending(path: "logo.png")
     let cached = IdentityPresentationCache(
@@ -63,7 +63,7 @@ final class IdentityPresentationTests: XCTestCase {
     addTeardownBlock {
       await gate.releaseAll()
       await gate.stopObserving(observation.id)
-      await server.close()
+      await server.stop()
     }
     let baseURL = try await server.start()
     let oldURL = baseURL.appending(path: "old.png")
@@ -82,7 +82,7 @@ final class IdentityPresentationTests: XCTestCase {
     XCTAssertEqual(presentation.image("workspace:org")?.pngData(), visible)
     await presentation.close(removeFiles: true)
     await gate.releaseAll()
-    await server.close()
+    await server.stop()
     let reopened = IdentityPresentationCache(
       environment: "test", userID: "user", directory: directory)
     let lateImage = await reopened.cachedImage(entity: "workspace:org", url: newURL)
