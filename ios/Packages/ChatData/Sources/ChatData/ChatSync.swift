@@ -172,11 +172,14 @@ public actor ChatSync {
   }
 
   public func cachedIndicators() async -> CachedChatIndicators? {
+    guard let cache else { return indicatorState.snapshot }
     do {
-      return try await cache?.loadIndicators() ?? indicatorState.snapshot
+      return try await cache.loadIndicators()
     } catch {
       logIndicatorCacheFailure(error)
-      return indicatorState.snapshot
+      // A process-local counter cannot stand in for the shared cache revision.
+      // The mounted list already owns its last confirmed presentation.
+      return nil
     }
   }
 
@@ -218,14 +221,13 @@ public actor ChatSync {
 
   func changeReadState(_ change: ChatReadStateChange) async {
     // Fence the in-flight local readers before suspending for disk metadata.
-    indicatorState.mutationRevision += 1
+    indicatorState.change(change)
     let threads: [ChatThread]
     if case .invalidated = change {
       threads = []
     } else {
       threads = await cachedThreads() ?? []
     }
-    indicatorState.change(change, threads: threads)
     do { try await cache?.changeReadState(change, threads: threads) } catch {
       logIndicatorCacheFailure(error)
     }

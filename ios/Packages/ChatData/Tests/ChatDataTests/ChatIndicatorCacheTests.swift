@@ -7,8 +7,7 @@ import XCTest
 
 @MainActor
 final class ChatIndicatorCacheTests: XCTestCase {
-  func testUnreadSnapshotReopensOfflineWithoutRestoringRunningIndicatorsOrAnotherScope() async throws
-  {
+  func testUnreadCacheReopensOfflineWithoutRunningIndicatorsOrCrossingScopes() async throws {
     let offline = Mutex(false)
     let fixture = ChatHTTPFixture { request in
       if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
