@@ -18,6 +18,8 @@ final class IdentityPresentation {
   private var restoration: Task<Void, Never>?
   private var hasFreshWorkspaces = false
   private var closed = false
+  private var preparationID = UUID()
+  private var workspaceRevision = 0
 
   init(userID: String, cache: IdentityPresentationCache, workspaces: [WorkspacePresentation] = []) {
     self.userID = userID
@@ -32,6 +34,8 @@ final class IdentityPresentation {
   func image(_ entity: String) -> UIImage? { images[entity]?.image }
 
   func restore(workspaceID: String, profileURL: URL?, hasProfileImage: Bool) async {
+    let preparation = UUID()
+    preparationID = preparation
     if restoration == nil {
       restoration = Task { [weak self, cache] in
         let values = await cache.workspaces()
@@ -40,7 +44,7 @@ final class IdentityPresentation {
       }
     }
     await restoration?.value
-    guard !closed, !Task.isCancelled else { return }
+    guard !closed, !Task.isCancelled, preparationID == preparation else { return }
     let workspace = workspace(workspaceID)
     let logo = read("workspace:" + workspaceID)
     if let workspace { logo.configure(workspace.hasImage ? workspace.imageURL : nil) }
@@ -49,7 +53,7 @@ final class IdentityPresentation {
     // Resolve only local bytes before presenting the sidebar. Network reads follow below.
     await logo.restore()
     await profile.restore()
-    guard !closed, !Task.isCancelled else { return }
+    guard !closed, !Task.isCancelled, preparationID == preparation else { return }
     preparedWorkspaceID = workspaceID
     logo.refresh()
     profile.refresh()
@@ -57,12 +61,15 @@ final class IdentityPresentation {
 
   func replaceWorkspaces(_ values: [WorkspacePresentation], activeID: String?) async {
     guard !closed else { return }
+    workspaceRevision += 1
+    let revision = workspaceRevision
     hasFreshWorkspaces = true
     workspaces = values
     let retained = Set(values.map { "workspace:" + $0.id }).union(["profile"])
     for entity in Array(images.keys) where !retained.contains(entity) {
       images.removeValue(forKey: entity)?.close()
       do { try await cache.removeImages(entity: entity) } catch { Self.log(error) }
+      guard !closed, workspaceRevision == revision else { return }
     }
     for workspace in values.prefix(100) {
       let image = read("workspace:" + workspace.id)
@@ -87,7 +94,9 @@ final class IdentityPresentation {
     if let image = images[entity] { return image }
     // Current account photo plus at most 100 workspace marks; the active mark is protected.
     if images.count >= 101,
-      let retired = images.keys.first(where: { $0 != "profile" && $0 != "workspace:" + (preparedWorkspaceID ?? "") })
+      let retired = images.keys.first(where: {
+        $0 != "profile" && $0 != "workspace:" + (preparedWorkspaceID ?? "")
+      })
     {
       images.removeValue(forKey: retired)?.close()
     }
@@ -98,7 +107,7 @@ final class IdentityPresentation {
 
   fileprivate static func log(_ error: Error) {
     Logger(subsystem: "ai.okou.ios", category: "IdentityPresentation")
-      .error("Cannot update identity display cache: \(error.localizedDescription, privacy: .public)")
+      .error("Identity display cache failed: \(error.localizedDescription, privacy: .public)")
   }
 }
 
@@ -124,40 +133,48 @@ private final class IdentityImageRead {
     self.store = store
   }
 
-  @ObservationIgnored private lazy var value = Computed<Task<Void, Never>> { [weak self] get, options in
-    guard let self, !closed else { return Task {} }
-    let url = try get(source)
-    _ = try get(revision)
-    failed = false
-    let signal = options.signal
-    let task = Task.immediate { @MainActor [weak self, cache, entity] in
-      guard let self else { return }
-      do {
-        guard let url else {
-          try await cache.removeImages(entity: entity)
-          return
+  @ObservationIgnored private lazy var value = makeValue()
+
+  private func makeValue() -> Computed<Task<Void, Never>> {
+    Computed { [weak self] get, options in
+      guard let self, !closed else { return Task {} }
+      let url = try get(source)
+      _ = try get(revision)
+      failed = false
+      let signal = options.signal
+      let task = Task.immediate { @MainActor [weak self, cache, entity] in
+        guard let self else { return }
+        do {
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          guard !closed, self.url == url else { return }
+          guard let url else {
+            try await cache.removeImages(entity: entity)
+            return
+          }
+          let bytes = try await cache.image(entity: entity, url: url)
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          let decoded = await decoder.image(bytes)
+          try Task.checkCancellation()
+          try signal.checkCancellation()
+          guard !closed, self.url == url else { return }
+          if let decoded {
+            image = decoded
+          } else {
+            failed = true
+            try await cache.removeImages(entity: entity)
+          }
+        } catch is CancellationError {
+        } catch {
+          if !closed, !Task.isCancelled { failed = true }
+          IdentityPresentation.log(error)
         }
-        let bytes = try await cache.image(entity: entity, url: url)
-        try Task.checkCancellation()
-        try signal.checkCancellation()
-        let decoded = await decoder.image(bytes)
-        try Task.checkCancellation()
-        try signal.checkCancellation()
-        guard !closed, self.url == url else { return }
-        if let decoded {
-          image = decoded
-        } else {
-          try await cache.removeImages(entity: entity)
-        }
-      } catch is CancellationError {
-      } catch {
-        if !closed, !Task.isCancelled { failed = true }
-        IdentityPresentation.log(error)
       }
+      request = task
+      signal.onCancel { task.cancel() }
+      return task
     }
-    request = task
-    signal.onCancel { task.cancel() }
-    return task
   }
 
   func configure(_ url: URL?) {
@@ -199,12 +216,14 @@ private final class IdentityImageRead {
 private actor IdentityImageDecoder {
   func image(_ data: Data) -> UIImage? {
     guard let source = CGImageSourceCreateWithData(data as CFData, nil),
-      let image = CGImageSourceCreateThumbnailAtIndex(source, 0, [
-        kCGImageSourceCreateThumbnailFromImageAlways: true,
-        kCGImageSourceCreateThumbnailWithTransform: true,
-        kCGImageSourceThumbnailMaxPixelSize: 192,
-        kCGImageSourceShouldCacheImmediately: true,
-      ] as CFDictionary)
+      let image = CGImageSourceCreateThumbnailAtIndex(
+        source, 0,
+        [
+          kCGImageSourceCreateThumbnailFromImageAlways: true,
+          kCGImageSourceCreateThumbnailWithTransform: true,
+          kCGImageSourceThumbnailMaxPixelSize: 192,
+          kCGImageSourceShouldCacheImmediately: true,
+        ] as CFDictionary)
     else { return nil }
     return UIImage(cgImage: image)
   }

@@ -133,10 +133,11 @@ final class AuthenticationService {
     if workspacesUserID == userID, let workspace = workspaces.first(where: { $0.id == id }) {
       return workspace
     }
-    if presentation?.userID == userID, let workspace = presentation?.workspace(id) { return workspace }
-    guard let organization = clerk?.user?.organizationMemberships?.first(where: {
-      $0.organization.id == id
-    })?.organization else { return nil }
+    if presentation?.userID == userID, let workspace = presentation?.workspace(id) {
+      return workspace
+    }
+    let membership = clerk?.user?.organizationMemberships?.first { $0.organization.id == id }
+    guard let organization = membership?.organization else { return nil }
     return Workspace(
       id: organization.id, name: organization.name,
       imageURL: URL(string: organization.imageUrl), hasImage: organization.hasImage)
@@ -151,8 +152,9 @@ final class AuthenticationService {
         cache: IdentityPresentationCache(
           environment: clerk.publishableKey, userID: userID, directory: presentationDirectory),
         workspaces: (clerk.user?.organizationMemberships ?? []).map {
-          Workspace(id: $0.organization.id, name: $0.organization.name,
-                    imageURL: URL(string: $0.organization.imageUrl), hasImage: $0.organization.hasImage)
+          Workspace(
+            id: $0.organization.id, name: $0.organization.name,
+            imageURL: URL(string: $0.organization.imageUrl), hasImage: $0.organization.hasImage)
         })
       await previous?.close(removeFiles: false)
     }

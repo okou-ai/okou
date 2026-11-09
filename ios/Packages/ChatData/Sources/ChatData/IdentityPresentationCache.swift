@@ -85,6 +85,7 @@ public actor IdentityPresentationCache {
   }
 
   public func removeImages(entity: String) throws {
+    try Task.checkCancellation()
     guard !closed else { return }
     let prefix = Self.digest(entity) + "-"
     for file in try files() where file.lastPathComponent.hasPrefix(prefix) {
@@ -100,7 +101,8 @@ public actor IdentityPresentationCache {
   }
 
   private func imageFile(entity: String, url: URL) -> URL {
-    directory.appending(path: Self.digest(entity) + "-" + Self.digest(url.absoluteString) + ".image")
+    directory.appending(
+      path: Self.digest(entity) + "-" + Self.digest(url.absoluteString) + ".image")
   }
 
   private func createDirectory() throws {

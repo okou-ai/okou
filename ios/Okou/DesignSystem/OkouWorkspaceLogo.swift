@@ -76,7 +76,8 @@ struct OkouWorkspaceGlassLogo: View {
 @MainActor
 enum OkouWorkspaceMenuLogos {
   static func image(workspaceID: String, hasImage: Bool, cachedImage: UIImage?) -> Image {
-    let image = hasImage ? cachedImage : UIImage(named: OkouWorkspaceLogo.defaultAssetName(for: workspaceID))
+    let image =
+      hasImage ? cachedImage : UIImage(named: OkouWorkspaceLogo.defaultAssetName(for: workspaceID))
     return Image(uiImage: tile(image)).renderingMode(.original)
   }
 
