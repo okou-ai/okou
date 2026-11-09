@@ -79,7 +79,7 @@ class TestModelProviderWebSocketPrewarmUsage:
             b'{"type":"'
             + terminal_event.encode()
             + b'","padding":['
-            + b",".join([b"0"] * 20_000)
+            + (b"0," * 20_000)[:-1]
             + b'],"response":{"id":"dense-prewarm","model":"gpt-5.5",'
             b'"usage":{"input_tokens":9,"output_tokens":4}}}'
         )
@@ -723,7 +723,7 @@ class TestModelProviderWebSocketPrewarmUsage:
     ):
         flow = make_openai_responses_websocket_flow(real_flow, tmp_path)
         mitm_addon.responseheaders(flow)
-        over_budget_error = b'{"type":"error","padding":[' + b",".join([b"0"] * 40_000) + b"]}"
+        over_budget_error = b'{"type":"error","padding":[' + (b"0," * 40_000)[:-1] + b"]}"
 
         with self._usage_webhook_api() as webhook:
             feed_websocket_client_message(
@@ -755,7 +755,7 @@ class TestModelProviderWebSocketPrewarmUsage:
         mitm_addon.responseheaders(flow)
         over_budget_request = (
             b'{"type":"response.create","generate":false,"padding":['
-            + b",".join([b"0"] * 40_000)
+            + (b"0," * 40_000)[:-1]
             + b"]}"
         )
 

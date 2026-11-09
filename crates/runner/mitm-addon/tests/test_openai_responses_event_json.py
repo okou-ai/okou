@@ -527,7 +527,7 @@ def test_work_limit_rejects_partial_usage_and_returns_stable_error():
     body = (
         b'{"type":"response.completed","response":{"id":"resp_partial",'
         b'"model":"gpt-5.6","usage":{"input_tokens":9,"output_tokens":4}},'
-        b'"padding":[' + b",".join([b"0"] * 40_000) + b"]}"
+        b'"padding":[' + (b"0," * 40_000)[:-1] + b"]}"
     )
     event = inspect_openai_responses_event_json(body)
 

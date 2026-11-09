@@ -8,7 +8,7 @@ from usage.json_selective import JsonSelectiveExtractor, ScalarField
 @pytest.mark.parametrize(
     ("payload", "exact_work_units"),
     [
-        (b"[" + b",".join([b"0"] * 10) + b"]", 22),
+        (b"[" + (b"0," * 10)[:-1] + b"]", 22),
         (b"{" + b",".join([b'"x":0'] * 10) + b"}", 43),
         (b"   null", 5),
         (b'"' + b"\\n" * 17 + b'"', 3),
@@ -87,7 +87,7 @@ def test_default_extractor_has_no_total_work_limit():
     element_count = 40_000
     extractor = JsonSelectiveExtractor(array_count_paths={()})
 
-    extractor.feed(b"[" + b",".join([b"0"] * element_count) + b"]")
+    extractor.feed(b"[" + (b"0," * element_count)[:-1] + b"]")
     result = extractor.finish()
 
     assert result.complete is True
