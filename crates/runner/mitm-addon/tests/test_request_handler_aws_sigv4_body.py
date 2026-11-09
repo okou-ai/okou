@@ -15,6 +15,7 @@ from mitmproxy.websocket import WebSocketData
 
 import auth
 import aws_sigv4_body_admission
+import aws_sigv4_flow
 import flow_metadata_keys as metadata_keys
 import matching
 import mitm_addon
@@ -182,7 +183,7 @@ def _s3_presigned_query_path_with_pair_count(pair_count: int) -> str:
 
 def _raw_header_list_size(request_headers: http.Headers) -> int:
     return sum(
-        len(name) + len(value) + auth.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
+        len(name) + len(value) + aws_sigv4_flow.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
         for name, value in request_headers.fields
     )
 
@@ -349,8 +350,8 @@ async def test_payload_independent_sigv4_cancellation_restores_inspection_state(
 @pytest.mark.parametrize(
     ("target_size", "accepted"),
     [
-        (auth.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES, True),
-        (auth.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES + 1, False),
+        (aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES, True),
+        (aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES + 1, False),
     ],
     ids=["exact-limit", "over-limit"],
 )
@@ -423,7 +424,7 @@ async def test_presigned_s3_query_pair_count_inspection_boundary(
     host = "bucket.s3.amazonaws.com"
     registry_path = _write_aws_registry(tmp_path, base=f"https://{host}")
     path = _s3_presigned_query_path_with_pair_count(pair_count)
-    assert len(path.encode()) < auth.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES
+    assert len(path.encode()) < aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES
     flow = real_flow(
         with_response=False,
         client_ip=_CLIENT_IP,
@@ -474,8 +475,8 @@ async def test_presigned_s3_query_pair_count_inspection_boundary(
 @pytest.mark.parametrize(
     ("header_list_size", "accepted"),
     [
-        (auth.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES, True),
-        (auth.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES + 1, False),
+        (aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES, True),
+        (aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES + 1, False),
     ],
     ids=["exact-limit", "over-limit"],
 )
@@ -499,7 +500,7 @@ async def test_sigv4_request_header_list_inspection_boundary(
         header_list_size
         - _raw_header_list_size(flow.request.headers)
         - len(padding_name.encode())
-        - auth.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
+        - aws_sigv4_flow.AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
     )
     assert padding_value_size >= 0
     flow.request.headers[padding_name] = "x" * padding_value_size
@@ -550,12 +551,14 @@ async def test_sigv4_request_hook_header_field_count_fails_closed(
         content_hash="UNSIGNED-PAYLOAD",
     )
     additional_fields = (
-        auth.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS + 1 - len(flow.request.headers.fields)
+        aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS + 1 - len(flow.request.headers.fields)
     )
     flow.request.headers = http.Headers(
         (*flow.request.headers.fields, *((b"X-Padding", b""),) * additional_fields)
     )
-    assert len(flow.request.headers.fields) == auth.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS + 1
+    assert (
+        len(flow.request.headers.fields) == aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS + 1
+    )
     get_headers = AsyncMock(return_value=_resolved_token_meta())
 
     with (
@@ -876,7 +879,7 @@ def test_aws_firewall_context_marks_oversized_target_uninspectable(
     headers,
 ) -> None:
     flow = _header_auth_flow(real_flow, headers)
-    flow.request.path = "/" + "x" * auth.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES
+    flow.request.path = "/" + "x" * aws_sigv4_flow.MAX_AWS_SIGV4_REQUEST_TARGET_BYTES
 
     context = request_classification._aws_firewall_request_context(flow)
 
