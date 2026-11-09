@@ -102,7 +102,7 @@ test("A failed Mermaid layout leaves its source readable and other diagrams usab
 
   await waitFor(() => {
     const fallback = screen.getByText("flowchart TD Failed --> Layout", {
-      selector: "pre > code",
+      selector: "pre code",
     });
     expect(fallback).toBeVisible();
   });
