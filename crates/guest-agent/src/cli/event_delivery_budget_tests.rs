@@ -46,6 +46,20 @@ fn body(event: &Value) -> String {
     format!("{{\"runId\":{},\"events\":[{event}]}}", json!(RUN_ID))
 }
 
+fn body_len(event: &Value) -> usize {
+    #[derive(serde::Serialize)]
+    struct Body<'a> {
+        #[serde(rename = "runId")]
+        run_id: &'a str,
+        events: [&'a Value; 1],
+    }
+    cli_test_support::json_fixture::serialized_len(&Body {
+        run_id: RUN_ID,
+        events: [event],
+    })
+    .unwrap()
+}
+
 fn text_event(framework: Framework, text: &str) -> Value {
     text_event_at_sequence(framework, text, 19)
 }
@@ -155,9 +169,14 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
             let empty = make_event("");
             let retained = overflow.map_or(5, |extra| LIMIT - body(&empty).len() + extra);
             let event = make_event(&"x".repeat(retained));
-            let expected = body(&event);
+            let expected_body = (overflow != Some(1)).then(|| body(&event));
             if let Some(extra) = overflow {
-                assert_eq!(expected.len(), LIMIT + extra);
+                assert_eq!(
+                    expected_body
+                        .as_ref()
+                        .map_or_else(|| body_len(&event), String::len),
+                    LIMIT + extra
+                );
             }
             // Only non-message structure is compared after content reduction.
             let expected_event = (collaboration && overflow == Some(1)).then(|| {
@@ -165,7 +184,6 @@ async fn sender_preserves_normal_bytes_and_accounts_for_exact_request_envelopes(
                 expected["item"]["agents_states"]["status"]["message"] = Value::Null;
                 expected
             });
-            let expected_body = (overflow != Some(1)).then_some(expected);
             let server = MockServer::start_async().await;
             let request = server.mock(|when, then| {
                 when.method(POST)
@@ -348,7 +366,10 @@ async fn irreducible_events_are_skipped_and_later_uploads_advance_across_gaps() 
         match i {
             0 | 1 => event["message"]["id"] = Value::String("x".repeat(LIMIT)),
             2 => event["item"]["id"] = Value::String("x".repeat(LIMIT)),
-            3 => event["item"]["receiver_thread_ids"] = json!(["x".repeat(LIMIT)]),
+            3 => {
+                event["item"]["receiver_thread_ids"] =
+                    Value::Array(vec![Value::String("x".repeat(LIMIT))])
+            }
             4 => {
                 event["item"]["agents_states"] =
                     json!({"x".repeat(LIMIT): {"status": "errored", "message": "text"}})
