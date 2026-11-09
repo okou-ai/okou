@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "Bilah samping",
       "chat": "Chat",
-      "feedWaiting_other": "{{count}} menunggu",
       "hideChatList": "Sembunyikan daftar chat",
       "mobile": {
         "invite": "Undang",
@@ -413,6 +412,7 @@
       "resizeChatList": "Ubah ukuran daftar chat",
       "searchWorkspace": "Cari ruang kerja",
       "showChatList": "Tampilkan daftar chat",
+      "suggestionsWaiting_other": "{{count}} menunggu",
       "workspaceSwitcher": {
         "create": "Buat ruang kerja",
         "creating": "Membuat…",

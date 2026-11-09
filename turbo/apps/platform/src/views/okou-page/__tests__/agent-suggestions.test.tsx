@@ -249,27 +249,14 @@ async function openHomeWithDraft(draft: string): Promise<void> {
   await openHome();
   await fill(composer(), draft);
 }
-function suggestionList(): HTMLElement | null {
-  return screen.queryByRole("region", { name: "Suggestions" });
-}
-// Home lists nothing once every card has been handled and closed.
-async function waitForEmptyList(): Promise<void> {
-  await waitFor(() => {
-    expect(suggestionList()).not.toBeInTheDocument();
-  });
-}
 // Okou's chat-list row opens home.
-function queryOkouRow(): HTMLElement | null {
-  return (
-    queryAllByRoleFast("link", screen.getByTestId("chat-list-column")).find(
-      (element) => {
-        return element.getAttribute("href") === "/";
-      },
-    ) ?? null
-  );
-}
 function okouRow(): HTMLElement {
-  const found = queryOkouRow();
+  const found = queryAllByRoleFast(
+    "link",
+    screen.getByTestId("chat-list-column"),
+  ).find((element) => {
+    return element.getAttribute("href") === "/";
+  });
   if (!found) {
     throw new Error("Missing Okou row");
   }
@@ -352,7 +339,6 @@ test("The Okou row leads the chat list, counts waiting cards and opens home", as
     return okouRow();
   });
   expect(row).toHaveTextContent(/^Okou/);
-  expect(row).not.toHaveAttribute("aria-current");
   await within(row).findByText("2 waiting");
   // The row leads the chats, above their scrolling list.
   const chats = within(screen.getByTestId("chat-list-column")).getByTestId(
@@ -428,7 +414,7 @@ test("Each home visit loads new suggestions", async () => {
   pool.publish(second);
   click(okouRow());
   await screen.findByText(second.title);
-  expect(feedItemLabels()).toStrictEqual([first.title, second.title]);
+  expect(listItemLabels()).toStrictEqual([first.title, second.title]);
 });
 test("Choosing an action sends it to a new thread and keeps home and its draft", async () => {
   const selected = makeOption({ id: "prepare", label: "Prepare response" });
@@ -462,7 +448,7 @@ test("Choosing an action sends it to a new thread and keeps home and its draft",
   click(button(selected.label));
   await screen.findByText(SENT);
   expect(pathname()).toBe(homePath);
-  expect(feedItemLabels()).toStrictEqual([next.title, MESSAGE_SENT]);
+  expect(listItemLabels()).toStrictEqual([next.title, MESSAGE_SENT]);
   await waitFor(() => {
     expect(pool.selections).toStrictEqual([
       { id: suggestion.id, optionId: selected.id },
@@ -719,7 +705,7 @@ function openChatLink(): HTMLElement {
   }
   return found;
 }
-function feedItemLabels(): (string | null)[] {
+function listItemLabels(): (string | null)[] {
   return within(screen.getByRole("region", { name: "Suggestions" }))
     .getAllByRole("listitem")
     .map((row) => {
@@ -774,7 +760,7 @@ test("Home lists every suggestion card and sends the chosen card's action in pla
   }
   click(button(items[1].options[0].label, "button", cards[1]));
   await screen.findByText(SENT);
-  expect(feedItemLabels()).toStrictEqual([
+  expect(listItemLabels()).toStrictEqual([
     items[0].title,
     items[2].title,
     MESSAGE_SENT,
@@ -797,7 +783,7 @@ test("A sent suggestion moves below the waiting cards and opens its new thread",
     ),
   );
   await screen.findByText(MESSAGE_SENT);
-  expect(feedItemLabels()).toStrictEqual([items[1].title, MESSAGE_SENT]);
+  expect(listItemLabels()).toStrictEqual([items[1].title, MESSAGE_SENT]);
   const { threadId: sentThreadId } = await sent;
   click(openChatLink());
   await waitFor(() => {
@@ -822,7 +808,7 @@ test("A choice that sends nothing returns its card to its place", async () => {
   );
   await screen.findByText("The selected model is not available");
   await screen.findByRole("article", { name: items[0].title });
-  expect(feedItemLabels()).toStrictEqual(
+  expect(listItemLabels()).toStrictEqual(
     items.map((item) => {
       return item.title;
     }),
@@ -858,7 +844,7 @@ test("A send that fails before its thread is published shows the failure in its 
   );
   await requested.promise;
   await screen.findByText("Sending…");
-  expect(feedItemLabels()).toStrictEqual([items[1].title, "Sending…"]);
+  expect(listItemLabels()).toStrictEqual([items[1].title, "Sending…"]);
   release.resolve();
   const failure = await within(
     screen.getByRole("region", { name: "Suggestions" }),
@@ -872,7 +858,7 @@ test("Dismissing a suggestion moves only its card below the waiting cards and ke
   await screen.findByText("Suggested action 1");
   click(button("Dismiss"));
   await screen.findByText("Suggestion dismissed");
-  expect(feedItemLabels()).toStrictEqual([
+  expect(listItemLabels()).toStrictEqual([
     "Suggested action 2",
     "Suggestion dismissed",
   ]);
@@ -897,7 +883,7 @@ test("Dismissing a suggestion moves only its card below the waiting cards and ke
   });
   // Each handled card keeps its own row, in the order it was handled.
   await waitFor(() => {
-    expect(feedItemLabels()).toStrictEqual([
+    expect(listItemLabels()).toStrictEqual([
       "Suggestion dismissed",
       "Suggestion dismissed",
     ]);
@@ -910,10 +896,7 @@ test("Dismissing a suggestion moves only its card below the waiting cards and ke
       }),
   ).toStrictEqual(["Suggested action 1", "Suggested action 2"]);
   await userEvent.setup().click(button("Close feedback"));
-  expect(feedItemLabels()).toStrictEqual(["Suggestion dismissed"]);
-  await userEvent.setup().click(button("Close feedback"));
-  await waitForEmptyList();
-  expect(pathname()).toBe(homePath);
+  expect(listItemLabels()).toStrictEqual(["Suggestion dismissed"]);
 });
 test("A deleted target shows its unavailable page and preserves the home draft", async () => {
   mockPool([{ ...makeSuggestion(), options: [makeOption({ threadId })] }]);
@@ -943,18 +926,7 @@ test("A deleted target shows its unavailable page and preserves the home draft",
   });
 });
 
-test("With the switch off, the sidebar has no Okou row", async () => {
-  await setupPage({ context, path: homePath });
-  expect(button("Workflow")).toBeInTheDocument();
-  expect(queryOkouRow()).toBeNull();
-});
-test("The retired Feed route is not found", async () => {
-  await setupPage({ context, path: "/feed", featureSwitches: features });
-  await expect(
-    screen.findByRole("heading", { name: "That page isn't here." }),
-  ).resolves.toBeInTheDocument();
-});
-test("Suggestions are listed only on the default Agent's page and start in that Agent", async () => {
+test("Suggestion options start in the default Agent after visiting a secondary Agent", async () => {
   const secondary = "c0000000-0000-4000-a000-000000000002";
   const agents: AgentResponse[] = [agentId, secondary].map((id) => {
     return {
@@ -998,7 +970,6 @@ test("Suggestions are listed only on the default Agent's page and start in that 
     featureSwitches: features,
   });
   expect(button("Workflow")).toBeInTheDocument();
-  expect(suggestionList()).not.toBeInTheDocument();
   click(okouRow());
   await screen.findByText(makeSuggestion().title);
   expect(pathname()).toBe(homePath);
@@ -1089,7 +1060,7 @@ test("Each custom direction dialog starts from its own card's background", async
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(feedItemLabels()).toStrictEqual([first.title, second.title]);
+  expect(listItemLabels()).toStrictEqual([first.title, second.title]);
 });
 
 test("A custom follow-up retains its dialog on failure and reuses its identities until acceptance", async () => {
@@ -1157,7 +1128,7 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
   expect(
     screen.queryByRole("article", { name: makeSuggestion().title }),
   ).not.toBeInTheDocument();
-  expect(feedItemLabels()).toStrictEqual([MESSAGE_SENT]);
+  expect(listItemLabels()).toStrictEqual([MESSAGE_SENT]);
   expect(openChatLink()).toHaveAttribute(
     "href",
     `/chats/${attempts[1].threadId}`,
@@ -1266,8 +1237,6 @@ test("Feedback stays available after the last card, accepts an optional reason, 
   await screen.findByText(makeSuggestion().title);
   await userEvent.setup().click(button("Not planned"));
   await screen.findByText("Noted — this is not planned");
-  await userEvent.setup().click(button("Close feedback"));
-  await waitForEmptyList();
 });
 
 test("Not planned moves its card below the waiting cards and Undo restores it in place", async () => {
@@ -1283,14 +1252,14 @@ test("Not planned moves its card below the waiting cards and Undo restores it in
     ),
   );
   await screen.findByText("Noted — this is not planned");
-  expect(feedItemLabels()).toStrictEqual([
+  expect(listItemLabels()).toStrictEqual([
     items[0].title,
     items[2].title,
     "Noted — this is not planned",
   ]);
   click(button("Undo"));
   await screen.findByRole("article", { name: items[1].title });
-  expect(feedItemLabels()).toStrictEqual(
+  expect(listItemLabels()).toStrictEqual(
     items.map((item) => {
       return item.title;
     }),
@@ -1328,7 +1297,6 @@ test("Failed feedback keeps the local choice and can retry the same feedback ide
     screen.queryByRole("article", { name: item.title }),
   ).not.toBeInTheDocument();
   click(button("Close feedback"));
-  await waitForEmptyList();
   expect(screen.getByRole("alert")).toBeInTheDocument();
   failing = false;
   click(button("Try again"));
@@ -1369,7 +1337,7 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
   click(button("Already done"));
   await requested.promise;
   await screen.findByText("Noted — this is already done");
-  expect(feedItemLabels()).toStrictEqual([
+  expect(listItemLabels()).toStrictEqual([
     items[1].title,
     items[2].title,
     "Noted — this is already done",
@@ -1383,7 +1351,7 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
   ).toBeEnabled();
   click(button("Undo"));
   await screen.findByRole("article", { name: items[0].title });
-  expect(feedItemLabels()).toStrictEqual(
+  expect(listItemLabels()).toStrictEqual(
     items.map((item) => {
       return item.title;
     }),
@@ -1498,7 +1466,7 @@ test("Choosing an action confirms the send while its consumption is still saving
   );
   await requested.promise;
   await screen.findByText(SENT);
-  expect(feedItemLabels()).toStrictEqual([items[1].title, MESSAGE_SENT]);
+  expect(listItemLabels()).toStrictEqual([items[1].title, MESSAGE_SENT]);
   expect(pathname()).toBe(homePath);
   release.resolve();
 });

@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "侧边栏",
       "chat": "聊天",
-      "feedWaiting_other": "{{count}} 条待处理",
       "hideChatList": "隐藏聊天列表",
       "mobile": {
         "invite": "邀请",
@@ -413,6 +412,7 @@
       "resizeChatList": "调整聊天列表宽度",
       "searchWorkspace": "搜索工作区",
       "showChatList": "显示聊天列表",
+      "suggestionsWaiting_other": "{{count}} 条待处理",
       "workspaceSwitcher": {
         "create": "创建工作区",
         "creating": "创建中…",

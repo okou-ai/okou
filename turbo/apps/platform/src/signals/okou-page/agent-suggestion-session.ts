@@ -122,21 +122,21 @@ export type SuggestionOutcome =
   SuggestionFeedbackOutcome | SuggestionSentOutcome;
 
 /** A listed row: a waiting card, or a handled one below every waiting card. */
-interface AgentSuggestionFeedItem {
+interface AgentSuggestionListItem {
   readonly entry: AgentSuggestionEntry;
   readonly outcome: SuggestionOutcome | null;
 }
-interface SettledSuggestion extends AgentSuggestionFeedItem {
+interface SettledSuggestion extends AgentSuggestionListItem {
   readonly outcome: SuggestionOutcome;
 }
 
 /** Home's suggestion list and its chat-list row follow the Suggestions rollout. */
-export const suggestionFeedEnabled$ = computed((get) => {
+export const suggestionsEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] === true;
 });
 
 const agentSuggestionsEnabled$ = computed(async (get) => {
-  if (!get(suggestionFeedEnabled$)) {
+  if (!get(suggestionsEnabled$)) {
     return false;
   }
   // A new-chat option starts in the default agent.
@@ -160,14 +160,14 @@ const readAgentSuggestions$ = command(
   },
 );
 
-const feedWaitingCountVersion$ = state(0);
+const waitingSuggestionCountVersion$ = state(0);
 /**
  * The cards waiting on home, counted on its chat-list row. The row reads the
  * server's actionable cards rather than a home visit's snapshot, so it follows
  * every committed change, including those made on home itself.
  */
-export const feedWaitingCount$ = computed(async (get) => {
-  get(feedWaitingCountVersion$);
+export const waitingSuggestionCount$ = computed(async (get) => {
+  get(waitingSuggestionCountVersion$);
   if (!(await get(agentSuggestionsEnabled$))) {
     return 0;
   }
@@ -184,8 +184,8 @@ export const feedWaitingCount$ = computed(async (get) => {
     return getSuggestionExpiresAt(item) > now();
   }).length;
 });
-const reloadFeedWaitingCount$ = command(({ set }) => {
-  set(feedWaitingCountVersion$, (version) => {
+const reloadWaitingSuggestionCount$ = command(({ set }) => {
+  set(waitingSuggestionCountVersion$, (version) => {
     return version + 1;
   });
 });
@@ -194,14 +194,14 @@ const reloadFeedWaitingCount$ = command(({ set }) => {
  * while its row is shown. Each subscription reads it once more, so a row that
  * returns does not show a count from before it left.
  */
-export const followFeedWaitingCountOnRef$ = onRef(
+export const followWaitingSuggestionCountOnRef$ = onRef(
   command(({ set }, _row: HTMLElement, signal: AbortSignal) => {
     set(
       setAblyInvalidationLoop$,
       {
         scope: "credential",
         topic: "agentSuggestionsChanged",
-        invalidations: [reloadFeedWaitingCount$],
+        invalidations: [reloadWaitingSuggestionCount$],
         options: { runOnSubscribe: true },
       },
       signal,
@@ -219,8 +219,8 @@ function createSuggestionSession() {
   });
   // Handled cards, in the order the member handled them.
   const settled$ = state<readonly SettledSuggestion[]>([]);
-  const feedItems$ = computed(
-    async (get): Promise<readonly AgentSuggestionFeedItem[]> => {
+  const listItems$ = computed(
+    async (get): Promise<readonly AgentSuggestionListItem[]> => {
       const entries = await get(entries$);
       const waiting = entries
         .filter((entry) => {
@@ -237,7 +237,7 @@ function createSuggestionSession() {
   return {
     snapshot$,
     entries$,
-    feedItems$,
+    listItems$,
     settled$,
     // The handled card whose feedback reason is being edited.
     reasonOpen$: state<AgentSuggestionEntry | null>(null),
@@ -252,8 +252,8 @@ const session$ = computed((get) => {
 export const agentSuggestionEntries$ = computed((get) => {
   return get(get(session$).entries$);
 });
-export const agentSuggestionFeedItems$ = computed((get) => {
-  return get(get(session$).feedItems$);
+export const agentSuggestionListItems$ = computed((get) => {
+  return get(get(session$).listItems$);
 });
 export const suggestionFeedbackReasonOpen$ = computed((get) => {
   return get(get(session$).reasonOpen$);
@@ -264,7 +264,7 @@ export const suggestionFeedbackReasonOpen$ = computed((get) => {
  */
 export const enterHomeSuggestions$ = command(
   async ({ get, set }, signal: AbortSignal) => {
-    if (!get(suggestionFeedEnabled$)) {
+    if (!get(suggestionsEnabled$)) {
       return;
     }
     const active = await get(defaultAgentChatPageActive$);

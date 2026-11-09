@@ -39,7 +39,7 @@ import { assistantName$ } from "../../signals/branding.ts";
 import {
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
-  agentSuggestionFeedItems$,
+  agentSuggestionListItems$,
   submitAgentSuggestionFeedback$,
   suggestionFeedbackReasonOpen$,
   closeSettledSuggestion$,
@@ -638,7 +638,7 @@ export function AgentSuggestions({
   readonly className?: string;
 }) {
   const { t } = useTranslation();
-  const result = useLastLoadable(agentSuggestionFeedItems$);
+  const result = useLastLoadable(agentSuggestionListItems$);
   const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
   const signal = useGet(pageSignal$);
   const openCustomDirection = (item: Suggestion) => {

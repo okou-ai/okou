@@ -36,7 +36,7 @@ import {
   AgentSuggestions,
   SuggestionSaveErrors,
 } from "./agent-suggestions.tsx";
-import { suggestionFeedEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
+import { suggestionsEnabled$ } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { ChatHomeCompliance } from "./chat-home-compliance.tsx";
 import { SCROLL_FADE_Y_END_SM } from "./scroll-fade.ts";
 import { GrowthEntryHeader } from "./growth-entry.tsx";
@@ -491,7 +491,7 @@ export function AgentComposerPage({
 
   // Suggestion options start chats in the default Agent, so only its own
   // new-chat page lists them.
-  const suggestionsEnabled = useGet(suggestionFeedEnabled$);
+  const suggestionsEnabled = useGet(suggestionsEnabled$);
   const defaultAgentChatPage = useLastResolved(defaultAgentChatPageActive$);
   const showSuggestions = suggestionsEnabled && defaultAgentChatPage === true;
 

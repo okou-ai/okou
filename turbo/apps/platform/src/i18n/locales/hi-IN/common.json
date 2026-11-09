@@ -392,8 +392,6 @@
     "sidebar": {
       "ariaLabel": "साइड बार",
       "chat": "चैट",
-      "feedWaiting_one": "{{count}} प्रतीक्षारत",
-      "feedWaiting_other": "{{count}} प्रतीक्षारत",
       "hideChatList": "चैट सूची छिपाएं",
       "mobile": {
         "invite": "आमंत्रित करें",
@@ -414,6 +412,8 @@
       "resizeChatList": "चैट सूची का आकार बदलें",
       "searchWorkspace": "वर्कस्पेस खोजें",
       "showChatList": "चैट सूची दिखाएं",
+      "suggestionsWaiting_one": "{{count}} प्रतीक्षारत",
+      "suggestionsWaiting_other": "{{count}} प्रतीक्षारत",
       "workspaceSwitcher": {
         "create": "वर्कस्पेस बनाएं",
         "creating": "बनाया जा रहा है...",

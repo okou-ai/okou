@@ -392,8 +392,6 @@
     "sidebar": {
       "ariaLabel": "Sidebar",
       "chat": "Chat",
-      "feedWaiting_one": "{{count}} waiting",
-      "feedWaiting_other": "{{count}} waiting",
       "hideChatList": "Hide chat list",
       "mobile": {
         "invite": "Invite",
@@ -414,6 +412,8 @@
       "resizeChatList": "Resize chat list",
       "searchWorkspace": "Search workspace",
       "showChatList": "Show chat list",
+      "suggestionsWaiting_one": "{{count}} waiting",
+      "suggestionsWaiting_other": "{{count}} waiting",
       "workspaceSwitcher": {
         "create": "Create workspace",
         "creating": "Creating…",

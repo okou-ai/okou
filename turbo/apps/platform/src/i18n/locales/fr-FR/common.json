@@ -406,9 +406,6 @@
     "sidebar": {
       "ariaLabel": "Barre latérale",
       "chat": "Chat",
-      "feedWaiting_one": "{{count}} en attente",
-      "feedWaiting_many": "{{count}} en attente",
-      "feedWaiting_other": "{{count}} en attente",
       "hideChatList": "Masquer la liste des chats",
       "mobile": {
         "invite": "Inviter",
@@ -429,6 +426,9 @@
       "resizeChatList": "Redimensionner la liste des chats",
       "searchWorkspace": "Rechercher dans l’espace de travail",
       "showChatList": "Afficher la liste des chats",
+      "suggestionsWaiting_one": "{{count}} en attente",
+      "suggestionsWaiting_many": "{{count}} en attente",
+      "suggestionsWaiting_other": "{{count}} en attente",
       "workspaceSwitcher": {
         "create": "Créer un espace de travail",
         "creating": "Création…",

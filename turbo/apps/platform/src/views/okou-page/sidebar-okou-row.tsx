@@ -4,16 +4,16 @@ import { Badge, cn } from "@okouai/ui";
 import { defaultAgentChatPageActive$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import {
-  feedWaitingCount$,
-  followFeedWaitingCountOnRef$,
-  suggestionFeedEnabled$,
+  waitingSuggestionCount$,
+  followWaitingSuggestionCountOnRef$,
+  suggestionsEnabled$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
 
-function FeedWaitingCount() {
+function WaitingSuggestionCount() {
   const { t } = useTranslation();
-  const count = useLastResolved(feedWaitingCount$) ?? 0;
+  const count = useLastResolved(waitingSuggestionCount$) ?? 0;
   if (count === 0) {
     return null;
   }
@@ -23,7 +23,7 @@ function FeedWaitingCount() {
       <span className="sr-only">
         {t(
           ($) => {
-            return $.appShell.sidebar.feedWaiting;
+            return $.appShell.sidebar.suggestionsWaiting;
           },
           { count },
         )}
@@ -38,10 +38,10 @@ function FeedWaitingCount() {
  * the names line up.
  */
 export function OkouChatListRow() {
-  const enabled = useGet(suggestionFeedEnabled$);
+  const enabled = useGet(suggestionsEnabled$);
   const active = useLastResolved(defaultAgentChatPageActive$) === true;
   const assistantName = useGet(assistantName$);
-  const followCount = useSet(followFeedWaitingCountOnRef$);
+  const followCount = useSet(followWaitingSuggestionCountOnRef$);
   if (!enabled) {
     return null;
   }
@@ -59,7 +59,7 @@ export function OkouChatListRow() {
         <OkouLogomark className="size-4 shrink-0 opacity-70" />
       </span>
       <span className="min-w-0 flex-1 truncate">{assistantName}</span>
-      <FeedWaitingCount />
+      <WaitingSuggestionCount />
     </Link>
   );
 }

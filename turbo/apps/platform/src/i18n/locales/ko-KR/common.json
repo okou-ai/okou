@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "사이드바",
       "chat": "채팅",
-      "feedWaiting_other": "대기 중 {{count}}개",
       "hideChatList": "채팅 목록 숨기기",
       "mobile": {
         "invite": "초대",
@@ -413,6 +412,7 @@
       "resizeChatList": "채팅 목록 크기 조절",
       "searchWorkspace": "워크스페이스 검색",
       "showChatList": "채팅 목록 표시",
+      "suggestionsWaiting_other": "대기 중 {{count}}개",
       "workspaceSwitcher": {
         "create": "워크스페이스 만들기",
         "creating": "만드는 중…",
