@@ -452,11 +452,37 @@ test("Report a finalization failure once without replaying completion", async ()
     }),
   );
   await expect(
-    screen.findByText("Failed to upload recording.mp4."),
+    screen.findByText("Multipart upload not found"),
   ).resolves.toBeInTheDocument();
   expect(completions).toBe(1);
   expect(
-    screen.queryByText("Multipart upload not found"),
+    screen.queryByText("Failed to upload recording.mp4."),
+  ).not.toBeInTheDocument();
+});
+
+test("Keep unauthorized upload preparation quiet", async () => {
+  await setupMultipartUpload(37);
+  const rejected = createDeferredPromise<void>(context.signal);
+  context.mocks.api(uploadsContract.prepare, async ({ respond }) => {
+    await rejected.promise;
+    return respond(401, {
+      error: { code: "UNAUTHORIZED", message: "Unauthorized" },
+    });
+  });
+  await userEvent.upload(
+    composerFileInput(),
+    new File(["unauthorized"], "unauthorized.txt", { type: "text/plain" }),
+  );
+  await expect(
+    screen.findByRole("progressbar", { name: "Loading unauthorized.txt" }),
+  ).resolves.toBeInTheDocument();
+  rejected.resolve();
+  await waitFor(() => {
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+  expect(screen.queryByText("Unauthorized")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText("Failed to upload unauthorized.txt."),
   ).not.toBeInTheDocument();
 });
 

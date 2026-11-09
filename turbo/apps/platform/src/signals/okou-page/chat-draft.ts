@@ -194,6 +194,25 @@ async function uploadPart(
   );
 }
 
+function throwStorageUploadFailure(
+  filename: string,
+  error: unknown,
+  signal: AbortSignal,
+): never {
+  signal.throwIfAborted();
+  if (!isAbortError(error)) {
+    toast.error(
+      i18n.t(
+        ($) => {
+          return $.chat.attachments.uploadFailed;
+        },
+        { filename },
+      ),
+    );
+  }
+  throw error;
+}
+
 /**
  * Presigns, transfers and finalizes one file, returning its canonical info.
  *
@@ -202,7 +221,7 @@ async function uploadPart(
  * a second, subtly different uploader. The file body never travels through the
  * app runtime in either case.
  */
-const transferFileToStorage$ = command(
+const uploadFileToStorage$ = command(
   async (
     { get, set },
     file: File,
@@ -229,7 +248,6 @@ const transferFileToStorage$ = command(
       }),
       [200],
       signal,
-      { showErrorToast: false },
     );
     signal.throwIfAborted();
 
@@ -275,7 +293,7 @@ const transferFileToStorage$ = command(
         return outcome.status === "rejected";
       });
       if (failure?.status === "rejected") {
-        throw failure.reason;
+        throwStorageUploadFailure(file.name, failure.reason, signal);
       }
 
       signal.throwIfAborted();
@@ -291,23 +309,27 @@ const transferFileToStorage$ = command(
         }),
         [200],
         signal,
-        { showErrorToast: false },
       );
       signal.throwIfAborted();
       return uploadFileInfo(completed.body, prepared.body.contentType);
     }
 
     signal.throwIfAborted();
-    await uploadPart(
-      prepared.body.uploadUrl,
-      file,
-      {
-        "content-type": prepared.body.contentType,
-        ...prepared.body.uploadHeaders,
-      },
-      signal,
-    );
+    const [transfer] = await Promise.allSettled([
+      uploadPart(
+        prepared.body.uploadUrl,
+        file,
+        {
+          "content-type": prepared.body.contentType,
+          ...prepared.body.uploadHeaders,
+        },
+        signal,
+      ),
+    ]);
     signal.throwIfAborted();
+    if (transfer.status === "rejected") {
+      throwStorageUploadFailure(file.name, transfer.reason, signal);
+    }
 
     if (uploadedBytes$) {
       set(uploadedBytes$, file.size);
@@ -321,40 +343,11 @@ const transferFileToStorage$ = command(
         }),
         [200],
         signal,
-        { showErrorToast: false },
       );
       signal.throwIfAborted();
       return uploadFileInfo(completed.body, completed.body.contentType);
     }
     return uploadFileInfo(prepared.body, prepared.body.contentType);
-  },
-);
-
-const uploadFileToStorage$ = command(
-  async (
-    { set },
-    file: File,
-    uploadedBytes$: State<number> | undefined,
-    signal: AbortSignal,
-  ): Promise<FileInfo> => {
-    const [result] = await Promise.allSettled([
-      set(transferFileToStorage$, file, uploadedBytes$, signal),
-    ]);
-    signal.throwIfAborted();
-    if (result.status === "rejected") {
-      if (!isAbortError(result.reason)) {
-        toast.error(
-          i18n.t(
-            ($) => {
-              return $.chat.attachments.uploadFailed;
-            },
-            { filename: file.name },
-          ),
-        );
-      }
-      throw result.reason;
-    }
-    return result.value;
   },
 );
 
