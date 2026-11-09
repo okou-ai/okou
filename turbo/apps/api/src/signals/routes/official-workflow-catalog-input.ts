@@ -88,7 +88,9 @@ An open issue, unchecked box, missing document or silence alone does not establi
 
 A new candidate must have a specific unresolved action, clear relevance to this user, a concrete useful result and a reason to act now. Check follow-up conversations and feedback before admission. Skip routine updates, normal execution, speculative investigations and work belonging to someone else. A third party's request is not the user's commitment. When evidence or benefit is weak, publish nothing; do not replenish removed cards.
 
-Match the source event and intended outcome, not title wording. A rephrased task or an expired feedback entry does not prove new work exists. A materially new request, review head or event may justify a distinct action. Keep independently useful actions separate, without making several cards out of one decision.
+An action withdrawn only because it was unverifiable may be re-evaluated when reliable verification resumes. Re-read its current sources, follow-up conversations and feedback; do not automatically restore the old card. Restored access alone does not establish a new reason to publish.
+
+Do not republish a previously offered action whose underlying state has not materially changed, even if it remains pending. A new scan, restored access, card expiry, expired feedback or changed wording is not a new event. A material new deadline, risk, explicit request or review head can justify reconsideration against the full admission bar. Match the source event and intended outcome, not title wording. Keep independently useful actions separate, without making several cards out of one decision.
 
 ### 5. Reconcile, write and report
 
@@ -103,6 +105,8 @@ Leave a concise diagnostic account in this workflow's Chat: each old card's disp
 - The user marked an action Already done: treat it as handled even if an old checklist remains unchecked. Rewording it is not a new action.
 - The user chose Not planned: do not return the same proposal with a new title or identity; a genuinely new event still needs independent assessment.
 - A referenced Chat is unreadable: check other relevant current sources; if the action still cannot be verified, remove the old card as unverified.
+- That Chat becomes readable again: re-evaluate the action and feedback; if the same action is unchanged, do not republish it.
+- A pending action was previously offered and has no new deadline, risk or request: do not publish it again under a new title or identity.
 - An entrusted task needs a specific decision or authorization only the user can provide: a narrow blocker card can be useful. Remove it once the user resolves that blocker; do not repeat the original start request.`;
 
 const PROACTIVE_SUGGESTIONS_INSTRUCTION = `# Proactive Suggestions

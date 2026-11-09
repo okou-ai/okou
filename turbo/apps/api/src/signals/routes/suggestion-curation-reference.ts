@@ -16,7 +16,7 @@ Read \`okou suggestion list --all --json\`; follow nextAfter with \`--all --afte
 
 For a new action, derive a stable UUID with \`okou suggestion identity --key '<provider>:<canonical object or event id>:<specific next action>' --json\`. Reuse the same key across hourly checks and Morning Brief. Exclude the current hour, Run ID and title wording. If identity derivation is unavailable, report it and do not invent a convention.
 
-Preserve the UUID and exact creation file after an uncertain result. A retained consumed/removed identity is terminal: do not restore it, change its key to evade feedback, or treat a conflict as permission to choose another ID. A materially new request, review head or event can justify a new action after verification. Agent withdrawal does not establish completion or negative preference; if later verification warrants reconsideration, reuse the canonical key and respect any retained terminal receipt.
+Preserve the UUID and exact creation file after an uncertain result. A retained consumed/removed identity is terminal: do not restore it, change its key to evade feedback, or treat a conflict as permission to choose another ID. A material new deadline, risk, explicit request or review head can justify reconsideration after verification. Agent withdrawal does not establish completion or negative preference. An action withdrawn as unverifiable may be re-evaluated when verification resumes, but restored access or an unchanged pending action does not justify republication. Reuse the canonical key for the same action and respect any retained terminal receipt.
 
 ## Publish cards
 
