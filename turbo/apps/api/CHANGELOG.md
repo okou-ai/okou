@@ -10,6 +10,28 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.54.6](https://github.com/okou-ai/okou/compare/api-v2.54.5...api-v2.54.6) (2026-11-09)
+
+
+### Bug Fixes
+
+* **api:** guide integration credit recovery by plan ([#46045](https://github.com/okou-ai/okou/issues/46045)) ([9a9dfa3](https://github.com/okou-ai/okou/commit/9a9dfa333cd34c9faf4a2e44e9145c001523e3a8))
+* **api:** make suggestions a conservative maintenance loop ([#46035](https://github.com/okou-ai/okou/issues/46035)) ([8376e57](https://github.com/okou-ai/okou/commit/8376e57861eb08b5472d0f671147f72b7b6c3829))
+
+
+### Refactoring
+
+* **api:** retire template guidance storage fallback ([#46072](https://github.com/okou-ai/okou/issues/46072)) ([1fcf82a](https://github.com/okou-ai/okou/commit/1fcf82a3b88713b5d959146aff4455618056ac12))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.4
+    * @okouai/db bumped to 2.24.5
+    * @okouai/pi-agent-runtime bumped to 1.51.88
+
 ## [2.54.5](https://github.com/okou-ai/okou/compare/api-v2.54.4...api-v2.54.5) (2026-11-09)
 
 

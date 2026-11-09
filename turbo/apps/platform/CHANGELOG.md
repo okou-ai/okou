@@ -13,6 +13,27 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1103.0](https://github.com/okou-ai/okou/compare/app-v0.1102.6...app-v0.1103.0) (2026-11-09)
+
+
+### Features
+
+* **app:** list suggestions on home and retire the feed page ([#46056](https://github.com/okou-ai/okou/issues/46056)) ([262cfc3](https://github.com/okou-ai/okou/commit/262cfc3466f5d208d8bd6a71d23cbae439669311))
+* **platform:** redesign friend referral dialog ([#46065](https://github.com/okou-ai/okou/issues/46065)) ([b738439](https://github.com/okou-ai/okou/commit/b7384395d9c84aebfaf2f98e68fdac32a60edc06))
+
+
+### Bug Fixes
+
+* **app:** compact capability entries on mobile ([#46050](https://github.com/okou-ai/okou/issues/46050)) ([4db5b03](https://github.com/okou-ai/okou/commit/4db5b03b8fbe2e56425f873b3c6d7e1ab7fce2fc))
+* **platform:** overlay markdown scrollbars so code blocks keep their height ([#46062](https://github.com/okou-ai/okou/issues/46062)) ([02f97c4](https://github.com/okou-ai/okou/commit/02f97c4502ad848fb34f2f136721e1ec34bef22a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/core bumped to 8.824.4
+
 ## [0.1102.6](https://github.com/okou-ai/okou/compare/app-v0.1102.5...app-v0.1102.6) (2026-11-09)
 
 
