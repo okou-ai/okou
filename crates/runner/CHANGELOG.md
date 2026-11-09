@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.244.45](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.44...runner-rs-v0.244.45) (2026-11-09)
+
+
+### Refactoring
+
+* **python:** centralize strict compression fixture dispatch ([#45973](https://github.com/okou-ai/okou/issues/45973)) ([4cdcdc7](https://github.com/okou-ai/okou/commit/4cdcdc74c11fb5d313afbc274c325ffc95d8ccce))
+* **python:** centralize strict json limit validation ([#45996](https://github.com/okou-ai/okou/issues/45996)) ([440e296](https://github.com/okou-ai/okou/commit/440e296db635fc96c60235eeb80cf6699ce7d0ea))
+
 ## [0.244.44](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.43...runner-rs-v0.244.44) (2026-11-08)
 
 ### Release Dependencies

@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.29.2](https://github.com/okou-ai/okou/compare/ios-v0.29.1...ios-v0.29.2) (2026-11-09)
+
+
+### Refactoring
+
+* **ios:** share connector directory reads with ccstate ([#45984](https://github.com/okou-ai/okou/issues/45984)) ([4dd1192](https://github.com/okou-ai/okou/commit/4dd1192db1a6083baeff6568691ad62f78ffcaab))
+* **ios:** subscribe to batched run usage resources ([#45980](https://github.com/okou-ai/okou/issues/45980)) ([f8df12f](https://github.com/okou-ai/okou/commit/f8df12fd880956dfe5bd179824a0b2d23c294f18))
+
 ## [0.29.1](https://github.com/okou-ai/okou/compare/ios-v0.29.0...ios-v0.29.1) (2026-11-08)
 
 
