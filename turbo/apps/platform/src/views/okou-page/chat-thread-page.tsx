@@ -543,7 +543,7 @@ export function ChatThreadHeaderTitle({
 }
 
 const CHAT_THREAD_HEADER_CLASS =
-  "@container flex h-14 shrink-0 items-center justify-between bg-transparent px-6";
+  "flex h-14 shrink-0 items-center justify-between bg-transparent px-6";
 
 function ChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
@@ -611,9 +611,6 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
           <ChatHeaderIconButton
             thread={thread}
             icon={<Share2 size={18} />}
-            textLabel={t(($) => {
-              return $.chat.sharing.create;
-            })}
             label={t(($) => {
               return $.chat.sharing.start;
             })}
@@ -628,7 +625,7 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
               },
             }}
           />
-          <ChatResourcesButton thread={thread} showLabel />
+          <ChatResourcesButton thread={thread} />
           <DesktopChatThreadMoreMenu thread={thread} />
         </div>
       </SettledChatThreadActions>

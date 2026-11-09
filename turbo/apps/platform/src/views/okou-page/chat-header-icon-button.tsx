@@ -41,8 +41,6 @@ export function ChatHeaderIconButton({
   icon,
   label,
   tooltip = label,
-  textLabel,
-  compactLabel = false,
   ref,
   largeTarget = false,
   usage,
@@ -51,9 +49,6 @@ export function ChatHeaderIconButton({
   readonly icon: ReactNode;
   readonly label: string;
   readonly tooltip?: string;
-  readonly textLabel?: string;
-  /** Collapse secondary text when the chat pane is narrow. */
-  readonly compactLabel?: boolean;
   readonly ref?: Ref<HTMLElement>;
   /** Touch layouts use a 44px target. */
   readonly largeTarget?: boolean;
@@ -66,7 +61,7 @@ export function ChatHeaderIconButton({
       ref={ref}
       type="button"
       variant="quiet"
-      size={textLabel ? "sm" : "icon-sm"}
+      size="icon-sm"
       iconSize="md"
       // Settling buttons stay focusable but take no presses.
       disabled={transitioning}
@@ -79,7 +74,6 @@ export function ChatHeaderIconButton({
         "shrink-0 duration-150",
         OPEN_CLASS,
         largeTarget && "size-11",
-        compactLabel && "w-8 px-0 @min-[480px]:w-auto @min-[480px]:px-3",
       )}
     />
   );
@@ -96,18 +90,7 @@ export function ChatHeaderIconButton({
   return (
     <TooltipProvider delay={300}>
       <Tooltip>
-        <TooltipTrigger render={trigger}>
-          {icon}
-          {textLabel && (
-            <span
-              className={
-                compactLabel ? "hidden @min-[480px]:inline" : undefined
-              }
-            >
-              {textLabel}
-            </span>
-          )}
-        </TooltipTrigger>
+        <TooltipTrigger render={trigger}>{icon}</TooltipTrigger>
         <TooltipContent side="bottom">{tooltip}</TooltipContent>
       </Tooltip>
     </TooltipProvider>

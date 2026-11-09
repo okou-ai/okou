@@ -49,18 +49,15 @@ import {
 export function ChatResourcesButton({
   thread,
   largeTarget = false,
-  showLabel = false,
 }: {
   readonly thread: ChatPanelSignals;
   readonly largeTarget?: boolean;
-  readonly showLabel?: boolean;
 }) {
   return (
     <ChatResourcesButtonInner
       key={thread.threadId}
       thread={thread}
       largeTarget={largeTarget}
-      showLabel={showLabel}
     />
   );
 }
@@ -68,11 +65,9 @@ export function ChatResourcesButton({
 function ChatResourcesButtonInner({
   thread,
   largeTarget,
-  showLabel,
 }: {
   readonly thread: ChatPanelSignals;
   readonly largeTarget: boolean;
-  readonly showLabel: boolean;
 }) {
   const { t } = useTranslation();
   // The old pane can remain mounted while the next thread's metadata loads.
@@ -104,13 +99,6 @@ function ChatResourcesButtonInner({
         label={t(($) => {
           return $.chat.resources.title;
         })}
-        textLabel={
-          showLabel
-            ? t(($) => {
-                return $.appShell.sidebar.navigation.artifacts;
-              })
-            : undefined
-        }
         largeTarget={largeTarget}
         usage={{ kind: "popup", popup: "popover" }}
       />

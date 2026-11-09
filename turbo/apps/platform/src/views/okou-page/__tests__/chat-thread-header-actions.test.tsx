@@ -244,13 +244,15 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   );
 });
 
-test("Expose labeled primary actions and open emails from the desktop menu", async () => {
+test("Keep primary icon actions accessible and open emails from the desktop menu", async () => {
   context.mocks.browser.matchMedia(true);
   await setupHeaderPage();
-  expect(buttonNamed("Share messages")).toHaveTextContent("Share");
-  expect(buttonNamed("Artifacts and chats")).toHaveTextContent("Artifacts");
+  expect(buttonNamed("Share messages")).toHaveAccessibleName("Share messages");
+  expect(buttonNamed("Artifacts and chats")).toHaveAccessibleName(
+    "Artifacts and chats",
+  );
   const more = buttonNamed("More actions");
-  expect(more).toHaveTextContent("More actions");
+  expect(more).toHaveAccessibleName("More actions");
   expect(screen.queryByLabelText("Manage emails")).not.toBeInTheDocument();
   click(more);
   await screen.findByRole("menu");

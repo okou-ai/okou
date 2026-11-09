@@ -252,13 +252,9 @@ export function DesktopChatThreadMoreMenu({
       <DropdownMenu>
         <ChatHeaderIconButton
           ref={anchorRef}
-          compactLabel
           thread={thread}
           icon={<Ellipsis size={18} />}
           label={t(($) => {
-            return $.chat.actions.more;
-          })}
-          textLabel={t(($) => {
             return $.chat.actions.more;
           })}
           usage={{ kind: "popup", popup: "menu" }}
