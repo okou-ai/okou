@@ -434,6 +434,99 @@ test("Image quality presets and slider keys preserve native menu dismissal", asy
   });
 });
 
+test("Dragging image quality from the numeric field commits only after release", async () => {
+  const browser = await setupInteractiveViewer();
+  const input = await openQualityInput();
+  const menu = screen.getByRole("menu", { name: "Image quality" });
+  const slider = within(menu).getByRole("slider", { name: "Image quality" });
+  // Press the shared slider's visible control, not its hidden range input.
+  const control = slider.closest('[data-slot="slider"]')?.firstElementChild;
+  if (!(control instanceof HTMLElement)) {
+    throw new Error("The quality slider must expose its pointer control");
+  }
+  vi.spyOn(control, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 100, 16),
+  );
+  await fill(input, "85");
+  const capture = browser.holdNext("Page.stopScreencast");
+  const user = userEvent.setup();
+  await user.pointer({
+    target: control,
+    keys: "[MouseLeft>]",
+    coords: { clientX: 25, clientY: 8 },
+  });
+  await waitFor(() => {
+    expect(slider).toHaveFocus();
+  });
+  expect(input).toHaveValue("25");
+  expect(input).not.toHaveAttribute("readonly");
+  expect(browser.captures.at(-1)).toMatchObject({ quality: 70 });
+
+  await user.pointer({
+    target: control,
+    coords: { clientX: 60, clientY: 8 },
+  });
+  expect(input).toHaveValue("60");
+  expect(input).not.toHaveAttribute("readonly");
+  expect(browser.captures.at(-1)).toMatchObject({ quality: 70 });
+
+  await user.pointer({
+    target: control,
+    keys: "[/MouseLeft]",
+    coords: { clientX: 60, clientY: 8 },
+  });
+  await capture.received;
+  await act(capture.release);
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 60 });
+    expect(input).not.toHaveAttribute("readonly");
+  });
+});
+
+test("Escape cancels a quality drag despite pointer events queued during dismissal", async () => {
+  const browser = await setupInteractiveViewer();
+  const menu = await openQualityMenu();
+  const slider = within(menu).getByRole("slider", { name: "Image quality" });
+  const control = slider.closest('[data-slot="slider"]')?.firstElementChild;
+  if (!(control instanceof HTMLElement)) {
+    throw new Error("The quality slider must expose its pointer control");
+  }
+  vi.spyOn(control, "getBoundingClientRect").mockReturnValue(
+    new DOMRect(0, 0, 100, 16),
+  );
+  const pointer = {
+    pointerId: 1,
+    pointerType: "mouse",
+    isPrimary: true,
+    button: 0,
+    buttons: 1,
+    clientY: 8,
+  };
+  fireEvent.pointerDown(control, { ...pointer, clientX: 25 });
+  await waitFor(() => {
+    expect(slider).toHaveFocus();
+  });
+  expect(within(menu).getByRole("textbox")).toHaveValue("25");
+
+  // Native exit animations keep the slider mounted after dismissal starts.
+  // Deliver queued pointer events before React removes that closing content.
+  act(() => {
+    fireEvent.keyDown(slider, { key: "Escape" });
+    fireEvent.pointerMove(control, { ...pointer, clientX: 90 });
+    fireEvent.pointerUp(control, { ...pointer, buttons: 0, clientX: 90 });
+  });
+  await waitFor(() => {
+    expect(menu).not.toBeInTheDocument();
+    expect(
+      screen.getByText("Image quality").closest('[role="menuitem"]'),
+    ).not.toHaveAttribute("aria-disabled", "true");
+  });
+  click(screen.getByText("Image quality"));
+  const reopened = await screen.findByRole("menu", { name: "Image quality" });
+  expect(within(reopened).getByRole("textbox")).toHaveValue("70");
+  expect(browser.captures.at(-1)).toMatchObject({ quality: 70 });
+});
+
 test("Choosing a quality preset replaces an unfinished custom draft", async () => {
   const browser = await setupInteractiveViewer();
   const input = await openQualityInput();

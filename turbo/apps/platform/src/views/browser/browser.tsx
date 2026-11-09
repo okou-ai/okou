@@ -287,6 +287,7 @@ function QualitySettingsMenu({
   const { t } = useTranslation();
   const capture = useGet(signals.capture$);
   const values = useGet(signals.quality.values$);
+  const begin = useSet(signals.quality.begin$);
   const reset = useSet(signals.quality.reset$);
   const qualityLabel = t(($) => {
     return $.browserViewer.quality;
@@ -294,7 +295,9 @@ function QualitySettingsMenu({
   return (
     <DropdownMenuSub
       onOpenChange={(open, details) => {
-        if (!open) {
+        if (open) {
+          begin();
+        } else {
           detach(onClose(details.reason === "escape-key"), Reason.DomCallback);
         }
       }}
@@ -393,6 +396,13 @@ function QualityControls({
             aria-label={qualityLabel}
             value={values.slider}
             aria-busy={pending || undefined}
+            onMouseDown={(event) => {
+              if (event.button === 0) {
+                // Let Base UI focus the range input; a track's native focus
+                // would blur the numeric field and commit before release.
+                event.preventDefault();
+              }
+            }}
             onValueChange={(value, details) => {
               if (pending) {
                 // Keep keyboard focus while a capture change is still settling.

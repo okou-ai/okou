@@ -21,6 +21,7 @@ export function createCaptureQualitySignals(
 ) {
   const draft$ = state<string | null>(null);
   const invalid$ = state(false);
+  const editing$ = state(false);
   const operationState$ = state<Promise<void> | null>(null);
   const operation$ = computed((get) => {
     return get(operationState$);
@@ -38,7 +39,10 @@ export function createCaptureQualitySignals(
       invalid: get(invalid$),
     };
   });
-  const edit$ = command(({ set }, text: string) => {
+  const edit$ = command(({ get, set }, text: string) => {
+    if (!get(editing$)) {
+      return;
+    }
     set(draft$, text);
     set(invalid$, false);
   });
@@ -46,9 +50,17 @@ export function createCaptureQualitySignals(
     set(draft$, null);
     set(invalid$, false);
   });
+  const begin$ = command(({ set }) => {
+    set(reset$);
+    set(editing$, true);
+  });
   const apply$ = command(
     async ({ get, set }, selection: number | "draft", signal: AbortSignal) => {
       signal.throwIfAborted();
+      // Closing portals still receive pointer events during their exit animation.
+      if (!get(editing$)) {
+        return;
+      }
       const capture = get(capture$);
       if (capture.format === "png") {
         set(reset$);
@@ -78,10 +90,11 @@ export function createCaptureQualitySignals(
   const close$ = command(({ set }, cancel: boolean, signal: AbortSignal) => {
     // Consume the draft before menu dismissal can unmount the field without blur.
     const operation = cancel ? Promise.resolve() : set(apply$, "draft", signal);
+    set(editing$, false);
     set(reset$);
     return operation;
   });
-  return { values$, operation$, edit$, reset$, apply$, close$ };
+  return { values$, operation$, begin$, edit$, reset$, apply$, close$ };
 }
 
 export type CaptureQualitySignals = ReturnType<
