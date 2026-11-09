@@ -1952,6 +1952,7 @@ function ComposerMediaPreviewButton({
       }}
       aria-label={label}
       aria-busy={uploading}
+      disabled={uploading}
       className="group/image-preview relative h-9 w-9 overflow-hidden rounded-lg border border-foreground/10 transition-colors hover:border-foreground/25"
     >
       {status !== "loaded" && (
@@ -1979,13 +1980,15 @@ function ComposerMediaPreviewButton({
           uploading ? "bg-black/30" : "bg-black/0",
         )}
       >
-        <PreviewIcon
-          size={18}
-          className={cn(
-            "text-white drop-shadow group-hover/image-preview:opacity-100",
-            kind === "video" ? "opacity-80" : "opacity-0",
-          )}
-        />
+        {!uploading && (
+          <PreviewIcon
+            size={18}
+            className={cn(
+              "text-white drop-shadow group-hover/image-preview:opacity-100",
+              kind === "video" ? "opacity-80" : "opacity-0",
+            )}
+          />
+        )}
       </span>
       {markCount > 0 && (
         <span

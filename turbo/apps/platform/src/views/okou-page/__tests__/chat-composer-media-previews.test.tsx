@@ -34,7 +34,7 @@ test.each([
   { kind: "image", filename: "photo.png", contentType: "image/png" },
   { kind: "video", filename: "recording.mp4", contentType: "video/mp4" },
 ] as const)(
-  "A $kind is previewable before upload completes and keeps its preview afterward",
+  "A $kind shows its local thumbnail during upload and enables preview after completion",
   async ({ kind, filename, contentType }) => {
     mockAttachmentChat(context);
     const blobs = context.mocks.browser.blobDownload();
@@ -76,7 +76,7 @@ test.each([
     const thumbnailUrl = thumbnail.getAttribute("src")!;
     const localUrl = thumbnailUrl.split("#")[0];
     expect(blobs.blobForUrl(localUrl)).toBe(file);
-    expect(openPreview).toBeEnabled();
+    expect(openPreview).toBeDisabled();
     expect(openPreview).toHaveAttribute("aria-busy", "true");
     expect(getNamedButton(`Cancel upload ${filename}`)).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toBeInTheDocument();
@@ -86,6 +86,12 @@ test.each([
       fireEvent.loadedData(thumbnail);
     }
 
+    transfer.resolve();
+    await findNamedButton(`Remove ${filename}`);
+    expect(openPreview).toBeEnabled();
+    expect(openPreview).toHaveAttribute("aria-busy", "false");
+    expect(openPreview.querySelector(tag)).toBe(thumbnail);
+    expect(thumbnail).toHaveAttribute("src", thumbnailUrl);
     click(openPreview);
     const dialog = await screen.findByRole("dialog", {
       name: `${filename} preview`,
@@ -107,19 +113,6 @@ test.each([
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
     });
 
-    transfer.resolve();
-    await findNamedButton(`Remove ${filename}`);
-    expect(openPreview).toHaveAttribute("aria-busy", "false");
-    expect(openPreview.querySelector(tag)).toBe(thumbnail);
-    expect(thumbnail).toHaveAttribute("src", thumbnailUrl);
-    click(openPreview);
-    const completedDialog = await screen.findByRole("dialog", {
-      name: `${filename} preview`,
-    });
-    click(getNamedButton("Close", completedDialog));
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
-    });
     click(getNamedButton(`Remove ${filename}`));
     await waitFor(() => {
       expect(
