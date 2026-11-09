@@ -1255,7 +1255,7 @@ interface GoogleDriveFileFixture {
 
 type GoogleDriveFilesListResponse =
   | { readonly status: 200; readonly files: readonly GoogleDriveFileFixture[] }
-  | { readonly status: 401 | 500 };
+  | { readonly status: 401 | 403 | 429 | 500 | 503; readonly body?: string };
 
 interface GoogleDriveFilesListRecorder {
   readonly authorizationHeaders: (string | null)[];
@@ -1282,7 +1282,9 @@ export function mockGoogleDriveFilesList(
       recorded.queries.push(new URL(request.url).searchParams.get("q") ?? "");
       const response = respond(request);
       if (response.status !== 200) {
-        return new HttpResponse(null, { status: response.status });
+        return new HttpResponse(response.body ?? null, {
+          status: response.status,
+        });
       }
       return HttpResponse.json({ files: [...response.files] });
     }),
