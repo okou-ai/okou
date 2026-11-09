@@ -2034,10 +2034,32 @@ function AttachmentChip({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={uploadPercent}
-          className="ml-1 flex w-14 shrink-0 items-center gap-1 text-xs text-muted-foreground tabular-nums"
+          className="absolute -top-1 -left-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-background"
         >
-          <Loader2 size={10} className="shrink-0 animate-spin" />
-          {uploadPercent}%
+          <svg
+            viewBox="0 0 12 12"
+            className="h-2.5 w-2.5 -rotate-90"
+            fill="none"
+            aria-hidden="true"
+          >
+            <circle
+              cx="6"
+              cy="6"
+              r="4"
+              strokeWidth="2"
+              className="stroke-muted-foreground/20"
+            />
+            <circle
+              cx="6"
+              cy="6"
+              r="4"
+              pathLength="100"
+              strokeWidth="2"
+              strokeDasharray="100"
+              strokeDashoffset={100 - uploadPercent}
+              className="stroke-primary"
+            />
+          </svg>
         </span>
       )}
       <IconTooltipButton
