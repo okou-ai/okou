@@ -32,6 +32,7 @@ Examples:
 
 Notes:
   - --output-dir is required and receives grep-friendly raw history files
+  - --output-dir must be outside the agent memory directory, which every run saves as memory
   - Repeated synchronization resumes from the latest local sequence ID
   - Reads a thread the current user owns, including one another agent run wrote into
   - This is a point-in-time read/sync. Repeated calls are polling; they do not wait for a run or emit terminal completion

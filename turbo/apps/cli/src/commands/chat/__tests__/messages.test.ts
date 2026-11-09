@@ -9,6 +9,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { CURRENT_CHAT_EVENT_SCHEMA_VERSION } from "@okouai/api-contracts/contracts/chat-event-schema-version";
+import {
+  CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+  CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+  CANONICAL_PI_MEMORY_MOUNT_PATH,
+} from "@okouai/api-contracts/contracts/runners";
 import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import { HttpResponse, http } from "msw";
 import {
@@ -516,6 +521,65 @@ describe("okou chat messages command", () => {
     await expect(
       readFile(join(threadDirectory, "notes.txt"), "utf8"),
     ).resolves.toBe("keep me");
+  });
+
+  it.each([
+    CANONICAL_CLAUDE_MEMORY_MOUNT_PATH,
+    CANONICAL_CODEX_MEMORY_MOUNT_PATH,
+    CANONICAL_PI_MEMORY_MOUNT_PATH,
+  ])(
+    "rejects an output directory resolved inside the memory root %s",
+    async (memoryRoot) => {
+      const cwd = vi.spyOn(process, "cwd").mockReturnValue(memoryRoot);
+      onTestFinished(() => {
+        cwd.mockRestore();
+      });
+      server.use(
+        http.get(SNAPSHOT_URL, () => {
+          throw new Error("Snapshot endpoint must not be called");
+        }),
+        http.get(ROWS_URL, () => {
+          throw new Error("Rows endpoint must not be called");
+        }),
+      );
+
+      await expect(async () => {
+        await chatCommand.parseAsync([
+          "node",
+          "cli",
+          "messages",
+          "--output-dir",
+          "threads",
+        ]);
+      }).rejects.toThrow("process.exit called");
+
+      const stderr = mockConsoleError.mock.calls.flat().join("\n");
+      expect(stderr).toContain(
+        `is inside the agent memory directory ${memoryRoot}`,
+      );
+      expect(stderr).toContain(
+        "okou chat messages --output-dir /tmp/okou-chat-threads",
+      );
+      expect(mockExit).toHaveBeenCalledWith(1);
+    },
+  );
+
+  it("rejects the memory root itself as the output directory", async () => {
+    await expect(async () => {
+      await chatCommand.parseAsync([
+        "node",
+        "cli",
+        "messages",
+        "--output-dir",
+        `${CANONICAL_CLAUDE_MEMORY_MOUNT_PATH}/`,
+      ]);
+    }).rejects.toThrow("process.exit called");
+
+    const stderr = mockConsoleError.mock.calls.flat().join("\n");
+    expect(stderr).toContain(
+      `is inside the agent memory directory ${CANONICAL_CLAUDE_MEMORY_MOUNT_PATH}`,
+    );
+    expect(mockExit).toHaveBeenCalledWith(1);
   });
 
   it("requires a thread ID from the flag or the current web chat", async () => {
