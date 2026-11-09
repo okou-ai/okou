@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio_util::task::AbortOnDropHandle;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,29 +72,36 @@ impl RecordingServer {
         let events = Arc::new(Mutex::new(Vec::new()));
         let task_events = Arc::clone(&events);
         let handle = tokio::spawn(async move {
-            while let Ok((mut socket, _peer)) = listener.accept().await {
-                let connection_events = Arc::clone(&task_events);
-                tokio::spawn(async move {
-                    let Ok(request) = read_http_request(&mut socket).await else {
-                        let _ = write_http_response(&mut socket, 400).await;
-                        return;
-                    };
-                    let status = if request.path.starts_with("/channels/") {
-                        ably_status
-                    } else {
-                        200
-                    };
-                    let path = request.path.clone();
-                    push_recorded_event(&connection_events, RecordedHttpEvent::Request(request));
-                    if path.starts_with("/channels/") && !ably_response_delay.is_zero() {
-                        tokio::time::sleep(ably_response_delay).await;
+            let mut connections = JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let Ok((mut socket, _peer)) = accepted else { break };
+                        let connection_events = Arc::clone(&task_events);
+                        connections.spawn(async move {
+                            let Ok(request) = read_http_request(&mut socket).await else {
+                                let _ = write_http_response(&mut socket, 400).await;
+                                return;
+                            };
+                            let status = if request.path.starts_with("/channels/") {
+                                ably_status
+                            } else {
+                                200
+                            };
+                            let path = request.path.clone();
+                            push_recorded_event(&connection_events, RecordedHttpEvent::Request(request));
+                            if path.starts_with("/channels/") && !ably_response_delay.is_zero() {
+                                tokio::time::sleep(ably_response_delay).await;
+                            }
+                            let _ = write_http_response(&mut socket, status).await;
+                            push_recorded_event(
+                                &connection_events,
+                                RecordedHttpEvent::Response { path, status },
+                            );
+                        });
                     }
-                    let _ = write_http_response(&mut socket, status).await;
-                    push_recorded_event(
-                        &connection_events,
-                        RecordedHttpEvent::Response { path, status },
-                    );
-                });
+                    _ = connections.join_next(), if !connections.is_empty() => {}
+                }
             }
         });
 
@@ -187,35 +195,42 @@ impl ControlledHttpServer {
         let task_recorded_requests = recorded_requests.clone();
         let (request_tx, request_rx) = mpsc::unbounded_channel();
         let handle = tokio::spawn(async move {
-            while let Ok((mut socket, _peer)) = listener.accept().await {
-                let connection_tx = request_tx.clone();
-                let connection_requests = Arc::clone(&task_requests);
-                let connection_completed_responses = Arc::clone(&task_completed_responses);
-                let connection_recorded_requests = task_recorded_requests.clone();
-                tokio::spawn(async move {
-                    let Ok(request) = read_http_request(&mut socket).await else {
-                        let _ = write_http_response(&mut socket, 400).await;
-                        return;
-                    };
-                    connection_requests.fetch_add(1, Ordering::SeqCst);
-                    if let Some(recorded_requests) = &connection_recorded_requests
-                        && let Ok(mut requests) = recorded_requests.lock()
-                    {
-                        requests.push(request.clone());
+            let mut connections = JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let Ok((mut socket, _peer)) = accepted else { break };
+                        let connection_tx = request_tx.clone();
+                        let connection_requests = Arc::clone(&task_requests);
+                        let connection_completed_responses = Arc::clone(&task_completed_responses);
+                        let connection_recorded_requests = task_recorded_requests.clone();
+                        connections.spawn(async move {
+                            let Ok(request) = read_http_request(&mut socket).await else {
+                                let _ = write_http_response(&mut socket, 400).await;
+                                return;
+                            };
+                            connection_requests.fetch_add(1, Ordering::SeqCst);
+                            if let Some(recorded_requests) = &connection_recorded_requests
+                                && let Ok(mut requests) = recorded_requests.lock()
+                            {
+                                requests.push(request.clone());
+                            }
+                            let (response, response_rx) = oneshot::channel();
+                            if connection_tx
+                                .send(ControlledRequest { request, response })
+                                .is_err()
+                            {
+                                return;
+                            }
+                            let Ok(status) = response_rx.await else {
+                                return;
+                            };
+                            let _ = write_http_response(&mut socket, status).await;
+                            connection_completed_responses.fetch_add(1, Ordering::SeqCst);
+                        });
                     }
-                    let (response, response_rx) = oneshot::channel();
-                    if connection_tx
-                        .send(ControlledRequest { request, response })
-                        .is_err()
-                    {
-                        return;
-                    }
-                    let Ok(status) = response_rx.await else {
-                        return;
-                    };
-                    let _ = write_http_response(&mut socket, status).await;
-                    connection_completed_responses.fetch_add(1, Ordering::SeqCst);
-                });
+                    _ = connections.join_next(), if !connections.is_empty() => {}
+                }
             }
         });
 
@@ -376,3 +391,6 @@ fn push_recorded_event(events: &Arc<Mutex<Vec<RecordedHttpEvent>>>, event: Recor
         events.push(event);
     }
 }
+
+#[cfg(test)]
+mod tests;
