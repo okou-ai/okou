@@ -22,13 +22,13 @@
     stripe_bin: "{{ stripe_bin_dir }}/stripe"
     stripe_archive: "{{ stripe_dir }}/stripe.tar.gz"
     stripe_log: "{{ stripe_dir }}/stripe-listen.log"
-    stripe_cli_version: "1.41.2"
+    # Stripe CLI v1.41.2; immutable release assets and their published digests.
     stripe_cli_assets:
       x86_64:
-        archive_arch: x86_64
+        id: 425574252
         sha256: 35684521fc6c2d994e6461ef28330f2c77fbf7d588a7b93fee5e8d4aa52d0c65
       aarch64:
-        archive_arch: arm64
+        id: 425574254
         sha256: 04d86663e840ec1fc71ec0f1ccceb9345a5bd783614746f590b05e4bf1f61b9b
     stripe_cli_architecture_aliases:
       x86_64: x86_64
@@ -83,7 +83,9 @@
 
         - name: Download verified Stripe CLI archive
           get_url:
-            url: "https://github.com/stripe/stripe-cli/releases/download/v{{ stripe_cli_version }}/stripe_{{ stripe_cli_version }}_linux_{{ stripe_cli_asset.archive_arch }}.tar.gz"
+            url: "https://api.github.com/repos/stripe/stripe-cli/releases/assets/{{ stripe_cli_asset.id }}"
+            headers:
+              Accept: application/octet-stream
             dest: "{{ stripe_archive }}"
             checksum: "sha256:{{ stripe_cli_asset.sha256 }}"
             force: true

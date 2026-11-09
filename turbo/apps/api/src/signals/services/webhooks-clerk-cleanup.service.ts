@@ -38,6 +38,7 @@ import { removeUsagePackMemberAllocation$ } from "./usage-pack-allocation-change
 import { refundUsagePackMemberCredits$ } from "./usage-pack-credit-refund.service";
 import { deleteFeatureGuideReceipts$ } from "./feature-guides.service";
 import { deleteWechatOwnerData$ } from "./wechat-owner-cleanup.service";
+import { deleteEmailOwnerData$ } from "./email-channel-maintenance.service";
 import { workflowScheduleRevocationRows } from "./workflow-automation-enqueue.service";
 
 const L = logger("WebhookClerkCleanup");
@@ -237,6 +238,7 @@ export const cleanupClerkDeletedOrg$ = command(
     const owner = { kind: "organization", orgId } as const;
     await set(deleteTeamsOwnerAccounts$, owner, signal);
     await set(deleteWechatOwnerData$, owner, signal);
+    await set(deleteEmailOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
     signal.throwIfAborted();
@@ -259,6 +261,7 @@ export const cleanupClerkDeletedUser$ = command(
     await set(deleteMarketingContentGrants$, userId, signal);
     await set(deleteTeamsOwnerAccounts$, owner, signal);
     await set(deleteWechatOwnerData$, owner, signal);
+    await set(deleteEmailOwnerData$, owner, signal);
     await set(stopClerkDeletedOwnerSchedules$, owner, signal);
     await set(stopClerkDeletedOwnerRuns$, owner, signal);
     signal.throwIfAborted();

@@ -1,3 +1,4 @@
+import { EmailCard } from "./email-card.tsx";
 import type { TeamsConnectStatus } from "@okouai/api-contracts/contracts/teams-connect";
 import type { Command } from "ccstate";
 import { ProviderCardMenu } from "./components/provider-card-menu.tsx";
@@ -995,6 +996,7 @@ export function WorksPage() {
           ) : null}
           <TelegramCard />
           <AgentPhoneCard />
+          {features[FeatureSwitchKey.EmailIntegration] ? <EmailCard /> : null}
           {features[FeatureSwitchKey.WhatsappIntegration] ? (
             <WhatsappCard />
           ) : null}

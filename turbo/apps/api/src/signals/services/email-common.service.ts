@@ -1,7 +1,9 @@
+import { renderEmailMarkdown } from "../../lib/email-markdown";
 import crypto from "node:crypto";
 import { debugMorningBriefEmailTemplateSchema } from "../../lib/debug-morning-brief-email";
 
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
+import { emailUserLinks } from "@okouai/db/schema/email-integration";
 import { mailNotifications } from "@okouai/db/schema/mail-notification";
 import {
   notifyMailSubjectSchema,
@@ -108,6 +110,10 @@ export const CREDIT_LOW_BALANCE_EMAIL_SUBJECT =
   "Your credit balance is running low";
 
 const emailTemplateSchema = discriminatedUnion("template", [
+  object({
+    template: literal("email-channel"),
+    props: object({ text: string(), userLinkId: string().optional() }).strict(),
+  }).strict(),
   debugMorningBriefEmailTemplateSchema,
   object({
     template: literal("agent-morning-brief"),
@@ -175,6 +181,7 @@ const providerRequestSchema = object({
   subject: string(),
   replyTo: string().optional(),
   headers: record(string(), string()).optional(),
+  tags: array(object({ name: string(), value: string() })).optional(),
   html: string(),
   text: string().optional(),
 }).strict();
@@ -294,6 +301,12 @@ function renderTemplate(
   headers: Readonly<Record<string, string>> | undefined,
 ): RenderedEmailTemplate {
   switch (template.template) {
+    case "email-channel": {
+      return {
+        html: renderEmailMarkdown(template.props.text),
+        text: template.props.text,
+      };
+    }
     case "debug-morning-brief":
     case "agent-morning-brief": {
       return renderAgentMorningBriefEmail(
@@ -327,6 +340,9 @@ function fromAddressForTemplate(template: EmailTemplate): string {
     case "credit-low-balance": {
       return buildTeamFromAddress();
     }
+    case "email-channel": {
+      return `${BRAND_PRESENTATION.assistantName} <okou@okou.io>`;
+    }
     case "data-export-ready":
     case "debug-morning-brief":
     case "agent-morning-brief":
@@ -350,6 +366,9 @@ function buildProviderRequest(row: OutboxRow): ProviderRequest {
     subject: row.subject,
     ...(row.reply_to === null ? {} : { replyTo: row.reply_to }),
     ...(headers === undefined ? {} : { headers }),
+    ...(row.template.template === "email-channel"
+      ? { tags: [{ name: "okou_email_message", value: row.id }] }
+      : {}),
     html: rendered.html,
     ...(rendered.text === undefined ? {} : { text: rendered.text }),
   };
@@ -382,6 +401,7 @@ async function sendProviderRequest(
       to: typeof request.to === "string" ? request.to : [...request.to],
       subject: request.subject,
       html: request.html,
+      ...(request.tags ? { tags: request.tags } : {}),
       ...(request.text === undefined ? {} : { text: request.text }),
       ...(request.cc === undefined
         ? {}
@@ -556,6 +576,26 @@ function outboxPreparation(
  * A concurrent mutation rejects this attempt without publishing a receipt or
  * contacting the provider. The existing next drain can select another item.
  */
+const emailConnectionRevoked$ = command(async ({ set }, row: OutboxRow) => {
+  if (
+    row.template.template !== "email-channel" ||
+    !row.template.props.userLinkId
+  ) {
+    return false;
+  }
+  const [link] = await set(writeDb$)
+    .select({ email: emailUserLinks.emailAddress })
+    .from(emailUserLinks)
+    .where(
+      and(
+        eq(emailUserLinks.id, row.template.props.userLinkId),
+        isNull(emailUserLinks.disconnectedAt),
+      ),
+    )
+    .limit(1);
+  return !link || row.to_addresses !== link.email;
+});
+
 async function prepareNextOutboxItem(
   { set }: Parameters<Write<Promise<PrepareOutcome>, [number]>>[0],
   currentTimeMs: number,
@@ -594,6 +634,13 @@ async function prepareNextOutboxItem(
   let rejection: OutboxRejection | null = admissionError
     ? { ...admissionError, status: "failed" }
     : null;
+  if (!rejection && (await set(emailConnectionRevoked$, row))) {
+    rejection = {
+      message: "Email connection revoked",
+      status: "skipped",
+      reason: "unsubscribed",
+    };
+  }
   if (!rejection) {
     const [notification] = await db
       .select({ unsubscribed: users.emailUnsubscribed })

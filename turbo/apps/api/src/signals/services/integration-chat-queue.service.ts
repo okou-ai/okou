@@ -1,3 +1,4 @@
+import { chatEmailContext } from "@okouai/db/schema/email-integration";
 import { chatAgentphoneContext } from "@okouai/db/schema/chat-agentphone-context";
 import { chatDiscordContext } from "@okouai/db/schema/chat-discord-context";
 import { chatFeishuContext } from "@okouai/db/schema/chat-feishu-context";
@@ -57,6 +58,12 @@ function integrationContextSql(
   chatThreadId: string,
   createdAt: Date,
 ): SQL {
+  if (context.type === "email") {
+    return gatedIntegrationContextSql(chatEmailContext, {
+      ...context,
+      createdAt,
+    });
+  }
   if (context.type === "wechat") {
     throw new Error("WeChat inputs use their atomic statement writer");
   }

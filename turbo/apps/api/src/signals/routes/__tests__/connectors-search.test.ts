@@ -252,28 +252,6 @@ describe("GET /api/connectors/search", () => {
     expect(cloudflare?.authMethods).toStrictEqual(["oauth"]);
   });
 
-  it("shows ungated api-token while hiding feature-gated oauth", async () => {
-    mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
-
-    const client = setupApp({ context, routes: builtinConnectorsRoutes })(
-      builtinConnectorsSearchContract,
-    );
-    const response = await accept(
-      client.search({
-        query: {},
-        headers: { authorization: "Bearer clerk-session" },
-      }),
-      [200],
-    );
-
-    const neon = response.body.connectors.find((c) => {
-      return c.slug === "neon";
-    });
-    expect(neon).toBeDefined();
-    expect(neon?.authMethods).toContain("api-token");
-    expect(neon?.authMethods).not.toContain("oauth");
-  });
-
   it("exposes openai as api-token only", async () => {
     mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
 

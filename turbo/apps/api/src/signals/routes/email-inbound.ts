@@ -1,3 +1,6 @@
+import { recordSentEmailMessageId$ } from "../services/email-channel-maintenance.service";
+import { uuid } from "zod";
+import { handleReceivedChannelEmail$ } from "../services/email-channel.service";
 import { command } from "ccstate";
 import { emailInboundContract } from "@okouai/api-contracts/contracts/email";
 import { emailSuppressions } from "@okouai/db/schema/email-suppression";
@@ -19,6 +22,8 @@ interface WebhookEvent {
   readonly data?: {
     readonly to?: readonly string[];
     readonly email_id?: string;
+    readonly message_id?: string;
+    readonly tags?: Readonly<Record<string, string>>;
   };
 }
 
@@ -118,9 +123,23 @@ const handleInboundRoute$ = command(
       signal.throwIfAborted();
     }
 
-    // The Agent Email Channel is retired. Resend still sends delivery events
-    // to this shared webhook, so all other signed event types are acknowledged
-    // without fetching message contents or starting background work.
+    if (event.type === "email.sent") {
+      await set(
+        recordSentEmailMessageId$,
+        {
+          outboxId: event.data?.tags?.okou_email_message,
+          messageId: event.data?.message_id,
+        },
+        signal,
+      );
+    }
+    if (event.type === "email.received") {
+      const emailId = uuid().safeParse(event.data?.email_id);
+      if (emailId.success) {
+        await set(handleReceivedChannelEmail$, emailId.data, signal);
+        signal.throwIfAborted();
+      }
+    }
     return jsonResponse({ received: true });
   },
 );

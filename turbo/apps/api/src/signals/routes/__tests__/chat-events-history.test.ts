@@ -149,7 +149,7 @@ describe("CHAT-02: incomplete-round context", () => {
       sessionId: null,
       generationRunId: null,
       recoveryPrompt: expect.stringContaining(
-        "okou chat messages --output-dir threads",
+        "okou chat messages --output-dir /tmp/okou-chat-history",
       ),
     });
     await completeChatRunOk(third.runId, thirdClaim.sandboxHeaders);

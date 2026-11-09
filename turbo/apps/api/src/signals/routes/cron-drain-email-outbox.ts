@@ -1,3 +1,4 @@
+import { cleanupUnconnectedEmailMessages$ } from "../services/email-channel-maintenance.service";
 import { cronDrainEmailOutboxContract } from "@okouai/api-contracts/contracts/cron";
 import { command } from "ccstate";
 
@@ -21,6 +22,7 @@ const drainEmailOutboxRoute$ = command(
     const cleaned = await set(cleanupExpiredEmailOutbox$, drainContext, signal);
     signal.throwIfAborted();
 
+    await set(cleanupUnconnectedEmailMessages$, signal);
     return {
       status: 200 as const,
       body: { success: true as const, drained, cleaned },

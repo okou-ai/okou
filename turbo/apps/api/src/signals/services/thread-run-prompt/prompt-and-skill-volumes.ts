@@ -1,3 +1,4 @@
+import { createEmailThreadPrompt } from "./email";
 import { createSuggestionsPrompt } from "./suggestions";
 import { createWechatThreadPrompt } from "./wechat";
 import { computed, type Computed } from "ccstate";
@@ -85,6 +86,7 @@ function createIntegrationPrompts(
       threadContext.telegramContext$,
       featureSwitches$,
     ),
+    email: createEmailThreadPrompt(threadContext.emailContext$),
     agentphone: createAgentPhoneThreadPrompt(
       pickedEvent$,
       threadContext.agentPhoneContext$,

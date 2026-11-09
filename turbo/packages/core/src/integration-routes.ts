@@ -1,5 +1,6 @@
 /** Public App destinations; each provider owns its query and authorization state. */
 export const INTEGRATION_SETTINGS_PATHS = {
+  email: "/settings/email",
   agentphone: "/settings/agentphone",
   whatsapp: "/settings/whatsapp",
   slack: "/settings/slack",

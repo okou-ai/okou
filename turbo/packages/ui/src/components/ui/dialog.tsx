@@ -271,10 +271,10 @@ function DialogHeader({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="dialog-header"
-      className={cn(
-        "flex flex-col space-y-1.5 text-center sm:text-left",
-        className,
-      )}
+      // shadcn/ui v4 spacing. Flex `gap` skips out-of-flow children such as an
+      // `sr-only` description; Tailwind v4 `space-y-*` would still leave a
+      // margin under the title.
+      className={cn("flex flex-col gap-2 text-center sm:text-left", className)}
       {...props}
     />
   );

@@ -163,6 +163,7 @@ export interface ClerkPaginated<T> {
 }
 
 export interface ClerkEmailAddress {
+  readonly verification?: { readonly status: string } | null;
   readonly id: string;
   readonly emailAddress: string;
 }

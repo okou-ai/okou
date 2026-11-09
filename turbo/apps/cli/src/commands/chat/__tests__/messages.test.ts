@@ -558,7 +558,7 @@ describe("okou chat messages command", () => {
         `is inside the agent memory directory ${memoryRoot}`,
       );
       expect(stderr).toContain(
-        "okou chat messages --output-dir /tmp/okou-chat-threads",
+        "okou chat messages --output-dir /tmp/okou-chat-history",
       );
       expect(mockExit).toHaveBeenCalledWith(1);
     },

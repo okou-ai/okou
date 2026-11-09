@@ -26,13 +26,14 @@ export const messagesCommand = new Command()
     "after",
     `
 Examples:
-  Sync this chat:     okou chat messages --output-dir threads
-  Sync another chat:  okou chat messages --thread-id <thread-id> --output-dir threads
-  Print JSON:         okou chat messages --thread-id <thread-id> --output-dir threads --json
+  Sync this chat:     okou chat messages --output-dir /tmp/okou-chat-history
+  Sync another chat:  okou chat messages --thread-id <thread-id> --output-dir /tmp/okou-chat-history
+  Print JSON:         okou chat messages --thread-id <thread-id> --output-dir /tmp/okou-chat-history --json
 
 Notes:
   - --output-dir is required and receives grep-friendly raw history files
-  - --output-dir must be outside the agent memory directory, which every run saves as memory
+  - Chat history files are temporary caches. Store them under /tmp, outside personal memory. If removed, synchronize again.
+  - An --output-dir inside the agent memory directory is rejected, because every run saves that directory as memory
   - Repeated synchronization resumes from the latest local sequence ID
   - Reads a thread the current user owns, including one another agent run wrote into
   - This is a point-in-time read/sync. Repeated calls are polling; they do not wait for a run or emit terminal completion

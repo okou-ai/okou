@@ -6559,7 +6559,7 @@ export function registerFeishuIntegrationTests(
           }),
         );
         expect(claim.nativeContinuation?.recoveryPrompt).toContain(
-          "okou chat messages --output-dir threads",
+          "okou chat messages --output-dir /tmp/okou-chat-history",
         );
         await own(() => {
           return runsApi.requestCancelRun(actor, run.id, [200]);

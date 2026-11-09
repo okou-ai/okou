@@ -39,7 +39,7 @@ const THREAD_START_SEQ_ID = 0;
 const SNAPSHOT_FILE_PATTERN = /^snapshot-to-(\d+)\.ndjson$/;
 const EVENT_FILE_PATTERN = /^event-SEQ_ID_(\d+)\.json$/;
 const CACHE_FORMAT_FILE = ".okou-chat-event-schema-version";
-const CHAT_HISTORY_OUTPUT_EXAMPLE = "/tmp/okou-chat-threads";
+const CHAT_HISTORY_OUTPUT_EXAMPLE = "/tmp/okou-chat-history";
 // Every Run saves these roots as the member's memory, so raw history synced
 // into one would be persisted and reloaded as memory in later Runs.
 const AGENT_MEMORY_ROOTS = [

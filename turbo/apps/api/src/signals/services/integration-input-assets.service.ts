@@ -1,3 +1,4 @@
+import { fetchResendAttachment } from "../external/resend-attachment";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { command } from "ccstate";
 import type { CanonicalAssetProvenance } from "@okouai/db/jsonb-contracts/run-uploaded-file";
@@ -25,6 +26,11 @@ import type { WechatMessage } from "@okouai/api-contracts/contracts/wechat-proto
 import { downloadWechatInputMedia } from "../external/wechat-input-media";
 
 type IntegrationInputResource =
+  | {
+      readonly provider: "email";
+      readonly emailId: string;
+      readonly attachmentId: string;
+    }
   | {
       readonly provider: "feishu" | "lark";
       readonly installationId: string;
@@ -65,6 +71,48 @@ export interface IntegrationInputAsset {
   readonly asset: CanonicalInputAsset;
 }
 
+async function downloadTelegramInputResource(
+  resource: Extract<
+    IntegrationInputResource,
+    { readonly provider: "telegram" }
+  >,
+  signal: AbortSignal,
+): Promise<Response> {
+  const metadata = await getFile(resource.botToken, resource.fileId, signal);
+  signal.throwIfAborted();
+  if (!metadata.file_path) {
+    throw new Error("Telegram file has no download path");
+  }
+  if ((metadata.file_size ?? 0) > resource.maxBytes) {
+    throw new InputFileImportError(
+      "too-large",
+      "Telegram file exceeds the download limit",
+    );
+  }
+  const acceptedResponse = await settle(
+    accept(
+      fetch(buildFileDownloadUrl(resource.botToken, metadata.file_path), {
+        signal,
+      }),
+      [200],
+    ),
+  );
+  signal.throwIfAborted();
+  let response: Response;
+  if (acceptedResponse.ok) {
+    response = acceptedResponse.value;
+  } else if (
+    acceptedResponse.error instanceof HttpStatusError &&
+    acceptedResponse.error.status >= 300
+  ) {
+    response = acceptedResponse.error.response;
+  } else {
+    throw acceptedResponse.error;
+  }
+  signal.throwIfAborted();
+  return response;
+}
+
 const downloadIntegrationInputResource$ = command(
   async (
     { set },
@@ -72,6 +120,13 @@ const downloadIntegrationInputResource$ = command(
     signal: AbortSignal,
   ): Promise<Response> => {
     switch (resource.provider) {
+      case "email": {
+        return await fetchResendAttachment(
+          resource.emailId,
+          resource.attachmentId,
+          signal,
+        );
+      }
       case "wechat": {
         return await downloadWechatInputMedia(resource.item, signal);
       }
@@ -80,43 +135,7 @@ const downloadIntegrationInputResource$ = command(
         return await set(downloadFeishuMessageResource$, resource, signal);
       }
       case "telegram": {
-        const metadata = await getFile(
-          resource.botToken,
-          resource.fileId,
-          signal,
-        );
-        signal.throwIfAborted();
-        if (!metadata.file_path) {
-          throw new Error("Telegram file has no download path");
-        }
-        if ((metadata.file_size ?? 0) > resource.maxBytes) {
-          throw new InputFileImportError(
-            "too-large",
-            "Telegram file exceeds the download limit",
-          );
-        }
-        const acceptedResponse = await settle(
-          accept(
-            fetch(buildFileDownloadUrl(resource.botToken, metadata.file_path), {
-              signal,
-            }),
-            [200],
-          ),
-        );
-        signal.throwIfAborted();
-        let response: Response;
-        if (acceptedResponse.ok) {
-          response = acceptedResponse.value;
-        } else if (
-          acceptedResponse.error instanceof HttpStatusError &&
-          acceptedResponse.error.status >= 300
-        ) {
-          response = acceptedResponse.error.response;
-        } else {
-          throw acceptedResponse.error;
-        }
-        signal.throwIfAborted();
-        return response;
+        return await downloadTelegramInputResource(resource, signal);
       }
       case "teams": {
         if (!isAllowedTeamsDownloadUrl(resource.payload.url)) {
