@@ -982,8 +982,9 @@ if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_
   fail "Rollback target predates immutable content bundle publication: ${CONTENT_BUNDLE_PREPARATION_COMMIT}."
 fi
 
-# Catalog v4 and provenance v2 survive rollback. Require the released preparation
-# API, whose publisher also fences against downgrading an accepted v4 catalog.
+# Catalog v4 and provenance v2 survive rollback. The released source-only
+# revision reader also tolerates the contracted legacy Storage-binding columns;
+# its publisher fences against downgrading an accepted v4 catalog.
 if ! official_workflow_bundle_reader_commit=$(git show "origin/main:${OFFICIAL_WORKFLOW_BUNDLE_READER_PATH}"); then
   fail "Cannot read the Official Workflow bundle reader rollback floor from main."
 fi
