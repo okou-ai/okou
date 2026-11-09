@@ -345,7 +345,7 @@ struct ChatSidebarView: View {
     .buttonStyle(.plain)
     .accessibilityIdentifier("project-\(project.id)")
     .accessibilityValue(expanded ? Text("Expanded") : Text("Collapsed"))
-    .listRowInsets(.horizontal, rowInset)
+    .listRowInsets(EdgeInsets(top: 0, leading: rowInset, bottom: 0, trailing: rowInset))
     .listRowSeparator(.hidden)
     .listRowBackground(Color.clear)
     .contextMenu {
