@@ -20,7 +20,6 @@ import type { ChatEvent } from "../chat-page/chat-event-types.ts";
 import { createChatEventProjectionSignals } from "../chat-page/chat-event-projection-signals.ts";
 import { createComposerConnectorSignals } from "./connectors.ts";
 import { createComposerProjectSignals } from "../projects/composer-project.ts";
-import { waitForProjectCreation$ } from "../projects/projects.ts";
 import { createPendingRemoteAccessSignals } from "../remote-access.ts";
 import {
   chatPageModelSelection$,
@@ -123,10 +122,6 @@ function createAgentSubmitMessage(
         ? null
         : await get(connector.accounts.preferenceState$);
       signal.throwIfAborted();
-      if (options.projectId) {
-        // A Project created a moment ago may still be on its way to the server.
-        await set(waitForProjectCreation$, options.projectId, signal);
-      }
       const send = options.inPlace
         ? sendNewThreadWithoutNavigation$
         : sendNewThread$;

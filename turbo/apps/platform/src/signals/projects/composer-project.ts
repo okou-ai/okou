@@ -3,7 +3,7 @@ import { defaultAgentId$ } from "../agent.ts";
 import { navigateToAgentChat$ } from "../okou-page/agent-chat-navigation.ts";
 import { detachedNavigateTo$ } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
-import { projectsEnabled$ } from "./projects.ts";
+import { projectsEnabled$, unconfirmedProjectIds$ } from "./projects.ts";
 
 /**
  * Which Project a new chat starts in, as the composer shows and changes it.
@@ -22,6 +22,11 @@ export interface ComposerProjectSignals {
    * one; another Agent's composer keeps its menu as it was.
    */
   readonly available$: Computed<Promise<boolean>>;
+  /**
+   * The Project was created a moment ago and the server has not persisted it
+   * yet, so a chat cannot start inside it.
+   */
+  readonly pending$: Computed<boolean>;
   /** Start this chat in another Project, or `null` for none. */
   readonly select$: Command<void, [string | null]>;
 }
@@ -37,6 +42,9 @@ export function createComposerProjectSignals(
         return false;
       }
       return agentId === (await get(defaultAgentId$));
+    }),
+    pending$: computed((get) => {
+      return projectId !== null && get(unconfirmedProjectIds$).has(projectId);
     }),
     select$: command(({ set }, next: string | null) => {
       if (next === projectId) {

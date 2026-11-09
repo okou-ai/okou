@@ -103,6 +103,27 @@ export const projects$ = computed((get) => {
       : project;
   });
 });
+/**
+ * Projects created on this page that the server has not persisted yet. A chat
+ * cannot start inside one until its creation lands.
+ */
+export const unconfirmedProjectIds$ = computed((get) => {
+  const owner = get(projectState$);
+  const persistedIds = new Set(
+    get(owner.events$)?.events.map((event) => {
+      return event.id;
+    }),
+  );
+  return new Set(
+    get(owner.optimisticCreates$)
+      .filter((event) => {
+        return !persistedIds.has(event.eventId);
+      })
+      .map((event) => {
+        return event.project.id;
+      }),
+  );
+});
 export const syncProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);

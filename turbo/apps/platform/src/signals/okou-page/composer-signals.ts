@@ -823,6 +823,10 @@ function createComposerPrimaryActionSignal(args: {
     if ((await get(args.voiceState$)).status !== "idle") {
       return "disabled";
     }
+    // A chat can start in a just-created Project once the server has it.
+    if (options.project && get(options.project.pending$)) {
+      return "disabled";
+    }
 
     const uploadsReady = await get(draft.attachmentUploadsReady$);
     const attachments = await get(draft.usableAttachments$);
