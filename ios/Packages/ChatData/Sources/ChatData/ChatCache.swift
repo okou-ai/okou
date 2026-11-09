@@ -1,3 +1,4 @@
+import ChatDomain
 import CryptoKit
 import Foundation
 import OSLog
@@ -182,6 +183,48 @@ public actor ChatCache {
         "INSERT OR REPLACE INTO sidebar_navigation (id, snapshot) VALUES (1, ?)")
       try write.bind(data, at: 1)
       try write.run()
+    }
+  }
+
+  public func loadIndicators() throws -> CachedChatIndicators? {
+    try withDatabase { try readIndicatorState($0).snapshot }
+  }
+
+  func beginIndicatorsRead() throws -> ChatIndicatorsRead {
+    try updateIndicatorState { $0.beginRead() }
+  }
+
+  func saveIndicators(
+    _ indicators: Indicators, threads: [ChatThread], request: ChatIndicatorsRead
+  ) throws -> Bool {
+    try updateIndicatorState { $0.save(indicators, threads: threads, request: request) }
+  }
+
+  func changeReadState(_ change: ChatReadStateChange, threads: [ChatThread]) throws {
+    try updateIndicatorState { $0.change(change, threads: threads) }
+  }
+
+  private func readIndicatorState(_ database: CacheDatabase) throws -> ChatIndicatorCacheState {
+    let query = try database.prepare("SELECT state FROM chat_indicators WHERE id = 1")
+    guard try query.step() else { return ChatIndicatorCacheState() }
+    return try JSONDecoder().decode(ChatIndicatorCacheState.self, from: query.blob(at: 0))
+  }
+
+  private func updateIndicatorState<Result>(
+    _ update: (inout ChatIndicatorCacheState) -> Result
+  ) throws -> Result {
+    try withDatabase { database in
+      // App and NSE use different actors/connections. Reserve request IDs and
+      // fence read mutations under the same cross-process SQLite write lock.
+      try database.transaction {
+        var state = try readIndicatorState(database)
+        let result = update(&state)
+        let write = try database.prepare(
+          "INSERT OR REPLACE INTO chat_indicators (id, state) VALUES (1, ?)")
+        try write.bind(JSONEncoder().encode(state), at: 1)
+        try write.run()
+        return result
+      }
     }
   }
 
@@ -597,6 +640,10 @@ private final class CacheDatabase {
     try execute("CREATE TABLE IF NOT EXISTS cache_migrations (id INTEGER PRIMARY KEY)")
     try execute(
       "CREATE TABLE IF NOT EXISTS notification_prefetch_reports (id INTEGER PRIMARY KEY AUTOINCREMENT, report BLOB NOT NULL)"
+    )
+    // Additive so both the previous App and its NSE can still open this cache.
+    try execute(
+      "CREATE TABLE IF NOT EXISTS chat_indicators (id INTEGER PRIMARY KEY CHECK (id = 1), state BLOB NOT NULL)"
     )
     let currentVersion: Int
     do {

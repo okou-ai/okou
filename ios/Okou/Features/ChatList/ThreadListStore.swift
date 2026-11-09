@@ -2,6 +2,7 @@ import CCState
 import ChatData
 import ChatDomain
 import Foundation
+import OSLog
 import Observation
 
 /// Navigation data and list presentation for one workspace.
@@ -38,6 +39,7 @@ final class ThreadListStore {
   private var indicatorsAgain = false
   private var refreshGeneration = UUID()
   private var appliedThreadSequence = 0
+  private var appliedIndicatorsRevision = 0
   private var creationRevision = 0
   private var refreshTask: Task<Void, Never>?
   private var navigationTask: Task<Void, Never>?
@@ -102,21 +104,41 @@ final class ThreadListStore {
     }
     let revision = creationRevision
     let sequence = hasLoadedThreads ? appliedThreadSequence : nil
-    guard let cached = await sync.cachedThreadList(newerThan: sequence), !closed, !Task.isCancelled,
+    var restoredThreads = false
+    if let cached = await sync.cachedThreadList(newerThan: sequence), !closed, !Task.isCancelled,
       revision == creationRevision,
       !hasLoadedThreads || cached.cursor.seqID > appliedThreadSequence
+    {
+      let previous = Dictionary(uniqueKeysWithValues: threads.map { ($0.id, $0) })
+      let restored = cached.threads.map { thread in
+        var updated = thread
+        updated.indicator = previous[thread.id]?.indicator
+        updated.unreadAt = previous[thread.id]?.unreadAt
+        return updated
+      }
+      appliedThreadSequence = cached.cursor.seqID
+      projectThreads(restored)
+      restoredThreads = true
+    }
+    // Read changes need not advance the thread-list event cursor. Re-read the
+    // independent snapshot even in an already-mounted, unchanged list.
+    let read = readRevision
+    guard let cached = await sync.cachedIndicators(), !closed, !Task.isCancelled,
+      read == readRevision, restoredThreads || cached.revision > appliedIndicatorsRevision
     else { return }
-    let previous = Dictionary(uniqueKeysWithValues: threads.map { ($0.id, $0) })
-    let restored = cached.threads.map { thread in
+    appliedIndicatorsRevision = cached.revision
+    unreadAgentIDs = cached.unreadAgentIDs
+    threads = threads.map { thread in
       var updated = thread
-      // Read state has its own server/read-cursor owner and is not part of the
-      // persisted list projection. Keep current indicators until its refresh completes.
-      updated.indicator = previous[thread.id]?.indicator
-      updated.unreadAt = previous[thread.id]?.unreadAt
+      updated.unreadAt = thread.isMuted ? nil : cached.unreadAt[thread.id]
+      if updated.unreadAt != nil {
+        updated.indicator = .unread
+      } else if updated.indicator == .unread {
+        updated.indicator = nil
+      }
       return updated
     }
-    appliedThreadSequence = cached.cursor.seqID
-    projectThreads(restored)
+    didRefresh(threads)
   }
 
   var stateStore: CCState.Store { resources.store }
@@ -298,13 +320,13 @@ final class ThreadListStore {
             refreshAgain = true
             continue
           }
-          if revision != readRevision {
+          if revision != readRevision || response.indicators == nil {
             for index in result.indices {
               let held = threads.first { $0.id == result[index].id }
               result[index].indicator = held?.indicator
               result[index].unreadAt = held?.unreadAt
             }
-            refreshAgain = true
+            if revision != readRevision { refreshAgain = true }
           } else {
             unreadAgentIDs = Set(
               response.indicators?.agents.filter { $0.value == .unread }.map(\.key) ?? [])
@@ -417,6 +439,8 @@ final class ThreadListStore {
         if refreshGeneration == generation { indicatorsTask = nil }
       }
       guard !Task.isCancelled, refreshGeneration == generation else { return }
+      await restoreCached()
+      guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
       repeat {
         indicatorsAgain = false
         do {
@@ -444,9 +468,16 @@ final class ThreadListStore {
           return
         } catch {
           guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
-          indicatorsError = error.localizedDescription
-          blocked = (error as? APIClientError)?.statusCode == 426
-          didFail(error)
+          if let api = error as? APIClientError, api.statusCode == 401 || api.statusCode == 426 {
+            indicatorsError = error.localizedDescription
+            blocked = api.statusCode == 426
+            didFail(error)
+          } else {
+            // Unread refresh is best-effort: retain the confirmed presentation
+            // without adding a user-facing synchronization warning.
+            Logger(subsystem: "ai.okou.ios", category: "ChatSync")
+              .info("Keeping unread indicators: \(error.localizedDescription, privacy: .public)")
+          }
         }
       } while indicatorsAgain && !closed && !blocked && !Task.isCancelled
     }

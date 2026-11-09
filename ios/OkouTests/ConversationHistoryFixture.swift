@@ -19,12 +19,14 @@ final class ConversationHistoryFixture: Sendable {
     snapshot: ChatHTTPFixture.Handler? = nil,
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
-    detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil
+    detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil,
+    indicators: ChatHTTPFixture.Handler? = nil
   ) {
     self.init(
       rows: (0..<count).map { Self.row($0 + 1) }, beforeRequest: beforeRequest, snapshot: snapshot,
       threadSnapshot: threadSnapshot,
-      beforeEventRows: beforeEventRows, detail: detail, additional: additional)
+      beforeEventRows: beforeEventRows, detail: detail, additional: additional,
+      indicators: indicators)
   }
 
   init(
@@ -34,7 +36,8 @@ final class ConversationHistoryFixture: Sendable {
     snapshot: ChatHTTPFixture.Handler? = nil, send: ChatHTTPFixture.Handler? = nil,
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
-    detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil
+    detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil,
+    indicators: ChatHTTPFixture.Handler? = nil
   ) {
     let rows = HistoryRows(initial)
     self.rows = rows
@@ -52,6 +55,10 @@ final class ConversationHistoryFixture: Sendable {
         return try await artifactResources(request)
       }
       switch request.url?.path {
+      case "/api/indicators":
+        if let indicators { return try await indicators(request) }
+        if let additional { return try await additional(request) }
+        return ChatHTTPResponse(body: #"{"agents":{},"threads":{},"unreadAt":{}}"#)
       case "/api/chat-threads/snapshot":
         if let threadSnapshot { return try await threadSnapshot(request) }
         return Self.threadSnapshotResponse()
