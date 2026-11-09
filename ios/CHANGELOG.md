@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.29.3](https://github.com/okou-ai/okou/compare/ios-v0.29.2...ios-v0.29.3) (2026-11-09)
+
+
+### Refactoring
+
+* **ios:** move connector permissions to ccstate ([#46007](https://github.com/okou-ai/okou/issues/46007)) ([843fdd5](https://github.com/okou-ai/okou/commit/843fdd5a8454ac5a5ba8975957e2f51ac3e75028))
+
 ## [0.29.2](https://github.com/okou-ai/okou/compare/ios-v0.29.1...ios-v0.29.2) (2026-11-09)
 
 
