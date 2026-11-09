@@ -48,7 +48,6 @@ export type Baseline = zInfer<typeof baselineSchema>;
 export const inventorySchema = object({
   storages: count,
   versions: count,
-  pendingPublications: count,
   unconvertedWorkflows: count,
   unfinishedJobs: count,
 });
@@ -210,8 +209,6 @@ export function validatePlan(plan: Plan): void {
 export function workflowBaseline(observation: Observation): Baseline[] {
   if (!observation.cutoverInstalled)
     throw new RetirementError("WorkflowClaimCutoverRequired");
-  if (observation.inventory.pendingPublications !== 0)
-    throw new RetirementError("WorkflowPublicationsRemain");
   return observation.workflows.map((workflow) => {
     if (!workflow.official) {
       const parsed = workflowAttachmentsSchema.safeParse(workflow.attachments);

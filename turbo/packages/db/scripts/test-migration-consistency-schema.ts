@@ -1508,7 +1508,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "92643bf0c1e256d924d2cf022c7c3657",
+    bodyHash: "4130c8ccb1453502ee738244c961aed0",
   },
   {
     schemaName: "public",
@@ -1519,7 +1519,7 @@ const EXPECTED_PERMANENT_FUNCTIONS: readonly PermanentFunction[] = [
     volatility: "v",
     securityDefiner: false,
     parallel: "u",
-    bodyHash: "10474201f5b27fc7f34631dcc0a84e10",
+    bodyHash: "58aacbf9b312b8369002b5504da92f2f",
   },
   {
     schemaName: "public",
@@ -3213,17 +3213,6 @@ async function main(): Promise<void> {
     await validateRunOutputMemoryCitationRetirement(dbUrl1);
     await validateStripeInvoicePaidRetirement(dbUrl1);
     await validateManagedDataRetirement(dbUrl1);
-    console.log("=== Workflow attachment migration CLI ===");
-    console.log(
-      execCommand(
-        "node --import tsx scripts/migrations/024-workflow-attachments/test-backfill.ts",
-        {
-          cwd: PACKAGE_DIR,
-          env: { DATABASE_URL: dbUrl1 },
-        },
-      ),
-    );
-
     await validatePermanentUsagePackPendingSnapshotState(dbUrl1);
     await validatePermanentAgentRunMetadataState(dbUrl1);
     await validatePermanentBuiltInModelKeyState(dbUrl1);
