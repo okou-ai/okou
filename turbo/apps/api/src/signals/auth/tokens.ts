@@ -61,6 +61,7 @@ const CONDITIONAL_CAPABILITIES = [
   ["wechat:read", FeatureSwitchKey.WechatIntegration],
   ["wechat:write", FeatureSwitchKey.WechatIntegration],
   ["whatsapp:write", FeatureSwitchKey.WhatsappIntegration],
+  ["email:write", FeatureSwitchKey.EmailIntegration],
   ["presentation-convert:write", FeatureSwitchKey.PresentationConvert],
 ] as const satisfies readonly (readonly [Capability, FeatureSwitchKey])[];
 

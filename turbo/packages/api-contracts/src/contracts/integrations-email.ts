@@ -1,9 +1,59 @@
 import { emailConnectBodySchema } from "../validators/integrations-email";
-import { array, boolean, email, object, string } from "zod";
+import {
+  array,
+  boolean,
+  discriminatedUnion,
+  email,
+  literal,
+  number,
+  object,
+  string,
+  uuid,
+} from "zod";
+import { artifactUrlSchema } from "./artifact-references";
 import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
+// Resend limits the whole email to 40 MB after Base64 encoding. A 25 MiB
+// attachment encodes to about 35 MB, leaving room for MIME framing and text.
+// https://resend.com/docs/dashboard/emails/attachments#attachment-limitations
+export const MAX_EMAIL_ATTACHMENT_SIZE_BYTES = 25 * 1024 * 1024;
+
+export const integrationsEmailUploadContract = c.router({
+  complete: {
+    method: "POST",
+    path: "/api/integrations/email/upload-file/complete",
+    headers: authHeadersSchema,
+    body: object({
+      uploadId: uuid(),
+      text: string().max(2000).optional(),
+    }).strict(),
+    responses: {
+      200: object({
+        uploadId: uuid(),
+        operationId: uuid(),
+        chatThreadId: uuid(),
+        emailAddress: email(),
+        filename: string(),
+        contentType: string(),
+        size: number().int().positive(),
+        url: artifactUrlSchema,
+        delivery: discriminatedUnion("status", [
+          object({ status: literal("pending") }),
+          object({ status: literal("accepted"), providerId: string() }),
+          object({ status: literal("failed"), message: string() }),
+        ]),
+      }),
+      400: apiErrorSchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+      409: apiErrorSchema,
+    },
+    summary: "Attach a private file to the current Email run's conversation",
+  },
+});
 const errors = {
   400: apiErrorSchema,
   401: apiErrorSchema,
