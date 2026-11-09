@@ -1649,7 +1649,7 @@
     },
     "attachments": {
       "attach": "Lampirkan",
-      "fileTooLarge": "{{filename}} melebihi batas 512 MB",
+      "fileTooLarge": "{{filename}} melebihi batas 5 GB",
       "imageUnavailable": "[Gambar tidak tersedia: {{filename}}]",
       "loadingFile": "Memuat {{filename}}",
       "previewFile": "Pratinjau {{filename}}",

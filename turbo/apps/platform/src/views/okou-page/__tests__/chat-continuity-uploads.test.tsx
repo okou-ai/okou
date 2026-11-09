@@ -13,6 +13,7 @@ import {
   installContinuityWorkspace,
 } from "./chat-continuity-test-helpers.ts";
 import { fastButton } from "./chat-list-test-helpers.ts";
+import { createDeferredPromise } from "../../../signals/utils.ts";
 
 const context = testContext();
 
@@ -150,14 +151,14 @@ test("Accept supported drops and reject an oversized dropped file", async () => 
   });
   Object.defineProperty(oversized, "size", {
     configurable: true,
-    value: 512 * 1024 * 1024 + 1,
+    value: 5 * 1024 * 1024 * 1024 + 1,
   });
   fireEvent.drop(composerDropTarget(), {
     dataTransfer: { types: ["Files"], files: [dropped, oversized] },
   });
 
   await expect(
-    screen.findByText("archive.iso exceeds the 512 MB limit"),
+    screen.findByText("archive.iso exceeds the 5 GB limit"),
   ).resolves.toBeVisible();
   await waitFor(() => {
     expect(fastButton("Remove dropped.txt")).toBeVisible();
@@ -260,8 +261,246 @@ test("Keep successful attachments after another upload fails", async () => {
     expect(fastButton("Send")).toBeEnabled();
   });
   expect(screen.queryByText("failed.txt")).not.toBeInTheDocument();
+  await expect(
+    screen.findByText("Failed to upload failed.txt."),
+  ).resolves.toBeInTheDocument();
   await userEvent.click(fastButton("Send"));
   await waitFor(() => {
     expect(deliveredAttachments).toStrictEqual(["ready.txt"]);
   });
+});
+
+const PART_BYTES = 5 * 1024 * 1024;
+
+async function setupMultipartUpload(
+  caseId: number,
+  complete: () => Promise<void> = async () => {},
+) {
+  const thread = continuityThread(caseId, 1, "Large attachment upload");
+  const workspace = installContinuityWorkspace(context, {
+    caseId,
+    threads: [thread],
+  });
+  const id = uploadId(caseId, 1);
+  const url = `https://cdn.vm7.io/uploads/${caseId}/recording.mp4`;
+  context.mocks.api(uploadsContract.prepare, ({ body, respond }) => {
+    expect(body.multipart).toBeTruthy();
+    return respond(200, {
+      id,
+      filename: body.filename,
+      contentType: body.contentType,
+      size: body.size,
+      url,
+      multipart: {
+        uploadId: `multipart-${caseId}`,
+        partSize: PART_BYTES,
+        parts: Array.from(
+          { length: Math.ceil(body.size / PART_BYTES) },
+          (_, index) => {
+            return {
+              partNumber: index + 1,
+              uploadUrl: `https://uploads.vm7.test/${caseId}/part-${index + 1}`,
+            };
+          },
+        ),
+      },
+    });
+  });
+  context.mocks.api(uploadsContract.completeMultipart, async ({ respond }) => {
+    await complete();
+    return respond(200, { id, url });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${thread.id}`,
+    ...workspace.pageOptions,
+  });
+  await messageComposer();
+}
+
+test("Bound concurrent parts and show byte progress until finalization succeeds", async () => {
+  const completed = createDeferredPromise<void>(context.signal);
+  await setupMultipartUpload(31, () => {
+    return completed.promise;
+  });
+  const parts = new Map<
+    number,
+    ReturnType<typeof createDeferredPromise<void>>
+  >();
+  const lengths = new Map<number, number>();
+  context.mocks.http.put(
+    "https://uploads.vm7.test/31/part-:part",
+    async ({ request, params, signal }) => {
+      const part = Number(params.part);
+      lengths.set(part, (await request.arrayBuffer()).byteLength);
+      const transferred = createDeferredPromise<void>(signal);
+      parts.set(part, transferred);
+      await transferred.promise;
+      return new HttpResponse(null, { status: 200 });
+    },
+  );
+  await userEvent.upload(
+    composerFileInput(),
+    new File([new Uint8Array(4 * PART_BYTES + 1)], "recording.mp4", {
+      type: "video/mp4",
+    }),
+  );
+  const progress = await screen.findByRole("progressbar", {
+    name: "Loading recording.mp4",
+  });
+  await waitFor(() => {
+    expect(parts.size).toBe(4);
+  });
+  expect(progress).toHaveAttribute("aria-valuenow", "0");
+  parts.get(2)?.resolve();
+  await waitFor(() => {
+    expect(progress).toHaveAttribute("aria-valuenow", "24");
+    expect(parts.size).toBe(5);
+  });
+  for (const [number, part] of parts) {
+    if (number !== 2) {
+      part.resolve();
+    }
+  }
+  await waitFor(() => {
+    expect(progress).toHaveAttribute("aria-valuenow", "99");
+  });
+  expect(lengths.get(5)).toBe(1);
+  completed.resolve();
+  await waitFor(() => {
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+    expect(fastButton("Remove recording.mp4")).toBeInTheDocument();
+  });
+});
+
+test("Retry transient part failures without retransferring successful parts", async () => {
+  await setupMultipartUpload(32);
+  const attempts = new Map<string, number>();
+  context.mocks.http.put(
+    "https://uploads.vm7.test/32/part-:part",
+    ({ params }) => {
+      const part = String(params.part);
+      const attempt = (attempts.get(part) ?? 0) + 1;
+      attempts.set(part, attempt);
+      if (part === "1" && attempt < 3) {
+        return attempt === 1
+          ? new HttpResponse(null, { status: 503 })
+          : HttpResponse.error();
+      }
+      return new HttpResponse(null, { status: 200 });
+    },
+  );
+  await userEvent.upload(
+    composerFileInput(),
+    new File([new Uint8Array(PART_BYTES + 1)], "recording.mp4", {
+      type: "video/mp4",
+    }),
+  );
+  await waitFor(() => {
+    expect(fastButton("Remove recording.mp4")).toBeInTheDocument();
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+  expect(attempts.get("1")).toBe(3);
+  expect(attempts.get("2")).toBe(1);
+  expect(
+    screen.queryByText("Failed to upload recording.mp4."),
+  ).not.toBeInTheDocument();
+});
+
+test.each([
+  { status: 503, expectedAttempts: 5 },
+  { status: 403, expectedAttempts: 1 },
+])(
+  "Show one failure toast after storage returns $status",
+  async ({ status, expectedAttempts }) => {
+    await setupMultipartUpload(33);
+    let attempts = 0;
+    context.mocks.http.put("https://uploads.vm7.test/33/*", () => {
+      attempts += 1;
+      return new HttpResponse(null, { status });
+    });
+    await userEvent.upload(
+      composerFileInput(),
+      new File([new Uint8Array(PART_BYTES)], "recording.mp4", {
+        type: "video/mp4",
+      }),
+    );
+    await expect(
+      screen.findByText("Failed to upload recording.mp4."),
+    ).resolves.toBeInTheDocument();
+    expect(attempts).toBe(expectedAttempts);
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  },
+);
+
+test("Report a finalization failure once without replaying completion", async () => {
+  await setupMultipartUpload(35);
+  let completions = 0;
+  context.mocks.api(uploadsContract.completeMultipart, ({ respond }) => {
+    completions += 1;
+    return respond(404, {
+      error: { code: "NOT_FOUND", message: "Multipart upload not found" },
+    });
+  });
+  context.mocks.http.put("https://uploads.vm7.test/35/*", () => {
+    return new HttpResponse(null, { status: 200 });
+  });
+  await userEvent.upload(
+    composerFileInput(),
+    new File([new Uint8Array(PART_BYTES)], "recording.mp4", {
+      type: "video/mp4",
+    }),
+  );
+  await expect(
+    screen.findByText("Failed to upload recording.mp4."),
+  ).resolves.toBeInTheDocument();
+  expect(completions).toBe(1);
+  expect(
+    screen.queryByText("Multipart upload not found"),
+  ).not.toBeInTheDocument();
+});
+
+test("Accept the 5 GiB picker boundary before starting the transfer", async () => {
+  await setupMultipartUpload(36);
+  const sizes: number[] = [];
+  context.mocks.api(uploadsContract.prepare, ({ body, signal }) => {
+    sizes.push(body.size);
+    return createDeferredPromise<never>(signal).promise;
+  });
+  const file = new File(["sparse fixture"], "long-recording.mp4", {
+    type: "video/mp4",
+  });
+  Object.defineProperty(file, "size", { value: 5 * 1024 * 1024 * 1024 });
+  await userEvent.upload(composerFileInput(), file);
+  await expect(
+    screen.findByRole("progressbar", { name: "Loading long-recording.mp4" }),
+  ).resolves.toBeInTheDocument();
+  expect(sizes).toStrictEqual([5 * 1024 * 1024 * 1024]);
+  await userEvent.click(fastButton("Cancel upload long-recording.mp4"));
+});
+
+test("Cancel active parts without a failure toast or starting queued parts", async () => {
+  await setupMultipartUpload(34);
+  let started = 0;
+  context.mocks.http.put("https://uploads.vm7.test/34/*", ({ signal }) => {
+    started += 1;
+    return createDeferredPromise<never>(signal).promise;
+  });
+  await userEvent.upload(
+    composerFileInput(),
+    new File([new Uint8Array(4 * PART_BYTES + 1)], "recording.mp4", {
+      type: "video/mp4",
+    }),
+  );
+  await waitFor(() => {
+    expect(started).toBe(4);
+  });
+  await userEvent.click(fastButton("Cancel upload recording.mp4"));
+  await waitFor(() => {
+    expect(screen.queryByRole("progressbar")).not.toBeInTheDocument();
+  });
+  expect(started).toBe(4);
+  expect(
+    screen.queryByText("Failed to upload recording.mp4."),
+  ).not.toBeInTheDocument();
 });

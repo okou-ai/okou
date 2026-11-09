@@ -1652,7 +1652,7 @@
     },
     "attachments": {
       "attach": "Attach",
-      "fileTooLarge": "{{filename}} exceeds the 512 MB limit",
+      "fileTooLarge": "{{filename}} exceeds the 5 GB limit",
       "imageUnavailable": "[Image unavailable: {{filename}}]",
       "loadingFile": "Loading {{filename}}",
       "previewFile": "Preview {{filename}}",

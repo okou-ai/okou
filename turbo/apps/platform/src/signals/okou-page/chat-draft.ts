@@ -7,7 +7,7 @@ import {
   type Computed,
   type State,
 } from "ccstate";
-import { resetSignal } from "../utils.ts";
+import { isAbortError, resetSignal, waitLoopUntil } from "../utils.ts";
 import {
   createImageLoadSignals,
   type ImageLoadSignals,
@@ -156,20 +156,42 @@ function inferUploadContentType(file: File): string {
 async function uploadPart(
   uploadUrl: string,
   body: Blob,
-  contentType: string,
+  headers: Readonly<Record<string, string>>,
   signal: AbortSignal,
 ): Promise<void> {
-  const response = await fetchResource(
-    uploadUrl,
-    { method: "PUT", body, headers: { "content-type": contentType } },
+  let attempts = 0;
+  await waitLoopUntil(
+    async (attemptSignal) => {
+      attempts += 1;
+      const [result] = await Promise.allSettled([
+        fetchResource(
+          uploadUrl,
+          { method: "PUT", body, headers },
+          attemptSignal,
+        ),
+      ]);
+      attemptSignal.throwIfAborted();
+      if (result.status === "fulfilled" && result.value.ok) {
+        return true;
+      }
+      if (result.status === "rejected") {
+        if (isAbortError(result.reason) || attempts >= 5) {
+          throw result.reason;
+        }
+        return false;
+      }
+      const status = result.value.status;
+      if (
+        attempts >= 5 ||
+        !(status === 408 || status === 429 || status >= 500)
+      ) {
+        throw new Error(`storage returned ${String(status)}`);
+      }
+      return false;
+    },
+    500,
     signal,
   );
-  signal.throwIfAborted();
-  if (!response.ok) {
-    throw new Error(
-      `storage returned ${String(response.status)} ${response.statusText}`,
-    );
-  }
 }
 
 /**
@@ -180,8 +202,13 @@ async function uploadPart(
  * a second, subtly different uploader. The file body never travels through the
  * app runtime in either case.
  */
-const uploadFileToStorage$ = command(
-  async ({ get }, file: File, signal: AbortSignal): Promise<FileInfo> => {
+const transferFileToStorage$ = command(
+  async (
+    { get, set },
+    file: File,
+    uploadedBytes$: State<number> | undefined,
+    signal: AbortSignal,
+  ): Promise<FileInfo> => {
     const createClient = get(apiClient$);
     const client = createClient(uploadsContract);
     const contentType = inferUploadContentType(file);
@@ -201,20 +228,54 @@ const uploadFileToStorage$ = command(
         fetchOptions: { signal },
       }),
       [200],
+      signal,
+      { showErrorToast: false },
     );
     signal.throwIfAborted();
 
     if ("multipart" in prepared.body) {
       const multipart = prepared.body.multipart;
-      for (const part of multipart.parts) {
-        const start = (part.partNumber - 1) * multipart.partSize;
-        const end = Math.min(start + multipart.partSize, file.size);
-        await uploadPart(
-          part.uploadUrl,
-          file.slice(start, end, prepared.body.contentType),
-          prepared.body.contentType,
-          signal,
-        );
+      let nextPart = 0;
+      let failed = false;
+      const workers = Array.from(
+        { length: Math.min(4, multipart.parts.length) },
+        async () => {
+          while (!failed) {
+            signal.throwIfAborted();
+            const part = multipart.parts[nextPart++];
+            if (!part) {
+              return;
+            }
+            const start = (part.partNumber - 1) * multipart.partSize;
+            const end = Math.min(start + multipart.partSize, file.size);
+            const [result] = await Promise.allSettled([
+              uploadPart(
+                part.uploadUrl,
+                file.slice(start, end, prepared.body.contentType),
+                { "content-type": prepared.body.contentType },
+                signal,
+              ),
+            ]);
+            if (result.status === "rejected") {
+              failed = true;
+              throw result.reason;
+            }
+            if (uploadedBytes$) {
+              set(uploadedBytes$, (bytes) => {
+                return bytes + end - start;
+              });
+            }
+          }
+        },
+      );
+      // Drain active transfers before reporting failure or finalizing the file.
+      const outcomes = await Promise.allSettled(workers);
+      signal.throwIfAborted();
+      const failure = outcomes.find((outcome) => {
+        return outcome.status === "rejected";
+      });
+      if (failure?.status === "rejected") {
+        throw failure.reason;
       }
 
       signal.throwIfAborted();
@@ -229,28 +290,27 @@ const uploadFileToStorage$ = command(
           fetchOptions: { signal },
         }),
         [200],
+        signal,
+        { showErrorToast: false },
       );
       signal.throwIfAborted();
       return uploadFileInfo(completed.body, prepared.body.contentType);
     }
 
     signal.throwIfAborted();
-    const putRes = await fetchResource(
+    await uploadPart(
       prepared.body.uploadUrl,
+      file,
       {
-        method: "PUT",
-        body: file,
-        headers: {
-          "content-type": prepared.body.contentType,
-          ...prepared.body.uploadHeaders,
-        },
+        "content-type": prepared.body.contentType,
+        ...prepared.body.uploadHeaders,
       },
       signal,
     );
     signal.throwIfAborted();
 
-    if (!putRes.ok) {
-      throw new Error(`storage returned ${putRes.status} ${putRes.statusText}`);
+    if (uploadedBytes$) {
+      set(uploadedBytes$, file.size);
     }
 
     if (parseArtifactReference(prepared.body.url, location.origin)) {
@@ -260,11 +320,41 @@ const uploadFileToStorage$ = command(
           fetchOptions: { signal },
         }),
         [200],
+        signal,
+        { showErrorToast: false },
       );
       signal.throwIfAborted();
       return uploadFileInfo(completed.body, completed.body.contentType);
     }
     return uploadFileInfo(prepared.body, prepared.body.contentType);
+  },
+);
+
+const uploadFileToStorage$ = command(
+  async (
+    { set },
+    file: File,
+    uploadedBytes$: State<number> | undefined,
+    signal: AbortSignal,
+  ): Promise<FileInfo> => {
+    const [result] = await Promise.allSettled([
+      set(transferFileToStorage$, file, uploadedBytes$, signal),
+    ]);
+    signal.throwIfAborted();
+    if (result.status === "rejected") {
+      if (!isAbortError(result.reason)) {
+        toast.error(
+          i18n.t(
+            ($) => {
+              return $.chat.attachments.uploadFailed;
+            },
+            { filename: file.name },
+          ),
+        );
+      }
+      throw result.reason;
+    }
+    return result.value;
   },
 );
 
@@ -298,7 +388,12 @@ function createUploadAnnotatedCopy(
         args.filename,
         signal,
       );
-      const uploaded = await set(uploadFileToStorage$, flattened.file, signal);
+      const uploaded = await set(
+        uploadFileToStorage$,
+        flattened.file,
+        undefined,
+        signal,
+      );
       // Replacement, removal and teardown must not install an older derivative.
       signal.throwIfAborted();
       set(annotatedFileId$, uploaded.id);
@@ -407,6 +502,8 @@ export interface ChatAttachment {
   imageLoad: ImageLoadSignals;
   /** Reactive file info (id + url) — loading while uploading, hasData when done. */
   fileInfo$: Computed<Promise<FileInfo | null>>;
+  /** Confirmed transferred bytes; completion remains owned by fileInfo$. */
+  uploadedBytes$: Computed<number>;
   preview$: Computed<Promise<AttachmentPreviewSignals | null>>;
   /** Whether the annotated derivative required by a send is available. */
   annotationReady$: Computed<boolean>;
@@ -441,6 +538,7 @@ function createChatAttachment(file: File): ChatAttachment {
   const contentType = inferUploadContentType(file);
   const imageLoad = createImageLoadSignals();
   const resetSignal$ = resetSignal();
+  const uploadedBytes$ = state(0);
   const internalUpload$ = state<Promise<FileInfo | null>>(
     Promise.resolve(null),
   );
@@ -458,7 +556,8 @@ function createChatAttachment(file: File): ChatAttachment {
 
   const upload$ = command(async ({ set }, parentSignal: AbortSignal) => {
     const signal = set(resetSignal$, parentSignal);
-    const promise = set(uploadFileToStorage$, file, signal);
+    set(uploadedBytes$, 0);
+    const promise = set(uploadFileToStorage$, file, uploadedBytes$, signal);
     set(internalUpload$, promise);
     await promise;
   });
@@ -471,6 +570,9 @@ function createChatAttachment(file: File): ChatAttachment {
     size: file.size,
     imageLoad,
     fileInfo$,
+    uploadedBytes$: computed((get) => {
+      return get(uploadedBytes$);
+    }),
     preview$: createComposerAttachmentPreview(fileInfo$),
     cancel$,
     upload$,
@@ -645,6 +747,9 @@ export function createRestoredAttachment(
     size: persisted.size,
     imageLoad: createImageLoadSignals(),
     fileInfo$,
+    uploadedBytes$: computed(() => {
+      return persisted.size;
+    }),
     preview$: computed(async (get) => {
       return (await get(restored$))?.preview ?? null;
     }),
