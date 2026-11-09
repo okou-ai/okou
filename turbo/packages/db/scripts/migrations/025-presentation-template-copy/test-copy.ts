@@ -25,6 +25,8 @@ import {
   hashFileContent,
 } from "@okouai/api-contracts/contracts/storage-content-hash";
 
+import { prepareTemplateGuidanceBundle } from "@okouai/core/template-guidance-bundle";
+
 const databaseUrl = process.env.DATABASE_URL;
 if (!databaseUrl) throw new Error("A disposable DATABASE_URL is required");
 const databaseAddress = new URL(databaseUrl);
@@ -164,6 +166,15 @@ async function seed(visibility: "private" | "public" = "private") {
       size: reference.length,
     },
   ];
+  const bundle = await prepareTemplateGuidanceBundle([
+    { path: "SKILL.md", content },
+    { path: "references.md", content: reference },
+  ]);
+  objects.set(`bundles/v1/${bundle.descriptor.sha256}.tar.gz`, bundle.archive);
+  await db.query(
+    "UPDATE presentation_templates SET guidance_bundle = $1 WHERE id = $2",
+    [bundle.descriptor, id],
+  );
   const versionId = computeContentHashFromHashes(storageId, files);
   const s3Prefix = `historical-prefix/${storageId}`;
   const s3Key = `${s3Prefix}/${versionId}`;
@@ -314,6 +325,29 @@ try {
     assert.equal((await run(fixture.id, "--migrate")).existing, 1);
     assert.deepEqual(await snapshot(fixture.orgId), edited);
     assert.equal(putCount, writesAfter);
+  }
+  {
+    const fixture = await seed();
+    await db.query(
+      "UPDATE presentation_templates SET guidance_bundle = NULL WHERE id = $1",
+      [fixture.id],
+    );
+    const before = await snapshot(fixture.orgId);
+    const writesBefore = putCount;
+    await assert.rejects(run(fixture.id, "--migrate"), (error: unknown) => {
+      const failed = zObject({ code: literal(1), stdout: string() }).safeParse(
+        error,
+      );
+      return (
+        failed.success &&
+        zObject({
+          result: literal("failed"),
+          classification: literal("ZodError"),
+        }).safeParse(JSON.parse(failed.data.stdout.trim())).success
+      );
+    });
+    assert.deepEqual(await snapshot(fixture.orgId), before);
+    assert.equal(putCount, writesBefore);
   }
   for (const scenario of [
     "missing-head",
