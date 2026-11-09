@@ -984,8 +984,7 @@
       "actionFailed": "Impossibile continuare.",
       "allow": "Consenti",
       "allowed": "Consentito",
-      "callbackPrompt": "Il browser cloud è attivo. Continua l’attività precedente.",
-      "cardDescription": "Attiva il browser cloud per questa chat e continua automaticamente. Il controllo del computer verrà disconnesso.",
+      "cardDescription": "Usa un browser cloud per questa chat. Questo disconnette Computer Use.",
       "description": "{{assistantName}} utilizzerà un profilo browser cloud isolato per questo thread di chat. Abilitandolo, Computer Use verrà disconnesso dal thread.",
       "enable": "Abilita per questo thread",
       "enabled": "Browser cloud abilitato",
@@ -994,8 +993,9 @@
       "unavailableDescription": "Questo collegamento di autorizzazione del browser cloud non è valido, è scaduto o non è disponibile per questa area di lavoro.",
       "unavailableTitle": "Collegamento di autorizzazione non disponibile"
     },
+    "callbackFailed": "Accesso abilitato, ma non è stato possibile continuare la conversazione. Riprova.",
     "computerUse": {
-      "actionFailed": "Impossibile autorizzare questo computer. Aggiorna la chat per riprovare.",
+      "actionFailed": "Impossibile autorizzare questo computer. Riprova.",
       "authorize": "Autorizza",
       "authorized": "Autorizzato",
       "authorizedDescription": "Accesso al computer abilitato per le prossime esecuzioni in questa chat.",

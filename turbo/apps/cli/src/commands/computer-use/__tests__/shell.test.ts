@@ -167,6 +167,7 @@ describe("computer-use shell", () => {
       status: "approved",
       computerName: "Work Mac",
       grantExpiresAt: "2099-10-20T11:00:00.000Z",
+      authorizationUrl: `https://app.okou.ai/computer-use/shell/authorize/${session.id}`,
     };
     server.use(
       http.post(`${base}/shell/authorizations`, () => {
@@ -388,4 +389,37 @@ describe("computer-use shell", () => {
     ).rejects.toThrow("process.exit called");
     expect(error).toHaveBeenCalled();
   });
+});
+
+it("adds the standard callback parameters to Shell access links only when requested", async () => {
+  const agentId = "10000000-0000-4000-8000-000000000001";
+  const threadId = "20000000-0000-4000-8000-000000000001";
+  vi.stubEnv("OKOU_AGENT_ID", agentId);
+  vi.stubEnv("OKOU_CHAT_THREAD_ID", threadId);
+  server.use(
+    http.post(`${base}/shell/authorizations`, () => {
+      return HttpResponse.json({
+        id: session.id,
+        status: "pending",
+        computerName: "Work Mac",
+        authorizationUrl: `https://app.okou.ai/computer-use/shell/authorize/${session.id}`,
+      });
+    }),
+  );
+  await createShellCommand().parseAsync([
+    "node",
+    "okou",
+    "request-access",
+    "--reason",
+    "Inspect project",
+    "--callback-prompt",
+    "Recheck access and continue",
+    "--json",
+  ]);
+  const output = JSON.parse(String(log.mock.calls.at(-1)?.[0]));
+  const url = new URL(output.authorizationUrl);
+  expect(url.searchParams.get("threadId")).toBe(threadId);
+  expect(url.searchParams.get("callbackPrompt")).toBe(
+    "Recheck access and continue",
+  );
 });

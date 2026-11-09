@@ -1,10 +1,12 @@
 import { browserAuthorizationRequestsContract } from "@okouai/api-contracts/client/browser";
 import { command, computed, state } from "ccstate";
-import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
 import { setAblyLoop$ } from "../realtime.ts";
-import { runChatActionCallback$ } from "./action-callback.ts";
+import {
+  authorizationChatCallback,
+  runAuthorizationChatCallback$,
+} from "./action-callback.ts";
 import { createCardSignalsRegistry } from "./card-signal-map.ts";
 import {
   chatActionIdMatches,
@@ -40,6 +42,12 @@ function createBrowserAuthorizationSignals(
       }),
       [200, 403, 404, 410],
     );
+    if (result.status === 200) {
+      authorizationChatCallback(
+        descriptor.originalUrl,
+        result.body.chatThreadId,
+      );
+    }
     return result.status === 200 &&
       chatActionIdMatches(result.body.chatThreadId, context.threadId)
       ? result.body
@@ -58,30 +66,28 @@ function createBrowserAuthorizationSignals(
         "Cloud browser authorization is unavailable in this chat",
       );
     }
-    await accept(
-      get(apiClient$)(browserAuthorizationRequestsContract).apply({
-        params: { requestToken: descriptor.requestToken },
-        body: {},
-        fetchOptions: { signal },
-      }),
-      [200],
-      signal,
-    );
-    await set(
-      runChatActionCallback$,
-      {
-        ...context,
-        callbackPrompt: i18n.t(($) => {
-          return $.authorization.browser.callbackPrompt;
+    if (!request.completedAt) {
+      await accept(
+        get(apiClient$)(browserAuthorizationRequestsContract).apply({
+          params: { requestToken: descriptor.requestToken },
+          body: {},
+          fetchOptions: { signal },
         }),
-        // The request identifies its single continuation across tabs.
-        callbackIds: {
-          clientEventId: request.id,
-          chatThreadSortEventId: request.id,
-        },
+        [200],
+        signal,
+      );
+    }
+    set(refresh$);
+    await set(
+      runAuthorizationChatCallback$,
+      {
+        originalUrl: descriptor.originalUrl,
+        chatThreadId: context.threadId,
+        authorizationId: request.id,
       },
       signal,
     );
+    set(refresh$);
   });
   const invalidate$ = command(({ set }) => {
     set(refresh$);
@@ -110,7 +116,7 @@ export function createBrowserAuthorizationCardSignalsRegistry(
 ) {
   return createCardSignalsRegistry(
     (descriptor: BrowserAuthorizationDescriptor) => {
-      return descriptor.requestToken;
+      return descriptor.originalUrl;
     },
     (descriptor) => {
       return createBrowserAuthorizationSignals(descriptor, context);

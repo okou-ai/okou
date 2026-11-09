@@ -964,8 +964,7 @@
       "actionFailed": "未能继续。",
       "allow": "允许",
       "allowed": "已允许",
-      "callbackPrompt": "浏览器已启用，请继续完成刚才的任务。",
-      "cardDescription": "为当前聊天启用云浏览器并自动继续任务。这会断开电脑操作。",
+      "cardDescription": "在此聊天中使用云端浏览器。这将断开 Computer Use。",
       "description": "{{assistantName}} 会在这个聊天会话中使用独立的云端浏览器环境。启用后，该会话的 Computer Use 会断开。",
       "enable": "为这个会话启用",
       "enabled": "云端浏览器已启用",
@@ -974,8 +973,9 @@
       "unavailableDescription": "这个云端浏览器授权链接无效、已过期，或不适用于当前工作区。",
       "unavailableTitle": "授权链接不可用"
     },
+    "callbackFailed": "访问已启用，但对话未能继续。请重试。",
     "computerUse": {
-      "actionFailed": "未能授权这台电脑，请刷新聊天后重试。",
+      "actionFailed": "无法授权此电脑。请重试。",
       "authorize": "授权",
       "authorized": "已授权",
       "authorizedDescription": "已为此聊天的后续运行启用电脑访问。",

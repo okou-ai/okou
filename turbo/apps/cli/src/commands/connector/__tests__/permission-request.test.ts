@@ -388,8 +388,8 @@ describe("okou connector permission-request command", () => {
       ["connectorSlug", "slack"],
       ["permission", SLACK_READ_PERMISSION],
       ["action", "allow"],
-      ["threadId", "thread-abc-123"],
       ["callbackPrompt", "Re-check permission & continue"],
+      ["threadId", "thread-abc-123"],
     ]);
     expect(logCalls).toContain("end the current turn");
     expect(logCalls).toContain("exact callback URL above verbatim");
@@ -1076,6 +1076,76 @@ describe("okou connector permission-request command", () => {
     );
     expect(mockConsoleError).not.toHaveBeenCalled();
   });
+
+  it.each(["computer-use", "browser"])(
+    "adds the standard optional callback to %s authorization",
+    async (target) => {
+      vi.stubEnv("OKOU_API_BACKEND_URL", "http://localhost:3000");
+      vi.stubEnv("OKOU_TOKEN", "run-token");
+      vi.stubEnv("OKOU_AGENT_ID", "agent-1");
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "20000000-0000-4000-8000-000000000001");
+      const original = `https://app.okou.ai/${target}/authorize/request-token`;
+      server.use(
+        http.post(
+          `http://localhost:3000/api/${target}/authorization-requests`,
+          () => {
+            return HttpResponse.json({
+              authorizationUrl: original,
+              source: "chat",
+              expiresAt: "2026-11-10T00:00:00.000Z",
+            });
+          },
+        ),
+      );
+      await permissionRequestCommand.parseAsync([
+        "node",
+        "cli",
+        target,
+        "--permission",
+        `${target}:write`,
+        "--callback-prompt",
+        "Recheck access and continue.",
+      ]);
+      const output = mockConsoleLog.mock.calls.flat().join("\n");
+      const link = output.split("\n").find((line) => {
+        return line.startsWith(original);
+      });
+      expect(link).toBeDefined();
+      const url = new URL(link ?? "");
+      expect(url.searchParams.get("threadId")).toBe(
+        "20000000-0000-4000-8000-000000000001",
+      );
+      expect(url.searchParams.get("callbackPrompt")).toBe(
+        "Recheck access and continue.",
+      );
+      expect(url.searchParams.toString()).toMatch(
+        /threadId=20000000-0000-4000-8000-000000000001$/u,
+      );
+      expect(output).toContain("Then end the current turn");
+    },
+  );
+
+  it.each(["computer-use", "browser"])(
+    "rejects a %s callback without a web chat before requesting access",
+    async (target) => {
+      vi.stubEnv("OKOU_TOKEN", "run-token");
+      vi.stubEnv("OKOU_CHAT_THREAD_ID", "");
+      await expect(
+        permissionRequestCommand.parseAsync([
+          "node",
+          "cli",
+          target,
+          "--permission",
+          `${target}:write`,
+          "--callback-prompt",
+          "Continue",
+        ]),
+      ).rejects.toThrow("process.exit called");
+      expect(mockConsoleError.mock.calls.flat().join("\n")).toContain(
+        "--callback-prompt requires the current web chat",
+      );
+    },
+  );
 
   it("exits with an error for an invalid permission name", async () => {
     await expect(async () => {

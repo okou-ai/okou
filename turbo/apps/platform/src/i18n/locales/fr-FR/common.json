@@ -984,8 +984,7 @@
       "actionFailed": "Impossible de continuer.",
       "allow": "Autoriser",
       "allowed": "Autorisé",
-      "callbackPrompt": "Le navigateur cloud est activé. Veuillez poursuivre la tâche précédente.",
-      "cardDescription": "Activez le navigateur cloud pour cette conversation et continuez automatiquement. Cela déconnecte le contrôle de l’ordinateur.",
+      "cardDescription": "Utilisez un navigateur cloud pour cette conversation. Cela déconnecte Computer Use.",
       "description": "{{assistantName}} utilisera un profil de navigateur cloud isolé pour ce fil de discussion. L'activer déconnecte l'utilisation de l'ordinateur pour ce fil.",
       "enable": "Activer pour ce fil",
       "enabled": "Navigateur cloud activé",
@@ -994,8 +993,9 @@
       "unavailableDescription": "Ce lien d'autorisation du navigateur cloud est invalide, expiré ou non disponible pour cet espace de travail.",
       "unavailableTitle": "Lien d'autorisation indisponible"
     },
+    "callbackFailed": "Accès activé, mais la conversation n’a pas pu continuer. Réessayez.",
     "computerUse": {
-      "actionFailed": "Impossible d’autoriser cet ordinateur. Actualisez la conversation pour réessayer.",
+      "actionFailed": "Impossible d’autoriser cet ordinateur. Réessayez.",
       "authorize": "Autoriser",
       "authorized": "Autorisé",
       "authorizedDescription": "Accès à l’ordinateur activé pour les prochaines exécutions de cette conversation.",
