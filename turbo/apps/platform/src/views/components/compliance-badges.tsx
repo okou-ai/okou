@@ -119,7 +119,7 @@ export function ComplianceBadges({
     <ul className={className}>
       {items.map((item) => {
         return (
-          <li key={item.name} className={quiet ? "flex @4xl:px-4" : undefined}>
+          <li key={item.name} className={quiet ? "flex" : undefined}>
             <Item
               className={
                 quiet
