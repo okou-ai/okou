@@ -79,13 +79,13 @@ private struct ComposerConnectorPermissionsContent: View {
     let selection = controls.selection
     return List {
       if let failure = controls.confirmationFailure {
-        ConnectorLoadError(error: failure, isLoading: loading || store.isLoading) {
+        ConnectorLoadError(error: failure, isLoading: loading || store.isRefreshing) {
           await resources.retry()
         }
       }
       if case .hasError(let error) = page {
         ConnectorLoadError(
-          error: ChatRequestFailure.message(for: error), isLoading: loading || store.isLoading
+          error: ChatRequestFailure.message(for: error), isLoading: loading || store.isRefreshing
         ) {
           await resources.retry()
         }

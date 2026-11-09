@@ -11,7 +11,7 @@ import XCTest
 final class ComposerConnectorStoreTests: XCTestCase {
   private typealias F = ConnectorHTTPFixtures
 
-  func testTransportCancellationRecoversConnectorAndRemoteReadsWithoutManualRefresh() async {
+  func testTransportCancellationRecoversConnectorAndRemoteReadsWithoutManualRefresh() async throws {
     let cancelledPaths = Mutex(Set(["/api/connectors/connected", "/api/vnc/connections"]))
     let fixture = ChatHTTPFixture { request in
       if cancelledPaths.withLock({ $0.remove(request.url!.path) != nil }) {
@@ -48,15 +48,15 @@ final class ComposerConnectorStoreTests: XCTestCase {
 
     await store.refresh()
 
-    XCTAssertNil(store.connectorError)
-    XCTAssertNil(store.remoteError)
+    _ = try await connectedValue(store)
+    _ = try await remoteValue(store)
     XCTAssertEqual(store.connectors.first?.label, "Slack")
     XCTAssertEqual(store.connectors.first?.authorized, true)
     XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
     XCTAssertEqual(store.vncConnections.first?.id, F.accountID)
   }
 
-  func testRepeatedTransportCancellationStopsAndAllowsManualRecovery() async {
+  func testRepeatedTransportCancellationStopsAndAllowsManualRecovery() async throws {
     let unavailable = Mutex(true)
     let reads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
@@ -73,13 +73,20 @@ final class ComposerConnectorStoreTests: XCTestCase {
     await store.refresh()
 
     XCTAssertEqual(reads.withLock { $0 }, 2)
-    XCTAssertNotNil(store.remoteError)
-    XCTAssertNotEqual(store.remoteError, URLError(.cancelled).localizedDescription)
-    XCTAssertNil(store.connectorError)
+    let resources = try XCTUnwrap(store.resources)
+    let failure = await (try resources.store.get(resources.remote)).result
+    if case .failure(let error) = failure {
+      XCTAssertEqual(
+        ComposerConnectorResources.message(for: error, in: .remote),
+        String(localized: "Could not load remote access. Try again."))
+    } else {
+      XCTFail("Repeated transport cancellation became successful data")
+    }
+    _ = try await connectedValue(store)
 
     unavailable.withLock { $0 = false }
     await store.refresh()
-    XCTAssertNil(store.remoteError)
+    _ = try await remoteValue(store)
     XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
   }
 
@@ -98,13 +105,13 @@ final class ComposerConnectorStoreTests: XCTestCase {
     defer { store.close() }
     store.configure(agentID: F.agentID)
     await store.refresh()
-    XCTAssertNil(store.remoteError)
+    _ = try await remoteValue(store)
     XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [F.accountID])
 
     await store.setComputerAccess(ChatComputerAccess(computerUseHostId: F.accountID))
     status.withLock { $0 = "offline" }
     await store.refresh()
-    XCTAssertNil(store.remoteError)
+    _ = try await remoteValue(store)
     XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [F.accountID])
     XCTAssertEqual(store.pendingOptions.computerAccess?.computerUseHostId, F.accountID)
 
@@ -146,7 +153,7 @@ final class ComposerConnectorStoreTests: XCTestCase {
     let store = makeStore(fixture, thread: thread)
     defer { store.close() }
     await store.refresh()
-    XCTAssertNil(store.remoteError)
+    _ = try await remoteValue(store)
     XCTAssertEqual(store.visibleComputerUseHosts.map(\.id), [F.accountID])
     XCTAssertEqual(store.computerAccess.computerUseHostId, F.accountID)
 
@@ -371,8 +378,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
     blocked.withLock { $0 = false }
     response.open()
     await saving.value
-    XCTAssertNil(store.connectorError)
-    XCTAssertNil(store.remoteError)
+    _ = try await connectedValue(store)
+    _ = try await remoteValue(store)
     XCTAssertNotNil(store.notice)
     XCTAssertTrue(store.canSend)
     XCTAssertEqual(store.hosts(.ssh).first?.overrideEnabled, false)
@@ -415,6 +422,288 @@ final class ComposerConnectorStoreTests: XCTestCase {
     await write.value
     XCTAssertEqual(writes.withLock { $0 }, 0)
     XCTAssertTrue(store.canSend)
+  }
+
+  func testSharedOverviewReadsKeepFailuresUntilAnExplicitRefresh() async throws {
+    struct Server: Sendable {
+      var connectedReads = 0
+      var remoteReads = 0
+      var fails = true
+    }
+    let server = Mutex(Server())
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path == "/api/connectors/connected" {
+        server.withLock { $0.connectedReads += 1 }
+      }
+      if request.url!.path == "/api/remotes/overview" {
+        let fails = server.withLock { value in
+          value.remoteReads += 1
+          return value.fails
+        }
+        if fails {
+          return ChatHTTPResponse(
+            status: 403, body: #"{"error":{"message":"Remote access unavailable"}}"#)
+        }
+      }
+      return try composerResponse(request)
+    }
+    let store = makeStore(fixture)
+    defer { store.close() }
+    store.configure(agentID: F.agentID)
+    let resources = try XCTUnwrap(store.resources)
+    let first = try resources.store.get(resources.connected)
+    let second = try resources.store.get(resources.connected)
+    let values = try await (first.value, second.value)
+    XCTAssertTrue(values.0.connectors.isEmpty)
+    XCTAssertFalse(values.1.chatAccountAccess)
+    let failed = try resources.store.get(resources.remote)
+    if case .success = await failed.result {
+      XCTFail("A failed remote read became successful data")
+    }
+    server.withLock { $0.fails = false }
+    if case .success = await (try resources.store.get(resources.remote)).result {
+      XCTFail("Observation silently retried the failed resource")
+    }
+    XCTAssertEqual(server.withLock { $0.connectedReads }, 1)
+    XCTAssertEqual(server.withLock { $0.remoteReads }, 1)
+    await store.refresh()
+    let remote = try await remoteValue(store)
+    XCTAssertEqual(remote.overview.sshHosts.first?.connectionId, F.accountID)
+    XCTAssertEqual(server.withLock { $0.remoteReads }, 2)
+  }
+
+  func testOverviewSectionsStartIndependentlyAndPublishWithoutACombinedSuccessBarrier() async throws
+  {
+    let connectedStarted = expectation(description: "Connected read started")
+    let remoteStarted = expectation(description: "Remote read started")
+    let connectedResponse = ConnectorResponseGate()
+    let remoteResponse = ConnectorResponseGate()
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path == "/api/connectors/connected" {
+        connectedStarted.fulfill()
+        await connectedResponse.wait()
+      }
+      if request.url!.path == "/api/remotes/overview" {
+        remoteStarted.fulfill()
+        await remoteResponse.wait()
+      }
+      return try composerResponse(request)
+    }
+    let store = makeStore(fixture)
+    defer { store.close() }
+    store.configure(agentID: F.agentID)
+    let resources = try XCTUnwrap(store.resources)
+    let pending = try resources.requests()
+    addTeardownBlock {
+      connectedResponse.open()
+      remoteResponse.open()
+      pending.connected.cancel()
+      pending.remote.cancel()
+      _ = await (pending.connected.result, pending.remote.result)
+    }
+    await fulfillment(of: [connectedStarted, remoteStarted], timeout: 3)
+    remoteResponse.open()
+    let remote = try await pending.remote.value
+    XCTAssertEqual(remote.overview.sshHosts.first?.connectionId, F.accountID)
+    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
+    connectedResponse.open()
+    let connected = try await pending.connected.value
+    XCTAssertTrue(connected.connectors.isEmpty)
+  }
+
+  func testAgentReplacementCancelsBothOriginalReadsAndRejectsTheirLateResults() async throws {
+    let old = Mutex(true)
+    let started = expectation(description: "Both original HTTP reads started")
+    started.expectedFulfillmentCount = 2
+    let cancelled = expectation(description: "Both original HTTP reads cancelled")
+    cancelled.expectedFulfillmentCount = 2
+    let response = ConnectorResponseGate()
+    let fixture = ChatHTTPFixture { request in
+      let path = request.url!.path
+      let isOverview = ["/api/connectors/connected", "/api/remotes/overview"].contains(path)
+      let isOld = old.withLock { $0 }
+      if isOverview, isOld {
+        await withTaskCancellationHandler {
+          started.fulfill()
+          await response.wait()
+        } onCancel: {
+          cancelled.fulfill()
+        }
+      }
+      if path == "/api/agents/\(F.siblingID)" {
+        return ChatHTTPResponse(body: "{\"agentId\":\"\(F.siblingID)\"}")
+      }
+      if path == "/api/agents/\(F.siblingID)/connector-access" {
+        return ChatHTTPResponse(
+          body: #"{"enabledConnectorSlugs":["slack"],"customConnectorIds":[]}"#)
+      }
+      if path == "/api/connectors/connected" {
+        return ChatHTTPResponse(
+          body:
+            "{\"builtinConnectors\":[{\"slug\":\"slack\",\"label\":\"\(isOld ? "Old service" : "New service")\",\"hasPermissions\":false}],\"customConnectors\":[]}"
+        )
+      }
+      return try composerResponse(request)
+    }
+    let store = makeStore(fixture)
+    defer { store.close() }
+    store.configure(agentID: F.agentID)
+    let resources = try XCTUnwrap(store.resources)
+    let pending = try resources.requests()
+    addTeardownBlock {
+      response.open()
+      pending.connected.cancel()
+      pending.remote.cancel()
+      _ = await (pending.connected.result, pending.remote.result)
+    }
+    await fulfillment(of: [started], timeout: 3)
+    old.withLock { $0 = false }
+    store.configure(agentID: F.siblingID)
+    await fulfillment(of: [cancelled], timeout: 3)
+    await store.refresh()
+    XCTAssertEqual(store.connectors.first?.label, "New service")
+    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
+    response.open()
+    if case .success = await pending.connected.result {
+      XCTFail("The retired connector read returned data")
+    }
+    if case .success = await pending.remote.result {
+      XCTFail("The retired remote read returned data")
+    }
+    XCTAssertEqual(store.connectors.first?.label, "New service")
+  }
+
+  func testCancellingOneConsumerDoesNotCancelTheSharedRemoteRead() async throws {
+    let started = expectation(description: "Shared remote HTTP started")
+    let response = ConnectorResponseGate()
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path == "/api/remotes/overview" {
+        started.fulfill()
+        await response.wait()
+      }
+      return try composerResponse(request)
+    }
+    let store = makeStore(fixture)
+    defer { store.close() }
+    store.configure(agentID: F.agentID)
+    let resources = try XCTUnwrap(store.resources)
+    let shared = try resources.store.get(resources.remote)
+    let waiter = Task { try await shared.value }
+    addTeardownBlock {
+      waiter.cancel()
+      shared.cancel()
+      response.open()
+      _ = await waiter.result
+      _ = await shared.result
+    }
+    await fulfillment(of: [started], timeout: 3)
+    waiter.cancel()
+    let surviving = try resources.store.get(resources.remote)
+    response.open()
+    let remote = try await surviving.value
+    XCTAssertEqual(remote.overview.sshHosts.first?.connectionId, F.accountID)
+    XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
+  }
+
+  func testClosingComposerCancelsItsOriginalRemoteReadWithoutRetrying() async throws {
+    let started = expectation(description: "Remote HTTP started")
+    let cancelled = expectation(description: "Original HTTP cancelled on close")
+    let response = ConnectorResponseGate()
+    let reads = Mutex(0)
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path == "/api/remotes/overview" {
+        reads.withLock { $0 += 1 }
+        await withTaskCancellationHandler {
+          started.fulfill()
+          await response.wait()
+        } onCancel: {
+          cancelled.fulfill()
+        }
+      }
+      return try composerResponse(request)
+    }
+    let store = makeStore(fixture)
+    defer { store.close() }
+    store.configure(agentID: F.agentID)
+    let resources = try XCTUnwrap(store.resources)
+    let pending = try resources.store.get(resources.remote)
+    addTeardownBlock {
+      pending.cancel()
+      response.open()
+      _ = await pending.result
+    }
+    await fulfillment(of: [started], timeout: 3)
+    store.close()
+    await fulfillment(of: [cancelled], timeout: 3)
+    response.open()
+    if case .success = await pending.result { XCTFail("The closed composer published remote data") }
+    XCTAssertEqual(reads.withLock { $0 }, 1)
+  }
+
+  func testPartialReadbackCannotConfirmAnUnknownWriteOrReplayIt() async throws {
+    struct Server: Sendable {
+      var enabled = true
+      var unavailable = false
+      var writes = 0
+    }
+    let server = Mutex(Server())
+    let fixture = ChatHTTPFixture { request in
+      if request.url!.path.hasSuffix("/remote-access/ssh/\(F.accountID)"),
+        request.httpMethod == "PUT"
+      {
+        server.withLock {
+          $0.enabled = false
+          $0.unavailable = true
+          $0.writes += 1
+        }
+        throw URLError(.networkConnectionLost)
+      }
+      if request.url!.path == "/api/remotes/overview", server.withLock({ $0.unavailable }) {
+        return ChatHTTPResponse(
+          status: 403, body: #"{"error":{"message":"Remote access unavailable"}}"#)
+      }
+      if request.url!.path.hasSuffix("/remote-access") {
+        let enabled = server.withLock { $0.enabled }
+        return ChatHTTPResponse(
+          body:
+            "{\"ssh\":[{\"connectionId\":\"\(F.accountID)\",\"displayName\":\"Build Mac\",\"defaultEnabled\":true,\"overrideEnabled\":\(enabled),\"enabled\":\(enabled)}],\"vnc\":[]}"
+        )
+      }
+      return try composerResponse(request)
+    }
+    let thread = ChatThread(
+      id: F.threadID, agentID: F.agentID, title: "Remote work", selectedModel: nil,
+      createdAt: .distantPast, updatedAt: .distantPast, sortAt: .distantPast,
+      pinnedAt: nil, pinOrder: nil, indicator: nil)
+    let store = makeStore(fixture, thread: thread)
+    defer { store.close() }
+    await store.refresh()
+    let host = try XCTUnwrap(store.hosts(.ssh).first)
+    await store.setRemote(host, protocol: .ssh, enabled: false)
+    _ = try await connectedValue(store)
+    XCTAssertFalse(store.canSend)
+    await store.setRemote(host, protocol: .ssh, enabled: true)
+    XCTAssertEqual(server.withLock { $0.writes }, 1)
+    server.withLock { $0.unavailable = false }
+    await store.refresh()
+    let confirmed = try await remoteValue(store)
+    XCTAssertEqual(confirmed.access?.ssh.first?.enabled, false)
+    XCTAssertTrue(store.canSend)
+    XCTAssertEqual(server.withLock { $0.writes }, 1)
+  }
+
+  private func connectedValue(_ store: ComposerConnectorStore) async throws
+    -> ComposerConnectorResources.Connected
+  {
+    let resources = try XCTUnwrap(store.resources)
+    return try await resources.store.get(resources.connected).value
+  }
+
+  private func remoteValue(_ store: ComposerConnectorStore) async throws
+    -> ComposerConnectorResources.Remote
+  {
+    let resources = try XCTUnwrap(store.resources)
+    return try await resources.store.get(resources.remote).value
   }
 
   private func makeStore(_ fixture: ChatHTTPFixture, thread: ChatThread? = nil)

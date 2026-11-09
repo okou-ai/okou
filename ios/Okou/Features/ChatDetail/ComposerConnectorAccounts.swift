@@ -74,15 +74,13 @@ private struct ComposerConnectorAccountsContent: View {
 
   private func content(_ search: String) -> some View {
     List {
-      if let error = store.error ?? store.connectorError {
-        ConnectorLoadError(error: error, isLoading: store.isLoading) { await resources.retry() }
-      }
+      ComposerConnectorReadError(store: store) { await resources.retry() }
       switch page {
       case .loading: EmptyView()
       case .hasError(let error):
         ConnectorLoadError(
           error: ChatRequestFailure.message(for: error),
-          isLoading: status == .loading || store.isLoading
+          isLoading: status == .loading || store.isRefreshing
         ) { await resources.retry() }
       case .hasData(let value):
         if resources.managesDefaults {
