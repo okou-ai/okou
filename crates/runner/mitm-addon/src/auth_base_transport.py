@@ -2,7 +2,8 @@
 
 The addon forwards auth.base requests itself because mitmproxy's eager
 connection has already connected to the placeholder IP. This module owns
-the low-level HTTP and destination-validation details for that forward path.
+the low-level HTTP, destination-validation and forwarded-response representation
+details for that forward path.
 """
 
 import asyncio
@@ -55,6 +56,11 @@ MAX_AUTH_BASE_RESPONSE_BODY_BYTES = 32 * 1024 * 1024
 _AUTH_BASE_RESPONSE_READ_BUFFER_BYTES = 64 * 1024
 _AUTH_BASE_RESPONSE_MAX_LINE_BYTES = 64 * 1024
 _AUTH_BASE_RESPONSE_MAX_HEADER_LINES = 100
+_HTTP_STATUS_INFORMATIONAL_MIN = 100
+_HTTP_STATUS_SUCCESS_MIN = 200
+_HTTP_STATUS_NO_CONTENT = 204
+_HTTP_STATUS_RESET_CONTENT = 205
+_HTTP_STATUS_NOT_MODIFIED = 304
 _PERCENT_DECODED_UPSTREAM_HOST_SYNTAX_CHARS = frozenset("{}*.\u3002\uff0e\uff61,")
 _UPSTREAM_HOST_FORBIDDEN_CHARS = frozenset("{}*")
 # UTF-8 encodings of str.strip() whitespace, matching mitmproxy's native
@@ -486,6 +492,48 @@ def _filter_response_headers(headers: list[tuple[str, str]]) -> http.Headers:
         (name.encode("latin-1"), value.encode("latin-1"))
         for name, value in _filter_header_pairs(headers)
     )
+
+
+def set_forwarded_response(
+    flow: http.HTTPFlow,
+    status: int,
+    resp_raw_content: bytes,
+    resp_headers: http.Headers,
+) -> None:
+    """Install raw forwarded bytes while preserving representation metadata.
+
+    Response.make accepts decoded content. Hide codings while it normalizes
+    framing, then restore their original order. HEAD and GET/304 lengths describe
+    the representation rather than the received body.
+    """
+    is_head_representation = flow.request.method == "HEAD" and not (
+        _HTTP_STATUS_INFORMATIONAL_MIN <= status < _HTTP_STATUS_SUCCESS_MIN
+        or status in (_HTTP_STATUS_NO_CONTENT, _HTTP_STATUS_RESET_CONTENT)
+    )
+    preserves_representation_length = is_head_representation or (
+        flow.request.method == "GET" and status == _HTTP_STATUS_NOT_MODIFIED
+    )
+    representation_content_length: str | None = None
+    if preserves_representation_length:
+        content_lengths = resp_headers.get_all("Content-Length")
+        if len(content_lengths) == 1:
+            candidate = content_lengths[0].strip(" \t")
+            if candidate.isascii() and candidate.isdigit():
+                representation_content_length = candidate
+    content_encodings = [
+        value for name, value in header_pairs(resp_headers) if name.lower() == "content-encoding"
+    ]
+    if content_encodings:
+        del resp_headers["Content-Encoding"]
+    # The forwarder returns representation bytes, but Response.make expects
+    # decoded content. Hide the codings while it normalizes response framing.
+    flow.response = http.Response.make(status, resp_raw_content, resp_headers)
+    if preserves_representation_length:
+        del flow.response.headers["Content-Length"]
+        if representation_content_length is not None:
+            flow.response.headers["Content-Length"] = representation_content_length
+    if content_encodings:
+        flow.response.headers.set_all("Content-Encoding", content_encodings)
 
 
 def _normalized_forward_request_host(parsed: urllib.parse.SplitResult) -> str:
