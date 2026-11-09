@@ -5940,6 +5940,16 @@
           "title": "Stockage IndexedDB",
           "unavailable": "Le stockage IndexedDB est indisponible."
         },
+        "learning": {
+          "description": "Examinez l’activité récente et actualisez votre mémoire personnelle une fois. Votre programmation nocturne reste inchangée.",
+          "notInstalled": "Activez l’apprentissage dans les préférences avant de le lancer ici.",
+          "queued": "Apprentissage en attente.",
+          "requestFailed": "La demande n’a pas pu être confirmée.",
+          "run": "Lancer l’apprentissage",
+          "starting": "Démarrage…",
+          "title": "Apprentissage",
+          "unavailable": "L’apprentissage est indisponible pour le moment."
+        },
         "morningBrief": {
           "description": "Exécute une fois le workflow activé de ton compte. Il peut actualiser les suggestions et envoyer un véritable e-mail. Ton horaire quotidien reste inchangé.",
           "openChat": "Ouvrir la conversation",

@@ -5940,6 +5940,16 @@
           "title": "Almacenamiento de IndexedDB",
           "unavailable": "El almacenamiento de IndexedDB no está disponible."
         },
+        "learning": {
+          "description": "Revisa la actividad reciente y actualiza tu memoria personal una vez. La programación nocturna no cambia.",
+          "notInstalled": "Activa el aprendizaje en Preferencias antes de ejecutarlo aquí.",
+          "queued": "Aprendizaje en cola.",
+          "requestFailed": "No se pudo confirmar la solicitud.",
+          "run": "Ejecutar aprendizaje",
+          "starting": "Iniciando…",
+          "title": "Aprendizaje",
+          "unavailable": "El aprendizaje no está disponible en este momento."
+        },
         "morningBrief": {
           "description": "Ejecuta una vez el flujo activado de tu cuenta. Puede actualizar sugerencias y enviar un correo real. Tu horario diario no cambia.",
           "openChat": "Abrir conversación",

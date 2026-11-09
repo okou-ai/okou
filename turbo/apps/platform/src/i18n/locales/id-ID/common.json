@@ -5856,6 +5856,16 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
+        "learning": {
+          "description": "Tinjau aktivitas terbaru dan perbarui memori pribadi sekali. Jadwal malam Anda tetap sama.",
+          "notInstalled": "Aktifkan pembelajaran di Preferensi sebelum menjalankannya di sini.",
+          "queued": "Pembelajaran masuk antrean.",
+          "requestFailed": "Permintaan belum dapat dikonfirmasi.",
+          "run": "Jalankan pembelajaran",
+          "starting": "Memulai…",
+          "title": "Pembelajaran",
+          "unavailable": "Pembelajaran saat ini tidak tersedia."
+        },
         "morningBrief": {
           "description": "Jalankan sekali alur kerja yang aktif di akunmu. Ini dapat memperbarui saran dan mengirim email sungguhan. Jadwal harianmu tidak berubah.",
           "openChat": "Buka percakapan",
