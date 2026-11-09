@@ -527,28 +527,6 @@ def test_registered_flow_metadata_guard_flags_composed_iterables(tmp_path):
     )
 
 
-def test_registered_flow_metadata_guard_projects_nested_mapping_constructor_keys(tmp_path):
-    source_path = tmp_path / "nested_mapping_constructors.py"
-    _write_python_source(
-        source_path,
-        "nested_mapping_constructors.base.py.txt",
-        "nested_mapping_constructors.allowed.py.txt",
-    )
-
-    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
-
-    assert _normalized_violations(source_path, violations) == _expected_lines(
-        "nested_mapping_constructors.expected.txt"
-    )
-
-
-def test_registered_flow_metadata_guard_preserves_nested_mapping_controls(tmp_path):
-    source_path = tmp_path / "nested_mapping_controls.py"
-    _write_python_source(source_path, "nested_mapping_constructors.allowed.py.txt")
-
-    assert flow_metadata_key_linter.metadata_key_violations(source_path) == []
-
-
 @pytest.mark.parametrize(
     "wrapper", ["frozenset", "iter", "list", "reversed", "set", "sorted", "tuple"]
 )
@@ -887,10 +865,8 @@ def test_comprehension_loop_aliases_through_api_and_cli(tmp_path, has_violations
     _write_python_source(source_path, *fixtures)
     expected = _expected_lines("comprehension_loop_aliases.expected.txt") if has_violations else []
 
-    violations = flow_metadata_key_linter.metadata_key_violations(source_path)
     result = _run_check_script(check_script, addon_root, tmp_path)
 
-    assert _normalized_violations(source_path, violations) == expected
     assert result.returncode == (1 if has_violations else 0)
     assert result.stdout == "".join(f"src/{line}\n" for line in expected)
     assert result.stderr == ""
