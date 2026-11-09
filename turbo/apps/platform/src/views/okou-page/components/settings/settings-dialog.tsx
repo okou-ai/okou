@@ -290,6 +290,11 @@ function SettingsDialog({
       icon: Wrench,
     },
     { id: "debug", label: sectionMeta.debug.title, icon: Bug },
+    {
+      id: "wallet",
+      label: sectionMeta.wallet.title,
+      icon: Wallet,
+    },
   ];
   const personalGroup: SidebarGroup = {
     label: t(($) => {
@@ -350,11 +355,6 @@ function SettingsDialog({
             },
           ]
         : []),
-      {
-        id: "wallet" as const,
-        label: sectionMeta.wallet.title,
-        icon: Wallet,
-      },
     ],
   };
   const sidebarGroups: readonly SidebarGroup[] = [
