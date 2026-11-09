@@ -1,3 +1,4 @@
+import { ProjectCreateButton } from "../projects/project-row.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { Collapsible } from "@base-ui/react/collapsible";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
@@ -505,9 +506,9 @@ function ChatListHeader() {
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
   // My Okou has a single chat list, so the header carries the list's actions
-  // instead of a title, and New chat and New project lead the list itself. An
-  // active filter still names itself beside the toggle so a filtered list never
-  // looks like the inbox.
+  // instead of a title, and New chat leads the list itself. An active filter
+  // still names itself beside the toggle so a filtered list never looks like
+  // the inbox.
   const filterLabel = useChatThreadsFilterLabel();
   const searchLabel = t(($) => {
     return $.appShell.sidebar.searchWorkspace;
@@ -585,6 +586,7 @@ function ChatListHeader() {
             {filterLabel}
           </span>
           <ShortcutTooltipGroup items={[searchItem]} />
+          <ProjectCreateButton />
           <ChatThreadsListMenu showMarkAllRead />
         </>
       ) : (

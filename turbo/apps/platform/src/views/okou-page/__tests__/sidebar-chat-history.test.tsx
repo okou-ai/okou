@@ -965,7 +965,7 @@ test("Route New chat to the current agent and Chat to the default agent", async 
   });
 });
 
-// The New chat and New project rows lead My Okou's chat list.
+// The New chat row leads My Okou's chat list.
 function newChatRow(list: HTMLElement): HTMLElement {
   const found = queryAllByRoleFast("link", list).find((link) => {
     return link.getAttribute("href") === "/";
@@ -975,15 +975,7 @@ function newChatRow(list: HTMLElement): HTMLElement {
   }
   return found;
 }
-function newProjectRow(list: HTMLElement): HTMLElement | null {
-  return (
-    queryAllByRoleFast("button", list).find((item) => {
-      return item.textContent?.trim() === "New Project";
-    }) ?? null
-  );
-}
-
-test("My Okou's header keeps the toggle, search and list menu while New chat and New project lead the list", async () => {
+test("My Okou's header holds the toggle, search, New Project and list menu while New chat leads the list", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
@@ -1009,6 +1001,7 @@ test("My Okou's header keeps the toggle, search and list menu while New chat and
   ).toStrictEqual([
     "Hide chat list",
     "Search workspace",
+    "Create Project",
     "Open chat list menu",
   ]);
   expect(header).toHaveTextContent(/^$/);
@@ -1024,21 +1017,13 @@ test("My Okou's header keeps the toggle, search and list menu while New chat and
   await waitFor(() => {
     expect(newChat).toHaveAttribute("aria-current", "page");
   });
-  const chats = within(list).getByTestId("sidebar-scroll-area");
-  const newProject = newProjectRow(list);
-  if (!newProject) {
-    throw new Error("New project row not found");
-  }
   expect(
-    newChat.compareDocumentPosition(newProject) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
-  ).toBeTruthy();
-  expect(
-    newProject.compareDocumentPosition(chats) &
-      Node.DOCUMENT_POSITION_FOLLOWING,
+    newChat.compareDocumentPosition(
+      within(list).getByTestId("sidebar-scroll-area"),
+    ) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
 
-  click(newProject);
+  click(within(header).getByLabelText("Create Project"));
   await expect(
     screen.findByRole("textbox", { name: "Project name" }),
   ).resolves.toBeInTheDocument();
@@ -1056,7 +1041,7 @@ test("My Okou's header keeps the toggle, search and list menu while New chat and
   await expect(within(header).findByText("Archived")).resolves.toBeVisible();
 });
 
-test("My Okou without Projects leads the chat list with New chat only", async () => {
+test("My Okou without Projects leaves New Project out of the header", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
@@ -1069,7 +1054,19 @@ test("My Okou without Projects leads the chat list with New chat only", async ()
   const list = await screen.findByTestId("chat-list-column");
   await within(list).findByText("Release plan");
   expect(newChatRow(list)).toHaveTextContent(/^New chat/);
-  expect(newProjectRow(list)).toBeNull();
+  const header = within(list).getByLabelText("Hide chat list").closest("div");
+  if (!header) {
+    throw new Error("Chat list header not found");
+  }
+  expect(
+    queryAllByRoleFast("button", header).map((button) => {
+      return button.getAttribute("aria-label");
+    }),
+  ).toStrictEqual([
+    "Hide chat list",
+    "Search workspace",
+    "Open chat list menu",
+  ]);
 });
 
 test("My Okou's Chat link and new chat shortcut open its chat page at /", async () => {
