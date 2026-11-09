@@ -8,17 +8,30 @@ on:
       mode:
         description: Inspect only, or copy after a successful inspection
         type: choice
-        options: [dry-run, copy, capture-guidance]
+        options:
+          [dry-run, copy, capture-guidance, plan-guidance, apply-guidance]
         default: dry-run
         required: true
       frozen_inventory:
-        description: Reviewed template-guidance-sources-v1 JSON; capture-guidance only
+        description: Reviewed template-guidance-sources-v1 JSON; capture-guidance or plan-guidance
         type: string
         required: false
       recipient_public_key:
         description: RSA public key for encrypted capture; never supply a private key
         type: string
         required: false
+      plan_run_id:
+        description: Successful plan-guidance run on the same main commit; apply-guidance only
+        type: string
+        required: false
+      plan_sha256:
+        description: Exact reviewed plan.json SHA-256; apply-guidance only
+        type: string
+        required: false
+      writers_drained:
+        description: Attest canonical legacy template writers have drained before apply
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -36,7 +49,7 @@ defaults:
 
 jobs:
   copy:
-    if: github.ref == 'refs/heads/main' && inputs.mode != 'capture-guidance'
+    if: github.ref == 'refs/heads/main' && (inputs.mode == 'dry-run' || inputs.mode == 'copy')
     runs-on: ubuntu-latest
     container: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
     timeout-minutes: 30
@@ -200,3 +213,109 @@ jobs:
           path: ${{ runner.temp }}/template-guidance-capture
           if-no-files-found: error
           retention-days: 1
+
+  guidance-production:
+    if: github.ref == 'refs/heads/main' && (inputs.mode == 'plan-guidance' || inputs.mode == 'apply-guidance')
+    runs-on: ubuntu-latest
+    container: ghcr.io/${{ github.repository_owner }}/vm0-toolchain:20261023
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: ./.github/actions/toolchain-init
+      - name: Verify the serving writer and main-owned rollback boundary
+        run: |
+          set -euo pipefail
+          floor=$(git show origin/main:.github/rollback-floors/template-guidance-bundle-writer)
+          [[ "$floor" =~ ^[0-9a-f]{40}$ ]]
+          git merge-base --is-ancestor "$floor" origin/main
+          for origin in https://api.vm0.ai https://api.okou.ai; do
+            build=$(curl -fsS --connect-timeout 10 --max-time 30 "$origin/api/build-info")
+            serving=$(jq -er '.commitSha | select(type == "string" and test("^[0-9a-f]{40}$"))' <<< "$build")
+            git merge-base --is-ancestor "$floor" "$serving"
+            printf '%s serves the bundle writer: %s\n' "$origin" "$serving"
+          done
+      - name: Prepare private context and credentials
+        env:
+          GUIDANCE_MODE: ${{ inputs.mode }}
+          FROZEN_INVENTORY: ${{ inputs.frozen_inventory }}
+          PLAN_RUN_ID: ${{ inputs.plan_run_id }}
+          PLAN_SHA256: ${{ inputs.plan_sha256 }}
+          WRITERS_DRAINED: ${{ inputs.writers_drained }}
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          umask 077
+          [[ "$NEON_PROJECT_ID" == hidden-lab-39609750 ]]
+          request_dir=$(mktemp -d)
+          export C03_REQUEST_DIR="$request_dir"
+          printf 'C03_REQUEST_DIR=%s\n' "$request_dir" >> "$GITHUB_ENV"
+          node --input-type=module <<'JS'
+          import { writeFile } from 'node:fs/promises';
+          import { join } from 'node:path';
+          const context = {
+            mode: process.env.GUIDANCE_MODE, commit: process.env.GITHUB_SHA,
+            runId: process.env.GITHUB_RUN_ID, runAttempt: Number(process.env.GITHUB_RUN_ATTEMPT),
+            repository: process.env.GITHUB_REPOSITORY, ref: process.env.GITHUB_REF,
+            actor: process.env.GITHUB_ACTOR, planRunId: process.env.PLAN_RUN_ID,
+            planSha256: process.env.PLAN_SHA256, writersDrained: process.env.WRITERS_DRAINED === 'true',
+          };
+          const root = process.env.C03_REQUEST_DIR;
+          await writeFile(join(root, 'context.json'), JSON.stringify(context), { mode: 0o600 });
+          await writeFile(join(root, 'credentials.json'), JSON.stringify({ neon: process.env.NEON_API_KEY, github: process.env.GITHUB_TOKEN }), { mode: 0o600 });
+          await writeFile(join(root, 'inventory.json'), process.env.FROZEN_INVENTORY, { mode: 0o600 });
+          JS
+      - name: Verify the reviewed plan run before downloading
+        if: inputs.mode == 'apply-guidance'
+        id: plan-origin
+        working-directory: turbo/packages/db
+        run: |
+          node --import tsx scripts/migrations/029-template-guidance-bundles/production.ts \
+            --operation verify-origin --context "$C03_REQUEST_DIR/context.json" \
+            --credentials "$C03_REQUEST_DIR/credentials.json" --github-output "$GITHUB_OUTPUT"
+      - name: Download the exact reviewed plan artifact
+        if: inputs.mode == 'apply-guidance'
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.plan_run_id }}
+          name: ${{ steps.plan-origin.outputs.artifact-name }}
+          path: ${{ runner.temp }}/template-guidance-reviewed
+      - name: Plan or apply the exact reviewed owner-pointer backfill
+        working-directory: turbo/packages/db
+        env:
+          R2_ENDPOINT: https://${{ vars.R2_ACCOUNT_ID }}.r2.cloudflarestorage.com
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_USER_STORAGES_BUCKET_NAME: ${{ vars.R2_USER_STORAGES_BUCKET_NAME }}
+        run: |
+          set -euo pipefail
+          umask 077
+          node --import tsx scripts/migrations/029-template-guidance-bundles/production.ts \
+            --operation run --context "$C03_REQUEST_DIR/context.json" \
+            --credentials "$C03_REQUEST_DIR/credentials.json" --request "$C03_REQUEST_DIR" \
+            --reviewed "$RUNNER_TEMP/template-guidance-reviewed" \
+            --output "$RUNNER_TEMP/template-guidance-production"
+      - name: Retain metadata plans and reconciliation receipts only
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: template-guidance-${{ inputs.mode == 'plan-guidance' && 'plan' || 'apply' }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/template-guidance-production
+          if-no-files-found: error
+          retention-days: 14
+      - name: Remove private connection and API credential files
+        if: always()
+        run: |
+          if [[ -n "${C03_REQUEST_DIR:-}" ]]; then
+            rm -rf "$C03_REQUEST_DIR"
+          fi
