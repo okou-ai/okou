@@ -760,7 +760,7 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
   const user = userEvent.setup({ delay: null });
-  await user.click(button("Create Project"));
+  await user.click(button("Create project"));
   await user.type(
     await screen.findByRole("textbox", { name: "Project name" }),
     "Campaign",
@@ -793,7 +793,7 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   await user.click(button("Options for Campaign two"));
   await user.click(await findMenuItem("Delete"));
   const dialog = await screen.findByRole("dialog");
-  await user.click(button("Delete Project", dialog));
+  await user.click(button("Delete project", dialog));
   await waitFor(() => {
     return expect(
       queryAllByRoleFast("button").some((item) => {
@@ -803,7 +803,7 @@ test("creates, renames and deletes a Project through the shared dialogs", async 
   });
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
   await waitFor(() => {
-    expect(button("Create Project")).toHaveFocus();
+    expect(button("Create project")).toHaveFocus();
   });
 });
 
@@ -889,7 +889,7 @@ test("Creating a Project from a chat moves it immediately and survives navigatio
   }
   await user.click(within(row).getByTestId("chat-thread-menu-trigger"));
   await user.click(await findMenuItem("Move to Project"));
-  await user.click(button("Create a Project from this chat"));
+  await user.click(button("Create a project from this chat"));
   await fill(
     await screen.findByRole("textbox", { name: "Project name" }),
     "Campaign",
@@ -1028,7 +1028,7 @@ test("A new Project accepts a new chat after its pending creation is confirmed",
     featureSwitches: { [FeatureSwitchKey.Projects]: true },
   });
   const user = userEvent.setup({ delay: null });
-  await user.click(button("Create Project"));
+  await user.click(button("Create project"));
   await fill(
     await screen.findByRole("textbox", { name: "Project name" }),
     "Campaign",
@@ -2162,4 +2162,125 @@ test("A Project mention reveals a folded chat sidebar and keeps the current conv
   });
   expect(namedLink(projectRows(), "Launch planning")).toBeInTheDocument();
   expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+});
+
+function findShowArchived() {
+  return waitFor(() => {
+    const item = queryAllByRoleFast("menuitemcheckbox").find((candidate) => {
+      return candidate.textContent?.trim() === "Show archived";
+    });
+    if (!item) {
+      throw new Error("Show archived missing");
+    }
+    return item;
+  });
+}
+
+test("A Project shows its archived chats after the others only when asked", async () => {
+  const ordinary = continuityThread(98, 1, "Ordinary chat");
+  const member = {
+    ...continuityThread(98, 2, "Launch planning"),
+    projectId: id,
+  };
+  const archived = {
+    ...continuityThread(98, 3, "Archived research"),
+    projectId: id,
+    archived: true,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 98,
+    threads: [ordinary, archived, member],
+  });
+  metadata();
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const user = userEvent.setup({ delay: null });
+  await user.click(projectToggle("Launch"));
+  expect(namedLink(projectRows(), "Launch planning")).toBeVisible();
+  expect(namedLink(projectRows(), "Archived research")).toBeNull();
+
+  await user.click(button("Options for Launch"));
+  const toggle = await findShowArchived();
+  expect(toggle).toHaveAttribute("aria-checked", "false");
+  await user.click(toggle);
+  await waitFor(() => {
+    expect(namedLink(projectRows(), "Archived research")).toBeVisible();
+  });
+  const titles = projectRows()
+    .map((row) => {
+      return row.textContent?.trim();
+    })
+    .filter((text) => {
+      return text === "Launch planning" || text === "Archived research";
+    });
+  expect(titles).toStrictEqual(["Launch planning", "Archived research"]);
+  expect(namedLink(document, "Ordinary chat")).toBeVisible();
+
+  await user.click(button("Options for Launch"));
+  const checked = await findShowArchived();
+  expect(checked).toHaveAttribute("aria-checked", "true");
+  await user.click(checked);
+  await waitFor(() => {
+    expect(namedLink(projectRows(), "Archived research")).toBeNull();
+  });
+  expect(location.pathname).toBe(`/chats/${ordinary.id}`);
+});
+
+test("A mention of a deleted Project keeps its name but is no longer a link", async () => {
+  const ordinary = continuityThread(99, 1, "Current conversation");
+  const deletedId = "30000000-0000-4000-8000-000000000099";
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 99,
+    threads: [ordinary],
+    chatEventRows: [
+      continuityEventRow(99, 1, ordinary.id, "input.prompt", {
+        payload: {
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "project", projectId: id, nameSnapshot: "Launch" },
+              {
+                type: "project",
+                projectId: deletedId,
+                nameSnapshot: "Old campaign",
+              },
+            ],
+          },
+        },
+      }),
+    ],
+  });
+  metadata();
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+  const message = await waitFor(() => {
+    const found = document.querySelector<HTMLElement>(
+      "[data-structured-user-message]",
+    );
+    if (!found?.querySelector("[data-project-reference-unavailable]")) {
+      throw new Error("Deleted Project mention missing");
+    }
+    return found;
+  });
+  expect(namedLink(message, "Launch")).toHaveAttribute(
+    "href",
+    expect.stringContaining(`/projects/${id}`),
+  );
+  expect(namedLink(message, "Old campaign")).toBeNull();
+  const deleted = message.querySelector<HTMLElement>(
+    "[data-project-reference-unavailable]",
+  );
+  expect(deleted).toHaveTextContent("Old campaign");
+  expect(deleted).toHaveAttribute(
+    "aria-label",
+    "Old campaign, This project was deleted",
+  );
 });

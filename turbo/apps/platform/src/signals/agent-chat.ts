@@ -15,6 +15,7 @@ import {
   chatThreadMetaMap$,
   eventDrivenChatThreads$,
 } from "./chat-page/chat-thread-event-sourcing.ts";
+import { projectsShowingArchived$ } from "./projects/project-archived.ts";
 import {
   buildChatThreadListRows,
   buildChatThreadNavigationList,
@@ -260,8 +261,23 @@ function createChatThreadListSignals(
       return threadIdsOf(get(allThreads$));
     }),
     // A filter applies to the chats inside Projects as it does to the rest.
+    // Without one, a Project can also show its archived chats after the rest.
     projectThreads$: computed((get): readonly EventDrivenChatThread[] => {
-      return get(allProjectThreads$).filter(listed);
+      const threads = get(allProjectThreads$);
+      if (filter.onlyArchived || filter.onlyMuted) {
+        return threads.filter(listed);
+      }
+      const showingArchived = get(projectsShowingArchived$);
+      return [
+        ...threads.filter(listed),
+        ...threads.filter((thread) => {
+          return (
+            thread.archived &&
+            thread.projectId !== null &&
+            showingArchived.has(thread.projectId)
+          );
+        }),
+      ];
     }),
     allProjectThreads$,
     hideEmptyProjects: filter.onlyArchived || filter.onlyMuted,

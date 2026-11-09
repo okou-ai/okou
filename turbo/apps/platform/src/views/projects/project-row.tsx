@@ -3,6 +3,8 @@ import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
+  Archive,
+  Check,
   Ellipsis,
   Folder,
   FolderOpen,
@@ -14,6 +16,8 @@ import {
 import {
   Button,
   DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuCheckboxItemIndicator,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -22,6 +26,10 @@ import {
 } from "@okouai/ui";
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { projectsEnabled$ } from "../../signals/projects/projects.ts";
+import {
+  projectsShowingArchived$,
+  toggleProjectArchived$,
+} from "../../signals/projects/project-archived.ts";
 import { newProjectThread$ } from "../../signals/projects/project-new-thread.ts";
 import {
   openProjectEditor$,
@@ -71,6 +79,8 @@ function ProjectMenu({
   const editor = useSet(openProjectEditor$);
   const open = useSet(setProjectDialog$);
   const dialog = useGet(projectDialog$);
+  const showingArchived = useGet(projectsShowingArchived$).has(project.id);
+  const toggleArchived = useSet(toggleProjectArchived$);
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -121,6 +131,23 @@ function ProjectMenu({
             return $.projects.rename;
           })}
         </DropdownMenuItem>
+        <DropdownMenuCheckboxItem
+          checked={showingArchived}
+          closeOnClick
+          onCheckedChange={() => {
+            toggleArchived(project.id);
+          }}
+        >
+          <Archive size={16} />
+          <span className="flex-1">
+            {t(($) => {
+              return $.projects.showArchived;
+            })}
+          </span>
+          <DropdownMenuCheckboxItemIndicator>
+            <Check size={16} />
+          </DropdownMenuCheckboxItemIndicator>
+        </DropdownMenuCheckboxItem>
         <DropdownMenuSeparator />
         <DropdownMenuItem
           className="text-destructive focus:text-destructive"

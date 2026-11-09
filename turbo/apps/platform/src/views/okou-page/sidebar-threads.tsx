@@ -616,6 +616,11 @@ function ChatThreadItemLink({
   const endDrag = useSet(endProjectThreadDrag$);
   const draggable = projectsEnabled && !touch && !renaming;
   const titleReveal = useTitleReveal();
+  // Archived chats only appear among active ones inside a Project that shows
+  // them; the Archived filter needs no marker.
+  const archived = useGet(signals.archived$);
+  const archivedOnly = useGet(chatThreadOnlyArchived$);
+  const archivedAmongActive = archived && !archivedOnly;
 
   return (
     <Link
@@ -669,9 +674,20 @@ function ChatThreadItemLink({
         )}
       >
         <ChatThreadListPaneIcon signals={signals} />
+        {archivedAmongActive && (
+          <Archive
+            size={14}
+            aria-hidden="true"
+            className="shrink-0 text-nav-copy-muted"
+          />
+        )}
         <HoverScrollTitle
           data-slot="sidebar-thread-title"
-          className="text-[color:var(--nav-copy,inherit)]"
+          className={
+            archivedAmongActive
+              ? "text-nav-copy-muted"
+              : "text-[color:var(--nav-copy,inherit)]"
+          }
           title={
             title ??
             t(($) => {

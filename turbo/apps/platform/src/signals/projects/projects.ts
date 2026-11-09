@@ -102,6 +102,10 @@ export const projects$ = computed((get) => {
       : project;
   });
 });
+/** Whether `projects$` reflects the member's synced Projects. */
+export const projectsLoaded$ = computed((get) => {
+  return get(projectsEnabled$) && get(get(projectState$).events$) !== null;
+});
 export const syncProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const owner = get(projectState$);
