@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.83](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.82...sandbox-firecracker-v0.53.83) (2026-11-09)
+
+
+### Refactoring
+
+* **sandbox:** centralize exec environment rejection policy ([#46048](https://github.com/okou-ai/okou/issues/46048)) ([28c0756](https://github.com/okou-ai/okou/commit/28c07566f691037ad36cd018ae1ac5dfd06f5220))
+
 ## [0.53.82](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.81...sandbox-firecracker-v0.53.82) (2026-11-09)
 
 
