@@ -10,6 +10,9 @@ import { chatEvents } from "@okouai/db/schema/chat-event";
 import { and, desc, eq, inArray, isNotNull } from "drizzle-orm";
 
 import { logger } from "../../lib/log";
+import { recordTemplateUsage } from "../../lib/template-usage-log";
+import { resolveThreadGenerationTemplates } from "../../lib/thread-generation-template";
+import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { DiscordQueuedLaunchUnavailableError } from "./discord-queued-launch-context.service";
@@ -28,6 +31,7 @@ import {
   revokedChatEventReadPlan,
   revokedChatEventIdsFromRows,
 } from "./chat-event-queue.service";
+import { projectUserMessage } from "./chat-user-message.service";
 
 /*
  * Steering a pending input into a running sandbox run.
@@ -355,6 +359,31 @@ export const declareSteeredInput$ = command(
             ),
           )[0] ?? null;
         if (replacement) {
+          // Record the committed winner before the caller observes cancellation.
+          if (source.eventType === "input.prompt") {
+            const projection = projectUserMessage(source.userMessage);
+            // Reparse the immutable selection at declaration time, not the earlier
+            // GET's exact guidance. Steering cannot add mounts to the running run.
+            const { identities } = resolveThreadGenerationTemplates({
+              explicit: projection.primaryTemplate,
+              explicitTemplates: projection.templates,
+              includeManagedImageInstructions: false,
+              mountedUserPresentationTemplateIds: [],
+              mountedUserTemplates: [],
+            });
+            recordTemplateUsage(
+              {
+                runId: scope.runId,
+                sourceEventId: source.id,
+                orgId: scope.orgId,
+                userId: scope.userId,
+                chatThreadId: scope.chatThreadId,
+                dispatchPath: "active-input",
+                usedAt: nowDate(),
+              },
+              identities,
+            );
+          }
           return { outcome: "appended" };
         }
       }
