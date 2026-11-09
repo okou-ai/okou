@@ -152,6 +152,15 @@ bytes. Producer rootfs identity is provenance; it does not invalidate a compatib
 Home by itself. The fixed home scope is independent of cwd.
 New build/snapshot identities require a supported Guest/Runner pair.
 
+Exact VM reuse remains preferred. An available compatible blank can also host a
+selected cached Home: the cache lease revokes discovery before handing over the
+image, and the provider fences normal operations through normal unmount, backend
+replacement and validated remount. An incomplete transition makes the VM unusable
+for execution or pooling. The active image keeps its canonical workspace path,
+with the selected Home's storage fingerprints and history proof. Startup path
+`home` covers both fresh allocation and this combination;
+`runner_blank_home_rebind` measures the latter's cache handoff and replacement.
+
 Home captures ordinary tools/framework files, `/home/user/.npm` and user files
 outside cwd. Current captured instructions, skills, memory, storage, account,
 model, auth, permissions and proxy state remain authoritative over stale managed

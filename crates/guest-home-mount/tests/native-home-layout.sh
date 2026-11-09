@@ -58,6 +58,20 @@ chroot "$work/root" /sbin/guest-home-mount
 [[ $(chroot "$work/root" sh -c 'cd /home/user/workspace && pwd') == /home/user/workspace ]]
 for name in .bashrc .profile .bash_logout; do [[ -f "$work/root/home/user/$name" ]]; done
 
+# A busy Home must remain mounted; replacement cannot silently detach a live
+# working directory. Once it is idle, the fixed helper can normally remount it.
+if chroot "$work/root" sh -c 'cd /home/user; /sbin/guest-home-mount --unmount'; then
+  echo 'busy home was detached' >&2
+  exit 1
+fi
+mountpoint -q "$work/root/home/user"
+chroot "$work/root" /sbin/guest-home-mount --unmount
+if mountpoint -q "$work/root/home/user"; then
+  echo 'idle home remained mounted' >&2
+  exit 1
+fi
+chroot "$work/root" /sbin/guest-home-mount
+
 # A hit and a newly attached persisted home retain ordinary user bytes without
 # backfilling defaults, recursively copying the used rootfs home, or chowning
 # existing trees. Remount is a real filesystem test, not a snapshot surrogate.

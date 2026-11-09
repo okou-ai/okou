@@ -74,6 +74,7 @@ use crate::snapshot_mount_namespace::{BindMount, SnapshotMountMode, build_comman
 
 mod guest_connection_timing;
 mod guest_readiness;
+mod home_rebind;
 mod park_attempt;
 mod snapshot_restore;
 mod state;
@@ -3101,6 +3102,13 @@ impl Sandbox for FirecrackerSandbox {
         *timing = sandbox::StorageManifestTiming::default();
         self.apply_storage_manifest_observed(request, Some(timing))
             .await
+    }
+
+    async fn replace_home_drive(
+        &mut self,
+        config: &sandbox::HomeDriveConfig,
+    ) -> sandbox::Result<()> {
+        self.replace_blank_home(config).await
     }
 
     async fn mount_home_drive(&self) -> sandbox::Result<ExecResult> {

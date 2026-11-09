@@ -269,9 +269,10 @@ pub use payloads::guest_storage_manifest::{
     encode_guest_storage_manifest_result, encode_guest_storage_manifest_result_frame_into,
 };
 pub use payloads::home_drive_mount::{
-    HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES, decode_home_drive_mount_request,
+    HOME_DRIVE_MOUNT_OUTPUT_LIMIT_BYTES, HomeDriveOperation, decode_home_drive_mount_request,
     decode_home_drive_mount_result, encode_home_drive_mount_request_frame_into,
     encode_home_drive_mount_result, encode_home_drive_mount_result_frame_into,
+    encode_home_drive_operation_frame_into,
 };
 pub use payloads::memory_snapshot::{
     MEMORY_SNAPSHOT_PAYLOAD_SIZE, MemorySnapshot, decode_memory_snapshot,

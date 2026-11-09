@@ -56,6 +56,7 @@ use tracing::Level;
 use tracing_subscriber::prelude::*;
 
 mod account_context;
+mod blank_home;
 mod blank_prefetch;
 mod cancellation;
 mod codex_reconnect;

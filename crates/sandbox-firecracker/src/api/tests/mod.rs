@@ -601,6 +601,43 @@ async fn patch_drive_rate_limiter_serializes_partial_drive() {
 }
 
 #[tokio::test]
+async fn patch_drive_path_serializes_partial_drive() {
+    let mut api = MockFirecrackerApi::with_responses([MockResponse::no_content()]);
+    let client = ApiClient::new(api.socket_path()).unwrap();
+    let home_path = "/owned/home \"quoted\"\\image.ext4";
+
+    client.patch_drive_path("home", home_path).await.unwrap();
+
+    let request = api.next_request().await;
+    assert_request(&request, "PATCH", "/drives/home");
+    assert_eq!(
+        request_body_json(&request),
+        serde_json::json!({"drive_id": "home", "path_on_host": home_path}),
+    );
+}
+
+#[tokio::test]
+async fn patch_drive_path_preserves_upstream_rejection() {
+    let api = MockFirecrackerApi::with_responses([MockResponse::bad_request_fault(
+        "cannot open replacement image",
+    )]);
+    let client = ApiClient::new(api.socket_path()).unwrap();
+
+    let error = client
+        .patch_drive_path("home", "/owned/missing.ext4")
+        .await
+        .unwrap_err();
+
+    match error {
+        ApiError::Http { status, body } => {
+            assert_eq!(status, 400);
+            assert_eq!(body, "cannot open replacement image");
+        }
+        error => panic!("expected upstream HTTP rejection, got {error:?}"),
+    }
+}
+
+#[tokio::test]
 async fn configure_network_interface_succeeds_on_204() {
     let mut api = MockFirecrackerApi::with_responses([MockResponse::no_content()]);
     let sock_path = api.socket_path().to_path_buf();

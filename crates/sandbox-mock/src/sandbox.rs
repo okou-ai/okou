@@ -1003,6 +1003,25 @@ impl Sandbox for MockSandbox {
         Ok(apply_exec_output_limits(result, EXEC_OUTPUT_LIMIT_1_MIB))
     }
 
+    async fn replace_home_drive(&mut self, config: &HomeDriveConfig) -> Result<()> {
+        if let Some(overrides) = &self.overrides {
+            overrides
+                .exec
+                .home_drive_replacements
+                .lock_ignoring_poison()
+                .push(config.clone());
+        }
+        let result = self.mount_home_drive().await?;
+        if result.termination != (ExecTermination::Exited { exit_code: 0 }) {
+            return Err(SandboxError::Operation {
+                operation: SandboxOperation::MountHomeDrive,
+                reason: SandboxOperationReason::Other,
+                message: "mock Home replacement failed".into(),
+            });
+        }
+        Ok(())
+    }
+
     async fn mount_home_drive(&self) -> Result<ExecResult> {
         *self.home_drive_mount_calls.lock_ignoring_poison() += 1;
         if let Some(overrides) = &self.overrides {

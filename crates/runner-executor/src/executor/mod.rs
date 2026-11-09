@@ -953,27 +953,53 @@ pub async fn execute_job_reuse_with_hooks(
         );
     }
 
-    let home_image = match (config.home_cache.as_ref(), home_image) {
-        (_, Some(home_image)) => Some(home_image),
-        (Some(cache), None) => Some(
-            cache
-                .lease_active(HomeImageLeaseRequest {
-                    identity: HomeImageLeaseIdentity {
-                        run_id,
-                        sandbox_id,
-                        profile_name: &params.profile_name,
-                        rootfs_hash: &params.rootfs_hash,
-                        reuse_key: claimed_reuse_key,
-                        working_dir: CANONICAL_WORKING_DIR,
-                        image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
-                    },
-                    home_drive_available: true,
-                })
-                .await
-                .with_first_run(context.is_first_run),
-        ),
-        (None, None) => None,
+    let home_image = if kind == IdleSandboxKind::Blank {
+        sandbox_run::prepare_home_image(&context, sandbox_id, config, params, &mut telemetry).await
+    } else {
+        match (config.home_cache.as_ref(), home_image) {
+            (_, Some(home_image)) => Some(home_image),
+            (Some(cache), None) => Some(
+                cache
+                    .lease_active(HomeImageLeaseRequest {
+                        identity: HomeImageLeaseIdentity {
+                            run_id,
+                            sandbox_id,
+                            profile_name: &params.profile_name,
+                            rootfs_hash: &params.rootfs_hash,
+                            reuse_key: claimed_reuse_key,
+                            working_dir: CANONICAL_WORKING_DIR,
+                            image_size_bytes: u64::from(params.home_disk_mb) * 1024 * 1024,
+                        },
+                        home_drive_available: true,
+                    })
+                    .await
+                    .with_first_run(context.is_first_run),
+            ),
+            (None, None) => None,
+        }
     };
+    let combined_home = kind == IdleSandboxKind::Blank
+        && home_image
+            .as_ref()
+            .is_some_and(HomeImageLease::is_cache_hit);
+    let combined_storage = home_image
+        .as_ref()
+        .filter(|_| combined_home)
+        .and_then(HomeImageLease::previous_storage)
+        .cloned();
+    let home_history_proof = home_image
+        .as_ref()
+        .filter(|_| combined_home)
+        .and_then(|image| image.history_proof_binding().cloned());
+    if combined_home {
+        telemetry.set_home_startup_source(
+            home_image
+                .as_ref()
+                .and_then(HomeImageLease::source_identity),
+        );
+    }
+
+    let home_image_result = home_image.as_ref().map(HomeImageLease::result);
 
     // The reuse owner either returns a live sandbox for caller finalization or
     // retires an unusable blank before attempting its single replacement.
@@ -995,6 +1021,11 @@ pub async fn execute_job_reuse_with_hooks(
             home_image,
         ),
         Ok(prepared_run_payload) => {
+            let mut controls = RunControls::from_cancellation(cancellation, active_input_source)
+                .with_sandbox_recovery(sandbox_recovery)
+                .with_spawn_timing(spawn_timing)
+                .with_guest_state_prepared(guest_state_prepared);
+            controls.home_history_proof = home_history_proof;
             execute_reused_sandbox(
                 ReusedSandboxRun {
                     sandbox_id,
@@ -1015,38 +1046,29 @@ pub async fn execute_job_reuse_with_hooks(
                     reuse_result,
                     home_reuse_result: match kind {
                         IdleSandboxKind::Exact => HomeReuseResult::SandboxReused,
-                        IdleSandboxKind::Blank => blank_home_reuse_result(&context, config),
+                        IdleSandboxKind::Blank => {
+                            sandbox_run::final_home_reuse_result(home_image_result, false)
+                        }
                     },
                     sandbox_startup_path: match kind {
                         IdleSandboxKind::Exact => SandboxStartupPath::Sandbox,
+                        IdleSandboxKind::Blank if combined_home => SandboxStartupPath::Home,
                         IdleSandboxKind::Blank => SandboxStartupPath::Blank,
                     },
-                    prev_storage: (kind == IdleSandboxKind::Exact).then_some(&prev_storage),
+                    prev_storage: if combined_home {
+                        combined_storage.as_ref()
+                    } else {
+                        (kind == IdleSandboxKind::Exact).then_some(&prev_storage)
+                    },
                 },
                 &mut telemetry,
-                PreparedRunInputs::new(
-                    RunControls::from_cancellation(cancellation, active_input_source)
-                        .with_sandbox_recovery(sandbox_recovery)
-                        .with_spawn_timing(spawn_timing)
-                        .with_guest_state_prepared(guest_state_prepared),
-                    prepared_run_payload,
-                ),
+                PreparedRunInputs::new(controls, prepared_run_payload),
             )
             .await
         }
     };
 
     (outcome.with_storage_context(&context), telemetry)
-}
-
-fn blank_home_reuse_result(context: &ExecutionContext, config: &ExecutorConfig) -> HomeReuseResult {
-    if config.home_cache.is_none() {
-        HomeReuseResult::NotConfigured
-    } else if context.reuse_key().is_some() {
-        HomeReuseResult::CacheMiss
-    } else {
-        HomeReuseResult::NoReuseKey
-    }
 }
 
 async fn resolve_reused_home_promotion(

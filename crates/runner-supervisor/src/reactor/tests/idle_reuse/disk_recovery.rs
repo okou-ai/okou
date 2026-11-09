@@ -89,10 +89,6 @@ async fn assert_exhausted_home_cleanup() {
             "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa".into(),
             None,
         );
-        assert!(matches!(
-            env.idle_pool.lock().await.park(candidate),
-            crate::idle_pool::ParkResult::Parked
-        ));
         let paths = RunnerPaths::new(config.paths.base_dir.clone());
         let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
         let reuse_key = "thread:disk-blank-recovery";
@@ -132,8 +128,20 @@ async fn assert_exhausted_home_cleanup() {
         let mut context = context_with_session(run_id, "disk-blank-recovery");
         context.reuse_key = Some(reuse_key.into());
         context.prompt = "Current input survives every resource replacement".into();
+        // Keep this fixture about disk replacement. Publish the prepared blank
+        // only after initial cached-Home creation has accepted its resources;
+        // otherwise ordinary startup now correctly combines that Home and blank.
+        let original_creation = MockLifecycleGate::new();
+        overrides.set_create_lifecycle_gate(original_creation.clone());
         let task = tokio::spawn(run(config));
         push_job(&env, run_id, "vm0/default", Some(context));
+        original_creation.wait_entered(1, WAIT).await.unwrap();
+        assert!(matches!(
+            env.idle_pool.lock().await.park(candidate),
+            crate::idle_pool::ParkResult::Parked
+        ));
+        // The accepted original and optional single cold replacement may create.
+        original_creation.release_many(2);
         if retirement != "confirmed" {
             let completion = env.handle.wait_completion(run_id, WAIT).await.unwrap();
             assert_ne!(completion.exit_code, 0);
