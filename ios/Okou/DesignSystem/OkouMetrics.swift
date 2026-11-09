@@ -36,12 +36,11 @@ enum OkouControl {
   static let largeHeight: CGFloat = 52
   static let pageInset: CGFloat = 24
   static let readableWidth: CGFloat = 440
-  /// Chat rows in the sidebar; agent rows add room for their avatar.
+  /// Chat rows in the sidebar.
   static let listRow: CGFloat = 48
   /// A row in a grouped card (Settings and every sheet): the height the system gives a row
   /// with a 28 pt icon slot or a switch, so a row of text alone is no shorter beside it.
   static let groupedRow: CGFloat = 52
-  static let agentRow: CGFloat = 50
   /// Quiet icon actions inside content (message actions, row shortcuts); still a 44 pt wide target.
   static let inlineActionHeight: CGFloat = 36
   /// The slim header of a code block (language and copy).
@@ -49,9 +48,6 @@ enum OkouControl {
   /// Centre-to-centre spacing of the icon actions under an answer (web: 28 px buttons, 4 px gap;
   /// ChatGPT: 31 pt).
   static let messageActionPitch: CGFloat = 32
-  /// One agent in a sideways rail: avatar and a one-line name of about eleven characters at
-  /// 11 pt (Instagram's tray shows about ten), so about four and a half fit across the sidebar.
-  static let agentTile: CGFloat = 76
   /// Unread marker on a chat row (web: 8 px `sky-600`).
   static let unreadDot: CGFloat = 8
   /// The leading slot that holds a chat's status emoji in a list section.
@@ -122,8 +118,6 @@ enum OkouAvatarSize {
   static let message: CGFloat = 28
   static let sidebar: CGFloat = 32
   static let greeting: CGFloat = 56
-  /// An agent in the sidebar's sideways rail of pinned agents.
-  static let rail: CGFloat = 56
   /// An agent in a chat row's status column (Active): its mark is the size of a status emoji.
   static let row: CGFloat = 28
   /// The account and the workspace at the top of Settings: one size, the height of the

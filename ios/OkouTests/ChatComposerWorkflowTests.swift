@@ -22,7 +22,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     try await focusMentionInput(input)
     input.insertText("Before @")
     let firstChat = try XCTUnwrap(
-      workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .chat })
+      workspace.mentionTestSource.suggestions(for: "").first)
     try await waitForBusinessResult {
       workspace.newComposer.editor.mentionSuggestions.contains(firstChat)
     }
@@ -48,7 +48,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
     input.insertText(" @")
     let chat = try XCTUnwrap(
-      workspace.mentionTestSource.suggestions(for: "").first { $0.kind == .chat })
+      workspace.mentionTestSource.suggestions(for: "").first)
     try await waitForBusinessResult {
       workspace.newComposer.editor.mentionSuggestions.contains(chat)
     }

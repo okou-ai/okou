@@ -13,8 +13,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
     let source = workspace.mentionTestSource
-    let overview = source.suggestions(for: "")
-    let chats = overview.filter { $0.kind == .chat }
+    let chats = source.suggestions(for: "")
     XCTAssertEqual(chats.count, 25)
     // Sidebar pinOrder puts the older pin first; mention ordering uses activity.
     XCTAssertEqual(chats.first?.referenceID, MentionNavigationFixture.thread(35))
@@ -164,13 +163,14 @@ final class ChatComposerMentionTests: XCTestCase {
       conversation.close()
       workspace.close()
     }
-    let reference = ComposerMentionSuggestion(
-      kind: .agent, referenceID: MentionNavigationFixture.agent(1), title: "Planner", avatarURL: nil
-    )
-    let draft = ChatDraftDocument(parts: [
-      reference.part, .object(["type": .string("text"), "text": .string(" ")]),
+    let reference: MessageJSON = .object([
+      "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
+      "nameSnapshot": .string("Planner"),
     ])
-    let expected = ChatDraftDocument(parts: [reference.part])
+    let draft = ChatDraftDocument(parts: [
+      reference, .object(["type": .string("text"), "text": .string(" ")]),
+    ])
+    let expected = ChatDraftDocument(parts: [reference])
     let block = try XCTUnwrap(conversation.composer.editorBlocks.first)
     conversation.composer.editBlock(block.id, document: draft)
     XCTAssertEqual(conversation.composer.document, draft)
@@ -214,15 +214,16 @@ final class ChatComposerMentionTests: XCTestCase {
         message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
     let block = try XCTUnwrap(conversation.composer.addFeedback(quote))
     let source = workspace.mentionTestSource
-    let chat = try XCTUnwrap(source.suggestions(for: "plan").first { $0.kind == .chat })
-    let agent = ComposerMentionSuggestion(
-      kind: .agent, referenceID: MentionNavigationFixture.agent(1), title: "Planner", avatarURL: nil
-    )
+    let chat = try XCTUnwrap(source.suggestions(for: "plan").first)
+    let agent: MessageJSON = .object([
+      "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
+      "nameSnapshot": .string("Planner"),
+    ])
     let note = ChatDraftDocument(parts: [
       .object(["type": .string("text"), "text": .string("Compare ")]),
       chat.part,
       .object(["type": .string("text"), "text": .string(" with ")]),
-      agent.part,
+      agent,
       .object(["type": .string("text"), "text": .string(" ")]),
     ])
     conversation.composer.editBlock(block, document: note)
@@ -265,7 +266,7 @@ final class ChatComposerMentionTests: XCTestCase {
       candidates.close()
     }
     let reference = try XCTUnwrap(
-      candidates.mentionTestSource.suggestions(for: "plan").first { $0.kind == .chat })
+      candidates.mentionTestSource.suggestions(for: "plan").first)
     let draft = ChatDraftDocument(parts: [
       reference.part, .object(["type": .string("text"), "text": .string(" ")]),
     ])
