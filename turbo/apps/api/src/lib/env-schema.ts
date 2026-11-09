@@ -39,6 +39,9 @@ function coreEnvSchema() {
     DATABASE_URL: string().min(1),
     CLERK_SECRET_KEY: string().min(1),
     CLERK_PUBLISHABLE_KEY: string().min(1),
+    // Optional instance public PEM. Pinned keys require coordinated redeployment
+    // on rotation/withdrawal; unset selects the SDK's online JWKS discovery.
+    CLERK_JWT_KEY: string().min(1).optional(),
     MCP_RESOURCE_URL: url().optional(),
     MCP_OAUTH_ISSUER: url().optional(),
     SECRETS_ENCRYPTION_KEY: string().length(64),

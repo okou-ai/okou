@@ -852,6 +852,7 @@ export async function authenticateClerkSession(
 ): Promise<ClerkSessionAuthentication> {
   const requestState = await clerkSdk().authenticateRequest(request, {
     acceptsToken: "session_token",
+    jwtKey: env("CLERK_JWT_KEY"),
     ...(options ? { authorizedParties: [...options.authorizedParties] } : {}),
   });
 
