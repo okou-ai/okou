@@ -15,8 +15,8 @@ import time
 import urllib.error
 import urllib.parse
 from collections.abc import Callable
+from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
-from functools import partial
 
 import network_log_sanitization
 from logging_utils import log_proxy_entry
@@ -127,13 +127,13 @@ def _post_webhook_with_retry(
     payload: dict,
     proxy_log_path: str,
     log_type: str,
-    pending_report: PendingReportLease,
     max_retries: int = 1,
     delivery_outcome_callback: _DeliveryOutcomeCallback | None = None,
 ) -> None:
     """POST with retry.
 
-    Reports the final delivery outcome before decrementing pending reports.
+    Reports the final delivery outcome and invokes its owning callback.
+    The admitted delivery owner retains and releases the pending counters.
     Non-retryable programming errors (``TypeError`` from a non-serializable
     payload, invalid request URLs, etc.) are logged and reported as permanent.
     They are re-raised only when no outcome callback owns the failure.
@@ -152,8 +152,6 @@ def _post_webhook_with_retry(
         record_delivery_outcome(outcome)
         if delivery_outcome_callback is not None:
             delivery_outcome_callback(outcome)
-    finally:
-        pending_report.release()
 
 
 def _handle_retryable_webhook_failure(
@@ -368,48 +366,62 @@ def reset_delivery_capacity_for_tests() -> None:
         _pending_delivery_payloads = 0
 
 
-def _post_admitted_webhook_with_retry(
-    url: str,
-    bearer_credential: str,
-    payload: dict,
-    proxy_log_path: str,
-    log_type: str,
-    pending_report: PendingReportLease,
-    delivery_outcome_callback: _DeliveryOutcomeCallback | None,
-    release_capacity: Callable[[], None],
-    try_claim_delivery: Callable[[], bool],
-    *,
-    fallback_message: str | None = None,
-) -> None:
-    if not try_claim_delivery():
-        return
+@dataclass(eq=False, repr=False)
+class _WebhookDelivery:
+    """One admitted payload owns its claim and both counters until completion."""
 
-    delivery_started = False
-    try:
-        if fallback_message is not None:
-            log_proxy_entry(
-                proxy_log_path,
-                "warn",
-                fallback_message,
-                type=log_type,
-                url=url,
-            )
-        delivery_started = True
-        _post_webhook_with_retry(
-            url,
-            bearer_credential,
-            payload,
-            proxy_log_path,
-            log_type,
-            pending_report,
-            delivery_outcome_callback=delivery_outcome_callback,
-        )
-    finally:
+    url: str
+    bearer_credential: str
+    payload: dict
+    proxy_log_path: str
+    log_type: str
+    pending_report: PendingReportLease
+    release_capacity: Callable[[], None]
+    delivery_outcome_callback: _DeliveryOutcomeCallback | None
+    _claim_lock: threading.Lock = field(default_factory=threading.Lock, init=False)
+    _claimed: bool = field(default=False, init=False)
+
+    def _try_claim(self) -> bool:
+        with self._claim_lock:
+            if self._claimed:
+                return False
+            self._claimed = True
+            return True
+
+    def _release_resources(self) -> None:
         try:
-            if not delivery_started:
-                pending_report.release()
+            self.pending_report.release()
         finally:
-            release_capacity()
+            self.release_capacity()
+
+    def run(self, *, fallback_message: str | None = None) -> None:
+        if not self._try_claim():
+            return
+
+        try:
+            if fallback_message is not None:
+                log_proxy_entry(
+                    self.proxy_log_path,
+                    "warn",
+                    fallback_message,
+                    type=self.log_type,
+                    url=self.url,
+                )
+            _post_webhook_with_retry(
+                self.url,
+                self.bearer_credential,
+                self.payload,
+                self.proxy_log_path,
+                self.log_type,
+                delivery_outcome_callback=self.delivery_outcome_callback,
+            )
+        finally:
+            self._release_resources()
+
+    def rollback_if_unclaimed(self) -> None:
+        """A failed submit cannot retire work already claimed by a worker."""
+        if self._try_claim():
+            self._release_resources()
 
 
 def enqueue_webhook_delivery(
@@ -486,42 +498,26 @@ def enqueue_webhook_delivery(
         release_capacity()
         raise
 
-    pending_report = admit_pending_report()
-    claim_lock = threading.Lock()
-    claimed = False
-
-    def try_claim_delivery() -> bool:
-        nonlocal claimed
-        with claim_lock:
-            if claimed:
-                return False
-            claimed = True
-            return True
-
-    deliver = partial(
-        _post_admitted_webhook_with_retry,
-        url,
-        sandbox_token,
-        payload,
-        proxy_log_path,
-        log_type,
-        pending_report,
-        delivery_outcome_callback,
-        release_capacity,
-        try_claim_delivery,
+    delivery = _WebhookDelivery(
+        url=url,
+        bearer_credential=sandbox_token,
+        payload=payload,
+        proxy_log_path=proxy_log_path,
+        log_type=log_type,
+        pending_report=admit_pending_report(),
+        release_capacity=release_capacity,
+        delivery_outcome_callback=delivery_outcome_callback,
     )
     try:
-        executor.submit(deliver)
+        executor.submit(delivery.run)
     except RuntimeError:
         # submit() can queue work before Thread.start() raises. Only one
         # invocation may own delivery, its callback, and counter cleanup.
-        deliver(fallback_message="Webhook submission failed, falling back to synchronous delivery")
+        delivery.run(
+            fallback_message="Webhook submission failed, falling back to synchronous delivery"
+        )
     except Exception:
-        if try_claim_delivery():
-            try:
-                pending_report.release()
-            finally:
-                release_capacity()
+        delivery.rollback_if_unclaimed()
         raise
     return True
 
