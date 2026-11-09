@@ -369,16 +369,6 @@ async fn deferred_poll_extends_until_latest_deadline() {
     assert_eq!(poll_reason(wait.await.unwrap()), Some(PollReason::Deferred));
 }
 
-#[tokio::test]
-async fn deferred_poll_until_preserves_absolute_deadline() {
-    let wakeups = PollWakeups::new(true);
-    let deadline = StdInstant::now() + Duration::from_secs(2);
-
-    wakeups.request_deferred_poll_until(deadline);
-
-    assert_eq!(wakeups.snapshot().deferred_poll_at, Some(deadline.into()));
-}
-
 #[tokio::test(start_paused = true)]
 async fn deferred_poll_revalidates_extended_deadline() {
     let wakeups = PollWakeups::new(true);

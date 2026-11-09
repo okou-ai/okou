@@ -104,7 +104,7 @@ use idle_memory::IdleMemoryReclaimer;
 use job_discovery::{AdmissionContext, DiscoveredJob};
 use job_spawn::{JobResult, SpawnContext, handle_job_result};
 use maintenance::{MaintenanceCompletion, MaintenanceTasks};
-use pending_candidate::PendingCandidate;
+use pending_candidate::PendingCandidates;
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_lifecycle::home_image_cache::snapshot::HomeCacheStateSnapshot;
 use runner_network::proxy::MitmRecovery;
@@ -1144,7 +1144,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         &mode_rx,
     );
     let mut soft_drain = soft_drain::SoftDrain::new();
-    let mut pending_candidate = PendingCandidate::new();
+    let mut pending_candidates = PendingCandidates::new();
+    let mut prefer_pending_retry = true;
     let mut ready_direct_candidates_left = 0;
     let mut terminal_error = None;
     loop {
@@ -1168,7 +1169,10 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 heartbeat.request(mode)?;
             }
         }
-        pending_candidate.clear_if_inactive(mode);
+        pending_candidates.clear_if_inactive(mode);
+        if mode != RunnerMode::Running {
+            provider_state.provider.clear_candidate_deferrals().await;
+        }
         blank_pool.cancel_if_inactive(mode);
         match mode {
             RunnerMode::Starting => {}
@@ -1237,8 +1241,33 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         // Spawn background restart task when timer fires
         mitm_recovery.maybe_start(&mut mitm, &mut mitm_crash_rx);
 
-        if let Some(candidate) = pending_candidate.take_retry(mode, claim_tasks.has_capacity()) {
-            claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
+        if !claim_tasks.has_capacity() {
+            for run_id in pending_candidates.release_expired() {
+                provider_state
+                    .provider
+                    .release_candidate_deferral(run_id)
+                    .await;
+            }
+        }
+        // Yield through select between retries so a continuously eligible
+        // pending set cannot hide unrelated discovery behind preparation.
+        if prefer_pending_retry
+            && let Some((candidate, retry)) =
+                pending_candidates.take_retry(mode, claim_tasks.has_capacity())
+        {
+            prefer_pending_retry = false;
+            if candidate.runner_preference().is_none() {
+                provider_state
+                    .provider
+                    .release_candidate_deferral(candidate.run_id())
+                    .await;
+            }
+            claim_tasks.submit(
+                DiscoveredJob { candidate },
+                &runner.profiles,
+                &factories,
+                retry,
+            );
         }
         let can_discover = if matches!(mode, RunnerMode::Running) {
             // A selected finalizing successor can claim against an exact
@@ -1259,8 +1288,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
         let mitm_retry_deadline = mitm_recovery.retry_deadline();
         let heartbeat_sending = heartbeat.is_sending();
         let heartbeat_retry_deadline = heartbeat.retry_deadline().map(Into::into);
-        let pending_finalizing_deadline =
-            pending_candidate.expiry_deadline(mode, claim_tasks.has_capacity());
+        let pending_retry_deadline =
+            pending_candidates.next_deadline(mode, claim_tasks.has_capacity());
         tokio::select! {
             result = soft_drain.join(), if soft_drain.is_in_flight() => {
                 if let Err(error) = soft_drain.complete(result, &lifecycle) {
@@ -1321,8 +1350,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                 let Some(candidate) = discovered else { break };
                 // Future completed — create a new one for the next discovery.
                 discover_fut = Box::pin(provider_state.provider.discover());
-                let candidate = pending_candidate.for_admission(candidate);
-                claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
+                let (candidate, retry) = pending_candidates.for_admission(candidate);
+                prefer_pending_retry = true;
+                claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories, retry);
                 ready_direct_candidates_left = READY_DIRECT_CANDIDATE_DRAIN_LIMIT;
             }
             candidate = provider_state.provider.try_discover_ready(),
@@ -1330,8 +1360,9 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             {
                 if let Some(candidate) = candidate {
                     ready_direct_candidates_left -= 1;
-                    let candidate = pending_candidate.for_admission(candidate);
-                    claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
+                    let (candidate, retry) = pending_candidates.for_admission(candidate);
+                    prefer_pending_retry = true;
+                    claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories, retry);
                 } else {
                     ready_direct_candidates_left = 0;
                 }
@@ -1354,8 +1385,8 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                         break;
                     }
                 };
-                if let Some(candidate) = result.pending_candidate {
-                    pending_candidate.retain(candidate, *mode_rx.borrow());
+                if let Some((candidate, retry)) = result.pending_candidate {
+                    pending_candidates.retain(candidate, *mode_rx.borrow(), retry);
                 }
                 let live_mode = *mode_rx.borrow();
                 if result.needs_reuse_state_refresh
@@ -1397,6 +1428,7 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
                     }
                     HomeCacheObservationEvent::Refreshed(change) => {
                         let live_mode = *mode_rx.borrow();
+                        pending_candidates.request_retry(live_mode);
                         if matches!(live_mode, RunnerMode::Running | RunnerMode::Draining) {
                             heartbeat.request_home_cache(live_mode, change)?;
                         }
@@ -1577,25 +1609,22 @@ pub async fn run(config: RunConfig) -> error::ReactorResult<()> {
             _ = capacity.budget.changed(),
                 if matches!(mode, RunnerMode::Running | RunnerMode::Draining) =>
             {
+                pending_candidates.request_retry(*mode_rx.borrow());
                 heartbeat.request(*mode_rx.borrow())?;
             }
             _ = idle_pool_changes.changed(),
                 if matches!(mode, RunnerMode::Running | RunnerMode::Draining) =>
             {
+                pending_candidates.request_retry(*mode_rx.borrow());
                 heartbeat.request(*mode_rx.borrow())?;
             }
-            _ = sleep_until_optional_instant(pending_finalizing_deadline) =>
-            {
-                let Some(candidate) = pending_candidate.take_expired() else {
-                    continue;
-                };
-                claim_tasks.submit(DiscoveredJob { candidate }, &runner.profiles, &factories);
-            }
+            _ = sleep_until_optional_instant(pending_retry_deadline) =>
+            { prefer_pending_retry = true; }
             // Immediate heartbeat after reusable state changes eliminates the
             // routine-report blind spot for reuse-aware routing.
             _ = reuse_state_notify.notified(), if matches!(mode, RunnerMode::Running | RunnerMode::Draining) => {
                 let live_mode = *mode_rx.borrow();
-                pending_candidate.request_retry(live_mode);
+                pending_candidates.request_retry(live_mode);
                 let source = match live_mode {
                     RunnerMode::Running if can_discover => "main",
                     RunnerMode::Running => "budget_exhausted",
