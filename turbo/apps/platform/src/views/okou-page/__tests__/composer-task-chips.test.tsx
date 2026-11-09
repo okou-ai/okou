@@ -300,7 +300,7 @@ test.each([
       "Turn a photo of me into a professional headshot. Keep my identity recognizable and help me choose a natural background and lighting.",
   },
 ])(
-  "A second $task idea rewrites the first prompt instead of stacking one after it",
+  "Choosing a second $task idea replaces its prompt and dismissing restores the original draft",
   async ({ task, first, second, firstPrompt, secondPrompt }) => {
     mockTemplateChat();
     const editor = await setupChips();
@@ -317,6 +317,8 @@ test.each([
     await waitFor(() => {
       expect(editor.textContent).toBe(`Keep this context\n${secondPrompt}`);
     });
+    click(selectedTask(editor, task));
+    expect(editor).toHaveTextContent(/^Keep this context$/);
   },
 );
 

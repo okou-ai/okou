@@ -567,6 +567,7 @@ export function createComposerSignals(
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
     insertPrompt$: workflowComposer.replacePromptText$,
+    clearPrompt$: workflowComposer.clearUnchangedPrompt$,
     openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
