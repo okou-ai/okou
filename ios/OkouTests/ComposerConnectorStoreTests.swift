@@ -517,7 +517,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
     started.expectedFulfillmentCount = 2
     let cancelled = expectation(description: "Both original HTTP reads cancelled")
     cancelled.expectedFulfillmentCount = 2
-    let response = ConnectorResponseGate()
+    let connectedResponse = ConnectorResponseGate()
+    let remoteResponse = ConnectorResponseGate()
     let fixture = ChatHTTPFixture { request in
       let path = request.url!.path
       let isOverview = ["/api/connectors/connected", "/api/remotes/overview"].contains(path)
@@ -525,7 +526,11 @@ final class ComposerConnectorStoreTests: XCTestCase {
       if isOverview, isOld {
         await withTaskCancellationHandler {
           started.fulfill()
-          await response.wait()
+          if path == "/api/connectors/connected" {
+            await connectedResponse.wait()
+          } else {
+            await remoteResponse.wait()
+          }
         } onCancel: {
           cancelled.fulfill()
         }
@@ -551,7 +556,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
     let resources = try XCTUnwrap(store.resources)
     let pending = try resources.requests()
     addTeardownBlock {
-      response.open()
+      connectedResponse.open()
+      remoteResponse.open()
       pending.connected.cancel()
       pending.remote.cancel()
       _ = await (pending.connected.result, pending.remote.result)
@@ -563,7 +569,8 @@ final class ComposerConnectorStoreTests: XCTestCase {
     await store.refresh()
     XCTAssertEqual(store.connectors.first?.label, "New service")
     XCTAssertEqual(store.hosts(.ssh).first?.connectionId, F.accountID)
-    response.open()
+    connectedResponse.open()
+    remoteResponse.open()
     if case .success = await pending.connected.result {
       XCTFail("The retired connector read returned data")
     }
