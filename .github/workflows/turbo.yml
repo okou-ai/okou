@@ -1255,6 +1255,7 @@ jobs:
           NEON_PROJECT_ID: ${{ vars.NEON_PROJECT_ID }}
           WEB_API_ENV_FILE: ${{ steps.api-seed-env.outputs.file }}
           DEV_MODEL_OPENROUTER_KEY: ${{ secrets.OPENROUTER_API_KEY }}
+          SEED_NOTIFICATION_PREVIEW_SAMPLES: ${{ github.event_name == 'pull_request' && contains(github.event.pull_request.labels.*.name, 'preview-notification-samples') }}
         run: |
           while IFS= read -r line; do
             if [ -n "$line" ]; then
@@ -1301,6 +1302,16 @@ jobs:
           cd turbo
           DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db db:migrate
           ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F api db:dev-seed --preview-onboarding-catalog
+
+          if [ "$SEED_NOTIFICATION_PREVIEW_SAMPLES" = "true" ]; then
+            notification_recipients=(
+              --recipient-email yuma@vm0.ai
+              --recipient-email test-notifications-guide-45688-1109+clerk_test@example.com
+            )
+            notification_migration=scripts/migrations/030-notification-preview-samples/backfill.ts
+            ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db exec tsx "$notification_migration" "${notification_recipients[@]}"
+            ENV=preview DATABASE_URL="$DATABASE_URL" pnpm -F @okouai/db exec tsx "$notification_migration" "${notification_recipients[@]}" --migrate
+          fi
 
           echo "database-url=$DATABASE_URL" >> "$GITHUB_OUTPUT"
 
