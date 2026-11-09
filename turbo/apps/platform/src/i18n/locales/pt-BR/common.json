@@ -1643,6 +1643,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "Tudo em dia",
+        "emptyTitle": "Nenhuma sugestão nova",
+        "feedback": "Ações da sugestão",
+        "loading": "Carregando sugestões",
+        "navigation": "Explorar sugestões",
+        "next": "Próxima sugestão",
+        "previous": "Sugestão anterior",
+        "retry": "Tentar novamente"
+      },
       "label": "Sugestões",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1911,17 +1921,19 @@
       "workflow": {
         "advanced": {
           "description": "Conecte suas ferramentas e etapas.",
+          "shortTitle": "Avançado",
           "title": "Fluxos de trabalho avançados"
         },
         "description": "Uma pequena configuração. Muito menos trabalho.",
         "scheduled": {
           "description": "Execute no momento certo.",
           "items": {
-            "daily": "Rotina diária",
-            "once": "Lembrete único",
-            "weekly": "Revisão semanal"
+            "once": "Executar uma vez em um horário definido",
+            "recurring": "Repetir conforme uma programação"
           },
-          "prompt": "Ajude-me a configurar: {{task}}. Pergunte o que quero fazer, quando executar e qual fuso horário usar.",
+          "prompt": "{{task}}. Pergunte o que quero fazer, quando executar e qual fuso horário usar.",
+          "setupTitle": "Agendar uma tarefa",
+          "shortTitle": "Agendadas",
           "title": "Tarefas agendadas"
         },
         "suggestions": "Comece com uma sugestão e adapte ao que você precisa.",
@@ -1967,6 +1979,7 @@
             }
           },
           "monitorPrompt": "Ajude-me a configurar {{task}} com {{source}}. Fluxo: {{event}} → {{action}} → {{result}}. Pergunte quais feeds, assuntos ou contas acompanhar, com que frequência e onde salvar o resumo. Verifique periodicamente, ignore itens já processados e confirme a configuração antes de ativar.",
+          "shortTitle": "Gatilhos",
           "title": "Gatilhos"
         }
       }

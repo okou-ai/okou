@@ -217,7 +217,7 @@ describe("Codex execution switch", () => {
         "The earlier Pi answer",
       );
       expect(secondClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
-        "okou chat messages --output-dir threads",
+        "okou chat messages --output-dir /tmp/okou-chat-history",
       );
       chatCallbacks.mockChatOutputEvents([
         {

@@ -105,6 +105,10 @@ async function fixture() {
       worker,
       wire,
       runtimeId,
+      async disconnectPlaywright() {
+        // connectOverCDP owns this driver connection, not the Chromium process.
+        await browser.close();
+      },
       async client() {
         const client = await OkouBrowserClient.connect({
           transport: wire,
@@ -614,36 +618,66 @@ async function pauseWorkerRestart(f, client, page = f.context.pages()[0]) {
       new URL(target.url).hostname === f.runtimeId
     );
   });
-  const { sessionId } = await f.wire.request("Target.attachToTarget", {
-    targetId: worker.targetId,
-    flatten: true,
-  });
+  const attached = Promise.withResolvers();
+  const reloaded = Promise.withResolvers();
   const paused = Promise.withResolvers();
+  let sessionId;
+  let breakpointId;
   let suspended = false;
   const off = f.wire.onEvent((event) => {
-    if (event.sessionId === sessionId && event.method === "Debugger.paused") {
+    if (
+      event.method === "Target.attachedToTarget" &&
+      event.params.targetInfo.targetId === worker.targetId
+    ) {
+      sessionId = event.params.sessionId;
+      attached.resolve();
+    }
+    if (event.sessionId !== sessionId) return;
+    if (event.method === "Inspector.targetReloadedAfterCrash")
+      reloaded.resolve();
+    if (
+      event.method === "Debugger.paused" &&
+      event.params.hitBreakpoints?.includes(breakpointId)
+    ) {
       suspended = true;
       paused.resolve(event.params.callFrames[0].callFrameId);
       off();
     }
   });
-  const cdp = await f.context.newCDPSession(page);
-  await cdp.send("ServiceWorker.enable");
+  await f.wire.request("Target.setAutoAttach", {
+    autoAttach: true,
+    waitForDebuggerOnStart: true,
+    flatten: true,
+    filter: [{ type: "service_worker" }, { exclude: true }],
+  });
+  await attached.promise;
+  const { sessionId: pageSession } = await f.wire.request(
+    "Target.attachToTarget",
+    {
+      targetId: await f.target(page),
+      flatten: true,
+    },
+  );
+  // Playwright automatically resumes restarted workers. This fixture must be
+  // the sole owner that releases startup after installing the native breakpoint.
+  await f.disconnectPlaywright();
+  await f.wire.request("ServiceWorker.enable", {}, pageSession);
   const invalidated = new Promise((resolve) => {
     client.signal.addEventListener("abort", resolve, { once: true });
   });
-  await cdp.send("ServiceWorker.stopAllWorkers");
+  await f.wire.request("ServiceWorker.stopAllWorkers", {}, pageSession);
   await invalidated;
-  // The retained inspector queues these commands for the new worker context.
-  // Nothing in the extension source or its Runtime responses is substituted.
-  const armed = Promise.all([
-    f.wire.request("Debugger.enable", {}, sessionId),
-    f.wire.request(
+  // Auto-attach holds the new context while its debugger is configured. Queuing
+  // commands on a crashed inspector alone can lose the race with module startup.
+  const armed = reloaded.promise.then(async () => {
+    await f.wire.request("Debugger.enable", {}, sessionId);
+    ({ breakpointId } = await f.wire.request(
       "Debugger.setBreakpointByUrl",
       { lineNumber: 0, url: worker.url },
       sessionId,
-    ),
-  ]);
+    ));
+    await f.wire.request("Runtime.runIfWaitingForDebugger", {}, sessionId);
+  });
   const ready = Promise.all([paused.promise, armed]).then(([frame]) => {
     return frame;
   });
@@ -670,8 +704,14 @@ async function pauseWorkerRestart(f, client, page = f.context.pages()[0]) {
     async close() {
       off();
       await resume();
-      await cdp.detach();
-      await f.wire.request("Target.detachFromTarget", { sessionId });
+      await f.wire.request("Target.setAutoAttach", {
+        autoAttach: false,
+        waitForDebuggerOnStart: false,
+        flatten: true,
+      });
+      await f.wire.request("Target.detachFromTarget", {
+        sessionId: pageSession,
+      });
     },
   };
 }
@@ -680,12 +720,15 @@ for (const completion of [
   "resume",
   "abort",
   "timeout",
+  "timeout-before-observer",
   "observer-loss",
   "observer-page-loss",
 ]) {
   test(`a fresh client owns pending native worker startup until ${completion}`, async () => {
     const f = await fixture();
     const owner = new AbortController();
+    const releaseObserver = Promise.withResolvers();
+    const expires = completion.startsWith("timeout");
     let startup;
     let connecting;
     let next;
@@ -704,7 +747,23 @@ for (const completion of [
         return page.url() === `${origin}/desired`;
       });
       const desiredTarget = await f.target(desiredPage);
-      startup = await pauseWorkerRestart(f, previous, desiredPage);
+      startup = await test.step("arm the native worker restart", () => {
+        return pauseWorkerRestart(f, previous, desiredPage);
+      });
+      if (expires) {
+        // Establish the paused worker before the tested readiness deadline.
+        // Otherwise expiry can prevent the wake that produces startup.ready.
+        const targetId = await tabTargetForPage(f.wire, desiredTarget);
+        await f.wire.request("Extensions.triggerAction", {
+          id: f.runtimeId,
+          targetId,
+        });
+        const frame =
+          await test.step("pause the timeout fixture worker", () => {
+            return startup.ready;
+          });
+        expect(await startup.bridgeType(frame)).toBe("undefined");
+      }
       const observing = Promise.withResolvers();
       const replacing = Promise.withResolvers();
       const hello = Promise.withResolvers();
@@ -713,13 +772,15 @@ for (const completion of [
       let observerTarget;
       const pageTargets = new Map();
       const observers = [];
+      const clientSessions = [];
+      let heldObserver = false;
       let running = false;
       let helloCount = 0;
       let prematureHello = false;
       connecting = OkouBrowserClient.connect({
         runtimeId: f.runtimeId,
         signal: owner.signal,
-        ...(completion === "timeout" ? { readinessTimeoutMs: 500 } : {}),
+        ...(expires ? { readinessTimeoutMs: 500 } : {}),
         transport: {
           onEvent(listener) {
             return f.wire.onEvent((event) => {
@@ -750,10 +811,31 @@ for (const completion of [
               hello.resolve("hello");
             }
             const value = await response;
-            if (method === "Target.attachToBrowserTarget")
+            if (method === "Target.attachToBrowserTarget") {
               browserSession = value.sessionId;
-            if (method === "Target.attachToTarget")
+              clientSessions.push({
+                sessionId: value.sessionId,
+                probe: "Target.getTargets",
+              });
+            }
+            if (method === "Target.attachToTarget") {
               pageTargets.set(value.sessionId, params.targetId);
+              clientSessions.push({
+                sessionId: value.sessionId,
+                probe: "Runtime.enable",
+              });
+              if (completion === "timeout-before-observer") {
+                heldObserver = true;
+                // Keep the real reply pending until deadline cleanup. No
+                // observer event or debugger pause is required from this client.
+                await releaseObserver.promise;
+              }
+            }
+            if (
+              method === "Target.detachFromTarget" &&
+              params.sessionId === browserSession
+            )
+              releaseObserver.resolve();
             if (method === "Target.getTargets") {
               // Target order is unspecified. Select an auxiliary page first.
               value.targetInfos.sort((a, b) => {
@@ -767,13 +849,27 @@ for (const completion of [
           },
         },
       });
-      // Observe rejection immediately while the native startup gate is held.
-      void connecting.catch(() => {});
-      const frame = await startup.ready;
-      expect(await startup.bridgeType(frame)).toBe("undefined");
-      expect(await Promise.race([observing.promise, hello.promise])).toBe(
-        "observing",
+      const settled = connecting.then(
+        (client) => {
+          return { client };
+        },
+        (error) => {
+          return { error };
+        },
       );
+      if (!expires) {
+        const started = await Promise.race([
+          startup.ready.then((frame) => {
+            return { frame };
+          }),
+          settled,
+        ]);
+        expect(started).toHaveProperty("frame");
+        expect(await startup.bridgeType(started.frame)).toBe("undefined");
+        expect(
+          await Promise.race([observing.promise, hello.promise, connecting]),
+        ).toBe("observing");
+      }
       if (
         completion === "resume" ||
         completion === "observer-loss" ||
@@ -808,18 +904,44 @@ for (const completion of [
         expect(f.wire.listeners.size).toBe(0);
       } else {
         if (completion === "abort") owner.abort();
-        await expect(connecting).rejects.toHaveProperty("kind", "unavailable");
+        const outcome = await test.step("settle the unavailable client", () => {
+          return settled;
+        });
+        expect(outcome).toMatchObject({
+          error: {
+            kind: "unavailable",
+            ...(expires
+              ? {
+                  diagnostics: {
+                    reason: "worker-readiness-timeout",
+                    stage: "start-worker",
+                  },
+                }
+              : {}),
+          },
+        });
+        if (completion === "timeout-before-observer")
+          expect(heldObserver).toBe(true);
         expect(helloCount).toBe(0);
         expect(f.wire.listeners.size).toBe(0);
+        for (const { sessionId, probe } of clientSessions)
+          await expect(f.wire.request(probe, {}, sessionId)).rejects.toThrow(
+            `CDP ${probe} failed`,
+          );
         await startup.resume();
-        next = await f.client();
+        next = await test.step("connect after resuming the worker", () => {
+          return f.client();
+        });
         expect(
           (await next.call("getWindow", { windowId: window.id })).value.id,
         ).toBe(window.id);
       }
     } finally {
+      releaseObserver.resolve();
       owner.abort();
-      await startup?.close();
+      await test.step("release the startup inspector", () => {
+        return startup?.close();
+      });
       await connecting?.then(
         (client) => {
           return client.close();

@@ -191,7 +191,7 @@ Notes:
   - The message is sent to the thread queue; the API returns without waiting for a run to start or finish
   - Failures such as insufficient credits appear later in the thread as a rejected message, not as a send error
   - Cancel the message while it is still queued with okou chat cancel --event-id <event-id>
-  - Sync the thread's messages with okou chat messages --thread-id <thread-id> --output-dir <directory>
+  - Sync the thread's messages with okou chat messages --thread-id <thread-id> --output-dir /tmp/okou-chat-history
   - Authenticates via OKOU_TOKEN (requires chat-thread:read and chat-event:write capabilities)`,
   )
   .action(
@@ -229,7 +229,7 @@ Notes:
       console.log("Sync the thread's messages:");
       console.log(
         chalk.cyan(
-          `  okou chat messages --thread-id ${result.threadId} --output-dir <directory>`,
+          `  okou chat messages --thread-id ${result.threadId} --output-dir /tmp/okou-chat-history`,
         ),
       );
       console.log("Cancel it while it is still queued:");

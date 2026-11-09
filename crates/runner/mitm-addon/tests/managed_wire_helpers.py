@@ -37,7 +37,7 @@ class WireSession:
         native_context.server.address = ("openrouter.ai", 443)
         native_context.server.tls = True
         self.native = HttpLayer(native_context, HTTPMode.transparent)
-        self.initial = list(self.native.handle_event(events.Start()))
+        self.initial = tuple(self.native.handle_event(events.Start()))
         self._flow: http.HTTPFlow | None = None
         self.request_headers: dict[bytes, bytes] = {}
         self.digest = hashlib.sha256()
@@ -74,7 +74,7 @@ class WireSession:
 
     async def drive(self, event=None):
         pending = deque(self.initial if event is None else self.native.handle_event(event))
-        self.initial = []
+        self.initial = ()
         while pending:
             command = pending.popleft()
             if isinstance(command, commands.StartHook):

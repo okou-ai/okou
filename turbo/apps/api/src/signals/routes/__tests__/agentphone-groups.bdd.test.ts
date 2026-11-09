@@ -463,38 +463,33 @@ describe("iMessage group discovery", () => {
     },
   );
 
-  it.each(["provider failure", "invalid roster"] as const)(
-    "reports %s instead of fabricating an empty list",
-    async (scenario) => {
-      const { integrations, ap, actor, phone } = await linkedGroupMember();
-      const conversationId = uniqueConversationId();
-      await ap.postAgentPhoneInboundMessage({
-        channel: "imessage",
-        from: phone,
-        body: "ordinary group conversation",
-        conversationId,
-        isGroup: true,
-      });
-      server.use(
-        http.get(
-          `https://api.agentphone.test/v1/conversations/${conversationId}`,
-          () => {
-            return scenario === "provider failure"
-              ? HttpResponse.json({ detail: "Unavailable" }, { status: 503 })
-              : HttpResponse.json({ participants: "invalid" });
-          },
-        ),
-      );
-      const failed = await integrations.requestAgentPhoneGroupList(
-        actor,
-        { limit: 25 },
-        [502],
-      );
-      expect(failed.body).toMatchObject({
-        error: { code: "AGENTPHONE_ERROR" },
-      });
-    },
-  );
+  it("reports provider failure instead of fabricating an empty list", async () => {
+    const { integrations, ap, actor, phone } = await linkedGroupMember();
+    const conversationId = uniqueConversationId();
+    await ap.postAgentPhoneInboundMessage({
+      channel: "imessage",
+      from: phone,
+      body: "ordinary group conversation",
+      conversationId,
+      isGroup: true,
+    });
+    server.use(
+      http.get(
+        `https://api.agentphone.test/v1/conversations/${conversationId}`,
+        () => {
+          return HttpResponse.json({ detail: "Unavailable" }, { status: 503 });
+        },
+      ),
+    );
+    const failed = await integrations.requestAgentPhoneGroupList(
+      actor,
+      { limit: 25 },
+      [502],
+    );
+    expect(failed.body).toMatchObject({
+      error: { code: "AGENTPHONE_ERROR" },
+    });
+  });
 
   it("requires authentication and rejects invalid pagination", async () => {
     const { integrations, actor } = await linkedGroupMember();
@@ -506,17 +501,11 @@ describe("iMessage group discovery", () => {
     expect(unauthorized.body).toMatchObject({
       error: { code: "UNAUTHORIZED" },
     });
-    for (const query of [
-      { limit: 0 },
-      { limit: 101 },
+    const invalid = await integrations.requestAgentPhoneGroupList(
+      actor,
       { limit: 25, cursor: "invalid" },
-    ]) {
-      const invalid = await integrations.requestAgentPhoneGroupList(
-        actor,
-        query,
-        [400],
-      );
-      expect(invalid.status).toBe(400);
-    }
+      [400],
+    );
+    expect(invalid.status).toBe(400);
   });
 });

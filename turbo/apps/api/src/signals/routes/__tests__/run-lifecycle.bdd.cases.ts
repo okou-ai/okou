@@ -12913,7 +12913,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               sessionId: null,
               generationRunId: null,
               recoveryPrompt: expect.stringContaining(
-                "okou chat messages --output-dir threads",
+                "okou chat messages --output-dir /tmp/okou-chat-history",
               ),
             });
           }
@@ -13307,7 +13307,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               sessionId: null,
               generationRunId: null,
               recoveryPrompt: expect.stringContaining(
-                "okou chat messages --output-dir threads",
+                "okou chat messages --output-dir /tmp/okou-chat-history",
               ),
             });
           }

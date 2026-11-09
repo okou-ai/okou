@@ -5,22 +5,20 @@ import SwiftUI
 
 /// Workspace search as a full page, as ChatGPT, Claude and Perplexity open theirs: it grows
 /// out of the sidebar's search capsule and fills the screen, the field at the top. Under the
-/// field the web's filter row (`ThreeColumnSearchDialog`): All, Chats, Messages, Agents,
-/// Workflows and Artifacts. A chat or message opens its chat; an agent starts its new chat; a
-/// workflow starts its agent's new chat with `/name` in the draft, as the composer's `/` menu
-/// does; an artifact opens in the app's preview.
+/// field the web's filter row (`ThreeColumnSearchDialog`): All, Chats, Messages,
+/// Workflows and Artifacts. A chat or message opens its chat; a workflow starts a default
+/// Agent chat with `/name` in the draft; an artifact opens in the app's preview.
 struct ChatSearchView: View {
   let workspace: WorkspaceStore
   var showsArchived = false
   let didOpen: () -> Void
-  let openAgent: (String) -> Void
   let openWorkflow: (ChatSearchWorkflow) -> Void
 
   var body: some View {
     StoreProvider(workspace.search.stateStore) {
       ChatSearchContent(
         workspace: workspace, showsArchived: showsArchived, didOpen: didOpen,
-        openAgent: openAgent, openWorkflow: openWorkflow
+        openWorkflow: openWorkflow
       )
       .id(ObjectIdentifier(workspace.search))
     }
@@ -29,14 +27,13 @@ struct ChatSearchView: View {
 
 private struct ChatSearchContent: View {
   enum Scope: CaseIterable, Hashable {
-    case all, chats, messages, agents, workflows, artifacts
+    case all, chats, messages, workflows, artifacts
 
     var title: LocalizedStringKey {
       switch self {
       case .all: "All"
       case .chats: "Chats"
       case .messages: "Messages"
-      case .agents: "Agents"
       case .workflows: "Workflows"
       case .artifacts: "Artifacts"
       }
@@ -46,7 +43,6 @@ private struct ChatSearchContent: View {
   @Bindable var workspace: WorkspaceStore
   var showsArchived = false
   let didOpen: () -> Void
-  let openAgent: (String) -> Void
   let openWorkflow: (ChatSearchWorkflow) -> Void
   @LoadableValue private var messageResults: Loadable<[ChatSearchResult]>
   @LoadableValue private var workflowResults: Loadable<[ChatSearchWorkflow]>
@@ -54,13 +50,11 @@ private struct ChatSearchContent: View {
 
   init(
     workspace: WorkspaceStore, showsArchived: Bool, didOpen: @escaping () -> Void,
-    openAgent: @escaping (String) -> Void,
     openWorkflow: @escaping (ChatSearchWorkflow) -> Void
   ) {
     self.workspace = workspace
     self.showsArchived = showsArchived
     self.didOpen = didOpen
-    self.openAgent = openAgent
     self.openWorkflow = openWorkflow
     _messageResults = LoadableValue(task: workspace.search.messagesValue)
     _workflowResults = LoadableValue(task: workspace.search.workflowsValue)
@@ -86,13 +80,6 @@ private struct ChatSearchContent: View {
     search.keyword.isEmpty
       ? workspace.list.threads(agentID: workspace.selectedAgentID, archived: showsArchived)
       : workspace.list.threads
-  }
-
-  private var agents: [AgentRecord] {
-    let keyword = search.keyword
-    return workspace.list.agents.filter { agent in
-      keyword.isEmpty || (agent.displayName ?? "Okou").lowercased().contains(keyword)
-    }
   }
 
   private func shows(_ section: Scope) -> Bool { scope == .all || scope == section }
@@ -156,9 +143,6 @@ private struct ChatSearchContent: View {
       }
     }
     if shows(.messages), !search.keyword.isEmpty { messagesSection }
-    if shows(.agents), !agents.isEmpty, scope == .agents || !search.keyword.isEmpty {
-      agentsSection
-    }
     if shows(.workflows) { workflowsSection }
     if shows(.artifacts) { artifactsSection }
   }
@@ -199,29 +183,6 @@ private struct ChatSearchContent: View {
         } else if let error = messageError {
           OkouLoadErrorRow(message: error) { search.retry() }
         }
-      }
-    }
-  }
-
-  private var agentsSection: some View {
-    Section {
-      sectionTitle { Text("Agents").okouSectionHeader() }
-      ForEach(agents, id: \.agentId) { agent in
-        Button {
-          openAgent(agent.agentId)
-        } label: {
-          HStack(spacing: OkouSpace.md) {
-            OkouAgentAvatar(
-              avatarURL: agent.avatarUrl, name: agent.displayName ?? "Okou",
-              isDefault: agent.isDefaultAgent, size: OkouAvatarSize.row)
-            Text(agent.displayName ?? "Okou").lineLimit(1)
-              .alignmentGuide(.listRowSeparatorLeading) { $0[.leading] }
-            Spacer(minLength: 0)
-          }
-          .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("search-agent-\(agent.agentId)")
       }
     }
   }
@@ -350,14 +311,12 @@ private struct ChatSearchContent: View {
     } else if !keyword.isEmpty && !isLoadingMessages && messageError == nil {
       switch scope {
       case .all
-      where !hasTitles && messages.isEmpty && agents.isEmpty && workflows.isEmpty
+      where !hasTitles && messages.isEmpty && workflows.isEmpty
         && artifacts.isEmpty && !isLoadingArtifacts:
         noResults(messages: true)
       case .messages where messages.isEmpty:
         noResults(messages: true)
       case .chats where !hasTitles:
-        noResults(messages: false)
-      case .agents where agents.isEmpty:
         noResults(messages: false)
       case .workflows where workflows.isEmpty && !isLoadingWorkflows:
         noResults(messages: false)

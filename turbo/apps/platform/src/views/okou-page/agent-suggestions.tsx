@@ -18,6 +18,9 @@ import {
   CircleCheck,
   CircleMinus,
   SlidersHorizontal,
+  ChevronLeft,
+  ChevronRight,
+  Ellipsis,
 } from "lucide-react";
 import type {
   Suggestion,
@@ -32,6 +35,12 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
+  DialogTrigger,
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  surfaceVariants,
   Textarea,
 } from "@okouai/ui";
 import { defaultAgentId$, defaultAgentName$ } from "../../signals/agent.ts";
@@ -48,6 +57,12 @@ import {
   saveSuggestionFeedbackReason$,
   retryAgentSuggestion$,
   type SuggestionOutcome,
+  homeSuggestionCard$,
+  moveHomeSuggestion$,
+  setHomeSuggestionDetailsOpen$,
+  enterHomeSuggestions$,
+  submitHomeSuggestionFeedback$,
+  focusSuggestionTitleOnRef$,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
   agentSuggestionComposerItem$,
@@ -62,6 +77,7 @@ import { detach, Reason } from "../../signals/utils.ts";
 import { Link } from "../router/link.tsx";
 import { ChatComposer } from "./chat-composer.tsx";
 import { AgentAvatarImg } from "./sidebar-shared.tsx";
+import { SuggestionsComplete } from "./suggestions-complete.tsx";
 
 const SUGGESTION_ACTION =
   "min-h-11 shrink-0 gap-1 whitespace-nowrap px-0.5 text-xs font-normal @min-[521px]/suggestion:min-h-9 @min-[521px]/suggestion:gap-2 @min-[521px]/suggestion:px-2";
@@ -519,9 +535,9 @@ function AgentSuggestionComposerDialog({
     >
       <DialogContent
         smMaxWidth="xl"
-        contentClassName="grid-cols-[minmax(0,1fr)] gap-0 overflow-hidden p-0"
+        contentClassName="grid-cols-[minmax(0,1fr)] gap-4 overflow-hidden p-5"
       >
-        <DialogHeader className="min-w-0 px-5 pb-3 pt-5">
+        <DialogHeader className="min-w-0">
           <DialogTitle className="min-w-0 overflow-hidden pr-8 text-base font-semibold">
             <span className="flex min-w-0 items-center gap-2">
               {agentId ? (
@@ -541,11 +557,11 @@ function AgentSuggestionComposerDialog({
           </DialogDescription>
         </DialogHeader>
         {composer.state === "hasData" ? (
-          <div className="w-full min-w-0 p-5" data-chat-composer>
+          <div className="w-full min-w-0" data-chat-composer>
             <ChatComposer signals={composer.data} showPendingItems={false} />
           </div>
         ) : composer.state === "hasError" ? (
-          <p role="alert" className="px-5 pb-5 text-sm text-muted-foreground">
+          <p role="alert" className="text-sm text-muted-foreground">
             {composer.error instanceof Error
               ? composer.error.message
               : t(($) => {
@@ -565,28 +581,43 @@ function AgentSuggestionComposerDialog({
 function AgentSuggestionCard({
   item,
   onCustomDirection,
+  embedded = false,
 }: {
   readonly item: Suggestion;
   readonly onCustomDirection: (item: Suggestion) => void;
+  readonly embedded?: boolean;
 }) {
   const { t } = useTranslation();
   const start = useSet(startAgentSuggestion$);
-  const submitFeedback = useSet(submitAgentSuggestionFeedback$);
+  const focusTitle = useSet(focusSuggestionTitleOnRef$);
+  const submitFeedback = useSet(
+    embedded ? submitHomeSuggestionFeedback$ : submitAgentSuggestionFeedback$,
+  );
   const signal = useGet(pageSignal$);
   return (
     <article
       aria-labelledby={`suggestion-title-${item.id}`}
-      className="flex flex-col gap-3 rounded-xl border border-border bg-card px-5 py-4"
+      className={cn(
+        "flex flex-col gap-3",
+        !embedded && "rounded-xl border border-border bg-card px-5 py-4",
+      )}
     >
       <div className="flex flex-col gap-3 motion-safe:animate-composer-panel-in">
         <div className="flex flex-col gap-2">
           <h3
             id={`suggestion-title-${item.id}`}
-            className="text-base font-medium leading-6 text-foreground"
+            ref={embedded ? focusTitle : undefined}
+            tabIndex={embedded ? -1 : undefined}
+            className="text-base font-medium leading-6 text-foreground focus:outline-none"
           >
             {item.title}
           </h3>
-          <p className="line-clamp-4 text-sm leading-5 text-muted-foreground">
+          <p
+            className={cn(
+              "text-sm leading-5 text-muted-foreground",
+              !embedded && "line-clamp-4",
+            )}
+          >
             {item.rationale}
           </p>
         </div>
@@ -626,6 +657,316 @@ function AgentSuggestionCard({
         </div>
       </div>
     </article>
+  );
+}
+
+function HomeSuggestionFeedback({ item }: { readonly item: Suggestion }) {
+  const { t } = useTranslation();
+  const submitFeedback = useSet(submitHomeSuggestionFeedback$);
+  const signal = useGet(pageSignal$);
+  const feedbackLabel = t(($) => {
+    return $.chat.agentSuggestions.homeCard.feedback;
+  });
+  const feedbackCopy = t(
+    ($) => {
+      return $.chat.agentSuggestions;
+    },
+    { returnObjects: true },
+  );
+  const feedbackActions = [
+    { kind: "dismissed", label: feedbackCopy.dismiss, Icon: X },
+    {
+      kind: "already_done",
+      label: feedbackCopy.alreadyDone,
+      Icon: CircleCheck,
+    },
+    { kind: "not_planned", label: feedbackCopy.notPlanned, Icon: CircleMinus },
+    {
+      kind: "less_like_this",
+      label: feedbackCopy.lessLikeThis,
+      Icon: SlidersHorizontal,
+    },
+  ] as const;
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="quiet"
+            size="icon-sm"
+            aria-label={feedbackLabel}
+            className="size-7 shrink-0 text-muted-foreground pointer-coarse:size-11 [&_svg]:size-4"
+          />
+        }
+      >
+        <Ellipsis aria-hidden />
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        {feedbackActions.map(({ kind, label: actionLabel, Icon }) => {
+          return (
+            <DropdownMenuItem
+              key={kind}
+              onClick={() => {
+                detach(
+                  submitFeedback(item.id, kind, signal),
+                  Reason.DomCallback,
+                );
+              }}
+            >
+              <Icon aria-hidden />
+              {actionLabel}
+            </DropdownMenuItem>
+          );
+        })}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  );
+}
+
+function HomeSuggestionPreview({
+  item,
+  index,
+  count,
+}: {
+  readonly item: Suggestion;
+  readonly index: number;
+  readonly count: number;
+}) {
+  const { t } = useTranslation();
+  const move = useSet(moveHomeSuggestion$);
+  const signal = useGet(pageSignal$);
+  const copy = t(
+    ($) => {
+      return $.chat.agentSuggestions.homeCard;
+    },
+    { returnObjects: true },
+  );
+  return (
+    <>
+      <DialogTrigger
+        render={
+          <Button
+            variant="quiet"
+            aria-label={item.title}
+            className="absolute inset-0 z-0 size-full rounded-[inherit] p-0 hover:bg-transparent active:bg-transparent focus-visible:ring-inset motion-reduce:transition-none"
+          />
+        }
+      />
+      <div className="pointer-events-none relative z-10 min-h-0 flex-1 pt-1">
+        <h3 className="min-w-0 line-clamp-3 text-sm font-medium leading-5 break-words text-foreground">
+          {item.title}
+        </h3>
+      </div>
+      <div
+        role="group"
+        aria-label={copy.navigation}
+        className="pointer-events-none relative z-20 flex shrink-0 items-center justify-end gap-3 pt-3"
+      >
+        <Button
+          variant="quiet"
+          size="icon-sm"
+          iconSize="md"
+          className="pointer-events-auto size-7 text-muted-foreground pointer-coarse:size-11"
+          aria-label={copy.previous}
+          disabled={index === 0}
+          onClick={() => {
+            detach(move(-1, signal), Reason.DomCallback);
+          }}
+        >
+          <ChevronLeft aria-hidden />
+        </Button>
+        <span
+          aria-live="polite"
+          className="text-xs whitespace-nowrap tabular-nums text-muted-foreground"
+        >
+          {index + 1} / {count}
+        </span>
+        <Button
+          variant="quiet"
+          size="icon-sm"
+          iconSize="md"
+          className="pointer-events-auto size-7 text-muted-foreground pointer-coarse:size-11"
+          aria-label={copy.next}
+          disabled={index === count - 1}
+          onClick={() => {
+            detach(move(1, signal), Reason.DomCallback);
+          }}
+        >
+          <ChevronRight aria-hidden />
+        </Button>
+      </div>
+    </>
+  );
+}
+
+function HomeSuggestionDetails() {
+  const { t } = useTranslation();
+  const card = useLastResolved(homeSuggestionCard$);
+  const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
+  const signal = useGet(pageSignal$);
+  return (
+    <DialogContent
+      maxWidth={640}
+      hideWhenNestedOpen
+      aria-describedby={undefined}
+      contentClassName="@container/suggestion flex flex-col gap-4 p-5 sm:p-6"
+    >
+      <DialogHeader className="flex-row items-baseline justify-start gap-3 space-y-0 pr-10">
+        <DialogTitle>
+          {t(($) => {
+            return $.chat.agentSuggestions.label;
+          })}
+        </DialogTitle>
+        {card?.detail && (
+          <span className="shrink-0 text-xs whitespace-nowrap tabular-nums text-muted-foreground">
+            {card.detailIndex + 1} / {card.detailCount}
+          </span>
+        )}
+      </DialogHeader>
+      {card?.complete ? (
+        <SuggestionsComplete />
+      ) : card?.detail ? (
+        <div key={card.detail.entry.item.id}>
+          {card.detail.outcome ? (
+            <SettledSuggestion
+              entry={card.detail.entry}
+              outcome={card.detail.outcome}
+            />
+          ) : (
+            <AgentSuggestionCard
+              embedded
+              item={card.detail.entry.item}
+              onCustomDirection={(suggestion) => {
+                detach(openComposer(suggestion.id, signal), Reason.DomCallback);
+              }}
+            />
+          )}
+          <SuggestionSaveError entry={card.detail.entry} />
+        </div>
+      ) : null}
+      <AgentSuggestionComposerDialog composer={composer} />
+    </DialogContent>
+  );
+}
+
+/** A bounded preview opens the complete review flow. */
+export function HomeSuggestionsCard() {
+  const { t } = useTranslation();
+  const result = useLastLoadable(homeSuggestionCard$);
+  const setDetailsOpen = useSet(setHomeSuggestionDetailsOpen$);
+  const reload = useSet(enterHomeSuggestions$);
+  const signal = useGet(pageSignal$);
+  const card = result.state === "hasData" ? result.data : undefined;
+  const item = card?.item;
+  const copy = t(
+    ($) => {
+      return $.chat.agentSuggestions.homeCard;
+    },
+    {
+      returnObjects: true,
+    },
+  );
+  const label = t(($) => {
+    return $.chat.agentSuggestions.label;
+  });
+  return (
+    <Dialog
+      open={card?.detailsOpen ?? false}
+      onOpenChange={(open) => {
+        detach(setDetailsOpen(open, signal), Reason.DomCallback);
+      }}
+    >
+      <section
+        aria-label={label}
+        className={surfaceVariants({
+          interactive: Boolean(item),
+          className:
+            "relative isolate flex h-52 min-w-0 flex-col bg-linear-to-br from-[#f3f7ed]/50 via-card to-card p-4 motion-reduce:transition-none pointer-coarse:h-56 dark:from-[#8fa07d]/5 @2xl:p-5",
+        })}
+      >
+        <div className="pointer-events-none relative z-10 mb-3 flex min-h-7 shrink-0 items-center justify-between gap-2">
+          <h2 className="flex min-w-0 items-center gap-1.5 text-base font-medium leading-6 tracking-tight">
+            <span className="min-w-0">{label}</span>
+            {item && (
+              <svg
+                aria-hidden
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                strokeWidth={2}
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                className="size-4 shrink-0 text-muted-foreground"
+              >
+                <path d="M10 13h.01" />
+                <path d="M14 13h.01" />
+                <path d="M10 16a3.5 3.5 0 0 0 4 0" />
+                <path d="M9 5h-2a2 2 0 0 0 -2 2v12a2 2 0 0 0 2 2h10a2 2 0 0 0 2 -2v-12a2 2 0 0 0 -2 -2h-2" />
+                <path d="M9 5a2 2 0 0 1 2 -2h2a2 2 0 0 1 2 2a2 2 0 0 1 -2 2h-2a2 2 0 0 1 -2 -2" />
+              </svg>
+            )}
+          </h2>
+          {item && (
+            <div className="pointer-events-auto">
+              <HomeSuggestionFeedback item={item} />
+            </div>
+          )}
+        </div>
+        {result.state === "hasError" ? (
+          <div className="flex flex-1 flex-col items-start justify-center gap-2">
+            <p role="alert" className="text-sm text-muted-foreground">
+              {t(($) => {
+                return $.global.errors.requestFailed;
+              })}
+            </p>
+            <Button
+              variant="quiet"
+              size="sm"
+              onClick={() => {
+                detach(reload(signal), Reason.DomCallback);
+              }}
+            >
+              {copy.retry}
+            </Button>
+          </div>
+        ) : !card ? (
+          <div
+            role="status"
+            aria-label={copy.loading}
+            className="flex flex-1 items-center justify-center text-muted-foreground"
+          >
+            <Loader2 aria-hidden className="size-5 motion-safe:animate-spin" />
+          </div>
+        ) : item ? (
+          <HomeSuggestionPreview
+            item={item}
+            index={card.index}
+            count={card.count}
+          />
+        ) : (
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 pb-3 text-center text-muted-foreground">
+            <svg
+              aria-hidden
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth={2}
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              className="size-8 text-[#8c9b77] dark:text-[#b0bc97]"
+            >
+              <path d="M3 14c.83 .642 2.077 1.017 3.5 1c1.423 .017 2.67 -.358 3.5 -1c.83 -.642 2.077 -1.017 3.5 -1c1.423 -.017 2.67 .358 3.5 1" />
+              <path d="M8 3a2.4 2.4 0 0 0 -1 2a2.4 2.4 0 0 0 1 2" />
+              <path d="M12 3a2.4 2.4 0 0 0 -1 2a2.4 2.4 0 0 0 1 2" />
+              <path d="M3 10h14v5a6 6 0 0 1 -6 6h-2a6 6 0 0 1 -6 -6v-5" />
+              <path d="M16.746 16.726a3 3 0 1 0 .252 -5.555" />
+            </svg>
+            <p className="text-sm leading-5">{copy.emptyTitle}</p>
+          </div>
+        )}
+      </section>
+      <HomeSuggestionDetails />
+    </Dialog>
   );
 }
 

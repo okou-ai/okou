@@ -206,10 +206,10 @@ test("Scheduled tasks and triggers prepare their own editable automation request
   await fill(editor, "Use my work account.");
   click(button("Scheduled tasks", capabilities()));
   const scheduled = await screen.findByRole("region", {
-    name: "Scheduled tasks",
+    name: "Schedule a task",
   });
-  click(button("Daily routine", scheduled));
-  expect(editor).toHaveTextContent("Help me set up Daily routine.");
+  click(button("Repeat on a schedule", scheduled));
+  expect(editor).toHaveTextContent("Repeat on a schedule.");
   expect(editor).toHaveTextContent("which time zone to use");
   expect(editor).toHaveFocus();
   click(button("All capabilities", scheduled));
@@ -286,23 +286,40 @@ test("Search and Research open separate suggestions and prepare editable drafts 
 });
 
 const HOME_PROMPTS = [
-  { capability: "Find people", suggestion: "Potential customers" },
-  { capability: "Research", suggestion: "Compare website traffic" },
-  { capability: "Scheduled tasks", suggestion: "Daily routine" },
-  { capability: "Triggers", suggestion: "Email replies" },
+  {
+    capability: "Find people",
+    guideTitle: "Find people",
+    suggestion: "Potential customers",
+  },
+  {
+    capability: "Research",
+    guideTitle: "Research",
+    suggestion: "Compare website traffic",
+  },
+  {
+    capability: "Scheduled tasks",
+    guideTitle: "Schedule a task",
+    suggestion: "Repeat on a schedule",
+  },
+  {
+    capability: "Triggers",
+    guideTitle: "Triggers",
+    suggestion: "Email replies",
+  },
   {
     capability: "Advanced workflows",
+    guideTitle: "Advanced workflows",
     suggestion: "Start your day with a clear plan",
   },
 ] as const;
 
 test.each(HOME_PROMPTS)(
   "Closing $capability clears its unchanged injected prompt",
-  async ({ capability, suggestion }) => {
+  async ({ capability, guideTitle, suggestion }) => {
     mockTemplateChat();
     const editor = await setupHome();
     click(button(capability, capabilities()));
-    const guide = await screen.findByRole("region", { name: capability });
+    const guide = await screen.findByRole("region", { name: guideTitle });
     click(button(suggestion, guide));
     expect(editor.textContent).not.toBe("");
 
@@ -319,11 +336,11 @@ test.each(HOME_PROMPTS)(
 
 test.each(HOME_PROMPTS)(
   "Closing $capability preserves the prompt after the user edits it",
-  async ({ capability, suggestion }) => {
+  async ({ capability, guideTitle, suggestion }) => {
     mockTemplateChat();
     const editor = await setupHome();
     click(button(capability, capabilities()));
-    const guide = await screen.findByRole("region", { name: capability });
+    const guide = await screen.findByRole("region", { name: guideTitle });
     click(button(suggestion, guide));
     const user = userEvent.setup({ delay: null });
     await user.paste(" Focus on my company.");

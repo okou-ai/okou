@@ -151,7 +151,7 @@ describe("okou chat send command", () => {
     expect(output).toContain(`Thread: ${OTHER_THREAD_ID}`);
     expect(output).toContain(`Event:  ${sentEventId}`);
     expect(output).toContain(
-      `okou chat messages --thread-id ${OTHER_THREAD_ID} --output-dir <directory>`,
+      `okou chat messages --thread-id ${OTHER_THREAD_ID} --output-dir /tmp/okou-chat-history`,
     );
     expect(output).toContain(
       `okou chat cancel --thread-id ${OTHER_THREAD_ID} --event-id ${sentEventId}`,

@@ -1254,7 +1254,7 @@ export function PricingStepContent({
   return (
     <>
       {/* The close button shares the header row with its title and steps. */}
-      <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 space-y-0 border-b border-[hsl(var(--gray-200))] py-0 pl-6 pr-4 text-left">
+      <DialogHeader className="h-14 flex-row shrink-0 items-center gap-3 border-b border-[hsl(var(--gray-200))] py-0 pl-6 pr-4 text-left">
         {onBack && <PricingBackButton onBack={onBack} />}
         <DialogTitle className="min-w-0 flex-1 text-base font-medium leading-none">
           {title ?? (step !== undefined && pricingStepTitle(step))}

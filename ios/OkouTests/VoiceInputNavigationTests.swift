@@ -80,6 +80,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     workspace.close()
     let reopened = fixture.workspace(capture: VoiceCaptureFixture())
     defer { reopened.close() }
+    await reopened.refreshNavigation()
     XCTAssertEqual(reopened.newChatDraft, "Existing notes: spoken words")
   }
 

@@ -2,7 +2,7 @@ import type { NativeContinuation } from "@okouai/api-contracts/contracts/runners
 import type { ChatThreadRequestRow } from "./chat-thread-request-facts";
 
 export const NATIVE_CONTEXT_RECOVERY_PROMPT =
-  "This Run did not resume the earlier native conversation context. Before processing the current request, you must run `okou chat messages --output-dir threads`, read and understand this Thread's earlier messages, and then continue the current request using that context.";
+  "This Run did not resume the earlier native conversation context. Before processing the current request, you must run `okou chat messages --output-dir /tmp/okou-chat-history`, read and understand this Thread's earlier messages, and then continue the current request using that context. Chat history files are temporary caches. Store them under `/tmp`, outside personal memory. If removed, synchronize again.";
 
 export interface ChatThreadNativeBinding {
   readonly threadAgentId: string | null;

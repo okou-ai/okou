@@ -46,7 +46,7 @@ export function WorkflowWebhookUpgradeDialog() {
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent smMaxWidth="md">
         <DialogHeader>
-          <div className="mb-1 flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
+          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-50 text-amber-700">
             <Lock size={19} />
           </div>
           <DialogTitle>
