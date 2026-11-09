@@ -6,6 +6,12 @@ import { array, boolean, number, object, string } from "zod";
 import { encodeHTML } from "entities";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
 import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
+import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
+import { presentationTemplatesContract } from "@okouai/api-contracts/contracts/presentation-templates";
+import {
+  userTemplatesContract,
+  type PublishUserTemplateBody,
+} from "@okouai/api-contracts/contracts/user-templates";
 import { accept, testContext } from "../../__tests__/test-context";
 import { createApp } from "../../app-factory";
 
@@ -22,6 +28,14 @@ import {
   userMessageWithTemplate,
 } from "../../signals/routes/__tests__/helpers/chat-events-fixture";
 import { publicChatActor } from "../../signals/routes/__tests__/helpers/public-chat-actor";
+import { createRouteMocks } from "../../signals/routes/__tests__/helpers/route-test";
+import {
+  installS3Fixture,
+  tarGz,
+  uploadTemplateFile,
+} from "../../signals/routes/__tests__/helpers/template-publish-fixture";
+import { userTemplatesRoutes } from "../../signals/routes/user-templates";
+import { presentationTemplatesRoutes } from "../../signals/routes/presentation-templates";
 import { useSecretKmsProbe } from "../../signals/routes/__tests__/helpers/secret-kms-probe";
 import { webhooksAgentHealthUsageTelemetryRoutes } from "../../signals/routes/webhooks-agent-health-usage-telemetry";
 import { createDeferredPromise } from "../../signals/utils";
@@ -32,6 +46,7 @@ import { createSharedBrowserFixtures } from "../../signals/routes/__tests__/help
 import { mockOptionalEnv } from "../env";
 import { clearMockMonotonicNow, mockMonotonicNow, mockNow, now } from "../time";
 import { withRequestRuntime } from "../request-runtime";
+import { recordTemplateUsage } from "../template-usage-log";
 
 const context = testContext();
 const FAILURE_MESSAGE =
@@ -402,7 +417,9 @@ describe("template usage Axiom transport", () => {
     templateRole: string(),
     templateIndex: number(),
     templateCount: number(),
-  });
+    colorSystemId: string().optional(),
+    workflowCategory: string().optional(),
+  }).passthrough();
 
   function templateEvents(orgId: string | null) {
     return context.mocks.axiom.sdkIngest.mock.calls
@@ -495,6 +512,333 @@ describe("template usage Axiom transport", () => {
           templateCount: 2,
         }),
       ]);
+    });
+  });
+
+  it("preserves live categories, optional reporting fields, aliases and repeated marker order", async () => {
+    const owned = await publicChatActor(context);
+    await owned.run(async () => {
+      const sourceEventId = randomUUID();
+      const templates: readonly GenerationTemplateRequest[] = [
+        {
+          type: "presentation",
+          selection: {
+            templateId: "template:html-ppt-meridian",
+            colorSystemId: "color-system:ocean-deep",
+          },
+        },
+        { type: "website", selection: { websiteTemplateId: "black-slabs" } },
+        {
+          type: "illustration",
+          selection: { illustrationStyleId: "image-style:ink-mascot" },
+        },
+        {
+          type: "workflow",
+          selection: {
+            workflowTemplateId: "workflow-template:daily-standup-report",
+          },
+        },
+        {
+          type: "document",
+          selection: { documentTemplateId: "document-mutual-nda" },
+        },
+        {
+          type: "presentation",
+          selection: {
+            templateId: "template:html-ppt-meridian",
+            colorSystemId: "color-system:ocean-deep",
+          },
+        },
+      ];
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        clientEventId: sourceEventId,
+        prompt: "Use each selected template around its marker",
+        userMessage: {
+          version: 1,
+          parts: [
+            { type: "text", text: "Use each selected template " },
+            ...templates.map((template) => {
+              return {
+                type: "template" as const,
+                titleSnapshot: "Selected template",
+                template,
+              };
+            }),
+          ],
+        },
+      });
+      await flushWaitUntilForTest();
+      const identities = [
+        {
+          templateCategory: "presentation",
+          templateId: "template:html-ppt-meridian",
+          templateSlug: "html-ppt-meridian",
+          colorSystemId: "color-system:ocean-deep",
+        },
+        {
+          templateCategory: "website",
+          templateId: "black-slabs",
+          templateSlug: "black-slabs",
+        },
+        {
+          templateCategory: "illustration",
+          templateId: "image-style:ink-mascot",
+          templateSlug: "ink-mascot",
+        },
+        {
+          templateCategory: "workflow",
+          templateId: "workflow-template:daily-standup-report",
+          templateSlug: "daily-standup-report",
+          workflowCategory: "Engineering",
+        },
+        {
+          templateCategory: "document",
+          templateId: "document-mutual-nda",
+          templateSlug: "document-mutual-nda",
+        },
+        {
+          templateCategory: "presentation",
+          templateId: "template:html-ppt-meridian",
+          templateSlug: "html-ppt-meridian",
+          colorSystemId: "color-system:ocean-deep",
+        },
+      ];
+      expect(templateEvents(owned.actor.orgId)).toStrictEqual(
+        identities.map((identity, index) => {
+          return expect.objectContaining({
+            ...identity,
+            runId: run.runId,
+            sourceEventId,
+            usageEventId: `template-used:v2:${sourceEventId}:${index}`,
+            templateSource: "builtin",
+            templateRole: index === 0 ? "primary" : "inline",
+            templateIndex: index,
+            templateCount: identities.length,
+          });
+        }),
+      );
+    });
+  });
+
+  it.each(["presentation", "document", "illustration"] as const)(
+    "reports a published imported %s by its authorized kind without private metadata or inheritance",
+    async (kind) => {
+      const owned = await publicChatActor(context);
+      const chat = createChatEventsFixture(context);
+      const storage = installS3Fixture(context);
+      await owned.run(async () => {
+        const title = `Private ${kind} source`;
+        const sourceFileId = await uploadTemplateFile(
+          context,
+          owned.actor,
+          storage,
+          kind === "illustration"
+            ? { filename: "private-source.png", contentType: "image/png" }
+            : {
+                filename: "private-source.pdf",
+                contentType: "application/pdf",
+              },
+          Buffer.from("Private source bytes"),
+        );
+        const previewFileId = await uploadTemplateFile(
+          context,
+          owned.actor,
+          storage,
+          { filename: "private-preview.png", contentType: "image/png" },
+          Buffer.from("Private preview bytes"),
+        );
+        const packageFileId = await uploadTemplateFile(
+          context,
+          owned.actor,
+          storage,
+          {
+            filename: "private-package.tar.gz",
+            contentType: "application/gzip",
+          },
+          tarGz([
+            { path: "SKILL.md", content: "# Private template instructions\n" },
+            { path: "design-system.md", content: "Private design details\n" },
+          ]),
+        );
+        const inputs = { title, sourceFileId, packageFileId };
+        const body: PublishUserTemplateBody =
+          kind === "presentation"
+            ? { ...inputs, kind, pageFileIds: [previewFileId] }
+            : kind === "document"
+              ? { ...inputs, kind, coverFileId: previewFileId }
+              : { ...inputs, kind, exampleFileIds: [previewFileId] };
+        createRouteMocks(context).clerk.session(
+          owned.actor.userId,
+          owned.actor.orgId,
+        );
+        const published = await accept(
+          setupApp({ context, routes: userTemplatesRoutes })(
+            userTemplatesContract,
+          ).publish({
+            headers: { authorization: "Bearer clerk-session" },
+            body,
+          }),
+          [200],
+        );
+        expect(published.body).toMatchObject({ kind, visibility: "private" });
+        const sourceEventId = randomUUID();
+        const template = {
+          type: "custom" as const,
+          selection: { userTemplateId: published.body.id },
+        };
+        const run = await owned.sendChatRun(owned.actor, {
+          agentId: owned.agentId,
+          clientEventId: sourceEventId,
+          prompt: "Use both imported template markers",
+          userMessage: {
+            version: 1,
+            parts: [
+              { type: "text", text: "Use this template " },
+              { type: "template", titleSnapshot: title, template },
+              { type: "text", text: "and apply it again here " },
+              { type: "template", titleSnapshot: title, template },
+            ],
+          },
+        });
+        await flushWaitUntilForTest();
+        const events = templateEvents(owned.actor.orgId);
+        expect(events).toStrictEqual(
+          [0, 1].map((index) => {
+            return expect.objectContaining({
+              runId: run.runId,
+              sourceEventId,
+              usageEventId: `template-used:v2:${sourceEventId}:${index}`,
+              templateCategory: kind,
+              templateId: "user-template",
+              templateSlug: "user-template",
+              templateSource: "user-imported",
+              templateRole: index === 0 ? "primary" : "inline",
+              templateIndex: index,
+              templateCount: 2,
+            });
+          }),
+        );
+        const serialized = JSON.stringify(events);
+        for (const privateValue of [
+          published.body.id,
+          title,
+          sourceFileId,
+          previewFileId,
+          packageFileId,
+          "private-source",
+          "private-preview",
+          "private-package",
+          "Private template instructions",
+          "Private design details",
+          "bundles/v1/",
+        ]) {
+          expect(serialized).not.toContain(privateValue);
+        }
+        expect(events[0]).not.toHaveProperty("colorSystemId");
+        await chat.cancelChatRun(owned.actor, run.runId);
+        await owned.sendChatRun(owned.actor, {
+          agentId: owned.agentId,
+          threadId: run.threadId,
+          prompt: "Continue without selecting a template",
+        });
+        await flushWaitUntilForTest();
+        expect(templateEvents(owned.actor.orgId)).toStrictEqual(events);
+      });
+    },
+  );
+
+  it("redacts a published private presentation selection and its preview metadata", async () => {
+    const owned = await publicChatActor(context);
+    const storage = installS3Fixture(context);
+    await owned.run(async () => {
+      const sourceFileId = await uploadTemplateFile(
+        context,
+        owned.actor,
+        storage,
+        { filename: "private-deck.pdf", contentType: "application/pdf" },
+        Buffer.from("Private presentation source"),
+      );
+      const pageFileId = await uploadTemplateFile(
+        context,
+        owned.actor,
+        storage,
+        { filename: "private-page.png", contentType: "image/png" },
+        Buffer.from("Private presentation preview"),
+      );
+      const packageFileId = await uploadTemplateFile(
+        context,
+        owned.actor,
+        storage,
+        { filename: "private-deck.tar.gz", contentType: "application/gzip" },
+        tarGz([
+          {
+            path: "SKILL.md",
+            content: "# Private presentation instructions\n",
+          },
+          { path: "design-system.md", content: "Private presentation style\n" },
+        ]),
+      );
+      createRouteMocks(context).clerk.session(
+        owned.actor.userId,
+        owned.actor.orgId,
+      );
+      const published = await accept(
+        setupApp({ context, routes: presentationTemplatesRoutes })(
+          presentationTemplatesContract,
+        ).publish({
+          headers: { authorization: "Bearer clerk-session" },
+          body: {
+            title: "Confidential imported presentation",
+            sourceFileId,
+            pageFileIds: [pageFileId],
+            packageFileId,
+          },
+        }),
+        [200],
+      );
+      const privatePreviewUrl =
+        "https://private.example.test/confidential-deck";
+      const run = await owned.sendChatRun(owned.actor, {
+        agentId: owned.agentId,
+        prompt: "Use the imported presentation",
+        template: {
+          type: "presentation",
+          selection: {
+            templateId: `user-template:${published.body.id}`,
+            colorSystemId: "color-system:prism",
+            previewUrl: privatePreviewUrl,
+          },
+        },
+      });
+      await flushWaitUntilForTest();
+      const events = templateEvents(owned.actor.orgId);
+      expect(events).toStrictEqual([
+        expect.objectContaining({
+          runId: run.runId,
+          templateCategory: "presentation",
+          templateId: "user-template",
+          templateSlug: "user-template",
+          templateSource: "user-imported",
+        }),
+      ]);
+      expect(events[0]).not.toHaveProperty("colorSystemId");
+      const serialized = JSON.stringify(events);
+      for (const privateValue of [
+        published.body.id,
+        "Confidential imported presentation",
+        privatePreviewUrl,
+        "color-system:prism",
+        sourceFileId,
+        pageFileId,
+        packageFileId,
+        "private-deck",
+        "private-page",
+        "Private presentation",
+        "bundles/v1/",
+      ]) {
+        expect(serialized).not.toContain(privateValue);
+      }
     });
   });
 
@@ -684,66 +1028,72 @@ describe("template usage Axiom transport", () => {
     });
   });
 
-  it("exports committed template usage once through Worker native logs, not the SDK", async () => {
-    await setupApp({ context, routes: healthRoutes, isolatePg: true });
-    const owned = await publicChatActor(context);
+  // Logger-only Worker host contract. The public API cases above cover the
+  // durable business transition; this case needs no database or Run fixture.
+  it("exports a template usage record once through Worker native logs, not the SDK", async () => {
     const restoreConsole = context.mocks.console.capture();
     onTestFinished(restoreConsole);
-    await owned.run(async () => {
-      const sourceEventId = randomUUID();
-      const run = await withRequestRuntime(
-        {
-          nativeTelemetry: true,
-          database: () => {
-            throw new Error("The API fixture owns the test database");
-          },
-          waitUntil: () => {},
-          traceQuery: (_name, _sql, execute) => {
-            return execute({ setAttributes: () => {} });
-          },
-          observeHttp: () => {},
+    const sourceEventId = randomUUID();
+    const runId = randomUUID();
+    await withRequestRuntime(
+      {
+        nativeTelemetry: true,
+        database: () => {
+          throw new Error("Template telemetry does not access the database");
         },
-        async () => {
-          const created = await owned.sendChatRun(owned.actor, {
-            agentId: owned.agentId,
-            clientEventId: sourceEventId,
-            prompt: "Prepare an invoice in the Worker runtime",
-            template: {
-              type: "document",
-              selection: {
-                documentTemplateId: "document-template:simple-invoice",
-              },
+        waitUntil: () => {},
+        traceQuery: (_name, _sql, execute) => {
+          return execute({ setAttributes: () => {} });
+        },
+        observeHttp: () => {},
+      },
+      async () => {
+        recordTemplateUsage(
+          {
+            runId,
+            sourceEventId,
+            orgId: randomUUID(),
+            userId: randomUUID(),
+            chatThreadId: randomUUID(),
+            dispatchPath: "queued-claim",
+            usedAt: new Date(now()),
+          },
+          [
+            {
+              category: "document",
+              templateId: "document-template:simple-invoice",
+              templateSlug: "simple-invoice",
+              source: "builtin",
             },
-          });
-          await flushWaitUntilForTest();
-          return created;
-        },
-      );
-      const nativeEvents = array(
-        object({ type: string().optional() }).passthrough(),
-      )
-        .parse(
-          context.mocks.console.log.mock.calls.map(([record]) => {
-            return record;
-          }),
-        )
-        .filter((event) => {
-          return event.type === "template_used";
-        });
-      expect(nativeEvents).toStrictEqual([
-        expect.objectContaining({
-          axiom_dataset: "vm0-web-logs-dev",
-          okou_runtime: "cloudflare-workers",
-          runId: run.runId,
-          sourceEventId,
-          usageEventId: `template-used:v2:${sourceEventId}:0`,
-          templateCategory: "document",
-          templateCount: 1,
+          ],
+        );
+        await flushWaitUntilForTest();
+      },
+    );
+    const nativeEvents = array(
+      object({ type: string().optional() }).passthrough(),
+    )
+      .parse(
+        context.mocks.console.log.mock.calls.map(([record]) => {
+          return record;
         }),
-      ]);
-      expect(templateEvent.parse(nativeEvents[0]).templateUsageVersion).toBe(2);
-      expect(templateEvents(owned.actor.orgId)).toStrictEqual([]);
-    });
+      )
+      .filter((event) => {
+        return event.type === "template_used";
+      });
+    expect(nativeEvents).toStrictEqual([
+      expect.objectContaining({
+        axiom_dataset: "vm0-web-logs-dev",
+        okou_runtime: "cloudflare-workers",
+        runId,
+        sourceEventId,
+        usageEventId: `template-used:v2:${sourceEventId}:0`,
+        templateCategory: "document",
+        templateCount: 1,
+      }),
+    ]);
+    expect(templateEvent.parse(nativeEvents[0]).templateUsageVersion).toBe(2);
+    expect(context.mocks.axiom.sdkIngest).not.toHaveBeenCalled();
   });
 
   it("keeps committed usage when Runner activation fails and the run is cancelled", async () => {
