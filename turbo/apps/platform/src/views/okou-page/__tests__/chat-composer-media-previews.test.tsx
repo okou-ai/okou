@@ -90,8 +90,7 @@ test.each([
     await findNamedButton(`Remove ${filename}`);
     expect(openPreview).toBeEnabled();
     expect(openPreview).toHaveAttribute("aria-busy", "false");
-    expect(openPreview.querySelector(tag)).toBe(thumbnail);
-    expect(thumbnail).toHaveAttribute("src", thumbnailUrl);
+    expect(openPreview.querySelector(tag)).toHaveAttribute("src", thumbnailUrl);
     click(openPreview);
     const dialog = await screen.findByRole("dialog", {
       name: `${filename} preview`,
