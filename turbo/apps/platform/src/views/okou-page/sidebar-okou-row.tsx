@@ -1,7 +1,7 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { Badge, cn } from "@okouai/ui";
-import { activeRoute$ } from "../../signals/active-route.ts";
+import { defaultAgentChatPageActive$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import {
   feedWaitingCount$,
@@ -33,13 +33,13 @@ function FeedWaitingCount() {
 }
 
 /**
- * Okou's own entry, first in the chat list: it opens the Feed and counts the
- * cards waiting there. The glyph takes the Project folders' slot so the names
- * line up.
+ * Okou's own entry, first in the chat list: it opens home and counts the
+ * suggestion cards waiting there. The glyph takes the Project folders' slot so
+ * the names line up.
  */
-export function FeedChatListRow() {
+export function OkouChatListRow() {
   const enabled = useGet(suggestionFeedEnabled$);
-  const active = useGet(activeRoute$) === "feed";
+  const active = useLastResolved(defaultAgentChatPageActive$) === true;
   const assistantName = useGet(assistantName$);
   const followCount = useSet(followFeedWaitingCountOnRef$);
   if (!enabled) {
@@ -48,7 +48,7 @@ export function FeedChatListRow() {
   return (
     <Link
       ref={followCount}
-      pathname="/feed"
+      pathname="/"
       aria-current={active ? "page" : undefined}
       className={cn(
         "flex h-8 w-full min-w-0 items-center rounded-lg pr-2 text-left text-sm text-nav-copy motion-safe:transition-colors motion-safe:duration-[180ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",

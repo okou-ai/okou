@@ -123,8 +123,8 @@ function button(
   }
   return found;
 }
-function composer() {
-  const node = document.querySelector(
+function composer(container: ParentNode = document) {
+  const node = container.querySelector(
     '[data-slot="chat-composer-card"] [contenteditable="true"]',
   );
   if (!(node instanceof HTMLElement)) {
@@ -239,18 +239,41 @@ const features = {
   [FeatureSwitchKey.AgentSuggestion]: true,
   [FeatureSwitchKey.ProactiveLearning]: false,
 } as const;
+// Without My Okou, `/` forwards to the default Agent's chat page.
 const homePath = `/agents/${agentId}/chat`;
-const EMPTY_FEED = "You’re all caught up";
 
-async function openFeed(): Promise<void> {
-  await setupPage({ context, path: "/feed", featureSwitches: features });
-}
-// The Feed has no composer, so a home draft is written first and the Feed is
-// opened through its sidebar entry.
-async function openFeedFromHome(draft: string): Promise<void> {
+async function openHome(): Promise<void> {
   await setupPage({ context, path: homePath, featureSwitches: features });
+}
+async function openHomeWithDraft(draft: string): Promise<void> {
+  await openHome();
   await fill(composer(), draft);
-  click(link("/feed"));
+}
+function suggestionList(): HTMLElement | null {
+  return screen.queryByRole("region", { name: "Suggestions" });
+}
+// Home lists nothing once every card has been handled and closed.
+async function waitForEmptyList(): Promise<void> {
+  await waitFor(() => {
+    expect(suggestionList()).not.toBeInTheDocument();
+  });
+}
+// Okou's chat-list row opens home.
+function queryOkouRow(): HTMLElement | null {
+  return (
+    queryAllByRoleFast("link", screen.getByTestId("chat-list-column")).find(
+      (element) => {
+        return element.getAttribute("href") === "/";
+      },
+    ) ?? null
+  );
+}
+function okouRow(): HTMLElement {
+  const found = queryOkouRow();
+  if (!found) {
+    throw new Error("Missing Okou row");
+  }
+  return found;
 }
 const SENT = "Sent to a new chat";
 const MESSAGE_SENT = "Message sent";
@@ -263,7 +286,7 @@ interface SentInput {
   readonly threadId?: string;
   readonly userMessage?: UserMessageDocument;
 }
-// Resolves with the chat input the Feed sends while the page stays in place.
+// Resolves with the chat input home sends while the page stays in place.
 function captureSend(): Promise<SentInput> {
   const sent = context.mocks.deferred<SentInput>();
   mockChatLifecycle(context, {
@@ -311,23 +334,25 @@ test("A cached card still sends its action after server cleanup", async () => {
     });
   });
   const sent = captureSend();
-  await openFeed();
+  await openHome();
   await screen.findByText(suggestion.title);
   pool.withdrawAll();
   click(button(makeOption().label));
   await screen.findByText(SENT);
   expect((await sent).userMessage?.parts).toContainEqual(REFERENCED_THREAD);
   await expect(consumedWith.promise).resolves.toBe(suggestion.consumeToken);
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
 });
 
-test("The Okou row leads the chat list, counts waiting cards and opens the Feed", async () => {
+test("The Okou row leads the chat list, counts waiting cards and opens home", async () => {
   mockPool(numberedSuggestions(2));
-  await setupPage({ context, path: homePath, featureSwitches: features });
+  await setupPage({ context, path: "/agents", featureSwitches: features });
+  await screen.findByRole("heading", { name: "Agents" });
   const row = await waitFor(() => {
-    return link("/feed");
+    return okouRow();
   });
   expect(row).toHaveTextContent(/^Okou/);
+  expect(row).not.toHaveAttribute("aria-current");
   await within(row).findByText("2 waiting");
   // The row leads the chats, above their scrolling list.
   const chats = within(screen.getByTestId("chat-list-column")).getByTestId(
@@ -339,42 +364,73 @@ test("The Okou row leads the chat list, counts waiting cards and opens the Feed"
 
   click(row);
   await screen.findByText("Suggested action 1");
-  expect(pathname()).toBe("/feed");
-  expect(link("/feed")).toHaveAttribute("aria-current", "page");
+  expect(pathname()).toBe(homePath);
+  await waitFor(() => {
+    expect(okouRow()).toHaveAttribute("aria-current", "page");
+  });
+});
+
+test("My Okou's home lists the cards below its capabilities", async () => {
+  mockPool();
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const list = await screen.findByRole("region", { name: "Suggestions" });
+  await within(list).findByRole("article", { name: makeSuggestion().title });
+  const capabilities = screen.getByRole("group", {
+    name: "Explore Okou capabilities",
+  });
+  expect(within(capabilities).getByText("Workflow")).toBeInTheDocument();
+  expect(within(capabilities).getByText("Explore")).toBeInTheDocument();
+  expect(
+    capabilities.compareDocumentPosition(list) &
+      Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
+  expect(pathname()).toBe("/");
+  await waitFor(() => {
+    expect(okouRow()).toHaveAttribute("aria-current", "page");
+  });
 });
 
 test("The Okou row's count follows committed suggestion changes", async () => {
   const pool = mockPool(numberedSuggestions(2));
-  await openFeed();
-  await within(link("/feed")).findByText("2 waiting");
+  await openHome();
+  await within(okouRow()).findByText("2 waiting");
 
   click(button("Dismiss"));
-  await within(link("/feed")).findByText("1 waiting");
+  await within(okouRow()).findByText("1 waiting");
 
   pool.publish(numberedSuggestions(3)[2]);
   notifySuggestionsChanged();
-  await within(link("/feed")).findByText("2 waiting");
+  await within(okouRow()).findByText("2 waiting");
 
   pool.withdrawAll();
   notifySuggestionsChanged();
   await waitFor(() => {
-    expect(link("/feed")).toHaveTextContent(/^Okou$/);
+    expect(okouRow()).toHaveTextContent(/^Okou$/);
   });
 });
 
-test("Each Feed visit loads new suggestions and an empty pool says so", async () => {
-  const pool = mockPool([]);
-  await openFeed();
-  await screen.findByText(EMPTY_FEED);
+test("Each home visit loads new suggestions", async () => {
+  const [first, second] = numberedSuggestions(2);
+  const pool = mockPool([first]);
+  await openHome();
+  await screen.findByText(first.title);
   click(link("/agents"));
   await screen.findByRole("heading", { name: "Agents" });
 
-  pool.publish(makeSuggestion());
-  click(link("/feed"));
-  await screen.findByText(makeSuggestion().title);
-  expect(screen.queryByText(EMPTY_FEED)).not.toBeInTheDocument();
+  pool.publish(second);
+  click(okouRow());
+  await screen.findByText(second.title);
+  expect(feedItemLabels()).toStrictEqual([first.title, second.title]);
 });
-test("Choosing an action sends it to a new thread and keeps the Feed and the home draft", async () => {
+test("Choosing an action sends it to a new thread and keeps home and its draft", async () => {
   const selected = makeOption({ id: "prepare", label: "Prepare response" });
   const suggestion = {
     ...makeSuggestion(),
@@ -399,13 +455,13 @@ test("Choosing an action sends it to a new thread and keeps the Feed and the hom
   };
   const pool = mockPool([suggestion, next]);
   const sent = captureSend();
-  await openFeedFromHome("My original draft");
+  await openHomeWithDraft("My original draft");
   await screen.findByText(suggestion.title);
   expect(button("Review decision")).toBeInTheDocument();
   expect(button("Summarize the decision")).toBeInTheDocument();
   click(button(selected.label));
   await screen.findByText(SENT);
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
   expect(feedItemLabels()).toStrictEqual([next.title, MESSAGE_SENT]);
   await waitFor(() => {
     expect(pool.selections).toStrictEqual([
@@ -416,10 +472,7 @@ test("Choosing an action sends it to a new thread and keeps the Feed and the hom
   expect(openChatLink()).toHaveAttribute("href", `/chats/${sentThreadId}`);
   expect(message?.parts).toContainEqual(REFERENCED_THREAD);
   expect(JSON.stringify(message)).not.toContain("Unselected action");
-  click(link(homePath));
-  await waitFor(() => {
-    expect(composer()).toHaveTextContent("My original draft");
-  });
+  expect(composer()).toHaveTextContent("My original draft");
   expect(composer()).not.toHaveTextContent("Referenced decision");
 });
 
@@ -486,7 +539,7 @@ test("An existing-thread suggestion merges its content and attachments with the 
       draftAttachments: [original],
     });
   });
-  await openFeed();
+  await openHome();
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
   await waitFor(() => {
@@ -525,7 +578,7 @@ test("A consumed suggestion is saved when target metadata is unavailable", async
     saved.push(body.draftUserMessage);
     return respond(204);
   });
-  await openFeed();
+  await openHome();
   await screen.findByText(suggestion.title);
   click(button(suggestion.options[0].label));
   await waitFor(() => {
@@ -552,13 +605,13 @@ test("A choice is still sent when another session consumed the card", async () =
     });
   });
   const sent = captureSend();
-  await openFeed();
+  await openHome();
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
   await screen.findByText(SENT);
   expect((await sent).userMessage?.parts).toContainEqual(REFERENCED_THREAD);
   await consumed.promise;
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
 });
 
@@ -589,7 +642,7 @@ test("A suggestion uses the ordinary composer to join a running target chat", as
       },
     ],
   });
-  await openFeed();
+  await openHome();
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
   await waitFor(() => {
@@ -634,7 +687,7 @@ test("The loaded option keeps its draft and destination when the server responds
       ],
     });
   });
-  await openFeed();
+  await openHome();
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
   const message = await sent;
@@ -642,7 +695,7 @@ test("The loaded option keeps its draft and destination when the server responds
   expect(message.userMessage?.parts).toContainEqual(REFERENCED_THREAD);
   expect(JSON.stringify(message.userMessage)).not.toContain("Updated action");
   await consumed.promise;
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
 });
 function numberedSuggestions(count: number): Suggestion[] {
   return Array.from({ length: count }, (_, index) => {
@@ -675,7 +728,7 @@ function feedItemLabels(): (string | null)[] {
       return content.textContent;
     });
 }
-test("The Feed lists every suggestion card and sends the chosen card's action in place", async () => {
+test("Home lists every suggestion card and sends the chosen card's action in place", async () => {
   const items = numberedSuggestions(3).map((item, index) => {
     return {
       ...item,
@@ -700,7 +753,7 @@ test("The Feed lists every suggestion card and sends the chosen card's action in
   });
   mockPool(items);
   const sent = captureSend();
-  await openFeed();
+  await openHome();
   const suggestions = await screen.findByRole("region", {
     name: "Suggestions",
   });
@@ -729,13 +782,13 @@ test("The Feed lists every suggestion card and sends the chosen card's action in
   expect(JSON.stringify((await sent).userMessage)).toContain(
     "Draft for suggested action 2",
   );
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
 });
 test("A sent suggestion moves below the waiting cards and opens its new thread", async () => {
   const items = numberedSuggestions(2);
   mockPool(items);
   const sent = captureSend();
-  await openFeed();
+  await openHome();
   click(
     button(
       makeOption().label,
@@ -759,7 +812,7 @@ test("A choice that sends nothing returns its card to its place", async () => {
   context.mocks.api(runModelsMainContract.list, ({ respond }) => {
     return respond(200, { models: [] });
   });
-  await openFeed();
+  await openHome();
   click(
     button(
       makeOption().label,
@@ -795,7 +848,7 @@ test("A send that fails before its thread is published shows the failure in its 
       });
     },
   );
-  await openFeed();
+  await openHome();
   click(
     button(
       makeOption().label,
@@ -815,7 +868,7 @@ test("A send that fails before its thread is published shows the failure in its 
 });
 test("Dismissing a suggestion moves only its card below the waiting cards and keeps the rest available", async () => {
   const pool = mockPool(numberedSuggestions(2));
-  await openFeed();
+  await openHome();
   await screen.findByText("Suggested action 1");
   click(button("Dismiss"));
   await screen.findByText("Suggestion dismissed");
@@ -834,7 +887,7 @@ test("Dismissing a suggestion moves only its card below the waiting cards and ke
   expect(pool.selections).toStrictEqual([
     { id: makeSuggestion().id, optionId: null },
   ]);
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
   click(button("Dismiss"));
   await waitFor(() => {
     expect(pool.consumed).toStrictEqual([
@@ -856,12 +909,11 @@ test("Dismissing a suggestion moves only its card below the waiting cards and ke
         return within(row).getByText(/^Suggested action/).textContent;
       }),
   ).toStrictEqual(["Suggested action 1", "Suggested action 2"]);
-  expect(screen.queryByText(EMPTY_FEED)).not.toBeInTheDocument();
   await userEvent.setup().click(button("Close feedback"));
   expect(feedItemLabels()).toStrictEqual(["Suggestion dismissed"]);
   await userEvent.setup().click(button("Close feedback"));
-  await screen.findByText(EMPTY_FEED);
-  expect(pathname()).toBe("/feed");
+  await waitForEmptyList();
+  expect(pathname()).toBe(homePath);
 });
 test("A deleted target shows its unavailable page and preserves the home draft", async () => {
   mockPool([{ ...makeSuggestion(), options: [makeOption({ threadId })] }]);
@@ -880,7 +932,7 @@ test("A deleted target shows its unavailable page and preserves the home draft",
       error: { code: "NOT_FOUND", message: "Chat thread not found" },
     });
   });
-  await openFeedFromHome("Keep my home draft");
+  await openHomeWithDraft("Keep my home draft");
   await screen.findByText(makeSuggestion().title);
   click(button(makeOption().label));
   await screen.findByRole("heading", { name: "Chat thread not found" });
@@ -891,18 +943,18 @@ test("A deleted target shows its unavailable page and preserves the home draft",
   });
 });
 
-test("With the switch off, the sidebar has no Feed entry", async () => {
+test("With the switch off, the sidebar has no Okou row", async () => {
   await setupPage({ context, path: homePath });
   expect(button("Workflow")).toBeInTheDocument();
-  expect(queryLink("/feed")).toBeNull();
+  expect(queryOkouRow()).toBeNull();
 });
-test("With the switch off, the Feed route is not found", async () => {
-  await setupPage({ context, path: "/feed" });
+test("The retired Feed route is not found", async () => {
+  await setupPage({ context, path: "/feed", featureSwitches: features });
   await expect(
     screen.findByRole("heading", { name: "That page isn't here." }),
   ).resolves.toBeInTheDocument();
 });
-test("Feed options start in the default Agent after visiting a secondary Agent", async () => {
+test("Suggestions are listed only on the default Agent's page and start in that Agent", async () => {
   const secondary = "c0000000-0000-4000-a000-000000000002";
   const agents: AgentResponse[] = [agentId, secondary].map((id) => {
     return {
@@ -946,17 +998,19 @@ test("Feed options start in the default Agent after visiting a secondary Agent",
     featureSwitches: features,
   });
   expect(button("Workflow")).toBeInTheDocument();
-  click(link("/feed"));
+  expect(suggestionList()).not.toBeInTheDocument();
+  click(okouRow());
   await screen.findByText(makeSuggestion().title);
+  expect(pathname()).toBe(homePath);
   click(button(makeOption().label));
   await screen.findByText(SENT);
   await expect(sender.promise).resolves.toBe(agentId);
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
 });
 
 test("Custom direction opens a dialog composer for the default Agent without touching its home draft", async () => {
   const pool = mockPool();
-  await openFeedFromHome("Keep my original draft");
+  await openHomeWithDraft("Keep my original draft");
   await screen.findByText(makeSuggestion().title);
   const custom = button("I’d like to…");
   expect(custom).toHaveTextContent(
@@ -967,10 +1021,10 @@ test("Custom direction opens a dialog composer for the default Agent without tou
       Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
   const { dialog, note } = await openCustomDirection();
-  expect(pathname()).toBe("/feed");
-  expect(composer()).toHaveTextContent(makeSuggestion().title);
-  expect(composer()).not.toHaveTextContent("launch-plan-v2");
-  expect(composer()).not.toHaveTextContent("Keep my original draft");
+  expect(pathname()).toBe(homePath);
+  expect(composer(dialog)).toHaveTextContent(makeSuggestion().title);
+  expect(composer(dialog)).not.toHaveTextContent("launch-plan-v2");
+  expect(composer(dialog)).not.toHaveTextContent("Keep my original draft");
   expect(button("Send", "button", dialog)).toBeDisabled();
   await writeDirection(note, "What decision should I make first?");
   await waitFor(() => {
@@ -984,10 +1038,7 @@ test("Custom direction opens a dialog composer for the default Agent without tou
   expect(
     screen.getByRole("article", { name: makeSuggestion().title }),
   ).toBeInTheDocument();
-  click(link(homePath));
-  await waitFor(() => {
-    expect(composer()).toHaveTextContent("Keep my original draft");
-  });
+  expect(composer()).toHaveTextContent("Keep my original draft");
   expect(composer()).not.toHaveTextContent(makeSuggestion().title);
 });
 
@@ -1015,23 +1066,25 @@ test("Each custom direction dialog starts from its own card's background", async
     },
   };
   mockPool([first, second]);
-  await openFeed();
+  await openHome();
   await screen.findByText(first.title);
   const opened = await openCustomDirection(
     screen.getByRole("article", { name: first.title }),
   );
-  expect(composer()).toHaveTextContent(first.title);
+  expect(composer(opened.dialog)).toHaveTextContent(first.title);
   await writeDirection(opened.note, "Assess the risks first");
   click(within(opened.dialog).getByLabelText("Close"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  await openCustomDirection(
+  const reopened = await openCustomDirection(
     screen.getByRole("article", { name: second.title }),
   );
-  expect(composer()).toHaveTextContent(second.title);
-  expect(composer()).not.toHaveTextContent(first.title);
-  expect(composer()).not.toHaveTextContent("Assess the risks first");
+  expect(composer(reopened.dialog)).toHaveTextContent(second.title);
+  expect(composer(reopened.dialog)).not.toHaveTextContent(first.title);
+  expect(composer(reopened.dialog)).not.toHaveTextContent(
+    "Assess the risks first",
+  );
   click(within(screen.getByRole("dialog")).getByLabelText("Close"));
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
@@ -1071,7 +1124,7 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
       createdAt: "2026-10-27T00:00:00Z",
     });
   });
-  await openFeed();
+  await openHome();
   await screen.findByText(makeSuggestion().title);
   const { dialog, note } = await openCustomDirection();
   await writeDirection(note, "Assess the budget risk first");
@@ -1080,13 +1133,13 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
   });
   click(button("Send", "button", dialog));
   await screen.findByText("Follow-up temporarily unavailable");
-  expect(pathname()).toBe("/feed");
-  expect(composer()).toHaveTextContent("Assess the budget risk first");
-  expect(composer()).toHaveTextContent(makeSuggestion().title);
+  expect(pathname()).toBe(homePath);
+  expect(composer(dialog)).toHaveTextContent("Assess the budget risk first");
+  expect(composer(dialog)).toHaveTextContent(makeSuggestion().title);
   failing = false;
   click(button("Send", "button", dialog));
   await retryRequested.promise;
-  expect(composer()).toHaveTextContent("Assess the budget risk first");
+  expect(composer(dialog)).toHaveTextContent("Assess the budget risk first");
   expect(attempts[1]).toStrictEqual(attempts[0]);
   const [quote] = suggestionFeedbacks(
     attempts[1].userMessage ?? { version: 1, parts: [] },
@@ -1100,7 +1153,7 @@ test("A custom follow-up retains its dialog on failure and reuses its identities
   await waitFor(() => {
     expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
   expect(
     screen.queryByRole("article", { name: makeSuggestion().title }),
   ).not.toBeInTheDocument();
@@ -1157,14 +1210,13 @@ test("The custom direction dialog sends the background files without the home dr
     });
   });
   const sent = captureSend();
-  await setupPage({ context, path: homePath, featureSwitches: features });
+  await openHome();
   await screen.findByText("my-original.txt");
-  click(link("/feed"));
   await screen.findByText(suggestion.title);
   const { dialog, note } = await openCustomDirection();
   await within(dialog).findByText("suggestion-background.txt");
   expect(within(dialog).queryByText("my-original.txt")).not.toBeInTheDocument();
-  expect(composer()).not.toHaveTextContent("My saved draft");
+  expect(composer(dialog)).not.toHaveTextContent("My saved draft");
   await writeDirection(note, "Keep my own requirements");
   await waitFor(() => {
     expect(button("Send", "button", dialog)).toBeEnabled();
@@ -1177,12 +1229,12 @@ test("The custom direction dialog sends the background files without the home dr
   );
   expect(JSON.stringify(message)).not.toContain(original.id);
   expect(JSON.stringify(message)).not.toContain("My saved draft");
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
 });
 
 test("Feedback stays available after the last card, accepts an optional reason, and undo restores the card", async () => {
   mockPool([{ ...makeSuggestion(), consumeToken: "a".repeat(64) }]);
-  await openFeed();
+  await openHome();
   await screen.findByText(makeSuggestion().title);
   const actions = ["Dismiss", "Already done", "Not planned", "Less like this"];
   const suggestion = screen.getByRole("region", { name: "Suggestions" });
@@ -1215,13 +1267,13 @@ test("Feedback stays available after the last card, accepts an optional reason, 
   await userEvent.setup().click(button("Not planned"));
   await screen.findByText("Noted — this is not planned");
   await userEvent.setup().click(button("Close feedback"));
-  await screen.findByText(EMPTY_FEED);
+  await waitForEmptyList();
 });
 
 test("Not planned moves its card below the waiting cards and Undo restores it in place", async () => {
   const items = numberedSuggestions(3);
   mockPool(items);
-  await openFeed();
+  await openHome();
   await screen.findByText(items[1].title);
   click(
     button(
@@ -1264,7 +1316,7 @@ test("Failed feedback keeps the local choice and can retry the same feedback ide
     retried.resolve();
     return respond(200, { restored: false });
   });
-  await openFeed();
+  await openHome();
   await screen.findByText(item.title);
   click(button("Already done"));
   const error = await screen.findByRole("alert");
@@ -1276,7 +1328,7 @@ test("Failed feedback keeps the local choice and can retry the same feedback ide
     screen.queryByRole("article", { name: item.title }),
   ).not.toBeInTheDocument();
   click(button("Close feedback"));
-  await screen.findByText(EMPTY_FEED);
+  await waitForEmptyList();
   expect(screen.getByRole("alert")).toBeInTheDocument();
   failing = false;
   click(button("Try again"));
@@ -1312,7 +1364,7 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
       return respond(200, { restored: body.kind === "undo" });
     },
   );
-  await openFeed();
+  await openHome();
   await screen.findByText(items[0].title);
   click(button("Already done"));
   await requested.promise;
@@ -1331,13 +1383,7 @@ test("Slow feedback leaves other cards usable and Undo restores the original car
   ).toBeEnabled();
   click(button("Undo"));
   await screen.findByRole("article", { name: items[0].title });
-  expect(
-    within(screen.getByRole("region", { name: "Suggestions" }))
-      .getAllByRole("heading")
-      .map((heading) => {
-        return heading.textContent;
-      }),
-  ).toStrictEqual(
+  expect(feedItemLabels()).toStrictEqual(
     items.map((item) => {
       return item.title;
     }),
@@ -1401,7 +1447,7 @@ test("Reason edits and Undo are local while their writes follow the original fee
     }
     return respond(200, { restored: body.kind === "undo" });
   });
-  await openFeed();
+  await openHome();
   await screen.findByText(item.title);
   click(button("Less like this"));
   await requested.promise;
@@ -1441,7 +1487,7 @@ test("Choosing an action confirms the send while its consumption is still saving
       selectedOptionId: body.optionId,
     });
   });
-  await openFeed();
+  await openHome();
   await screen.findByText(items[0].title);
   click(
     button(
@@ -1453,7 +1499,7 @@ test("Choosing an action confirms the send while its consumption is still saving
   await requested.promise;
   await screen.findByText(SENT);
   expect(feedItemLabels()).toStrictEqual([items[1].title, MESSAGE_SENT]);
-  expect(pathname()).toBe("/feed");
+  expect(pathname()).toBe(homePath);
   release.resolve();
 });
 
@@ -1485,7 +1531,7 @@ test("An existing conversation opens before consumption and its remote draft fin
       draftAttachments: null,
     });
   });
-  await openFeed();
+  await openHome();
   await screen.findByText(item.title);
   click(button(makeOption().label));
   await consuming.promise;

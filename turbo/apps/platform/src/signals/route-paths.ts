@@ -24,7 +24,6 @@ export const ROUTES = {
   prompt: "/prompt",
   works: "/works",
   artifacts: "/artifacts",
-  feed: "/feed",
   sharedArtifact: "/artifacts/:artifactShareId",
   legacySharedArtifact: "/share/artifacts/:artifactShareId",
   sharedThread: "/share/threads/:id",

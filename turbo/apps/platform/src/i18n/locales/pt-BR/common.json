@@ -418,7 +418,6 @@
         "agents": "Agentes",
         "artifacts": "Artefatos",
         "connectors": "Conectores",
-        "feed": "Feed",
         "settings": "Configurações",
         "workflows": "Fluxos de trabalho",
         "works": "Onde {{agentName}} trabalha"
@@ -4266,12 +4265,6 @@
     "previous": "Anterior",
     "previousFeature": "Recurso anterior",
     "tryPrompt": "Experimentar esta tarefa"
-  },
-  "feed": {
-    "description": "Próximos passos sugeridos com base no seu trabalho recente.",
-    "emptyDescription": "Novas sugestões aparecerão aqui.",
-    "emptyTitle": "Tudo em dia",
-    "title": "Feed"
   },
   "friendReferrals": {
     "checkingCode": "Verificando o código…",

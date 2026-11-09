@@ -402,7 +402,6 @@
         "agents": "智能體",
         "artifacts": "成果",
         "connectors": "連接器",
-        "feed": "動態",
         "settings": "設定",
         "workflows": "工作流",
         "works": "{{agentName}} 的工作渠道"
@@ -4197,12 +4196,6 @@
     "previous": "上一步",
     "previousFeature": "上一個功能",
     "tryPrompt": "試試這個任務"
-  },
-  "feed": {
-    "description": "根據你最近的工作推薦的下一步。",
-    "emptyDescription": "新的建議會顯示在這裡。",
-    "emptyTitle": "已全部處理",
-    "title": "動態"
   },
   "friendReferrals": {
     "checkingCode": "正在驗證邀請碼…",

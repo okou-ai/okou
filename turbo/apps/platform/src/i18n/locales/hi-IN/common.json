@@ -403,7 +403,6 @@
         "agents": "एजेंटों",
         "artifacts": "आर्टिफ़ैक्ट्स",
         "connectors": "कनेक्टर्स",
-        "feed": "फ़ीड",
         "settings": "सेटिंग्स",
         "workflows": "वर्कफ़्लो",
         "works": "जहां {{agentName}} काम करता है"
@@ -4212,12 +4211,6 @@
     "previous": "पिछला",
     "previousFeature": "पिछली सुविधा",
     "tryPrompt": "यह काम आज़माएँ"
-  },
-  "feed": {
-    "description": "आपके हाल के काम के आधार पर सुझाए गए अगले कदम।",
-    "emptyDescription": "नए सुझाव यहाँ दिखाई देंगे।",
-    "emptyTitle": "आप पूरी तरह अप टू डेट हैं",
-    "title": "फ़ीड"
   },
   "friendReferrals": {
     "checkingCode": "आमंत्रण कोड जाँचा जा रहा है…",

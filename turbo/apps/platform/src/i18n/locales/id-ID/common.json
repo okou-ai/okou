@@ -402,7 +402,6 @@
         "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
-        "feed": "Feed",
         "settings": "Pengaturan",
         "workflows": "Alur kerja",
         "works": "Tempat {{agentName}} bekerja"
@@ -4197,12 +4196,6 @@
     "previous": "Sebelumnya",
     "previousFeature": "Fitur sebelumnya",
     "tryPrompt": "Coba tugas ini"
-  },
-  "feed": {
-    "description": "Langkah berikutnya yang disarankan berdasarkan pekerjaan terbaru Anda.",
-    "emptyDescription": "Saran baru akan muncul di sini.",
-    "emptyTitle": "Semua sudah terkini",
-    "title": "Feed"
   },
   "friendReferrals": {
     "checkingCode": "Memeriksa kode undangan…",

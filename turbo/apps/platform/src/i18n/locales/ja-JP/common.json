@@ -402,7 +402,6 @@
         "agents": "エージェント",
         "artifacts": "アーティファクト",
         "connectors": "コネクター",
-        "feed": "フィード",
         "settings": "設定",
         "workflows": "ワークフロー",
         "works": "{{agentName}}の連携先"
@@ -4197,12 +4196,6 @@
     "previous": "前へ",
     "previousFeature": "前の機能",
     "tryPrompt": "このタスクを試す"
-  },
-  "feed": {
-    "description": "最近の作業をもとにした、次のステップの提案です。",
-    "emptyDescription": "新しい提案はここに表示されます。",
-    "emptyTitle": "すべて確認済みです",
-    "title": "フィード"
   },
   "friendReferrals": {
     "checkingCode": "招待コードを確認中…",

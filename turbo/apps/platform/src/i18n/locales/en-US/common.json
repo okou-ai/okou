@@ -403,7 +403,6 @@
         "agents": "Agents",
         "artifacts": "Artifacts",
         "connectors": "Connectors",
-        "feed": "Feed",
         "settings": "Settings",
         "workflows": "Workflows",
         "works": "Where {{agentName}} works"
@@ -4210,12 +4209,6 @@
     "previous": "Previous",
     "previousFeature": "Previous feature",
     "tryPrompt": "Try this task"
-  },
-  "feed": {
-    "description": "Suggested next steps based on your recent work.",
-    "emptyDescription": "New suggestions will appear here.",
-    "emptyTitle": "You’re all caught up",
-    "title": "Feed"
   },
   "friendReferrals": {
     "checkingCode": "Checking invitation code…",

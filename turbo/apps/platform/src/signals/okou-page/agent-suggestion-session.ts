@@ -8,7 +8,7 @@ import type {
 } from "@okouai/api-contracts/contracts/suggestions";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
-import { defaultAgentId$ } from "../agent.ts";
+import { defaultAgentChatPageActive$, defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
@@ -121,7 +121,7 @@ interface SuggestionSentOutcome {
 export type SuggestionOutcome =
   SuggestionFeedbackOutcome | SuggestionSentOutcome;
 
-/** A Feed row: a waiting card, or a handled one below every waiting card. */
+/** A listed row: a waiting card, or a handled one below every waiting card. */
 interface AgentSuggestionFeedItem {
   readonly entry: AgentSuggestionEntry;
   readonly outcome: SuggestionOutcome | null;
@@ -130,7 +130,7 @@ interface SettledSuggestion extends AgentSuggestionFeedItem {
   readonly outcome: SuggestionOutcome;
 }
 
-/** The Feed page and its sidebar entry follow the Suggestions rollout. */
+/** Home's suggestion list and its chat-list row follow the Suggestions rollout. */
 export const suggestionFeedEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] === true;
 });
@@ -162,9 +162,9 @@ const readAgentSuggestions$ = command(
 
 const feedWaitingCountVersion$ = state(0);
 /**
- * The cards waiting in the Feed, counted on its chat-list row. The row reads
- * the server's actionable cards rather than a Feed visit's snapshot, so it
- * follows every committed change, including those made on the Feed itself.
+ * The cards waiting on home, counted on its chat-list row. The row reads the
+ * server's actionable cards rather than a home visit's snapshot, so it follows
+ * every committed change, including those made on home itself.
  */
 export const feedWaitingCount$ = computed(async (get) => {
   get(feedWaitingCountVersion$);
@@ -258,12 +258,24 @@ export const agentSuggestionFeedItems$ = computed((get) => {
 export const suggestionFeedbackReasonOpen$ = computed((get) => {
   return get(get(session$).reasonOpen$);
 });
-export const enterAgentSuggestions$ = command(
-  ({ get, set }, signal: AbortSignal) => {
+/**
+ * The default Agent's new-chat page lists the cards, because their options
+ * start chats in that Agent. Each visit reads one snapshot.
+ */
+export const enterHomeSuggestions$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!get(suggestionFeedEnabled$)) {
+      return;
+    }
+    const active = await get(defaultAgentChatPageActive$);
+    signal.throwIfAborted();
+    if (!active) {
+      return;
+    }
     set(visit$, get(visit$) + 1);
     const snapshot = set(readAgentSuggestions$, signal);
     set(get(session$).snapshot$, snapshot);
-    return snapshot;
+    await snapshot;
   },
 );
 
@@ -340,7 +352,7 @@ function settledFeedback(
   return found?.outcome.type === "feedback" ? found.outcome : null;
 }
 
-/** Clears a handled card from the Feed; the card stays handled. */
+/** Clears a handled card from the list; the card stays handled. */
 export const closeSettledSuggestion$ = command(
   ({ get, set }, entry: AgentSuggestionEntry) => {
     const session = get(session$);
