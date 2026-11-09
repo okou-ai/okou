@@ -66,6 +66,7 @@ export async function computerUseHostIsPresent(
   signal: AbortSignal,
 ): Promise<boolean> {
   signal.throwIfAborted();
+  const started = performance.now();
   const request = async () => {
     const members = await ablyClient()
       .channels.get(
@@ -77,7 +78,15 @@ export async function computerUseHostIsPresent(
         ),
       )
       .presence.get({ clientId: target.userId, limit: 1 });
-    return members.items.length > 0;
+    const present = members.items.length > 0;
+    L.debug("Computer-use presence queried", {
+      hostId: target.id,
+      connectionGeneration: target.connectionGeneration,
+      outcome: "ok",
+      present,
+      durationMs: performance.now() - started,
+    });
+    return present;
   };
   const result = await settleIncludingAbort(
     awaitWithSignal(
@@ -87,6 +96,12 @@ export async function computerUseHostIsPresent(
   );
   signal.throwIfAborted();
   if (!result.ok) {
+    L.warn("Computer-use presence unavailable", {
+      hostId: target.id,
+      connectionGeneration: target.connectionGeneration,
+      outcome: "unavailable",
+      durationMs: performance.now() - started,
+    });
     throw new HTTPException(503, {
       res: Response.json(
         {
@@ -203,6 +218,22 @@ async function publishComputerUseCommandsChangedNow(
       .channels.get(channelName)
       .publish(computerUseCommandsChangedEvent, null);
   }
+}
+
+export function publishComputerUseCommandsChanged(target: {
+  readonly userId: string;
+  readonly orgId: string;
+  readonly hostId: string;
+  readonly connectionGeneration: number;
+}): Promise<void> {
+  return publishComputerUseCommandsChangedNow(
+    computerUseHostChannelName(
+      target.userId,
+      target.orgId,
+      target.hostId,
+      target.connectionGeneration,
+    ),
+  );
 }
 
 export function publishComputerUseCommandsChangedSafely(target: {

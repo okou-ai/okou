@@ -38,17 +38,20 @@ public struct ComputerUseHostRegistration: Codable, Equatable, Sendable {
   public let hostId: String
   public let commandNotifications: CommandNotifications
   public let livenessMode: LivenessMode?
+  public let presenceOnly: Bool?
 
   public init(
     connectionGeneration: Int,
     hostId: String,
     commandNotifications: CommandNotifications,
-    livenessMode: LivenessMode? = nil
+    livenessMode: LivenessMode? = nil,
+    presenceOnly: Bool? = nil
   ) {
     self.connectionGeneration = connectionGeneration
     self.hostId = hostId
     self.commandNotifications = commandNotifications
     self.livenessMode = livenessMode
+    self.presenceOnly = presenceOnly
   }
 }
 

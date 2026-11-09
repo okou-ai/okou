@@ -69,7 +69,6 @@ public actor HostRuntime {
       return .object(fields)
     }
     var heartbeat: ApiRoute { ApiRoutes.computerUseHostHeartbeat(hostId: hostId) }
-    var wait: ApiRoute { ApiRoutes.computerUseHostCommandWait(hostId: hostId) }
     var state: ApiRoute { ApiRoutes.computerUseHostState(hostId: hostId) }
     var realtimeToken: ApiRoute { ApiRoutes.computerUseHostRealtimeToken(hostId: hostId) }
     var stop: ApiRoute { ApiRoutes.computerUseHostStop(hostId: hostId) }
@@ -81,13 +80,13 @@ public actor HostRuntime {
   private var connection: Connection?
   private var heartbeatTask: Task<Void, Never>?
   private var stateTask: Task<Void, Never>?
-  private var queueWaitTask: Task<Void, Never>?
   private var lastAdvertisedState: JSONValue?
   private var pendingStateRefresh = false
   private var heartbeatDiagnostics = HostRequestDiagnostics()
   private var stateDiagnostics = HostRequestDiagnostics(request: .state)
-  private var queueDiagnostics = HostRequestDiagnostics(request: .queueWait)
+  private var notificationReady = false
   private var notificationTask: Task<Void, Never>?
+  private var notificationReports: [UUID: Task<Void, Never>] = [:]
   private var notificationStops = 0
   private var drainTask: Task<Void, Never>?
   private var commandRetryTask: Task<Void, Never>?
@@ -192,6 +191,7 @@ public actor HostRuntime {
     let advertised = await body()
     var registrationBody = advertised
     registrationBody["livenessMode"] = .string("presence")
+    registrationBody["presenceOnly"] = .bool(true)
     let response = try await api.authenticatedRequest(
       ApiRoutes.computerUseHostRegister, body: registrationBody, timeout: 10,
       tokenProvider: tokenProvider)
@@ -238,7 +238,8 @@ public actor HostRuntime {
     let notifications = registration.commandNotifications
     state.hostId = connection.hostId
     state.usesPresence = connection.usesPresence
-    state.status = "online"
+    notificationReady = false
+    state.status = connection.usesPresence ? "connecting" : "online"
     state.lastHeartbeat = Date()
     state.lastError = nil
     state.recoveryAttempt = 0
@@ -246,7 +247,6 @@ public actor HostRuntime {
     await publish()
     guard running, acceptingCommands, generation == current else { return }
     if connection.usesPresence {
-      queueWaitTask = Task { await self.queueWaitLoop(generation: current, connection: connection) }
       await refreshAdvertisement()
     } else {
       heartbeatTask = Task { await self.heartbeatLoop(generation: current, connection: connection) }
@@ -271,14 +271,10 @@ public actor HostRuntime {
   }
   private func stopRuntime() async {
     acceptingCommands = false
-    let waiting = queueWaitTask
-    waiting?.cancel()
-    queueWaitTask = nil
     state.status = "stopping"
     await executor.retireShellSessions()
     await publish()
     await stopNotifications()
-    await waiting?.value
     // Keep heartbeats alive while an existing command drains; its Clerk
     // session must remain available until the completion report has been sent.
     if connection == nil {
@@ -305,7 +301,6 @@ public actor HostRuntime {
     pendingStateRefresh = false
     heartbeatDiagnostics.finish(outcome: .stopped)
     stateDiagnostics.finish(outcome: .stopped)
-    queueDiagnostics.finish(outcome: .stopped)
     if let connection {
       do {
         let response = try await api.authenticatedRequest(
@@ -362,7 +357,8 @@ public actor HostRuntime {
         guard running, generation == current else { return }
         lastAdvertisedState = advertised
         state.lastHeartbeat = Date()
-        state.status = acceptingCommands ? "online" : "stopping"
+        state.status = !acceptingCommands ? "stopping"
+          : connection.usesPresence && !notificationReady ? "recovering" : "online"
         state.lastError = nil
         state.retryAt = nil
         state.recoveryAttempt = 0
@@ -379,52 +375,6 @@ public actor HostRuntime {
         let operation = await trace.snapshot()
         guard running, generation == current else { return }
         stateDiagnostics.failed(error: error, requests: operation.requests, retryDelay: delay(attempt), operation: operation)
-        await recover(error, attempt: attempt)
-        do { try await Task.sleep(for: .seconds(delay(attempt))) } catch { return }
-      }
-    }
-  }
-  private func queueWaitLoop(generation current: Int, connection: Connection) async {
-    var attempt = 0
-    while running && acceptingCommands && generation == current {
-      let trace = APIRequestTrace()
-      do {
-        let response = try await request(
-          connection.wait, connection: connection, body: .object([:]), timeout: 70, generation: current, trace: trace)
-        let operation = await trace.snapshot()
-        try Task.checkCancellation()
-        guard running, acceptingCommands, generation == current else { return }
-        if await rejectAuthority(response) { return }
-        guard (200..<300).contains(response.status) else {
-          throw DesktopFailure("network_error", "Command wait failed (HTTP \(response.status))")
-        }
-        let pending = try response.decode(ComputerUseHostCommandWait.self)
-        queueDiagnostics.finish(outcome: .recovered, requests: operation.requests, operation: operation)
-        await notifications.setAvailable(true, channelName: connection.channelName)
-        guard running, generation == current else { return }
-        state.lastHeartbeat = Date()
-        state.status = "online"
-        state.lastError = nil
-        state.retryAt = nil
-        state.recoveryAttempt = 0
-        await publish()
-        attempt = 0
-        if pending.hasPendingCommands {
-          requestCommandRefresh(generation: current, connection: connection)
-          // Continue receiving liveness evidence while an existing command drains.
-          // A temporarily unclaimable item must not turn this into a busy loop.
-          try await Task.sleep(for: .seconds(15))
-        }
-      } catch is CancellationError { return } catch {
-        guard running, acceptingCommands, generation == current else { return }
-        if await rejectAuthentication(error) { return }
-        await notifications.setAvailable(false, channelName: connection.channelName)
-        requestStateRefresh(generation: current, connection: connection)
-        guard running, generation == current else { return }
-        attempt += 1
-        let operation = await trace.snapshot()
-        guard running, generation == current else { return }
-        queueDiagnostics.failed(error: error, requests: operation.requests, retryDelay: delay(attempt), operation: operation)
         await recover(error, attempt: attempt)
         do { try await Task.sleep(for: .seconds(delay(attempt))) } catch { return }
       }
@@ -480,9 +430,6 @@ public actor HostRuntime {
     }
     heartbeatDiagnostics.finish(outcome: .authorityRejected)
     stateDiagnostics.finish(outcome: .authorityRejected)
-    queueDiagnostics.finish(outcome: .authorityRejected)
-    queueWaitTask?.cancel()
-    queueWaitTask = nil
     running = false
     acceptingCommands = false
     await executor.stop()
@@ -497,9 +444,6 @@ public actor HostRuntime {
     guard [401, 403, 409, 426].contains(response.status) else { return false }
     heartbeatDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
     stateDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
-    queueDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
-    queueWaitTask?.cancel()
-    queueWaitTask = nil
     if response.status == 426 {
       // Close admission without invalidating completion reports for claimed work.
       acceptingCommands = false
@@ -538,8 +482,13 @@ public actor HostRuntime {
     notificationTask?.cancel()
     let task = notificationTask
     notificationTask = nil
+    notificationReady = false
     await notifications.stop()
     await task?.value
+    let reports = Array(notificationReports.values)
+    notificationReports.removeAll()
+    for report in reports { report.cancel() }
+    for report in reports { await report.value }
   }
   private func notificationLoop(
     subscription: CommandNotificationSubscription, generation current: Int, connection: Connection
@@ -572,26 +521,62 @@ public actor HostRuntime {
         guard !Task.isCancelled, running, acceptingCommands, generation == current else { return }
         switch event {
         case .ready:
+          notificationReady = true
           if connection.usesPresence { requestStateRefresh(generation: current, connection: connection) }
           requestCommandRefresh(generation: current, connection: connection)
+          scheduleNotificationReport("ready", connection: connection)
         case .refresh:
           requestCommandRefresh(generation: current, connection: connection)
-        case .unavailable(let message):
+        case .unavailable(let message, let code):
+          notificationReady = false
+          if connection.usesPresence {
+            state.status = "recovering"
+            state.lastError = message
+          }
           state.errors.insert(message, at: 0)
           state.errors = Array(state.errors.prefix(50))
           await publish()
+          scheduleNotificationReport("unavailable", reasonCode: code, connection: connection)
         }
       }
     } catch is CancellationError {
     } catch {
       guard running, acceptingCommands, generation == current else { return }
+      notificationReady = false
+      if connection.usesPresence {
+        state.status = "recovering"
+        state.lastError = error.localizedDescription
+      }
       state.errors.insert(error.localizedDescription, at: 0)
       state.errors = Array(state.errors.prefix(50))
       await publish()
     }
   }
+  private func scheduleNotificationReport(
+    _ event: String, reasonCode: Int? = nil, connection: Connection
+  ) {
+    guard connection.usesPresence else { return }
+    let id = UUID()
+    notificationReports[id] = Task {
+      await self.reportNotificationEvent(event, reasonCode: reasonCode, connection: connection)
+      self.notificationReports[id] = nil
+    }
+  }
+  private func reportNotificationEvent(
+    _ event: String, reasonCode: Int? = nil, connection: Connection
+  ) async {
+    guard connection.usesPresence else { return }
+    var fields: [String: JSONValue] = ["event": .string(event)]
+    if let reasonCode { fields["reasonCode"] = .number(Double(reasonCode)) }
+    // Transition-only diagnostics are best effort: they never renew liveness,
+    // delay command dispatch, or cause another recovery/request loop.
+    _ = try? await api.authenticatedRequest(
+      ApiRoutes.computerUseHostConnectionEvent(hostId: connection.hostId),
+      body: connection.body(.object(fields)), timeout: 3, tokenProvider: tokenProvider)
+  }
   private func requestCommandRefresh(generation current: Int, connection: Connection) {
     guard running, acceptingCommands, generation == current else { return }
+    guard !connection.usesPresence || notificationReady else { return }
     pendingRefresh = true
     guard drainTask == nil, commandRetryTask == nil else { return }
     drainTask = Task { await self.drainCommands(generation: current, connection: connection) }
@@ -599,6 +584,7 @@ public actor HostRuntime {
   private func drainCommands(generation current: Int, connection: Connection) async {
     defer { if generation == current { drainTask = nil } }
     while running && acceptingCommands && generation == current {
+      guard !connection.usesPresence || notificationReady else { return }
       do {
         pendingRefresh = false
         let claimStarted = ContinuousClock.now

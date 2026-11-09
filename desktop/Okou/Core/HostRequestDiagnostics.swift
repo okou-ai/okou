@@ -4,13 +4,11 @@ import Foundation
 struct HostRequestDiagnostics {
   enum Request: String {
     case heartbeat, state
-    case queueWait = "commands/wait"
 
     var label: String {
       switch self {
       case .heartbeat: return "heartbeat"
       case .state: return "state synchronization"
-      case .queueWait: return "command wait"
       }
     }
   }

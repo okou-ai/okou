@@ -185,6 +185,18 @@ export const computerUseSessionHostsContract: ClientDescriptor<
       503: true,
     },
   },
+  connectionEvent: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/connection-events",
+    statuses: {
+      204: true,
+      401: true,
+      403: true,
+      409: true,
+      429: true,
+      503: true,
+    },
+  },
   stop: {
     method: "POST",
     path: "/api/computer-use/hosts/:hostId/stop",
