@@ -29,7 +29,7 @@
   "crates/codex-mock": "0.12.56",
   "crates/guest-state-restore": "0.4.5",
   "crates/guest-write-file": "0.1.283",
-  "crates/runner": "0.244.44",
+  "crates/runner": "0.244.45",
   "crates/runner-executor": "0.21.0",
   "crates/runner-host": "0.10.40",
   "crates/runner-lifecycle": "0.17.80",
@@ -55,7 +55,7 @@
   "crates/linux-mountinfo": "0.2.0",
   "crates/kerberos-worker": "0.3.10",
   "crates/rfb-client": "0.24.7",
-  "ios": "0.29.1",
+  "ios": "0.29.2",
   "crates/kerberos-credentials": "0.2.0",
   "desktop": "0.56.1"
 }
