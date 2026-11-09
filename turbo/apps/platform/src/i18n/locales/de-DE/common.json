@@ -6217,7 +6217,7 @@
       "title": "Hoppla! Etwas ging schief"
     },
     "forceUpgrade": {
-      "description": "Diese Version von {{brandName}} wird nicht mehr unterstützt.",
+      "description": "Wir haben neue Funktionen für {{brandName}} veröffentlicht. Lade neu, um die neueste Version zu nutzen.",
       "title": "Update erforderlich"
     },
     "mermaid": {

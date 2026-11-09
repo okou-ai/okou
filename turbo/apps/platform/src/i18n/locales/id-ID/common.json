@@ -6198,7 +6198,7 @@
       "title": "Ups! Ada yang salah"
     },
     "forceUpgrade": {
-      "description": "Versi {{brandName}} ini tidak lagi didukung.",
+      "description": "Kami telah merilis fitur baru di {{brandName}}. Muat ulang untuk menggunakan versi terbaru.",
       "title": "Pembaruan diperlukan"
     },
     "mermaid": {

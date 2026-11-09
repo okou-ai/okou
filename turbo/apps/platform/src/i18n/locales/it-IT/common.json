@@ -6282,7 +6282,7 @@
       "title": "Ops! Qualcosa è andato storto"
     },
     "forceUpgrade": {
-      "description": "Questa versione di {{brandName}} non è più supportata.",
+      "description": "Abbiamo rilasciato nuove funzionalità in {{brandName}}. Aggiorna per usare la versione più recente.",
       "title": "Aggiornamento richiesto"
     },
     "mermaid": {

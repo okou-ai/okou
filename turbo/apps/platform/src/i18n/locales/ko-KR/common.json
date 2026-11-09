@@ -6198,7 +6198,7 @@
       "title": "앗! 문제가 발생했습니다"
     },
     "forceUpgrade": {
-      "description": "이 버전의 {{brandName}}은 더 이상 지원되지 않습니다.",
+      "description": "{{brandName}}에 새로운 기능이 추가되었습니다. 새로고침하여 최신 버전을 사용하세요.",
       "title": "업데이트 필요"
     },
     "mermaid": {

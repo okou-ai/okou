@@ -6215,7 +6215,7 @@
       "title": "Oops! Something went sideways"
     },
     "forceUpgrade": {
-      "description": "This version of {{brandName}} is no longer supported.",
+      "description": "We've released new features in {{brandName}}. Refresh to get the latest version.",
       "title": "Update required"
     },
     "mermaid": {

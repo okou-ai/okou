@@ -248,7 +248,7 @@ test("Require an application update before using connectors", async () => {
 
   const dialog = await screen.findByRole("dialog", { name: "Update required" });
   expect(dialog).toHaveTextContent(
-    "This version of Okou is no longer supported.",
+    "We've released new features in Okou. Refresh to get the latest version.",
   );
   expect(screen.queryByText("HTTP 426")).not.toBeInTheDocument();
 });
