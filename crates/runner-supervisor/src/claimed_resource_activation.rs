@@ -92,6 +92,7 @@ pub struct ReuseFromPoolReady {
 
 pub struct ReservedActivationRequest<'a> {
     pub run_id: RunId,
+    pub required_home_source_run_id: Option<RunId>,
     pub rootfs_hash: &'a str,
     pub profile_name: &'a str,
     pub device_rate_limits: &'a Option<DeviceRateLimits>,
@@ -242,6 +243,7 @@ async fn prepare_speculated_exact(
 ) -> PendingExactActivation {
     let ReservedActivationRequest {
         run_id,
+        required_home_source_run_id: _,
         rootfs_hash,
         profile_name,
         device_rate_limits: _,
@@ -544,6 +546,7 @@ pub async fn activate_reserved_idle(
     let (reservation, idle_snapshot) = reservation.into_parts();
     let ReservedActivationRequest {
         run_id,
+        required_home_source_run_id,
         rootfs_hash,
         profile_name,
         device_rate_limits,
@@ -553,10 +556,14 @@ pub async fn activate_reserved_idle(
     let started_at = Instant::now();
     let requested_reuse_key = context.reuse_key();
     // A matching exact sandbox can park while the provider claim is in
-    // flight. Preserve the normal exact-over-blank priority without giving up
-    // the blank reservation that owns admission capacity during that wait.
-    let (reservation, idle_snapshot) = match (reservation.kind(), requested_reuse_key) {
-        (IdleSandboxKind::Blank, Some(reuse_key)) => {
+    // flight. Ordinary reuse preserves exact-over-blank priority, but a selected
+    // Home source must not be displaced by a different VM's retained state.
+    let (reservation, idle_snapshot) = match (
+        reservation.kind(),
+        requested_reuse_key,
+        required_home_source_run_id,
+    ) {
+        (IdleSandboxKind::Blank, Some(reuse_key), None) => {
             let mut pool = ctx.idle_pool.lock().await;
             if let Some(exact) = pool.reserve_reusable(reuse_key, profile_name, device_rate_limits)
             {
@@ -578,7 +585,7 @@ pub async fn activate_reserved_idle(
                 (reservation, idle_snapshot)
             }
         }
-        (IdleSandboxKind::Exact | IdleSandboxKind::Blank, _) => (reservation, idle_snapshot),
+        (IdleSandboxKind::Exact | IdleSandboxKind::Blank, _, _) => (reservation, idle_snapshot),
     };
     let reservation_kind = reservation.kind();
     let reserved_reuse_key = reservation.reuse_key().map(str::to_owned);
