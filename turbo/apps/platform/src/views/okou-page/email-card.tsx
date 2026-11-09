@@ -29,7 +29,7 @@ export function EmailCard() {
           </div>
         </div>
         {email ? (
-          <span className="inline-flex min-w-0 max-w-52 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground">
+          <span className="inline-flex min-w-0 max-w-20 shrink-0 items-center gap-1.5 rounded-lg border border-border bg-background px-1.5 py-1 text-xs font-medium text-secondary-foreground sm:max-w-52">
             <CircleCheck className="h-3 w-3 text-green-600" />
             <span className="truncate">{email}</span>
           </span>

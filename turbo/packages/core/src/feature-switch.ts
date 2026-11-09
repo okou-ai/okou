@@ -47,7 +47,7 @@ export interface FeatureSwitchContext {
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
   [FeatureSwitchKey.EmailIntegration]: {
-    maintainer: "yuma@vm0.ai",
+    maintainer: "yuma@okou.ai",
     displayName: "Email integration",
     description:
       "Email Okou and continue each email conversation in its own chat.",
