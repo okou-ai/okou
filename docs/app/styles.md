@@ -795,7 +795,10 @@ Markdown code blocks and tables scroll sideways through
 `ScrollBar`. A native `overflow-x: auto` block would grow by its scrollbar's
 thickness when a line starts to overflow wherever the OS shows scroll bars
 permanently; the overlaid scrollbar keeps the block's height independent of
-its overflow.
+its overflow. Inside a `pre`, which admits phrasing content only, its
+`phrasing` option renders every part, the bar and its thumb as block-level
+`span`s. Its root clips to the caller's radius, because the bar is placed
+against the root's box rather than inside the rounded viewport.
 
 ### Icon controls and dialog bodies
 
@@ -817,11 +820,13 @@ The default `DialogContent` inner container also uses `DialogBody`, preserving
 its `dialog-inner` slot and its protected vertical scrolling.
 
 Scrollbar styling is private to `DialogBody`, not an exported class-name API.
-Tailwind arbitrary variants address WebKit pseudo-elements. The component owns
-the 6px width, 3px thumb radius, 4px vertical track inset, transparent track,
-and neutral thumb colors, including hover. All default dialog bodies use this
-treatment, including the existing workflow-recommendation detail body; artifact
-previews retain their own clipping and internal scroll ownership.
+The component owns a thin scrollbar with a neutral thumb on a transparent
+track, through the standard `scrollbar-width` and `scrollbar-color` properties
+only: an element that sets either has its `::-webkit-scrollbar` rules ignored
+in Chrome 121+ and Safari 18.2+, so WebKit pseudo-element utilities beside them
+would be dead. All default dialog bodies use this treatment, including the
+existing workflow-recommendation detail body; artifact previews retain their
+own clipping and internal scroll ownership.
 
 `IconTooltip` merges its disabled-child wrapper's utilities with `cn()`, and the
 Mermaid diagram box passes its own `wrapperClassName` into that slot.

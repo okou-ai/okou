@@ -259,7 +259,7 @@ function DialogBody({
       className={cn(
         "min-h-0 min-w-0 flex-1",
         scrollable &&
-          "overflow-auto [scrollbar-width:thin] [scrollbar-color:rgba(128,128,128,0.3)_transparent] [&::-webkit-scrollbar]:w-1.5 [&::-webkit-scrollbar-track]:my-1 [&::-webkit-scrollbar-track]:bg-transparent [&::-webkit-scrollbar-thumb]:rounded-[3px] [&::-webkit-scrollbar-thumb]:bg-[rgba(128,128,128,0.3)] [&::-webkit-scrollbar-thumb:hover]:bg-[rgba(128,128,128,0.5)]",
+          "overflow-auto [scrollbar-width:thin] [scrollbar-color:rgba(128,128,128,0.3)_transparent]",
         className,
       )}
       {...props}
