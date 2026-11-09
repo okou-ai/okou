@@ -1,4 +1,3 @@
-import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -10,7 +9,6 @@ import Observation
 final class ThreadListStore {
   private(set) var threads: [ChatThread] = []
   private(set) var agents: [AgentRecord] = []
-  private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
   var hasUnreadThreads: Bool {
     threads.contains { !$0.isMuted && $0.indicator == .unread }
@@ -45,11 +43,6 @@ final class ThreadListStore {
   private var navigationTask: Task<Void, Never>?
   private var navigationRevision = 0
   private var restoredNavigation = false
-  private var receivedAgents = false
-  private var receivedPreferences = false
-  private let navigationLifetime = CCState.State(true)
-  @ObservationIgnored private var agentsPublication: Task<[AgentRecord], Error>?
-  @ObservationIgnored private var preferencesPublication: Task<SidebarPreferences, Error>?
   private var indicatorsTask: Task<Void, Never>?
   private var updateTasks: [String: Task<Void, Never>] = [:]
   private var pinTasks: [String: Task<Void, Never>] = [:]
@@ -93,12 +86,8 @@ final class ThreadListStore {
       let cached = await sync.cachedNavigation()
       guard !closed, !Task.isCancelled else { return }
       if let cached, !restoredNavigation, navigationRevision == revision {
-        // A SwiftUI subscriber can finish a read while disk restoration is suspended.
-        if !receivedAgents {
-          agents = cached.agents
-          didLoadAgents(agents)
-        }
-        if !receivedPreferences { pinnedAgentIDs = cached.preferences.pinnedAgentIds }
+        agents = cached.agents
+        didLoadAgents(agents)
       }
       restoredNavigation = true
     }
@@ -141,71 +130,6 @@ final class ThreadListStore {
     didRefresh(threads)
   }
 
-  var stateStore: CCState.Store { resources.store }
-
-  /// SwiftUI and business consumers share these publications, not a second request state.
-  @ObservationIgnored lazy var agentsValue = Computed<Task<[AgentRecord], Error>> {
-    [weak self] get, options in
-    guard let self, try get(navigationLifetime), !closed, !blocked else {
-      throw CancellationError()
-    }
-    let pending = try get(resources.agentRecords)
-    let signal = options.signal
-    let task = Task.immediate { @MainActor [weak self] in
-      do {
-        let agents = try await pending.value
-        try signal.checkCancellation()
-        try Task.checkCancellation()
-        guard let self, !closed, !blocked else { throw CancellationError() }
-        receivedAgents = true
-        self.agents = agents
-        didLoadAgents(agents)
-        return agents
-      } catch {
-        if !Task.isCancelled, !signal.isCancelled { self?.reportNavigationFailure(error) }
-        throw error
-      }
-    }
-    agentsPublication = task
-    signal.onCancel { task.cancel() }
-    return task
-  }
-
-  @ObservationIgnored lazy var preferencesValue = Computed<Task<SidebarPreferences, Error>> {
-    [weak self] get, options in
-    guard let self, try get(navigationLifetime), !closed, !blocked else {
-      throw CancellationError()
-    }
-    let pending = try get(resources.pinnedPreferences)
-    let signal = options.signal
-    let task = Task.immediate { @MainActor [weak self] in
-      do {
-        let preferences = try await pending.value
-        try signal.checkCancellation()
-        try Task.checkCancellation()
-        guard let self, !closed, !blocked else { throw CancellationError() }
-        receivedPreferences = true
-        pinnedAgentIDs = preferences.pinnedAgentIds
-        return preferences
-      } catch {
-        if !Task.isCancelled, !signal.isCancelled { self?.reportNavigationFailure(error) }
-        throw error
-      }
-    }
-    preferencesPublication = task
-    signal.onCancel { task.cancel() }
-    return task
-  }
-
-  @ObservationIgnored lazy var pinnedAgentsValue: Computed<Task<[AgentRecord], Error>> =
-    computedTask {
-      [agentsValue, preferencesValue] get, _ in
-      let agents = try get(agentsValue)
-      let preferences = try get(preferencesValue)
-      return try await ThreadListStore.pinnedAgents(
-        agents: agents.value, preferences: preferences.value)
-    }
-
   func refreshNavigation() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
     await restoreCached()
@@ -231,56 +155,25 @@ final class ThreadListStore {
     guard !closed, !blocked, !Task.isCancelled else { return }
     navigationRevision += 1
     do {
-      let reads = try resources.navigation(refresh: navigationRevision > 1)
-      let agents = try stateStore.get(agentsValue)
-      let preferences = try stateStore.get(preferencesValue)
-      // Each publication settles independently, even while this caller awaits both.
-      let (agentResult, preferenceResult) = await withTaskCancellationHandler {
-        (await agents.result, await preferences.result)
+      let read = try resources.navigation(refresh: navigationRevision > 1)
+      let value = try await withTaskCancellationHandler {
+        try await read.value
       } onCancel: {
-        agents.cancel()
-        preferences.cancel()
-        reads.agents.cancel()
-        reads.preferences.cancel()
+        read.cancel()
       }
       guard !closed, !blocked, !Task.isCancelled else { return }
-      var failure: Error?
-      if case .failure(let error) = agentResult { failure = error }
-      if case .failure(let error) = preferenceResult { failure = error }
-      // This is the aggregate synchronization summary; views read each original Task.
-      navigationError = failure?.localizedDescription
-      if case .success(let agents) = agentResult,
-        case .success(let preferences) = preferenceResult
-      {
-        await sync.persistNavigation(
-          SidebarNavigationSnapshot(agents: agents, preferences: preferences))
-      }
+      agents = value
+      didLoadAgents(value)
+      navigationError = nil
+      await sync.persistNavigation(SidebarNavigationSnapshot(agents: value))
     } catch is CancellationError {
       return
     } catch {
       guard !closed, !Task.isCancelled else { return }
       navigationError = error.localizedDescription
+      blocked = (error as? APIClientError)?.statusCode == 426
       didFail(error)
     }
-  }
-
-  var visiblePinnedAgents: [AgentRecord] {
-    Self.pinnedAgents(
-      agents: agents, preferences: SidebarPreferences(pinnedAgentIds: pinnedAgentIDs))
-  }
-
-  private static func pinnedAgents(agents: [AgentRecord], preferences: SidebarPreferences)
-    -> [AgentRecord]
-  {
-    let defaultID = agents.first(where: \.isDefaultAgent)?.agentId
-    let ids = [defaultID].compactMap { $0 } + preferences.pinnedAgentIds.filter { $0 != defaultID }
-    return ids.compactMap { id in agents.first(where: { $0.agentId == id }) }
-  }
-
-  private func reportNavigationFailure(_ failure: Error) {
-    guard !closed, !(failure is CancellationError) else { return }
-    blocked = (failure as? APIClientError)?.statusCode == 426
-    didFail(failure)
   }
 
   func refresh(waitForCurrent: Bool = false) async {
@@ -733,11 +626,6 @@ final class ThreadListStore {
     closed = true
     cancelRefresh()
     navigationTask?.cancel()
-    agentsPublication?.cancel()
-    preferencesPublication?.cancel()
-    agentsPublication = nil
-    preferencesPublication = nil
-    do { try stateStore.set(navigationLifetime, false) } catch { didFail(error) }
     for task in updateTasks.values { task.cancel() }
     for task in pinTasks.values { task.cancel() }
     cancelRename()

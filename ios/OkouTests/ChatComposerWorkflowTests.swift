@@ -211,7 +211,6 @@ final class ChatComposerWorkflowTests: XCTestCase {
       _ = try? await old.value
     }
     await fulfillment(of: [started], timeout: 3)
-    workspace.startNewChat(agentID: "other-agent")
     do {
       _ = try await source.load(agentID: "other-agent")
       XCTFail("The HTTP failure must remain visible to the caller")
@@ -247,19 +246,22 @@ final class ChatComposerWorkflowTests: XCTestCase {
     try await focusMentionInput(old)
     old.insertText("/rel")
     let retired = try await workflowCell("release", in: host.view)
-    workspace.startNewChat(agentID: "other-agent")
+    let replacement = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { replacement.close() }
+    await replacement.refreshNavigation()
+    host.rootView = WorkflowNewChatHost(workspace: replacement)
     try await eventually { self.inputs(in: host.view).first !== old }
     let current = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(current)
     current.insertText("/")
-    let fresh = try await workflowCell("fresh", in: host.view)
+    let fresh = try await workflowCell("release", in: host.view)
     XCTAssertTrue(retired.accessibilityActivate())
     XCTAssertEqual(current.text, "/")
-    XCTAssertEqual(workspace.newComposer.text, "/")
-    workspace.close()
+    XCTAssertEqual(replacement.newComposer.text, "/")
+    replacement.close()
     XCTAssertTrue(fresh.accessibilityActivate())
     XCTAssertEqual(current.text, "/")
-    XCTAssertEqual(workspace.newComposer.text, "/")
+    XCTAssertEqual(replacement.newComposer.text, "/")
   }
 
   func testRecentUseIsRecordedAfterSuccessfulRetryAndPersistsWithinWorkspaceOnly() async throws {
