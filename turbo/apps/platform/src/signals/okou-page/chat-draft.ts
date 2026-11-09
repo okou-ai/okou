@@ -1,4 +1,4 @@
-import { fetchResource } from "../../lib/resource-fetch.ts";
+import { uploadResource } from "../../lib/resource-fetch.ts";
 import {
   command,
   computed,
@@ -157,6 +157,7 @@ async function uploadPart(
   uploadUrl: string,
   body: Blob,
   headers: Readonly<Record<string, string>>,
+  onProgress: ((bytes: number) => void) | undefined,
   signal: AbortSignal,
 ): Promise<void> {
   let attempts = 0;
@@ -164,14 +165,15 @@ async function uploadPart(
     async (attemptSignal) => {
       attempts += 1;
       const [result] = await Promise.allSettled([
-        fetchResource(
-          uploadUrl,
-          { method: "PUT", body, headers },
-          attemptSignal,
-        ),
+        uploadResource(uploadUrl, body, headers, onProgress, attemptSignal),
       ]);
       attemptSignal.throwIfAborted();
-      if (result.status === "fulfilled" && result.value.ok) {
+      if (
+        result.status === "fulfilled" &&
+        result.value >= 200 &&
+        result.value < 300
+      ) {
+        onProgress?.(body.size);
         return true;
       }
       if (result.status === "rejected") {
@@ -180,7 +182,7 @@ async function uploadPart(
         }
         return false;
       }
-      const status = result.value.status;
+      const status = result.value;
       if (
         attempts >= 5 ||
         !(status === 408 || status === 429 || status >= 500)
@@ -266,22 +268,27 @@ const uploadFileToStorage$ = command(
             }
             const start = (part.partNumber - 1) * multipart.partSize;
             const end = Math.min(start + multipart.partSize, file.size);
+            let transferredBytes = 0;
             const [result] = await Promise.allSettled([
               uploadPart(
                 part.uploadUrl,
                 file.slice(start, end, prepared.body.contentType),
                 { "content-type": prepared.body.contentType },
+                (bytes) => {
+                  if (uploadedBytes$ && bytes > transferredBytes) {
+                    const delta = bytes - transferredBytes;
+                    transferredBytes = bytes;
+                    set(uploadedBytes$, (total) => {
+                      return total + delta;
+                    });
+                  }
+                },
                 signal,
               ),
             ]);
             if (result.status === "rejected") {
               failed = true;
               throw result.reason;
-            }
-            if (uploadedBytes$) {
-              set(uploadedBytes$, (bytes) => {
-                return bytes + end - start;
-              });
             }
           }
         },
@@ -323,16 +330,19 @@ const uploadFileToStorage$ = command(
           "content-type": prepared.body.contentType,
           ...prepared.body.uploadHeaders,
         },
+        (bytes) => {
+          if (uploadedBytes$) {
+            set(uploadedBytes$, (previous) => {
+              return Math.max(previous, bytes);
+            });
+          }
+        },
         signal,
       ),
     ]);
     signal.throwIfAborted();
     if (transfer.status === "rejected") {
       throwStorageUploadFailure(file.name, transfer.reason, signal);
-    }
-
-    if (uploadedBytes$) {
-      set(uploadedBytes$, file.size);
     }
 
     if (parseArtifactReference(prepared.body.url, location.origin)) {
@@ -495,7 +505,7 @@ export interface ChatAttachment {
   imageLoad: ImageLoadSignals;
   /** Reactive file info (id + url) — loading while uploading, hasData when done. */
   fileInfo$: Computed<Promise<FileInfo | null>>;
-  /** Confirmed transferred bytes; completion remains owned by fileInfo$. */
+  /** Native transfer progress, including active parts; fileInfo$ owns completion. */
   uploadedBytes$: Computed<number>;
   preview$: Computed<Promise<AttachmentPreviewSignals | null>>;
   /** Whether the annotated derivative required by a send is available. */

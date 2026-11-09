@@ -17,11 +17,13 @@ general rules; ESLint owns the custom lifecycle and import boundaries.
 - Application API calls use `apiClient$`, an existing typed contract, `accept`,
   and the owning signal. Multipart bodies are supported by the contract client;
   they are not an exception. STT and Web Push both have contracts.
-- Public assets and presigned object transfers use `fetchResource`. This
-  boundary does not inject application tokens, client headers, or preview bypass
-  headers, and always omits cookies. It preserves the supplied method, headers,
-  body, cache policy, and cancellation signal. Initial locale loading may run
-  before an application lifetime exists; its signal can be undefined.
+- Public assets use `fetchResource`; presigned object uploads use
+  `uploadResource` from the same transport boundary for native byte progress.
+  Neither injects application tokens, client headers, or preview bypass headers.
+  Fetch always omits cookies. Uploads require a cross-origin HTTP URL and use
+  credential-free XHR, because XHR cannot omit same-origin cookies. Both preserve
+  supplied headers, bodies, and cancellation. Initial locale loading may run
+  before an application lifetime exists; its fetch signal can be undefined.
 - `no-direct-fetch` rejects native fetch references. Only
   `lib/resource-fetch.ts` implements the native primitive.
 - `ccstate/no-on-rejection` rejects unreviewed error callbacks. Derive request
