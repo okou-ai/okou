@@ -46,7 +46,9 @@ final class AttachmentDraftTests: XCTestCase {
     await fulfillment(of: [creating], timeout: 3)
     let submission = try XCTUnwrap(store.newChatSubmission)
     let attachment = try XCTUnwrap(submission.message.message.attachments.first)
-    let thumbnail = try await submission.viewer.thumbnail(attachment)
+    let reads = submission.viewer.reads
+    let read = reads.thumbnail(attachment)
+    let thumbnail = try await reads.store.get(read.value).value.image
     XCTAssertNotNil(thumbnail)
     submission.viewer.open(attachment)
     let cachedURL = try XCTUnwrap(submission.viewer.preview?.file?.url)

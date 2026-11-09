@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -6,26 +7,62 @@ struct MessageAttachmentView: View {
   let attachment: ChatMessageAttachment
   let viewer: MessageAttachmentStore
   let loadsThumbnail: Bool
-  private struct LoadKey: Hashable {
-    let fileID: String
-    let owner: ObjectIdentifier
-    let enabled: Bool
-  }
-  private struct Prepared {
-    let key: LoadKey
-    let image: UIImage?
-    let message: String?
-  }
-  @State private var prepared: Prepared?
 
-  private var loadKey: LoadKey {
-    LoadKey(fileID: attachment.downloadID, owner: ObjectIdentifier(viewer), enabled: loadsThumbnail)
+  var body: some View {
+    let reads = viewer.reads
+    StoreProvider(reads.store) {
+      if loadsThumbnail, isMedia {
+        MessageAttachmentValue(attachment: attachment, viewer: viewer, reads: reads)
+      } else {
+        MessageAttachmentContent(attachment: attachment, viewer: viewer, value: .loading)
+      }
+    }
+    .id(ObjectIdentifier(reads))
   }
-  private var thumbnail: UIImage? {
-    guard loadsThumbnail else { return nil }
-    return viewer.cachedThumbnail(attachment) ?? (prepared?.key == loadKey ? prepared?.image : nil)
+
+  private var isMedia: Bool {
+    attachment.contentType.hasPrefix("image/") || attachment.contentType.hasPrefix("video/")
   }
-  private var thumbnailMessage: String? { prepared?.key == loadKey ? prepared?.message : nil }
+}
+
+private struct MessageAttachmentValue: View {
+  let attachment: ChatMessageAttachment
+  let viewer: MessageAttachmentStore
+  private let read: MessageAttachmentThumbnailRead
+  private let reads: MessageAttachmentResources
+  @LoadableValue private var value: Loadable<MessageAttachmentThumbnail>
+
+  init(
+    attachment: ChatMessageAttachment, viewer: MessageAttachmentStore,
+    reads: MessageAttachmentResources
+  ) {
+    self.attachment = attachment
+    self.viewer = viewer
+    self.reads = reads
+    let read = reads.thumbnail(attachment)
+    self.read = read
+    _value = LoadableValue(task: read.value)
+  }
+
+  var body: some View {
+    MessageAttachmentContent(attachment: attachment, viewer: viewer, value: value)
+      .onAppear { reads.retryIfNeeded(read) }
+  }
+}
+
+private struct MessageAttachmentContent: View {
+  let attachment: ChatMessageAttachment
+  let viewer: MessageAttachmentStore
+  let value: Loadable<MessageAttachmentThumbnail>
+
+  private var thumbnail: UIImage? { value.data?.image }
+  private var thumbnailMessage: String? {
+    if let error = value.error {
+      return ChatRequestFailure.isTransient(error)
+        ? String(localized: "Tap to download preview") : MessageAttachmentStore.message(for: error)
+    }
+    return value.state == .hasData && thumbnail == nil ? "Tap to download preview" : nil
+  }
   private var thumbnailFailed: Bool { thumbnailMessage != nil }
 
   private var isMedia: Bool {
@@ -62,23 +99,6 @@ struct MessageAttachmentView: View {
     .accessibilityLabel("Preview \(attachment.filename)")
     .accessibilityHint(thumbnailMessage ?? result.subtitle)
     .accessibilityIdentifier("message-attachment-\(attachment.id)")
-    .task(id: loadKey) {
-      guard loadsThumbnail, isMedia else { return }
-      let key = loadKey
-      do {
-        let image = try await viewer.thumbnail(attachment)
-        guard !Task.isCancelled else { return }
-        prepared = Prepared(
-          key: key, image: image, message: image == nil ? "Tap to download preview" : nil)
-      } catch {
-        guard !Task.isCancelled else { return }
-        prepared = Prepared(
-          key: key, image: nil,
-          message: ChatRequestFailure.isTransient(error)
-            ? String(localized: "Tap to download preview")
-            : MessageAttachmentStore.message(for: error))
-      }
-    }
   }
 }
 
