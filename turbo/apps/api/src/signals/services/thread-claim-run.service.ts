@@ -255,6 +255,7 @@ import {
   isFeatureEnabled,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { DEFAULT_DISALLOWED_TOOLS } from "./run-execution-defaults";
 
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
@@ -5738,16 +5739,6 @@ function initialRunBody(args: {
 // rather than a restatement that this is an agent run.
 type AgentRunOrigin = "direct" | "workflow_automation";
 
-const DISALLOWED_TOOLS = [
-  "CronCreate",
-  "CronList",
-  "CronDelete",
-  "ScheduleWakeup",
-  "AskUserQuestion",
-  "Skill(loop)",
-  "Skill(loop *)",
-] as const;
-
 function agentRunsCreateForbidden(
   message: string,
 ): ApiErrorResponse<403, "FORBIDDEN"> {
@@ -5807,7 +5798,7 @@ function createRunBody(args: {
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
     appendSystemPrompt: args.prompt.appendedSystemPrompt,
-    disallowedTools: [...DISALLOWED_TOOLS],
+    disallowedTools: [...DEFAULT_DISALLOWED_TOOLS],
   };
 }
 

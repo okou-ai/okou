@@ -5,7 +5,6 @@ import {
 import { CLIENT_VERSION_HEADER } from "@okouai/api-contracts/contracts/client-headers";
 import { runnerRealtimeTokenContract } from "@okouai/api-contracts/contracts/realtime";
 import {
-  claimCompatibleStoredExecutionContextSchema,
   CONNECTOR_RUNTIME_SYNC_RUN_TERMINAL_ERROR_CODE,
   elapsedSinceApiStartMs,
   runnersBuiltinFirewallsResolveContract,
@@ -46,7 +45,7 @@ import type {
   RunnerHeldSandboxState as PersistedRunnerHeldSandboxState,
   RunnerHeldHomeState as PersistedRunnerHeldHomeState,
 } from "@okouai/db/jsonb-contracts/runner-state";
-import { command } from "ccstate";
+import { command, computed } from "ccstate";
 import {
   and,
   desc,
@@ -89,6 +88,10 @@ import { bodyResultOf, pathParamsOf } from "../context/request";
 import type { JsonResponseObserver } from "../context/route";
 import { waitUntil } from "../context/wait-until";
 import { db$, writeDb$ } from "../external/db";
+import {
+  createClaimExecutionContext,
+  type ClaimExecutionContextRun,
+} from "../services/claim-execution-context";
 import {
   signClaimedContentBundle$,
   type ClaimedContentBundleSignature,
@@ -247,6 +250,7 @@ type ClaimRouteTimingActionType =
   | "claim_route_lookup_sql_call"
   | "claim_route_lookup_application_remainder"
   | "claim_route_context_parse"
+  | "claim_route_context_hydrate"
   | "claim_route_secret_materialization"
   | "claim_route_response_network_policy_refresh"
   | "claim_route_content_bundles"
@@ -1003,11 +1007,7 @@ interface ClaimableJob {
   readonly run: ClaimedRun;
 }
 
-interface ClaimedRun {
-  readonly id: string;
-  readonly userId: string;
-  readonly orgId: string;
-  readonly agentId: string | null;
+interface ClaimedRun extends ClaimExecutionContextRun {
   readonly modelProvider: (typeof agentRuns.$inferSelect)["modelProvider"];
   readonly prompt: string;
   readonly appendSystemPrompt: string | null;
@@ -1080,34 +1080,32 @@ function isTerminalRunStatus(status: RunStatus): boolean {
   );
 }
 
-const getClaimableJob$ = command(
-  async (
-    { get },
-    runId: string,
-    signal: AbortSignal,
-  ): Promise<ClaimLookupResult> => {
-    const db = get(db$);
-    const [jobWithRun] = await db
-      .select({
-        job: {
-          runnerGroup: runnerJobQueue.runnerGroup,
-          profile: runnerJobQueue.profile,
-          reuseKey: runnerJobQueue.reuseKey,
-          executionContext: runnerJobQueue.executionContext,
-          createdAt: runnerJobQueue.createdAt,
-        },
-        run: {
-          id: agentRuns.id,
-          userId: agentRuns.userId,
-          orgId: agentRuns.orgId,
-          agentId: agentRuns.agentId,
-          prompt: agentRuns.prompt,
-          appendSystemPrompt: agentRuns.appendSystemPrompt,
-          vars: agentRuns.vars,
-          modelProvider: agentRuns.modelProvider,
-          // Claim's current input may already belong to this Run; only another
-          // run-attributed event is evidence of earlier thread activity.
-          isFirstRun: sql`
+const claimableJob$ = computed(async (get): Promise<ClaimLookupResult> => {
+  const runId = get(pathParamsOf(runnersJobClaimContract.claim)).id;
+  const db = get(db$);
+  const [jobWithRun] = await db
+    .select({
+      job: {
+        runnerGroup: runnerJobQueue.runnerGroup,
+        profile: runnerJobQueue.profile,
+        reuseKey: runnerJobQueue.reuseKey,
+        executionContext: runnerJobQueue.executionContext,
+        createdAt: runnerJobQueue.createdAt,
+      },
+      run: {
+        id: agentRuns.id,
+        userId: agentRuns.userId,
+        orgId: agentRuns.orgId,
+        agentId: agentRuns.agentId,
+        chatThreadId: agentRuns.chatThreadId,
+        launchSnapshot: agentRuns.launchSnapshot,
+        prompt: agentRuns.prompt,
+        appendSystemPrompt: agentRuns.appendSystemPrompt,
+        vars: agentRuns.vars,
+        modelProvider: agentRuns.modelProvider,
+        // Claim's current input may already belong to this Run; only another
+        // run-attributed event is evidence of earlier thread activity.
+        isFirstRun: sql`
           CASE WHEN ${agentRuns.chatThreadId} IS NULL THEN NULL
           ELSE ${notExists(
             db
@@ -1122,28 +1120,45 @@ const getClaimableJob$ = command(
               ),
           )} END
         `.mapWith(nullableDriverValueDecoder(pgBooleanDecoder)),
-        },
-      })
-      .from(runnerJobQueue)
-      .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
-      .where(
-        and(
-          eq(runnerJobQueue.runId, runId),
-          or(isNotNull(agentRuns.agentId), isNull(agentRuns.chatThreadId)),
-          gt(runnerJobQueue.expiresAt, sql`now()`),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
+      },
+    })
+    .from(runnerJobQueue)
+    .innerJoin(agentRuns, eq(runnerJobQueue.runId, agentRuns.id))
+    .where(
+      and(
+        eq(runnerJobQueue.runId, runId),
+        or(isNotNull(agentRuns.agentId), isNull(agentRuns.chatThreadId)),
+        gt(runnerJobQueue.expiresAt, sql`now()`),
+      ),
+    )
+    .limit(1);
+  if (jobWithRun) {
+    return {
+      job: jobWithRun.job,
+      run: jobWithRun.run,
+    };
+  }
+  return notFound("Job not found in queue");
+});
 
-    if (jobWithRun) {
-      return {
-        job: jobWithRun.job,
-        run: jobWithRun.run,
-      };
+const claimExecutionContext$ = createClaimExecutionContext(
+  computed(async (get) => {
+    const entry = await get(claimableJob$);
+    if (!isClaimableJob(entry)) {
+      throw new Error("Claim context requires an authorized queue entry");
     }
-    return notFound("Job not found in queue");
-  },
+    return {
+      run: {
+        id: entry.run.id,
+        orgId: entry.run.orgId,
+        userId: entry.run.userId,
+        agentId: entry.run.agentId,
+        chatThreadId: entry.run.chatThreadId,
+        launchSnapshot: entry.run.launchSnapshot,
+      },
+      executionContext: entry.job.executionContext,
+    };
+  }),
 );
 
 function claimAuthorizationError(
@@ -1643,13 +1658,6 @@ const readClaimNetworkPolicyRefreshes$ = command(
   > => {
     const storedNetworkPolicies = args.storedContext.networkPolicies ?? {};
     assertClaimConnectorIdentity(args.run, args.storedContext);
-    if (Object.keys(storedNetworkPolicies).length === 0) {
-      return {
-        networkPolicies: args.storedContext.networkPolicies,
-        networkPolicyRefreshes: undefined,
-      };
-    }
-
     const builtinConnectorSlugs = [
       ...new Set(
         args.storedContext.connectorRuntimeTargets.flatMap((target) => {
@@ -1657,6 +1665,16 @@ const readClaimNetworkPolicyRefreshes$ = command(
         }),
       ),
     ];
+
+    if (
+      builtinConnectorSlugs.length === 0 &&
+      Object.keys(storedNetworkPolicies).length === 0
+    ) {
+      return {
+        networkPolicies: args.storedContext.networkPolicies,
+        networkPolicyRefreshes: undefined,
+      };
+    }
 
     const startedAt = now();
     // Keep the whole finite read in the response owner's allSettled group.
@@ -2296,27 +2314,28 @@ const failClaimForInvalidStoredExecutionContext$ = command(
 
 const resolveStoredExecutionContextForClaim$ = command(
   async function resolveStoredExecutionContextForClaim(
-    { set },
+    { get, set },
     args: {
       readonly runId: string;
       readonly orgId: string;
-      readonly executionContext: unknown;
       readonly capabilities: RunnerClaimCapabilities;
       readonly timing: ClaimRouteTimingCollector;
     },
     signal: AbortSignal,
   ) {
     const contextParseStartedAt = now();
-    const storedContextResult =
-      claimCompatibleStoredExecutionContextSchema.safeParse(
-        args.executionContext,
-      );
+    const { result: storedContextResult, hydrationMs } = await get(
+      claimExecutionContext$,
+    );
+    signal.throwIfAborted();
     args.timing.recordElapsed(
       "claim_route_context_parse",
       "top_level",
       contextParseStartedAt,
     );
-    signal.throwIfAborted();
+    if (hydrationMs !== undefined) {
+      args.timing.recordDuration("claim_route_context_hydrate", hydrationMs);
+    }
     if (!storedContextResult.success) {
       warnInvalidStoredExecutionContext(
         args.runId,
@@ -2392,7 +2411,6 @@ const claimAuthorizedJob$ = command(
       {
         runId,
         orgId: run.orgId,
-        executionContext: jobWithRun.job.executionContext,
         capabilities: args.capabilities,
         timing: claimRouteTiming,
       },
@@ -2551,7 +2569,7 @@ const claimInner$ = command(async ({ get, set }, signal: AbortSignal) => {
 
   const lookupAuthorizationStartedAt = now();
   const jobWithRun = await claimRouteTiming.measureLookup(async () => {
-    return await set(getClaimableJob$, runId, signal);
+    return await get(claimableJob$);
   });
   signal.throwIfAborted();
   if (!isClaimableJob(jobWithRun)) {

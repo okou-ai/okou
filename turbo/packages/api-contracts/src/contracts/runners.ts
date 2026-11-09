@@ -902,6 +902,9 @@ function requireCompletePiFields(
     readonly piModelConfig?: unknown;
   },
   refinement: RefinementCtx,
+  requiredFields: readonly (
+    "piSessionId" | "piLaunchConfig" | "piModelConfig"
+  )[] = ["piSessionId", "piLaunchConfig", "piModelConfig"],
 ): void {
   const expectsPi = context.cliAgentType === "pi";
   for (const field of [
@@ -916,7 +919,7 @@ function requireCompletePiFields(
         path: [field],
         message: `${field} requires cliAgentType pi`,
       });
-    } else if (expectsPi && !fieldPresent) {
+    } else if (expectsPi && requiredFields.includes(field) && !fieldPresent) {
       refinement.addIssue({
         code: "custom",
         path: [field],
@@ -1046,12 +1049,33 @@ export const storedExecutionContextSchema =
  * Claim-time reader that inspects Pi generation support before decoding the
  * generation-specific route. Other stored-context readers remain fully typed.
  */
+const claimPreparedExecutionContextObjectSchema =
+  storedExecutionContextObjectSchema.extend({
+    piModelConfig: zUnknown().optional(),
+  });
+
+/** Complete normalized inputs, before generation-specific Pi negotiation. */
+export const claimPreparedExecutionContextSchema =
+  claimPreparedExecutionContextObjectSchema.superRefine(
+    requireCompletePiFields,
+  );
+
+/** Duplicate Run-owned inputs may be resolved after decoding a queued context. */
 export const claimCompatibleStoredExecutionContextSchema =
-  storedExecutionContextObjectSchema
-    .extend({
-      piModelConfig: zUnknown().optional(),
+  claimPreparedExecutionContextObjectSchema
+    .partial({
+      cliAgentType: true,
+      connectorRuntimeTargets: true,
+      piLaunchConfig: true,
     })
-    .superRefine(requireCompletePiFields);
+    .superRefine((context, refinement) => {
+      if (context.cliAgentType !== undefined) {
+        requireCompletePiFields(context, refinement, [
+          "piSessionId",
+          "piModelConfig",
+        ]);
+      }
+    });
 
 /**
  * Execution context returned when claiming a job.

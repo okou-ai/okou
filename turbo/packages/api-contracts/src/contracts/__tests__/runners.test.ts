@@ -8,6 +8,7 @@ import {
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
   claimCompatibleStoredExecutionContextSchema,
+  claimPreparedExecutionContextSchema,
   connectorRuntimeSyncResultSchema,
   elapsedSinceApiStartMs,
   executionContextSchema,
@@ -230,7 +231,10 @@ describe("stored Seed Skill bundle contract", () => {
     seedSkillBundles: [],
     connectorRuntimeTargets: [],
     environment: null,
-    platformEnvironment: {},
+    platformEnvironment: {
+      OKOU_TOKEN: "captured-run-token",
+      CUSTOM_PLATFORM_VALUE: "explicit",
+    },
     secretValueEnvironmentKeys: null,
     nativeContinuation: {
       sessionId: null,
@@ -239,7 +243,52 @@ describe("stored Seed Skill bundle contract", () => {
     },
     encryptedSecrets: null,
     cliAgentType: "claude-code",
+    disallowedTools: [],
+    userTimezone: "Asia/Shanghai",
   };
+
+  it.each([
+    { fields: ["cliAgentType"] },
+    { fields: ["connectorRuntimeTargets"] },
+    { fields: ["cliAgentType", "connectorRuntimeTargets"] },
+  ])(
+    "decodes Run-owned omissions $fields before complete preparation",
+    ({ fields }) => {
+      const queued = Object.fromEntries(
+        Object.entries(context).filter(([field]) => {
+          return !fields.includes(field);
+        }),
+      );
+      const decoded = claimCompatibleStoredExecutionContextSchema.parse(queued);
+      expect(decoded.nativeContinuation).toStrictEqual(
+        context.nativeContinuation,
+      );
+      expect(
+        claimPreparedExecutionContextSchema.parse({
+          ...decoded,
+          cliAgentType: context.cliAgentType,
+          connectorRuntimeTargets: context.connectorRuntimeTargets,
+        }),
+      ).toStrictEqual(context);
+    },
+  );
+
+  it.each([
+    { field: "cliAgentType", value: null },
+    { field: "storageMounts", value: {} },
+    { field: "connectorRuntimeTargets", value: null },
+    { field: "piLaunchConfig", value: { schemaVersion: 1 } },
+  ])(
+    "rejects malformed supplied $field instead of an omission",
+    ({ field, value }) => {
+      expect(
+        claimCompatibleStoredExecutionContextSchema.safeParse({
+          ...context,
+          [field]: value,
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it.each(["x", "workflow-setup", "x".repeat(64)])(
     "preserves captured Skill %s for all supported roots and readers",
@@ -373,6 +422,18 @@ describe("Pi sandbox execution contract", () => {
     piLaunchConfig: piStoredContext.piLaunchConfig,
     piModelConfig: piStoredContext.piModelConfig,
   };
+  it("accepts an omitted derived Pi marker and requires it before execution", () => {
+    const { piLaunchConfig, ...piInputs } = piStoredContext;
+    const queued = { ...storedContext, ...piInputs };
+    const decoded = claimCompatibleStoredExecutionContextSchema.parse(queued);
+    expect(decoded.piModelConfig).toStrictEqual(piInputs.piModelConfig);
+    expect(claimPreparedExecutionContextSchema.safeParse(decoded).success).toBe(
+      false,
+    );
+    expect(
+      claimPreparedExecutionContextSchema.parse({ ...decoded, piLaunchConfig }),
+    ).toStrictEqual({ ...queued, piLaunchConfig });
+  });
   const pollJob = {
     runId: "22222222-2222-4222-8222-222222222222",
     prompt: "continue",
