@@ -515,11 +515,6 @@ struct ChatSidebarView: View {
       // The menu opens from what it is attached to: the label's own width, so it drops from
       // "Chats ⌄" on the left instead of from the middle of a full-width row.
       .frame(maxWidth: .infinity, alignment: .leading)
-      Button("New project", okouSymbol: "folder-plus") { showEditor(editor()) }
-        .labelStyle(.iconOnly)
-        .frame(width: OkouControl.minimumTarget, height: OkouControl.minimumTarget)
-        .disabled(store.needsUpgrade || store.projects.pending.contains("create"))
-        .accessibilityIdentifier("new-project")
     }
     .buttonStyle(.plain)
     .listRowInsets(EdgeInsets(top: 2, leading: rowInset, bottom: 0, trailing: rowInset))
