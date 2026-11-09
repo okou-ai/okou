@@ -129,7 +129,7 @@ function CapabilityIcon({
   return (
     <span
       className={cn(
-        "flex size-14 shrink-0 items-center justify-center rounded-[18px] border transition-[border-color,filter] duration-150 group-hover:border-current group-hover:brightness-95 motion-reduce:transition-none dark:group-hover:brightness-110",
+        "flex size-9 shrink-0 items-center justify-center rounded-xl border transition-[border-color,filter] duration-150 group-hover:border-current group-hover:brightness-95 motion-reduce:transition-none dark:group-hover:brightness-110 @2xl:size-14 @2xl:rounded-[18px]",
         color,
       )}
     >
@@ -161,7 +161,7 @@ function ExploreCapabilityCard({
       variant="quiet"
       aria-label={copy.title}
       className={cn(
-        "group h-auto min-h-24 items-center justify-start gap-4 rounded-3xl border border-surface-border bg-card bg-linear-to-br via-card to-card p-5 text-left whitespace-normal hover:bg-card hover:text-muted-foreground active:bg-card [&_svg]:size-7",
+        "group h-auto min-h-16 min-w-0 items-center justify-start gap-2 rounded-2xl border border-surface-border bg-card bg-linear-to-br via-card to-card p-3 text-left whitespace-normal hover:bg-card hover:text-muted-foreground active:bg-card @2xl:min-h-24 @2xl:gap-4 @2xl:rounded-3xl @2xl:p-5 [&_svg]:size-5 @2xl:[&_svg]:size-7",
         surface,
       )}
       onClick={() => {
@@ -169,7 +169,7 @@ function ExploreCapabilityCard({
       }}
     >
       <CapabilityIcon Icon={Icon} color={color} />
-      <span className="min-w-0 text-xl font-medium tracking-tight">
+      <span className="min-w-0 text-sm font-medium tracking-tight @2xl:text-xl">
         {copy.title}
       </span>
     </Button>
@@ -310,25 +310,25 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
       role="group"
       aria-label={copy.capabilities}
     >
-      <div className="grid gap-3 @2xl:col-span-4 @2xl:grid-rows-2">
+      <div className="grid grid-cols-2 gap-3 @2xl:col-span-4 @2xl:grid-cols-1 @2xl:grid-rows-2">
         <ExploreCapabilityCard signals={signals} kind="search" />
         <ExploreCapabilityCard signals={signals} kind="research" />
       </div>
       <section
-        className="flex flex-col rounded-3xl border border-surface-border bg-card bg-linear-to-br from-[#f7f2ff] via-card to-card p-5 dark:from-[#9480cf]/10 @2xl:col-span-8"
+        className="flex flex-col rounded-2xl border border-surface-border bg-card bg-linear-to-br from-[#f7f2ff] via-card to-card p-4 dark:from-[#9480cf]/10 @2xl:col-span-8 @2xl:rounded-3xl @2xl:p-5"
         aria-label={copy.create.title}
       >
-        <h2 className="text-xl font-medium tracking-tight">
+        <h2 className="text-base font-medium tracking-tight @2xl:text-xl">
           {copy.create.title}
         </h2>
-        <div className="mt-8 grid flex-1 grid-cols-3 content-end gap-1 pb-3 @2xl:mt-10 @2xl:grid-cols-5">
+        <div className="mt-3 grid flex-1 grid-cols-3 content-end gap-1 @2xl:mt-10 @2xl:grid-cols-5 @2xl:pb-3">
           {CREATE_TASKS.map(({ task, Icon, color }) => {
             const button = (
               <Button
                 key={task}
                 variant="quiet"
                 aria-label={tasks[task]}
-                className="group h-auto min-w-0 flex-col justify-start gap-3 rounded-2xl px-0 py-2 text-sm font-medium hover:bg-transparent hover:text-muted-foreground active:bg-transparent [&_svg]:size-7"
+                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-2xl px-0 py-2 text-xs font-medium hover:bg-transparent hover:text-muted-foreground active:bg-transparent @2xl:gap-3 @2xl:text-sm [&_svg]:size-5 @2xl:[&_svg]:size-7"
                 onClick={() => {
                   openTask(task);
                 }}
@@ -351,24 +351,26 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
         </div>
       </section>
       <section
-        className="rounded-3xl border border-surface-border bg-card bg-linear-to-br from-[#f2f7ff] via-card to-card p-5 dark:from-[#7b9fd3]/10 @2xl:col-span-8"
+        className="rounded-2xl border border-surface-border bg-card bg-linear-to-br from-[#f2f7ff] via-card to-card p-4 dark:from-[#7b9fd3]/10 @2xl:col-span-8 @2xl:rounded-3xl @2xl:p-5"
         aria-label={tasks.workflow}
       >
-        <h2 className="text-xl font-medium tracking-tight">{tasks.workflow}</h2>
-        <div className="mt-4 grid gap-3 @2xl:grid-cols-3">
+        <h2 className="text-base font-medium tracking-tight @2xl:text-xl">
+          {tasks.workflow}
+        </h2>
+        <div className="mt-3 grid grid-cols-3 gap-1 @2xl:mt-4 @2xl:gap-3">
           {WORKFLOW_KINDS.map(({ kind, Icon, color }) => {
             return (
               <Button
                 key={kind}
                 variant="quiet"
                 aria-label={copy.workflow[kind].title}
-                className="group h-auto min-w-0 justify-start gap-3 rounded-2xl px-1 py-2 text-left whitespace-normal hover:bg-transparent hover:text-muted-foreground active:bg-transparent @2xl:flex-col @2xl:text-center [&_svg]:size-7"
+                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-2xl px-1 py-2 text-center whitespace-normal hover:bg-transparent hover:text-muted-foreground active:bg-transparent @2xl:gap-3 [&_svg]:size-5 @2xl:[&_svg]:size-7"
                 onClick={() => {
                   openWorkflow(kind);
                 }}
               >
                 <CapabilityIcon Icon={Icon} color={color} />
-                <span className="text-sm font-medium leading-6">
+                <span className="max-w-full text-xs font-medium leading-5 break-words @2xl:text-sm @2xl:leading-6">
                   {copy.workflow[kind].title}
                 </span>
               </Button>
