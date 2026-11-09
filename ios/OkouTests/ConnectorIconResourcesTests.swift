@@ -161,8 +161,8 @@ final class ConnectorIconResourcesTests: XCTestCase {
     let format = UIGraphicsImageRendererFormat()
     format.scale = 1
     let side = CGFloat(side)
-    return UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format).pngData {
-      context in
+    let renderer = UIGraphicsImageRenderer(size: CGSize(width: side, height: side), format: format)
+    return renderer.pngData { context in
       UIColor.systemTeal.setFill()
       context.fill(CGRect(x: 0, y: 0, width: side, height: side))
     }
