@@ -14,10 +14,14 @@ final class NewChatRequests {
   }
   private var pending: Request?
   var pendingID: UUID? { pending?.id }
+  // Consumption retires pending work without changing the UI task's identity.
+  private(set) var requestedID: UUID?
   private(set) var openedID: UUID?
 
   func request(startVoiceInput: Bool = false) {
-    pending = Request(startsVoiceInput: startVoiceInput)
+    let request = Request(startsVoiceInput: startVoiceInput)
+    pending = request
+    requestedID = request.id
   }
 
   @discardableResult
@@ -72,7 +76,7 @@ struct NewChatNavigation: ViewModifier {
       .environment(\.newChatActivation, requests.openedID)
       .task(
         id: Readiness(
-          requestID: requests.pendingID, isActive: scenePhase == .active,
+          requestID: requests.requestedID, isActive: scenePhase == .active,
           isAuthenticated: isAuthenticated, canOpen: workspace.canOpenNewChatFromSystem)
       ) {
         // Retire requests outside SwiftUI's update so a second system entry can

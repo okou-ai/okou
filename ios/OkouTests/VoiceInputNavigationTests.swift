@@ -126,6 +126,8 @@ final class VoiceInputNavigationTests: XCTestCase {
     let capture = VoiceCaptureFixture()
     let gate = VoiceResponseGate(
       started: expectation(description: "Microphone permission requested"))
+    let opened = expectation(description: "Voice and keyboard entries opened")
+    opened.expectedFulfillmentCount = 2
     capture.startGate = gate
     let workspace = fixture.workspace(capture: capture)
     addTeardownBlock { @MainActor in workspace.close() }
@@ -139,7 +141,8 @@ final class VoiceInputNavigationTests: XCTestCase {
       await voice.discard()
     }
     let host = UIHostingController(
-      rootView: VoiceEntryHarness(workspace: workspace, isAuthenticated: true))
+      rootView: VoiceEntryHarness(
+        workspace: workspace, isAuthenticated: true, didOpen: { opened.fulfill() }))
     let window = try await mountMentionHost(host)
     addTeardownBlock { @MainActor in unmount(window) }
     let requests = NewChatRequests.shared
@@ -150,6 +153,7 @@ final class VoiceInputNavigationTests: XCTestCase {
     _ = try await VoiceInputIntent().perform()
     await fulfillment(of: [gate.started], timeout: 3)
     _ = try await NewChatIntent().perform()
+    await fulfillment(of: [opened], timeout: 3)
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
     try await eventually { input.isFirstResponder }
     gate.release()
@@ -196,10 +200,13 @@ final class VoiceInputNavigationTests: XCTestCase {
 private struct VoiceEntryHarness: View {
   let workspace: WorkspaceStore
   let isAuthenticated: Bool
+  var didOpen: () -> Void = {}
 
   var body: some View {
     MentionComposerHarness(workspace: workspace)
-      .modifier(NewChatNavigation(workspace: workspace, isAuthenticated: isAuthenticated))
+      .modifier(
+        NewChatNavigation(
+          workspace: workspace, isAuthenticated: isAuthenticated, didOpen: didOpen))
       .environment(\.scenePhase, .active)
   }
 }
