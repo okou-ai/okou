@@ -22,7 +22,8 @@ final class ConnectorIconResourcesTests: XCTestCase {
       guard first else { return .init(status: 503) }
       entered.fulfill()
       for await _ in gate.stream { break }
-      return .init(headers: ["Content-Type": "image/png"], body: bytes)
+      return .init(
+        headers: ["Content-Type": "image/png", "Cache-Control": "no-store"], body: bytes)
     }
     addTeardownBlock { await server.stop() }
     let origin = try await server.start()
@@ -51,7 +52,8 @@ final class ConnectorIconResourcesTests: XCTestCase {
     let server = try ChatFileHTTPServer { _ in
       downloads.withLock { $0 += 1 }
       if unavailable.withLock({ $0 }) { return .init(status: 503) }
-      return .init(headers: ["Content-Type": "image/png"], body: bytes)
+      return .init(
+        headers: ["Content-Type": "image/png", "Cache-Control": "no-store"], body: bytes)
     }
     addTeardownBlock { await server.stop() }
     let origin = try await server.start()
@@ -81,7 +83,8 @@ final class ConnectorIconResourcesTests: XCTestCase {
     let server = try ChatFileHTTPServer { _ in
       entered.fulfill()
       for await _ in gate.stream { break }
-      return .init(headers: ["Content-Type": "image/png"], body: bytes)
+      return .init(
+        headers: ["Content-Type": "image/png", "Cache-Control": "no-store"], body: bytes)
     }
     addTeardownBlock { await server.stop() }
     let origin = try await server.start()
@@ -111,7 +114,9 @@ final class ConnectorIconResourcesTests: XCTestCase {
         $0 += 1
         return $0 == 1
       }
-      return first ? .init(headers: ["Content-Type": "image/png"], body: bytes) : .init(status: 503)
+      guard first else { return .init(status: 503) }
+      return .init(
+        headers: ["Content-Type": "image/png", "Cache-Control": "no-store"], body: bytes)
     }
     addTeardownBlock { await server.stop() }
     let origin = try await server.start()
@@ -137,9 +142,11 @@ final class ConnectorIconResourcesTests: XCTestCase {
       if request.url?.lastPathComponent == "old.png" {
         entered.fulfill()
         for await _ in gate.stream { break }
-        return .init(headers: ["Content-Type": "image/png"], body: oldBytes)
+        return .init(
+          headers: ["Content-Type": "image/png", "Cache-Control": "no-store"], body: oldBytes)
       }
-      return .init(headers: ["Content-Type": "image/png"], body: newBytes)
+      return .init(
+        headers: ["Content-Type": "image/png", "Cache-Control": "no-store"], body: newBytes)
     }
     addTeardownBlock { await server.stop() }
     let origin = try await server.start()
