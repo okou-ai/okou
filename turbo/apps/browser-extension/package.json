@@ -22,7 +22,7 @@
     "@types/node": "^24.13.4",
     "@typescript/native": "npm:typescript@7.0.2",
     "eslint": "^9.34.0",
-    "globals": "16.3.0",
+    "globals": "17.14.0",
     "oxlint": "^1.75.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
     "vite": "^8.1.6"
