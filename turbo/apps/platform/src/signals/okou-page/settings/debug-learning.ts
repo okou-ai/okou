@@ -10,7 +10,7 @@ import { accept } from "../../../lib/accept.ts";
 import { defaultAgentId$ } from "../../agent.ts";
 import { apiClient$ } from "../../api-client.ts";
 import { featureSwitch$ } from "../../external/feature-switch.ts";
-import { NEVER_RESOLVED_PROMISE, onRef } from "../../utils.ts";
+import { onRef } from "../../utils.ts";
 import { settingsActionSignal$ } from "./settings-dialog.ts";
 
 export const debugLearningEnabled$ = computed(async (get) => {
@@ -21,8 +21,8 @@ export const debugLearningEnabled$ = computed(async (get) => {
   );
 });
 
-const discovery$ = state<Promise<WorkflowAutomationSummary | null>>(
-  NEVER_RESOLVED_PROMISE,
+const discovery$ = state<Promise<WorkflowAutomationSummary | null> | undefined>(
+  undefined,
 );
 export const debugLearningAutomation$ = computed((get) => {
   return get(discovery$);

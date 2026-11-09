@@ -74,7 +74,7 @@ export function LearningRunCard() {
               })}
         </Button>
       </div>
-      {automation.state === "hasData" && !target && (
+      {automation.state === "hasData" && automation.data === null && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
             return $.settings.preferences.debug.learning.notInstalled;
