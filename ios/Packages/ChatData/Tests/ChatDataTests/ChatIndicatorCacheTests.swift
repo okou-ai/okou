@@ -7,7 +7,8 @@ import XCTest
 
 @MainActor
 final class ChatIndicatorCacheTests: XCTestCase {
-  func testUnreadSnapshotReopensOfflineWithoutRestoringRunningIndicatorsOrAnotherScope() async throws {
+  func testUnreadSnapshotReopensOfflineWithoutRestoringRunningIndicatorsOrAnotherScope() async throws
+  {
     let offline = Mutex(false)
     let fixture = ChatHTTPFixture { request in
       if offline.withLock({ $0 }) { throw URLError(.notConnectedToInternet) }
@@ -46,7 +47,10 @@ final class ChatIndicatorCacheTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/indicators":
-        let count = reads.withLock { $0 += 1; return $0 }
+        let count = reads.withLock {
+          $0 += 1
+          return $0
+        }
         if count == 2 {
           started.fulfill()
           await gate.wait()
@@ -94,7 +98,10 @@ final class ChatIndicatorCacheTests: XCTestCase {
       guard request.url?.path == "/api/indicators" else {
         return try indicatorMetadata(request)
       }
-      let first = requests.withLock { $0 += 1; return $0 == 1 }
+      let first = requests.withLock {
+        $0 += 1
+        return $0 == 1
+      }
       if first {
         started.fulfill()
         await gate.wait()
@@ -166,7 +173,10 @@ final class ChatIndicatorCacheTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/indicators":
-        let first = reads.withLock { $0 += 1; return $0 == 1 }
+        let first = reads.withLock {
+          $0 += 1
+          return $0 == 1
+        }
         if first {
           started.fulfill()
           await gate.wait()

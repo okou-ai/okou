@@ -64,7 +64,9 @@ struct ChatIndicatorCacheState: Codable {
       revision: (snapshot?.revision ?? 0) + 1, savedAt: Date(),
       unreadAt: indicators.unreadAt.filter { indicators.threads[$0.key] == .unread },
       unreadAgentIDs: Set(indicators.agents.filter { $0.value == .unread }.map(\.key)),
-      threadAgentIDs: Dictionary(uniqueKeysWithValues: threads.map { ($0.id, $0.agentID) }))
+      threadAgentIDs: Dictionary(
+        uniqueKeysWithValues: threads.filter { indicators.unreadAt[$0.id] != nil }
+          .map { ($0.id, $0.agentID) }))
     return true
   }
 
@@ -75,7 +77,9 @@ struct ChatIndicatorCacheState: Codable {
   mutating func change(_ change: ChatReadStateChange, threads: [ChatThread] = []) {
     mutationRevision += 1
     guard var snapshot else { return }
-    for thread in threads { snapshot.threadAgentIDs[thread.id] = thread.agentID }
+    for thread in threads where snapshot.unreadAt[thread.id] != nil {
+      snapshot.threadAgentIDs[thread.id] = thread.agentID
+    }
     snapshot.revision += 1
     switch change {
     case .read(let threadID, let watermark):

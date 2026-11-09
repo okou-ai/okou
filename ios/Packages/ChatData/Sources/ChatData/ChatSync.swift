@@ -246,7 +246,7 @@ public actor ChatSync {
         do { _ = try await self.indicators() } catch {
           if !Task.isCancelled {
             Logger(subsystem: "ai.okou.ios", category: "ChatSync")
-              .info("Push unread refresh unavailable: \(error.localizedDescription, privacy: .public)")
+              .info("Push unread unavailable: \(error.localizedDescription, privacy: .public)")
           }
         }
         return nil
