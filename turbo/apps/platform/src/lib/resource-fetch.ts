@@ -18,8 +18,8 @@ export async function uploadResource(
   url: string | URL,
   body: Blob,
   headers: Readonly<Record<string, string>>,
+  onProgress: ((bytes: number) => void) | undefined,
   signal: AbortSignal,
-  onProgress?: (bytes: number) => void,
 ): Promise<number> {
   signal.throwIfAborted();
   const target = new URL(url, location.href);

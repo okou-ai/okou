@@ -157,15 +157,15 @@ async function uploadPart(
   uploadUrl: string,
   body: Blob,
   headers: Readonly<Record<string, string>>,
+  onProgress: ((bytes: number) => void) | undefined,
   signal: AbortSignal,
-  onProgress?: (bytes: number) => void,
 ): Promise<void> {
   let attempts = 0;
   await waitLoopUntil(
     async (attemptSignal) => {
       attempts += 1;
       const [result] = await Promise.allSettled([
-        uploadResource(uploadUrl, body, headers, attemptSignal, onProgress),
+        uploadResource(uploadUrl, body, headers, onProgress, attemptSignal),
       ]);
       attemptSignal.throwIfAborted();
       if (
@@ -274,7 +274,6 @@ const uploadFileToStorage$ = command(
                 part.uploadUrl,
                 file.slice(start, end, prepared.body.contentType),
                 { "content-type": prepared.body.contentType },
-                signal,
                 (bytes) => {
                   if (uploadedBytes$ && bytes > transferredBytes) {
                     const delta = bytes - transferredBytes;
@@ -284,6 +283,7 @@ const uploadFileToStorage$ = command(
                     });
                   }
                 },
+                signal,
               ),
             ]);
             if (result.status === "rejected") {
@@ -330,7 +330,6 @@ const uploadFileToStorage$ = command(
           "content-type": prepared.body.contentType,
           ...prepared.body.uploadHeaders,
         },
-        signal,
         (bytes) => {
           if (uploadedBytes$) {
             set(uploadedBytes$, (previous) => {
@@ -338,6 +337,7 @@ const uploadFileToStorage$ = command(
             });
           }
         },
+        signal,
       ),
     ]);
     signal.throwIfAborted();
