@@ -790,6 +790,13 @@ scroll-position ownership; they do not add scrollbar width, color, or offset
 overrides. The documented `scroll-area-viewport`, `scroll-area-scrollbar`, and
 `scroll-area-thumb` slots identify the shared parts for browser verification.
 
+Markdown code blocks and tables scroll sideways through
+`MarkdownHorizontalScroll`, which composes the same parts with a horizontal
+`ScrollBar`. A native `overflow-x: auto` block would grow by its scrollbar's
+thickness when a line starts to overflow wherever the OS shows scroll bars
+permanently; the overlaid scrollbar keeps the block's height independent of
+its overflow.
+
 ### Icon controls and dialog bodies
 
 `IconButton` from `@okouai/ui` owns a neutral 36px square control, the shared
@@ -1552,12 +1559,14 @@ styling one.
 
 ### Table header rules and the global scrollbar treatment
 
-The App stylesheet applies the scrollbar treatment — `scrollbar-width`,
-`scrollbar-color`, and the four `::-webkit-scrollbar*` rules — to `*`, and
-`@okouai/ui` is consumed only by the App, which imports that stylesheet. Do not
-restate those declarations on a surface. Reach for the scrollbar utilities only
-where a surface wants something other than the global treatment, as `DialogBody`
-does.
+The App stylesheet applies the scrollbar treatment — `scrollbar-width` and
+`scrollbar-color` — to `*`, and `@okouai/ui` is consumed only by the App, which
+imports that stylesheet. Do not restate those declarations on a surface. There
+are no global `::-webkit-scrollbar` rules: Chrome 121+ and Safari 18.2+ ignore
+them on any element that sets either standard property, and older WebKit turns
+them into classic scrollbars that take layout space even where macOS overlays
+scrollbars. Reach for the scrollbar utilities only where a surface wants
+something other than the global treatment, as `DialogBody` does.
 
 `TableHeader` writes `border-b border-b-border [&_tr]:border-b-0` for the header
 separator and its suppression on the header row. Tailwind's Preflight sets
