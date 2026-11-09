@@ -150,7 +150,7 @@ fn rng() -> Result<StdRng, Error> {
     StdRng::try_from_rng(&mut SysRng).map_err(|_| Error::Randomness)
 }
 fn wire(key: &RsaPublicKey) -> Result<Vec<u8>, Error> {
-    let bits = key.n().bits();
+    let bits = key.n().bit_width();
     let size = key.size();
     let mut result = Vec::with_capacity(4 + size * 2);
     result.extend_from_slice(&bits.to_be_bytes());
