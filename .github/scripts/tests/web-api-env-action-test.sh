@@ -542,19 +542,6 @@ for integration_environment in preview production; do
   done < <(jq -r '.[]' <<< "$integration_config_keys")
 done
 
-# GitHub variables supply each Clerk instance's public PEM as a single line.
-for clerk_environment in preview production; do
-  clerk_dir="$(mktemp -d)"
-  TEMP_DIRS+=("$clerk_dir")
-  clerk_pem="-----BEGIN PUBLIC KEY-----${clerk_environment}-----END PUBLIC KEY-----"
-  clerk_vars_json="$(jq -cn --arg pem "$clerk_pem" '{CLERK_JWT_KEY: $pem}')"
-  clerk_output="$(run_switch_action "$clerk_dir" api "$clerk_environment" "$clerk_vars_json" 2>&1)"
-  clerk_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${clerk_dir}/github-output")"
-  assert_contains "$clerk_output" "Rendered"
-  assert_env_key_count "$clerk_env_file" CLERK_JWT_KEY 1
-  assert_env_value "$clerk_env_file" CLERK_JWT_KEY "$clerk_pem"
-done
-
 assert_machine_secret_canonical_case \
   preview \
   '{"OKOU_MACHINE_SECRET_KEY":" preview-canonical-machine-secret=bytes "}' \
@@ -757,7 +744,6 @@ assert_env_value "$success_env_file" OKOU_PREVIEW_JOB_REF "pr-123"
 assert_api_backend_url_canonical "$success_env_file" "https://pr-123-api-backend.okou.test"
 assert_env_value "$success_env_file" MCP_RESOURCE_URL "https://pr-123-api-backend.okou.test/mcp"
 assert_env_value "$success_env_file" MCP_OAUTH_ISSUER ""
-assert_env_value "$success_env_file" CLERK_JWT_KEY ""
 assert_google_llm_config "$success_env_file" "llm-dev@vm0-ai-488909.iam.gserviceaccount.com"
 assert_env_value "$success_env_file" FEISHU_CALLBACK_BASE_URL "https://pr-123-api-backend.okou.test"
 assert_env_value "$success_env_file" FINICITY_WEBHOOK_BASE_URL "https://pr-123-api-backend.okou.test"
@@ -800,7 +786,7 @@ assert_env_absent_value "$success_env_file" "github-artifact-preview-waf-secret"
 
 preview_web_dir="$(mktemp -d)"
 TEMP_DIRS+=("$preview_web_dir")
-preview_web_output="$(run_switch_action "$preview_web_dir" web preview '{"CLERK_JWT_KEY":"api-only-public-pem"}' 2>&1)"
+preview_web_output="$(run_action "$(build_doppler_secrets_json)" "$preview_web_dir" web preview 2>&1)"
 preview_web_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${preview_web_dir}/github-output")"
 assert_contains "$preview_web_output" "Rendered"
 assert_no_fixture_secret_values "$preview_web_output"
@@ -813,7 +799,6 @@ assert_web_url_absent "$preview_web_env_file"
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_PROJECT_ID
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_WORKLOAD_IDENTITY_PROVIDER
 assert_env_key_absent "$preview_web_env_file" GCP_LLM_SERVICE_ACCOUNT_EMAIL
-assert_env_key_absent "$preview_web_env_file" CLERK_JWT_KEY
 
 empty_job_ref_dir="$(mktemp -d)"
 TEMP_DIRS+=("$empty_job_ref_dir")

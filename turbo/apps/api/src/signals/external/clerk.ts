@@ -852,12 +852,10 @@ export async function authenticateClerkSession(
   request: Request,
   options?: { readonly authorizedParties: readonly string[] },
 ): Promise<ClerkSessionAuthentication> {
-  const jwtKey = env("CLERK_JWT_KEY");
   const startedAt = monotonicNow();
   const verification = await settleIncludingAbort(() => {
     return clerkSdk().authenticateRequest(request, {
       acceptsToken: "session_token",
-      jwtKey,
       ...(options ? { authorizedParties: [...options.authorizedParties] } : {}),
     });
   });
@@ -869,7 +867,7 @@ export async function authenticateClerkSession(
         durationMs,
         success: verification.ok && verification.value.isAuthenticated,
         dimensions: {
-          verification_mode: jwtKey ? "local_key" : "remote_jwks",
+          verification_mode: "remote_jwks",
           outcome: !verification.ok
             ? "error"
             : verification.value.isAuthenticated

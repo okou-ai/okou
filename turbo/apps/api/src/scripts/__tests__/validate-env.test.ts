@@ -28,8 +28,6 @@ describe("validatedEnvironmentRecord", () => {
       DATABASE_URL: "postgresql://user:pass@db.example.test/neondb?a=b",
       APNS_PRIVATE_KEY_BASE64:
         "-----BEGIN PRIVATE KEY-----\nc2VjcmV0==\n-----END PRIVATE KEY-----",
-      CLERK_JWT_KEY:
-        "-----BEGIN PUBLIC KEY-----cHVibGlj-----END PUBLIC KEY-----",
       OKOU_PRICE_CUSTOM: " price_a, ,price_b ",
       WHATSAPP_ALLOWED_COUNTRY_PREFIXES: " +1, +49 ",
       OKOU_ONE_TIME_CAMPAIGN: '{"launch":{"priceId":"p","couponId":"c"}}',
@@ -61,8 +59,6 @@ describe("validatedEnvironmentRecord", () => {
       DATABASE_URL: "postgresql://user:pass@db.example.test/neondb?a=b",
       APNS_PRIVATE_KEY_BASE64:
         "-----BEGIN PRIVATE KEY-----\nc2VjcmV0==\n-----END PRIVATE KEY-----",
-      CLERK_JWT_KEY:
-        "-----BEGIN PUBLIC KEY-----cHVibGlj-----END PUBLIC KEY-----",
       OKOU_PRICE_CUSTOM: ["price_a", "price_b"],
       WHATSAPP_ALLOWED_COUNTRY_PREFIXES: ["+1", "+49"],
       OKOU_ONE_TIME_CAMPAIGN: { launch: { priceId: "p", couponId: "c" } },
