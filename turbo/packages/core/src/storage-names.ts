@@ -40,31 +40,6 @@ export function getCustomSkillStorageName(skillName: string): string {
 }
 
 /**
- * Generate the storage name for a published presentation template package.
- * Format: presentation-template@{templateId}
- *
- * Derived from the row id, so the package needs no column of its own and there
- * is nothing to keep in sync.
- *
- * @param templateId - Presentation template row id
- * @returns Storage name for the template's guidance package
- */
-export function getPresentationTemplateStorageName(templateId: string): string {
-  return `presentation-template@${templateId}`;
-}
-
-/**
- * Generate the storage name for a user template's guidance package.
- * Derived from the row id, so the template needs no column pointing at it.
- *
- * @param templateId - User template row id
- * @returns Storage name for the template's guidance package
- */
-export function getUserTemplateStorageName(templateId: string): string {
-  return `user-template@${templateId}`;
-}
-
-/**
  * Generate the storage name for a custom connector skill.
  * The connector id is used so renaming the connector does not orphan storage.
  */
