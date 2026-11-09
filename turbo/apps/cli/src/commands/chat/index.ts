@@ -35,7 +35,7 @@ Examples:
   List your chats:  okou chat list
   Show this chat:    okou chat get
   Show another:      okou chat get --thread-id <thread-id>
-  Sync messages:     okou chat messages --thread-id <thread-id> --output-dir threads
+  Sync messages:     okou chat messages --thread-id <thread-id> --output-dir /tmp/okou-chat-history
   Switch model:      okou chat model claude-sonnet-5
   Switch another:    okou chat model --thread <thread-id> claude-sonnet-5
   Rename this chat:  okou chat rename "Launch plan"

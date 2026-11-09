@@ -142,7 +142,7 @@ describe("independent finalizing resource source", () => {
         sessionId: null,
         generationRunId: null,
         recoveryPrompt: expect.stringContaining(
-          "okou chat messages --output-dir threads",
+          "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
       });
       await f.owned.run(async () => {
@@ -327,7 +327,7 @@ describe("independent finalizing resource source", () => {
       sessionId: null,
       generationRunId: null,
       recoveryPrompt: expect.stringContaining(
-        "okou chat messages --output-dir threads",
+        "okou chat messages --output-dir /tmp/okou-chat-history",
       ),
     });
     await f.owned.run(async () => {
