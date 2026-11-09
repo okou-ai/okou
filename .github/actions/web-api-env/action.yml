@@ -241,9 +241,11 @@ runs:
           add_env OKOU_API_BACKEND_URL "$api_backend_url"
         fi
         if [[ "$INPUT_APP" == "api" ]]; then
-          # Optional public PEM, resolved in the same GitHub Environment as the
-          # Clerk instance keys. Leave unset until key rotation is coordinated.
-          add_var CLERK_JWT_KEY CLERK_JWT_KEY
+          # Clerk accepts a compact PEM. Keep it on one record for the line-based
+          # seed/build/deploy consumers, including keys copied with CRLF endings.
+          clerk_jwt_key="$(repo_var CLERK_JWT_KEY)"
+          clerk_jwt_key="${clerk_jwt_key//$'\r'/}"
+          add_env CLERK_JWT_KEY "${clerk_jwt_key//$'\n'/}"
           # Bind the MCP audience to this deployment's API, including PR aliases.
           add_env MCP_RESOURCE_URL "${api_backend_url%/}/mcp"
           # Repository variables configure previews; production overrides the

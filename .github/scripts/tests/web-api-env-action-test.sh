@@ -542,27 +542,24 @@ for integration_environment in preview production; do
   done < <(jq -r '.[]' <<< "$integration_config_keys")
 done
 
-# Resolved GitHub Environment variables carry each Clerk instance's public PEM.
-# Exercise literal multiline bytes through the action, not a flattened stand-in.
-for clerk_environment in preview production; do
+# Deployment consumers read one KEY=value record per line. Public PEMs copied
+# with Unix or Windows line endings must render like already-single-line keys.
+for clerk_case in preview:single-line production:multiline production:crlf; do
+  clerk_environment="${clerk_case%%:*}"
   clerk_dir="$(mktemp -d)"
   TEMP_DIRS+=("$clerk_dir")
-  clerk_pem="$(printf '%s\n%s\n%s' '-----BEGIN PUBLIC KEY-----' "$clerk_environment" '-----END PUBLIC KEY-----')"
+  clerk_compact_pem="-----BEGIN PUBLIC KEY-----${clerk_environment}-----END PUBLIC KEY-----"
+  case "${clerk_case#*:}" in
+    single-line) clerk_pem="$clerk_compact_pem" ;;
+    multiline) clerk_pem="$(printf '%s\n%s\n%s' '-----BEGIN PUBLIC KEY-----' "$clerk_environment" '-----END PUBLIC KEY-----')" ;;
+    crlf) clerk_pem="$(printf '%s\r\n%s\r\n%s\r\n' '-----BEGIN PUBLIC KEY-----' "$clerk_environment" '-----END PUBLIC KEY-----')" ;;
+  esac
   clerk_vars_json="$(jq -cn --arg pem "$clerk_pem" '{CLERK_JWT_KEY: $pem}')"
   clerk_output="$(run_switch_action "$clerk_dir" api "$clerk_environment" "$clerk_vars_json" 2>&1)"
   clerk_env_file="$(awk -F= '$1 == "file" { sub(/^[^=]*=/, ""); print }' "${clerk_dir}/github-output")"
   assert_contains "$clerk_output" "Rendered"
   assert_env_key_count "$clerk_env_file" CLERK_JWT_KEY 1
-  if ! python3 - "$clerk_env_file" "$clerk_pem" <<'PY'
-from pathlib import Path
-import sys
-
-text = Path(sys.argv[1]).read_text()
-assert f"CLERK_JWT_KEY={sys.argv[2]}\n" in text
-PY
-  then
-    fail "Clerk public PEM did not survive environment rendering"
-  fi
+  assert_env_value "$clerk_env_file" CLERK_JWT_KEY "$clerk_compact_pem"
 done
 
 assert_machine_secret_canonical_case \

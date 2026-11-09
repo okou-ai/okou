@@ -5,7 +5,7 @@ DATABASE_URL=postgresql://postgres:postgres@localhost:5432/postgres
 CLERK_SECRET_KEY=op://Development/clerk/CLERK_SECRET_KEY
 CLERK_PUBLISHABLE_KEY=op://Development/clerk/CLERK_PUBLISHABLE_KEY
 CLERK_WEBHOOK_SIGNING_SECRET=op://Development/clerk/CLERK_WEBHOOK_SIGNING_SECRET
-# Optional: this instance's public PEM for networkless session verification.
+# Optional: this instance's public PEM, on one line, for networkless verification.
 # Leave unset for online JWKS; rotation/withdrawal requires replacing instances.
 # CLERK_JWT_KEY=
 

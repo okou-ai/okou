@@ -9,7 +9,7 @@ import { array, instanceof as instanceOf, literal, object, string } from "zod";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
-import { mockEnv } from "../../../lib/env";
+import { env, mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { authMeRoutes } from "../auth-me";
@@ -32,19 +32,27 @@ const sessionOptions = object({
 });
 
 function publicPem(key = currentKey): string {
-  return key.publicKey.export({ type: "spki", format: "pem" }).toString();
+  return key.publicKey
+    .export({ type: "spki", format: "pem" })
+    .toString()
+    .replace(/\r?\n/gu, "");
 }
 
 async function useSessionVerification(): Promise<void> {
   mockEnv("CLERK_JWT_KEY", publicPem());
   mockEnv("APP_URL", appOrigin);
+  mockEnv("CLERK_SECRET_KEY", "sk_live_session_verification");
+  mockEnv(
+    "CLERK_PUBLISHABLE_KEY",
+    `pk_live_${Buffer.from(`${clerkHost}$`).toString("base64")}`,
+  );
   // Retain the shared profile/organization mocks, but exercise the installed
   // SDK's actual session verification with only provider HTTP simulated.
   const sdk =
     await vi.importActual<typeof import("@clerk/backend")>("@clerk/backend");
   const client = sdk.createClerkClient({
-    secretKey: `sk_live_fixture_${randomUUID()}`,
-    publishableKey: `pk_live_${Buffer.from(`${clerkHost}$`).toString("base64")}`,
+    secretKey: env("CLERK_SECRET_KEY"),
+    publishableKey: env("CLERK_PUBLISHABLE_KEY"),
     telemetry: { disabled: true },
   });
   context.mocks.clerk.authenticateRequest.mockImplementation(
