@@ -22,6 +22,7 @@ import {
   setupPage,
 } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { openCustomQuality } from "./browser-settings-test-helpers.ts";
 
 const context = testContext();
 const threadId = "11111111-1111-4111-8111-111111111111";
@@ -240,11 +241,9 @@ test("Capture closure cannot erase a failed original input receipt", async () =>
 test("A late capture configuration receipt cannot replace recovered imagery", async () => {
   const browser = await setupSplitViewer();
   const capture = browser.holdNext("Page.stopScreencast");
-  click(screen.getByLabelText("Browser settings"));
-  fireEvent.change(
-    await screen.findByRole("spinbutton", { name: "Image quality" }),
-    { target: { value: "60" } },
-  );
+  const quality = await openCustomQuality();
+  fireEvent.change(quality, { target: { value: "60" } });
+  fireEvent.blur(quality);
   await capture.received;
   await userEvent.keyboard("{Escape}");
   loseFrames(browser);

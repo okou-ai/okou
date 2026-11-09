@@ -40,6 +40,10 @@ import {
   chatListThread,
   installChatListStream,
 } from "../../okou-page/__tests__/chat-list-test-helpers.ts";
+import {
+  openCustomQuality,
+  openQualityMenu,
+} from "./browser-settings-test-helpers.ts";
 
 const context = testContext();
 const THREAD_ID = "11111111-1111-4111-8111-111111111111";
@@ -155,11 +159,11 @@ async function openViewerSizingMenu(): Promise<HTMLElement> {
   return screen.findByRole("menu", { name: "Window size" });
 }
 
-async function setupInteractiveViewer(): Promise<void> {
+async function setupInteractiveViewer() {
   const activeSession = browserSession();
   const cdpUrl = "wss://cdp.browser-use.com/test";
   mockBrowserSession(activeSession);
-  mockBrowserCdp(context, cdpUrl);
+  const browser = mockBrowserCdp(context, cdpUrl);
   context.mocks.api(browserContract.viewerConnection, ({ respond }) => {
     return respond(200, {
       browser: activeSession,
@@ -183,6 +187,7 @@ async function setupInteractiveViewer(): Promise<void> {
     expect(screen.getByDisplayValue("https://example.com")).toBeEnabled();
   });
   expect(screen.getByLabelText("New tab")).toBeInTheDocument();
+  return browser;
 }
 
 async function setupInteractiveViewerSizingMenu(): Promise<HTMLElement> {
@@ -287,9 +292,7 @@ test("The Okou viewer starts with WebP and lets the owner change capture setting
   await setupInteractiveViewer();
   click(screen.getByLabelText("Browser settings"));
   const menu = await screen.findByRole("menu");
-  expect(
-    within(menu).getByRole("spinbutton", { name: "Image quality" }),
-  ).toBeEnabled();
+  expect(within(menu).getByText("Image quality")).toBeInTheDocument();
   click(within(menu).getByText("Image format"));
   const formats = await screen.findByRole("menu", { name: "Image format" });
   expect(menuRadio(formats, "WebP")).toHaveAttribute("aria-checked", "true");
@@ -301,6 +304,197 @@ test("The Okou viewer starts with WebP and lets the owner change capture setting
   click(within(await screen.findByRole("menu")).getByText("Image format"));
   const updated = await screen.findByRole("menu", { name: "Image format" });
   expect(menuRadio(updated, "JPEG")).toHaveAttribute("aria-checked", "true");
+});
+
+test("Image quality can be cleared and retyped before applying with Enter or blur", async () => {
+  const browser = await setupInteractiveViewer();
+  const quality = await openCustomQuality();
+  const menu = screen.getByRole("menu", { name: "Image quality" });
+  expect(within(menu).getByText("0")).toBeInTheDocument();
+  expect(within(menu).getByText("100")).toBeInTheDocument();
+  expect(within(menu).queryByText("Image quality")).not.toBeInTheDocument();
+
+  await fill(quality, "");
+  expect(quality).toHaveValue("");
+  await userEvent.type(quality, "100");
+  expect(quality).toHaveValue("100");
+  expect(quality).toBeEnabled();
+  expect(browser.captures.at(-1)).toMatchObject({ quality: 70 });
+  fireEvent.compositionStart(quality);
+  fireEvent.keyDown(quality, { key: "Enter", isComposing: true, keyCode: 229 });
+  fireEvent.keyDown(quality, {
+    key: "Escape",
+    isComposing: true,
+    keyCode: 229,
+  });
+  expect(quality).toHaveValue("100");
+  expect(menu).toBeInTheDocument();
+  expect(browser.captures.at(-1)).toMatchObject({ quality: 70 });
+  fireEvent.compositionEnd(quality);
+
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 100 });
+    expect(quality).not.toHaveAttribute("readonly");
+  });
+
+  await fill(quality, "");
+  await userEvent.type(quality, "0");
+  expect(browser.captures.at(-1)).toMatchObject({ quality: 100 });
+  await userEvent.click(screen.getByLabelText("Address"));
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 0 });
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test("Empty and invalid image quality edits retain the applied quality", async () => {
+  const browser = await setupInteractiveViewer();
+  const quality = await openCustomQuality();
+
+  await fill(quality, "");
+  await userEvent.type(quality, "85");
+  expect(quality).toHaveValue("85");
+  expect(quality).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 85 });
+    expect(quality).not.toHaveAttribute("readonly");
+  });
+
+  await fill(quality, "");
+  await userEvent.keyboard("{Enter}");
+  expect(quality).toHaveValue("85");
+
+  for (const value of ["101", "-1", "50.5"]) {
+    await fill(quality, value);
+    await userEvent.keyboard("{Enter}");
+    expect(quality).toHaveValue(value);
+    expect(quality).toHaveAttribute("aria-invalid", "true");
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "Enter a whole number from 0 to 100",
+    );
+    expect(quality).toBeEnabled();
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 85 });
+  }
+});
+
+test("Image quality presets and custom slider keys preserve native menu dismissal", async () => {
+  const browser = await setupInteractiveViewer();
+  const menu = await openQualityMenu();
+  expect(menuRadio(menu, "Balanced")).toHaveAttribute("aria-checked", "true");
+  expect(within(menu).queryByRole("textbox")).not.toBeInTheDocument();
+
+  for (const [label, quality] of [
+    ["Data saver", 40],
+    ["Sharper", 90],
+    ["Balanced", 70],
+  ] as const) {
+    click(menuRadio(menu, label));
+    await waitFor(() => {
+      expect(browser.captures.at(-1)).toMatchObject({ quality });
+      expect(menuRadio(menu, label)).toHaveAttribute("aria-checked", "true");
+      expect(menuRadio(menu, label)).not.toHaveAttribute(
+        "aria-disabled",
+        "true",
+      );
+    });
+  }
+
+  click(within(menu).getByText("Custom"));
+  const slider = within(menu).getByRole("slider", { name: "Image quality" });
+  const input = within(menu).getByRole("textbox", { name: "Image quality" });
+  await userEvent.click(slider);
+  await userEvent.keyboard("{End}");
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 100 });
+    expect(input).not.toHaveAttribute("readonly");
+  });
+  expect(slider).toHaveFocus();
+  expect(input).toHaveValue("100");
+  await userEvent.keyboard("{Home}");
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 0 });
+    expect(input).not.toHaveAttribute("readonly");
+  });
+  expect(slider).toHaveFocus();
+  await fill(input, "63");
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(menu).not.toBeInTheDocument();
+  });
+  expect(browser.captures.at(-1)).toMatchObject({ quality: 0 });
+  expect(
+    screen.getByText("Image quality").closest('[role="menuitem"]'),
+  ).toHaveFocus();
+  await userEvent.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Browser settings", { selector: "button" }),
+    ).toHaveFocus();
+  });
+});
+
+test("Choosing a quality preset replaces an unfinished custom draft", async () => {
+  const browser = await setupInteractiveViewer();
+  const input = await openCustomQuality();
+  const menu = screen.getByRole("menu", { name: "Image quality" });
+  await fill(input, "");
+  await userEvent.type(input, "85");
+  expect(browser.captures.at(-1)).toMatchObject({ quality: 70 });
+
+  await userEvent.click(menuRadio(menu, "Sharper"));
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 90 });
+    expect(menuRadio(menu, "Sharper")).toHaveAttribute("aria-checked", "true");
+    expect(menuRadio(menu, "Sharper")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  expect(browser.captures).not.toContainEqual(
+    expect.objectContaining({ quality: 85 }),
+  );
+});
+
+test("PNG shows lossless quality and switching back restores the chosen lossy quality", async () => {
+  const browser = await setupInteractiveViewer();
+  const qualityMenu = await openQualityMenu();
+  click(menuRadio(qualityMenu, "Sharper"));
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ quality: 90 });
+    expect(menuRadio(qualityMenu, "Sharper")).not.toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+  });
+  await userEvent.click(screen.getByLabelText("Address"));
+
+  click(screen.getByLabelText("Browser settings", { selector: "button" }));
+  click(screen.getByText("Image format"));
+  const formats = await screen.findByRole("menu", { name: "Image format" });
+  click(menuRadio(formats, "PNG"));
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({ format: "png" });
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+
+  click(screen.getByLabelText("Browser settings", { selector: "button" }));
+  expect(
+    screen.getByText("Lossless").closest('[role="menuitem"]'),
+  ).toHaveAttribute("aria-disabled", "true");
+  click(screen.getByText("Image format"));
+  const updatedFormats = await screen.findByRole("menu", {
+    name: "Image format",
+  });
+  click(menuRadio(updatedFormats, "JPEG"));
+  await waitFor(() => {
+    expect(browser.captures.at(-1)).toMatchObject({
+      format: "jpeg",
+      quality: 90,
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
 });
 
 test("The browser viewer keeps one-time sizing after automatic sizing is disabled", async () => {
