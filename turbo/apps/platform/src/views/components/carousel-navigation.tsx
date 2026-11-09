@@ -39,7 +39,7 @@ export function CarouselNavigation({
       >
         <ArrowLeft size={16} aria-hidden="true" />
       </IconButton>
-      <div className="flex min-w-0 items-center gap-0.5">
+      <div className="flex min-w-0 flex-wrap items-center justify-center gap-0.5">
         {items.map((item, itemIndex) => {
           return (
             <IconButton
@@ -47,7 +47,7 @@ export function CarouselNavigation({
               aria-label={item.label}
               aria-controls={controlsId}
               aria-current={itemIndex === index ? "step" : undefined}
-              className="size-6 rounded-full"
+              className="size-6 shrink-0 rounded-full"
               onClick={() => {
                 onSelect(itemIndex);
               }}
