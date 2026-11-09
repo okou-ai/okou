@@ -37,14 +37,34 @@ def fixture_helper_bytes():
 
 
 @cache
-def fixture_sdk_archive_bytes():
-    # Share immutable input bytes; every test still owns its writable SDK file.
+def fixture_sdk_archive_bytes(*, helper=False):
+    # Share the two immutable SDK inputs, never a case's writable archive.
+    files = {}
+    if helper:
+        zig = b'''#!/bin/bash
+set -eu
+context=$(cd -- "$(dirname -- "$0")/../.." && pwd -P)
+fixture_root=${context%/*}
+source "$context.fixture-env"
+env > "$fixture_root/compiler.env"
+if [[ ${CACHE_TEST_COMPILE_FAIL:-} == true ]]; then exit 24; fi
+echo compile >> "$fixture_root/compiles"
+while [[ $1 != -o ]]; do shift; done
+cp "$fixture_root/fixture-helper" "$2"
+'''
+        for host in ("x86_64", "aarch64"):
+            prefix = f"zig-{host}-linux-0.15.2"
+            files[f"{prefix}/zig"] = zig
+            files[f"{prefix}/LICENSE"] = (RECIPE.parent / "NOTICE-Zig").read_bytes()
+            files[f"{prefix}/lib/libc/musl/COPYRIGHT"] = (RECIPE.parent / "NOTICE-musl").read_bytes()
+    else:
+        files["zig-x86_64-linux-0.15.2/zig"] = b"fixture SDK"
     output = io.BytesIO()
-    data = b"fixture SDK"
     with tarfile.open(fileobj=output, mode="w:xz") as archive:
-        info = tarfile.TarInfo("zig-x86_64-linux-0.15.2/zig")
-        info.size, info.mode = len(data), 0o755
-        archive.addfile(info, io.BytesIO(data))
+        for name, data in files.items():
+            info = tarfile.TarInfo(name)
+            info.size, info.mode = len(data), 0o755
+            archive.addfile(info, io.BytesIO(data))
     return output.getvalue()
 
 
@@ -371,23 +391,7 @@ exit 73
         binary = self.root / "fixture-helper"
         binary.write_bytes(fixture_helper_bytes())
         binary.chmod(0o755)
-        zig = f"#!/bin/bash\nfixture_root={shlex.quote(str(self.root))}\n" + """
-set -eu
-context=$(cd -- "$(dirname -- "$0")/../.." && pwd -P)
-source "$context.fixture-env"
-env > "$fixture_root/compiler.env"
-if [[ ${CACHE_TEST_COMPILE_FAIL:-} == true ]]; then exit 24; fi
-echo compile >> "$fixture_root/compiles"
-while [[ $1 != -o ]]; do shift; done
-cp "$fixture_root/fixture-helper" "$2"
-"""
-        sdk = {}
-        for host in ("x86_64", "aarch64"):
-            prefix = f"zig-{host}-linux-0.15.2"
-            sdk[f"{prefix}/zig"] = zig.encode()
-            sdk[f"{prefix}/LICENSE"] = (self.native / "NOTICE-Zig").read_bytes()
-            sdk[f"{prefix}/lib/libc/musl/COPYRIGHT"] = (self.native / "NOTICE-musl").read_bytes()
-        self.archive("zig.tar.xz", "w:xz", sdk)
+        (self.root / "zig.tar.xz").write_bytes(fixture_sdk_archive_bytes(helper=True))
         with tarfile.open(self.root / "krb5.tar.gz") as archive:
             with archive.extractfile("krb5-1.22.2/src/configure") as source:
                 configure = source.read()
