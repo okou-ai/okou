@@ -1626,6 +1626,7 @@
       "saveReason": "Save",
       "sending": "भेजा जा रहा है…",
       "sent": "नई चैट में भेजा गया",
+      "unavailable": "यह सुझाव अब उपलब्ध नहीं है। सुझाव रीफ़्रेश कर दिए गए हैं।",
       "undoFeedback": "Undo",
       "useSuggestion": "सुझाव इस्तेमाल करें"
     },

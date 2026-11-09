@@ -1626,6 +1626,7 @@
       "saveReason": "Save",
       "sending": "Wird gesendet…",
       "sent": "An einen neuen Chat gesendet",
+      "unavailable": "Dieser Vorschlag ist nicht mehr verfügbar. Die Vorschläge wurden aktualisiert.",
       "undoFeedback": "Undo",
       "useSuggestion": "Vorschlag verwenden"
     },

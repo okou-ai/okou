@@ -1623,6 +1623,7 @@
       "saveReason": "儲存",
       "sending": "正在傳送…",
       "sent": "已傳送到新聊天",
+      "unavailable": "這則建議已無法使用，建議清單已重新整理。",
       "undoFeedback": "復原",
       "useSuggestion": "使用建議"
     },

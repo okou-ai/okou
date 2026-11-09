@@ -178,7 +178,11 @@ function mockPool(initial: Suggestion[] = [makeSuggestion()]) {
       });
       if (!found) {
         return respond(409, {
-          error: { code: "CONFLICT", message: "Already consumed" },
+          error: {
+            code: "CONFLICT",
+            message:
+              "Suggestion is no longer available. Refresh your suggestions.",
+          },
         });
       }
       retired.set(params.id, found);
@@ -1285,6 +1289,52 @@ test("Failed feedback keeps the local choice and can retry the same feedback ide
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
   });
   expect(attemptedIds[1]).toBe(attemptedIds[0]);
+});
+
+test("Feedback on a card that left the pool refreshes the suggestions with a notice", async () => {
+  const items = numberedSuggestions(3);
+  const pool = mockPool(items);
+  await openFeed();
+  await screen.findByText(items[0].title);
+  click(
+    button(
+      "Dismiss",
+      "button",
+      screen.getByRole("article", { name: items[0].title }),
+    ),
+  );
+  await waitFor(() => {
+    expect(pool.consumed).toStrictEqual([items[0].id]);
+  });
+  // A background check withdraws the rest of the pool and offers a new card
+  // while the Feed still shows the cards it loaded.
+  const offered = {
+    ...makeSuggestion(),
+    id: "a0000000-0000-4000-a000-000000000009",
+    title: "Newly offered action",
+  };
+  pool.withdrawAll();
+  pool.publish(offered);
+  click(
+    button(
+      "Already done",
+      "button",
+      screen.getByRole("article", { name: items[1].title }),
+    ),
+  );
+  await screen.findByText(
+    "That suggestion is no longer available. Suggestions have been refreshed.",
+  );
+  await screen.findByRole("article", { name: offered.title });
+  // Every card that left goes; the card handled earlier keeps its row.
+  expect(feedItemLabels()).toStrictEqual([
+    offered.title,
+    "Suggestion dismissed",
+  ]);
+  expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  expect(
+    screen.queryByText(/Refresh your suggestions/),
+  ).not.toBeInTheDocument();
 });
 
 test("Slow feedback leaves other cards usable and Undo restores the original card in order", async () => {

@@ -45,6 +45,7 @@ import {
   openSuggestionFeedbackReason$,
   undoSuggestionFeedback$,
   saveSuggestionFeedbackReason$,
+  retryAgentSuggestion$,
   type SuggestionOutcome,
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import {
@@ -440,7 +441,7 @@ function SuggestionSaveError({
 }) {
   const { t } = useTranslation();
   const result = useLoadable(entry.result$);
-  const retry = useSet(entry.retry$);
+  const retry = useSet(retryAgentSuggestion$);
   const signal = useGet(pageSignal$);
   if (result.state !== "hasError") {
     return null;
@@ -463,7 +464,7 @@ function SuggestionSaveError({
         variant="quiet"
         size="sm"
         onClick={() => {
-          detach(retry(signal), Reason.DomCallback);
+          detach(retry(entry, signal), Reason.DomCallback);
         }}
       >
         {t(($) => {
