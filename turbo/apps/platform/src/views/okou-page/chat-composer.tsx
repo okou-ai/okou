@@ -5938,12 +5938,10 @@ function ComposerInputSlot({
         return item.kind === "file";
       }) || clipboardData.files.length > 0,
     );
-    if (textFile) {
+    if (textFile && uploadFile(textFile)) {
       // The attachment owns this paste; leave the editor and its selection intact.
       event.preventDefault();
-      if (uploadFile(textFile)) {
-        notifyDraftChanged();
-      }
+      notifyDraftChanged();
       return;
     }
     let pastedPlainText = false;

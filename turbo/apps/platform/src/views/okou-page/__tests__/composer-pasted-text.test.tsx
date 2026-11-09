@@ -8,9 +8,10 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
+import { CHAT_UPLOAD_MAX_FILE_SIZE } from "../../../lib/chat-upload.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   ATTACHMENT_THREAD_ID,
@@ -194,6 +195,51 @@ test.each([
     screen.queryByLabelText(`Remove ${FIRST_FILENAME}`),
   ).not.toBeInTheDocument();
   expect(screen.getByLabelText("Send")).toBeEnabled();
+});
+
+test("A size-rejected long paste stays inline and can be sent", async () => {
+  const user = userEvent.setup({ delay: null });
+  const text = "a".repeat(10_001);
+  let sentMessage: UserMessageDocument | undefined;
+  mockAttachmentChat(context, {
+    onSendRequest: ({ userMessage }) => {
+      sentMessage = userMessage;
+    },
+  });
+  // Exercise the browser's file metadata boundary without a 512 MiB allocation.
+  vi.spyOn(File.prototype, "size", "get").mockImplementation(function (
+    this: File,
+  ) {
+    return this.name === FIRST_FILENAME
+      ? CHAT_UPLOAD_MAX_FILE_SIZE + 1
+      : new Blob([this]).size;
+  });
+  const editor = await openComposer();
+
+  await fill(editor, EXISTING_DRAFT);
+  expect(editor.textContent).toBe(EXISTING_DRAFT);
+  await user.keyboard("{Control>}a{/Control}");
+  await user.paste(textClipboard(text));
+
+  await expect(
+    screen.findByText(`${FIRST_FILENAME} exceeds the 512 MB limit`),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(editor.textContent).toBe(text);
+  });
+  expect(
+    screen.queryByLabelText(`Remove ${FIRST_FILENAME}`),
+  ).not.toBeInTheDocument();
+  const send = getNamedButton("Send");
+  expect(send).toBeEnabled();
+  click(send);
+
+  await waitFor(() => {
+    expect(screen.getByRole("textbox", { name: "Message" }).textContent).toBe(
+      "",
+    );
+  });
+  expect(sentMessage?.parts).toStrictEqual([{ type: "text", text }]);
 });
 
 test.each([
