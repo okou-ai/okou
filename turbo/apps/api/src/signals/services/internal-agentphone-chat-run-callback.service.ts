@@ -18,7 +18,7 @@ import { recordSandboxOperation } from "../external/sandbox-op-log";
 import { now, nowDate } from "../../lib/time";
 import { clerk$, isClerkResourceNotFound } from "../external/clerk";
 import { settle, settleIncludingAbort, tapError } from "../utils";
-import { formatIntegrationRunError$ } from "./integration-run-errors.service";
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import { sendPendingAgentPhoneContactCard$ } from "./agentphone-contact-card.service";
 import {
   agentphoneChatCallbackPayloadSchema,
@@ -60,9 +60,10 @@ const formatAgentPhoneMessageContent$ = command(
     },
     signal: AbortSignal,
   ): Promise<string> => {
+    const content = await set(formatIntegrationChatMessage$, args, signal);
     // Workspace identity and account-management instructions belong in a DM.
     if (args.isGroup || args.error !== "insufficient_credits") {
-      return markdownToImessagePlain(args.content);
+      return markdownToImessagePlain(content);
     }
 
     const workspace = await settle(
@@ -84,21 +85,9 @@ const formatAgentPhoneMessageContent$ = command(
       ].join("\n\n");
     }
 
-    const billingGuidance = await set(
-      formatIntegrationRunError$,
-      {
-        orgId: args.orgId,
-        userId: args.userId,
-        code: "INSUFFICIENT_CREDITS",
-        message:
-          "Add credits or connect a personal Codex or Claude subscription.",
-      },
-      signal,
-    );
-    signal.throwIfAborted();
     return [
-      `Your phone is connected to workspace "${workspace.value.name}", which has insufficient credits to continue.`,
-      markdownToImessagePlain(billingGuidance),
+      `Your phone is connected to workspace "${workspace.value.name}".`,
+      markdownToImessagePlain(content),
       AGENTPHONE_ACCOUNT_SWITCH_GUIDANCE,
     ].join("\n\n");
   },

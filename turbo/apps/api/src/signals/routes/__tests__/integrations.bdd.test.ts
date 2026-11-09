@@ -5806,6 +5806,81 @@ describe("INT-02: Telegram integration", () => {
     expect(noContentMessage.body).toBe("OK");
   });
 
+  it("offers billing recovery when a running Telegram task runs out of credits", async () => {
+    bdd.acceptAgentStorageWrites();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    const runnerGroup = runs.configureRunnerGroup();
+    const actor = integrations.user();
+    await configureFastCodexPreference(actor);
+    const telegramUserId = randomInt(100_000_000, 999_999_999);
+    const token = "123456:bdd-credit-token";
+    mockEnv("TELEGRAM_OFFICIAL_BOT_TOKEN", token);
+    mockEnv("TELEGRAM_OFFICIAL_BOT_USERNAME", "bdd_credit_bot");
+    mockEnv(
+      "TELEGRAM_OFFICIAL_WEBHOOK_SECRET",
+      TELEGRAM_OFFICIAL_WEBHOOK_SECRET,
+    );
+    const sentTexts: string[] = [];
+    server.use(
+      http.post(`https://api.telegram.org/bot${token}/sendChatAction`, () => {
+        return HttpResponse.json({ ok: true, result: true });
+      }),
+      http.post(
+        `https://api.telegram.org/bot${token}/sendMessage`,
+        async ({ request }) => {
+          const body = await request.json();
+          if (isRecord(body) && typeof body.text === "string") {
+            sentTexts.push(body.text);
+          }
+          return HttpResponse.json({
+            ok: true,
+            result: { message_id: 655, chat: { id: telegramUserId } },
+          });
+        },
+      ),
+    );
+    await integrations.requestLinkTelegram(
+      actor,
+      {
+        telegramBotId: OFFICIAL_TELEGRAM_BOT_ID,
+        telegramAuth: telegramLoginAuth(token, {
+          id: telegramUserId,
+          first_name: "BDD",
+        }),
+      },
+      [200],
+    );
+    await integrations.requestTelegramWebhook(
+      OFFICIAL_TELEGRAM_BOT_ID,
+      JSON.stringify({
+        update_id: 4003,
+        message: {
+          message_id: 73,
+          chat: { id: telegramUserId, type: "private" },
+          from: { id: telegramUserId, first_name: "BDD" },
+          text: "Finish this task",
+        },
+      }),
+      { "x-telegram-bot-api-secret-token": TELEGRAM_OFFICIAL_WEBHOOK_SECRET },
+      [200],
+    );
+    const runId = await pollRunnerRun(runnerGroup, "Expected a Telegram run");
+    const claim = await runs.claimRunnerJob(runId);
+    await webhooks.requestAgentComplete(
+      {
+        runId,
+        exitCode: 1,
+        error: "insufficient_credits",
+        failureReason: "insufficient_credits",
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(sentTexts.at(-1)).toContain("/billings");
+  });
+
   it("keeps Telegram reply and outbound attribution consistent across model changes", async () => {
     mockEnv("APP_URL", "https://app.okou.ai");
     bdd.acceptAgentStorageWrites();

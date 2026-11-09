@@ -319,6 +319,25 @@ async function responseFixture() {
 }
 
 describe("WeChat reply presentation and processing status", () => {
+  it("offers billing recovery when a running WeChat task runs out of credits", async () => {
+    const fixture = await responseFixture();
+    await fixture.receive("Finish this task");
+    const run = await fixture.claim();
+    await fixture.webhooks.requestAgentComplete(
+      {
+        runId: run.runId,
+        exitCode: 1,
+        error: "insufficient_credits",
+        failureReason: "insufficient_credits",
+      },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(fixture.sentTexts.at(-1)).toContain("Insufficient credits");
+    expect(fixture.sentTexts.at(-1)).toContain("/billings");
+  });
+
   it.each(["membership", "feature"] as const)(
     "stops a multi-part reply when %s access is revoked after the first part",
     async (revoked) => {
