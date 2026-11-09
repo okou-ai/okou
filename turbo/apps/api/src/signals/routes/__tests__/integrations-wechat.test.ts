@@ -335,7 +335,7 @@ describe("WeChat reply presentation and processing status", () => {
     );
     await flushWaitUntilForTest();
     expect(fixture.sentTexts.at(-1)).toContain("Insufficient credits");
-    expect(fixture.sentTexts.at(-1)).toContain("/billings");
+    expect(fixture.sentTexts.at(-1)).toContain("/?settings=billing");
   });
 
   it.each(["membership", "feature"] as const)(

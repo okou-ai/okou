@@ -1573,7 +1573,7 @@ describe("CHAT-02: completed chat callback", () => {
     await flushWaitUntilForTest();
     expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
       expect.objectContaining({
-        text: expect.stringContaining("/billings"),
+        text: expect.stringContaining("/?settings=billing"),
       }),
     );
     const events = await chat.listThreadEvents(actor, threadId);

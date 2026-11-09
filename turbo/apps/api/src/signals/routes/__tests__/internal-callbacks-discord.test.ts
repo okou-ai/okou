@@ -649,7 +649,9 @@ describe("canonical Discord terminal replies", () => {
     expect(started.provider.sentMessages[0]?.content).toContain(
       "Insufficient credits",
     );
-    expect(started.provider.sentMessages[0]?.content).toContain("/billings");
+    expect(started.provider.sentMessages[0]?.content).toContain(
+      "/?settings=billing",
+    );
   });
 
   it("delivers cancellation before a runner claims the queued run", async () => {

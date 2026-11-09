@@ -1447,7 +1447,7 @@ describe("Teams chat callbacks", () => {
       error: "Cannot continue session from history",
       expected: "Cannot continue session from history",
     },
-    { error: "insufficient_credits", expected: "/billings" },
+    { error: "insufficient_credits", expected: "/?settings=billing" },
   ])(
     "posts readable failed run replies for $error without persisting a thread session",
     async ({ error, expected }) => {

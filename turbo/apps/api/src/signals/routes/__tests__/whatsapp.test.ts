@@ -1130,7 +1130,7 @@ describe("WhatsApp through the shared AgentPhone number", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    expect(setup.sends.at(-1)?.body).toContain("/billings");
+    expect(setup.sends.at(-1)?.body).toContain("/?settings=billing");
   });
 
   it("does not describe a failed run as a completed task when the window is closed", async () => {

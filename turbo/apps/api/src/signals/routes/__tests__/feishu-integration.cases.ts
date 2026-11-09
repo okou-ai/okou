@@ -6480,7 +6480,7 @@ export function registerFeishuIntegrationTests(
         await own(flushWaitUntilForTest);
         expect(
           fixtureState.outboundMessages.some((message) => {
-            return messageContent(message).includes("/billings");
+            return messageContent(message).includes("/?settings=billing");
           }),
         ).toBeTruthy();
         await removeFeishuInstallation(fixture);

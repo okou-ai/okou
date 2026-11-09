@@ -5878,7 +5878,7 @@ describe("INT-02: Telegram integration", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    expect(sentTexts.at(-1)).toContain("/billings");
+    expect(sentTexts.at(-1)).toContain("/?settings=billing");
   });
 
   it("keeps Telegram reply and outbound attribution consistent across model changes", async () => {

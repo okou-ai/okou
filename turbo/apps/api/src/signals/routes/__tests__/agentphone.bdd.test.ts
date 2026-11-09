@@ -2987,8 +2987,9 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
         expect(reply).toContain(`workspace "${workspaceName}"`);
         expect(reply).toContain("send /switch");
       }
-      expect(reply).toContain("Add credits or upgrade your plan to continue.");
-      expect(reply).toContain("/billings");
+      expect(reply).toContain("Add credits to continue.");
+      expect(reply).toContain("/?settings=billing");
+      expect(reply).not.toContain("billingView=plans");
 
       const chat = createChatFilesBddApi(context);
       const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
@@ -3055,7 +3056,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await waitForSendCount(sends, beforeSend + 1);
       const reply = lastSend(sends).body;
       if (isGroup) {
-        expect(reply).toContain("Insufficient credits");
+        expect(reply).toContain("Upgrade to Pro");
+        expect(reply).toContain("/?settings=billing&billingView=plans");
         expect(reply).not.toContain(workspaceName);
         expect(reply).not.toContain("/switch");
         await ap.postAgentPhoneInboundMessage({
@@ -3074,7 +3076,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(reply).toContain(`workspace "${workspaceName}"`);
       expect(reply).toContain("send /switch");
       if (role === "org:admin") {
-        expect(reply).toContain("/billings");
+        expect(reply).toContain("Upgrade to Pro");
+        expect(reply).toContain("/?settings=billing&billingView=plans");
       } else {
         expect(reply).toContain("Ask a workspace admin");
         expect(reply).not.toContain("?settings=billing");
