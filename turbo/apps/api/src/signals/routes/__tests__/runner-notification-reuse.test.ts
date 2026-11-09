@@ -43,6 +43,7 @@ describe("Runner notification reuse after durable launch", () => {
     });
 
     const next = await continuation(f);
+    mockNow(f.clock + 20_000);
     expect(deliveryDelayed).toBeTruthy();
     const preference = {
       kind: "preference",
