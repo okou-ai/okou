@@ -15,7 +15,6 @@ import asyncio
 import codecs
 import tempfile
 from collections.abc import Awaitable
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal, NoReturn
 
@@ -74,6 +73,7 @@ import model_websocket_usage
 import platform_api
 import public_destination_body_admission
 import registry_control
+import request_authority
 import request_body_admission
 import request_classification
 import request_streaming
@@ -169,21 +169,6 @@ _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
 _AUTH_BASE_BODYLESS_METHODS = frozenset(("GET", "HEAD"))
 _HTTP_RESPONSE_BODYLESS_METHODS = frozenset(("CONNECT", "HEAD"))
 _WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT = 8 * 1024
-
-
-@dataclass(frozen=True)
-class _FirewallRequestIdentity:
-    authority: TrustedAuthority
-    method: str
-    scheme: str
-
-
-def _capture_firewall_request_identity(flow: http.HTTPFlow) -> _FirewallRequestIdentity:
-    return _FirewallRequestIdentity(
-        authority=get_trusted_authority(flow),
-        method=flow.request.method,
-        scheme=flow.request.scheme,
-    )
 
 
 # ============================================================================
@@ -527,18 +512,6 @@ def _builtin_host_policy_error_for_firewall_allow(
     except builtin_host_policy.BuiltinRuntimeHostPolicyError as e:
         return e
     return None
-
-
-def _firewall_request_identity_is_current(
-    flow: http.HTTPFlow,
-    expected: _FirewallRequestIdentity,
-) -> bool:
-    return (
-        flow_metadata.trusted_authority_host(flow.metadata) == expected.authority.host
-        and flow.request.port == expected.authority.port
-        and flow.request.method == expected.method
-        and flow.request.scheme == expected.scheme
-    )
 
 
 def _connector_auth_destination_is_current(
@@ -1395,7 +1368,7 @@ async def _try_firewall_request_stream_from_headers(
     _maybe_normalize_accept_encoding_for_body_inspection(flow, allow, sandbox_info)
     _start_request_timing(flow)
     expected_run_id = flow_metadata.run_id(flow.metadata)
-    expected_request = _capture_firewall_request_identity(flow)
+    expected_request = request_authority.capture_firewall_request_identity(flow)
     try:
         result = await try_apply_stream_safe_firewall_auth_for_requestheaders(
             flow,
@@ -1498,7 +1471,7 @@ def _revalidate_current_firewall_authorization_for_request(
     allow: matching.FirewallAllow,
     *,
     expected_run_id: str,
-    expected_request: _FirewallRequestIdentity,
+    expected_request: request_authority.FirewallRequestIdentity,
     expected_managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
@@ -1509,7 +1482,9 @@ def _revalidate_current_firewall_authorization_for_request(
         expected_allow=allow,
         expected_run_id=expected_run_id,
     )
-    if current_allow is None or not _firewall_request_identity_is_current(flow, expected_request):
+    if current_allow is None or not request_authority.firewall_request_identity_is_current(
+        flow, expected_request
+    ):
         _block_current_firewall_authorization(flow, current_classification)
         return False
     if allow.name == managed_openrouter.OWNER and (
@@ -1592,7 +1567,7 @@ def _firewall_authorization_is_current_for_requestheaders(
     allow: matching.FirewallAllow,
     *,
     expected_run_id: str,
-    expected_request: _FirewallRequestIdentity,
+    expected_request: request_authority.FirewallRequestIdentity,
     expected_managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> bool:
     current_classification = _current_firewall_authorization_classification(
@@ -1610,7 +1585,7 @@ def _firewall_authorization_is_current_for_requestheaders(
             or managed_openrouter.policy_for_sandbox(current_allow.sandbox_info)
             == expected_managed_policy
         )
-        and _firewall_request_identity_is_current(flow, expected_request)
+        and request_authority.firewall_request_identity_is_current(flow, expected_request)
         and _connector_auth_destination_is_current(flow, current_allow)
         and _builtin_host_policy_error_for_firewall_allow(flow, current_allow.firewall_allow)
         is None
@@ -1692,7 +1667,7 @@ async def _prepare_codex_catalog_request_with_upstream_revalidation(
     allow: matching.FirewallAllow,
     *,
     expected_run_id: str,
-    expected_request: _FirewallRequestIdentity,
+    expected_request: request_authority.FirewallRequestIdentity,
     request_end_stream: bool,
 ) -> None:
     """Coordinate catalog preparation with post-wait provider revalidation.
@@ -1883,7 +1858,7 @@ async def request(flow: http.HTTPFlow) -> None:
                 is_billable_firewall(allow.name, sandbox_info),
             )
             expected_run_id = flow_metadata.run_id(flow.metadata)
-            expected_request = _capture_firewall_request_identity(flow)
+            expected_request = request_authority.capture_firewall_request_identity(flow)
             auth_result = await handle_firewall_request(
                 flow,
                 allow,
