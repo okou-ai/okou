@@ -39,6 +39,12 @@ function integrationNoteLines(
   args: IntegrationNotePromptInputs,
 ): readonly string[] {
   switch (args.triggerSource) {
+    case "email": {
+      return [
+        "- Email messaging and files: your final response is automatically delivered to the verified sender in this email conversation. Use `okou email upload-file -f <path>` for a requested file attachment, with optional `--text` for its caption. The server derives the recipient and RFC reply references from the current run; the command cannot choose another recipient. Incoming attachments arrive as canonical `[Web file]` blocks; read them with `okou web download-file -h`.",
+        "- Email attachment delivery: files remain private in Okou and are sent as real email attachments, up to 10 MiB each. Preserve the returned upload ID and operation ID. A pending receipt is queued, and an accepted receipt means Resend accepted the message, not that the recipient received it. After an uncertain response, use `okou email upload-file --upload-id <id>` to inspect or resume that same delivery; never upload the same file again merely to retry delivery. A bare private artifact link does not deliver the file to the recipient. Hosted HTML pages and websites should use their hosted view URL instead of an attachment. The final text reply is delivered separately; do not duplicate it with Gmail, Outlook or Resend calls.",
+      ];
+    }
     case "web":
     case "agent": {
       return [

@@ -29,6 +29,7 @@ export const CAPABILITIES = [
   "teams:write",
   "phone:read",
   "phone:write",
+  "email:write",
   "telegram:read",
   "telegram:write",
   "chat-event:read",

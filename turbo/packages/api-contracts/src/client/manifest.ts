@@ -401,7 +401,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "integrations-email",
-    contracts: ["integrationsEmailContract"],
+    contracts: ["integrationsEmailContract", "integrationsEmailUploadContract"],
   },
   {
     module: "integrations-github",

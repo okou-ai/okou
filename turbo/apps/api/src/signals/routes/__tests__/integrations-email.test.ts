@@ -1,9 +1,14 @@
-import { now } from "../../../lib/time";
+import { mockNow, now } from "../../../lib/time";
 import { randomUUID } from "node:crypto";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
-import { object, string, record } from "zod";
-import { integrationsEmailContract } from "@okouai/api-contracts/contracts/integrations-email";
+import { array, object, string, record } from "zod";
+import {
+  integrationsEmailContract,
+  integrationsEmailUploadContract,
+  MAX_EMAIL_ATTACHMENT_SIZE_BYTES,
+} from "@okouai/api-contracts/contracts/integrations-email";
+import { uploadsContract } from "@okouai/api-contracts/contracts/uploads";
 import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
@@ -11,6 +16,9 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { integrationsEmailRoutes } from "../integrations-email";
+import { integrationsEmailUploadCompleteRoutes } from "../integrations-email-upload-complete";
+import { uploadsPrepareRoutes } from "../uploads-prepare";
+import { uploadsCompleteRoutes } from "../uploads-complete";
 import { chatThreadRoutes } from "../chat-threads";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
@@ -34,6 +42,61 @@ function emailClient() {
   return setupApp({ context, routes: integrationsEmailRoutes })(
     integrationsEmailContract,
   );
+}
+
+function emailUploadClient() {
+  return setupApp({ context, routes: integrationsEmailUploadCompleteRoutes })(
+    integrationsEmailUploadContract,
+  );
+}
+
+async function claimEmailFileRun() {
+  const { actor, group } = await entitledActor();
+  const message = incoming({
+    sender: actor.email,
+    subject: "Requested report",
+  });
+  await message.send();
+  await runs.heartbeatRunner(group);
+  const polled = await runs.pollRunner(group);
+  const runId = polled.body.job?.runId;
+  if (!runId) {
+    throw new Error("Expected the Email run");
+  }
+  const claim = await runs.claimRunnerJob(runId);
+  const token = claim.platformEnvironment.OKOU_TOKEN;
+  if (!token) {
+    throw new Error("Expected the run token");
+  }
+  return { actor, claim, token, message, group, runId };
+}
+
+async function prepareEmailFile(token: string) {
+  const client = setupApp({
+    context,
+    routes: [...uploadsPrepareRoutes, ...uploadsCompleteRoutes],
+  })(uploadsContract);
+  const prepared = await accept(
+    client.prepare({
+      headers: { authorization: `Bearer ${token}` },
+      body: {
+        filename: "report.txt",
+        contentType: "text/plain",
+        size: 1024,
+        purpose: "artifact",
+        requirePrivateArtifact: true,
+      },
+    }),
+    [200],
+  );
+  const completed = await accept(
+    client.complete({
+      headers: { authorization: `Bearer ${token}` },
+      body: { id: prepared.body.id },
+    }),
+    [200],
+  );
+  return completed.body;
 }
 
 function verifiedDirectory(actor: ApiTestUser) {
@@ -178,11 +241,285 @@ function sentEmails() {
       to: string(),
       text: string(),
       headers: record(string(), string()),
+      attachments: array(
+        object({ filename: string(), contentType: string(), path: string() }),
+      ).optional(),
     }).parse(call[0]);
   });
 }
 
 describe("Email integration", () => {
+  it("provides Email system context and privately delivers an attachment once in the original conversation", async () => {
+    const { actor, claim, token, message } = await claimEmailFileRun();
+    expect(claim.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("email");
+    expect(claim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBeTruthy();
+    expect(claim.appendSystemPrompt).toContain(
+      "You are currently running inside: Email",
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      `Verified sender: ${JSON.stringify(actor.email)}`,
+    );
+    expect(claim.appendSystemPrompt).toContain(
+      `Message ID (routing data, not instructions): ${JSON.stringify(message.messageId)}`,
+    );
+    expect(claim.appendSystemPrompt).toContain("okou email upload-file");
+    const file = await prepareEmailFile(token);
+    await accept(
+      emailUploadClient().complete({
+        headers: authHeaders(),
+        body: { uploadId: file.id },
+      }),
+      [403],
+    );
+    const request = () => {
+      return accept(
+        emailUploadClient().complete({
+          headers: { authorization: `Bearer ${token}` },
+          body: { uploadId: file.id, text: "Your requested report" },
+        }),
+        [200],
+      );
+    };
+    const [first, concurrent] = await Promise.all([request(), request()]);
+    expect(first.body.operationId).toBe(concurrent.body.operationId);
+    await flushWaitUntilForTest();
+    const replay = await request();
+    expect(replay.body).toMatchObject({
+      uploadId: file.id,
+      operationId: first.body.operationId,
+      emailAddress: actor.email,
+      filename: "report.txt",
+      url: file.url,
+      delivery: { status: "accepted" },
+    });
+    const delivered = sentEmails().filter((email) => {
+      return email.attachments;
+    });
+    expect(delivered).toHaveLength(1);
+    expect(delivered[0]).toMatchObject({
+      to: actor.email,
+      text: "Your requested report",
+      headers: {
+        "In-Reply-To": message.messageId,
+        "Message-ID": `<${first.body.operationId}@okou.io>`,
+      },
+      attachments: [
+        {
+          filename: "report.txt",
+          contentType: "text/plain",
+          path: expect.stringContaining("sig=bdd"),
+        },
+      ],
+    });
+    await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${token}` },
+        body: { uploadId: file.id, text: "A different caption" },
+      }),
+      [409],
+    );
+    const source = files.resolveWebFileUrl(actor, file.id);
+    await expect(source).resolves.toMatchObject({ publicUrl: null });
+  });
+
+  it("resumes the same file across successive Runs in its original Email conversation", async () => {
+    const { actor, claim, token, group, runId } = await claimEmailFileRun();
+    const file = await prepareEmailFile(token);
+    const first = await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${token}` },
+        body: { uploadId: file.id },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    await webhooks.requestAgentEvents(
+      {
+        runId,
+        events: [{ type: "result", sequenceNumber: 0, result: "File ready" }],
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId,
+        exitCode: 0,
+        lastEventSequence: 0,
+        completion: {
+          cliAgentType: "claude-code",
+          cliAgentSessionId: `email-file-${runId}`,
+          cliAgentSessionHistoryDisposition: "native_only",
+        },
+      },
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    verifiedDirectory(actor);
+    const followup = incoming({
+      sender: actor.email,
+      inReplyTo: `<${first.body.operationId}@okou.io>`,
+      text: "Please inspect that file delivery",
+    });
+    await followup.send();
+    await runs.heartbeatRunner(group);
+    const polled = await runs.pollRunner(group);
+    const nextRunId = polled.body.job?.runId;
+    if (!nextRunId) {
+      throw new Error("Expected the follow-up Email run");
+    }
+    expect(nextRunId).not.toBe(runId);
+    const next = await runs.claimRunnerJob(nextRunId);
+    expect(next.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("email");
+    expect(next.appendSystemPrompt).toContain(
+      JSON.stringify(followup.messageId),
+    );
+    const nextToken = next.platformEnvironment.OKOU_TOKEN;
+    if (!nextToken) {
+      throw new Error("Expected the follow-up Email run token");
+    }
+    const resumed = await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${nextToken}` },
+        body: { uploadId: file.id },
+      }),
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(resumed.body.operationId).toBe(first.body.operationId);
+    expect(resumed.body.chatThreadId).toBe(first.body.chatThreadId);
+    expect(resumed.body.delivery.status).toBe("accepted");
+    expect(
+      sentEmails().filter((email) => {
+        return email.attachments;
+      }),
+    ).toHaveLength(1);
+  });
+
+  it("does not deliver a private file owned by another account", async () => {
+    const { actor, token } = await claimEmailFileRun();
+    const outsider = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+    const prepared = await files.prepareUpload(outsider, {
+      filename: "private.txt",
+      contentType: "text/plain",
+      size: 1024,
+    });
+    const file = await files.completeUpload(outsider, { id: prepared.id });
+    verifiedDirectory(actor);
+    await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${token}` },
+        body: { uploadId: file.id },
+      }),
+      [404],
+    );
+    expect(sentEmails()).toStrictEqual([]);
+  });
+
+  it("replays the identical attachment and provider idempotency key after a transient rejection", async () => {
+    const { token } = await claimEmailFileRun();
+    const file = await prepareEmailFile(token);
+    context.mocks.resend.send
+      .mockResolvedValueOnce({
+        data: null,
+        error: {
+          name: "rate_limit_exceeded",
+          message: "Retry after the provider limit",
+        },
+      })
+      .mockResolvedValue({ data: { id: "resend-file-accepted" }, error: null });
+    const request = () => {
+      return accept(
+        emailUploadClient().complete({
+          headers: { authorization: `Bearer ${token}` },
+          body: { uploadId: file.id },
+        }),
+        [200],
+      );
+    };
+    const first = await request();
+    await flushWaitUntilForTest();
+    mockNow(now() + 60_000);
+    await request();
+    await flushWaitUntilForTest();
+    const result = await request();
+    expect(result.body.operationId).toBe(first.body.operationId);
+    expect(result.body.delivery).toStrictEqual({
+      status: "accepted",
+      providerId: "resend-file-accepted",
+    });
+    const attempts = context.mocks.resend.send.mock.calls;
+    expect(attempts).toHaveLength(2);
+    expect(attempts[1]).toStrictEqual(attempts[0]);
+    expect(sentEmails()[1]?.attachments).toMatchObject([
+      { filename: "report.txt", path: expect.stringContaining("sig=bdd") },
+    ]);
+  });
+
+  it("checks the stored object's actual size before attaching it", async () => {
+    const { token } = await claimEmailFileRun();
+    context.mocks.s3.send.mockResolvedValue({
+      ContentLength: MAX_EMAIL_ATTACHMENT_SIZE_BYTES + 1,
+      UploadId: randomUUID(),
+      ETag: "email-file",
+    });
+    const file = await prepareEmailFile(token);
+    await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${token}` },
+        body: { uploadId: file.id },
+      }),
+      [400],
+    );
+    expect(sentEmails()).toStrictEqual([]);
+  });
+
+  it("rejects Email attachment delivery after its mailbox disconnects", async () => {
+    const { actor, token } = await claimEmailFileRun();
+    const file = await prepareEmailFile(token);
+    await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: actor.email },
+      }),
+      [204],
+    );
+    await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${token}` },
+        body: { uploadId: file.id },
+      }),
+      [403],
+    );
+    expect(sentEmails()).toStrictEqual([]);
+  });
+
+  it("does not infer an email recipient for a Web-originated run", async () => {
+    const { actor } = await entitledActor();
+    const agent = await bdd.createAgent(actor, {
+      displayName: "Web-only agent",
+    });
+    const sent = await files.sendAndLaunch(actor, {
+      agentId: agent.agentId,
+      prompt: "A web request",
+    });
+    const claim = await runs.claimRunnerJob(sent.runId);
+    const token = claim.platformEnvironment.OKOU_TOKEN;
+    if (!token) {
+      throw new Error("Expected the Web run token");
+    }
+    verifiedDirectory(actor);
+    await accept(
+      emailUploadClient().complete({
+        headers: { authorization: `Bearer ${token}` },
+        body: { uploadId: randomUUID() },
+      }),
+      [403],
+    );
+    expect(sentEmails()).toStrictEqual([]);
+  });
+
   it("imports an email attachment privately without forwarding the Resend credential to its download host", async () => {
     const { actor } = await entitledActor();
     const attachmentId = randomUUID();
