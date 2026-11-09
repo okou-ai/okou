@@ -290,6 +290,15 @@ test.each([
     const files = readClaimedContentBundle(s3.objects, bundle);
     expect(files.get("SKILL.md")?.toString()).toContain(heading);
     expectScopeGuidance(files.get("SKILL.md")?.toString(), learning);
+    if (!learning) {
+      const reference = detail.body.fileContents?.find((file) => {
+        return file.path === "references/suggestions.md";
+      });
+      if (!reference) {
+        throw new Error("Expected the suggestion publishing reference");
+      }
+      expect(files.get(reference.path)?.toString()).toBe(reference.content);
+    }
     await owned.run(() => {
       return fixture.failChatRun(
         runId,
