@@ -59,12 +59,15 @@ export const censusRowSchema = ownerSchema.extend({
 export type CensusRow = zInfer<typeof censusRowSchema>;
 
 export const rolePermissionsSchema = object({
+  login: string().min(1),
   role: string(),
   readonly: boolean(),
   selectUser: boolean(),
   selectPresentation: boolean(),
   writableUser: boolean(),
   writablePresentation: boolean(),
+  updateUserBundle: boolean(),
+  updatePresentationBundle: boolean(),
 });
 
 export function validateRolePermissions(
@@ -74,10 +77,13 @@ export function validateRolePermissions(
 ) {
   if (
     !permissions ||
-    permissions.role !== role ||
+    permissions.login !== role ||
     !permissions.readonly ||
     !permissions.selectUser ||
     !permissions.selectPresentation ||
+    (applying &&
+      (!permissions.updateUserBundle ||
+        !permissions.updatePresentationBundle)) ||
     (!applying &&
       (permissions.writableUser || permissions.writablePresentation))
   )
