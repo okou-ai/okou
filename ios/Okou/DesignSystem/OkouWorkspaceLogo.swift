@@ -7,6 +7,9 @@ struct OkouWorkspaceLogo: View {
   var imageURL: URL? = nil
   var hasImage = false
   var size: CGFloat = OkouAvatarSize.workspace
+  var cachedImage: UIImage? = nil
+  var usesSharedImage = false
+  var metadataKnown = true
 
   /// FNV-1a over UTF-16, matching Web's identity-hash.ts exactly.
   nonisolated static func defaultAssetName(for workspaceID: String) -> String {
@@ -16,7 +19,13 @@ struct OkouWorkspaceLogo: View {
 
   var body: some View {
     Group {
-      if hasImage, let imageURL {
+      if !metadataKnown {
+        OkouColor.stateHover
+      } else if hasImage, let cachedImage {
+        Image(uiImage: cachedImage).resizable().scaledToFill()
+      } else if hasImage, usesSharedImage {
+        OkouColor.stateHover
+      } else if hasImage, let imageURL {
         // A neutral tile while loading: showing the default mark first made the same
         // workspace look like a different one until its own logo arrived.
         AsyncImage(url: imageURL) { phase in
@@ -48,47 +57,28 @@ struct OkouWorkspaceGlassLogo: View {
   let name: String
   var imageURL: URL? = nil
   var hasImage = false
+  var cachedImage: UIImage? = nil
+  var usesSharedImage = false
+  var metadataKnown = true
 
   var body: some View {
     OkouWorkspaceLogo(
       workspaceID: workspaceID, name: name, imageURL: imageURL, hasImage: hasImage,
-      size: OkouAvatarSize.glassControl
+      size: OkouAvatarSize.glassControl, cachedImage: cachedImage,
+      usesSharedImage: usesSharedImage, metadataKnown: metadataKnown
     )
     .clipShape(Circle())
     .modifier(OkouGlassControl(shape: .circle))
   }
 }
 
-/// Workspace logos for the system menu, which draws images, not views: each tile is drawn once
-/// with the logo's own rounded corners, as the web's switcher puts a logo on every row. An
-/// uploaded logo shows a neutral tile until it has loaded, as `OkouWorkspaceLogo` does.
+/// The system menu renders the same retained bitmap as the sidebar, without another request.
 @MainActor
-@Observable
-final class OkouWorkspaceMenuLogos {
-  private struct Key: Hashable {
-    let workspaceID: String
-    let imageURL: URL?
-  }
-
-  private var tiles: [Key: UIImage] = [:]
-
-  func image(workspaceID: String, imageURL: URL?, hasImage: Bool) -> Image {
-    let key = Key(workspaceID: workspaceID, imageURL: hasImage ? imageURL : nil)
-    return Image(uiImage: tiles[key] ?? Self.tile(nil)).renderingMode(.original)
-  }
-
-  func load(workspaceID: String, imageURL: URL?, hasImage: Bool) async {
-    let key = Key(workspaceID: workspaceID, imageURL: hasImage ? imageURL : nil)
-    guard tiles[key] == nil else { return }
-    guard let imageURL = key.imageURL else {
-      let name = OkouWorkspaceLogo.defaultAssetName(for: workspaceID)
-      tiles[key] = Self.tile(UIImage(named: name))
-      return
-    }
-    guard let (data, _) = try? await URLSession.shared.data(from: imageURL),
-      let image = UIImage(data: data)
-    else { return }
-    tiles[key] = Self.tile(image)
+enum OkouWorkspaceMenuLogos {
+  static func image(workspaceID: String, hasImage: Bool, cachedImage: UIImage?) -> Image {
+    let image =
+      hasImage ? cachedImage : UIImage(named: OkouWorkspaceLogo.defaultAssetName(for: workspaceID))
+    return Image(uiImage: tile(image)).renderingMode(.original)
   }
 
   private static func tile(_ image: UIImage?) -> UIImage {
