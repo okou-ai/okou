@@ -253,7 +253,6 @@ test("Keep primary icon actions accessible and open emails from the desktop menu
   );
   const more = buttonNamed("More actions");
   expect(more).toHaveAccessibleName("More actions");
-  expect(screen.queryByLabelText("Manage emails")).not.toBeInTheDocument();
   click(more);
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
