@@ -206,7 +206,8 @@ private struct VoiceEntryHarness: View {
     MentionComposerHarness(workspace: workspace)
       .modifier(
         NewChatNavigation(
-          workspace: workspace, isAuthenticated: isAuthenticated, didOpen: didOpen))
+          workspace: workspace, isAuthenticated: isAuthenticated, didOpen: didOpen)
+      )
       .environment(\.scenePhase, .active)
   }
 }
