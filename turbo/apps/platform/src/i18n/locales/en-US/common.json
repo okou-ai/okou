@@ -7245,15 +7245,6 @@
       "viewAutomations": "View automations"
     },
     "migration": {
-      "accountConflict": {
-        "confirm": "Use this account",
-        "connectedToOkou": "Connected to your Okou",
-        "description": "{{workflow}} used to run as {{agent}}, which was connected to a different {{connector}} account than your Okou. Until you choose one, this automation is skipped.",
-        "later": "Later",
-        "open": "Choose an account for {{title}}",
-        "title": "Choose a {{connector}} account",
-        "usedByAgent": "Used by {{agent}}"
-      },
       "fromAgent": "From agent",
       "fromNamedAgent": "From {{agent}}",
       "howItWorks": {

@@ -7323,15 +7323,6 @@
       "viewAutomations": "Visualizza le automazioni"
     },
     "migration": {
-      "accountConflict": {
-        "confirm": "Usa questo account",
-        "connectedToOkou": "Collegato al tuo Okou",
-        "description": "{{workflow}} veniva eseguito come {{agent}}, collegato a un account {{connector}} diverso da quello del tuo Okou. Finché non ne scegli uno, questa automazione viene saltata.",
-        "later": "Più tardi",
-        "open": "Scegli un account per {{title}}",
-        "title": "Scegli un account {{connector}}",
-        "usedByAgent": "Usato da {{agent}}"
-      },
       "fromAgent": "Da agente",
       "fromNamedAgent": "Da {{agent}}",
       "howItWorks": {

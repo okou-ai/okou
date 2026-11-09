@@ -678,27 +678,6 @@ export type WorkflowSchedule = zInfer<typeof workflowScheduleSchema>;
  * automations no longer carry an agentId. Detail responses only ever list the
  * caller's own automations.
  */
-/**
- * A connector account choice left open when legacy agents became workflows:
- * the automation's former agent and the owner's Okou were connected to
- * different accounts of the same connector. The automation skips runs until
- * its owner picks one. Absent when there is nothing to resolve.
- */
-const workflowAutomationAccountConflictSchema = object({
-  connectorLabel: string(),
-  agentDisplayName: string(),
-  options: array(
-    object({
-      connectionId: string(),
-      accountLabel: string(),
-      source: zEnum(["agent", "okou"]),
-    }),
-  ).min(2),
-});
-export type WorkflowAutomationAccountConflict = zInfer<
-  typeof workflowAutomationAccountConflictSchema
->;
-
 const workflowAutomationSummaryBaseSchema = object({
   id: string(),
   ownerUserId: string(),
@@ -706,9 +685,6 @@ const workflowAutomationSummaryBaseSchema = object({
   chatThreadId: string().nullable(),
   nextRunAt: iso.datetime().nullable(),
   lastRunAt: iso.datetime().nullable(),
-  accountConflict: workflowAutomationAccountConflictSchema
-    .nullable()
-    .optional(),
   official: object({
     blueprintKey: officialWorkflowBlueprintKeySchema,
     appliedFingerprint: string().regex(/^[0-9a-f]{64}$/),
@@ -1786,22 +1762,6 @@ export const workflowAutomationsContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Get a workflow automation",
-  },
-  resolveAccountConflict: {
-    method: "POST",
-    path: "/api/workflow-automations/:id/account-conflict",
-    headers: authHeadersSchema,
-    pathParams: automationIdParams,
-    body: object({ connectionId: string() }),
-    responses: {
-      200: workflowAutomationSummarySchema,
-      400: apiErrorSchema,
-      401: apiErrorSchema,
-      403: apiErrorSchema,
-      404: apiErrorSchema,
-    },
-    summary:
-      "Choose the connector account a migrated automation runs with and resume it",
   },
   update: {
     method: "PATCH",

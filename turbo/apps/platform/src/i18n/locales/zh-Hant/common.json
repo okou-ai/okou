@@ -7224,15 +7224,6 @@
       "viewAutomations": "檢視自動化"
     },
     "migration": {
-      "accountConflict": {
-        "confirm": "使用這個帳號",
-        "connectedToOkou": "已連結到你的 Okou",
-        "description": "{{workflow}} 原本以 {{agent}} 的身分執行，它連結的 {{connector}} 帳號和你的 Okou 不同。選擇之前，這項自動化會略過執行。",
-        "later": "稍後",
-        "open": "為 {{title}} 選擇帳號",
-        "title": "選擇一個 {{connector}} 帳號",
-        "usedByAgent": "{{agent}} 使用的帳號"
-      },
       "fromAgent": "來自 Agent",
       "fromNamedAgent": "來自 {{agent}}",
       "howItWorks": {

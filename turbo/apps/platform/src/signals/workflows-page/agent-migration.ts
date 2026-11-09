@@ -1,12 +1,6 @@
 import { command, computed, state } from "ccstate";
-import {
-  workflowAutomationsContract,
-  workflowsDetailContract,
-} from "@okouai/api-contracts/client/workflows";
-import type {
-  WorkflowAutomationAccountConflict,
-  WorkflowSummary,
-} from "@okouai/api-contracts/contracts/workflows";
+import { workflowsDetailContract } from "@okouai/api-contracts/client/workflows";
+import type { WorkflowSummary } from "@okouai/api-contracts/contracts/workflows";
 
 import { accept } from "../../lib/accept.ts";
 import { apiClient$ } from "../api-client.ts";
@@ -108,73 +102,6 @@ export const howWorkflowsWorkOpen$ = computed((get) => {
 export const setHowWorkflowsWorkOpen$ = command(({ set }, open: boolean) => {
   set(internalHowWorkflowsWorkOpen$, open);
 });
-
-export interface AccountConflictTarget {
-  readonly automationId: string;
-  readonly workflowTitle: string;
-  readonly conflict: WorkflowAutomationAccountConflict;
-}
-
-const internalAccountConflictTarget$ = state<AccountConflictTarget | null>(
-  null,
-);
-const internalSelectedConnectionId$ = state<string | null>(null);
-
-export const accountConflictTarget$ = computed((get) => {
-  return get(internalAccountConflictTarget$);
-});
-
-/** The account picked in the dialog; defaults to the first option. */
-export const selectedConflictConnectionId$ = computed((get) => {
-  const target = get(internalAccountConflictTarget$);
-  if (!target) {
-    return null;
-  }
-  return (
-    get(internalSelectedConnectionId$) ??
-    target.conflict.options[0]?.connectionId ??
-    null
-  );
-});
-
-export const selectConflictConnection$ = command(
-  ({ set }, connectionId: string) => {
-    set(internalSelectedConnectionId$, connectionId);
-  },
-);
-
-export const openAccountConflict$ = command(
-  ({ set }, target: AccountConflictTarget) => {
-    set(internalSelectedConnectionId$, null);
-    set(internalAccountConflictTarget$, target);
-  },
-);
-
-export const closeAccountConflict$ = command(({ set }) => {
-  set(internalAccountConflictTarget$, null);
-  set(internalSelectedConnectionId$, null);
-});
-
-export const resolveAccountConflict$ = command(
-  async (
-    { get, set },
-    input: { readonly automationId: string; readonly connectionId: string },
-    signal: AbortSignal,
-  ) => {
-    const client = get(apiClient$)(workflowAutomationsContract);
-    await accept(
-      client.resolveAccountConflict({
-        params: { id: input.automationId },
-        body: { connectionId: input.connectionId },
-        fetchOptions: { signal },
-      }),
-      [200],
-    );
-    signal.throwIfAborted();
-    set(closeAccountConflict$);
-    set(reloadWorkflows$);
-  },
-);
 
 export const removeWorkflowInclude$ = command(
   async (

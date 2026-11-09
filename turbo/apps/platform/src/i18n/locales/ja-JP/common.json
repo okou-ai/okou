@@ -7224,15 +7224,6 @@
       "viewAutomations": "オートメーションを表示する"
     },
     "migration": {
-      "accountConflict": {
-        "confirm": "このアカウントを使う",
-        "connectedToOkou": "Okou に接続済み",
-        "description": "{{workflow}} は以前 {{agent}} として実行されており、Okou とは別の {{connector}} アカウントに接続されていました。選択するまで、この自動化はスキップされます。",
-        "later": "あとで",
-        "open": "{{title}} のアカウントを選択",
-        "title": "{{connector}} アカウントを選択",
-        "usedByAgent": "{{agent}} が使用"
-      },
       "fromAgent": "エージェントから",
       "fromNamedAgent": "{{agent}} から",
       "howItWorks": {

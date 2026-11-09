@@ -7224,15 +7224,6 @@
       "viewAutomations": "查看自动化"
     },
     "migration": {
-      "accountConflict": {
-        "confirm": "使用这个账号",
-        "connectedToOkou": "已连接到你的 Okou",
-        "description": "{{workflow}} 原来以 {{agent}} 的身份运行，它连接的 {{connector}} 账号和你的 Okou 不同。选择之前，这条自动化会跳过运行。",
-        "later": "稍后",
-        "open": "为 {{title}} 选择账号",
-        "title": "选择一个 {{connector}} 账号",
-        "usedByAgent": "{{agent}} 使用的账号"
-      },
       "fromAgent": "来自 Agent",
       "fromNamedAgent": "来自 {{agent}}",
       "howItWorks": {

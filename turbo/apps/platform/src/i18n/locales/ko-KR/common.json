@@ -7224,15 +7224,6 @@
       "viewAutomations": "자동화 보기"
     },
     "migration": {
-      "accountConflict": {
-        "confirm": "이 계정 사용",
-        "connectedToOkou": "내 Okou에 연결됨",
-        "description": "{{workflow}}은(는) 원래 {{agent}}(으)로 실행되었고, Okou와 다른 {{connector}} 계정에 연결되어 있었습니다. 선택하기 전까지 이 자동화는 건너뜁니다.",
-        "later": "나중에",
-        "open": "{{title}}의 계정 선택",
-        "title": "{{connector}} 계정 선택",
-        "usedByAgent": "{{agent}}이(가) 사용"
-      },
       "fromAgent": "에이전트에서",
       "fromNamedAgent": "{{agent}}에서",
       "howItWorks": {

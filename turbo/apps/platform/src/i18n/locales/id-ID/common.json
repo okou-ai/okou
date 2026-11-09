@@ -7224,15 +7224,6 @@
       "viewAutomations": "Lihat otomatisasi"
     },
     "migration": {
-      "accountConflict": {
-        "confirm": "Gunakan akun ini",
-        "connectedToOkou": "Terhubung ke Okou Anda",
-        "description": "{{workflow}} dulu berjalan sebagai {{agent}}, yang terhubung ke akun {{connector}} berbeda dari Okou Anda. Sampai Anda memilih, otomatisasi ini dilewati.",
-        "later": "Nanti",
-        "open": "Pilih akun untuk {{title}}",
-        "title": "Pilih akun {{connector}}",
-        "usedByAgent": "Dipakai oleh {{agent}}"
-      },
       "fromAgent": "Dari agen",
       "fromNamedAgent": "Dari {{agent}}",
       "howItWorks": {

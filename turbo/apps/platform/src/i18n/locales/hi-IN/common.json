@@ -7247,15 +7247,6 @@
       "viewAutomations": "ऑटोमेशन देखें"
     },
     "migration": {
-      "accountConflict": {
-        "confirm": "यह खाता इस्तेमाल करें",
-        "connectedToOkou": "आपके Okou से जुड़ा",
-        "description": "{{workflow}} पहले {{agent}} के रूप में चलता था, जो आपके Okou से अलग {{connector}} खाते से जुड़ा था। जब तक आप एक नहीं चुनते, यह ऑटोमेशन छोड़ा जाएगा।",
-        "later": "बाद में",
-        "open": "{{title}} के लिए खाता चुनें",
-        "title": "{{connector}} खाता चुनें",
-        "usedByAgent": "{{agent}} द्वारा इस्तेमाल"
-      },
       "fromAgent": "एजेंट से",
       "fromNamedAgent": "{{agent}} से",
       "howItWorks": {

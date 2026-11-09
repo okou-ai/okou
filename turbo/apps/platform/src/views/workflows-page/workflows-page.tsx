@@ -91,12 +91,10 @@ import {
 } from "./workflow-shared.tsx";
 import { WorkflowWebhookUpgradeDialog } from "./workflow-webhook-upgrade-dialog.tsx";
 import {
-  AccountConflictDialog,
   AgentMigrationNotice,
   HowWorkflowsWorkDialog,
   WorkflowMigrationBadge,
 } from "./agent-migration.tsx";
-import { openAccountConflict$ } from "../../signals/workflows-page/agent-migration.ts";
 
 type WorkflowAutomationEntryMap = ReadonlyMap<
   string,
@@ -117,9 +115,6 @@ function workflowAutomationEntryMap(
 
 function automationDotClass(entry: WorkflowAutomationEntry): string {
   const automation = entry.automation;
-  if (automation.accountConflict) {
-    return "bg-amber-500";
-  }
   if (
     isGoogleCalendarWorkflowAutomation(automation) &&
     automation.warning !== undefined
@@ -136,14 +131,9 @@ function automationDotClass(entry: WorkflowAutomationEntry): string {
 
 function isActionRequiredEntry(entry: WorkflowAutomationEntry): boolean {
   return (
-    hasAccountConflict(entry) ||
-    (isGoogleCalendarWorkflowAutomation(entry.automation) &&
-      entry.automation.warning !== undefined)
+    isGoogleCalendarWorkflowAutomation(entry.automation) &&
+    entry.automation.warning !== undefined
   );
-}
-
-function hasAccountConflict(entry: WorkflowAutomationEntry): boolean {
-  return Boolean(entry.automation.accountConflict);
 }
 
 function connectorNames(entries: readonly WorkflowAutomationEntry[]): string {
@@ -270,60 +260,6 @@ function VisibilityIcon({ workflow }: { readonly workflow: WorkflowSummary }) {
   );
 }
 
-/** Opens the account picker for an automation left with two accounts. */
-function AccountConflictEntryButton({
-  entry,
-  title,
-  ruleLabel,
-}: {
-  readonly entry: WorkflowAutomationEntry;
-  readonly title: string;
-  readonly ruleLabel: string;
-}) {
-  const openAccountConflict = useSet(openAccountConflict$);
-  return (
-    <button
-      type="button"
-      onClick={() => {
-        const conflict = entry.automation.accountConflict;
-        if (conflict) {
-          openAccountConflict({
-            automationId: entry.automation.id,
-            workflowTitle: title,
-            conflict,
-          });
-        }
-      }}
-      aria-label={i18n.t(
-        ($) => {
-          return $.workflows.migration.accountConflict.open;
-        },
-        { title },
-      )}
-      className="flex min-w-0 flex-1 items-center gap-2 rounded-md text-left focus-visible:outline focus-visible:outline-2 focus-visible:outline-ring"
-    >
-      <span
-        className={cn(
-          connectorPillClassName({}),
-          "border-amber-300/80 bg-amber-50 text-amber-700 dark:border-amber-800 dark:bg-amber-950/30 dark:text-amber-400",
-        )}
-      >
-        <ConnectorPillMarker dotClassName={automationDotClass(entry)} />
-        {i18n.t(($) => {
-          return $.workflows.list.actionRequired;
-        })}
-      </span>
-      <span className="min-w-0 flex-1 truncate text-xs text-muted-foreground">
-        {ruleLabel}
-      </span>
-      <AlertTriangle
-        size={13}
-        className="shrink-0 text-amber-600 dark:text-amber-400"
-      />
-    </button>
-  );
-}
-
 /** The connector pill's list of automations, shown when the pill is clicked. */
 function ConnectorPopoverList({
   entries,
@@ -356,13 +292,7 @@ function ConnectorPopoverList({
             key={entry.automation.id}
             className="flex items-center gap-2 rounded-lg px-2 py-1.5 hover:bg-state-hover"
           >
-            {entry.automation.accountConflict ? (
-              <AccountConflictEntryButton
-                entry={entry}
-                title={title}
-                ruleLabel={ruleLabel}
-              />
-            ) : actionRequired ? (
+            {actionRequired ? (
               <Link
                 pathname={ROUTES.workflowDetailAutomations}
                 options={{
@@ -1524,7 +1454,6 @@ export function WorkflowsPage() {
       <CreateWorkflowAutomationDialog />
       <WorkflowWebhookUpgradeDialog />
       <HowWorkflowsWorkDialog />
-      <AccountConflictDialog />
     </div>
   );
 }

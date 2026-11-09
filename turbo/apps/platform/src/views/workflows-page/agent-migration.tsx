@@ -1,7 +1,7 @@
 // What members see after legacy agents become workflows: row labels, the
-// one-time notice, the "How workflows work" dialog and the account picker for
-// automations whose former agent used a different connector account.
-import type { FormEvent, ReactNode } from "react";
+// one-time notice, the "How workflows work" dialog and the migrated workflow
+// settings rows.
+import type { ReactNode } from "react";
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import type {
@@ -24,8 +24,6 @@ import {
   DialogFooter,
   DialogHeader,
   DialogTitle,
-  Radio,
-  RadioGroup,
 } from "@okouai/ui";
 import { Alert } from "@okouai/ui/components/ui/alert";
 import { useTranslation } from "react-i18next";
@@ -34,19 +32,13 @@ import { nowDate } from "../../lib/time.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { onDomEventFn } from "../../signals/utils.ts";
 import {
-  accountConflictTarget$,
   agentMigrationNoticeVisible$,
-  closeAccountConflict$,
   dismissAgentMigrationNotice$,
   howWorkflowsWorkOpen$,
   migratedAgentWorkflows$,
   removeWorkflowInclude$,
-  resolveAccountConflict$,
-  selectConflictConnection$,
-  selectedConflictConnectionId$,
   setHowWorkflowsWorkOpen$,
   workflowMigrationBadge,
-  type AccountConflictTarget,
   type MigratedAgentWorkflow,
 } from "../../signals/workflows-page/agent-migration.ts";
 import { locale$ } from "../../signals/locale.ts";
@@ -264,137 +256,6 @@ export function HowWorkflowsWorkDialog() {
             })}
           </Button>
         </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-}
-
-function AccountConflictForm({
-  target,
-}: {
-  readonly target: AccountConflictTarget;
-}) {
-  const { t } = useTranslation();
-  const close = useSet(closeAccountConflict$);
-  const pageSignal = useGet(pageSignal$);
-  const [submit, resolve] = useLoadableSet(resolveAccountConflict$);
-  const { conflict } = target;
-  const selected = useGet(selectedConflictConnectionId$) ?? "";
-  const select = useSet(selectConflictConnection$);
-  const submitting = submit.state === "loading";
-  return (
-    <form
-      className="flex flex-col gap-4"
-      onSubmit={onDomEventFn(async (event: FormEvent) => {
-        // The form owns submission; the dialog stays in the SPA.
-        event.preventDefault();
-        await resolve(
-          { automationId: target.automationId, connectionId: selected },
-          pageSignal,
-        );
-      })}
-    >
-      <DialogHeader>
-        <DialogTitle>
-          {t(
-            ($) => {
-              return $.workflows.migration.accountConflict.title;
-            },
-            { connector: conflict.connectorLabel },
-          )}
-        </DialogTitle>
-        <DialogDescription>
-          {t(
-            ($) => {
-              return $.workflows.migration.accountConflict.description;
-            },
-            {
-              workflow: target.workflowTitle,
-              agent: conflict.agentDisplayName,
-              connector: conflict.connectorLabel,
-            },
-          )}
-        </DialogDescription>
-      </DialogHeader>
-      <RadioGroup
-        value={selected}
-        onValueChange={(value) => {
-          select(String(value));
-        }}
-        className="flex flex-col gap-2"
-      >
-        {conflict.options.map((option) => {
-          return (
-            <label
-              key={option.connectionId}
-              className="flex cursor-pointer items-start gap-3 rounded-xl border border-border px-4 py-3 transition-colors hover:bg-state-hover has-[[data-checked]]:border-primary"
-            >
-              <Radio value={option.connectionId} className="mt-0.5" />
-              <span className="min-w-0">
-                <span className="block truncate text-sm font-medium text-foreground">
-                  {option.accountLabel}
-                </span>
-                <span className="block text-xs text-muted-foreground">
-                  {option.source === "agent"
-                    ? t(
-                        ($) => {
-                          return $.workflows.migration.accountConflict
-                            .usedByAgent;
-                        },
-                        { agent: conflict.agentDisplayName },
-                      )
-                    : t(($) => {
-                        return $.workflows.migration.accountConflict
-                          .connectedToOkou;
-                      })}
-                </span>
-              </span>
-            </label>
-          );
-        })}
-      </RadioGroup>
-      <DialogFooter>
-        <Button
-          type="button"
-          variant="outline"
-          onClick={() => {
-            close();
-          }}
-        >
-          {t(($) => {
-            return $.workflows.migration.accountConflict.later;
-          })}
-        </Button>
-        <Button type="submit" disabled={!selected || submitting}>
-          {t(($) => {
-            return $.workflows.migration.accountConflict.confirm;
-          })}
-        </Button>
-      </DialogFooter>
-    </form>
-  );
-}
-
-/**
- * Opened from an automation's "Action required". Until the owner picks an
- * account the automation skips its runs.
- */
-export function AccountConflictDialog() {
-  const target = useGet(accountConflictTarget$);
-  const close = useSet(closeAccountConflict$);
-  return (
-    <Dialog
-      open={target !== null}
-      onOpenChange={(open) => {
-        if (!open) {
-          close();
-        }
-      }}
-    >
-      <DialogContent smMaxWidth="md">
-        {target ? (
-          <AccountConflictForm key={target.automationId} target={target} />
-        ) : null}
       </DialogContent>
     </Dialog>
   );
