@@ -120,13 +120,6 @@ from logging_utils import (
     project_url_for_proxy_log,
     shutdown_log_writer,
 )
-from request_authority import (
-    AuthorityValidationError,
-    TrustedAuthority,
-    custom_http_auth_is_allowed,
-    custom_http_binding,
-    get_trusted_authority,
-)
 
 # HTTP status boundaries used in response-phase classification.
 _HTTP_STATUS_UNAUTHORIZED = 401
@@ -324,7 +317,7 @@ def _classify_request_for_flow(
 def _classify_request_for_flow_with_trusted_authority(
     flow: http.HTTPFlow,
     *,
-    trusted_authority: TrustedAuthority,
+    trusted_authority: request_authority.TrustedAuthority,
     defer_unresolved_public_destination: bool = False,
 ) -> request_classification.RequestClassification:
     return request_classification.classify_request_with_trusted_authority(
@@ -364,8 +357,8 @@ def _admit_connector_auth_request(
     *,
     platform_connector_auth: bool,
 ) -> bool:
-    if flow.request.scheme == "http" and custom_http_binding(flow) is not None:
-        get_trusted_authority(flow)
+    if flow.request.scheme == "http" and request_authority.custom_http_binding(flow) is not None:
+        request_authority.get_trusted_authority(flow)
         return True
     if not upstream_admission.ensure_bound_destination(
         flow,
@@ -410,8 +403,8 @@ def _prebind_bounded_requestheaders_upstream_destination(
         return None
     api_url = get_api_url()
     try:
-        trusted_authority = get_trusted_authority(flow)
-    except AuthorityValidationError:
+        trusted_authority = request_authority.get_trusted_authority(flow)
+    except request_authority.AuthorityValidationError:
         return None
     flow.metadata[metadata_keys.TRUSTED_AUTHORITY_HOST] = trusted_authority.host
     is_api_destination = upstream_admission.api_destination_matches(
@@ -519,7 +512,7 @@ def _connector_auth_destination_is_current(
     current: request_classification.FirewallAllow,
 ) -> bool:
     if flow.request.scheme == "http":
-        return custom_http_auth_is_allowed(
+        return request_authority.custom_http_auth_is_allowed(
             flow, current.firewall_allow.api_entry, current.sandbox_info
         )
     if flow.error is not None or flow.request.scheme != "https" or ctx.options.ssl_insecure:
@@ -542,7 +535,7 @@ def _connector_auth_destination_is_current(
         # pending-binding path, but never substitute DNS for a lost/failed endpoint.
         return direct_binding_matches and not flow.server_conn.error
 
-    authority = get_trusted_authority(flow)
+    authority = request_authority.get_trusted_authority(flow)
     wire_authority = flow.request.authority
     wire_headers = flow.request.headers.fields
     # Public request.host selects normal acquisition and its TLS hostname.
@@ -737,7 +730,7 @@ def _requestheaders(flow: http.HTTPFlow) -> Awaitable[None] | None:
         _block_custom_http_invalid_input(flow, error)
         _mark_local_requestheaders_response(flow)
         return None
-    except AuthorityValidationError as error:
+    except request_authority.AuthorityValidationError as error:
         _reject_custom_http_requestheaders(flow, error)
         return None
     if preparation is not None:
@@ -761,7 +754,7 @@ def _block_custom_http_invalid_input(
 
 
 def _reject_custom_http_requestheaders(
-    flow: http.HTTPFlow, error: AuthorityValidationError
+    flow: http.HTTPFlow, error: request_authority.AuthorityValidationError
 ) -> None:
     # Preserve early error framing rather than forwarding an unadmitted body.
     _classify_request_for_flow(flow)
@@ -774,7 +767,7 @@ async def _prepare_custom_http_requestheaders(
 ) -> None:
     try:
         await preparation
-    except AuthorityValidationError as error:
+    except request_authority.AuthorityValidationError as error:
         _reject_custom_http_requestheaders(flow, error)
         return
     continuation = _requestheaders_after_authority(flow, request_end_stream=request_end_stream)
@@ -914,7 +907,7 @@ def _requestheaders_after_authority(
             request_classification.firewall_allow_uses_public_destination(
                 classification.firewall_allow
             )
-            or custom_http_binding(flow) is not None
+            or request_authority.custom_http_binding(flow) is not None
         )
         and (
             classification.kind == "firewall_policy_allow"
@@ -1518,7 +1511,7 @@ def _revalidate_current_firewall_authorization_for_request(
 def _current_firewall_authorization_classification(
     flow: http.HTTPFlow,
     *,
-    original_authority: TrustedAuthority,
+    original_authority: request_authority.TrustedAuthority,
 ) -> request_classification.RequestClassification:
     preserved_probe_metadata = {
         key: flow.metadata[key]
@@ -1748,7 +1741,7 @@ async def request(flow: http.HTTPFlow) -> None:
         except custom_http.InvalidFirewallInputError as error:
             _block_custom_http_invalid_input(flow, error)
             return
-        except AuthorityValidationError as error:
+        except request_authority.AuthorityValidationError as error:
             _classify_request_for_flow(flow)
             http_local_responses.block_authority_validation_error(flow, error)
             return
