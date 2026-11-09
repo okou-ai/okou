@@ -1356,6 +1356,12 @@ jobs:
           API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
 
+      - name: Use online Clerk verification for the timing baseline
+        if: github.event_name == 'pull_request' && github.event.pull_request.number == 46121
+        env:
+          API_ENV_FILE: ${{ steps.api-deploy-env.outputs.file }}
+        run: sed -i '/^CLERK_JWT_KEY=/d' "$API_ENV_FILE"
+
       # Validate the final rendered environment before deploying either API
       # target. Its decoded record lets their runtimes skip schema validation.
       - name: Validate API runtime environment
