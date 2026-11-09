@@ -616,7 +616,10 @@ impl ApiProvider {
         );
     }
 
-    async fn wait_for_discovery_wakeup(&self) -> Option<DiscoveryWakeup> {
+    async fn wait_for_discovery_wakeup(
+        &self,
+        mut preceding_poll_deadline: Option<tokio::time::Instant>,
+    ) -> Option<DiscoveryWakeup> {
         // Subscribe before reading deadlines; a newly recorded/released hold
         // must interrupt an existing wait without postponing unrelated polls.
         let mut admission_changed = self.admission_deferrals.subscribe();
@@ -625,7 +628,15 @@ impl ApiProvider {
                 return Some(DiscoveryWakeup::Direct(Box::new(candidate)));
             }
 
-            let admission_deadline = self.admission_deferrals.snapshot().next_deadline;
+            // Keep the preceding poll's deadline even if result processing
+            // pruned its holder just before this wait subscribed.
+            let admission_deadline = self
+                .admission_deferrals
+                .snapshot()
+                .next_deadline
+                .into_iter()
+                .chain(preceding_poll_deadline)
+                .min();
             tokio::select! {
                 biased;
                 () = self.cancel.cancelled() => {
@@ -647,6 +658,7 @@ impl ApiProvider {
                         std::future::pending::<()>().await;
                     }
                 } => {
+                    preceding_poll_deadline = None;
                     self.poll_wakeups.request_immediate_poll();
                 }
             }
@@ -753,8 +765,12 @@ impl JobProvider for ApiProvider {
     }
 
     async fn discover(&self) -> Option<JobCandidate> {
+        let mut preceding_poll_deadline = None;
         loop {
-            let due = match self.wait_for_discovery_wakeup().await? {
+            let due = match self
+                .wait_for_discovery_wakeup(preceding_poll_deadline.take())
+                .await?
+            {
                 DiscoveryWakeup::Direct(direct) => {
                     let run_id = direct.run_id();
                     let profile = direct.profile_name().to_owned();
@@ -773,6 +789,7 @@ impl JobProvider for ApiProvider {
             let poll_due_started_at = Instant::now();
             let cooldowns = self.claim_cooldowns.snapshot().await;
             let admission = self.admission_deferrals.snapshot();
+            preceding_poll_deadline = admission.next_deadline;
             let excluded_run_ids = self
                 .in_flight_claims
                 .poll_exclusions(&admission.run_ids, &cooldowns.run_ids);
@@ -1077,9 +1094,10 @@ impl JobProvider for ApiProvider {
     }
 
     async fn release_candidate_deferral(&self, run_id: RunId) {
-        if self.admission_deferrals.release(run_id) {
-            self.poll_wakeups.request_immediate_poll();
-        }
+        self.admission_deferrals.release(run_id);
+        // Reactor's waiter ended even if lazy expiry already pruned the hold.
+        // Discovery may have been suspended behind full claim slots meanwhile.
+        self.poll_wakeups.request_immediate_poll();
     }
 
     async fn clear_candidate_deferrals(&self) {

@@ -25,6 +25,114 @@ async fn selected_exact_candidate_rechecks_home_after_watcher_loss() {
 }
 
 #[tokio::test]
+async fn selected_exact_candidate_rechecks_busy_home_after_unlock_without_event() {
+    use crate::home_image_cache::{
+        HomeCacheTerminalStatus, HomeImageLeaseIdentity, HomeImageLeaseRequest,
+        HomeImagePromotionOutcome, HomeImagePromotionRequest,
+    };
+    use crate::storage_fingerprints::StorageFingerprints;
+
+    let mut profiles = test_profiles();
+    profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
+    let overrides = Arc::new(MockSandboxOverrides::new());
+    let execution = MockLifecycleGate::new();
+    overrides.set_wait_process_lifecycle_gate(execution.clone());
+    let (mut config, env) = mock_run_config_with_overrides(profiles, 2, 8192, 1, overrides.clone());
+    config.capacity.max_idle = 0;
+    let paths = RunnerPaths::new(config.paths.base_dir.clone());
+    let cache = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    Arc::get_mut(&mut config.exec_config).unwrap().home_cache = Some(cache);
+    let budget = config.capacity.budget.clone();
+    let cache_dir = config.paths.home.home_image_cache_dir();
+    let rootfs_hash = config.runner.profiles["vm0/default"].rootfs_hash.clone();
+    let publisher = HomeImageCache::shared(paths.clone(), &config.paths.home, &config.runner.group);
+    let source = RunId::new_v4();
+    let successor = RunId::new_v4();
+    let sandbox_id = sandbox::SandboxId::new_v4();
+    let key = "thread:exact-busy-home";
+    let lease = publisher
+        .lease_active(HomeImageLeaseRequest {
+            identity: HomeImageLeaseIdentity {
+                run_id: source,
+                sandbox_id,
+                profile_name: "vm0/default",
+                rootfs_hash: &rootfs_hash,
+                reuse_key: Some(key),
+                working_dir: "/home/user/workspace",
+                image_size_bytes: 1024 * 1024,
+            },
+            home_drive_available: true,
+        })
+        .await;
+    let active_image = paths.active_home_image(&sandbox_id);
+    tokio::fs::create_dir_all(active_image.parent().unwrap())
+        .await
+        .unwrap();
+    tokio::fs::write(&active_image, vec![0x5a; 1024 * 1024])
+        .await
+        .unwrap();
+    let publication = lease
+        .into_promotion_context(HomeImagePromotionRequest {
+            run_id: source,
+            sandbox_id,
+            restored_session_identity: None,
+            terminal_status: HomeCacheTerminalStatus::Success,
+            completed_at: "2026-10-27T10:00:00Z".into(),
+            storage_fingerprints: StorageFingerprints::default(),
+        })
+        .unwrap();
+    let runner = tokio::spawn(run(config));
+    wait_discover_entered(&env, WAIT).await;
+    let moved = cache_dir.with_extension("moved");
+    tokio::fs::rename(&cache_dir, &moved).await.unwrap();
+    tokio::fs::rename(&moved, &cache_dir).await.unwrap();
+    assert_eq!(
+        publication.promote().await.unwrap(),
+        HomeImagePromotionOutcome::Promoted
+    );
+    env.provider
+        .set_claim_result(successor, Some(context_with_reuse_key(successor, key)));
+    let candidate = exact_source_preference_candidate(successor, key, source);
+    let deadline = candidate.runner_preference().unwrap().deadline();
+    env.handle.discover_tx.send(candidate).unwrap();
+    assert!(env.handle.wait_deferred_poll_count(1, WAIT).await);
+    assert!(env.handle.claim_candidates().is_empty());
+    assert_eq!(budget.allocated(), (0, 0, 0));
+    // flock unlock emits no filesystem event, and the directory watch was lost.
+    drop(publication);
+    execution.wait_entered(1, WAIT).await.unwrap();
+    let claims = env.handle.claim_candidates();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0].runner_preference().unwrap().deadline(), deadline);
+    let configs = overrides.create_configs();
+    let seed = configs[0]
+        .home_drive
+        .as_ref()
+        .unwrap()
+        .seed_image
+        .as_ref()
+        .unwrap();
+    let seed_path = match seed {
+        sandbox::HomeDriveSeedImage::Move(path) | sandbox::HomeDriveSeedImage::Copy(path) => path,
+    };
+    assert_eq!(
+        tokio::fs::read(seed_path).await.unwrap(),
+        vec![0x5a; 1024 * 1024]
+    );
+    execution.release_one();
+    assert_eq!(
+        env.handle
+            .wait_completion(successor, WAIT)
+            .await
+            .unwrap()
+            .exit_code,
+        0
+    );
+    shutdown(&env, runner).await;
+    assert_eq!(budget.allocated(), (0, 0, 0));
+}
+
+#[tokio::test]
 async fn multiple_exact_candidates_wait_without_blocking_unrelated_work() {
     let mut profiles = test_profiles();
     profiles.get_mut("vm0/default").unwrap().home_disk_mb = 1;
