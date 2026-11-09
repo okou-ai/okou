@@ -999,10 +999,12 @@
     "computerUse": {
       "actionFailed": "Tidak dapat mengizinkan komputer ini. Muat ulang obrolan untuk mencoba lagi.",
       "authorize": "Otorisasi",
+      "authorizeAndContinue": "Izinkan dan lanjutkan",
       "authorized": "Diotorisasi",
-      "authorizedDescription": "Akses komputer diaktifkan untuk proses berikutnya dalam obrolan ini.",
+      "authorizedDescription": "Akses komputer diaktifkan untuk chat ini.",
       "cardDescription": "Pilih komputer untuk obrolan ini. Ini akan memutus peramban cloud.",
       "checkingCompatibility": "Memeriksa kompatibilitas",
+      "continueDescription": "Pilih komputer dan lanjutkan tugas secara otomatis. Ini memutus browser cloud.",
       "description": "Pilih komputer online untuk digunakan {{assistantName}} di {{source}}.",
       "downloadMac": "Unduh untuk macOS",
       "lastSeen": "Terakhir terlihat {{date}}",
@@ -1010,6 +1012,7 @@
       "macRequirement": "Memerlukan Mac Apple silicon dengan macOS 14 atau yang lebih baru. Mac Intel tidak didukung.",
       "noHostsDescription": "Buka {{desktopApplicationName}} di Mac Anda agar perangkat terhubung.",
       "noHostsTitle": "Tidak ada komputer online",
+      "requestSuperseded": "Chat ini memiliki tugas yang lebih baru. Minta izin Computer Use yang baru.",
       "selectComputer": "Pilih komputer",
       "sources": {
         "chat": "thread chat ini",

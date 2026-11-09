@@ -28,6 +28,7 @@ function mockRequest(
     hosts?: ComputerUseHost[];
     threadId?: string;
     completed?: boolean;
+    blockedReason?: "run_active" | "chat_busy" | "request_superseded" | null;
   } = {},
 ) {
   let completed = options.completed ?? false;
@@ -35,6 +36,9 @@ function mockRequest(
   context.mocks.api(contract.get, ({ respond }) => {
     return respond(200, {
       source: "chat",
+      ...(options.blockedReason !== undefined
+        ? { continuation: { blockedReason: options.blockedReason } }
+        : {}),
       chatThreadId: options.threadId ?? THREAD_ID,
       expiresAt: new Date(now() + 60 * 60 * 1000).toISOString(),
       completedAt: completed ? new Date(now()).toISOString() : null,
@@ -107,9 +111,7 @@ test("A user authorizes the only online computer directly in the chat", async ()
     expect(button(card, "Authorized")).toBeDisabled();
   });
   expect(
-    within(card).getByText(
-      "Computer access enabled for future runs in this chat.",
-    ),
+    within(card).getByText("Computer access enabled for this chat."),
   ).toBeInTheDocument();
 });
 
@@ -257,5 +259,52 @@ test("Completed requests remain authorized when the chat is reopened", async () 
   const card = await setupChat();
   await waitFor(() => {
     expect(button(card, "Authorized")).toBeDisabled();
+  });
+});
+
+test("Web authorization promises continuation and waits for the source Run", async () => {
+  mockRequest({ blockedReason: "run_active" });
+  const card = await setupChat();
+  await waitFor(() => {
+    return expect(button(card, "Authorize and continue")).toBeDisabled();
+  });
+  expect(
+    within(card).getByText(
+      "Wait for the requesting Run to finish before approving.",
+    ),
+  ).toBeInTheDocument();
+});
+
+test("An obsolete authorization card asks for a fresh request", async () => {
+  mockRequest({ blockedReason: "request_superseded" });
+  const card = await setupChat();
+  await waitFor(() => {
+    return expect(button(card, "Authorize and continue")).toBeDisabled();
+  });
+  expect(
+    within(card).getByText(
+      "This chat has a newer task. Ask for a new Computer Use request.",
+    ),
+  ).toBeInTheDocument();
+});
+
+test("Web authorization refreshes the card after the server enqueues continuation", async () => {
+  const request = mockRequest({ blockedReason: null });
+  context.mocks.api(contract.apply, ({ respond }) => {
+    request.complete();
+    return respond(200, {
+      ok: true,
+      source: "chat",
+      computerUseHostId: HOST_ID,
+      continuationEnqueued: true,
+    });
+  });
+  const card = await setupChat();
+  await waitFor(() => {
+    return expect(button(card, "Authorize and continue")).toBeEnabled();
+  });
+  click(button(card, "Authorize and continue"));
+  await waitFor(() => {
+    return expect(button(card, "Authorized")).toBeDisabled();
   });
 });

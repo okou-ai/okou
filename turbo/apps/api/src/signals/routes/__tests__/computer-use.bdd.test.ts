@@ -250,6 +250,8 @@ describe("FILE-03 desktop computer-use runtime", () => {
         const initialDirectory = await api.listComputerUseHosts(actor);
         expect(readable.hosts).toStrictEqual(initialDirectory.hosts);
 
+        await scenario.cancelRun(actor, run.runId);
+        await scenario.run(flushWaitUntilForTest);
         const applied = await api.applyComputerUseAuthorizationRequest(
           actor,
           requestToken,
@@ -257,6 +259,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         );
         expect(applied).toStrictEqual({
           ok: true,
+          continuationEnqueued: true,
           source: "chat",
           computerUseHostId: host.hostId,
         });
@@ -491,6 +494,8 @@ describe("FILE-03 desktop computer-use runtime", () => {
               hosts: [expect.objectContaining({ id: host.hostId })],
             });
             if (completeBeforeExpiry) {
+              await scenario.cancelRun(actor, run.runId);
+              await scenario.run(flushWaitUntilForTest);
               await expect(
                 api.applyComputerUseAuthorizationRequest(
                   actor,
@@ -499,6 +504,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
                 ),
               ).resolves.toStrictEqual({
                 ok: true,
+                continuationEnqueued: true,
                 source: "chat",
                 computerUseHostId: host.hostId,
               });
@@ -545,7 +551,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
     },
   );
 
-  it("accepts repeat authorization with updated completion and distinct ordered events", async () => {
+  it("waits for the source Run and resumes exactly once across approval retries", async () => {
     const scenario = createScenario();
     const {
       bdd,
@@ -553,174 +559,195 @@ describe("FILE-03 desktop computer-use runtime", () => {
       createAuthorizationScenario,
       readAuthorizationThreadLifecycle,
     } = scenario;
-    return await withNowScopeForTest(() => {
-      return scenario.run(async () => {
-        const base = now();
-        await withMockNowForTest(base, async () => {
-          const actor = bdd.user();
-          const { chat, run, created, requestToken } =
-            await createAuthorizationScenario(actor);
-          const host = await api.startComputerUseHost(actor);
-          for (const offset of [1000, 2000]) {
-            mockNow(base + offset);
-            await expect(
-              api.applyComputerUseAuthorizationRequest(
-                actor,
-                requestToken,
-                host.hostId,
-              ),
-            ).resolves.toStrictEqual({
-              ok: true,
-              source: "chat",
-              computerUseHostId: host.hostId,
-            });
-            await expect(
-              api.readComputerUseAuthorizationRequest(actor, requestToken),
-            ).resolves.toMatchObject({
-              expiresAt: created.expiresAt,
-              completedAt: new Date(base + offset).toISOString(),
-              computerUseHostId: host.hostId,
-            });
-            await expect(
-              scenario.run(() => {
-                return chat.readThreadMetadata(actor, run.threadId);
-              }),
-            ).resolves.toMatchObject({
-              computerUseHostId: host.hostId,
-              cloudBrowserEnabled: false,
-            });
-          }
-          const lifecycle = await readAuthorizationThreadLifecycle(actor);
-          const appliedEvents = lifecycle.events.filter((event) => {
+    await scenario.run(async () => {
+      const actor = bdd.user();
+      const { chat, run, requestToken } =
+        await createAuthorizationScenario(actor);
+      const host = await api.startComputerUseHost(actor, {
+        supportedCapabilities: ["apps.list"],
+      });
+      await expect(
+        api.readComputerUseAuthorizationRequest(actor, requestToken),
+      ).resolves.toMatchObject({
+        continuation: { blockedReason: "run_active" },
+      });
+      await api.requestApplyComputerUseAuthorizationRequest(
+        actor,
+        requestToken,
+        host.hostId,
+        [409],
+      );
+      await scenario.cancelRun(actor, run.runId);
+      await scenario.run(flushWaitUntilForTest);
+      await expect(
+        api.readComputerUseAuthorizationRequest(actor, requestToken),
+      ).resolves.toMatchObject({ continuation: { blockedReason: null } });
+      const approvals = await Promise.all(
+        [1, 2].map(() => {
+          return api.requestApplyComputerUseAuthorizationRequest(
+            actor,
+            requestToken,
+            host.hostId,
+            [200, 409],
+          );
+        }),
+      );
+      expect(
+        approvals.some((approval) => {
+          return approval.status === 200;
+        }),
+      ).toBeTruthy();
+      await scenario.run(flushWaitUntilForTest);
+      await expect(
+        api.applyComputerUseAuthorizationRequest(
+          actor,
+          requestToken,
+          host.hostId,
+        ),
+      ).resolves.toMatchObject({ continuationEnqueued: false });
+      const { events } = await chat.listThreadEvents(actor, run.threadId);
+      const continuations = events.filter((event) => {
+        return (
+          event.eventType === "input.prompt" &&
+          event.runId &&
+          event.userMessage?.parts.some((part) => {
             return (
-              event.kind === "computer_use_host_updated" &&
-              event.chatThreadId === run.threadId
+              part.type === "text" &&
+              part.text.startsWith("Computer Use was authorized")
             );
+          })
+        );
+      });
+      expect(continuations).toHaveLength(1);
+      const continuation = continuations[0];
+      if (!continuation?.runId) {
+        throw new Error("Expected approval to start a new Run");
+      }
+      const claim = await scenario.claimExisting(actor, continuation.runId);
+      const token = claim.platformEnvironment.OKOU_TOKEN;
+      if (!token) {
+        throw new Error("Expected a claimed Run token");
+      }
+      const directory = await api.listComputerUseHosts({ bearer: token });
+      expect(
+        directory.hosts.map((item) => {
+          return item.id;
+        }),
+      ).toStrictEqual([host.hostId]);
+      const lifecycle = await readAuthorizationThreadLifecycle(actor);
+      expect(
+        lifecycle.events.filter((event) => {
+          return (
+            event.kind === "computer_use_host_updated" &&
+            event.chatThreadId === run.threadId
+          );
+        }),
+      ).toHaveLength(1);
+      await scenario.cancelRun(actor, continuation.runId);
+    });
+  });
+
+  it("keeps the winning computer when two tabs authorize different hosts", async () => {
+    const scenario = createScenario();
+    const { bdd, api, createAuthorizationScenario } = scenario;
+    await scenario.run(async () => {
+      const actor = bdd.user();
+      const { chat, run, requestToken } =
+        await createAuthorizationScenario(actor);
+      const hosts = await Promise.all(
+        ["First Mac", "Second Mac"].map((hostName) => {
+          return api.startComputerUseHost(actor, {
+            hostName,
+            installationId: randomUUID(),
           });
-          expect(appliedEvents).toStrictEqual([
-            expect.objectContaining({
-              computerUseHostId: host.hostId,
-              cloudBrowserEnabled: false,
-              createdAt: new Date(base + 1000).toISOString(),
-            }),
-            expect.objectContaining({
-              computerUseHostId: host.hostId,
-              cloudBrowserEnabled: false,
-              createdAt: new Date(base + 2000).toISOString(),
-            }),
-          ]);
-          const [first, second] = appliedEvents;
-          if (!first || !second) {
-            throw new Error("Expected both authorization events");
-          }
-          expect(second.seqId).toBeGreaterThan(first.seqId);
-          expect(second.id).not.toBe(first.id);
-        });
+        }),
+      );
+      await scenario.cancelRun(actor, run.runId);
+      await scenario.run(flushWaitUntilForTest);
+      const decisions = await Promise.all(
+        hosts.map((host) => {
+          return api.requestApplyComputerUseAuthorizationRequest(
+            actor,
+            requestToken,
+            host.hostId,
+            [200, 409],
+          );
+        }),
+      );
+      const winner = decisions.find((decision) => {
+        return decision.status === 200;
+      });
+      if (!winner || winner.status !== 200) {
+        throw new Error("Expected one approved computer");
+      }
+      expect(
+        decisions.filter((decision) => {
+          return decision.status === 409;
+        }),
+      ).toHaveLength(1);
+      await expect(
+        chat.readThreadMetadata(actor, run.threadId),
+      ).resolves.toMatchObject({
+        computerUseHostId: winner.body.computerUseHostId,
+      });
+      // A stale tab must not select its different computer after completion.
+      const loser = hosts.find((host) => {
+        return host.hostId !== winner.body.computerUseHostId;
+      });
+      if (!loser) {
+        throw new Error("Expected the other computer");
+      }
+      await api.requestApplyComputerUseAuthorizationRequest(
+        actor,
+        requestToken,
+        loser.hostId,
+        [409],
+      );
+      await expect(
+        chat.readThreadMetadata(actor, run.threadId),
+      ).resolves.toMatchObject({
+        computerUseHostId: winner.body.computerUseHostId,
       });
     });
   });
 
-  it("orders concurrent desktop authorizations and retains the last event's preference", async () => {
+  it("leaves newer chat work in control instead of resuming an old authorization card", async () => {
     const scenario = createScenario();
-    const {
-      bdd,
-      api,
-      createAuthorizationScenario,
-      readAuthorizationThreadLifecycle,
-    } = scenario;
-    return await withNowScopeForTest(() => {
-      return scenario.run(async () => {
-        await withMockNowForTest(now(), async () => {
-          const actor = bdd.user();
-          const { chat, run, requestToken } =
-            await createAuthorizationScenario(actor);
-          const firstHost = await api.startComputerUseHost(actor, {
-            hostName: "First authorization desktop",
-          });
-          const secondHost = await api.startComputerUseHost(actor, {
-            hostName: "Second authorization desktop",
-          });
-          const before = await readAuthorizationThreadLifecycle(actor);
-          const created = before.events.find((event) => {
-            return (
-              event.kind === "created" && event.chatThreadId === run.threadId
-            );
-          });
-          if (!created) {
-            throw new Error("Expected the publicly created thread event");
-          }
-          const responses = await Promise.all(
-            [firstHost, secondHost].map((host) => {
-              return api.applyComputerUseAuthorizationRequest(
-                actor,
-                requestToken,
-                host.hostId,
-              );
-            }),
-          );
-          expect(responses).toStrictEqual(
-            [firstHost, secondHost].map((host) => {
-              return {
-                ok: true,
-                source: "chat",
-                computerUseHostId: host.hostId,
-              };
-            }),
-          );
-          const lifecycle = await readAuthorizationThreadLifecycle(actor);
-          const events = lifecycle.events.filter((event) => {
-            return (
-              event.kind === "computer_use_host_updated" &&
-              event.chatThreadId === run.threadId
-            );
-          });
-          expect(events).toHaveLength(2);
-          expect(
-            new Set(
-              events.map((event) => {
-                return event.computerUseHostId;
-              }),
-            ),
-          ).toStrictEqual(new Set([firstHost.hostId, secondHost.hostId]));
-          for (const event of events) {
-            expect(event).toStrictEqual({
-              id: expect.any(String),
-              seqId: expect.any(Number),
-              kind: "computer_use_host_updated",
-              chatThreadId: run.threadId,
-              agentId: created.agentId,
-              title: null,
-              pinOrder: null,
-              selectedModel: null,
-              serviceTier: null,
-              computerUseHostId: event.computerUseHostId,
-              cloudBrowserEnabled: false,
-              createdAt: new Date(now()).toISOString(),
-            });
-          }
-          const [first, last] = events;
-          if (!first || !last) {
-            throw new Error("Expected both concurrent authorization events");
-          }
-          expect(first.seqId).toBeGreaterThan(created.seqId);
-          expect(last.seqId).toBeGreaterThan(first.seqId);
-          expect(last.id).not.toBe(first.id);
-          await expect(
-            scenario.run(() => {
-              return chat.readThreadMetadata(actor, run.threadId);
-            }),
-          ).resolves.toMatchObject({
-            computerUseHostId: last.computerUseHostId,
-            cloudBrowserEnabled: false,
-          });
-          await expect(
-            api.readComputerUseAuthorizationRequest(actor, requestToken),
-          ).resolves.toMatchObject({
-            completedAt: new Date(now()).toISOString(),
-            computerUseHostId: last.computerUseHostId,
-          });
-        });
+    const { bdd, api, createAuthorizationScenario } = scenario;
+    await scenario.run(async () => {
+      const actor = bdd.user();
+      const { chat, run, requestToken } =
+        await createAuthorizationScenario(actor);
+      const host = await api.startComputerUseHost(actor);
+      await scenario.cancelRun(actor, run.runId);
+      await scenario.run(flushWaitUntilForTest);
+      const { agentId } = await scenario.prepareActor(actor);
+      await chat.requestSendEvent(
+        actor,
+        {
+          agentId,
+          threadId: run.threadId,
+          prompt: "Work on this newer task",
+          clientEventId: randomUUID(),
+        },
+        [201],
+      );
+      await scenario.run(flushWaitUntilForTest);
+      await expect(
+        api.readComputerUseAuthorizationRequest(actor, requestToken),
+      ).resolves.toMatchObject({
+        completedAt: null,
+        continuation: { blockedReason: "request_superseded" },
       });
+      await api.requestApplyComputerUseAuthorizationRequest(
+        actor,
+        requestToken,
+        host.hostId,
+        [409],
+      );
+      await expect(
+        chat.readThreadMetadata(actor, run.threadId),
+      ).resolves.toMatchObject({ computerUseHostId: null });
     });
   });
 
@@ -788,6 +815,8 @@ describe("FILE-03 desktop computer-use runtime", () => {
           "Computer-use host not found",
         );
 
+        await scenario.cancelRun(actor, run.runId);
+        await scenario.run(flushWaitUntilForTest);
         const applied = await api.applyComputerUseAuthorizationRequest(
           actor,
           requestToken,
@@ -795,6 +824,7 @@ describe("FILE-03 desktop computer-use runtime", () => {
         );
         expect(applied).toStrictEqual({
           ok: true,
+          continuationEnqueued: true,
           source: "chat",
           computerUseHostId: onlineHost.hostId,
         });
@@ -807,7 +837,6 @@ describe("FILE-03 desktop computer-use runtime", () => {
             );
           }),
         ).resolves.toMatchObject({ computerUseHostId: onlineHost.hostId });
-        await scenario.cancelRun(actor, run.runId);
       });
     });
   });

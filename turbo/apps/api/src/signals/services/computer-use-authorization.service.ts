@@ -6,6 +6,7 @@ import { and, eq, isNotNull, isNull, sql } from "drizzle-orm";
 import { boolean, object } from "zod";
 import type {
   ComputerUseAuthorizationSource,
+  ComputerUseAuthorizationContinuation,
   ComputerUseHostListResponse,
 } from "@okouai/api-contracts/contracts/computer-use";
 import { computerUseHosts } from "@okouai/db/runtime/computer-use-host";
@@ -24,6 +25,10 @@ import {
   publishDesktopShellAuthorizationChangedSafely,
   publishThreadListChanged,
 } from "../external/realtime";
+import {
+  applyComputerUseContinuation$,
+  readComputerUseContinuation$,
+} from "./computer-use-authorization-continuation.service";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import {
   computerUseHostIsOnline$,
@@ -59,6 +64,7 @@ type ReadComputerUseAuthorizationRequestResult =
       readonly chatThreadId: string | null;
       readonly expiresAt: string;
       readonly completedAt: string | null;
+      readonly continuation?: ComputerUseAuthorizationContinuation;
       readonly computerUseHostId: string | null;
       readonly hosts: ComputerUseHostListResponse["hosts"];
     }
@@ -68,13 +74,20 @@ type ReadComputerUseAuthorizationRequestResult =
 type ApplyComputerUseAuthorizationRequestResult =
   | {
       readonly status: "applied";
+      readonly continuation?: {
+        readonly enqueued: boolean;
+        readonly chatThreadId: string;
+        readonly agentId: string;
+      };
       readonly source: ComputerUseAuthorizationSource;
       readonly computerUseHostId: string;
     }
   | { readonly status: "not_found" }
   | { readonly status: "expired" }
   | { readonly status: "host_not_found" }
-  | { readonly status: "scope_not_found" };
+  | { readonly status: "scope_not_found" }
+  | { readonly status: "conflict" }
+  | { readonly status: "model_unavailable"; readonly message: string };
 
 function hashSecret(value: string): string {
   return createHash("sha256").update(value).digest("hex");
@@ -611,8 +624,28 @@ export const readComputerUseAuthorizationRequest$ = command(
     );
     signal.throwIfAborted();
 
+    const continuation =
+      loaded.request.source === "chat"
+        ? await set(
+            readComputerUseContinuation$,
+            {
+              ...loaded.request,
+              chatThreadId: requiredChatThreadId(loaded.request),
+            },
+            signal,
+          )
+        : null;
     return {
       status: "found",
+      ...(continuation
+        ? {
+            continuation: {
+              blockedReason: loaded.request.completedAt
+                ? null
+                : continuation.blockedReason,
+            },
+          }
+        : {}),
       source: loaded.request.source as ComputerUseAuthorizationSource,
       chatThreadId:
         loaded.request.source === "chat"
@@ -657,7 +690,19 @@ export const applyComputerUseAuthorizationRequest$ = command(
       return loaded;
     }
 
+    const continuationScope =
+      loaded.request.source === "chat"
+        ? {
+            ...loaded.request,
+            chatThreadId: requiredChatThreadId(loaded.request),
+          }
+        : null;
+    const continuation = continuationScope
+      ? await set(readComputerUseContinuation$, continuationScope, signal)
+      : null;
+
     if (
+      !(continuation && loaded.request.completedAt) &&
       !(await set(
         onlineHostExists$,
         {
@@ -672,6 +717,33 @@ export const applyComputerUseAuthorizationRequest$ = command(
       return { status: "host_not_found" };
     }
     signal.throwIfAborted();
+
+    if (continuation && continuationScope) {
+      const result = await set(
+        applyComputerUseContinuation$,
+        continuationScope,
+        continuation,
+        args.computerUseHostId,
+        signal,
+      );
+      if (result.status !== "applied") {
+        return result;
+      }
+      await publishThreadListChanged(args);
+      signal.throwIfAborted();
+      await publishDesktopShellAuthorizationChangedSafely(args.userId);
+      signal.throwIfAborted();
+      return {
+        status: "applied",
+        source: "chat",
+        computerUseHostId: args.computerUseHostId,
+        continuation: {
+          enqueued: result.enqueued,
+          chatThreadId: continuationScope.chatThreadId,
+          agentId: continuation.thread.agentId,
+        },
+      };
+    }
 
     const request = loaded.request;
     const applied =

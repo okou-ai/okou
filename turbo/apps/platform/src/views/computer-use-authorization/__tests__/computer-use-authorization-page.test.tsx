@@ -7,6 +7,7 @@ import { screen, waitFor } from "@testing-library/react";
 import { expect, test } from "vitest";
 
 import {
+  click,
   queryAllByRoleFast,
   setupPage,
 } from "../../../__tests__/page-helper.ts";
@@ -168,4 +169,59 @@ test("A user with no online computer receives setup guidance", async () => {
     "href",
     expect.stringContaining("/api/desktop/updates/stable/darwin/arm64/dmg"),
   );
+});
+
+test("The standalone Web authorization follows Run readiness and authorizes once", async () => {
+  const host = computerUseHost(
+    "30000000-0000-4000-8000-000000000001",
+    "Test Mac",
+  );
+  let ready = false;
+  let completed = false;
+  context.mocks.api(
+    computerUseAuthorizationRequestsContract.get,
+    ({ respond }) => {
+      return respond(200, {
+        source: "chat",
+        chatThreadId: "20000000-0000-4000-8000-000000000001",
+        expiresAt: "2099-09-01T10:00:00.000Z",
+        completedAt: completed ? "2026-11-09T04:00:00.000Z" : null,
+        computerUseHostId: completed ? host.id : null,
+        hosts: [host],
+        continuation: { blockedReason: ready ? null : "run_active" },
+      });
+    },
+  );
+  context.mocks.api(
+    computerUseAuthorizationRequestsContract.apply,
+    ({ respond }) => {
+      completed = true;
+      return respond(200, {
+        ok: true,
+        source: "chat",
+        computerUseHostId: host.id,
+        continuationEnqueued: true,
+      });
+    },
+  );
+  await setupPage({
+    context,
+    path: `/computer-use/authorize/${REQUEST_TOKEN}`,
+    host: "app.okou.ai",
+  });
+  await waitFor(() => {
+    return expect(getButton("Authorize and continue")).toBeDisabled();
+  });
+  expect(
+    screen.getByText("Wait for the requesting Run to finish before approving."),
+  ).toBeInTheDocument();
+  ready = true;
+  context.mocks.ably.trigger("desktopShellAuthorizationChanged");
+  await waitFor(() => {
+    return expect(getButton("Authorize and continue")).toBeEnabled();
+  });
+  click(getButton("Authorize and continue"));
+  await waitFor(() => {
+    return expect(getButton("Authorized")).toBeDisabled();
+  });
 });

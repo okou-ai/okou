@@ -970,7 +970,7 @@ export function createComputerUseBddApi(
       actor: ApiTestUser | null,
       requestToken: string,
       computerUseHostId: string,
-      statuses: readonly (200 | 401 | 403 | 404 | 410)[],
+      statuses: readonly (200 | 400 | 401 | 403 | 404 | 409 | 410)[],
     ) {
       return await run(async () => {
         return await accept(

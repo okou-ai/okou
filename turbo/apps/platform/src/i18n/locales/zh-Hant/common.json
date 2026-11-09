@@ -999,10 +999,12 @@
     "computerUse": {
       "actionFailed": "未能授權這台電腦，請重新整理聊天後再試。",
       "authorize": "授權",
+      "authorizeAndContinue": "授權並繼續",
       "authorized": "已授權",
-      "authorizedDescription": "已為此聊天的後續執行啟用電腦存取。",
+      "authorizedDescription": "此聊天已啟用電腦存取。",
       "cardDescription": "選擇此聊天使用的電腦。這會中斷雲端瀏覽器。",
       "checkingCompatibility": "正在檢查相容性",
+      "continueDescription": "選擇電腦後自動繼續任務。這會中斷雲端瀏覽器。",
       "description": "選擇一臺線上的電腦，供 {{assistantName}} 在{{source}}中使用。",
       "downloadMac": "下載 macOS 版",
       "lastSeen": "最後線上於{{date}}",
@@ -1010,6 +1012,7 @@
       "macRequirement": "需要搭載 Apple 晶片、系統為 macOS 14 或更高版本的 Mac，不支援 Intel 版 Mac。",
       "noHostsDescription": "在 Mac 上開啟 {{desktopApplicationName}}，讓裝置上線。",
       "noHostsTitle": "沒有線上的電腦",
+      "requestSuperseded": "此聊天已有更新的任務，請重新申請 Computer Use 授權。",
       "selectComputer": "選擇電腦",
       "sources": {
         "chat": "這個聊天會話",

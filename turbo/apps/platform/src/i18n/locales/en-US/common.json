@@ -1001,10 +1001,12 @@
     "computerUse": {
       "actionFailed": "Could not authorize this computer. Refresh the chat to try again.",
       "authorize": "Authorize",
+      "authorizeAndContinue": "Authorize and continue",
       "authorized": "Authorized",
-      "authorizedDescription": "Computer access enabled for future runs in this chat.",
+      "authorizedDescription": "Computer access enabled for this chat.",
       "cardDescription": "Choose a computer for this chat. This disconnects the cloud browser.",
       "checkingCompatibility": "Checking compatibility",
+      "continueDescription": "Choose a computer and continue the task automatically. This disconnects the cloud browser.",
       "description": "Choose an online computer for {{assistantName}} to use in {{source}}.",
       "downloadMac": "Download for macOS",
       "lastSeen": "Last seen {{date}}",
@@ -1012,6 +1014,7 @@
       "macRequirement": "Requires an Apple silicon Mac with macOS 14 or newer. Intel Macs aren't supported.",
       "noHostsDescription": "Open {{desktopApplicationName}} on your Mac to bring it online.",
       "noHostsTitle": "No online computers",
+      "requestSuperseded": "This chat has a newer task. Ask for a new Computer Use request.",
       "selectComputer": "Select a computer",
       "sources": {
         "chat": "this chat thread",

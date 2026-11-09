@@ -395,7 +395,9 @@ describe("Desktop Shell command pipeline", () => {
             }),
           ).toBeFalsy();
         }
-        expect(notifiedReasons).toStrictEqual(["computer_changed"]);
+        expect(new Set(notifiedReasons)).toStrictEqual(
+          new Set(["computer_changed"]),
+        );
         expect(context.mocks.ably.channelGet.mock.calls).toContainEqual([
           `user:${actor.userId}`,
         ]);

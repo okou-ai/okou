@@ -3,6 +3,7 @@ import { computerUseAuthorizationRequestsContract } from "@okouai/api-contracts/
 import type { ComputerUseHost } from "@okouai/api-contracts/contracts/computer-use";
 import { accept } from "../../lib/accept.ts";
 import { pathParams$ } from "../route.ts";
+import { setAblyLoop$ } from "../realtime.ts";
 import { apiClient$ } from "../api-client.ts";
 
 const computerUseAuthorizationReload$ = state(0);
@@ -50,5 +51,26 @@ export const applyComputerUseAuthorizationRequest$ = command(
       return prev + 1;
     });
     return result.body;
+  },
+);
+
+const refreshComputerUseAuthorization$ = command(({ set }) => {
+  set(computerUseAuthorizationReload$, (previous) => {
+    return previous + 1;
+  });
+  return false;
+});
+export const subscribeComputerUseAuthorization$ = command(
+  ({ set }, signal: AbortSignal) => {
+    for (const topic of [
+      "desktopShellAuthorizationChanged",
+      "computerUseHostsChanged",
+    ]) {
+      set(
+        setAblyLoop$,
+        { topic, loopCommand$: refreshComputerUseAuthorization$ },
+        signal,
+      );
+    }
   },
 );

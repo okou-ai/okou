@@ -1019,10 +1019,12 @@
     "computerUse": {
       "actionFailed": "Não foi possível autorizar este computador. Atualize o chat para tentar novamente.",
       "authorize": "Autorizar",
+      "authorizeAndContinue": "Autorizar e continuar",
       "authorized": "Autorizado",
-      "authorizedDescription": "Acesso ao computador ativado para futuras execuções neste chat.",
+      "authorizedDescription": "Acesso ao computador ativado para este chat.",
       "cardDescription": "Escolha um computador para este chat. Isso desconecta o navegador na nuvem.",
       "checkingCompatibility": "Verificando compatibilidade",
+      "continueDescription": "Escolha um computador e continue a tarefa automaticamente. Isso desconecta o navegador na nuvem.",
       "description": "Escolha um computador online para o {{assistantName}} usar {{source}}.",
       "downloadMac": "Baixar para macOS",
       "lastSeen": "Visto pela última vez em {{date}}",
@@ -1030,6 +1032,7 @@
       "macRequirement": "Requer um Mac com Apple silicon e macOS 14 ou mais recente. Macs com Intel não são compatíveis.",
       "noHostsDescription": "Abra o {{desktopApplicationName}} no seu Mac para conectá-lo.",
       "noHostsTitle": "Nenhum computador online",
+      "requestSuperseded": "Este chat tem uma tarefa mais recente. Solicite uma nova autorização de Computer Use.",
       "selectComputer": "Selecionar um computador",
       "sources": {
         "chat": "nesta conversa",

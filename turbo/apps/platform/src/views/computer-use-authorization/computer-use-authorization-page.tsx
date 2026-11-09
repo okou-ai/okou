@@ -25,6 +25,7 @@ import {
   AuthorizationErrorState,
   formatTime,
 } from "../components/authorization-error-state.tsx";
+import { computerUseAuthorizationBlocker } from "../components/computer-use-authorization-status.ts";
 import { locale$ } from "../../signals/locale.ts";
 import { i18n } from "../../i18n/index.ts";
 
@@ -53,12 +54,14 @@ function HostOption({
   disabled,
   applying,
   applied,
+  continuesChat,
   onAuthorize,
 }: {
   host: ComputerUseHost;
   disabled: boolean;
   applying: boolean;
   applied: boolean;
+  continuesChat: boolean;
   onAuthorize: () => void;
 }) {
   const { t } = useTranslation();
@@ -100,7 +103,9 @@ function HostOption({
           </>
         ) : (
           t(($) => {
-            return $.authorization.computerUse.authorize;
+            return continuesChat
+              ? $.authorization.computerUse.authorizeAndContinue
+              : $.authorization.computerUse.authorize;
           })
         )}
       </Button>
@@ -222,6 +227,7 @@ export function ComputerUseAuthorizationPage() {
   }
 
   const applying = applyLoadable.state === "loading";
+  const blocker = computerUseAuthorizationBlocker(request.continuation);
   const completed =
     applyLoadable.state === "hasData" || Boolean(request.completedAt);
 
@@ -259,8 +265,9 @@ export function ComputerUseAuthorizationPage() {
                 <HostOption
                   key={host.id}
                   host={host}
-                  disabled={applying || completed}
+                  disabled={applying || completed || blocker !== null}
                   applying={applying}
+                  continuesChat={Boolean(request.continuation)}
                   applied={selectedHostId === host.id}
                   onAuthorize={() => {
                     detach(
@@ -274,6 +281,18 @@ export function ComputerUseAuthorizationPage() {
           </div>
         )}
 
+        {blocker && !completed && (
+          <p role="status" className="text-sm text-muted-foreground">
+            {blocker}
+          </p>
+        )}
+        {applyLoadable.state === "hasError" && (
+          <p role="alert" className="text-sm text-destructive">
+            {t(($) => {
+              return $.authorization.computerUse.actionFailed;
+            })}
+          </p>
+        )}
         <div className="flex flex-col gap-3 border-t border-border pt-5">
           <div className="text-xs text-muted-foreground">
             {t(

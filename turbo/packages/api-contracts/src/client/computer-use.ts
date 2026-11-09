@@ -62,6 +62,7 @@ export const computerUseAuthorizationRequestsContract: ClientDescriptor<
       401: true,
       403: true,
       404: true,
+      409: true,
       410: true,
       503: true,
     },

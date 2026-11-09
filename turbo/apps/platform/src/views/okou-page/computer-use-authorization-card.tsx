@@ -17,6 +17,7 @@ import { locale$ } from "../../signals/locale.ts";
 import { visibleComputerUseHosts } from "../../signals/okou-page/computer-use-hosts.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
+import { computerUseAuthorizationBlocker } from "../components/computer-use-authorization-status.ts";
 import { ChatCard } from "./components/chat-card.tsx";
 
 function AuthorizationDescription({
@@ -24,11 +25,15 @@ function AuthorizationDescription({
   unavailable,
   completed,
   empty,
+  blocker,
+  continuesChat,
 }: {
   failed: boolean;
   unavailable: boolean;
   completed: boolean;
   empty: boolean;
+  blocker: string | null;
+  continuesChat: boolean;
 }) {
   const { t } = useTranslation();
   const desktopApplicationName = useGet(computerUseProductName$);
@@ -51,9 +56,12 @@ function AuthorizationDescription({
               },
               { desktopApplicationName },
             )
-          : t(($) => {
-              return $.authorization.computerUse.cardDescription;
-            });
+          : (blocker ??
+            t(($) => {
+              return continuesChat
+                ? $.authorization.computerUse.continueDescription
+                : $.authorization.computerUse.cardDescription;
+            }));
   return (
     <p
       className="mt-0.5 text-sm leading-5 text-muted-foreground"
@@ -72,6 +80,8 @@ function AuthorizationControls({
   busy,
   completed,
   failed,
+  blocked,
+  continuesChat,
   onAuthorize,
 }: {
   signals: ComputerUseAuthorizationSignals;
@@ -80,6 +90,8 @@ function AuthorizationControls({
   busy: boolean;
   completed: boolean;
   failed: boolean;
+  blocked: boolean;
+  continuesChat: boolean;
   onAuthorize: () => void;
 }) {
   const { t } = useTranslation();
@@ -124,7 +136,7 @@ function AuthorizationControls({
       <Button
         variant="secondary"
         pending={busy}
-        disabled={loading || completed || failed || !selectedHost}
+        disabled={loading || completed || failed || blocked || !selectedHost}
         className="shrink-0"
         onClick={onAuthorize}
       >
@@ -138,7 +150,9 @@ function AuthorizationControls({
               return $.authorization.computerUse.authorized;
             })
           : t(($) => {
-              return $.authorization.computerUse.authorize;
+              return continuesChat
+                ? $.authorization.computerUse.authorizeAndContinue
+                : $.authorization.computerUse.authorize;
             })}
       </Button>
     </div>
@@ -163,6 +177,7 @@ export function ComputerUseAuthorizationCard({
   const failed = operation.state === "hasError";
   const unavailable = !loading && !data;
   const empty = data !== null && !completed && hosts.length === 0;
+  const blocker = computerUseAuthorizationBlocker(data?.continuation);
 
   return (
     <ChatCard
@@ -185,6 +200,8 @@ export function ComputerUseAuthorizationCard({
             unavailable={unavailable}
             completed={completed}
             empty={empty}
+            blocker={blocker}
+            continuesChat={Boolean(data?.continuation)}
           />
         </div>
       </div>
@@ -207,6 +224,8 @@ export function ComputerUseAuthorizationCard({
             busy={busy}
             completed={completed}
             failed={failed}
+            blocked={blocker !== null}
+            continuesChat={Boolean(data?.continuation)}
             onAuthorize={() => {
               detach(authorize(pageSignal), Reason.DomCallback);
             }}

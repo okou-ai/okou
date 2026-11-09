@@ -999,10 +999,12 @@
     "computerUse": {
       "actionFailed": "未能授权这台电脑，请刷新聊天后重试。",
       "authorize": "授权",
+      "authorizeAndContinue": "授权并继续",
       "authorized": "已授权",
-      "authorizedDescription": "已为此聊天的后续运行启用电脑访问。",
+      "authorizedDescription": "此聊天已启用电脑访问。",
       "cardDescription": "选择此聊天使用的电脑。这会断开云端浏览器。",
       "checkingCompatibility": "正在检查兼容性",
+      "continueDescription": "选择电脑后自动继续任务。这会断开云浏览器。",
       "description": "选择一台在线的电脑，供 {{assistantName}} 在{{source}}中使用。",
       "downloadMac": "下载 macOS 版",
       "lastSeen": "最后在线于{{date}}",
@@ -1010,6 +1012,7 @@
       "macRequirement": "需要搭载 Apple 芯片、系统为 macOS 14 或更高版本的 Mac，不支持 Intel 版 Mac。",
       "noHostsDescription": "在 Mac 上打开 {{desktopApplicationName}}，使设备上线。",
       "noHostsTitle": "没有在线的电脑",
+      "requestSuperseded": "此聊天已有更新的任务，请重新申请 Computer Use 授权。",
       "selectComputer": "选择电脑",
       "sources": {
         "chat": "这个聊天会话",

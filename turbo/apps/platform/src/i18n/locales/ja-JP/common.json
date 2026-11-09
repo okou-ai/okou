@@ -999,10 +999,12 @@
     "computerUse": {
       "actionFailed": "このコンピューターを承認できませんでした。チャットを再読み込みして再試行してください。",
       "authorize": "承認する",
+      "authorizeAndContinue": "許可して続行",
       "authorized": "認可された",
-      "authorizedDescription": "このチャットの今後の実行でコンピューターへのアクセスが有効になりました。",
+      "authorizedDescription": "このチャットでコンピューターへのアクセスが有効です。",
       "cardDescription": "このチャットで使うコンピューターを選択してください。クラウドブラウザーは切断されます。",
       "checkingCompatibility": "互換性の確認",
+      "continueDescription": "コンピューターを選択するとタスクを自動で続行します。クラウドブラウザーは切断されます。",
       "description": "{{source}} で使用する {{assistantName}} のオンライン コンピューターを選択します。",
       "downloadMac": "macOS をダウンロード",
       "lastSeen": "最後に表示されたのは {{date}}",
@@ -1010,6 +1012,7 @@
       "macRequirement": "macOS 14 以降を搭載した Apple Silicon Mac が必要です。 Intel Mac はサポートされていません。",
       "noHostsDescription": "Mac で {{desktopApplicationName}} を開いてオンラインにしてください。",
       "noHostsTitle": "オンラインコンピュータはありません",
+      "requestSuperseded": "このチャットには新しいタスクがあります。Computer Use の許可を再申請してください。",
       "selectComputer": "コンピューターを選択",
       "sources": {
         "chat": "このチャットスレッド",
