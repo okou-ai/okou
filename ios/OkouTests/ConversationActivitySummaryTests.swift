@@ -234,7 +234,7 @@ private final class ActivityScenario: Sendable {
       let path = "/api/chat-threads/\(Self.thread)"
       switch request.url?.path {
       case "/api/agents": return ChatHTTPResponse(body: "[]")
-      case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
+
       case "/api/feature-switches":
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot":

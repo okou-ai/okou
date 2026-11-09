@@ -78,7 +78,7 @@ final class ChatClientTests: XCTestCase {
       queries.withLock { $0[5] }, [URLQueryItem(name: "eventId", value: unmuteEventID)])
   }
 
-  func testCreateUsesSelectedAgentAndSavedModelWithoutOnboardingBootstrap() async throws {
+  func testCreateUsesDefaultAgentAndSavedModelWithoutOnboardingBootstrap() async throws {
     struct CreatedRequest: Decodable, Sendable {
       let agentId: String
       let model: String
@@ -91,7 +91,7 @@ final class ChatClientTests: XCTestCase {
       case "/api/agents":
         return ChatHTTPResponse(
           body:
-            "[{\"agentId\":\"\(fixtureAgent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"},{\"agentId\":\"\(secondaryAgent)\",\"isDefaultAgent\":false,\"displayName\":\"Second\"}]"
+            "[{\"agentId\":\"\(secondaryAgent)\",\"isDefaultAgent\":false,\"displayName\":\"Second\"},{\"agentId\":\"\(fixtureAgent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
         )
       case "/api/user-model-preference":
         return ChatHTTPResponse(
@@ -119,14 +119,9 @@ final class ChatClientTests: XCTestCase {
     ).createThread()
     XCTAssertEqual(created.agentID, fixtureAgent)
     XCTAssertEqual(created.selectedModel, "gpt-5.6-sol")
-    let selected = try await ChatCommands(
-      client: fixture.client, sync: ChatSync(client: fixture.client)
-    ).createThread(
-      agentID: secondaryAgent)
-    XCTAssertEqual(selected.agentID, secondaryAgent)
-    XCTAssertEqual(createdRequests.withLock { $0.map(\.agentId) }, [fixtureAgent, secondaryAgent])
-    XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["gpt-5.6-sol", "gpt-5.6-sol"])
-    XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high", "high"])
+    XCTAssertEqual(createdRequests.withLock { $0.map(\.agentId) }, [fixtureAgent])
+    XCTAssertEqual(createdRequests.withLock { $0.map(\.model) }, ["gpt-5.6-sol"])
+    XCTAssertEqual(createdRequests.withLock { $0.map(\.reasoningEffort) }, ["high"])
   }
 
   func testCreateWithoutSavedModelSendsAutoAsExplicitNull() async throws {

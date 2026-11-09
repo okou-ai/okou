@@ -62,16 +62,6 @@
       "dependency": "module:turbo/apps/api/src/signals/services/member-memory-initialization.service"
     },
     {
-      "file": "turbo/apps/api/src/signals/routes/workflow-copy-source-publication.ts",
-      "uses": 5,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/routes/workflow-copy-source.ts",
-      "uses": 6,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
       "file": "turbo/apps/api/src/signals/routes/workflows.ts",
       "uses": 2,
       "dependency": "module:turbo/apps/api/src/signals/services/workflow-update.service"
@@ -122,69 +112,9 @@
       "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {
-      "file": "turbo/apps/api/src/signals/services/morning-brief-workflow-selection.service.ts",
-      "uses": 4,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-publication.ts",
-      "uses": 13,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-read.service.ts",
-      "uses": 18,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-catalog-sync.service.ts",
-      "uses": 15,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-context.signals.ts",
-      "uses": 12,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-installation.service.ts",
-      "uses": 13,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation-sql.ts",
-      "uses": 20,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation-worker.service.ts",
-      "uses": 31,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-reconciliation.service.ts",
-      "uses": 74,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-schedule-recovery.service.ts",
-      "uses": 3,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/official-workflow-thread.service.ts",
-      "uses": 5,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
       "file": "turbo/apps/api/src/signals/services/onboarding.service.ts",
       "uses": 2,
       "dependency": "module:turbo/apps/api/src/signals/services/member-memory-initialization.service"
-    },
-    {
-      "file": "turbo/apps/api/src/signals/services/pending-launch-official-plan.ts",
-      "uses": 4,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
     },
     {
       "file": "turbo/apps/api/src/signals/services/pi-resource-version-index.service.ts",
@@ -342,11 +272,6 @@
       "dependency": "module:turbo/packages/db/src/schema/storage-publication-fence"
     },
     {
-      "file": "turbo/apps/api/src/signals/services/workflow-data.service.ts",
-      "uses": 3,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
       "file": "turbo/apps/api/src/signals/services/workflow-update.service.ts",
       "uses": 5,
       "dependency": "module:turbo/packages/db/src/schema/storage-publication-fence"
@@ -469,11 +394,6 @@
     {
       "file": "turbo/packages/db/src/index.ts",
       "uses": 2,
-      "dependency": "module:turbo/packages/db/src/schema/official-workflow-catalog"
-    },
-    {
-      "file": "turbo/packages/db/src/index.ts",
-      "uses": 2,
       "dependency": "module:turbo/packages/db/src/schema/pi-resource-version-index"
     },
     {
@@ -495,11 +415,6 @@
       "file": "turbo/packages/db/src/index.ts",
       "uses": 2,
       "dependency": "module:turbo/packages/db/src/schema/storage-version-lineage"
-    },
-    {
-      "file": "turbo/packages/db/src/schema/official-workflow-catalog.ts",
-      "uses": 3,
-      "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {
       "file": "turbo/packages/db/src/schema/pi-resource-version-index.ts",

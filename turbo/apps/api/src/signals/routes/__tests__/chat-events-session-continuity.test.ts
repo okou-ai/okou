@@ -262,7 +262,7 @@ describe("CHAT-02: run-level model overrides", () => {
       sessionId: `bdd-cli-${first.runId}`,
       generationRunId: first.runId,
       recoveryPrompt: expect.stringContaining(
-        "okou chat messages --output-dir threads",
+        "okou chat messages --output-dir /tmp/okou-chat-history",
       ),
     });
     expect(claimEnvironment(secondClaim.claim).ANTHROPIC_MODEL).toBe(
@@ -309,7 +309,7 @@ describe("CHAT-02: run-level model overrides", () => {
         sessionId: first.threadId,
         generationRunId: first.runId,
         recoveryPrompt: expect.stringContaining(
-          "okou chat messages --output-dir threads",
+          "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
       },
     });
@@ -562,7 +562,7 @@ describe("CHAT-02: run-level model overrides", () => {
         sessionId: null,
         generationRunId: null,
         recoveryPrompt: expect.stringContaining(
-          "okou chat messages --output-dir threads",
+          "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
       });
       await cancelChatRun(actor, second.runId, next.sandboxHeaders);
@@ -790,7 +790,7 @@ describe("CHAT-02: run-level model overrides", () => {
         result: { frameworkSessionId: expect.any(String) },
       });
       expect(secondClaim.claim.nativeContinuation?.recoveryPrompt).toContain(
-        "okou chat messages --output-dir threads",
+        "okou chat messages --output-dir /tmp/okou-chat-history",
       );
       expect(secondRun.result?.framework).toBe(toRuntime);
 
@@ -848,7 +848,7 @@ describe("CHAT-02: run-level model overrides", () => {
         sessionId: null,
         generationRunId: null,
         recoveryPrompt: expect.stringContaining(
-          "okou chat messages --output-dir threads",
+          "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
       });
       await waitForThreadMessages(actor, first.threadId, (items) => {
@@ -907,7 +907,7 @@ describe("CHAT-02: run-level model overrides", () => {
       sessionId: null,
       generationRunId: null,
       recoveryPrompt: expect.stringContaining(
-        "okou chat messages --output-dir threads",
+        "okou chat messages --output-dir /tmp/okou-chat-history",
       ),
     });
     expect(secondClaim.claim.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
@@ -963,7 +963,7 @@ describe("CHAT-02: run-level model overrides", () => {
         sessionId: null,
         generationRunId: null,
         recoveryPrompt: expect.stringContaining(
-          "okou chat messages --output-dir threads",
+          "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
       });
       chatCallbacks.mockChatOutputEvents([]);

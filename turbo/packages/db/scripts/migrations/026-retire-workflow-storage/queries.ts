@@ -82,8 +82,6 @@ function referenceCtes(requireDeleted: boolean) {
       CASE WHEN EXISTS(SELECT 1 FROM org_custom_connectors WHERE skill_storage_version_id IN(SELECT id FROM captured_ids)) THEN 'custom-connector' END,
       CASE WHEN EXISTS(SELECT 1 FROM pi_resource_version_indexes WHERE storage_version_id IN(SELECT id FROM captured_ids)
         AND status IN('pending','running')) THEN 'pi-index-work' END,
-      CASE WHEN EXISTS(SELECT 1 FROM official_workflow_definition_revisions WHERE storage_id=$1::uuid
-        OR storage_version IN(SELECT id FROM captured_ids)) THEN 'official-definition' END,
       CASE WHEN EXISTS(SELECT 1 FROM storage_version_lineage WHERE storage_id=$1::uuid
         OR version_id IN(SELECT id FROM captured_ids) OR parent_version_id IN(SELECT id FROM captured_ids)) THEN 'version-lineage' END,
       CASE WHEN EXISTS(SELECT 1 FROM workflows WHERE id=$4::uuid

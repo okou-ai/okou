@@ -1,4 +1,3 @@
-import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -11,7 +10,7 @@ struct ChatSidebarView: View {
   let headerHeight: CGFloat
   @Binding var accountError: String?
   let close: () -> Void
-  let newChat: (String?) -> Void
+  let newChat: () -> Void
 
   /// The web's chat filters: Inbox, Unread, Archived, Muted.
   private enum ThreadFilter {
@@ -30,6 +29,8 @@ struct ChatSidebarView: View {
   @State private var showArchived = false
   @State private var showMuted = false
   @State private var showsSettings = false
+  /// Rows have scrolled under the top bar, so the workspace name gives way to them.
+  @State private var isScrolled = false
   @Environment(\.newChatActivation) private var newChatActivation
   /// The scheme the page behind the Settings sheet resolved: the chosen one, or the system's.
   @Environment(\.colorScheme) private var colorScheme
@@ -73,7 +74,6 @@ struct ChatSidebarView: View {
 
   var body: some View {
     List {
-      pinnedAgentsSection
       if store.list.isLoading && !store.list.hasLoadedThreads {
         OkouLoadingRow("Loading chats…")
           .frame(maxWidth: .infinity)
@@ -105,29 +105,20 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    // The workspace title sits directly over chat titles: soft let them read through it, and
-    // the system's hard edge draws a white band on the warm sidebar. The header instead takes
-    // the sidebar's own colour, with a short fade where rows pass under it. The bottom has no
-    // edge effect, as everywhere in the app: rows pass plainly under the footer's glass.
-    .scrollEdgeEffectHidden(true, for: .top)
+    // The top is the system's soft edge (the app's default): rows blur away under the glass
+    // buttons. The workspace name would sit over chat titles there, so it leaves as soon as
+    // rows scroll under the bar, as Slack's does. The bottom has no edge effect, as
+    // everywhere in the app: rows pass plainly under the footer's glass.
     .scrollEdgeEffectHidden(true, for: .bottom)
+    .onScrollGeometryChange(for: Bool.self) { geometry in
+      geometry.contentOffset.y + geometry.contentInsets.top > OkouSpace.xs
+    } action: { _, scrolled in
+      isScrolled = scrolled
+    }
     .safeAreaBar(edge: .top, spacing: 0) {
       VStack(spacing: 0) {
         // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
         header.padding(.horizontal, rowInset)
-      }
-      .background {
-        OkouColor.sidebar
-          .ignoresSafeArea(edges: .top)
-          .overlay(alignment: .bottom) {
-            LinearGradient(
-              colors: [OkouColor.sidebar, OkouColor.sidebar.opacity(0)], startPoint: .top,
-              endPoint: .bottom
-            )
-            .frame(height: OkouSpace.lg)
-            .offset(y: OkouSpace.lg)
-            .allowsHitTesting(false)
-          }
       }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
@@ -142,13 +133,9 @@ struct ChatSidebarView: View {
     ) {
       ChatSearchView(
         workspace: store, showsArchived: showArchived, didOpen: close,
-        openAgent: { agentID in
-          store.search.dismiss()
-          newChat(agentID)
-        },
         openWorkflow: { workflow in
           store.search.dismiss()
-          newChat(workflow.agentId)
+          newChat()
           store.useWorkflow(named: workflow.name)
         }
       )
@@ -156,10 +143,20 @@ struct ChatSidebarView: View {
     }
   }
 
-  /// The workspace on the left; on the right the way back to the chat the sidebar covers.
+  /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
+  /// beside it with no arrow, and on the right the way back to the chat the sidebar covers.
+  /// The name leaves once rows scroll under the bar; the glass buttons stay.
   private var header: some View {
-    HStack {
-      workspaceSwitcher.frame(maxWidth: .infinity, alignment: .leading)
+    HStack(spacing: OkouSpace.md) {
+      workspaceSwitcher
+      Text(workspaceName)
+        .font(.okou(.headline))
+        .lineLimit(1)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .opacity(isScrolled ? 0 : 1)
+        .animation(OkouMotion.transition, value: isScrolled)
+        // The switcher's label already names the workspace.
+        .accessibilityHidden(true)
       Button(action: close) {
         OkouToolbarIcon("chevrons-right").modifier(OkouGlassControl(shape: .circle))
       }
@@ -189,20 +186,12 @@ struct ChatSidebarView: View {
       .pickerStyle(.inline)
       .labelsHidden()
     } label: {
-      HStack(spacing: OkouSpace.sm) {
-        let workspace = authentication.workspaces.first(where: { $0.id == workspaceID })
-        OkouWorkspaceLogo(
-          workspaceID: workspaceID, name: workspaceName,
-          imageURL: workspace?.imageURL, hasImage: workspace?.hasImage ?? false
-        )
-        .accessibilityHidden(true)
-        Text(workspaceName)
-          .font(.okou(.headline))
-          .lineLimit(1)
-        OkouIcon("chevron-down", size: OkouIconSize.inline)
-          .foregroundStyle(OkouColor.mutedForeground)
-      }
-      .contentShape(Rectangle())
+      let workspace = authentication.workspaces.first(where: { $0.id == workspaceID })
+      OkouWorkspaceGlassLogo(
+        workspaceID: workspaceID, name: workspaceName,
+        imageURL: workspace?.imageURL, hasImage: workspace?.hasImage ?? false
+      )
+      .accessibilityHidden(true)
     }
     .buttonStyle(.plain)
     .disabled(authentication.isSwitchingWorkspace || authentication.workspaces.isEmpty)
@@ -224,13 +213,6 @@ struct ChatSidebarView: View {
           accountError = error.localizedDescription
         }
       }
-    }
-  }
-
-  private var pinnedAgentsSection: some View {
-    StoreProvider(store.list.stateStore) {
-      SidebarPinnedAgents(workspace: store, newChat: newChat)
-        .id(ObjectIdentifier(store.list))
     }
   }
 
@@ -472,7 +454,7 @@ struct ChatSidebarView: View {
       .accessibilityLabel("Search chats")
       .accessibilityIdentifier("search-chats")
       Button {
-        newChat(store.selectedAgentID)
+        newChat()
       } label: {
         OkouToolbarIcon("square-pen")
           .modifier(OkouGlassControl(shape: .circle))
@@ -484,80 +466,5 @@ struct ChatSidebarView: View {
     .frame(height: ChatComposerView.compactHeight)
     .padding(.horizontal, rowInset)
     .padding(.top, OkouSpace.sm)
-  }
-}
-
-/// The rail observes workspace Tasks without tying their lifetime to sidebar visibility.
-private struct SidebarPinnedAgents: View {
-  @Bindable var workspace: WorkspaceStore
-  let newChat: (String?) -> Void
-  @LoadableValue private var agents: Loadable<[AgentRecord]>
-  @LoadableValue private var preferences: Loadable<SidebarPreferences>
-  @ResolvedValue private var pinnedAgents: [AgentRecord]?
-  /// One caption2 line of Geist under each avatar.
-  @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
-  private let rowInset = OkouControl.pageInset
-
-  init(workspace: WorkspaceStore, newChat: @escaping (String?) -> Void) {
-    self.workspace = workspace
-    self.newChat = newChat
-    _agents = LoadableValue(task: workspace.list.agentsValue)
-    _preferences = LoadableValue(task: workspace.list.preferencesValue)
-    _pinnedAgents = ResolvedValue(task: workspace.list.pinnedAgentsValue)
-  }
-
-  private var isLoading: Bool { agents.state == .loading || preferences.state == .loading }
-
-  var body: some View {
-    Section {
-      Text("Pinned Agents")
-        .font(.okou(.subheadline).weight(.semibold))
-        .foregroundStyle(OkouColor.mutedForeground)
-        .lineLimit(1)
-        .accessibilityAddTraits(.isHeader)
-        .listRowInsets(EdgeInsets(top: 14, leading: rowInset, bottom: 8, trailing: rowInset))
-        .listRowSeparator(.hidden)
-        .listRowBackground(Color.clear)
-      // The confirmed snapshot also supplies cached/partially refreshed content on failure.
-      // Agents can publish the default tile before the preference-dependent task settles.
-      let visible = pinnedAgents ?? workspace.list.visiblePinnedAgents
-      OkouChipRail(inset: rowInset - (OkouControl.agentTile - OkouAvatarSize.rail) / 2) {
-        ForEach(visible, id: \.agentId) { agent in
-          Button {
-            newChat(agent.agentId)
-          } label: {
-            OkouAgentTile(
-              avatarURL: agent.avatarUrl, name: agent.displayName ?? "Okou",
-              isDefault: agent.isDefaultAgent,
-              isSelected: workspace.selectedThreadID == nil
-                && workspace.selectedAgentID == agent.agentId,
-              hasUnread: workspace.list.unreadAgentIDs.contains(agent.agentId))
-          }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("agent-\(agent.agentId)")
-        }
-      }
-      .frame(height: OkouSpace.sm * 2 + OkouAvatarSize.rail + OkouSpace.six + agentNameLine)
-      .listRowInsets(EdgeInsets())
-      .listRowSeparator(.hidden)
-      .listRowBackground(Color.clear)
-      if let error = agents.error {
-        failureRow(error, subject: String(localized: "Agents"))
-      }
-      if let error = preferences.error {
-        failureRow(error, subject: String(localized: "Pinned Agents"))
-      }
-    }
-  }
-
-  private func failureRow(_ error: Error, subject: String) -> some View {
-    OkouLoadErrorRow(
-      message: "\(subject): \(ChatRequestFailure.message(for: error))",
-      isRetrying: isLoading,
-      retry: { await workspace.refreshNavigation() }
-    )
-    .listRowInsets(.horizontal, rowInset)
-    .listRowSeparator(.hidden)
-    .listRowBackground(Color.clear)
   }
 }

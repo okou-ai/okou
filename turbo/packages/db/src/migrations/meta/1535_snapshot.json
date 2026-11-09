@@ -1,5 +1,5 @@
 {
-  "id": "b58ec581-76d3-447e-82c1-c59dcb21bc2e",
+  "id": "c49b4e0d-d90c-46de-8078-deaf283c9652",
   "prevId": "59946497-e67b-480a-a64c-701fc4d69d48",
   "version": "7",
   "dialect": "postgresql",
@@ -23299,24 +23299,6 @@
           "primaryKey": false,
           "notNull": true
         },
-        "storage_name": {
-          "name": "storage_name",
-          "type": "varchar(256)",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "storage_id": {
-          "name": "storage_id",
-          "type": "uuid",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "storage_version": {
-          "name": "storage_version",
-          "type": "varchar(64)",
-          "primaryKey": false,
-          "notNull": false
-        },
         "content_bundle": {
           "name": "content_bundle",
           "type": "jsonb",
@@ -23332,34 +23314,7 @@
         }
       },
       "indexes": {},
-      "foreignKeys": {
-        "official_workflow_definition_revisions_storage_id_storages_id_fk": {
-          "name": "official_workflow_definition_revisions_storage_id_storages_id_fk",
-          "tableFrom": "official_workflow_definition_revisions",
-          "tableTo": "storages",
-          "columnsFrom": [
-            "storage_id"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        },
-        "official_workflow_definition_revisions_storage_version_storage_versions_id_fk": {
-          "name": "official_workflow_definition_revisions_storage_version_storage_versions_id_fk",
-          "tableFrom": "official_workflow_definition_revisions",
-          "tableTo": "storage_versions",
-          "columnsFrom": [
-            "storage_version"
-          ],
-          "columnsTo": [
-            "id"
-          ],
-          "onDelete": "no action",
-          "onUpdate": "no action"
-        }
-      },
+      "foreignKeys": {},
       "compositePrimaryKeys": {
         "official_workflow_definition_revisions_pk": {
           "name": "official_workflow_definition_revisions_pk",
@@ -23372,10 +23327,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {
-        "official_workflow_definition_revision_delivery_check": {
-          "name": "official_workflow_definition_revision_delivery_check",
-          "value": "(\n          (\"official_workflow_definition_revisions\".\"storage_name\" IS NOT NULL AND \"official_workflow_definition_revisions\".\"storage_id\" IS NOT NULL AND \"official_workflow_definition_revisions\".\"storage_version\" IS NOT NULL)\n          OR (\"official_workflow_definition_revisions\".\"storage_name\" IS NULL AND \"official_workflow_definition_revisions\".\"storage_id\" IS NULL AND \"official_workflow_definition_revisions\".\"storage_version\" IS NULL AND \"official_workflow_definition_revisions\".\"content_bundle\" IS NOT NULL)\n        )"
-        },
         "official_workflow_definition_revision_bundle_check": {
           "name": "official_workflow_definition_revision_bundle_check",
           "value": "\"official_workflow_definition_revisions\".\"content_bundle\" IS NULL OR (\n          jsonb_typeof(\"official_workflow_definition_revisions\".\"content_bundle\") = 'object'\n          AND \"official_workflow_definition_revisions\".\"content_bundle\" ?& ARRAY['sha256', 'archiveBytes']\n          AND (\"official_workflow_definition_revisions\".\"content_bundle\" - 'sha256' - 'archiveBytes') = '{}'::jsonb\n          AND jsonb_typeof(\"official_workflow_definition_revisions\".\"content_bundle\"->'sha256') = 'string'\n          AND \"official_workflow_definition_revisions\".\"content_bundle\"->>'sha256' ~ '^[0-9a-f]{64}$'\n          AND jsonb_typeof(\"official_workflow_definition_revisions\".\"content_bundle\"->'archiveBytes') = 'number'\n          AND (\"official_workflow_definition_revisions\".\"content_bundle\"->>'archiveBytes')::numeric BETWEEN 1 AND 33554432\n          AND trunc((\"official_workflow_definition_revisions\".\"content_bundle\"->>'archiveBytes')::numeric) = (\"official_workflow_definition_revisions\".\"content_bundle\"->>'archiveBytes')::numeric\n        )"
@@ -34704,153 +34655,6 @@
       "uniqueConstraints": {},
       "policies": {},
       "checkConstraints": {},
-      "isRLSEnabled": false
-    },
-    "public.user_notifications": {
-      "name": "user_notifications",
-      "schema": "",
-      "columns": {
-        "id": {
-          "name": "id",
-          "type": "uuid",
-          "primaryKey": true,
-          "notNull": true,
-          "default": "gen_random_uuid()"
-        },
-        "user_id": {
-          "name": "user_id",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "title": {
-          "name": "title",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "summary": {
-          "name": "summary",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "payload": {
-          "name": "payload",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "delivery_key": {
-          "name": "delivery_key",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "created_at": {
-          "name": "created_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": true,
-          "default": "now()"
-        },
-        "read_at": {
-          "name": "read_at",
-          "type": "timestamp (3) with time zone",
-          "primaryKey": false,
-          "notNull": false
-        }
-      },
-      "indexes": {
-        "idx_user_notifications_inbox": {
-          "name": "idx_user_notifications_inbox",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            },
-            {
-              "expression": "id",
-              "isExpression": false,
-              "asc": false,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "idx_user_notifications_unread": {
-          "name": "idx_user_notifications_unread",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "created_at",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
-          "where": "\"user_notifications\".\"read_at\" IS NULL",
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "uq_user_notifications_delivery": {
-          "name": "uq_user_notifications_delivery",
-          "columns": [
-            {
-              "expression": "user_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            },
-            {
-              "expression": "delivery_key",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        }
-      },
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {
-        "chk_user_notification_title": {
-          "name": "chk_user_notification_title",
-          "value": "length(trim(\"user_notifications\".\"title\")) BETWEEN 1 AND 200"
-        },
-        "chk_user_notification_summary": {
-          "name": "chk_user_notification_summary",
-          "value": "length(\"user_notifications\".\"summary\") <= 500"
-        },
-        "chk_user_notification_payload": {
-          "name": "chk_user_notification_payload",
-          "value": "(jsonb_typeof(\"user_notifications\".\"payload\") = 'object' AND CASE\n    WHEN \"user_notifications\".\"payload\"->>'type' = 'rich_text' THEN (\n      jsonb_typeof(\"user_notifications\".\"payload\"->'markdown') = 'string'\n      AND length(\"user_notifications\".\"payload\"->>'markdown') BETWEEN 1 AND 50000\n    )\n    WHEN \"user_notifications\".\"payload\"->>'type' = 'carousel' AND jsonb_typeof(\"user_notifications\".\"payload\"->'pages') = 'array' THEN (\n      jsonb_array_length(\"user_notifications\".\"payload\"->'pages') BETWEEN 2 AND 10\n      AND ((\"user_notifications\".\"payload\"->'pages'->0) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->0)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->0)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->0)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->1) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->1)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->1)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->1)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->2) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->2)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->2)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->2)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->3) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->3)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->3)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->3)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->4) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->4)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->4)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->4)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->5) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->5)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->5)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->5)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->6) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->6)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->6)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->6)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->7) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->7)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->7)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->7)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->8) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->8)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->8)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->8)->>'markdown') BETWEEN 1 AND 50000\n    )) AND ((\"user_notifications\".\"payload\"->'pages'->9) IS NULL OR (\n      jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->9)) = 'object'\n      AND jsonb_typeof((\"user_notifications\".\"payload\"->'pages'->9)->'markdown') = 'string'\n      AND length((\"user_notifications\".\"payload\"->'pages'->9)->>'markdown') BETWEEN 1 AND 50000\n    ))\n    )\n    ELSE false END) IS TRUE"
-        }
-      },
       "isRLSEnabled": false
     },
     "public.user_permission_grants": {

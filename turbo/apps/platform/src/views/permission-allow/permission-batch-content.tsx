@@ -589,7 +589,7 @@ function BatchDialog({ batch, href }: BatchViewProps & { href: string }) {
     <Dialog>
       <BatchCardSummary batch={batch} />
       <DialogContent maxWidth={640} showCloseButton={false}>
-        <DialogHeader className="flex-row items-center gap-3 space-y-0 text-left">
+        <DialogHeader className="flex-row items-center gap-3 text-left">
           <DialogTitle className="min-w-0 flex-1 leading-6">
             {t(($) => {
               return $.authorization.permissionBatch.title;

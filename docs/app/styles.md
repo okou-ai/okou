@@ -870,6 +870,17 @@ import the shared dialog rather than Base UI's dialog primitives; ESLint
 enforces this boundary. Preserve Base UI's focus, nested portal, outside-press,
 and animation-completion ownership when changing it.
 
+Dialog spacing follows shadcn/ui v4. The inner container owns the outer
+padding and the spacing between sections through `contentClassName` (`p-*`
+and `gap-*`); a header, body or composer section does not pad itself, so two
+sections never stack their insets. A section that runs edge to edge, such as a
+tinted band or a command surface that owns its insets as in `CommandDialog`,
+cancels the padding with matching negative margins. `DialogHeader` stacks its
+children with flex `gap-2`; adjust it with `gap-*`, not `space-y-*`. Tailwind
+v4 `space-y-*` adds a bottom margin to every child but the last, so a
+visually hidden last description still leaves a gap under the title, and it
+adds to the base `gap` rather than replacing it.
+
 The windowed popup's radius is `rounded-2xl`, and a layer inset from one of its
 edges derives its own from that figure: inner radius = 16px minus the inset it
 keeps. A layer sitting 8px inside the dialog therefore takes `rounded-lg`. Two

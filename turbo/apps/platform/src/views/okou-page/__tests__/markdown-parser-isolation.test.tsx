@@ -56,7 +56,7 @@ async function openInstructionsThenChat(): Promise<void> {
   });
   context.mocks.api(agentInstructionsContract.get, ({ respond }) => {
     return respond(200, {
-      content: "++Editor underline++",
+      content: "<u>Editor underline</u>",
       filename: "AGENTS.md",
     });
   });

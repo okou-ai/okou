@@ -117,7 +117,7 @@ describe("Runner first-start Thread binding", () => {
           sessionId: null,
           generationRunId: null,
           recoveryPrompt: expect.stringContaining(
-            "okou chat messages --output-dir threads",
+            "okou chat messages --output-dir /tmp/okou-chat-history",
           ),
         });
       });
@@ -162,7 +162,7 @@ describe("Runner first-start Thread binding", () => {
         sessionId: cancelled.startedAt ? null : first.threadId,
         generationRunId: cancelled.startedAt ? null : first.runId,
         recoveryPrompt: expect.stringContaining(
-          "okou chat messages --output-dir threads",
+          "okou chat messages --output-dir /tmp/okou-chat-history",
         ),
       });
     });

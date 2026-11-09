@@ -77,7 +77,7 @@ function SourcesSkipDialogContent({ onSkip }: { readonly onSkip: () => void }) {
         alt=""
         className="mx-auto h-44 max-w-full object-contain sm:h-52"
       />
-      <DialogHeader className="space-y-4 sm:text-center">
+      <DialogHeader className="gap-4 sm:text-center">
         <DialogTitle className="text-xl leading-7">
           {t(($) => {
             return $.onboarding.sourcesFirst.sources.skipDialog.title;

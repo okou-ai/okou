@@ -786,7 +786,7 @@ async function expectFirstSlackPiExecution(args: {
   const launchInput = JSON.stringify(claim);
   expect(claim.nativeContinuation?.sessionId).toBeNull();
   expect(claim.nativeContinuation?.recoveryPrompt).toContain(
-    "okou chat messages --output-dir threads",
+    "okou chat messages --output-dir /tmp/okou-chat-history",
   );
   expect(launchInput).toContain(args.turn.prompt);
   await completeSlackPiTurnInSandbox({
@@ -880,7 +880,7 @@ async function claimContinuedSlackPiTurn(args: {
     sessionId: args.scenario.chatThreadId,
     generationRunId: args.firstRunId,
     recoveryPrompt: expect.stringContaining(
-      "okou chat messages --output-dir threads",
+      "okou chat messages --output-dir /tmp/okou-chat-history",
     ),
   });
   await expectThreadModelCredits(
@@ -956,7 +956,7 @@ async function runSuccessfulRecoveredSlackPiTurn(args: {
     sessionId: null,
     generationRunId: null,
     recoveryPrompt: expect.stringContaining(
-      "okou chat messages --output-dir threads",
+      "okou chat messages --output-dir /tmp/okou-chat-history",
     ),
   });
   const events = (

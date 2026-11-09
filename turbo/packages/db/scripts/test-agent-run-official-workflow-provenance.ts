@@ -170,7 +170,6 @@ export async function validateAgentRunOfficialWorkflowProvenanceSchema(
         ],
       );
       for (const value of [
-        null,
         {},
         { sha256: "bad", archiveBytes: 200 },
         { ...bundle, archiveBytes: 0 },
@@ -184,17 +183,28 @@ export async function validateAgentRunOfficialWorkflowProvenanceSchema(
           ),
         );
       }
-      await assert.rejects(
-        client.query(
-          "UPDATE official_workflow_definition_revisions SET storage_name=$1 WHERE definition_name=$2",
-          ["partial-identity", revisionName],
-        ),
-        (error: unknown) => {
-          return (
-            databaseErrorConstraint(error) ===
-            "official_workflow_definition_revision_delivery_check"
-          );
-        },
+      // A retained immutable source may be unmaterialized. Publication supplies
+      // its bundle before it can join the current execution catalog.
+      const retained = await client.query<{ payload: unknown }>(
+        "SELECT payload FROM official_workflow_definition_revisions WHERE definition_name=$1",
+        [revisionName],
+      );
+      await client.query(
+        "UPDATE official_workflow_definition_revisions SET content_bundle=NULL WHERE definition_name=$1",
+        [revisionName],
+      );
+      assert.deepEqual(
+        (
+          await client.query(
+            "SELECT payload FROM official_workflow_definition_revisions WHERE definition_name=$1",
+            [revisionName],
+          )
+        ).rows,
+        retained.rows,
+      );
+      await client.query(
+        "UPDATE official_workflow_definition_revisions SET content_bundle=$1 WHERE definition_name=$2",
+        [bundle, revisionName],
       );
     } finally {
       await client.query(

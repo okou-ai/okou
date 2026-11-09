@@ -589,7 +589,7 @@ export function RemoteNetworkCredentialHelp({
           contentClassName="flex flex-col gap-0 p-0"
           showCloseButton={false}
         >
-          <DialogHeader className="space-y-0 px-6 pt-6 text-left">
+          <DialogHeader className="px-6 pt-6 text-left">
             <div className="flex items-center justify-between gap-4">
               <DialogTitle
                 className="min-w-0 flex-1 text-xl font-semibold leading-7"

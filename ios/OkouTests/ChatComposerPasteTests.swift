@@ -127,11 +127,14 @@ final class ChatComposerPasteTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.preparations.isEmpty })
   }
 
-  func testResettingAgentDraftDetachesALateMixedTextPaste() async throws {
+  func testPendingMixedTextPasteStaysWithItsDraftWhenOpeningAnExistingChat() async throws {
     let fixture = AttachmentFlowFixture()
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { workspace.close() }
-    workspace.selectedAgentID = AttachmentFlowFixture.agentID
+    await workspace.refreshNavigation()
+    let created = await workspace.createChat()
+    let thread = try XCTUnwrap(created)
+    workspace.startNewChat()
     let originalComposer = workspace.newComposer
     let host = UIHostingController(rootView: WorkspacePasteComposerHarness(workspace: workspace))
     let window = try await mount(host)
@@ -166,18 +169,18 @@ final class ChatComposerPasteTests: XCTestCase {
     }
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
-    workspace.startNewChat(agentID: "another-agent")
+    workspace.selectChat(thread.id)
     input.insertText("stale edit")
-    XCTAssertEqual(workspace.newChatDraft, "")
+    XCTAssertEqual(workspace.selectedConversation?.draft, "")
     XCTAssertTrue(originalComposer.text.contains("stale edit"))
-    // The draft switch retires the input owner; UIKit teardown is not a prerequisite
+    // Opening a chat selects a different composer; UIKit teardown is not a prerequisite
     // for delivering the old paste and checking that the new draft stays isolated.
     delivery.release()
     // UIKit's completion event is the causal boundary, independent of display frames.
     await fulfillment(of: [pasted], timeout: 3)
     XCTAssertTrue(input.text.contains("late text"))
-    XCTAssertEqual(workspace.newChatDraft, "")
-    XCTAssertFalse(workspace.newAttachmentDraft.hasAttachments)
+    XCTAssertEqual(workspace.selectedConversation?.draft, "")
+    XCTAssertFalse(workspace.selectedConversation?.attachmentDraft.hasAttachments ?? true)
   }
 
   func testPendingImageStaysWithItsConversationWhileAnotherDraftIsSent() async throws {

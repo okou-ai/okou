@@ -104,7 +104,7 @@ function ReadError({ inbox }: { readonly inbox: NotificationInbox }) {
 function NotificationHeader({ item }: { readonly item: UserNotification }) {
   const { t } = useTranslation();
   return (
-    <DialogHeader className="shrink-0 space-y-3 pr-7 text-left">
+    <DialogHeader className="shrink-0 gap-3 pr-7 text-left">
       <DialogDescription>
         {t(($) => {
           return $.userNotifications.sender;
