@@ -3186,6 +3186,13 @@
       "when": 1794111441034,
       "tag": "1533_prepare_template_guidance_bundles",
       "breakpoints": true
+    },
+    {
+      "idx": 1534,
+      "version": "7",
+      "when": 1794197492259,
+      "tag": "1534_email_integration",
+      "breakpoints": true
     }
   ]
 }

@@ -1055,6 +1055,11 @@ export const clientContractImportManifest = [
     ],
   },
   {
+    module: "integrations-email",
+    contracts: ["integrationsEmailContract"],
+    bindings: [],
+  },
+  {
     module: "integrations-github",
     contracts: ["integrationsGithubContract"],
     bindings: [],

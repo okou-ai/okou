@@ -46,6 +46,15 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
+  [FeatureSwitchKey.EmailIntegration]: {
+    maintainer: "yuma@vm0.ai",
+    displayName: "Email integration",
+    description:
+      "Email Okou and continue each email conversation in its own chat.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+    enabledEmailHashes: [fnv1a("yuma@vm0.ai")],
+  },
   [FeatureSwitchKey.HomeCapabilities]: {
     maintainer: "bingjie@okou.ai",
     displayName: "Home capabilities",

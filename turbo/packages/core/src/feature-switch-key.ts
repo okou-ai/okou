@@ -4,6 +4,7 @@
  * Defines all available feature switch identifiers.
  */
 export enum FeatureSwitchKey {
+  EmailIntegration = "emailIntegration",
   HomeCapabilities = "homeCapabilities",
   SingleAgent = "singleAgent",
   FriendReferrals = "friendReferrals",

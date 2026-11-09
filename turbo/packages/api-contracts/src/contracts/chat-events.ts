@@ -27,6 +27,7 @@ export const CHAT_EVENT_CONTEXT_TYPES = [
   "teams",
   "telegram",
   "agentphone",
+  "email",
   "automation",
   "agent_run",
 ] as const;

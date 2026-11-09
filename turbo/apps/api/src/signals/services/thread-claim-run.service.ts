@@ -1,3 +1,4 @@
+import { emailDeliveryTargetSchema } from "./email-chat-callback-payload";
 import { templateGuidanceMountPath } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { performance } from "node:perf_hooks";
 import {
@@ -1148,6 +1149,7 @@ function claimRejectionContext(
       discordDelivery: input.discordDelivery,
       wechatDelivery: input.wechatDelivery,
       telegramDelivery: input.telegramDelivery,
+      emailDelivery: input.emailDelivery,
       agentphoneDelivery: input.agentphoneDelivery,
     },
   };
@@ -1538,6 +1540,26 @@ export function createThreadClaimRunObjects(
       };
     },
   );
+  const emailPromptMaterial$ = computed(
+    async (get): Promise<QueuedLaunchMaterial> => {
+      if (
+        !isFeatureEnabled(
+          FeatureSwitchKey.EmailIntegration,
+          await get(bootstrap.featureSwitches$),
+        )
+      ) {
+        throw new QueuedPromptLaunchUnavailableError();
+      }
+      const context = await get(threadContext.emailContext$);
+      if (!context) {
+        throw new QueuedPromptLaunchUnavailableError();
+      }
+      return {
+        triggerSource: "email",
+        delivery: { emailDelivery: emailDeliveryTargetSchema.parse(context) },
+      };
+    },
+  );
   const promptMaterialMaterial$ = computed(
     async (get): Promise<QueuedLaunchMaterial> => {
       const { queuedMessage } = await get(promptArgsArgs$);
@@ -1598,6 +1620,9 @@ export function createThreadClaimRunObjects(
               telegramDelivery: queuedTelegramDelivery(context),
             },
           };
+        }
+        case "email": {
+          return await get(emailPromptMaterial$);
         }
         case "agentphone": {
           const context = await get(agentPhoneContext$);

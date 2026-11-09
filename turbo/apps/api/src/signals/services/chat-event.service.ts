@@ -64,7 +64,23 @@ export type WechatChatEventContext = Readonly<
   >
 >;
 
+type EmailChatEventContext = {
+  readonly userLinkId: string;
+  readonly emailMessageId: string;
+  readonly messageText: string;
+};
+
 type ChatEventDisplayContext =
+  | {
+      readonly emailContext: EmailChatEventContext;
+      readonly wechatContext?: never;
+      readonly discordContext?: never;
+      readonly slackContext?: never;
+      readonly feishuContext?: never;
+      readonly teamsContext?: never;
+      readonly telegramContext?: never;
+      readonly agentphoneContext?: never;
+    }
   | {
       readonly wechatContext: WechatChatEventContext;
       readonly discordContext?: never;
@@ -72,6 +88,7 @@ type ChatEventDisplayContext =
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
+      readonly emailContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -81,6 +98,7 @@ type ChatEventDisplayContext =
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
+      readonly emailContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -105,6 +123,7 @@ type ChatEventDisplayContext =
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
+      readonly emailContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -127,6 +146,7 @@ type ChatEventDisplayContext =
       };
       readonly teamsContext?: never;
       readonly telegramContext?: never;
+      readonly emailContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -155,6 +175,7 @@ type ChatEventDisplayContext =
         readonly connectionId: string;
       };
       readonly telegramContext?: never;
+      readonly emailContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -179,6 +200,7 @@ type ChatEventDisplayContext =
         readonly senderUsername: string | null;
         readonly senderLanguage: string | null;
       };
+      readonly emailContext?: never;
       readonly agentphoneContext?: never;
     }
   | {
@@ -211,6 +233,7 @@ type ChatEventDisplayContext =
       readonly feishuContext?: never;
       readonly teamsContext?: never;
       readonly telegramContext?: never;
+      readonly emailContext?: never;
       readonly agentphoneContext?: never;
     };
 
@@ -376,6 +399,11 @@ export interface LoadedChatEventReplacementTarget extends StoredChatEventContext
 }
 
 type NewDisplayContext =
+  | ({
+      readonly type: "email";
+      readonly id: string;
+      readonly chatThreadId: string;
+    } & EmailChatEventContext)
   | {
       readonly type: "wechat";
       readonly id: string;
@@ -613,6 +641,17 @@ function newDisplayContext(
       id: eventId,
       chatThreadId: values.chatThreadId,
       ...teamsContext,
+    };
+  }
+
+  const emailContext =
+    "emailContext" in values ? values.emailContext : undefined;
+  if (emailContext) {
+    return {
+      type: "email",
+      id: eventId,
+      chatThreadId: values.chatThreadId,
+      ...emailContext,
     };
   }
 

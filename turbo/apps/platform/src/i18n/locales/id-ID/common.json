@@ -7260,6 +7260,19 @@
       "unconfigured": "Discord belum dikonfigurasi untuk organisasi ini."
     },
     "documentTitle": "Berfungsi",
+    "email": {
+      "connected": "Email terhubung",
+      "description": "Kirim email ke Okou dan simpan setiap percakapan di chat tersendiri",
+      "healthNotice": "Jangan gunakan integrasi ini untuk informasi pasien yang diatur oleh HIPAA.",
+      "instructions": "Kirim pesan dari alamat email akun Anda. Email baru memulai chat baru; balasan melanjutkan percakapan yang sama. Jika Anda pengguna baru, kami akan membantu pendaftaran lalu melanjutkan permintaan Anda.",
+      "invalidLink": "Tautan koneksi ini tidak valid. Kirim email baru ke Okou.",
+      "loadError": "Tidak dapat memuat koneksi email Anda",
+      "manage": "Kelola",
+      "open": "Buka email",
+      "resumed": "{{email}} terhubung. Permintaan awal Anda akan dijawab dalam percakapan email yang sama.",
+      "title": "Email",
+      "unavailable": "Email belum tersedia untuk ruang kerja ini"
+    },
     "feishuConnected": "Feishu berhasil terhubung",
     "github": {
       "adminInstall": "Minta admin organisasi untuk menginstal aplikasi GitHub",

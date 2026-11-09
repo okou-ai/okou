@@ -7359,6 +7359,19 @@
       "unconfigured": "Discord n’est pas encore configuré pour cette organisation."
     },
     "documentTitle": "Fonctionne",
+    "email": {
+      "connected": "E-mail connecté",
+      "description": "Écrivez à Okou et gardez chaque conversation dans son propre fil",
+      "healthNotice": "N’utilisez pas cette intégration pour des informations de patients soumises à HIPAA.",
+      "instructions": "Envoyez un message depuis l’adresse e-mail de votre compte. Les nouveaux e-mails créent de nouveaux chats ; les réponses gardent la même conversation. Nous aidons les nouveaux utilisateurs à s’inscrire avant de poursuivre leur demande.",
+      "invalidLink": "Ce lien de connexion est invalide. Envoyez un nouvel e-mail à Okou.",
+      "loadError": "Impossible de charger votre connexion e-mail",
+      "manage": "Gérer",
+      "open": "Ouvrir l’e-mail",
+      "resumed": "{{email}} est connecté. Votre demande initiale recevra une réponse dans la même conversation par e-mail.",
+      "title": "E-mail",
+      "unavailable": "L’e-mail n’est pas encore disponible pour cet espace de travail"
+    },
     "feishuConnected": "Feishu connecté avec succès",
     "github": {
       "adminInstall": "Demandez à un administrateur de l’organisation d’installer l’application GitHub",
