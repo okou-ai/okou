@@ -32,7 +32,7 @@ const QUEST_ART = Object.freeze({
   checkinWeek: "get-started-checkin-week-b218eb5cd860.png",
 });
 
-function questArtUrl(name: keyof typeof QUEST_ART): string {
+export function questArtUrl(name: keyof typeof QUEST_ART): string {
   return platformStaticAssetUrl(`views/okou-page/assets/${QUEST_ART[name]}`);
 }
 

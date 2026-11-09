@@ -4192,14 +4192,18 @@
   "friendReferrals": {
     "copied": "Copied",
     "copyFailed": "Copy failed. Try again.",
-    "copyLink": "Copy link",
-    "description": "Earn $20 in credits when a friend signs up through your invitation link, buys a usage pack, and upgrades to Pro or above.",
+    "copyLink": "Copy invite link",
+    "description": "You get $20 in credits once a friend completes all 3 steps",
+    "dialogTitle": "Invite friends, get $20 each",
     "earned": "Credits earned",
     "loadFailed": "Your invitation link could not be loaded. Try again.",
     "loading": "Getting your invitation link…",
     "registered": "Friends signed up",
     "retry": "Try again",
-    "terms": "For new users only. Each friend can earn you one reward. Credits go to your personal balance in this workspace and expire one month after they are granted.",
+    "stepSignUp": "Signs up with your invite link",
+    "stepUpgrade": "Upgrades to Pro or above",
+    "stepUsagePack": "Buys a usage pack",
+    "terms": "New users only. One reward per friend. Credits go to your personal balance in this workspace and expire 1 month after they’re granted.",
     "title": "Invite your friends"
   },
   "global": {
