@@ -5,7 +5,7 @@ import {
   string as zString,
   type infer as zInfer,
 } from "zod";
-import type { StoredExecutionContext } from "@okouai/api-contracts/contracts/runners";
+import type { PreparedExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import { contentBundleSchema } from "@okouai/api-contracts/contracts/content-bundle";
 import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { agents } from "@okouai/db/schema/agent";
@@ -22,13 +22,13 @@ export const claimedWorkflowSchema = zObject({
 export type ClaimedWorkflow = zInfer<typeof claimedWorkflowSchema>;
 
 export interface WorkflowClaimInput {
-  readonly selection: StoredExecutionContext["customWorkflowSelection"];
+  readonly selection: PreparedExecutionContext["customWorkflowSelection"];
   readonly skillRoot: string;
   readonly ambiguousMountPaths: readonly string[];
 }
 
 function officialWorkflowClaimSelection(
-  context: StoredExecutionContext,
+  context: PreparedExecutionContext,
   skillRoot: string,
 ): WorkflowClaimInput["selection"] {
   const officialPaths = (context.officialWorkflowBundles ?? []).map(
@@ -61,7 +61,7 @@ function officialWorkflowClaimSelection(
 }
 
 export function workflowClaimInput(
-  context: StoredExecutionContext,
+  context: PreparedExecutionContext,
 ): WorkflowClaimInput {
   const skillRoot =
     context.cliAgentType === "pi"

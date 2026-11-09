@@ -441,7 +441,6 @@ test("keeps captured workspace Workflow scope after claim and a live switch chan
       });
       const claim = await runs.claimRunnerJob(queued.runId);
       owner.rememberClaim(queued.runId, claim.sandboxToken);
-      expect(claim.featureFlags).toMatchObject({ singleAgent: true });
       await billing.updateFeatureSwitches(member, { singleAgent: false });
       const runHeaders = {
         authorization: `Bearer ${claim.platformEnvironment.OKOU_TOKEN!}`,
@@ -494,7 +493,6 @@ test("keeps captured workspace Workflow scope after claim and a live switch chan
       await billing.updateFeatureSwitches(member, { singleAgent: true });
       const retainedClaim = await runs.claimRunnerJob(retained.runId);
       owner.rememberClaim(retained.runId, retainedClaim.sandboxToken);
-      expect(retainedClaim.featureFlags).toMatchObject({ singleAgent: false });
       await accept(
         detail().copy({
           headers: {

@@ -11,10 +11,11 @@ const api = createRunsApi(context);
 const bdd = createBddApi(context);
 
 describe("Runner Claim launch defaults", () => {
-  it("uses a newly configured timezone and retains launch restrictions and identity", async () => {
+  it("uses the latest timezone and retains restrictions and identity with compact context", async () => {
     mockEnv("APP_URL", "https://claim-defaults.example");
     const owned = await publicChatActor(context);
     await owned.run(async () => {
+      await bdd.updateUserTimezone(owned.actor, "America/Los_Angeles");
       const queued = await api.createThreadRun(owned.actor, {
         agentId: owned.agentId,
         prompt: "prepare the accepted Run with current missing preferences",
