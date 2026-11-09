@@ -13,6 +13,19 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1105.0](https://github.com/okou-ai/okou/compare/app-v0.1104.0...app-v0.1105.0) (2026-11-09)
+
+
+### Features
+
+* **app:** lead my okou chat list with new chat and new project rows ([#46159](https://github.com/okou-ai/okou/issues/46159)) ([1b5af70](https://github.com/okou-ai/okou/commit/1b5af7038f04cef3b637ffc1b11d8fdcf315e695))
+* **platform:** pick a new chat's project from the composer ([#46147](https://github.com/okou-ai/okou/issues/46147)) ([42dac27](https://github.com/okou-ai/okou/commit/42dac27c6ea2320312d82b489111ed1cacf5f13a))
+
+
+### Bug Fixes
+
+* **app:** group secondary chat actions in an icon-only dropdown ([#46138](https://github.com/okou-ai/okou/issues/46138)) ([e92341f](https://github.com/okou-ai/okou/commit/e92341fddca02e6b9256c02c57b4716d5c8c6fda))
+
 ## [0.1104.0](https://github.com/okou-ai/okou/compare/app-v0.1103.1...app-v0.1104.0) (2026-11-09)
 
 

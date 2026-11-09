@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.244.51](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.50...runner-rs-v0.244.51) (2026-11-09)
+
+
+### Refactoring
+
+* **python:** centralize firewall request identity ([#46175](https://github.com/okou-ai/okou/issues/46175)) ([bafa32a](https://github.com/okou-ai/okou/commit/bafa32a490681694271275f22f9ae22cd4bc8eec))
+
 ## [0.244.50](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.49...runner-rs-v0.244.50) (2026-11-09)
 
 
