@@ -4148,7 +4148,10 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
   ] as const)(
     "workspace conversion reports Google HTTP $providerStatus without creating another file (after refresh: $afterRefresh)",
     async ({ providerStatus, afterRefresh }) => {
-      const fixture = await workspaceSource("report.txt", Buffer.from("Hello"));
+      const fixture = await publicOfficeConversionSource(
+        docsImportFixture(),
+        "docx",
+      );
       mockGoogleDriveConnectorOAuth({
         refreshOutcome: {
           type: "ok",
@@ -4173,12 +4176,13 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
           body: JSON.stringify({
             error: {
               code: providerStatus,
-              message: `Cannot inspect ${fixture.deckId} for owner@example.test: https://drive.google.com/file/${fixture.deckId}?access_token=private-token`,
+              message:
+                "Cannot inspect private-file-id for owner@example.test: https://drive.google.com/file/private-file-id?access_token=private-token",
             },
           }),
         };
       });
-      const response = await fixture.upload("google");
+      const response = await fixture.upload("google", [400]);
       expect(response.status).toBe(400);
       expect(response.body).toStrictEqual({
         error: {
@@ -4188,7 +4192,6 @@ describe("CHAT-03 thread artifacts and google drive status", () => {
       });
       expect(upload.metadata).toHaveLength(0);
       expect(upload.bodies).toHaveLength(0);
-      await fixture.finish();
     },
     120_000,
   );
