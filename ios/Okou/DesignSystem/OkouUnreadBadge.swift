@@ -10,7 +10,6 @@ struct OkouUnreadBadge: ViewModifier {
         Circle()
           .fill(OkouStatusColor.running)
           .frame(width: OkouControl.unreadDot, height: OkouControl.unreadDot)
-          .overlay { Circle().stroke(OkouColor.background, lineWidth: OkouSpace.two) }
           .offset(x: OkouSpace.xs, y: -OkouSpace.xs)
           .allowsHitTesting(false)
           .accessibilityHidden(true)
