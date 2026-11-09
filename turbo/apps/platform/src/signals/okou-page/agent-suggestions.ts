@@ -118,6 +118,7 @@ const suggestionComposerGraph$ = computed((get) => {
       session.agentId,
       agentDraft,
       session.onOptimisticSend,
+      session.entry.item.title,
     ),
   };
 });
@@ -273,6 +274,7 @@ const sendAgentSuggestionOption$ = command(
       sendNewThreadWithoutNavigation$,
       {
         agentId,
+        title: entry.item.title,
         draft,
         preserveAgentDraft: true,
         prompt,
