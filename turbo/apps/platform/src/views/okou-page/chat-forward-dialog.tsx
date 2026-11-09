@@ -44,7 +44,7 @@ import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 function ForwardContent({ text }: { readonly text: string }) {
   const { t } = useTranslation();
   return (
-    <div className="border-y border-border/60 bg-gray-50 px-5 py-4">
+    <div className="-mx-5 border-y border-border/60 bg-gray-50 px-5 py-4">
       <div className="mb-2 text-xs font-medium text-muted-foreground">
         {t(($) => {
           return $.chat.forward.content;
@@ -124,7 +124,8 @@ function ForwardTargetPicker({
       }}
       className="min-h-0"
     >
-      <div className="relative px-5 pb-4 pt-3">
+      {/* Top inset only for the focus ring, which the command clips. */}
+      <div className="relative px-5 pb-4 pt-1">
         <CommandInput
           autoFocus
           placeholder={t(($) => {
@@ -213,7 +214,7 @@ function ForwardComposerSurface({
   readonly composer: ComposerSignals;
 }) {
   return (
-    <div className="w-full min-w-0 p-5" data-chat-composer>
+    <div className="w-full min-w-0" data-chat-composer>
       <ChatComposer signals={composer} showPendingItems={false} />
     </div>
   );
@@ -249,9 +250,9 @@ export function ChatForwardDialog({
     >
       <DialogContent
         smMaxWidth="xl"
-        contentClassName="grid-cols-[minmax(0,1fr)] gap-0 overflow-hidden p-0"
+        contentClassName="grid-cols-[minmax(0,1fr)] gap-4 overflow-hidden p-5"
       >
-        <DialogHeader className="min-w-0 px-5 pb-3 pt-5">
+        <DialogHeader className="min-w-0">
           <div className="flex min-w-0 items-center gap-2 pr-8">
             {target && !singleAgent ? (
               <IconTooltipButton
@@ -295,7 +296,7 @@ export function ChatForwardDialog({
         ) : target && prepared.state === "hasData" && prepared.data ? (
           <ForwardComposerSurface composer={prepared.data.composer} />
         ) : prepared.state === "hasError" ? (
-          <p role="alert" className="px-5 pb-5 text-sm text-muted-foreground">
+          <p role="alert" className="text-sm text-muted-foreground">
             {prepared.error instanceof Error
               ? prepared.error.message
               : t(($) => {
@@ -307,7 +308,11 @@ export function ChatForwardDialog({
             <Loader2 size={16} className="animate-spin" aria-hidden />
           </div>
         ) : (
-          <ForwardTargetPicker onSelect={handleTargetSelect} />
+          // A command surface owns its insets, as in the shared CommandDialog,
+          // so the picker bleeds to the dialog's side and bottom edges.
+          <div className="-mx-5 -mb-5 min-w-0">
+            <ForwardTargetPicker onSelect={handleTargetSelect} />
+          </div>
         )}
       </DialogContent>
     </Dialog>
