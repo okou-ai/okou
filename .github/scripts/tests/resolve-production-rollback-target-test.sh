@@ -80,6 +80,8 @@ case "${1:-}" in
       fi
     elif [ "${3:-}" = "046a7bac03cc5f5a94cc67394756f69be2eaf111" ]; then
       [ "${MOCK_MARKETING_SHORT_ADDRESS_WRITER_TARGET_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "ac0609591b2a0a5f159afb50b7561df46a23f6a4" ]; then
+      [ "${MOCK_CHAT_INDICATORS_CHANGED_PUBLISHER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "01d21f7c5857795104c27cd54e724f2ced2d683e" ]; then
       [ "${MOCK_IMMUTABLE_DEFAULT_AGENT_WRITER_TARGET_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "bcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbcbc" ]; then
@@ -677,6 +679,15 @@ assert_failure "Rollback target predates Marketing handoff short-address respons
 [ ! -s "${tmp_dir}/marketing-short-address.output" ] || fail "full-hash-only API must not publish outputs"
 if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
   fail "full-hash-only API must fail before provider or host access"
+fi
+
+# Current Apps refresh chat indicators only from chatIndicatorsChanged.
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates chat indicator change signals" \
+  run_resolver "${tmp_dir}/chat-indicators-changed.output" MOCK_CHAT_INDICATORS_CHANGED_PUBLISHER_TARGET_VALID=0
+[ ! -s "${tmp_dir}/chat-indicators-changed.output" ] || fail "signal-free API must not publish outputs"
+if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+  fail "signal-free API must fail before provider or host access"
 fi
 
 # The prepared API reader is required even when the rollback selects an older

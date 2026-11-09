@@ -276,11 +276,6 @@ export const handleSharedDatabaseRealtimeMessage$ = command(
           ? { kind: "chat-thread-event" }
           : null;
     if (topic === "threadListChanged") {
-      // Rollout fallback (#45719): APIs before #45712 never publish
-      // chatIndicatorsChanged, but publish this topic at every Run start, Run
-      // terminal marker, mute and delete. Remove it once an enforced API
-      // rollback floor excludes those APIs.
-      set(startChatThreadIndicatorsRefresh$);
       set(broadcastSharedDatabaseWorkerMessage$, {
         type: "invalidate",
         dataKey: { kind: "project-event" },
