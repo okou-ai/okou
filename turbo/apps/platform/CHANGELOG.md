@@ -13,6 +13,14 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1102.5](https://github.com/okou-ai/okou/compare/app-v0.1102.4...app-v0.1102.5) (2026-11-09)
+
+
+### Bug Fixes
+
+* **app:** announce new features in the force-upgrade dialog ([#46023](https://github.com/okou-ai/okou/issues/46023)) ([ded4a6a](https://github.com/okou-ai/okou/commit/ded4a6a42b4a9236e5c2f11da6341c7663d58d02))
+* retire thread-list indicator refresh fallback ([#46009](https://github.com/okou-ai/okou/issues/46009)) ([3696606](https://github.com/okou-ai/okou/commit/36966068cf7f6465fddc6dde6fde2574b95f4c1c))
+
 ## [0.1102.4](https://github.com/okou-ai/okou/compare/app-v0.1102.3...app-v0.1102.4) (2026-11-08)
 
 
