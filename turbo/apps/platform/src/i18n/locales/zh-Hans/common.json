@@ -5077,6 +5077,7 @@
     "moveTitle": "移动聊天",
     "moveTo": "移至 {{name}}",
     "name": "Project 名称",
+    "new": "新建 Project",
     "newChat": "新建聊天",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",

@@ -5095,6 +5095,7 @@
     "moveTitle": "Move chat",
     "moveTo": "{{name}} में ले जाएँ",
     "name": "Project name",
+    "new": "New Project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",

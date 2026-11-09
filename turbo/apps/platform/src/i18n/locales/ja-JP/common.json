@@ -5077,6 +5077,7 @@
     "moveTitle": "Move chat",
     "moveTo": "{{name}} に移動",
     "name": "Project name",
+    "new": "New Project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
