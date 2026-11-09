@@ -121,6 +121,8 @@ test("runs the current default agent's official Learning while its nightly sched
             ...formerDefault.workflow,
             id: "33333333-3333-4333-8333-333333333333",
             agentId: "dddddddd-dddd-4ddd-8ddd-dddddddddddd",
+            agentName: "former-default",
+            agentDisplayName: "Former default",
           },
           automation: {
             ...formerDefault.automation,
@@ -132,6 +134,7 @@ test("runs the current default agent's official Learning while its nightly sched
           workflow: {
             ...unrelated.workflow,
             id: "11111111-1111-4111-8111-111111111111",
+            name: "proactive-suggestions",
             official: {
               definitionName: "proactive-suggestions",
               installationState: "installed",
