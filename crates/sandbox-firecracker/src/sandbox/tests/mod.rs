@@ -30,6 +30,7 @@ mod process_write;
 mod readiness;
 mod running_handoff;
 mod shutdown_closed;
+mod startup_connection;
 
 struct TestNormalOperationFence;
 
