@@ -63,6 +63,7 @@ import { modelCatalogContract } from "../contracts/model-catalog";
 import { orgContract } from "../contracts/org-routes";
 import { personalModelProviderAccountsByIdContract } from "../contracts/personal-model-providers";
 import { platformRealtimeTokenContract } from "../contracts/realtime";
+import { projectsContract } from "../contracts/projects";
 import { remotesContract } from "../contracts/remotes";
 import { runModelsMainContract } from "../contracts/run-models";
 import { runConnectorAccountsContract } from "../contracts/run-connector-accounts";
@@ -408,6 +409,11 @@ const iosContracts: readonly {
     id: "ios.platformRealtimeTokenContract.create",
     route: platformRealtimeTokenContract.create,
   },
+  { id: "ios.projectsContract.list", route: projectsContract.list },
+  { id: "ios.projectsContract.create", route: projectsContract.create },
+  { id: "ios.projectsContract.update", route: projectsContract.update },
+  { id: "ios.projectsContract.delete", route: projectsContract.delete },
+  { id: "ios.projectsContract.membership", route: projectsContract.membership },
   { id: "ios.remotesContract.overview", route: remotesContract.overview },
   { id: "ios.runModelsMainContract.list", route: runModelsMainContract.list },
   {
