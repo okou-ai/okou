@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.28.19](https://github.com/okou-ai/okou/compare/sandbox-v0.28.18...sandbox-v0.28.19) (2026-11-09)
+
+
+### Documentation
+
+* **sandbox:** clarify agent start timing observation boundaries ([#46137](https://github.com/okou-ai/okou/issues/46137)) ([2501731](https://github.com/okou-ai/okou/commit/2501731ae77cd8ac9cef3382d489f6b2419801ee))
+
 ## [0.28.18](https://github.com/okou-ai/okou/compare/sandbox-v0.28.17...sandbox-v0.28.18) (2026-11-09)
 
 ## [0.28.17](https://github.com/okou-ai/okou/compare/sandbox-v0.28.16...sandbox-v0.28.17) (2026-11-09)

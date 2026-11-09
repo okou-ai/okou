@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.53.85](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.84...sandbox-firecracker-v0.53.85) (2026-11-09)
+
+
+### Refactoring
+
+* **sandbox:** own guest connection task during startup ([#46105](https://github.com/okou-ai/okou/issues/46105)) ([141d537](https://github.com/okou-ai/okou/commit/141d537be106797791bd3dda209077fa69a3e4df))
+
 ## [0.53.84](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.83...sandbox-firecracker-v0.53.84) (2026-11-09)
 
 ## [0.53.83](https://github.com/okou-ai/okou/compare/sandbox-firecracker-v0.53.82...sandbox-firecracker-v0.53.83) (2026-11-09)

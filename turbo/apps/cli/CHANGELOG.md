@@ -1,5 +1,32 @@
 # Changelog
 
+## [10.19.0](https://github.com/okou-ai/okou/compare/cli-v10.18.17...cli-v10.19.0) (2026-11-09)
+
+
+### Features
+
+* **email:** add file uploads and integration context ([#46119](https://github.com/okou-ai/okou/issues/46119)) ([831ba71](https://github.com/okou-ai/okou/commit/831ba71f8ef3abfe63860da9ac69970e809f8910))
+
+
+### Bug Fixes
+
+* **cli:** reject chat history output inside the agent memory directory ([#46107](https://github.com/okou-ai/okou/issues/46107)) ([cdc0477](https://github.com/okou-ai/okou/commit/cdc04778c743aa7eec5effaaa6fbe2a9e698171c))
+* unify optional callbacks across computer access cards ([#46066](https://github.com/okou-ai/okou/issues/46066)) ([fbf9922](https://github.com/okou-ai/okou/commit/fbf9922703e4f61dfddf0e377092a3382d20fdf6))
+
+
+### Documentation
+
+* direct chat history guidance to temporary storage ([#46104](https://github.com/okou-ai/okou/issues/46104)) ([e862ae0](https://github.com/okou-ai/okou/commit/e862ae074025e2723fa4184177fdb2ca8b354c54))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.46.0
+    * @okouai/core bumped to 8.825.0
+    * @okouai/pi-agent-runtime bumped to 1.51.90
+
 ## [10.18.17](https://github.com/okou-ai/okou/compare/cli-v10.18.16...cli-v10.18.17) (2026-11-09)
 
 
