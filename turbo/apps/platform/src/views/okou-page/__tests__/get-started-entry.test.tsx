@@ -53,7 +53,7 @@ import {
 const QUEST_AGENT_ID = "c0000000-0000-4000-a000-000000000002";
 const context = testContext();
 
-test("The gift opens invitations independently of credit quests, with code and link copying", async () => {
+test("The gift opens invitations independently of credit quests and copies the invitation link", async () => {
   const status = configureQuestPage(context, "admin");
   status.quests = [];
   const linkReady = context.mocks.deferred<void>();
@@ -103,23 +103,14 @@ test("The gift opens invitations independently of credit quests, with code and l
   ).toBeInTheDocument();
   await expect(
     within(dialog).findByRole("status", {
-      name: "Getting your invitation code…",
+      name: "Getting your invitation link…",
     }),
   ).resolves.toBeInTheDocument();
   linkReady.resolve();
-  const code = await within(dialog).findByLabelText("Your invitation code");
-  expect(code).toHaveValue("a7k2p9");
-  expect(
-    within(dialog).queryByDisplayValue(
-      `${location.origin}/sign-up?friend_referral=a7k2p9`,
-    ),
-  ).not.toBeInTheDocument();
-  expect(within(dialog).getByText("40,000")).toBeInTheDocument();
-  click(buttonNamed("Copy code", dialog));
   await waitFor(() => {
-    expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
+    return buttonNamed("Copy link", dialog);
   });
-  await expect(navigator.clipboard.readText()).resolves.toBe("a7k2p9");
+  expect(within(dialog).getByText("40,000")).toBeInTheDocument();
   click(buttonNamed("Copy link", dialog));
   await waitFor(() => {
     expect(buttonNamed("Copied", dialog)).toBeInTheDocument();
@@ -127,7 +118,6 @@ test("The gift opens invitations independently of credit quests, with code and l
   await expect(navigator.clipboard.readText()).resolves.toBe(
     `${location.origin}/sign-up?friend_referral=a7k2p9`,
   );
-  expect(buttonNamed("Copy code", dialog)).toBeInTheDocument();
   await user.keyboard("{Escape}");
   await waitFor(() => {
     expect(dialog).not.toBeInTheDocument();
@@ -200,13 +190,13 @@ test("Referral link failures can be retried in the same dialog", async () => {
     name: "Invite your friends",
   });
   await expect(within(dialog).findByRole("alert")).resolves.toHaveTextContent(
-    "Your invitation code could not be loaded. Try again.",
+    "Your invitation link could not be loaded. Try again.",
   );
   failed = false;
   click(buttonNamed("Try again", dialog));
-  await expect(
-    within(dialog).findByLabelText("Your invitation code"),
-  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(buttonNamed("Copy link", dialog)).toBeInTheDocument();
+  });
 });
 
 test("The invitation gift is hidden when friend referrals are disabled", async () => {

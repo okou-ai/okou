@@ -2,7 +2,7 @@ import type {
   BrowserClerk,
   CreateOrganizationParams,
 } from "@clerk/react/types";
-import type { ClerkOptions, SignUpResource } from "@clerk/shared/types";
+import type { ClerkOptions } from "@clerk/shared/types";
 import type { ClerkUIConstructor } from "@clerk/shared/ui";
 import { vi } from "vitest";
 import { replaceState } from "../signals/location.ts";
@@ -243,17 +243,6 @@ function clearMockedAuth() {
   mockedClerk.clientSignInCreate.mockImplementation(
     defaultClientSignInCreateImpl,
   );
-  mockedClerk.client.signUp.create.mockReset();
-  mockedClerk.client.signUp.status = null;
-  mockedClerk.client.signUp.create.mockImplementation(defaultSignupCreate);
-  mockedClerk.client.signUp.prepareEmailAddressVerification.mockReset();
-  mockedClerk.client.signUp.prepareEmailAddressVerification.mockResolvedValue(
-    undefined,
-  );
-  mockedClerk.client.signUp.authenticateWithRedirect.mockReset();
-  mockedClerk.client.signUp.authenticateWithRedirect.mockResolvedValue(
-    undefined,
-  );
   mockedClerk.buildUrlWithAuth.mockReset();
   mockedClerk.buildUrlWithAuth.mockImplementation(defaultBuildUrlWithAuthImpl);
   mockedClerk.buildUserProfileUrl.mockReset();
@@ -335,26 +324,6 @@ function defaultClientSignInCreateImpl(_params: {
 const clientSignInCreate = vi.fn<typeof defaultClientSignInCreateImpl>(
   defaultClientSignInCreateImpl,
 );
-
-type SignupAttempt = Pick<
-  SignUpResource,
-  | "status"
-  | "createdSessionId"
-  | "missingFields"
-  | "unverifiedFields"
-  | "protectCheck"
->;
-function defaultSignupCreate(
-  _params: Parameters<SignUpResource["create"]>[0],
-): Promise<SignupAttempt> {
-  return Promise.resolve({
-    status: "missing_requirements",
-    createdSessionId: null,
-    missingFields: [],
-    unverifiedFields: ["email_address"],
-    protectCheck: null,
-  });
-}
 
 const defaultBuildUrlWithAuthImpl = (to: string) => {
   return to;
@@ -554,20 +523,6 @@ export const mockedClerk = {
     },
     signIn: {
       create: clientSignInCreate,
-    },
-    signUp: {
-      status: null as SignUpResource["status"],
-      create: vi.fn<typeof defaultSignupCreate>(defaultSignupCreate),
-      prepareEmailAddressVerification: vi.fn<
-        (
-          params: Parameters<
-            SignUpResource["prepareEmailAddressVerification"]
-          >[0],
-        ) => Promise<void>
-      >(() => Promise.resolve()),
-      authenticateWithRedirect: vi.fn<
-        SignUpResource["authenticateWithRedirect"]
-      >(() => Promise.resolve()),
     },
   },
   openSignIn: vi.fn<

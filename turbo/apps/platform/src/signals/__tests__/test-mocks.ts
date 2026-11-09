@@ -276,7 +276,8 @@ type OmitFirst<T extends readonly unknown[]> = T extends readonly [
 /**
  * Every page test now runs on an okou.ai host, where the theme preference is
  * persisted in a cookie. happy-dom keeps cookies for the whole file, so clear
- * them whenever a test navigates to a new page.
+ * them at the first navigation of each case, while preserving them across
+ * document replacements within that case (including Clerk auth round trips).
  */
 function clearBrowserCookies(): void {
   const domainAttributes = new Set<string>([""]);
@@ -414,6 +415,7 @@ export function createTestMocks(getSignal: () => AbortSignal) {
         return mockBrowserWebSocket(getSignal(), respond, options);
       },
       url: (url: string, options: BrowserUrlOptions = {}): void => {
+        const firstNavigation = originalBrowserUrl === null;
         if (originalBrowserUrl === null) {
           originalBrowserUrl = window.location.href;
           restoreOnAbort(getSignal(), () => {
@@ -426,7 +428,9 @@ export function createTestMocks(getSignal: () => AbortSignal) {
           });
         }
         window.location.href = url;
-        clearBrowserCookies();
+        if (firstNavigation) {
+          clearBrowserCookies();
+        }
         ownedApiOriginMarker?.remove();
         ownedApiOriginMarker = null;
 
