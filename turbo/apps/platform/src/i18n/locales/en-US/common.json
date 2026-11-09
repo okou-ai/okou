@@ -392,8 +392,6 @@
     "sidebar": {
       "ariaLabel": "Sidebar",
       "chat": "Chat",
-      "feedWaiting_one": "{{count}} waiting",
-      "feedWaiting_other": "{{count}} waiting",
       "hideChatList": "Hide chat list",
       "mobile": {
         "invite": "Invite",
@@ -403,7 +401,6 @@
         "agents": "Agents",
         "artifacts": "Artifacts",
         "connectors": "Connectors",
-        "feed": "Feed",
         "settings": "Settings",
         "workflows": "Workflows",
         "works": "Where {{agentName}} works"
@@ -415,6 +412,8 @@
       "resizeChatList": "Resize chat list",
       "searchWorkspace": "Search workspace",
       "showChatList": "Show chat list",
+      "suggestionsWaiting_one": "{{count}} waiting",
+      "suggestionsWaiting_other": "{{count}} waiting",
       "workspaceSwitcher": {
         "create": "Create workspace",
         "creating": "Creating…",
@@ -4190,12 +4189,6 @@
     "previous": "Previous",
     "previousFeature": "Previous feature",
     "tryPrompt": "Try this task"
-  },
-  "feed": {
-    "description": "Suggested next steps based on your recent work.",
-    "emptyDescription": "New suggestions will appear here.",
-    "emptyTitle": "You’re all caught up",
-    "title": "Feed"
   },
   "friendReferrals": {
     "copied": "Copied",

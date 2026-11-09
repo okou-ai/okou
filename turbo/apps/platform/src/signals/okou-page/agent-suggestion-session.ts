@@ -10,7 +10,7 @@ import { toast } from "@okouai/ui/components/ui/sonner";
 import { i18n } from "../../i18n/index.ts";
 import { accept } from "../../lib/accept.ts";
 import { now } from "../../lib/time.ts";
-import { defaultAgentId$ } from "../agent.ts";
+import { defaultAgentChatPageActive$, defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
 import { setAblyInvalidationLoop$ } from "../realtime.ts";
@@ -152,22 +152,22 @@ interface SuggestionSentOutcome {
 export type SuggestionOutcome =
   SuggestionFeedbackOutcome | SuggestionSentOutcome;
 
-/** A Feed row: a waiting card, or a handled one below every waiting card. */
-interface AgentSuggestionFeedItem {
+/** A listed row: a waiting card, or a handled one below every waiting card. */
+interface AgentSuggestionListItem {
   readonly entry: AgentSuggestionEntry;
   readonly outcome: SuggestionOutcome | null;
 }
-interface SettledSuggestion extends AgentSuggestionFeedItem {
+interface SettledSuggestion extends AgentSuggestionListItem {
   readonly outcome: SuggestionOutcome;
 }
 
-/** The Feed page and its sidebar entry follow the Suggestions rollout. */
-export const suggestionFeedEnabled$ = computed((get) => {
+/** Home's suggestion list and its chat-list row follow the Suggestions rollout. */
+export const suggestionsEnabled$ = computed((get) => {
   return get(featureSwitch$)[FeatureSwitchKey.AgentSuggestion] === true;
 });
 
 const agentSuggestionsEnabled$ = computed(async (get) => {
-  if (!get(suggestionFeedEnabled$)) {
+  if (!get(suggestionsEnabled$)) {
     return false;
   }
   // A new-chat option starts in the default agent.
@@ -191,14 +191,14 @@ const readAgentSuggestions$ = command(
   },
 );
 
-const feedWaitingCountVersion$ = state(0);
+const waitingSuggestionCountVersion$ = state(0);
 /**
- * The cards waiting in the Feed, counted on its chat-list row. The row reads
- * the server's actionable cards rather than a Feed visit's snapshot, so it
- * follows every committed change, including those made on the Feed itself.
+ * The cards waiting on home, counted on its chat-list row. The row reads the
+ * server's actionable cards rather than a home visit's snapshot, so it follows
+ * every committed change, including those made on home itself.
  */
-export const feedWaitingCount$ = computed(async (get) => {
-  get(feedWaitingCountVersion$);
+export const waitingSuggestionCount$ = computed(async (get) => {
+  get(waitingSuggestionCountVersion$);
   if (!(await get(agentSuggestionsEnabled$))) {
     return 0;
   }
@@ -215,8 +215,8 @@ export const feedWaitingCount$ = computed(async (get) => {
     return getSuggestionExpiresAt(item) > now();
   }).length;
 });
-const reloadFeedWaitingCount$ = command(({ set }) => {
-  set(feedWaitingCountVersion$, (version) => {
+const reloadWaitingSuggestionCount$ = command(({ set }) => {
+  set(waitingSuggestionCountVersion$, (version) => {
     return version + 1;
   });
 });
@@ -225,14 +225,14 @@ const reloadFeedWaitingCount$ = command(({ set }) => {
  * while its row is shown. Each subscription reads it once more, so a row that
  * returns does not show a count from before it left.
  */
-export const followFeedWaitingCountOnRef$ = onRef(
+export const followWaitingSuggestionCountOnRef$ = onRef(
   command(({ set }, _row: HTMLElement, signal: AbortSignal) => {
     set(
       setAblyInvalidationLoop$,
       {
         scope: "credential",
         topic: "agentSuggestionsChanged",
-        invalidations: [reloadFeedWaitingCount$],
+        invalidations: [reloadWaitingSuggestionCount$],
         options: { runOnSubscribe: true },
       },
       signal,
@@ -248,8 +248,8 @@ function createSuggestionSession() {
   >([]);
   // Handled cards, in the order the member handled them.
   const settled$ = state<readonly SettledSuggestion[]>([]);
-  const feedItems$ = computed(
-    async (get): Promise<readonly AgentSuggestionFeedItem[]> => {
+  const listItems$ = computed(
+    async (get): Promise<readonly AgentSuggestionListItem[]> => {
       const entries = await get(entries$);
       const waiting = entries
         .filter((entry) => {
@@ -270,7 +270,7 @@ function createSuggestionSession() {
   );
   return {
     entries$,
-    feedItems$,
+    listItems$,
     settled$,
     // The handled card whose feedback reason is being edited.
     reasonOpen$: state<AgentSuggestionEntry | null>(null),
@@ -285,8 +285,8 @@ const session$ = computed((get) => {
 export const agentSuggestionEntries$ = computed((get) => {
   return get(get(session$).entries$);
 });
-export const agentSuggestionFeedItems$ = computed((get) => {
-  return get(get(session$).feedItems$);
+export const agentSuggestionListItems$ = computed((get) => {
+  return get(get(session$).listItems$);
 });
 export const suggestionFeedbackReasonOpen$ = computed((get) => {
   return get(get(session$).reasonOpen$);
@@ -298,12 +298,24 @@ const loadAgentSuggestionEntries$ = command(
     );
   },
 );
-export const enterAgentSuggestions$ = command(
-  ({ get, set }, signal: AbortSignal) => {
+/**
+ * The default Agent's new-chat page lists the cards, because their options
+ * start chats in that Agent. Each visit reads one snapshot.
+ */
+export const enterHomeSuggestions$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (!get(suggestionsEnabled$)) {
+      return;
+    }
+    const active = await get(defaultAgentChatPageActive$);
+    signal.throwIfAborted();
+    if (!active) {
+      return;
+    }
     set(visit$, get(visit$) + 1);
     const entries = set(loadAgentSuggestionEntries$, signal);
     set(get(session$).entries$, entries);
-    return entries;
+    await entries;
   },
 );
 
@@ -446,7 +458,7 @@ function settledFeedback(
   return found?.outcome.type === "feedback" ? found.outcome : null;
 }
 
-/** Clears a handled card from the Feed; the card stays handled. */
+/** Clears a handled card from the list; the card stays handled. */
 export const closeSettledSuggestion$ = command(
   ({ get, set }, entry: AgentSuggestionEntry) => {
     const session = get(session$);

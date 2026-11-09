@@ -637,6 +637,23 @@ describe("canonical Discord terminal replies", () => {
     );
   });
 
+  it("offers billing recovery when a running Discord task runs out of credits", async () => {
+    const started = await startDiscordRun();
+    const claim = await claimRun(started.actor, started.runId);
+    await completeRun({
+      runId: started.runId,
+      sandboxToken: claim.sandboxToken,
+      error: "insufficient_credits",
+    });
+    expect(started.provider.sentMessages).toHaveLength(1);
+    expect(started.provider.sentMessages[0]?.content).toContain(
+      "Insufficient credits",
+    );
+    expect(started.provider.sentMessages[0]?.content).toContain(
+      "/?settings=billing",
+    );
+  });
+
   it("delivers cancellation before a runner claims the queued run", async () => {
     const started = await startDiscordRun();
     await runs.requestCancelRun(started.actor.actor, started.runId, [200]);

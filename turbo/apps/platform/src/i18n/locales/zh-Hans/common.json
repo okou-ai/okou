@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "侧边栏",
       "chat": "聊天",
-      "feedWaiting_other": "{{count}} 条待处理",
       "hideChatList": "隐藏聊天列表",
       "mobile": {
         "invite": "邀请",
@@ -402,7 +401,6 @@
         "agents": "智能体",
         "artifacts": "成果",
         "connectors": "连接器",
-        "feed": "动态",
         "settings": "设置",
         "workflows": "工作流",
         "works": "{{agentName}} 的工作渠道"
@@ -414,6 +412,7 @@
       "resizeChatList": "调整聊天列表宽度",
       "searchWorkspace": "搜索工作区",
       "showChatList": "显示聊天列表",
+      "suggestionsWaiting_other": "{{count}} 条待处理",
       "workspaceSwitcher": {
         "create": "创建工作区",
         "creating": "创建中…",
@@ -4177,12 +4176,6 @@
     "previous": "上一步",
     "previousFeature": "上一个功能",
     "tryPrompt": "试试这个任务"
-  },
-  "feed": {
-    "description": "根据你最近的工作推荐的下一步。",
-    "emptyDescription": "新的建议会显示在这里。",
-    "emptyTitle": "已全部处理",
-    "title": "动态"
   },
   "friendReferrals": {
     "copied": "已复制",

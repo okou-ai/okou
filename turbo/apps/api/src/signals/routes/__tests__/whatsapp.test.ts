@@ -1112,6 +1112,27 @@ describe("WhatsApp through the shared AgentPhone number", () => {
     },
   );
 
+  it("offers billing recovery when a running WhatsApp task runs out of credits", async () => {
+    const setup = await configure();
+    const { run, runId } = await startWhatsappTask(setup);
+    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+      id: setup.actor.orgId,
+      name: "WhatsApp workspace",
+    });
+    await createWebhookCallbackApi(context).requestAgentComplete(
+      {
+        runId,
+        exitCode: 1,
+        error: "insufficient_credits",
+        failureReason: "insufficient_credits",
+      },
+      { authorization: `Bearer ${run.sandboxToken}` },
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(setup.sends.at(-1)?.body).toContain("/?settings=billing");
+  });
+
   it("does not describe a failed run as a completed task when the window is closed", async () => {
     const setup = await configure();
     const task = await startWhatsappTask(setup);

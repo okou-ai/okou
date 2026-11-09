@@ -2951,57 +2951,66 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
     expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
   });
 
-  it("identifies the workspace and offers account recovery after a run runs out of credits", async () => {
-    const { actor, ap, phone, runnerGroup, sends } =
-      await entitledLinkedActor();
-    const workspaceName = "Finance * Operations";
-    context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
-      id: actor.orgId,
-      name: workspaceName,
-    });
+  it.each([
+    { channel: "imessage", isGroup: false },
+    { channel: "imessage", isGroup: true },
+    { channel: "sms", isGroup: false },
+    { channel: "mms", isGroup: false },
+  ] as const)(
+    "offers billing recovery after a run runs out of credits ($channel, group=$isGroup)",
+    async ({ channel, isGroup }) => {
+      const { actor, ap, phone, runnerGroup, sends } =
+        await entitledLinkedActor();
+      const workspaceName = "Finance * Operations";
+      context.mocks.clerk.organizations.getOrganization.mockResolvedValue({
+        id: actor.orgId,
+        name: workspaceName,
+      });
 
-    await ap.postAgentPhoneInboundMessage({
-      channel: "imessage",
-      from: phone,
-      body: "finish my report",
-      conversationId: uniqueConversationId(),
-    });
-    const run = await claimDispatchedRun(runnerGroup);
-    const beforeCompletion = sends.messages.length;
-    await completeSandboxRun(run.sandboxToken, run.runId, 1, {
-      error: "insufficient_credits",
-    });
-    await waitForSendCount(sends, beforeCompletion + 1);
-    const reply = lastSend(sends).body;
-    expect(reply).toContain(`workspace "${workspaceName}"`);
-    expect(reply).toContain("which has insufficient credits to continue");
-    expect(reply).toContain(
-      "Add credits or connect a personal Codex or Claude",
-    );
-    expect(reply).toContain("?settings=billing&billingView=credits");
-    expect(reply).toContain(
-      "Or switch to a different Okou account or workspace: send /switch.",
-    );
+      await ap.postAgentPhoneInboundMessage({
+        channel,
+        from: phone,
+        body: "@Okou finish my report",
+        conversationId: uniqueConversationId(),
+        isGroup,
+      });
+      const run = await claimDispatchedRun(runnerGroup);
+      const beforeCompletion = sends.messages.length;
+      await completeSandboxRun(run.sandboxToken, run.runId, 1, {
+        error: "insufficient_credits",
+      });
+      await waitForSendCount(sends, beforeCompletion + 1);
+      const reply = lastSend(sends).body;
+      if (isGroup) {
+        expect(reply).not.toContain(workspaceName);
+      } else {
+        expect(reply).toContain(`workspace "${workspaceName}"`);
+        expect(reply).toContain("send /switch");
+      }
+      expect(reply).toContain("Add credits to continue.");
+      expect(reply).toContain("/?settings=billing");
+      expect(reply).not.toContain("billingView=plans");
 
-    const chat = createChatFilesBddApi(context);
-    const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
-    if (lifecycle.status !== 200) {
-      throw new Error("Expected AgentPhone thread lifecycle events");
-    }
-    const thread = lifecycle.body.events.find((event) => {
-      return event.kind === "created";
-    });
-    if (!thread) {
-      throw new Error("Expected the Phone chat thread");
-    }
-    const events = await chat.listThreadEvents(actor, thread.chatThreadId);
-    expect(events.events).toContainEqual(
-      expect.objectContaining({
-        eventType: "run.failed",
-        content: "insufficient_credits",
-      }),
-    );
-  });
+      const chat = createChatFilesBddApi(context);
+      const lifecycle = await chat.requestThreadEvents(actor, {}, [200]);
+      if (lifecycle.status !== 200) {
+        throw new Error("Expected AgentPhone thread lifecycle events");
+      }
+      const thread = lifecycle.body.events.find((event) => {
+        return event.kind === "created";
+      });
+      if (!thread) {
+        throw new Error("Expected the Phone chat thread");
+      }
+      const events = await chat.listThreadEvents(actor, thread.chatThreadId);
+      expect(events.events).toContainEqual(
+        expect.objectContaining({
+          eventType: "run.failed",
+          content: "insufficient_credits",
+        }),
+      );
+    },
+  );
 
   it.each([
     { role: "org:admin", isGroup: false },
@@ -3047,7 +3056,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       await waitForSendCount(sends, beforeSend + 1);
       const reply = lastSend(sends).body;
       if (isGroup) {
-        expect(reply).toContain("Insufficient credits");
+        expect(reply).toContain("Upgrade to Pro");
+        expect(reply).toContain("/?settings=billing&billingView=plans");
         expect(reply).not.toContain(workspaceName);
         expect(reply).not.toContain("/switch");
         await ap.postAgentPhoneInboundMessage({
@@ -3066,7 +3076,8 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       expect(reply).toContain(`workspace "${workspaceName}"`);
       expect(reply).toContain("send /switch");
       if (role === "org:admin") {
-        expect(reply).toContain("?settings=billing&billingView=plans");
+        expect(reply).toContain("Upgrade to Pro");
+        expect(reply).toContain("/?settings=billing&billingView=plans");
       } else {
         expect(reply).toContain("Ask a workspace admin");
         expect(reply).not.toContain("?settings=billing");

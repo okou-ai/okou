@@ -1,3 +1,4 @@
+import { formatIntegrationChatMessage$ } from "./integration-run-errors.service";
 import { createHash } from "node:crypto";
 import { sendPreparedWechatText$ } from "./wechat-message-send.service";
 import {
@@ -20,7 +21,10 @@ import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import { chatEvents } from "@okouai/db/schema/chat-event";
 import { agents } from "@okouai/db/schema/agent";
 import { writeDb$ } from "../external/db";
-import { canonicalChatEventContent } from "./canonical-chat-event-read.service";
+import {
+  canonicalChatEventContent,
+  canonicalChatEventError,
+} from "./canonical-chat-event-read.service";
 import { chatEventTypeIn } from "./chat-event-type.service";
 import {
   wechatDeliveryTargetSchema,
@@ -58,6 +62,7 @@ export const sendWechatChatReply$ = command(
       .select({
         agentId: agents.id,
         content: canonicalChatEventContent(),
+        error: canonicalChatEventError(),
         runId: chatEvents.runId,
       })
       .from(wechatConnections)
@@ -131,10 +136,14 @@ export const sendWechatChatReply$ = command(
               { ...presentationArgs, runId: reply.runId },
               signal,
             );
-      signal.throwIfAborted();
+      const message = await set(
+        formatIntegrationChatMessage$,
+        { ...owner, content: reply.content, error: reply.error },
+        signal,
+      );
       content = presentation.footerText
-        ? `${reply.content}\n\n${presentation.footerText}`
-        : reply.content;
+        ? `${message}\n\n${presentation.footerText}`
+        : message;
     }
     if (args.deliveryCallbackId) {
       const snapshot = await set(

@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "사이드바",
       "chat": "채팅",
-      "feedWaiting_other": "대기 중 {{count}}개",
       "hideChatList": "채팅 목록 숨기기",
       "mobile": {
         "invite": "초대",
@@ -402,7 +401,6 @@
         "agents": "에이전트",
         "artifacts": "아티팩트",
         "connectors": "커넥터",
-        "feed": "피드",
         "settings": "설정",
         "workflows": "워크플로",
         "works": "{{agentName}}가(이) 작업하는 곳"
@@ -414,6 +412,7 @@
       "resizeChatList": "채팅 목록 크기 조절",
       "searchWorkspace": "워크스페이스 검색",
       "showChatList": "채팅 목록 표시",
+      "suggestionsWaiting_other": "대기 중 {{count}}개",
       "workspaceSwitcher": {
         "create": "워크스페이스 만들기",
         "creating": "만드는 중…",
@@ -4177,12 +4176,6 @@
     "previous": "이전",
     "previousFeature": "이전 기능",
     "tryPrompt": "이 작업 시작하기"
-  },
-  "feed": {
-    "description": "최근 작업을 바탕으로 제안된 다음 단계입니다.",
-    "emptyDescription": "새로운 제안이 여기에 표시됩니다.",
-    "emptyTitle": "모두 확인했어요",
-    "title": "피드"
   },
   "friendReferrals": {
     "copied": "복사됨",

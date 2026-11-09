@@ -26,6 +26,7 @@ import type {
 import {
   Button,
   buttonVariants,
+  cn,
   Dialog,
   DialogContent,
   DialogDescription,
@@ -38,7 +39,7 @@ import { assistantName$ } from "../../signals/branding.ts";
 import {
   agentSuggestionEntries$,
   type AgentSuggestionEntry,
-  agentSuggestionFeedItems$,
+  agentSuggestionListItems$,
   submitAgentSuggestionFeedback$,
   suggestionFeedbackReasonOpen$,
   closeSettledSuggestion$,
@@ -490,7 +491,7 @@ type ComposerPreparation =
   | { readonly state: "hasError"; readonly error: unknown };
 
 /**
- * The custom direction is written over the Feed, like a forward: the default
+ * The custom direction is written over home, like a forward: the default
  * Agent receives it in a new thread and the member stays on the next card.
  */
 function AgentSuggestionComposerDialog({
@@ -628,23 +629,50 @@ function AgentSuggestionCard({
   );
 }
 
-export function AgentSuggestions() {
+/**
+ * The default Agent's suggestion cards, listed under its new-chat entries.
+ * Nothing shows while they load or once the list is empty.
+ */
+export function AgentSuggestions({
+  className,
+}: {
+  readonly className?: string;
+}) {
   const { t } = useTranslation();
-  const result = useLastLoadable(agentSuggestionFeedItems$);
+  const result = useLastLoadable(agentSuggestionListItems$);
   const [composer, openComposer] = useLoadableSet(openAgentSuggestionComposer$);
   const signal = useGet(pageSignal$);
   const openCustomDirection = (item: Suggestion) => {
     detach(openComposer(item.id, signal), Reason.DomCallback);
   };
+  if (result.state === "hasError") {
+    return (
+      <p
+        role="alert"
+        className={cn("text-sm text-muted-foreground", className)}
+      >
+        {t(($) => {
+          return $.global.errors.requestFailed;
+        })}
+      </p>
+    );
+  }
   if (result.state !== "hasData" || result.data.length === 0) {
     return null;
   }
   return (
     <section
-      aria-label={t(($) => {
-        return $.chat.agentSuggestions.label;
-      })}
+      aria-labelledby="agent-suggestions-title"
+      className={cn("flex flex-col gap-3", className)}
     >
+      <h2
+        id="agent-suggestions-title"
+        className="text-xl font-medium tracking-tight"
+      >
+        {t(($) => {
+          return $.chat.agentSuggestions.label;
+        })}
+      </h2>
       {/* Handled cards follow the waiting ones in the order handled. */}
       <ul className="flex flex-col gap-4">
         {result.data.map(({ entry, outcome }) => {

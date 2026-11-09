@@ -1,19 +1,12 @@
-import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
+import {
+  formatRunErrorForExternalSurface,
+  INSUFFICIENT_CREDITS_ASK_ADMIN_MESSAGE,
+} from "@okouai/api-contracts/contracts/errors";
 import { command } from "ccstate";
 
 import { env } from "../../lib/env";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { loadOrgPlanCapabilities$ } from "./org-plan-entitlement-read.service";
-
-function addCreditsUrl(): string {
-  const appUrl = env("APP_URL");
-  return `${appUrl}/?settings=billing&billingView=credits`;
-}
-
-function comparePlansUrl(): string {
-  const appUrl = env("APP_URL");
-  return `${appUrl}/?settings=billing&billingView=plans`;
-}
 
 export const formatIntegrationRunError$ = command(
   async (
@@ -33,23 +26,52 @@ export const formatIntegrationRunError$ = command(
       });
     }
 
-    const [membership, capabilities] = await Promise.all([
-      set(getMemberRoleAndUpdateCache$, args.orgId, args.userId, signal),
-      set(loadOrgPlanCapabilities$, args.orgId),
-    ]);
-    signal.throwIfAborted();
+    const membership = await set(
+      getMemberRoleAndUpdateCache$,
+      args.orgId,
+      args.userId,
+      signal,
+    );
+    if (membership.kind !== "member" || membership.role !== "admin") {
+      return INSUFFICIENT_CREDITS_ASK_ADMIN_MESSAGE;
+    }
+    const capabilities = await set(
+      loadOrgPlanCapabilities$,
+      args.orgId,
+      signal,
+    );
+    const appUrl = env("APP_URL");
+    if (capabilities?.planKey === "limited-free-1") {
+      return `Insufficient credits. Upgrade to Pro to continue.\n\nUpgrade to Pro: ${appUrl}/?settings=billing&billingView=plans`;
+    }
+    return `Insufficient credits. Add credits to continue.\n\nBilling: ${appUrl}/?settings=billing`;
+  },
+);
 
-    const canBuyCredits = capabilities?.canBuyCredits === true;
-    return formatRunErrorForExternalSurface({
-      code: args.code,
-      message: args.message,
-      insufficientCredits: {
-        canManageBilling:
-          membership.kind === "member" && membership.role === "admin",
-        ...(canBuyCredits
-          ? { addCreditsUrl: addCreditsUrl() }
-          : { comparePlansUrl: comparePlansUrl() }),
+/** Keep Web's recovery marker in the event and render guidance at delivery. */
+export const formatIntegrationChatMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly orgId: string;
+      readonly userId: string;
+      readonly content: string;
+      readonly error: string | null;
+    },
+    signal: AbortSignal,
+  ): Promise<string> => {
+    if (args.error !== "insufficient_credits") {
+      return args.content;
+    }
+    return await set(
+      formatIntegrationRunError$,
+      {
+        orgId: args.orgId,
+        userId: args.userId,
+        code: "INSUFFICIENT_CREDITS",
+        message: args.content,
       },
-    });
+      signal,
+    );
   },
 );

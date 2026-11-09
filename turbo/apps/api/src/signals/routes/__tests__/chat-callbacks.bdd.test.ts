@@ -1536,6 +1536,56 @@ describe("CHAT-02: completed chat callback", () => {
     );
   });
 
+  it("offers billing recovery for a Slack run without changing the Web marker", async () => {
+    const { actor, runnerGroup } = await entitledChatActor();
+    integrations.configureSlackAppMocks();
+    await integrations.configureNativeSubscriptionModels(actor);
+    const slackUserId = `U_${randomUUID().replaceAll("-", "")}`;
+    const { teamId, botUserId } = await integrations.installSlackWorkspace(
+      actor,
+      { installerSlackUserId: slackUserId },
+    );
+    await integrations.postSlackEvent(teamId, {
+      type: "app_mention",
+      user: slackUserId,
+      text: `<@${botUserId}> Finish this task`,
+      channel: `C_${randomUUID().replaceAll("-", "")}`,
+      ts: "4000.000100",
+    });
+    await flushWaitUntilForTest();
+    await api.heartbeatRunner(runnerGroup);
+    const runId = (await api.pollRunner(runnerGroup)).body.job?.runId;
+    if (!runId) {
+      throw new Error("Expected a Slack run");
+    }
+    const claim = await api.claimRunnerJob(runId);
+    const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+    if (!threadId) {
+      throw new Error("Expected a Slack chat thread");
+    }
+    context.mocks.slack.chat.postMessage.mockClear();
+    await failChatRun(
+      runId,
+      { authorization: `Bearer ${claim.sandboxToken}` },
+      "insufficient_credits",
+      "insufficient_credits",
+    );
+    await flushWaitUntilForTest();
+    expect(context.mocks.slack.chat.postMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        text: expect.stringContaining("/?settings=billing"),
+      }),
+    );
+    const events = await chat.listThreadEvents(actor, threadId);
+    expect(events.events).toContainEqual(
+      expect.objectContaining({
+        eventType: "run.failed",
+        error: "insufficient_credits",
+        content: "insufficient_credits",
+      }),
+    );
+  });
+
   it.each(["completed", "failed"] as const)(
     "consumes the whole thread's unread state without push or unarchive for a Slack %s run",
     async (status) => {

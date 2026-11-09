@@ -88,7 +88,7 @@
     "postgres": "^3.4.9"
   },
   "devDependencies": {
-    "@aws-sdk/client-s3": "^3.1159.0",
+    "@aws-sdk/client-s3": "^3.1162.0",
     "@okouai/eslint-config": "workspace:*",
     "@okouai/eslint-rules": "workspace:*",
     "@okouai/typescript-config": "workspace:*",
@@ -103,7 +103,7 @@
     "tar": "^7.5.19",
     "tsx": "^4.21.0",
     "typescript": "npm:@typescript/typescript6@6.0.2",
-    "vitest": "^5.0.5",
+    "vitest": "^5.1.0",
     "zod": "^4.5.4"
   }
 }
