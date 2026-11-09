@@ -392,8 +392,6 @@
     "sidebar": {
       "ariaLabel": "साइड बार",
       "chat": "चैट",
-      "feedWaiting_one": "{{count}} प्रतीक्षारत",
-      "feedWaiting_other": "{{count}} प्रतीक्षारत",
       "hideChatList": "चैट सूची छिपाएं",
       "mobile": {
         "invite": "आमंत्रित करें",
@@ -403,7 +401,6 @@
         "agents": "एजेंटों",
         "artifacts": "आर्टिफ़ैक्ट्स",
         "connectors": "कनेक्टर्स",
-        "feed": "फ़ीड",
         "settings": "सेटिंग्स",
         "workflows": "वर्कफ़्लो",
         "works": "जहां {{agentName}} काम करता है"
@@ -415,6 +412,8 @@
       "resizeChatList": "चैट सूची का आकार बदलें",
       "searchWorkspace": "वर्कस्पेस खोजें",
       "showChatList": "चैट सूची दिखाएं",
+      "suggestionsWaiting_one": "{{count}} प्रतीक्षारत",
+      "suggestionsWaiting_other": "{{count}} प्रतीक्षारत",
       "workspaceSwitcher": {
         "create": "वर्कस्पेस बनाएं",
         "creating": "बनाया जा रहा है...",
@@ -4191,12 +4190,6 @@
     "previous": "पिछला",
     "previousFeature": "पिछली सुविधा",
     "tryPrompt": "यह काम आज़माएँ"
-  },
-  "feed": {
-    "description": "आपके हाल के काम के आधार पर सुझाए गए अगले कदम।",
-    "emptyDescription": "नए सुझाव यहाँ दिखाई देंगे।",
-    "emptyTitle": "आप पूरी तरह अप टू डेट हैं",
-    "title": "फ़ीड"
   },
   "friendReferrals": {
     "copied": "कॉपी किया गया",

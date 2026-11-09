@@ -406,9 +406,6 @@
     "sidebar": {
       "ariaLabel": "Barra lateral",
       "chat": "Chat",
-      "feedWaiting_one": "{{count}} pendiente",
-      "feedWaiting_many": "{{count}} pendientes",
-      "feedWaiting_other": "{{count}} pendientes",
       "hideChatList": "Ocultar lista de chats",
       "mobile": {
         "invite": "Invitar",
@@ -418,7 +415,6 @@
         "agents": "Agentes",
         "artifacts": "Artefactos",
         "connectors": "Conectores",
-        "feed": "Feed",
         "settings": "Configuración",
         "workflows": "Flujos de trabajo",
         "works": "Dónde trabaja {{agentName}}"
@@ -430,6 +426,9 @@
       "resizeChatList": "Cambiar el tamaño de la lista de chats",
       "searchWorkspace": "Buscar en el espacio de trabajo",
       "showChatList": "Mostrar lista de chats",
+      "suggestionsWaiting_one": "{{count}} pendiente",
+      "suggestionsWaiting_many": "{{count}} pendientes",
+      "suggestionsWaiting_other": "{{count}} pendientes",
       "workspaceSwitcher": {
         "create": "Crear espacio de trabajo",
         "creating": "Creando…",
@@ -4245,12 +4244,6 @@
     "previous": "Anterior",
     "previousFeature": "Función anterior",
     "tryPrompt": "Probar esta tarea"
-  },
-  "feed": {
-    "description": "Próximos pasos sugeridos según tu trabajo reciente.",
-    "emptyDescription": "Las nuevas sugerencias aparecerán aquí.",
-    "emptyTitle": "Estás al día",
-    "title": "Feed"
   },
   "friendReferrals": {
     "copied": "Copiado",

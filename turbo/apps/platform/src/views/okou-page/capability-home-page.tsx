@@ -658,13 +658,18 @@ function HomeWorkflowSuggestions({
   );
 }
 
-/** Shared discovery and template surface; the host owns its composer and header. */
+/**
+ * Shared discovery and template surface; the host owns its composer and
+ * header, and may list suggestions under the capability cards.
+ */
 export function CapabilityHomeContent({
   signals,
   heading,
+  suggestions,
 }: {
   readonly signals: ComposerSignals;
   readonly heading?: ReactNode;
+  readonly suggestions?: ReactNode;
 }) {
   const { t } = useTranslation();
   const selected = useGet(signals.taskChips.home.task$);
@@ -706,6 +711,7 @@ export function CapabilityHomeContent({
             )}
             <CapabilityCards signals={signals} />
             <CapabilityHomeCompliance />
+            {suggestions}
           </div>
         ) : (
           <div className="flex flex-1 flex-col justify-end py-4">
@@ -739,15 +745,21 @@ export function CapabilityHomeContent({
 export function CapabilityHomePage({
   signals,
   heading,
+  suggestions,
 }: {
   readonly signals: ComposerSignals;
   readonly heading: ReactNode;
+  readonly suggestions: ReactNode;
 }) {
   return (
     <div className="relative flex min-h-0 flex-1 flex-col">
       <GrowthEntryHeader />
       <div className="isolate flex min-h-0 flex-1 flex-col">
-        <CapabilityHomeContent signals={signals} heading={heading} />
+        <CapabilityHomeContent
+          signals={signals}
+          heading={heading}
+          suggestions={suggestions}
+        />
         <footer data-chat-composer className="relative shrink-0">
           <div className="overflow-y-auto [scrollbar-gutter:stable] px-4 pb-safe-or-4 pt-3 sm:px-6">
             <div className="mx-auto max-w-[900px]">

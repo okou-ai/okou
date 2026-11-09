@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "Bilah samping",
       "chat": "Chat",
-      "feedWaiting_other": "{{count}} menunggu",
       "hideChatList": "Sembunyikan daftar chat",
       "mobile": {
         "invite": "Undang",
@@ -402,7 +401,6 @@
         "agents": "Agen",
         "artifacts": "Artifact",
         "connectors": "Konektor",
-        "feed": "Feed",
         "settings": "Pengaturan",
         "workflows": "Alur kerja",
         "works": "Tempat {{agentName}} bekerja"
@@ -414,6 +412,7 @@
       "resizeChatList": "Ubah ukuran daftar chat",
       "searchWorkspace": "Cari ruang kerja",
       "showChatList": "Tampilkan daftar chat",
+      "suggestionsWaiting_other": "{{count}} menunggu",
       "workspaceSwitcher": {
         "create": "Buat ruang kerja",
         "creating": "Membuat…",
@@ -4176,12 +4175,6 @@
     "previous": "Sebelumnya",
     "previousFeature": "Fitur sebelumnya",
     "tryPrompt": "Coba tugas ini"
-  },
-  "feed": {
-    "description": "Langkah berikutnya yang disarankan berdasarkan pekerjaan terbaru Anda.",
-    "emptyDescription": "Saran baru akan muncul di sini.",
-    "emptyTitle": "Semua sudah terkini",
-    "title": "Feed"
   },
   "friendReferrals": {
     "copied": "Disalin",

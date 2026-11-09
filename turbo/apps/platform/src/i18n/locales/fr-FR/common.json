@@ -406,9 +406,6 @@
     "sidebar": {
       "ariaLabel": "Barre latérale",
       "chat": "Chat",
-      "feedWaiting_one": "{{count}} en attente",
-      "feedWaiting_many": "{{count}} en attente",
-      "feedWaiting_other": "{{count}} en attente",
       "hideChatList": "Masquer la liste des chats",
       "mobile": {
         "invite": "Inviter",
@@ -418,7 +415,6 @@
         "agents": "Agents",
         "artifacts": "Artéfacts",
         "connectors": "Connecteurs",
-        "feed": "Fil",
         "settings": "Paramètres",
         "workflows": "Workflows",
         "works": "Où {{agentName}} travaille"
@@ -430,6 +426,9 @@
       "resizeChatList": "Redimensionner la liste des chats",
       "searchWorkspace": "Rechercher dans l’espace de travail",
       "showChatList": "Afficher la liste des chats",
+      "suggestionsWaiting_one": "{{count}} en attente",
+      "suggestionsWaiting_many": "{{count}} en attente",
+      "suggestionsWaiting_other": "{{count}} en attente",
       "workspaceSwitcher": {
         "create": "Créer un espace de travail",
         "creating": "Création…",
@@ -4245,12 +4244,6 @@
     "previous": "Précédent",
     "previousFeature": "Fonctionnalité précédente",
     "tryPrompt": "Essayer cette tâche"
-  },
-  "feed": {
-    "description": "Prochaines étapes suggérées d’après votre travail récent.",
-    "emptyDescription": "Les nouvelles suggestions apparaîtront ici.",
-    "emptyTitle": "Vous êtes à jour",
-    "title": "Fil"
   },
   "friendReferrals": {
     "copied": "Copié",

@@ -392,7 +392,6 @@
     "sidebar": {
       "ariaLabel": "サイドバー",
       "chat": "チャット",
-      "feedWaiting_other": "{{count}} 件が対応待ち",
       "hideChatList": "チャットリストを非表示",
       "mobile": {
         "invite": "招待する",
@@ -402,7 +401,6 @@
         "agents": "エージェント",
         "artifacts": "アーティファクト",
         "connectors": "コネクター",
-        "feed": "フィード",
         "settings": "設定",
         "workflows": "ワークフロー",
         "works": "{{agentName}}の連携先"
@@ -414,6 +412,7 @@
       "resizeChatList": "チャットリストのサイズを変更する",
       "searchWorkspace": "ワークスペースを検索",
       "showChatList": "チャットリストを表示",
+      "suggestionsWaiting_other": "{{count}} 件が対応待ち",
       "workspaceSwitcher": {
         "create": "ワークスペースの作成",
         "creating": "作成中…",
@@ -4176,12 +4175,6 @@
     "previous": "前へ",
     "previousFeature": "前の機能",
     "tryPrompt": "このタスクを試す"
-  },
-  "feed": {
-    "description": "最近の作業をもとにした、次のステップの提案です。",
-    "emptyDescription": "新しい提案はここに表示されます。",
-    "emptyTitle": "すべて確認済みです",
-    "title": "フィード"
   },
   "friendReferrals": {
     "copied": "コピー済み",

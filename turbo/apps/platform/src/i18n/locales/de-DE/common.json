@@ -392,8 +392,6 @@
     "sidebar": {
       "ariaLabel": "Seitenleiste",
       "chat": "Chat",
-      "feedWaiting_one": "{{count}} offen",
-      "feedWaiting_other": "{{count}} offen",
       "hideChatList": "Chatliste ausblenden",
       "mobile": {
         "invite": "Einladen",
@@ -403,7 +401,6 @@
         "agents": "Agenten",
         "artifacts": "Artefakte",
         "connectors": "Integrationen",
-        "feed": "Feed",
         "settings": "Einstellungen",
         "workflows": "Workflows",
         "works": "Einsatzorte von {{agentName}}"
@@ -415,6 +412,8 @@
       "resizeChatList": "Größe der Chatliste ändern",
       "searchWorkspace": "Arbeitsbereich durchsuchen",
       "showChatList": "Chatliste anzeigen",
+      "suggestionsWaiting_one": "{{count}} offen",
+      "suggestionsWaiting_other": "{{count}} offen",
       "workspaceSwitcher": {
         "create": "Arbeitsbereich erstellen",
         "creating": "Wird erstellt…",
@@ -4191,12 +4190,6 @@
     "previous": "Zurück",
     "previousFeature": "Vorherige Funktion",
     "tryPrompt": "Diese Aufgabe ausprobieren"
-  },
-  "feed": {
-    "description": "Vorgeschlagene nächste Schritte auf Basis deiner letzten Arbeit.",
-    "emptyDescription": "Neue Vorschläge erscheinen hier.",
-    "emptyTitle": "Du bist auf dem neuesten Stand",
-    "title": "Feed"
   },
   "friendReferrals": {
     "copied": "Kopiert",
