@@ -30,35 +30,6 @@ struct OkouFloatingPanelStyle: ViewModifier {
   }
 }
 
-struct OkouTextFieldStyle: TextFieldStyle {
-  var isFocused = false
-  @Environment(\.isEnabled) private var isEnabled
-
-  func _body(configuration: TextField<Self._Label>) -> some View {
-    configuration
-      .font(.okou(.body))
-      .foregroundStyle(OkouColor.foreground)
-      .tint(OkouColor.foreground)
-      .padding(.horizontal, OkouSpace.lg)
-      .padding(.vertical, OkouSpace.md)
-      .frame(minHeight: OkouControl.largeHeight)
-      .background(OkouColor.input, in: RoundedRectangle(cornerRadius: OkouRadius.control))
-      .overlay {
-        RoundedRectangle(cornerRadius: OkouRadius.control)
-          .strokeBorder(
-            isFocused ? OkouColor.primary : OkouColor.controlBorder, lineWidth: OkouSpace.hairline
-          )
-          .allowsHitTesting(false)
-      }
-      .overlay {
-        RoundedRectangle(cornerRadius: OkouRadius.control)
-          .stroke(OkouColor.primary.opacity(isFocused ? 0.1 : 0), lineWidth: 3)
-          .allowsHitTesting(false)
-      }
-      .opacity(isEnabled ? 1 : 0.5)
-  }
-}
-
 extension View {
   /// Every grouped list or form in a sheet: the same neutral grouped ground with the system's
   /// rows (the warm grey ramp read as pink behind white rows), and the soft blur under the
@@ -88,33 +59,5 @@ extension View {
   /// the root does the ground slide up with the sheet.
   func okouSheetBackground(_ ground: Color = OkouGroupedColor.background) -> some View {
     presentationBackground(ground)
-  }
-}
-
-extension View {
-  /// A picker that shows its current value at the trailing edge of a row (Thinking effort,
-  /// Appearance, Allow for …). The label stays `foreground`; the value and chevron are
-  /// `trailingValue`, a step lighter, as in the system Settings app. The app's global
-  /// `foreground` tint otherwise drew the value as heavy as its label.
-  func okouValuePicker() -> some View {
-    pickerStyle(.menu).tint(OkouColor.trailingValue)
-  }
-}
-
-extension View {
-  /// Text under a grouped card (section footer): 13 pt supporting text, as in the system
-  /// Settings app. Footers otherwise inherit the app's 17 pt `foreground` body style.
-  func okouSectionNote() -> some View {
-    font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground)
-  }
-}
-
-extension View {
-  /// The label above a grouped card: 15 pt medium in `foreground`, in sentence case, the
-  /// same weight as the provider headings that carry a logo.
-  func okouSectionHeader() -> some View {
-    font(.okou(.subheadline).weight(.medium))
-      .foregroundStyle(OkouColor.foreground)
-      .textCase(nil)
   }
 }

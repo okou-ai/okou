@@ -127,8 +127,7 @@ struct ChatSettingsView: View {
           // the string catalog.
           Section {
             NavigationLink {
-              OkouDesignSystemCatalog()
-                .toolbar { OkouCloseToolbarItem { dismiss() } }
+              OkouDesignSystemCatalog(close: { dismiss() })
             } label: {
               OkouRowLabel(Text(verbatim: "Design system")) {
                 OkouIcon("layout-grid", size: OkouIconSize.standard)
