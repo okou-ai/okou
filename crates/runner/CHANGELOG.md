@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.47](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.46...runner-rs-v0.244.47) (2026-11-09)
+
+
+### Refactoring
+
+* **python:** isolate sigv4 flow request ownership ([#46044](https://github.com/okou-ai/okou/issues/46044)) ([c110789](https://github.com/okou-ai/okou/commit/c110789825577fdd88cb5b6405d2d9e3be87343b))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.46](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.45...runner-rs-v0.244.46) (2026-11-09)
 
 ## [0.244.45](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.44...runner-rs-v0.244.45) (2026-11-09)
