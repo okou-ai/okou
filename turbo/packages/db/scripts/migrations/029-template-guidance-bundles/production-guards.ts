@@ -135,8 +135,7 @@ export async function resolveTarget(
   if (targets.length !== 1)
     throw new BackfillError("ProductionEndpointNotUnique");
   const endpoint = targets[0]!;
-  const role =
-    mode === "plan-guidance" ? "okou_readonly_access" : "neondb_owner";
+  const role = mode === "plan-guidance" ? "RO" : "neondb_owner";
   const query = new URLSearchParams({
     branch_id: BRANCH,
     endpoint_id: endpoint.id,
@@ -148,13 +147,18 @@ export async function resolveTarget(
     await requestJson(fetcher, `${base}/connection_uri?${query}`, token),
   );
   const address = new URL(uri);
+  if (!address.password)
+    throw new BackfillError("ProductionConnectionPasswordRequired");
+  if (
+    address.hostname !== endpoint.host ||
+    (address.port && address.port !== "5432")
+  )
+    throw new BackfillError("ProductionConnectionEndpointRejected");
+  if (decodeURIComponent(address.username) !== role)
+    throw new BackfillError("ProductionConnectionRoleRejected");
   if (
     !["postgres:", "postgresql:"].includes(address.protocol) ||
-    address.hostname !== endpoint.host ||
-    (address.port && address.port !== "5432") ||
     address.pathname !== "/neondb" ||
-    decodeURIComponent(address.username) !== role ||
-    !address.password ||
     address.hash ||
     [...address.searchParams.keys()].some((k) => {
       return !["sslmode", "channel_binding"].includes(k);

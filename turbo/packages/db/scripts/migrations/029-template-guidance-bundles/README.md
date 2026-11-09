@@ -132,7 +132,7 @@ that ancestry check.
 
 For `plan-guidance`, supply the reviewed `frozen_inventory`. The job resolves
 the exact default/protected production branch and its unique read/write endpoint,
-using `okou_readonly_access` with a read-only session. It verifies SELECT access
+using the existing `RO` login with a read-only session. It verifies SELECT access
 and absence of UPDATE privileges on both owner tables. Source operations are GET
 only. Every current NULL owner must appear in the inventory. The artifact contains
 only `plan.json`, `inventory.json` and `metadata.json`; no credentials or packages.
