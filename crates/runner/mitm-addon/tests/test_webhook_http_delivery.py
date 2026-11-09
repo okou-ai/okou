@@ -581,10 +581,13 @@ def test_retry_failure_sanitizes_sensitive_webhook_url_in_message_and_error(
     retry_url = "https://api.okou.ai/api/webhooks/agent/usage-event?token=secret#frag"
     url_without_fragment = retry_url.removesuffix("#frag")
 
-    with patch.object(
-        urllib.request.OpenerDirector,
-        "open",
-        side_effect=urllib.error.URLError(f"failed {retry_url} and {url_without_fragment}"),
+    with (
+        patch.object(
+            urllib.request.OpenerDirector,
+            "open",
+            side_effect=urllib.error.URLError(f"failed {retry_url} and {url_without_fragment}"),
+        ),
+        patch.object(usage.webhook, "time"),
     ):
         assert usage.webhook.enqueue_webhook_delivery(
             retry_url,
