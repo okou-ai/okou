@@ -4,6 +4,7 @@ The pure signer owns AWS algorithms; auth owns credentials and hash-worker
 lifetime. This adapter owns the bounded HTTPFlow representation and its cache.
 """
 
+import codecs
 import urllib.parse
 from dataclasses import dataclass, field
 
@@ -33,6 +34,7 @@ AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES = 32
 MAX_AWS_SIGV4_REQUEST_HEADER_FIELDS = (
     MAX_AWS_SIGV4_REQUEST_HEADER_LIST_BYTES // AWS_SIGV4_REQUEST_HEADER_FIELD_OVERHEAD_BYTES
 )
+_AWS_SIGV4_AUTHORIZATION_PREFIX_BYTES = 64
 _MISSING_AWS_SIGV4_ORIGINAL_URL = object()
 
 
@@ -73,6 +75,26 @@ class _AwsSigV4FlowInspection:
         if self.inspection is None:
             return True
         return self.inspection.requires_body
+
+
+def may_use_aws_sigv4(flow: http.HTTPFlow) -> bool:
+    """Conservatively probe bounded raw signals before canonical classification."""
+    for name, value in flow.request.headers.fields:
+        if name.lower() != b"authorization":
+            continue
+        complete = len(value) <= _AWS_SIGV4_AUTHORIZATION_PREFIX_BYTES
+        prefix = (
+            codecs.getincrementaldecoder("utf-8")("surrogateescape")
+            .decode(value[:_AWS_SIGV4_AUTHORIZATION_PREFIX_BYTES], final=complete)
+            .lstrip()
+        )
+        if prefix.startswith("AWS4-"):
+            return True
+        if not complete and "AWS4-".startswith(prefix):
+            # Unfinished Unicode whitespace or a partial scheme must still pass
+            # canonical classification and its managed request-body admission.
+            return True
+    return "X-Amz-Algorithm" in flow.request.path
 
 
 def _trusted_aws_sigv4_url(flow: http.HTTPFlow) -> str:
