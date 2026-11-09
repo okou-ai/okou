@@ -87,6 +87,7 @@ const noOpEventAction$ = command(
 
 interface AgentComposerOptions {
   readonly forward?: ChatForwardContext;
+  readonly title?: string;
   /**
    * A dialog composer sends from its own unsaved draft and keeps the current
    * page, leaving the Agent's saved composer untouched.
@@ -134,6 +135,7 @@ function createAgentSubmitMessage(
         send,
         {
           agentId,
+          title: options.title,
           ...(options.projectId ? { projectId: options.projectId } : {}),
           draft,
           prompt: submission.prompt,
@@ -240,10 +242,12 @@ export function createInPlaceAgentComposerSignals(
   agentId: string,
   agentDraft: EnsuredAgentDraft,
   onOptimisticSend: (threadId: string) => void,
+  title: string,
 ) {
   return createAgentComposerSignalsWithDraft(agentId, agentDraft, {
     inPlace: true,
     onOptimisticSend,
+    title,
   });
 }
 

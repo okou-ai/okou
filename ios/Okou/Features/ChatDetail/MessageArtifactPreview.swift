@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -18,12 +19,11 @@ struct MessageArtifactPreview: View {
               Text(error).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(
                 OkouSpace.md)
             }
-            if let warning = viewer.catalogWarning {
-              DisclosureGroup("File details unavailable") {
-                Text(warning).font(.okou(.caption))
-                Button("Refresh file details") { Task { await viewer.refreshDetails() } }
-              }.font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(
-                OkouSpace.md)
+            if preview.loadsMetadata {
+              StoreProvider(viewer.reads.store) {
+                ArtifactCatalogWarning(reads: viewer.reads) { await viewer.refreshDetails() }
+              }
+              .id(ObjectIdentifier(viewer.reads))
             }
           }
         } actions: {
@@ -133,6 +133,28 @@ struct MessageArtifactPreview: View {
     }
   }
 
+}
+
+private struct ArtifactCatalogWarning: View {
+  @LoadableValue private var catalog: Loadable<[ChatArtifact]>
+  let retry: @MainActor () async -> Void
+
+  init(reads: MessageArtifactResources, retry: @escaping @MainActor () async -> Void) {
+    _catalog = LoadableValue(task: reads.catalog, keepLast: true)
+    self.retry = retry
+  }
+
+  var body: some View {
+    if let error = catalog.error,
+      (error as? APIClientError)?.statusCode != 401,
+      (error as? APIClientError)?.statusCode != 426
+    {
+      DisclosureGroup("File details unavailable") {
+        Text("Some file details could not be loaded.").font(.okou(.caption))
+        Button("Refresh file details") { Task { await retry() } }
+      }.font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground).padding(OkouSpace.md)
+    }
+  }
 }
 
 private struct ArtifactTextView: View {

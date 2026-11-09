@@ -36,6 +36,8 @@ import {
   Maximize2,
   Minimize2,
   Pencil,
+  Play,
+  Video,
   X,
 } from "lucide-react";
 import type {
@@ -44,7 +46,6 @@ import type {
 } from "@okouai/api-contracts/contracts/chat-threads";
 import type { ChatAttachment } from "../../signals/okou-page/chat-draft";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
-import { canonicalUserMessageFileUrl } from "../../signals/chat-page/user-message-files.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -1826,28 +1827,48 @@ export function PreviewableAudioAttachmentChip({
 // ---------------------------------------------------------------------------
 
 /**
- * Composer attachments use the same presigned thumbnail as sent messages.
- * The preview also supplies the original credential to the lightbox. Kept in
- * its own component so the surrounding button stays one DOM node across the
- * pending-to-uploaded transition. The canonical URL identifies the load state.
+ * The attachment owns its source through upload completion. Restored drafts
+ * use the same presigned source as sent messages. Keep the button and media
+ * mounted while the upload state changes so the thumbnail does not flash.
  */
-function ComposerImagePreviewImage({
+function ComposerMediaPreviewContent({
   preview,
+  kind,
   load,
   loaded,
   url,
 }: {
   preview: AttachmentPreviewSignals;
+  kind: "image" | "video";
   load: ImageLoadSignals;
   loaded: boolean;
   url: string;
 }) {
   const markLoaded = useSet(load.loaded$);
   const markFailed = useSet(load.failed$);
-  const resolvedUrl = useLastResolved(preview.thumbnailUrl$) ?? null;
+  const resolvedUrl =
+    useLastResolved(
+      kind === "video" ? preview.resourceUrl$ : preview.thumbnailUrl$,
+    ) ?? null;
 
   if (resolvedUrl === null) {
     return null;
+  }
+
+  if (kind === "video") {
+    return (
+      <video
+        key={url}
+        src={`${resolvedUrl.split("#")[0]}#t=0.001`}
+        muted
+        playsInline
+        preload="metadata"
+        aria-hidden="true"
+        onLoadedData={markLoaded}
+        onError={markFailed}
+        className={`h-full w-full object-cover ${loaded ? "" : "opacity-0"}`}
+      />
+    );
   }
 
   return (
@@ -1863,40 +1884,62 @@ function ComposerImagePreviewImage({
   );
 }
 
-function ComposerImagePreviewButton({
+function ComposerMediaPreviewButton({
   preview,
+  kind,
   filename,
   load,
   markCount,
-  openImageLightbox,
+  openPreview,
   url,
+  uploading,
 }: {
   preview: AttachmentPreviewSignals | null;
+  kind: "image" | "video";
   filename: string;
   load: ImageLoadSignals;
   markCount: number;
-  openImageLightbox: (url: string, preview: AttachmentPreviewSignals) => void;
+  openPreview: (url: string, preview: AttachmentPreviewSignals) => void;
   url: string | undefined;
+  uploading: boolean;
 }) {
   const { t } = useTranslation();
-  const currentImageStatus = useGet(load.status$);
+  const status = useGet(load.status$);
+  const PlaceholderIcon = kind === "video" ? Video : Image;
+  const PreviewIcon = kind === "video" ? Play : Image;
+  const label =
+    kind === "video"
+      ? t(
+          ($) => {
+            return $.artifacts.preview.openKind;
+          },
+          {
+            kind: t(($) => {
+              return $.artifacts.preview.openKinds.video;
+            }),
+            filename,
+          },
+        )
+      : t(
+          ($) => {
+            return $.artifacts.attachments.openImagePreview;
+          },
+          { filename },
+        );
 
   if (!url || !preview) {
     return (
       <button
         type="button"
         disabled
-        aria-label={t(
-          ($) => {
-            return $.artifacts.attachments.openImagePreview;
-          },
-          {
-            filename,
-          },
-        )}
+        aria-label={label}
+        aria-busy={uploading}
         className="group/image-preview relative h-9 w-9 overflow-hidden rounded-lg border border-foreground/10 transition-colors hover:border-foreground/25"
       >
-        <Image size={20} className="text-muted-foreground m-auto h-full" />
+        <PlaceholderIcon
+          size={20}
+          className="text-muted-foreground m-auto h-full"
+        />
       </button>
     );
   }
@@ -1905,41 +1948,47 @@ function ComposerImagePreviewButton({
     <button
       type="button"
       onClick={() => {
-        openImageLightbox(url, preview);
+        openPreview(url, preview);
       }}
-      aria-label={t(
-        ($) => {
-          return $.artifacts.attachments.openImagePreview;
-        },
-        {
-          filename,
-        },
-      )}
+      aria-label={label}
+      aria-busy={uploading}
+      disabled={uploading}
       className="group/image-preview relative h-9 w-9 overflow-hidden rounded-lg border border-foreground/10 transition-colors hover:border-foreground/25"
     >
-      {currentImageStatus !== "loaded" && (
+      {status !== "loaded" && (
         <span
-          data-testid="composer-image-preview-loading"
+          data-testid={`composer-${kind}-preview-loading`}
           className="absolute inset-0 flex items-center justify-center bg-muted/70 text-muted-foreground"
         >
-          {currentImageStatus === "loading" ? (
+          {status === "loading" ? (
             <Loader2 size={14} className="animate-spin" />
           ) : (
-            <Image size={16} />
+            <PlaceholderIcon size={16} />
           )}
         </span>
       )}
-      <ComposerImagePreviewImage
+      <ComposerMediaPreviewContent
         preview={preview}
+        kind={kind}
         load={load}
-        loaded={currentImageStatus === "loaded"}
+        loaded={status === "loaded"}
         url={url}
       />
-      <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/image-preview:bg-black/30">
-        <Image
-          size={18}
-          className="text-white opacity-0 drop-shadow group-hover/image-preview:opacity-100"
-        />
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-0 flex items-center justify-center transition-colors group-hover/image-preview:bg-black/30",
+          uploading ? "bg-black/30" : "bg-black/0",
+        )}
+      >
+        {!uploading && (
+          <PreviewIcon
+            size={18}
+            className={cn(
+              "text-white drop-shadow group-hover/image-preview:opacity-100",
+              kind === "video" ? "opacity-80" : "opacity-0",
+            )}
+          />
+        )}
       </span>
       {markCount > 0 && (
         <span
@@ -1984,13 +2033,13 @@ function AttachmentChip({
     99,
     Math.floor((uploadedBytes / Math.max(1, attachment.size)) * 100),
   );
-  const url =
-    infoLoadable.state === "hasData" && infoLoadable.data
-      ? canonicalUserMessageFileUrl(infoLoadable.data.id)
-      : undefined;
+  const url = preview?.url;
   const openAttachmentPreview = useSet(previewHost.openAttachmentPreview$);
   const annotations = useGet(attachment.annotations$);
   const isImage = attachment.contentType.startsWith("image/");
+  const isVideo =
+    useGet(featureSwitch$)[FeatureSwitchKey.ComposerMediaPreviews] &&
+    attachment.contentType.startsWith("video/");
   if (
     infoLoadable.state === "hasError" ||
     (infoLoadable.state === "hasData" && infoLoadable.data === null)
@@ -1999,19 +2048,21 @@ function AttachmentChip({
   }
   return (
     <div className="relative inline-flex items-center">
-      {isImage ? (
-        <ComposerImagePreviewButton
+      {isImage || isVideo ? (
+        <ComposerMediaPreviewButton
           preview={preview}
+          kind={isVideo ? "video" : "image"}
           filename={attachment.filename}
           load={attachment.imageLoad}
           markCount={annotationMarkCount(annotations)}
-          openImageLightbox={(previewUrl, imagePreview) => {
+          openPreview={(previewUrl, mediaPreview) => {
             openAttachmentPreview(attachment, {
               url: previewUrl,
-              preview: imagePreview,
+              preview: mediaPreview,
             });
           }}
           url={url}
+          uploading={uploading}
         />
       ) : (
         <span className={FILE_CHIP_CLASSES}>

@@ -46,11 +46,13 @@ export interface FeatureSwitchContext {
  * Registry of all feature switches
  */
 const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
-  [FeatureSwitchKey.UserNotifications]: {
+  [FeatureSwitchKey.ComposerMediaPreviews]: {
     maintainer: "yuma@okou.ai",
-    displayName: "In-app notifications",
-    description: "Receive personal announcements from the Okou team.",
+    displayName: "Composer media previews",
+    description:
+      "Show image and video thumbnails during upload, then enable preview.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.EmailIntegration]: {
     maintainer: "yuma@okou.ai",
@@ -353,6 +355,12 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
+  },
+  [FeatureSwitchKey.UserNotifications]: {
+    maintainer: "yuma@okou.ai",
+    displayName: "In-app notifications",
+    description: "Receive personal announcements from the Okou team.",
+    enabled: false,
   },
 };
 
