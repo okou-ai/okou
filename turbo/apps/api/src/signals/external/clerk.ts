@@ -13,6 +13,8 @@ import { array, number, object, string, union, url } from "zod";
 import { accept, HttpStatusError } from "@okouai/connectors/accept";
 import { singleton } from "../../lib/singleton";
 import { env } from "../../lib/env";
+import { monotonicNow } from "../../lib/time";
+import { recordApiOperationTimings } from "./sandbox-op-log";
 import {
   safeJsonParse,
   settle,
@@ -850,10 +852,37 @@ export async function authenticateClerkSession(
   request: Request,
   options?: { readonly authorizedParties: readonly string[] },
 ): Promise<ClerkSessionAuthentication> {
-  const requestState = await clerkSdk().authenticateRequest(request, {
-    acceptsToken: "session_token",
-    ...(options ? { authorizedParties: [...options.authorizedParties] } : {}),
+  const startedAt = monotonicNow();
+  const verification = await settleIncludingAbort(() => {
+    return clerkSdk().authenticateRequest(request, {
+      acceptsToken: "session_token",
+      ...(options ? { authorizedParties: [...options.authorizedParties] } : {}),
+    });
   });
+  const durationMs = monotonicNow() - startedAt;
+  await settleIncludingAbort(() => {
+    recordApiOperationTimings([
+      {
+        actionType: "clerk_session_verification",
+        durationMs,
+        success: verification.ok && verification.value.isAuthenticated,
+        dimensions: {
+          verification_mode: "remote_jwks",
+          outcome: !verification.ok
+            ? "error"
+            : verification.value.isAuthenticated
+              ? "authenticated"
+              : "unauthenticated",
+          host: new URL(request.url).hostname,
+          api_commit_sha: env("GIT_COMMIT_SHA"),
+        },
+      },
+    ]);
+  });
+  if (!verification.ok) {
+    throw verification.error;
+  }
+  const requestState = verification.value;
 
   if (!requestState.isAuthenticated) {
     return { identity: null };
