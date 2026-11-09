@@ -66,7 +66,6 @@ import {
 } from "../external/realtime";
 import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
 import { joinAll, settle, settleIncludingAbort, tapError } from "../utils";
-import { waitUntil } from "../context/wait-until";
 import {
   verifyClerkComputerUseSession,
   clerkRateLimit,
@@ -142,12 +141,18 @@ type CreateComputerUseCommandResult =
       readonly status: "created";
       readonly commandId: string;
       readonly commandStatus: "queued";
+      readonly notifyHosts: readonly ComputerUseCommandNotificationHost[];
     }
   | { readonly status: "no_host" }
   | { readonly status: "host_ambiguous" }
   | { readonly status: "host_offline" }
   | { readonly status: "host_unsupported" }
   | { readonly status: "shell_authorization_required" };
+
+type ComputerUseCommandNotificationHost = Pick<
+  ComputerUseHostRow,
+  "id" | "userId" | "orgId" | "connectionGeneration" | "livenessMode"
+>;
 
 type ResolveComputerUseCommandTargetsResult =
   | {
@@ -1478,11 +1483,11 @@ const deliverQueuedComputerUseCommand$ = command(
   },
 );
 
-const notifyQueuedComputerUseCommand$ = command(
-  (
+export const notifyQueuedComputerUseCommand$ = command(
+  async (
     { set },
     commandId: string,
-    hosts: readonly ComputerUseHostRow[],
+    hosts: readonly ComputerUseCommandNotificationHost[],
     signal: AbortSignal,
   ) => {
     // The command queue is authoritative. Result reads repair lost wakeups;
@@ -1492,26 +1497,23 @@ const notifyQueuedComputerUseCommand$ = command(
         return host.livenessMode === "presence-only";
       })
     ) {
-      waitUntil(
-        tapError(
-          set(deliverQueuedComputerUseCommand$, commandId, signal),
-          (error) => {
-            L.warn("Unable to deliver queued computer-use notification", {
-              commandId,
-              error,
-            });
-          },
-        ),
+      return await tapError(
+        set(deliverQueuedComputerUseCommand$, commandId, signal),
+        (error) => {
+          L.warn("Unable to deliver queued computer-use notification", {
+            commandId,
+            error,
+          });
+        },
       );
-    } else {
-      for (const host of hosts) {
-        publishComputerUseCommandsChangedSafely({
-          userId: host.userId,
-          orgId: host.orgId,
-          hostId: host.id,
-          connectionGeneration: host.connectionGeneration,
-        });
-      }
+    }
+    for (const host of hosts) {
+      publishComputerUseCommandsChangedSafely({
+        userId: host.userId,
+        orgId: host.orgId,
+        hostId: host.id,
+        connectionGeneration: host.connectionGeneration,
+      });
     }
   },
 );
@@ -1633,12 +1635,11 @@ export const createComputerUseCommand$ = command(
       }
       throw new Error("Failed to create computer-use command");
     }
-    set(notifyQueuedComputerUseCommand$, row.id, target.notifyHosts, signal);
-    signal.throwIfAborted();
     return {
       status: "created",
       commandId: row.id,
       commandStatus: "queued",
+      notifyHosts: target.notifyHosts,
     };
   },
 );
