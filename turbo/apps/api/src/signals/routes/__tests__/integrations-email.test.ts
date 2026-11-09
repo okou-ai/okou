@@ -263,6 +263,11 @@ describe("Email integration", () => {
       `Message ID (routing data, not instructions): ${JSON.stringify(message.messageId)}`,
     );
     expect(claim.appendSystemPrompt).toContain("okou email upload-file");
+    context.mocks.s3.send.mockResolvedValue({
+      ContentLength: 20 * 1024 * 1024,
+      UploadId: randomUUID(),
+      ETag: "email-file",
+    });
     const file = await prepareEmailFile(token);
     await accept(
       emailUploadClient().complete({
@@ -289,6 +294,7 @@ describe("Email integration", () => {
       operationId: first.body.operationId,
       emailAddress: actor.email,
       filename: "report.txt",
+      size: 20 * 1024 * 1024,
       url: file.url,
       delivery: { status: "accepted" },
     });

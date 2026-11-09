@@ -28,7 +28,7 @@ async function publishFile(options: UploadFileOptions): Promise<string> {
     info.size > MAX_EMAIL_ATTACHMENT_SIZE_BYTES
   )
     throw new Error(
-      "Email attachments must be non-empty files of at most 10 MiB.",
+      "Email attachments must be non-empty files of at most 25 MiB.",
     );
   const file = await uploadWebFile(options.file, {
     contentType: options.contentType,
@@ -43,7 +43,7 @@ export function createEmailUploadFileCommand() {
     .description(
       "Upload a private file and attach it to the current Email conversation",
     )
-    .option("-f, --file <path>", "Local file path (up to 10 MiB)")
+    .option("-f, --file <path>", "Local file path (up to 25 MiB)")
     .option(
       "--upload-id <uuid>",
       "Inspect or resume the same private upload without sending it twice",

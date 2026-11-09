@@ -15,7 +15,10 @@ import { authHeadersSchema, initContract } from "./base";
 import { apiErrorSchema } from "./errors";
 
 const c = initContract();
-export const MAX_EMAIL_ATTACHMENT_SIZE_BYTES = 10 * 1024 * 1024;
+// Resend limits the whole email to 40 MB after Base64 encoding. A 25 MiB
+// attachment encodes to about 35 MB, leaving room for MIME framing and text.
+// https://resend.com/docs/dashboard/emails/attachments#attachment-limitations
+export const MAX_EMAIL_ATTACHMENT_SIZE_BYTES = 25 * 1024 * 1024;
 
 export const integrationsEmailUploadContract = c.router({
   complete: {

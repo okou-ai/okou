@@ -69,7 +69,7 @@ const complete$ = command(async ({ get, set }, signal: AbortSignal) => {
   }
   if (file.size <= 0 || file.size > MAX_EMAIL_ATTACHMENT_SIZE_BYTES) {
     return badRequestMessage(
-      "Email attachments must be non-empty and at most 10 MiB.",
+      "Email attachments must be non-empty and at most 25 MiB.",
     );
   }
   // The private signed address has at least one hour remaining, beyond the

@@ -175,7 +175,7 @@ describe("okou email upload-file", () => {
         path,
       ]),
     ).rejects.toThrow("CLI exited");
-    expect(errors.mock.calls.flat().join("\n")).toContain("at most 10 MiB");
+    expect(errors.mock.calls.flat().join("\n")).toContain("at most 25 MiB");
   });
 
   it("rejects another integration before trying to publish or send", async () => {
