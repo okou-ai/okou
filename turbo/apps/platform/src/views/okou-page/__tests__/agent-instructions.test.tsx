@@ -328,3 +328,34 @@ test("A user can format and save agent instructions", async () => {
     "Launch risks",
   );
 });
+
+test("Instructions keep plus signs literal and save underline as HTML", async () => {
+  const updates: string[] = [];
+  await setupInstructionsPage(
+    "Use C++ and i++ in ++legacy notes++",
+    (content) => {
+      updates.push(content);
+    },
+  );
+  const user = userEvent.setup({ delay: null });
+
+  const editor = await instructionsEditor();
+  expect(editor).toHaveTextContent("Use C++ and i++ in ++legacy notes++");
+  expect(editor.querySelector("u")).toBeNull();
+
+  await user.click(editor);
+  await user.keyboard("{Control>}a{/Control}");
+  await user.keyboard("{Control>}u{/Control}");
+  expect(editor.querySelector("u")).toHaveTextContent(
+    "Use C++ and i++ in ++legacy notes++",
+  );
+
+  const unsavedBar = await screen.findByTestId("unsaved-bar");
+  click(within(unsavedBar).getByTestId("save-button"));
+
+  await waitFor(() => {
+    expect(updates).toStrictEqual([
+      "<u>Use C++ and i++ in ++legacy notes++</u>",
+    ]);
+  });
+});
