@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { useGet, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
+  ArrowUpRight,
   BookOpenCheck,
   ChartNoAxesCombined,
   Clock3,
@@ -18,6 +19,7 @@ import {
 import {
   Button,
   cn,
+  surfaceVariants,
   Tooltip,
   TooltipContent,
   TooltipTrigger,
@@ -88,14 +90,14 @@ const EXPLORE_KINDS = [
     Icon: Users,
     color:
       "border-[#d9efe5] bg-[#eefaf5] text-[#71ad98] dark:border-[#71ad98]/25 dark:bg-[#71ad98]/10 dark:text-[#b0dcca]",
-    surface: "from-[#f1faf6] dark:from-[#71ad98]/10",
+    surface: "from-[#f1faf6]/50 dark:from-[#71ad98]/5",
   },
   {
     kind: "research",
     Icon: BookOpenCheck,
     color:
       "border-[#e5ddfa] bg-[#f4f0ff] text-[#9480cf] dark:border-[#9480cf]/25 dark:bg-[#9480cf]/10 dark:text-[#c3b6ee]",
-    surface: "from-[#f7f2ff] dark:from-[#9480cf]/10",
+    surface: "from-[#f7f2ff]/50 dark:from-[#9480cf]/5",
   },
 ] as const;
 const WORKFLOW_KINDS = [
@@ -129,7 +131,7 @@ function CapabilityIcon({
   return (
     <span
       className={cn(
-        "flex size-9 shrink-0 items-center justify-center rounded-xl border transition-[border-color,filter] duration-150 group-hover:border-current group-hover:brightness-95 motion-reduce:transition-none dark:group-hover:brightness-110 @2xl:size-14 @2xl:rounded-[18px]",
+        "flex size-9 shrink-0 items-center justify-center rounded-xl border duration-150 group-hover:border-current/40 group-hover:brightness-95 group-focus-visible:border-current/40 motion-safe:transition-[border-color,filter] dark:group-hover:brightness-110 @2xl:size-12 @2xl:rounded-2xl",
         color,
       )}
     >
@@ -161,7 +163,8 @@ function ExploreCapabilityCard({
       variant="quiet"
       aria-label={copy.title}
       className={cn(
-        "group h-auto min-h-16 min-w-0 items-center justify-start gap-2 rounded-2xl border border-surface-border bg-card bg-linear-to-br via-card to-card p-3 text-left whitespace-normal hover:bg-card hover:text-muted-foreground active:bg-card @2xl:min-h-24 @2xl:gap-4 @2xl:rounded-3xl @2xl:p-5 [&_svg]:size-5 @2xl:[&_svg]:size-7",
+        surfaceVariants({ interactive: true }),
+        "group h-auto min-h-16 min-w-0 items-center justify-start gap-2 bg-linear-to-br via-card to-card p-3 text-left whitespace-normal text-foreground hover:bg-card active:bg-card motion-reduce:transition-none @2xl:min-h-22 @2xl:gap-3 @2xl:p-5 [&_svg]:size-5 @2xl:[&_svg]:size-6",
         surface,
       )}
       onClick={() => {
@@ -169,7 +172,7 @@ function ExploreCapabilityCard({
       }}
     >
       <CapabilityIcon Icon={Icon} color={color} />
-      <span className="min-w-0 text-sm font-medium tracking-tight @2xl:text-xl">
+      <span className="min-w-0 text-sm font-medium tracking-tight @2xl:text-lg">
         {copy.title}
       </span>
     </Button>
@@ -182,7 +185,10 @@ const FEATURE_PREVIEW_CARD =
 /** Decorative product UI fragments, not examples of generated artwork. */
 function ExploreFeaturePreview() {
   return (
-    <div className="relative h-24 w-full max-w-56 select-none" aria-hidden>
+    <div
+      className="relative h-24 w-full max-w-56 scale-90 select-none"
+      aria-hidden
+    >
       <div
         className={cn(
           FEATURE_PREVIEW_CARD,
@@ -264,26 +270,23 @@ function ExploreBlogCard() {
       target="_blank"
       rel="noopener noreferrer"
       aria-label={title}
-      className="flex h-full flex-col overflow-hidden rounded-3xl border border-surface-border bg-card bg-linear-to-br from-[#fff4ee] via-card to-card p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring dark:from-[#cf947c]/10"
+      className={surfaceVariants({
+        interactive: true,
+        className:
+          "group flex h-full flex-col overflow-hidden bg-linear-to-br from-[#fff4ee]/50 via-card to-card p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transition-none dark:from-[#cf947c]/5",
+      })}
     >
-      <div className="flex items-center gap-2">
-        <h2 className="min-w-0 text-base font-medium tracking-tight @2xl:text-xl">
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="min-w-0 text-base font-medium tracking-tight @2xl:text-lg">
           {title}
         </h2>
-        <svg
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="1.5"
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          className="size-5 shrink-0 text-amber-400"
+        <ArrowUpRight
+          strokeWidth={1.8}
+          className="size-4 shrink-0 text-muted-foreground duration-150 group-hover:text-foreground group-focus-visible:text-foreground motion-safe:transition-transform motion-safe:group-hover:-translate-y-0.5 motion-safe:group-hover:translate-x-0.5"
           aria-hidden
-        >
-          <path d="M16 18a2 2 0 0 1 2 2a2 2 0 0 1 2-2a2 2 0 0 1-2-2a2 2 0 0 1-2 2m0-12a2 2 0 0 1 2 2a2 2 0 0 1 2-2a2 2 0 0 1-2-2a2 2 0 0 1-2 2m-7 12a6 6 0 0 1 6-6a6 6 0 0 1-6-6a6 6 0 0 1-6 6a6 6 0 0 1 6 6" />
-        </svg>
+        />
       </div>
-      <div className="mt-4 flex flex-1 items-center justify-center">
+      <div className="mt-2 flex flex-1 items-center justify-center">
         <ExploreFeaturePreview />
       </div>
     </a>
@@ -317,26 +320,29 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
         <ExploreCapabilityCard signals={signals} kind="research" />
       </div>
       <section
-        className="flex flex-col rounded-2xl border border-surface-border bg-card bg-linear-to-br from-[#f7f2ff] via-card to-card p-4 dark:from-[#9480cf]/10 @2xl:col-span-8 @2xl:rounded-3xl @2xl:p-5"
+        className={surfaceVariants({
+          className:
+            "flex flex-col bg-linear-to-br from-[#f7f2ff]/50 via-card to-card p-4 dark:from-[#9480cf]/5 @2xl:col-span-8 @2xl:p-5",
+        })}
         aria-label={copy.create.title}
       >
-        <h2 className="text-base font-medium tracking-tight @2xl:text-xl">
+        <h2 className="text-base font-medium tracking-tight @2xl:text-lg">
           {copy.create.title}
         </h2>
-        <div className="mt-3 grid flex-1 grid-cols-3 content-end gap-1 @2xl:mt-10 @2xl:grid-cols-5 @2xl:pb-3">
+        <div className="mt-3 grid flex-1 grid-cols-3 content-center gap-1 @2xl:mt-5 @2xl:grid-cols-5 @2xl:gap-y-3">
           {CREATE_TASKS.map(({ task, Icon, color }) => {
             const button = (
               <Button
                 key={task}
                 variant="quiet"
                 aria-label={tasks[task]}
-                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-2xl px-0 py-2 text-xs font-medium hover:bg-transparent hover:text-muted-foreground active:bg-transparent @2xl:gap-3 @2xl:text-sm [&_svg]:size-5 @2xl:[&_svg]:size-7"
+                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-2xl px-0 py-2 text-xs font-medium hover:bg-transparent active:bg-transparent motion-reduce:transition-none @2xl:gap-2.5 @2xl:text-sm [&_svg]:size-5 @2xl:[&_svg]:size-6"
                 onClick={() => {
                   openTask(task);
                 }}
               >
                 <CapabilityIcon Icon={Icon} color={color} />
-                <span className="max-w-full break-words whitespace-normal">
+                <span className="max-w-full text-xs leading-5 break-words whitespace-normal @2xl:text-action">
                   {tasks[task]}
                 </span>
               </Button>
@@ -353,26 +359,29 @@ function CapabilityCards({ signals }: { readonly signals: ComposerSignals }) {
         </div>
       </section>
       <section
-        className="rounded-2xl border border-surface-border bg-card bg-linear-to-br from-[#f2f7ff] via-card to-card p-4 dark:from-[#7b9fd3]/10 @2xl:col-span-8 @2xl:rounded-3xl @2xl:p-5"
+        className={surfaceVariants({
+          className:
+            "bg-linear-to-br from-[#f2f7ff]/50 via-card to-card p-4 dark:from-[#7b9fd3]/5 @2xl:col-span-8 @2xl:p-5",
+        })}
         aria-label={tasks.workflow}
       >
-        <h2 className="text-base font-medium tracking-tight @2xl:text-xl">
+        <h2 className="text-base font-medium tracking-tight @2xl:text-lg">
           {tasks.workflow}
         </h2>
-        <div className="mt-3 grid grid-cols-3 gap-1 @2xl:mt-4 @2xl:gap-3">
+        <div className="mt-3 grid grid-cols-3 gap-1 @2xl:gap-3">
           {WORKFLOW_KINDS.map(({ kind, Icon, color }) => {
             return (
               <Button
                 key={kind}
                 variant="quiet"
                 aria-label={copy.workflow[kind].title}
-                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-2xl px-1 py-2 text-center whitespace-normal hover:bg-transparent hover:text-muted-foreground active:bg-transparent @2xl:gap-3 [&_svg]:size-5 @2xl:[&_svg]:size-7"
+                className="group h-auto min-w-0 flex-col justify-start gap-2 rounded-2xl px-1 py-2 text-center whitespace-normal hover:bg-transparent active:bg-transparent motion-reduce:transition-none @2xl:gap-2.5 [&_svg]:size-5 @2xl:[&_svg]:size-6"
                 onClick={() => {
                   openWorkflow(kind);
                 }}
               >
                 <CapabilityIcon Icon={Icon} color={color} />
-                <span className="max-w-full text-xs font-medium leading-5 break-words @2xl:text-sm @2xl:leading-6">
+                <span className="max-w-full text-xs font-medium leading-5 break-words @2xl:text-action @2xl:leading-6">
                   {copy.workflow[kind].title}
                 </span>
               </Button>
@@ -409,7 +418,7 @@ function HomeSuggestionCard({
     >
       <span
         className={cn(
-          "text-base font-medium leading-6",
+          "text-sm font-medium leading-6",
           titlePosition === "top" && "truncate",
         )}
       >
@@ -694,20 +703,20 @@ export function CapabilityHomeContent({
     <main
       className={cn(
         "isolate flex min-h-0 flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable] px-4 sm:px-6",
-        // Match the home's 56px greeting and 16px gap without rendering them
-        // in empty chats. Their desktop thread header already occupies 56px.
+        // Reserve greeting space in empty chats, whose desktop thread header
+        // already occupies 56px.
         heading === undefined && selected === null
           ? "pt-24 md:pt-14"
-          : "pt-6 md:pt-10",
+          : selected === null
+            ? "pt-6 md:pt-8"
+            : "pt-6 md:pt-10",
       )}
     >
       <div className="@container mx-auto flex w-full max-w-[900px] flex-1 flex-col">
         {selected === null ? (
-          <div className="my-auto flex min-w-0 shrink-0 flex-col gap-4 py-2">
+          <div className="mt-auto mb-1 flex min-w-0 shrink-0 flex-col gap-5">
             {heading !== undefined && (
-              <div className="flex min-h-14 -translate-y-3 justify-start sm:-translate-y-5">
-                {heading}
-              </div>
+              <div className="flex min-h-14 justify-start">{heading}</div>
             )}
             <CapabilityCards signals={signals} />
             <CapabilityHomeCompliance />
