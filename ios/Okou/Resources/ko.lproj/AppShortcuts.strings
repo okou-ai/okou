@@ -1,2 +1,5 @@
 /* Opens the new chat composer without a request parameter. */
 "New ${applicationName} chat" = "새 ${applicationName} 채팅";
+
+/* Opens a new chat and starts dictation without sending a message. */
+"Start voice input in ${applicationName}" = "${applicationName}에서 음성 입력 시작";

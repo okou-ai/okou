@@ -39,6 +39,10 @@
         <key>UIApplicationShortcutItemType</key><string>ai.okou.new-chat</string>
         <key>UIApplicationShortcutItemTitle</key><string>New chat</string>
         <key>UIApplicationShortcutItemIconFile</key><string>Lucide-square-pen</string>
+    </dict><dict>
+        <key>UIApplicationShortcutItemType</key><string>ai.okou.voice-input</string>
+        <key>UIApplicationShortcutItemTitle</key><string>Voice Input</string>
+        <key>UIApplicationShortcutItemIconFile</key><string>Lucide-mic</string>
     </dict></array>
     <key>UILaunchStoryboardName</key><string>LaunchScreen</string>
     <key>UISupportedInterfaceOrientations</key>

@@ -15,3 +15,6 @@
 
 /* Home Screen quick action */
 "New chat" = "Nouvelle discussion";
+
+/* Home Screen voice input quick action */
+"Voice Input" = "Saisie vocale";

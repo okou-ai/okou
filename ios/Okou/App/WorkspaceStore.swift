@@ -51,6 +51,7 @@ final class WorkspaceStore {
   var newAttachmentDraft: AttachmentDraftStore { newComposer.attachments }
   private(set) var newComposer: ComposerDraftStore
   private let draftStorage: ChatDraftStorage?
+  private let voiceCapture: (@MainActor () -> any VoiceAudioCapture)?
   private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
   @ObservationIgnored private var agentDrafts: [String: ComposerDraftStore] = [:]
@@ -118,6 +119,7 @@ final class WorkspaceStore {
     client: APIClient, webURL: URL, cache: ChatCache? = nil, conversationLimit: Int = 8,
     sharedSync: ChatSync? = nil, draftStorage: ChatDraftStorage? = nil,
     measurementScope: ChatCacheScope? = nil,
+    voiceCapture: (@MainActor () -> any VoiceAudioCapture)? = nil,
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     },
@@ -133,6 +135,7 @@ final class WorkspaceStore {
     self.didRefreshReadState = didRefreshReadState
     self.draftStorage = draftStorage
     self.measurementScope = measurementScope
+    self.voiceCapture = voiceCapture
     draftRepository = draftStorage.map { _ in ChatDraftRepository(client: client) }
     let sync = sharedSync ?? ChatSync(client: client, cache: cache)
     self.sync = sync
@@ -300,7 +303,8 @@ final class WorkspaceStore {
       let composer = ComposerDraftStore(
         target: .agent(id), commands: commands,
         repository: draftRepository, storage: draftStorage,
-        didFail: { [weak self] in self?.handle($0) }, syncSleep: readRetrySleep)
+        didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
+        syncSleep: readRetrySleep)
       // Preserve input entered before navigation resolves the default Agent.
       if !isCreating && newComposer.hasContent && agentDrafts.isEmpty {
         newComposer.move(to: composer)
@@ -665,12 +669,19 @@ final class WorkspaceStore {
   }
 
   @discardableResult
-  func openNewChatFromSystem() -> Bool {
+  func openNewChatFromSystem(startVoiceInput: Bool = false) -> Bool {
     guard canOpenNewChatFromSystem else { return false }
     startNewChat()
     search.dismiss()
-    if let block = newComposer.editorBlocks.last {
-      newComposer.requestEditorFocus(block.id)
+    if startVoiceInput {
+      if let request = newComposer.focusRequest { newComposer.consumeFocusRequest(request) }
+      newComposer.editor.dismissKeyboard()
+      newComposer.voice?.requestStart()
+    } else {
+      newComposer.voice?.suspend()
+      if let block = newComposer.editorBlocks.last {
+        newComposer.requestEditorFocus(block.id)
+      }
     }
     return true
   }

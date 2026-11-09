@@ -7,28 +7,45 @@ import UIKit
 final class NewChatRequests {
   static let shared = NewChatRequests()
   static let shortcutType = "ai.okou.new-chat"
-  private(set) var pendingID: UUID?
+  static let voiceShortcutType = "ai.okou.voice-input"
+  private struct Request {
+    let id = UUID()
+    let startsVoiceInput: Bool
+  }
+  private var pending: Request?
+  var pendingID: UUID? { pending?.id }
   private(set) var openedID: UUID?
 
-  func request() { pendingID = UUID() }
+  func request(startVoiceInput: Bool = false) {
+    pending = Request(startsVoiceInput: startVoiceInput)
+  }
 
   @discardableResult
   func receive(_ shortcut: UIApplicationShortcutItem) -> Bool {
-    guard shortcut.type == Self.shortcutType else { return false }
-    request()
+    switch shortcut.type {
+    case Self.shortcutType: request()
+    case Self.voiceShortcutType: request(startVoiceInput: true)
+    default: return false
+    }
     return true
   }
 
   @discardableResult
   func open(in workspace: WorkspaceStore) -> Bool {
-    guard let pendingID, workspace.openNewChatFromSystem() else { return false }
-    openedID = pendingID
-    consume(pendingID)
+    guard let pending,
+      workspace.openNewChatFromSystem(startVoiceInput: pending.startsVoiceInput)
+    else { return false }
+    openedID = pending.id
+    consume(pending.id)
     return true
   }
 
   func consume(_ id: UUID) {
-    if pendingID == id { pendingID = nil }
+    if pending?.id == id { pending = nil }
+  }
+
+  func cancelPendingVoiceInput() {
+    if pending?.startsVoiceInput == true { pending = nil }
   }
 }
 
@@ -71,6 +88,10 @@ struct NewChatNavigation: ViewModifier {
 
 /// SwiftUI's window scene receives both cold-launch and running-app quick actions.
 final class NewChatSceneDelegate: NSObject, UIWindowSceneDelegate {
+  func sceneDidEnterBackground(_ scene: UIScene) {
+    NewChatRequests.shared.cancelPendingVoiceInput()
+  }
+
   func scene(
     _ scene: UIScene, willConnectTo session: UISceneSession,
     options connectionOptions: UIScene.ConnectionOptions
