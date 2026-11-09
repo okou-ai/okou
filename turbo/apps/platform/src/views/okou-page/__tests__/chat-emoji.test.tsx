@@ -229,11 +229,9 @@ test.each([
     });
 
     await waitFor(() => {
-      if (desktop) {
-        expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
-      } else {
-        expect(buttonByLabel("Share messages")).toHaveTextContent("Share");
-      }
+      expect(
+        screen.getByLabelText(desktop ? "Back to chats" : "More actions"),
+      ).toBeInTheDocument();
       const searchInputs = screen.getAllByLabelText("Search emoji");
       expect(searchInputs).toHaveLength(1);
       expect(searchInputs[0]).toHaveFocus();
