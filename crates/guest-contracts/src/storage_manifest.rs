@@ -27,6 +27,10 @@
 //! Unknown top-level and mount fields are ignored during deserialization so future fields can be
 //! added compatibly.
 //!
+//! Optional `archiveReadiness` gates explicitly declared local sources within one
+//! operation. Absent descriptors preserve the ordinary all-prepared path and are
+//! omitted on serialization. See [`ArchiveReadiness`] for publication ownership.
+//!
 //! `storageId` is optional in canonical `storageMounts` input. For a `writeback: true` mount,
 //! omitting `storageId` defaults the value to `None` and preserves it as
 //! [`ArtifactEntry::vas_storage_id`] == `None`; deserialization does not require the field. The
@@ -36,6 +40,11 @@
 use std::collections::HashSet;
 
 use serde::{Deserialize, Serialize};
+
+mod readiness;
+mod template_guidance;
+pub use readiness::ArchiveReadiness;
+pub use template_guidance::*;
 
 /// In-memory execution projection behind the canonical storage manifest wire contract.
 ///
@@ -52,6 +61,8 @@ pub struct Manifest {
     pub cleanup_paths: Vec<String>,
     /// Instruction-specific cleanup operations.
     pub instruction_cleanups: Vec<InstructionCleanupEntry>,
+    /// Optional publication gates for local archives in this operation.
+    pub archive_readiness: Option<ArchiveReadiness>,
 }
 
 #[derive(Deserialize)]
@@ -62,6 +73,8 @@ struct ManifestWire {
     cleanup_paths: Vec<String>,
     #[serde(default)]
     instruction_cleanups: Vec<InstructionCleanupEntry>,
+    #[serde(default)]
+    archive_readiness: Option<ArchiveReadiness>,
 }
 
 #[derive(Serialize)]
@@ -71,6 +84,8 @@ struct CanonicalManifest<'a> {
     cleanup_paths: &'a [String],
     #[serde(skip_serializing_if = "instruction_cleanup_slice_is_empty")]
     instruction_cleanups: &'a [InstructionCleanupEntry],
+    #[serde(skip_serializing_if = "Option::is_none")]
+    archive_readiness: &'a Option<ArchiveReadiness>,
 }
 
 struct BorrowedStorageMounts<'a> {
@@ -112,6 +127,7 @@ impl Serialize for Manifest {
             },
             cleanup_paths: &self.cleanup_paths,
             instruction_cleanups: &self.instruction_cleanups,
+            archive_readiness: &self.archive_readiness,
         }
         .serialize(serializer)
     }
@@ -123,12 +139,19 @@ impl<'de> Deserialize<'de> for Manifest {
         D: serde::Deserializer<'de>,
     {
         let wire = ManifestWire::deserialize(deserializer)?;
-        Self::from_storage_mounts(
+        let mut manifest = Self::from_storage_mounts(
             wire.storage_mounts,
             wire.cleanup_paths,
             wire.instruction_cleanups,
         )
-        .map_err(serde::de::Error::custom)
+        .map_err(serde::de::Error::custom)?;
+        manifest.archive_readiness = wire.archive_readiness;
+        if let Some(readiness) = &manifest.archive_readiness {
+            readiness
+                .validate(&manifest)
+                .map_err(serde::de::Error::custom)?;
+        }
+        Ok(manifest)
     }
 }
 
@@ -145,6 +168,9 @@ impl Manifest {
 
         for mount in storage_mounts {
             if mount.writeback {
+                if mount.template_guidance.is_some() {
+                    return Err("Template guidance cannot be writable".into());
+                }
                 artifacts.push(ArtifactEntry {
                     mount_path: mount.mount_path,
                     archive_url: mount.archive_url,
@@ -164,7 +190,11 @@ impl Manifest {
             if mount.missing_root_policy.is_some() {
                 return Err("read-only storage mount cannot contain missingRootPolicy".to_string());
             }
+            if let Some(reference) = &mount.template_guidance {
+                reference.validate()?;
+            }
             storages.push(StorageEntry {
+                template_guidance: mount.template_guidance,
                 mount_path: mount.mount_path,
                 archive_url: mount.archive_url,
                 cached: mount.cached,
@@ -178,6 +208,7 @@ impl Manifest {
             artifacts,
             cleanup_paths,
             instruction_cleanups,
+            archive_readiness: None,
         })
     }
 }
@@ -218,6 +249,9 @@ pub struct StorageEntry {
     /// VAS version identifier used for diagnostics and cache identity.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub vas_version_id: Option<String>,
+    /// Optional immutable template profile; absent for existing inputs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_guidance: Option<TemplateGuidanceReference>,
 }
 
 /// Artifact entry in the guest storage manifest.
@@ -286,6 +320,9 @@ pub struct StorageMountEntry {
     /// Whether changed contents are written back to the same Storage.
     #[serde(default)]
     pub writeback: bool,
+    /// Template-only compressed identity and extraction profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub template_guidance: Option<TemplateGuidanceReference>,
 }
 
 // Match the owned wire type's Serde identity, field order and omission rules.
@@ -307,6 +344,8 @@ struct BorrowedStorageMountEntry<'a> {
     #[serde(skip_serializing_if = "Option::is_none")]
     missing_root_policy: Option<&'a str>,
     writeback: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    template_guidance: Option<&'a TemplateGuidanceReference>,
 }
 
 impl<'a> BorrowedStorageMountEntry<'a> {
@@ -321,6 +360,7 @@ impl<'a> BorrowedStorageMountEntry<'a> {
             empty: false,
             missing_root_policy: None,
             writeback: false,
+            template_guidance: entry.template_guidance.as_ref(),
         }
     }
 
@@ -335,6 +375,7 @@ impl<'a> BorrowedStorageMountEntry<'a> {
             empty: entry.empty,
             missing_root_policy: entry.missing_root_policy.as_deref(),
             writeback: true,
+            template_guidance: None,
         }
     }
 }

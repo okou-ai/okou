@@ -9,10 +9,11 @@ use tokio::time::{Instant, MissedTickBehavior};
 use tokio_util::sync::CancellationToken;
 use tokio_util::task::AbortOnDropHandle;
 
-use crate::heartbeat::HEARTBEAT_PERIOD;
+// Diagnostic observation is independent of remote state reporting cadence.
+const OBSERVATION_PERIOD: Duration = Duration::from_secs(10);
 
 // Reporting/read bounds only, not calibrated actuator cadence or permission freshness.
-const DIAGNOSTIC_MAX_AGE: Duration = HEARTBEAT_PERIOD.saturating_mul(2);
+const DIAGNOSTIC_MAX_AGE: Duration = OBSERVATION_PERIOD.saturating_mul(2);
 
 pub struct HostMemoryObserver {
     latest: watch::Receiver<HostMemoryObservation>,
@@ -34,7 +35,7 @@ impl HostMemoryObserver {
         let cancel = CancellationToken::new();
         let task_cancel = cancel.clone();
         let task = tokio::spawn(async move {
-            let mut ticks = tokio::time::interval(HEARTBEAT_PERIOD);
+            let mut ticks = tokio::time::interval(OBSERVATION_PERIOD);
             ticks.set_missed_tick_behavior(MissedTickBehavior::Skip);
             loop {
                 tokio::select! {
@@ -47,7 +48,7 @@ impl HostMemoryObserver {
                     biased;
                     () = task_cancel.cancelled() => break,
                     observation = &mut reading => observation,
-                    () = tokio::time::sleep(HEARTBEAT_PERIOD) => {
+                    () = tokio::time::sleep(OBSERVATION_PERIOD) => {
                         sender.send_replace(HostMemoryObservation::unknown(HostMemoryUnknown::ReadTimeout));
                         tracing::info!(valid = false, pressure = "unknown", unknown_reason = "read_timeout", "host memory observation");
                         // Keep the same accepted read. A timeout invalidates the cache,

@@ -27,6 +27,11 @@ const chat = createChatFilesBddApi(context);
 const callbacks = createChatCallbacksApi(context);
 const webhooks = createWebhookCallbackApi(context);
 const BINGJIE_USER_ID = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
+const retryableFailures = [
+  "provider_overloaded",
+  "provider_rate_limited",
+  "execution_timeout",
+] as const;
 
 async function setEnabled(actor: ApiTestUser, enabled: boolean) {
   createRouteMocks(context).clerk.session(
@@ -114,7 +119,7 @@ async function setupFixture(userId = BINGJIE_USER_ID) {
       {
         runId,
         exitCode: 1,
-        error: "This model is busy right now",
+        error: "This run was interrupted",
         failureReason,
       },
       { authorization: `Bearer ${claim.body.sandboxToken}` },
@@ -146,8 +151,8 @@ async function latestRun(
   return runId;
 }
 
-describe("Automatic continuation after a busy model", () => {
-  it.each(["provider_overloaded", "provider_rate_limited"] as const)(
+describe("Automatic continuation after a recoverable run failure", () => {
+  it.each(retryableFailures)(
     "continues %s chats once per failure with bounded 1, 3, 5 minute backoff",
     async (failureReason) => {
       // The real cron sweeps jobs across tenants.
@@ -189,7 +194,7 @@ describe("Automatic continuation after a busy model", () => {
     },
   );
 
-  it("shares the retry budget across busy and rate-limited failures", async () => {
+  it("shares the retry budget across busy, rate-limited, and timed-out failures", async () => {
     // The real cron sweeps jobs across tenants.
     await setupApp({
       context,
@@ -201,7 +206,7 @@ describe("Automatic continuation after a busy model", () => {
     const failures = [
       ["provider_rate_limited", 60_000],
       ["provider_overloaded", 180_000],
-      ["provider_rate_limited", 300_000],
+      ["execution_timeout", 300_000],
     ] as const;
     for (const [index, [failureReason, delay]] of failures.entries()) {
       await fixture.fail(await latestRun(fixture, threadId), failureReason);
@@ -218,41 +223,41 @@ describe("Automatic continuation after a busy model", () => {
     await expect(fixture.runs(threadId)).resolves.toHaveLength(4);
   });
 
-  it("cancels waiting rate-limit retries when the owner disables the switch", async () => {
-    // The real cron sweeps jobs across tenants.
-    await setupApp({
-      context,
-      routes: cronProcessBackgroundJobsRoutes,
-      isolatePg: true,
-    });
-    const fixture = await setupFixture();
-    const threadId = await fixture.send();
-    await fixture.fail(
-      await latestRun(fixture, threadId),
-      "provider_rate_limited",
-    );
-    await setEnabled(fixture.actor, false);
-    await fixture.tick(60_000);
-    await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
-  });
+  it.each(retryableFailures)(
+    "cancels waiting %s retries when the owner disables the switch",
+    async (failureReason) => {
+      // The real cron sweeps jobs across tenants.
+      await setupApp({
+        context,
+        routes: cronProcessBackgroundJobsRoutes,
+        isolatePg: true,
+      });
+      const fixture = await setupFixture();
+      const threadId = await fixture.send();
+      await fixture.fail(await latestRun(fixture, threadId), failureReason);
+      await setEnabled(fixture.actor, false);
+      await fixture.tick(60_000);
+      await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
+    },
+  );
 
-  it("leaves rate-limited chats idle while the switch is disabled", async () => {
-    // The real cron sweeps jobs across tenants.
-    await setupApp({
-      context,
-      routes: cronProcessBackgroundJobsRoutes,
-      isolatePg: true,
-    });
-    const fixture = await setupFixture();
-    await setEnabled(fixture.actor, false);
-    const threadId = await fixture.send();
-    await fixture.fail(
-      await latestRun(fixture, threadId),
-      "provider_rate_limited",
-    );
-    await fixture.tick(600_000);
-    await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
-  });
+  it.each(retryableFailures)(
+    "leaves %s chats idle while the switch is disabled",
+    async (failureReason) => {
+      // The real cron sweeps jobs across tenants.
+      await setupApp({
+        context,
+        routes: cronProcessBackgroundJobsRoutes,
+        isolatePg: true,
+      });
+      const fixture = await setupFixture();
+      await setEnabled(fixture.actor, false);
+      const threadId = await fixture.send();
+      await fixture.fail(await latestRun(fixture, threadId), failureReason);
+      await fixture.tick(600_000);
+      await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
+    },
+  );
 
   it("stays off for other users until they explicitly opt in", async () => {
     const actor = bdd.user();
@@ -277,68 +282,54 @@ describe("Automatic continuation after a busy model", () => {
     ).toBeTruthy();
   });
 
-  it("leaves a manual continuation alone after rate limiting", async () => {
-    // The real cron sweeps jobs across tenants.
-    await setupApp({
-      context,
-      routes: cronProcessBackgroundJobsRoutes,
-      isolatePg: true,
-    });
-    const fixture = await setupFixture();
-    const threadId = await fixture.send();
-    await fixture.fail(
-      await latestRun(fixture, threadId),
-      "provider_rate_limited",
-    );
-    await fixture.send(threadId);
-    await fixture.tick(60_000);
-    await expect(fixture.runs(threadId)).resolves.toHaveLength(2);
-    await fixture.fail(
-      await latestRun(fixture, threadId),
-      "invalid_credentials",
-    );
-    await fixture.tick(60_000);
-    await expect(fixture.runs(threadId)).resolves.toHaveLength(2);
-    const page = await chat.listThreadEvents(fixture.actor, threadId);
-    expect(
-      page.events.some((event) => {
-        return (
-          event.eventType === "input.prompt" &&
-          chatEventDisplayText(event) === "continue"
-        );
-      }),
-    ).toBeFalsy();
-  });
+  it.each(retryableFailures)(
+    "leaves a manual continuation alone after %s",
+    async (failureReason) => {
+      // The real cron sweeps jobs across tenants.
+      await setupApp({
+        context,
+        routes: cronProcessBackgroundJobsRoutes,
+        isolatePg: true,
+      });
+      const fixture = await setupFixture();
+      const threadId = await fixture.send();
+      await fixture.fail(await latestRun(fixture, threadId), failureReason);
+      await fixture.send(threadId);
+      await fixture.tick(60_000);
+      await expect(fixture.runs(threadId)).resolves.toHaveLength(2);
+      await fixture.fail(
+        await latestRun(fixture, threadId),
+        "invalid_credentials",
+      );
+      await fixture.tick(60_000);
+      await expect(fixture.runs(threadId)).resolves.toHaveLength(2);
+      const page = await chat.listThreadEvents(fixture.actor, threadId);
+      expect(
+        page.events.some((event) => {
+          return (
+            event.eventType === "input.prompt" &&
+            chatEventDisplayText(event) === "continue"
+          );
+        }),
+      ).toBeFalsy();
+    },
+  );
 
-  it("does not resume a rate-limited chat the user archived", async () => {
-    // The real cron sweeps jobs across tenants.
-    await setupApp({
-      context,
-      routes: cronProcessBackgroundJobsRoutes,
-      isolatePg: true,
-    });
-    const fixture = await setupFixture();
-    const threadId = await fixture.send();
-    await fixture.fail(
-      await latestRun(fixture, threadId),
-      "provider_rate_limited",
-    );
-    createRouteMocks(context).clerk.session(
-      fixture.actor.userId,
-      fixture.actor.orgId,
-      fixture.actor.orgRole,
-    );
-    await accept(
-      setupApp({ context, routes: featureSwitchesRoutes })(
-        featureSwitchesContract,
-      ).update({
-        headers: { authorization: "Bearer clerk-session" },
-        body: { switches: { [FeatureSwitchKey.ChatThreadArchiving]: true } },
-      }),
-      [200],
-    );
-    await chat.requestSetThreadArchived(fixture.actor, threadId, true, [204]);
-    await fixture.tick(60_000);
-    await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
-  });
+  it.each(retryableFailures)(
+    "does not resume a %s chat the user archived",
+    async (failureReason) => {
+      // The real cron sweeps jobs across tenants.
+      await setupApp({
+        context,
+        routes: cronProcessBackgroundJobsRoutes,
+        isolatePg: true,
+      });
+      const fixture = await setupFixture();
+      const threadId = await fixture.send();
+      await fixture.fail(await latestRun(fixture, threadId), failureReason);
+      await chat.requestSetThreadArchived(fixture.actor, threadId, true, [204]);
+      await fixture.tick(60_000);
+      await expect(fixture.runs(threadId)).resolves.toHaveLength(1);
+    },
+  );
 });

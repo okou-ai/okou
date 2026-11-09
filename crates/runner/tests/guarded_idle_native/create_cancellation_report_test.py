@@ -13,6 +13,7 @@ import uuid
 import create_cancellation_report as create
 import snapshot_report_fixture
 import report
+import report_test
 import snapshot_report as startup
 
 
@@ -65,9 +66,8 @@ class CreateCancellationTests(unittest.TestCase):
                     "sandbox_id":terminal[1]["sandbox_id"],"backing_generation":terminal[1]["backing_generation"],"evidence":value})
 
     def write(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(v) for v in self.samples))
-        (self.root/"stdout.log").write_text("\n".join([report.PREFIX+json.dumps(v) for v in self.events]+[create.PREFIX+json.dumps(v) for v in self.witnesses]))
+        report_test.write_report_fixture(self.root, self.collector, self.samples,
+            [(report.PREFIX, self.events), (create.PREFIX, self.witnesses)])
 
     def validate(self):
         self.write(); return create.validate(self.root)

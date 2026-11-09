@@ -1,3 +1,6 @@
+import { HTTPException } from "hono/http-exception";
+import { providerUnavailable } from "../../lib/error";
+import { setTimeout as delay } from "node:timers/promises";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { DesktopShellRequest } from "@okouai/api-contracts/contracts/desktop-shell";
@@ -55,12 +58,17 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import {
   publishUserSignal,
+  computerUseHostIsPresent,
   publishComputerUseCommandsChangedSafely,
   publishComputerUseResultChangedSafely,
 } from "../external/realtime";
 import { putS3Object$, signPresignedGetUrl$ } from "../external/s3";
-import { settle } from "../utils";
-import { verifyClerkComputerUseSession } from "../external/clerk";
+import { joinAll, settle } from "../utils";
+import {
+  verifyClerkComputerUseSession,
+  clerkRateLimit,
+  clerkReadUnavailable,
+} from "../external/clerk";
 import {
   computerUseHostAuthorityCondition,
   resolveComputerUseHost$,
@@ -152,6 +160,7 @@ interface StartComputerUseHostResult {
   readonly status: "started";
   readonly hostId: string;
   readonly connectionGeneration: number;
+  readonly livenessMode: "heartbeat" | "presence";
 }
 
 type HeartbeatComputerUseHostResult =
@@ -271,7 +280,7 @@ function normalizeHostPermissions(
   };
 }
 
-export function computerUseHostIsOnline(
+function computerUseHostIsOnline(
   host: {
     readonly status: string;
     readonly appVersion: string;
@@ -291,6 +300,77 @@ export function computerUseHostIsOnline(
       COMPUTER_USE_HOST_CLOSED_AFTER_MS
   );
 }
+
+/** Presence replaces only liveness; current server-owned authority is still required. */
+export const computerUseHostIsOnline$ = command(
+  async (
+    { set },
+    host: ComputerUseHostRow,
+    now: Date,
+    signal: AbortSignal,
+  ): Promise<boolean> => {
+    // Old Desktop -> new API compatibility (#45809). Retire heartbeat-mode
+    // registration/selection and its endpoint after a live presence-capable
+    // Desktop release and enforced floor exclude old clients, retained hosts
+    // are reconciled, and pre-presence API rollback writers are excluded.
+    if (host.livenessMode === "heartbeat") {
+      return computerUseHostIsOnline(host, now);
+    }
+    if (
+      !computerUseHostIsOnline({ ...host, lastSeenAt: now }, now) ||
+      !host.sessionId
+    ) {
+      return false;
+    }
+    const authorization = await settle(
+      set(
+        resolveComputerUseHost$,
+        {
+          hostId: host.id,
+          orgId: host.orgId,
+          userId: host.userId,
+          sessionId: host.sessionId,
+          connectionGeneration: host.connectionGeneration,
+        },
+        signal,
+      ),
+      signal,
+    );
+    if (!authorization.ok) {
+      if (
+        clerkReadUnavailable(authorization.error) ||
+        clerkRateLimit(authorization.error)
+      ) {
+        const error = providerUnavailable(
+          "Authentication provider is temporarily unavailable",
+        );
+        throw new HTTPException(error.status, {
+          res: Response.json(error.body, { status: error.status }),
+          cause: authorization.error,
+        });
+      }
+      throw authorization.error;
+    }
+    const authorized = authorization.value;
+
+    if (authorized === null) {
+      return false;
+    }
+    const presence = await settle(
+      computerUseHostIsPresent(host, signal),
+      signal,
+    );
+    // A received queue-wait request is independent proof of HTTP reachability.
+    // Preserve the previous 90-second recovery window if Ably is unavailable.
+    if (computerUseHostIsOnline(host, now)) {
+      return true;
+    }
+    if (!presence.ok) {
+      throw presence.error;
+    }
+    return presence.value;
+  },
+);
 
 async function publishComputerUseHostsChanged(userId: string): Promise<void> {
   await publishUserSignal([userId], COMPUTER_USE_HOSTS_CHANGED_TOPIC);
@@ -738,7 +818,7 @@ function timeoutErrorForCommand(
   };
 }
 
-function serializeHost(row: ComputerUseHostRow, now: Date) {
+function serializeHost(row: ComputerUseHostRow, online: boolean) {
   return {
     id: row.id,
     hostName: row.displayName,
@@ -747,9 +827,7 @@ function serializeHost(row: ComputerUseHostRow, now: Date) {
     osVersion: row.osVersion,
     supportedCapabilities: row.supportedCapabilities,
     permissions: normalizeHostPermissions(row.permissions),
-    status: computerUseHostIsOnline(row, now)
-      ? ("online" as const)
-      : ("offline" as const),
+    status: online ? ("online" as const) : ("offline" as const),
     lastSeenAt: row.lastSeenAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
   };
@@ -917,6 +995,7 @@ export const startComputerUseHost$ = command(
     { set },
     params: ComputerUseSessionIdentity & {
       readonly installationId: string;
+      readonly livenessMode?: "presence";
       readonly hostName: string;
       readonly appVersion: string;
       readonly osVersion: string;
@@ -962,6 +1041,7 @@ export const startComputerUseHost$ = command(
         osVersion,
         supportedCapabilities,
         permissions: params.permissions,
+        livenessMode: params.livenessMode ?? "heartbeat",
         status: "online",
         lastSeenAt: now,
         createdAt: now,
@@ -986,6 +1066,7 @@ export const startComputerUseHost$ = command(
           osVersion,
           supportedCapabilities,
           permissions: params.permissions,
+          livenessMode: params.livenessMode ?? "heartbeat",
           status: "online",
           lastSeenAt: now,
           updatedAt: now,
@@ -1005,6 +1086,7 @@ export const startComputerUseHost$ = command(
       status: "started",
       hostId: host.id,
       connectionGeneration: host.connectionGeneration,
+      livenessMode: params.livenessMode ?? "heartbeat",
     };
   },
 );
@@ -1133,11 +1215,56 @@ export const heartbeatComputerUseHost$ = command(
   },
 );
 
-/**
- * Stop authenticates by token and ends the host session with one conditional
- * UPDATE that rotates the credential; a concurrent stop or rotation makes it
- * match nothing.
- */
+/** Independent of Ably publication, including committed commands with no result reader. */
+export const waitForComputerUseHostCommands$ = command(
+  async (
+    { get, set },
+    authority: ComputerUseHostAuthority,
+    signal: AbortSignal,
+  ) => {
+    const deadline = performance.now() + 60_000;
+    let received = false;
+    while (true) {
+      const host = await set(resolveComputerUseHost$, authority, signal);
+      if (!host) {
+        return { status: "invalid_connection" as const };
+      }
+      if (!received) {
+        await set(refreshComputerUseHostLiveness$, host, nowDate(), signal);
+        received = true;
+      }
+      const [pending] = await get(db$)
+        .select({ id: computerUseCommands.id })
+        .from(computerUseCommands)
+        .where(
+          and(
+            eq(computerUseCommands.hostId, host.id),
+            eq(computerUseCommands.orgId, host.orgId),
+            eq(computerUseCommands.userId, host.userId),
+            eq(computerUseCommands.status, "queued"),
+            inArray(
+              computerUseCommands.kind,
+              COMPUTER_USE_COMMANDS.filter((kind) => {
+                return hostSupportsCommand({ host, kind });
+              }),
+            ),
+          ),
+        )
+        .limit(1);
+      signal.throwIfAborted();
+      const remaining = deadline - performance.now();
+      if (pending || remaining <= 0) {
+        return {
+          status: "ok" as const,
+          hasPendingCommands: pending !== undefined,
+        };
+      }
+      await delay(Math.min(15_000, remaining), undefined, { signal });
+    }
+  },
+);
+
+/** End exactly the authenticated generation; stale connections cannot stop its replacement. */
 export const stopComputerUseHost$ = command(
   async (
     { set },
@@ -1173,7 +1300,7 @@ export const stopComputerUseHost$ = command(
 
 export const listComputerUseHosts$ = command(
   async (
-    { get },
+    { get, set },
     params: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ): Promise<{ readonly hosts: readonly ComputerUseHost[] }> => {
@@ -1192,9 +1319,14 @@ export const listComputerUseHosts$ = command(
       .orderBy(desc(computerUseHosts.lastSeenAt));
     signal.throwIfAborted();
     return {
-      hosts: hosts.map((host) => {
-        return serializeHost(host, now);
-      }),
+      hosts: await joinAll(
+        hosts.map(async (host) => {
+          return serializeHost(
+            host,
+            await set(computerUseHostIsOnline$, host, now, signal),
+          );
+        }),
+      ),
     };
   },
 );
@@ -1247,8 +1379,14 @@ export const createComputerUseCommand$ = command(
       return { status: "no_host" };
     }
 
-    const onlineHosts = hosts.filter((host) => {
-      return computerUseHostIsOnline(host, now);
+    const availability = await joinAll(
+      hosts.map((host) => {
+        return set(computerUseHostIsOnline$, host, now, signal);
+      }),
+    );
+    signal.throwIfAborted();
+    const onlineHosts = hosts.filter((_, index) => {
+      return availability[index];
     });
     const payload = commandPayload(params.payload);
     const target = resolveComputerUseCommandTargets({
@@ -1310,8 +1448,8 @@ export const createComputerUseCommand$ = command(
       }
       throw new Error("Failed to create computer-use command");
     }
-    // Schedule only after the INSERT commits. A failed or missed publish is
-    // recovered by the Native heartbeat's pending-work hint.
+    // The command queue is authoritative. Result reads repair lost wakeups;
+    // legacy Desktop clients also recover through heartbeat pending-work hints.
     for (const host of target.notifyHosts) {
       publishComputerUseCommandsChangedSafely({
         userId: host.userId,
@@ -1411,11 +1549,24 @@ export const getComputerUseCommand$ = command(
     }
 
     const [host] = await db
-      .select({ displayName: computerUseHosts.displayName })
+      .select()
       .from(computerUseHosts)
       .where(eq(computerUseHosts.id, commandRow.hostId))
       .limit(1);
     signal.throwIfAborted();
+    if (
+      commandRow.status === "queued" &&
+      host?.livenessMode === "presence" &&
+      host.status === "online" &&
+      host.revokedAt === null
+    ) {
+      publishComputerUseCommandsChangedSafely({
+        userId: host.userId,
+        orgId: host.orgId,
+        hostId: host.id,
+        connectionGeneration: host.connectionGeneration,
+      });
+    }
     return serializeCommand(commandRow, host?.displayName ?? null);
   },
 );

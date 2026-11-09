@@ -11,7 +11,6 @@ import {
   USER_TEMPLATE_SOURCE_CONTENT_TYPES,
   type PublishUserTemplateBody,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { getUserTemplateStorageName } from "@okouai/core/storage-names";
 import type { UserTemplateManifest } from "@okouai/db/jsonb-contracts/user-template";
 import { userTemplates } from "@okouai/db/schema/user-template";
 
@@ -25,7 +24,7 @@ import {
   type ResolvedUpload,
   type TemplatePackageLimits,
 } from "./template-package.service";
-import { uploadVolumeServerSide$ } from "./storage-volume-upload.service";
+import { publishTemplateGuidanceBundle$ } from "./template-guidance-bundle.service";
 
 /**
  * The size ceilings are the template's, not the kind's, so only the required
@@ -291,6 +290,12 @@ export const publishUserTemplate$ = command(
       return rejected(packageResult.message);
     }
 
+    const guidanceBundle = await set(
+      publishTemplateGuidanceBundle$,
+      packageResult.files,
+      signal,
+    );
+    signal.throwIfAborted();
     const currentTime = nowDate();
     const [created] = await db
       .insert(userTemplates)
@@ -301,6 +306,7 @@ export const publishUserTemplate$ = command(
         sourceStorageKey: source.storageKey,
         sourceFilename: source.filename,
         manifest: publishedManifest(body, pages, cover, examples),
+        guidanceBundle,
         createdBy: args.ownerUserId,
         updatedBy: args.ownerUserId,
         createdAt: currentTime,
@@ -312,18 +318,6 @@ export const publishUserTemplate$ = command(
       throw new Error("Failed to create the user template");
     }
 
-    // The package is stored under a name derived from the row id, so the
-    // template needs no column pointing at it.
-    await set(
-      uploadVolumeServerSide$,
-      {
-        orgId: args.orgId,
-        storageName: getUserTemplateStorageName(created.id),
-        files: packageResult.files,
-      },
-      signal,
-    );
-    signal.throwIfAborted();
     return { kind: "published", templateId: created.id };
   },
 );

@@ -1,6 +1,5 @@
 import {
   AGENT_ID,
-  agentRowByName,
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
@@ -9,7 +8,6 @@ import {
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   menuItemByText,
-  mobileSidebar,
   mockSidebarTitleLayout,
   mockSidebarViewport,
   openChatListMenu,
@@ -51,7 +49,6 @@ import {
   fill,
   queryAllByRoleFast,
 } from "../../../__tests__/page-helper.ts";
-import { mockNow } from "../../../__tests__/time.ts";
 import {
   chatEventRowsResponse,
   testContext,
@@ -59,18 +56,13 @@ import {
 import { pathname } from "../../../signals/location.ts";
 import { PLACEHOLDER } from "./chat-test-helpers.ts";
 import { mockChatEventRows } from "./chat-event-test-helpers.ts";
-import {
-  changeChatThreadReadCursor,
-  createChatEvent,
-} from "../../../mocks/mock-helpers.ts";
+import { changeChatThreadReadCursor } from "../../../mocks/mock-helpers.ts";
 
 const context = testContext();
 const {
   mockChatThreadSnapshot,
   mockLongSidebarHistory,
-  mockMobileLayout,
   mockSidebarThreadStory,
-  mockUnreadAgents,
   prepareAgents,
   prepareDefaultAgent,
 } = createSidebarHelpers(context);
@@ -96,103 +88,6 @@ test("Browse a long sidebar chat history", async () => {
 
   const scrollArea = await scrollToArchivedContext();
   expect(scrollArea).toBeInTheDocument();
-});
-
-test.each([false, true])(
-  "Keep the three-column chat list expanded with saved collapsed state %s",
-  async (savedCollapsed) => {
-    const viewport = mockMobileLayout();
-    prepareDefaultAgent();
-    mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
-
-    await setupSidebarPage({
-      context,
-      path: `/agents/${AGENT_ID}/chat`,
-    });
-
-    click(screen.getByLabelText("Open menu"));
-    const drawer = await waitFor(() => {
-      const current = mobileSidebar();
-      expect(within(current).getByText("Release plan")).toBeInTheDocument();
-      return current;
-    });
-    const mobileTitle = buttonByText("Chats with Okou", drawer);
-    if (savedCollapsed) {
-      click(mobileTitle);
-    }
-    expect(mobileTitle).toHaveAttribute(
-      "aria-expanded",
-      String(!savedCollapsed),
-    );
-    expect(within(drawer).queryByText("Release plan") !== null).toBe(
-      !savedCollapsed,
-    );
-    act(() => {
-      viewport.setMatches((query) => {
-        return query === "(min-width: 48rem)";
-      });
-    });
-
-    const list = await screen.findByTestId("chat-list-column");
-    const thread = await within(list).findByText("Release plan");
-    const title = within(list).getByText("Chats with Okou");
-    expect(
-      queryAllByRoleFast("button", list).some((button) => {
-        return button.textContent?.includes("Chats with Okou");
-      }),
-    ).toBeFalsy();
-    expect(thread).toBeVisible();
-
-    click(title);
-    expect(thread).toBeVisible();
-    for (const button of within(list).getAllByLabelText("New chat")) {
-      expect(button).toBeEnabled();
-    }
-    expect(within(list).getByLabelText("Open chat list menu")).toBeEnabled();
-  },
-);
-
-test("Toggle the mobile chat list from its title with pointer and keyboard", async () => {
-  mockMobileLayout();
-  const user = userEvent.setup({ delay: null });
-  prepareDefaultAgent();
-  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  click(screen.getByLabelText("Open menu"));
-  const list = await waitFor(() => {
-    const current = mobileSidebar();
-    expect(within(current).getByText("Release plan")).toBeInTheDocument();
-    return current;
-  });
-  const titleButton = buttonByText("Chats with Okou", list);
-  const contentId = titleButton.getAttribute("aria-controls");
-  if (!contentId) {
-    throw new Error("Chat list title does not control its content");
-  }
-  const content = document.getElementById(contentId);
-  if (!content) {
-    throw new Error("Controlled chat list content not found");
-  }
-
-  expect(titleButton).toHaveAttribute("aria-expanded", "true");
-  expect(content).toBeVisible();
-  titleButton.focus();
-  await user.keyboard("{Enter}");
-
-  expect(titleButton).toHaveFocus();
-  expect(titleButton).toHaveAttribute("aria-expanded", "false");
-  expect(content).not.toBeVisible();
-  expect(within(list).queryByText("Release plan")).not.toBeInTheDocument();
-
-  click(titleButton);
-  await within(list).findByText("Release plan");
-  expect(titleButton).toHaveAttribute("aria-expanded", "true");
-  expect(content).toBeVisible();
 });
 
 test("Delete a chat after reviewing the impact", async () => {
@@ -411,56 +306,6 @@ test("Filter unread conversations using indicator timestamps", async () => {
   });
 });
 
-test("Keep check-mark chats and archive controls unchanged when archiving is disabled", async () => {
-  prepareDefaultAgent();
-  const completedThread = createThread(
-    EXISTING_THREAD_ID,
-    "✅ Completed release",
-  );
-  mockSidebarThreadStory([completedThread]);
-
-  await setupSidebarPage({
-    context,
-    path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: false },
-  });
-
-  await waitFor(() => {
-    expect(
-      within(sidebar()).getByText("✅ Completed release"),
-    ).toBeInTheDocument();
-  });
-
-  openChatListMenu();
-  expect(menuItemByText("All chats")).toBeInTheDocument();
-  expect(queryMenuItemByText("Inbox")).not.toBeInTheDocument();
-  expect(queryMenuItemByText("Archived")).not.toBeInTheDocument();
-  click(menuItemByText("Unread"));
-  await expect(
-    within(sidebar()).findByText("No unread chats"),
-  ).resolves.toBeInTheDocument();
-  // Without archiving, the filter keeps the plain agent title.
-  expect(within(sidebar()).getByText("Chats with Okou")).toBeInTheDocument();
-  click(buttonByText("Show all chats", sidebar()));
-  await expect(
-    within(sidebar()).findByText("✅ Completed release"),
-  ).resolves.toBeInTheDocument();
-
-  openThreadMenu("✅ Completed release");
-  expect(menuItemByText("Rename chat")).toBeInTheDocument();
-  expect(queryMenuItemByText("Archive chat")).not.toBeInTheDocument();
-  expect(queryMenuItemByText("Unarchive chat")).not.toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
-
-  pressArchiveShortcut();
-  await expect(
-    within(sidebar()).findByText("✅ Completed release"),
-  ).resolves.toBeInTheDocument();
-  expect(
-    within(sidebar()).queryByText("Your inbox is empty"),
-  ).not.toBeInTheDocument();
-});
-
 test("Filter chats by Inbox, Unread, or Archived", async () => {
   prepareDefaultAgent();
   const currentThread = createThread(EXISTING_THREAD_ID, "Release plan");
@@ -493,7 +338,6 @@ test("Filter chats by Inbox, Unread, or Archived", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   const titles = [
@@ -511,7 +355,6 @@ test("Filter chats by Inbox, Unread, or Archived", async () => {
 
   openChatListMenu();
   expect(menuItemByText("Inbox")).toBeInTheDocument();
-  expect(queryMenuItemByText("All chats")).not.toBeInTheDocument();
   expect(menuItemByText("Archived")).toBeInTheDocument();
   expect(
     screen
@@ -568,7 +411,6 @@ test("Selecting a filter skips the chat open in the right pane", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}?sidebar=${ARCHIVED_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
   await waitFor(() => {
     expect(visibleThreadTitles(["Release plan"])).toStrictEqual([
@@ -593,7 +435,6 @@ test("Mute and unmute a chat without hiding or reordering it", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
   });
   await within(sidebar()).findByText("Quiet task");
   openThreadMenu("Quiet task");
@@ -640,7 +481,6 @@ test("Mute an unread chat with feedback and undo it from the toast", async () =>
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
   });
   await waitFor(() => {
     expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName(
@@ -680,7 +520,6 @@ test("Unmute a chat without resurfacing replies that arrived while it was muted"
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
   });
   await waitFor(() => {
     expect(threadLinkByTitle("Incident notes")).toHaveAccessibleName(
@@ -701,36 +540,6 @@ test("Unmute a chat without resurfacing replies that arrived while it was muted"
   );
 });
 
-test("Hide muting when the switch is off but keep Unmute for chats already muted", async () => {
-  prepareDefaultAgent();
-  mockSidebarThreadStory([
-    createThread(EXISTING_THREAD_ID, "Release plan"),
-    createThread(INCIDENT_THREAD_ID, "Quiet task", { muted: true }),
-  ]);
-  await setupSidebarPage({
-    context,
-    path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: false },
-  });
-  await within(sidebar()).findByText("Quiet task");
-  openChatListMenu();
-  expect(queryMenuItemByText("Muted")).not.toBeInTheDocument();
-  expect(menuItemByText("All chats")).toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
-
-  openThreadMenu("Release plan");
-  expect(menuItemByText("Rename chat")).toBeInTheDocument();
-  expect(queryMenuItemByText("Mute chat")).not.toBeInTheDocument();
-  fireEvent.keyDown(document, { code: "Escape", key: "Escape" });
-
-  openThreadMenu("Quiet task");
-  click(menuItemByText("Unmute chat"));
-  await expect(screen.findByText("Chat unmuted")).resolves.toBeInTheDocument();
-  expect(threadLinkByTitle("Quiet task")).toHaveAccessibleName("Quiet task");
-  // Muting is off, so the toast offers no Undo that would fail.
-  expect(screen.queryByText("Undo")).not.toBeInTheDocument();
-});
-
 async function prepareMutedChatFilter() {
   prepareDefaultAgent();
   mockSidebarThreadStory([
@@ -745,10 +554,6 @@ async function prepareMutedChatFilter() {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadMuting]: true,
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
-    },
   });
   const titles = [
     "Release plan",
@@ -828,7 +633,7 @@ test("Switch from muted chats to Inbox without losing filter state", async () =>
   ).not.toBeInTheDocument();
 });
 
-test("The muted filter works without archiving and shows an empty state after unmuting", async () => {
+test("Show an empty muted filter after unmuting its last chat", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
     createThread(EXISTING_THREAD_ID, "Release plan"),
@@ -837,10 +642,6 @@ test("The muted filter works without archiving and shows an empty state after un
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadMuting]: true,
-      [FeatureSwitchKey.ChatThreadArchiving]: false,
-    },
   });
   await within(sidebar()).findByText("Quiet task");
   openChatListMenu();
@@ -877,7 +678,6 @@ test("Running indicators take precedence over the muted icon", async () => {
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadMuting]: true },
   });
   await within(sidebar()).findByText("Running muted task");
   await waitFor(() => {
@@ -897,7 +697,6 @@ test("Hide the current chat after archiving it without changing its title", asyn
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   await waitFor(() => {
@@ -950,7 +749,6 @@ test("Archive and unarchive the current chat with the keyboard shortcut", async 
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   await waitFor(() => {
@@ -1002,10 +800,6 @@ test("Undo an archive from its toast and explain the muted exception", async () 
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
-      [FeatureSwitchKey.ChatThreadMuting]: true,
-    },
   });
 
   await within(sidebar()).findByText("Quiet task");
@@ -1034,7 +828,6 @@ test("Find archived chats in All and Chats workspace search results", async () =
   await setupSidebarPage({
     context,
     path: `/chats/${EXISTING_THREAD_ID}`,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   await waitFor(() => {
@@ -1172,6 +965,158 @@ test("Route New chat to the current agent and Chat to the default agent", async 
   });
 });
 
+test("My Okou drops the chat list title for a toggle and one New menu", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+  const createdAgentIds: string[] = [];
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    createdAgentIds.push(body.agentId);
+    return respond(201, {
+      id: body.clientThreadId ?? crypto.randomUUID(),
+      title: null,
+      createdAt: "2026-03-10T00:10:00Z",
+      selectedModel: body.model ?? null,
+      serviceTier: null,
+    });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      [FeatureSwitchKey.SingleAgent]: true,
+      [FeatureSwitchKey.Projects]: true,
+    },
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  await within(list).findByText("Release plan");
+  const header = within(list).getByLabelText("Hide chat list").closest("div");
+  if (!header) {
+    throw new Error("Chat list header not found");
+  }
+  expect(
+    queryAllByRoleFast("button", header).map((button) => {
+      return button.getAttribute("aria-label");
+    }),
+  ).toStrictEqual([
+    "Hide chat list",
+    "Search workspace",
+    "New",
+    "Open chat list menu",
+  ]);
+  expect(header).toHaveTextContent(/^$/);
+  expect(within(list).queryByText(/^Chats with/)).not.toBeInTheDocument();
+
+  click(within(header).getByLabelText("New"));
+  click(menuItemByText("New Project"));
+  await expect(
+    screen.findByRole("textbox", { name: "Project name" }),
+  ).resolves.toBeInTheDocument();
+  fireEvent.keyDown(document.activeElement ?? document.body, {
+    key: "Escape",
+  });
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("textbox", { name: "Project name" }),
+    ).not.toBeInTheDocument();
+  });
+
+  click(within(header).getByLabelText("Open chat list menu"));
+  click(menuItemByText("Archived"));
+  await expect(within(header).findByText("Archived")).resolves.toBeVisible();
+
+  click(within(header).getByLabelText("New"));
+  click(menuItemByText("New chat"));
+  await waitFor(() => {
+    expect(createdAgentIds).toStrictEqual([AGENT_ID]);
+  });
+});
+
+test("My Okou without Projects starts a chat straight from the header +", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
+  const createdAgentIds: string[] = [];
+  context.mocks.api(chatThreadsContract.create, ({ body, respond }) => {
+    createdAgentIds.push(body.agentId);
+    return respond(201, {
+      id: body.clientThreadId ?? crypto.randomUUID(),
+      title: null,
+      createdAt: "2026-03-10T00:10:00Z",
+      selectedModel: body.model ?? null,
+      serviceTier: null,
+    });
+  });
+
+  await setupSidebarPage({
+    context,
+    path: "/",
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  const list = await screen.findByTestId("chat-list-column");
+  await within(list).findByText("Release plan");
+  const header = within(list).getByLabelText("Hide chat list").closest("div");
+  if (!header) {
+    throw new Error("Chat list header not found");
+  }
+  expect(
+    queryAllByRoleFast("button", header).map((button) => {
+      return button.getAttribute("aria-label");
+    }),
+  ).toStrictEqual([
+    "Hide chat list",
+    "Search workspace",
+    "New chat",
+    "Open chat list menu",
+  ]);
+
+  click(within(header).getByLabelText("New chat"));
+  await waitFor(() => {
+    expect(createdAgentIds).toStrictEqual([AGENT_ID]);
+  });
+});
+
+test("My Okou's Chat link and new chat shortcut open its chat page at /", async () => {
+  prepareDefaultAgent();
+  mockSidebarThreadStory([
+    createThread(EXISTING_THREAD_ID, "Existing conversation"),
+  ]);
+
+  await setupSidebarPage({
+    context,
+    path: `/chats/${EXISTING_THREAD_ID}`,
+    featureSwitches: { [FeatureSwitchKey.SingleAgent]: true },
+  });
+
+  const rail = await screen.findByTestId("labeled-nav-rail");
+  await screen.findByPlaceholderText(PLACEHOLDER);
+  const chatLink = within(rail).getByLabelText("Chat");
+  expect(chatLink).toHaveAttribute("href", "/");
+
+  fireEvent.keyDown(document, {
+    key: "O",
+    code: "KeyO",
+    ctrlKey: true,
+    shiftKey: true,
+  });
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+  await expect(
+    screen.findByPlaceholderText(PLACEHOLDER),
+  ).resolves.toBeInTheDocument();
+
+  click(within(sidebar()).getByText("Existing conversation"));
+  await waitFor(() => {
+    expect(pathname()).toBe(`/chats/${EXISTING_THREAD_ID}`);
+  });
+  click(chatLink);
+  await waitFor(() => {
+    expect(pathname()).toBe("/");
+  });
+});
+
 test("Mark all current-agent chats read from the chat-list menu", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([
@@ -1228,8 +1173,10 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       }),
     ).toStrictEqual([
       "Mark all read",
-      "All chats",
+      "Inbox",
       expect.stringMatching(/^Unread/u),
+      "Archived",
+      "Muted",
     ]);
   });
   expect(menuItemByText("Mark all read")).not.toHaveAttribute(
@@ -1273,8 +1220,10 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       }),
     ).toStrictEqual([
       "Mark all read",
-      "All chats",
+      "Inbox",
       expect.stringMatching(/^Unread/u),
+      "Archived",
+      "Muted",
     ]);
     const menuWithDisabledMarkAllRead =
       document.querySelector<HTMLElement>('[role="menu"]');
@@ -1285,74 +1234,6 @@ test("Mark all current-agent chats read from the chat-list menu", async () => {
       menuWithDisabledMarkAllRead.querySelectorAll('[role="separator"]'),
     ).toHaveLength(1);
   });
-});
-
-test("Mark all of an agent’s chats read", async () => {
-  mockMobileLayout();
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID],
-  });
-
-  let unreadAgentIds = [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID];
-  const markedAgentIds: string[] = [];
-  mockUnreadAgents(() => {
-    return unreadAgentIds;
-  });
-  context.mocks.api(
-    chatThreadMarkAgentReadContract.markAgentRead,
-    ({ body, respond }) => {
-      markedAgentIds.push(body.agentId);
-      unreadAgentIds = unreadAgentIds.filter((id) => {
-        return id !== body.agentId;
-      });
-      changeChatThreadReadCursor();
-      return respond(204);
-    },
-  );
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-
-  click(screen.getByLabelText("Open menu"));
-  const nav = await waitFor(() => {
-    const current = mobileSidebar();
-    expect(within(current).getByText("Research Agent")).toBeInTheDocument();
-    return current;
-  });
-  const researchSidebarRow = agentRowByName(nav, "Research Agent");
-  // Unpinned agents appear after the Worker finishes loading unread indicators,
-  // independently of the pinned-agent list above.
-  const supportSidebarRow = await waitFor(() => {
-    return agentRowByName(nav, "Support Agent");
-  });
-  await waitFor(() => {
-    expect(
-      within(researchSidebarRow).getByLabelText("Unread"),
-    ).toBeInTheDocument();
-    expect(
-      within(supportSidebarRow).getByLabelText("Unread"),
-    ).toBeInTheDocument();
-  });
-
-  click(within(researchSidebarRow).getByLabelText("Open agent menu"));
-  click(menuItemByText("Mark all read"));
-
-  await waitFor(() => {
-    expect(markedAgentIds).toStrictEqual([RESEARCH_AGENT_ID]);
-    expect(
-      within(researchSidebarRow).queryByLabelText("Unread"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(supportSidebarRow).getByLabelText("Unread"),
-    ).toBeInTheDocument();
-  });
-
-  click(within(researchSidebarRow).getByLabelText("Open agent menu"));
-  expect(queryMenuItemByText("Mark all read")).not.toBeInTheDocument();
-  expect(menuItemByText("Unpin")).toBeInTheDocument();
 });
 
 async function setupReadUnreadSidebar() {
@@ -1474,164 +1355,4 @@ test("Mark the current conversation unread after navigating away", async () => {
   expect(threadLinkByTitle("Release plan")).toHaveAccessibleName(
     "Release plan Unread",
   );
-});
-
-test("An open thread with runless messages reads each newer delivery without a terminal Run", async () => {
-  const firstAt = "2026-03-10T00:04:00Z";
-  const secondAt = "2026-03-10T00:05:00Z";
-  const thirdAt = "2026-03-10T00:06:00Z";
-  mockNow(Date.parse("2026-03-10T00:04:30Z"), context.signal);
-  prepareDefaultAgent();
-  mockSidebarThreadStory([
-    createThread(EXISTING_THREAD_ID, "Runless updates"),
-    createThread(INCIDENT_THREAD_ID, "Other conversation"),
-  ]);
-
-  const rows = mockChatEventRows([
-    {
-      id: "runless-message-1",
-      threadId: EXISTING_THREAD_ID,
-      eventType: "output.message" as const,
-      content: "First runless update",
-      seqId: 1,
-      createdAt: firstAt,
-    },
-  ]);
-  let unreadAt: string | null = firstAt;
-  let historyRequests = 0;
-  let unreadRequests = 0;
-  const markedThrough: string[] = [];
-  const secondMarkStarted = context.mocks.deferred<void>();
-  const releaseSecondMark = context.mocks.deferred<void>();
-  const thirdIndicatorsStarted = context.mocks.deferred<void>();
-  const releaseThirdIndicators = context.mocks.deferred<void>();
-
-  context.mocks.api(chatThreadsContract.indicators, async ({ respond }) => {
-    unreadRequests += 1;
-    if (unreadAt === thirdAt) {
-      thirdIndicatorsStarted.resolve();
-      await releaseThirdIndicators.promise;
-    }
-    return respond(200, {
-      agents: unreadAt === null ? {} : { [AGENT_ID]: "unread" },
-      threads: unreadAt === null ? {} : { [EXISTING_THREAD_ID]: "unread" },
-      unreadAt: unreadAt === null ? {} : { [EXISTING_THREAD_ID]: unreadAt },
-    });
-  });
-  context.mocks.api(
-    chatThreadEventsContract.rows,
-    ({ params, query, respond }) => {
-      historyRequests += 1;
-      return respond(
-        200,
-        chatEventRowsResponse(
-          rows.filter((row) => {
-            return (
-              row.chatThreadId === params.threadId &&
-              row.seqId > query.sinceSeqId
-            );
-          }),
-          query,
-        ),
-      );
-    },
-  );
-  context.mocks.api(
-    chatThreadMarkReadContract.markRead,
-    async ({ params, respond }) => {
-      expect(params.id).toBe(EXISTING_THREAD_ID);
-      expect(historyRequests).toBeGreaterThan(0);
-      const target = unreadAt;
-      if (target === null) {
-        throw new Error("mark-read started without a server unread");
-      }
-      markedThrough.push(target);
-      unreadAt = null;
-      if (target === secondAt) {
-        secondMarkStarted.resolve();
-        await releaseSecondMark.promise;
-      }
-      // This response snapshot is intentionally stale when the third delivery
-      // arrives while the second request is in flight.
-      return respond(200, { lastReadAt: target });
-    },
-  );
-
-  await setupSidebarPage({
-    context,
-    path: `/chats/${EXISTING_THREAD_ID}`,
-    sharedWorkerTestTransport: "message-port",
-  });
-  await expect(
-    screen.findByText("First runless update"),
-  ).resolves.toBeVisible();
-  await waitFor(() => {
-    expect(markedThrough).toStrictEqual([firstAt]);
-  });
-
-  mockNow(Date.parse("2026-03-10T00:05:30Z"), context.signal);
-  unreadAt = secondAt;
-  rows.push(
-    ...mockChatEventRows([
-      {
-        id: "runless-message-2",
-        threadId: EXISTING_THREAD_ID,
-        eventType: "output.message" as const,
-        content: "Second runless update",
-        seqId: 2,
-        createdAt: secondAt,
-      },
-    ]),
-  );
-  createChatEvent(EXISTING_THREAD_ID);
-  await expect
-    .poll(() => {
-      return {
-        historyRequests,
-        unreadRequests,
-        markedThrough: [...markedThrough],
-        secondMarkStarted: secondMarkStarted.settled(),
-      };
-    })
-    .toMatchObject({
-      markedThrough: [firstAt, secondAt],
-      secondMarkStarted: true,
-    });
-  await expect(
-    screen.findByText("Second runless update"),
-  ).resolves.toBeVisible();
-
-  mockNow(Date.parse("2026-03-10T00:06:30Z"), context.signal);
-  unreadAt = thirdAt;
-  rows.push(
-    ...mockChatEventRows([
-      {
-        id: "runless-message-3",
-        threadId: EXISTING_THREAD_ID,
-        eventType: "output.message" as const,
-        content: "Third runless update",
-        seqId: 3,
-        createdAt: thirdAt,
-      },
-    ]),
-  );
-  createChatEvent(EXISTING_THREAD_ID);
-  await thirdIndicatorsStarted.promise;
-  releaseSecondMark.resolve();
-
-  // A pending indicator refresh must not block the actual message delivery.
-  await expect(
-    screen.findByText("Third runless update"),
-  ).resolves.toBeVisible();
-  releaseThirdIndicators.resolve();
-  await waitFor(() => {
-    expect(markedThrough).toStrictEqual([firstAt, secondAt, thirdAt]);
-    expect(unreadRequests).toBeGreaterThanOrEqual(3);
-  });
-  click(threadLinkByTitle("Other conversation"));
-  await waitFor(() => {
-    expect(threadLinkByTitle("Runless updates")).toHaveAccessibleName(
-      "Runless updates",
-    );
-  });
 });

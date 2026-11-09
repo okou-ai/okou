@@ -240,7 +240,7 @@ const CLAIM_DETERMINISTIC_COOLDOWN: Duration = POLL_SLOW;
 const PREFERRED_CLAIM_RETRY_DELAY: Duration = Duration::from_millis(100);
 /// Matches the existing sustained Ably-disconnection reporting boundary.
 const POLL_DEGRADED_AFTER: Duration = Duration::from_secs(60);
-/// Runner reuse requires a heartbeat observed within this freshness window.
+/// Report sustained heartbeat delivery failures independently of routine cadence.
 const HEARTBEAT_DEGRADED_AFTER: Duration = Duration::from_secs(30);
 // The full catalog is multi-megabyte. This budget covers connection setup,
 // response headers and the entire body, rather than restarting for each chunk.

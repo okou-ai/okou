@@ -72,6 +72,8 @@ test("The standalone app hides the install banner", async () => {
 
   await setupPage({ context, path: "/", host: "app.okou.ai" });
 
-  expect(getButton({ label: "Open menu" })).toBeEnabled();
+  await expect(
+    screen.findByRole("navigation", { name: "Main navigation" }),
+  ).resolves.toBeInTheDocument();
   expect(screen.queryByText("Install Okou for a better experience")).toBeNull();
 });

@@ -38,7 +38,8 @@ extension OkouRowLabel where Leading == OkouIcon {
 }
 
 /// A grouped row with a trailing value, as in the system Settings app: the title keeps its one
-/// line and the value yields, truncating in the middle, in body-size supporting text. Without
+/// line and the value yields, truncating in the middle, in body-size `trailingValue` grey,
+/// the same as a value picker's. Without
 /// this, a long value (an email address) squeezed the title onto two lines.
 struct OkouValueRow<Label: View>: View {
   let label: Label
@@ -57,7 +58,7 @@ struct OkouValueRow<Label: View>: View {
       Spacer(minLength: OkouSpace.sm)
       value
         .font(.okou(.body))
-        .foregroundStyle(OkouColor.mutedForeground)
+        .foregroundStyle(OkouColor.trailingValue)
         .lineLimit(1)
         .truncationMode(.middle)
     }

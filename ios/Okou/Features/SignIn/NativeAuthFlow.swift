@@ -6,11 +6,11 @@ import Observation
 @MainActor
 @Observable
 final class NativeAuthFlow {
-  enum Mode { case signIn, signUp }
-  enum Step { case options, email, code, password, profile, additionalVerification }
+  /// One way in for everyone: `.options` holds the providers and the email field, and the same
+  /// Continue logs an existing account in or creates a new one, as Clerk's own screen does.
+  enum Step { case options, code, password, profile, additionalVerification }
 
   let clerk: Clerk
-  var mode: Mode = .signIn
   private(set) var step: Step = .options
   var email = ""
   var code = ""
@@ -39,7 +39,8 @@ final class NativeAuthFlow {
       clerk.environment?.userSettings.social.values.filter {
         $0.enabled && $0.authenticatable && !$0.notSelectable
       }.map { OAuthProvider(strategy: $0.strategy) } ?? []
-    let preferred: [OAuthProvider] = [.google, .microsoft, .apple, .slack]
+    // Apple first: App Review asks that Sign in with Apple be no less prominent than the rest.
+    let preferred: [OAuthProvider] = [.apple, .google, .microsoft, .slack]
     return configured.sorted {
       (preferred.firstIndex(of: $0) ?? preferred.count, $0.name)
         < (preferred.firstIndex(of: $1) ?? preferred.count, $1.name)
@@ -51,20 +52,10 @@ final class NativeAuthFlow {
     return value.contains("@") && value.split(separator: "@").count == 2 && !value.contains(" ")
   }
 
-  func chooseEmail() {
-    error = nil
-    step = .email
-  }
-
-  func switchMode() {
-    guard !isWorking else { return }
-    mode = mode == .signIn ? .signUp : .signIn
-    reset(to: .options)
-  }
-
+  /// Back to the first screen; the email stays in its field to correct.
   func back() {
     guard !isWorking else { return }
-    reset(to: step == .code || step == .password ? .email : .options)
+    reset(to: .options)
   }
 
   func cancel() {
@@ -85,36 +76,43 @@ final class NativeAuthFlow {
     self.step = step
   }
 
+  /// Clerk's answers for an email with no account yet, which Continue turns into a sign-up.
+  private static let newAccountCodes: Set<String> = [
+    "form_identifier_not_found", "invitation_account_not_exists",
+  ]
+
   /// The SDK owns transport, verification, and sessions; this owner only composes the native steps.
   @discardableResult
   func startEmail() -> Task<Void, Never>? {
     guard canSubmitEmail else { return nil }
     email = email.trimmingCharacters(in: .whitespacesAndNewlines)
     return run {
-      if self.mode == .signUp {
-        let attempt = try await self.clerk.auth.signUp(emailAddress: self.email)
+      let attempt: SignIn
+      do {
+        attempt = try await self.clerk.auth.signIn(self.email)
+      } catch let error as ClerkAPIError where Self.newAccountCodes.contains(error.code) {
+        // No account for this email yet: the same Continue creates one.
+        let created = try await self.clerk.auth.signUp(emailAddress: self.email)
         try self.requireCurrentOperation()
-        self.signUp = attempt
-        try await self.continueSignUp(attempt)
+        try await self.continueSignUp(created)
+        return
+      }
+      try self.requireCurrentOperation()
+      self.signIn = attempt
+      if attempt.status == .complete {
+        try await self.finish(sessionID: attempt.createdSessionId)
+      } else if attempt.supportedFirstFactors?.contains(where: { $0.strategy == .emailCode })
+        == true
+      {
+        self.signIn = try await attempt.sendEmailCode()
+        try self.requireCurrentOperation()
+        self.showCode()
+      } else if attempt.supportedFirstFactors?.contains(where: { $0.strategy == .password })
+        == true
+      {
+        self.step = .password
       } else {
-        let attempt = try await self.clerk.auth.signIn(self.email)
-        try self.requireCurrentOperation()
-        self.signIn = attempt
-        if attempt.status == .complete {
-          try await self.finish(sessionID: attempt.createdSessionId)
-        } else if attempt.supportedFirstFactors?.contains(where: { $0.strategy == .emailCode })
-          == true
-        {
-          self.signIn = try await attempt.sendEmailCode()
-          try self.requireCurrentOperation()
-          self.showCode()
-        } else if attempt.supportedFirstFactors?.contains(where: { $0.strategy == .password })
-          == true
-        {
-          self.step = .password
-        } else {
-          self.step = .additionalVerification
-        }
+        self.step = .additionalVerification
       }
     }
   }
@@ -220,13 +218,15 @@ final class NativeAuthFlow {
     }
   }
 
+  /// A provider logs an existing account in or creates one (Clerk's transfer flow). Apple uses
+  /// the system's own Sign in with Apple sheet rather than a web page.
   func startOAuth(_ provider: OAuthProvider) {
     run {
       let result: TransferFlowResult
-      if self.mode == .signUp {
-        result = try await self.clerk.auth.signUpWithOAuth(provider: provider)
+      if provider == .apple {
+        result = try await self.clerk.auth.signInWithApple()
       } else {
-        result = try await self.clerk.auth.signInWithOAuth(provider: provider, transferable: false)
+        result = try await self.clerk.auth.signInWithOAuth(provider: provider, transferable: true)
       }
       try self.requireCurrentOperation()
       switch result {
@@ -278,7 +278,7 @@ final class NativeAuthFlow {
       }
       do { try await action() } catch is CancellationError {} catch let error
         as ASWebAuthenticationSessionError where error.code == .canceledLogin
-      {} catch {
+      {} catch let error as ASAuthorizationError where error.code == .canceled {} catch {
         guard generation == self.generation, !Task.isCancelled else { return }
         self.error = error.localizedDescription
       }

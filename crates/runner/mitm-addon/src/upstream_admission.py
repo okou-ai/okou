@@ -49,28 +49,21 @@ class TlsAdmission:
 _api_destination_cache: tuple[str, platform_api_url.PlatformApiUrl | None] | None = None
 
 
-def _client_connection_id(client: object) -> str | None:
-    client_id = getattr(client, "id", None)
-    if isinstance(client_id, str) and client_id:
-        return client_id
-    return None
-
-
 def record_tls_admission(client: object, admission: TlsAdmission) -> None:
-    client_id = _client_connection_id(client)
+    client_id = connection_endpoints.connection_id(client)
     if client_id is not None:
         _tls_admissions[client_id] = admission
 
 
 def tls_admission_for_client(client: object) -> TlsAdmission | None:
-    client_id = _client_connection_id(client)
+    client_id = connection_endpoints.connection_id(client)
     if client_id is None:
         return None
     return _tls_admissions.get(client_id)
 
 
 def forget_tls_admission(client: object) -> None:
-    client_id = _client_connection_id(client)
+    client_id = connection_endpoints.connection_id(client)
     if client_id is not None:
         _tls_admissions.pop(client_id, None)
 
@@ -651,13 +644,6 @@ def forget_client(client: object) -> None:
     upstream_destination_binding.forget_client_bindings(client)
 
 
-def _endpoint_text(address: tuple[str, int] | None) -> str:
-    if address is None:
-        return ""
-    host, port = address
-    return f"{host}:{port}"
-
-
 def record_unbound_diagnostics(
     flow: http.HTTPFlow,
     *,
@@ -675,14 +661,16 @@ def record_unbound_diagnostics(
             "request_host": flow.request.host,
             "request_port": flow.request.port,
             "server_connected": bool(getattr(flow.server_conn, "connected", False)),
-            "server_address": _endpoint_text(connection_endpoints.server_address(flow.server_conn)),
-            "server_peername": _endpoint_text(
+            "server_address": connection_endpoints.diagnostic_text(
+                connection_endpoints.server_address(flow.server_conn)
+            ),
+            "server_peername": connection_endpoints.diagnostic_text(
                 connection_endpoints.server_peername(flow.server_conn)
             ),
-            "server_sockname": _endpoint_text(
+            "server_sockname": connection_endpoints.diagnostic_text(
                 connection_endpoints.connection_sockname(flow.server_conn)
             ),
-            "client_sockname": _endpoint_text(
+            "client_sockname": connection_endpoints.diagnostic_text(
                 connection_endpoints.connection_sockname(flow.client_conn)
             ),
         }

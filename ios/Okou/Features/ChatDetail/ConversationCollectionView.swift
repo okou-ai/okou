@@ -14,7 +14,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
   case failure(
     ChatMessage, AssistantFailureState, topSpacing: CGFloat, providerMessage: String? = nil)
   case followups(ChatRecommendedFollowupSource, finishedAt: Date?)
-  case usage(runID: String, state: ConversationRunUsageState)
+  case usage(runID: String)
 
   static let messageHorizontalInset: CGFloat = 20
   static let assistantLeadingInset: CGFloat = 6
@@ -27,7 +27,7 @@ enum ConversationCollectionRow: Equatable, Identifiable {
     case .footer: "conversation-bottom"
     case .failure(let message, _, _, _): message.id
     case .followups: "conversation-followups"
-    case .usage(let runID, _): "usage:\(runID)"
+    case .usage(let runID): "usage:\(runID)"
     }
   }
 
@@ -139,6 +139,7 @@ final class ConversationCollectionController<Content: View>: UIViewController,
   UICollectionViewDelegateFlowLayout, ConversationCollectionScrolling, SidebarScrollParticipant
 {
   private typealias Measurement = ConversationMeasurementCache.Measurement
+  private var keyboardTap: KeyboardDismissTap?
 
   private struct PreparedRows {
     let rows: [ConversationCollectionRow]
@@ -223,12 +224,15 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     collection.autoresizingMask = [.flexibleWidth, .flexibleHeight]
     collection.backgroundColor = .clear
     collection.alwaysBounceVertical = true
-    // The header and composer insets are safe-area insets (see updateContentInsets). Blur
-    // content beneath the header, but let it show through beneath the composer's own glass.
-    collection.contentInsetAdjustmentBehavior = .always
+    // The top is the system's soft edge, the progressive blur ChatGPT and Manus draw:
+    // strongest at the screen's edge, clearing toward the content, with no colour of its own.
+    // It follows the safe area, so its reach is the status bar band (updateContentInsets).
+    // The bottom has none, as everywhere in the app: messages pass plainly under the
+    // composer's glass.
     collection.topEdgeEffect.style = .soft
     collection.bottomEdgeEffect.isHidden = true
     collection.keyboardDismissMode = .interactive
+    keyboardTap = KeyboardDismissTap(on: collection)
     collection.selfSizingInvalidation = .disabled
     collection.register(MessageSelectionCell.self, forCellWithReuseIdentifier: "message")
     collection.delegate = self
@@ -564,18 +568,15 @@ final class ConversationCollectionController<Content: View>: UIViewController,
     }
   }
 
+  /// The header and composer heights are content insets, not safe area, so the soft top edge
+  /// blurs only the status bar band; under the header's glass controls the text stays sharp.
   private func updateContentInsets() {
-    // Header and composer heights extend the safe area rather than the content inset:
-    // adjustedContentInset stays the same, and UIKit's scroll edge effects follow the
-    // safe area, so they now reach under both bars.
-    let bars = UIEdgeInsets(
-      top: source.contentInsets.top, left: 0, bottom: source.contentInsets.bottom, right: 0)
-    let horizontal = UIEdgeInsets(
-      top: 0, left: source.contentInsets.leading, bottom: 0, right: source.contentInsets.trailing)
-    guard additionalSafeAreaInsets != bars || collection.contentInset != horizontal else { return }
-    additionalSafeAreaInsets = bars
-    collection.contentInset = horizontal
-    view.layoutIfNeeded()
+    let insets = UIEdgeInsets(
+      top: source.contentInsets.top, left: source.contentInsets.leading,
+      bottom: source.contentInsets.bottom, right: source.contentInsets.trailing)
+    guard collection.contentInset != insets else { return }
+    collection.contentInset = insets
+    collection.verticalScrollIndicatorInsets = insets
     source.sendTransition?.layoutDidChange()
     publishViewportChange()
     publishMetrics()
@@ -1347,4 +1348,28 @@ private final class ConversationAccessibilityCollection: UICollectionView {
     setContentOffset(CGPoint(x: contentOffset.x, y: target), animated: true)
     return true
   }
+}
+
+/// A tap anywhere in the transcript puts the keyboard away, so the composer folds back as in
+/// Messages and ChatGPT. It never takes the tap from what is under it: links, cards and text
+/// selection still get it.
+final class KeyboardDismissTap: NSObject, UIGestureRecognizerDelegate {
+  init(on view: UIView) {
+    super.init()
+    let tap = UITapGestureRecognizer(target: self, action: #selector(dismiss))
+    tap.cancelsTouchesInView = false
+    tap.delegate = self
+    view.addGestureRecognizer(tap)
+  }
+
+  @objc private func dismiss() {
+    // The transcript's text selection must keep its own first responder.
+    UIApplication.shared.sendAction(
+      #selector(ComposerTextView.dismissComposerKeyboard), to: nil, from: self, for: nil)
+  }
+
+  func gestureRecognizer(
+    _ gestureRecognizer: UIGestureRecognizer,
+    shouldRecognizeSimultaneouslyWith otherGestureRecognizer: UIGestureRecognizer
+  ) -> Bool { true }
 }

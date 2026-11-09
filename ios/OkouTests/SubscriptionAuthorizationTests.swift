@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import Foundation
+import Observation
 import Synchronization
 import XCTest
 
@@ -88,7 +89,7 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     await resource.refresh()
     let store = resource.subscriptions
     store.start(type: .claude)
-    try await waitForBusinessResult { store.phase == .pending }
+    try await waitForAuthorization(store, phase: .pending)
     store.authorizationCode = "example-code"
     let completion = Task { await store.submitClaudeCode() }
     addTeardownBlock { @MainActor in
@@ -128,12 +129,12 @@ final class SubscriptionAuthorizationTests: XCTestCase {
       client: fixture.client, authNow: { clock.now }, authSleep: clock.sleep, didFail: { _ in })
     defer { store.close() }
     store.start(type: .codex)
-    try await waitForBusinessResult { store.phase == .pending }
+    try await waitForAuthorization(store, phase: .pending)
     XCTAssertEqual(store.verificationCode, "EXAMPLE-CODE")
     await fulfillment(of: [scheduled], timeout: 3)
     clock.advance(by: .seconds(1))
     await fulfillment(of: [completed], timeout: 3)
-    try await waitForBusinessResult { store.phase == .complete && !store.accounts.isEmpty }
+    try await waitForAuthorization(store, phase: .complete, requiresAccounts: true)
     XCTAssertNil(store.browserURL)
     XCTAssertNil(store.verificationCode)
     XCTAssertEqual(store.authorizationCode, "")
@@ -156,7 +157,7 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
     defer { store.close() }
     store.start(type: .claude, accountID: ModelHTTPFixtures.accountID)
-    try await waitForBusinessResult { store.phase == .pending }
+    try await waitForAuthorization(store, phase: .pending)
     XCTAssertNil(store.verificationCode)
     await store.submitClaudeCode()
     XCTAssertTrue(submitted.withLock { $0.isEmpty })
@@ -214,7 +215,7 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     let store = PersonalSubscriptionStore(client: fixture.client, didFail: { _ in })
     defer { store.close() }
     store.start(type: .claude)
-    try await waitForBusinessResult { store.phase == .pending }
+    try await waitForAuthorization(store, phase: .pending)
     store.authorizationCode = "invalid-example"
     await store.submitClaudeCode()
     XCTAssertEqual(store.phase, .pending)
@@ -254,7 +255,7 @@ final class SubscriptionAuthorizationTests: XCTestCase {
       completionGate.open()
     }
     store.start(type: .claude)
-    try await waitForBusinessResult { store.phase == .pending }
+    try await waitForAuthorization(store, phase: .pending)
     store.authorizationCode = "example-code"
     let completion = Task { await store.submitClaudeCode() }
     addTeardownBlock { @MainActor in
@@ -321,6 +322,41 @@ final class SubscriptionAuthorizationTests: XCTestCase {
     store.close()
     await fulfillment(of: [closed], timeout: 3)
   }
+  private func waitForAuthorization(
+    _ store: PersonalSubscriptionStore, phase: PersonalSubscriptionAuthorization.Phase,
+    requiresAccounts: Bool = false
+  ) async throws {
+    let succeeded: @MainActor () -> Bool = {
+      store.authorization.current.phase == phase && (!requiresAccounts || !store.accounts.isEmpty)
+    }
+    if succeeded() { return }
+    let ready = expectation(description: "The public authorization result is \(phase)")
+    var observed = false
+    let notify: @MainActor () -> Void = {
+      if !observed, succeeded() {
+        observed = true
+        ready.fulfill()
+      }
+    }
+    let subscription = try store.stateStore.watch(store.authorization.value) { notify() }
+    defer {
+      do { try subscription.cancel() } catch { XCTFail("Authorization observer cleanup: \(error)") }
+    }
+    // Confirmed account publication uses Observation; watching it must not start a quota request.
+    let accounts = Task { @MainActor in
+      for await _ in Observations({ store.accountRevision }) {
+        notify()
+        if observed { return }
+      }
+    }
+    defer { accounts.cancel() }
+    notify()
+    await fulfillment(of: [ready], timeout: 3)
+    accounts.cancel()
+    await accounts.value
+    _ = try XCTUnwrap(succeeded() ? true : nil)
+  }
+
 }
 
 private final class SubscriptionAuthorizationClock: Sendable {

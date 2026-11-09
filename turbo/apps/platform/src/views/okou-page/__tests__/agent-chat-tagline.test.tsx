@@ -58,7 +58,10 @@ test("The greeting shows its complete sentence, one box per word", async () => {
   mountedAgent([AGENT_ID]);
   context.mocks.browser.matchMedia(false);
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
+  });
 
   const { tagline, fullLine, text } = await greeting();
   // The sentence is complete from the first frame. Each word arrives on its
@@ -78,7 +81,10 @@ test("The avatar leads the sentence", async () => {
   mountedAgent([AGENT_ID]);
   context.mocks.browser.matchMedia(false);
 
-  await setupPage({ context, path: `/agents/${AGENT_ID}/chat` });
+  await setupPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
+  });
 
   const row = await screen.findByTestId("chat-greeting");
   const avatarBox = row.querySelector('[data-slot="chat-greeting-avatar"]');

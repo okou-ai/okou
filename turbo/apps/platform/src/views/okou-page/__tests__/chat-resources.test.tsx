@@ -21,21 +21,17 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import {
   createChatResourcesHelpers,
   RESOURCE_ARTIFACT_ID,
-  installResourceGeometry,
   resourceButton,
   resourcePanel,
   resourceState,
 } from "./chat-resources-test-helpers.ts";
 
 const context = testContext();
-const { setupOverflowResources, setupResources, recordPreferenceUpdates } =
+const { setupOverflowResources, setupResources } =
   createChatResourcesHelpers(context);
 
-test("Keep an empty chat closed through presses while it loads, then show its hint when pressed", async () => {
-  installResourceGeometry(480);
+test("Open an empty chat's panel on press while it loads, then replace the loading state with its hint", async () => {
   context.mocks.browser.matchMedia(true);
-  const preferenceSaved = createDeferredPromise<void>(context.signal);
-  recordPreferenceUpdates(true, preferenceSaved.promise);
   mockArtifactConversation(context, {
     catalog: [],
     artifactRuns: () => {
@@ -59,33 +55,17 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
   });
   await screen.findByTestId("chat-thread-header-title");
-  // The saved default asks for the panel; its trigger waits without changing appearance.
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
-  });
-  expect(resourceButton()).toHaveAttribute("aria-disabled", "true");
-  expect(resourceButton()).toHaveAttribute(
-    "aria-description",
-    "Loading artifacts",
-  );
-  // Taken, this press would be an explicit open that shows the empty hint.
-  click(resourceButton());
-  const user = userEvent.setup({ delay: null });
-  resourceButton().focus();
-  await user.keyboard("{Enter} ");
-  expect(resourceButton()).toHaveFocus();
-  response.resolve();
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
-  });
-  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
+  // Nothing opens or loads on its own; the press opens the panel at once.
   expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  // The saved preference is already on, so opening the empty hint must not
-  // wait for another preference save.
   click(resourceButton());
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
+  expect(
+    within(panel).getByRole("status", { name: "Loading artifacts" }),
+  ).toBeInTheDocument();
+  expect(within(panel).queryByText("No artifacts yet")).not.toBeInTheDocument();
+  response.resolve();
   await expect(
     within(panel).findByText("No artifacts yet"),
   ).resolves.toBeInTheDocument();
@@ -94,14 +74,11 @@ test("Keep an empty chat closed through presses while it loads, then show its hi
       "Files, websites, and other artifacts made in this chat will show up here.",
     ),
   ).toBeInTheDocument();
-  expect(resourceButton()).toHaveAttribute("aria-busy", "false");
-  preferenceSaved.resolve();
+  expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
 });
 
-test("Draw complete resources after loading and reuse them when reopened", async () => {
-  installResourceGeometry(480);
+test("Open a pressed panel at once, draw its resources complete, and reuse them when reopened", async () => {
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, {
     catalog: [],
     chatEvents: [
@@ -155,86 +132,39 @@ test("Draw complete resources after loading and reuse them when reopened", async
   await screen.findByText("Keep chatting while resources load");
   expect(screen.getByRole("textbox", { name: "Message" })).toBeEnabled();
   click(resourceButton());
-  // The press is acknowledged at once; the panel waits for every source.
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
-  });
-  expect(resourceButton()).toHaveAttribute("aria-disabled", "true");
-  expect(resourcePanel()).not.toBeInTheDocument();
-  response.resolve();
-  const panel = await screen.findByRole("region", {
+  // The press opens the panel at once; its rows draw once every source answers.
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
-  expect(within(panel).getByText("report.pdf")).toBeInTheDocument();
+  expect(
+    within(panel).getByRole("status", { name: "Loading artifacts" }),
+  ).toBeInTheDocument();
+  expect(within(panel).queryByText("report.pdf")).not.toBeInTheDocument();
+  expect(resourceButton()).toHaveAttribute("aria-disabled", "false");
+  response.resolve();
+  await expect(
+    within(panel).findByText("report.pdf"),
+  ).resolves.toBeInTheDocument();
   expect(within(panel).getByText("Research child")).toBeInTheDocument();
   expect(within(panel).queryByRole("status")).not.toBeInTheDocument();
-  expect(resourceButton()).toHaveAttribute("aria-busy", "false");
-  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
 
   click(resourceButton());
   await waitFor(() => {
     expect(resourceState()).toStrictEqual({ open: false, visible: false });
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
   });
   // Reopening keeps the loaded resources, even if the service's list changes.
   resourcesAvailable = false;
   click(resourceButton());
-  const reopened = await screen.findByRole("region", {
+  const reopened = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   expect(within(reopened).getByText("report.pdf")).toBeInTheDocument();
   expect(within(reopened).getByText("Research child")).toBeInTheDocument();
-  expect(resourceButton()).toHaveAttribute("aria-busy", "false");
-  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
-});
-
-test("Release the resource button when the gutter narrows and open the pending resources on press", async () => {
-  const resize = installResourceGeometry(480);
-  context.mocks.browser.matchMedia(true);
-  mockArtifactConversation(context, { catalog: [], chatEvents: [] });
-  const response = createDeferredPromise<void>(context.signal);
-  context.mocks.api(artifactCatalogContract.list, async ({ respond }) => {
-    await response.promise;
-    return respond(200, {
-      artifacts: [artifactSummary(RESOURCE_ARTIFACT_ID, "file", "report.pdf")],
-      nextCursor: null,
-    });
-  });
-  await setupPage({
-    context,
-    path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-  });
-  await screen.findByTestId("chat-thread-header-title");
-  // The saved default asks for the panel while it has room.
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
-  });
-  resize(200);
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "false");
-  });
-  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
-  expect(resourceState()).toStrictEqual({ open: false, visible: false });
-
-  click(resourceButton());
-  await waitFor(() => {
-    expect(resourceButton()).toHaveAttribute("aria-busy", "true");
-  });
-  expect(resourceButton()).toHaveAttribute("aria-disabled", "true");
-  expect(resourcePanel()).not.toBeInTheDocument();
-  response.resolve();
-  const panel = await screen.findByRole("region", {
-    name: "Artifacts and chats",
-  });
-  expect(within(panel).getByText("report.pdf")).toBeInTheDocument();
-  expect(resourceButton()).toHaveAttribute("aria-busy", "false");
-  expect(resourceButton()).not.toHaveAttribute("aria-disabled");
+  expect(within(reopened).queryByRole("status")).not.toBeInTheDocument();
 });
 
 test("Display a resource loading error without showing an empty state", async () => {
-  installResourceGeometry(480);
   context.mocks.browser.matchMedia(true);
-  context.mocks.data.userPreferences({ chatResourcesEnabledByDefault: false });
   mockArtifactConversation(context, { catalog: [], chatEvents: [] });
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(500, {
@@ -251,7 +181,7 @@ test("Display a resource loading error without showing an empty state", async ()
 
   click(resourceButton());
 
-  const panel = await screen.findByRole("region", {
+  const panel = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await expect(
@@ -260,10 +190,8 @@ test("Display a resource loading error without showing an empty state", async ()
 });
 
 test("Name the closed resource trigger in a tooltip until the panel opens", async () => {
-  await setupResources({ preferred: false });
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: false, visible: false });
-  });
+  await setupResources({ open: false });
+  expect(resourceState()).toStrictEqual({ open: false, visible: false });
   const user = userEvent.setup();
   await user.hover(resourceButton());
   const tooltip = await screen.findByText("Artifacts and chats");
@@ -318,11 +246,8 @@ test("Expand and collapse the artifacts list in place", async () => {
 
 test("Show artifacts in the floating panel while links remain in the transcript", async () => {
   await setupResources();
-  await waitFor(() => {
-    expect(resourceState()).toStrictEqual({ open: true, visible: true });
-  });
   const panel = resourcePanel()!;
-  expect(resourceButton()).not.toHaveAttribute("aria-haspopup");
+  expect(resourceButton()).toHaveAttribute("aria-haspopup", "dialog");
   expect(resourceButton()).toHaveAttribute("aria-expanded", "true");
   expect(resourceButton()).toHaveAttribute("aria-controls", panel.id);
   await within(panel).findByText("report.pdf");
@@ -339,16 +264,20 @@ test("Show artifacts in the floating panel while links remain in the transcript"
   expect(
     screen.queryByTestId("thread-sidebar-artifacts"),
   ).not.toBeInTheDocument();
+  // Like Emails, the panel is titled and closes from its own header.
+  expect(
+    within(panel).getByRole("heading", { name: "Artifacts and chats" }),
+  ).toBeInTheDocument();
+  click(buttonNamed("Close artifacts and chats", panel));
+  await waitFor(() => {
+    expect(resourceState()).toStrictEqual({ open: false, visible: false });
+  });
 });
 
 test.each([0, 20])(
   "Show empty resources for a link-only chat with a link in message %i",
   async (linkIndex) => {
-    installResourceGeometry(480);
     context.mocks.browser.matchMedia(true);
-    context.mocks.data.userPreferences({
-      chatResourcesEnabledByDefault: false,
-    });
     mockArtifactConversation(context, {
       catalog: [],
       chatEvents: Array.from({ length: 21 }, (_, index) => {
@@ -382,7 +311,7 @@ test.each([0, 20])(
     expect(resourceButton()).toBeEnabled();
     expect(resourcePanel()).not.toBeInTheDocument();
     click(resourceButton());
-    const panel = await screen.findByRole("region", {
+    const panel = await screen.findByRole("dialog", {
       name: "Artifacts and chats",
     });
     await within(panel).findByText("No artifacts yet");

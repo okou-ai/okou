@@ -26,7 +26,7 @@ import {
 } from "../external/realtime";
 import { chatThreadEventInsertSql } from "./chat-thread-event.service";
 import {
-  computerUseHostIsOnline,
+  computerUseHostIsOnline$,
   listComputerUseHosts$,
 } from "./computer-use.service";
 
@@ -56,6 +56,7 @@ type ReadComputerUseAuthorizationRequestResult =
   | {
       readonly status: "found";
       readonly source: ComputerUseAuthorizationSource;
+      readonly chatThreadId: string | null;
       readonly expiresAt: string;
       readonly completedAt: string | null;
       readonly computerUseHostId: string | null;
@@ -189,7 +190,7 @@ const loadRequestByToken$ = command(
 
 const onlineHostExists$ = command(
   async (
-    { get },
+    { get, set },
     args: {
       readonly orgId: string;
       readonly userId: string;
@@ -199,13 +200,7 @@ const onlineHostExists$ = command(
     signal: AbortSignal,
   ): Promise<boolean> => {
     const [host] = await get(db$)
-      .select({
-        appVersion: computerUseHosts.appVersion,
-        sessionId: computerUseHosts.sessionId,
-        lastSeenAt: computerUseHosts.lastSeenAt,
-        revokedAt: computerUseHosts.revokedAt,
-        status: computerUseHosts.status,
-      })
+      .select()
       .from(computerUseHosts)
       .where(
         and(
@@ -217,7 +212,10 @@ const onlineHostExists$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return host !== undefined && computerUseHostIsOnline(host, args.now);
+    return (
+      host !== undefined &&
+      (await set(computerUseHostIsOnline$, host, args.now, signal))
+    );
   },
 );
 
@@ -616,6 +614,10 @@ export const readComputerUseAuthorizationRequest$ = command(
     return {
       status: "found",
       source: loaded.request.source as ComputerUseAuthorizationSource,
+      chatThreadId:
+        loaded.request.source === "chat"
+          ? requiredChatThreadId(loaded.request)
+          : null,
       expiresAt: loaded.request.expiresAt.toISOString(),
       completedAt: loaded.request.completedAt?.toISOString() ?? null,
       computerUseHostId,

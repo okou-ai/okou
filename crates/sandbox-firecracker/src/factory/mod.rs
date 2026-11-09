@@ -34,6 +34,7 @@ use crate::paths::{FactoryPaths, RuntimePaths, SandboxPaths, SockPaths};
 use crate::prerequisites;
 use crate::runtime_dirs::prepare_runtime_socket_dir;
 use crate::sandbox::{FirecrackerSandbox, FirecrackerSandboxInit};
+use crate::snapshot_memory::SnapshotMemoryPrefetch;
 
 #[cfg(any(test, feature = "test-support"))]
 use home_checkpoint::FactoryCheckpoint;
@@ -56,6 +57,7 @@ pub(crate) struct FirecrackerFactory {
     shutdown_netns_pool: Option<NetnsPoolHandle>,
     host_cpu_cgroup: Option<Arc<HostCpuCgroupManager>>,
     home_drive_pressure: Option<Arc<dyn sandbox::HomeDrivePressurePolicy>>,
+    snapshot_memory: Option<SnapshotMemoryPrefetch>,
 }
 
 struct StartedFactoryResources {
@@ -173,6 +175,11 @@ impl FirecrackerFactory {
         };
         info!(mode, "factory started");
 
+        let snapshot_memory = config
+            .snapshot
+            .as_ref()
+            .map(|snapshot| SnapshotMemoryPrefetch::new(snapshot.memory_path.clone()));
+
         Ok(Self {
             config,
             factory_paths,
@@ -187,6 +194,7 @@ impl FirecrackerFactory {
             shutdown_netns_pool: None,
             host_cpu_cgroup,
             home_drive_pressure,
+            snapshot_memory,
         })
     }
 
@@ -231,6 +239,9 @@ impl FirecrackerFactory {
         #[cfg(any(test, feature = "test-support"))]
         let home_checkpoint = checkpoint.and_then(FactoryCheckpoint::home);
         let resources = self.resources()?;
+        if let Some(memory) = self.snapshot_memory.as_ref() {
+            memory.handle().prefetch();
+        }
         let device_rate_limits = convert_device_rate_limits(config.device_rate_limits.as_ref())?;
         let leak_tx = resources.leak_cleaner.sender();
         let id = config.id.to_string();
@@ -430,6 +441,10 @@ impl FirecrackerFactory {
             device_rate_limits,
             leak_tx,
             host_cpu_cgroup: self.host_cpu_cgroup.clone(),
+            snapshot_memory: self
+                .snapshot_memory
+                .as_ref()
+                .map(SnapshotMemoryPrefetch::handle),
         });
         #[cfg(feature = "test-support")]
         let sandbox = crate::preparation_checkpoint::attach(sandbox, guest_checkpoint);
@@ -514,6 +529,9 @@ impl SandboxFactory for FirecrackerFactory {
     }
 
     async fn shutdown(&mut self) {
+        if let Some(memory) = self.snapshot_memory.as_mut() {
+            memory.shutdown().await;
+        }
         self.cleanup_group.shutdown().await;
 
         let Some(resources) = self.resources.take() else {

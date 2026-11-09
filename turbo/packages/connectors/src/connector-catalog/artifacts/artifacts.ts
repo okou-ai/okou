@@ -7,6 +7,7 @@ import {
   object,
   record,
   string,
+  union,
   enum as zEnum,
   type infer as zInfer,
 } from "zod";
@@ -132,20 +133,29 @@ const connectorSkillStorageNameSchema = string()
 
 const connectorSkillVersionIdSchema = string().regex(/^[a-f0-9]{64}$/u);
 
-export const connectorCatalogSkillSchema = discriminatedUnion("kind", [
+const bundledConnectorCatalogSkillSchema = object({
+  kind: literal("bundled"),
+  versionId: connectorSkillVersionIdSchema,
+  size: number().int().nonnegative().max(CONNECTOR_SKILL_MAX_TOTAL_BYTES),
+  archiveSize: number().int().positive().max(CONNECTOR_SKILL_MAX_ARCHIVE_BYTES),
+  fileCount: number().int().positive().max(CONNECTOR_SKILL_MAX_FILES),
+}).strict();
+
+// Producer/API rollout and retained catalogs still require the complete Storage
+// descriptor. Remove this variant under #45309 after the producer contracts and
+// retained catalog/Run references and supported rollback catalogs no longer use it.
+const legacyBundledConnectorCatalogSkillSchema =
+  bundledConnectorCatalogSkillSchema
+    .extend({
+      storageName: connectorSkillStorageNameSchema,
+      storageVersionPrefix: artifactKeySchema,
+    })
+    .strict();
+
+export const connectorCatalogSkillSchema = union([
   object({ kind: literal("none") }).strict(),
-  object({
-    kind: literal("bundled"),
-    storageName: connectorSkillStorageNameSchema,
-    versionId: connectorSkillVersionIdSchema,
-    storageVersionPrefix: artifactKeySchema,
-    size: number().int().nonnegative().max(CONNECTOR_SKILL_MAX_TOTAL_BYTES),
-    archiveSize: number()
-      .int()
-      .positive()
-      .max(CONNECTOR_SKILL_MAX_ARCHIVE_BYTES),
-    fileCount: number().int().positive().max(CONNECTOR_SKILL_MAX_FILES),
-  }).strict(),
+  bundledConnectorCatalogSkillSchema,
+  legacyBundledConnectorCatalogSkillSchema,
 ]);
 
 const connectorCatalogFirewallConfigSchema = firewallConfigSchema
@@ -207,7 +217,10 @@ export const connectorCatalogArtifactConnectorSchema = object({
         path: ["authMethods"],
       });
     }
-    if (connector.skill.kind === "none") {
+    if (
+      connector.skill.kind === "none" ||
+      !("storageName" in connector.skill)
+    ) {
       return;
     }
     const expectedStorageVersionPrefix =

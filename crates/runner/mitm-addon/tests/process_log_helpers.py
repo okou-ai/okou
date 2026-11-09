@@ -5,15 +5,16 @@ import os
 import stat
 from collections.abc import Iterator
 from contextlib import contextmanager
-from unittest.mock import MagicMock, patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import addon_process_logging
 
 
 @contextmanager
-def capture_addon_process_events() -> Iterator[MagicMock]:
+def capture_addon_process_events() -> Iterator[Mock]:
     """Capture the external stderr write after real event serialization."""
-    log = MagicMock()
+    log = Mock()
 
     def capture(fd: int, record: bytes) -> int:
         assert fd == 42
@@ -38,13 +39,15 @@ def capture_addon_process_events() -> Iterator[MagicMock]:
             getattr(log, level)(message)
         return len(record)
 
-    stderr = MagicMock()
-    stderr.O_WRONLY = os.O_WRONLY
-    stderr.O_NONBLOCK = os.O_NONBLOCK
-    stderr.O_CLOEXEC = os.O_CLOEXEC
-    stderr.open.return_value = 42
-    stderr.fstat.return_value.st_mode = stat.S_IFIFO
-    stderr.fpathconf.return_value = 4096
-    stderr.write.side_effect = capture
+    stderr = SimpleNamespace(
+        O_WRONLY=os.O_WRONLY,
+        O_NONBLOCK=os.O_NONBLOCK,
+        O_CLOEXEC=os.O_CLOEXEC,
+        open=lambda _path, _flags: 42,
+        fstat=lambda _fd: SimpleNamespace(st_mode=stat.S_IFIFO),
+        fpathconf=lambda _fd, _name: 4096,
+        write=capture,
+        close=lambda _fd: None,
+    )
     with patch.object(addon_process_logging, "os", stderr):
         yield log

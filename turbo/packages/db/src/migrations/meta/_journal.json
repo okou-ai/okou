@@ -3162,8 +3162,36 @@
     {
       "idx": 1530,
       "version": "7",
-      "when": 1793956505119,
-      "tag": "1530_user_notifications",
+      "when": 1793999130080,
+      "tag": "1530_drop_retired_action_and_artifact_preferences",
+      "breakpoints": true
+    },
+    {
+      "idx": 1531,
+      "version": "7",
+      "when": 1794022994310,
+      "tag": "1531_connector_skill_registry_free_source",
+      "breakpoints": true
+    },
+    {
+      "idx": 1532,
+      "version": "7",
+      "when": 1794025769163,
+      "tag": "1532_computer_use_host_presence",
+      "breakpoints": true
+    },
+    {
+      "idx": 1533,
+      "version": "7",
+      "when": 1794111441034,
+      "tag": "1533_prepare_template_guidance_bundles",
+      "breakpoints": true
+    },
+    {
+      "idx": 1534,
+      "version": "7",
+      "when": 1794190464534,
+      "tag": "1534_user_notifications",
       "breakpoints": true
     }
   ]

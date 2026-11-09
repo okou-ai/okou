@@ -13,7 +13,9 @@ import pytest
 from mitmproxy import http
 
 import codex_model_catalog_cache as catalog_cache
+import codex_model_catalog_validation as catalog_validation
 import mitm_addon
+import thread_pool
 from tests.codex_model_catalog_cache_helpers import (
     catalog_flow,
     catalog_response,
@@ -79,10 +81,12 @@ def _dense_catalog_body(label: str) -> bytes:
     ).encode()
     prefix = b'{"models":['
     suffix = b"]}"
-    item_count = (catalog_cache.MAX_ENTRY_BYTES - len(prefix) - len(suffix) + 1) // (len(item) + 1)
+    item_count = (catalog_validation.MAX_ENTRY_BYTES - len(prefix) - len(suffix) + 1) // (
+        len(item) + 1
+    )
     body = prefix + b",".join([item] * item_count) + suffix
-    assert len(body) <= catalog_cache.MAX_ENTRY_BYTES
-    assert len(body) >= catalog_cache.MAX_ENTRY_BYTES * 9 // 10
+    assert len(body) <= catalog_validation.MAX_ENTRY_BYTES
+    assert len(body) >= catalog_validation.MAX_ENTRY_BYTES * 9 // 10
     return body
 
 
@@ -137,7 +141,7 @@ async def test_dense_catalog_validations_are_serialized_off_event_loop(
     try:
         with (
             mitm_ctx(),
-            patch.object(catalog_cache, "ThreadPoolExecutor", return_value=executor),
+            patch.object(catalog_cache, "start_thread_pool", return_value=executor),
         ):
             try:
                 _, first_continuation = await _start_catalog_response(
@@ -200,7 +204,7 @@ async def test_catalog_validation_cancellation_preserves_atomic_ownership(
     try:
         with (
             mitm_ctx(),
-            patch.object(catalog_cache, "ThreadPoolExecutor", return_value=executor),
+            patch.object(catalog_cache, "start_thread_pool", return_value=executor),
         ):
             try:
                 admitted_flow, admitted_continuation = await _start_catalog_response(
@@ -297,7 +301,7 @@ async def test_executor_submission_failure_releases_catalog_owner(
 
     with (
         mitm_ctx(),
-        patch.object(catalog_cache, "ThreadPoolExecutor", return_value=failed_executor),
+        patch.object(catalog_cache, "start_thread_pool", return_value=failed_executor),
     ):
         flow, continuation = await _start_catalog_response(
             real_flow,
@@ -320,7 +324,7 @@ async def test_worker_start_failures_release_queued_snapshots_and_recover(
     loop = asyncio.get_running_loop()
     executors: list[ThreadPoolExecutor] = []
     original_start = threading.Thread.start
-    original_validate = catalog_cache._validate_response_snapshot
+    original_validate = catalog_validation.validate_response_snapshot
     validations: list[int] = []
     failed_starts = 0
 
@@ -339,16 +343,16 @@ async def test_worker_start_failures_release_queued_snapshots_and_recover(
         original_start(thread)
 
     def observe_validation(
-        snapshot: catalog_cache._ResponseValidationSnapshot,
-    ) -> catalog_cache._ValidatedResponse | str:
+        snapshot: catalog_validation.ResponseValidationSnapshot,
+    ) -> catalog_validation.ValidatedResponse | str:
         validations.append(id(snapshot))
         return original_validate(snapshot)
 
     try:
         with (
             mitm_ctx(),
-            patch.object(catalog_cache, "ThreadPoolExecutor", side_effect=create_executor),
-            patch.object(catalog_cache, "_validate_response_snapshot", observe_validation),
+            patch.object(thread_pool, "ThreadPoolExecutor", side_effect=create_executor),
+            patch.object(catalog_validation, "validate_response_snapshot", observe_validation),
         ):
             with patch.object(threading.Thread, "start", fail_catalog_start):
                 assert (
@@ -357,7 +361,11 @@ async def test_worker_start_failures_release_queued_snapshots_and_recover(
                 for index in range(catalog_cache.MAX_IN_FLIGHT_REQUESTS + 4):
                     version = f"start-failure-{index}"
                     prefix = b'{"models":[],"padding":"' + version.encode()
-                    body = prefix + b"x" * (catalog_cache.MAX_ENTRY_BYTES - len(prefix) - 2) + b'"}'
+                    body = (
+                        prefix
+                        + b"x" * (catalog_validation.MAX_ENTRY_BYTES - len(prefix) - 2)
+                        + b'"}'
+                    )
                     flow, continuation = await _start_catalog_response(
                         real_flow, version=version, body=body
                     )
@@ -385,7 +393,7 @@ async def test_worker_start_failures_release_queued_snapshots_and_recover(
             assert not validations
             gc.collect()
             retained_snapshots = sum(
-                isinstance(value, catalog_cache._ResponseValidationSnapshot)
+                isinstance(value, catalog_validation.ResponseValidationSnapshot)
                 for value in gc.get_objects()
             )
             assert retained_snapshots == 0
@@ -425,7 +433,7 @@ async def test_done_joins_catalog_validation_and_closes_admission(
     try:
         with (
             mitm_ctx(),
-            patch.object(catalog_cache, "ThreadPoolExecutor", return_value=executor),
+            patch.object(catalog_cache, "start_thread_pool", return_value=executor),
         ):
             try:
                 _, continuation = await _start_catalog_response(

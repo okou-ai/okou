@@ -392,13 +392,12 @@
     "sidebar": {
       "ariaLabel": "Seitenleiste",
       "chat": "Chat",
-      "collapse": "Seitenleiste einklappen",
+      "feedWaiting_one": "{{count}} offen",
+      "feedWaiting_other": "{{count}} offen",
       "hideChatList": "Chatliste ausblenden",
-      "manage": "Verwalten",
       "mobile": {
         "invite": "Einladen",
-        "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen",
-        "openMenu": "Menü öffnen"
+        "openAutomations": "Automatisierungen auf dem Mobilgerät öffnen"
       },
       "navigation": {
         "agents": "Agenten",
@@ -464,8 +463,10 @@
       "nextImage": "Nächstes Bildartefakt",
       "openNewTab": "In neuem Tab öffnen",
       "openSplitView": "In geteilter Ansicht öffnen",
+      "partiallyUnavailable": "Einige Aktionen sind vorübergehend nicht verfügbar",
       "previousImage": "Vorheriges Bildartefakt",
       "resetZoom": "Zoom zurücksetzen",
+      "retry": "Erneut versuchen",
       "share": "Aktie",
       "shareArtifact": "Artefakt teilen",
       "zoomIn": "Vergrößern",
@@ -998,8 +999,11 @@
       "unavailableTitle": "Autorisierungslink nicht verfügbar"
     },
     "computerUse": {
+      "actionFailed": "Dieser Computer konnte nicht autorisiert werden. Lade den Chat neu, um es erneut zu versuchen.",
       "authorize": "Autorisieren",
       "authorized": "Autorisiert",
+      "authorizedDescription": "Computerzugriff für zukünftige Ausführungen in diesem Chat aktiviert.",
+      "cardDescription": "Wähle einen Computer für diesen Chat. Dadurch wird der Cloud-Browser getrennt.",
       "checkingCompatibility": "Kompatibilität prüfen",
       "description": "Wählen Sie einen Online-Computer aus, den {{assistantName}} in {{source}} verwenden soll.",
       "downloadMac": "Für macOS herunterladen",
@@ -1008,6 +1012,7 @@
       "macRequirement": "Erfordert einen Apple Silicon Mac mit macOS 14 oder neuer. Intel-Macs werden nicht unterstützt.",
       "noHostsDescription": "Öffne {{desktopApplicationName}} auf deinem Mac, um ihn online zu bringen.",
       "noHostsTitle": "Keine Online-Computer",
+      "selectComputer": "Computer auswählen",
       "sources": {
         "chat": "dieser Chat-Thread",
         "slack": "dieser Slack-Thread",
@@ -1432,6 +1437,8 @@
   },
   "browserViewer": {
     "address": "Adresse",
+    "addressOpening": "Eine Seite wird noch geöffnet. Versuche es gleich noch einmal.",
+    "addressPreparing": "Der Browser ist noch nicht bereit. Versuche es gleich noch einmal.",
     "allTabs": "Alle Tabs",
     "automatic": "Automatisch",
     "back": "Zurück",
@@ -1472,11 +1479,11 @@
     "unavailable": "Browseransicht nicht verfügbar",
     "unsupportedCapability": "Der Browser unterstützt diese Aktion nicht.",
     "untitledTab": "Unbenannter Tab",
+    "updatingView": "Ansicht wird aktualisiert…",
     "windowSize": "Fenstergröße"
   },
   "chat": {
     "actions": {
-      "authorize": "Autorisieren",
       "cancel": "Abbrechen",
       "confirm": "Bestätigen",
       "continue": "Weiter",
@@ -1645,7 +1652,7 @@
     },
     "attachments": {
       "attach": "Anhängen",
-      "fileTooLarge": "{{filename}} überschreitet die 1-GB-Grenze",
+      "fileTooLarge": "{{filename}} überschreitet die 512-MB-Grenze",
       "imageUnavailable": "[Bild nicht verfügbar: {{filename}}]",
       "loadingFile": "{{filename}} wird geladen",
       "previewFile": "Vorschau von {{filename}}",
@@ -1853,6 +1860,102 @@
       "uncertain": "Browser prüfen",
       "uncertainDescription": "Der Browser hat die Informationen möglicherweise erhalten. Bitte den Agenten, das Ergebnis zu prüfen."
     },
+    "capabilityHome": {
+      "back": "Alle Funktionen",
+      "capabilities": "Okou-Funktionen entdecken",
+      "create": {
+        "description": "Von der ersten Idee bis zum fertigen Ergebnis.",
+        "documentFormats": "Doc · PDF · Tabelle",
+        "title": "Erstellen"
+      },
+      "explore": "Entdecken",
+      "research": {
+        "items": {
+          "ads": "Werbemotive erkunden",
+          "products": "Produkte recherchieren",
+          "searchOpportunities": "Suchpotenziale entdecken",
+          "tools": "Tools vergleichen",
+          "topic": "Ein Thema recherchieren",
+          "traffic": "Website-Traffic vergleichen"
+        },
+        "prompt": "{{task}}. Kläre, was ich erfahren möchte, vergleiche die Belege und fasse die wichtigsten Erkenntnisse mit Quellen zusammen.",
+        "title": "Recherche"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Affiliate-Programme",
+          "creators": "Creator-Kooperationen",
+          "customers": "Potenzielle Kunden",
+          "decisionMakers": "Entscheidungsträger",
+          "podcasts": "Passende Podcasts",
+          "speakers": "Vortragende für Events"
+        },
+        "prompt": "Hilf mir, Folgendes zu finden: {{task}}. Frage zuerst nach Zielgruppe, Kriterien und Umfang. Erstelle dann eine Auswahlliste mit relevanten Details und Quellenlinks.",
+        "title": "Personen finden"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Verbinde deine Tools und Arbeitsschritte.",
+          "title": "Erweiterte Workflows"
+        },
+        "description": "Einmal einrichten. Viel Arbeit sparen.",
+        "scheduled": {
+          "description": "Automatisch zum richtigen Zeitpunkt.",
+          "items": {
+            "daily": "Tägliche Routine",
+            "once": "Einmalige Erinnerung",
+            "weekly": "Wöchentlicher Rückblick"
+          },
+          "prompt": "Hilf mir beim Einrichten: {{task}}. Frage nach der Aufgabe, dem Ausführungszeitpunkt und der Zeitzone.",
+          "title": "Geplante Aufgaben"
+        },
+        "suggestions": "Starte mit einem Vorschlag und passe ihn an.",
+        "triggers": {
+          "description": "Starten, sobald etwas passiert.",
+          "eventPrompt": "Hilf mir, {{task}} mit {{source}} einzurichten. Ablauf: {{event}} → {{action}} → {{result}}. Frage nach Quelle, Filtern und Ausgabeziel. Erstelle einen Workflow-Entwurf und bestätige die Einrichtung vor der Aktivierung.",
+          "items": {
+            "calendar": {
+              "action": "Teilnehmer prüfen",
+              "event": "Termin geändert",
+              "result": "Briefing erstellen",
+              "title": "Meeting-Briefings"
+            },
+            "email": {
+              "action": "Anliegen erfassen",
+              "event": "E-Mail markiert",
+              "result": "Antwort entwerfen",
+              "title": "E-Mail-Antworten"
+            },
+            "news": {
+              "action": "Themen filtern",
+              "event": "Suchwort gefunden",
+              "result": "Zusammenfassen",
+              "title": "Nachrichtenüberblick"
+            },
+            "slack": {
+              "action": "Aufgaben erfassen",
+              "event": "Erwähnt",
+              "result": "Aufgabenliste",
+              "title": "Slack-Aufgaben"
+            },
+            "social": {
+              "action": "Interessen filtern",
+              "event": "Neuer Beitrag",
+              "result": "Beiträge bündeln",
+              "title": "X-Beobachtung"
+            },
+            "webhook": {
+              "action": "Firma recherchieren",
+              "event": "Formular gesendet",
+              "result": "Nachricht entwerfen",
+              "title": "Lead-Nachverfolgung"
+            }
+          },
+          "monitorPrompt": "Hilf mir, {{task}} mit {{source}} einzurichten. Ablauf: {{event}} → {{action}} → {{result}}. Frage nach Feeds, Themen oder Konten, Prüfintervall und Speicherort. Prüfe regelmäßig, überspringe bereits verarbeitete Einträge und bestätige die Einrichtung vor der Aktivierung.",
+          "title": "Auslöser"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Details ansehen"
     },
@@ -1922,7 +2025,6 @@
     },
     "computerUse": {
       "authorization": "Berechtigung zur Computernutzung",
-      "authorizationDescription": "Wählen Sie in diesem Thread einen Desktop-Host für zukünftige Ausführungen aus.",
       "checkingCompatibility": "Kompatibilität prüfen",
       "cloudBrowser": "Cloud-Browser",
       "connectMyComputer": "Meinen Computer verbinden",
@@ -2007,7 +2109,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Dieser Lauf konnte nicht abgeschlossen werden",
-      "loadMessages": "Nachrichten konnten nicht geladen werden",
       "noModelProviderAction": "Abonnements verwalten",
       "noModelProviderPrefix": "Für diese Ausführung ist kein Modellanbieter verfügbar. Verbinde ein persönliches Abonnement.",
       "providerIncompatibleAction": "Starten Sie eine neue Sitzung",
@@ -2083,6 +2184,11 @@
       "sourcePartHeading": "Aus {{description}} zitiert",
       "sourcePartsHeading_one": "{{count}} Teil aus {{description}} zitiert",
       "sourcePartsHeading_other": "{{count}} Teile aus {{description}} zitiert"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Mit dieser Auswahl einen neuen Chat starten",
+      "sent": "Neuer Chat erstellt"
     },
     "forward": {
       "action": "Weiterleiten",
@@ -2261,6 +2367,7 @@
       "unavailableSsh": "nicht verfügbarer SSH-Host"
     },
     "resources": {
+      "close": "Artefakte und Chats schließen",
       "collapse": "Einklappen",
       "copyLink": "Link kopieren",
       "emptyDescription": "Dateien, Websites und andere Artefakte aus diesem Chat werden hier angezeigt.",
@@ -2340,7 +2447,6 @@
       "number": "Nummer"
     },
     "sidebar": {
-      "allChats": "Alle Chats",
       "archive": "Chat archivieren",
       "archived": "Archiviert",
       "chatsWith": "Chats mit {{agentName}}",
@@ -2359,6 +2465,7 @@
       "mute": "Chat stummschalten",
       "muted": "Stummgeschaltet",
       "newChatWith": "Neuer Chat mit {{agentName}}",
+      "newMenu": "Neu",
       "noArchived": "Keine archivierten Chats",
       "noMuted": "Keine stummgeschalteten Chats",
       "noUnread": "Keine ungelesenen Chats",
@@ -2602,12 +2709,9 @@
       "ideasLabel": "Ideen zum Einstieg",
       "label": "Aufgaben zum Einstieg",
       "more": "Mehr",
-      "moreTemplates": "Weitere Vorlagen",
       "presentationTemplates": "Präsentationsvorlagen",
       "removeTask": "{{task}} entfernen",
       "shelf": {
-        "browseStyles": "Alle Stile durchsuchen",
-        "browseTemplates": "Alle Vorlagen durchsuchen",
         "document": "Dokumentvorlagen",
         "image": "Bildstile",
         "nextPage": "Nächste Seite",
@@ -2623,6 +2727,7 @@
         "website": "Website",
         "workflow": "Workflow"
       },
+      "viewAll": "Alle anzeigen",
       "visualization": {
         "allCharts": "Alle Diagramme",
         "back": "Back to visualization options",
@@ -4028,7 +4133,6 @@
     "deniedTitle": "Shell-Zugriff abgelehnt",
     "deny": "Ablehnen",
     "description": "Der Agent benötigt die Berechtigung, die Shell auf deinem Computer zu verwenden.",
-    "details": "Details",
     "duration": "Der Zugriff gilt nach der Genehmigung für 1 Stunde",
     "expired": "Autorisierung abgelaufen",
     "expiredTitle": "Shell-Zugriff abgelaufen",
@@ -4036,7 +4140,6 @@
     "pendingSummary": "{{computer}} · 1 Stunde",
     "reasonTitle": "Grund für den Zugriff",
     "requestExpired": "Anfrage abgelaufen",
-    "review": "Zugriff prüfen",
     "revoke": "Widerrufen",
     "revoked": "Shell-Zugriff widerrufen",
     "scope": "Eine Stunde Zugriff für diesen Chat",
@@ -4248,7 +4351,6 @@
     "instructions": "Anweisungen",
     "loadError": "Deine Anweisungen konnten nicht geladen werden. Versuche es erneut.",
     "markdown": "Schreibe in Klartext oder Markdown",
-    "newChat": "Neuer Chat",
     "placeholder": "Sag Okou, wie du gerne arbeitest…",
     "reload": "Gespeicherte Anweisungen neu laden",
     "retry": "Erneut versuchen",
@@ -5001,6 +5103,7 @@
     "moveTitle": "Move chat",
     "moveTo": "Nach {{name}} verschieben",
     "name": "Project name",
+    "new": "New Project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
@@ -5407,6 +5510,7 @@
         "credits": "Credits",
         "fiveHourLimit": "5-Stunden-Limit",
         "label": "Abonnementnutzung",
+        "limitReached": "Limit erreicht",
         "lowUsage": "Abonnementnutzung: weniger als 20 % verbleibend",
         "resetTimeUnavailable": "Rücksetzzeit nicht verfügbar",
         "usage": "{{provider}} Nutzung",
@@ -6364,6 +6468,7 @@
     "loading": "Benachrichtigungen werden geladen",
     "loadMore": "Ältere anzeigen",
     "nextPage": "Nächste Seite",
+    "pageNavigation": "Seiten dieser Nachricht",
     "pageOf": "Seite {{current}} von {{total}}",
     "previousPage": "Vorherige Seite",
     "readAll": "Alle als gelesen markieren",

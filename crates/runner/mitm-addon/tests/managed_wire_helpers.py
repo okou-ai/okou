@@ -2,6 +2,7 @@
 
 import hashlib
 from collections import deque
+from functools import cached_property
 
 import h11
 import pytest
@@ -37,10 +38,6 @@ class WireSession:
         native_context.server.tls = True
         self.native = HttpLayer(native_context, HTTPMode.transparent)
         self.initial = list(self.native.handle_event(events.Start()))
-        self.guest = H2Connection(H2Configuration(client_side=True, header_encoding=None))
-        self.provider = H2Connection(H2Configuration(client_side=False, header_encoding=None))
-        self.http1 = h11.Connection(h11.SERVER)
-        self.provider.initiate_connection()
         self._flow: http.HTTPFlow | None = None
         self.request_headers: dict[bytes, bytes] = {}
         self.digest = hashlib.sha256()
@@ -51,6 +48,20 @@ class WireSession:
         self.response_status: int | None = None
         self.response_ended = False
         self.closed = []
+
+    @cached_property
+    def guest(self) -> H2Connection:
+        return H2Connection(H2Configuration(client_side=True, header_encoding=None))
+
+    @cached_property
+    def provider(self) -> H2Connection:
+        provider = H2Connection(H2Configuration(client_side=False, header_encoding=None))
+        provider.initiate_connection()
+        return provider
+
+    @cached_property
+    def http1(self) -> h11.Connection:
+        return h11.Connection(h11.SERVER)
 
     @property
     def flow(self) -> http.HTTPFlow:

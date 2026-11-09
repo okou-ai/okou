@@ -1,34 +1,16 @@
 import { instructions } from "@okouai/db/schema/instructions";
-import { SINGLE_AGENT_SEED_INSTRUCTIONS } from "@okouai/core/seed-instructions";
+import {
+  SINGLE_AGENT_SEED_INSTRUCTIONS,
+  SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE,
+} from "@okouai/core/seed-instructions";
 import { command } from "ccstate";
-import { and, eq } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 import { writeDb$ } from "../external/db";
 import { publishContentBundle$ } from "./content-bundle.service";
 
-/** Publish before insertion; the business key arbitrates concurrent first use. */
-export const initializePersonalInstructions$ = command(
-  async (
-    { set },
-    scope: {
-      readonly orgId: string;
-      readonly userId: string;
-    },
-    signal: AbortSignal,
-  ) => {
-    const db = set(writeDb$);
-    const condition = and(
-      eq(instructions.orgId, scope.orgId),
-      eq(instructions.userId, scope.userId),
-    );
-    const [existing] = await db
-      .select()
-      .from(instructions)
-      .where(condition)
-      .limit(1);
-    signal.throwIfAborted();
-    if (existing) {
-      return existing;
-    }
+/** Deployments publish the default before serving; requests only reference it. */
+export const publishDefaultPersonalInstructions$ = command(
+  async ({ set }, signal: AbortSignal) => {
     const bundle = await set(
       publishContentBundle$,
       [
@@ -39,29 +21,15 @@ export const initializePersonalInstructions$ = command(
       ],
       signal,
     );
-    const [inserted] = await db
-      .insert(instructions)
-      .values({ ...scope, content: SINGLE_AGENT_SEED_INSTRUCTIONS, bundle })
-      .onConflictDoNothing({
-        target: [instructions.orgId, instructions.userId],
-      })
-      .returning();
-    signal.throwIfAborted();
-    if (inserted) {
-      return inserted;
-    }
-    const [retained] = await db
-      .select()
-      .from(instructions)
-      .where(condition)
-      .limit(1);
-    signal.throwIfAborted();
-    if (!retained) {
+    if (
+      bundle.sha256 !== SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE.sha256 ||
+      bundle.archiveBytes !== SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE.archiveBytes
+    ) {
       throw new Error(
-        "Personal Instructions disappeared during initialization",
+        `SINGLE_AGENT_SEED_INSTRUCTIONS_BUNDLE must be ${JSON.stringify(bundle)}`,
       );
     }
-    return retained;
+    return bundle;
   },
 );
 

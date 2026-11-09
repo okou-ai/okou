@@ -1,3 +1,4 @@
+import { createAddressSignals } from "../navigation/address.ts";
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import {
   initialInventory,
@@ -10,7 +11,6 @@ import type {
   ViewerCaptureOptions,
   ViewerError,
   ViewerNavigation,
-  NavigationReceipt,
   ViewerSnapshot,
   ViewerTransport,
   WindowSizeSync,
@@ -30,7 +30,7 @@ export type ViewerTransition =
   | { type: "discovery-failed"; error: ViewerError }
   | { type: "streaming" }
   | { type: "stopped"; retainFrame?: boolean }
-  | { type: "pause"; paused: boolean }
+  | { type: "pause"; paused: boolean; preview?: boolean }
   | { type: "closed" }
   | { type: "failed"; error: ViewerError }
   | ImageEvent
@@ -49,39 +49,6 @@ export type ViewerIntentTransition = Extract<
   }
 >;
 type SnapshotTransition = Exclude<ViewerTransition, ImageEvent>;
-
-export interface AddressSubmission {
-  readonly selection: object;
-  readonly scope: object;
-  readonly version: object;
-  readonly value: string;
-  readonly baseline: ViewerNavigation | null;
-}
-interface AddressDraft {
-  readonly owner: object;
-  readonly version: object;
-  readonly value: string;
-  readonly editing: boolean;
-  readonly baseline: ViewerNavigation | null;
-  readonly submission?: {
-    readonly token: AddressSubmission;
-    readonly receipt: NavigationReceipt | null;
-  };
-}
-
-function confirmsSubmission(
-  document: ViewerNavigation | null,
-  submission: AddressSubmission,
-  receipt: NavigationReceipt,
-): boolean {
-  return (
-    !!document &&
-    document !== submission.baseline &&
-    receipt.kind === "ack" &&
-    (receipt.frameId === undefined || document.frameId === receipt.frameId) &&
-    (receipt.loaderId === undefined || document.loaderId === receipt.loaderId)
-  );
-}
 
 type ViewerLifecycle = Omit<ViewerSnapshot, "inventory">;
 
@@ -102,7 +69,6 @@ function createModelAtoms() {
   const faviconState$ = state<
     ReadonlyMap<string, { readonly url: string; readonly failed: boolean }>
   >(new Map());
-  const draftState$ = state<AddressDraft | null>(null);
   const spaceState$ = state<TabSpace | null>(null);
   const captureState$ = state<ViewerCaptureOptions>({ format: "webp" });
   const transportState$ = state<ViewerTransport>("shared");
@@ -115,7 +81,6 @@ function createModelAtoms() {
     scopedState$,
     loadingPreviewState$,
     faviconState$,
-    draftState$,
     spaceState$,
     captureState$,
     transportState$,
@@ -139,7 +104,6 @@ function createModelValues(
     transportState$,
     modeState$,
     faviconState$,
-    draftState$,
     spaceState$,
   } = atoms;
   const inventory$ = computed((get) => {
@@ -205,25 +169,6 @@ function createModelValues(
   const navigationScope$ = computed((get) => {
     return get(navigationScopeSource$);
   });
-  const address$ = computed((get) => {
-    const draft = get(draftState$);
-    const document = get(navigation$);
-    const remote = document?.url ?? "";
-    if (draft?.owner === get(intent$).selection) {
-      const submitted = draft.submission;
-      const confirmed =
-        submitted?.receipt &&
-        submitted.token.scope === get(navigationScope$) &&
-        confirmsSubmission(document, submitted.token, submitted.receipt);
-      if (
-        draft.editing ||
-        (submitted ? !confirmed : draft.baseline === document)
-      ) {
-        return draft.value;
-      }
-    }
-    return remote === "about:blank" ? "" : remote;
-  });
   const tabLayout$ = computed((get) => {
     return layoutTabs(get(tabs$), get(selectedTabId$), true, get(spaceState$));
   });
@@ -244,7 +189,6 @@ function createModelValues(
     selectedTabId$,
     navigation$,
     navigationScope$,
-    address$,
     tabLayout$,
   };
 }
@@ -409,19 +353,17 @@ function createSnapshotTransitions(
   atoms: ModelAtoms,
   publication: ModelPublication,
 ) {
-  const { faviconState$, draftState$, imageState$, lifecycleState$ } = atoms;
+  const { faviconState$, imageState$, lifecycleState$ } = atoms;
   const { inventoryUpdate$, update$ } = publication;
   return command(({ get, set }, event: SnapshotTransition) => {
     switch (event.type) {
       case "reset": {
         set(inventoryUpdate$, { type: "reset" });
         set(faviconState$, new Map());
-        set(draftState$, null);
         set(update$, initialLifecycle());
         break;
       }
       case "select": {
-        set(draftState$, null);
         set(update$, {
           selectedTargetId: event.targetId,
           status: event.paused ? "paused" : "connecting",
@@ -434,7 +376,6 @@ function createSnapshotTransitions(
         if (event.type === "discovery-failed") {
           set(inventoryUpdate$, { type: "reset" });
         }
-        set(draftState$, null);
         set(update$, {
           selectedTargetId: null,
           status: "unavailable",
@@ -476,10 +417,6 @@ function createSnapshotTransitions(
         });
         break;
       }
-      case "closed": {
-        set(draftState$, null);
-        break;
-      }
     }
   });
 }
@@ -488,6 +425,7 @@ function createModelTransitions(
   atoms: ModelAtoms,
   publication: ModelPublication,
   changed$: Command<void, []>,
+  observeAddressTarget$: Command<void, [string]>,
 ) {
   const { intentState$, imageState$, loadingPreviewState$, lifecycleState$ } =
     atoms;
@@ -523,8 +461,13 @@ function createModelTransitions(
         ? !!event.retainFrame &&
             (get(lifecycleState$).status === "streaming" ||
               get(loadingPreviewState$))
-        : event.type === "select" && !!event.preview && !event.paused,
+        : (event.type === "select" || event.type === "pause") &&
+            !!event.preview &&
+            !event.paused,
     );
+    if (event.type === "select") {
+      set(observeAddressTarget$, event.targetId);
+    }
     set(snapshotTransition$, event);
     set(changed$);
     return undefined;
@@ -536,104 +479,6 @@ function createModelTransitions(
     },
   );
   return { transition$, commitIntent$ };
-}
-
-function createAddressActions(atoms: ModelAtoms, values: ModelValues) {
-  const { draftState$, intentState$ } = atoms;
-  const { address$, navigation$, navigationScope$ } = values;
-  const resetAddress$ = command(({ set }) => {
-    set(draftState$, null);
-  });
-  const editAddress$ = command(({ get, set }, value: string) => {
-    set(draftState$, {
-      owner: get(intentState$).selection,
-      version: {},
-      value,
-      editing: true,
-      baseline: get(navigation$),
-    });
-  });
-  const focusAddress$ = command(({ get, set }) => {
-    set(draftState$, {
-      owner: get(intentState$).selection,
-      version: {},
-      value: get(address$),
-      editing: true,
-      baseline: get(navigation$),
-    });
-  });
-  const blurAddress$ = command(({ get, set }) => {
-    const draft = get(draftState$);
-    if (draft) {
-      set(draftState$, { ...draft, editing: false });
-    }
-  });
-  const prepareAddress$ = command(
-    ({ get, set }, scope: object): AddressSubmission => {
-      const token: AddressSubmission = Object.freeze({
-        selection: get(intentState$).selection,
-        scope,
-        version: {},
-        value: get(address$),
-        baseline: get(navigation$),
-      });
-      set(draftState$, {
-        owner: token.selection,
-        version: token.version,
-        value: token.value,
-        baseline: token.baseline,
-        editing: false,
-        submission: { token, receipt: null },
-      });
-      return token;
-    },
-  );
-  const acceptAddress$ = command(
-    ({ get, set }, token: AddressSubmission, receipt: NavigationReceipt) => {
-      const draft = get(draftState$);
-      if (
-        !draft ||
-        draft.version !== token.version ||
-        get(intentState$).selection !== token.selection ||
-        get(navigationScope$) !== token.scope
-      ) {
-        return;
-      }
-      if (
-        receipt.kind === "download" ||
-        receipt.kind === "unavailable" ||
-        confirmsSubmission(get(navigation$), token, receipt)
-      ) {
-        set(draftState$, null);
-      } else {
-        set(draftState$, { ...draft, submission: { token, receipt } });
-      }
-    },
-  );
-  const reconcileAddress$ = command(({ get, set }, scope: object) => {
-    const draft = get(draftState$);
-    const submission = draft?.submission;
-    if (
-      draft &&
-      submission?.receipt &&
-      submission.token.scope === scope &&
-      get(navigationScope$) === scope &&
-      draft.owner === get(intentState$).selection &&
-      draft.version === submission.token.version &&
-      confirmsSubmission(get(navigation$), submission.token, submission.receipt)
-    ) {
-      set(draftState$, null);
-    }
-  });
-  return {
-    resetAddress$,
-    editAddress$,
-    focusAddress$,
-    blurAddress$,
-    prepareAddress$,
-    acceptAddress$,
-    reconcileAddress$,
-  };
 }
 
 function createFaviconActions(atoms: ModelAtoms) {
@@ -715,8 +560,13 @@ export function createViewerSignals(
     creationReadySource$,
   );
   const publication = createModelPublication(atoms, values);
-  const transitions = createModelTransitions(atoms, publication, changed$);
-  const address = createAddressActions(atoms, values);
+  const address = createAddressSignals(values);
+  const transitions = createModelTransitions(
+    atoms,
+    publication,
+    changed$,
+    address.observeAddressTarget$,
+  );
   const favicon = createFaviconActions(atoms);
   const configuration = createConfigurationActions(atoms);
   return {
@@ -727,6 +577,8 @@ export function createViewerSignals(
     ...address,
     ...favicon,
     ...configuration,
+    // Resource-owned readiness can change without a lifecycle transition.
+    readinessChanged$: changed$,
   };
 }
 export type ViewerSignals = ReturnType<typeof createViewerSignals>;

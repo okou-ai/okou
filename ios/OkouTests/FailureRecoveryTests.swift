@@ -368,8 +368,9 @@ final class FailureRecoveryTests: XCTestCase {
     }
     await fulfillment(of: [settingsStarted], timeout: 3)
     cardGate.open()
-    await cardRead.value
     settingsGate.open()
+    // Both callers now await the same current read after replacement.
+    await cardRead.value
     _ = await settingsRead.value
     XCTAssertEqual(conversation.failureState(failure).accountLabel, "new-active@example.invalid")
     XCTAssertFalse(conversation.failureState(failure).isBusy)

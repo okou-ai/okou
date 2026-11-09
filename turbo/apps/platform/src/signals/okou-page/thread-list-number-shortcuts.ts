@@ -1,11 +1,9 @@
 import { command } from "ccstate";
 import { currentChatThreadListIds$ } from "../agent-chat.ts";
-import {
-  currentLeftThread$,
-  loadLeftThread$,
-} from "../chat-page/chat-thread-panes.ts";
+import { currentLeftThread$ } from "../chat-page/chat-thread-panes.ts";
+import { loadLeftThread$ } from "../chat-page/chat-thread-pane-navigation.ts";
 import { onDomEventFn, onRef } from "../utils.ts";
-import { navigateToChat$, setSidebarExpanded$ } from "./nav.ts";
+import { navigateToChat$ } from "./nav.ts";
 import { threadNumberShortcutIndex$ } from "./thread-number-shortcuts.ts";
 
 export const setThreadListNumberShortcutRoot$ = onRef(
@@ -33,7 +31,6 @@ export const setThreadListNumberShortcutRoot$ = onRef(
         } else {
           set(navigateToChat$, threadId);
         }
-        set(setSidebarExpanded$, false);
       }),
       { signal },
     );

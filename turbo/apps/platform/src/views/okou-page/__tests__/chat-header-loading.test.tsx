@@ -1,6 +1,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
+import { chatThreadMetadataContract } from "@okouai/api-contracts/contracts/chat-threads";
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
 
@@ -45,8 +46,7 @@ function menuItem(name: string, container: ParentNode) {
 
 async function navigate(threadId: string, desktop = true) {
   if (!desktop) {
-    click(fastButton("Open menu"));
-    await screen.findByRole("dialog", { name: "Sidebar" });
+    click(screen.getByLabelText("Back to chats"));
   }
   const link = await waitFor(() => {
     const found = document.querySelector<HTMLAnchorElement>(
@@ -160,7 +160,11 @@ async function setupHeaders({
       );
     },
   );
-  await setupPage({ context, path, ...workspace.pageOptions });
+  await setupPage({
+    context,
+    path,
+    ...workspace.pageOptions,
+  });
   await waitFor(() => {
     expect(fastButton("Share messages")).toHaveAttribute(
       "aria-disabled",
@@ -244,10 +248,20 @@ test("Open the destination's loading lists as soon as its pane replaces the prev
   click(mailEntry);
   const list = await screen.findByRole("dialog", { name: "Emails" });
   await within(list).findByRole("status", { name: "Loading emails" });
+  // The first load shows placeholders, not search, filters or a count.
+  const heading = within(list).getByRole("heading", { name: "Emails" });
+  expect(heading).toHaveTextContent(/^Emails$/);
+  expect(
+    within(list).queryByPlaceholderText("Search by subject or sender"),
+  ).toBeNull();
   mail.resolve();
   await expect(
     within(list).findByText("Current header mail"),
   ).resolves.toBeInTheDocument();
+  expect(heading).toHaveTextContent(/^Emails1$/);
+  expect(
+    within(list).getByPlaceholderText("Search by subject or sender"),
+  ).toBeInTheDocument();
   await closeMailList(list);
 
   const sidebar = await openAutomations(true, header);
@@ -255,6 +269,55 @@ test("Open the destination's loading lists as soon as its pane replaces the prev
   await expect(
     within(sidebar).findByText("Header schedule"),
   ).resolves.toBeInTheDocument();
+});
+
+test("Mark every header button as settling while the previous chat is still on screen", async () => {
+  const serviceWorker = context.mocks.browser.serviceWorker();
+  await setupHeaders();
+  const names = [
+    "Share messages",
+    "Automations",
+    "Manage emails",
+    "Open browser",
+    "Artifacts and chats",
+  ];
+  for (const name of names) {
+    expect(fastButton(name, pane(previous.id))).toHaveAttribute(
+      "aria-busy",
+      "false",
+    );
+  }
+  // A chat outside the list resolves its details first, so the previous
+  // chat's header briefly stays on screen while the route asks for another.
+  const pending = continuityThread(76, 3, "Pending header");
+  const detailsRequested = context.mocks.deferred<void>();
+  const details = context.mocks.deferred<void>();
+  context.mocks.api(chatThreadMetadataContract.get, async ({ respond }) => {
+    detailsRequested.resolve();
+    await details.promise;
+    return respond(404, {
+      error: {
+        code: "CHAT_THREAD_NOT_FOUND",
+        message: "Chat thread not found",
+      },
+    });
+  });
+  serviceWorker.dispatchMessage({
+    type: "NOTIFICATION_CLICK",
+    url: `/chats/${pending.id}`,
+  });
+  await detailsRequested.promise;
+  // Settling buttons stay focusable (aria-disabled, not disabled) and busy;
+  // Base UI's disabled Button takes no presses.
+  await waitFor(() => {
+    for (const name of names) {
+      const button = fastButton(name, pane(previous.id));
+      expect(button).toHaveAttribute("aria-disabled", "true");
+      expect(button).toHaveAttribute("aria-busy", "true");
+      expect(button).not.toHaveAttribute("disabled");
+    }
+  });
+  details.resolve();
 });
 
 test("Show failed first mail and automation reads instead of empty states", async () => {

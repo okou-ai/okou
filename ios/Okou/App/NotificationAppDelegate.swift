@@ -24,6 +24,15 @@ final class NotificationAppDelegate: NSObject, UIApplicationDelegate,
   }
 
   func application(
+    _ application: UIApplication, configurationForConnecting connectingSceneSession: UISceneSession,
+    options: UIScene.ConnectionOptions
+  ) -> UISceneConfiguration {
+    let configuration = connectingSceneSession.configuration
+    configuration.delegateClass = NewChatSceneDelegate.self
+    return configuration
+  }
+
+  func application(
     _ application: UIApplication, didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data
   ) {
     notifications.didRegister(deviceToken: deviceToken)

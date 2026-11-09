@@ -4,6 +4,7 @@ import { apiClient$ } from "../../api-client.ts";
 import { accept } from "../../../lib/accept.ts";
 import type { AgentInstructions } from "../agent-types.ts";
 import { agentDetail$, reloadAgentDetail$ } from "./detail.ts";
+import { watchInstructionsUpdates$ } from "../../instructions-updates.ts";
 
 // ---------------------------------------------------------------------------
 // Agent instructions — reactive async computed
@@ -16,6 +17,21 @@ const reloadAgentInstructions$ = command(({ set }) => {
     return prev + 1;
   });
 });
+
+export const watchAgentInstructions$ = command(
+  ({ set }, signal: AbortSignal) => {
+    set(reloadAgentInstructions$);
+    set(
+      watchInstructionsUpdates$,
+      {
+        scope: "org",
+        topic: "agentInstructionsChanged",
+        reload$: reloadAgentInstructions$,
+      },
+      signal,
+    );
+  },
+);
 
 export const agentInstructions$ = computed(
   async (get): Promise<AgentInstructions | null> => {
@@ -37,57 +53,88 @@ export const agentInstructions$ = computed(
 // Instructions editing
 // ---------------------------------------------------------------------------
 
-const editedContent$ = state<string | null>(null);
+const draft$ = state<{ content: string; savedContent: string } | null>(null);
 const editorRevision$ = state(0);
+const saveConflict$ = state(false);
 
-export const agentEditedContent$ = computed((get) => {
-  return get(editedContent$);
+export const agentInstructionsDraft$ = computed((get) => {
+  return get(draft$);
 });
 
 export const agentInstructionsEditorRevision$ = computed((get) => {
   return get(editorRevision$);
 });
 
-export const agentInstructionsDirty$ = computed(async (get) => {
-  const edited = get(editedContent$);
+export const agentInstructionsConflict$ = computed(async (get) => {
+  const draft = get(draft$);
+  if (!draft) {
+    return false;
+  }
+  if (get(saveConflict$)) {
+    return true;
+  }
   const instructions = await get(agentInstructions$);
-  const savedBody = instructions?.content ?? "";
-  return edited !== null && edited.trim() !== savedBody.trim();
+  return draft.savedContent !== (instructions?.content ?? "");
 });
 
-export const setAgentEditedContent$ = command(({ set }, value: string) => {
-  set(editedContent$, value);
-});
+export const setAgentEditedContent$ = command(
+  ({ get, set }, content: string, savedContent: string) => {
+    const baseline = get(draft$)?.savedContent ?? savedContent;
+    if (content.trim() === baseline.trim()) {
+      set(draft$, null);
+      set(saveConflict$, false);
+      return;
+    }
+    set(draft$, { content, savedContent: baseline });
+  },
+);
 
 export const discardAgentEdit$ = command(({ set }) => {
-  set(editedContent$, null);
+  set(draft$, null);
+  set(saveConflict$, false);
   set(editorRevision$, (previous) => {
     return previous + 1;
   });
 });
 
+export const reloadLatestAgentInstructions$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    set(reloadAgentInstructions$);
+    await get(agentInstructions$);
+    signal.throwIfAborted();
+    set(discardAgentEdit$);
+  },
+);
+
 export const buildAgentInstructions$ = command(
   async ({ get, set }, signal: AbortSignal) => {
     const detail = await get(agentDetail$);
     signal.throwIfAborted();
-    const raw = get(editedContent$);
-    if (!detail?.agentId || raw === null) {
-      return;
+    const draft = get(draft$);
+    if (!detail?.agentId || !draft) {
+      return false;
     }
-    const edited = raw.trim();
 
     const client = get(apiClient$)(agentInstructionsContract);
-    await accept(
+    const response = await accept(
       client.update({
         params: { id: detail.agentId },
-        body: { content: edited },
+        body: { content: draft.content.trim(), ifContent: draft.savedContent },
+        fetchOptions: { signal },
       }),
-      [200],
+      [200, 409],
     );
     signal.throwIfAborted();
+    if (response.status === 409) {
+      set(saveConflict$, true);
+      return false;
+    }
 
-    set(editedContent$, null);
     set(reloadAgentInstructions$);
     set(reloadAgentDetail$);
+    await get(agentInstructions$);
+    signal.throwIfAborted();
+    set(discardAgentEdit$);
+    return true;
   },
 );

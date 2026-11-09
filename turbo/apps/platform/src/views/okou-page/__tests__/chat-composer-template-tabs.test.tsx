@@ -71,7 +71,7 @@ async function openPicker({
   const user = userEvent.setup({ delay: null });
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
   });
   const dialog = await openTemplatePicker(user);
   return { user, dialog };

@@ -159,16 +159,23 @@ final class ChatComposerPasteTests: XCTestCase {
         callback(Data("late text".utf8), nil)
       }
     }
+    let pasted = expectation(
+      forNotification: UITextView.textDidChangeNotification, object: input
+    ) { _ in
+      MainActor.assumeIsolated { input.text.contains("late text") }
+    }
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
     workspace.startNewChat(agentID: "another-agent")
     input.insertText("stale edit")
     XCTAssertEqual(workspace.newChatDraft, "")
     XCTAssertTrue(originalComposer.text.contains("stale edit"))
-    try await eventually { self.textView(in: host.view) !== input && input.delegate == nil }
+    // The draft switch retires the input owner; UIKit teardown is not a prerequisite
+    // for delivering the old paste and checking that the new draft stays isolated.
     delivery.release()
-    // Wait until UIKit has resolved the old paste, rather than waiting a fixed delay.
-    try await eventually { input.text.contains("late text") }
+    // UIKit's completion event is the causal boundary, independent of display frames.
+    await fulfillment(of: [pasted], timeout: 3)
+    XCTAssertTrue(input.text.contains("late text"))
     XCTAssertEqual(workspace.newChatDraft, "")
     XCTAssertFalse(workspace.newAttachmentDraft.hasAttachments)
   }
@@ -235,7 +242,7 @@ final class ChatComposerPasteTests: XCTestCase {
     let file = try makeImage()
     defer { try? FileManager.default.removeItem(at: file) }
     let handle = try FileHandle(forWritingTo: file)
-    try handle.truncate(atOffset: UInt64(ChatAttachment.maximumSize + 1))
+    try handle.truncate(atOffset: UInt64(ChatAttachment.maximumUploadSize + 1))
     try handle.close()
     let provider = NSItemProvider()
     provider.registerFileRepresentation(
@@ -245,7 +252,9 @@ final class ChatComposerPasteTests: XCTestCase {
       return Progress(totalUnitCount: 1)
     }
     input.paste(itemProviders: [provider])
-    try await waitForBusinessResult { conversation.attachmentDraft.error?.contains("1 GB") == true }
+    try await waitForBusinessResult {
+      conversation.attachmentDraft.error?.contains("512 MB") == true
+    }
     XCTAssertEqual(conversation.draft, "Keep selected text")
     XCTAssertEqual(input.selectedRange, NSRange(location: 5, length: 8))
     XCTAssertFalse(conversation.attachmentDraft.hasAttachments)

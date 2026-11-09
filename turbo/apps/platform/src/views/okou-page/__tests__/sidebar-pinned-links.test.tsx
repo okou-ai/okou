@@ -11,7 +11,6 @@ import {
   createThread,
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
-  mobileSidebar,
   pinnedAgentLink,
   RESEARCH_AGENT_ID,
   setupSidebarPage,
@@ -20,14 +19,10 @@ import {
 } from "./sidebar-test-helpers.tsx";
 
 const context = testContext();
-const { mockMobileLayout, mockSidebarThreadStory, prepareAgents } =
-  createSidebarHelpers(context);
+const { mockSidebarThreadStory, prepareAgents } = createSidebarHelpers(context);
 
-async function preparePinnedNavigation(layout: "horizontal" | "vertical") {
+async function preparePinnedNavigation() {
   const user = userEvent.setup({ delay: null });
-  if (layout === "vertical") {
-    mockMobileLayout();
-  }
   prepareAgents();
   context.mocks.data.userPreferences({ pinnedAgentIds: [RESEARCH_AGENT_ID] });
   // Happy DOM delegates anchor defaults to window.open. Native tab/window
@@ -44,14 +39,12 @@ async function preparePinnedNavigation(layout: "horizontal" | "vertical") {
       unreadAt: { [INCIDENT_THREAD_ID]: "2026-03-10T00:05:00Z" },
     });
   });
-  await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
-  if (layout === "vertical") {
-    click(screen.getByLabelText("Open menu"));
-  }
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
   const pinned = () => {
-    return layout === "horizontal"
-      ? screen.getByTestId("pinned-agents-grid")
-      : mobileSidebar();
+    return screen.getByTestId("pinned-agents-grid");
   };
   const current = () => {
     return pinnedAgentLink(pinned(), "Nova");
@@ -60,7 +53,7 @@ async function preparePinnedNavigation(layout: "horizontal" | "vertical") {
     return pinnedAgentLink(pinned(), "Research Agent");
   };
   const list = () => {
-    return layout === "horizontal" ? sidebar() : mobileSidebar();
+    return sidebar();
   };
   await waitFor(() => {
     expect(within(pinned()).getByLabelText("Unread")).toBeInTheDocument();
@@ -68,34 +61,18 @@ async function preparePinnedNavigation(layout: "horizontal" | "vertical") {
   await within(list()).findByText("Read conversation");
   click(current());
   await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
-  });
-  if (layout === "vertical") {
-    click(screen.getByLabelText("Open menu"));
-  }
-  await waitFor(() => {
     expect(
       within(list()).queryByText("Read conversation"),
     ).not.toBeInTheDocument();
     expect(within(list()).getByText("Unread conversation")).toBeInTheDocument();
-    expect(pinned().dataset.sidebarExpanded).toBe(
-      layout === "vertical" ? "true" : undefined,
-    );
   });
-  return { user, pinned, current, other, list };
+  return { user, current, other, list };
 }
 
-test.each(
-  (["horizontal", "vertical"] as const).flatMap((layout) => {
-    return ["Alt", "Control", "Meta", "Shift"].map((modifier) => {
-      return { layout, modifier };
-    });
-  }),
-)(
-  "$layout pinned links preserve the current agent and unread filter for $modifier activation",
-  async ({ layout, modifier }) => {
-    const { user, pinned, current, other, list } =
-      await preparePinnedNavigation(layout);
+test.each(["Alt", "Control", "Meta", "Shift"])(
+  "Pinned links preserve the current agent and unread filter for %s activation",
+  async (modifier) => {
+    const { user, current, other, list } = await preparePinnedNavigation();
     await user.keyboard(`{${modifier}>}`);
     await user.click(current());
     await user.click(other());
@@ -106,30 +83,18 @@ test.each(
       within(list()).queryByText("Read conversation"),
     ).not.toBeInTheDocument();
     expect(within(list()).getByText("Unread conversation")).toBeInTheDocument();
-    expect(pinned().dataset.sidebarExpanded).toBe(
-      layout === "vertical" ? "true" : undefined,
-    );
   },
 );
 
-test.each(
-  (["horizontal", "vertical"] as const).flatMap((layout) => {
-    return ["[MouseMiddle]", "[MouseRight]"].map((keys) => {
-      return { layout, keys };
-    });
-  }),
-)(
-  "$layout pinned links preserve the current agent and unread filter for $keys activation",
-  async ({ layout, keys }) => {
-    const { user, pinned, other, list } = await preparePinnedNavigation(layout);
+test.each(["[MouseMiddle]", "[MouseRight]"])(
+  "Pinned links preserve the current agent and unread filter for %s activation",
+  async (keys) => {
+    const { user, other, list } = await preparePinnedNavigation();
     await user.pointer({ target: other(), keys });
     expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
     expect(
       within(list()).queryByText("Read conversation"),
     ).not.toBeInTheDocument();
-    expect(pinned().dataset.sidebarExpanded).toBe(
-      layout === "vertical" ? "true" : undefined,
-    );
     if (screen.queryByRole("menu")) {
       await user.keyboard("{Escape}");
     }
@@ -137,7 +102,7 @@ test.each(
 );
 
 test("Reveal a pinned agent title from the whole tile", async () => {
-  const { user, other } = await preparePinnedNavigation("horizontal");
+  const { user, other } = await preparePinnedNavigation();
   const link = other();
   const clip = link.querySelector<HTMLElement>("[data-title-reveal]");
   const text = clip?.firstElementChild;
@@ -162,56 +127,39 @@ test("Reveal a pinned agent title from the whole tile", async () => {
   expect(clip).not.toHaveAttribute("data-title-revealing");
 });
 
-test.each(["horizontal", "vertical"] as const)(
-  "%s pinned links preserve the current agent and unread filter for keyboard activation",
-  async (layout) => {
-    const { user, current, other, list } =
-      await preparePinnedNavigation(layout);
-    current().focus();
-    await user.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
-    });
-    if (layout === "vertical") {
-      click(screen.getByLabelText("Open menu"));
-    }
-    await within(list()).findByText("Read conversation");
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
-    other().focus();
-    await user.keyboard("{Enter}");
-    await waitFor(() => {
-      expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
-    });
-  },
-);
+test("Pinned links preserve the current agent and unread filter for keyboard activation", async () => {
+  const { user, current, other, list } = await preparePinnedNavigation();
+  current().focus();
+  await user.keyboard("{Enter}");
+  await within(list()).findByText("Read conversation");
+  expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+  other().focus();
+  await user.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
+  });
+});
 
-test.each(["horizontal", "vertical"] as const)(
-  "%s pinned links label an available unnamed agent with its ID",
-  async (layout) => {
-    if (layout === "vertical") {
-      mockMobileLayout();
-    }
-    const agents = prepareAgents().map((agent) => {
-      return agent.agentId === RESEARCH_AGENT_ID
-        ? { ...agent, displayName: null }
-        : agent;
-    });
-    context.mocks.data.agents(agents);
-    context.mocks.data.userPreferences({ pinnedAgentIds: [RESEARCH_AGENT_ID] });
-    await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
-    if (layout === "vertical") {
-      click(screen.getByLabelText("Open menu"));
-    }
-    const pinned =
-      layout === "horizontal"
-        ? screen.getByTestId("pinned-agents-grid")
-        : mobileSidebar();
-    const link = await waitFor(() => {
-      return pinnedAgentLink(pinned, RESEARCH_AGENT_ID);
-    });
-    expect(link).toHaveAttribute("href", `/agents/${RESEARCH_AGENT_ID}/chat`);
-  },
-);
+test("Pinned links label an available unnamed agent with its ID", async () => {
+  const agents = prepareAgents().map((agent) => {
+    return agent.agentId === RESEARCH_AGENT_ID
+      ? { ...agent, displayName: null }
+      : agent;
+  });
+  context.mocks.data.agents(agents);
+  context.mocks.data.userPreferences({ pinnedAgentIds: [RESEARCH_AGENT_ID] });
+  await setupSidebarPage({
+    context,
+    path: `/agents/${AGENT_ID}/chat`,
+  });
+  const link = await waitFor(() => {
+    return pinnedAgentLink(
+      screen.getByTestId("pinned-agents-grid"),
+      RESEARCH_AGENT_ID,
+    );
+  });
+  expect(link).toHaveAttribute("href", `/agents/${RESEARCH_AGENT_ID}/chat`);
+});
 
 test("Alt-click still opens a thread in the sidebar pane", async () => {
   const user = userEvent.setup({ delay: null });

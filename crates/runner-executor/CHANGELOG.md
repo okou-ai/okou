@@ -1,5 +1,43 @@
 # Changelog
 
+## [0.21.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.20.3...runner-executor-v0.21.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+## [0.20.3](https://github.com/okou-ai/okou/compare/runner-executor-v0.20.2...runner-executor-v0.20.3) (2026-11-07)
+
+
+### Performance Improvements
+
+* **runner:** overlap ready storage with cold archive delivery ([#45841](https://github.com/okou-ai/okou/issues/45841)) ([109d67a](https://github.com/okou-ai/okou/commit/109d67a03b63a3e53938af322ae13a7dd6507a52))
+
+## [0.20.2](https://github.com/okou-ai/okou/compare/runner-executor-v0.20.1...runner-executor-v0.20.2) (2026-11-07)
+
+## [0.20.1](https://github.com/okou-ai/okou/compare/runner-executor-v0.20.0...runner-executor-v0.20.1) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-host:** share json file-access test observation ([#45824](https://github.com/okou-ai/okou/issues/45824)) ([7e4918a](https://github.com/okou-ai/okou/commit/7e4918a6ae6e250dca3732384b3f7a9ce5c281d6))
+
+## [0.20.0](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.26...runner-executor-v0.20.0) (2026-11-07)
+
+
+### Features
+
+* **guest-storage:** add event-driven pending archive readiness ([#45766](https://github.com/okou-ai/okou/issues/45766)) ([2fe135a](https://github.com/okou-ai/okou/commit/2fe135ae51a7a4a3624917b3a987b43ab142b9b5))
+
+## [0.19.26](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.25...runner-executor-v0.19.26) (2026-11-06)
+
+## [0.19.25](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.24...runner-executor-v0.19.25) (2026-11-06)
+
+## [0.19.24](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.23...runner-executor-v0.19.24) (2026-11-06)
+
+## [0.19.23](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.22...runner-executor-v0.19.23) (2026-11-06)
+
 ## [0.19.22](https://github.com/okou-ai/okou/compare/runner-executor-v0.19.21...runner-executor-v0.19.22) (2026-11-06)
 
 

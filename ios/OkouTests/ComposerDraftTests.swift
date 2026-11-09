@@ -10,6 +10,27 @@ import XCTest
 
 @MainActor
 final class ComposerDraftTests: XCTestCase {
+  func testRetiredEditorCannotOverwriteTheReplacementDraftAfterClearAndRestart() async throws {
+    let server = DraftServer()
+    let storage = server.storage()
+    let composer = server.composer(storage: storage)
+    defer { composer.close() }
+    composer.text = "Original draft"
+    let retired = try XCTUnwrap(composer.editorBlocks.first)
+    composer.clear()
+    composer.editBlock(retired.id, text: "Late native callback")
+    XCTAssertTrue(composer.text.isEmpty)
+    let current = try XCTUnwrap(composer.editorBlocks.first)
+    composer.editBlock(current.id, text: "Replacement draft")
+    await composer.synchronize()
+    let saved = try await ChatDraftRepository(client: server.http.client).load(.agent(draftAgentID))
+    XCTAssertEqual(saved.draftUserMessage?.text, "Replacement draft")
+    composer.close()
+    let reopened = server.composer(storage: storage)
+    defer { reopened.close() }
+    XCTAssertEqual(reopened.text, "Replacement draft")
+  }
+
   func testNativeInlineEditsAndUndoPreserveRichQuoteAndAttachmentContext() async throws {
     preserveNativePasteboard(for: self)
     let remote = try quotedRichDraft()
@@ -54,6 +75,8 @@ final class ComposerDraftTests: XCTestCase {
     XCTAssertEqual(
       composer.document.parts.last?["range"], remote.draftUserMessage?.parts.last?["range"])
     let saved = composer.value
+    // Let the host consume the reference edit's focus request before changing its target.
+    try await waitForBusinessResult { composer.focusRequest == nil }
     try await focusMentionInput(input)
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.cut(nil)

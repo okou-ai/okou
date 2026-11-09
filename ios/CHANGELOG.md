@@ -1,5 +1,154 @@
 # Changelog
 
+## [0.29.2](https://github.com/okou-ai/okou/compare/ios-v0.29.1...ios-v0.29.2) (2026-11-09)
+
+
+### Refactoring
+
+* **ios:** share connector directory reads with ccstate ([#45984](https://github.com/okou-ai/okou/issues/45984)) ([4dd1192](https://github.com/okou-ai/okou/commit/4dd1192db1a6083baeff6568691ad62f78ffcaab))
+* **ios:** subscribe to batched run usage resources ([#45980](https://github.com/okou-ai/okou/issues/45980)) ([f8df12f](https://github.com/okou-ai/okou/commit/f8df12fd880956dfe5bd179824a0b2d23c294f18))
+
+## [0.29.1](https://github.com/okou-ai/okou/compare/ios-v0.29.0...ios-v0.29.1) (2026-11-08)
+
+
+### Refactoring
+
+* **ios:** separate subscription resources and native presentation ([#45965](https://github.com/okou-ai/okou/issues/45965)) ([0f71f7f](https://github.com/okou-ai/okou/commit/0f71f7f1dbf7b37ae6e452c81abf587a10817475))
+
+## [0.29.0](https://github.com/okou-ai/okou/compare/ios-v0.28.11...ios-v0.29.0) (2026-11-08)
+
+
+### Features
+
+* **ios:** add new chat entry points and retire ask okou ([#45962](https://github.com/okou-ai/okou/issues/45962)) ([1b91656](https://github.com/okou-ai/okou/commit/1b91656f6caee83800f09ead73a0de9fe8a3317b))
+
+
+### Bug Fixes
+
+* **ios:** show unread indicator on the sidebar button ([#45943](https://github.com/okou-ai/okou/issues/45943)) ([d24393e](https://github.com/okou-ai/okou/commit/d24393ed0bf3b0919846a8940a412668e2eaee8b))
+* **ios:** skip confirmed silence with system sound analysis ([#45946](https://github.com/okou-ai/okou/issues/45946)) ([5fee97b](https://github.com/okou-ai/okou/commit/5fee97bbe37c39abf525fe8a615c01a78adc8389))
+* **ios:** use the system soft top edge and hide bottom scroll-edge blur ([#45963](https://github.com/okou-ai/okou/issues/45963)) ([c6df61b](https://github.com/okou-ai/okou/commit/c6df61be3a6772381f7fb109958c7c27c1837d5a))
+
+
+### Refactoring
+
+* **ios:** derive composer workflow candidates with ccstate ([#45945](https://github.com/okou-ai/okou/issues/45945)) ([92d6869](https://github.com/okou-ai/okou/commit/92d6869130b9994c161c87d02b968ef84c2f270a))
+
+## [0.28.11](https://github.com/okou-ai/okou/compare/ios-v0.28.10...ios-v0.28.11) (2026-11-08)
+
+
+### Bug Fixes
+
+* **ios:** keep sidebar layout stable during navigation refresh ([#45947](https://github.com/okou-ai/okou/issues/45947)) ([aa7c849](https://github.com/okou-ai/okou/commit/aa7c849327d96aba1bbb3f2c08963bda829d4e95))
+
+## [0.28.10](https://github.com/okou-ai/okou/compare/ios-v0.28.9...ios-v0.28.10) (2026-11-08)
+
+
+### Documentation
+
+* **ios:** define native development and ccstate standards ([#45934](https://github.com/okou-ai/okou/issues/45934)) ([50aaabc](https://github.com/okou-ai/okou/commit/50aaabcaa091640e3e22df007373acc71c02fb50))
+
+
+### Refactoring
+
+* **ios:** bind sidebar navigation through ccstate swiftui ([#45925](https://github.com/okou-ai/okou/issues/45925)) ([3c37fa4](https://github.com/okou-ai/okou/commit/3c37fa4b319d8436a33a0c580434e3c0dfc7f6b9))
+* **ios:** derive search resource state with ccstate ([#45936](https://github.com/okou-ai/okou/issues/45936)) ([1ff03a1](https://github.com/okou-ai/okou/commit/1ff03a1dd487a0b394a7bed125dfc7ecaa4c29ea))
+* **ios:** isolate composer drafts in ccstate ([#45924](https://github.com/okou-ai/okou/issues/45924)) ([db94d5c](https://github.com/okou-ai/okou/commit/db94d5ca16785a710c8e3f25931f2543bc964e2f))
+
+## [0.28.9](https://github.com/okou-ai/okou/compare/ios-v0.28.8...ios-v0.28.9) (2026-11-08)
+
+
+### Refactoring
+
+* **ios:** bind model configuration through ccstate swiftui ([#45915](https://github.com/okou-ai/okou/issues/45915)) ([96ccfbf](https://github.com/okou-ai/okou/commit/96ccfbf91faa3846245f106784178ea98cbfc449))
+
+## [0.28.8](https://github.com/okou-ai/okou/compare/ios-v0.28.7...ios-v0.28.8) (2026-11-07)
+
+
+### Performance Improvements
+
+* **ios:** present cached home before identity refresh ([#45901](https://github.com/okou-ai/okou/issues/45901)) ([d98c265](https://github.com/okou-ai/okou/commit/d98c2653ad0cb69c66c41896e2eb088a0abc4351))
+
+## [0.28.7](https://github.com/okou-ai/okou/compare/ios-v0.28.6...ios-v0.28.7) (2026-11-07)
+
+
+### Performance Improvements
+
+* **ios:** load chats alongside model catch-up ([#45884](https://github.com/okou-ai/okou/issues/45884)) ([27e1434](https://github.com/okou-ai/okou/commit/27e1434d236f5c34ba3cf66abd5058587433807b))
+* **ios:** show home before background workspace loads finish ([#45885](https://github.com/okou-ai/okou/issues/45885)) ([56815e0](https://github.com/okou-ai/okou/commit/56815e0e40db0efbab54d8aa01a5a61ab89f9f8e))
+
+## [0.28.6](https://github.com/okou-ai/okou/compare/ios-v0.28.5...ios-v0.28.6) (2026-11-07)
+
+
+### Bug Fixes
+
+* **ios:** preserve successful navigation resources on partial failure ([#45835](https://github.com/okou-ai/okou/issues/45835)) ([fa7ad1c](https://github.com/okou-ai/okou/commit/fa7ad1c33c425dd858528ebe92cba77f7c77ed6b))
+
+## [0.28.5](https://github.com/okou-ai/okou/compare/ios-v0.28.4...ios-v0.28.5) (2026-11-07)
+
+
+### Bug Fixes
+
+* cap chat attachment uploads at 512 megabytes ([#45845](https://github.com/okou-ai/okou/issues/45845)) ([3936b03](https://github.com/okou-ai/okou/commit/3936b03aa991094a7417091344c17c5ff0287bf2))
+
+## [0.28.4](https://github.com/okou-ai/okou/compare/ios-v0.28.3...ios-v0.28.4) (2026-11-07)
+
+
+### Performance Improvements
+
+* **ios:** publish messages sooner and parallelize navigation ([#45836](https://github.com/okou-ai/okou/issues/45836)) ([57436b2](https://github.com/okou-ai/okou/commit/57436b2eb258e81a2df28720b32c3410b5a6de73))
+
+## [0.28.3](https://github.com/okou-ai/okou/compare/ios-v0.28.2...ios-v0.28.3) (2026-11-07)
+
+
+### Bug Fixes
+
+* **ios:** preserve text selection when dismissing the composer ([#45812](https://github.com/okou-ai/okou/issues/45812)) ([0b1f54a](https://github.com/okou-ai/okou/commit/0b1f54a7d4b8ac27640e30c198e172face9dac58))
+* **ios:** scope model defaults to new chats ([#45807](https://github.com/okou-ai/okou/issues/45807)) ([2b5c67d](https://github.com/okou-ai/okou/commit/2b5c67dc67b8bc8caf959f17e3a0848793974233))
+
+
+### Performance Improvements
+
+* **ios:** coalesce realtime subscription catch-up reads ([#45823](https://github.com/okou-ai/okou/issues/45823)) ([96d88d8](https://github.com/okou-ai/okou/commit/96d88d8561f696b42b99e6c4ec14117454313d1f))
+
+## [0.28.2](https://github.com/okou-ai/okou/compare/ios-v0.28.1...ios-v0.28.2) (2026-11-07)
+
+
+### Performance Improvements
+
+* **ios:** reuse model metadata reads with ccstate ([#45778](https://github.com/okou-ai/okou/issues/45778)) ([c97efb6](https://github.com/okou-ai/okou/commit/c97efb658e94bfcfae697552c042764eb0cfe8c4))
+
+## [0.28.1](https://github.com/okou-ai/okou/compare/ios-v0.28.0...ios-v0.28.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* **ios:** share attachment previews and cache sent files ([#45737](https://github.com/okou-ai/okou/issues/45737)) ([ca4a103](https://github.com/okou-ai/okou/commit/ca4a103b83e02d854800cd5ce5ee9557b3eeb08a))
+
+## [0.28.0](https://github.com/okou-ai/okou/compare/ios-v0.27.3...ios-v0.28.0) (2026-11-06)
+
+
+### Features
+
+* **ios:** full-page search, one-step sign-in and the earlier chat edges ([#45700](https://github.com/okou-ai/okou/issues/45700)) ([1959dee](https://github.com/okou-ai/okou/commit/1959dee6558ad067b4ac89e9c616bcaf93b46444))
+
+
+### CI
+
+* **ios:** enforce pinned swiftlint checks ([#45699](https://github.com/okou-ai/okou/issues/45699)) ([bea40bc](https://github.com/okou-ai/okou/commit/bea40bc14488ae1c657a6cc46ccebef516ba352f))
+
+
+### Performance Improvements
+
+* **ios:** reuse sidebar status column decision ([#45709](https://github.com/okou-ai/okou/issues/45709)) ([44eaf98](https://github.com/okou-ai/okou/commit/44eaf98300233f4db3f8638be446261cb1a53657))
+
+## [0.27.3](https://github.com/okou-ai/okou/compare/ios-v0.27.2...ios-v0.27.3) (2026-11-06)
+
+
+### Refactoring
+
+* remove chat thread archiving and muting feature switches ([#45680](https://github.com/okou-ai/okou/issues/45680)) ([4183b2f](https://github.com/okou-ai/okou/commit/4183b2f44fb472a38962c5ad3124939bb11b5cdc))
+
 ## [0.27.2](https://github.com/okou-ai/okou/compare/ios-v0.27.1...ios-v0.27.2) (2026-11-06)
 
 

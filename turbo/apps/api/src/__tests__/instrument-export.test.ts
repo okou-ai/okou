@@ -452,6 +452,32 @@ describe("API telemetry exports", () => {
         Sentry.captureException(new Error("API error regression"));
         span.end();
       });
+    // Axiom ingest writes are not traced; other Axiom API calls still are.
+    server.use(
+      http.post("https://api.axiom.co/v1/datasets/:dataset/ingest", () => {
+        return HttpResponse.json({ ingested: 0, failed: 0 });
+      }),
+      http.post("https://api.axiom.co/v1/datasets/_apl", () => {
+        return HttpResponse.json({});
+      }),
+    );
+    await trace
+      .getTracer("dependency-upgrade")
+      .startActiveSpan("axiom-calls", async (span) => {
+        for (const url of [
+          "https://api.axiom.co/v1/datasets/vm0-web-logs-dev/ingest",
+          "https://api.axiom.co/v1/datasets/vm0-request-log-dev/ingest?timestamp-field=_time",
+          "https://api.axiom.co/v1/datasets/_apl?format=tabular",
+        ]) {
+          const response = await fetch(url, {
+            method: "POST",
+            body: "[]",
+            signal: context.signal,
+          });
+          expect(response.status).toBe(200);
+        }
+        span.end();
+      });
     await delegate.forceFlush();
     await expect(Sentry.flush(2000)).resolves.toBeTruthy();
 
@@ -502,6 +528,10 @@ describe("API telemetry exports", () => {
     const exportedTraces = JSON.stringify(traces);
     expect(exportedTraces).toContain("GET /health");
     expect(exportedTraces).toContain(`${path}-other`);
+    expect(exportedTraces).toContain(
+      "fetch POST https://api.axiom.co/v1/datasets/_apl",
+    );
+    expect(exportedTraces).not.toContain("/ingest");
     for (const secret of [proof, identity]) {
       expect(exportedTraces).not.toContain(secret);
       expect(errors.join("\n")).not.toContain(secret);

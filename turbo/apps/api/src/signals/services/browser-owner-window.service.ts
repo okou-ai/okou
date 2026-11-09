@@ -10,6 +10,7 @@ import { and, eq, exists } from "drizzle-orm";
 import { QueryBuilder } from "drizzle-orm/pg-core";
 import type { BrowserDisplaySize } from "@okouai/core/browser-display";
 import { db$ } from "../external/db";
+import { recordBrowserLifecycleFact } from "./browser-lifecycle-telemetry";
 import { settleIncludingAbort } from "../utils";
 import { decryptPersistentSecretValue } from "./crypto.utils";
 import {
@@ -66,6 +67,11 @@ const cleanupWindowCandidate$ = command(
     if (references.length > 0) {
       return;
     }
+    recordBrowserLifecycleFact({
+      lifecycleEvent: "unpublished-native-close-requested",
+      instanceId: args.instanceId,
+      primaryWindowId: args.candidate.primaryWindowId,
+    });
     await tryCloseBrowserUseWindow(
       args,
       args.candidate.primaryWindowId,
@@ -111,7 +117,7 @@ async function prepareBrowserOwnerWindow(
     userId: input.owner.userId,
   });
   signal.throwIfAborted();
-  const urls = array(string().max(8192)).max(50).parse(JSON.parse(decoded));
+  const urls = array(string().max(8192)).parse(JSON.parse(decoded));
   await restoreBrowserUseWindowTabUrls(input, candidate, urls, signal);
   signal.throwIfAborted();
 }

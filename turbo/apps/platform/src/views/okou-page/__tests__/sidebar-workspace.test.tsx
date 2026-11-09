@@ -1,6 +1,5 @@
 import {
   AGENT_ID,
-  agentRowByName,
   ARCHIVED_THREAD_ID,
   AUTOMATION_THREAD_ID,
   buttonByText,
@@ -9,7 +8,6 @@ import {
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   menuItemByText,
-  mobileSidebar,
   openChatListMenu,
   pinnedAgentLink,
   queryMenuItemByText,
@@ -21,7 +19,6 @@ import {
 } from "./sidebar-test-helpers.tsx";
 
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
 
 import {
@@ -33,16 +30,10 @@ import { click, fill } from "../../../__tests__/page-helper.ts";
 import { mockNow } from "../../../__tests__/time.ts";
 import { emptySearchImg } from "../platform-assets.ts";
 import { pathname } from "../../../signals/location.ts";
-import { changeChatThreadReadCursor } from "../../../mocks/mock-helpers.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
-const {
-  mockMobileLayout,
-  mockSidebarThreadStory,
-  mockUnreadAgents,
-  prepareAgents,
-} = createSidebarHelpers(context);
+const { mockSidebarThreadStory, prepareAgents } = createSidebarHelpers(context);
 
 async function setupWorkspaceSearch({
   runningThreadIds = [],
@@ -180,75 +171,6 @@ test("Filter workspace search to chats and navigate", async () => {
         name: "Search workspace...",
       }),
     ).not.toBeInTheDocument();
-  });
-});
-
-test("Show unread agents and contextual actions in the pinned section", async () => {
-  const user = userEvent.setup();
-  mockMobileLayout();
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID],
-  });
-
-  let unreadAgentIds = [RESEARCH_AGENT_ID, SUPPORT_AGENT_ID];
-  mockUnreadAgents(() => {
-    return unreadAgentIds;
-  });
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-    sharedWorkerTestTransport: "message-port",
-  });
-  click(screen.getByLabelText("Open menu"));
-
-  const nav = await waitFor(() => {
-    const current = mobileSidebar();
-    expect(within(current).getByText("Research Agent")).toBeInTheDocument();
-    return current;
-  });
-  const researchSidebarRow = agentRowByName(nav, "Research Agent");
-  const supportSidebarRow = await waitFor(() => {
-    return agentRowByName(nav, "Support Agent");
-  });
-  await waitFor(() => {
-    expect(
-      within(researchSidebarRow).getByLabelText("Unread"),
-    ).toBeInTheDocument();
-    expect(
-      within(researchSidebarRow).getByLabelText("Open agent menu"),
-    ).toBeInTheDocument();
-    expect(
-      within(researchSidebarRow).queryByLabelText("Unpin"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(supportSidebarRow).getByLabelText("Unread"),
-    ).toBeInTheDocument();
-  });
-
-  click(within(supportSidebarRow).getByLabelText("Open agent menu"));
-  expect(menuItemByText("Mark all read")).toBeInTheDocument();
-  expect(menuItemByText("Pin to sidebar")).toBeInTheDocument();
-  expect(queryMenuItemByText("Unpin")).not.toBeInTheDocument();
-  await user.keyboard("{Escape}");
-
-  click(within(researchSidebarRow).getByLabelText("Open agent menu"));
-  expect(menuItemByText("Unpin")).toBeInTheDocument();
-  await user.keyboard("{Escape}");
-
-  unreadAgentIds = [SUPPORT_AGENT_ID];
-  changeChatThreadReadCursor({
-    agentId: RESEARCH_AGENT_ID,
-  });
-
-  await waitFor(() => {
-    expect(
-      within(researchSidebarRow).queryByLabelText("Unread"),
-    ).not.toBeInTheDocument();
-    expect(
-      within(supportSidebarRow).getByLabelText("Unread"),
-    ).toBeInTheDocument();
   });
 });
 

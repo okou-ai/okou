@@ -9,6 +9,7 @@ import Observation
 final class WorkspaceStore {
   private let client: APIClient
   private let sync: ChatSync
+  private let resources: WorkspaceResources
   private let commands: ChatCommands
   private let conversationLimit: Int
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
@@ -78,18 +79,24 @@ final class WorkspaceStore {
   }
 
   @ObservationIgnored lazy var modelStore = ChatModelStore(
-    client: client, webURL: webURL, readRetrySleep: readRetrySleep,
+    client: client, webURL: webURL, resources: resources, readRetrySleep: readRetrySleep,
     didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var composerWorkflows = ComposerWorkflowSource(
     client: client, storage: draftStorage, didFail: { [weak self] in self?.handle($0) })
   @ObservationIgnored lazy var newModelSelection = ChatModelSelectionStore(models: modelStore)
   @ObservationIgnored lazy var search = ChatSearchStore(
     sync: sync, didFail: { [weak self] in self?.handle($0) })
+  /// Previews of results opened from workspace search, which belong to no chat.
+  @ObservationIgnored lazy var searchArtifacts = MessageArtifactStore(
+    service: commands.artifacts, threadID: nil, webURL: webURL, markdown: messageMarkdown,
+    didFail: { [weak self] in self?.handle($0) })
 
   @ObservationIgnored lazy var list = ThreadListStore(
-    client: client, sync: sync, commands: commands,
+    client: client, sync: sync, commands: commands, resources: resources,
     didRefresh: { [weak self] in self?.applyThreads($0) },
-    didFail: { [weak self] in self?.handle($0) }, readRetrySleep: readRetrySleep)
+    didFail: { [weak self] in self?.handle($0) },
+    didLoadAgents: { [weak self] in self?.selectDefaultAgent(from: $0) },
+    readRetrySleep: readRetrySleep)
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
   @ObservationIgnored private var lastUse: [String: UInt64] = [:]
   private var clock: UInt64 = 0
@@ -120,6 +127,7 @@ final class WorkspaceStore {
     didRefreshReadState: @escaping @MainActor () -> Void = {}
   ) {
     self.client = client
+    resources = WorkspaceResources(client: client, sleep: readRetrySleep)
     self.readRetrySleep = readRetrySleep
     self.historyWarmingSleep = historyWarmingSleep
     self.didRefreshReadState = didRefreshReadState
@@ -157,22 +165,29 @@ final class WorkspaceStore {
     }
     await list.restoreCached()
     guard canContinueStartup(generation) else { return }
-    if selectedAgentID == nil {
-      selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
+    selectDefaultAgent(from: list.agents)
+    await withTaskCancellationHandler {
+      async let navigation: Void = refreshNavigation()
+      let realtime = RealtimeService(
+        userID: userID, workspaceID: workspaceID,
+        tokenProvider: { [client] in
+          try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
+        },
+        onChange: { [weak self] in self?.requestRefresh($0) },
+        onConnection: { [weak self] in self?.connectionStatus = $0 })
+      self.realtime = realtime
+      realtime.setForeground(isForeground)
+      realtime.start()
+      await refresh()
+      await navigation
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        guard let self, startupGeneration == generation else { return }
+        realtime?.stop()
+        realtime = nil
+        list.cancelRefresh()
+      }
     }
-    await refreshNavigation()
-    guard canContinueStartup(generation) else { return }
-    let realtime = RealtimeService(
-      userID: userID, workspaceID: workspaceID,
-      tokenProvider: { [client] in
-        try await client.data("/api/realtime/token", method: "POST", body: Data("{}".utf8)).data
-      },
-      onChange: { [weak self] in self?.requestRefresh($0) },
-      onConnection: { [weak self] in self?.connectionStatus = $0 })
-    self.realtime = realtime
-    realtime.setForeground(isForeground)
-    realtime.start()
-    await refresh()
   }
 
   private func canContinueStartup(_ generation: UUID) -> Bool {
@@ -181,10 +196,13 @@ final class WorkspaceStore {
 
   func refreshNavigation() async {
     await list.refreshNavigation()
-    guard !closed, !Task.isCancelled else { return }
-    if selectedAgentID == nil {
-      selectedAgentID = list.agents.first(where: \.isDefaultAgent)?.agentId
-    }
+  }
+
+  private func selectDefaultAgent(from agents: [AgentRecord]) {
+    guard !closed, !needsUpgrade, !Task.isCancelled,
+      selectedAgentID == nil, selectedThreadID == nil
+    else { return }
+    selectedAgentID = agents.first(where: \.isDefaultAgent)?.agentId
   }
 
   var currentAgentName: String {
@@ -233,8 +251,10 @@ final class WorkspaceStore {
     composerWorkflows.close()
     newModelSelection.close()
     list.close()
+    resources.close()
     threadFeedback = nil
     search.close()
+    searchArtifacts.close()
     for conversation in conversations.values { conversation.close() }
     realtime?.stop()
     realtime = nil
@@ -242,6 +262,7 @@ final class WorkspaceStore {
     agentDraftTask?.cancel()
     newComposer.close()
     for composer in agentDrafts.values { composer.close() }
+    commands.closeFileCache()
   }
 
   func setForeground(_ active: Bool) {
@@ -320,10 +341,8 @@ final class WorkspaceStore {
     let selectedBeforeRefresh = selectedThreadID
     let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
-    if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
-    {
-      await modelStore.refresh()
-    }
+    // Model catch-up must stay fresh, but it does not gate the chat list or messages.
+    async let modelRefresh: Void = refreshModels(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
       await list.refresh()
@@ -340,7 +359,8 @@ final class WorkspaceStore {
     if awaitingSelectedThread, selectedThreadID == selectedBeforeRefresh {
       await selectedConversation?.refresh()
     }
-    guard !closed, !Task.isCancelled, refreshGeneration == generation else { return }
+    await modelRefresh
+    guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil,
       full || selectedConversation?.modelSelection?.needsThreadReadback == true
     {
@@ -348,6 +368,16 @@ final class WorkspaceStore {
     }
     await trimConversations(limit: conversationLimit)
     requestHistoryWarming()
+  }
+
+  private func refreshModels(_ batch: Set<ChatInvalidation>) async {
+    let full = batch.contains(.reconnected)
+    if modelStore.active && (full || batch.contains(.runModels) || batch.contains(.modelPreference))
+    {
+      await modelStore.refresh(batch)
+    } else if full {
+      do { try resources.invalidate(batch) } catch { handle(error) }
+    }
   }
 
   private func refreshConversations(_ batch: Set<ChatInvalidation>, generation: UUID) async {
@@ -538,7 +568,7 @@ final class WorkspaceStore {
     restoreOnUndo: Bool = false, reopenOnSuccess: Bool = false,
     eventID: String = UUID().uuidString.lowercased()
   ) async -> Bool {
-    guard !closed, !needsUpgrade, list.canArchiveChats, list.canUpdate(id),
+    guard !closed, !needsUpgrade, list.canUpdate(id),
       let thread = list.threads.first(where: { $0.id == id })
     else { return false }
     let leaving = archived && leaveDetail && selectedThreadID == id
@@ -592,9 +622,8 @@ final class WorkspaceStore {
         muted
         ? "Chat muted"
         : "Chat unmuted"
-      let canUndo = muted || list.canMuteChats
       threadFeedback = ChatThreadFeedback(
-        threadID: id, message: message, actionTitle: canUndo ? "Undo" : nil
+        threadID: id, message: message, actionTitle: "Undo"
       ) { [weak self] in
         // Undo restores mute state without clearing unread replies, like the PWA.
         await self?.setMuted(id, muted: !muted, markRead: false)
@@ -609,6 +638,14 @@ final class WorkspaceStore {
     }
   }
 
+  /// Puts `/name` at the start of the new chat's draft, as choosing the workflow from the
+  /// composer's `/` menu does; whatever the draft already held stays after it.
+  func useWorkflow(named name: String) {
+    let token = "/" + name + " "
+    guard !newChatDraft.hasPrefix(token) else { return }
+    newChatDraft = token + newChatDraft
+  }
+
   func startNewChat(agentID: String? = nil) {
     guard !isCreating, !needsUpgrade, !closed else { return }
     newChatSubmission?.close()
@@ -621,6 +658,21 @@ final class WorkspaceStore {
     newComposer.requestSync()
     newModelSelection.resetNewChat()
     error = nil
+  }
+
+  var canOpenNewChatFromSystem: Bool {
+    isForeground && selectedAgentID != nil && !isCreating && !needsUpgrade && !closed
+  }
+
+  @discardableResult
+  func openNewChatFromSystem() -> Bool {
+    guard canOpenNewChatFromSystem else { return false }
+    startNewChat()
+    search.dismiss()
+    if let block = newComposer.editorBlocks.last {
+      newComposer.requestEditorFocus(block.id)
+    }
+    return true
   }
 
   @discardableResult
@@ -694,7 +746,7 @@ final class WorkspaceStore {
         id: messageID,
         text: sourceComposer.text.trimmingCharacters(in: .whitespacesAndNewlines),
         createdAt: .now, attachments: sourceComposer.attachments.uploaded,
-        document: sourceComposer.value.draftUserMessage),
+        document: sourceComposer.value.draftUserMessage?.trimmingWhitespace()),
       composer: ComposerDraftStore(target: .unassigned, commands: commands, didFail: { _ in }),
       viewer: MessageAttachmentStore(
         commands: commands, didFail: { [weak self] in self?.handle($0) }),
@@ -751,7 +803,6 @@ final class WorkspaceStore {
   private func applyThreads(_ threads: [ChatThread]) {
     guard !closed else { return }
     didRefreshReadState()
-    if selectedAgentID == nil { selectedAgentID = threads.first?.agentID }
     for thread in threads { conversations[thread.id]?.thread = thread }
     if let selectedThreadID {
       if let thread = threads.first(where: { $0.id == selectedThreadID }) {

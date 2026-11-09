@@ -79,13 +79,8 @@ resolver = "2"
 members = ["guest-one", "other-one", "runner"]
 
 [profile.release]
-lto = true
-strip = true
-codegen-units = 1
-
-[profile.ci]
-inherits = "release"
 lto = "thin"
+strip = true
 codegen-units = 4
 TOML
 cat > "${repo}/crates/Cargo.lock" <<'TOML'
@@ -235,7 +230,7 @@ PY
 commit_all "$repo" disable-cross-crate-lto
 for target in aarch64-unknown-linux-musl x86_64-unknown-linux-musl; do
   [ "$(digest_value "$repo" "$target")" != "$(digest_value "$repo" "$target" "$thin_profile_revision")" ] \
-    || fail "CI profile changes must invalidate the ${target} binary key"
+    || fail "release profile changes must invalidate the ${target} binary key"
 done
 
 valid_revision=$(git -C "$repo" rev-parse HEAD)
@@ -266,7 +261,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 [ -n "$target" ]
-[ -n "$profile" ]
+[ "$profile" = release ]
 mkdir -p "${CARGO_TARGET_DIR}/${target}/${profile}"
 printf 'guest-output\n' > "${CARGO_TARGET_DIR}/${target}/${profile}/guest-one"
 printf 'runner-output\n' > "${CARGO_TARGET_DIR}/${target}/${profile}/runner"
@@ -285,6 +280,7 @@ CARGO_TARGET_DIR="${TMPDIR}/target" \
 RUNNER_BINARY_CONTEXT_ROOT="$context_root" \
 RUNNER_BINARY_ACTUAL_TOOLCHAIN_IMAGE="$RUNNER_BINARY_TOOLCHAIN_IMAGE" \
 RUNNER_BINARY_METADATA_PATH="${TMPDIR}/metadata.json" \
+GITHUB_OUTPUT="${TMPDIR}/build.outputs" \
   "${repo}/.github/scripts/runner/runner-binary-build/build.sh" build >/dev/null
 
 [ "$(wc -l < "${TMPDIR}/cargo.log" | tr -d ' ')" -eq 2 ] \
@@ -292,6 +288,8 @@ RUNNER_BINARY_METADATA_PATH="${TMPDIR}/metadata.json" \
 if [ "$(grep -c -- '--locked' "${TMPDIR}/cargo.log")" -ne 2 ]; then
   fail "every Cargo build must use the tracked lockfile"
 fi
+grep -Fxq "runner-path=${TMPDIR}/target/aarch64-unknown-linux-musl/release/runner" "${TMPDIR}/build.outputs" \
+  || fail "build must export its release Runner output for staging"
 jq -e \
   --arg digest "$build_digest" \
   --arg toolchain "$RUNNER_BINARY_TOOLCHAIN_IMAGE" '

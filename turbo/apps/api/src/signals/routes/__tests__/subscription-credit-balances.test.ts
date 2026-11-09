@@ -1,6 +1,5 @@
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
 import { thirdPartySubscriptionsMainContract } from "@okouai/api-contracts/contracts/third-party-subscriptions";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { http, HttpResponse } from "msw";
 import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
@@ -15,7 +14,6 @@ import {
   createAuthDeviceApiActions,
   mockCodexDeviceAuthProvider,
 } from "./helpers/api-bdd-auth-device";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const headers = Object.freeze({ authorization: "Bearer clerk-session" });
@@ -79,24 +77,11 @@ async function connectedAccounts() {
   if (!first || !second) {
     throw new Error("Expected two connected accounts");
   }
-  return { actor, first, second };
+  return { first, second };
 }
 
-test("lists account-owned live credits within the subscription rollout", async () => {
-  const { actor, first, second } = await connectedAccounts();
-  const disabled = await accept(
-    app()(thirdPartySubscriptionsMainContract).list({ headers }),
-    [200],
-  );
-  expect(disabled.body.subscriptions).toHaveLength(2);
-  for (const account of disabled.body.subscriptions) {
-    expect(account.planType).toBe("pro");
-    expect(account).not.toHaveProperty("subscriptionCredits");
-  }
-
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
-  });
+test("lists account-owned live credits", async () => {
+  const { first, second } = await connectedAccounts();
   const listed = await accept(
     app()(thirdPartySubscriptionsMainContract).list({ headers }),
     [200],
@@ -146,10 +131,7 @@ test.each([
   },
   { name: "unavailable status", credits: null, expected: null },
 ])("preserves quotas with $name", async ({ credits, expected }) => {
-  const { actor } = await connectedAccounts();
-  await updateFeatureSwitchesForUser(context, actor, {
-    [FeatureSwitchKey.SidebarSubscriptionUsage]: true,
-  });
+  await connectedAccounts();
   server.use(
     http.get("https://chatgpt.com/backend-api/wham/usage", () => {
       return HttpResponse.json({

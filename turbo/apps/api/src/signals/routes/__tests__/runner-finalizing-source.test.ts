@@ -401,7 +401,7 @@ describe("independent finalizing resource source", () => {
         },
       ],
     });
-    mockNow(f.clock + 31_000);
+    mockNow(f.clock + 180_001);
     const next = await continuation(f);
     expect((await poll(f, next.runId))?.runnerPreference).toMatchObject({
       kind: "noPreference",

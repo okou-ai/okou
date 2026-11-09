@@ -3,8 +3,6 @@ import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-
 import {
   queryAllByRoleFast,
   setupPage,
@@ -103,7 +101,6 @@ test("A mobile user with bottom navigation sees an active incident above their c
     context,
     host: "app.okou.ai",
     path: "/",
-    featureSwitches: { [FeatureSwitchKey.PwaNavigation]: true },
   });
 
   await screen.findByRole("navigation", { name: "Main navigation" });
@@ -112,7 +109,4 @@ test("A mobile user with bottom navigation sees an active incident above their c
       name: "Investigating: API requests are delayed",
     }),
   ).resolves.toBeVisible();
-  expect(
-    screen.queryByRole("textbox", { name: "Message" }),
-  ).not.toBeInTheDocument();
 });

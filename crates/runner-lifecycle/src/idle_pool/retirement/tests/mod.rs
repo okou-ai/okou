@@ -10,75 +10,25 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use futures_util::future::BoxFuture;
-use runner_host::host_memory::HostMemoryObservation;
 use sandbox::{BackingProcessIdentity, SandboxBackingProcess, SandboxFactory};
 use sandbox_mock::{MockSandbox, MockSandboxFactory, MockSandboxOverrides};
-use tokio::sync::oneshot;
 
 use super::IdleRetirementEnvelope;
 use crate::home_promotion::test_support::{
     HomePromotionFixture, add_healthy_cache_preparation_matcher, test_home_image,
 };
 use crate::host_memory_operations::{
-    HostMemoryOperations, MemoryObservationSource, MemoryOperationError, MemoryOperationPlan,
-    MemoryOperationPolicy, MemoryOperationSnapshot,
+    HostMemoryOperations, MemoryOperationError, MemoryOperationPlan, MemoryOperationPolicy,
+    MemoryOperationSnapshot,
 };
 use crate::host_memory_policy::HostMemoryBounds;
 use crate::idle_pool::IdleDestroyJob;
 use crate::idle_pool::entry::{HomePromotionPolicy, IdleDestroyPayload, IdleSandboxResources};
 use crate::resource_budget::ResourceBudget;
+use crate::test_fixtures::memory_observation::FileMemoryObservationSource as FileSource;
 
 const MIB: u64 = 1024 * 1024;
 const WAIT: Duration = Duration::from_secs(5);
-
-struct ReadGate {
-    seen: oneshot::Sender<()>,
-    release: oneshot::Receiver<()>,
-}
-
-struct FileSource {
-    path: PathBuf,
-    gate: Mutex<Option<ReadGate>>,
-}
-
-impl MemoryObservationSource for FileSource {
-    fn observe(&self) -> BoxFuture<'_, HostMemoryObservation> {
-        Box::pin(async move {
-            let gate = self.gate.lock().unwrap().take();
-            let observation = HostMemoryObservation::read_at(&self.path).await;
-            if let Some(gate) = gate {
-                gate.seen.send(()).unwrap();
-                gate.release.await.unwrap();
-            }
-            observation
-        })
-    }
-}
-
-impl FileSource {
-    async fn available(&self, mib: u64) {
-        tokio::fs::write(&self.path, format!("MemAvailable: {} kB\n", mib * 1024))
-            .await
-            .unwrap();
-    }
-
-    fn gate_read(&self) -> (oneshot::Receiver<()>, oneshot::Sender<()>) {
-        let (seen, observed) = oneshot::channel();
-        let (release, wait) = oneshot::channel();
-        assert!(
-            self.gate
-                .lock()
-                .unwrap()
-                .replace(ReadGate {
-                    seen,
-                    release: wait,
-                })
-                .is_none()
-        );
-        (observed, release)
-    }
-}
 
 fn policy() -> MemoryOperationPolicy {
     // Synthetic measured-input fixtures, not production defaults/calibration.
@@ -116,10 +66,7 @@ impl Env {
 
     async fn with_policy(available: u64, policy: MemoryOperationPolicy) -> Self {
         let dir = tempfile::tempdir().unwrap();
-        let source = Arc::new(FileSource {
-            path: dir.path().join("meminfo"),
-            gate: Mutex::new(None),
-        });
+        let source = Arc::new(FileSource::new(dir.path().join("meminfo")));
         source.available(available).await;
         let operations = HostMemoryOperations::new(policy, source.clone()).unwrap();
         Self {

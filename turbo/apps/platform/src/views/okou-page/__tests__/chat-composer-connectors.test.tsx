@@ -1,4 +1,5 @@
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { userPermissionGrantsContract } from "@okouai/api-contracts/contracts/user-permission-grants";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import type { ConnectorSlug } from "@okouai/api-contracts/contracts/connector-identity";
 import { screen, waitFor, within } from "@testing-library/react";
@@ -156,6 +157,59 @@ test("Configure connector permissions from the composer", async () => {
       screen.queryByRole("dialog", { name: /Axiom permissions.*Scout/u }),
     ).toBeNull();
     expect(queryFastControl("button", "Add connectors")).toBeNull();
+  });
+});
+
+test("Apply composer connector permissions as the agent's grants", async () => {
+  const axiom = builtinConnector({
+    slug: AXIOM_SLUG,
+    label: "Axiom",
+    hasPermissions: true,
+  });
+  installComposerConnectorFixture({
+    catalog: [axiom],
+    builtinAuthorizations: { [SCOUT_AGENT_ID]: [AXIOM_SLUG] },
+    permissionDetails: new Map([
+      [
+        AXIOM_SLUG,
+        permissionDetail(AXIOM_SLUG, "Axiom", ["annotations|create"]),
+      ],
+    ]),
+  });
+  const applied: unknown[] = [];
+  context.mocks.api(userPermissionGrantsContract.apply, ({ body, respond }) => {
+    applied.push(body);
+    return respond(200, []);
+  });
+
+  await setupPage({ context, path: `/agents/${SCOUT_AGENT_ID}/chat` });
+
+  click(await findFastControl("button", "Connectors"));
+  click(await findFastControl("button", "Configure Axiom permissions"));
+  const dialog = await screen.findByRole("dialog", {
+    name: /Axiom permissions.*Scout/u,
+  });
+  const permission = within(dialog).getByText("annotations|create");
+  const row = permission.closest(".flex.items-center");
+  if (!(row instanceof HTMLElement)) {
+    throw new Error("Permission row not found");
+  }
+  click(await findFastControl("button", "Deny", row));
+  click(await findFastControl("button", "Apply", dialog));
+
+  await screen.findByText("Permissions updated");
+  expect(applied).toStrictEqual([
+    {
+      agentId: SCOUT_AGENT_ID,
+      connectorSlug: AXIOM_SLUG,
+      mode: "patch",
+      grants: [{ permission: "annotations|create", action: "deny" }],
+    },
+  ]);
+  await waitFor(() => {
+    expect(
+      screen.queryByRole("dialog", { name: /Axiom permissions.*Scout/u }),
+    ).toBeNull();
   });
 });
 

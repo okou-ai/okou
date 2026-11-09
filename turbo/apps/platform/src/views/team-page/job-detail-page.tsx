@@ -52,12 +52,13 @@ import { TONE_OPTIONS, type Tone } from "../okou-page/tone-constants.ts";
 import { agentDetail$ } from "../../signals/okou-page/job-detail/detail";
 import {
   agentInstructions$,
-  agentEditedContent$,
-  agentInstructionsDirty$,
+  agentInstructionsDraft$,
+  agentInstructionsConflict$,
   agentInstructionsEditorRevision$,
   setAgentEditedContent$,
   discardAgentEdit$,
   buildAgentInstructions$,
+  reloadLatestAgentInstructions$,
 } from "../../signals/okou-page/job-detail/instructions";
 import { updateAgentSettings$ } from "../../signals/okou-page/job-detail/settings";
 import { agentAuthorizedConnectors$ } from "../../signals/okou-page/job-detail/connectors";
@@ -82,21 +83,16 @@ import {
   type PermissionConnectorCardItem,
 } from "../okou-page/components/settings/connector-card.tsx";
 import { PermissionsDrawer } from "../okou-page/components/settings/permissions-dialog.tsx";
-import type { PermissionDraftIntent } from "../../signals/okou-page/settings/permission-draft-intent.ts";
-import { savePermissionDraftPolicies } from "../../signals/okou-page/settings/permission-grant-save.ts";
 import { noConnectorImg } from "../okou-page/platform-assets.ts";
 import { JobCustomConnectorsSection } from "./job-custom-connectors-section.tsx";
-import {
-  applyUserPermissionGrants$,
-  currentAgentUserPermissionGrants$,
-} from "../../signals/permission-allow/permission-allow-signals.ts";
+import { currentAgentUserPermissionGrants$ } from "../../signals/permission-allow/permission-allow-signals.ts";
 import { matchesConnectorSearch } from "../../signals/okou-page/settings/connectors.ts";
 import { userConnectedConnectors$ } from "../../signals/okou-page/connector-overview.ts";
 import { currentAgentVisibleWorkflows$ } from "../../signals/workflows-page/workflows-signals.ts";
 import { toast } from "@okouai/ui/components/ui/sonner";
 import {
   permConnectorSlug$,
-  agentPermissionMetadata$,
+  agentPermissionDrawer,
   setPermConnectorSlug$,
   permSearch$,
   setPermSearch$,
@@ -105,12 +101,6 @@ import {
   setPermSearchActive$,
   toggleAgentPermissionConnector$,
 } from "../../signals/okou-page/job-detail-page.ts";
-import type { FirewallPolicies } from "@okouai/connectors/firewall-contracts";
-import type {
-  PlatformConnectorPermissionMetadata,
-  PlatformUserPermissionGrant,
-} from "../../signals/connector-domain.ts";
-import { activeUserPermissionGrantSnapshot } from "../../signals/user-permission-grants.ts";
 import {
   DetailPageBreadcrumbBar,
   DetailPageHeader,
@@ -653,26 +643,11 @@ function AgentPermissionsDrawer({
   connectorSlug,
   connectorLabel,
   displayName,
-  initialPolicies,
-  initialGrants,
-  readOnly,
-  onApply,
-  onClose,
 }: {
   targetId: string;
   connectorSlug: ConnectorSlug | null;
   connectorLabel: string;
   displayName: string;
-  initialPolicies: FirewallPolicies;
-  initialGrants: readonly PlatformUserPermissionGrant[];
-  readOnly: boolean;
-  onApply: (
-    intent: PermissionDraftIntent,
-    options: {
-      readonly metadata: PlatformConnectorPermissionMetadata;
-    },
-  ) => Promise<void>;
-  onClose: () => void;
 }) {
   if (!connectorSlug) {
     return null;
@@ -682,13 +657,8 @@ function AgentPermissionsDrawer({
       agentId={targetId}
       connectorSlug={connectorSlug}
       connectorLabel={connectorLabel}
-      metadata$={agentPermissionMetadata$}
       displayName={displayName}
-      initialPolicies={initialPolicies}
-      initialGrants={initialGrants}
-      readOnly={readOnly}
-      onApply={onApply}
-      onClose={onClose}
+      session={agentPermissionDrawer}
     />
   );
 }
@@ -715,7 +685,6 @@ function JobPermissionsTab({
   agentId: string;
   displayName: string;
 }) {
-  const { t } = useTranslation("agents");
   // Use useLastLoadable so the list keeps showing the previous data while the
   // signal refetches after a toggle/save or a permission-policy reload. This
   // prevents the entire list from flickering to the skeleton on each change
@@ -723,17 +692,7 @@ function JobPermissionsTab({
   const connectorsLoadable = useLastLoadable(agentAuthorizedConnectors$);
   const authorizedConnectors =
     connectorsLoadable.state === "hasData" ? connectorsLoadable.data : [];
-  const pageSignal = useGet(pageSignal$);
   const userGrantsLoadable = useLoadable(currentAgentUserPermissionGrants$);
-  const userGrants =
-    userGrantsLoadable.state === "hasData" ? userGrantsLoadable.data : [];
-  const activeUserGrantSnapshot = activeUserPermissionGrantSnapshot(userGrants);
-  const userGrantPolicies =
-    userGrantsLoadable.state === "hasData"
-      ? activeUserGrantSnapshot.policies
-      : null;
-  const drawerInitialPolicies = userGrantPolicies ?? {};
-  const [, applyGrantPolicies] = useLoadableSet(applyUserPermissionGrants$);
   const connectorSlug = useGet(permConnectorSlug$);
   const setConnectorSlug = useSet(setPermConnectorSlug$);
   const search = useGet(permSearch$);
@@ -804,34 +763,6 @@ function JobPermissionsTab({
             connectorSlug={connectorSlug}
             connectorLabel={connectorLabel}
             displayName={displayName}
-            initialPolicies={drawerInitialPolicies}
-            initialGrants={activeUserGrantSnapshot.grants}
-            readOnly={!canManagePermissions}
-            onApply={async (intent, { metadata }) => {
-              if (connectorSlug === null) {
-                throw new Error("Cannot save permissions without a connector");
-              }
-              await savePermissionDraftPolicies(
-                {
-                  scope: { agentId },
-                  connectorSlug,
-                  metadata,
-                  initialPolicies: drawerInitialPolicies,
-                  initialGrants: activeUserGrantSnapshot.grants,
-                  intent,
-                  applyGrantPolicies,
-                },
-                pageSignal,
-              );
-              toast.success(
-                t(($) => {
-                  return $.authorization.permissionsUpdated;
-                }),
-              );
-            }}
-            onClose={() => {
-              return setConnectorSlug(null);
-            }}
           />
         </>
       )}
@@ -842,11 +773,15 @@ function JobPermissionsTab({
 function JobInstructionsTab() {
   const { t } = useTranslation("agents");
   const pageSignal = useGet(pageSignal$);
-  const instructionsLoadable = useLoadable(agentInstructions$);
-  const editedLoadable = useLoadable(agentEditedContent$);
-  const dirtyLoadable = useLoadable(agentInstructionsDirty$);
+  const instructionsLoadable = useLastLoadable(agentInstructions$);
+  const draft = useGet(agentInstructionsDraft$);
+  const conflict = useLastLoadable(agentInstructionsConflict$);
+  const isConflict = conflict.state === "hasData" && conflict.data;
   const editorRevision = useGet(agentInstructionsEditorRevision$);
   const [buildLoadable, build] = useLoadableSet(buildAgentInstructions$);
+  const [reloadLoadable, reload] = useLoadableSet(
+    reloadLatestAgentInstructions$,
+  );
 
   const instructions =
     instructionsLoadable.state === "hasData" ? instructionsLoadable.data : null;
@@ -857,13 +792,14 @@ function JobInstructionsTab() {
       return $.errors.unknown;
     }),
   );
-  const edited =
-    editedLoadable.state === "hasData" ? editedLoadable.data : null;
-  const isDirty =
-    dirtyLoadable.state === "hasData" && dirtyLoadable.data === true;
-  const isBuilding = buildLoadable.state === "loading";
+  const isBuilding =
+    buildLoadable.state === "loading" || reloadLoadable.state === "loading";
+  const unknownError = t(($) => {
+    return $.errors.unknown;
+  });
   const buildError =
-    buildLoadable.state === "hasError" ? String(buildLoadable.error) : null;
+    loadableErrorMessage(buildLoadable, unknownError) ??
+    loadableErrorMessage(reloadLoadable, unknownError);
 
   const setEdited = useSet(setAgentEditedContent$);
   const discard = useSet(discardAgentEdit$);
@@ -873,22 +809,36 @@ function JobInstructionsTab() {
       instructions={instructions}
       loading={loading}
       fetchError={fetchError}
-      editedContent={edited}
+      editedContent={draft?.content ?? null}
+      editorBaseline={draft?.savedContent ?? null}
       editorRevision={editorRevision}
-      isDirty={isDirty}
+      isDirty={draft !== null}
       isBuilding={isBuilding}
+      isConflict={isConflict}
       buildError={buildError}
-      onEdit={setEdited}
-      onDiscard={discard}
+      onEdit={(value) => {
+        setEdited(value, instructions?.content ?? "");
+      }}
+      onDiscard={() => {
+        if (isConflict) {
+          detach(reload(pageSignal), Reason.DomCallback);
+        } else {
+          discard();
+        }
+      }}
+      onReload={() => {
+        detach(reload(pageSignal), Reason.DomCallback);
+      }}
       onBuild={() => {
         detach(
           (async () => {
-            await build(pageSignal);
-            toast.success(
-              t(($) => {
-                return $.instructions.saved;
-              }),
-            );
+            if (await build(pageSignal)) {
+              toast.success(
+                t(($) => {
+                  return $.instructions.saved;
+                }),
+              );
+            }
           })(),
           Reason.DomCallback,
         );

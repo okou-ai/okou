@@ -406,13 +406,13 @@
     "sidebar": {
       "ariaLabel": "Barre latérale",
       "chat": "Chat",
-      "collapse": "Réduire la barre latérale",
+      "feedWaiting_one": "{{count}} en attente",
+      "feedWaiting_many": "{{count}} en attente",
+      "feedWaiting_other": "{{count}} en attente",
       "hideChatList": "Masquer la liste des chats",
-      "manage": "Gérer",
       "mobile": {
         "invite": "Inviter",
-        "openAutomations": "Ouvrir les automatisations mobiles",
-        "openMenu": "Ouvrir le menu"
+        "openAutomations": "Ouvrir les automatisations mobiles"
       },
       "navigation": {
         "agents": "Agents",
@@ -478,8 +478,10 @@
       "nextImage": "Artéfact d'image suivant",
       "openNewTab": "Ouvrir dans un nouvel onglet",
       "openSplitView": "Ouvrir en vue partagée",
+      "partiallyUnavailable": "Certaines actions sont indisponibles",
       "previousImage": "Artéfact d'image précédent",
       "resetZoom": "Réinitialiser le zoom",
+      "retry": "Réessayer",
       "share": "Partager",
       "shareArtifact": "Partager l'artéfact",
       "zoomIn": "Zoomer",
@@ -1015,8 +1017,11 @@
       "unavailableTitle": "Lien d'autorisation indisponible"
     },
     "computerUse": {
+      "actionFailed": "Impossible d’autoriser cet ordinateur. Actualisez la conversation pour réessayer.",
       "authorize": "Autoriser",
       "authorized": "Autorisé",
+      "authorizedDescription": "Accès à l’ordinateur activé pour les prochaines exécutions de cette conversation.",
+      "cardDescription": "Choisissez un ordinateur pour cette conversation. Cela déconnecte le navigateur cloud.",
       "checkingCompatibility": "Vérification de la compatibilité",
       "description": "Choisissez un ordinateur en ligne pour que {{assistantName}} l'utilise dans {{source}}.",
       "downloadMac": "Télécharger pour macOS",
@@ -1025,6 +1030,7 @@
       "macRequirement": "Nécessite un Mac avec puce Apple et macOS 14 ou version ultérieure. Les Mac Intel ne sont pas pris en charge.",
       "noHostsDescription": "Ouvrez {{desktopApplicationName}} sur votre Mac pour le connecter.",
       "noHostsTitle": "Aucun ordinateur en ligne",
+      "selectComputer": "Sélectionner un ordinateur",
       "sources": {
         "chat": "ce fil de discussion chat",
         "slack": "ce fil de discussion Slack",
@@ -1455,6 +1461,8 @@
   },
   "browserViewer": {
     "address": "Adresse",
+    "addressOpening": "Une page est encore en cours d’ouverture. Réessayez dans un instant.",
+    "addressPreparing": "Le navigateur n’est pas encore prêt. Réessayez dans un instant.",
     "allTabs": "Tous les onglets",
     "automatic": "Automatique",
     "back": "Retour",
@@ -1495,11 +1503,11 @@
     "unavailable": "Vue du navigateur indisponible",
     "unsupportedCapability": "Le navigateur ne prend pas en charge cette opération.",
     "untitledTab": "Onglet sans titre",
+    "updatingView": "Actualisation de la vue…",
     "windowSize": "Taille de la fenêtre"
   },
   "chat": {
     "actions": {
-      "authorize": "Autoriser",
       "cancel": "Annuler",
       "confirm": "Confirmer",
       "continue": "Continuer",
@@ -1668,7 +1676,7 @@
     },
     "attachments": {
       "attach": "Joindre",
-      "fileTooLarge": "{{filename}} dépasse la limite de 1 Go",
+      "fileTooLarge": "{{filename}} dépasse la limite de 512 Mo",
       "imageUnavailable": "[Image non disponible : {{filename}}]",
       "loadingFile": "Chargement de {{filename}}",
       "previewFile": "Aperçu de {{filename}}",
@@ -1881,6 +1889,102 @@
       "uncertain": "Vérifiez le navigateur",
       "uncertainDescription": "Le navigateur a peut-être reçu les informations. Demandez à l’agent de vérifier le résultat."
     },
+    "capabilityHome": {
+      "back": "Toutes les fonctionnalités",
+      "capabilities": "Découvrez les possibilités d’Okou",
+      "create": {
+        "description": "De votre première idée à un résultat prêt à partager.",
+        "documentFormats": "Doc · PDF · Tableur",
+        "title": "Créer"
+      },
+      "explore": "Explorer",
+      "research": {
+        "items": {
+          "ads": "Explorer des créations publicitaires",
+          "products": "Étudier des produits",
+          "searchOpportunities": "Trouver des opportunités de recherche",
+          "tools": "Comparer des outils",
+          "topic": "Étudier un sujet",
+          "traffic": "Comparer le trafic web"
+        },
+        "prompt": "{{task}}. Précise ce que je veux apprendre, puis compare les éléments et résume les principales conclusions avec leurs sources.",
+        "title": "Étudier"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Des programmes d’affiliation",
+          "creators": "Partenariats créateurs",
+          "customers": "Des clients potentiels",
+          "decisionMakers": "Des décideurs",
+          "podcasts": "Des podcasts à contacter",
+          "speakers": "Des intervenants"
+        },
+        "prompt": "Aide-moi à trouver : {{task}}. Demande-moi d’abord la cible, les critères et le périmètre. Fournis une sélection avec les détails utiles et les liens vers les sources.",
+        "title": "Trouver des personnes"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Reliez vos outils et vos étapes.",
+          "title": "Workflows avancés"
+        },
+        "description": "Un peu de configuration. Beaucoup de temps gagné.",
+        "scheduled": {
+          "description": "Exécutez au bon moment.",
+          "items": {
+            "daily": "Routine quotidienne",
+            "once": "Rappel ponctuel",
+            "weekly": "Bilan hebdomadaire"
+          },
+          "prompt": "Aide-moi à configurer : {{task}}. Demande ce que je veux faire, à quel moment et dans quel fuseau horaire.",
+          "title": "Tâches planifiées"
+        },
+        "suggestions": "Partez d’une suggestion et adaptez-la à vos besoins.",
+        "triggers": {
+          "description": "Démarrez lorsqu’un événement se produit.",
+          "eventPrompt": "Aide-moi à configurer {{task}} avec {{source}}. Étapes : {{event}} → {{action}} → {{result}}. Demande la source, les filtres et la destination des résultats. Prépare un brouillon du workflow et confirme la configuration avant de l’activer.",
+          "items": {
+            "calendar": {
+              "action": "Étudier les invités",
+              "event": "Événement modifié",
+              "result": "Préparer une note",
+              "title": "Préparer les réunions"
+            },
+            "email": {
+              "action": "Extraire la demande",
+              "event": "E-mail suivi",
+              "result": "Rédiger la réponse",
+              "title": "Réponses aux e-mails"
+            },
+            "news": {
+              "action": "Filtrer les sujets",
+              "event": "Mot-clé trouvé",
+              "result": "Résumer l’actualité",
+              "title": "Résumé de l’actualité"
+            },
+            "slack": {
+              "action": "Extraire les actions",
+              "event": "Mention",
+              "result": "Liste de tâches",
+              "title": "Tâches Slack"
+            },
+            "social": {
+              "action": "Filtrer les intérêts",
+              "event": "Nouveau post",
+              "result": "Résumer les posts",
+              "title": "Veille sur X"
+            },
+            "webhook": {
+              "action": "Étudier l’entreprise",
+              "event": "Formulaire envoyé",
+              "result": "Rédiger un suivi",
+              "title": "Suivi des prospects"
+            }
+          },
+          "monitorPrompt": "Aide-moi à configurer {{task}} avec {{source}}. Étapes : {{event}} → {{action}} → {{result}}. Demande les flux, sujets ou comptes à suivre, la fréquence et où enregistrer le résumé. Vérifie périodiquement, ignore les éléments déjà traités et confirme la configuration avant de l’activer.",
+          "title": "Déclencheurs"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Voir les détails"
     },
@@ -1950,7 +2054,6 @@
     },
     "computerUse": {
       "authorization": "Autorisation d'utilisation de l'ordinateur",
-      "authorizationDescription": "Sélectionnez un hôte de bureau pour les futures exécutions dans ce fil.",
       "checkingCompatibility": "Vérification de la compatibilité",
       "cloudBrowser": "Navigateur cloud",
       "connectMyComputer": "Connecter mon ordinateur",
@@ -2038,7 +2141,6 @@
     "documentTitle": "Discussion",
     "errors": {
       "genericTitle": "Cette exécution n’a pas pu se terminer",
-      "loadMessages": "Échec du chargement des messages",
       "noModelProviderAction": "Gérer les abonnements",
       "noModelProviderPrefix": "Aucun fournisseur de modèles n'est disponible pour cette exécution. Connectez un abonnement personnel.",
       "providerIncompatibleAction": "Commencer une nouvelle session",
@@ -2117,6 +2219,11 @@
       "sourcePartsHeading_one": "{{count}} partie citée depuis {{description}}",
       "sourcePartsHeading_many": "{{count}} parties citées depuis {{description}}",
       "sourcePartsHeading_other": "{{count}} parties citées depuis {{description}}"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Démarrer une nouvelle discussion avec cette sélection",
+      "sent": "Nouvelle discussion créée"
     },
     "forward": {
       "action": "Transférer",
@@ -2300,6 +2407,7 @@
       "unavailableSsh": "hôte SSH indisponible"
     },
     "resources": {
+      "close": "Fermer les artéfacts et discussions",
       "collapse": "Réduire",
       "copyLink": "Copier le lien",
       "emptyDescription": "Les fichiers, sites Web et autres artéfacts créés dans ce chat apparaîtront ici.",
@@ -2384,7 +2492,6 @@
       "number": "numéro"
     },
     "sidebar": {
-      "allChats": "Toutes les discussions",
       "archive": "Archiver la discussion",
       "archived": "Archivées",
       "chatsWith": "Discussions avec {{agentName}}",
@@ -2403,6 +2510,7 @@
       "mute": "Mettre la discussion en sourdine",
       "muted": "En sourdine",
       "newChatWith": "Nouvelle discussion avec {{agentName}}",
+      "newMenu": "Nouveau",
       "noArchived": "Aucune discussion archivée",
       "noMuted": "Aucune discussion en sourdine",
       "noUnread": "Aucune discussion non lue",
@@ -2648,12 +2756,9 @@
       "ideasLabel": "Idées pour démarrer",
       "label": "Tâches pour démarrer",
       "more": "Plus",
-      "moreTemplates": "Autres modèles",
       "presentationTemplates": "Modèles de présentation",
       "removeTask": "Retirer {{task}}",
       "shelf": {
-        "browseStyles": "Parcourir tous les styles",
-        "browseTemplates": "Parcourir tous les modèles",
         "document": "Modèles de documents",
         "image": "Styles d'image",
         "nextPage": "Page suivante",
@@ -2669,6 +2774,7 @@
         "website": "Site web",
         "workflow": "Workflow"
       },
+      "viewAll": "Tout voir",
       "visualization": {
         "allCharts": "Tous les graphiques",
         "back": "Back to visualization options",
@@ -4081,7 +4187,6 @@
     "deniedTitle": "Accès Shell refusé",
     "deny": "Refuser",
     "description": "L’agent a besoin d’une autorisation pour utiliser Shell sur votre ordinateur.",
-    "details": "Détails",
     "duration": "L’accès dure 1 heure après l’approbation",
     "expired": "Autorisation expirée",
     "expiredTitle": "Accès Shell expiré",
@@ -4089,7 +4194,6 @@
     "pendingSummary": "{{computer}} · 1 heure",
     "reasonTitle": "Motif de l’accès",
     "requestExpired": "Demande expirée",
-    "review": "Vérifier l’accès",
     "revoke": "Révoquer",
     "revoked": "Accès à Shell révoqué",
     "scope": "Une heure d’accès pour cette discussion",
@@ -4303,7 +4407,6 @@
     "instructions": "Instructions",
     "loadError": "Impossible de charger vos instructions. Réessayez.",
     "markdown": "Écrivez en texte brut ou en Markdown",
-    "newChat": "Nouvelle conversation",
     "placeholder": "Indiquez à Okou comment vous aimez travailler…",
     "reload": "Recharger les instructions enregistrées",
     "retry": "Réessayer",
@@ -5057,6 +5160,7 @@
     "moveTitle": "Move chat",
     "moveTo": "Déplacer vers {{name}}",
     "name": "Project name",
+    "new": "New Project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
@@ -5468,6 +5572,7 @@
         "credits": "Crédits",
         "fiveHourLimit": "Limite de 5 heures",
         "label": "Utilisation des abonnements",
+        "limitReached": "Limite atteinte",
         "lowUsage": "Utilisation des abonnements : moins de 20 % restants",
         "resetTimeUnavailable": "Réinitialisation du temps indisponible",
         "usage": "Utilisation de {{provider}}",
@@ -6432,6 +6537,7 @@
     "loading": "Chargement des notifications",
     "loadMore": "Afficher les précédentes",
     "nextPage": "Page suivante",
+    "pageNavigation": "Pages de ce message",
     "pageOf": "Page {{current}} sur {{total}}",
     "previousPage": "Page précédente",
     "readAll": "Tout marquer comme lu",

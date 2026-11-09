@@ -142,13 +142,6 @@ export const sendUserPushNotifications$ = command(
       return;
     }
 
-    // Presence is scoped to the notification's org, not the device's active org.
-    const foreground = await isUserInForeground(
-      args.userId,
-      args.orgId,
-      signal,
-    );
-
     const unreadCounts = await Promise.all(
       nativeSubscriptions.map((subscription) => {
         return subscription.notificationStateRevision !== subscription.revision
@@ -165,28 +158,31 @@ export const sendUserPushNotifications$ = command(
       }),
     );
     signal.throwIfAborted();
-    await Promise.all([
-      ...nativeSubscriptions.flatMap((subscription, index) => {
-        const supportsState =
-          subscription.notificationStateRevision === subscription.revision;
-        if (foreground && !supportsState) {
-          return [];
-        }
-        const unreadCount = unreadCounts[index];
-        const native: NativePushDelivery = foreground
-          ? {
-              orgId: args.orgId,
-              notificationId: `badge:${args.userId}`,
-              payload: JSON.stringify({ aps: { badge: unreadCount } }),
-            }
-          : nativeRunNotification(
-              args,
-              supportsState ? unreadCount : undefined,
-            );
-        return [set(sendNativeRegistration$, native, subscription, signal)];
+    const deliveries = await Promise.allSettled([
+      // iOS owns foreground presentation; another client's presence must not suppress its alert.
+      ...nativeSubscriptions.map((subscription, index) => {
+        return set(
+          sendNativeRegistration$,
+          nativeRunNotification(args, unreadCounts[index]),
+          subscription,
+          signal,
+        );
       }),
-      ...(!foreground && publicKey && privateKey
-        ? subscriptions.map((subscription) => {
+      (async () => {
+        if (!publicKey || !privateKey || subscriptions.length === 0) {
+          return;
+        }
+        // Web presence is scoped to the notification's org and only gates Web Push.
+        const foreground = await isUserInForeground(
+          args.userId,
+          args.orgId,
+          signal,
+        );
+        if (foreground) {
+          return;
+        }
+        await Promise.all(
+          subscriptions.map((subscription) => {
             return set(
               sendWebSubscription$,
               {
@@ -197,9 +193,16 @@ export const sendUserPushNotifications$ = command(
               },
               signal,
             );
-          })
-        : []),
+          }),
+        );
+      })(),
     ]);
+    signal.throwIfAborted();
+    for (const delivery of deliveries) {
+      if (delivery.status === "rejected") {
+        throw delivery.reason;
+      }
+    }
   },
 );
 

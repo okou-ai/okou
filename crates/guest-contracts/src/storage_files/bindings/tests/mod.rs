@@ -37,6 +37,7 @@ fn indexed_conflicts(mounts: &[&str]) -> Vec<bool> {
 
 fn storage(mount: &str) -> StorageEntry {
     StorageEntry {
+        template_guidance: None,
         mount_path: mount.into(),
         archive_url: Some("file:///archive".into()),
         cached: false,
@@ -60,6 +61,7 @@ fn artifact(mount: &str) -> ArtifactEntry {
 
 fn manifest(storages: Vec<StorageEntry>, artifacts: Vec<ArtifactEntry>) -> Manifest {
     Manifest {
+        archive_readiness: None,
         storages,
         artifacts,
         cleanup_paths: Vec::new(),

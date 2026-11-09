@@ -14,6 +14,7 @@ import claim_producer_report_test as fixture
 import cleanup_report as cleanup
 import fixed_restore_report as fixed
 import report
+import report_test
 
 
 class FixedRestoreReportTests(unittest.TestCase):
@@ -98,13 +99,13 @@ class FixedRestoreReportTests(unittest.TestCase):
         self.values[6].update(exchange_joined=not unwind,transport_producer_unwound=unwind,connection_retained_pending=not unwind)
 
     def write(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(v) for v in self.samples))
-        lines=[report.PREFIX+json.dumps(self.events[0]),"NATIVE_CONTINUATION_WITNESS "+json.dumps(self.continuation)]
-        lines += [fixed.PREFIX+json.dumps(v) for v in self.witnesses[:2]]
-        lines += [report.PREFIX+json.dumps(self.events[1])]
-        lines += [fixed.PREFIX+json.dumps(v) for v in self.witnesses[2:]]
-        (self.root/"stdout.log").write_text("\n".join(lines)+"\ntest result: FAILED\n")
+        report_test.write_report_fixture(self.root, self.collector, self.samples, [
+            (report.PREFIX, [self.events[0]]),
+            ("NATIVE_CONTINUATION_WITNESS ", [self.continuation]),
+            (fixed.PREFIX, self.witnesses[:2]),
+            (report.PREFIX, [self.events[1]]),
+            (fixed.PREFIX, self.witnesses[2:]),
+        ], stdout_suffix="\ntest result: FAILED\n")
         (self.root/"stderr.log").write_text("Error: FixedRestoreUncertain\n")
 
     def validate(self):

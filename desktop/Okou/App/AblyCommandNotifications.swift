@@ -13,6 +13,9 @@ final class AblyCommandNotifications: CommandNotifications {
   private var recoveryTask: Task<Void, Never>?
   private var authenticationTasks: [UUID: Task<Void, Never>] = [:]
   private var lastUnavailable: String?
+  private var presenceReady = false
+  private var available = true
+  private var enteringPresence = false
 
   func start(
     subscription: CommandNotificationSubscription,
@@ -21,6 +24,7 @@ final class AblyCommandNotifications: CommandNotifications {
     try Task.checkCancellation()
     await stop()
     try Task.checkCancellation()
+    available = true
     self.subscription = subscription
     self.tokenProvider = tokenProvider
     let stream = AsyncStream<CommandNotificationEvent>.makeStream(
@@ -33,6 +37,8 @@ final class AblyCommandNotifications: CommandNotifications {
   private func connect() {
     guard let subscription, tokenProvider != nil, continuation != nil else { return }
     generation = UUID()
+    presenceReady = false
+    enteringPresence = false
     let expected = generation
     for task in authenticationTasks.values { task.cancel() }
     authenticationTasks.removeAll()
@@ -102,6 +108,8 @@ final class AblyCommandNotifications: CommandNotifications {
           unavailable(message ?? "Command notification connection failed")
           recover(generation: expected)
         case .disconnected, .suspended:
+          presenceReady = false
+          enteringPresence = false
           unavailable(message ?? "Command notifications are temporarily unavailable")
         default: break
         }
@@ -115,11 +123,36 @@ final class AblyCommandNotifications: CommandNotifications {
       realtime.connection.state == .connected,
       realtime.channels.get(subscription.channelName).state == .attached
     else { return }
+    if subscription.presenceEnabled && !available { return }
+    if subscription.presenceEnabled && !presenceReady {
+      guard !enteringPresence else { return }
+      enteringPresence = true
+      let expected = generation
+      realtime.channels.get(subscription.channelName).presence.enter(nil) { [weak self] error in
+        let message = error?.message
+        Task { @MainActor [weak self] in
+          guard let self, generation == expected else { return }
+          enteringPresence = false
+          if let message {
+            unavailable(message)
+            recover(generation: expected)
+            return
+          }
+          if !available {
+            self.realtime?.channels.get(subscription.channelName).presence.leave(nil)
+            return
+          }
+          presenceReady = true
+          refreshWhenReady()
+        }
+      }
+      return
+    }
     recoveryAttempt = 0
     recoveryTask?.cancel()
     recoveryTask = nil
     lastUnavailable = nil
-    continuation?.yield(.refresh)
+    continuation?.yield(.ready)
   }
 
   private func unavailable(_ message: String) {
@@ -137,6 +170,17 @@ final class AblyCommandNotifications: CommandNotifications {
       guard let self, generation == expected, continuation != nil else { return }
       recoveryTask = nil
       connect()
+    }
+  }
+
+  func setAvailable(_ available: Bool, channelName: String) async {
+    guard subscription?.channelName == channelName, self.available != available else { return }
+    self.available = available
+    if !available, let realtime, let subscription, subscription.presenceEnabled {
+      presenceReady = false
+      realtime.channels.get(subscription.channelName).presence.leave(nil)
+    } else if available {
+      refreshWhenReady()
     }
   }
 

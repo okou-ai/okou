@@ -12,6 +12,9 @@ use tracing::info;
 use super::control::ControlHandle;
 use super::registry_application::{RegistryDigest, RegistryPublication};
 
+mod borrowed;
+mod capacity;
+
 use crate::error::{RunnerError, RunnerResult};
 use runner_host::lock;
 use runner_host::state_file::PROXY_REGISTRY_MAX_BYTES;
@@ -25,14 +28,14 @@ use runner_types::types::{
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct ProxyRegistry {
-    sandboxes: HashMap<String, SandboxEntry>,
+struct ProxyRegistry<P = NetworkPolicy> {
+    sandboxes: HashMap<String, SandboxEntry<P>>,
     updated_at: i64,
 }
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct SandboxEntry {
+struct SandboxEntry<P = NetworkPolicy> {
     run_id: String,
     cli_agent_type: String,
     sandbox_token: String,
@@ -42,7 +45,7 @@ struct SandboxEntry {
     network_log_path: String,
     proxy_log_path: String,
     firewalls: Option<Vec<FirewallEntry>>,
-    network_policies: Option<HashMap<String, NetworkPolicy>>,
+    network_policies: Option<HashMap<String, P>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     connector_runtime_targets: Vec<ConnectorRuntimeTarget>,
     #[serde(default, skip_serializing_if = "HashSet::is_empty")]
@@ -145,6 +148,14 @@ async fn read_registry_observed(
     path: &Path,
     observer: &mut dyn ProxyRegistrationObserver,
 ) -> RunnerResult<ProxyRegistry> {
+    let content = read_registry_content(path, observer).await?;
+    parse_registry(&content, observer)
+}
+
+async fn read_registry_content(
+    path: &Path,
+    observer: &mut dyn ProxyRegistrationObserver,
+) -> RunnerResult<String> {
     let started = Instant::now();
     let content = runner_host::state_file::read_to_string(
         path,
@@ -158,14 +169,19 @@ async fn read_registry_observed(
             RunnerError::Internal(format!("read registry {}: not found", path.display()))
         })
     });
-    let content =
-        record_registration_result(observer, ProxyRegistrationStage::Read, started, content)?;
+    record_registration_result(observer, ProxyRegistrationStage::Read, started, content)
+}
+
+fn parse_registry<'de, P: Deserialize<'de>>(
+    content: &'de str,
+    observer: &mut dyn ProxyRegistrationObserver,
+) -> RunnerResult<ProxyRegistry<P>> {
     let started = Instant::now();
     record_registration_result(
         observer,
         ProxyRegistrationStage::Parse,
         started,
-        serde_json::from_str(&content)
+        serde_json::from_str(content)
             .map_err(|e| RunnerError::Internal(format!("parse registry: {e}"))),
     )
 }
@@ -194,9 +210,9 @@ async fn write_locked_registry(
     write_locked_registry_observed(path, value, guard, &mut UnobservedRegistration).await
 }
 
-async fn write_locked_registry_observed(
+async fn write_locked_registry_observed<P: capacity::PolicyCapacity>(
     path: &Path,
-    value: &ProxyRegistry,
+    value: &ProxyRegistry<P>,
     guard: Flock<File>,
     observer: &mut dyn ProxyRegistrationObserver,
 ) -> RunnerResult<RegistryDigest> {
@@ -226,9 +242,9 @@ async fn write_registry_with_reserve(
     .await
 }
 
-async fn write_registry_with_reserve_observed(
+async fn write_registry_with_reserve_observed<P: Serialize>(
     path: &Path,
-    value: &ProxyRegistry,
+    value: &ProxyRegistry<P>,
     fail_closed_reserve: u64,
     guard: Flock<File>,
     observer: &mut dyn ProxyRegistrationObserver,
@@ -270,9 +286,9 @@ async fn write_registry_with_reserve_observed(
     Ok(digest)
 }
 
-fn serialize_registry(
+fn serialize_registry<P: Serialize>(
     path: &Path,
-    value: &ProxyRegistry,
+    value: &ProxyRegistry<P>,
     fail_closed_reserve: u64,
 ) -> RunnerResult<Vec<u8>> {
     let content = serde_json::to_vec(value)
@@ -292,7 +308,9 @@ fn serialize_registry(
     Ok(content)
 }
 
-fn fail_closed_capacity_bytes(value: &ProxyRegistry) -> RunnerResult<u64> {
+fn fail_closed_capacity_bytes<P: capacity::PolicyCapacity>(
+    value: &ProxyRegistry<P>,
+) -> RunnerResult<u64> {
     // Replacing a policy changes only that independent JSON object value. The
     // sum of positive per-policy deltas is therefore the maximum growth across
     // any subset of sequential fail-closed transitions.
@@ -302,16 +320,8 @@ fn fail_closed_capacity_bytes(value: &ProxyRegistry) -> RunnerResult<u64> {
         .filter_map(|sandbox| sandbox.network_policies.as_ref())
         .flat_map(|policies| policies.values())
         .try_fold(0_u64, |reserve, policy| {
-            let current_bytes = serde_json::to_vec(policy)
-                .map_err(|e| RunnerError::Internal(format!("serialize network policy: {e}")))?
-                .len() as u64;
-            let fail_closed_bytes = serde_json::to_vec(&fail_closed_policy(policy))
-                .map_err(|e| {
-                    RunnerError::Internal(format!("serialize fail-closed network policy: {e}"))
-                })?
-                .len() as u64;
             reserve
-                .checked_add(fail_closed_bytes.saturating_sub(current_bytes))
+                .checked_add(policy.capacity_growth()?)
                 .ok_or_else(|| {
                     RunnerError::Internal("proxy registry fail-closed reserve overflow".to_string())
                 })
@@ -848,7 +858,11 @@ impl ProxyRegistryHandle {
                 .map_err(RunnerError::from),
         )?;
 
-        let mut registry = read_registry_observed(&self.registry_path, observer).await?;
+        // The buffer and incoming registration remain alive until complete
+        // serialization. Only owned bytes enter the publication worker.
+        let content = read_registry_content(&self.registry_path, observer).await?;
+        let mut registry: ProxyRegistry<borrowed::NetworkPolicy<'_>> =
+            parse_registry(&content, observer)?;
         let started = Instant::now();
         let now = chrono::Utc::now().timestamp_millis();
         // Preserve original observation provenance for a same-run refresh and
@@ -873,7 +887,7 @@ impl ProxyRegistryHandle {
                 network_log_path: registration.network_log_path.to_string_lossy().into_owned(),
                 proxy_log_path: registration.proxy_log_path.to_string_lossy().into_owned(),
                 firewalls,
-                network_policies: registration.network_policies.cloned(),
+                network_policies: registration.network_policies.map(borrowed::policies),
                 connector_runtime_targets: registration
                     .connector_runtime_targets
                     .unwrap_or_default()

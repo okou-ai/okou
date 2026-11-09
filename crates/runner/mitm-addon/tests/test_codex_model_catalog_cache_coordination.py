@@ -8,6 +8,7 @@ from mitmproxy import http
 from mitmproxy.flow import Error
 
 import codex_model_catalog_cache as catalog_cache
+import codex_model_catalog_validation as catalog_validation
 import mitm_addon
 from tests.codex_model_catalog_cache_helpers import (
     CATALOG_BODY,
@@ -163,7 +164,7 @@ async def test_stream_overflow_releases_singleflight_owner_before_response_end(r
     stream = owner.response.stream
     assert callable(stream)
 
-    overflow_chunk = b'{"models":[],"padding":"' + b"x" * catalog_cache.MAX_ENTRY_BYTES
+    overflow_chunk = b'{"models":[],"padding":"' + b"x" * catalog_validation.MAX_ENTRY_BYTES
     assert stream(overflow_chunk) == overflow_chunk
 
     assert await asyncio.wait_for(replacement_prepare, timeout=0.1)

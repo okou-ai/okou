@@ -3,13 +3,7 @@ import { workflowsCollectionContract } from "@okouai/api-contracts";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
 import { WEBSITE_TEMPLATE_ITEMS } from "@okouai/core/website-template-items";
-import {
-  act,
-  fireEvent,
-  screen,
-  waitFor,
-  within,
-} from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import {
@@ -39,7 +33,7 @@ const THIRD_WORKFLOW_NAME = "axiom-traces";
 const THREAD_ID = "b0000000-0000-4000-a000-000000000900";
 const COMPOSER_PATHS = [
   `/chats/${THREAD_ID}`,
-  `/agents/${AGENT_ID}/chat`,
+  `/agents/${AGENT_ID}/chat?compose=1`,
 ] as const;
 
 function setupModels(): void {
@@ -69,7 +63,7 @@ function setupModels(): void {
 
 async function openSlashMenu(
   query = "",
-  path = `/agents/${AGENT_ID}/chat`,
+  path = `/agents/${AGENT_ID}/chat?compose=1`,
 ): Promise<void> {
   setupModels();
   mockChatLifecycle(context, { threadId: THREAD_ID });
@@ -734,31 +728,5 @@ test.each(COMPOSER_PATHS)(
     expect(screen.queryByTestId("slash-workflow-menu")).toBeNull();
     const editor = await findComposerEditor();
     expect(editor).toHaveFocus();
-  },
-);
-
-test.each(COMPOSER_PATHS)(
-  "Composer-anchored slash suggestions at %s hide the template preview at the mobile breakpoint and retain the picker",
-  async (path) => {
-    const viewport = context.mocks.browser.matchMedia((query) => {
-      return query === SIDEBAR_DESKTOP_MEDIA_QUERY;
-    });
-    await openSlashMenu("", path);
-    expect(detailPane()).toBeNull();
-    const user = userEvent.setup();
-    await user.keyboard("{ArrowUp}");
-    await waitFor(() => {
-      expect(detailPane()).toHaveAttribute("data-category", "slides");
-    });
-    act(() => {
-      viewport.setMatches(false);
-    });
-    await waitFor(() => {
-      expect(detailPane()).toBeNull();
-    });
-    expect(slashButton("Presentation")).toHaveAttribute("data-active", "true");
-    await user.click(slashButton("Illustration"));
-    await screen.findByRole("dialog");
-    expect(tabByText("Image")).toHaveAttribute("aria-selected", "true");
   },
 );

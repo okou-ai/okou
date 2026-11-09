@@ -1,5 +1,47 @@
 # Changelog
 
+## [0.17.0](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.24...runner-provider-v0.17.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+## [0.16.24](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.23...runner-provider-v0.16.24) (2026-11-07)
+
+## [0.16.23](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.22...runner-provider-v0.16.23) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-host:** share json file-access test observation ([#45824](https://github.com/okou-ai/okou/issues/45824)) ([7e4918a](https://github.com/okou-ai/okou/commit/7e4918a6ae6e250dca3732384b3f7a9ce5c281d6))
+
+
+### Performance Improvements
+
+* **runner:** reduce periodic heartbeats with immediate state reports ([#45825](https://github.com/okou-ai/okou/issues/45825)) ([8c64e5a](https://github.com/okou-ai/okou/commit/8c64e5aa6693a52afaa219b4a3ad51e368a17029))
+
+## [0.16.22](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.21...runner-provider-v0.16.22) (2026-11-07)
+
+
+### Refactoring
+
+* remove single-character skill claim negotiation ([#45775](https://github.com/okou-ai/okou/issues/45775)) ([ff5a579](https://github.com/okou-ai/okou/commit/ff5a5793fa5f19083c6a4fe76f8c020554bea19f)) [#45748](https://github.com/okou-ai/okou/issues/45748)
+
+## [0.16.21](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.20...runner-provider-v0.16.21) (2026-11-06)
+
+## [0.16.20](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.19...runner-provider-v0.16.20) (2026-11-06)
+
+
+### Bug Fixes
+
+* restore x connector skill claims across rolling deployments ([#45749](https://github.com/okou-ai/okou/issues/45749)) ([1f7157d](https://github.com/okou-ai/okou/commit/1f7157da70b987ac0d98274a333003a61fd75c91))
+* **runner:** accept single-character skill bundle names ([#45746](https://github.com/okou-ai/okou/issues/45746)) ([28abc7b](https://github.com/okou-ai/okou/commit/28abc7bf886d180768dfd065bbef021b34c8993f))
+
+## [0.16.19](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.18...runner-provider-v0.16.19) (2026-11-06)
+
+## [0.16.18](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.17...runner-provider-v0.16.18) (2026-11-06)
+
 ## [0.16.17](https://github.com/okou-ai/okou/compare/runner-provider-v0.16.16...runner-provider-v0.16.17) (2026-11-06)
 
 

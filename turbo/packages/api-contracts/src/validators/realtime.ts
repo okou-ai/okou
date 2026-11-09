@@ -41,6 +41,8 @@ export const walletChangedPayloadSchema = object({
 
 export const browserSessionChangedPayloadSchema = object({
   threadId: uuid(),
+  // Only the native shared-viewer open caller recognizes this transient echo.
+  operationId: uuid().optional(),
 }).strict();
 
 /**

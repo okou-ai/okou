@@ -120,6 +120,7 @@ const getAuthorizationRequestInner$ = command(
         source: result.source,
         expiresAt: result.expiresAt,
         completedAt: result.completedAt,
+        chatThreadId: result.chatThreadId,
         computerUseHostId: result.computerUseHostId,
         hosts: result.hosts,
       },

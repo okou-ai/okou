@@ -60,6 +60,7 @@ export const userTemplatesContract: ClientDescriptor<
       401: true,
       403: true,
       404: true,
+      409: true,
       500: true,
     },
   },

@@ -1,5 +1,41 @@
 # Changelog
 
+## [0.5.0](https://github.com/okou-ai/okou/compare/runner-network-v0.4.20...runner-network-v0.5.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+## [0.4.20](https://github.com/okou-ai/okou/compare/runner-network-v0.4.19...runner-network-v0.4.20) (2026-11-07)
+
+## [0.4.19](https://github.com/okou-ai/okou/compare/runner-network-v0.4.18...runner-network-v0.4.19) (2026-11-07)
+
+## [0.4.18](https://github.com/okou-ai/okou/compare/runner-network-v0.4.17...runner-network-v0.4.18) (2026-11-07)
+
+## [0.4.17](https://github.com/okou-ai/okou/compare/runner-network-v0.4.16...runner-network-v0.4.17) (2026-11-06)
+
+## [0.4.16](https://github.com/okou-ai/okou/compare/runner-network-v0.4.15...runner-network-v0.4.16) (2026-11-06)
+
+## [0.4.15](https://github.com/okou-ai/okou/compare/runner-network-v0.4.14...runner-network-v0.4.15) (2026-11-06)
+
+
+### Bug Fixes
+
+* **runner-network:** observe pidfd exit during cleanup rechecks ([#45702](https://github.com/okou-ai/okou/issues/45702)) ([27adc76](https://github.com/okou-ai/okou/commit/27adc765ef29476585743d7cce349c36709ed791))
+
+
+### Performance Improvements
+
+* **runner:** reduce proxy registry policy processing ([#45724](https://github.com/okou-ai/okou/issues/45724)) ([84bdbf7](https://github.com/okou-ai/okou/commit/84bdbf783038f82f0a45765f797e07792664741c))
+
+## [0.4.14](https://github.com/okou-ai/okou/compare/runner-network-v0.4.13...runner-network-v0.4.14) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** share strict jsonl fixture parsing ([#45691](https://github.com/okou-ai/okou/issues/45691)) ([5ec5173](https://github.com/okou-ai/okou/commit/5ec5173b2fc232a0068877e4b36bde0b057f195e))
+
 ## [0.4.13](https://github.com/okou-ai/okou/compare/runner-network-v0.4.12...runner-network-v0.4.13) (2026-11-06)
 
 

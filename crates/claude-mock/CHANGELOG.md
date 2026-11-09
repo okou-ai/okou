@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.22.95](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.94...claude-mock-v0.22.95) (2026-11-08)
+
+## [0.22.94](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.93...claude-mock-v0.22.94) (2026-11-07)
+
+## [0.22.93](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.92...claude-mock-v0.22.93) (2026-11-07)
+
+## [0.22.92](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.91...claude-mock-v0.22.92) (2026-11-06)
+
+## [0.22.91](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.90...claude-mock-v0.22.91) (2026-11-06)
+
+## [0.22.90](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.89...claude-mock-v0.22.90) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** share strict jsonl fixture parsing ([#45691](https://github.com/okou-ai/okou/issues/45691)) ([5ec5173](https://github.com/okou-ai/okou/commit/5ec5173b2fc232a0068877e4b36bde0b057f195e))
+
 ## [0.22.89](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.88...claude-mock-v0.22.89) (2026-11-04)
 
 ## [0.22.88](https://github.com/okou-ai/okou/compare/claude-mock-v0.22.87...claude-mock-v0.22.88) (2026-11-03)

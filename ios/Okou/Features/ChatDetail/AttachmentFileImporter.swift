@@ -74,8 +74,8 @@ actor AttachmentFileImporter {
             let access = url.startAccessingSecurityScopedResource()
             defer { if access { url.stopAccessingSecurityScopedResource() } }
             guard let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size <= ChatAttachment.maximumSize
-            else { throw ChatError.invalidContract("File too large (max 1 GB).") }
+              size <= ChatAttachment.maximumUploadSize
+            else { throw ChatError.invalidContract("File too large (max 512 MB).") }
             // Validate in place before making our private copy. Provider-owned URLs
             // are valid during this callback. Preserve encoded bytes and orientation;
             // only the small preview is decoded.
@@ -143,8 +143,8 @@ actor AttachmentFileImporter {
           guard values.isRegularFile == true else {
             throw ChatError.invalidContract("Choose a file rather than a folder.")
           }
-          guard let size = values.fileSize, size <= ChatAttachment.maximumSize else {
-            throw ChatError.invalidContract("File too large (max 1 GB).")
+          guard let size = values.fileSize, size <= ChatAttachment.maximumUploadSize else {
+            throw ChatError.invalidContract("File too large (max 512 MB).")
           }
           let filename = filename ?? source.lastPathComponent
           guard !filename.isEmpty, filename.utf16.count <= 255 else {
@@ -178,6 +178,19 @@ actor AttachmentFileImporter {
 
   func thumbnail(_ url: URL, maximumPixelSize: Int = 160) -> Data? {
     Self.makeThumbnail(url, maximumPixelSize: maximumPixelSize)
+  }
+
+  /// Decode ordinary static images directly; keep animated, unsupported and very large images
+  /// with Quick Look rather than allocating an unbounded full-resolution bitmap.
+  func previewImageData(_ url: URL) -> Data? {
+    guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+      CGImageSourceGetCount(source) == 1,
+      let properties = CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any],
+      let width = properties[kCGImagePropertyPixelWidth] as? Int,
+      let height = properties[kCGImagePropertyPixelHeight] as? Int,
+      width > 0, height > 0, Double(width) * Double(height) <= 16_000_000
+    else { return nil }
+    return try? Data(contentsOf: url, options: .mappedIfSafe)
   }
 
   /// The first page or slide of a document as Quick Look draws it, wide enough to fill a

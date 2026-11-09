@@ -12,6 +12,7 @@ import unittest
 import native_pause_report as native
 import native_unpark_report_test as unpark
 import report
+import report_test
 
 
 class NativePauseReportTests(unittest.TestCase):
@@ -56,11 +57,8 @@ class NativePauseReportTests(unittest.TestCase):
                 self.witnesses.append(ready)
 
     def validate(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(item) for item in self.samples))
-        (self.root/"stdout.log").write_text("\n".join(
-            [report.PREFIX+json.dumps(item) for item in self.events]
-            +[native.PREFIX+json.dumps(item) for item in self.witnesses]))
+        report_test.write_report_fixture(self.root, self.collector, self.samples,
+            [(report.PREFIX, self.events), (native.PREFIX, self.witnesses)])
         return native.validate(self.root)
 
     def test_complete_actual_pause_keeps_other_boundaries_unclaimed(self):

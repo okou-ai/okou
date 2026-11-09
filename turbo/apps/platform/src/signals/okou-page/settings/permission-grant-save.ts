@@ -22,16 +22,6 @@ import type {
   PlatformUserPermissionGrant,
 } from "../../connector-domain.ts";
 
-export type ApplyUserPermissionGrants = (
-  params: {
-    agentId: string;
-    connectorSlug: string;
-    mode: "patch" | "replace";
-    grants: readonly ApplyUserPermissionGrant[];
-  },
-  signal: AbortSignal,
-) => Promise<readonly PlatformUserPermissionGrant[]>;
-
 function userGrantAction(
   policy: FirewallPolicyValue,
 ): UserPermissionGrantAction {
@@ -320,95 +310,6 @@ function buildAppliedUserGrantPolicies({
     policies,
     expiresInByPermission,
   }).map(applyGrantFromChangedPolicy);
-}
-
-async function saveUserGrantPolicies(
-  {
-    scope,
-    connectorSlug,
-    metadata,
-    initialPolicies,
-    initialGrants,
-    policies,
-    expiresInByPermission,
-    resetPending,
-    applyGrantPolicies,
-  }: {
-    scope: {
-      agentId: string;
-    };
-    connectorSlug: string;
-    metadata: PlatformConnectorPermissionMetadata;
-    initialPolicies: FirewallPolicies;
-    initialGrants: readonly PlatformUserPermissionGrant[];
-    policies: FirewallPolicies;
-    expiresInByPermission: GrantExpirationSelections;
-    resetPending: boolean;
-    applyGrantPolicies: ApplyUserPermissionGrants;
-  },
-  pageSignal: AbortSignal,
-): Promise<void> {
-  await applyGrantPolicies(
-    {
-      ...scope,
-      connectorSlug,
-      mode: resetPending ? "replace" : "patch",
-      grants: buildAppliedUserGrantPolicies({
-        connectorSlug,
-        metadata,
-        initialPolicies,
-        initialGrants,
-        policies,
-        expiresInByPermission,
-        resetPending,
-      }),
-    },
-    pageSignal,
-  );
-}
-
-export async function savePermissionDraftPolicies(
-  {
-    scope,
-    connectorSlug,
-    metadata,
-    initialPolicies,
-    initialGrants,
-    intent,
-    applyGrantPolicies,
-  }: {
-    scope: {
-      agentId: string;
-    };
-    connectorSlug: string;
-    metadata: PlatformConnectorPermissionMetadata;
-    initialPolicies: FirewallPolicies;
-    initialGrants: readonly PlatformUserPermissionGrant[];
-    intent: PermissionDraftIntent;
-    applyGrantPolicies: ApplyUserPermissionGrants;
-  },
-  pageSignal: AbortSignal,
-): Promise<void> {
-  const { policies, expiresInByPermission } =
-    materializePermissionDraftForLegacySave({
-      context: createPermissionDraftContext({ metadata, initialPolicies }),
-      draft: intent,
-      permissions: metadata.permissions,
-    });
-  await saveUserGrantPolicies(
-    {
-      scope,
-      connectorSlug,
-      metadata,
-      initialPolicies,
-      initialGrants,
-      policies,
-      expiresInByPermission,
-      resetPending: intent.resetPending,
-      applyGrantPolicies,
-    },
-    pageSignal,
-  );
 }
 
 /** Serialize the same editor intent for the member/connector grant endpoint. */

@@ -31,7 +31,7 @@ pub fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
     .iter()
     .find_map(|prefix| mount_path.strip_prefix(prefix))
     .ok_or("Workflow skill path is outside a framework skill directory")?;
-    if name.len() < 2
+    if name.is_empty()
         || name.len() > 64
         || !name
             .bytes()
@@ -46,6 +46,8 @@ pub fn validate_workflow_mount(mount_path: &str) -> Result<(), String> {
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct StorageEntry {
+    /// Present only for an explicitly captured immutable template bundle.
+    pub template_guidance: Option<guest_contracts::storage_manifest::TemplateGuidanceReference>,
     pub name: String,
     pub mount_path: String,
     pub vas_storage_name: String,
@@ -124,6 +126,7 @@ fn normalize_storage_mounts(
             .archive_url
             .ok_or_else(|| "storage manifest read-only mount requires archiveUrl".to_string())?;
         storages.push(StorageEntry {
+            template_guidance: None,
             name: mount.name.clone(),
             mount_path: mount.mount_path,
             vas_storage_name: mount.name,

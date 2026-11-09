@@ -12,15 +12,11 @@ describe("FeatureSwitchKey", () => {
   it("uses the canonical switch names", () => {
     expect(FeatureSwitchKey.Dummy).toBe("_dummy");
     expect(FeatureSwitchKey.Lab).toBe("_lab");
-    expect(FeatureSwitchKey.SidebarSubscriptionUsage).toBe(
-      "sidebarSubscriptionUsage",
-    );
     expect(FeatureSwitchKey.FeishuIntegration).toBe("_feishuIntegration");
     expect(FeatureSwitchKey.OkouDebug).toBe("_debug");
     expect(FeatureSwitchKey.RealAgentInPreview).toBe("_realAgentInPreview");
     expect(FeatureSwitchKey.TestOauthConnector).toBe("_testOauthConnector");
     expect(FeatureSwitchKey.CodexExecution).toBe("_codexExecution");
-    expect(FeatureSwitchKey.ChatThreadArchiving).toBe("chatThreadArchiving");
     expect(FeatureSwitchKey.BrowserNativeInput).toBe("browserNativeInput");
   });
 });
@@ -42,24 +38,41 @@ describe("isFeatureEnabled", () => {
     }
   });
 
-  it.each([FeatureSwitchKey.ConnectorChatAccountAccess])(
-    "defaults %s to staff and honors Lab overrides",
-    (key) => {
-      const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-      for (const [context, enabled] of [
-        [{}, false],
-        [{ userId: "external-user" }, false],
-        [{ orgId: "external-org" }, false],
-        [{ userId: "external-user", orgId: "external-org" }, false],
-        [{ orgId: "external-org", overrides: { [key]: true } }, true],
-        [staff, true],
-        [{ ...staff, overrides: { [key]: false } }, false],
-      ] as const) {
-        expect(isFeatureEnabled(key, context)).toBe(enabled);
-        expect(getAllFeatureStates(context)[key]).toBe(enabled);
-      }
-    },
-  );
+  it.each([
+    FeatureSwitchKey.ConnectorChatAccountAccess,
+    FeatureSwitchKey.ArtifactPreviewToolbar,
+  ])("defaults %s to staff and honors Lab overrides", (key) => {
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ userId: "external-user" }, false],
+      [{ orgId: "external-org" }, false],
+      [{ userId: "external-user", orgId: "external-org" }, false],
+      [{ orgId: "external-org", overrides: { [key]: true } }, true],
+      [staff, true],
+      [{ ...staff, overrides: { [key]: false } }, false],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
+
+  it("defaults home capabilities to staff and honors Lab overrides", () => {
+    const key = FeatureSwitchKey.HomeCapabilities;
+    const staff = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
+    for (const [context, enabled] of [
+      [{}, false],
+      [{ userId: "external-user" }, false],
+      [{ orgId: "external-org" }, false],
+      [{ userId: "external-user", orgId: "external-org" }, false],
+      [{ orgId: "external-org", overrides: { [key]: true } }, true],
+      [staff, true],
+      [{ ...staff, overrides: { [key]: false } }, false],
+    ] as const) {
+      expect(isFeatureEnabled(key, context)).toBe(enabled);
+      expect(getAllFeatureStates(context)[key]).toBe(enabled);
+    }
+  });
 
   it("keeps Codex execution test-only and off for everyone without an override", () => {
     const key = FeatureSwitchKey.CodexExecution;
@@ -150,30 +163,6 @@ describe("isFeatureEnabled", () => {
         "Create native web forms that apply user-provided values to exact managed Browser controls",
       rolloutStage: "beta",
     });
-  });
-
-  it("enables chat thread archiving for staff and honors explicit overrides", () => {
-    for (const context of [{}, { orgId: "org_nonexistent" }]) {
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, context),
-      ).toBe(false);
-      expect(
-        isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-          ...context,
-          overrides: { [FeatureSwitchKey.ChatThreadArchiving]: true },
-        }),
-      ).toBe(true);
-    }
-    const staffContext = { orgId: "org_3ANttyrbWYJk6JKRSTRLEsbsDLe" };
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, staffContext),
-    ).toBe(true);
-    expect(
-      isFeatureEnabled(FeatureSwitchKey.ChatThreadArchiving, {
-        ...staffContext,
-        overrides: { [FeatureSwitchKey.ChatThreadArchiving]: false },
-      }),
-    ).toBe(false);
   });
 
   it("should return true for globally enabled switch", () => {
@@ -283,7 +272,6 @@ describe("getAllFeatureStates", () => {
     expect(staffOrgStates[FeatureSwitchKey.OkouDebug]).toBe(true);
     expect(staffOrgStates[FeatureSwitchKey.Banking]).toBe(false);
     expect(staffOrgStates[FeatureSwitchKey.PresentationConvert]).toBe(false);
-    expect(staffOrgStates[FeatureSwitchKey.ChatThreadArchiving]).toBe(true);
 
     const otherOrgStates = getAllFeatureStates({
       orgId: "org_nonexistent",
@@ -385,7 +373,7 @@ describe("getFeatureSwitchMetadata", () => {
       "alpha",
     );
     expect(
-      metadata[FeatureSwitchKey.SidebarSubscriptionUsage].rolloutStage,
+      metadata[FeatureSwitchKey.ConnectorChatAccountAccess].rolloutStage,
     ).toBe("beta");
     expect(metadata[FeatureSwitchKey.Banking].rolloutStage).toBe("alpha");
   });

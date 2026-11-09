@@ -392,13 +392,11 @@
     "sidebar": {
       "ariaLabel": "側邊欄",
       "chat": "聊天",
-      "collapse": "收起側邊欄",
+      "feedWaiting_other": "{{count}} 則待處理",
       "hideChatList": "隱藏聊天列表",
-      "manage": "管理",
       "mobile": {
         "invite": "邀請",
-        "openAutomations": "開啟自動化面板",
-        "openMenu": "開啟選單"
+        "openAutomations": "開啟自動化面板"
       },
       "navigation": {
         "agents": "智能體",
@@ -464,8 +462,10 @@
       "nextImage": "下一張圖片成果",
       "openNewTab": "在新標籤頁開啟",
       "openSplitView": "在分屏中開啟",
+      "partiallyUnavailable": "部分操作暫時無法使用",
       "previousImage": "上一張圖片成果",
       "resetZoom": "重置縮放",
+      "retry": "重試",
       "share": "分享",
       "shareArtifact": "分享成果",
       "zoomIn": "放大",
@@ -997,8 +997,11 @@
       "unavailableTitle": "授權連結不可用"
     },
     "computerUse": {
+      "actionFailed": "未能授權這台電腦，請重新整理聊天後再試。",
       "authorize": "授權",
       "authorized": "已授權",
+      "authorizedDescription": "已為此聊天的後續執行啟用電腦存取。",
+      "cardDescription": "選擇此聊天使用的電腦。這會中斷雲端瀏覽器。",
       "checkingCompatibility": "正在檢查相容性",
       "description": "選擇一臺線上的電腦，供 {{assistantName}} 在{{source}}中使用。",
       "downloadMac": "下載 macOS 版",
@@ -1007,6 +1010,7 @@
       "macRequirement": "需要搭載 Apple 晶片、系統為 macOS 14 或更高版本的 Mac，不支援 Intel 版 Mac。",
       "noHostsDescription": "在 Mac 上開啟 {{desktopApplicationName}}，讓裝置上線。",
       "noHostsTitle": "沒有線上的電腦",
+      "selectComputer": "選擇電腦",
       "sources": {
         "chat": "這個聊天會話",
         "slack": "這個 Slack 會話",
@@ -1430,6 +1434,8 @@
   },
   "browserViewer": {
     "address": "網址",
+    "addressOpening": "頁面仍在開啟，請稍後再試。",
+    "addressPreparing": "瀏覽器尚未就緒，請稍後再試。",
     "allTabs": "所有分頁",
     "automatic": "自動",
     "back": "上一頁",
@@ -1470,11 +1476,11 @@
     "unavailable": "瀏覽器畫面無法使用",
     "unsupportedCapability": "瀏覽器不支援此操作。",
     "untitledTab": "未命名分頁",
+    "updatingView": "正在更新畫面…",
     "windowSize": "視窗大小"
   },
   "chat": {
     "actions": {
-      "authorize": "授權",
       "cancel": "取消",
       "confirm": "確認",
       "continue": "繼續",
@@ -1643,7 +1649,7 @@
     },
     "attachments": {
       "attach": "新增附件",
-      "fileTooLarge": "{{filename}} 超過 1 GB 上限",
+      "fileTooLarge": "{{filename}} 超過 512 MB 上限",
       "imageUnavailable": "[圖片不可用：{{filename}}]",
       "loadingFile": "正在載入 {{filename}}",
       "previewFile": "預覽 {{filename}}",
@@ -1849,6 +1855,102 @@
       "uncertain": "請檢查瀏覽器",
       "uncertainDescription": "瀏覽器可能已收到這些資訊。請讓代理檢查結果。"
     },
+    "capabilityHome": {
+      "back": "所有能力",
+      "capabilities": "探索 Okou 的能力",
+      "create": {
+        "description": "從一個想法，到可以分享的作品。",
+        "documentFormats": "文件 · PDF · 試算表",
+        "title": "創作"
+      },
+      "explore": "探索",
+      "research": {
+        "items": {
+          "ads": "探索廣告創意",
+          "products": "研究產品",
+          "searchOpportunities": "發現搜尋機會",
+          "tools": "比較工具",
+          "topic": "研究一個主題",
+          "traffic": "比較網站流量"
+        },
+        "prompt": "{{task}}。先確認我想了解什麼，再比較證據並總結關鍵發現，附上來源。",
+        "title": "研究"
+      },
+      "search": {
+        "items": {
+          "affiliates": "聯盟行銷計畫",
+          "creators": "創作者合作",
+          "customers": "潛在客戶",
+          "decisionMakers": "決策者",
+          "podcasts": "可投稿的 Podcast",
+          "speakers": "活動講者"
+        },
+        "prompt": "幫我尋找{{task}}。先向我確認目標、篩選條件和範圍，再提供包含相關資訊和來源連結的精選名單。",
+        "title": "找人"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "串聯工具與多個步驟。",
+          "title": "進階工作流程"
+        },
+        "description": "簡單設定，讓瑣事自動完成。",
+        "scheduled": {
+          "description": "在合適的時間自動執行。",
+          "items": {
+            "daily": "每日例行任務",
+            "once": "一次性提醒",
+            "weekly": "每週回顧"
+          },
+          "prompt": "幫我設定{{task}}。先確認要做什麼、執行時間和時區。",
+          "title": "定時任務"
+        },
+        "suggestions": "從一條建議開始，按你的需要調整。",
+        "triggers": {
+          "description": "事件發生時自動開始。",
+          "eventPrompt": "幫我使用 {{source}} 設定「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先確認具體來源、篩選條件和輸出位置，準備工作流程草稿，確認設定後再啟用。",
+          "items": {
+            "calendar": {
+              "action": "研究與會者",
+              "event": "行程變更",
+              "result": "準備簡報",
+              "title": "會前簡報"
+            },
+            "email": {
+              "action": "提取需求",
+              "event": "郵件加星號",
+              "result": "草擬回覆",
+              "title": "郵件回覆"
+            },
+            "news": {
+              "action": "比對主題",
+              "event": "關鍵字符合",
+              "result": "整理摘要",
+              "title": "新聞摘要"
+            },
+            "slack": {
+              "action": "提取行動項目",
+              "event": "有人 @你",
+              "result": "待辦清單",
+              "title": "訊息轉待辦"
+            },
+            "social": {
+              "action": "篩選興趣",
+              "event": "新貼文",
+              "result": "提煉觀點",
+              "title": "X 動態追蹤"
+            },
+            "webhook": {
+              "action": "研究公司",
+              "event": "表單提交",
+              "result": "草擬跟進",
+              "title": "潛客跟進"
+            }
+          },
+          "monitorPrompt": "幫我使用 {{source}} 設定「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先確認要追蹤的訂閱來源、主題或帳號、檢查頻率和摘要儲存位置。定期檢查，只處理尚未處理的新內容，確認設定後再啟用。",
+          "title": "觸發器"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "檢視詳情"
     },
@@ -1918,7 +2020,6 @@
     },
     "computerUse": {
       "authorization": "Computer Use 授權",
-      "authorizationDescription": "為這個會話之後的執行選擇一臺 Desktop 主機。",
       "checkingCompatibility": "正在檢查相容性",
       "cloudBrowser": "雲端瀏覽器",
       "connectMyComputer": "連線我的電腦",
@@ -2000,7 +2101,6 @@
     "documentTitle": "聊天",
     "errors": {
       "genericTitle": "這次執行沒能完成",
-      "loadMessages": "訊息載入失敗",
       "noModelProviderAction": "管理訂閱",
       "noModelProviderPrefix": "此次執行沒有可用的模型提供者。請連結個人訂閱。",
       "providerIncompatibleAction": "開始新會話",
@@ -2076,6 +2176,11 @@
       "sourcePartHeading": "引用自{{description}}",
       "sourcePartsHeading_one": "從{{description}}引用了 {{count}} 段內容",
       "sourcePartsHeading_other": "從{{description}}引用了 {{count}} 段內容"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "以選取內容建立新聊天",
+      "sent": "已建立新聊天"
     },
     "forward": {
       "action": "轉發",
@@ -2253,6 +2358,7 @@
       "unavailableSsh": "無法使用的 SSH 主機"
     },
     "resources": {
+      "close": "關閉成果和聊天",
       "collapse": "收合",
       "copyLink": "複製連結",
       "emptyDescription": "這個對話裡生成的檔案、網站等成果會顯示在這裡。",
@@ -2331,7 +2437,6 @@
       "number": "數字"
     },
     "sidebar": {
-      "allChats": "全部聊天",
       "archive": "歸檔聊天",
       "archived": "已歸檔",
       "chatsWith": "與{{agentName}}的聊天",
@@ -2350,6 +2455,7 @@
       "mute": "靜音聊天",
       "muted": "已靜音",
       "newChatWith": "與{{agentName}}新建聊天",
+      "newMenu": "新增",
       "noArchived": "沒有已歸檔的聊天",
       "noMuted": "沒有已靜音的聊天",
       "noUnread": "沒有未讀聊天",
@@ -2591,12 +2697,9 @@
       "ideasLabel": "上手靈感",
       "label": "上手任務",
       "more": "更多",
-      "moreTemplates": "更多模板",
       "presentationTemplates": "簡報模板",
       "removeTask": "移除{{task}}",
       "shelf": {
-        "browseStyles": "瀏覽全部風格",
-        "browseTemplates": "瀏覽全部模板",
         "document": "文件模板",
         "image": "圖片風格",
         "nextPage": "下一頁",
@@ -2612,6 +2715,7 @@
         "website": "網站",
         "workflow": "工作流"
       },
+      "viewAll": "檢視全部",
       "visualization": {
         "allCharts": "全部圖表",
         "back": "返回視覺化選項",
@@ -4014,7 +4118,6 @@
     "deniedTitle": "Shell 存取已拒絕",
     "deny": "拒絕",
     "description": "Agent 需要取得在你的電腦上使用 Shell 的權限。",
-    "details": "詳細資訊",
     "duration": "核准後可存取 1 小時",
     "expired": "授權已到期",
     "expiredTitle": "Shell 存取已到期",
@@ -4022,7 +4125,6 @@
     "pendingSummary": "{{computer}} · 1 小時",
     "reasonTitle": "申請用途",
     "requestExpired": "申請已過期",
-    "review": "檢視授權",
     "revoke": "撤銷",
     "revoked": "已撤銷 Shell 授權",
     "scope": "目前聊天的一小時存取權限",
@@ -4232,7 +4334,6 @@
     "instructions": "指令",
     "loadError": "無法載入指令，請重試。",
     "markdown": "支援純文字和 Markdown",
-    "newChat": "新聊天",
     "placeholder": "告訴 Okou 你喜歡怎樣工作…",
     "reload": "重新載入已儲存的指令",
     "retry": "重試",
@@ -4984,6 +5085,7 @@
     "moveTitle": "移动聊天",
     "moveTo": "移至 {{name}}",
     "name": "Project 名称",
+    "new": "新建 Project",
     "newChat": "新建聊天",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
@@ -5390,6 +5492,7 @@
         "credits": "點數",
         "fiveHourLimit": "5 小時額度",
         "label": "訂閱用量",
+        "limitReached": "額度已用盡",
         "lowUsage": "訂閱用量：剩餘額度低於 20%",
         "resetTimeUnavailable": "重置時間不可用",
         "usage": "{{provider}}用量",
@@ -6344,6 +6447,7 @@
     "loading": "正在載入通知",
     "loadMore": "查看更早的通知",
     "nextPage": "下一頁",
+    "pageNavigation": "訊息中的頁面",
     "pageOf": "第 {{current}} / {{total}} 頁",
     "previousPage": "上一頁",
     "readAll": "全部已讀",

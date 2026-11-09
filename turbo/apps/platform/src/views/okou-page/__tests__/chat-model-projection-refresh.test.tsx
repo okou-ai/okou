@@ -59,13 +59,17 @@ function runModelFixture(
 
 async function openChat(
   transport: "direct" | "message-port" = "direct",
+  desktop = false,
 ): Promise<void> {
   context.mocks.browser.matchMedia((query) => {
-    return query === "(min-width: 640px)";
+    return (
+      query === "(min-width: 640px)" ||
+      (desktop && query === "(min-width: 48rem)")
+    );
   });
   await setupPage({
     context,
-    path: NEW_CHAT_PATH,
+    path: `${NEW_CHAT_PATH}?compose=1`,
     sharedWorkerTestTransport: transport,
   });
   await expect(
@@ -227,16 +231,12 @@ test("A local active-account change refreshes the member projection", async () =
       return respond(200, account(secondId, true));
     },
   );
-  await openChat();
+  await openChat("direct", true);
   const initialPanel = await openModelPanel("GPT 5.6 Sol");
   const initial = await findModelOption(/GPT 5\.6 Sol/u, initialPanel);
   expect(initial).not.toBeDisabled();
   await closeModelPanel();
-  click(screen.getByLabelText("Open menu"));
-  const drawer = await screen.findByRole("dialog", { name: "Sidebar" });
-  const trigger = within(drawer).getByText("Test User").closest("button");
-  expect(trigger).not.toBeNull();
-  click(trigger!);
+  click(await findButton("Test User"));
   const menu = await screen.findByRole("menu");
   click(within(menu).getByText("Settings"));
   const settings = await screen.findByRole("dialog", { name: "Settings" });

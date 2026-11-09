@@ -392,13 +392,11 @@
     "sidebar": {
       "ariaLabel": "サイドバー",
       "chat": "チャット",
-      "collapse": "サイドバーを折りたたむ",
+      "feedWaiting_other": "{{count}} 件が対応待ち",
       "hideChatList": "チャットリストを非表示",
-      "manage": "管理",
       "mobile": {
         "invite": "招待する",
-        "openAutomations": "モバイルでオートメーションを開く",
-        "openMenu": "メニューを開く"
+        "openAutomations": "モバイルでオートメーションを開く"
       },
       "navigation": {
         "agents": "エージェント",
@@ -464,8 +462,10 @@
       "nextImage": "次の画像アーティファクト",
       "openNewTab": "新しいタブで開く",
       "openSplitView": "分割ビューで開く",
+      "partiallyUnavailable": "一部の操作は現在利用できません",
       "previousImage": "前の画像アーティファクト",
       "resetZoom": "ズームをリセットする",
+      "retry": "再試行",
       "share": "シェアする",
       "shareArtifact": "アーティファクトを共有する",
       "zoomIn": "Zoom 内",
@@ -997,8 +997,11 @@
       "unavailableTitle": "認証リンクは使用できません"
     },
     "computerUse": {
+      "actionFailed": "このコンピューターを承認できませんでした。チャットを再読み込みして再試行してください。",
       "authorize": "承認する",
       "authorized": "認可された",
+      "authorizedDescription": "このチャットの今後の実行でコンピューターへのアクセスが有効になりました。",
+      "cardDescription": "このチャットで使うコンピューターを選択してください。クラウドブラウザーは切断されます。",
       "checkingCompatibility": "互換性の確認",
       "description": "{{source}} で使用する {{assistantName}} のオンライン コンピューターを選択します。",
       "downloadMac": "macOS をダウンロード",
@@ -1007,6 +1010,7 @@
       "macRequirement": "macOS 14 以降を搭載した Apple Silicon Mac が必要です。 Intel Mac はサポートされていません。",
       "noHostsDescription": "Mac で {{desktopApplicationName}} を開いてオンラインにしてください。",
       "noHostsTitle": "オンラインコンピュータはありません",
+      "selectComputer": "コンピューターを選択",
       "sources": {
         "chat": "このチャットスレッド",
         "slack": "この Slack スレッド",
@@ -1430,6 +1434,8 @@
   },
   "browserViewer": {
     "address": "アドレス",
+    "addressOpening": "ページを開いています。少し待ってからもう一度お試しください。",
+    "addressPreparing": "ブラウザーの準備ができていません。少し待ってからもう一度お試しください。",
     "allTabs": "すべてのタブ",
     "automatic": "自動",
     "back": "戻る",
@@ -1470,11 +1476,11 @@
     "unavailable": "ブラウザー画面を表示できません",
     "unsupportedCapability": "この操作はブラウザーでサポートされていません。",
     "untitledTab": "無題のタブ",
+    "updatingView": "画面を更新中…",
     "windowSize": "ウィンドウサイズ"
   },
   "chat": {
     "actions": {
-      "authorize": "承認する",
       "cancel": "キャンセル",
       "confirm": "確認する",
       "continue": "続ける",
@@ -1643,7 +1649,7 @@
     },
     "attachments": {
       "attach": "添付する",
-      "fileTooLarge": "{{filename}} が 1 GB の制限を超えています",
+      "fileTooLarge": "{{filename}} が 512 MB の制限を超えています",
       "imageUnavailable": "[画像は利用できません: {{filename}}]",
       "loadingFile": "{{filename}} をロードしています",
       "previewFile": "{{filename}} のプレビュー",
@@ -1849,6 +1855,102 @@
       "uncertain": "ブラウザを確認してください",
       "uncertainDescription": "ブラウザが情報を受け取った可能性があります。エージェントに結果の確認を依頼してください。"
     },
+    "capabilityHome": {
+      "back": "すべての機能",
+      "capabilities": "Okou の機能を見る",
+      "create": {
+        "description": "最初のアイデアから、そのまま共有できる成果物へ。",
+        "documentFormats": "文書 · PDF · 表計算",
+        "title": "作成"
+      },
+      "explore": "探索",
+      "research": {
+        "items": {
+          "ads": "広告クリエイティブを調べる",
+          "products": "商品を調べる",
+          "searchOpportunities": "検索の機会を見つける",
+          "tools": "ツールを比較",
+          "topic": "テーマを調べる",
+          "traffic": "サイトのアクセス数を比較"
+        },
+        "prompt": "{{task}}。知りたいことを確認してから、根拠を比較し、主な発見を出典付きでまとめてください。",
+        "title": "リサーチ"
+      },
+      "search": {
+        "items": {
+          "affiliates": "アフィリエイトプログラム",
+          "creators": "クリエイターとの提携",
+          "customers": "見込み客",
+          "decisionMakers": "意思決定者",
+          "podcasts": "出演候補のポッドキャスト",
+          "speakers": "イベントの登壇者"
+        },
+        "prompt": "{{task}}を探してください。まず対象、条件、範囲を確認し、関連情報と出典リンクを含む候補リストを作成してください。",
+        "title": "人を探す"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "ツールと手順をつなげます。",
+          "title": "高度なワークフロー"
+        },
+        "description": "少しの設定で、日々の作業をもっと楽に。",
+        "scheduled": {
+          "description": "ちょうどよいタイミングで実行。",
+          "items": {
+            "daily": "毎日のルーティン",
+            "once": "一度きりのリマインダー",
+            "weekly": "毎週の振り返り"
+          },
+          "prompt": "{{task}}の設定を手伝ってください。実行する内容、日時、タイムゾーンを確認してください。",
+          "title": "定期タスク"
+        },
+        "suggestions": "提案を選んで、自分に合うように調整しましょう。",
+        "triggers": {
+          "description": "イベントの発生をきっかけに開始。",
+          "eventPrompt": "{{source}} を使って「{{task}}」を設定してください。流れ：{{event}} → {{action}} → {{result}}。対象のソース、絞り込み条件、出力先を確認し、ワークフローの下書きを作成してください。設定を確認してから有効にしてください。",
+          "items": {
+            "calendar": {
+              "action": "参加者を調査",
+              "event": "予定の変更",
+              "result": "資料を準備",
+              "title": "会議の事前準備"
+            },
+            "email": {
+              "action": "要望を抽出",
+              "event": "スター付きメール",
+              "result": "返信を下書き",
+              "title": "メール返信"
+            },
+            "news": {
+              "action": "テーマで絞る",
+              "event": "キーワード一致",
+              "result": "ニュースを要約",
+              "title": "ニュース要約"
+            },
+            "slack": {
+              "action": "行動を抽出",
+              "event": "メンション",
+              "result": "タスク一覧",
+              "title": "メッセージをタスクに"
+            },
+            "social": {
+              "action": "関心で絞る",
+              "event": "新しい投稿",
+              "result": "投稿を要約",
+              "title": "X の動向チェック"
+            },
+            "webhook": {
+              "action": "企業を調査",
+              "event": "フォーム送信",
+              "result": "連絡文を下書き",
+              "title": "見込み客のフォロー"
+            }
+          },
+          "monitorPrompt": "{{source}} を使って「{{task}}」を設定してください。流れ：{{event}} → {{action}} → {{result}}。対象のフィード、テーマまたはアカウント、確認頻度、要約の保存先を確認してください。定期的に確認し、処理済みの項目を除外し、設定を確認してから有効にしてください。",
+          "title": "トリガー"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "詳細を表示"
     },
@@ -1918,7 +2020,6 @@
     },
     "computerUse": {
       "authorization": "コンピュータの使用許可",
-      "authorizationDescription": "このスレッドで今後実行するデスクトップ ホストを選択してください。",
       "checkingCompatibility": "互換性の確認",
       "cloudBrowser": "クラウドブラウザ",
       "connectMyComputer": "コンピューターを接続する",
@@ -2000,7 +2101,6 @@
     "documentTitle": "チャット",
     "errors": {
       "genericTitle": "この実行を完了できませんでした",
-      "loadMessages": "メッセージの読み込みに失敗しました",
       "noModelProviderAction": "サブスクリプションを管理",
       "noModelProviderPrefix": "この実行に使用できるモデルプロバイダーがありません。個人サブスクリプションを接続してください。",
       "providerIncompatibleAction": "新しいセッションを開始する",
@@ -2076,6 +2176,11 @@
       "sourcePartHeading": "{{description}}から引用",
       "sourcePartsHeading_one": "{{description}}から {{count}} 件を引用",
       "sourcePartsHeading_other": "{{description}}から {{count}} 件を引用"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "選択した内容で新しいチャットを開始",
+      "sent": "新しいチャットを作成しました"
     },
     "forward": {
       "action": "転送",
@@ -2253,6 +2358,7 @@
       "unavailableSsh": "利用できない SSH ホスト"
     },
     "resources": {
+      "close": "アーティファクトとチャットを閉じる",
       "collapse": "折りたたむ",
       "copyLink": "リンクをコピー",
       "emptyDescription": "このチャットで作成されたファイルやウェブサイトなどのアーティファクトがここに表示されます。",
@@ -2331,7 +2437,6 @@
       "number": "番号"
     },
     "sidebar": {
-      "allChats": "すべてのチャット",
       "archive": "チャットをアーカイブ",
       "archived": "アーカイブ済み",
       "chatsWith": "{{agentName}} とのチャット",
@@ -2350,6 +2455,7 @@
       "mute": "チャットをミュート",
       "muted": "ミュート中",
       "newChatWith": "{{agentName}} との新しいチャット",
+      "newMenu": "新規作成",
       "noArchived": "アーカイブ済みのチャットはありません",
       "noMuted": "ミュート中のチャットはありません",
       "noUnread": "未読のチャットはありません",
@@ -2591,12 +2697,9 @@
       "ideasLabel": "始めるためのアイデア",
       "label": "タスクを始める",
       "more": "その他",
-      "moreTemplates": "他のテンプレート",
       "presentationTemplates": "プレゼンテンプレート",
       "removeTask": "{{task}}を削除",
       "shelf": {
-        "browseStyles": "すべてのスタイルを見る",
-        "browseTemplates": "すべてのテンプレートを見る",
         "document": "ドキュメントのテンプレート",
         "image": "画像スタイル",
         "nextPage": "次のページ",
@@ -2612,6 +2715,7 @@
         "website": "ウェブサイト",
         "workflow": "ワークフロー"
       },
+      "viewAll": "すべて表示",
       "visualization": {
         "allCharts": "すべてのグラフ",
         "back": "Back to visualization options",
@@ -4014,7 +4118,6 @@
     "deniedTitle": "Shell アクセスは拒否されました",
     "deny": "拒否",
     "description": "エージェントがコンピュータ上で Shell を使用するには許可が必要です。",
-    "details": "詳細",
     "duration": "承認後、1 時間アクセスできます",
     "expired": "承認の有効期限が切れました",
     "expiredTitle": "Shell アクセスの有効期限切れ",
@@ -4022,7 +4125,6 @@
     "pendingSummary": "{{computer}} · 1 時間",
     "reasonTitle": "アクセスの目的",
     "requestExpired": "リクエストの有効期限切れ",
-    "review": "アクセスを確認",
     "revoke": "取り消す",
     "revoked": "Shell へのアクセスを取り消しました",
     "scope": "このチャットでの 1 時間のアクセス",
@@ -4232,7 +4334,6 @@
     "instructions": "指示",
     "loadError": "指示を読み込めませんでした。もう一度お試しください。",
     "markdown": "プレーンテキストまたは Markdown で記入",
-    "newChat": "新しいチャット",
     "placeholder": "好みの仕事の進め方を Okou に伝えてください…",
     "reload": "保存済みの指示を再読み込み",
     "retry": "再試行",
@@ -4984,6 +5085,7 @@
     "moveTitle": "Move chat",
     "moveTo": "{{name}} に移動",
     "name": "Project name",
+    "new": "New Project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
@@ -5390,6 +5492,7 @@
         "credits": "クレジット",
         "fiveHourLimit": "5時間の上限",
         "label": "サブスクリプションの使用状況",
+        "limitReached": "上限に達しました",
         "lowUsage": "サブスクリプションの使用状況：残り20%未満",
         "resetTimeUnavailable": "リセット時間は利用不可",
         "usage": "{{provider}}の使用量",
@@ -6344,6 +6447,7 @@
     "loading": "通知を読み込み中",
     "loadMore": "以前の通知を表示",
     "nextPage": "次のページ",
+    "pageNavigation": "このメッセージのページ",
     "pageOf": "{{current}} / {{total}} ページ",
     "previousPage": "前のページ",
     "readAll": "すべて既読にする",

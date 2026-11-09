@@ -27,6 +27,13 @@ export const swiftTypeBindings = [
     doc: ["`POST /api/computer-use/hosts/register` success body."],
   },
   {
+    schema: computerUseSessionHostsContract.wait.responses[200],
+    swiftTypeName: "ComputerUseHostCommandWait",
+    doc: [
+      "Queue availability from the bounded command wait; it never claims work.",
+    ],
+  },
+  {
     schema: computerUseSessionHostsContract.heartbeat.responses[200],
     swiftTypeName: "ComputerUseHostHeartbeat",
     doc: ["`POST /api/computer-use/hosts/:hostId/heartbeat` success body."],

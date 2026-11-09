@@ -38,6 +38,7 @@ export const computerUseAuthorizationRequestsContract: ClientDescriptor<
       403: true,
       404: true,
       409: true,
+      503: true,
     },
   },
   get: {
@@ -49,6 +50,7 @@ export const computerUseAuthorizationRequestsContract: ClientDescriptor<
       403: true,
       404: true,
       410: true,
+      503: true,
     },
   },
   apply: {
@@ -61,6 +63,7 @@ export const computerUseAuthorizationRequestsContract: ClientDescriptor<
       403: true,
       404: true,
       410: true,
+      503: true,
     },
   },
 };
@@ -78,6 +81,7 @@ export const computerUseCommandContract: ClientDescriptor<
       403: true,
       404: true,
       409: true,
+      503: true,
     },
   },
   get: {
@@ -112,6 +116,7 @@ export const computerUseHostsContract: ClientDescriptor<
       200: true,
       401: true,
       403: true,
+      503: true,
     },
   },
 };
@@ -135,6 +140,42 @@ export const computerUseSessionHostsContract: ClientDescriptor<
   heartbeat: {
     method: "POST",
     path: "/api/computer-use/hosts/:hostId/heartbeat",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+      409: true,
+      429: true,
+      503: true,
+    },
+  },
+  wait: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/commands/wait",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+      409: true,
+      429: true,
+      503: true,
+    },
+  },
+  state: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/state",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+      409: true,
+      429: true,
+      503: true,
+    },
+  },
+  realtimeToken: {
+    method: "POST",
+    path: "/api/computer-use/hosts/:hostId/realtime-token",
     statuses: {
       200: true,
       401: true,
@@ -198,6 +239,7 @@ export const computerUseWriteCommandContract: ClientDescriptor<
       403: true,
       404: true,
       409: true,
+      503: true,
     },
   },
 };

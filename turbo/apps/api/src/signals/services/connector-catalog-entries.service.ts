@@ -218,6 +218,10 @@ function materializeImmutableSelection(
   });
   return {
     ...materializeConnectorRuntimeLookup({
+      catalogIdentity: catalogIdentityFromCapture(
+        capturedCatalog,
+        capability.digest,
+      ),
       connectors: entries,
       filteredMethodKeys: new Set(
         filtered.map((method) => {

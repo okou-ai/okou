@@ -36,23 +36,21 @@ export function WorkspaceCanvasBackdrop({
 
 /**
  * The workspace sheet: the app's canvas, framed by the chrome around it. The
- * chat list supplies the left edge in the app shell, so the sheet drops that
- * margin there; beside the bare nav rail -- or with no chrome at all -- nothing
- * supplies it, so the sheet keeps the frame on all four sides.
+ * chat list is the sheet's left part in the app shell and supplies its left
+ * edge and corners, so the sheet drops that margin and those corners there;
+ * beside the bare nav rail -- or with no chrome at all -- nothing supplies
+ * them, so the sheet keeps the frame on all four sides.
  */
 export function WorkspaceInset({
   beside = "chat-list",
   children,
   framed = true,
-  joined = false,
   className,
 }: {
   readonly beside?: "chat-list" | "nav-rail" | "nothing";
   readonly children: ReactNode;
   /** A shell-owned sidebar supplies the shared frame outside this boundary. */
   readonly framed?: boolean;
-  /** The chat list is the sheet's left part and supplies its left corners. */
-  readonly joined?: boolean;
   readonly className?: string;
 }) {
   return (
@@ -61,9 +59,9 @@ export function WorkspaceInset({
         framed
           ? "before:absolute before:inset-0 before:-z-1 before:bg-workspace-canvas before:bg-workspace-canvas-image before:bg-[length:100%_100%] before:content-[''] bg-background md:m-2 md:rounded-2xl md:border md:border-border [anchor-name:--workspace-canvas]"
           : "bg-transparent"
-      } ${framed && beside === "chat-list" ? "md:ml-0" : ""} ${
-        framed && joined && beside === "chat-list" ? "md:rounded-l-none" : ""
-      } ${className ?? ""}`}
+      } ${framed && beside === "chat-list" ? "md:ml-0 md:rounded-l-none" : ""} ${
+        className ?? ""
+      }`}
       data-testid="workspace-inset"
       // The chrome the sheet is framed against, so the rendered layout case is
       // readable as data rather than inferred from the margin utility.

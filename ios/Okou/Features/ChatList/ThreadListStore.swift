@@ -1,3 +1,4 @@
+import CCState
 import ChatData
 import ChatDomain
 import Foundation
@@ -10,9 +11,9 @@ final class ThreadListStore {
   private(set) var agents: [AgentRecord] = []
   private(set) var pinnedAgentIDs: [String] = []
   private(set) var unreadAgentIDs: Set<String> = []
-  private var archivingEnabled: Bool?
-  var canArchiveChats: Bool { archivingEnabled == true }
-  private(set) var canMuteChats = false
+  var hasUnreadThreads: Bool {
+    threads.contains { !$0.isMuted && $0.indicator == .unread }
+  }
   var onlyUnread = false
   private(set) var markingAgentRead = false
   private var readRevision = 0
@@ -27,8 +28,10 @@ final class ThreadListStore {
   private(set) var updatingThreads: Set<String> = []
   private let client: APIClient
   private let sync: ChatSync
+  private let resources: WorkspaceResources
   private let commands: ChatCommands
   private let didRefresh: @MainActor ([ChatThread]) -> Void
+  private let didLoadAgents: @MainActor ([AgentRecord]) -> Void
   private let didFail: @MainActor (Error) -> Void
   private let readRetrySleep: @Sendable (Duration) async throws -> Void
   private var refreshAgain = false
@@ -40,6 +43,11 @@ final class ThreadListStore {
   private var navigationTask: Task<Void, Never>?
   private var navigationRevision = 0
   private var restoredNavigation = false
+  private var receivedAgents = false
+  private var receivedPreferences = false
+  private let navigationLifetime = CCState.State(true)
+  @ObservationIgnored private var agentsPublication: Task<[AgentRecord], Error>?
+  @ObservationIgnored private var preferencesPublication: Task<SidebarPreferences, Error>?
   private var indicatorsTask: Task<Void, Never>?
   private var updateTasks: [String: Task<Void, Never>] = [:]
   private var pinTasks: [String: Task<Void, Never>] = [:]
@@ -58,17 +66,20 @@ final class ThreadListStore {
   private var blocked = false
 
   init(
-    client: APIClient, sync: ChatSync, commands: ChatCommands,
+    client: APIClient, sync: ChatSync, commands: ChatCommands, resources: WorkspaceResources,
     didRefresh: @escaping @MainActor ([ChatThread]) -> Void,
     didFail: @escaping @MainActor (Error) -> Void,
+    didLoadAgents: @escaping @MainActor ([AgentRecord]) -> Void = { _ in },
     readRetrySleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     }
   ) {
     self.client = client
     self.sync = sync
+    self.resources = resources
     self.commands = commands
     self.didRefresh = didRefresh
+    self.didLoadAgents = didLoadAgents
     self.didFail = didFail
     self.readRetrySleep = readRetrySleep
   }
@@ -80,9 +91,12 @@ final class ThreadListStore {
       let cached = await sync.cachedNavigation()
       guard !closed, !Task.isCancelled else { return }
       if let cached, !restoredNavigation, navigationRevision == revision {
-        agents = cached.agents
-        pinnedAgentIDs = cached.preferences.pinnedAgentIds
-        applySwitches(cached.featureSwitches)
+        // A SwiftUI subscriber can finish a read while disk restoration is suspended.
+        if !receivedAgents {
+          agents = cached.agents
+          didLoadAgents(agents)
+        }
+        if !receivedPreferences { pinnedAgentIDs = cached.preferences.pinnedAgentIds }
       }
       restoredNavigation = true
     }
@@ -104,6 +118,71 @@ final class ThreadListStore {
     appliedThreadSequence = cached.cursor.seqID
     projectThreads(restored)
   }
+
+  var stateStore: CCState.Store { resources.store }
+
+  /// SwiftUI and business consumers share these publications, not a second request state.
+  @ObservationIgnored lazy var agentsValue = Computed<Task<[AgentRecord], Error>> {
+    [weak self] get, options in
+    guard let self, try get(navigationLifetime), !closed, !blocked else {
+      throw CancellationError()
+    }
+    let pending = try get(resources.agentRecords)
+    let signal = options.signal
+    let task = Task.immediate { @MainActor [weak self] in
+      do {
+        let agents = try await pending.value
+        try signal.checkCancellation()
+        try Task.checkCancellation()
+        guard let self, !closed, !blocked else { throw CancellationError() }
+        receivedAgents = true
+        self.agents = agents
+        didLoadAgents(agents)
+        return agents
+      } catch {
+        if !Task.isCancelled, !signal.isCancelled { self?.reportNavigationFailure(error) }
+        throw error
+      }
+    }
+    agentsPublication = task
+    signal.onCancel { task.cancel() }
+    return task
+  }
+
+  @ObservationIgnored lazy var preferencesValue = Computed<Task<SidebarPreferences, Error>> {
+    [weak self] get, options in
+    guard let self, try get(navigationLifetime), !closed, !blocked else {
+      throw CancellationError()
+    }
+    let pending = try get(resources.pinnedPreferences)
+    let signal = options.signal
+    let task = Task.immediate { @MainActor [weak self] in
+      do {
+        let preferences = try await pending.value
+        try signal.checkCancellation()
+        try Task.checkCancellation()
+        guard let self, !closed, !blocked else { throw CancellationError() }
+        receivedPreferences = true
+        pinnedAgentIDs = preferences.pinnedAgentIds
+        return preferences
+      } catch {
+        if !Task.isCancelled, !signal.isCancelled { self?.reportNavigationFailure(error) }
+        throw error
+      }
+    }
+    preferencesPublication = task
+    signal.onCancel { task.cancel() }
+    return task
+  }
+
+  @ObservationIgnored lazy var pinnedAgentsValue: Computed<Task<[AgentRecord], Error>> =
+    computedTask {
+      [agentsValue, preferencesValue] get, _ in
+      let agents = try get(agentsValue)
+      let preferences = try get(preferencesValue)
+      return try await ThreadListStore.pinnedAgents(
+        agents: agents.value, preferences: preferences.value)
+    }
 
   func refreshNavigation() async {
     guard !closed, !blocked, !Task.isCancelled else { return }
@@ -130,53 +209,56 @@ final class ThreadListStore {
     guard !closed, !blocked, !Task.isCancelled else { return }
     navigationRevision += 1
     do {
-      let result: [AgentRecord] = try await client.request("/api/agents")
-      guard !closed, !Task.isCancelled else { return }
-      agents = result
-      let preferences: SidebarPreferences = try await client.request("/api/user-preferences")
-      guard !closed, !Task.isCancelled else { return }
-      pinnedAgentIDs = preferences.pinnedAgentIds
-      navigationError = nil
+      let reads = try resources.navigation(refresh: navigationRevision > 1)
+      let agents = try stateStore.get(agentsValue)
+      let preferences = try stateStore.get(preferencesValue)
+      // Each publication settles independently, even while this caller awaits both.
+      let (agentResult, preferenceResult) = await withTaskCancellationHandler {
+        (await agents.result, await preferences.result)
+      } onCancel: {
+        agents.cancel()
+        preferences.cancel()
+        reads.agents.cancel()
+        reads.preferences.cancel()
+      }
+      guard !closed, !blocked, !Task.isCancelled else { return }
+      var failure: Error?
+      if case .failure(let error) = agentResult { failure = error }
+      if case .failure(let error) = preferenceResult { failure = error }
+      // This is the aggregate synchronization summary; views read each original Task.
+      navigationError = failure?.localizedDescription
+      if case .success(let agents) = agentResult,
+        case .success(let preferences) = preferenceResult
+      {
+        await sync.persistNavigation(
+          SidebarNavigationSnapshot(agents: agents, preferences: preferences))
+      }
     } catch is CancellationError {
       return
-    } catch let error as APIClientError where error.statusCode == 409 {
-      guard !closed, !Task.isCancelled else { return }
-      pinnedAgentIDs = []
-      navigationError = nil
     } catch {
       guard !closed, !Task.isCancelled else { return }
       navigationError = error.localizedDescription
       didFail(error)
     }
-    guard !closed, !blocked, !Task.isCancelled else { return }
-    let switches: SidebarFeatureSwitches
-    do {
-      switches = try await client.request("/api/feature-switches")
-    } catch {
-      guard !closed, !Task.isCancelled else { return }
-      didFail(error)
-      return
-    }
-    guard !closed, !Task.isCancelled else { return }
-    // Keep this workspace's last successful flags until a new response replaces them.
-    applySwitches(switches)
-    if navigationError == nil {
-      await sync.persistNavigation(
-        SidebarNavigationSnapshot(
-          agents: agents, preferences: SidebarPreferences(pinnedAgentIds: pinnedAgentIDs),
-          featureSwitches: switches))
-    }
-  }
-
-  private func applySwitches(_ switches: SidebarFeatureSwitches) {
-    archivingEnabled = switches.effectiveSwitches["chatThreadArchiving"] == true
-    canMuteChats = switches.effectiveSwitches["chatThreadMuting"] == true
   }
 
   var visiblePinnedAgents: [AgentRecord] {
+    Self.pinnedAgents(
+      agents: agents, preferences: SidebarPreferences(pinnedAgentIds: pinnedAgentIDs))
+  }
+
+  private static func pinnedAgents(agents: [AgentRecord], preferences: SidebarPreferences)
+    -> [AgentRecord]
+  {
     let defaultID = agents.first(where: \.isDefaultAgent)?.agentId
-    let ids = [defaultID].compactMap { $0 } + pinnedAgentIDs.filter { $0 != defaultID }
+    let ids = [defaultID].compactMap { $0 } + preferences.pinnedAgentIds.filter { $0 != defaultID }
     return ids.compactMap { id in agents.first(where: { $0.agentId == id }) }
+  }
+
+  private func reportNavigationFailure(_ failure: Error) {
+    guard !closed, !(failure is CancellationError) else { return }
+    blocked = (failure as? APIClientError)?.statusCode == 426
+    didFail(failure)
   }
 
   func refresh(waitForCurrent: Bool = false) async {
@@ -317,9 +399,7 @@ final class ThreadListStore {
         // PWA's unread list includes archived chats and retains active-indicator precedence.
         return !$0.isMuted && $0.indicator == .unread
       }
-      // Cached recent chats can render before switches arrive. Keep archived
-      // chats in their own section until the server resolves that visibility.
-      return archivingEnabled == false || $0.isArchived == archived
+      return $0.isArchived == archived
     }
   }
 
@@ -453,7 +533,7 @@ final class ThreadListStore {
   }
 
   func canMute(_ id: String) -> Bool {
-    canUpdate(id) && (canMuteChats || threads.first(where: { $0.id == id })?.isMuted == true)
+    canUpdate(id)
   }
 
   @discardableResult
@@ -462,7 +542,7 @@ final class ThreadListStore {
     onFailure: (@MainActor (String) -> Void)? = nil,
     didBegin: @MainActor () -> Void = {}
   ) async -> Bool {
-    guard canArchiveChats, canUpdate(thread.id), !Task.isCancelled else { return false }
+    guard canUpdate(thread.id), !Task.isCancelled else { return false }
     if !optimisticChanges.contains(where: { $0.id == eventID }) {
       optimisticChanges.append(
         (
@@ -609,6 +689,11 @@ final class ThreadListStore {
     closed = true
     cancelRefresh()
     navigationTask?.cancel()
+    agentsPublication?.cancel()
+    preferencesPublication?.cancel()
+    agentsPublication = nil
+    preferencesPublication = nil
+    do { try stateStore.set(navigationLifetime, false) } catch { didFail(error) }
     for task in updateTasks.values { task.cancel() }
     for task in pinTasks.values { task.cancel() }
     cancelRename()

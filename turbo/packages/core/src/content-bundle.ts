@@ -1,16 +1,7 @@
 import { createHash } from "node:crypto";
-import {
-  chmod,
-  mkdtemp,
-  mkdir,
-  writeFile,
-  readFile,
-  rm,
-} from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
 import { gunzipSync } from "node:zlib";
-import { create, Parser } from "tar";
+import { Parser } from "tar";
+import { prepareCanonicalBundleArchive } from "./content-bundle-archive";
 import {
   contentBundleSchema,
   type ContentBundle,
@@ -77,38 +68,12 @@ export async function prepareContentBundle(
   readonly archive: Buffer;
 }> {
   const files = validateFiles(input);
-  const root = await mkdtemp(join(tmpdir(), "content-bundle-"));
-  try {
-    const directory = join(root, "files");
-    for (const file of files) {
-      const path = join(directory, file.path);
-      await mkdir(dirname(path), { recursive: true });
-      await writeFile(path, file.content, { mode: 0o600 });
-      await chmod(path, file.mode ?? 0o600);
-    }
-    const archivePath = join(root, "archive.tar.gz");
-    await create(
-      {
-        cwd: directory,
-        file: archivePath,
-        gzip: { portable: true },
-        portable: true,
-        mtime: new Date(0),
-        noDirRecurse: true,
-      },
-      files.map((file) => {
-        return file.path;
-      }),
-    );
-    const archive = await readFile(archivePath);
-    const descriptor = contentBundleSchema.parse({
-      sha256: contentBundleDigest(archive),
-      archiveBytes: archive.length,
-    });
-    return { descriptor, archive };
-  } finally {
-    await rm(root, { recursive: true, force: true });
-  }
+  const archive = await prepareCanonicalBundleArchive(files);
+  const descriptor = contentBundleSchema.parse({
+    sha256: contentBundleDigest(archive),
+    archiveBytes: archive.length,
+  });
+  return { descriptor, archive };
 }
 
 /** Verify complete compressed bytes before admitting any extracted member. */

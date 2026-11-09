@@ -1,0 +1,4 @@
+# This target is test support, not production transport or storage.
+disabled_rules:
+  - force_cast
+  - force_try

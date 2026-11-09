@@ -1,15 +1,22 @@
 export type BrowserUpgradeTarget =
-  "browser" | "chrome" | "chromium" | "ios" | "safari";
+  "browser" | "chrome" | "chromium" | "edge" | "firefox" | "ios" | "safari";
 
 export interface BrowserUpgrade {
   readonly actionUrl: string;
   readonly target: BrowserUpgradeTarget;
 }
 
+// Native CSS sign() sets the desktop Chromium floor. Android also needs
+// SharedWorker, which Chromium first enabled there in 148. Tailwind v4 requires
+// Firefox 128, and stable scrollbar gutters require Safari/iOS 18.2.
+const MINIMUM_CHROMIUM_VERSION = 138;
+const MINIMUM_ANDROID_CHROMIUM_VERSION = 148;
+const MINIMUM_FIREFOX_VERSION = 128;
+
 function supportsAppleVersion(match: RegExpExecArray): boolean {
   const major = Number(match[1]);
   const minor = Number(match[2] ?? 0);
-  return major > 16 || (major === 16 && minor >= 4);
+  return major > 18 || (major === 18 && minor >= 2);
 }
 
 function browserUpgradeForUserAgent(userAgent: string): BrowserUpgrade | null {
@@ -25,19 +32,47 @@ function browserUpgradeForUserAgent(userAgent: string): BrowserUpgrade | null {
         };
   }
 
+  const firefoxMatch = /\bFirefox\/(\d+)/.exec(userAgent);
+  if (firefoxMatch) {
+    return Number(firefoxMatch[1]) >= MINIMUM_FIREFOX_VERSION
+      ? null
+      : {
+          actionUrl: "https://www.mozilla.org/firefox/new/",
+          target: "firefox",
+        };
+  }
+
+  const isAndroid = /\bAndroid\b/.test(userAgent);
   const chromiumMatch = /\bChromium\/(\d+)/.exec(userAgent);
   const chromeMatch = /\b(?:Chrome|CriOS|HeadlessChrome)\/(\d+)/.exec(
     userAgent,
   );
-  if (
-    (chromiumMatch || chromeMatch) &&
-    !/\b(?:Edg|OPR|SamsungBrowser)\//.test(userAgent)
-  ) {
+  if (chromiumMatch || chromeMatch) {
     const match = chromiumMatch ?? chromeMatch;
-    const target = chromiumMatch ? "chromium" : "chrome";
-    if (Number(match?.[1]) >= 111) {
+    const minimumVersion = isAndroid
+      ? MINIMUM_ANDROID_CHROMIUM_VERSION
+      : MINIMUM_CHROMIUM_VERSION;
+    if (Number(match?.[1]) >= minimumVersion) {
       return null;
     }
+
+    // A Chrome token identifies the rendering engine, not necessarily the app.
+    // Embedded browsers and other brands cannot update via Chrome's controls.
+    if (
+      /\b(?:wv|MicroMessenger)\b|\b(?:OPR|SamsungBrowser)\//.test(userAgent)
+    ) {
+      return {
+        actionUrl: "https://www.google.com/chrome/",
+        target: "browser",
+      };
+    }
+    if (/\b(?:Edg|EdgA)\//.test(userAgent)) {
+      return {
+        actionUrl: "https://www.microsoft.com/edge/download",
+        target: "edge",
+      };
+    }
+    const target = chromiumMatch ? "chromium" : "chrome";
     return {
       actionUrl:
         target === "chromium"
@@ -51,6 +86,7 @@ function browserUpgradeForUserAgent(userAgent: string): BrowserUpgrade | null {
     userAgent,
   );
   if (
+    !isAndroid &&
     safariMatch &&
     !/\b(?:Chrome|CriOS|Chromium|Edg|OPR|FxiOS)\//.test(userAgent)
   ) {

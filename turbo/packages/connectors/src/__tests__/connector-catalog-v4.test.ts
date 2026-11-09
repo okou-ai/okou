@@ -47,6 +47,23 @@ function publishedCatalog() {
   return connectorCatalogArtifactSchema.parse(value);
 }
 
+function contractedSkillCatalog() {
+  const artifact = publishedCatalog();
+  for (const connector of artifact.connectors) {
+    if (connector.skill.kind === "bundled") {
+      const skill = connector.skill;
+      connector.skill = {
+        kind: skill.kind,
+        versionId: skill.versionId,
+        size: skill.size,
+        archiveSize: skill.archiveSize,
+        fileCount: skill.fileCount,
+      };
+    }
+  }
+  return artifact;
+}
+
 function requiredConnector(
   artifact: ConnectorCatalogArtifact,
   slug: string,
@@ -114,6 +131,72 @@ describe("v4 connector catalog reader", () => {
         return method.connectorSlug === "plaud-mcp";
       }),
     ).toBeUndefined();
+  });
+
+  it("reads contracted Skill descriptors without changing source identity or entry bytes", () => {
+    const artifact = contractedSkillCatalog();
+
+    const decoded = decode(artifact);
+    expect(decoded).toEqual(artifact);
+    const skillConnector = requiredConnector(decoded, "019sms");
+    expect(skillConnector.skill).toStrictEqual({
+      kind: "bundled",
+      versionId:
+        "8a4b16358576e79605485937b68623bf85e12ff932ef36a983a032d7ebb2245c",
+      size: 15892,
+      archiveSize: 4528,
+      fileCount: 1,
+    });
+    expect(
+      JSON.parse(connectorCatalogEntryPayload(skillConnector).toString("utf8")),
+    ).toEqual(skillConnector);
+  });
+
+  it.each([
+    { storageName: "connector-skill@019sms" },
+    {
+      storageVersionPrefix:
+        "__system__/volume/connector-skill@019sms/8a4b16358576e79605485937b68623bf85e12ff932ef36a983a032d7ebb2245c",
+    },
+  ])(
+    "rejects an incomplete Storage descriptor during contraction: %j",
+    (storage) => {
+      const artifact = contractedSkillCatalog();
+      const rawBytes = Buffer.from(
+        JSON.stringify({
+          ...artifact,
+          connectors: artifact.connectors.map((connector) => {
+            return connector.slug === "019sms"
+              ? { ...connector, skill: { ...connector.skill, ...storage } }
+              : connector;
+          }),
+        }),
+      );
+      expect(() => {
+        validateConnectorCatalogCandidateBytes({
+          rawBytes,
+          pointer: catalogPointer(artifact.catalogVersion, rawBytes),
+        });
+      }).toThrow("invalid-artifact");
+    },
+  );
+
+  it("rejects shared source versions between contracted Skill owners", () => {
+    const artifact = contractedSkillCatalog();
+    const first = requiredConnector(artifact, "019sms");
+    const second = requiredConnector(artifact, "ahrefs");
+    if (first.skill.kind !== "bundled" || second.skill.kind !== "bundled") {
+      throw new Error("Expected bundled Skill fixtures");
+    }
+    second.skill = { ...second.skill, versionId: first.skill.versionId };
+    expect(() => {
+      decode(artifact);
+    }).toThrow(
+      expect.objectContaining({
+        code: "relationship-mismatch",
+        relationshipRule: "duplicate-skill-version-owner",
+      }),
+    );
   });
 
   it("binds candidates to the supported schema, release, and digest", () => {

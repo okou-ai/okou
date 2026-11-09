@@ -22,6 +22,8 @@ desktop_manifest_r2_reader_floor=$(<"${repo_root}/.github/rollback-floors/deskto
 data_router_stateless_mcp_api_floor=$(<"${repo_root}/.github/rollback-floors/data-router-stateless-mcp-api")
 official_workflow_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/official-workflow-bundle-reader")
 registry_archive_reader_floor=$(<"${repo_root}/.github/rollback-floors/registry-archive-reader")
+template_guidance_bundle_reader_floor=$(<"${repo_root}/.github/rollback-floors/template-guidance-bundle-reader")
+template_guidance_bundle_writer_floor=$(<"${repo_root}/.github/rollback-floors/template-guidance-bundle-writer")
 content_bundle_reference_api_floor=$(<"${repo_root}/.github/rollback-floors/content-bundle-reference-only-api")
 home_cache_capacity_reader_floor=$(<"${repo_root}/.github/rollback-floors/home-cache-capacity-reader")
 
@@ -32,10 +34,34 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "7474747474747474747474747474747474747474" ]; then
+    if [ "${3:-}" = "deadc0dedeadc0dedeadc0dedeadc0dedeadc0de" ]; then
+      [ "${MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "f00df00df00df00df00df00df00df00df00df00d" ]; then
+      [ "${MOCK_SINGLE_CHARACTER_SKILL_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "beefbeefbeefbeefbeefbeefbeefbeefbeefbeef" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_SINGLE_CHARACTER_SKILL_RUNNER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_SINGLE_CHARACTER_SKILL_RUNNER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "7474747474747474747474747474747474747474" ]; then
       [ "${MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "7373737373737373737373737373737373737373" ]; then
       [ "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "$MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_ON_MAIN:-1}" = "1" ]
+      else
+        [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_VALID:-1}" = "1" ]
+      fi
+    elif [ "${3:-}" = "$MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR" ] || [ "${3:-}" = "6363636363636363636363636363636363636363" ]; then
+      if [ "${4:-}" = "origin/main" ]; then
+        [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_ON_MAIN:-1}" = "1" ]
+      elif [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
+        [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_RUNNER_VALID:-1}" = "1" ]
+      else
+        [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_API_VALID:-1}" = "1" ]
+      fi
     elif [ "${3:-}" = "$MOCK_REGISTRY_ARCHIVE_READER_FLOOR" ]; then
       if [ "${4:-}" = "origin/main" ]; then
         [ "${MOCK_REGISTRY_ARCHIVE_READER_ON_MAIN:-1}" = "1" ]
@@ -146,6 +172,10 @@ case "${1:-}" in
       [ "${MOCK_RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "94389e2203aaa62408b780156c2cf8f9a9cc5414" ]; then
       [ "${MOCK_MEMBER_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "222d8618346194b5af227c5e147a0076181ee3e0" ]; then
+      [ "${MOCK_PROACTIVE_ACTION_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "11b6837e854dcd643e31ca309b450b7a15a5de37" ]; then
+      [ "${MOCK_ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_FLOOR_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "c8de6212dc54a5aae0d4658acf1afa6a35f939ab" ]; then
       if [ "${4:-}" = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" ]; then
         [ "${MOCK_DAV_RUNNER_READER_VALID:-1}" = "1" ]
@@ -297,6 +327,14 @@ case "${1:-}" in
     fi
     ;;
   log)
+    if [[ "$*" == *rollback-floors/single-character-skill-capability-free-api* ]]; then
+      printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT-deadc0dedeadc0dedeadc0dedeadc0dedeadc0de}"
+      exit 0
+    fi
+    if [[ "$*" == *rollback-floors/single-character-skill-bundle-reader* ]]; then
+      printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_API_COMMIT-f00df00df00df00df00df00df00df00df00df00d}"
+      exit 0
+    fi
     if [[ "$*" == *rollback-floors/connector-skill-bundle-claims* ]]; then
       printf '%s\n' "${MOCK_CONNECTOR_SKILL_BUNDLE_CLAIMS_COMMIT-7474747474747474747474747474747474747474}"
       exit 0
@@ -407,6 +445,21 @@ case "${1:-}" in
     printf 'vm0-v1.2.3\n'
     ;;
   show)
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/single-character-skill-bundle-reader" ]; then
+      [ "${MOCK_SINGLE_CHARACTER_SKILL_READ_FAIL:-0}" = "0" ] || exit 1
+      printf '%s\n' "${MOCK_SINGLE_CHARACTER_SKILL_RUNNER_COMMIT-beefbeefbeefbeefbeefbeefbeefbeefbeefbeef}"
+      exit 0
+    fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/template-guidance-bundle-writer" ]; then
+      [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_COMMIT-$MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR}"
+      exit 0
+    fi
+    if [ "${2:-}" = "origin/main:.github/rollback-floors/template-guidance-bundle-reader" ]; then
+      [ "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_AVAILABLE:-1}" = "1" ] || exit 128
+      printf '%s\n' "${MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_COMMIT-$MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR}"
+      exit 0
+    fi
     if [ "${2:-}" = "origin/main:.github/rollback-floors/registry-archive-reader" ]; then
       [ "${MOCK_REGISTRY_ARCHIVE_READER_AVAILABLE:-1}" = "1" ] || exit 128
       printf '%s\n' "${MOCK_REGISTRY_ARCHIVE_READER_COMMIT-$MOCK_REGISTRY_ARCHIVE_READER_FLOOR}"
@@ -548,6 +601,8 @@ run_resolver() {
     MOCK_HOME_CACHE_CAPACITY_READER_FLOOR="$home_cache_capacity_reader_floor" \
     MOCK_OFFICIAL_WORKFLOW_BUNDLE_READER_FLOOR="$official_workflow_bundle_reader_floor" \
     MOCK_REGISTRY_ARCHIVE_READER_FLOOR="$registry_archive_reader_floor" \
+    MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_FLOOR="$template_guidance_bundle_reader_floor" \
+    MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_FLOOR="$template_guidance_bundle_writer_floor" \
     MOCK_CONTENT_BUNDLE_REFERENCE_API_FLOOR="$content_bundle_reference_api_floor" \
     TARGET_COMMIT="$target_commit" \
     VERCEL_ORG_ID=test-org \
@@ -2117,6 +2172,20 @@ assert_failure "Rollback target predates the retired member preference mapping" 
 if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
   fail "Retired member preference mapping must reject before artifact or host access"
 fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired proactive action preference mapping" \
+  run_resolver "${tmp_dir}/proactive-action-floor.output" MOCK_PROACTIVE_ACTION_PREFERENCE_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/proactive-action-floor.output" ] || fail "proactive-action-floor-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Retired proactive action preference mapping must reject before artifact or host access"
+fi
+: >"${tmp_dir}/boundaries.log"
+assert_failure "Rollback target predates the retired artifacts auto-open preference mapping" \
+  run_resolver "${tmp_dir}/artifact-auto-open-floor.output" MOCK_ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_FLOOR_VALID=0
+[ ! -s "${tmp_dir}/artifact-auto-open-floor.output" ] || fail "artifact-auto-open-floor-dependent API must not publish rollback outputs"
+if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+  fail "Retired artifacts auto-open preference mapping must reject before artifact or host access"
+fi
 
 assert_failure "Cannot resolve the merged direct Workflow attachment runtime" \
   run_resolver "${tmp_dir}/workflow-attachment-missing.output" MOCK_WORKFLOW_ATTACHMENT_COMMIT=
@@ -2163,6 +2232,50 @@ for official_bundle_case in \
     fail "Official bundle reader floor must reject before provider or host access"
   fi
 done
+
+for template_writer_case in \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_AVAILABLE=0|Cannot read the template guidance bundle writer rollback floor from main" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_COMMIT=invalid|Missing or invalid template guidance bundle writer rollback floor" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_ON_MAIN=0|Template guidance bundle writer rollback floor is not on main" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_WRITER_VALID=0|Rollback target predates bundle-only template publication"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${template_writer_case#*|}" \
+    run_resolver "${tmp_dir}/template-writer.output" "${template_writer_case%%|*}"
+  [ ! -s "${tmp_dir}/template-writer.output" ] || fail "legacy template writer must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "template writer floor must reject before provider or host access"
+  fi
+done
+
+for template_reader_case in \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_AVAILABLE=0|Cannot read the template guidance bundle reader rollback floor from main" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_COMMIT=|Missing or invalid template guidance bundle reader rollback floor" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_COMMIT=invalid|Missing or invalid template guidance bundle reader rollback floor" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_ON_MAIN=0|Template guidance bundle reader rollback floor is not on main" \
+  "MOCK_TEMPLATE_GUIDANCE_BUNDLE_API_VALID=0|Rollback target predates template guidance bundle readers"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${template_reader_case#*|}" \
+    run_resolver "${tmp_dir}/template-reader.output" "${template_reader_case%%|*}"
+  [ ! -s "${tmp_dir}/template-reader.output" ] || fail "incompatible template API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh) ' "${tmp_dir}/boundaries.log"; then
+    fail "template API reader floor must reject before provider or host access"
+  fi
+done
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates template guidance bundle readers" \
+  run_resolver "${tmp_dir}/template-runner.output" MOCK_TEMPLATE_GUIDANCE_BUNDLE_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/template-runner.output" ] || fail "incompatible template Runner must not publish rollback outputs"
+if grep -Eq '^ssh |releases/tags/' "${tmp_dir}/boundaries.log"; then
+  fail "template Runner floor must reject before Runner artifact or host access"
+fi
+
+# A main policy update is authoritative even when the selected artifact is old.
+run_resolver "${tmp_dir}/template-reader-main.output" \
+  MOCK_TEMPLATE_GUIDANCE_BUNDLE_READER_COMMIT=6363636363636363636363636363636363636363 \
+  >"${tmp_dir}/template-reader-main.log"
+grep -Fxq "git merge-base --is-ancestor 6363636363636363636363636363636363636363 ${target_commit}" "${tmp_dir}/boundaries.log" || fail "template API must obey current main's floor"
+grep -Fxq "git merge-base --is-ancestor 6363636363636363636363636363636363636363 bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" "${tmp_dir}/boundaries.log" || fail "template Runner must obey current main's floor"
 
 for registry_reader_case in \
   "MOCK_REGISTRY_ARCHIVE_READER_AVAILABLE=0|Cannot read the Registry archive reader rollback floor from main" \
@@ -2231,6 +2344,42 @@ for expectation in \
   [ ! -s "${tmp_dir}/connector-skill-bundle-claims.output" ] || fail "incompatible Connector claim reader must not publish rollback outputs"
   if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
     fail "Connector claim reader floor must fail before artifact or host access"
+  fi
+done
+
+for expectation in \
+  "MOCK_SINGLE_CHARACTER_SKILL_READ_FAIL=1|Cannot read the single-character Skill Runner reader rollback floor from main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_RUNNER_COMMIT=|Missing or invalid single-character Skill Runner reader rollback floor" \
+  "MOCK_SINGLE_CHARACTER_SKILL_RUNNER_COMMIT=invalid|Missing or invalid single-character Skill Runner reader rollback floor" \
+  "MOCK_SINGLE_CHARACTER_SKILL_RUNNER_ON_MAIN=0|Single-character Skill Runner reader rollback floor is not on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_API_COMMIT=|Cannot resolve the merged single-character Skill API reader on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_API_COMMIT=invalid|Cannot resolve the merged single-character Skill API reader on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_API_VALID=0|Rollback target predates the single-character Skill API reader"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" run_resolver "${tmp_dir}/single-character-api.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/single-character-api.output" ] || fail "incompatible Skill readers must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "invalid Skill API floors must fail before artifact or host access"
+  fi
+done
+
+: >"${tmp_dir}/boundaries.log"
+assert_failure "predates single-character Skill bundle support" \
+  run_resolver "${tmp_dir}/single-character-runner.output" MOCK_SINGLE_CHARACTER_SKILL_RUNNER_VALID=0
+[ ! -s "${tmp_dir}/single-character-runner.output" ] || fail "incompatible Skill Runner must not publish rollback outputs"
+if grep -Eq '^ssh ' "${tmp_dir}/boundaries.log"; then
+  fail "invalid Skill Runner floors must fail before host access"
+fi
+
+for expectation in \
+  "MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT=|Cannot resolve the merged capability-free single-character Skill API on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_COMMIT=invalid|Cannot resolve the merged capability-free single-character Skill API on main" \
+  "MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_VALID=0|Rollback target predates capability-free single-character Skill claims"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" run_resolver "${tmp_dir}/single-character-capability-free-api.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/single-character-capability-free-api.output" ] || fail "incompatible Skill claim API must not publish rollback outputs"
+  if grep -Eq '^(curl|ssh|git rev-list) ' "${tmp_dir}/boundaries.log"; then
+    fail "capability-free Skill claim floor must fail before artifact or host access"
   fi
 done
 

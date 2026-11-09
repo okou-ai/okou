@@ -190,6 +190,8 @@ async fn upgraded_server(
 ) -> Upgraded {
     loop {
         let (socket, _) = listener.accept().await.unwrap();
+        // Small synthetic DERP/TLS writes must not wait for Nagle coalescing.
+        socket.set_nodelay(true).unwrap();
         if let Some(tls) = &tls {
             match tokio_rustls::TlsAcceptor::from(Arc::clone(tls))
                 .accept(socket)

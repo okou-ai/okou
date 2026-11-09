@@ -2,22 +2,24 @@ import type { UserNotification } from "@okouai/api-contracts/contracts/user-noti
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
-import { Bell, ChevronLeft, ChevronRight } from "lucide-react";
+import { Bell, ChevronRight } from "lucide-react";
 import {
-  Button,
   Dialog,
   DialogContent,
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  IconButton,
+} from "@okouai/ui/components/ui/dialog";
+import { Button } from "@okouai/ui/components/ui/button";
+import { IconButton } from "@okouai/ui/components/ui/icon-button";
+import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-  Skeleton,
-  cn,
-  useMediaQuery,
-} from "@okouai/ui";
+} from "@okouai/ui/components/ui/popover";
+import { Skeleton } from "@okouai/ui/components/ui/skeleton";
+import { cn } from "@okouai/ui/lib/utils";
+import { useMediaQuery } from "@okouai/ui";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
@@ -32,6 +34,7 @@ import {
   formatRelativeTimestamp,
 } from "../../i18n/format.ts";
 import { Markdown } from "../components/markdown.tsx";
+import { CarouselNavigation } from "../components/carousel-navigation.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 
 function InboxSkeleton() {
@@ -93,7 +96,7 @@ function ReadError({ inbox }: { readonly inbox: NotificationInbox }) {
 function NotificationHeader({ item }: { readonly item: UserNotification }) {
   const { t } = useTranslation();
   return (
-    <DialogHeader className="space-y-3 pr-7">
+    <DialogHeader className="space-y-3 pr-7 text-left">
       <DialogDescription>
         {t(($) => {
           return $.userNotifications.sender;
@@ -152,8 +155,10 @@ function CarouselNotification({
 }) {
   const { t } = useTranslation();
   const selection = useGet(inbox.pageSelection$);
-  const index = useGet(selection.pageIndex$);
-  const selectPage = useSet(selection.selectPage$);
+  const index = useGet(selection.index$);
+  const selectPage = useSet(selection.select$);
+  const beginSwipe = useSet(selection.beginSwipe$);
+  const endSwipe = useSet(selection.endSwipe$);
   const mounted = useSet(inbox.detailRef$);
   const page = pages[index];
   if (!page) {
@@ -163,27 +168,47 @@ function CarouselNotification({
   const bodyId = `${inbox.descriptionId}-page-body`;
   return (
     <>
-      <div ref={mounted} className="min-w-0 space-y-5">
+      <div ref={mounted} className="min-w-0 space-y-4">
         <NotificationHeader item={item} />
-        <div className="flex items-center justify-end gap-2">
-          <IconButton
-            aria-label={t(($) => {
-              return $.userNotifications.previousPage;
-            })}
-            aria-controls={bodyId}
-            disabled={index === 0}
-            className="size-8 shrink-0 text-muted-foreground pointer-coarse:size-11"
-            onClick={() => {
-              selectPage(index - 1);
-            }}
-          >
-            <ChevronLeft className="size-4" aria-hidden="true" />
-          </IconButton>
-          <span
-            id={counterId}
-            aria-live="polite"
-            className="w-32 shrink-0 text-center text-xs tabular-nums text-muted-foreground"
-          >
+        <div
+          className="touch-pan-y touch-pinch-zoom"
+          onTouchStart={(event) => {
+            const touch = event.touches[0];
+            const interactive =
+              event.target instanceof Element &&
+              event.target.closest(
+                "button, a, input, select, textarea, video, audio, [contenteditable]",
+              );
+            beginSwipe(
+              event.touches.length === 1 && touch && !interactive
+                ? {
+                    identifier: touch.identifier,
+                    x: touch.clientX,
+                    y: touch.clientY,
+                  }
+                : null,
+            );
+          }}
+          onTouchEnd={(event) => {
+            const touch = event.changedTouches[0];
+            endSwipe(
+              event.touches.length === 0 &&
+                event.changedTouches.length === 1 &&
+                touch
+                ? {
+                    identifier: touch.identifier,
+                    x: touch.clientX,
+                    y: touch.clientY,
+                  }
+                : null,
+              pages.length,
+            );
+          }}
+          onTouchCancel={() => {
+            beginSwipe(null);
+          }}
+        >
+          <span id={counterId} aria-live="polite" className="sr-only">
             {t(
               ($) => {
                 return $.userNotifications.pageOf;
@@ -194,37 +219,50 @@ function CarouselNotification({
               },
             )}
           </span>
-          <IconButton
-            aria-label={t(($) => {
-              return $.userNotifications.nextPage;
-            })}
-            aria-controls={bodyId}
-            disabled={index === pages.length - 1}
-            className="size-8 shrink-0 text-muted-foreground pointer-coarse:size-11"
-            onClick={() => {
-              selectPage(index + 1);
-            }}
+          <div
+            key={index}
+            id={bodyId}
+            role="region"
+            aria-labelledby={counterId}
           >
-            <ChevronRight className="size-4" aria-hidden="true" />
-          </IconButton>
-        </div>
-        <div
-          key={index}
-          id={bodyId}
-          role="region"
-          aria-labelledby={counterId}
-          tabIndex={0}
-          className="h-96 max-h-[50dvh] overflow-y-auto outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
-        >
-          <Markdown
-            source={page.markdown}
-            escapeHtml
-            mediaPreview={false}
-            className="text-sm! leading-relaxed! [&_img]:max-h-48 [&_img]:object-contain"
-          />
+            <Markdown
+              source={page.markdown}
+              escapeHtml
+              mediaPreview={false}
+              className="text-sm! leading-relaxed! [&_img]:aspect-video [&_img]:w-full [&_img]:rounded-xl [&_img]:bg-gray-50 [&_img]:object-contain"
+            />
+          </div>
         </div>
       </div>
       <ReadError inbox={inbox} />
+      <CarouselNavigation
+        items={pages.map((_, pageIndex) => {
+          return {
+            id: `${item.id}-page-${pageIndex}`,
+            label: t(
+              ($) => {
+                return $.userNotifications.pageOf;
+              },
+              {
+                current: formatLocalizedNumber(pageIndex + 1),
+                total: formatLocalizedNumber(pages.length),
+              },
+            ),
+          };
+        })}
+        index={index}
+        onSelect={selectPage}
+        label={t(($) => {
+          return $.userNotifications.pageNavigation;
+        })}
+        previousLabel={t(($) => {
+          return $.userNotifications.previousPage;
+        })}
+        nextLabel={t(($) => {
+          return $.userNotifications.nextPage;
+        })}
+        controlsId={bodyId}
+      />
     </>
   );
 }
@@ -583,7 +621,8 @@ function NotificationInboxView() {
         }}
       >
         <DialogContent
-          maxWidth={560}
+          maxWidth="2xl"
+          contentClassName="auto-rows-max grid-cols-1"
           closeLabel={t(($) => {
             return $.userNotifications.close;
           })}

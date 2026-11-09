@@ -1,3 +1,4 @@
+import type { StoredTemplateGuidanceBundle } from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
 
 export interface SystemPromptVariables {
@@ -40,7 +41,14 @@ type BundleSkillSource = Extract<
   "system_skill" | "connector_skill" | "custom_connector_skill"
 >;
 
+interface TemplateBundleVolume {
+  readonly source: "request_additional_volume";
+  readonly mountPath: string;
+  readonly templateGuidanceBundle: StoredTemplateGuidanceBundle;
+}
+
 export type SkillVolume =
+  | TemplateBundleVolume
   | {
       readonly source: BundleSkillSource;
       readonly skillName: string;
@@ -49,10 +57,7 @@ export type SkillVolume =
   | (SkillVolumeStorage &
       (
         | {
-            readonly source: Exclude<
-              SkillVolumeSource,
-              "request_additional_volume" | "system_skill"
-            >;
+            readonly source: "workflow_skill";
             readonly skillName: string;
           }
         | {
@@ -115,8 +120,9 @@ export function mergeRunPromptAndSkills(
 }
 
 type ResolvedSkillVolume =
+  | TemplateBundleVolume
   | (SkillVolumeStorage & {
-      readonly source: Exclude<SkillVolumeSource, "system_skill">;
+      readonly source: "workflow_skill" | "request_additional_volume";
       readonly mountPath: string;
     })
   | {

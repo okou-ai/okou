@@ -6,16 +6,7 @@ import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { pageVersion$ } from "../page-signal.ts";
 import { onRef } from "../utils.ts";
-
-function createNotificationPageSelection() {
-  const pageIndex$ = state(0);
-  return {
-    pageIndex$,
-    selectPage$: command(({ set }, index: number) => {
-      set(pageIndex$, index);
-    }),
-  };
-}
+import { createCarouselSelection } from "../carousel.ts";
 
 function createInboxState() {
   const revision$ = state(0);
@@ -36,7 +27,7 @@ function createInboxState() {
   const descriptionId = crypto.randomUUID();
   const pageSelection$ = computed((get) => {
     get(detailRevision$);
-    return createNotificationPageSelection();
+    return createCarouselSelection();
   });
   return {
     pageSelection$,

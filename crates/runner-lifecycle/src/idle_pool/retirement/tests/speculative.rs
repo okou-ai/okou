@@ -442,7 +442,7 @@ async fn no_unknown_or_cancelled_headroom_retains_full_speculative_cleanup_capsu
                 .unwrap();
         }
         if fault == "cancel" {
-            let (observed, release) = env.source.gate_read();
+            let (observed, release) = env.source.gate_next_read();
             let mut pending = Box::pin(cleanup.grant_cleanup(&env.operations, envelope()));
             assert!(futures_util::poll!(pending.as_mut()).is_pending());
             tokio::select! { _ = observed => {}, result = pending.as_mut() => panic!("unexpected grant: {result:?}") }

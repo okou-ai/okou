@@ -2,13 +2,10 @@
 
 import gzip
 import json
-import zlib
 from collections import Counter
 from pathlib import Path
 
-import brotli
 import pytest
-import zstandard
 from mitmproxy.flow import Error
 
 import flow_metadata_keys as metadata_keys
@@ -20,6 +17,7 @@ from body_limits import (
     STREAM_DECODE_EXPANSION_GRACE,
     STREAM_DECODE_MAX_EXPANSION_RATIO,
 )
+from tests.body_decode_helpers import compress_one_shot_body
 from tests.flow_helpers import response_stream
 from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.x_flow_helpers import (
@@ -30,18 +28,6 @@ from tests.x_flow_helpers import (
     make_x_stream_pipeline_flow,
 )
 from usage.idempotency import USAGE_EVENT_NAMESPACE_CONNECTOR, derive_usage_idempotency_key
-
-
-def _compress_body(encoding: str, payload: bytes) -> bytes:
-    if encoding == "gzip":
-        return gzip.compress(payload)
-    if encoding == "deflate":
-        return zlib.compress(payload)
-    if encoding == "br":
-        return brotli.compress(payload)
-    if encoding == "zstd":
-        return zstandard.ZstdCompressor().compress(payload)
-    raise AssertionError(f"unsupported test encoding: {encoding}")
 
 
 class TestXConnectorResponsePipeline:
@@ -81,7 +67,7 @@ class TestXConnectorResponsePipeline:
     ):
         flow = make_x_pipeline_flow(real_flow, tmp_path, content_encoding="br")
         payload = b'{"data":[{"id":"1"}],"includes":{"users":[{"id":"u1"}]}}'
-        compressed = _compress_body("br", payload)
+        compressed = compress_one_shot_body("br", payload)
 
         with mitm_ctx():
             mitm_addon.responseheaders(flow)
@@ -109,7 +95,7 @@ class TestXConnectorResponsePipeline:
 
         with mitm_ctx():
             mitm_addon.responseheaders(flow)
-        response_stream(flow)(_compress_body("zstd", payload))
+        response_stream(flow)(compress_one_shot_body("zstd", payload))
         assert metadata_keys.STREAM_BUFFER in flow.metadata
         assert metadata_keys.STREAM_BUFFER_STATE in flow.metadata
 
@@ -138,7 +124,7 @@ class TestXConnectorResponsePipeline:
             content_encoding=encoding_case,
         )
         payload = json_body_that_exceeds_x_json_work_limit()
-        compressed = _compress_body(encoding_case, payload)
+        compressed = compress_one_shot_body(encoding_case, payload)
         assert len(compressed) < STREAM_BUFFER_LIMIT < len(payload)
 
         with mitm_ctx():
@@ -174,7 +160,7 @@ class TestXConnectorResponsePipeline:
             content_encoding=encoding_case,
         )
         payload = json_body_that_exceeds_x_json_work_limit()
-        compressed = _compress_body(encoding_case, payload)
+        compressed = compress_one_shot_body(encoding_case, payload)
         allowed_decoded_bytes = max(
             STREAM_DECODE_EXPANSION_GRACE,
             len(compressed) * STREAM_DECODE_MAX_EXPANSION_RATIO,
@@ -185,7 +171,7 @@ class TestXConnectorResponsePipeline:
         callback = response_stream(flow)
         assert callback(compressed) == compressed
         await mitm_addon.responseinspection(flow)
-        corrupt_followup = bytearray(_compress_body(encoding_case, b""))
+        corrupt_followup = bytearray(compress_one_shot_body(encoding_case, b""))
         checksum_offset = -8 if encoding_case == "gzip" else -1
         corrupt_followup[checksum_offset] ^= 0xFF
         assert callback(bytes(corrupt_followup)) == bytes(corrupt_followup)
@@ -234,7 +220,7 @@ class TestXConnectorResponsePipeline:
             content_encoding=encoding_case,
         )
         payload = b'{"data":[{"id":"1"}],"meta":{"result_count":1}}'
-        compressed = _compress_body(encoding_case, payload)[:-1]
+        compressed = compress_one_shot_body(encoding_case, payload)[:-1]
 
         mitm_addon.responseheaders(flow)
         response_stream(flow)(compressed)
@@ -775,7 +761,7 @@ class TestXConnectorErrorPipeline:
         with usage_webhook_api() as webhook:
             mitm_addon.responseheaders(flow)
             response_stream(flow)(
-                _compress_body(
+                compress_one_shot_body(
                     encoding_case,
                     b'{"data":{"id":"1"},"includes":{"users":[{"id":"u1"}]}}\n{"data":{"id":"2"}}\n',
                 )

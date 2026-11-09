@@ -1,61 +1,61 @@
+import CCState
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
-/// The connector catalog in the web directory's colours, on the same white page: a segment
-/// control switches between the catalog and the connections the workspace set up itself,
-/// categories are chips that scroll sideways, and every connector is a card. "+" on a card adds it straight away and the rest opens its detail; a connected card
-/// says "Connected" under its name and opens its detail from anywhere.
 struct ComposerConnectorDirectory: View {
   let store: ComposerConnectorStore
-  @State private var tab = Tab.discover
-  @State private var search = ""
-  @State private var category = ""
-  @State private var catalog: [ChatCatalogConnector] = []
-  @State private var custom: [ChatCustomConnector] = []
-  @State private var categories: [String] = []
-  @State private var error: String?
-  @State private var loading = false
-  @State private var requestID = UUID()
-
-  private enum Tab { case discover, custom }
+  let resources: ComposerConnectorDirectoryResources
 
   var body: some View {
+    StoreProvider(resources.store) {
+      ComposerConnectorDirectoryContent(store: store, resources: resources)
+    }
+  }
+}
+
+private struct ComposerConnectorDirectoryContent: View {
+  let store: ComposerConnectorStore
+  let resources: ComposerConnectorDirectoryResources
+  @LoadableValue private var selection: Loadable<ComposerConnectorDirectoryResources.Selection>
+
+  init(store: ComposerConnectorStore, resources: ComposerConnectorDirectoryResources) {
+    self.store = store
+    self.resources = resources
+    _selection = LoadableValue(resources.selection)
+  }
+
+  var body: some View {
+    switch selection {
+    case .hasData(let value): content(value)
+    case .loading: OkouLoadingRow("Loading connectors…")
+    case .hasError(let error):
+      ConnectorLoadError(error: ChatRequestFailure.message(for: error)) {
+        await resources.refresh()
+      }
+    }
+  }
+
+  private func content(_ selection: ComposerConnectorDirectoryResources.Selection) -> some View {
     ScrollView {
       VStack(alignment: .leading, spacing: OkouSpace.lg) {
         OkouSegmentControl(
-          selection: $tab, options: [(Tab.discover, "Discover"), (Tab.custom, "Custom")]
+          selection: Binding(
+            get: { selection.tab },
+            set: { tab in
+              resources.update(tab: tab)
+            }),
+          options: [(.discover, "Discover"), (.custom, "Custom")]
         )
         .padding(.horizontal, OkouSpace.lg)
-        if tab == .discover && !categories.isEmpty {
-          OkouChipRail {
-            OkouChip(title: Text("All"), isSelected: category.isEmpty) { category = "" }
-            ForEach(categories, id: \.self) { name in
-              OkouChip(
-                title: Text(ConnectorCategoryName.short(name)), isSelected: category == name
-              ) {
-                category = name
-              }
-            }
+        if selection.tab == .discover {
+          ConnectorDirectoryRead(signal: resources.catalog) { value, isLoading in
+            discover(value, selection: selection, isLoading: isLoading)
           }
-        }
-        if let error {
-          ConnectorLoadError(error: error) { await load() }
-            .padding(.horizontal, OkouSpace.lg)
-        }
-        LazyVStack(spacing: OkouSpace.sm) {
-          if tab == .discover {
-            ForEach(catalog) { catalogCard($0) }
-          } else {
-            customCards
+        } else {
+          ConnectorDirectoryRead(signal: resources.customMatches) { value, isLoading in
+            custom(value, selection: selection, isLoading: isLoading)
           }
-        }
-        .padding(.horizontal, OkouSpace.lg)
-        if loading && isEmpty {
-          ProgressView().frame(maxWidth: .infinity).padding(.top, OkouSpace.xxl)
-        } else if !loading && error == nil && isEmpty {
-          emptyState
-        }
-        if tab == .custom {
           remoteAccess
         }
       }
@@ -64,21 +64,75 @@ struct ComposerConnectorDirectory: View {
     .okouGroupedBackground(OkouColor.background)
     .navigationTitle("Add connectors")
     .navigationBarTitleDisplayMode(.inline)
-    .searchable(text: $search, prompt: "Find connectors")
-    .task(id: "\(tab)/\(search)/\(category)") { await load() }
-    .refreshable { await load() }
+    .searchable(
+      text: Binding(
+        get: { selection.search },
+        set: { search in
+          resources.update(search: search)
+        }),
+      prompt: "Find connectors"
+    )
+    .refreshable { await resources.refresh() }
     .onChange(of: store.webDestination?.id) { _, destinationID in
-      if destinationID == nil { Task { await load() } }
+      if destinationID == nil { Task { await resources.refresh() } }
     }
   }
 
-  private var visibleCustom: [ChatCustomConnector] {
-    custom.filter { search.isEmpty || $0.displayName.localizedCaseInsensitiveContains(search) }
+  @ViewBuilder private func discover(
+    _ value: Loadable<ChatConnectorDiscovery>,
+    selection: ComposerConnectorDirectoryResources.Selection, isLoading: Bool
+  ) -> some View {
+    switch value {
+    case .loading:
+      ProgressView().frame(maxWidth: .infinity).padding(.top, OkouSpace.xxl)
+    case .hasError(let error):
+      ConnectorLoadError(error: ChatRequestFailure.message(for: error), isLoading: isLoading) {
+        await resources.refresh()
+      }
+      .padding(.horizontal, OkouSpace.lg)
+    case .hasData(let result):
+      if let counts = result.categoryConnectorCounts, !counts.isEmpty {
+        OkouChipRail {
+          OkouChip(title: Text("All"), isSelected: selection.category.isEmpty) {
+            resources.update(category: "")
+          }
+          ForEach(counts.keys.sorted(), id: \.self) { name in
+            OkouChip(
+              title: Text(ConnectorCategoryName.short(name)), isSelected: selection.category == name
+            ) {
+              resources.update(category: name)
+            }
+          }
+        }
+      }
+      LazyVStack(spacing: OkouSpace.sm) {
+        ForEach(result.connectors) { catalogCard($0) }
+      }
+      .padding(.horizontal, OkouSpace.lg)
+      if result.connectors.isEmpty { emptyState(selection) }
+    }
   }
 
-  private var isEmpty: Bool {
-    if tab == .discover { return catalog.isEmpty }
-    return visibleCustom.isEmpty
+  @ViewBuilder private func custom(
+    _ value: Loadable<[ChatCustomConnector]>,
+    selection: ComposerConnectorDirectoryResources.Selection, isLoading: Bool
+  ) -> some View {
+    LazyVStack(spacing: OkouSpace.sm) {
+      switch value {
+      case .loading:
+        customCards([])
+        ProgressView().frame(maxWidth: .infinity).padding(.top, OkouSpace.xxl)
+      case .hasError(let error):
+        ConnectorLoadError(error: ChatRequestFailure.message(for: error), isLoading: isLoading) {
+          await resources.refresh()
+        }
+        customCards([])
+      case .hasData(let connectors):
+        customCards(connectors)
+        if connectors.isEmpty { emptyState(selection) }
+      }
+    }
+    .padding(.horizontal, OkouSpace.lg)
   }
 
   private func catalogCard(_ connector: ChatCatalogConnector) -> some View {
@@ -132,14 +186,14 @@ struct ComposerConnectorDirectory: View {
     .modifier(OkouSurfaceStyle())
   }
 
-  @ViewBuilder private var customCards: some View {
+  @ViewBuilder private func customCards(_ connectors: [ChatCustomConnector]) -> some View {
     Button {
       store.openWeb(path: "connectors", query: [URLQueryItem(name: "scope", value: "custom")])
     } label: {
       customCard(title: Text("Create custom connector"), icon: "plus", trailing: "arrow-up-right")
     }
     .buttonStyle(.plain)
-    ForEach(visibleCustom, id: \.id) { connector in
+    ForEach(connectors, id: \.id) { connector in
       Button {
         if connector.managed || connector.permissionBundleRef != nil {
           openConnector(connector.slug)
@@ -195,11 +249,13 @@ struct ComposerConnectorDirectory: View {
     .contentShape(Rectangle())
   }
 
-  @ViewBuilder private var emptyState: some View {
-    if !search.isEmpty {
+  @ViewBuilder private func emptyState(_ selection: ComposerConnectorDirectoryResources.Selection)
+    -> some View
+  {
+    if !selection.search.isEmpty {
       OkouEmptyState(
         "No results", icon: "search", description: Text("Try another search."))
-    } else if tab == .custom {
+    } else if selection.tab == .custom {
       OkouEmptyState(
         "No custom connectors yet", icon: "puzzle",
         description: Text("Add your own MCP server or API on the web, then use it here."))
@@ -225,30 +281,24 @@ struct ComposerConnectorDirectory: View {
     }
   }
 
-  private func load() async {
-    let request = UUID()
-    requestID = request
-    loading = true
-    defer { if requestID == request { loading = false } }
-    do {
-      if tab == .discover {
-        let result = try await store.service.discover(
-          keyword: search, category: category.isEmpty ? nil : category)
-        guard !Task.isCancelled, requestID == request else { return }
-        catalog = result.connectors
-        if let counts = result.categoryConnectorCounts { categories = counts.keys.sorted() }
-      } else {
-        let result = try await store.service.customConnectors()
-        guard !Task.isCancelled, requestID == request else { return }
-        custom = result
-      }
-      error = nil
-    } catch is CancellationError {
-    } catch {
-      guard requestID == request else { return }
-      self.error = ChatRequestFailure.message(for: error)
-    }
+}
+
+/// Both native phase projections observe the same cached request Task.
+private struct ConnectorDirectoryRead<Value: Sendable, Content: View>: View {
+  @LoadableValue private var value: Loadable<Value>
+  @LoadableStatus<Value> private var status: LoadableState
+  let content: (Loadable<Value>, Bool) -> Content
+
+  init(
+    signal: Computed<Task<Value, Error>>,
+    @ViewBuilder content: @escaping (Loadable<Value>, Bool) -> Content
+  ) {
+    _value = LoadableValue(task: signal, keepLast: true)
+    _status = LoadableStatus(task: signal)
+    self.content = content
   }
+
+  var body: some View { content(value, status == .loading) }
 }
 
 /// A connector's page in the manner of Manus: the mark, name and what it does on one card,
@@ -296,7 +346,7 @@ private struct ComposerConnectorDetail: View {
       }
       HStack(spacing: OkouSpace.sm) {
         Button {
-          ComposerConnectorDirectory.connect(connector, store: store)
+          ComposerConnectorDirectoryContent.connect(connector, store: store)
         } label: {
           if added {
             OkouCompactButtonLabel("Add account", icon: "plus")

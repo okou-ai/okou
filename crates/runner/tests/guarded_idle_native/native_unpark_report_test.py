@@ -12,6 +12,7 @@ import uuid
 
 import native_unpark_report as native
 import report
+import report_test
 import speculative_fault_report_test as callback
 
 
@@ -99,10 +100,8 @@ class NativeUnparkReportTests(unittest.TestCase):
         return next(event for event in self.witnesses if event["phase"]==phase)
 
     def validate(self):
-        (self.root/"report.json").write_text(json.dumps(self.collector))
-        (self.root/"samples.jsonl").write_text("\n".join(json.dumps(item) for item in self.samples))
-        (self.root/"stdout.log").write_text("\n".join([report.PREFIX+json.dumps(item) for item in self.events]
-            +[native.PREFIX+json.dumps(item) for item in self.witnesses]))
+        report_test.write_report_fixture(self.root, self.collector, self.samples,
+            [(report.PREFIX, self.events), (native.PREFIX, self.witnesses)])
         return native.validate(self.root)
 
     def refused(self, changes):

@@ -16,6 +16,7 @@ import {
 import { ProjectThreadDragHint } from "../projects/project-thread-drag-hint.tsx";
 import { useProjectThreadDropTarget } from "../projects/project-thread-drop-target.tsx";
 import {
+  openProjectEditor$,
   openProjectMembership$,
   projectDialog$,
   projectThreadMenuOpenChanged$,
@@ -33,7 +34,6 @@ import {
   Plus,
   Check,
   CheckCheck,
-  ChevronRight,
   Trash,
   Pencil,
   Ellipsis,
@@ -45,6 +45,8 @@ import {
   BellOff,
   Bell,
   FolderInput,
+  FolderPlus,
+  SquarePen,
 } from "lucide-react";
 import {
   ChatThreadStateText,
@@ -97,6 +99,7 @@ import type {
   SidebarChatThreadItemSignals,
 } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { HoverScrollTitle } from "./hover-scroll-title.tsx";
+import { FeedChatListRow } from "./sidebar-feed-row.tsx";
 import { useTitleReveal } from "./use-title-reveal.ts";
 import {
   currentChatAgentScope$,
@@ -104,7 +107,6 @@ import {
   currentChatThreadId$,
   hasCurrentChatThread$,
 } from "../../signals/agent-chat.ts";
-import { setSidebarExpanded$ } from "../../signals/okou-page/nav.ts";
 import { chatThreadOnlyArchived$ } from "../../signals/chat-page/chat-thread-only-archived.ts";
 import { chatThreadOnlyMuted$ } from "../../signals/chat-page/chat-thread-only-muted.ts";
 import { chatThreadOnlyUnread$ } from "../../signals/chat-page/chat-thread-only-unread.ts";
@@ -123,8 +125,6 @@ import {
   renameDialogThreadId$,
   renameDialogInput$,
   setRenameDialogInput$,
-  sessionListCollapsed$,
-  setSessionListCollapsed$,
   CHAT_THREAD_VIRTUAL_ROW_HEIGHT,
   threeColumnSearchOpen$,
 } from "../../signals/okou-page/sidebar-state.ts";
@@ -136,8 +136,6 @@ import { ThreadPinMoveMenuItems } from "./sidebar-thread-reorder.tsx";
 import { ChatThreadMenuShortcut } from "./chat-thread-menu-shortcut.tsx";
 import { equalArrays } from "../../lib/equality.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 
 // The row glyphs draw at 17px, which the shared button base (`[&_svg]:size-4`)
 // would otherwise clamp to 16px. Dimming stays on the individual glyphs so the
@@ -145,7 +143,6 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 const CHAT_THREAD_ROW_ICON_CLASS = "[&_svg]:size-[17px]";
 // One spatial cycle spans 12 rows: 200ms per row at the existing 2.4s cadence.
 const RUNNING_INDICATOR_WAVE_ROWS = 12;
-const CHAT_THREADS_CONTENT_ID = "sidebar-chat-threads-content";
 
 // Labels never wrap: the menu grows past its minimum when a label shares its
 // row with a long shortcut such as Ctrl+Shift+X.
@@ -279,13 +276,6 @@ function ChatThreadMuteMenuItem({
   const muted = useGet(signals.muted$);
   const toggleMuted = useSet(signals.toggleMuted$);
   const pageSignal = useGet(pageSignal$);
-  const enabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
-  // The API keeps suppressing a chat muted before the switch went off, so
-  // unmuting stays available for as long as one exists.
-  if (!enabled && !muted) {
-    return null;
-  }
   const label = muted
     ? t(($) => {
         return $.chat.sidebar.unmute;
@@ -315,11 +305,6 @@ function ChatThreadArchiveMenuSection({
 }: {
   signals: SidebarChatThreadItemSignals;
 }) {
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
-  if (!archiveEnabled) {
-    return null;
-  }
   return (
     <>
       <ChatThreadArchiveMenuItem signals={signals} />
@@ -623,8 +608,6 @@ function ChatThreadItemLink({
   const isHighlighted = useGet(signals.highlighted$);
   const isUnread = useLastResolved(signals.unread$) ?? false;
   const select = useSet(signals.select$);
-  const inlineRenameEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadInlineRename] === true;
   const renaming = useGet(signals.inlineRenaming$);
   const startInlineRename = useSet(signals.startInlineRename$);
   const projectsEnabled = useGet(projectsEnabled$);
@@ -662,18 +645,14 @@ function ChatThreadItemLink({
           e.preventDefault();
         }
       }}
-      onDoubleClick={
-        inlineRenameEnabled
-          ? (e) => {
-              // Modified clicks open tabs or the side pane; renaming on top
-              // of them would act twice for one gesture.
-              if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
-                return;
-              }
-              startInlineRename();
-            }
-          : undefined
-      }
+      onDoubleClick={(e) => {
+        // Modified clicks open tabs or the side pane; renaming on top
+        // of them would act twice for one gesture.
+        if (e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) {
+          return;
+        }
+        startInlineRename();
+      }}
       className={`col-span-2 col-start-1 row-start-1 grid grid-cols-subgrid items-center rounded-lg text-left leading-5 motion-safe:transition-colors motion-safe:duration-[180ms] motion-safe:ease-[cubic-bezier(0.2,0,0,1)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring ${touch ? "h-14 pl-3 text-base" : "h-8 pl-2 text-sm"} ${draggable ? "cursor-grab active:cursor-grabbing" : ""} ${draggingThread?.id === signals.threadId ? "opacity-40" : ""} ${
         isHighlighted
           ? "bg-state-selected text-sidebar-foreground font-medium"
@@ -1154,8 +1133,6 @@ function ChatThreads({
   listSignals: SidebarChatThreadListSignals;
 }) {
   const { t } = useTranslation();
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
   const rowCount = useGet(listSignals.count$);
@@ -1180,7 +1157,7 @@ function ChatThreads({
         />
       );
     }
-    if (archiveEnabled && archivedOnly) {
+    if (archivedOnly) {
       return (
         <ChatThreadListEmptyState
           message={t(($) => {
@@ -1241,7 +1218,6 @@ function ChatThreadsListMenuTooltip() {
 function useNewChatAction() {
   const currentChatAgentId = useLastResolved(currentChatAgentId$) ?? null;
   const createNewChat = useSet(createNewChatThread$);
-  const setExpanded = useSet(setSidebarExpanded$);
   const rootSignal = useGet(rootSignal$);
   const newChatDisabled = useGet(newChatThreadDisabled$);
 
@@ -1253,7 +1229,6 @@ function useNewChatAction() {
       createNewChat({ agentId: currentChatAgentId }, pane, rootSignal),
       Reason.DomCallback,
     );
-    setExpanded(false);
   }
 
   return {
@@ -1314,11 +1289,7 @@ function ChatThreadFilterMenuItems() {
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const muteEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadMuting] === true;
   const selectFilter = useSelectChatThreadFilter();
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
 
   return (
     <>
@@ -1331,13 +1302,9 @@ function ChatThreadFilterMenuItems() {
           size={16}
           className={`mr-2 ${unreadOnly || archivedOnly || mutedOnly ? "invisible" : ""}`}
         />
-        {archiveEnabled
-          ? t(($) => {
-              return $.chat.sidebar.inbox;
-            })
-          : t(($) => {
-              return $.chat.sidebar.allChats;
-            })}
+        {t(($) => {
+          return $.chat.sidebar.inbox;
+        })}
       </DropdownMenuItem>
       <DropdownMenuItem
         onClick={() => {
@@ -1355,33 +1322,29 @@ function ChatThreadFilterMenuItems() {
           shortcut={GLOBAL_KEYBOARD_SHORTCUTS.toggleUnreadOnly.binding}
         />
       </DropdownMenuItem>
-      {archiveEnabled ? (
-        <DropdownMenuItem
-          onClick={() => {
-            selectFilter("archived");
-          }}
-        >
-          <Check
-            size={16}
-            className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
-          />
-          {t(($) => {
-            return $.chat.sidebar.archived;
-          })}
-        </DropdownMenuItem>
-      ) : null}
-      {muteEnabled ? (
-        <DropdownMenuItem
-          onClick={() => {
-            selectFilter("muted");
-          }}
-        >
-          <Check size={16} className={`mr-2 ${mutedOnly ? "" : "invisible"}`} />
-          {t(($) => {
-            return $.chat.sidebar.muted;
-          })}
-        </DropdownMenuItem>
-      ) : null}
+      <DropdownMenuItem
+        onClick={() => {
+          selectFilter("archived");
+        }}
+      >
+        <Check
+          size={16}
+          className={`mr-2 ${archivedOnly ? "" : "invisible"}`}
+        />
+        {t(($) => {
+          return $.chat.sidebar.archived;
+        })}
+      </DropdownMenuItem>
+      <DropdownMenuItem
+        onClick={() => {
+          selectFilter("muted");
+        }}
+      >
+        <Check size={16} className={`mr-2 ${mutedOnly ? "" : "invisible"}`} />
+        {t(($) => {
+          return $.chat.sidebar.muted;
+        })}
+      </DropdownMenuItem>
     </>
   );
 }
@@ -1431,17 +1394,13 @@ export function ChatThreadsListMenu({
   );
 }
 
-// With archiving on, a non-default filter names itself in the title so the list
-// never looks like the inbox while it shows archived, unread, or muted chats.
-function useChatThreadsFilteredTitleLabel() {
+/** The active unread, archived or muted filter's name; null for the inbox. */
+export function useChatThreadsFilterLabel(): string | null {
   const { t } = useTranslation();
-  const { titleLabel } = useChatThreadsTitleLabels();
   const unreadOnly = useGet(chatThreadOnlyUnread$);
   const archivedOnly = useGet(chatThreadOnlyArchived$);
   const mutedOnly = useGet(chatThreadOnlyMuted$);
-  const archiveEnabled =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
-  const filterLabel = unreadOnly
+  return unreadOnly
     ? t(($) => {
         return $.chat.sidebar.unreadOnly;
       })
@@ -1454,7 +1413,15 @@ function useChatThreadsFilteredTitleLabel() {
             return $.chat.sidebar.muted;
           })
         : null;
-  if (!archiveEnabled || filterLabel === null) {
+}
+
+// A non-default filter names itself in the title so the list
+// never looks like the inbox while it shows archived, unread, or muted chats.
+function useChatThreadsFilteredTitleLabel() {
+  const { t } = useTranslation();
+  const { titleLabel } = useChatThreadsTitleLabels();
+  const filterLabel = useChatThreadsFilterLabel();
+  if (filterLabel === null) {
     return titleLabel;
   }
   return t(
@@ -1501,45 +1468,89 @@ function NewChatThreadButton() {
   );
 }
 
-function ChatThreadsTitle({
-  showMarkAllRead,
-  contentId,
-  collapsible,
-}: {
-  showMarkAllRead: boolean;
-  contentId: string;
-  collapsible: boolean;
-}) {
+/**
+ * One + for a chat or, with Projects on, a Project. Without Projects the menu
+ * would hold a single item, so the button starts the chat directly.
+ */
+export function ChatThreadsNewMenu() {
+  const { t } = useTranslation();
+  const projectsEnabled = useGet(projectsEnabled$);
+  const openProjectEditor = useSet(openProjectEditor$);
+  const newChatAction = useNewChatAction();
+  if (!projectsEnabled) {
+    return <NewChatThreadButton />;
+  }
+  const label = t(($) => {
+    return $.chat.sidebar.newMenu;
+  });
+
+  return (
+    <TooltipProvider delay={200}>
+      <DropdownMenu>
+        <DropdownMenuTrigger
+          render={
+            <Button
+              type="button"
+              variant="quiet"
+              size="icon-sm"
+              iconSize="md"
+              className="shrink-0"
+              aria-label={label}
+            />
+          }
+        >
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span>
+                  <Plus size={18} />
+                </span>
+              }
+            />
+            <TooltipContent side="bottom">
+              <p className="text-xs">{label}</p>
+            </TooltipContent>
+          </Tooltip>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent
+          align="end"
+          className={chatThreadMenuContentClassName(false)}
+        >
+          <DropdownMenuItem
+            disabled={newChatAction.disabled}
+            onClick={() => {
+              newChatAction.onSelect("main");
+            }}
+          >
+            <SquarePen size={16} className="mr-2" />
+            {t(($) => {
+              return $.chat.newChat;
+            })}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            onClick={() => {
+              openProjectEditor();
+            }}
+          >
+            <FolderPlus size={16} className="mr-2" />
+            {t(($) => {
+              return $.projects.new;
+            })}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </TooltipProvider>
+  );
+}
+
+function ChatThreadsTitle({ showMarkAllRead }: { showMarkAllRead: boolean }) {
   const titleLabel = useChatThreadsFilteredTitleLabel();
-  const setCollapsed = useSet(setSessionListCollapsed$);
-  const collapsed = useGet(sessionListCollapsed$);
 
   return (
     <div className="group flex h-8 shrink-0 items-center justify-between rounded-lg pr-0 hover:bg-state-hover transition-colors">
-      {collapsible ? (
-        <Button
-          type="button"
-          variant="quiet"
-          size="sm"
-          aria-expanded={!collapsed}
-          aria-controls={contentId}
-          onClick={() => {
-            setCollapsed(!collapsed);
-          }}
-          className="h-8 min-w-0 flex-1 justify-start gap-1 px-2 text-[13px] leading-4 text-nav-copy-muted hover:bg-transparent hover:text-nav-copy active:bg-transparent group-hover:text-nav-copy [&_svg]:size-3"
-        >
-          <span className="min-w-0 truncate">{titleLabel}</span>
-          <span className="shrink-0 opacity-0 group-hover:opacity-100 group-focus-within:opacity-100">
-            <ChevronRight
-              className={`opacity-35 ${collapsed ? "" : "rotate-90"}`}
-            />
-          </span>
-        </Button>
-      ) : (
-        <span className="min-w-0 flex-1 truncate px-2 text-[13px] font-medium leading-4 text-nav-copy-muted">
-          {titleLabel}
-        </span>
-      )}
+      <span className="min-w-0 flex-1 truncate px-2 text-[13px] font-medium leading-4 text-nav-copy-muted">
+        {titleLabel}
+      </span>
       <div className="flex items-center gap-0.5">
         <ProjectCreateButton />
         <NewChatThreadButton />
@@ -1570,30 +1581,15 @@ function ChatThreadsSkeleton() {
 function ChatThreadsContent({
   scrollSignals,
   contentClassName,
-  contentId,
   stylesheetLoaded,
-  collapsible,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
-  contentId: string;
   stylesheetLoaded: boolean;
-  collapsible: boolean;
 }) {
-  const savedCollapsed = useGet(sessionListCollapsed$);
-  const collapsed = collapsible && savedCollapsed;
-
-  // The region stays mounted so the title's `aria-controls` always resolves.
-  // The attribute carries the collapsed state to assistive technology; the
-  // display utility owns the cascade, because an author `display: flex` would
-  // otherwise beat the user-agent `[hidden]` rule while expanded.
   return (
-    <div
-      id={contentId}
-      hidden={collapsed}
-      className={cn("min-h-0 flex-1 flex-col", collapsed ? "hidden" : "flex")}
-    >
-      {!collapsed && stylesheetLoaded ? (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {stylesheetLoaded ? (
         <ExpandedChatThreadsContent
           scrollSignals={scrollSignals}
           contentClassName={contentClassName}
@@ -1760,26 +1756,45 @@ function ChatThreadsViewport({
   const { t } = useTranslation();
   const isScrolled = useGet(scrollSignals.isScrolled$);
   const hasCurrentChatThread = useGet(hasCurrentChatThread$);
+  const [moving, move] = useLoadableSet(moveDraggedProjectThread$);
+  const signal = useGet(rootSignal$);
+  const drop = useProjectThreadDropTarget({
+    projectId: null,
+    touch: false,
+    moving: moving.state === "loading",
+    moveHere(projectId) {
+      detach(move(projectId, signal), Reason.DomCallback);
+    },
+  });
 
   return (
-    <OverlayScrollArea
-      scrollSignals={scrollSignals}
-      className="mt-1 min-h-0 flex-1"
-      // Keep the viewport's previous shadow precedence when it receives focus.
-      viewportClassName={
-        isScrolled
-          ? "[box-shadow:0_-1px_0_0_hsl(var(--border)/0.4)]!"
-          : "[box-shadow:none]!"
-      }
-      contentClassName={contentClassName}
-      aria-label={t(($) => {
-        return $.chat.sidebar.chatThreads;
-      })}
-      data-testid="sidebar-scroll-area"
-      tabIndex={hasCurrentChatThread ? 0 : undefined}
-    >
-      {children}
-    </OverlayScrollArea>
+    <div {...drop.props} className="mt-1 flex min-h-0 flex-1 flex-col">
+      <OverlayScrollArea
+        scrollSignals={scrollSignals}
+        className="min-h-0 flex-1"
+        // Keep the viewport's previous shadow precedence when it receives focus.
+        viewportClassName={
+          isScrolled
+            ? "[box-shadow:0_-1px_0_0_hsl(var(--border)/0.4)]!"
+            : "[box-shadow:none]!"
+        }
+        contentClassName={contentClassName}
+        aria-label={t(($) => {
+          return $.chat.sidebar.chatThreads;
+        })}
+        data-testid="sidebar-scroll-area"
+        tabIndex={hasCurrentChatThread ? 0 : undefined}
+      >
+        {children}
+      </OverlayScrollArea>
+      {moving.state === "hasError" && (
+        <p role="alert" className="px-3 py-1 text-xs text-destructive">
+          {t(($) => {
+            return $.projects.moveError;
+          })}
+        </p>
+      )}
+    </div>
   );
 }
 
@@ -1809,32 +1824,36 @@ export function ChatThreadsSection({
   scrollSignals,
   contentClassName,
   showMarkAllRead = false,
-  collapsible = true,
+  showTitle = true,
 }: {
   scrollSignals: SidebarChatThreadScrollSignals;
   contentClassName: string;
   showMarkAllRead?: boolean;
-  collapsible?: boolean;
+  /** False when the surrounding header already carries the title actions. */
+  showTitle?: boolean;
 }) {
   const agentScope = useGet(currentChatAgentScope$);
   const mainStylesheetLoaded = useLastResolved(mainStylesheetLoaded$);
 
   return (
-    <div className="mt-4 flex min-h-0 flex-1 flex-col">
-      <div className={contentClassName}>
-        <ChatThreadsTitle
-          key={agentScope ?? "no-agent"}
-          showMarkAllRead={showMarkAllRead}
-          contentId={CHAT_THREADS_CONTENT_ID}
-          collapsible={collapsible}
-        />
+    <div className={cn("flex min-h-0 flex-1 flex-col", showTitle && "mt-4")}>
+      {showTitle ? (
+        <div className={contentClassName}>
+          <ChatThreadsTitle
+            key={agentScope ?? "no-agent"}
+            showMarkAllRead={showMarkAllRead}
+          />
+        </div>
+      ) : null}
+      {/* Okou's entry leads the list and stays outside its scroll viewport,
+          whose virtual rows start at the viewport's top. */}
+      <div className={cn("empty:hidden", contentClassName)}>
+        <FeedChatListRow />
       </div>
       <ChatThreadsContent
         scrollSignals={scrollSignals}
         contentClassName={contentClassName}
-        contentId={CHAT_THREADS_CONTENT_ID}
         stylesheetLoaded={mainStylesheetLoaded === true}
-        collapsible={collapsible}
       />
     </div>
   );
@@ -1929,7 +1948,7 @@ function ChatThreadListRowFrame({
   rowHeight: number | null;
   touch: boolean;
   moving: boolean;
-  moveHere: (projectId: string) => void;
+  moveHere: (projectId: string | null) => void;
   children: ReactNode;
 }) {
   const drop = useProjectThreadDropTarget({
@@ -1952,6 +1971,7 @@ function ChatThreadListRowFrame({
         rowHeight !== null && "absolute left-0 top-0",
         row.projectId !== null && row.kind !== "project" && "pl-6",
         drop.targeted && "bg-state-hover",
+        drop.targeted && row.projectId === null && "rounded-lg",
         drop.targeted && row.kind === "project" && "rounded-t-lg",
         drop.targeted && row.projectEnd && "rounded-b-lg",
       )}
@@ -1996,7 +2016,7 @@ function ChatThreadListRowsView({
   const [moving, move] = useLoadableSet(moveDraggedProjectThread$);
   const signal = useGet(rootSignal$);
   const dragEventsRef = useSet(projectThreadDragEventsRef$);
-  function moveHere(projectId: string) {
+  function moveHere(projectId: string | null) {
     detach(move(projectId, signal), Reason.DomCallback);
   }
 

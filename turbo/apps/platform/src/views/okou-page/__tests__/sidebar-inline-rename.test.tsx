@@ -2,7 +2,6 @@ import { fireEvent, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { mockedClerk } from "../../../__tests__/mock-auth.ts";
 import { pathname } from "../../../signals/location.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -23,15 +22,9 @@ const { mockSidebarThreadStory, prepareDefaultAgent } =
 
 const ROW_HEIGHT = 36;
 
-function inlineRenameSwitch(enabled: boolean) {
-  return { [FeatureSwitchKey.ChatThreadInlineRename]: enabled };
-}
-
 async function setupConversations({
-  inlineRename = true,
   mockBeforePage,
 }: {
-  inlineRename?: boolean;
   mockBeforePage?: () => void;
 } = {}): Promise<void> {
   prepareDefaultAgent();
@@ -43,7 +36,6 @@ async function setupConversations({
   await setupSidebarPage({
     context,
     path: `/chats/${INCIDENT_THREAD_ID}`,
-    featureSwitches: inlineRenameSwitch(inlineRename),
   });
   await waitFor(() => {
     expect(within(sidebar()).getByText("Release plan")).toBeInTheDocument();
@@ -138,7 +130,6 @@ test("Scrolling the field's row away saves it instead of reopening it", async ()
   await setupSidebarPage({
     context,
     path: `/chats/${threadIdAt(0)}`,
-    featureSwitches: inlineRenameSwitch(true),
   });
   await within(sidebar()).findByText("Chat 1");
 
@@ -212,19 +203,4 @@ test("A modified double-click keeps its browser behavior instead of renaming", a
 
   await user.dblClick(threadLinkByTitle("Incident notes"));
   await expect(findRenameField()).resolves.toHaveValue("Incident notes");
-});
-
-test("Double-click only opens the conversation while inline rename is off", async () => {
-  const user = userEvent.setup();
-  await setupConversations({ inlineRename: false });
-
-  await user.dblClick(threadLinkByTitle("Release plan"));
-
-  await waitFor(() => {
-    expect(threadLinkByTitle("Release plan")).toHaveAttribute(
-      "aria-current",
-      "page",
-    );
-  });
-  expect(queryRenameField()).not.toBeInTheDocument();
 });

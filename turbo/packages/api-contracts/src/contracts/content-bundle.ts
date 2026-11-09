@@ -1,3 +1,4 @@
+import { storedTemplateGuidanceBundleSchema } from "./template-guidance-bundle";
 import {
   array,
   literal,
@@ -31,11 +32,22 @@ const contentBundleDownloadSchema = contentBundleSchema
 export const claimedContentBundlesSchema = object({
   format: literal("tar-gzip-v1"),
   instructions: contentBundleDownloadSchema.optional(),
+  // Omit entirely until a selected template has an immutable owner reference.
+  templates: array(
+    storedTemplateGuidanceBundleSchema
+      .extend({
+        downloadUrl: url({ protocol: /^https$/u }).refine((value) => {
+          const parsed = new URL(value);
+          return parsed.username === "" && parsed.password === "";
+        }),
+      })
+      .strict(),
+  ).optional(),
   skills: array(
     contentBundleDownloadSchema
       .extend({
         mountPath: string().regex(
-          /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9][a-z0-9-]{0,62}[a-z0-9]$/u,
+          /^\/home\/user\/\.(?:claude|codex|pi\/agent)\/skills\/[a-z0-9](?:[a-z0-9-]{0,62}[a-z0-9])?$/u,
         ),
       })
       .strict(),

@@ -1,7 +1,6 @@
 import { claudeCodeDeviceAuthContract } from "@okouai/api-contracts/contracts/claude-code-device-auth";
 import type { ModelProviderResponse } from "@okouai/api-contracts/contracts/model-providers";
 import { personalModelProviderAccountsByIdContract } from "@okouai/api-contracts/contracts/personal-model-providers";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
@@ -256,7 +255,6 @@ async function setupPersonalSubscriptionIdentityReview() {
   await setupPage({
     context,
     path: "/?settings=model",
-    featureSwitches: { [FeatureSwitchKey.SidebarSubscriptionUsage]: true },
   });
   return {
     accountA,
@@ -280,7 +278,6 @@ test("Review personal subscription identity and usage", async () => {
     within(rowC).getByText("Connected · — ChatGPT credits"),
   ).toBeInTheDocument();
   expect(within(rowA).getByText("2 resets left")).toBeVisible();
-  expect(within(rowB).queryByText(/resets? left/u)).not.toBeInTheDocument();
   expect(within(rowC).getByText("Resets —")).toBeVisible();
   expect(
     within(rowC).getByLabelText("Resets left unavailable"),
@@ -564,7 +561,7 @@ test("Review personal subscriptions through account switching", async () => {
   ).findByLabelText(/^Subscription usage/);
   click(usageEntry);
   const panel = await screen.findByTestId("account-menu-subscriptions");
-  expect(within(panel).getByText("0% left")).toBeInTheDocument();
+  expect(within(panel).getByText("Limit reached")).toBeInTheDocument();
   expect(within(panel).getByText("Credits")).toBeInTheDocument();
   expect(within(panel).getByText("0")).toBeInTheDocument();
 });

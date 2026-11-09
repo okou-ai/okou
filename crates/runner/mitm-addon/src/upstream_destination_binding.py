@@ -100,13 +100,6 @@ def normalize_upstream_destination(
     )
 
 
-def _connection_id(connection: object) -> str | None:
-    connection_id = getattr(connection, "id", None)
-    if isinstance(connection_id, str) and connection_id:
-        return connection_id
-    return None
-
-
 def _connected_endpoint_matches_address(
     connected_endpoint: connection_endpoints.ConnectedIpEndpoint,
     binding_address: tuple[str, int],
@@ -135,7 +128,7 @@ def _connected_endpoint_matches_any_binding(
 
 
 def _associate_server_with_client(server_id: str, client: object | None) -> None:
-    client_id = _connection_id(client)
+    client_id = connection_endpoints.connection_id(client)
     if client_id is None:
         return
     existing_client_id = _client_id_by_server_id.get(server_id)
@@ -158,7 +151,7 @@ def record_normalized_server_binding(
     original_address: tuple[str, int] | None,
 ) -> None:
     """Record a normalized destination after retargeting or verification."""
-    server_id = _connection_id(server)
+    server_id = connection_endpoints.connection_id(server)
     if server_id is None:
         return
     _bindings_by_server_id[server_id] = UpstreamDestinationBinding(
@@ -175,7 +168,7 @@ def _matching_server_binding(
     *,
     destination: NormalizedUpstreamDestination,
 ) -> tuple[str, UpstreamDestinationBinding] | None:
-    server_id = _connection_id(server)
+    server_id = connection_endpoints.connection_id(server)
     if server_id is None:
         return None
     binding = _bindings_by_server_id.get(server_id)
@@ -256,7 +249,7 @@ def refresh_server_binding_connected_address_if_matching(
     The fail-closed ``without_verified_tls`` and positive ``after_retargeting`` integration cases
     in ``tests/test_request_handler_connector_admission.py`` cover this handoff.
     """
-    server_id = _connection_id(server)
+    server_id = connection_endpoints.connection_id(server)
     if server_id is None:
         return False
     binding = _bindings_by_server_id.get(server_id)
@@ -281,7 +274,7 @@ def refresh_server_binding_connected_address_if_matching(
 
 def forget_server_binding(server: object) -> None:
     """Discard all binding state owned by one mitmproxy server connection."""
-    server_id = _connection_id(server)
+    server_id = connection_endpoints.connection_id(server)
     if server_id is not None:
         _bindings_by_server_id.pop(server_id, None)
         client_id = _client_id_by_server_id.pop(server_id, None)
@@ -295,7 +288,7 @@ def forget_server_binding(server: object) -> None:
 
 def forget_client_bindings(client: object) -> None:
     """Discard bindings associated with a disconnected client connection."""
-    client_id = _connection_id(client)
+    client_id = connection_endpoints.connection_id(client)
     if client_id is None:
         return
     server_ids = _server_ids_by_client_id.pop(client_id, set())
@@ -306,13 +299,13 @@ def forget_client_bindings(client: object) -> None:
 
 def has_server_binding(server: object) -> bool:
     """Return whether the server connection has a direct binding."""
-    server_id = _connection_id(server)
+    server_id = connection_endpoints.connection_id(server)
     return server_id is not None and server_id in _bindings_by_server_id
 
 
 def server_binding_original_address(server: object) -> tuple[str, int] | None:
     """Return the original endpoint only while the server address still matches."""
-    server_id = _connection_id(server)
+    server_id = connection_endpoints.connection_id(server)
     if server_id is None:
         return None
     binding = _bindings_by_server_id.get(server_id)
@@ -375,7 +368,7 @@ def _matching_client_bindings(
     port: int,
     allowed_kinds: frozenset[BindingKind],
 ) -> tuple[UpstreamDestinationBinding, ...]:
-    client_id = _connection_id(client)
+    client_id = connection_endpoints.connection_id(client)
     if client_id is None:
         return ()
 
@@ -418,7 +411,7 @@ def _resolve_destination_binding(
     allowed_kinds: frozenset[BindingKind],
 ) -> _DestinationBindingMatch | None:
     server = flow.server_conn
-    server_id = _connection_id(server)
+    server_id = connection_endpoints.connection_id(server)
     binding = _bindings_by_server_id.get(server_id) if server_id is not None else None
     if binding is not None:
         if not _binding_matches(
@@ -467,10 +460,10 @@ def diagnostic_snapshot_for_flow(
     matches those client bindings. The host list is diagnostic context only.
     """
     server = flow.server_conn
-    server_id = _connection_id(server)
+    server_id = connection_endpoints.connection_id(server)
     direct_binding = _bindings_by_server_id.get(server_id) if server_id is not None else None
 
-    client_id = _connection_id(flow.client_conn)
+    client_id = connection_endpoints.connection_id(flow.client_conn)
     client_server_ids = _server_ids_by_client_id.get(client_id, set()) if client_id else set()
     client_bindings = [
         binding
@@ -520,7 +513,12 @@ def diagnostic_snapshot_for_flow(
         "client_binding_match": bool(matching_client_bindings),
         "client_binding_endpoint_match": client_binding_endpoint_match,
         "client_binding_hosts": ",".join(
-            sorted({f"{binding.host}:{binding.port}" for binding in client_bindings})[:8]
+            sorted(
+                {
+                    connection_endpoints.diagnostic_text((binding.host, binding.port))
+                    for binding in client_bindings
+                }
+            )[:8]
         ),
     }
 
@@ -616,7 +614,7 @@ def flow_matches_direct_bound_destination(
         return False
 
     server = flow.server_conn
-    server_id = _connection_id(server)
+    server_id = connection_endpoints.connection_id(server)
     binding = _bindings_by_server_id.get(server_id) if server_id is not None else None
     if binding is None:
         return False

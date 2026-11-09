@@ -10,7 +10,6 @@ import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test, vi } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -786,9 +785,6 @@ test("Keep PWA navigation and clean up an artifact when leaving the mobile pane"
     context,
     path: `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
     host: "app.okou.ai",
-    featureSwitches: {
-      [FeatureSwitchKey.PwaNavigation]: true,
-    },
   });
   await openResourceArtifact("Launch site");
   await waitFor(() => {
@@ -798,11 +794,11 @@ test("Keep PWA navigation and clean up an artifact when leaving the mobile pane"
     ).toBeVisible();
     expect(screen.getByLabelText("Back to chats")).toBeVisible();
   });
-  click(screen.getByLabelText("Back to chats"));
+  const backToChats = screen.getByLabelText("Back to chats");
+  const chatsPath = backToChats.getAttribute("href");
+  click(backToChats);
   await waitFor(() => {
-    expect(window.location.pathname).not.toBe(
-      `/chats/${NAVIGATION_ARTIFACT_THREAD_ID}`,
-    );
+    expect(window.location.pathname).toBe(chatsPath);
     expect(screen.queryByTitle("Launch site preview")).not.toBeInTheDocument();
     expect(screen.queryByTestId("artifact-sidebar")).not.toBeInTheDocument();
     expect(
@@ -837,7 +833,7 @@ test("Show artifacts that belong to the current thread", async () => {
   });
   click(resourcesControl());
 
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   await waitFor(() => {

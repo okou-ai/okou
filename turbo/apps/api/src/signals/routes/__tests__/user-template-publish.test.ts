@@ -1,9 +1,10 @@
+import { PutObjectCommand } from "@aws-sdk/client-s3";
 import {
   userTemplatesContract,
   type PublishUserTemplateBody,
   type UserTemplateKind,
 } from "@okouai/api-contracts/contracts/user-templates";
-import { getUserTemplateStorageName } from "@okouai/core/storage-names";
+import { readTemplateGuidanceBundle } from "@okouai/core/template-guidance-bundle";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
@@ -11,12 +12,8 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { ClerkRateLimitError } from "../../external/clerk";
 import { createBddApi, type ApiTestUser } from "./helpers/api-bdd";
-import {
-  createRunsApi,
-  expectCanonicalStorageManifest,
-} from "./helpers/api-bdd-runs";
+import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
-import { extractFilesFromTarGz } from "../../../lib/tar";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mockClerkUsers } from "./helpers/clerk-users";
 import { createRouteMocks } from "./helpers/route-test";
@@ -236,15 +233,9 @@ describe("POST /api/user-templates", () => {
       ownerUserId: actor.userId,
       canManage: true,
     });
-    // The package is addressed by the row id, so no column points at it.
-    expect(getUserTemplateStorageName(response.body.id)).toBe(
-      `user-template@${response.body.id}`,
+    expect(fixture.keys()).toContainEqual(
+      expect.stringMatching(/^bundles\/v1\/[a-f0-9]{64}\.tar\.gz$/u),
     );
-    expect(
-      fixture.keys().some((key) => {
-        return key.endsWith("/archive.tar.gz");
-      }),
-    ).toBeTruthy();
   });
 
   it("renames a private template and preserves its cover and ownership", async () => {
@@ -983,6 +974,69 @@ describe("POST /api/user-templates", () => {
     });
   });
 
+  it("returns a conflict if the owner is deleted during bundle publication", async () => {
+    const fixture = installS3Fixture(context);
+    const actor = bdd.user();
+    signIn(actor);
+    const client = templateClient();
+    const published = await accept(
+      client.publish({
+        headers: webHeaders(),
+        body: await publishBody(actor, fixture),
+      }),
+      [200],
+    );
+    const packageFileId = await uploadTemplateFile(
+      context,
+      actor,
+      fixture,
+      { filename: "replacement.tar.gz", contentType: PACKAGE_CONTENT_TYPE },
+      tarGz([
+        ...guidance("presentation"),
+        { path: "revision.txt", content: "Revised package" },
+      ]),
+    );
+    const sendS3 = context.mocks.s3.send.getMockImplementation()!;
+    let deleted = false;
+    onTestFinished(() => {
+      context.mocks.s3.send.mockImplementation(sendS3);
+    });
+    context.mocks.s3.send.mockImplementation(async (command: unknown) => {
+      const result = await sendS3(command);
+      if (!deleted && command instanceof PutObjectCommand) {
+        deleted = true;
+        // The external write has happened, but its response has not returned.
+        // Delete through the real API before repackage can update the owner.
+        await accept(
+          client.delete({
+            headers: webHeaders(),
+            params: { templateId: published.body.id },
+            body: undefined,
+          }),
+          [204],
+        );
+      }
+      return result;
+    });
+    await accept(
+      client.replacePackage({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { packageFileId },
+      }),
+      [409],
+    );
+    expect(deleted).toBeTruthy();
+    await accept(
+      client.replacePackage({
+        headers: webHeaders(),
+        params: { templateId: published.body.id },
+        body: { packageFileId },
+      }),
+      [404],
+    );
+  });
+
   it("replaces the stored package rather than adding to it", async () => {
     const actor = bdd.user();
     runs.acceptTelemetryIngest();
@@ -1044,7 +1098,6 @@ describe("POST /api/user-templates", () => {
       [200],
     );
     ownedTemplates.add(published.body.id);
-    const storageName = getUserTemplateStorageName(published.body.id);
     const consumedFiles = async () => {
       const { runId } = await chatEvents.sendChatRun(actor, {
         agentId: agent.agentId,
@@ -1059,19 +1112,24 @@ describe("POST /api/user-templates", () => {
       const { claim } = await chatEvents.claimChatRun(runnerGroup, runId);
       expect(claim.appendSystemPrompt).toContain("okou host screenshot");
       expect(claim.appendSystemPrompt).toContain("previewImageUrl");
-      const mount = expectCanonicalStorageManifest(
-        claim.storageManifest,
-      )?.storageMounts.find((candidate) => {
-        return candidate.name === storageName;
-      });
-      if (!mount?.archiveUrl) {
-        throw new Error("Expected the selected template's real archive mount");
+      const bundle = claim.contentBundles.templates?.[0];
+      if (!bundle) {
+        throw new Error("Expected the selected template's immutable bundle");
       }
-      const files = [
-        ...extractFilesFromTarGz(fixture.readSignedObject(mount.archiveUrl)),
-      ].sort((left, right) => {
-        return left.path.localeCompare(right.path);
+      expect(bundle).toMatchObject({
+        ownerKind: "user-template",
+        templateId: published.body.id,
       });
+      const files = readTemplateGuidanceBundle(
+        fixture.readSignedObject(bundle.downloadUrl),
+        { sha256: bundle.sha256, archiveBytes: bundle.archiveBytes },
+      )
+        .map((file) => {
+          return { path: file.path, content: file.content.toString("utf8") };
+        })
+        .sort((left, right) => {
+          return left.path.localeCompare(right.path);
+        });
       await runs.requestCancelRun(actor, runId, [200]);
       await flushWaitUntilForTest();
       activeRuns.delete(runId);

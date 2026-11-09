@@ -1,3 +1,4 @@
+import ChatDataTestSupport
 import ClerkKit
 import XCTest
 
@@ -28,6 +29,7 @@ final class AuthenticationScopeTests: XCTestCase {
     await provider.activation.hold()
     let refresh = try await refreshUntilRequest(authentication, at: provider.activation)
     XCTAssertNil(authentication.scopeID)
+    XCTAssertNil(authentication.presentationScopeID)
     await provider.activation.releaseAll()
     await refresh.task.value
     XCTAssertEqual(authentication.activeWorkspaceID, "org_one")
@@ -115,16 +117,232 @@ final class AuthenticationScopeTests: XCTestCase {
     try await assertToken(authentication)
   }
 
-  func testOnlyTheLatestInitialMembershipReadCanAuthorizeTheScope() async throws {
+  func testRefreshedActiveSessionCanIssueScopedTokensWhileMembershipsLoad() async throws {
     let (provider, authentication) = try await session()
     await provider.memberships.hold()
-    let first = try await refreshUntilRequest(authentication, at: provider.memberships)
-    let latest = try await refreshUntilRequest(authentication, at: provider.memberships)
-    await provider.memberships.release(first.request)
-    await first.task.value
-    XCTAssertNil(authentication.scopeID)
+    let refresh = try await refreshUntilRequest(authentication, at: provider.memberships)
+    XCTAssertFalse(authentication.isLoading)
+    XCTAssertEqual(authentication.activeWorkspaceID, "org_one")
+    try await assertToken(authentication)
     await provider.memberships.releaseAll()
-    await latest.task.value
+    await refresh.task.value
+    try await assertToken(authentication)
+  }
+
+  func testRestoredHomeScopeIsStableWhileRequestsWaitForIdentityButNotMemberships() async throws {
+    let (provider, authentication) = try await session()
+    let presentation = try XCTUnwrap(authentication.presentationScopeID)
+    XCTAssertEqual(authentication.presentationWorkspaceID, "org_one")
+    XCTAssertNil(authentication.scopeID)
+    await provider.clientReads.hold()
+    await provider.memberships.hold()
+    let refresh = try await refreshUntilRequest(authentication, at: provider.clientReads)
+    let authorized = expectation(description: "Scoped request resumes after identity verification")
+    let token = Task.immediate {
+      let value = try await authentication.accessToken(
+        workspaceID: "org_one", scopeID: presentation)
+      authorized.fulfill()
+      return value
+    }
+    addTeardownBlock {
+      token.cancel()
+      await provider.clientReads.releaseAll()
+      await provider.memberships.releaseAll()
+      _ = try? await token.value
+    }
+    XCTAssertNil(authentication.scopeID)
+    XCTAssertEqual(authentication.presentationScopeID, presentation)
+    await provider.clientReads.releaseAll()
+    await fulfillment(of: [authorized], timeout: 3)
+    let value = try await token.value
+    XCTAssertFalse(value.isEmpty)
+    XCTAssertEqual(authentication.scopeID, presentation)
+    XCTAssertEqual(authentication.presentationScopeID, presentation)
+    await provider.memberships.releaseAll()
+    await refresh.task.value
+  }
+
+  func testSigningOutDuringIdentityRestorationRejectsTheQueuedRequest() async throws {
+    let (provider, authentication) = try await session()
+    let scope = try XCTUnwrap(authentication.presentationScopeID)
+    await provider.clientReads.hold()
+    let refresh = try await refreshUntilRequest(authentication, at: provider.clientReads)
+    let token = Task.immediate {
+      try await authentication.accessToken(workspaceID: "org_one", scopeID: scope)
+    }
+    addTeardownBlock {
+      await provider.clientReads.releaseAll()
+      _ = try? await token.value
+    }
+    try await authentication.signOut()
+    XCTAssertNil(authentication.presentationScopeID)
+    await provider.clientReads.releaseAll()
+    await refresh.task.value
+    do {
+      _ = try await token.value
+      XCTFail("A request queued in a signed-out scope must not receive credentials")
+    } catch {}
+    XCTAssertNil(authentication.scopeID)
+  }
+
+  func testIdentityReplacementDuringRestorationRejectsThePreviousHomeScope() async throws {
+    let (provider, authentication) = try await session()
+    let scope = try XCTUnwrap(authentication.presentationScopeID)
+    await provider.clientReads.hold()
+    let refresh = try await refreshUntilRequest(authentication, at: provider.clientReads)
+    let token = Task.immediate {
+      try await authentication.accessToken(workspaceID: "org_one", scopeID: scope)
+    }
+    addTeardownBlock {
+      await provider.clientReads.releaseAll()
+      _ = try? await token.value
+    }
+    provider.state.withLock {
+      $0.userID = "user_replacement_" + UUID().uuidString
+      $0.sessionID = "sess_replacement_" + UUID().uuidString
+      $0.activeWorkspaceID = "org_two"
+      $0.workspaceIDs = ["org_two"]
+    }
+    await provider.clientReads.releaseAll()
+    await refresh.task.value
+    do {
+      _ = try await token.value
+      XCTFail("A request queued in another account must not receive its credentials")
+    } catch let error as AuthenticationService.AuthenticationError {
+      XCTAssertEqual(error, .workspaceChanged)
+    }
+    XCTAssertNotEqual(authentication.presentationScopeID, scope)
+    try await assertToken(authentication)
+  }
+
+  func testOverlappingStartupAndForegroundRefreshShareIdentityRestoration() async throws {
+    let (provider, authentication) = try await session()
+    await provider.memberships.hold()
+    let refresh = try await refreshUntilRequest(authentication, at: provider.memberships)
+    let overlapping = Task.immediate { await authentication.refresh() }
+    addTeardownBlock { await overlapping.value }
+    await provider.memberships.releaseAll()
+    await refresh.task.value
+    await overlapping.value
+    let membershipRequests = await provider.memberships.count()
+    XCTAssertEqual(membershipRequests, refresh.request)
+    try await assertToken(authentication)
+  }
+
+  func testMembershipFailureDoesNotBlockARefreshedActiveSession() async throws {
+    let (_, authentication) = try await session { $0.failMemberships = true }
+    await authentication.refresh()
+    XCTAssertFalse(authentication.isLoading)
+    XCTAssertNotNil(authentication.errorMessage)
+    try await assertToken(authentication)
+  }
+
+  func testIdentityChangedDuringStartupCanResolveWhileThePreviousMembershipReadIsPending()
+    async throws
+  {
+    let (provider, authentication) = try await session()
+    await provider.memberships.hold()
+    let observation = await provider.memberships.observeRequests()
+    let first = expectation(description: "The initial identity is loading memberships")
+    let observer = Task {
+      for await _ in observation.arrivals {
+        first.fulfill()
+        return
+      }
+    }
+    let startup = Task { await authentication.start() }
+    addTeardownBlock {
+      startup.cancel()
+      await provider.memberships.releaseAll()
+      await provider.memberships.stopObserving(observation.id)
+      observer.cancel()
+      await observer.value
+      await startup.value
+    }
+    await fulfillment(of: [first], timeout: 3)
+    // The SDK can request memberships before the app's session refresh completes.
+    try await waitForBusinessResult { authentication.scopeID != nil }
+    let oldScope = try XCTUnwrap(authentication.scopeID)
+    let replacement = expectation(description: "The replacement identity loads its own memberships")
+    let sessionID = "sess_replacement_" + UUID().uuidString
+    provider.identityOverride.withLock {
+      $0 = { request in
+        if request.url?.path == "/v1/me/organization_memberships",
+          URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+            .first(where: { $0.name == "_clerk_session_id" })?.value == sessionID
+        {
+          replacement.fulfill()
+        }
+        return nil
+      }
+    }
+    provider.state.withLock {
+      $0.userID = "user_replacement_" + UUID().uuidString
+      $0.sessionID = sessionID
+      $0.activeWorkspaceID = "org_two"
+      $0.workspaceIDs = ["org_two"]
+    }
+    try await authentication.clerk?.refreshClient()
+    await fulfillment(of: [replacement], timeout: 3)
+    await provider.memberships.releaseAll()
+    try await waitForBusinessResult { authentication.activeWorkspaceID == "org_two" }
+    await assertRejected(authentication, workspace: "org_one", scope: oldScope)
+    try await assertToken(authentication)
+  }
+
+  func testFailedSessionRefreshCannotAuthorizeTheCachedIdentityAndCanRetry() async throws {
+    let (provider, authentication) = try await session()
+    let presentation = try XCTUnwrap(authentication.presentationScopeID)
+    provider.identityOverride.withLock {
+      $0 = { request in
+        guard request.url?.path == "/v1/client" else { return nil }
+        return ChatHTTPResponse(
+          status: 400,
+          body: #"{"errors":[{"code":"fixture_unavailable","message":"Session unavailable"}]}"#)
+      }
+    }
+    await authentication.refresh()
+    XCTAssertFalse(authentication.isLoading)
+    XCTAssertNil(authentication.scopeID)
+    XCTAssertEqual(authentication.presentationScopeID, presentation)
+    XCTAssertNotNil(authentication.errorMessage)
+    provider.state.withLock { $0.failMemberships = true }
+    await authentication.refreshWorkspaces()
+    XCTAssertNil(authentication.scopeID)
+    provider.identityOverride.withLock { $0 = nil }
+    provider.state.withLock { $0.failMemberships = false }
+    await authentication.refresh()
+    try await assertToken(authentication)
+    XCTAssertEqual(authentication.scopeID, presentation)
+  }
+
+  func testRevokedSessionRemovesTheRestoredHomeScope() async throws {
+    let (provider, authentication) = try await session()
+    XCTAssertNotNil(authentication.presentationScopeID)
+    provider.state.withLock { $0.signedOut = true }
+    await authentication.refresh()
+    XCTAssertNil(authentication.presentationScopeID)
+    XCTAssertNil(authentication.scopeID)
+  }
+
+  func testCrossWorkspaceNavigationWaitsForMembershipsWhileTheCurrentWorkspaceIsUsable()
+    async throws
+  {
+    let (provider, authentication) = try await session { $0.workspaceIDs = ["org_one", "org_two"] }
+    await provider.memberships.hold()
+    let refresh = try await refreshUntilRequest(authentication, at: provider.memberships)
+    try await assertToken(authentication)
+    let switching = Task.immediate { try await authentication.switchWorkspace("org_two") }
+    addTeardownBlock {
+      switching.cancel()
+      await provider.memberships.releaseAll()
+      _ = try? await switching.value
+    }
+    XCTAssertEqual(authentication.activeWorkspaceID, "org_one")
+    await provider.memberships.releaseAll()
+    await refresh.task.value
+    try await switching.value
+    XCTAssertEqual(authentication.activeWorkspaceID, "org_two")
     try await assertToken(authentication)
   }
 

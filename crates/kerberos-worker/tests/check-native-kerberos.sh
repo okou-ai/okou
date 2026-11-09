@@ -56,11 +56,15 @@ for line in (receipt/'compiler.json').read_text().splitlines():
 assert set(executables)=={'kerberos_worker','process','parent_death','cleanup_unknown'} and len(builds)==1
 build=builds[0];env=dict(build['env']);binary=Path(build['out_dir'])/'native/kerberos-worker'
 assert env['KERBEROS_WORKER_TARGET']==f'{arch}-unknown-linux-musl'
-sha=hashlib.sha256(binary.read_bytes()).hexdigest();assert sha==env['KERBEROS_WORKER_SHA256']
+helper=binary.read_bytes()
+sha=hashlib.sha256(helper).hexdigest();assert sha==env['KERBEROS_WORKER_SHA256']
 notices=b'\n'.join((Path(build['out_dir'])/'native'/name).read_bytes() for name in ('NOTICE-MIT','NOTICE-musl','NOTICE-Zig'))
 notice_sha=hashlib.sha256(notices).hexdigest();assert notice_sha==env['KERBEROS_WORKER_NOTICES_SHA256']
 for executable in executables.values():
-    assert notices in Path(executable).read_bytes(), 'linked native consumer did not retain redistribution notices'
+    consumer=Path(executable).read_bytes()
+    assert notices in consumer, 'linked native consumer did not retain redistribution notices'
+    assert consumer.count(helper)==1, 'linked native consumer must retain exactly one sealed helper ELF'
+    del consumer
 (receipt/'notices.txt').write_bytes(notices)
 headers=subprocess.check_output(['readelf','-h','-l','-d',str(binary)],text=True)
 assert 'INTERP' not in headers and '(NEEDED)' not in headers

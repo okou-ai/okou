@@ -37,6 +37,7 @@ public actor VoiceDraftSession {
   private struct Segment: Codable {
     let endSample: Int
     let transcript: String
+    let vadPolicyVersion: String?
   }
   private struct Record: Codable {
     let id: UUID
@@ -50,14 +51,19 @@ public actor VoiceDraftSession {
   public var hasPreparedText: Bool { record?.text != nil }
   private let storage: VoiceDraftStorage
   private let client: VoiceInputClient
+  private let activityDetection: any VoiceActivityDetection
   private var record: Record?
   private var sampleCount: Int
 
-  public init(client: VoiceInputClient, storage: VoiceDraftStorage) throws {
+  public init(
+    client: VoiceInputClient, storage: VoiceDraftStorage,
+    activityDetection: any VoiceActivityDetection
+  ) throws {
     self.client = client
     self.storage = storage
+    self.activityDetection = activityDetection
     if storage.hasRecording {
-      let saved = try JSONDecoder().decode(
+      var saved = try JSONDecoder().decode(
         Record.self, from: Data(contentsOf: storage.directory.appendingPathComponent("record.json"))
       )
       let size =
@@ -66,6 +72,14 @@ public actor VoiceDraftSession {
       guard size.isMultiple(of: 2), size <= Self.maximumBytes,
         (saved.segments.last?.endSample ?? 0) <= size / 2
       else { throw VoiceDraftError.unavailable }
+      // A changed detector must reconsider locally skipped audio, including a
+      // cached final text. Later segments depend on that transcript context.
+      if let stale = saved.segments.firstIndex(where: {
+        $0.vadPolicyVersion != nil && $0.vadPolicyVersion != activityDetection.policyVersion
+      }) {
+        saved.segments.removeSubrange(stale...)
+        saved.text = nil
+      }
       record = saved
       sampleCount = size / 2
     } else {
@@ -126,16 +140,34 @@ public actor VoiceDraftSession {
         try? file.close()
         throw error
       }
-      let previous = String(current.segments.map(\.transcript).joined(separator: " ").suffix(1_000))
-      let transcript = try await client.transcribe(
-        pcm: pcm, previousTranscript: previous,
-        overlapSeconds: Double(previousEnd - start) / Double(Self.sampleRate),
-        totalSeconds: Double(sampleCount) / Double(Self.sampleRate), context: current.context)
+      // Earlier overlap cannot establish that this segment contains new speech.
+      // Preserve the original segment bytes when speech is weak or uncertain.
+      let overlap = previousEnd - start
+      let mayContainSpeech = try await activityDetection.mayContainSpeech(
+        Data(pcm.dropFirst(overlap * 2)))
+      try Task.checkCancellation()
+      guard record?.id == recordingID,
+        (record?.segments.last?.endSample ?? 0) == previousEnd
+      else { throw VoiceDraftError.changed }
+      let transcript: String
+      if mayContainSpeech {
+        let previous = String(
+          current.segments.map(\.transcript).joined(separator: " ").suffix(1_000))
+        transcript = try await client.transcribe(
+          pcm: pcm, previousTranscript: previous,
+          overlapSeconds: Double(overlap) / Double(Self.sampleRate),
+          totalSeconds: Double(sampleCount) / Double(Self.sampleRate), context: current.context)
+      } else {
+        transcript = ""
+      }
       try Task.checkCancellation()
       guard var updated = record, updated.id == recordingID,
         (updated.segments.last?.endSample ?? 0) == previousEnd
       else { throw VoiceDraftError.changed }
-      updated.segments.append(Segment(endSample: end, transcript: transcript))
+      updated.segments.append(
+        Segment(
+          endSample: end, transcript: transcript,
+          vadPolicyVersion: mayContainSpeech ? nil : activityDetection.policyVersion))
       try save(updated)
       record = updated
     }

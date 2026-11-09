@@ -3,7 +3,6 @@ import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
 import { expect, test } from "vitest";
 import { chatThreadRenameContract } from "@okouai/api-contracts/contracts/chat-threads";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 
 import {
   click,
@@ -20,10 +19,7 @@ import { mockChatLifecycle } from "./chat-test-helpers.ts";
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000001";
 
-function setupEmojiPage(
-  threadTitle = "Emoji planning",
-  archiveEnabled?: boolean,
-): Promise<void> {
+function setupEmojiPage(threadTitle = "Emoji planning"): Promise<void> {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle,
@@ -31,10 +27,6 @@ function setupEmojiPage(
   return setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches:
-      archiveEnabled === undefined
-        ? undefined
-        : { [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled },
   });
 }
 
@@ -112,8 +104,8 @@ function nextAnimationFrame(): Promise<void> {
   return frame.promise;
 }
 
-test("Keep the check-mark thread icon Done when archiving is enabled", async () => {
-  await setupEmojiPage("Emoji planning", true);
+test("Keep the check-mark thread icon Done", async () => {
+  await setupEmojiPage();
   await waitFor(() => {
     expect(buttonByLabel("Change icon")).toBeInTheDocument();
   });
@@ -151,7 +143,7 @@ test("Retain a thread icon when resizing from mobile to desktop", async () => {
   const viewport = context.mocks.browser.matchMedia(false);
   await setupEmojiPage("😀 Emoji planning");
   await waitFor(() => {
-    expect(screen.getByLabelText("Open menu")).toBeInTheDocument();
+    expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
     expect(buttonByLabel("Change icon")).toHaveTextContent("😀");
   });
 
@@ -162,7 +154,6 @@ test("Retain a thread icon when resizing from mobile to desktop", async () => {
     expect(screen.getByLabelText("Open browser")).toBeInTheDocument();
     expect(buttonByLabel("Change icon")).toHaveTextContent("😀");
   });
-  expect(screen.queryByLabelText("Open menu")).not.toBeInTheDocument();
   expect(screen.getAllByTestId("chat-thread-header-title")).toHaveLength(1);
 });
 
@@ -179,7 +170,7 @@ test("Change a thread icon before its save finishes", async () => {
     expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
       "Emoji planning",
     );
-    expect(buttonByLabel("Open menu")).toBeInTheDocument();
+    expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
   });
   const changeIcon = buttonByLabel("Change icon");
 
@@ -239,7 +230,7 @@ test.each([
 
     await waitFor(() => {
       expect(
-        screen.getByLabelText(desktop ? "Open menu" : "Open browser"),
+        screen.getByLabelText(desktop ? "Back to chats" : "Open browser"),
       ).toBeInTheDocument();
       const searchInputs = screen.getAllByLabelText("Search emoji");
       expect(searchInputs).toHaveLength(1);

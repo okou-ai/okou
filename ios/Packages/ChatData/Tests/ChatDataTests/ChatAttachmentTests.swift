@@ -81,6 +81,19 @@ final class ChatAttachmentTests: XCTestCase {
     XCTAssertEqual(
       Array(paths.withLock { $0 }.prefix(3)),
       ["/api/uploads/prepare", "/storage/file", "/api/uploads/complete"])
+
+    // Clearing the composer removes its copy; both preview paths must keep the uploaded bytes.
+    try FileManager.default.removeItem(at: file)
+    let sentAttachment = ChatMessageAttachment(
+      id: attachment.id, filename: attachment.filename, contentType: attachment.contentType)
+    let preview = try await commands.downloadAttachment(sentAttachment)
+    XCTAssertEqual(try Data(contentsOf: XCTUnwrap(preview?.url)), Data("invoice".utf8))
+    let artifact = ChatArtifact(
+      source: .file(attachment.id), filename: attachment.filename,
+      contentType: attachment.contentType)
+    let (_, shared) = try await commands.artifacts.download(artifact)
+    XCTAssertEqual(shared.url, preview?.url)
+    commands.closeFileCache()
   }
 
   func testMultipartFailureAbortsAndExplicitRetryUploadsAllPartsBeforeCompletion() async throws {
@@ -180,7 +193,7 @@ final class ChatAttachmentTests: XCTestCase {
     XCTAssertTrue(FileManager.default.createFile(atPath: file.path, contents: nil))
     defer { try? FileManager.default.removeItem(at: file) }
     let handle = try FileHandle(forWritingTo: file)
-    try handle.truncate(atOffset: UInt64(ChatAttachment.maximumSize + 1))
+    try handle.truncate(atOffset: UInt64(ChatAttachment.maximumUploadSize + 1))
     try handle.close()
     let fixture = ChatHTTPFixture { _ in
       XCTFail("Oversized files must not allocate remote storage")
@@ -191,7 +204,7 @@ final class ChatAttachmentTests: XCTestCase {
       _ = try await commands.uploadAttachment(
         file: file, filename: "large.zip", contentType: "application/zip")
       XCTFail("Oversized files must be rejected")
-    } catch { XCTAssertTrue(error.localizedDescription.contains("1 GB")) }
+    } catch { XCTAssertTrue(error.localizedDescription.contains("512 MB")) }
   }
 }
 

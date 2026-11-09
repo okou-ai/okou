@@ -5,6 +5,7 @@
 //! status retry before GC instead of aborting work that may outlive its future.
 
 use std::sync::Arc;
+use std::time::Duration;
 
 use tokio::sync::watch;
 use tokio::task::JoinHandle;
@@ -14,6 +15,8 @@ use super::{HOME_CACHE_GC_PERIOD, RunnerError, RunnerResult};
 use crate::home_image_cache::HomeImageCache;
 use crate::lifecycle::RunnerMode;
 use crate::status::StatusTracker;
+
+pub(super) const STATUS_RETRY_PERIOD: Duration = Duration::from_secs(10);
 
 pub(super) struct MaintenanceTasks {
     home_cache_gc: Option<JoinHandle<()>>,

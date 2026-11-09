@@ -134,7 +134,6 @@ export interface ChatThreadListSignals {
 }
 
 interface ChatThreadListFilter {
-  readonly archiveEnabled: boolean;
   readonly onlyArchived: boolean;
   readonly onlyMuted: boolean;
 }
@@ -250,9 +249,6 @@ function createChatThreadListSignals(
     if (filter.onlyMuted) {
       return thread.muted;
     }
-    if (!filter.archiveEnabled) {
-      return true;
-    }
     return filter.onlyArchived ? thread.archived : !thread.archived;
   };
 
@@ -270,7 +266,7 @@ function createChatThreadListSignals(
     allProjectThreads$,
     hideEmptyProjects: filter.onlyArchived || filter.onlyMuted,
     hasHiddenArchivedThreads$: computed((get): boolean => {
-      if (!filter.archiveEnabled || filter.onlyArchived || filter.onlyMuted) {
+      if (filter.onlyArchived || filter.onlyMuted) {
         return false;
       }
       return get(allThreads$).some((thread) => {
@@ -284,14 +280,11 @@ function createChatThreadListSignals(
 // Thread events can update the returned signals without replacing this Promise.
 const currentChatThreadListSignals$ = computed(
   async (get): Promise<ChatThreadListSignals> => {
-    const archiveEnabled =
-      get(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] ?? false;
-    const onlyArchived = archiveEnabled && get(chatThreadOnlyArchived$);
+    const onlyArchived = get(chatThreadOnlyArchived$);
 
     const agentId = get(currentChatAgentScope$) ?? (await get(defaultAgentId$));
 
     return createChatThreadListSignals(agentId, {
-      archiveEnabled,
       onlyArchived,
       onlyMuted: get(chatThreadOnlyMuted$),
     });

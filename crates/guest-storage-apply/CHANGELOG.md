@@ -1,5 +1,37 @@
 # Changelog
 
+## [0.31.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.30.1...guest-storage-apply-v0.31.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+## [0.30.1](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.30.0...guest-storage-apply-v0.30.1) (2026-11-07)
+
+
+### Performance Improvements
+
+* **runner:** overlap ready storage with cold archive delivery ([#45841](https://github.com/okou-ai/okou/issues/45841)) ([109d67a](https://github.com/okou-ai/okou/commit/109d67a03b63a3e53938af322ae13a7dd6507a52))
+
+## [0.30.0](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.8...guest-storage-apply-v0.30.0) (2026-11-07)
+
+
+### Features
+
+* **guest-storage:** add event-driven pending archive readiness ([#45766](https://github.com/okou-ai/okou/issues/45766)) ([2fe135a](https://github.com/okou-ai/okou/commit/2fe135ae51a7a4a3624917b3a987b43ab142b9b5))
+
+## [0.29.8](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.7...guest-storage-apply-v0.29.8) (2026-11-06)
+
+## [0.29.7](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.6...guest-storage-apply-v0.29.7) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** share mixed tar archive fixtures ([#45710](https://github.com/okou-ai/okou/issues/45710)) ([26daf82](https://github.com/okou-ai/okou/commit/26daf82d8ea6b055ed951fd3653e59da5a8d2dc8))
+
+## [0.29.6](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.5...guest-storage-apply-v0.29.6) (2026-11-06)
+
 ## [0.29.5](https://github.com/okou-ai/okou/compare/guest-storage-apply-v0.29.4...guest-storage-apply-v0.29.5) (2026-11-06)
 
 

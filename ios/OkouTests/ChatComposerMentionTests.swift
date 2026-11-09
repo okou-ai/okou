@@ -139,7 +139,7 @@ final class ChatComposerMentionTests: XCTestCase {
         $0.referenceID == MentionNavigationFixture.thread(35)
       })
     try await waitForBusinessResult { editor.mentionSuggestions.contains(target) }
-    for _ in 0..<3 { try mentionKey(UIKeyCommand.inputDownArrow, input: input) }
+    for _ in 0..<3 { try await mentionKey(UIKeyCommand.inputDownArrow, input: input) }
     input.insertText("\n")
     try await waitForBusinessResult {
       workspace.newComposer.document.parts.contains(target.part)
@@ -148,7 +148,7 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(navigation.paths.value.withLock { $0.allSatisfy { !$0.contains("/search") } })
     input.insertText("@")
     try await waitForBusinessResult { editor.mentionSuggestions.contains(target) }
-    try mentionKey(UIKeyCommand.inputEscape, input: input)
+    try await mentionKey(UIKeyCommand.inputEscape, input: input)
     XCTAssertFalse(editor.handleMentionKey("\r", in: input))
     XCTAssertTrue(input.isFirstResponder)
     input.insertText("missing")
@@ -167,11 +167,13 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     let reference = try XCTUnwrap(
       workspace.mentionTestSource.suggestions(for: "pl").first { $0.kind == .agent })
-    let expected = ChatDraftDocument(parts: [
+    let draft = ChatDraftDocument(parts: [
       reference.part, .object(["type": .string("text"), "text": .string(" ")]),
     ])
+    let expected = ChatDraftDocument(parts: [reference.part])
     let block = try XCTUnwrap(conversation.composer.editorBlocks.first)
-    conversation.composer.editBlock(block.id, document: expected)
+    conversation.composer.editBlock(block.id, document: draft)
+    XCTAssertEqual(conversation.composer.document, draft)
     XCTAssertTrue(conversation.composer.hasContent)
     XCTAssertEqual(conversation.draft.trimmingCharacters(in: .whitespacesAndNewlines), "")
     await conversation.send()
@@ -262,11 +264,13 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     let reference = try XCTUnwrap(
       candidates.mentionTestSource.suggestions(for: "plan").first { $0.kind == .chat })
-    let expected = ChatDraftDocument(parts: [
+    let draft = ChatDraftDocument(parts: [
       reference.part, .object(["type": .string("text"), "text": .string(" ")]),
     ])
+    let expected = ChatDraftDocument(parts: [reference.part])
     let block = try XCTUnwrap(workspace.newComposer.editorBlocks.first)
-    workspace.newComposer.editBlock(block.id, document: expected)
+    workspace.newComposer.editBlock(block.id, document: draft)
+    XCTAssertEqual(workspace.newComposer.document, draft)
     await workspace.sendNewChat()
     let conversation = try XCTUnwrap(workspace.selectedConversation)
     let pending = try XCTUnwrap(conversation.pending.first)
@@ -285,7 +289,11 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertEqual(sends[0].clientEventId, sends[1].clientEventId)
   }
 
-  private func mentionKey(_ key: String, input: ComposerTextView) throws {
+  private func mentionKey(_ key: String, input: ComposerTextView) async throws {
+    // IME confirmation settles on a later UIKit turn than the business document.
+    try await eventually {
+      input.keyCommands?.contains { $0.input == key && $0.modifierFlags.isEmpty } == true
+    }
     let command = try XCTUnwrap(
       input.keyCommands?.first { $0.input == key && $0.modifierFlags.isEmpty })
     XCTAssertTrue(
@@ -297,17 +305,15 @@ final class ChatComposerMentionTests: XCTestCase {
     let navigation = MentionNavigationFixture()
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
-    let host = UIHostingController(rootView: MentionComposerHarness(workspace: workspace))
+    let originalComposer = workspace.newComposer
+    // Keep the old native editor mounted while its draft is no longer selected.
+    // The callback must reach that owner rather than race SwiftUI's teardown.
+    let host = UIHostingController(
+      rootView: MentionComposerHarness(
+        state: originalComposer, source: workspace.mentionTestSource))
     let window = try await mountMentionHost(host)
     addTeardownBlock { @MainActor in unmount(window) }
     let input = try XCTUnwrap(mentionInputs(in: host.view).first)
-    let pasteDelegate = try XCTUnwrap(input.pasteDelegate)
-    let consumed = expectation(description: "UIKit consumed the production paste result")
-    let observer = PasteResultObserver(delegate: pasteDelegate, completed: consumed)
-    input.pasteDelegate = observer
-    addTeardownBlock { @MainActor in
-      withExtendedLifetime(observer) { input.pasteDelegate = nil }
-    }
     try await focusMentionInput(input)
     input.insertText("@pl")
     try await eventually { mentionTable(in: host.view)?.visibleCells.first != nil }
@@ -315,7 +321,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let started = expectation(description: "Structured clipboard provider started")
     let delivery = DelayedProviderTasks(owner: self)
     let data = Data(
-      #"{"version":1,"parts":[{"type":"agent","agentId":"73000000-0000-4000-8000-000000000001","nameSnapshot":"Planner"}]}"#
+      #"{"version":1,"parts":[{"type":"agent","agentId":"73000000-0000-4000-8000-000000000003","nameSnapshot":"Notes"}]}"#
         .utf8)
     let provider = NSItemProvider()
     provider.registerDataRepresentation(
@@ -327,10 +333,15 @@ final class ChatComposerMentionTests: XCTestCase {
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
     workspace.startNewChat(agentID: MentionNavigationFixture.agent(2))
-    try await eventually { mentionInputs(in: host.view).first !== input && input.delegate == nil }
+    // Exercise the old callbacks after switching their draft owner, independently
+    // of when SwiftUI dismantles the old editor.
     XCTAssertTrue(retiredRow.accessibilityActivate())
     delivery.release()
-    await fulfillment(of: [consumed], timeout: 3)
+    try await waitForBusinessResult {
+      originalComposer.document.parts.contains {
+        $0["type"]?.string == "agent" && $0["agentId"]?.string == MentionNavigationFixture.agent(3)
+      }
+    }
     try await hostingPresentationFrame()
     XCTAssertFalse(workspace.newComposer.hasContent)
     XCTAssertEqual(workspace.selectedAgentID, MentionNavigationFixture.agent(2))

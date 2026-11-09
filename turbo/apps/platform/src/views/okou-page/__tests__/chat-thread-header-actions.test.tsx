@@ -1,5 +1,6 @@
 import { act, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   chatThreadArchiveContract,
   chatThreadMuteContract,
@@ -11,7 +12,6 @@ import {
 import { browserContract } from "@okouai/api-contracts/contracts/browser";
 import { mailContract } from "@okouai/api-contracts/contracts/mail";
 import { workflowAutomationsContract } from "@okouai/api-contracts/contracts/workflows";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
   click,
   queryAllByRoleFast,
@@ -29,8 +29,9 @@ const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
 
 async function setupHeaderPage(
   threadEvents: readonly ChatThreadEvent[] = [],
-  archiveEnabled = true,
-  mutingEnabled = false,
+  options: {
+    readonly singleAgent?: boolean;
+  } = {},
 ) {
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
@@ -71,10 +72,10 @@ async function setupHeaderPage(
   await setupPage({
     context,
     path: `/chats/${THREAD_ID}`,
-    featureSwitches: {
-      [FeatureSwitchKey.ChatThreadArchiving]: archiveEnabled,
-      [FeatureSwitchKey.ChatThreadMuting]: mutingEnabled,
-    },
+    featureSwitches:
+      options.singleAgent === undefined
+        ? {}
+        : { [FeatureSwitchKey.SingleAgent]: options.singleAgent },
   });
   await screen.findByText("Review the header layout");
   await waitFor(() => {
@@ -111,25 +112,6 @@ function menuItemNamed(name: string) {
 function menuItemNames() {
   return queryAllByRoleFast("menuitem").map((item) => {
     return item.textContent?.trim();
-  });
-}
-
-async function openMobileSidebarPin(pinned: boolean): Promise<HTMLElement> {
-  click(buttonNamed("Open menu"));
-  const drawer = await screen.findByRole("dialog", { name: "Sidebar" });
-  await waitFor(() => {
-    expect(
-      within(drawer).getByTestId("chat-thread-menu-trigger"),
-    ).toHaveAttribute("data-pinned", String(pinned));
-  });
-  return drawer;
-}
-
-async function expectMobileSidebarPin(pinned: boolean) {
-  const drawer = await openMobileSidebarPin(pinned);
-  click(within(drawer).getByLabelText("Collapse sidebar"));
-  await waitFor(() => {
-    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
   });
 }
 
@@ -175,7 +157,6 @@ test("Keep menu pin changes responsive across resize and save", async () => {
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));
-  await expectMobileSidebarPin(true);
   act(() => {
     viewport.setMatches(true);
   });
@@ -196,23 +177,17 @@ test("Keep menu pin changes responsive across resize and save", async () => {
     expect(menuItemNamed("Unpin chat")).toBeEnabled();
   });
   click(menuItemNamed("Unpin chat"));
-  const drawer = await openMobileSidebarPin(false);
 
   pinResponse.resolve();
   await waitFor(() => {
-    expect(drawer).toBeInTheDocument();
-    expect(drawer).toHaveTextContent("Pin changes saved");
+    expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
+      "Pin changes saved",
+    );
   });
-  expect(
-    within(drawer).getByTestId("chat-thread-menu-trigger"),
-  ).toHaveAttribute("data-pinned", "false");
-  click(within(drawer).getByLabelText("Collapse sidebar"));
+  click(buttonNamed("More actions"));
   await waitFor(() => {
-    expect(drawer).not.toBeInTheDocument();
+    expect(menuItemNamed("Pin chat")).toBeEnabled();
   });
-  expect(screen.getByTestId("chat-thread-header-title")).toHaveTextContent(
-    "Pin changes saved",
-  );
 });
 
 test("Keep Share and More in the header and match the sidebar menu order", async () => {
@@ -249,13 +224,14 @@ test("Keep Share and More in the header and match the sidebar menu order", async
     "Artifacts and chats",
     "More actions",
   ]);
-  expect(buttonNamed("Open menu")).toBeInTheDocument();
+  expect(screen.getByLabelText("Back to chats")).toBeInTheDocument();
 
   click(more);
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
     "Pin chat",
     "Rename chat",
+    "Mute chat",
     "Archive chat",
     "Automations",
     "Open browser",
@@ -267,45 +243,70 @@ test("Keep Share and More in the header and match the sidebar menu order", async
   );
 });
 
-test("Archive from the mobile header and return to the thread's agent before saving", async () => {
-  context.mocks.browser.matchMedia(false);
-  const archiveResponse = context.mocks.deferred<void>();
-  const events: ChatThreadEvent[] = [];
-  let archiveRequestAborted = false;
-  context.mocks.api(
-    chatThreadArchiveContract.archive,
-    async ({ params, query, request, respond }) => {
-      request.signal.addEventListener("abort", () => {
-        archiveRequestAborted = true;
-      });
-      await archiveResponse.promise;
-      events.push(
-        chatListEvent(951, 1, "archived", params.id, {
-          id: query?.eventId,
-          agentId: AGENT_ID,
-        }),
-      );
-      changeChatThreadList();
-      return respond(204);
-    },
-  );
-  await setupHeaderPage(events);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  click(menuItemNamed("Archive chat"));
+test("Report sidebar toggles as pressed and popup triggers as expanded in the desktop header", async () => {
+  context.mocks.browser.matchMedia(true);
+  await setupHeaderPage();
   await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
+    expect(buttonNamed("Manage emails")).toHaveAttribute("aria-busy", "false");
   });
-  expect(
-    screen.queryByText("Review the header layout"),
-  ).not.toBeInTheDocument();
-
-  archiveResponse.resolve();
-  await waitFor(() => {
-    expect(events).toHaveLength(1);
-  });
-  expect(archiveRequestAborted).toBeFalsy();
+  expect(buttonNamed("Automations")).toHaveAttribute("aria-pressed", "false");
+  expect(buttonNamed("Open browser")).toHaveAttribute("aria-pressed", "false");
+  const mail = buttonNamed("Manage emails");
+  expect(mail).toHaveAttribute("aria-expanded", "false");
+  click(mail);
+  await screen.findByRole("dialog", { name: "Emails" });
+  expect(mail).toHaveAttribute("aria-expanded", "true");
 });
+
+test.each([
+  {
+    name: "the thread's agent",
+    singleAgent: false,
+    leavesTo: `/agents/${AGENT_ID}/chat`,
+  },
+  { name: "My Okou's chat page", singleAgent: true, leavesTo: "/" },
+])(
+  "Archive from the mobile header and return to $name before saving",
+  async ({ singleAgent, leavesTo }) => {
+    context.mocks.browser.matchMedia(false);
+    const archiveResponse = context.mocks.deferred<void>();
+    const events: ChatThreadEvent[] = [];
+    let archiveRequestAborted = false;
+    context.mocks.api(
+      chatThreadArchiveContract.archive,
+      async ({ params, query, request, respond }) => {
+        request.signal.addEventListener("abort", () => {
+          archiveRequestAborted = true;
+        });
+        await archiveResponse.promise;
+        events.push(
+          chatListEvent(951, 1, "archived", params.id, {
+            id: query?.eventId,
+            agentId: AGENT_ID,
+          }),
+        );
+        changeChatThreadList();
+        return respond(204);
+      },
+    );
+    await setupHeaderPage(events, { singleAgent });
+    click(buttonNamed("More actions"));
+    await screen.findByRole("menu");
+    click(menuItemNamed("Archive chat"));
+    await waitFor(() => {
+      expect(pathname()).toBe(leavesTo);
+    });
+    expect(
+      screen.queryByText("Review the header layout"),
+    ).not.toBeInTheDocument();
+
+    archiveResponse.resolve();
+    await waitFor(() => {
+      expect(events).toHaveLength(1);
+    });
+    expect(archiveRequestAborted).toBeFalsy();
+  },
+);
 
 test("Undo a header archive from its toast and return to the thread", async () => {
   context.mocks.browser.matchMedia(false);
@@ -383,7 +384,7 @@ test("Mute from the mobile header and unmute from the desktop header", async () 
   const viewport = context.mocks.browser.matchMedia(false);
   const events: ChatThreadEvent[] = [];
   mockMuteRequests(events);
-  await setupHeaderPage(events, true, true);
+  await setupHeaderPage(events);
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   expect(menuItemNames()).toStrictEqual([
@@ -435,19 +436,6 @@ test("Show the archive API error after leaving the thread", async () => {
   expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
 });
 
-test("Hide header archiving when the archive switch is off", async () => {
-  context.mocks.browser.matchMedia(false);
-  await setupHeaderPage([], false);
-  click(buttonNamed("More actions"));
-  await screen.findByRole("menu");
-  expect(menuItemNames()).toStrictEqual([
-    "Pin chat",
-    "Rename chat",
-    "Automations",
-    "Open browser",
-  ]);
-});
-
 test("Unarchive from the mobile header and stay in the current thread", async () => {
   context.mocks.browser.matchMedia(false);
   const unarchiveResponse = context.mocks.deferred<void>();
@@ -474,6 +462,7 @@ test("Unarchive from the mobile header and stay in the current thread", async ()
   expect(menuItemNames()).toStrictEqual([
     "Pin chat",
     "Rename chat",
+    "Mute chat",
     "Unarchive chat",
     "Automations",
     "Open browser",
@@ -550,6 +539,7 @@ test("Open linked automations from the mobile menu", async () => {
     expect(menuItemNames()).toStrictEqual([
       "Pin chat",
       "Rename chat",
+      "Mute chat",
       "Archive chat",
       "Automations",
       "Open browser",
@@ -611,13 +601,11 @@ test("Continue saving the next pin change after an earlier request fails", async
   click(buttonNamed("More actions"));
   await screen.findByRole("menu");
   click(menuItemNamed("Pin chat"));
-  await expectMobileSidebarPin(true);
   click(buttonNamed("More actions"));
   await waitFor(() => {
     expect(menuItemNamed("Unpin chat")).toBeEnabled();
   });
   click(menuItemNamed("Unpin chat"));
-  await expectMobileSidebarPin(false);
 
   pinResponse.resolve();
   await screen.findByText("Unpin request failed");

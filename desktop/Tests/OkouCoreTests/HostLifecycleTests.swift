@@ -35,10 +35,11 @@ private actor NotificationBoundary: CommandNotifications {
     continuation = stream.continuation
     self.tokenProvider = tokenProvider
     onStart()
-    if attachedOnStart { continuation?.yield(.refresh) }
+    if attachedOnStart { continuation?.yield(.ready) }
     return stream.stream
   }
   func refresh() { continuation?.yield(.refresh) }
+  func reconnect() { continuation?.yield(.ready) }
   func renew() async throws -> JSONValue {
     guard let tokenProvider else { throw CancellationError() }
     return try await tokenProvider()
@@ -1552,7 +1553,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(operation.phase, .tokenRefresh)
       XCTAssertEqual(operation.deadline, .authenticatedRequest)
       XCTAssertEqual(operation.requests.map(\.status), [401])
-      var diagnostics = HeartbeatDiagnostics()
+      var diagnostics = HostRequestDiagnostics()
       diagnostics.failed(
         error: error, requests: operation.requests, retryDelay: 2, operation: operation)
       diagnostics.finish(outcome: .stopped)
@@ -1595,7 +1596,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       XCTAssertEqual(error.code, "network_error")
       XCTAssertEqual(error.message, "Desktop authentication request timed out")
       let operation = await trace.snapshot()
-      var diagnostics = HeartbeatDiagnostics()
+      var diagnostics = HostRequestDiagnostics()
       diagnostics.failed(
         error: error, requests: operation.requests, retryDelay: 2, operation: operation)
     }
@@ -1669,6 +1670,130 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       onChange: { state in if state.status == "error" { unavailable.fulfill() } })
     await runtime.start()
     await fulfillment(of: [unavailable], timeout: 1)
+    await runtime.stop()
+  }
+
+  func testPresenceHostSynchronizesChangesAndReconnectsWithoutIdleHeartbeat() async throws {
+    let initial = expectation(description: "Presence attachment synchronizes host state")
+    let changed = expectation(description: "Changed permissions are synchronized")
+    let reconnected = expectation(description: "Reattachment synchronizes host state")
+    let synced = RequestCount()
+    let changes = RequestCount()
+    let registration = CompletionFlag()
+    let notifications = NotificationBoundary()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        var registration = registeredHostResponse()
+        registration["livenessMode"] = .string("presence")
+        connection.reply(registration)
+      } else if path.hasSuffix("/state") {
+        switch synced.next() {
+        case 1, 2, 3: break
+        default: XCTFail("Unchanged state must not cause another synchronization")
+        }
+        connection.reply(heartbeatResponse(pending: false))
+      } else if path.hasSuffix("/wait") {
+        // The transport remains pending until runtime.stop cancels it.
+      } else if path.hasSuffix("/realtime-token") {
+        connection.reply(.object(["keyName": .string("scoped-host-key")]))
+      } else if path.hasSuffix("/next") {
+        connection.reply(.object(["status": .string("idle")]))
+      } else if path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected request for a presence host: \(path)")
+        connection.reply(.object([:]))
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: notifications, onChange: { state in
+      if state.status == "online" && state.usesPresence {
+        if !registration.value { registration.finish(); return }
+        switch changes.next() {
+        case 1: initial.fulfill()
+        case 2: changed.fulfill()
+        case 3: reconnected.fulfill()
+        default: break
+        }
+      }
+    })
+    await runtime.start()
+    await fulfillment(of: [initial], timeout: 3)
+    let permissions = JSONValue.object(["accessibility": .bool(true), "screenRecording": .bool(true)])
+    await runtime.updatePermissions(permissions)
+    await fulfillment(of: [changed], timeout: 3)
+    await runtime.updatePermissions(permissions)
+    let token = try await notifications.renew()
+    XCTAssertEqual(token["keyName"].string, "scoped-host-key")
+    await notifications.reconnect()
+    await fulfillment(of: [reconnected], timeout: 3)
+    await runtime.stop()
+  }
+
+  func testPresenceHostRecoversQueuedWorkWhenRealtimeNeverAttaches() async throws {
+    let reported = expectation(description: "HTTP queue wait recovers without Ably or a result reader")
+    let claims = RequestCount()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        var registration = registeredHostResponse()
+        registration["livenessMode"] = .string("presence")
+        connection.reply(registration)
+      } else if path.hasSuffix("/wait") {
+        connection.reply(.object(["hasPendingCommands": .bool(true)]))
+      } else if path.hasSuffix("/next") {
+        connection.reply(claims.next() == 1 ? commandResponse("without-realtime") : .object(["status": .string("idle")]))
+      } else if path.hasSuffix("/complete") {
+        connection.reply(.object([:]))
+        reported.fulfill()
+      } else if path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected request: \(path)")
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: NotificationBoundary(attachedOnStart: false))
+    await runtime.start()
+    await fulfillment(of: [reported], timeout: 4)
+    await runtime.stop()
+  }
+
+  func testPresenceHostPublishesPermissionChangesMadeDuringRegistration() async throws {
+    let registering = expectation(description: "Registration is in flight")
+    let synchronized = expectation(description: "The changed state is acknowledged")
+    let pending = PendingResponse()
+    let session = notificationTestSession()
+    defer { session.invalidateAndCancel() }
+    URLProtocolFixture.boundary.set { connection in
+      let path = connection.request.url!.path
+      if path.hasSuffix("/register") {
+        pending.hold(connection)
+        registering.fulfill()
+      } else if path.hasSuffix("/state") {
+        XCTAssertEqual(connection.body["permissions"]["accessibility"], .bool(true))
+        connection.reply(heartbeatResponse(pending: false))
+        synchronized.fulfill()
+      } else if path.hasSuffix("/wait") {
+        // Owned pending request is cancelled and joined by stop().
+      } else if path.hasSuffix("/stop") {
+        connection.reply(.object([:]))
+      } else {
+        XCTFail("Unexpected request: \(path)")
+      }
+    }
+    let runtime = notificationTestRuntime(session: session, notifications: NotificationBoundary(attachedOnStart: false))
+    let start = Task { await runtime.start() }
+    await fulfillment(of: [registering], timeout: 3)
+    await runtime.updatePermissions(.object(["accessibility": .bool(true), "screenRecording": .bool(true)]))
+    var response = registeredHostResponse()
+    response["livenessMode"] = .string("presence")
+    pending.reply(response)
+    await start.value
+    await fulfillment(of: [synchronized], timeout: 3)
     await runtime.stop()
   }
 

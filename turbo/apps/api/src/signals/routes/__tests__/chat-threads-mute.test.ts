@@ -1,10 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it } from "vitest";
 import { testContext } from "../../../__tests__/test-context";
+import { flushWaitUntilForTest } from "../../context/wait-until";
 import { createBddApi } from "./helpers/api-bdd";
 import { createChatFilesBddApi } from "./helpers/api-bdd-chat-files";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -23,17 +22,6 @@ async function fixture() {
     title: "Keep this title",
     model: null,
   });
-  if (!actor.orgId) {
-    throw new Error("Expected organization");
-  }
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-    {
-      [FeatureSwitchKey.ChatThreadMuting]: true,
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
-    },
-  );
   return { actor, thread };
 }
 
@@ -85,24 +73,25 @@ describe("chat thread muting", () => {
     );
   });
 
-  it("gates mute but keeps unmute available after the switch goes off", async () => {
+  it("signals indicator changes after muting, unmuting and deleting", async () => {
     const { actor, thread } = await fixture();
-    await chat.requestSetThreadMuted(actor, thread.id, true, [204]);
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
+    for (const muted of [true, false]) {
+      await flushWaitUntilForTest();
+      context.mocks.ably.publish.mockClear();
+      await chat.requestSetThreadMuted(actor, thread.id, muted, [204]);
+      await flushWaitUntilForTest();
+      expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+        "chatIndicatorsChanged",
+        null,
+      );
     }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.ChatThreadMuting]: false },
+    context.mocks.ably.publish.mockClear();
+    await chat.deleteThread(actor, thread.id);
+    await flushWaitUntilForTest();
+    expect(context.mocks.ably.publish).toHaveBeenCalledWith(
+      "chatIndicatorsChanged",
+      null,
     );
-    await chat.requestSetThreadMuted(actor, thread.id, false, [204]);
-    await chat.requestSetThreadMuted(actor, thread.id, true, [404]);
-    await expect(
-      chat.readThreadMetadata(actor, thread.id),
-    ).resolves.toMatchObject({
-      muted: false,
-    });
   });
 
   it("does not expose threads across user or organization boundaries", async () => {
@@ -113,18 +102,6 @@ describe("chat thread muting", () => {
       bdd.user({ userId: actor.userId }),
     ]) {
       await bdd.readOnboardingStatus(outsider);
-      if (!outsider.orgId) {
-        throw new Error("Expected organization");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        {
-          userId: outsider.userId,
-          orgId: outsider.orgId,
-          orgRole: outsider.orgRole,
-        },
-        { [FeatureSwitchKey.ChatThreadMuting]: true },
-      );
       await chat.requestSetThreadMuted(outsider, thread.id, true, [404]);
       await chat.requestSetThreadMuted(outsider, thread.id, false, [404]);
     }

@@ -19,6 +19,7 @@ use runner_types::types::HeartbeatState;
 use crate::idle_lifecycle::SharedIdlePool;
 use crate::orphan_reap::OrphanedActiveRuns;
 use crate::ownership::OwnershipTransitions;
+use crate::tests::status_active_run_records;
 
 #[test]
 fn completion_reason_uses_diagnostic_for_generic_failure() {
@@ -155,23 +156,6 @@ async fn status_active_run_count(path: &std::path::Path) -> usize {
     let raw = tokio::fs::read_to_string(path).await.unwrap();
     let status: serde_json::Value = serde_json::from_str(&raw).unwrap();
     status["active_runs"].as_array().unwrap().len()
-}
-async fn status_active_run_records(status_path: &std::path::Path) -> Vec<(String, String)> {
-    let raw = tokio::fs::read_to_string(status_path).await.unwrap();
-    let status: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    let mut records: Vec<(String, String)> = status["active_runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|run| {
-            (
-                run["run_id"].as_str().unwrap().to_string(),
-                run["sandbox_id"].as_str().unwrap().to_string(),
-            )
-        })
-        .collect();
-    records.sort_unstable();
-    records
 }
 struct CompletionAuthProvider {
     auth_matches: Arc<AtomicBool>,

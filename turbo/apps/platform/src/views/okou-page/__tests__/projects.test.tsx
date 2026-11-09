@@ -511,7 +511,6 @@ test("Projects show cross-Agent chats inline and follow the list filter without 
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.Projects]: true,
-      [FeatureSwitchKey.ChatThreadArchiving]: true,
     },
   });
   const user = userEvent.setup({ delay: null });
@@ -1346,6 +1345,84 @@ test("Dropping over an existing Project chat moves immediately while the request
   expect(namedLink(projectRows(), "Drag me into Launch")).toBeInTheDocument();
 });
 
+test.each(["chat row", "empty list space"] as const)(
+  "Dropping a Project chat onto the outer %s removes it while preserving the open chat",
+  async (destination) => {
+    const confirmation = context.mocks.deferred<void>();
+    const canonicalRead = context.mocks.deferred<void>();
+    const member = {
+      ...continuityThread(125, 1, "Launch planning"),
+      projectId: id,
+    };
+    const ordinary = continuityThread(125, 2, "Ordinary chat");
+    const workspace = installContinuityWorkspace(context, {
+      caseId: 125,
+      threads: destination === "chat row" ? [member, ordinary] : [member],
+    });
+    metadata();
+    const events: ChatThreadEvent[] = [];
+    context.mocks.api(chatThreadsContract.events, ({ query, respond }) => {
+      if (events.length > 0) {
+        canonicalRead.resolve();
+      }
+      return respond(200, {
+        events: events.filter((event) => {
+          return event.seqId > (query.sinceSeqId ?? 0);
+        }),
+        hasMore: false,
+      });
+    });
+    context.mocks.api(
+      projectsContract.membership,
+      async ({ params, body, respond }) => {
+        await confirmation.promise;
+        events.push({
+          id: body.eventId,
+          seqId: 2,
+          kind: "project_updated",
+          chatThreadId: params.id,
+          agentId: member.agentId,
+          title: member.title,
+          projectId: body.projectId,
+          selectedModel: member.selectedModel,
+          serviceTier: null,
+          computerUseHostId: null,
+          createdAt: at,
+        });
+        return respond(200, { threadId: params.id, projectId: body.projectId });
+      },
+    );
+    await setupPage({
+      context,
+      path: `/chats/${member.id}`,
+      ...workspace.pageOptions,
+      featureSwitches: { [FeatureSwitchKey.Projects]: true },
+    });
+    expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+    const target =
+      destination === "chat row"
+        ? threadLink(ordinary.id)
+        : screen.getByTestId("sidebar-scroll-area");
+    const dataTransfer = createDataTransferStub();
+    fireEvent.dragStart(threadLink(member.id), { dataTransfer });
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    fireEvent.dragOver(target, { dataTransfer, clientX: 160, clientY: 240 });
+    await expect(screen.findByRole("tooltip")).resolves.toHaveTextContent(
+      "Remove from Project",
+    );
+    fireEvent.drop(target, { dataTransfer });
+    await waitFor(() => {
+      expect(threadLink(member.id).closest("[data-project-row-id]")).toBeNull();
+    });
+    expect(namedLink(projectRows(), "Launch planning")).toBeNull();
+    expect(location.pathname).toBe(`/chats/${member.id}`);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    confirmation.resolve();
+    await canonicalRead.promise;
+    expect(threadLink(member.id).closest("[data-project-row-id]")).toBeNull();
+  },
+);
+
 test("A cross-Agent Project chat can be dragged onto another collapsed Project", async () => {
   const secondId = "30000000-0000-4000-8000-000000000072";
   const ordinary = continuityThread(102, 1, "Keep this chat open");
@@ -1874,7 +1951,6 @@ test.each([
       ...workspace.pageOptions,
       featureSwitches: {
         [FeatureSwitchKey.Projects]: true,
-        [FeatureSwitchKey.PwaNavigation]: mobile,
       },
     });
     const row = await waitFor(() => {
@@ -1987,7 +2063,6 @@ test("PWA uses the same Projects and a bottom sheet for Thread membership", asyn
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.Projects]: true,
-      [FeatureSwitchKey.PwaNavigation]: true,
     },
   });
   const user = userEvent.setup({ delay: null });
@@ -2059,13 +2134,12 @@ test("A Project mention reveals a folded chat sidebar and keeps the current conv
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.Projects]: true,
-      [FeatureSwitchKey.UnifiedChatWorkspace]: true,
     },
   });
   const user = userEvent.setup({ delay: null });
   await user.click(button("Hide chat list"));
   await waitFor(() => {
-    expect(screen.queryByTestId("chat-list-column")).not.toBeInTheDocument();
+    expect(button("Show chat list")).toBeInTheDocument();
   });
   const mention = await waitFor(() => {
     const message = document.querySelector<HTMLElement>(

@@ -12,7 +12,6 @@ import {
   EXISTING_THREAD_ID,
   INCIDENT_THREAD_ID,
   menuItemByText,
-  mobileSidebar,
   openThreadMenu,
   pinnedAgentLink,
   pinnedAgentNames,
@@ -36,16 +35,12 @@ import {
   type UserPreferencesResponse,
 } from "@okouai/api-contracts/contracts/user-preferences";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
-import {
-  click,
-  fill,
-  queryAllByRoleFast,
-} from "../../../__tests__/page-helper.ts";
+import { click, fill } from "../../../__tests__/page-helper.ts";
 import { pathname } from "../../../signals/location.ts";
 import {
+  changeChatIndicators,
   changeChatThreadList,
   changeChatThreadReadCursor,
-  createChatEvent,
 } from "../../../mocks/mock-helpers.ts";
 import { mockNow } from "../../../lib/time.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
@@ -53,7 +48,6 @@ import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 const context = testContext();
 const {
   mockChatThreadSnapshot,
-  mockMobileLayout,
   mockSidebarThreadStory,
   mockUnreadAgents,
   prepareAgents,
@@ -102,84 +96,6 @@ test("Move to the next relevant agent with a shortcut", async () => {
     ).toBeInTheDocument();
   });
 });
-
-test("Navigate pinned agents from the mobile sidebar", async () => {
-  mockMobileLayout();
-  prepareAgents();
-  context.mocks.data.userPreferences({
-    pinnedAgentIds: [RESEARCH_AGENT_ID],
-  });
-  context.mocks.browser.open();
-
-  await setupSidebarPage({
-    context,
-    path: `/agents/${AGENT_ID}/chat`,
-  });
-  click(screen.getByLabelText("Open menu"));
-
-  await waitFor(() => {
-    expect(
-      pinnedAgentLink(mobileSidebar(), "Research Agent"),
-    ).toBeInTheDocument();
-  });
-
-  await waitFor(() => {
-    expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
-  });
-
-  const researchLink = pinnedAgentLink(mobileSidebar(), "Research Agent");
-  expect(researchLink).toHaveAttribute(
-    "href",
-    `/agents/${RESEARCH_AGENT_ID}/chat`,
-  );
-  click(pinnedAgentLink(mobileSidebar(), "Nova"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${AGENT_ID}/chat`);
-    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
-  });
-
-  click(screen.getByLabelText("Open menu"));
-  await waitFor(() => {
-    expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
-  });
-
-  click(pinnedAgentLink(mobileSidebar(), "Research Agent"));
-  await waitFor(() => {
-    expect(pathname()).toBe(`/agents/${RESEARCH_AGENT_ID}/chat`);
-    expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
-  });
-});
-
-test.each([
-  { name: "Agents", route: "/agents" },
-  { name: "Works", route: "/works" },
-])(
-  "Mobile $name navigation closes the drawer on primary activation",
-  async ({ name, route }) => {
-    mockMobileLayout();
-    prepareDefaultAgent();
-    context.mocks.browser.open();
-    await setupSidebarPage({ context, path: `/agents/${AGENT_ID}/chat` });
-    click(screen.getByLabelText("Open menu"));
-    await waitFor(() => {
-      expect(mobileSidebar()).toHaveAttribute("data-sidebar-expanded", "true");
-    });
-    const link = queryAllByRoleFast("link", mobileSidebar()).find(
-      (candidate) => {
-        return candidate.getAttribute("href") === route;
-      },
-    );
-    if (!link) {
-      throw new Error(`Expected the ${name} sidebar link`);
-    }
-
-    click(link);
-    await waitFor(() => {
-      expect(pathname()).toBe(route);
-      expect(screen.queryByRole("dialog", { name: "Sidebar" })).toBeNull();
-    });
-  },
-);
 
 test("Open and use workspace search with the keyboard", async () => {
   prepareAgents();
@@ -511,7 +427,6 @@ test("Recognize and pin sidebar conversation states", async () => {
 test.each(["agent", "thread"] as const)(
   "Refresh the %s unread indicator",
   async (indicator) => {
-    mockMobileLayout();
     // Both consumers observe Nova and its thread; unrelated agents add no coverage.
     context.mocks.data.agents(
       prepareAgents().filter((agent) => {
@@ -537,22 +452,22 @@ test.each(["agent", "thread"] as const)(
       path: "/agents",
       sharedWorkerTestTransport: "message-port",
     });
-    click(screen.getByLabelText("Open menu"));
 
     await waitFor(() => {
-      const current = mobileSidebar();
-      expect(within(current).getByText("Nova")).toBeInTheDocument();
+      expect(
+        pinnedAgentLink(screen.getByTestId("pinned-agents-grid"), "Nova"),
+      ).toBeInTheDocument();
     });
     // Both indicator consumers must finish loading before the external refresh.
     await waitFor(() => {
       expect(
-        threadRowByTitle("Remote unread conversation", mobileSidebar()),
+        threadRowByTitle("Remote unread conversation", sidebar()),
       ).toBeInTheDocument();
     });
     const indicatorRow = () => {
       return indicator === "agent"
-        ? agentRowByName(mobileSidebar(), "Nova")
-        : threadRowByTitle("Remote unread conversation", mobileSidebar());
+        ? pinnedAgentLink(screen.getByTestId("pinned-agents-grid"), "Nova")
+        : threadRowByTitle("Remote unread conversation", sidebar());
     };
     const unreadIndicator = () => {
       return indicator === "agent"
@@ -564,7 +479,7 @@ test.each(["agent", "thread"] as const)(
     });
 
     hasUnread = true;
-    changeChatThreadList();
+    changeChatIndicators();
 
     await waitFor(() => {
       expect(unreadIndicator()).toBeInTheDocument();
@@ -572,10 +487,9 @@ test.each(["agent", "thread"] as const)(
   },
 );
 
-test.each(["thread list", "read cursor"] as const)(
-  "Refresh the running indicator after a %s change without warming chats",
+test.each(["indicator", "read cursor", "pre-#45712 API thread list"] as const)(
+  "Refresh the running indicator after the %s notification without warming chats",
   async (notification) => {
-    mockMobileLayout();
     prepareDefaultAgent();
     mockSidebarThreadStory([
       createThread(EXISTING_THREAD_ID, "Remote running conversation"),
@@ -596,9 +510,8 @@ test.each(["thread list", "read cursor"] as const)(
       path: "/agents",
       sharedWorkerTestTransport: "message-port",
     });
-    click(screen.getByLabelText("Open menu"));
     const threadLink = () => {
-      return threadLinkByTitle("Remote running conversation", mobileSidebar());
+      return threadLinkByTitle("Remote running conversation", sidebar());
     };
     await waitFor(() => {
       expect(threadLink()).toHaveAccessibleName(
@@ -607,7 +520,10 @@ test.each(["thread list", "read cursor"] as const)(
     });
 
     const changeIndicator = () => {
-      if (notification === "thread list") {
+      if (notification === "indicator") {
+        changeChatIndicators();
+      } else if (notification === "pre-#45712 API thread list") {
+        // Rollout fallback (#45719): an API without chatIndicatorsChanged.
         changeChatThreadList();
       } else {
         changeChatThreadReadCursor({
@@ -635,9 +551,8 @@ test.each(["thread list", "read cursor"] as const)(
 );
 
 test.each([false, true])(
-  "Refresh the latest unread state after a message burst with a failed leading fetch: %s",
+  "Refresh the latest unread state after an indicator burst with a failed leading fetch: %s",
   async (failLeadingRefresh) => {
-    mockMobileLayout();
     prepareDefaultAgent();
     mockSidebarThreadStory([
       createThread(EXISTING_THREAD_ID, "Burst conversation"),
@@ -669,21 +584,23 @@ test.each([false, true])(
 
     // The direct transport runs the production Worker handler synchronously,
     // so the entire burst is delivered before releasing the in-flight fetch.
-    await setupSidebarPage({ context, path: "/agents" });
-    click(screen.getByLabelText("Open menu"));
+    await setupSidebarPage({
+      context,
+      path: "/agents",
+    });
     const threadLink = () => {
-      return threadLinkByTitle("Burst conversation", mobileSidebar());
+      return threadLinkByTitle("Burst conversation", sidebar());
     };
     await waitFor(() => {
       expect(threadLink()).toHaveAccessibleName("Burst conversation");
     });
 
     blockRefresh = true;
-    createChatEvent(EXISTING_THREAD_ID);
+    changeChatIndicators();
     await refreshStarted.promise;
     hasUnread = true;
     for (let index = 0; index < 20; index++) {
-      createChatEvent(EXISTING_THREAD_ID);
+      changeChatIndicators();
     }
 
     // Advance the scheduling clock before unblocking the request: no sleeps

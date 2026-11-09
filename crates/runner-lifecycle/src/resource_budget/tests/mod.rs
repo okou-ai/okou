@@ -1,5 +1,28 @@
 use super::*;
 
+#[tokio::test]
+async fn reporting_observes_reserved_substituted_and_released_capacity() {
+    let budget = Arc::new(ResourceBudget::new(8, 32768, 1.0, 4));
+    let lease = ResourceBudget::try_reserve_lease(&budget, 2, 4096).unwrap();
+    tokio::time::timeout(std::time::Duration::from_secs(1), budget.changed())
+        .await
+        .unwrap();
+    assert_eq!(budget.allocated(), (2, 4096, 1));
+
+    let lease = ResourceBudget::try_substitute_leases(&budget, vec![lease], 4, 8192)
+        .unwrap_or_else(|_| panic!("replacement fits the budget"));
+    tokio::time::timeout(std::time::Duration::from_secs(1), budget.changed())
+        .await
+        .unwrap();
+    assert_eq!(budget.allocated(), (4, 8192, 1));
+
+    drop(lease);
+    tokio::time::timeout(std::time::Duration::from_secs(1), budget.changed())
+        .await
+        .unwrap();
+    assert_eq!(budget.allocated(), (0, 0, 0));
+}
+
 fn assert_f64_close(actual: f64, expected: f64) {
     assert!(
         (actual - expected).abs() < 1e-12,

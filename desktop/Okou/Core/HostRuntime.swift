@@ -18,6 +18,7 @@ public struct RuntimeState: Sendable {
   public var status = "offline"
   public var hostId: String?
   public var lastHeartbeat: Date?
+  public var usesPresence = false
   public var lastCommand: Date?
   public var lastError: String?
   public var authorityFailure: HostAuthorityFailure?
@@ -49,11 +50,18 @@ public actor HostRuntime {
   private struct Connection: Sendable {
     let hostId: String
     let generation: Int
+    let usesPresence: Bool
+    let channelName: String
     init?(registration: ComputerUseHostRegistration) {
       guard UUID(uuidString: registration.hostId) != nil, registration.connectionGeneration > 0
       else { return nil }
       hostId = registration.hostId
       generation = registration.connectionGeneration
+      // New Desktop -> old API compatibility (#45809). Remove this negotiation
+      // and its legacy heartbeat loop after pre-presence APIs have drained and
+      // are no longer supported rollback targets.
+      usesPresence = registration.livenessMode?.rawValue == "presence"
+      channelName = registration.commandNotifications.channelName
     }
     func body(_ value: JSONValue) -> JSONValue {
       guard case .object(var fields) = value else { return value }
@@ -61,6 +69,9 @@ public actor HostRuntime {
       return .object(fields)
     }
     var heartbeat: ApiRoute { ApiRoutes.computerUseHostHeartbeat(hostId: hostId) }
+    var wait: ApiRoute { ApiRoutes.computerUseHostCommandWait(hostId: hostId) }
+    var state: ApiRoute { ApiRoutes.computerUseHostState(hostId: hostId) }
+    var realtimeToken: ApiRoute { ApiRoutes.computerUseHostRealtimeToken(hostId: hostId) }
     var stop: ApiRoute { ApiRoutes.computerUseHostStop(hostId: hostId) }
     var nextCommand: ApiRoute { ApiRoutes.computerUseHostCommandNext(hostId: hostId) }
     func complete(commandId: String) -> ApiRoute {
@@ -69,7 +80,13 @@ public actor HostRuntime {
   }
   private var connection: Connection?
   private var heartbeatTask: Task<Void, Never>?
-  private var heartbeatDiagnostics = HeartbeatDiagnostics()
+  private var stateTask: Task<Void, Never>?
+  private var queueWaitTask: Task<Void, Never>?
+  private var lastAdvertisedState: JSONValue?
+  private var pendingStateRefresh = false
+  private var heartbeatDiagnostics = HostRequestDiagnostics()
+  private var stateDiagnostics = HostRequestDiagnostics(request: .state)
+  private var queueDiagnostics = HostRequestDiagnostics(request: .queueWait)
   private var notificationTask: Task<Void, Never>?
   private var notificationStops = 0
   private var drainTask: Task<Void, Never>?
@@ -99,7 +116,17 @@ public actor HostRuntime {
     self.tokenProvider = tokenProvider
     self.onChange = onChange
   }
-  public func updatePermissions(_ value: JSONValue) { permissions = value }
+  public func updatePermissions(_ value: JSONValue) async {
+    permissions = value
+    await refreshAdvertisement()
+  }
+  public func refreshAdvertisement() async {
+    guard let connection, connection.usesPresence, running, acceptingCommands else { return }
+    let current = generation
+    if await body() != lastAdvertisedState {
+      requestStateRefresh(generation: current, connection: connection)
+    }
+  }
   private func body() async -> JSONValue {
     .object([
       "installationId": .string(installationId), "hostName": .string(hostName),
@@ -162,8 +189,11 @@ public actor HostRuntime {
     }
   }
   private func register(generation current: Int) async throws {
+    let advertised = await body()
+    var registrationBody = advertised
+    registrationBody["livenessMode"] = .string("presence")
     let response = try await api.authenticatedRequest(
-      ApiRoutes.computerUseHostRegister, body: await body(), timeout: 10,
+      ApiRoutes.computerUseHostRegister, body: registrationBody, timeout: 10,
       tokenProvider: tokenProvider)
     guard running, current == generation else {
       if let lateConnection = parsedConnection(response) {
@@ -204,8 +234,10 @@ public actor HostRuntime {
       throw DesktopFailure("invalid_response", "Host registration response is missing its identity")
     }
     self.connection = connection
+    lastAdvertisedState = advertised
     let notifications = registration.commandNotifications
     state.hostId = connection.hostId
+    state.usesPresence = connection.usesPresence
     state.status = "online"
     state.lastHeartbeat = Date()
     state.lastError = nil
@@ -213,9 +245,15 @@ public actor HostRuntime {
     state.retryAt = nil
     await publish()
     guard running, acceptingCommands, generation == current else { return }
-    heartbeatTask = Task { await self.heartbeatLoop(generation: current, connection: connection) }
+    if connection.usesPresence {
+      queueWaitTask = Task { await self.queueWaitLoop(generation: current, connection: connection) }
+      await refreshAdvertisement()
+    } else {
+      heartbeatTask = Task { await self.heartbeatLoop(generation: current, connection: connection) }
+    }
     let subscription = CommandNotificationSubscription(
-      channelName: notifications.channelName, eventName: notifications.eventName)
+      channelName: notifications.channelName, eventName: notifications.eventName,
+      presenceEnabled: connection.usesPresence)
     notificationTask = Task {
       await self.notificationLoop(
         subscription: subscription, generation: current, connection: connection)
@@ -233,10 +271,14 @@ public actor HostRuntime {
   }
   private func stopRuntime() async {
     acceptingCommands = false
+    let waiting = queueWaitTask
+    waiting?.cancel()
+    queueWaitTask = nil
     state.status = "stopping"
     await executor.retireShellSessions()
     await publish()
     await stopNotifications()
+    await waiting?.value
     // Keep heartbeats alive while an existing command drains; its Clerk
     // session must remain available until the completion report has been sent.
     if connection == nil {
@@ -257,7 +299,13 @@ public actor HostRuntime {
     generation += 1
     heartbeatTask?.cancel()
     heartbeatTask = nil
+    stateTask?.cancel()
+    stateTask = nil
+    lastAdvertisedState = nil
+    pendingStateRefresh = false
     heartbeatDiagnostics.finish(outcome: .stopped)
+    stateDiagnostics.finish(outcome: .stopped)
+    queueDiagnostics.finish(outcome: .stopped)
     if let connection {
       do {
         let response = try await api.authenticatedRequest(
@@ -285,6 +333,102 @@ public actor HostRuntime {
       "\(ISO8601DateFormatter().string(from: Date())) \(error.localizedDescription)", at: 0)
     state.errors = Array(state.errors.prefix(50))
     await publish()
+  }
+  private func requestStateRefresh(generation current: Int, connection: Connection) {
+    guard running, acceptingCommands, generation == current else { return }
+    pendingStateRefresh = true
+    guard stateTask == nil else { return }
+    stateTask = Task { await self.synchronizeState(generation: current, connection: connection) }
+  }
+  private func synchronizeState(generation current: Int, connection: Connection) async {
+    defer { if generation == current { stateTask = nil } }
+    var attempt = 0
+    while running && generation == current {
+      let trace = APIRequestTrace()
+      do {
+        pendingStateRefresh = false
+        let advertised = await body()
+        let response = try await request(
+          connection.state, connection: connection, body: advertised, timeout: 10, generation: current, trace: trace)
+        let operation = await trace.snapshot()
+        guard running, generation == current else { return }
+        if await rejectAuthority(response) { return }
+        guard (200..<300).contains(response.status) else {
+          throw DesktopFailure("network_error", "Host state synchronization failed (HTTP \(response.status))")
+        }
+        let result = try response.decode(ComputerUseHostHeartbeat.self)
+        stateDiagnostics.finish(outcome: .recovered, requests: operation.requests, operation: operation)
+        await notifications.setAvailable(true, channelName: connection.channelName)
+        guard running, generation == current else { return }
+        lastAdvertisedState = advertised
+        state.lastHeartbeat = Date()
+        state.status = acceptingCommands ? "online" : "stopping"
+        state.lastError = nil
+        state.retryAt = nil
+        state.recoveryAttempt = 0
+        if result.hasPendingCommands { requestCommandRefresh(generation: current, connection: connection) }
+        await publish()
+        attempt = 0
+        if !pendingStateRefresh { return }
+      } catch is CancellationError { return } catch {
+        guard running, generation == current else { return }
+        if await rejectAuthentication(error) { return }
+        await notifications.setAvailable(false, channelName: connection.channelName)
+        guard running, generation == current else { return }
+        attempt += 1
+        let operation = await trace.snapshot()
+        guard running, generation == current else { return }
+        stateDiagnostics.failed(error: error, requests: operation.requests, retryDelay: delay(attempt), operation: operation)
+        await recover(error, attempt: attempt)
+        do { try await Task.sleep(for: .seconds(delay(attempt))) } catch { return }
+      }
+    }
+  }
+  private func queueWaitLoop(generation current: Int, connection: Connection) async {
+    var attempt = 0
+    while running && acceptingCommands && generation == current {
+      let trace = APIRequestTrace()
+      do {
+        let response = try await request(
+          connection.wait, connection: connection, body: .object([:]), timeout: 70, generation: current, trace: trace)
+        let operation = await trace.snapshot()
+        try Task.checkCancellation()
+        guard running, acceptingCommands, generation == current else { return }
+        if await rejectAuthority(response) { return }
+        guard (200..<300).contains(response.status) else {
+          throw DesktopFailure("network_error", "Command wait failed (HTTP \(response.status))")
+        }
+        let pending = try response.decode(ComputerUseHostCommandWait.self)
+        queueDiagnostics.finish(outcome: .recovered, requests: operation.requests, operation: operation)
+        await notifications.setAvailable(true, channelName: connection.channelName)
+        guard running, generation == current else { return }
+        state.lastHeartbeat = Date()
+        state.status = "online"
+        state.lastError = nil
+        state.retryAt = nil
+        state.recoveryAttempt = 0
+        await publish()
+        attempt = 0
+        if pending.hasPendingCommands {
+          requestCommandRefresh(generation: current, connection: connection)
+          // Continue receiving liveness evidence while an existing command drains.
+          // A temporarily unclaimable item must not turn this into a busy loop.
+          try await Task.sleep(for: .seconds(15))
+        }
+      } catch is CancellationError { return } catch {
+        guard running, acceptingCommands, generation == current else { return }
+        if await rejectAuthentication(error) { return }
+        await notifications.setAvailable(false, channelName: connection.channelName)
+        requestStateRefresh(generation: current, connection: connection)
+        guard running, generation == current else { return }
+        attempt += 1
+        let operation = await trace.snapshot()
+        guard running, generation == current else { return }
+        queueDiagnostics.failed(error: error, requests: operation.requests, retryDelay: delay(attempt), operation: operation)
+        await recover(error, attempt: attempt)
+        do { try await Task.sleep(for: .seconds(delay(attempt))) } catch { return }
+      }
+    }
   }
   private func heartbeatLoop(generation current: Int, connection: Connection) async {
     var attempt = 0
@@ -335,6 +479,10 @@ public actor HostRuntime {
       return false
     }
     heartbeatDiagnostics.finish(outcome: .authorityRejected)
+    stateDiagnostics.finish(outcome: .authorityRejected)
+    queueDiagnostics.finish(outcome: .authorityRejected)
+    queueWaitTask?.cancel()
+    queueWaitTask = nil
     running = false
     acceptingCommands = false
     await executor.stop()
@@ -348,6 +496,10 @@ public actor HostRuntime {
   private func rejectAuthority(_ response: APIResponse) async -> Bool {
     guard [401, 403, 409, 426].contains(response.status) else { return false }
     heartbeatDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
+    stateDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
+    queueDiagnostics.finish(outcome: .authorityRejected, terminalStatus: response.status)
+    queueWaitTask?.cancel()
+    queueWaitTask = nil
     if response.status == 426 {
       // Close admission without invalidating completion reports for claimed work.
       acceptingCommands = false
@@ -399,7 +551,8 @@ public actor HostRuntime {
         subscription: subscription,
         tokenProvider: {
           let response = try await api.authenticatedRequest(
-            ApiRoutes.platformRealtimeToken, body: .object([:]), timeout: 10,
+            connection.usesPresence ? connection.realtimeToken : ApiRoutes.platformRealtimeToken,
+            body: connection.usesPresence ? connection.body(.object([:])) : .object([:]), timeout: 10,
             tokenProvider: { forceRefresh in
               let token = try await provider(forceRefresh)
               try await self.checkGeneration(current)
@@ -407,6 +560,9 @@ public actor HostRuntime {
             })
           try await self.checkGeneration(current)
           guard (200..<300).contains(response.status) else {
+            if connection.usesPresence {
+              await self.requestStateRefresh(generation: current, connection: connection)
+            }
             throw DesktopFailure(
               "network_error", "Realtime authentication failed (HTTP \(response.status))")
           }
@@ -415,6 +571,9 @@ public actor HostRuntime {
       for await event in events {
         guard !Task.isCancelled, running, acceptingCommands, generation == current else { return }
         switch event {
+        case .ready:
+          if connection.usesPresence { requestStateRefresh(generation: current, connection: connection) }
+          requestCommandRefresh(generation: current, connection: connection)
         case .refresh:
           requestCommandRefresh(generation: current, connection: connection)
         case .unavailable(let message):

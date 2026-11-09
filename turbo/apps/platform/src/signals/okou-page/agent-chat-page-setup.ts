@@ -18,6 +18,7 @@ import {
 } from "../route.ts";
 import { ROUTES } from "../route-paths.ts";
 import { currentAgentId$, defaultAgentId$, agents$ } from "../agent.ts";
+import { singleAgentEnabled$ } from "../single-agent.ts";
 import { setChatAgentId$ } from "../agent-chat.ts";
 import { setTalkDraft$, talkDraft$ } from "./chat-draft.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
@@ -75,15 +76,9 @@ const restoreMarketingAgentDraft$ = command(
   },
 );
 
-export const setupAgentChatPage$ = command(
-  async ({ get, set }, signal: AbortSignal) => {
+const setupChatPageForAgent$ = command(
+  async ({ get, set }, agentId: string, signal: AbortSignal) => {
     set(resetProjectUi$);
-    const agentId = get(currentAgentId$);
-
-    if (!agentId) {
-      throw new Error("Chat page requires an active agent, but none found");
-    }
-
     set(setChatAgentId$, agentId);
     set(
       setPwaAgentComposeRequested$,
@@ -118,6 +113,12 @@ export const setupAgentChatPage$ = command(
     if (!agent) {
       if (firstGreetingVisit) {
         set(releaseChatGreetingVisit$);
+      }
+      // My Okou's only chat page is this one, so another agent's chat would
+      // route straight back here; its settings page is the usable surface.
+      if (get(singleAgentEnabled$)) {
+        set(detachedNavigateTo$, ROUTES.myOkou, { replace: true });
+        return;
       }
       // The URL names an agent this user cannot reach: it was deleted, it
       // belongs to another organization, or it is private to someone else.
@@ -202,5 +203,39 @@ export const setupAgentChatPage$ = command(
     if (queue === "1") {
       set(openQueueDrawer$);
     }
+  },
+);
+
+export const setupAgentChatPage$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    if (get(singleAgentEnabled$)) {
+      // My Okou has one chat page at `/`. Keep deep-link params such as
+      // `prompt` and `handoff` so the page there still applies them.
+      set(detachedNavigateTo$, ROUTES.home, {
+        searchParams: get(searchParams$),
+        replace: true,
+      });
+      return;
+    }
+    const agentId = get(currentAgentId$);
+
+    if (!agentId) {
+      throw new Error("Chat page requires an active agent, but none found");
+    }
+
+    await set(setupChatPageForAgent$, agentId, signal);
+  },
+);
+
+/** My Okou's chat page lives at `/` and always chats with the default agent. */
+export const setupHomeChatPage$ = command(
+  async ({ get, set }, signal: AbortSignal) => {
+    const defaultAgentId = await get(defaultAgentId$);
+    signal.throwIfAborted();
+    if (!defaultAgentId) {
+      set(detachedNavigateTo$, ROUTES.myOkou, { replace: true });
+      return;
+    }
+    await set(setupChatPageForAgent$, defaultAgentId, signal);
   },
 );

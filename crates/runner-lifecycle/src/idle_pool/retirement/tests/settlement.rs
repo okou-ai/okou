@@ -73,7 +73,7 @@ async fn concurrent_accounting_during_exit_observation_retries_without_abandonin
         .unwrap()
         .into_parts();
     kill.wait_entered(1, WAIT).await.unwrap();
-    let (captured, release) = env.source.gate_read();
+    let (captured, release) = env.source.gate_next_read();
     exit.confirm_exit();
     tokio::time::timeout(WAIT, captured).await.unwrap().unwrap();
     // Another real owner registers while the actual procfs-format read is held.

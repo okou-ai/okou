@@ -90,7 +90,7 @@ struct ChatDetailView: View {
             showsActions: !isWorkHistory && pendingRetry == nil && endsTurn(at: index, in: items))
         )
       case .usage(let runID):
-        result.append(.usage(runID: runID, state: conversation.runUsage.states[runID] ?? .loading))
+        result.append(.usage(runID: runID))
       }
     }
     // Text still streaming from the running run, until its durable event takes the same id.
@@ -277,7 +277,7 @@ struct ChatDetailView: View {
     .onChange(of: history.executionState) { _, _ in scrolling.executionStateChanged() }
     .sheet(item: $usageDetails) { selection in
       ConversationRunUsageDetails(
-        state: conversation.runUsage.states[selection.id] ?? .loading,
+        usage: conversation.runUsage, runID: selection.id,
         catalog: conversation.modelSelection?.models.usageCatalog,
         retry: { conversation.runUsage.retry(selection.id) }
       )
@@ -431,9 +431,10 @@ struct ChatDetailView: View {
       }
       .frame(maxWidth: .infinity, alignment: .leading)
       .padding(EdgeInsets(top: 24, leading: 20, bottom: 20, trailing: 20))
-    case .usage(let runID, let state):
+    case .usage(let runID):
       ConversationRunUsageView(
-        runID: runID, state: state, showDetails: { usageDetails = UsageDetails(id: runID) }
+        runID: runID, usage: conversation.runUsage,
+        showDetails: { usageDetails = UsageDetails(id: runID) }
       )
       .frame(maxWidth: .infinity, alignment: .leading)
       .background {

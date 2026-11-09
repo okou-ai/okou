@@ -11,6 +11,7 @@ final class MessageArtifactStore {
     var artifact: ChatArtifact
     var images: [ChatArtifact]
     var file: ChatAttachmentFile?
+    var thumbnail: Data?
     var contentURL: URL?
     var htmlExpiresAt: Date?
     var text: ArtifactTextContent?
@@ -37,7 +38,9 @@ final class MessageArtifactStore {
   private(set) var sharing: Share?
   private(set) var catalogWarning: String?
   private let service: ChatArtifacts
-  private let threadID: String
+  /// The chat whose artifact list supplies names and sizes; nil for a result opened from
+  /// workspace search, which arrives with its own title.
+  private let threadID: String?
   private let markdown: MessageMarkdownCache
   let webURL: URL
   var apiURL: URL { service.apiURL }
@@ -53,7 +56,7 @@ final class MessageArtifactStore {
   private var closed = false
 
   init(
-    service: ChatArtifacts, threadID: String, webURL: URL, markdown: MessageMarkdownCache,
+    service: ChatArtifacts, threadID: String?, webURL: URL, markdown: MessageMarkdownCache,
     didFail: @escaping @MainActor (Error) -> Void
   ) {
     self.service = service
@@ -121,9 +124,12 @@ final class MessageArtifactStore {
     guard !closed else { return }
     dismiss()
     var item = Preview(artifact: metadata(resource), images: images)
+    item.thumbnail = cards[resource.id]?.thumbnail
+    item.file = service.uploadedFile(resource)
     item.renewedHTMLSignature = renewedHTMLSignature
     let previewID = item.id
     preview = item
+    if item.file != nil, item.artifact.kind == .image, imageSources.isEmpty { return }
     previewTask = Task { [weak self] in
       guard let self else { return }
       do {
@@ -153,7 +159,7 @@ final class MessageArtifactStore {
           let isText = [.markdown, .text, .json, .csv].contains(kind)
           let (downloaded, file) = try await perform {
             try await service.download(
-              resolved.artifact, maximumSize: isText ? 2 * 1024 * 1024 : ChatAttachment.maximumSize)
+              resolved, maximumSize: isText ? 2 * 1024 * 1024 : ChatAttachment.maximumSize)
           }
           let text = isText ? try await ArtifactTextReader.shared.read(file, kind: kind) : nil
           guard !Task.isCancelled, preview?.id == previewID else { return }
@@ -282,6 +288,10 @@ final class MessageArtifactStore {
   private func loadCatalog() async throws {
     guard !closed else { throw CancellationError() }
     if catalog != nil { return }
+    guard let threadID else {
+      catalog = []
+      return
+    }
     let scope = generation
     let task: Task<[ChatArtifact], Error>
     if let existing = catalogTask {

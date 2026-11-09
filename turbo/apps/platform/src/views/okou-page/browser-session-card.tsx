@@ -280,10 +280,11 @@ function BrowserSessionCardState({
               { name: session.name },
             )}
             onClick={() => {
+              // Select viewer acquisition before Start captures its async owner.
+              openSidebar(signals.threadId);
               if (live && !selected) {
                 detach(start(pageSignal), Reason.DomCallback);
               }
-              openSidebar(signals.threadId);
             }}
           />
         )

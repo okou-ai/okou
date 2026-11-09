@@ -1,9 +1,9 @@
 use super::super::super::*;
+use super::super::support::wait_heartbeat_matching_after;
 use super::super::support::{
     minimal_context, mock_run_config_with_overrides, push_job, shutdown, test_profiles,
     wait_discover_entered, wait_idle_pool_len,
 };
-use super::home_cache::wait_heartbeat_matching_after;
 use crate::heartbeat::{HeartbeatProfile, refresh_initial_home_cache_snapshot};
 use crate::home_image_cache::{
     HomeCacheChange, HomeCacheTerminalStatus, HomeCacheWatcher, HomeImageCache,

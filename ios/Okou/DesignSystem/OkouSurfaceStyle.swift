@@ -62,10 +62,10 @@ struct OkouTextFieldStyle: TextFieldStyle {
 extension View {
   /// Every grouped list or form in a sheet: the same neutral grouped ground with the system's
   /// rows (the warm grey ramp read as pink behind white rows), and the soft blur under the
-  /// sheet's title bar. Sheets are hosted separately and do not inherit the app root's
-  /// scroll-edge style, so they get it here and cannot forget it. A page drawn as the web
-  /// draws it (the connector directory, whose track and chips are web greys made for white)
-  /// passes the white page ground instead.
+  /// sheet's title bar and none at the bottom. Sheets are hosted separately and do not inherit
+  /// the app root's scroll-edge style, so they get it here and cannot forget it. A page drawn
+  /// as the web draws it (the connector directory, whose track and chips are web greys made
+  /// for white) passes the white page ground instead.
   ///
   /// The sheet's own ground is not set here but at the sheet's root (`okouSheetBackground()`):
   /// set from inside the sheet's navigation stack, it reaches the sheet after its slide has
@@ -74,6 +74,7 @@ extension View {
     scrollContentBackground(.hidden)
       .background(ground)
       .scrollEdgeEffectStyle(.soft, for: .top)
+      .scrollEdgeEffectHidden(true, for: .bottom)
       // The first card starts just under the title bar instead of a header's worth below.
       .contentMargins(.top, OkouSpace.sm, for: .scrollContent)
       // One row height for every grouped sheet, so single-row cards match and rows do not
@@ -93,10 +94,10 @@ extension View {
 extension View {
   /// A picker that shows its current value at the trailing edge of a row (Thinking effort,
   /// Appearance, Allow for …). The label stays `foreground`; the value and chevron are
-  /// supporting text, as in the system Settings app. The app's global `foreground` tint
-  /// otherwise drew the value as heavy as its label.
+  /// `trailingValue`, a step lighter, as in the system Settings app. The app's global
+  /// `foreground` tint otherwise drew the value as heavy as its label.
   func okouValuePicker() -> some View {
-    pickerStyle(.menu).tint(OkouColor.mutedForeground)
+    pickerStyle(.menu).tint(OkouColor.trailingValue)
   }
 }
 

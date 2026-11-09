@@ -55,6 +55,8 @@ function mockAuthorizationRequest({
     ({ respond }) => {
       return respond(200, {
         source,
+        chatThreadId:
+          source === "chat" ? "20000000-0000-4000-8000-000000000001" : null,
         expiresAt: "2099-09-01T10:00:00.000Z",
         completedAt: null,
         computerUseHostId: null,

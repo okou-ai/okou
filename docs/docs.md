@@ -53,7 +53,7 @@ not precedent for adding another one.
 - `docs/`: cross-surface standards, Chat design, React development, and shared testing.
 - `docs/app/`: browser application behavior, React/ccstate, styling,
   and application testing.
-- `docs/ios/`: native iOS testing boundaries and verification standards.
+- `docs/ios/`: native iOS development, ccstate, design, testing, and verification.
 - `docs/desktop/`: native Desktop application behavior, testing, and release contracts.
 - `docs/api/`: server-side ccstate, database policy and lint, and API testing.
 - `docs/runner/`: host/guest infrastructure, MITM addon contracts, and native
@@ -116,6 +116,10 @@ owning surface.
 
 ## iOS
 
+- [iOS development](ios/ios-development.md): package boundaries, state owners,
+  concurrency, native interaction, persistence, and verification.
+- [iOS ccstate](ios/ios-ccstate.md): Swift graph construction, shared Task reads,
+  SwiftUI bindings, commands, invalidation, cancellation, and native adapters.
 - [Mobile Design System](ios/mobile-design-system.md): native design authority,
   shared Web color roles, mobile tokens, assets, reusable components, and previews.
 - [iOS testing](ios/ios-testing.md): native entry points, package contracts,

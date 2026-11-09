@@ -1,4 +1,5 @@
 use super::*;
+use cli_test_support::json_fixture::parse_json_lines;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 use std::time::Duration;
@@ -900,6 +901,7 @@ async fn non_success_home_promotion_preserves_affected_paths_across_cache_source
             let sandbox = cache_sandbox(format!("home-promotion-{session_id}"));
             let current_manifest = StorageManifest {
                 storages: vec![StorageEntry {
+                    template_guidance: None,
                     name: "current-storage".into(),
                     mount_path: current_storage_path.clone(),
                     vas_storage_name: "current-storage".into(),
@@ -2081,11 +2083,8 @@ async fn finalizer_flushes_accepted_network_log_writes_before_cancel_completion(
     let contents = tokio::fs::read_to_string(fixture.dir.path().join("network.jsonl"))
         .await
         .expect("accepted network-log row should be persisted before finalization returns");
-    let rows: Vec<serde_json::Value> = contents
-        .lines()
-        .map(serde_json::from_str)
-        .collect::<Result<_, _>>()
-        .expect("persisted network-log rows should be valid JSON");
+    let rows: Vec<serde_json::Value> =
+        parse_json_lines(&contents).expect("persisted network-log rows should be valid JSON");
     assert_eq!(rows, vec![accepted_row]);
     assert_eq!(fixture.idle_pool.lock().await.len(), 0);
 }

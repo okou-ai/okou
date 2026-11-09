@@ -1,4 +1,3 @@
-import { enrollMarketingHandoffSession$ } from "./prompt-page/marketing-handoff.ts";
 import {
   captureFriendReferral$,
   registerFriendReferral$,
@@ -60,11 +59,16 @@ import { suggestionFeedEnabled$ } from "./okou-page/agent-suggestion-session.ts"
 import { setupWorkflowsPage$ } from "./workflows-page/workflows-page-setup.ts";
 import { setupWorkflowDetailPage$ } from "./workflows-page/workflow-detail-page-setup.ts";
 import { setupWorksPage$ } from "./works-page/works-page-setup.ts";
-import { setupAgentChatPage$ } from "./okou-page/agent-chat-page-setup.ts";
+import {
+  setupAgentChatPage$,
+  setupHomeChatPage$,
+} from "./okou-page/agent-chat-page-setup.ts";
 import { setupHomePage$ } from "./okou-page/home-page-setup.ts";
+import { singleAgentEnabled$ } from "./single-agent.ts";
 import { setupProjectPage$ } from "./projects/project-page-setup.ts";
 import { hydrateProjects$ } from "./projects/projects.ts";
 import { setupChatPage$ } from "./chat-page/chat-page-setup.ts";
+import { clearChatThreadPanes$ } from "./chat-page/chat-thread-panes.ts";
 import { setupPromptPage$ } from "./prompt-page/prompt-page-setup.ts";
 import {
   setupOnboardingEntryPage$,
@@ -126,7 +130,7 @@ import { checkUnifiedSettingsParam$ } from "./okou-page/settings/settings-dialog
 import { captureInvitationRedirect$ } from "./invitation-redirect.ts";
 import { captureDiscordApprovalFragment$ } from "./okou-page/discord-oauth-approval.ts";
 import {
-  pwaNavigationEnabled$,
+  mobileChatViewport$,
   setupPwaNavigation$,
 } from "./okou-page/pwa-navigation.ts";
 import { setupPwaMePage$ } from "./okou-page/pwa-me-page-setup.ts";
@@ -200,9 +204,19 @@ const setupFeedRoute$ = setupAuthSidebarPageWrapper(
   }),
 );
 
+// My Okou renders its chat page at `/`, which applies its own settings param;
+// otherwise `/` forwards to the default agent's chat.
+const setupLegacyHomePage$ = setupSettingsParamAfterStableRoute(setupHomePage$);
+const setupHomeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
+  await set(
+    get(singleAgentEnabled$) ? setupHomeChatPage$ : setupLegacyHomePage$,
+    signal,
+  );
+});
+
 const setupPwaMeRoute$ = command(async ({ get, set }, signal: AbortSignal) => {
   await set(
-    get(pwaNavigationEnabled$)
+    get(mobileChatViewport$)
       ? setupAuthenticatedPwaMePage$
       : setupNotFoundPage$,
     signal,
@@ -534,19 +548,12 @@ const ROUTE_CONFIG = [
   },
   {
     path: ROUTES.home,
-    setup: setupAuthPageWrapper(
-      setupSettingsParamAfterStableRoute(setupHomePage$),
-    ),
+    setup: setupAuthPageWrapper(setupHomeRoute$),
   },
 
   // --- Redirect routes (backward compatibility) ---
   { path: "/team", setup: redirectTo(ROUTES.agents) },
   { path: "/team/:id", setup: redirectWithId(ROUTES.agentDetail, "agentId") },
-  { path: "/talk/:id", setup: redirectWithId(ROUTES.agentChat, "agentId") },
-  {
-    path: "/talk/:id/ideas",
-    setup: redirectWithId(ROUTES.agentIdeas, "agentId"),
-  },
   {
     path: "/firewall-allow/:id",
     setup: redirectWithId(ROUTES.agentPermissions, "agentId"),
@@ -576,8 +583,25 @@ const ROUTE_CONFIG = [
   },
 ] as const;
 
+// Thread panes belong to the chat page, which keeps, replaces or clears each
+// pane itself. Every other page starts without them.
+function withoutChatThreadPanes(
+  setupPage: Command<Promise<void> | void, [AbortSignal]>,
+) {
+  return command(async ({ set }, signal: AbortSignal) => {
+    set(clearChatThreadPanes$);
+    await set(setupPage, signal);
+  });
+}
+
+const PAGE_ROUTES = ROUTE_CONFIG.map((route) => {
+  return route.path === ROUTES.chat
+    ? route
+    : { ...route, setup: withoutChatThreadPanes(route.setup) };
+});
+
 const setupRoutes$ = command(async ({ set }, signal: AbortSignal) => {
-  await set(initRoutes$, ROUTE_CONFIG, signal);
+  await set(initRoutes$, PAGE_ROUTES, signal);
 });
 
 const syncInitialPreferences$ = command(
@@ -650,7 +674,6 @@ const completeBootstrap$ = command(
     signal.throwIfAborted();
 
     await Promise.all([
-      set(enrollMarketingHandoffSession$, signal),
       set(setupAuthenticatedBootstrapData$, signal),
       set(setupRoutes$, signal),
       set(bootstrapOnboardingGuard$, signal),

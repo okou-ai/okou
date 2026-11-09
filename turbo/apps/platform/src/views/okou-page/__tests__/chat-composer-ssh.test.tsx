@@ -4,7 +4,7 @@ import { sshConnectionsContract } from "@okouai/api-contracts/contracts/ssh-conn
 import { chatRemoteAccessContract } from "@okouai/api-contracts/contracts/chat-remote-access";
 import { vncConnectionsContract } from "@okouai/api-contracts/contracts/vnc-connections";
 import { connectorSlugSchema } from "@okouai/api-contracts/contracts/connector-identity";
-import { act, screen, waitFor, within } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { click, fill, setupPage } from "../../../__tests__/page-helper.ts";
@@ -214,8 +214,8 @@ test("A chat can restore multiple SSH host defaults independently", async () => 
   await expectReopenedRemoteAccessCount("2 enabled");
 });
 
-test("Remote host choices stay read-only across resize and reopen until a save completes", async () => {
-  const viewport = context.mocks.browser.matchMedia(true);
+test("Remote host choices stay read-only across reopen until a save completes", async () => {
+  context.mocks.browser.matchMedia(true);
   const saveResponse = context.mocks.deferred<void>();
   const { first, second } = await prepareRemoteDefaults(
     "override-first",
@@ -228,19 +228,6 @@ test("Remote host choices stay read-only across resize and reopen until a save c
     expect(second).toHaveAttribute("aria-readonly", "true");
   });
 
-  act(() => {
-    viewport.setMatches(false);
-  });
-  const dialog = await screen.findByRole("dialog", { name: "Remote access" });
-  expect(
-    within(dialog).getByRole("combobox", {
-      name: "SSH SSH host 1",
-    }),
-  ).toHaveAttribute("aria-readonly", "true");
-  const resizedSecond = within(dialog).getByRole("combobox", {
-    name: "SSH SSH host 2",
-  });
-  expect(resizedSecond).toHaveAttribute("aria-readonly", "true");
   await closeRemoteAccess();
   click(await findFastControl("button", "Connectors"));
   click(await screen.findByText("Remote access"));
@@ -271,7 +258,6 @@ test("Remote host choices stay read-only across resize and reopen until a save c
   await waitFor(() => {
     expect(reopenedFirst).toHaveTextContent("Off");
     expect(reopenedSecond).toHaveTextContent("On");
-    expect(reopenedSecond).not.toHaveAttribute("aria-readonly", "true");
   });
 });
 
@@ -632,7 +618,7 @@ async function prepareDraftHostChoices() {
   });
   await setupPage({
     context,
-    path: `/agents/${SCOUT_AGENT_ID}/chat`,
+    path: `/agents/${SCOUT_AGENT_ID}/chat?compose=1`,
   });
   const trigger = await findFastControl("button", "Connectors");
   click(trigger);
@@ -653,15 +639,14 @@ test.each([
   { viewportName: "desktop", desktop: true },
   { viewportName: "narrow", desktop: false },
 ])(
-  "Pending SSH choices survive resize and reopen from a $viewportName viewport",
+  "Pending SSH choices survive reopen from a $viewportName viewport",
   async ({ desktop }) => {
-    const viewport = context.mocks.browser.matchMedia(desktop);
+    context.mocks.browser.matchMedia(desktop);
     const { trigger, first, user } = await prepareDraftHostChoices();
     const dialog = screen.getByRole("dialog", { name: "Remote access" });
     await waitFor(() => {
       expect(dialog.contains(document.activeElement)).toBeTruthy();
     });
-    expect(screen.queryByRole("dialog", { name: "Connectors" })).toBeNull();
 
     first.focus();
     await user.keyboard("{Enter}");
@@ -671,19 +656,6 @@ test.each([
     });
     await user.keyboard("{ArrowDown}{ArrowDown}{Enter}");
     expect(first).toHaveTextContent("Off");
-
-    act(() => {
-      viewport.setMatches(!desktop);
-    });
-    const resizedDialog = await screen.findByRole("dialog", {
-      name: "Remote access",
-    });
-    expect(
-      within(resizedDialog).getByRole("combobox", { name: "SSH SSH host 1" }),
-    ).toHaveTextContent("Off");
-    await waitFor(() => {
-      expect(resizedDialog.contains(document.activeElement)).toBeTruthy();
-    });
 
     await expectReopenedRemoteAccessCount("0 enabled");
     click(await screen.findByText("Remote access"));

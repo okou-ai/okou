@@ -168,6 +168,16 @@ export class BrowserUseCdpCommandError extends Error {
   }
 }
 
+export class BrowserUseWindowHealthError extends Error {
+  constructor(
+    readonly phase: "connection" | "command" | "validation",
+    cause: unknown,
+  ) {
+    super("Managed Browser window health check failed", { cause });
+    this.name = "BrowserUseWindowHealthError";
+  }
+}
+
 const browserUseProfileSchema = object({
   id: uuid(),
   userId: string().nullable().optional(),
@@ -998,42 +1008,60 @@ export async function browserUseWindowExists(
   primaryWindowId: number,
   signal: AbortSignal,
 ): Promise<boolean> {
-  return await withBrowserUseCdpDeadline(signal, async (deadline) => {
-    // Browser Use's HTTPS CDP gateway accepts WSS at the same URL. Native
-    // window health does not need an additional /json/version round trip.
-    const endpoint = new URL(browserUseCdpUrlSchema.parse(connection.cdpUrl));
-    endpoint.protocol = "wss:";
-    return await withBrowserUseCdpSocket(
-      endpoint.href,
-      deadline,
-      async (socket) => {
-        const result = await settle(
-          sendBrowserUseCdpCommand(
-            socket,
-            {
-              id: 1,
-              method: "Browser.getWindowBounds",
-              params: { windowId: primaryWindowId },
-            },
-            deadline,
-          ),
-        );
-        deadline.throwIfAborted();
-        if (!result.ok) {
-          if (
-            result.error instanceof BrowserUseCdpCommandError &&
-            result.error.code === -32_000 &&
-            result.error.message === "Browser window not found"
-          ) {
-            return false;
+  let phase: BrowserUseWindowHealthError["phase"] = "connection";
+  const health = await settleIncludingAbort(
+    withBrowserUseCdpDeadline(signal, async (deadline) => {
+      // Browser Use's HTTPS CDP gateway accepts WSS at the same URL. Native
+      // window health does not need an additional /json/version round trip.
+      const endpoint = new URL(browserUseCdpUrlSchema.parse(connection.cdpUrl));
+      endpoint.protocol = "wss:";
+      return await withBrowserUseCdpSocket(
+        endpoint.href,
+        deadline,
+        async (socket) => {
+          phase = "command";
+          const result = await settle(
+            sendBrowserUseCdpCommand(
+              socket,
+              {
+                id: 1,
+                method: "Browser.getWindowBounds",
+                params: { windowId: primaryWindowId },
+              },
+              deadline,
+            ),
+          );
+          deadline.throwIfAborted();
+          if (!result.ok) {
+            if (
+              result.error instanceof BrowserUseCdpCommandError &&
+              result.error.code === -32_000 &&
+              result.error.message === "Browser window not found"
+            ) {
+              return false;
+            }
+            throw result.error;
           }
-          throw result.error;
-        }
-        browserUseCdpWindowBoundsSchema.parse(result.value);
-        return true;
-      },
-    );
-  });
+          phase = "validation";
+          browserUseCdpWindowBoundsSchema.parse(result.value);
+          return true;
+        },
+      );
+    }),
+  );
+  signal.throwIfAborted();
+  if (!health.ok) {
+    // Preserve provider status/codes and exact missing-window semantics. Only
+    // previously unclassified failures receive operation-local context.
+    if (
+      health.error instanceof BrowserUseProviderError ||
+      health.error instanceof BrowserUseCdpCommandError
+    ) {
+      throw health.error;
+    }
+    throw new BrowserUseWindowHealthError(phase, health.error);
+  }
+  return health.value;
 }
 
 function boundedRestorableBrowserUseTabUrls(
@@ -1052,6 +1080,14 @@ function boundedRestorableBrowserUseTabUrls(
     }
   }
   return boundedUrls;
+}
+
+function restorableBrowserUseTabUrls(
+  urls: readonly string[],
+): readonly string[] {
+  return urls.filter((url) => {
+    return url.length <= MAX_BROWSER_USE_TAB_URL_CHARS && URL.canParse(url);
+  });
 }
 
 function browserUseCdpSignal(signal: AbortSignal): AbortSignal {
@@ -3693,8 +3729,8 @@ export async function restoreBrowserUseWindowTabUrls(
   urls: readonly string[],
   signal: AbortSignal,
 ): Promise<void> {
-  const bounded = boundedRestorableBrowserUseTabUrls(urls);
-  if (bounded.length === 0) {
+  const restorable = restorableBrowserUseTabUrls(urls);
+  if (restorable.length === 0) {
     return;
   }
   const restored = await settleIncludingAbort(
@@ -3702,7 +3738,7 @@ export async function restoreBrowserUseWindowTabUrls(
       if (!(await nativeBrowserWindow(client, window.primaryWindowId))) {
         throw new Error("The Browser restore window is unavailable");
       }
-      for (const url of bounded) {
+      for (const url of restorable) {
         const created = await client.call("createTab", {
           windowId: window.primaryWindowId,
           url,
@@ -3753,8 +3789,8 @@ export async function restoreBrowserUseTabUrls(
   if (urls.length === 0) {
     return;
   }
-  const boundedUrls = boundedRestorableBrowserUseTabUrls(urls);
-  if (boundedUrls.length === 0) {
+  const restorable = restorableBrowserUseTabUrls(urls);
+  if (restorable.length === 0) {
     return;
   }
   const cdpSignal = browserUseCdpSignal(signal);
@@ -3769,7 +3805,7 @@ export async function restoreBrowserUseTabUrls(
     );
     let commandId = 2;
     let restored = 0;
-    for (const url of boundedUrls) {
+    for (const url of restorable) {
       const result = await settle(
         sendBrowserUseCdpCommand(
           socket,

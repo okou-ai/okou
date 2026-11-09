@@ -1,9 +1,10 @@
 import { gunzipSync } from "node:zlib";
 import { HttpResponse, http } from "msw";
-import { describe, expect, it, onTestFinished } from "vitest";
+import { describe, expect, it, onTestFinished, test } from "vitest";
 import { array, boolean, number, object, string } from "zod";
 import { encodeHTML } from "entities";
 import { webhookTelemetryContract } from "@okouai/api-contracts/contracts/webhooks";
+import { cronBrowserReconcileContract } from "@okouai/api-contracts/contracts/cron";
 import { accept, testContext } from "../../__tests__/test-context";
 import { createApp } from "../../app-factory";
 
@@ -20,6 +21,8 @@ import { webhooksAgentHealthUsageTelemetryRoutes } from "../../signals/routes/we
 import { createDeferredPromise } from "../../signals/utils";
 import { flushWaitUntilForTest } from "../../signals/context/wait-until";
 import { healthRoutes } from "../../signals/routes/health";
+import { cronBrowserReconcileRoutes } from "../../signals/routes/cron-browser-reconcile";
+import { createSharedBrowserFixtures } from "../../signals/routes/__tests__/helpers/browser-shared-fixture";
 import { mockOptionalEnv } from "../env";
 import { clearMockMonotonicNow, mockMonotonicNow, mockNow } from "../time";
 import { withRequestRuntime } from "../request-runtime";
@@ -27,6 +30,100 @@ import { withRequestRuntime } from "../request-runtime";
 const context = testContext();
 const FAILURE_MESSAGE =
   "Fal built-in generation webhook reported failed generation";
+
+// Logger-owned redaction contract: trigger failures at the external CDP boundary
+// through the authenticated production cron, without observing private services.
+test("keeps native window failure attribution finite and provider details private", async () => {
+  const app = await setupApp({
+    context,
+    routes: cronBrowserReconcileRoutes,
+    isolatePg: true,
+  });
+  const cron = app(cronBrowserReconcileContract);
+  const { fixture, open } = createSharedBrowserFixtures(context);
+  const f = await fixture();
+  await f.owned.run(async () => {
+    const chat = await f.start();
+    const first = await open(chat);
+    const [providerSessionId] = f.provider.sessionIds;
+    if (!providerSessionId) {
+      throw new Error("Expected the external Browser provider session");
+    }
+    const privateDetail = "private-provider-window-detail";
+    const scenarios = [
+      {
+        failure: "connection",
+        fields: {
+          errorKind: "transport",
+          nativePhase: "connection",
+          errorClass: "Error",
+        },
+      },
+      {
+        failure: "command",
+        fields: {
+          errorKind: "transport",
+          nativePhase: "command",
+          errorClass: "Error",
+        },
+      },
+      {
+        failure: "validation",
+        fields: {
+          errorKind: "validation",
+          nativePhase: "validation",
+          errorClass: "ZodError",
+        },
+      },
+      { failure: "cdp", fields: { errorKind: "cdp", errorCode: -32_602 } },
+    ] as const;
+    for (const { failure, fields } of scenarios) {
+      f.provider.native.disconnect =
+        failure === "connection"
+          ? "connection"
+          : failure === "command"
+            ? "window-bounds"
+            : undefined;
+      f.provider.native.windowBoundsResult =
+        failure === "validation"
+          ? { bounds: { windowState: privateDetail } }
+          : undefined;
+      f.provider.native.windowBoundsError =
+        failure === "cdp"
+          ? { code: -32_602, message: privateDetail }
+          : undefined;
+
+      const result = await accept(
+        cron.reconcile({
+          headers: { authorization: "Bearer test-cron-secret" },
+        }),
+        [200],
+      );
+      expect(result.body).toMatchObject({ checked: 1, errors: 1, stopped: 0 });
+      const warning = context.mocks.axiomLogging.warn.mock.calls
+        .filter(([message]) => {
+          return message === "Shared Browser window reconciliation failed";
+        })
+        .at(-1);
+      const record = object({})
+        .catchall(string().or(number()))
+        .parse(warning?.[1]);
+      expect(record).toStrictEqual({
+        instanceId: first.window?.instanceId,
+        primaryWindowId: first.window?.primaryWindowId,
+        phase: "check-native-window",
+        ...fields,
+        context: "SharedBrowserReconcile",
+      });
+      const serialized = JSON.stringify(warning);
+      expect(serialized).not.toContain(privateDetail);
+      expect(serialized).not.toContain("Private provider");
+      expect(serialized).not.toContain(f.provider.native.url);
+      expect(serialized).not.toContain(chat.threadId);
+      expect(serialized).not.toContain(providerSessionId);
+    }
+  });
+});
 
 // Logger-owned telemetry contract: exercise the production health route rather
 // than constructing a handler or mounting a test-only route.

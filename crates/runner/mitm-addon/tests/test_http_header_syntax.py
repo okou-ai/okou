@@ -14,7 +14,7 @@ from mitmproxy import http
 import http_header_syntax
 
 # RFC 9110 tchar: "!#$%&'*+-.^_`|~" plus ASCII digits and letters. Deliberately
-# independent of http_header_syntax._HTTP_TOKEN_CHARS so mutations are caught.
+# independent of the production implementation so mutations are caught.
 _TCHAR = frozenset("!#$%&'*+-.^_`|~0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
 _ASCII_CODE_POINTS = range(128)
 _TEST_HEADER_WORK_LIMIT = 256
@@ -381,4 +381,60 @@ def test_single_header_value_stops_at_early_duplicate_without_conversion() -> No
             fields, b"content-type", max_fields=3, max_value_bytes=512
         )
         is None
+    )
+
+
+@pytest.mark.parametrize(
+    ("fields", "max_fields", "max_bytes", "overhead", "within_budget"),
+    [
+        pytest.param((), 0, 0, 32, True, id="empty-at-zero-limits"),
+        pytest.param(((b"X", b""), (b"x", b"v")), 2, 67, 32, True, id="exact-limits"),
+        pytest.param(((b"X", b""), (b"x", b"v")), 2, 66, 32, False, id="one-byte-over"),
+        pytest.param(((b"X", b""), (b"x", b"v")), 1, 67, 32, False, id="one-field-over"),
+        pytest.param(((b"X", b""), (b"x", b"v")), 2, 3, 0, True, id="zero-overhead-exact"),
+        pytest.param(((b"X", b""), (b"x", b"v")), 2, 2, 0, False, id="zero-overhead-over"),
+    ],
+)
+def test_raw_header_list_budget_counts_complete_raw_fields(
+    fields: tuple[tuple[bytes, bytes], ...],
+    max_fields: int,
+    max_bytes: int,
+    overhead: int,
+    within_budget: bool,
+) -> None:
+    assert (
+        http_header_syntax.raw_header_list_within_budget(
+            http.Headers(fields).fields,
+            max_fields=max_fields,
+            max_bytes=max_bytes,
+            field_overhead_bytes=overhead,
+        )
+        is within_budget
+    )
+
+
+def test_raw_header_list_budget_rejects_count_before_field_access() -> None:
+    fields = _FieldReadGuard(((b"x", b"v"), (b"x", b"v")), read_limit=0)
+    assert not http_header_syntax.raw_header_list_within_budget(
+        fields, max_fields=1, max_bytes=68, field_overhead_bytes=32
+    )
+
+
+def test_raw_header_list_budget_stops_before_exhausted_suffix() -> None:
+    fields = _FieldReadGuard(
+        (
+            (_FullValueOperationGuard(b"x"), _FullValueOperationGuard(b"v")),
+            (b"unvisited", b"suffix"),
+        ),
+        read_limit=1,
+    )
+    assert not http_header_syntax.raw_header_list_within_budget(
+        fields, max_fields=2, max_bytes=33, field_overhead_bytes=32
+    )
+
+
+def test_raw_header_list_budget_accepts_without_full_value_operations() -> None:
+    fields = ((_FullValueOperationGuard(b"x"), _FullValueOperationGuard(b"value")),)
+    assert http_header_syntax.raw_header_list_within_budget(
+        fields, max_fields=1, max_bytes=38, field_overhead_bytes=32
     )

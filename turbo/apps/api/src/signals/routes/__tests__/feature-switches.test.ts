@@ -92,7 +92,7 @@ describe("/api/feature-switches", () => {
         api.update({
           headers,
           body: {
-            switches: { [FeatureSwitchKey.PwaNavigation]: true },
+            switches: { [FeatureSwitchKey.RealAgentInPreview]: true },
           },
         }),
         [200],
@@ -107,7 +107,7 @@ describe("/api/feature-switches", () => {
     ]);
     const current = await accept(api.get({ headers }), [200]);
     expect(current.body.switches).toStrictEqual({
-      [FeatureSwitchKey.PwaNavigation]: true,
+      [FeatureSwitchKey.RealAgentInPreview]: true,
       [FeatureSwitchKey.Dummy]: false,
     });
   });
@@ -128,7 +128,7 @@ describe("/api/feature-switches", () => {
         headers,
         body: {
           switches: {
-            [FeatureSwitchKey.PwaNavigation]: true,
+            [FeatureSwitchKey.RealAgentInPreview]: true,
             [FeatureSwitchKey.Dummy]: false,
           },
         },
@@ -140,7 +140,7 @@ describe("/api/feature-switches", () => {
         headers,
         body: {
           switches: {
-            [FeatureSwitchKey.PwaNavigation]: false,
+            [FeatureSwitchKey.RealAgentInPreview]: false,
             unregisteredFeature: true,
           },
         },
@@ -148,7 +148,7 @@ describe("/api/feature-switches", () => {
       [200],
     );
     const expected = {
-      [FeatureSwitchKey.PwaNavigation]: false,
+      [FeatureSwitchKey.RealAgentInPreview]: false,
       [FeatureSwitchKey.Dummy]: false,
     };
     expect(updated.body.switches).toStrictEqual(expected);
@@ -176,7 +176,7 @@ describe("/api/feature-switches", () => {
         body: {
           switches: {
             [FeatureSwitchKey.LarkIntegration]: true,
-            [FeatureSwitchKey.PwaNavigation]: true,
+            [FeatureSwitchKey.RealAgentInPreview]: true,
           },
         },
       }),
@@ -233,7 +233,7 @@ describe("/api/feature-switches", () => {
         body: {
           switches: {
             [FeatureSwitchKey.LarkIntegration]: true,
-            [FeatureSwitchKey.PwaNavigation]: false,
+            [FeatureSwitchKey.RealAgentInPreview]: false,
           },
         },
       }),
@@ -241,7 +241,7 @@ describe("/api/feature-switches", () => {
     );
     expect(updated.body.switches).toStrictEqual({
       [FeatureSwitchKey.LarkIntegration]: true,
-      [FeatureSwitchKey.PwaNavigation]: false,
+      [FeatureSwitchKey.RealAgentInPreview]: false,
     });
     clerk.session(peerId, orgId, "org:member");
     const current = await accept(client().get({ headers }), [200]);

@@ -161,7 +161,7 @@ function archiveFiles(archive: Buffer) {
 
 describe("Custom connector authentication modes", () => {
   it.each(["http", "mcp"] as const)(
-    "prepares identical Skill files in legacy and immutable %s publications",
+    "publishes canonical Skill bundles for %s connectors",
     async (kind) => {
       const api = clients();
       acceptSkillUploads();
@@ -184,22 +184,12 @@ describe("Custom connector authentication modes", () => {
       );
       expect(read.body.skillMarkdown).toBe(skillMarkdown);
       const archives = uploadedArchives();
-      const legacy = archives.find((file) => {
-        return file.key.endsWith("/archive.tar.gz");
-      });
-      const prepared = archives.find((file) => {
-        return file.key.startsWith("bundles/v1/");
-      });
-      if (!legacy || !prepared) {
-        throw new Error("Expected both Skill publications");
-      }
+      expect(archives).toHaveLength(1);
+      const prepared = archives[0]!;
       expect(prepared.key).toBe(
         `bundles/v1/${contentBundleDigest(prepared.archive)}.tar.gz`,
       );
       expect(prepared.condition).toBe("*");
-      expect(archiveFiles(prepared.archive)).toStrictEqual(
-        archiveFiles(legacy.archive),
-      );
       expect(archiveFiles(prepared.archive)[0]?.content.toString()).toContain(
         skillMarkdown,
       );

@@ -1,5 +1,6 @@
 //! Cancellation must retain a natural terminal turn that races interruption.
 
+use cli_test_support::json_fixture::parse_json_lines;
 use guest_agent_tests as common;
 
 use std::time::Duration;
@@ -73,10 +74,7 @@ async fn cancellation_ingests_completion_that_races_the_interrupt_error()
     .await?;
 
     let log = std::fs::read_to_string(runtime.paths.agent_log_file())?;
-    let completed = log
-        .lines()
-        .map(serde_json::from_str::<Value>)
-        .collect::<Result<Vec<_>, _>>()?
+    let completed = parse_json_lines(&log)?
         .into_iter()
         .find(|event| event.get("type").and_then(Value::as_str) == Some("turn.completed"))
         .ok_or("missing raced turn.completed event")?;

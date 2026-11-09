@@ -1,4 +1,4 @@
-import { screen, waitFor, within } from "@testing-library/react";
+import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -338,55 +338,143 @@ test("A notification delivered after the bulk snapshot stays unread", async () =
   expect(within(row(second.title)).getByText("Unread")).toBeInTheDocument();
 });
 
-test("Carousel notifications navigate pages and reopen at the first page", async () => {
-  const entry = {
-    ...first,
+const carouselEntry = Object.freeze<UserNotificationSummary>({
+  ...first,
+  type: "carousel",
+  title: "A three-page walkthrough",
+});
+const carouselNotification = Object.freeze<UserNotification>({
+  ...detail,
+  title: carouselEntry.title,
+  payload: {
     type: "carousel",
-    title: "A three-page walkthrough",
-  };
-  const carousel = {
-    ...detail,
-    title: entry.title,
-    payload: {
-      type: "carousel",
-      pages: [
-        {
-          markdown:
-            "## Start with an idea\n\nDescribe what you want to achieve.",
-        },
-        {
-          markdown:
-            "## Bring your context\n\n![Context overview](https://static.okou.io/notification-preview.png)",
-        },
-        { markdown: "## Make it happen\n\nKeep the next step in sight." },
-      ],
-    },
-  } satisfies UserNotification;
-  mockInbox([entry], carousel);
+    pages: [
+      {
+        markdown:
+          "## Start with an idea\n\nDescribe what you want to achieve.\n\n[Read the guide](https://example.com/guide)",
+      },
+      {
+        markdown:
+          "## Bring your context\n\n![Context overview](https://static.okou.io/notification-preview.png)",
+      },
+      { markdown: "## Make it happen\n\nKeep the next step in sight." },
+    ],
+  },
+});
+
+function swipe(
+  target: Element,
+  end: { readonly x: number; readonly y: number },
+) {
+  fireEvent.touchStart(target, {
+    touches: [{ identifier: 0, clientX: 200, clientY: 100 }],
+  });
+  fireEvent.touchEnd(target, {
+    touches: [],
+    changedTouches: [{ identifier: 0, clientX: end.x, clientY: end.y }],
+  });
+}
+
+test("Carousel arrows and dots cycle pages and reopening starts at page one", async () => {
+  mockInbox([carouselEntry], carouselNotification);
   await openInbox();
-  await screen.findByText(entry.title);
-  click(row(entry.title));
-  const dialog = await screen.findByRole("dialog", { name: entry.title });
+  await screen.findByText(carouselEntry.title);
+  click(row(carouselEntry.title));
+  const dialog = await screen.findByRole("dialog", {
+    name: carouselEntry.title,
+  });
   await within(dialog).findByText("Start with an idea");
-  expect(within(dialog).getByText("Page 1 of 3")).toBeInTheDocument();
-  expect(button("Previous page", dialog)).toBeDisabled();
-  click(button("Next page", dialog));
+  const navigation = within(dialog).getByRole("group", {
+    name: "Pages in this message",
+  });
+  expect(button("Page 1 of 3", navigation)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  click(button("Previous page", navigation));
+  await within(dialog).findByText("Make it happen");
+  click(button("Next page", navigation));
+  await within(dialog).findByText("Start with an idea");
+  click(button("Next page", navigation));
   await within(dialog).findByText("Bring your context");
   expect(within(dialog).getByAltText("Context overview")).toBeInTheDocument();
-  expect(within(dialog).getByText("Page 2 of 3")).toBeInTheDocument();
-  click(button("Next page", dialog));
+  expect(button("Page 2 of 3", navigation)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+  click(button("Page 3 of 3", navigation));
   await within(dialog).findByText("Make it happen");
-  expect(button("Next page", dialog)).toBeDisabled();
-  click(button("Previous page", dialog));
-  await within(dialog).findByText("Bring your context");
+  click(button("Next page", navigation));
+  await within(dialog).findByText("Start with an idea");
   await screen.findByText("0 unread notifications");
   click(button("Close", dialog));
-  await screen.findByText(entry.title);
+  await screen.findByText(carouselEntry.title);
   await waitFor(() => {
-    expect(row(entry.title)).toHaveFocus();
+    expect(row(carouselEntry.title)).toHaveFocus();
   });
-  click(row(entry.title));
-  const reopened = await screen.findByRole("dialog", { name: entry.title });
+  click(row(carouselEntry.title));
+  const reopened = await screen.findByRole("dialog", {
+    name: carouselEntry.title,
+  });
   await within(reopened).findByText("Start with an idea");
-  expect(within(reopened).getByText("Page 1 of 3")).toBeInTheDocument();
+  expect(button("Page 1 of 3", reopened)).toHaveAttribute(
+    "aria-current",
+    "step",
+  );
+});
+
+test("Carousel swipes cycle pages without intercepting reading or links", async () => {
+  mockInbox([carouselEntry], carouselNotification);
+  await openInbox();
+  await screen.findByText(carouselEntry.title);
+  click(row(carouselEntry.title));
+  const dialog = await screen.findByRole("dialog", {
+    name: carouselEntry.title,
+  });
+  const firstPage = await within(dialog).findByText("Start with an idea");
+  for (const end of [
+    { x: 180, y: 105 },
+    { x: 195, y: 240 },
+    { x: 130, y: 170 },
+  ]) {
+    swipe(firstPage, end);
+    expect(firstPage).toBeInTheDocument();
+  }
+  fireEvent.touchStart(firstPage, {
+    touches: [
+      { identifier: 0, clientX: 200, clientY: 100 },
+      { identifier: 1, clientX: 250, clientY: 100 },
+    ],
+  });
+  fireEvent.touchEnd(firstPage, {
+    touches: [],
+    changedTouches: [{ identifier: 0, clientX: 80, clientY: 100 }],
+  });
+  expect(firstPage).toBeInTheDocument();
+  fireEvent.touchStart(firstPage, {
+    touches: [{ identifier: 0, clientX: 200, clientY: 100 }],
+  });
+  fireEvent.touchCancel(firstPage, { touches: [], changedTouches: [] });
+  fireEvent.touchEnd(firstPage, {
+    touches: [],
+    changedTouches: [{ identifier: 0, clientX: 80, clientY: 100 }],
+  });
+  expect(firstPage).toBeInTheDocument();
+  const guideLink = queryAllByRoleFast("link", dialog).find((link) => {
+    return link.textContent?.trim() === "Read the guide";
+  });
+  if (!guideLink) {
+    throw new Error("Expected the notification guide link");
+  }
+  swipe(guideLink, {
+    x: 80,
+    y: 100,
+  });
+  expect(firstPage).toBeInTheDocument();
+  swipe(firstPage, { x: 80, y: 105 });
+  const secondPage = await within(dialog).findByText("Bring your context");
+  swipe(secondPage, { x: 340, y: 105 });
+  const returned = await within(dialog).findByText("Start with an idea");
+  swipe(returned, { x: 340, y: 105 });
+  await within(dialog).findByText("Make it happen");
 });

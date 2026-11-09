@@ -92,6 +92,10 @@ final class ChatSyncRecoveryTests: XCTestCase {
 
   func testBackgroundCancelsListIndicatorAndHistoryReadsAndForegroundCatchesUp() async throws {
     let paths: [(String, ChatInvalidation)] = [
+      (
+        "/api/chat-threads/\(SyncRecoveryFixture.threadID)",
+        .history(threadID: SyncRecoveryFixture.threadID)
+      ),
       ("/api/chat-threads/snapshot", .threadList),
       ("/api/indicators", .readCursor),
       (

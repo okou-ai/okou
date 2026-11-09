@@ -1388,6 +1388,22 @@ jobs:
           API_ENV_FILE: ${{ steps.api-production-env.outputs.file }}
         run: pnpm --dir turbo/apps/api env:validate "$API_ENV_FILE"
 
+      # Members without saved personal Instructions reference this default, so
+      # publish it before migrations or either API deployment serves the release.
+      - name: Publish default personal Instructions
+        shell: bash
+        env:
+          API_ENV_FILE: ${{ steps.api-production-env.outputs.file }}
+        run: |
+          set -euo pipefail
+          API_VALIDATED_ENV="$(sed -n 's/^API_VALIDATED_ENV=//p' "$API_ENV_FILE")"
+          if [[ -z "$API_VALIDATED_ENV" ]]; then
+            echo "::error::Validated API production environment is missing"
+            exit 1
+          fi
+          export API_VALIDATED_ENV
+          pnpm --dir turbo/apps/api instructions:publish-default
+
       - name: Notify Slack - Migration Starting
         id: migration-slack-start
         if: ${{ needs.release-please.outputs.api_release_created == 'true' && vars.SLACK_RELEASE_CHANNEL_ID != '' }}
@@ -2225,7 +2241,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.2
         with:
           workspaces: crates -> target
-          shared-key: ${{ steps.target-metadata.outputs.cache_suffix }}-release
+          shared-key: ${{ steps.target-metadata.outputs.cache_suffix }}-release-${{ hashFiles('crates/Cargo.toml') }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Configure pinned Kerberos cache
@@ -2261,6 +2277,7 @@ jobs:
       # IMPORTANT: production runner releases use the release profile. The
       # shared R2 template cache intentionally ignores guest binaries. See #9192.
       - name: Cross-compile guest binaries for ${{ matrix.target }}
+        id: build-guests
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
         run: |
@@ -2271,9 +2288,23 @@ jobs:
             guest_cargo_args+=("-p" "$package")
           done
           cd crates
-          cargo build --release --target "$TARGET_TRIPLE" "${guest_cargo_args[@]}"
+          rm -f target/cargo-timings/cargo-timing.html
+          echo "timings-started=true" >> "$GITHUB_OUTPUT"
+          cargo build --release --target "$TARGET_TRIPLE" "${guest_cargo_args[@]}" --timings
+
+      - name: Upload guest release build timings
+        if: (success() || failure()) && steps.build-guests.outputs.timings-started == 'true'
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runner-release-guest-build-timings-${{ matrix.target }}-${{ github.run_attempt }}
+          path: crates/target/cargo-timings/cargo-timing.html
+          if-no-files-found: warn
+          retention-days: 7
 
       - name: Cross-compile runner with embedded guests and CLI for ${{ matrix.target }}
+        id: build-runner
         env:
           TARGET_TRIPLE: ${{ matrix.target }}
           GUEST_CLI_PATH: ${{ github.workspace }}/runner-cli-intermediate/package.tgz
@@ -2287,7 +2318,20 @@ jobs:
           for index in "${!RUNNER_GUEST_BINARIES[@]}"; do
             guest_env+=("${RUNNER_GUEST_PATH_ENVS[$index]}=${TARGET_DIR}/${RUNNER_GUEST_BINARIES[$index]}")
           done
-          env "${guest_env[@]}" cargo build --release --target "$TARGET_TRIPLE" -p runner
+          rm -f target/cargo-timings/cargo-timing.html
+          echo "timings-started=true" >> "$GITHUB_OUTPUT"
+          env "${guest_env[@]}" cargo build --release --target "$TARGET_TRIPLE" -p runner --timings
+
+      - name: Upload runner release build timings
+        if: (success() || failure()) && steps.build-runner.outputs.timings-started == 'true'
+        continue-on-error: true
+        timeout-minutes: 1
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: runner-release-build-timings-${{ matrix.target }}-${{ github.run_attempt }}
+          path: crates/target/cargo-timings/cargo-timing.html
+          if-no-files-found: warn
+          retention-days: 7
 
       # Release always builds both targets; CI Runner compilers restore only.
       - name: Save pinned Runner Kerberos dependencies

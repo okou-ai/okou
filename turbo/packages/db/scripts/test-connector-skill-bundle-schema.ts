@@ -150,6 +150,30 @@ export async function validateConnectorSkillBundleSchema(
       "UPDATE org_custom_connectors SET skill_content_bundle=NULL,skill_content_bundle_source_version_id=NULL WHERE id=$1",
       [connectorId],
     );
+    // A bundle source is independently owned: new publications need no generic
+    // Storage row, while preceding readers still compare the retained IDs.
+    const independentSource = createHash("sha256")
+      .update(randomUUID())
+      .digest("hex");
+    const independentBundle = { sha256: independentSource, archiveBytes: 123 };
+    await client.query(
+      `UPDATE org_custom_connectors SET skill_markdown='Bundle-only Skill',
+        skill_storage_version_id=$1, skill_content_bundle=$2,
+        skill_content_bundle_source_version_id=$1 WHERE id=$3`,
+      [independentSource, independentBundle, connectorId],
+    );
+    const selected = await client.query(
+      `SELECT skill_storage_version_id, skill_content_bundle,
+        skill_content_bundle_source_version_id FROM org_custom_connectors WHERE id=$1`,
+      [connectorId],
+    );
+    assert.deepEqual(selected.rows, [
+      {
+        skill_storage_version_id: independentSource,
+        skill_content_bundle: independentBundle,
+        skill_content_bundle_source_version_id: independentSource,
+      },
+    ]);
   } finally {
     await client.query("DELETE FROM connector_catalog_entries WHERE hash=$1", [
       hash,

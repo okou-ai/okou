@@ -18,9 +18,9 @@ import {
   useLastResolved,
 } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Menu, Share2, UserPlus } from "lucide-react";
+import { Share2, UserPlus } from "lucide-react";
 import type { RouteKey } from "../../signals/route-paths.ts";
-import { Button, Sheet, SheetTrigger, cn, useMediaQuery } from "@okouai/ui";
+import { Button, cn } from "@okouai/ui";
 import { Sidebar, ThreeColumnSearchDialogContainer } from "./sidebar.tsx";
 import {
   AutomationMenuButton,
@@ -36,13 +36,11 @@ import {
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { AvatarFromUrl } from "./sidebar-shared.tsx";
 import { QueueDrawer } from "../queue-page/queue-drawer.tsx";
+import { sidebarOff$, isChatRoute } from "../../signals/okou-page/nav.ts";
 import {
-  sidebarExpanded$,
-  setSidebarExpanded$,
-  sidebarOff$,
-  isChatRoute,
-} from "../../signals/okou-page/nav.ts";
-import { activeRoute$ } from "../../signals/active-route.ts";
+  activeRoute$,
+  agentChatPageActive$,
+} from "../../signals/active-route.ts";
 import { mobileBreadcrumb$ } from "../../signals/okou-page/mobile-breadcrumb.ts";
 import { Link } from "../router/link.tsx";
 import { isOrgAdmin$ } from "../../signals/org.ts";
@@ -64,15 +62,14 @@ import { skillImportDialogOpen$ } from "../../signals/skill-import/skill-import-
 import { SkillImportDialog } from "../skill-import/skill-import-dialog.tsx";
 import { CreateAgentDialogContainer } from "../agents-page/create-agent-dialog.tsx";
 import { paletteColorTheme$ } from "../../signals/theme.ts";
-import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
 import { WorkspaceInset } from "./workspace-inset.tsx";
 import { MobileChatThreadMoreMenu } from "./chat-thread-header-actions.tsx";
 import { ThreadMailButton } from "./thread-mail.tsx";
+import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { ChatResourcesButton } from "./chat-resources.tsx";
-import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import {
   pwaChatListVisible$,
-  pwaNavigationEnabled$,
+  mobileChatViewport$,
 } from "../../signals/okou-page/pwa-navigation.ts";
 import {
   PwaBackToChats,
@@ -81,7 +78,6 @@ import {
 } from "./pwa-navigation.tsx";
 import { ChatThreadDialogs } from "./sidebar-threads.tsx";
 import { NotFoundPage } from "../not-found-page.tsx";
-import { unifiedChatWorkspace$ } from "../../signals/okou-page/unified-chat-workspace.ts";
 
 function AgentAvatarInTopBar() {
   const agent = useLastResolved(currentChatAgent$);
@@ -172,33 +168,28 @@ function MobileShareButtonInner({
   const phase = useGet(thread.sharing.phase$);
   const start = useSet(thread.sharing.start$);
   const pageSignal = useGet(pageSignal$);
-  const transitioning = useChatHeaderTransitioning(thread);
   if (phase !== "idle") {
     return null;
   }
   return (
-    <Button
-      showTooltip
-      type="button"
-      disabled={transitioning}
-      focusableWhenDisabled
-      onClick={() => {
-        detach(
-          start(pageSignal),
-          Reason.DomCallback,
-          "start shared thread selection",
-        );
-      }}
-      variant="quiet"
-      size="icon-sm"
-      iconSize={largeTarget ? "md" : "sm"}
-      className={cn("shrink-0", largeTarget && "size-11")}
-      aria-label={t(($) => {
+    <ChatHeaderIconButton
+      thread={thread}
+      icon={<Share2 size={18} />}
+      label={t(($) => {
         return $.chat.sharing.start;
       })}
-    >
-      <Share2 size={16} />
-    </Button>
+      largeTarget={largeTarget}
+      usage={{
+        kind: "action",
+        onClick: () => {
+          detach(
+            start(pageSignal),
+            Reason.DomCallback,
+            "start shared thread selection",
+          );
+        },
+      }}
+    />
   );
 }
 
@@ -258,7 +249,7 @@ function MobileChatThreadActions({ thread }: { thread: ChatPanelSignals }) {
   return (
     <div className="flex shrink-0 items-center gap-0.5">
       <MobileShareButtonInner thread={thread} largeTarget />
-      <ThreadMailButton thread={thread} />
+      <ThreadMailButton thread={thread} largeTarget />
       <ChatResourcesButton thread={thread} largeTarget />
       <MobileChatThreadMoreMenu thread={thread} />
     </div>
@@ -292,9 +283,7 @@ function MobileTopBarActions({ activeId }: { activeId: RouteKey | null }) {
   );
 }
 
-function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
-  const { t } = useTranslation();
-
+function MobileTopBar() {
   const breadcrumbLoadable = useLastLoadable(mobileBreadcrumb$);
   const breadcrumb =
     breadcrumbLoadable.state === "hasData" ? breadcrumbLoadable.data : null;
@@ -305,31 +294,7 @@ function MobileTopBar({ pwaNavigation = false }: { pwaNavigation?: boolean }) {
   return (
     <div className="relative md:hidden shrink-0 flex items-center min-h-12 px-3 gap-2 bg-background border-b border-border/50 z-10">
       <MobileSharingOverlayLeaf />
-      {pwaNavigation ? (
-        isChatRoute(activeId) ? (
-          <PwaBackToChats />
-        ) : (
-          <PwaBackToParent />
-        )
-      ) : (
-        <SheetTrigger
-          render={
-            <Button
-              showTooltip
-              type="button"
-              variant="quiet"
-              size="icon-sm"
-              iconSize="md"
-              className="shrink-0"
-              aria-label={t(($) => {
-                return $.appShell.sidebar.mobile.openMenu;
-              })}
-            />
-          }
-        >
-          <Menu size={18} />
-        </SheetTrigger>
-      )}
+      {isChatRoute(activeId) ? <PwaBackToChats /> : <PwaBackToParent />}
       {activeId === "chat" ? (
         <div className="flex-1 min-w-0">
           {thread && <ChatThreadHeaderTitle thread={thread} />}
@@ -380,26 +345,6 @@ function SkillImportDialogMount() {
   return open ? <SkillImportDialog /> : null;
 }
 
-function MobileSidebarSheet({ children }: { readonly children: ReactNode }) {
-  const expanded = useGet(sidebarExpanded$);
-  const setExpanded = useSet(setSidebarExpanded$);
-
-  return (
-    <Sheet open={expanded} onOpenChange={setExpanded}>
-      {children}
-    </Sheet>
-  );
-}
-
-function MobileSidebarMount() {
-  return (
-    <MobileSidebarSheet>
-      <MobileTopBar />
-      <Sidebar isDesktop={false} />
-    </MobileSidebarSheet>
-  );
-}
-
 function ChatWorkspace({
   children,
   beside,
@@ -416,8 +361,7 @@ function ChatWorkspace({
   const active = useGet(activeThreadSidebar$);
   const fullscreen = useGet(activeThreadSidebarFullscreen$);
   const syncSidebarLayout = useSet(commitWorkspaceLayout$);
-  const joinedToChatList =
-    useGet(unifiedChatWorkspace$) && beside === "chat-list";
+  const joinedToChatList = beside === "chat-list";
   return (
     <ChatThreadSidebarShell
       layout={chatLayout}
@@ -463,7 +407,6 @@ function SidebarWorkspaceFrame({
 }) {
   const chatListHidden = useGet(sidebarOff$);
   const activeRoute = useGet(activeRoute$);
-  const unified = useGet(unifiedChatWorkspace$);
   const beside = chatListHidden ? "nav-rail" : "chat-list";
 
   return activeRoute === "chat" ? (
@@ -476,7 +419,7 @@ function SidebarWorkspaceFrame({
       {children}
     </ChatWorkspace>
   ) : (
-    <WorkspaceInset beside={beside} joined={unified}>
+    <WorkspaceInset beside={beside}>
       {header}
       {children}
       {footer}
@@ -486,31 +429,22 @@ function SidebarWorkspaceFrame({
 
 function SidebarWorkspace({
   children,
-  isDesktop,
   pwaNavigation,
 }: {
   children: ReactNode;
-  isDesktop: boolean;
   pwaNavigation: boolean;
 }) {
   const chatListVisible = useGet(pwaChatListVisible$);
   const activeRoute = useGet(activeRoute$);
+  const agentChatPage = useGet(agentChatPageActive$);
 
   const workspaceHeader = (
     <>
       <InstallBanner />
       <IosInstallModal />
-      {!isDesktop &&
-        !(
-          pwaNavigation &&
-          (activeRoute === "me" ||
-            (activeRoute === "agentChat" && chatListVisible))
-        ) &&
-        (pwaNavigation ? (
-          <MobileTopBar pwaNavigation />
-        ) : (
-          <MobileSidebarMount />
-        ))}
+      {pwaNavigation &&
+        activeRoute !== "me" &&
+        !(agentChatPage && chatListVisible) && <MobileTopBar />}
     </>
   );
   const workspaceContent = pwaNavigation ? (
@@ -534,10 +468,8 @@ function SidebarWorkspace({
 
 function SidebarLayoutInner({ children }: { children: ReactNode }) {
   const paletteColorTheme = useGet(paletteColorTheme$);
-  const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
   const shellRef = useSet(threadSidebarLayoutRootRef$);
-  const pwaNavigation = useGet(pwaNavigationEnabled$);
-  const unified = useGet(unifiedChatWorkspace$);
+  const pwaNavigation = useGet(mobileChatViewport$);
 
   return withChatScrollLayout(
     <div
@@ -545,10 +477,9 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
       data-slot="app-shell"
       className={cn(
         "box-border flex h-full max-h-full min-h-full w-full overflow-hidden bg-background pb-0",
-        // The unified workspace's ground is the whole rail, not a thin frame,
-        // so it sits one stop below the sheet in either theme rather than at
-        // the sidebar fill.
-        unified ? "md:bg-workspace-ground" : "md:bg-sidebar",
+        // The workspace's ground is the whole rail, not a thin frame, so it
+        // sits one stop below the sheet in either theme.
+        "md:bg-workspace-ground",
       )}
       data-gradient-color-themes={
         paletteColorTheme === undefined ? undefined : true
@@ -571,20 +502,19 @@ function SidebarLayoutInner({ children }: { children: ReactNode }) {
           <ChatThreadDialogs />
           <ThreeColumnSearchDialogContainer />
         </>
-      ) : isDesktop ? (
-        <Sidebar isDesktop />
-      ) : null}
-      <SidebarWorkspace isDesktop={isDesktop} pwaNavigation={pwaNavigation}>
+      ) : (
+        <Sidebar />
+      )}
+      <SidebarWorkspace pwaNavigation={pwaNavigation}>
         {children}
       </SidebarWorkspace>
     </div>,
-    { measureWidth: true },
   );
 }
 
 function SidebarRouteGuard({ children }: { children: ReactNode }) {
   const activeRoute = useGet(activeRoute$);
-  const pwaNavigation = useGet(pwaNavigationEnabled$);
+  const pwaNavigation = useGet(mobileChatViewport$);
 
   return activeRoute === "me" && !pwaNavigation ? <NotFoundPage /> : children;
 }

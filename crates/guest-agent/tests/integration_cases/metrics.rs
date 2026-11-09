@@ -1,3 +1,4 @@
+use cli_test_support::json_fixture::parse_json_lines;
 use serde_json::Value;
 use std::error::Error;
 use std::path::{Path, PathBuf};
@@ -42,10 +43,7 @@ async fn settle_runnable_tasks() {
 
 fn metrics_entries(path: &Path) -> TestResult<Vec<Value>> {
     let content = std::fs::read_to_string(path)?;
-    let entries = content
-        .lines()
-        .map(serde_json::from_str)
-        .collect::<Result<Vec<_>, _>>()?;
+    let entries = parse_json_lines(&content)?;
     Ok(entries)
 }
 

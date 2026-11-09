@@ -116,14 +116,28 @@ public struct ModelCatalog: Decodable, Sendable {
 
 /// A projection of canonical API metadata. It owns no personal credentials or quota reads.
 public struct ChatModelConfiguration: Sendable {
-  public let preference: ModelPreference
+  public private(set) var preference: ModelPreference
   public let available: AvailableRunModels
   public let catalog: ModelCatalog
   public let switches: [String: Bool]
 
+  public init(
+    preference: ModelPreference, available: AvailableRunModels, catalog: ModelCatalog,
+    switches: [String: Bool]
+  ) throws {
+    guard catalog.routes.allSatisfy({ $0.piRuntimeCapable != nil }) else {
+      throw APIClientError.incompatibleData
+    }
+    self.preference = preference
+    self.available = available
+    self.catalog = catalog
+    self.switches = switches
+  }
+
   public func withPreference(_ preference: ModelPreference) -> ChatModelConfiguration {
-    ChatModelConfiguration(
-      preference: preference, available: available, catalog: catalog, switches: switches)
+    var updated = self
+    updated.preference = preference
+    return updated
   }
   public var canLinkSubscriptions: Bool { switches["subscriptionLinkingEntry"] == true }
   public var models: [AvailableRunModels.Model] {
@@ -203,21 +217,24 @@ public struct ChatModelService: Sendable {
   public func catalog() async throws -> ModelCatalog {
     try await client.request("/api/model-catalog")
   }
+  public func preference() async throws -> ModelPreference {
+    try await client.request("/api/user-model-preference")
+  }
+  public func availableModels() async throws -> AvailableRunModels {
+    try await client.request("/api/run-models")
+  }
+  public func featureSwitches() async throws -> SidebarFeatureSwitches {
+    try await client.request("/api/feature-switches")
+  }
 
   public func load() async throws -> ChatModelConfiguration {
-    async let preference: ModelPreference = client.request("/api/user-model-preference")
-    async let models: AvailableRunModels = client.request("/api/run-models")
-    async let catalog: ModelCatalog = client.request("/api/model-catalog")
-    async let features: SidebarFeatureSwitches = client.request("/api/feature-switches")
-    let configuration = try await ChatModelConfiguration(
+    async let preference = self.preference()
+    async let models = availableModels()
+    async let catalog = self.catalog()
+    async let features = featureSwitches()
+    return try await ChatModelConfiguration(
       preference: preference, available: models, catalog: catalog,
       switches: features.effectiveSwitches)
-    guard
-      configuration.catalog.routes.allSatisfy({ $0.piRuntimeCapable != nil })
-    else {
-      throw APIClientError.incompatibleData
-    }
-    return configuration
   }
   public func selection(threadID: String) async throws -> ChatModelSelection {
     let metadata: ThreadMetadata = try await client.request(

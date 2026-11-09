@@ -116,6 +116,7 @@ fn claim_body(value_bytes: usize) -> TestResult<(Vec<u8>, ExecutionContext)> {
         ),
     ] {
         manifest.storages.push(StorageEntry {
+            template_guidance: None,
             name: name.into(),
             mount_path: mount.into(),
             vas_storage_name: name.into(),

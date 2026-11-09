@@ -115,6 +115,7 @@ final class ConversationStore {
   private(set) var isRecoveringFailure = false
   private var failureAccountsReadyID: String?
   private var failureAccountBaseline: Int?
+  private var failureAccountError: String?
   private var failureContextRevision = UUID()
   private var failureAccountsRequestedID: String?
   private var failureAccountsTask: Task<Void, Never>?
@@ -244,7 +245,9 @@ final class ConversationStore {
       for index in pending.indices { pending[index].needsRetry = true }
       // Recovery inputs do not consume the composer; two absent documents are not an identity.
       if pending.contains(where: {
-        $0.document != nil && $0.document == composer.value.draftUserMessage
+        $0.document != nil
+          && $0.document?.trimmingWhitespace()
+            == composer.value.draftUserMessage?.trimmingWhitespace()
       }) {
         composer.clear()
       }
@@ -272,7 +275,7 @@ final class ConversationStore {
     guard !closed, !Task.isCancelled, refreshGeneration == generation,
       history?.persistedEventIDs == previousIDs
     else { return }
-    history = cached
+    history = cached.withCancellationRecoveryPending(history?.executionState == .recovering)
     pending.removeAll { cached.persistedEventIDs.contains($0.id) }
     rebuildMessages()
   }
@@ -301,15 +304,27 @@ final class ConversationStore {
       repeat {
         refreshAgain = false
         do {
-          let result = try await ChatReadRecovery.read("chat history", sleep: readRetrySleep) {
-            try await sync.history(threadID: thread.id)
+          async let recovery = ChatReadRecovery.read("cancellation recovery", sleep: readRetrySleep)
+          {
+            try await self.sync.cancellationRecoveryPending(threadID: self.thread.id)
           }
+          let events = try await ChatReadRecovery.read("chat history", sleep: readRetrySleep) {
+            try await sync.eventHistory(threadID: thread.id)
+          }
+          // Keep a confirmed recovery visible until its independent read finishes.
+          let result = events.withCancellationRecoveryPending(
+            history?.executionState == .recovering)
           await messageMarkdown.prepareLatest(result.messages)
           try Task.checkCancellation()
           guard !closed, refreshGeneration == generation else { return }
           if history != result { history = result }
           pending.removeAll { result.persistedEventIDs.contains($0.id) }
           rebuildMessages()
+          let recovering = try await recovery
+          try Task.checkCancellation()
+          guard !closed, refreshGeneration == generation else { return }
+          let verified = events.withCancellationRecoveryPending(recovering)
+          if history != verified { history = verified }
           historySyncError = nil
           if !result.canStop { stopIssue = nil }
           let unreadThrough = [result.latestRunFinishAt, thread.unreadAt].compactMap { $0 }.max()
@@ -397,7 +412,8 @@ final class ConversationStore {
       initialMessage
       ?? PendingMessage(
         id: messageID, text: text, createdAt: Date(),
-        attachments: attachmentDraft.uploaded, document: composer.value.draftUserMessage)
+        attachments: attachmentDraft.uploaded,
+        document: composer.value.draftUserMessage?.trimmingWhitespace())
     if let initialSelection {
       message.modelSelection = initialSelection
       message.reasoningEffort = modelSelection?.models.configuration?.requestedEffort(
@@ -434,7 +450,7 @@ final class ConversationStore {
           && failureAccountBaseline.map {
             (modelSelection?.models.subscriptions.accountRevision ?? 0) > $0
           } == true),
-      busy: isRecoveringFailure || isSending)
+      busy: isRecoveringFailure || isSending, accountsError: failureAccountError)
     if state.isCurrent {
       state.billing = failureBilling
       state.billingError = failureBillingError
@@ -452,6 +468,7 @@ final class ConversationStore {
     let request = UUID()
     failureContextRevision = request
     failureAccountsReadyID = nil
+    failureAccountError = nil
     if let failure = messages.first(where: { $0.id == id })?.failure,
       failure.recovery(personalFramework: nil).kind == .billing
     {
@@ -476,11 +493,19 @@ final class ConversationStore {
       failure.recovery(personalFramework: nil).kind == .usage
     else { return }
     failureAccountBaseline = modelSelection.models.subscriptions.accountRevision
-    let succeeded = await modelSelection.models.subscriptions.refresh(force: true)
-    guard succeeded, !closed, !Task.isCancelled, history?.latestFailureID == id,
-      failureContextRevision == request
-    else { return }
-    failureAccountsReadyID = id
+    do {
+      _ = try await modelSelection.models.subscriptions.readAccounts(force: true)
+      guard !closed, !Task.isCancelled, history?.latestFailureID == id,
+        failureContextRevision == request
+      else { return }
+      failureAccountsReadyID = id
+      failureAccountError = nil
+    } catch is CancellationError {} catch {
+      guard !closed, !Task.isCancelled, history?.latestFailureID == id,
+        failureContextRevision == request
+      else { return }
+      failureAccountError = ChatRequestFailure.message(for: error)
+    }
   }
 
   /// Execution recovery appends a new input. Uncertain delivery still uses retry(_:).

@@ -5,6 +5,7 @@ import {
 import type { ProactivePreference } from "@okouai/api-contracts/contracts/proactive";
 import { mockApi } from "../msw-contract.ts";
 import { proactiveLearningContract } from "@okouai/api-contracts/contracts/proactive-nightly";
+import { suggestionsContract } from "@okouai/api-contracts/contracts/suggestions";
 
 let preference: ProactiveSuggestionsPreference = {
   enabled: false,
@@ -21,6 +22,10 @@ export function resetMockProactiveSuggestions(): void {
   learning = { enabled: false, status: "paused", unavailableReason: null };
 }
 export const apiProactiveSuggestionsHandlers = [
+  // The chat list's Okou row counts the Feed whenever Suggestions are on.
+  mockApi(suggestionsContract.list, ({ respond }) =>
+    respond(200, { suggestions: [] }),
+  ),
   mockApi(proactiveLearningContract.get, ({ respond }) =>
     respond(200, learning),
   ),

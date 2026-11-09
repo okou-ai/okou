@@ -52,11 +52,13 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description: "Receive personal announcements from the Okou team.",
     enabled: false,
   },
-  [FeatureSwitchKey.ConnectorSkillBundleDelivery]: {
-    maintainer: "lancy@okou.ai",
+  [FeatureSwitchKey.HomeCapabilities]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Home capabilities",
     description:
-      "Deliver Connector Skills through prepared immutable bundles after compatible API claims have drained.",
+      "Explore people, research, creation, and workflow capabilities above a bottom-aligned composer.",
     enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.SingleAgent]: {
     maintainer: "lancy@okou.ai",
@@ -119,6 +121,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Open chat artifacts and artifacts-page previews directly in a sidebar instead of a lightbox.",
     enabled: false,
   },
+  [FeatureSwitchKey.ArtifactPreviewToolbar]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Artifact preview toolbar",
+    description:
+      "Keep sharing and view controls visible while grouping downloads, Google Drive, and deletion in a stable More menu.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.SlashActions]: {
     maintainer: "tongx@okou.ai",
     displayName: "Slash actions",
@@ -132,13 +142,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     description:
       "Open each chat reply with the agent's avatar and name inside the reading column, and pick messages to share from a checkbox column beside them.",
     enabled: false,
-  },
-  [FeatureSwitchKey.UnifiedChatWorkspace]: {
-    maintainer: "tongx@okou.ai",
-    displayName: "Unified chat workspace",
-    description:
-      "Hold the chat list, the chat and its side panel in one sheet, with resizable dividers that remember their widths.",
-    enabled: true,
   },
   [FeatureSwitchKey.CloudBrowserPanel]: {
     maintainer: "tongx@okou.ai",
@@ -191,21 +194,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     // fidelity is being evaluated.
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
-  },
-  [FeatureSwitchKey.ChatMessagePdf]: {
-    maintainer: "ethan@okou.ai",
-    displayName: "Message PDF export",
-    description:
-      "Generate a PDF of an assistant response, then download it with rendered diagrams, formulas, images, and clickable links.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadInlineRename]: {
-    maintainer: "tongx@okou.ai",
-    displayName: "Inline chat rename",
-    description: "Double-click a chat in the sidebar to rename it in place.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },
   [FeatureSwitchKey.BrowserNativeInput]: {
     maintainer: "liangyou@okou.ai",
@@ -296,20 +284,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
       "Test-only override to use Codex instead of Pi for supported ChatGPT subscription runs. Auto always stays on Pi.",
     enabled: false,
   },
-  [FeatureSwitchKey.SidebarSubscriptionUsage]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Show personal subscription usage in the account menu and on Me, and provider credit balances on connected accounts.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.PwaNavigation]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Use bottom navigation, an agent chat list, and Me at mobile viewport widths in any browser.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
   [FeatureSwitchKey.LarkIntegration]: {
     maintainer: "yuma@okou.ai",
     description: "Enable Lark bot setup, account connections, and messaging.",
@@ -341,7 +315,7 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "bingjie@okou.ai",
     displayName: "Auto-continue busy chats",
     description:
-      "Continue chats interrupted by a busy or rate-limited model after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
+      "Continue chats interrupted by a busy or rate-limited model or an execution time limit after 1, 3, and 5 minutes, up to three times. Turning this off cancels waiting retries.",
     enabled: false,
     enabledUserHashes: ["032a75d8"],
   },
@@ -349,20 +323,6 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     maintainer: "lancy@okou.ai",
     description:
       "Private cross-agent Projects. Enable only after supported readers and API/Runner drain gates.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadArchiving]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Let users archive chats and hide archived chats from the sidebar unless they are unread or explicitly shown.",
-    enabled: false,
-    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
-  },
-  [FeatureSwitchKey.ChatThreadMuting]: {
-    maintainer: "ethan@okou.ai",
-    description:
-      "Mute chats to suppress unread indicators, push notifications and automatic unarchiving.",
     enabled: false,
     enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
   },

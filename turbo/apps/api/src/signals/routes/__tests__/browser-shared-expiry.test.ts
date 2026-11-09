@@ -182,62 +182,107 @@ test.each([
   });
 });
 
-test("reports failed reconciliation without retiring a healthy shared window", async () => {
-  const app = await setupApp({
-    context,
-    routes: cronBrowserReconcileRoutes,
-    isolatePg: true,
-  });
-  const cron = app(cronBrowserReconcileContract);
-  const reconcile = () => {
-    return accept(
-      cron.reconcile({
-        headers: { authorization: "Bearer test-cron-secret" },
-      }),
-      [200],
-    );
-  };
+test.each(["provider", "connection", "command", "validation", "cdp"] as const)(
+  "reports failed %s reconciliation without retiring a healthy shared window",
+  async (failure) => {
+    const app = await setupApp({
+      context,
+      routes: cronBrowserReconcileRoutes,
+      isolatePg: true,
+    });
+    const cron = app(cronBrowserReconcileContract);
+    const reconcile = () => {
+      return accept(
+        cron.reconcile({
+          headers: { authorization: "Bearer test-cron-secret" },
+        }),
+        [200],
+      );
+    };
+    const f = await fixture();
+    await f.owned.run(async () => {
+      const a = await f.start();
+      const first = await open(a);
+      const [providerId] = f.provider.sessionIds;
+      if (!providerId) {
+        throw new Error("Expected the accepted provider instance");
+      }
+      let unavailable = failure === "provider";
+      server.use(
+        http.get(`${PROVIDER_URL}/browsers/${providerId}`, () => {
+          if (unavailable) {
+            return HttpResponse.json(
+              { detail: "Provider unavailable" },
+              { status: 503 },
+            );
+          }
+          return;
+        }),
+      );
+      if (failure === "connection" || failure === "command") {
+        f.provider.native.disconnect =
+          failure === "connection" ? "connection" : "window-bounds";
+      } else if (failure === "validation") {
+        f.provider.native.windowBoundsResult = {
+          bounds: { windowState: "unavailable" },
+        };
+      } else if (failure === "cdp") {
+        f.provider.native.windowBoundsError = {
+          code: -32_602,
+          message: "Native health unavailable",
+        };
+      }
+
+      expect((await reconcile()).body).toMatchObject({
+        checked: 1,
+        stopped: 0,
+        errors: 1,
+      });
+      if (failure !== "provider") {
+        expect((await use(a)).status).toBe(502);
+      }
+      // Public reads also consult the provider; restore it before observing bindings.
+      unavailable = false;
+      f.provider.native.disconnect = undefined;
+      f.provider.native.windowBoundsResult = undefined;
+      f.provider.native.windowBoundsError = undefined;
+      expect((await view(a)).window).toStrictEqual(first.window);
+      expect(f.provider.stoppedSessionIds.size).toBe(0);
+
+      expect((await reconcile()).body).toMatchObject({
+        checked: 1,
+        stopped: 0,
+        errors: 0,
+      });
+      expect((await view(a)).window).toStrictEqual(first.window);
+      expect(f.provider.sessionIds.has(providerId)).toBeTruthy();
+      expect(f.provider.sessionRequests).toHaveLength(1);
+    });
+  },
+);
+
+test("preserves the native health timeout response and recovers the same window", async () => {
   const f = await fixture();
   await f.owned.run(async () => {
     const a = await f.start();
     const first = await open(a);
-    const [providerId] = f.provider.sessionIds;
-    if (!providerId) {
-      throw new Error("Expected the accepted provider instance");
-    }
-    let unavailable = true;
-    server.use(
-      http.get(`${PROVIDER_URL}/browsers/${providerId}`, () => {
-        if (unavailable) {
-          return HttpResponse.json(
-            { detail: "Provider unavailable" },
-            { status: 503 },
-          );
-        }
-        return;
+    f.provider.native.windowReply = "withhold";
+    await expect(
+      client().leaseByThread({
+        headers,
+        params: { threadId: a.threadId },
+        body: {},
       }),
-    );
-
-    expect((await reconcile()).body).toMatchObject({
-      checked: 1,
-      stopped: 0,
-      errors: 1,
+    ).resolves.toMatchObject({
+      status: 503,
+      body: { error: { code: "BROWSER_USE_TIMEOUT" } },
     });
-    // Public reads also consult the provider; restore it before observing bindings.
-    unavailable = false;
-    expect((await view(a)).window).toStrictEqual(first.window);
-    expect(f.provider.stoppedSessionIds.size).toBe(0);
-
-    expect((await reconcile()).body).toMatchObject({
-      checked: 1,
-      stopped: 0,
-      errors: 0,
-    });
-    expect((await view(a)).window).toStrictEqual(first.window);
-    expect(f.provider.sessionIds.has(providerId)).toBeTruthy();
+    f.provider.native.windowReply = "reply";
+    expect((await renew(a)).window).toStrictEqual(first.window);
     expect(f.provider.sessionRequests).toHaveLength(1);
+    expect(f.provider.stoppedSessionIds.size).toBe(0);
   });
-});
+}, 20_000);
 
 test("stops after the last chat deletion even when its native bridge is unavailable", async () => {
   const f = await fixture();

@@ -1,5 +1,9 @@
 # Chat UI architecture
 
+Use [iOS development](../docs/ios/ios-development.md) and
+[iOS ccstate](../docs/ios/ios-ccstate.md) for reusable package, state, and task
+ownership rules. This component guide describes the chat implementation.
+
 ## Reference
 
 The primary reference is the [official Telegram iOS client](https://github.com/TelegramMessenger/Telegram-iOS).

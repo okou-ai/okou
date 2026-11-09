@@ -12,8 +12,6 @@ This addon runs on the runner HOST (not inside sandboxes) and:
 """
 
 import asyncio
-import base64
-import binascii
 import codecs
 import tempfile
 from collections.abc import Awaitable
@@ -29,10 +27,11 @@ import addon_process_logging
 # --- Sub-module imports ---
 #
 # auth_base_forwarder/body_capture/connector_diagnostics/connector_intent/content_length/
-# http_header_syntax/matching/model_websocket_usage/
+# matching/model_websocket_usage/
 # response_encoding_negotiation/
 # response_streaming/
 # runner_flush_lifecycle/terminal_usage/upstream_admission/usage/websocket_framing/
+# websocket_handshake/
 # websocket_retention are imported
 # by module (not selective `from X import ...`) so that:
 #   1. Cross-module calls read as ``auth_base_forwarder.X(...)`` /
@@ -43,7 +42,8 @@ import addon_process_logging
 #      ``response_streaming.X(...)`` / ``runner_flush_lifecycle.X(...)`` /
 #      ``terminal_usage.X(...)`` /
 #      ``upstream_admission.X(...)`` / ``usage.X(...)`` /
-#      ``websocket_framing.X(...)`` / ``websocket_retention.X(...)``, making the
+#      ``websocket_framing.X(...)`` / ``websocket_handshake.X(...)`` /
+#      ``websocket_retention.X(...)``, making the
 #      module boundary visible at call sites.
 #   2. Tests can patch names on the owning module object and affect all
 #      callers — no mock-placement pitfalls from copied function bindings.
@@ -54,15 +54,16 @@ import body_capture
 import builtin_connector_diagnostics
 import builtin_host_policy
 import codex_model_catalog_cache
+import connection_endpoints
 import connector_diagnostics
 import connector_intent
 import content_length
 import custom_http
 import data_router
+import firewall_auth_config
 import flow_metadata
 import flow_metadata_keys as metadata_keys
 import header_auth_response
-import http_header_syntax
 import http_local_responses
 import http_network_log
 import managed_openrouter
@@ -88,6 +89,7 @@ import upstream_admission
 import upstream_destination_binding
 import usage
 import websocket_framing
+import websocket_handshake
 import websocket_inspection
 import websocket_retention
 from auth import (
@@ -112,7 +114,6 @@ from firewall_auth_cache import (
     FirewallAuthCacheKey,
     invalidate_cached_firewall_headers,
 )
-from firewall_auth_config import auth_config_injects_ordinary_upstream_credentials
 from generated.data_router import DATA_ROUTER_REQUEST_BODY_MAX_BYTES
 from logging_utils import (
     NETWORK_LOG_MAX_SAFE_SIZE,
@@ -172,17 +173,7 @@ _STALE_FIREWALL_AUTHORIZATION_METADATA_KEYS = (
 
 _AUTH_BASE_BODYLESS_METHODS = frozenset(("GET", "HEAD"))
 _HTTP_RESPONSE_BODYLESS_METHODS = frozenset(("CONNECT", "HEAD"))
-_WEBSOCKET_KEY_BYTES = 16
-_WEBSOCKET_KEY_BASE64_BYTES = 24
 _WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT = 8 * 1024
-_BufferedRequestBodyCheckKind = Literal["ok", "too_large", "length_required"]
-
-
-@dataclass(frozen=True)
-class _BufferedRequestBodyCheck:
-    kind: _BufferedRequestBodyCheckKind
-    observed_size: int = 0
-    reason: str = ""
 
 
 @dataclass(frozen=True)
@@ -475,20 +466,6 @@ def _start_request_timing(flow: http.HTTPFlow) -> None:
     flow_metadata.start_request_timing(flow.metadata)
 
 
-def _firewall_allow_auth_base(allow: matching.FirewallAllow) -> str | None:
-    auth_config = allow.api_entry.get("auth", {})
-    auth_base = auth_config.get("base") if isinstance(auth_config, dict) else None
-    return auth_base if isinstance(auth_base, str) and auth_base else None
-
-
-def _firewall_allow_uses_aws_sigv4(allow: matching.FirewallAllow) -> bool:
-    auth_config = allow.api_entry.get("auth", {})
-    if not isinstance(auth_config, dict):
-        return False
-    aws_sigv4 = auth_config.get("awsSigv4")
-    return isinstance(aws_sigv4, dict) and bool(aws_sigv4)
-
-
 def _request_may_use_aws_sigv4(flow: http.HTTPFlow) -> bool:
     for name, value in flow.request.headers.fields:
         if name.lower() != b"authorization":
@@ -511,7 +488,9 @@ def _request_may_use_aws_sigv4(flow: http.HTTPFlow) -> bool:
 def _firewall_allow_injects_ordinary_upstream_credentials(
     allow: matching.FirewallAllow,
 ) -> bool:
-    return auth_config_injects_ordinary_upstream_credentials(allow.api_entry.get("auth"))
+    return firewall_auth_config.auth_config_injects_ordinary_upstream_credentials(
+        allow.api_entry.get("auth")
+    )
 
 
 def _builtin_host_policy_error_for_firewall_allow(
@@ -608,63 +587,12 @@ def _connector_auth_destination_is_current(
     return True
 
 
-def _buffered_auth_body_header_check(
-    flow: http.HTTPFlow,
-    *,
-    request_end_stream: bool | None,
-    max_body_bytes: int,
-    method_allows_missing_content_length: bool,
-) -> _BufferedRequestBodyCheck:
-    # Only presence matters; decoding ignored values can do input-sized work.
-    if any(name.lower() == b"transfer-encoding" for name, _value in flow.request.headers.fields):
-        return _BufferedRequestBodyCheck(
-            kind="length_required",
-            reason="transfer_encoding",
-        )
-
-    parsed_content_length = content_length.parse(
-        flow.request.headers.get_all("Content-Length"),
-        max_value=max_body_bytes,
-    )
-    if parsed_content_length.kind == "missing":
-        if not method_allows_missing_content_length:
-            return _BufferedRequestBodyCheck(
-                kind="length_required",
-                reason="missing_content_length",
-            )
-        if request_end_stream is not True:
-            reason = (
-                "request_stream_open"
-                if request_end_stream is False
-                else "request_end_stream_unavailable"
-            )
-            return _BufferedRequestBodyCheck(kind="length_required", reason=reason)
-        return _BufferedRequestBodyCheck(kind="ok")
-
-    if parsed_content_length.kind == "conflicting":
-        return _BufferedRequestBodyCheck(
-            kind="length_required",
-            reason="conflicting_content_length",
-        )
-    if parsed_content_length.kind == "over_limit":
-        return _BufferedRequestBodyCheck(
-            kind="too_large",
-            observed_size=parsed_content_length.value,
-        )
-    if parsed_content_length.kind == "valid":
-        return _BufferedRequestBodyCheck(kind="ok", observed_size=parsed_content_length.value)
-    return _BufferedRequestBodyCheck(
-        kind="length_required",
-        reason="invalid_content_length",
-    )
-
-
 def _auth_base_body_header_check(
     flow: http.HTTPFlow,
     *,
     request_end_stream: bool | None,
-) -> _BufferedRequestBodyCheck:
-    return _buffered_auth_body_header_check(
+) -> request_body_admission.RequestBodyHeaderCheck:
+    return request_body_admission.check_request_headers(
         flow,
         request_end_stream=request_end_stream,
         max_body_bytes=auth_base_forwarder.MAX_AUTH_BASE_REQUEST_BODY_BYTES,
@@ -678,8 +606,8 @@ def _aws_sigv4_body_header_check(
     flow: http.HTTPFlow,
     *,
     request_end_stream: bool | None,
-) -> _BufferedRequestBodyCheck:
-    return _buffered_auth_body_header_check(
+) -> request_body_admission.RequestBodyHeaderCheck:
+    return request_body_admission.check_request_headers(
         flow,
         request_end_stream=request_end_stream,
         max_body_bytes=aws_sigv4_body_admission.MAX_AWS_SIGV4_REQUEST_BODY_BYTES,
@@ -688,17 +616,18 @@ def _aws_sigv4_body_header_check(
 
 
 def _request_body_fits_stream_buffer(flow: http.HTTPFlow) -> bool:
-    if flow.request.headers.get_all("Transfer-Encoding"):
-        return False
-
-    parsed_content_length = content_length.parse(
-        flow.request.headers.get_all("Content-Length"),
-        max_value=STREAM_BUFFER_LIMIT,
-    )
     # requestheaders() does not expose mitmproxy's end_stream flag. Treat
     # missing Content-Length as unknown length even for GET/HEAD because
     # HTTP/2 can carry DATA frames after headers without a length header.
-    return parsed_content_length.kind == "valid"
+    return (
+        request_body_admission.check_request_headers(
+            flow,
+            request_end_stream=None,
+            max_body_bytes=STREAM_BUFFER_LIMIT,
+            method_allows_missing_content_length=False,
+        ).kind
+        == "ok"
+    )
 
 
 def _restore_request_headers_probe_metadata(
@@ -779,15 +708,8 @@ def _block_builtin_host_policy_denied(
         flow,
         allow=allow,
         error=error,
-        upstream_endpoint=_endpoint_text(upstream_endpoint),
+        upstream_endpoint=connection_endpoints.diagnostic_text(upstream_endpoint),
     )
-
-
-def _endpoint_text(address: tuple[str, int] | None) -> str:
-    if address is None:
-        return ""
-    host, port = address
-    return f"{host}:{port}"
 
 
 def server_connect(data: object) -> None:
@@ -980,9 +902,13 @@ def _requestheaders_after_authority(
         if (
             bounded_classification is None
             or bounded_classification.kind != "firewall_allow"
-            or _firewall_allow_auth_base(bounded_classification.firewall_allow)
+            or firewall_auth_config.auth_base_from_config(
+                bounded_classification.firewall_allow.api_entry.get("auth", {})
+            )
             or (
-                not _firewall_allow_uses_aws_sigv4(bounded_classification.firewall_allow)
+                not firewall_auth_config.uses_aws_sigv4(
+                    bounded_classification.firewall_allow.api_entry.get("auth", {})
+                )
                 and bounded_classification.firewall_allow.name != data_router.OWNER
             )
         ):
@@ -1064,8 +990,12 @@ def _requestheaders_after_authority(
         and (
             classification.kind == "firewall_policy_allow"
             or (
-                not _firewall_allow_auth_base(classification.firewall_allow)
-                and not _firewall_allow_uses_aws_sigv4(classification.firewall_allow)
+                not firewall_auth_config.auth_base_from_config(
+                    classification.firewall_allow.api_entry.get("auth", {})
+                )
+                and not firewall_auth_config.uses_aws_sigv4(
+                    classification.firewall_allow.api_entry.get("auth", {})
+                )
             )
         )
     ):
@@ -1081,7 +1011,7 @@ def _requestheaders_after_authority(
     if classification.kind == "firewall_allow":
         allow = classification.firewall_allow
         sandbox_info = classification.sandbox_info
-        auth_base = _firewall_allow_auth_base(allow)
+        auth_base = firewall_auth_config.auth_base_from_config(allow.api_entry.get("auth", {}))
         if auth_base_body_check.kind != "ok" and auth_base:
             _start_request_timing(flow)
             prepare_firewall_metadata(flow, allow, sandbox_info)
@@ -1131,7 +1061,7 @@ def _requestheaders_after_authority(
                 raise
             return None
 
-        if _firewall_allow_uses_aws_sigv4(allow):
+        if firewall_auth_config.uses_aws_sigv4(allow.api_entry.get("auth", {})):
             can_apply_from_headers = (
                 not request_classification.firewall_allow_uses_public_destination(allow)
                 and not aws_sigv4_request_requires_body_for_signing(flow)
@@ -1302,7 +1232,7 @@ def _reject_buffered_allowed_request_body(
     *,
     classification: request_classification.FirewallAllow
     | request_classification.FirewallPolicyAllow,
-    body_check: _BufferedRequestBodyCheck,
+    body_check: request_body_admission.RequestBodyHeaderCheck,
     error: str,
     message: str,
     max_body_bytes: int,
@@ -1332,7 +1262,7 @@ def _check_data_router_request_body(
     classification: request_classification.FirewallAllow,
     request_end_stream: bool | None,
 ) -> None:
-    body_check = _buffered_auth_body_header_check(
+    body_check = request_body_admission.check_request_headers(
         flow,
         request_end_stream=request_end_stream,
         max_body_bytes=DATA_ROUTER_REQUEST_BODY_MAX_BYTES,
@@ -1363,7 +1293,7 @@ def _admit_buffered_public_destination_request(
     | request_classification.FirewallPolicyAllow,
     request_end_stream: bool | None,
 ) -> None:
-    body_check = _buffered_auth_body_header_check(
+    body_check = request_body_admission.check_request_headers(
         flow,
         request_end_stream=request_end_stream,
         max_body_bytes=public_destination_body_admission.MAX_REQUEST_BODY_BYTES,
@@ -1403,7 +1333,7 @@ def _admit_buffered_aws_sigv4_request(
     flow: http.HTTPFlow,
     *,
     classification: request_classification.FirewallAllow | request_classification.FirewallBlock,
-    body_check: _BufferedRequestBodyCheck,
+    body_check: request_body_admission.RequestBodyHeaderCheck,
 ) -> None:
     # Native framing rejection already owns the error and prevents buffering.
     if flow.error is not None:
@@ -1466,7 +1396,7 @@ async def _try_firewall_request_stream_from_headers(
     metadata_snapshot: dict[str, object],
     request_end_stream: bool | None,
     capture_body: bool,
-    aws_sigv4_buffered_fallback: _BufferedRequestBodyCheck | None,
+    aws_sigv4_buffered_fallback: request_body_admission.RequestBodyHeaderCheck | None,
     managed_policy: managed_openrouter.PresetPolicy | None = None,
 ) -> None:
     allow = classification.firewall_allow
@@ -1892,12 +1822,15 @@ async def request(flow: http.HTTPFlow) -> None:
             http_local_responses.block_authority_validation_error(flow, error)
             return
         classification = _request_classification_for_flow(flow)
-        if classification.kind != "firewall_allow" or not _firewall_allow_auth_base(
-            classification.firewall_allow
+        if (
+            classification.kind != "firewall_allow"
+            or not firewall_auth_config.auth_base_from_config(
+                classification.firewall_allow.api_entry.get("auth", {})
+            )
         ):
             auth_base_forwarder.release_forward_request_admission_from_flow(flow)
-        if classification.kind != "firewall_allow" or not _firewall_allow_uses_aws_sigv4(
-            classification.firewall_allow
+        if classification.kind != "firewall_allow" or not firewall_auth_config.uses_aws_sigv4(
+            classification.firewall_allow.api_entry.get("auth", {})
         ):
             aws_sigv4_body_admission.release_from_flow(flow)
 
@@ -1942,7 +1875,10 @@ async def request(flow: http.HTTPFlow) -> None:
             flow.metadata.pop(metadata_keys.MODEL_USAGE_PROVIDER, None)
             flow.metadata.pop(metadata_keys.MODEL_USAGE_LONG_CONTEXT_MIN_TOTAL_INPUT_TOKENS, None)
             flow_metadata.set_firewall_decision(flow.metadata, "ALLOW")
-            if _is_websocket_upgrade_request(flow):
+            if websocket_handshake.is_websocket_upgrade_request(
+                flow,
+                websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
+            ):
                 flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
             run_usage.admit(flow)
             return
@@ -2057,7 +1993,10 @@ def _maybe_normalize_accept_encoding_for_body_inspection(
     allow: matching.FirewallAllow,
     sandbox_info: dict,
 ) -> None:
-    is_websocket_upgrade = _is_websocket_upgrade_request(flow)
+    is_websocket_upgrade = websocket_handshake.is_websocket_upgrade_request(
+        flow,
+        websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
+    )
     if is_websocket_upgrade:
         flow.metadata[metadata_keys.WEBSOCKET_UPGRADE_REQUEST] = True
     if _expects_http_response_body_usage_inspection(
@@ -2089,53 +2028,6 @@ def _expects_http_response_body_usage_inspection(
     return is_billable_firewall(allow.name, sandbox_info) and usage.has_connector_response_parser(
         allow.name
     )
-
-
-def _is_websocket_upgrade_request(flow: http.HTTPFlow) -> bool:
-    if flow.request.method.upper() != "GET":
-        return False
-    if flow.request.http_version != "HTTP/1.1":
-        return False
-    if not http_header_syntax.header_fields_contain_token(
-        flow.request.headers.fields,
-        b"upgrade",
-        b"websocket",
-        max_work_units=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    ):
-        return False
-    websocket_key = http_header_syntax.single_header_value(
-        flow.request.headers.fields,
-        b"sec-websocket-key",
-        max_fields=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-        max_value_bytes=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    )
-    if websocket_key is None or not _is_valid_websocket_key(websocket_key):
-        return False
-    websocket_version = http_header_syntax.single_header_value(
-        flow.request.headers.fields,
-        b"sec-websocket-version",
-        max_fields=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-        max_value_bytes=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    )
-    if websocket_version != b"13":
-        return False
-
-    return http_header_syntax.header_fields_contain_token(
-        flow.request.headers.fields,
-        b"connection",
-        b"upgrade",
-        max_work_units=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
-    )
-
-
-def _is_valid_websocket_key(value: bytes) -> bool:
-    if len(value) != _WEBSOCKET_KEY_BASE64_BYTES:
-        return False
-    try:
-        decoded = base64.b64decode(value, validate=True)
-    except binascii.Error:
-        return False
-    return len(decoded) == _WEBSOCKET_KEY_BYTES
 
 
 # ============================================================================
@@ -2230,7 +2122,7 @@ def websocket_end(flow: http.HTTPFlow) -> None:
 
 
 def _should_retain_model_websocket_tracking(flow: http.HTTPFlow) -> bool:
-    return response_streaming.is_confirmed_websocket_upgrade_response(
+    return websocket_handshake.is_confirmed_websocket_upgrade_response(
         flow,
         websocket_header_work_limit=_WEBSOCKET_HANDSHAKE_HEADER_WORK_LIMIT,
     ) and model_websocket_usage.is_enabled(flow)

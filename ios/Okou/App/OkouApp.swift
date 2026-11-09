@@ -27,6 +27,8 @@ struct OkouApp: App {
 
   init() {
     if !Self.isDesignPreview { CrashReporting.start() }
+    OkouNavigationBar.applyBackIndicator()
+    OkouNavigationBar.applySearchField()
     // The XCTest host runs real services with isolated HTTP fixtures, never production auth.
     let isTestHost = NSClassFromString("XCTestCase") != nil
     let authentication = isTestHost || Self.isDesignPreview ? nil : AuthenticationService()
@@ -96,17 +98,19 @@ struct AppRootView: View {
     self.configuration = configuration
     self.session = session
     self.notifications = notifications
+    let data = notifications.data(
+      authentication: authentication, configuration: configuration, session: session)
+    _workspaceData = State(initialValue: data)
   }
 
   var body: some View {
-    AppStartupContainer(isLoading: authentication.isLoading || authentication.isSwitchingWorkspace)
-    {
-      if let scopeID = authentication.scopeID,
-        let workspaceID = authentication.activeWorkspaceID,
+    Group {
+      if let scopeID = authentication.presentationScopeID,
+        let workspaceID = authentication.presentationWorkspaceID,
         let userID = authentication.userID
       {
         if let workspaceData, workspaceData.scopeID == scopeID,
-          scenePhase == .active || presentedScopeID == scopeID
+          scenePhase != .background || presentedScopeID == scopeID
         {
           WorkspaceRootView(
             authentication: authentication, configuration: configuration,
@@ -121,7 +125,7 @@ struct AppRootView: View {
         SignInView(authentication: authentication, webURL: configuration.webURL)
       }
     }
-    .task(id: authentication.scopeID) {
+    .task(id: authentication.presentationScopeID) {
       let data = notifications.data(
         authentication: authentication, configuration: configuration, session: session)
       workspaceData = data
@@ -144,7 +148,7 @@ struct AppRootView: View {
     }
     .onChange(of: scenePhase, initial: true) { _, phase in
       notifications.setForeground(phase == .active)
-      if phase == .active { presentedScopeID = authentication.scopeID }
+      if phase == .active { presentedScopeID = authentication.presentationScopeID }
       foregroundRefresh?.cancel()
       foregroundRefresh =
         phase == .active
@@ -380,15 +384,11 @@ private struct WorkspaceRootView: View {
     .task(id: notifications.pendingDestination) {
       await openPendingNotification()
     }
-    // Siri / Shortcuts "Ask Okou": a new chat with the request in the composer, unsent.
-    .task(id: PendingAppRequest.shared.prompt) {
-      guard let prompt = PendingAppRequest.shared.prompt else { return }
-      PendingAppRequest.shared.prompt = nil
-      startNewChat()
-      guard !prompt.isEmpty else { return }
-      try? await Task.sleep(for: .milliseconds(400))
-      store.newComposer.editor.appendText(prompt)
-    }
+    .modifier(
+      NewChatNavigation(
+        workspace: store, isAuthenticated: !authentication.isLoading,
+        didOpen: closeSidebar)
+    )
     .onDisappear {
       sidebar.cancelDrag()
       store.close()
@@ -435,13 +435,13 @@ private struct WorkspaceRootView: View {
     let agent = store.list.agents.first(where: { $0.agentId == store.selectedAgentID })
     return VStack(spacing: OkouSpace.xxl) {
       Spacer(minLength: 24)
-      // Restarts the web's word-by-word entrance for each agent and each return home.
+      // Background restoration keeps the entrance; user navigation starts a fresh greeting.
       NewChatGreeting(
         avatarURL: agent?.avatarUrl, agentName: agent?.displayName ?? "Okou",
         isDefaultAgent: agent?.isDefaultAgent ?? true,
         text: greetingText
       )
-      .id("\(store.selectedAgentID ?? "")-\(taglineIndex)")
+      .id(taglineIndex)
       // A custom agent says what it is for under its greeting.
       if agent?.isDefaultAgent == false,
         let description = agent?.description?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -458,7 +458,16 @@ private struct WorkspaceRootView: View {
     .frame(maxWidth: 440)
     .padding(.horizontal, OkouSpace.xxl)
     .frame(maxWidth: .infinity)
-    .onChange(of: store.selectedAgentID) { _, _ in taglineIndex = Int.random(in: 0..<64) }
+    .frame(maxHeight: .infinity)
+    // A tap anywhere on the empty page puts the keyboard away, as on the transcript.
+    .contentShape(Rectangle())
+    .onTapGesture {
+      UIApplication.shared.sendAction(
+        #selector(UIResponder.resignFirstResponder), to: nil, from: nil, for: nil)
+    }
+    .onChange(of: store.selectedAgentID) { previous, _ in
+      if previous != nil { taglineIndex = Int.random(in: 0..<64) }
+    }
     .onChange(of: store.selectedThreadID) { _, id in
       if id == nil { taglineIndex = Int.random(in: 0..<64) }
     }

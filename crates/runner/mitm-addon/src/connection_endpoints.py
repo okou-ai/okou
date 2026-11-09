@@ -1,4 +1,4 @@
-"""Read-only helpers for mitmproxy connection endpoint shapes."""
+"""Read-only helpers for mitmproxy connection identity and endpoint shapes."""
 
 import ipaddress
 from dataclasses import dataclass
@@ -16,6 +16,14 @@ class ConnectedIpEndpoint:
 
     address: tuple[str, int]
     parsed_ip: ipaddress.IPv4Address | ipaddress.IPv6Address
+
+
+def connection_id(connection: object) -> str | None:
+    """Return the original truthy string ID without proving ownership or authorization."""
+    connection_id = getattr(connection, "id", None)
+    if isinstance(connection_id, str) and connection_id:
+        return connection_id
+    return None
 
 
 def client_peername(client: object) -> tuple[str, int] | None:
@@ -49,6 +57,18 @@ def address_pair(address: object) -> tuple[str, int] | None:
     if not isinstance(host, str) or not isinstance(port, int):
         return None
     return host, port
+
+
+def diagnostic_text(address: tuple[str, int] | None) -> str:
+    """Render diagnostic endpoint text, preserving the original host and port.
+
+    Missing endpoints render as empty text. IPv6 hosts remain unbracketed;
+    this representation is not a URL or HTTP authority.
+    """
+    if address is None:
+        return ""
+    host, port = address
+    return f"{host}:{port}"
 
 
 def authoritative_connected_endpoint(endpoint: object) -> ConnectedIpEndpoint | None:

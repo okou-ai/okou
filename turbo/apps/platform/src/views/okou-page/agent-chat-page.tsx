@@ -1,3 +1,6 @@
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
+import { CapabilityHomePage } from "./capability-home-page.tsx";
 import { defaultAgentId$ } from "../../signals/agent.ts";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
@@ -479,6 +482,46 @@ export function AgentComposerPage({
   const finishGreetingEntrance = useSet(finishChatGreetingEntrance$);
   const greetingIdentity = `${currentChatAgentId ?? "none"}:${tagline}`;
 
+  const switches = useGet(featureSwitch$);
+  const heading =
+    project !== undefined ? (
+      project && <ProjectComposerHeading project={project} />
+    ) : currentChatAgentId === undefined || tagline === "" ? null : (
+      <div
+        key={greetingIdentity}
+        data-slot="chat-greeting"
+        data-testid="chat-greeting"
+        className="flex max-w-full items-center gap-4"
+      >
+        {/* The avatar is the greeting's first word. Only the first
+            greeting in this App lifetime takes the entrance; changing
+            agents or opening another new chat gets no second entrance. */}
+        <span
+          data-slot="chat-greeting-avatar"
+          className={cn(
+            "shrink-0",
+            animateGreeting && "motion-safe:animate-chat-greeting-token",
+          )}
+        >
+          <ChatAgentAvatar agentId={currentChatAgentId} />
+        </span>
+        <h2
+          aria-label={tagline}
+          data-testid="chat-tagline"
+          className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
+        >
+          <GreetingTokens
+            text={tagline}
+            animate={animateGreeting}
+            onAnimationComplete={finishGreetingEntrance}
+          />
+        </h2>
+      </div>
+    );
+  if (project === undefined && switches[FeatureSwitchKey.HomeCapabilities]) {
+    return <CapabilityHomePage signals={composerSignals} heading={heading} />;
+  }
+
   return (
     <div className="relative flex flex-1 flex-col min-h-0">
       <GrowthEntryHeader />
@@ -546,41 +589,7 @@ export function AgentComposerPage({
                 renders incomplete. Reserve the finished row's height, but do
                 not let the avatar run a throwaway entrance before the real
                 greeting can mount under its final identity. */}
-            {project !== undefined ? (
-              project && <ProjectComposerHeading project={project} />
-            ) : currentChatAgentId === undefined || tagline === "" ? null : (
-              <div
-                key={greetingIdentity}
-                data-slot="chat-greeting"
-                data-testid="chat-greeting"
-                className="flex max-w-full items-center gap-4"
-              >
-                {/* The avatar is the greeting's first word. Only the first
-                    greeting in this App lifetime takes the entrance; changing
-                    agents or opening another new chat gets no second entrance. */}
-                <span
-                  data-slot="chat-greeting-avatar"
-                  className={cn(
-                    "shrink-0",
-                    animateGreeting &&
-                      "motion-safe:animate-chat-greeting-token",
-                  )}
-                >
-                  <ChatAgentAvatar agentId={currentChatAgentId} />
-                </span>
-                <h2
-                  aria-label={tagline}
-                  data-testid="chat-tagline"
-                  className="min-w-0 text-2xl sm:text-3xl font-semibold tracking-tight text-foreground"
-                >
-                  <GreetingTokens
-                    text={tagline}
-                    animate={animateGreeting}
-                    onAnimationComplete={finishGreetingEntrance}
-                  />
-                </h2>
-              </div>
-            )}
+            {heading}
           </div>
 
           {/* The same two the thread page's footer carries.

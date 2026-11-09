@@ -19,7 +19,7 @@ import uuid
 from collections.abc import Callable, Iterator
 from concurrent.futures import Future
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, Mock, patch
 
 import pytest
 from mitmproxy import http, tcp
@@ -364,7 +364,7 @@ def mitm_ctx(tmp_path):
 
     Returns a context-manager factory: calling ``mitm_ctx(registry_path=...)``
     patches in a concrete options stub for settings consumed by the addon and a
-    ``MagicMock`` process-event capture. WARN and ERROR event details are
+    ``Mock`` process-event capture. WARN and ERROR event details are
     exposed as ``log.warn`` and ``log.error`` calls for focused assertions.
     ``options`` stays concrete so unexpected attribute access fails instead of
     silently creating another mock.
@@ -388,7 +388,7 @@ def mitm_ctx(tmp_path):
         client_session_id: str = "runner-session-test",
         client_version: str = "runner-version-test",
         ssl_insecure: bool = False,
-    ) -> Iterator[MagicMock]:
+    ) -> Iterator[Mock]:
         if registry_path is None:
             registry_path = default_registry_path
         if builtin_firewall_catalog_cache_path is None:

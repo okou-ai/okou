@@ -11,7 +11,9 @@ import { now } from "../../lib/time.ts";
 import { defaultAgentId$ } from "../agent.ts";
 import { apiClient$ } from "../api-client.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { setAblyInvalidationLoop$ } from "../realtime.ts";
 import { rootSignal$ } from "../root-signal.ts";
+import { onRef } from "../utils.ts";
 import { createDraftSignals } from "./chat-draft.ts";
 
 type FeedbackKind =
@@ -156,6 +158,55 @@ const readAgentSuggestions$ = command(
     );
     return result.status === 200 ? result.body.suggestions : [];
   },
+);
+
+const feedWaitingCountVersion$ = state(0);
+/**
+ * The cards waiting in the Feed, counted on its chat-list row. The row reads
+ * the server's actionable cards rather than a Feed visit's snapshot, so it
+ * follows every committed change, including those made on the Feed itself.
+ */
+export const feedWaitingCount$ = computed(async (get) => {
+  get(feedWaitingCountVersion$);
+  if (!(await get(agentSuggestionsEnabled$))) {
+    return 0;
+  }
+  const result = await accept(
+    get(apiClient$)(suggestionsContract).list(),
+    [200, 403],
+    undefined,
+    { showErrorToast: false },
+  );
+  if (result.status !== 200) {
+    return 0;
+  }
+  return result.body.suggestions.filter((item) => {
+    return getSuggestionExpiresAt(item) > now();
+  }).length;
+});
+const reloadFeedWaitingCount$ = command(({ set }) => {
+  set(feedWaitingCountVersion$, (version) => {
+    return version + 1;
+  });
+});
+/**
+ * The count follows the API's notice of every committed suggestion change
+ * while its row is shown. Each subscription reads it once more, so a row that
+ * returns does not show a count from before it left.
+ */
+export const followFeedWaitingCountOnRef$ = onRef(
+  command(({ set }, _row: HTMLElement, signal: AbortSignal) => {
+    set(
+      setAblyInvalidationLoop$,
+      {
+        scope: "credential",
+        topic: "agentSuggestionsChanged",
+        invalidations: [reloadFeedWaitingCount$],
+        options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+  }),
 );
 
 function createSuggestionSession() {

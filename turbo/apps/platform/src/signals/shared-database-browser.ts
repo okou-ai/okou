@@ -26,10 +26,7 @@ import { SharedDatabaseWorkerLoadError } from "../shared-database/worker-load-er
 import { reportSharedWorkerFailure } from "./shared-worker-failure.ts";
 import { clerk$, clerkUser$ } from "./auth.ts";
 import { ensureClerkToken, waitForClerkSession } from "./clerk-token.ts";
-import {
-  applyChatThreadReadCursorUpdated$,
-  reloadChatIndicatorsLocally$,
-} from "./chat-thread-list-reload.ts";
+import { applyChatThreadReadCursorUpdated$ } from "./chat-thread-list-reload.ts";
 import { syncActiveChatEvents$ } from "./chat-page/chat-event-signal-registry.ts";
 import { catchUpChatThreadEventSource$ } from "./chat-page/chat-thread-event-sourcing.ts";
 import { requestChatSync$ } from "./chat-sync.ts";
@@ -175,11 +172,6 @@ const syncSharedDatabaseInvalidation$ = command(
       return;
     }
     if (dataKey.kind === "chat-event") {
-      // Message-created is also the only realtime signal emitted by a native
-      // runless delivery. Invalidate the canonical unread resource before the
-      // event reaches the open-thread handlers, so they can read the new server
-      // watermark while processing that same event.
-      set(reloadChatIndicatorsLocally$);
       await set(syncActiveChatEvents$, dataKey.threadId, signal);
       return;
     }

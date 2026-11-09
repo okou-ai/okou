@@ -1,5 +1,27 @@
 # Changelog
 
+## [0.109.53](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.52...guest-agent-v0.109.53) (2026-11-08)
+
+## [0.109.52](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.51...guest-agent-v0.109.52) (2026-11-07)
+
+## [0.109.51](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.50...guest-agent-v0.109.51) (2026-11-07)
+
+
+### Refactoring
+
+* **guest-agent:** share native cli argument recording fixtures ([#45787](https://github.com/okou-ai/okou/issues/45787)) ([5dfd7c0](https://github.com/okou-ai/okou/commit/5dfd7c06dd5aaff3b168c3d338eae503ca8ff847))
+
+## [0.109.50](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.49...guest-agent-v0.109.50) (2026-11-06)
+
+## [0.109.49](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.48...guest-agent-v0.109.49) (2026-11-06)
+
+## [0.109.48](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.47...guest-agent-v0.109.48) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** share strict jsonl fixture parsing ([#45691](https://github.com/okou-ai/okou/issues/45691)) ([5ec5173](https://github.com/okou-ai/okou/commit/5ec5173b2fc232a0068877e4b36bde0b057f195e))
+
 ## [0.109.47](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.46...guest-agent-v0.109.47) (2026-11-06)
 
 ## [0.109.46](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.45...guest-agent-v0.109.46) (2026-11-06)

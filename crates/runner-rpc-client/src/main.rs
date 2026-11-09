@@ -1,5 +1,8 @@
 use std::process::ExitCode;
 
+#[cfg(test)]
+mod tests;
+
 fn main() -> ExitCode {
     let mut args = std::env::args_os().skip(1);
     let streaming = match (args.next(), args.next()) {
@@ -17,6 +20,10 @@ fn main() -> ExitCode {
         Ok(runtime) => runtime,
         Err(_) => return ExitCode::FAILURE,
     };
+    run(runtime, streaming)
+}
+
+fn run(runtime: tokio::runtime::Runtime, streaming: bool) -> ExitCode {
     let succeeded = runtime
         .block_on(async {
             if streaming {

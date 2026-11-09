@@ -10,6 +10,126 @@ import XCTest
 
 @MainActor
 final class ComposerVoiceInputTests: XCTestCase {
+  func testConfirmedSilenceLeavesDraftUnchangedWithoutVoiceRequests() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    composer.text = "Keep these notes"
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    // Nonzero microphone offset exercises the system classifier, rather than only
+    // the exact-digital-silence shortcut.
+    // The duration also leaves an incomplete final classifier window.
+    capture.record(Data(repeating: 1, count: 35_200))
+    await voice.finish()
+    XCTAssertEqual(voice.duration, 1.1, accuracy: 0.0001)
+    XCTAssertEqual(composer.text, "Keep these notes")
+    XCTAssertEqual(voice.phase, .idle)
+    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 0)
+    XCTAssertEqual(fixture.state.value.withLock { $0.polishRequests }, 0)
+  }
+
+  func testSilentTailSkipsEarlierSpeechOverlapAndSurvivesPolishRetry() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let uploaded = expectation(description: "Full speech segment uploaded")
+    fixture.state.value.withLock {
+      $0.transcriptionRequested = uploaded
+      $0.failPolish = true
+    }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    capture.speak(seconds: 15)
+    await fulfillment(of: [uploaded], timeout: 3)
+    capture.record(Data(repeating: 0, count: 32_000))
+    await voice.finish()
+    XCTAssertEqual(composer.text, "")
+    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 1)
+    composer.close()
+    unmount(window)
+
+    fixture.state.value.withLock { $0.failPolish = false }
+    let restored = fixture.composer(root: root, capture: VoiceCaptureFixture())
+    defer { restored.close() }
+    let restoredHost = UIHostingController(rootView: MentionComposerHarness(state: restored))
+    let restoredWindow = try await mountMentionHost(restoredHost)
+    defer { unmount(restoredWindow) }
+    await restored.voice?.finish()
+    XCTAssertEqual(restored.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.audioUploads }, 1)
+  }
+
+  func testShortNonzeroAudioIsPreservedForRecognition() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    capture.record(Data(repeating: 1, count: 200))
+    await voice.finish()
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [200])
+  }
+
+  func testQuietRecordedSpeechIsPreservedForRecognition() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    // Reduce the recorded voice by 24 dB, preserving its waveform and duration.
+    capture.speak(seconds: 1, attenuation: 16)
+    let started = ContinuousClock.now
+    await voice.finish()
+    print("SoundAnalysis quiet speech finish: \(started.duration(to: .now))")
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [32_000])
+  }
+
+  func testQuietWordInTheIncompleteFinalWindowIsPreserved() async throws {
+    let fixture = VoiceComposerFixture()
+    let root = temporaryRoot()
+    defer { try? FileManager.default.removeItem(at: root) }
+    let capture = VoiceCaptureFixture()
+    let composer = fixture.composer(root: root, capture: capture)
+    defer { composer.close() }
+    let host = UIHostingController(rootView: MentionComposerHarness(state: composer))
+    let window = try await mountMentionHost(host)
+    defer { unmount(window) }
+    let voice = try XCTUnwrap(composer.voice)
+    await voice.start()
+    capture.record(Data(repeating: 0, count: 64_000))
+    capture.speak(seconds: 1, attenuation: 16, sampleLimit: 4_000)
+    await voice.finish()
+    XCTAssertEqual(composer.text, "spoken words")
+    XCTAssertEqual(fixture.state.value.withLock { $0.uploadedAudioBytes }, [72_000])
+  }
+
   func testVoiceReplacesSelectionPreservesReferencesAndSupportsUndoWithoutSending() async throws {
     let fixture = VoiceComposerFixture()
     let root = temporaryRoot()
@@ -513,9 +633,30 @@ private final class VoiceCaptureFixture: VoiceAudioCapture {
     self.continuation = continuation
     return stream
   }
-  func speak(seconds: Int) {
-    continuation?.yield(
-      VoiceAudioChunk(pcm: Data(repeating: 32, count: seconds * 32_000), level: 0.3))
+  func speak(seconds: Int, attenuation: Int16 = 1, sampleLimit: Int? = nil) {
+    guard
+      let url = Bundle(for: ComposerVoiceInputTests.self)
+        .url(forResource: "voice-speech", withExtension: "wav"),
+      let wav = try? Data(contentsOf: url)
+    else {
+      XCTFail("The recorded speech fixture is missing")
+      return
+    }
+    var pcm = Data(wav.dropFirst(44))
+    pcm.withUnsafeMutableBytes { bytes in
+      for offset in stride(from: 0, to: bytes.count, by: 2) {
+        let sample = Int16(
+          littleEndian: bytes.loadUnaligned(fromByteOffset: offset, as: Int16.self))
+        bytes.storeBytes(
+          of: (sample / attenuation).littleEndian, toByteOffset: offset, as: Int16.self)
+      }
+    }
+    var audio = Data()
+    for _ in 0..<seconds { audio.append(pcm) }
+    record(sampleLimit.map { Data(audio.prefix($0 * 2)) } ?? audio)
+  }
+  func record(_ pcm: Data) {
+    continuation?.yield(VoiceAudioChunk(pcm: pcm, level: 0.3))
   }
   func stop() {
     if finalSeconds > 0 { speak(seconds: finalSeconds) }
@@ -538,6 +679,7 @@ private final class VoiceComposerState: Sendable {
     var transcriptionRequested: XCTestExpectation?
     var sentMessages = 0
     var failPolish = false
+    var polishRequests = 0
     var gate: VoiceResponseGate?
   }
   let value = Mutex(State())
@@ -585,6 +727,7 @@ private final class VoiceComposerFixture: Sendable {
         requested?.fulfill()
         return ChatHTTPResponse(body: #"{"transcript":"spoken words","language":"en"}"#)
       case "/api/voice-io/polish/segments":
+        state.value.withLock { $0.polishRequests += 1 }
         if let gate = state.value.withLock({ $0.gate }) { await gate.wait() }
         if state.value.withLock({ $0.failPolish }) {
           return ChatHTTPResponse(

@@ -1,5 +1,33 @@
 # Changelog
 
+## [0.32.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.31.1...guest-contracts-v0.32.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+## [0.31.1](https://github.com/okou-ai/okou/compare/guest-contracts-v0.31.0...guest-contracts-v0.31.1) (2026-11-07)
+
+
+### Performance Improvements
+
+* **runner:** overlap ready storage with cold archive delivery ([#45841](https://github.com/okou-ai/okou/issues/45841)) ([109d67a](https://github.com/okou-ai/okou/commit/109d67a03b63a3e53938af322ae13a7dd6507a52))
+
+## [0.31.0](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.4...guest-contracts-v0.31.0) (2026-11-07)
+
+
+### Features
+
+* **guest-storage:** add event-driven pending archive readiness ([#45766](https://github.com/okou-ai/okou/issues/45766)) ([2fe135a](https://github.com/okou-ai/okou/commit/2fe135ae51a7a4a3624917b3a987b43ab142b9b5))
+
+## [0.30.4](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.3...guest-contracts-v0.30.4) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** centralize the guest timezone name contract ([#45757](https://github.com/okou-ai/okou/issues/45757)) ([42118c3](https://github.com/okou-ai/okou/commit/42118c395c62650600d4eb3e41e841876510eb75))
+
 ## [0.30.3](https://github.com/okou-ai/okou/compare/guest-contracts-v0.30.2...guest-contracts-v0.30.3) (2026-11-04)
 
 

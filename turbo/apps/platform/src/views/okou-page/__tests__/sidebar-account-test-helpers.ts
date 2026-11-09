@@ -178,23 +178,9 @@ export function expectVisibleText(text: string): void {
 }
 
 function accountMenuTrigger(userName = "Alex Rivera"): HTMLElement {
-  const rail = screen.queryByTestId("labeled-nav-rail");
-  if (rail) {
-    return within(rail).getByLabelText(userName);
-  }
-
-  const minimalSidebar = document.querySelector(
-    '[data-slot="sidebar-expanded"]',
+  return within(screen.getByTestId("labeled-nav-rail")).getByLabelText(
+    userName,
   );
-  if (!(minimalSidebar instanceof HTMLElement)) {
-    throw new Error("Account menu container not found");
-  }
-  const accountName = within(minimalSidebar).getByText(userName);
-  const button = accountName.closest("button");
-  if (!button) {
-    throw new Error("Account menu trigger not found");
-  }
-  return button;
 }
 
 function findAccountMenuTrigger(

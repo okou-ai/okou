@@ -27,6 +27,7 @@ from mitmproxy.test import taddons, tutils
 
 import auth
 import codex_model_catalog_cache
+import codex_model_catalog_validation as catalog_validation
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 import response_streaming
@@ -649,7 +650,7 @@ async def test_http2_unbounded_brotli_catalog_is_passed_through_but_not_retained
     tmp_path: Path,
 ) -> None:
     catalog_path = "/backend-api/codex/models?client_version=0.145.0"
-    oversized_body = b"x" * (codex_model_catalog_cache.MAX_ENTRY_BYTES + 1)
+    oversized_body = b"x" * (catalog_validation.MAX_ENTRY_BYTES + 1)
 
     with (
         patch.object(mitm_addon, "__file__", str(tmp_path / "mitm_addon.py")),

@@ -1,0 +1,22 @@
+# swift-format owns formatting. Keep SwiftLint's initial safety rules explicit.
+only_rules:
+  - force_cast
+  - force_try
+  - duplicate_imports
+  - unused_closure_parameter
+  - invalid_swiftlint_command
+  - superfluous_disable_command
+
+included:
+  - Okou
+  - OkouTests
+  - Push
+  - Packages
+
+excluded:
+  - "**/.build"
+  - "**/DerivedData"
+  - "**/*.generated.swift"
+
+allow_zero_lintable_files: false
+check_for_updates: false

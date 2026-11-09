@@ -163,9 +163,9 @@ export function nextMarkOrdinal(marks: readonly ImageAnnotationMark[]): number {
 
 /**
  * What the editor needs in order to edit, kept deliberately narrow so this
- * module never has to know about drafts. `commit` is what makes the model
- * non-destructive: the editor hands back marks, and the caller decides where
- * they live. The original bytes are not part of this interface at all.
+ * module never has to know about drafts. The editor hands the marks back to
+ * its owner's commit command under `key`, and the owner decides where they
+ * live. The original bytes are not part of this interface at all.
  */
 export interface AnnotationTarget {
   readonly key: string;
@@ -173,11 +173,13 @@ export interface AnnotationTarget {
   readonly url: string;
   readonly preview?: AttachmentPreviewSignals;
   readonly annotations: ImageAnnotation | null;
-  readonly commit: (
-    annotations: ImageAnnotation | null,
-    signal: AbortSignal,
-  ) => Promise<void>;
 }
+
+/** Stores the marks the editor attaches to the target with this key. */
+export type CommitAnnotationTarget = Command<
+  Promise<void>,
+  [key: string, annotations: ImageAnnotation | null, signal: AbortSignal]
+>;
 
 interface AnnotationSession {
   readonly target: AnnotationTarget;
@@ -1084,7 +1086,10 @@ function createAnnotationGeometrySignals(
   };
 }
 
-function createCommitAnnotationSignal(session: AnnotationSessionSignals) {
+function createCommitAnnotationSignal(
+  session: AnnotationSessionSignals,
+  commitTarget$: CommitAnnotationTarget,
+) {
   return command(async ({ get, set }, signal: AbortSignal): Promise<void> => {
     // Attaching straight from an open, empty text mark must not ship it.
     set(session.internal.discardEmptyOpenTextMark$, null);
@@ -1095,7 +1100,7 @@ function createCommitAnnotationSignal(session: AnnotationSessionSignals) {
     const annotations = isAnnotationMeaningful(current.present)
       ? current.present
       : null;
-    await current.target.commit(annotations, signal);
+    await set(commitTarget$, current.target.key, annotations, signal);
     signal.throwIfAborted();
     if (get(session.internal.session$) === current) {
       set(session.signals.closeAnnotationEditor$);
@@ -1342,13 +1347,18 @@ function createAnnotationShortcutSignal(actions: AnnotationShortcutActions) {
   );
 }
 
-export function createImageAnnotationSignals() {
+export function createImageAnnotationSignals(
+  commitTarget$: CommitAnnotationTarget,
+) {
   const viewport = createAnnotationViewportSignals();
   const session = createAnnotationSessionSignals(viewport);
   const history = createAnnotationHistorySignals(session);
   const content = createAnnotationContentSignals(session, history);
   const geometry = createAnnotationGeometrySignals(session, history, viewport);
-  const commitAnnotation$ = createCommitAnnotationSignal(session);
+  const commitAnnotation$ = createCommitAnnotationSignal(
+    session,
+    commitTarget$,
+  );
   return {
     ...viewport.signals,
     ...session.signals,

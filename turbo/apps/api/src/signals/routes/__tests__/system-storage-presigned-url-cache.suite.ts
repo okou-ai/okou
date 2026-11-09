@@ -1,4 +1,3 @@
-import { enableConnectorSkillBundles } from "./helpers/enable-connector-skill-bundles";
 import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
 import { readPublishedArchive } from "./helpers/published-archive";
@@ -64,9 +63,6 @@ describe("system storage presigned URL cache", () => {
     const api = createRunsApi(context);
     await owned.run(() => {
       return api.updateUserModelPreference(owned.actor, "claude-fable-5-1");
-    });
-    await owned.run(() => {
-      return enableConnectorSkillBundles(context, owned.actor);
     });
     const publicationStart = context.mocks.s3.send.mock.calls.length;
     const connector = await owned.run(() => {

@@ -10,6 +10,29 @@ use runner_provider::{RunCancellationHandle, RunCancellationRegistry};
 
 const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
+pub(in super::super) async fn wait_heartbeat_matching_after(
+    handle: &crate::provider_test_support::MockProviderHandle,
+    mut cursor: usize,
+    timeout: Duration,
+    matches: impl Fn(&runner_types::types::HeartbeatState) -> bool,
+) -> bool {
+    let deadline = tokio::time::Instant::now() + timeout;
+    loop {
+        {
+            let heartbeats = handle.heartbeats.lock().unwrap_or_else(|e| e.into_inner());
+            if heartbeats[cursor..].iter().any(&matches) {
+                return true;
+            }
+            cursor = heartbeats.len();
+        }
+
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        if remaining.is_zero() || !handle.wait_heartbeat_past(cursor, remaining).await {
+            return false;
+        }
+    }
+}
+
 pub(super) enum WaitProbe<T> {
     Ready(T),
     Pending(String),

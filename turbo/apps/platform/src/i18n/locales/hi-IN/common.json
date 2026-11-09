@@ -392,13 +392,12 @@
     "sidebar": {
       "ariaLabel": "साइड बार",
       "chat": "चैट",
-      "collapse": "साइडबार को संक्षिप्त करें",
+      "feedWaiting_one": "{{count}} प्रतीक्षारत",
+      "feedWaiting_other": "{{count}} प्रतीक्षारत",
       "hideChatList": "चैट सूची छिपाएं",
-      "manage": "प्रबंधित करें",
       "mobile": {
         "invite": "आमंत्रित करें",
-        "openAutomations": "मोबाइल ऑटोमेशन खोलें",
-        "openMenu": "मेनू खोलें"
+        "openAutomations": "मोबाइल ऑटोमेशन खोलें"
       },
       "navigation": {
         "agents": "एजेंटों",
@@ -464,8 +463,10 @@
       "nextImage": "अगली छवि आर्टिफ़ैक्ट",
       "openNewTab": "नए टैब में खोलें",
       "openSplitView": "विभाजित दृश्य में खोलें",
+      "partiallyUnavailable": "कुछ कार्रवाइयाँ अभी उपलब्ध नहीं हैं",
       "previousImage": "पिछली छवि आर्टिफ़ैक्ट",
       "resetZoom": "ज़ूम रीसेट करें",
+      "retry": "फिर से कोशिश करें",
       "share": "शेयर करें",
       "shareArtifact": "आर्टिफ़ैक्ट शेयर करें",
       "zoomIn": "ज़ूम इन",
@@ -998,8 +999,11 @@
       "unavailableTitle": "प्राधिकरण लिंक अनुपलब्ध है"
     },
     "computerUse": {
+      "actionFailed": "इस कंप्यूटर को अनुमति नहीं दी जा सकी। फिर से कोशिश करने के लिए चैट रीफ़्रेश करें।",
       "authorize": "अधिकृत",
       "authorized": "अधिकृत",
+      "authorizedDescription": "इस चैट में आगे के रन के लिए कंप्यूटर ऐक्सेस चालू है।",
+      "cardDescription": "इस चैट के लिए कंप्यूटर चुनें। इससे क्लाउड ब्राउज़र डिस्कनेक्ट हो जाएगा।",
       "checkingCompatibility": "अनुकूलता की जाँच हो रही है",
       "description": "{{source}} में उपयोग हेतु {{assistantName}} के लिए एक ऑनलाइन कंप्यूटर चुनें।",
       "downloadMac": "macOS के लिए डाउनलोड करें",
@@ -1008,6 +1012,7 @@
       "macRequirement": "macOS 14 या नए संस्करण वाला Apple सिलिकॉन Mac आवश्यक है। Intel Mac समर्थित नहीं हैं.",
       "noHostsDescription": "अपने Mac को ऑनलाइन लाने के लिए उस पर {{desktopApplicationName}} खोलें।",
       "noHostsTitle": "कोई ऑनलाइन कंप्यूटर नहीं",
+      "selectComputer": "कंप्यूटर चुनें",
       "sources": {
         "chat": "यह चैट थ्रेड",
         "slack": "यह Slack थ्रेड",
@@ -1432,6 +1437,8 @@
   },
   "browserViewer": {
     "address": "पता",
+    "addressOpening": "एक पेज अभी खुल रहा है। थोड़ी देर बाद फिर कोशिश करें।",
+    "addressPreparing": "ब्राउज़र अभी तैयार नहीं है। थोड़ी देर बाद फिर कोशिश करें।",
     "allTabs": "सभी टैब",
     "automatic": "अपने आप",
     "back": "पीछे",
@@ -1472,11 +1479,11 @@
     "unavailable": "ब्राउज़र का दृश्य उपलब्ध नहीं है",
     "unsupportedCapability": "ब्राउज़र इस कार्रवाई का समर्थन नहीं करता।",
     "untitledTab": "बिना शीर्षक वाला टैब",
+    "updatingView": "दृश्य अपडेट हो रहा है…",
     "windowSize": "विंडो का आकार"
   },
   "chat": {
     "actions": {
-      "authorize": "अधिकृत करें",
       "cancel": "रद्द करें",
       "confirm": "पुष्टि करें",
       "continue": "जारी रखें",
@@ -1645,7 +1652,7 @@
     },
     "attachments": {
       "attach": "अटैच करें",
-      "fileTooLarge": "{{filename}} 1 GB सीमा से अधिक है",
+      "fileTooLarge": "{{filename}} 512 MB सीमा से अधिक है",
       "imageUnavailable": "[छवि अनुपलब्ध: {{filename}}]",
       "loadingFile": "{{filename}} लोड हो रहा है",
       "previewFile": "पूर्वावलोकन {{filename}}",
@@ -1853,6 +1860,102 @@
       "uncertain": "ब्राउज़र जाँचें",
       "uncertainDescription": "ब्राउज़र को जानकारी मिल गई हो सकती है। एजेंट से परिणाम की जाँच करने को कहें।"
     },
+    "capabilityHome": {
+      "back": "सभी क्षमताएँ",
+      "capabilities": "Okou की क्षमताएँ देखें",
+      "create": {
+        "description": "आपके पहले विचार से साझा करने के लिए तैयार परिणाम तक।",
+        "documentFormats": "Doc · PDF · शीट",
+        "title": "बनाएँ"
+      },
+      "explore": "एक्सप्लोर करें",
+      "research": {
+        "items": {
+          "ads": "विज्ञापन सामग्री देखें",
+          "products": "उत्पादों पर शोध करें",
+          "searchOpportunities": "खोज के अवसर ढूँढें",
+          "tools": "टूल की तुलना करें",
+          "topic": "किसी विषय पर शोध करें",
+          "traffic": "वेबसाइट ट्रैफ़िक की तुलना करें"
+        },
+        "prompt": "{{task}}। पहले स्पष्ट करें कि मैं क्या जानना चाहता हूँ, फिर साक्ष्यों की तुलना करें और स्रोतों के साथ मुख्य निष्कर्ष बताएँ।",
+        "title": "शोध"
+      },
+      "search": {
+        "items": {
+          "affiliates": "अफ़िलिएट कार्यक्रम",
+          "creators": "क्रिएटर साझेदारी",
+          "customers": "संभावित ग्राहक",
+          "decisionMakers": "निर्णय लेने वाले लोग",
+          "podcasts": "संपर्क करने के लिए पॉडकास्ट",
+          "speakers": "कार्यक्रम के लिए वक्ता"
+        },
+        "prompt": "{{task}} खोजने में मेरी मदद करें। पहले मुझसे लक्ष्य, मानदंड और दायरे के बारे में पूछें। फिर प्रासंगिक विवरण और स्रोत लिंक के साथ एक छोटी सूची दें।",
+        "title": "लोग खोजें"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "अपने टूल और चरणों को जोड़ें।",
+          "title": "उन्नत वर्कफ़्लो"
+        },
+        "description": "थोड़ा-सा सेटअप। बहुत-सा काम आसान।",
+        "scheduled": {
+          "description": "सही समय पर चलाएँ।",
+          "items": {
+            "daily": "दैनिक दिनचर्या",
+            "once": "एक बार का रिमाइंडर",
+            "weekly": "साप्ताहिक समीक्षा"
+          },
+          "prompt": "{{task}} सेट करने में मेरी मदद करें। पहले पूछें कि क्या करना है, कब चलाना है और कौन सा समय क्षेत्र इस्तेमाल करना है।",
+          "title": "निर्धारित कार्य"
+        },
+        "suggestions": "एक सुझाव से शुरू करें और उसे अपनी ज़रूरत के मुताबिक बदलें।",
+        "triggers": {
+          "description": "किसी घटना के होने पर शुरू करें।",
+          "eventPrompt": "{{source}} के साथ {{task}} सेट करने में मदद करें। क्रम: {{event}} → {{action}} → {{result}}। स्रोत, फ़िल्टर और परिणाम का स्थान पूछें। वर्कफ़्लो का मसौदा तैयार करें और चालू करने से पहले सेटिंग की पुष्टि करें।",
+          "items": {
+            "calendar": {
+              "action": "प्रतिभागी शोध",
+              "event": "कार्यक्रम बदला",
+              "result": "सारांश तैयार करें",
+              "title": "मीटिंग की तैयारी"
+            },
+            "email": {
+              "action": "अनुरोध निकालें",
+              "event": "ईमेल तारांकित",
+              "result": "जवाब का मसौदा",
+              "title": "ईमेल के जवाब"
+            },
+            "news": {
+              "action": "विषय चुनें",
+              "event": "कीवर्ड मिलान",
+              "result": "समाचार का सारांश",
+              "title": "समाचार सारांश"
+            },
+            "slack": {
+              "action": "कार्रवाई निकालें",
+              "event": "आपका उल्लेख",
+              "result": "कार्य सूची",
+              "title": "Slack से कार्य"
+            },
+            "social": {
+              "action": "रुचि के अनुसार छाँटें",
+              "event": "नई पोस्ट",
+              "result": "पोस्ट का सारांश",
+              "title": "X पर नज़र"
+            },
+            "webhook": {
+              "action": "कंपनी पर शोध",
+              "event": "फ़ॉर्म जमा",
+              "result": "फ़ॉलो-अप मसौदा",
+              "title": "लीड फ़ॉलो-अप"
+            }
+          },
+          "monitorPrompt": "{{source}} के साथ {{task}} सेट करने में मदद करें। क्रम: {{event}} → {{action}} → {{result}}। फ़ीड, विषय या खाते, जाँच की आवृत्ति और सारांश सहेजने का स्थान पूछें। नियमित रूप से जाँचें, पहले संसाधित सामग्री छोड़ दें और चालू करने से पहले सेटिंग की पुष्टि करें।",
+          "title": "ट्रिगर"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "विवरण देखें"
     },
@@ -1922,7 +2025,6 @@
     },
     "computerUse": {
       "authorization": "कंप्यूटर उपयोग प्राधिकरण",
-      "authorizationDescription": "इस थ्रेड में भविष्य में चलने के लिए एक डेस्कटॉप होस्ट चुनें।",
       "checkingCompatibility": "अनुकूलता की जाँच हो रही है",
       "cloudBrowser": "क्लाउड ब्राउज़र",
       "connectMyComputer": "मेरा कंप्यूटर कनेक्ट करें",
@@ -2007,7 +2109,6 @@
     "documentTitle": "चैट",
     "errors": {
       "genericTitle": "यह रन पूरा नहीं हो सका",
-      "loadMessages": "संदेश लोड करने में विफल",
       "noModelProviderAction": "सब्सक्रिप्शन प्रबंधित करें",
       "noModelProviderPrefix": "इस रन के लिए कोई मॉडल प्रोवाइडर उपलब्ध नहीं है। कोई व्यक्तिगत सब्सक्रिप्शन कनेक्ट करें।",
       "providerIncompatibleAction": "नया सत्र प्रारंभ करें",
@@ -2083,6 +2184,11 @@
       "sourcePartHeading": "{{description}} से उद्धृत",
       "sourcePartsHeading_one": "{{description}} से {{count}} भाग उद्धृत",
       "sourcePartsHeading_other": "{{description}} से {{count}} भाग उद्धृत"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "चुने गए हिस्से से नई चैट शुरू करें",
+      "sent": "नई चैट बनाई गई"
     },
     "forward": {
       "action": "फ़ॉरवर्ड करें",
@@ -2261,6 +2367,7 @@
       "unavailableSsh": "अनुपलब्ध SSH होस्ट"
     },
     "resources": {
+      "close": "आर्टिफ़ैक्ट और चैट बंद करें",
       "collapse": "समेटें",
       "copyLink": "लिंक कॉपी करें",
       "emptyDescription": "इस चैट में बनी फ़ाइलें, वेबसाइटें और दूसरे आर्टिफ़ैक्ट यहाँ दिखाई देंगे।",
@@ -2340,7 +2447,6 @@
       "number": "संख्या"
     },
     "sidebar": {
-      "allChats": "सभी चैट",
       "archive": "चैट आर्काइव करें",
       "archived": "आर्काइव की गई",
       "chatsWith": "{{agentName}} के साथ चैट",
@@ -2359,6 +2465,7 @@
       "mute": "चैट म्यूट करें",
       "muted": "म्यूट किया गया",
       "newChatWith": "{{agentName}} के साथ नई चैट",
+      "newMenu": "नया",
       "noArchived": "कोई आर्काइव की गई चैट नहीं",
       "noMuted": "कोई म्यूट की गई चैट नहीं",
       "noUnread": "कोई अपठित चैट नहीं",
@@ -2602,12 +2709,9 @@
       "ideasLabel": "शुरुआती सुझाव",
       "label": "शुरू करने के लिए काम",
       "more": "और",
-      "moreTemplates": "और टेम्पलेट",
       "presentationTemplates": "प्रस्तुति टेम्पलेट",
       "removeTask": "{{task}} हटाएँ",
       "shelf": {
-        "browseStyles": "सभी शैलियाँ देखें",
-        "browseTemplates": "सभी टेम्पलेट देखें",
         "document": "दस्तावेज़ टेम्पलेट",
         "image": "चित्र शैलियाँ",
         "nextPage": "अगला पृष्ठ",
@@ -2623,6 +2727,7 @@
         "website": "वेबसाइट",
         "workflow": "वर्कफ़्लो"
       },
+      "viewAll": "सभी देखें",
       "visualization": {
         "allCharts": "सभी चार्ट",
         "back": "Back to visualization options",
@@ -4028,7 +4133,6 @@
     "deniedTitle": "Shell एक्सेस अस्वीकार किया गया",
     "deny": "अस्वीकार करें",
     "description": "एजेंट को आपके कंप्यूटर पर Shell इस्तेमाल करने की अनुमति चाहिए।",
-    "details": "विवरण",
     "duration": "मंज़ूरी के बाद एक्सेस 1 घंटे तक रहता है",
     "expired": "अनुमति की समय सीमा समाप्त",
     "expiredTitle": "Shell एक्सेस की अवधि समाप्त",
@@ -4036,7 +4140,6 @@
     "pendingSummary": "{{computer}} · 1 घंटा",
     "reasonTitle": "ऐक्सेस का कारण",
     "requestExpired": "अनुरोध की अवधि समाप्त",
-    "review": "एक्सेस की समीक्षा करें",
     "revoke": "रद्द करें",
     "revoked": "Shell का ऐक्सेस रद्द किया गया",
     "scope": "इस चैट के लिए एक घंटे का एक्सेस",
@@ -4248,7 +4351,6 @@
     "instructions": "निर्देश",
     "loadError": "आपके निर्देश लोड नहीं हो सके। फिर कोशिश करें।",
     "markdown": "सादे टेक्स्ट या Markdown में लिखें",
-    "newChat": "नई चैट",
     "placeholder": "Okou को बताएँ कि आप कैसे काम करना पसंद करते हैं…",
     "reload": "सहेजे गए निर्देश फिर लोड करें",
     "retry": "फिर कोशिश करें",
@@ -5001,6 +5103,7 @@
     "moveTitle": "Move chat",
     "moveTo": "{{name}} में ले जाएँ",
     "name": "Project name",
+    "new": "New Project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
@@ -5407,6 +5510,7 @@
         "credits": "क्रेडिट",
         "fiveHourLimit": "5 घंटे की सीमा",
         "label": "सदस्यता का उपयोग",
+        "limitReached": "सीमा पूरी हो गई",
         "lowUsage": "सदस्यता का उपयोग: 20% से कम शेष",
         "resetTimeUnavailable": "रीसेट समय अनुपलब्ध",
         "usage": "{{provider}} उपयोग",
@@ -6364,6 +6468,7 @@
     "loading": "सूचनाएँ लोड हो रही हैं",
     "loadMore": "पुरानी सूचनाएँ दिखाएँ",
     "nextPage": "अगला पेज",
+    "pageNavigation": "इस संदेश के पृष्ठ",
     "pageOf": "पेज {{current}} / {{total}}",
     "previousPage": "पिछला पेज",
     "readAll": "सभी को पढ़ा हुआ चिह्नित करें",

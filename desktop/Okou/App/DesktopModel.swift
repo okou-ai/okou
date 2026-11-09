@@ -162,7 +162,10 @@ final class DesktopModel: ObservableObject {
         self.shellPolicyRevision += 1
         let revision = self.shellPolicyRevision
         let enabled = self.shellEnabled
-        Task { await self.executor.configureShell(enabled: enabled, policyRevision: revision) }
+        Task {
+          await self.executor.configureShell(enabled: enabled, policyRevision: revision)
+          await self.host.refreshAdvertisement()
+        }
         if !state.developerToolsAvailable { self.developerToolsEnabled = false }
         self.error = state.error
         if state.updateRequired {
@@ -416,6 +419,7 @@ final class DesktopModel: ObservableObject {
       self.shellEnabled = enabled
       self.shellPolicyRevision += 1
       await self.executor.configureShell(enabled: enabled, policyRevision: self.shellPolicyRevision)
+      await self.host.refreshAdvertisement()
       self.shellSessionCount = await self.executor.shells.count()
       if !enabled && !self.permissionsReady { await self.host.stop() }
     }

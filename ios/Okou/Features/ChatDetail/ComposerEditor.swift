@@ -238,22 +238,6 @@ final class ComposerEditor {
     view.scrollRangeToVisible(view.selectedRange)
   }
 
-  /// Appends dictated text at the end of the draft, continuing the current paragraph.
-  func appendText(_ value: String) {
-    let addition = value.trimmingCharacters(in: .whitespacesAndNewlines)
-    guard !addition.isEmpty, let target = mounted.last(where: \.canAppend),
-      let view = target.view, view.becomeFirstResponder()
-    else { return }
-    view.setFocused(true)
-    view.unmarkText()
-    let text = view.text ?? ""
-    view.selectedRange = NSRange(location: (text as NSString).length, length: 0)
-    let separator = text.isEmpty || text.last?.isWhitespace == true ? "" : " "
-    view.insertText(separator + addition)
-    target.focusRequested()
-    view.scrollRangeToVisible(view.selectedRange)
-  }
-
   private func match(_ prompt: String, in text: String, ranges: [NSRange]?) -> NSRange? {
     let string = text as NSString
     for range in ranges ?? [NSRange(location: 0, length: string.length)] {

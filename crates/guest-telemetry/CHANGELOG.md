@@ -1,5 +1,22 @@
 # Changelog
 
+## [0.3.193](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.192...guest-telemetry-v0.3.193) (2026-11-08)
+
+## [0.3.192](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.191...guest-telemetry-v0.3.192) (2026-11-07)
+
+## [0.3.191](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.190...guest-telemetry-v0.3.191) (2026-11-07)
+
+## [0.3.190](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.189...guest-telemetry-v0.3.190) (2026-11-06)
+
+## [0.3.189](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.188...guest-telemetry-v0.3.189) (2026-11-06)
+
+## [0.3.188](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.187...guest-telemetry-v0.3.188) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** share strict jsonl fixture parsing ([#45691](https://github.com/okou-ai/okou/issues/45691)) ([5ec5173](https://github.com/okou-ai/okou/commit/5ec5173b2fc232a0068877e4b36bde0b057f195e))
+
 ## [0.3.187](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.186...guest-telemetry-v0.3.187) (2026-11-04)
 
 ## [0.3.186](https://github.com/okou-ai/okou/compare/guest-telemetry-v0.3.185...guest-telemetry-v0.3.186) (2026-11-03)

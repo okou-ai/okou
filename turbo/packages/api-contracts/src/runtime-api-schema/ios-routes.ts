@@ -2,6 +2,7 @@ import { agentConnectorAccessContract } from "../contracts/agent-connector-acces
 import { agentCustomConnectorsContract } from "../contracts/agent-custom-connectors";
 import { agentDraftContract } from "../contracts/agent-draft";
 import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
+import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { billingStatusContract } from "../contracts/billing";
 import { chatEventsContract } from "../contracts/chat-event-send";
@@ -111,6 +112,10 @@ const iosContracts: readonly {
   { id: "ios.agentDraftContract.patch", route: agentDraftContract.patch },
   { id: "ios.agentsByIdContract.get", route: agentsByIdContract.get },
   { id: "ios.agentsMainContract.list", route: agentsMainContract.list },
+  {
+    id: "ios.artifactCatalogContract.list",
+    route: artifactCatalogContract.list,
+  },
   {
     id: "ios.artifactReferencesContract.resolve",
     route: artifactReferencesContract.resolve,
@@ -462,6 +467,10 @@ const iosContracts: readonly {
   {
     id: "ios.voiceIoPolishSegmentsContract.post",
     route: voiceIoPolishSegmentsContract.post,
+  },
+  {
+    id: "ios.workflowsCollectionContract.list",
+    route: workflowsCollectionContract.list,
   },
   {
     id: "ios.workflowsCollectionContract.composer",

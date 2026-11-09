@@ -47,6 +47,7 @@ function reportFailure(
       error.request,
       {
         connection: error.connection,
+        window: error.window,
       },
     ),
     sentryLogContext({
@@ -63,6 +64,7 @@ function reportFailure(
           : {}),
         ...(error.bridge ? { browser_bridge: { ...error.bridge } } : {}),
         ...(error.http ? { browser_http: { ...error.http } } : {}),
+        ...(error.window ? { browser_window: { ...error.window } } : {}),
       },
     }),
   ]);
@@ -87,13 +89,19 @@ export interface RecoveryTarget {
   readonly targetId: string;
 }
 
+export interface RecoveryIntent {
+  /** Retained image owner or lifecycle error superseded by this user intent. */
+  readonly retiredFailure: object | null;
+}
+
 export interface RecoveryView {
   readonly enabled: boolean;
   readonly paused: boolean;
+  /** The current descriptor request has not been confirmed by the runtime. */
   readonly pending: boolean;
   readonly nodes: object | null;
   readonly binding: BrowserConnection | null;
-  readonly intent: object;
+  readonly intent: RecoveryIntent;
   readonly targetId: string | null;
   readonly authorized: boolean;
   readonly connected: boolean;
@@ -108,6 +116,7 @@ interface RecoveryPorts {
   readonly notification$: State<(() => void) | null>;
   readonly notify$: Command<void, []>;
   readonly restoration$: State<RecoveryTarget | null>;
+  /** Attempt completion is not current readiness or window-absence proof. */
   readonly reconnect$: Command<Promise<void>, [AbortSignal]>;
   readonly retryImage$: Command<Promise<void>, [AbortSignal]>;
 }
@@ -115,13 +124,14 @@ interface RecoveryPorts {
 type RecoveryMode = "connection" | "image";
 interface Failure {
   readonly view: RecoveryView;
+  readonly owner: object;
   readonly error: ViewerError;
   readonly mode: RecoveryMode | null;
 }
 type RecoveryFence = Pick<RecoveryView, "nodes" | "intent" | "binding">;
 interface RecoveryOperation {
   readonly lifetime: object;
-  readonly intent: object;
+  readonly intent: RecoveryIntent;
   readonly nodes: object;
   readonly binding: BrowserConnection | null;
   readonly completion: DeferredPromise<BrowserRecoveryResult>;
@@ -171,6 +181,7 @@ function failure(view: RecoveryView): Failure | null {
   }
   return {
     view,
+    owner: image?.owner ?? error,
     error,
     mode: !error.transient
       ? null
@@ -182,17 +193,63 @@ function failure(view: RecoveryView): Failure | null {
   };
 }
 
-function attemptError(error: unknown, view: RecoveryView): ViewerError {
-  if (!isAbortError(error)) {
-    return diagnostic(error);
+type RecoveryProgress =
+  | { readonly status: "ready" }
+  | { readonly status: "pending" }
+  | {
+      readonly status: "failed";
+      readonly error: ViewerError;
+      readonly mode: RecoveryMode | null;
+    };
+
+function recoveryProgress(view: RecoveryView): RecoveryProgress {
+  if (view.usable) {
+    return { status: "ready" };
   }
-  // A retired wire can cancel its waiter without cancelling this episode.
-  // Only a current resource failure authorizes another recovery attempt.
   const current = failure(view);
-  if (!current) {
-    throw error;
+  if (current) {
+    return { status: "failed", error: current.error, mode: current.mode };
   }
-  return current.error;
+  // Runtime confirms a resolved missing descriptor separately from a pending
+  // revalidation. Native-attempt completion alone proves neither fact.
+  if (!view.pending && view.binding === null) {
+    return {
+      status: "failed",
+      error: diagnostic(
+        new CdpFault("scope", "The assigned browser window is unavailable."),
+      ),
+      mode: null,
+    };
+  }
+  return { status: "pending" };
+}
+
+function manualRecoveryMode(
+  mode: RecoveryMode,
+  automatic: boolean,
+  index: number,
+): RecoveryMode | null {
+  return !automatic && index === 0 ? mode : null;
+}
+
+function recoveryMode(
+  progress: RecoveryProgress,
+  manualMode: RecoveryMode | null,
+): RecoveryMode | null {
+  return manualMode ?? (progress.status === "failed" ? progress.mode : null);
+}
+
+function attemptError(
+  result: PromiseSettledResult<void>,
+  current: Extract<RecoveryProgress, { status: "failed" }>,
+  pending: boolean,
+): ViewerError {
+  return result.status === "fulfilled" ||
+    pending ||
+    isAbortError(result.reason) ||
+    current.mode === null
+    ? current.error
+    : diagnostic(result.reason);
 }
 
 function sameFailureOwner(
@@ -211,7 +268,8 @@ function createRecoveryState() {
   const active$ = state<RecoveryOperation | null>(null);
   const stopped$ = state<RecoveryFence | null>(null);
   const result$ = state<Promise<BrowserRecoveryResult> | null>(null);
-  return { lifetime$, active$, stopped$, result$ };
+  const progress$ = state<DeferredPromise<void> | null>(null);
+  return { lifetime$, active$, stopped$, result$, progress$ };
 }
 type RecoveryState = ReturnType<typeof createRecoveryState>;
 
@@ -247,8 +305,72 @@ function createRecoveryAssertion(ports: RecoveryPorts, graph: RecoveryState) {
   );
 }
 
+function createRecoveryProgressWait(
+  ports: RecoveryPorts,
+  graph: RecoveryState,
+) {
+  return command(async ({ get, set }, signal: AbortSignal) => {
+    signal.throwIfAborted();
+    const notification = createDeferredPromise<void>(
+      { rejection: "owner" },
+      signal,
+    );
+    set(graph.progress$, notification);
+    using _notification = {
+      [Symbol.dispose]: () => {
+        if (get(graph.progress$) === notification) {
+          set(graph.progress$, null);
+        }
+      },
+    };
+    // Registration precedes the read; the caller rechecks after every wake.
+    if (recoveryProgress(get(ports.view$)).status !== "pending") {
+      notification.resolve();
+    }
+    await notification.promise;
+    signal.throwIfAborted();
+  });
+}
+
+function createRecoveryRelease(ports: RecoveryPorts, graph: RecoveryState) {
+  return command(({ get, set }, operation: RecoveryOperation) => {
+    if (!operation.completion.settled()) {
+      operation.completion.reject(cancelled());
+    }
+    if (get(graph.active$) !== operation) {
+      return;
+    }
+    set(graph.active$, null);
+    if (get(ports.restoration$)?.owner === operation) {
+      set(ports.restoration$, null);
+    }
+    const view = get(ports.view$);
+    if (
+      get(graph.lifetime$) === operation.lifetime &&
+      view.intent === operation.intent &&
+      view.nodes === operation.nodes &&
+      compatibleBinding(operation.binding, view.binding)
+    ) {
+      // A pending descriptor or late timeout is still this spent owner.
+      set(
+        graph.stopped$,
+        view.usable
+          ? null
+          : {
+              nodes: operation.nodes,
+              intent: operation.intent,
+              binding: operation.binding ?? view.binding,
+            },
+      );
+    }
+    set(ports.notify$);
+  });
+}
+
 function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
   const assertCurrent$ = createRecoveryAssertion(ports, graph);
+  const waitForProgress$ = createRecoveryProgressWait(ports, graph);
+  const release$ = createRecoveryRelease(ports, graph);
   return command(
     async (
       { get, set },
@@ -265,36 +387,7 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
         );
       using _operation = {
         [Symbol.dispose]: () => {
-          if (!completion.settled()) {
-            completion.reject(cancelled());
-          }
-          if (get(graph.active$) !== operation) {
-            return;
-          }
-          set(graph.active$, null);
-          if (get(ports.restoration$)?.owner === operation) {
-            set(ports.restoration$, null);
-          }
-          const view = get(ports.view$);
-          if (
-            get(graph.lifetime$) === operation.lifetime &&
-            view.intent === operation.intent &&
-            view.nodes === operation.nodes &&
-            compatibleBinding(operation.binding, view.binding)
-          ) {
-            // A pending descriptor or late timeout is still this spent owner.
-            set(
-              graph.stopped$,
-              view.usable
-                ? null
-                : {
-                    nodes: operation.nodes,
-                    intent: operation.intent,
-                    binding: operation.binding ?? view.binding,
-                  },
-            );
-          }
-          set(ports.notify$);
+          set(release$, operation);
         },
       };
       const deadline = monotonicNow() + 180_000;
@@ -320,15 +413,21 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
           await waitForRetry(interval, signal);
         }
         set(assertCurrent$, operation, signal);
-        if (get(ports.view$).usable) {
+        const manualMode = manualRecoveryMode(initialMode, automatic, index);
+        let progress = recoveryProgress(get(ports.view$));
+        while (progress.status === "pending" && manualMode === null) {
+          await set(waitForProgress$, signal);
+          set(assertCurrent$, operation, signal);
+          progress = recoveryProgress(get(ports.view$));
+        }
+        if (progress.status === "ready") {
           finishRecovery(completion, { status: "restored" });
           return;
         }
-        const current = failure(get(ports.view$));
-        if (current) {
-          lastError = current.error;
+        if (progress.status === "failed") {
+          lastError = progress.error;
         }
-        const mode = !automatic && index === 0 ? initialMode : current?.mode;
+        const mode = recoveryMode(progress, manualMode);
         if (!mode) {
           finishRecovery(completion, { status: "terminal", error: lastError });
           return;
@@ -338,28 +437,21 @@ function createRecoveryExecution(ports: RecoveryPorts, graph: RecoveryState) {
         ]);
         signal.throwIfAborted();
         set(assertCurrent$, operation, signal);
-        if (get(ports.view$).usable) {
+        let afterAttempt = recoveryProgress(get(ports.view$));
+        const pendingAfterAttempt = afterAttempt.status === "pending";
+        // Success or cancellation ends one native attempt, not a still-current
+        // logical episode whose compatible resources are becoming ready.
+        while (afterAttempt.status === "pending") {
+          await set(waitForProgress$, signal);
+          set(assertCurrent$, operation, signal);
+          afterAttempt = recoveryProgress(get(ports.view$));
+        }
+        if (afterAttempt.status === "ready") {
           finishRecovery(completion, { status: "restored" });
           return;
         }
-        if (result.status === "fulfilled") {
-          finishRecovery(completion, {
-            status: "terminal",
-            error: diagnostic(
-              new CdpFault(
-                "scope",
-                "The assigned browser window is unavailable.",
-              ),
-            ),
-          });
-          return;
-        }
-        lastError = attemptError(result.reason, get(ports.view$));
-        const stopped = failure(get(ports.view$));
-        if (stopped?.mode === null) {
-          lastError = stopped.error;
-        }
-        if (!lastError.transient || stopped?.mode === null) {
+        lastError = attemptError(result, afterAttempt, pendingAfterAttempt);
+        if (!lastError.transient || afterAttempt.mode === null) {
           finishRecovery(completion, { status: "terminal", error: lastError });
           return;
         }
@@ -515,6 +607,7 @@ function createRecoveryObservation(
         view.enabled &&
         !view.paused &&
         current &&
+        current.owner !== view.intent.retiredFailure &&
         !sameFailureOwner(get(graph.stopped$), current.view)
       ) {
         if (current.mode) {
@@ -567,6 +660,10 @@ function createRecoveryWatch(
         // Publish the operation in the failure's own event, before React can
         // show a final error. The existing watch still owns cancellation.
         paused = set(observe$, paused, signal);
+        const progress = get(graph.progress$);
+        if (progress && !progress.settled()) {
+          progress.resolve();
+        }
         if (!notification.settled()) {
           notification.resolve();
         }

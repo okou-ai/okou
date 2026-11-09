@@ -2,6 +2,7 @@ import { useGet, useLastResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import { ArrowLeft, MessageCircle, Package, Plug, User } from "lucide-react";
 import { cn } from "@okouai/ui";
+import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { activeRoute$ } from "../../signals/active-route.ts";
 import { currentChatAgentId$ } from "../../signals/agent-chat.ts";
 import { isChatRoute } from "../../signals/okou-page/nav.ts";
@@ -38,9 +39,16 @@ function PwaBackLink({
   );
 }
 
+// My Okou's chats tab is `/`; otherwise it opens the current agent's chat.
+function useChatsTabAgentId(): string | null {
+  const singleAgent = useGet(singleAgentEnabled$);
+  const agentId = useLastResolved(currentChatAgentId$) ?? null;
+  return singleAgent ? null : agentId;
+}
+
 export function PwaBackToChats() {
   const { t } = useTranslation();
-  const agentId = useLastResolved(currentChatAgentId$);
+  const agentId = useChatsTabAgentId();
   return (
     <PwaBackLink
       pathname={agentId ? ROUTES.agentChat : ROUTES.home}
@@ -104,7 +112,7 @@ function PwaTabUnreadIndicator() {
 export function PwaBottomNavigation() {
   const { t } = useTranslation();
   const route = useGet(activeRoute$);
-  const agentId = useLastResolved(currentChatAgentId$);
+  const agentId = useChatsTabAgentId();
   const tabs = [
     {
       pathname: agentId ? ROUTES.agentChat : ROUTES.home,

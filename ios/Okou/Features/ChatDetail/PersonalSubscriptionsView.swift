@@ -1,8 +1,31 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
 struct PersonalSubscriptionsView: View {
+  let store: PersonalSubscriptionStore
+  var body: some View {
+    StoreProvider(store.stateStore) {
+      PersonalSubscriptionsContent(store: store).id(ObjectIdentifier(store))
+    }
+  }
+}
+
+private struct PersonalSubscriptionsContent: View {
   @Bindable var store: PersonalSubscriptionStore
+  @ResolvedValue private var groups: [PersonalSubscriptionResources.Group]?
+  @LoadableStatus<[PersonalSubscriptionResources.Group]> private var status: LoadableState
+
+  init(store: PersonalSubscriptionStore) {
+    self.store = store
+    _groups = ResolvedValue(task: store.resources.groups, keepLast: true)
+    _status = LoadableStatus(task: store.resources.groups)
+  }
+  private var accountGroups: [PersonalSubscriptionResources.Group] {
+    groups ?? store.resources.confirmedGroups
+  }
+  private var readError: String? { $groups.error.map(ChatRequestFailure.message(for:)) }
+
   @Environment(\.locale) private var locale
   @State private var showsAuth = false
   @State private var disconnecting: PersonalSubscription?
@@ -10,18 +33,18 @@ struct PersonalSubscriptionsView: View {
 
   var body: some View {
     List {
-      if store.isLoading && store.accounts.isEmpty {
+      if status == .loading && store.accounts.isEmpty {
         OkouLoadingRow("Loading accounts…")
       }
-      if let error = store.error {
+      if let error = readError ?? store.error {
         Section {
           OkouLoadErrorRow(message: error) { _ = await store.refresh(force: true) }
         }
       }
       // One card per account, grouped by provider; the provider names only its first card.
-      ForEach(PersonalSubscriptionType.allCases) { type in
-        let accounts = store.accounts.filter { $0.type == type.rawValue }
-        ForEach(Array(accounts.enumerated()), id: \.element.id) { index, account in
+      ForEach(accountGroups, id: \.type) { group in
+        let type = group.type
+        ForEach(Array(group.accounts.enumerated()), id: \.element.id) { index, account in
           accountSection(account, type: type, showsProvider: index == 0)
         }
       }
@@ -214,24 +237,49 @@ struct PersonalSubscriptionsView: View {
 }
 
 struct SubscriptionAuthorizationView: View {
-  @Bindable var store: PersonalSubscriptionStore
+  let store: PersonalSubscriptionStore
+  var body: some View {
+    StoreProvider(store.stateStore) {
+      SubscriptionAuthorizationContent(store: store).id(ObjectIdentifier(store))
+    }
+  }
+}
+
+private struct SubscriptionAuthorizationContent: View {
+  let store: PersonalSubscriptionStore
+  @LoadableValue private var presentation: Loadable<PersonalSubscriptionAuthorization.Presentation>
+
+  init(store: PersonalSubscriptionStore) {
+    self.store = store
+    _presentation = LoadableValue(store.authorization.value)
+  }
   @Environment(\.locale) private var locale
   @Environment(\.dismiss) private var dismiss
   @Environment(\.openURL) private var openURL
 
   var body: some View {
+    switch presentation {
+    case .hasData(let authorization): authorizationForm(authorization)
+    case .hasError(let error): OkouLoadErrorRow(message: ChatRequestFailure.message(for: error))
+    case .loading: ProgressView()
+    }
+  }
+
+  private func authorizationForm(_ authorization: PersonalSubscriptionAuthorization.Presentation)
+    -> some View
+  {
     NavigationStack {
       Form {
-        switch store.phase {
+        switch authorization.phase {
         case .idle, .starting:
           OkouLoadingRow("Starting authorization…")
         case .pending, .completing:
           Section {
             Text("1. Open the authorization page in your browser and sign in.")
-            if let url = store.browserURL {
+            if let url = authorization.browserURL {
               Button("Open authorization page", okouSymbol: "globe") { openURL(url) }
             }
-            if let code = store.verificationCode {
+            if let code = authorization.verificationCode {
               Text("2. Enter this verification code in your browser.")
               Text(code).font(.okou(.title).monospaced()).textSelection(.enabled)
                 .accessibilityLabel("Verification code: \(code)")
@@ -241,19 +289,26 @@ struct SubscriptionAuthorizationView: View {
               Text("Waiting for authorization…").foregroundStyle(OkouColor.mutedForeground)
             } else {
               Text("2. Paste the authorization code shown after signing in.")
-              TextField("Authorization code", text: $store.authorizationCode, axis: .vertical)
-                .textInputAutocapitalization(.never).autocorrectionDisabled()
-                .privacySensitive()
-                .accessibilityIdentifier("subscription-authorization-code")
+              TextField(
+                "Authorization code",
+                text: Binding(
+                  get: { authorization.authorizationCode }, set: { store.authorizationCode = $0 }),
+                axis: .vertical
+              )
+              .textInputAutocapitalization(.never).autocorrectionDisabled()
+              .privacySensitive()
+              .accessibilityIdentifier("subscription-authorization-code")
               Button("Complete connection") { Task { await store.submitClaudeCode() } }
                 .disabled(
-                  store.phase == .completing
-                    || store.authorizationCode.trimmingCharacters(in: .whitespacesAndNewlines)
-                      .isEmpty
+                  authorization.phase == .completing
+                    || authorization.authorizationCode.trimmingCharacters(
+                      in: .whitespacesAndNewlines
+                    )
+                    .isEmpty
                 )
-              if store.phase == .completing { ProgressView() }
+              if authorization.phase == .completing { ProgressView() }
             }
-            if let expires = store.expiresAt {
+            if let expires = authorization.expiresAt {
               Text(
                 "Authorization expires \(expires.formatted(Date.FormatStyle(date: .omitted, time: .shortened).locale(locale)))"
               )
@@ -265,15 +320,17 @@ struct SubscriptionAuthorizationView: View {
           Button("Done") { dismiss() }
         case .expired, .failed:
           Text(
-            store.phase == .expired
+            authorization.phase == .expired
               ? LocalizedStringKey("Authorization expired. Start again to connect.")
               : LocalizedStringKey("Unable to authorize your subscription."))
           Button("Start again") { store.retryAuth() }
         }
-        if let error = store.authError { Text(error).foregroundStyle(OkouColor.destructive) }
+        if let error = authorization.authError {
+          Text(error).foregroundStyle(OkouColor.destructive)
+        }
       }
       .okouGroupedBackground()
-      .navigationTitle(store.authType.map(providerTitle) ?? "Connect subscription")
+      .navigationTitle(authorization.authType.map(providerTitle) ?? "Connect subscription")
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         OkouCloseToolbarItem {

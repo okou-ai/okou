@@ -392,13 +392,12 @@
     "sidebar": {
       "ariaLabel": "Sidebar",
       "chat": "Chat",
-      "collapse": "Collapse sidebar",
+      "feedWaiting_one": "{{count}} waiting",
+      "feedWaiting_other": "{{count}} waiting",
       "hideChatList": "Hide chat list",
-      "manage": "Manage",
       "mobile": {
         "invite": "Invite",
-        "openAutomations": "Open mobile automations",
-        "openMenu": "Open menu"
+        "openAutomations": "Open mobile automations"
       },
       "navigation": {
         "agents": "Agents",
@@ -464,8 +463,10 @@
       "nextImage": "Next image artifact",
       "openNewTab": "Open in new tab",
       "openSplitView": "Open in split view",
+      "partiallyUnavailable": "Some actions are unavailable",
       "previousImage": "Previous image artifact",
       "resetZoom": "Reset zoom",
+      "retry": "Retry",
       "share": "Share",
       "shareArtifact": "Share artifact",
       "zoomIn": "Zoom in",
@@ -998,8 +999,11 @@
       "unavailableTitle": "Authorization link unavailable"
     },
     "computerUse": {
+      "actionFailed": "Could not authorize this computer. Refresh the chat to try again.",
       "authorize": "Authorize",
       "authorized": "Authorized",
+      "authorizedDescription": "Computer access enabled for future runs in this chat.",
+      "cardDescription": "Choose a computer for this chat. This disconnects the cloud browser.",
       "checkingCompatibility": "Checking compatibility",
       "description": "Choose an online computer for {{assistantName}} to use in {{source}}.",
       "downloadMac": "Download for macOS",
@@ -1008,6 +1012,7 @@
       "macRequirement": "Requires an Apple silicon Mac with macOS 14 or newer. Intel Macs aren't supported.",
       "noHostsDescription": "Open {{desktopApplicationName}} on your Mac to bring it online.",
       "noHostsTitle": "No online computers",
+      "selectComputer": "Select a computer",
       "sources": {
         "chat": "this chat thread",
         "slack": "this Slack thread",
@@ -1432,6 +1437,8 @@
   },
   "browserViewer": {
     "address": "Address",
+    "addressOpening": "A page is still opening. Try again shortly.",
+    "addressPreparing": "The browser is not ready. Try again shortly.",
     "allTabs": "All tabs",
     "automatic": "Automatic",
     "back": "Back",
@@ -1472,11 +1479,11 @@
     "unavailable": "Browser view unavailable",
     "unsupportedCapability": "The browser does not support this operation.",
     "untitledTab": "Untitled tab",
+    "updatingView": "Updating view…",
     "windowSize": "Window size"
   },
   "chat": {
     "actions": {
-      "authorize": "Authorize",
       "cancel": "Cancel",
       "confirm": "Confirm",
       "continue": "Continue",
@@ -1645,7 +1652,7 @@
     },
     "attachments": {
       "attach": "Attach",
-      "fileTooLarge": "{{filename}} exceeds the 1 GB limit",
+      "fileTooLarge": "{{filename}} exceeds the 512 MB limit",
       "imageUnavailable": "[Image unavailable: {{filename}}]",
       "loadingFile": "Loading {{filename}}",
       "previewFile": "Preview {{filename}}",
@@ -1853,6 +1860,102 @@
       "uncertain": "Check the browser",
       "uncertainDescription": "The browser may have received the information. Ask the agent to check the result."
     },
+    "capabilityHome": {
+      "back": "All capabilities",
+      "capabilities": "Explore Okou capabilities",
+      "create": {
+        "description": "From your first idea to something ready to share.",
+        "documentFormats": "Doc · PDF · Sheet",
+        "title": "Create"
+      },
+      "explore": "Explore",
+      "research": {
+        "items": {
+          "ads": "Explore ad creatives",
+          "products": "Research products",
+          "searchOpportunities": "Find search opportunities",
+          "tools": "Compare tools",
+          "topic": "Research a topic",
+          "traffic": "Compare website traffic"
+        },
+        "prompt": "{{task}}. Clarify what I want to learn, then compare the evidence and summarize key findings with sources.",
+        "title": "Research"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Affiliate programs",
+          "creators": "Creator partnerships",
+          "customers": "Potential customers",
+          "decisionMakers": "Decision-makers",
+          "podcasts": "Podcasts to pitch",
+          "speakers": "Event speakers"
+        },
+        "prompt": "Help me find: {{task}}. Ask me about my target, criteria, and scope first. Return a shortlist with relevant details and source links.",
+        "title": "Find people"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Connect your tools and steps.",
+          "title": "Advanced workflows"
+        },
+        "description": "A little setup. A lot off your plate.",
+        "scheduled": {
+          "description": "Run at just the right time.",
+          "items": {
+            "daily": "Daily routine",
+            "once": "One-time reminder",
+            "weekly": "Weekly check-in"
+          },
+          "prompt": "Help me set up {{task}}. Ask what I want done, when it should run, and which time zone to use.",
+          "title": "Scheduled tasks"
+        },
+        "suggestions": "Start with a suggestion, then make it yours.",
+        "triggers": {
+          "description": "Start when something happens.",
+          "eventPrompt": "Help me set up {{task}} using {{source}}. Flow: {{event}} → {{action}} → {{result}}. Ask which source, filters and output destination to use. Prepare a draft workflow and confirm the setup before enabling it.",
+          "items": {
+            "calendar": {
+              "action": "Research guests",
+              "event": "Event updated",
+              "result": "Brief",
+              "title": "Meeting briefs"
+            },
+            "email": {
+              "action": "Extract requests",
+              "event": "Email starred",
+              "result": "Draft reply",
+              "title": "Email replies"
+            },
+            "news": {
+              "action": "Match topics",
+              "event": "Keyword match",
+              "result": "News digest",
+              "title": "News digest"
+            },
+            "slack": {
+              "action": "Extract actions",
+              "event": "Mentioned",
+              "result": "Action list",
+              "title": "Slack to tasks"
+            },
+            "social": {
+              "action": "Filter interests",
+              "event": "New post",
+              "result": "Summary",
+              "title": "X watchlist"
+            },
+            "webhook": {
+              "action": "Research company",
+              "event": "Form submitted",
+              "result": "Follow-up",
+              "title": "Lead follow-up"
+            }
+          },
+          "monitorPrompt": "Help me set up {{task}} using {{source}}. Flow: {{event}} → {{action}} → {{result}}. Ask which feeds, topics or accounts to follow, how often to check, and where to save the summary. Check periodically, skip items already processed, and confirm the setup before enabling it.",
+          "title": "Triggers"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "View details"
     },
@@ -1922,7 +2025,6 @@
     },
     "computerUse": {
       "authorization": "Computer Use authorization",
-      "authorizationDescription": "Select a Desktop host for future runs in this thread.",
       "checkingCompatibility": "Checking compatibility",
       "cloudBrowser": "Cloud browser",
       "connectMyComputer": "Connect my computer",
@@ -2007,7 +2109,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "This run couldn't finish",
-      "loadMessages": "Failed to load messages",
       "noModelProviderAction": "Manage subscriptions",
       "noModelProviderPrefix": "No model provider is available for this run. Connect a personal subscription.",
       "providerIncompatibleAction": "Start a new session",
@@ -2083,6 +2184,11 @@
       "sourcePartHeading": "Quoted from {{description}}",
       "sourcePartsHeading_one": "Quoted {{count}} part from {{description}}",
       "sourcePartsHeading_other": "Quoted {{count}} parts from {{description}}"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Start a new chat with this selection",
+      "sent": "New chat created"
     },
     "forward": {
       "action": "Forward",
@@ -2261,6 +2367,7 @@
       "unavailableSsh": "unavailable SSH host"
     },
     "resources": {
+      "close": "Close artifacts and chats",
       "collapse": "Collapse",
       "copyLink": "Copy link",
       "emptyDescription": "Files, websites, and other artifacts made in this chat will show up here.",
@@ -2340,7 +2447,6 @@
       "number": "number"
     },
     "sidebar": {
-      "allChats": "All chats",
       "archive": "Archive chat",
       "archived": "Archived",
       "chatsWith": "Chats with {{agentName}}",
@@ -2359,6 +2465,7 @@
       "mute": "Mute chat",
       "muted": "Muted",
       "newChatWith": "New chat with {{agentName}}",
+      "newMenu": "New",
       "noArchived": "No archived chats",
       "noMuted": "No muted chats",
       "noUnread": "No unread chats",
@@ -2602,12 +2709,9 @@
       "ideasLabel": "Ideas to get started",
       "label": "Tasks to get started",
       "more": "More",
-      "moreTemplates": "More templates",
       "presentationTemplates": "Presentation templates",
       "removeTask": "Remove {{task}}",
       "shelf": {
-        "browseStyles": "Browse all styles",
-        "browseTemplates": "Browse all templates",
         "document": "Document templates",
         "image": "Image styles",
         "nextPage": "Next page",
@@ -2623,6 +2727,7 @@
         "website": "Website",
         "workflow": "Workflow"
       },
+      "viewAll": "View all",
       "visualization": {
         "allCharts": "All charts",
         "back": "Back to visualization options",
@@ -4026,7 +4131,6 @@
     "deniedTitle": "Shell access denied",
     "deny": "Deny",
     "description": "The agent needs permission to use Shell on your computer.",
-    "details": "Details",
     "duration": "Access lasts for 1 hour after approval",
     "expired": "Authorization expired",
     "expiredTitle": "Shell access expired",
@@ -4034,7 +4138,6 @@
     "pendingSummary": "{{computer}} · 1 hour",
     "reasonTitle": "Reason for access",
     "requestExpired": "Request expired",
-    "review": "Review access",
     "revoke": "Revoke",
     "revoked": "Shell access revoked",
     "scope": "One-hour access for this chat",
@@ -4246,7 +4349,6 @@
     "instructions": "Instructions",
     "loadError": "Couldn’t load your instructions. Try again.",
     "markdown": "Write in plain text or use Markdown",
-    "newChat": "New chat",
     "placeholder": "Tell Okou how you like to work…",
     "reload": "Reload saved instructions",
     "retry": "Retry",
@@ -4999,6 +5101,7 @@
     "moveTitle": "Move chat",
     "moveTo": "Move to {{name}}",
     "name": "Project name",
+    "new": "New Project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
@@ -5405,6 +5508,7 @@
         "credits": "Credits",
         "fiveHourLimit": "5-hour limit",
         "label": "Subscription usage",
+        "limitReached": "Limit reached",
         "lowUsage": "Subscription usage: less than 20% remaining",
         "resetTimeUnavailable": "Reset time unavailable",
         "usage": "{{provider}} usage",
@@ -6362,6 +6466,7 @@
     "loading": "Loading notifications",
     "loadMore": "Show older",
     "nextPage": "Next page",
+    "pageNavigation": "Pages in this message",
     "pageOf": "Page {{current}} of {{total}}",
     "previousPage": "Previous page",
     "readAll": "Mark all as read",

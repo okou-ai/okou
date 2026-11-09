@@ -1,6 +1,5 @@
 import { singleAgentEnabled$ } from "../single-agent.ts";
 import { command, computed, state } from "ccstate";
-import { localStorageSignals } from "../external/local-storage.ts";
 import { debounceCommand, onRef, resetSignal } from "../utils.ts";
 import { hideKeyboardShortcutHints$ } from "../keyboard-shortcut-hints.ts";
 import { openCreateAgentDialog$ } from "./jobs-page.ts";
@@ -139,21 +138,6 @@ export const closeChatThreadEmojiMenu$ = command(({ set }) => {
 });
 
 // ---------------------------------------------------------------------------
-// Session list collapse state (RecentChatSection)
-// ---------------------------------------------------------------------------
-const sessionListCollapsedStorage = localStorageSignals(
-  "sidebar-session-list-collapsed",
-);
-export const sessionListCollapsed$ = computed((get) => {
-  return get(sessionListCollapsedStorage.get$) === "true";
-});
-export const setSessionListCollapsed$ = command(
-  ({ set }, collapsed: boolean) => {
-    set(sessionListCollapsedStorage.set$, String(collapsed));
-  },
-);
-
-// ---------------------------------------------------------------------------
 // Three-column search dialog state
 // ---------------------------------------------------------------------------
 export type ThreeColumnSearchFilter =
@@ -286,19 +270,6 @@ export const setPinnedAgentDropTarget$ = command(
 export const endPinnedAgentDrag$ = command(({ set }) => {
   set(internalDraggingPinnedAgentId$, null);
   set(internalPinnedAgentDropTargetId$, null);
-});
-
-// ---------------------------------------------------------------------------
-// Agent card / pinned section collapse state
-// ---------------------------------------------------------------------------
-const agentCardCollapsedStorage = localStorageSignals(
-  "sidebar-agent-card-collapsed",
-);
-export const agentCardCollapsed$ = computed((get) => {
-  return get(agentCardCollapsedStorage.get$) === "true";
-});
-export const setAgentCardCollapsed$ = command(({ set }, collapsed: boolean) => {
-  set(agentCardCollapsedStorage.set$, String(collapsed));
 });
 
 // ---------------------------------------------------------------------------

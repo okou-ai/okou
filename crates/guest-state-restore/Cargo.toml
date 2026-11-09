@@ -1,10 +1,11 @@
 [package]
 name = "guest-state-restore"
-version = "0.4.1"
+version = "0.4.5"
 edition.workspace = true
 description = "Repair snapshot-sensitive guest state and apply guest timezones"
 
 [dependencies]
+guest-contracts.workspace = true
 libc = { workspace = true, features = ["std"] }
 
 [dev-dependencies]

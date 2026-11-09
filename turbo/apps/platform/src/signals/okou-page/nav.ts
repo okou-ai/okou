@@ -1,5 +1,5 @@
 import { singleAgentEnabled$ } from "../single-agent.ts";
-import { command, computed, state } from "ccstate";
+import { command, computed } from "ccstate";
 import { detachedNavigateTo$, pathParams$ } from "../route.ts";
 import { activeRoute$ } from "../active-route.ts";
 import { ROUTES, type RouteKey } from "../route-paths.ts";
@@ -17,11 +17,11 @@ import {
   setChatThreadUnreadFilter$,
   toggleChatThreadUnreadFilter$,
 } from "./chat-thread-filter.ts";
-import { pwaNavigationEnabled$ } from "./pwa-navigation.ts";
+import { mobileChatViewport$ } from "./pwa-navigation.ts";
+import { navigateToAgentChat$ } from "./agent-chat-navigation.ts";
 import {
   setStoredChatListHidden$,
   storedChatListHidden$,
-  unifiedChatWorkspace$,
 } from "./unified-chat-workspace.ts";
 
 type PinnedAgentShortcutDirection = "prev" | "next";
@@ -32,7 +32,7 @@ export const navigateToChat$ = command(({ set }, chatThreadId: string) => {
   });
 });
 
-// With mobile navigation the bare agent chat URL is the chat list, so a new
+// With mobile navigation the bare chat page URL is the chat list, so a new
 // chat asks for the composer explicitly.
 export const navigateToNewChat$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -41,12 +41,13 @@ export const navigateToNewChat$ = command(
     if (!agentId) {
       return;
     }
-    set(detachedNavigateTo$, "/agents/:agentId/chat", {
-      pathParams: { agentId },
-      searchParams: get(pwaNavigationEnabled$)
-        ? new URLSearchParams({ compose: "1" })
-        : undefined,
-    });
+    set(
+      navigateToAgentChat$,
+      agentId,
+      get(mobileChatViewport$)
+        ? { searchParams: new URLSearchParams({ compose: "1" }) }
+        : {},
+    );
   },
 );
 
@@ -126,22 +127,13 @@ export const selectPinnedAgent$ = command(
   },
 );
 
-const internalSidebarOff$ = state(false);
-
-// The unified workspace remembers a folded chat list across reloads.
+// The workspace remembers a folded chat list across reloads.
 export const sidebarOff$ = computed((get) => {
-  return get(unifiedChatWorkspace$)
-    ? get(storedChatListHidden$)
-    : get(internalSidebarOff$);
+  return get(storedChatListHidden$);
 });
 
 export const toggleSidebarOff$ = command(({ get, set }) => {
-  const off = !get(sidebarOff$);
-  if (get(unifiedChatWorkspace$)) {
-    set(setStoredChatListHidden$, off);
-    return;
-  }
-  set(internalSidebarOff$, off);
+  set(setStoredChatListHidden$, !get(sidebarOff$));
 });
 
 export function shouldHandleShortcutPress(event: KeyboardEvent): boolean {
@@ -211,23 +203,8 @@ export const setupGlobalKeyboardShortcuts$ = command(
   },
 );
 
-const internalSidebarExpanded$ = state(false);
-
-export const sidebarExpanded$ = computed((get) => {
-  return get(internalSidebarExpanded$);
-});
-
-export const setSidebarExpanded$ = command(({ set }, expanded: boolean) => {
-  set(internalSidebarExpanded$, expanded);
-});
-
-export const showChatSidebar$ = command(({ get, set }) => {
-  if (get(unifiedChatWorkspace$)) {
-    set(setStoredChatListHidden$, false);
-  } else {
-    set(internalSidebarOff$, false);
-  }
-  set(internalSidebarExpanded$, true);
+export const showChatSidebar$ = command(({ set }) => {
+  set(setStoredChatListHidden$, false);
 });
 
 export function isChatRoute(key: RouteKey | null): boolean {
@@ -244,7 +221,6 @@ export type AccountAction = "lab" | "signout";
 
 export const handleAccountAction$ = command(
   ({ set }, action: AccountAction) => {
-    set(internalSidebarExpanded$, false);
     if (action === "lab") {
       set(detachedNavigateTo$, ROUTES.lab);
     }

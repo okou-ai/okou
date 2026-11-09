@@ -7,6 +7,7 @@ mod decoded_observation;
 mod fresh_staging;
 mod fresh_teardown;
 mod group_failures;
+mod guest_application;
 mod http_reuse;
 mod large_selection;
 mod mixed_preparation;
@@ -235,6 +236,7 @@ fn home_at(temp: &tempfile::TempDir) -> HomePaths {
 
 fn storage_entry(mount_path: String, url: String, name: &str, version: &str) -> StorageEntry {
     StorageEntry {
+        template_guidance: None,
         name: name.to_string(),
         mount_path,
         archive_url: url,

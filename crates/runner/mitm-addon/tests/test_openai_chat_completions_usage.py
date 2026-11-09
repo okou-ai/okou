@@ -823,9 +823,9 @@ class TestOpenAIChatCompletionsUsage:
             chunks = [stream[:boundary], stream[boundary : boundary + 1], stream[boundary + 1 :]]
         else:
             chunk_size = {"whole": len(stream), "one-byte": 1, "split": 17}[chunking]
-            chunks = [
+            chunks = (
                 stream[offset : offset + chunk_size] for offset in range(0, len(stream), chunk_size)
-            ]
+            )
 
         mitm_addon.responseheaders(flow)
         callback = response_stream(flow)

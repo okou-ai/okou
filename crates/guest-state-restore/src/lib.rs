@@ -15,6 +15,8 @@ use std::os::unix::fs::symlink;
 use std::os::unix::io::AsRawFd;
 use std::path::Path;
 
+use guest_contracts::guest_timezone::is_safe_timezone_name;
+
 /// ioctl request code for RNDRESEEDCRNG.
 ///
 /// Forces an immediate reseed of the kernel CRNG from the input pool.
@@ -126,17 +128,6 @@ fn set_realtime(seconds: u64, nanoseconds: u32) -> io::Result<()> {
         return Err(io::Error::last_os_error());
     }
     Ok(())
-}
-
-fn is_safe_timezone_name(timezone: &str) -> bool {
-    !timezone.is_empty()
-        && timezone.bytes().all(|byte| {
-            byte.is_ascii_alphanumeric()
-                || byte == b'/'
-                || byte == b'_'
-                || byte == b'-'
-                || byte == b'+'
-        })
 }
 
 fn sync_timezone(timezone: &str) -> io::Result<bool> {

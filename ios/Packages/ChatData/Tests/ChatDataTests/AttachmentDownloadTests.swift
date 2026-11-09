@@ -47,6 +47,8 @@ final class AttachmentDownloadTests: XCTestCase {
     XCTAssertEqual(url.lastPathComponent, "report.pdf")
     XCTAssertEqual(lookups.withLock { $0 }, 2)
     file = nil
+    XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    commands.closeFileCache()
     XCTAssertFalse(FileManager.default.fileExists(atPath: url.deletingLastPathComponent().path))
   }
 

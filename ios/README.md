@@ -1,5 +1,8 @@
 # Okou for iOS
 
+Start with [iOS development](../docs/ios/ios-development.md) for architecture,
+state ownership, and verification, and [iOS ccstate](../docs/ios/ios-ccstate.md)
+for native graphs and SwiftUI bindings.
 For native UI work, start with the [Mobile Design System](../docs/ios/mobile-design-system.md)
 and [`AGENTS.md`](AGENTS.md). Shared tokens and reusable UI live in `Okou/DesignSystem/`.
 
@@ -14,8 +17,8 @@ selection, chat lists, conversation history, creating chats, sending text,
 retrying uncertain sends, and stopping work. The composer supports system image
 paste in new and existing chats alongside native photo, video and file selection, with
 local previews, upload progress, removal and retry. Uploads use the existing
-direct-to-storage API and its 1 GB limit; files of 5 MB or more use multipart
-uploads. A message can contain files with or without text. Selected files and
+direct-to-storage API with a 512 MB chat attachment limit; files of 5 MB or more
+use multipart uploads. A message can contain files with or without text. Selected files and
 uploads belong to their workspace and draft. Draft text, canonical message context
 and completed-upload metadata persist per API origin, user, workspace and
 Agent/thread, and synchronize through the existing draft APIs. New-chat drafts
@@ -31,9 +34,7 @@ and recent chats scoped to the selected agent, filtered like the web (Inbox,
 Unread, Archived, Muted). Workspace switching and "back to chat" sit at the top; the
 bottom bar has the account photo for Settings, search, and new chat. Native list actions support pinning,
 archiving, and renaming chats. The chat header has no title; its native More menu
-also supports muting. Archive and mute controls follow the existing `chatThreadArchiving` and
-`chatThreadMuting` feature switches; muted chats can still be unmuted after the
-muting switch is turned off. Opening a new chat is local and immediate;
+also supports muting. Opening a new chat is local and immediate;
 the thread is created when the first message is sent. New chats use the selected
 agent and the existing saved model preference. A native model sheet supports
 chat-specific choices and personal subscription account management.
@@ -242,12 +243,55 @@ Also verify uncertain-send recovery and that signing out or switching workspaces
 clears the previous workspace's chats and drafts. Record observed outcomes
 separately from compilation, automated tests, and release publication.
 
+## SwiftLint
+
+SwiftLint 0.65.1 checks safety and lint directives; Xcode's existing
+`swift-format` checks continue to own formatting. Install the official macOS
+binary and run the shared entry point from the repository root:
+
+```sh
+bash ios/scripts/install-swiftlint.sh
+bash ios/scripts/lint.sh
+```
+
+The installer reads `.swiftlint-version`, verifies the release archive's SHA-256
+and binary version, and publishes it under ignored `ios/.tools/`. Its stdout is
+only the binary path; `--path-only` uses an existing installation without a
+download. It requires Bash, curl, shasum and unzip. `lint.sh` uses
+`SWIFTLINT_BIN`, a `swiftlint` on PATH, or that local installation, in that order;
+the binary must match the pinned version. It never installs or fixes code.
+
+The explicit rules are `force_cast`, `force_try`, `duplicate_imports`,
+`unused_closure_parameter`, `invalid_swiftlint_command` and
+`superfluous_disable_command`. They use SwiftSyntax and run without SourceKit.
+App, Push, both packages, package manifests and test sources are included;
+generated Swift and build output are excluded. Test/test-support overrides allow
+only force casts and force tries. All other checks remain active there.
+Do not grow those exceptions, add suppressions or introduce a baseline to hide
+production findings.
+
+Run the wrapper rather than passing `--config` to SwiftLint: explicit config
+paths disable its directory-specific configuration discovery. The wrapper uses
+strict mode and rejects configuration warnings, including unknown rule names.
+CI emits GitHub annotations; local output uses Xcode diagnostics.
+
+CI uses the official Linux image pinned by digest in `ios.yml`. Linux callers
+can use that same image, mounting the repository and running
+`bash ios/scripts/lint.sh` with a Bash entry point. To upgrade, update the macOS
+version/checksum and CI image together, then run the full lint and
+`bash ios/scripts/test-lint.sh` with that installed version. Installer regression
+tests run with `python3 ios/scripts/install-swiftlint.test.py`.
+
 ## CI
 
 `.github/workflows/ios.yml` runs on pull requests, merge groups, pushes to main,
 and manual dispatch. Lightweight Linux jobs detect changes and test CI contracts
 on every run. Native jobs start after change detection while script checks run
 in parallel; archive publication and the required gate both require those checks.
+An independent Linux SwiftLint job runs for selected iOS changes on PRs, merge
+groups, main pushes and manual dispatch. Both `ci-gate-ios` and archive
+publication require it; failed, cancelled or unexpectedly skipped lint cannot
+pass the gate, even when exact-input evidence reuses native tests.
 On pull requests, merge groups, and manual dispatch, changes selected by
 `ios/scripts/ci-changed.sh` trigger Swift formatting, property-list validation,
 an app build, standalone ChatDomain/ChatData tests, and simulator tests on the

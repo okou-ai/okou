@@ -138,6 +138,30 @@ pub(super) async fn download_storages_with_files(
     files: &[(String, Arc<CachedFiles>)],
     telemetry: &mut JobTelemetry,
 ) -> RunnerResult<()> {
+    download_storages_with_files_inner(sandbox, context, manifest, files, telemetry, None).await
+}
+
+/// Stop later batches on a sibling failure without abandoning accepted Guest IO.
+pub(super) async fn download_storages_with_files_until_cancelled(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    manifest: Manifest,
+    files: &[(String, Arc<CachedFiles>)],
+    telemetry: &mut JobTelemetry,
+    cancel: &tokio_util::sync::CancellationToken,
+) -> RunnerResult<()> {
+    download_storages_with_files_inner(sandbox, context, manifest, files, telemetry, Some(cancel))
+        .await
+}
+
+async fn download_storages_with_files_inner(
+    sandbox: &dyn Sandbox,
+    context: &ExecutionContext,
+    manifest: Manifest,
+    files: &[(String, Arc<CachedFiles>)],
+    telemetry: &mut JobTelemetry,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> RunnerResult<()> {
     // Complete all fallible preparation before the first Guest mutation.
     let prepare_started = Instant::now();
     let inputs = storage_inputs(manifest, files);
@@ -160,6 +184,9 @@ pub(super) async fn download_storages_with_files(
     );
     // Only the current transport buffer is materialized across Guest IO.
     for (index, prepared) in inputs.into_iter().enumerate() {
+        if cancel.is_some_and(tokio_util::sync::CancellationToken::is_cancelled) {
+            return Err(RunnerError::Cancelled);
+        }
         let started = Instant::now();
         let input = prepared.into_input();
         let mut guest_duration_ms = None;
@@ -358,6 +385,7 @@ fn files_input<'a>(
 
 fn empty_storage_manifest() -> Manifest {
     Manifest {
+        archive_readiness: None,
         storages: Vec::new(),
         artifacts: Vec::new(),
         cleanup_paths: Vec::new(),

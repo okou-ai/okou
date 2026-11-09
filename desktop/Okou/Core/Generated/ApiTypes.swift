@@ -16,16 +16,48 @@ public struct ComputerUseHostRegistration: Codable, Equatable, Sendable {
     }
   }
 
+  /// Known wire values are constants; unknown values decode with their raw string.
+  public struct LivenessMode: RawRepresentable, Codable, Hashable, Sendable {
+    public let rawValue: String
+
+    public init(rawValue: String) {
+      self.rawValue = rawValue
+    }
+
+    public static let heartbeat = Self(rawValue: "heartbeat")
+    public static let presence = Self(rawValue: "presence")
+
+    /// Every value the contract declared when this file was generated.
+    public static let knownValues: [LivenessMode] = [
+      .heartbeat,
+      .presence,
+    ]
+  }
+
   public let connectionGeneration: Int
   public let hostId: String
   public let commandNotifications: CommandNotifications
+  public let livenessMode: LivenessMode?
 
   public init(
-    connectionGeneration: Int, hostId: String, commandNotifications: CommandNotifications
+    connectionGeneration: Int,
+    hostId: String,
+    commandNotifications: CommandNotifications,
+    livenessMode: LivenessMode? = nil
   ) {
     self.connectionGeneration = connectionGeneration
     self.hostId = hostId
     self.commandNotifications = commandNotifications
+    self.livenessMode = livenessMode
+  }
+}
+
+/// Queue availability from the bounded command wait; it never claims work.
+public struct ComputerUseHostCommandWait: Codable, Equatable, Sendable {
+  public let hasPendingCommands: Bool
+
+  public init(hasPendingCommands: Bool) {
+    self.hasPendingCommands = hasPendingCommands
   }
 }
 

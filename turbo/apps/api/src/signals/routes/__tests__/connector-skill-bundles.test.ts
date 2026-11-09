@@ -1,10 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { workflowsCollectionContract } from "@okouai/api-contracts/contracts/workflows";
-import {
-  getCustomConnectorSkillName,
-  getCustomConnectorSkillStorageName,
-} from "@okouai/core/storage-names";
+import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { workflowsRoutes } from "../workflows";
@@ -22,22 +19,22 @@ const context = testContext();
 
 describe("Connector Skill bundle delivery", () => {
   it.each([false, true])(
-    "keeps delivery off by default and captures each Run's selected mode across flag changes (Chat accounts: %s)",
+    "delivers the selected custom Skill bundle by default (Chat accounts: %s)",
     async (chatAccounts) => {
       const owner = await publicChatActor(context);
       owner.ownsFeatureSwitches();
       const fixture = createChatEventsFixture(context);
       const api = createConnectorBddApi(context);
-      const selected = await owner.run(async () => {
-        installWorkflowVolumeS3Fixture(context);
+      const { selected, s3 } = await owner.run(async () => {
+        const s3 = installWorkflowVolumeS3Fixture(context);
         const selected = await api.createCustomConnector(owner.actor, {
-          displayName: "Staged delivery",
-          prefixTemplates: ["https://staged-skill.example.test/api/"],
+          displayName: "Default bundle delivery",
+          prefixTemplates: ["https://default-skill.example.test/api/"],
           fields: [],
           headerInjections: [],
           queryInjections: [],
           authMode: "none",
-          skillMarkdown: "Staged Skill instructions.",
+          skillMarkdown: "Selected Skill instructions.",
         });
         await api.setCustomConnectorValues(owner.actor, selected.id, []);
         await api.updateAgentCustomConnectors(owner.actor, owner.agentId, [
@@ -46,73 +43,28 @@ describe("Connector Skill bundle delivery", () => {
         await api.updateFeatureSwitches(owner.actor, {
           [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
         });
-        return selected;
+        return { selected, s3 };
       });
-      const setDelivery = (enabled: boolean) => {
-        return owner.run(() => {
-          if (!owner.actor.orgId) {
-            throw new Error("Expected a workspace");
-          }
-          return updateFeatureSwitchesForUser(
-            context,
-            { ...owner.actor, orgId: owner.actor.orgId },
-            {
-              [FeatureSwitchKey.ConnectorSkillBundleDelivery]: enabled,
-            },
-          );
-        });
-      };
-      const createRun = () => {
-        return owner.sendChatRun(owner.actor, {
-          agentId: owner.agentId,
-          model: "claude-fable-5-1",
-          prompt: "Inspect the captured delivery mode",
-        });
-      };
+      const run = await owner.sendChatRun(owner.actor, {
+        agentId: owner.agentId,
+        model: "claude-fable-5-1",
+        prompt: "Use the selected custom Skill",
+      });
+      const claimed = await owner.claimChatRun(owner.runnerGroup, run.runId);
       const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
-      const legacy = await createRun();
-      await setDelivery(true);
-      const legacyClaim = await owner.claimChatRun(
-        owner.runnerGroup,
-        legacy.runId,
-      );
-      expect(legacyClaim.claim.storageManifest?.storageMounts).toContainEqual(
-        expect.objectContaining({
-          name: getCustomConnectorSkillStorageName(selected.id),
-          mountPath,
-        }),
-      );
+      const bundle = claimed.claim.contentBundles.skills.find((candidate) => {
+        return candidate.mountPath === mountPath;
+      })!;
       expect(
-        legacyClaim.claim.contentBundles.skills.some((bundle) => {
-          return bundle.mountPath === mountPath;
-        }),
-      ).toBeFalsy();
+        readClaimedContentBundle(s3.objects, bundle)
+          .get("SKILL.md")
+          ?.toString(),
+      ).toContain("Selected Skill instructions.");
       await owner.run(() => {
         return fixture.failChatRun(
-          legacy.runId,
-          legacyClaim.sandboxHeaders,
-          "Legacy capture inspected",
-        );
-      });
-      const bundled = await createRun();
-      await setDelivery(false);
-      const bundleClaim = await owner.claimChatRun(
-        owner.runnerGroup,
-        bundled.runId,
-      );
-      expect(bundleClaim.claim.contentBundles.skills).toContainEqual(
-        expect.objectContaining({ mountPath }),
-      );
-      expect(
-        bundleClaim.claim.storageManifest?.storageMounts.some((mount) => {
-          return mount.mountPath === mountPath;
-        }),
-      ).toBeFalsy();
-      await owner.run(() => {
-        return fixture.failChatRun(
-          bundled.runId,
-          bundleClaim.sandboxHeaders,
-          "Bundle capture inspected",
+          run.runId,
+          claimed.sandboxHeaders,
+          "Default bundle inspected",
         );
       });
     },
@@ -156,7 +108,6 @@ describe("Connector Skill bundle delivery", () => {
           { ...owner.actor, orgId: owner.actor.orgId },
           {
             [FeatureSwitchKey.CodexExecution]: framework === "codex",
-            [FeatureSwitchKey.ConnectorSkillBundleDelivery]: true,
           },
         );
         const s3 = installWorkflowVolumeS3Fixture(context);

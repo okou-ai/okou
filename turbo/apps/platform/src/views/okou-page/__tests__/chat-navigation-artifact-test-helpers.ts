@@ -41,7 +41,7 @@ export async function openResourceArtifact(
   container: ParentNode = document.body,
 ) {
   click(buttonNamed("Artifacts and chats", container));
-  const resources = await screen.findByRole("region", {
+  const resources = await screen.findByRole("dialog", {
     name: "Artifacts and chats",
   });
   const label = await within(resources).findByText(title);

@@ -47,6 +47,12 @@ readonly RUN_OUTPUT_MEMORY_CITATION_RETIREMENT_COMMIT=26bacab4693d32e4a4453dce5c
 # proactive_planning_enabled. Migration drop_retired_member_preference_columns
 # drops them, so earlier APIs fail every member preference statement.
 readonly MEMBER_PREFERENCE_RETIREMENT_COMMIT=94389e2203aaa62408b780156c2cf8f9a9cc5414
+# #45210 and #45669 stopped naming org_members_metadata.proactive_action_enabled
+# and chat_resources_enabled_by_default. Migration
+# drop_retired_action_and_artifact_preferences drops both, so earlier APIs fail
+# every member preference statement.
+readonly PROACTIVE_ACTION_PREFERENCE_RETIREMENT_COMMIT=222d8618346194b5af227c5e147a0076181ee3e0
+readonly ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_COMMIT=11b6837e854dcd643e31ca309b450b7a15a5de37
 # DAV catalog rules require #43517's API/Runner method support and rollout.
 readonly DAV_FIREWALL_READER_COMMIT=c8de6212dc54a5aae0d4658acf1afa6a35f939ab
 # #43667 prepared reference-only Workflow claims and current-content downloads.
@@ -122,8 +128,12 @@ readonly CONTENT_BUNDLE_PREPARATION_COMMIT=fc8f99468cc7946843620ff655ae22c09f9cb
 readonly CONTENT_BUNDLE_REFERENCE_ONLY_API_PATH=.github/rollback-floors/content-bundle-reference-only-api
 readonly SEED_SKILL_BUNDLE_ONLY_API_PATH=.github/rollback-floors/seed-skill-bundle-only-api
 readonly CONNECTOR_SKILL_BUNDLE_CLAIMS_PATH=.github/rollback-floors/connector-skill-bundle-claims
+readonly SINGLE_CHARACTER_SKILL_READER_PATH=.github/rollback-floors/single-character-skill-bundle-reader
+readonly SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH=.github/rollback-floors/single-character-skill-capability-free-api
 readonly OFFICIAL_WORKFLOW_BUNDLE_READER_PATH=.github/rollback-floors/official-workflow-bundle-reader
 readonly REGISTRY_ARCHIVE_READER_PATH=.github/rollback-floors/registry-archive-reader
+readonly TEMPLATE_GUIDANCE_BUNDLE_READER_PATH=.github/rollback-floors/template-guidance-bundle-reader
+readonly TEMPLATE_GUIDANCE_BUNDLE_WRITER_PATH=.github/rollback-floors/template-guidance-bundle-writer
 readonly OFFICIAL_WORKFLOW_ARTIFACT_READER_PATH=turbo/packages/core/src/official-workflow-artifact.ts
 readonly CONTENT_BUNDLE_ARCHIVE_READER_PATH=.github/rollback-floors/content-bundle-archive-reader
 readonly BROWSER_SESSION_MUTATIONS_PATH=.github/rollback-floors/browser-session-mutations
@@ -243,6 +253,14 @@ fi
 
 if ! git merge-base --is-ancestor "$MEMBER_PREFERENCE_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates the retired member preference mapping: ${MEMBER_PREFERENCE_RETIREMENT_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$PROACTIVE_ACTION_PREFERENCE_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired proactive action preference mapping: ${PROACTIVE_ACTION_PREFERENCE_RETIREMENT_COMMIT}."
+fi
+
+if ! git merge-base --is-ancestor "$ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_COMMIT" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the retired artifacts auto-open preference mapping: ${ARTIFACT_AUTO_OPEN_PREFERENCE_RETIREMENT_COMMIT}."
 fi
 
 if ! git merge-base --is-ancestor "$DAV_FIREWALL_READER_COMMIT" "$TARGET_COMMIT"; then
@@ -923,6 +941,37 @@ if ! git merge-base --is-ancestor "$connector_skill_bundle_claims_commit" "$TARG
   fail "Rollback target predates Connector Skill bundle claim precedence: ${connector_skill_bundle_claims_commit}."
 fi
 
+# The marker records the separately deployed Runner reader. Its own addition
+# is the API reader floor: both must accept captured single-character Skills.
+if ! single_character_skill_runner_commit=$(git show "origin/main:${SINGLE_CHARACTER_SKILL_READER_PATH}"); then
+  fail "Cannot read the single-character Skill Runner reader rollback floor from main."
+fi
+if [[ ! "$single_character_skill_runner_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid single-character Skill Runner reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$single_character_skill_runner_commit" origin/main; then
+  fail "Single-character Skill Runner reader rollback floor is not on main."
+fi
+single_character_skill_api_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SINGLE_CHARACTER_SKILL_READER_PATH" | sed -n '1p')
+if [[ ! "$single_character_skill_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged single-character Skill API reader on main."
+fi
+if ! git merge-base --is-ancestor "$single_character_skill_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the single-character Skill API reader: ${single_character_skill_api_commit}."
+fi
+
+# Current Runners omit the temporary claim query. Earlier APIs leave their
+# single-character Skill jobs pending forever, even with a compatible Runner.
+single_character_skill_capability_free_api_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_PATH" | sed -n '1p')
+if [[ ! "$single_character_skill_capability_free_api_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged capability-free single-character Skill API on main."
+fi
+if ! git merge-base --is-ancestor "$single_character_skill_capability_free_api_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates capability-free single-character Skill claims: ${single_character_skill_capability_free_api_commit}."
+fi
+
 if ! git merge-base --is-ancestor "$CONTENT_BUNDLE_PREPARATION_COMMIT" "$TARGET_COMMIT"; then
   fail "Rollback target predates immutable content bundle publication: ${CONTENT_BUNDLE_PREPARATION_COMMIT}."
 fi
@@ -955,6 +1004,36 @@ if ! git merge-base --is-ancestor "$registry_archive_reader_commit" origin/main;
 fi
 if ! git merge-base --is-ancestor "$registry_archive_reader_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates independent Registry archive reads: ${registry_archive_reader_commit}."
+fi
+
+# Template owner pointers and retained Runs survive an API rollback. Runner is
+# restored first, so independently require this released reader in both roles.
+if ! template_guidance_bundle_reader_commit=$(git show "origin/main:${TEMPLATE_GUIDANCE_BUNDLE_READER_PATH}"); then
+  fail "Cannot read the template guidance bundle reader rollback floor from main."
+fi
+if [[ ! "$template_guidance_bundle_reader_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid template guidance bundle reader rollback floor."
+fi
+if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" origin/main; then
+  fail "Template guidance bundle reader rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates template guidance bundle readers: ${template_guidance_bundle_reader_commit}."
+fi
+
+# Frozen template sources must not acquire a legacy publisher again. This is an
+# API-only floor; the separately checked Runner reader floor stays unchanged.
+if ! template_guidance_bundle_writer_commit=$(git show "origin/main:${TEMPLATE_GUIDANCE_BUNDLE_WRITER_PATH}"); then
+  fail "Cannot read the template guidance bundle writer rollback floor from main."
+fi
+if [[ ! "$template_guidance_bundle_writer_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Missing or invalid template guidance bundle writer rollback floor."
+fi
+if ! git merge-base --is-ancestor "$template_guidance_bundle_writer_commit" origin/main; then
+  fail "Template guidance bundle writer rollback floor is not on main."
+fi
+if ! git merge-base --is-ancestor "$template_guidance_bundle_writer_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates bundle-only template publication: ${template_guidance_bundle_writer_commit}."
 fi
 
 # Reference-only claims require the corrected archive reader. Keep the API
@@ -1132,6 +1211,14 @@ fi
 
 if ! git merge-base --is-ancestor "$content_bundle_archive_reader_commit" "$runner_tag_commit"; then
   fail "Runner release ${runner_tag} predates bounded content bundle archive delivery: ${content_bundle_archive_reader_commit}."
+fi
+
+if ! git merge-base --is-ancestor "$template_guidance_bundle_reader_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates template guidance bundle readers: ${template_guidance_bundle_reader_commit}."
+fi
+
+if ! git merge-base --is-ancestor "$single_character_skill_runner_commit" "$runner_tag_commit"; then
+  fail "Runner release ${runner_tag} predates single-character Skill bundle support: ${single_character_skill_runner_commit}."
 fi
 
 if ! git merge-base --is-ancestor "$WORKFLOW_DOWNLOAD_READER_COMMIT" "$runner_tag_commit"; then

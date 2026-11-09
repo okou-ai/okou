@@ -1,6 +1,6 @@
 {
   "name": "@okouai/app",
-  "version": "0.1097.5",
+  "version": "0.1102.4",
   "private": true,
   "type": "module",
   "scripts": {
@@ -28,6 +28,7 @@
     "@clerk/react": "^6.17.4",
     "@clerk/shared": "4.39.1",
     "@clerk/ui": "1.33.1",
+    "@formatjs/intl-segmenter": "12.3.1",
     "@okouai/api-contracts": "workspace:*",
     "@okouai/browser-extension-client": "workspace:*",
     "@okouai/connectors": "workspace:*",

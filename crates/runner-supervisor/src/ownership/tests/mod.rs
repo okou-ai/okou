@@ -1,4 +1,5 @@
 use super::*;
+use crate::tests::active_run_records;
 use runner_lifecycle::status::{BlankSandbox, IdleSandbox};
 
 async fn status_idle_reuse_keys_and_active_runs(
@@ -22,18 +23,7 @@ async fn status_idle_reuse_keys_and_active_runs(
         })
         .unwrap_or_default();
     reuse_keys.sort_unstable();
-    let mut active_runs: Vec<(String, String)> = status["active_runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|run| {
-            (
-                run["run_id"].as_str().unwrap().to_string(),
-                run["sandbox_id"].as_str().unwrap().to_string(),
-            )
-        })
-        .collect();
-    active_runs.sort_unstable();
+    let active_runs = active_run_records(&status);
     (reuse_keys, active_runs)
 }
 

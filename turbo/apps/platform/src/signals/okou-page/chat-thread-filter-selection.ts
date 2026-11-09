@@ -8,7 +8,7 @@ import {
 } from "../agent-chat.ts";
 import { chatThreadOnlyUnread$ } from "../chat-page/chat-thread-only-unread.ts";
 import { currentRightThread$ } from "../chat-page/chat-thread-pane-state.ts";
-import { loadLeftThread$ } from "../chat-page/chat-thread-panes.ts";
+import { loadLeftThread$ } from "../chat-page/chat-thread-pane-navigation.ts";
 import { resetSignal } from "../utils.ts";
 import {
   setChatThreadArchivedFilter$,
@@ -16,7 +16,7 @@ import {
   setChatThreadUnreadFilter$,
 } from "./chat-thread-filter.ts";
 import { shouldHandleShortcutPress } from "./nav.ts";
-import { activeRoute$ } from "../active-route.ts";
+import { agentChatPageActive$ } from "../active-route.ts";
 import { pwaChatListVisible$ } from "./pwa-navigation.ts";
 
 export type ChatThreadFilter = "all" | "unread" | "archived" | "muted";
@@ -37,7 +37,7 @@ export const selectChatThreadFilter$ = command(
       set(setChatThreadUnreadFilter$, filter === "unread");
     }
 
-    if (get(pwaChatListVisible$) && get(activeRoute$) === "agentChat") {
+    if (get(pwaChatListVisible$) && get(agentChatPageActive$)) {
       return;
     }
 

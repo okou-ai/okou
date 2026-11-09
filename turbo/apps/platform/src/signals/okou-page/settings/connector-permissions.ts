@@ -1,7 +1,6 @@
-import { command, computed, state } from "ccstate";
+import { command, computed, state, type Command } from "ccstate";
 import { connectorPermissionsContract } from "@okouai/api-contracts/client/connector-permissions";
 import { connectorCatalogContract } from "@okouai/api-contracts/client/connector-catalog";
-import type { FirewallPolicies } from "@okouai/connectors/firewall-contracts";
 import { accept } from "../../../lib/accept.ts";
 import { apiClient$, type ApiClientFactory } from "../../api-client.ts";
 import type { ApplyConnectorPermissions } from "@okouai/api-contracts/contracts/connector-permissions";
@@ -11,8 +10,11 @@ import type {
 } from "../../connector-domain.ts";
 import { onRef, resetSignal } from "../../utils.ts";
 import type { ConnectorAccountTarget } from "@okouai/api-contracts/contracts/connector-accounts";
-import type { PermissionDraftIntent } from "./permission-draft-intent.ts";
 import { connectorPermissionDraftChanges } from "./permission-grant-save.ts";
+import type {
+  PermissionDrawerChanges,
+  PermissionDrawerSession,
+} from "./permission-drawer-session.ts";
 
 export interface ConnectorPermissionsTarget {
   readonly target: Extract<ConnectorAccountTarget, { kind: "builtin" }>;
@@ -71,8 +73,10 @@ function permissionRequests(
   };
 }
 
+/** `dismiss$` closes the owner's surface once the rules are saved. */
 export function createConnectorPermissionsSignals(
   entry: ConnectorPermissionsTarget,
+  dismiss$: Command<void, []>,
 ) {
   const dialogElement$ = state<HTMLElement | null>(null);
   const bindDialog$ = onRef(
@@ -132,22 +136,12 @@ export function createConnectorPermissionsSignals(
   const save$ = command(
     async (
       { get },
-      args: {
-        readonly initialPolicies: FirewallPolicies;
-        readonly initialGrants: readonly PlatformUserPermissionGrant[];
-        readonly intent: PermissionDraftIntent;
-      },
+      args: PermissionDrawerChanges,
       signal: AbortSignal,
-    ) => {
-      const metadata = await get(metadata$);
-      signal.throwIfAborted();
-      if (!metadata) {
-        throw new Error("Connector permission metadata is unavailable");
-      }
+    ): Promise<void> => {
       const changes = connectorPermissionDraftChanges({
         ...args,
-        metadata,
-        connectorSlug: metadata.connectorSlug,
+        connectorSlug: args.metadata.connectorSlug,
       });
       const requests = get(requests$);
       if (!requests) {
@@ -164,12 +158,18 @@ export function createConnectorPermissionsSignals(
       );
     },
   );
+  const permissionDrawer: PermissionDrawerSession = {
+    grants$,
+    metadata$: editorMetadata$,
+    save$,
+    close$: dismiss$,
+  };
   return {
     editorMetadata$,
     grants$,
     open$,
     close$,
-    save$,
+    permissionDrawer,
     bindDialog$,
     initialFocus$,
   };

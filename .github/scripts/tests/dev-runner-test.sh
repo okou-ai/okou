@@ -100,10 +100,15 @@ SH
 set -euo pipefail
 
 target=""
+profile=""
 packages=()
 original_args="$*"
 while (($#)); do
   case "$1" in
+    --release)
+      profile=release
+      shift
+      ;;
     --target)
       target="$2"
       shift 2
@@ -120,12 +125,18 @@ if [ -z "$target" ]; then
   echo "missing fake cargo target" >&2
   exit 2
 fi
+[ "$profile" = release ]
+if [[ "${packages[*]}" == runner ]]; then
+  while IFS= read -r path_env; do
+    [ -s "${!path_env}" ]
+  done < <(jq -r '.[].pathEnv' runner/guest-binaries.json)
+fi
 
 printf '%s\n' "$original_args" >>"${CARGO_LOG:?}"
-mkdir -p "target/${target}/ci"
+mkdir -p "target/${target}/release"
 for bin in "${packages[@]}"; do
-  printf '%s\n' "$bin" >"target/${target}/ci/${bin}"
-  chmod +x "target/${target}/ci/${bin}"
+  printf '%s\n' "$bin" >"target/${target}/release/${bin}"
+  chmod +x "target/${target}/release/${bin}"
 done
 SH
   chmod +x "${root}/bin/cargo"

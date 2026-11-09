@@ -10,6 +10,77 @@ import XCTest
 
 @MainActor
 final class AttachmentDraftTests: XCTestCase {
+  func testLocalImageSurvivesNewChatHandoffAndSubsequentSends() async throws {
+    let creating = expectation(description: "New conversation is being created")
+    let (responses, release) = AsyncStream<Void>.makeStream()
+    defer { release.finish() }
+    let bytes = UIGraphicsImageRenderer(size: CGSize(width: 80, height: 60)).pngData { context in
+      UIColor.systemTeal.setFill()
+      context.fill(CGRect(x: 0, y: 0, width: 80, height: 60))
+    }
+    let fixture = AttachmentFlowFixture(
+      creation: {
+        creating.fulfill()
+        for await _ in responses { break }
+        return true
+      },
+      attachment: ChatAttachment(
+        id: AttachmentFlowFixture.fileID, filename: "Screenshot.png", contentType: "image/png",
+        size: bytes.count, url: "artifact://\(AttachmentFlowFixture.fileID)"))
+    let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { store.close() }
+    let source = try makeFile(filename: "Screenshot.png", content: bytes)
+    defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
+    store.newAttachmentDraft.importFiles([source])
+    try await waitForBusinessResult {
+      store.newAttachmentDraft.hasAttachments && store.newAttachmentDraft.isReady
+    }
+    let draftURL = try XCTUnwrap(store.newAttachmentDraft.items.first?.file.url)
+    let sending = Task { await store.sendNewChat() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      sending.cancel()
+      release.finish()
+      await sending.value
+    }
+    await fulfillment(of: [creating], timeout: 3)
+    let submission = try XCTUnwrap(store.newChatSubmission)
+    let attachment = try XCTUnwrap(submission.message.message.attachments.first)
+    let thumbnail = try await submission.viewer.thumbnail(attachment)
+    XCTAssertNotNil(thumbnail)
+    submission.viewer.open(attachment)
+    let cachedURL = try XCTUnwrap(submission.viewer.preview?.file?.url)
+    XCTAssertEqual(try Data(contentsOf: cachedURL), bytes)
+    submission.viewer.dismiss()
+    release.yield(())
+    await sending.value
+    XCTAssertFalse(FileManager.default.fileExists(atPath: draftURL.path))
+
+    let conversation = try XCTUnwrap(store.selectedConversation)
+    conversation.attachmentViewer.open(attachment)
+    XCTAssertEqual(conversation.attachmentViewer.preview?.file?.url, cachedURL)
+    let artifact = ChatArtifact(
+      source: .file(attachment.id), filename: attachment.filename,
+      contentType: attachment.contentType)
+    conversation.artifacts.open(artifact)
+    XCTAssertEqual(conversation.artifacts.preview?.file?.url, cachedURL)
+    conversation.attachmentViewer.dismiss()
+    conversation.artifacts.dismiss()
+
+    conversation.attachmentDraft.importFiles([source])
+    try await waitForBusinessResult {
+      conversation.attachmentDraft.hasAttachments && conversation.attachmentDraft.isReady
+    }
+    await conversation.send()
+    XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 2)
+    conversation.attachmentViewer.open(attachment)
+    let nextURL = try XCTUnwrap(conversation.attachmentViewer.preview?.file?.url)
+    XCTAssertEqual(try Data(contentsOf: nextURL), bytes)
+    conversation.attachmentViewer.dismiss()
+    store.close()
+    XCTAssertFalse(FileManager.default.fileExists(atPath: nextURL.path))
+  }
+
   func testUploadRetryAndUncertainMessageRetryPreserveFileAndMessageIdentity() async throws {
     let fixture = AttachmentFlowFixture(failUpload: true, failSend: true)
     let conversation = fixture.conversation()
@@ -96,7 +167,7 @@ final class AttachmentDraftTests: XCTestCase {
     let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { store.close() }
     store.selectedAgentID = AttachmentFlowFixture.agentID
-    store.newChatDraft = "Show this message immediately"
+    store.newChatDraft = "\n  Show this message immediately\n\t"
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
     store.newAttachmentDraft.importFiles([source])
@@ -114,6 +185,7 @@ final class AttachmentDraftTests: XCTestCase {
     await fulfillment(of: [creating], timeout: 3)
     let firstMessage = try XCTUnwrap(store.newChatSubmission?.message.message)
     XCTAssertEqual(firstMessage.text, "Show this message immediately")
+    XCTAssertEqual(firstMessage.copyText, firstMessage.text)
     XCTAssertEqual(firstMessage.attachments.first?.filename, "notes.txt")
 
     release.yield(())
@@ -121,12 +193,14 @@ final class AttachmentDraftTests: XCTestCase {
     let delivered = try XCTUnwrap(store.selectedConversation?.messages.first)
     XCTAssertEqual(delivered.id, firstMessage.id)
     XCTAssertEqual(delivered.text, firstMessage.text)
+    XCTAssertEqual(delivered.copyText, firstMessage.copyText)
     XCTAssertEqual(delivered.attachments.map(\.id), firstMessage.attachments.map(\.id))
     XCTAssertEqual(delivered.attachments.map(\.filename), firstMessage.attachments.map(\.filename))
     let sent = try fixture.state.value.withLock {
       try $0.messages.map { try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: $0) }
     }
     XCTAssertEqual(sent.map(\.clientEventId), [firstMessage.id])
+    XCTAssertEqual(sent.first?.userMessage.parts.first?.text, firstMessage.text)
     XCTAssertEqual(sent.first?.userMessage.parts.last?.fileId, AttachmentFlowFixture.fileID)
     XCTAssertEqual(store.newChatDraft, "")
   }
@@ -309,7 +383,14 @@ final class AttachmentDraftTests: XCTestCase {
   }
 
   func testFirstSendBeforeAgentNavigationCannotRestoreTheOldAgentDraftAfterward() async throws {
-    let fixture = AttachmentFlowFixture()
+    let creating = expectation(description: "Server-default first chat is being created")
+    let gate = AsyncStream<Void>.makeStream()
+    defer { gate.continuation.finish() }
+    let fixture = AttachmentFlowFixture(creation: {
+      creating.fulfill()
+      for await _ in gate.stream {}
+      return true
+    })
     let directory = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: directory) }
     let storage = ChatDraftStorage(
@@ -328,7 +409,18 @@ final class AttachmentDraftTests: XCTestCase {
     store.setForeground(true)
     XCTAssertNil(store.selectedAgentID)
     store.newChatDraft = "First message before navigation finishes"
-    await store.sendNewChat()
+    let sending = Task { await store.sendNewChat() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      sending.cancel()
+      gate.continuation.finish()
+      await sending.value
+    }
+    await fulfillment(of: [creating], timeout: 3)
+    // Navigation can now select the default Agent before the first creation returns.
+    await store.refreshNavigation()
+    gate.continuation.finish()
+    await sending.value
     await store.newComposer.synchronize()
     XCTAssertEqual(store.selectedThreadID, AttachmentFlowFixture.threadID)
     XCTAssertEqual(store.newChatDraft, "")
@@ -351,7 +443,7 @@ final class AttachmentDraftTests: XCTestCase {
       let first = fixture.conversation(storage: storage)
       defer { first.close() }
       await first.composer.synchronize()
-      first.draft = "Keep this delivery identity"
+      first.draft = "\n  Keep this delivery identity\n\t"
       let source = try makeFile()
       defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
       first.attachmentDraft.importFiles([source])
@@ -361,11 +453,13 @@ final class AttachmentDraftTests: XCTestCase {
       await first.send()
       let original = try XCTUnwrap(first.pending.first)
       XCTAssertTrue(original.needsRetry)
+      XCTAssertEqual(original.message.copyText, "Keep this delivery identity")
       first.close()
       let reopened = fixture.conversation(storage: storage)
       defer { reopened.close() }
       XCTAssertEqual(reopened.draft, "")
       XCTAssertEqual(reopened.pending.first?.id, original.id)
+      XCTAssertEqual(reopened.messages.first?.copyText, "Keep this delivery identity")
       await reopened.composer.synchronize()
       await reopened.refresh()
       XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 1)

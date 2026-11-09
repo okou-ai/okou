@@ -1,6 +1,2 @@
-/* No comment provided by engineer. */
-"Ask ${applicationName}" = "向 ${applicationName} 提问";
-
-/* No comment provided by engineer. */
+/* Opens the new chat composer without a request parameter. */
 "New ${applicationName} chat" = "新建 ${applicationName} 聊天";
-

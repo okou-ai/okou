@@ -1,5 +1,132 @@
 # Changelog
 
+## [8.824.2](https://github.com/okou-ai/okou/compare/core-v8.824.1...core-v8.824.2) (2026-11-08)
+
+
+### Bug Fixes
+
+* **api:** auto-continue chats after execution timeouts ([#45953](https://github.com/okou-ai/okou/issues/45953)) ([bcd58fe](https://github.com/okou-ai/okou/commit/bcd58fe38493ceb6b84ecc1ed890782d322b7fa6))
+
+## [8.824.1](https://github.com/okou-ai/okou/compare/core-v8.824.0...core-v8.824.1) (2026-11-08)
+
+
+### Refactoring
+
+* publish template guidance as immutable bundles ([#45951](https://github.com/okou-ai/okou/issues/45951)) ([3f37903](https://github.com/okou-ai/okou/commit/3f37903b5452d477b82936cda8cd89f48c5816e7))
+
+## [8.824.0](https://github.com/okou-ai/okou/compare/core-v8.823.0...core-v8.824.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.45.0
+
+## [8.823.0](https://github.com/okou-ai/okou/compare/core-v8.822.4...core-v8.823.0) (2026-11-07)
+
+
+### Features
+
+* **platform:** add staff capability homepage and empty chat discovery ([#45863](https://github.com/okou-ai/okou/issues/45863)) ([b3bf2d5](https://github.com/okou-ai/okou/commit/b3bf2d520fe7f2aa2ada7162ed4be57f68b21ea6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.5
+
+## [8.822.4](https://github.com/okou-ai/okou/compare/core-v8.822.3...core-v8.822.4) (2026-11-07)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.4
+
+## [8.822.3](https://github.com/okou-ai/okou/compare/core-v8.822.2...core-v8.822.3) (2026-11-07)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.3
+
+## [8.822.2](https://github.com/okou-ai/okou/compare/core-v8.822.1...core-v8.822.2) (2026-11-06)
+
+
+### Refactoring
+
+* remove four fully rolled-out feature switches ([#45747](https://github.com/okou-ai/okou/issues/45747)) ([0f03d03](https://github.com/okou-ai/okou/commit/0f03d03881ff81b8eb72e1ceca6a80619603873c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.2
+
+## [8.822.1](https://github.com/okou-ai/okou/compare/core-v8.822.0...core-v8.822.1) (2026-11-06)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.1
+
+## [8.822.0](https://github.com/okou-ai/okou/compare/core-v8.821.0...core-v8.822.0) (2026-11-06)
+
+
+### Features
+
+* **app:** refine artifact preview toolbar behind a feature switch ([#45626](https://github.com/okou-ai/okou/issues/45626)) ([2e0cb82](https://github.com/okou-ai/okou/commit/2e0cb82cb278afaa08d03792e91dc70cc455acc1))
+
+
+### Refactoring
+
+* **api:** make connector skill bundle delivery unconditional ([#45697](https://github.com/okou-ai/okou/issues/45697)) ([767c72c](https://github.com/okou-ai/okou/commit/767c72c2e73de6a774581bcb9fd4b01ecfc46f19))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.44.0
+
+## [8.821.0](https://github.com/okou-ai/okou/compare/core-v8.820.1...core-v8.821.0) (2026-11-06)
+
+
+### Features
+
+* roll out message pdf export, pwa navigation and subscription usage to all users ([#45649](https://github.com/okou-ai/okou/issues/45649)) ([7dfca6c](https://github.com/okou-ai/okou/commit/7dfca6cb087e0337b3519a8ae72d1fefd271ff69))
+
+
+### Refactoring
+
+* remove chat thread archiving and muting feature switches ([#45680](https://github.com/okou-ai/okou/issues/45680)) ([4183b2f](https://github.com/okou-ai/okou/commit/4183b2f44fb472a38962c5ad3124939bb11b5cdc))
+* remove ChatThreadInlineRename feature switch ([#45667](https://github.com/okou-ai/okou/issues/45667)) ([9d43b51](https://github.com/okou-ai/okou/commit/9d43b517bffb15108c0c0a96e7df808f2dd58bfe))
+
+
+### Performance Improvements
+
+* **api:** reference default personal instructions instead of initializing at dispatch ([#45686](https://github.com/okou-ai/okou/issues/45686)) ([22b2e6b](https://github.com/okou-ai/okou/commit/22b2e6b28a4eda306d61ba6a35e17a1d9831d74d))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.43.3
+
 ## [8.820.1](https://github.com/okou-ai/okou/compare/core-v8.820.0...core-v8.820.1) (2026-11-06)
 
 

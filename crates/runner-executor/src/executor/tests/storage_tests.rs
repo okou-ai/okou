@@ -12,6 +12,7 @@ use guest_contracts::runtime_paths::STORAGE_MANIFEST_PATH;
 
 fn empty_manifest() -> Manifest {
     Manifest {
+        archive_readiness: None,
         storages: Vec::new(),
         artifacts: Vec::new(),
         cleanup_paths: Vec::new(),
@@ -22,6 +23,7 @@ fn empty_manifest() -> Manifest {
 fn storage_manifest() -> Manifest {
     Manifest {
         storages: vec![StorageEntry {
+            template_guidance: None,
             mount_path: "/data".into(),
             archive_url: Some("https://s3/archive.tar.gz".into()),
             cached: false,

@@ -1,5 +1,55 @@
 # Changelog
 
+## [0.22.0](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.53...runner-supervisor-v0.22.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+## [0.21.53](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.52...runner-supervisor-v0.21.53) (2026-11-07)
+
+## [0.21.52](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.51...runner-supervisor-v0.21.52) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-lifecycle:** share post-read memory observation gates ([#45838](https://github.com/okou-ai/okou/issues/45838)) ([21af541](https://github.com/okou-ai/okou/commit/21af541e251ff57ac93535d3e97e1103a3cf30bd))
+
+## [0.21.51](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.50...runner-supervisor-v0.21.51) (2026-11-07)
+
+
+### Performance Improvements
+
+* **runner:** reduce periodic heartbeats with immediate state reports ([#45825](https://github.com/okou-ai/okou/issues/45825)) ([8c64e5a](https://github.com/okou-ai/okou/commit/8c64e5aa6693a52afaa219b4a3ad51e368a17029))
+
+## [0.21.50](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.49...runner-supervisor-v0.21.50) (2026-11-07)
+
+
+### Refactoring
+
+* **runner-supervisor:** share active-run status observers ([#45801](https://github.com/okou-ai/okou/issues/45801)) ([fda4b80](https://github.com/okou-ai/okou/commit/fda4b80752e3dde0e266043b18fdbf7814fae3cb))
+
+## [0.21.49](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.48...runner-supervisor-v0.21.49) (2026-11-07)
+
+## [0.21.48](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.47...runner-supervisor-v0.21.48) (2026-11-06)
+
+## [0.21.47](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.46...runner-supervisor-v0.21.47) (2026-11-06)
+
+## [0.21.46](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.45...runner-supervisor-v0.21.46) (2026-11-06)
+
+
+### Bug Fixes
+
+* **runner:** confirm required status behind retained writes ([#45717](https://github.com/okou-ai/okou/issues/45717)) ([8df8a63](https://github.com/okou-ai/okou/commit/8df8a6389a31a5b60c792e9e6625c8ffc091c3d8))
+
+## [0.21.45](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.44...runner-supervisor-v0.21.45) (2026-11-06)
+
+
+### Refactoring
+
+* **rust:** share strict jsonl fixture parsing ([#45691](https://github.com/okou-ai/okou/issues/45691)) ([5ec5173](https://github.com/okou-ai/okou/commit/5ec5173b2fc232a0068877e4b36bde0b057f195e))
+
 ## [0.21.44](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.43...runner-supervisor-v0.21.44) (2026-11-06)
 
 ## [0.21.43](https://github.com/okou-ai/okou/compare/runner-supervisor-v0.21.42...runner-supervisor-v0.21.43) (2026-11-06)

@@ -59,6 +59,7 @@ final class AuthenticationHTTPFixture: Sendable {
   let host = "startup-" + UUID().uuidString.lowercased() + ".example.invalid"
   var publishableKey: String { "pk_test_" + Data((host + "$").utf8).base64EncodedString() }
 
+  @MainActor private var configuredClerk: Clerk?
   private let listener: NWListener
   private let connections = Mutex<[NWConnection]>([])
   private let tasks = Mutex<[Task<Void, Never>]>([])
@@ -108,18 +109,18 @@ final class AuthenticationHTTPFixture: Sendable {
       return snapshot
     }
     let clerk = Clerk.configure(publishableKey: publishableKey, options: options)
+    configuredClerk = clerk
     if resetPersistedIdentity { try await Clerk.clearAllKeychainItemsAndWait() }
     _ = try await clerk.auth.signInWithPassword(
       identifier: "startup@example.invalid", password: "synthetic-password")
     state.withLock { $0 = snapshot }
     try await clerk.refreshClient()
     try await clerk.refreshEnvironment()
-    if restoredAccessGroup != nil {
-      // SDK refreshes enqueue Keychain writes. Its test-only configure resets
-      // the previous SDK and cancels pending persistence, unlike a cold launch.
-      // Wait for the actual old-group session before testing its restoration.
+    do {
+      // Reconfiguration cancels the previous SDK's queued Keychain writes.
+      // Every restored-session fixture must wait for its actual commit first.
       let service = "ai.okou.tests." + host
-      let sessionID = snapshot.sessionID
+      let sessionID = snapshot.signedOut ? nil : snapshot.sessionID
       let persisted = XCTNSPredicateExpectation(
         predicate: NSPredicate { _, _ in
           let query: [String: Any] = [
@@ -139,7 +140,7 @@ final class AuthenticationHTTPFixture: Sendable {
       let result = await XCTWaiter.fulfillment(of: [persisted], timeout: 3)
       _ = try XCTUnwrap(
         result == .completed ? true : nil,
-        "The initial session must be committed to Keychain before SDK restoration")
+        "The initial client must be committed to Keychain before SDK restoration")
     }
     // Recreate the SDK with its real persisted session, as on a cold launch.
     let restoredOptions = Clerk.Options(
@@ -147,11 +148,10 @@ final class AuthenticationHTTPFixture: Sendable {
       keychainConfig: .init(service: "ai.okou.tests." + host, accessGroup: restoredAccessGroup),
       proxyUrl: url.absoluteString)
     let restored = Clerk.configure(publishableKey: publishableKey, options: restoredOptions)
-    if restoredAccessGroup != nil {
-      XCTAssertEqual(
-        restored.session?.id, snapshot.sessionID,
-        "The explicit shared group must restore the session written to the app's implicit group")
-    }
+    configuredClerk = restored
+    XCTAssertEqual(
+      restored.session?.id, snapshot.signedOut ? nil : snapshot.sessionID,
+      "The SDK must restore the committed session in its configured access group")
     return AuthenticationService(clerk: restored)
   }
 
@@ -233,6 +233,7 @@ final class AuthenticationHTTPFixture: Sendable {
     await memberships.finishObservations()
     await activation.finishObservations()
     await clientReads.finishObservations()
+    await closeIdentity()
     listener.cancel()
     connections.withLock {
       for connection in $0 { connection.cancel() }
@@ -245,6 +246,22 @@ final class AuthenticationHTTPFixture: Sendable {
     }
     for task in pending { task.cancel() }
     for task in pending { await task.value }
+  }
+
+  @MainActor
+  private func closeIdentity() async {
+    guard let clerk = configuredClerk else { return }
+    configuredClerk = nil
+    // End SDK-owned session work while its HTTP provider can still answer it.
+    // Clear only this fixture's currently configured identity, after queued writes drain.
+    guard Clerk.shared === clerk else { return }
+    identityOverride.withLock { $0 = nil }
+    do {
+      if clerk.session != nil { try await clerk.auth.signOut() }
+      try await Clerk.clearAllKeychainItemsAndWait()
+    } catch {
+      XCTFail("Cannot close the fixture's Clerk session: \(error)")
+    }
   }
 
   func response(_ request: URLRequest) async throws -> ChatHTTPResponse {
@@ -373,6 +390,7 @@ actor AuthenticationRequestGate {
   private var observers: [UUID: AsyncStream<Int>.Continuation] = [:]
 
   func hold() { open = false }
+  func count() -> Int { requests }
 
   func observeRequests() -> (id: UUID, arrivals: AsyncStream<Int>) {
     let id = UUID()

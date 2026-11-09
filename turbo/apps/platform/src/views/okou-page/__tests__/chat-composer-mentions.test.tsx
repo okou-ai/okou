@@ -224,7 +224,6 @@ test("Keep archived chats in @ mention suggestions when archiving is enabled", a
     context,
     path: `/chats/${current.id}`,
     ...workspace.pageOptions,
-    featureSwitches: { [FeatureSwitchKey.ChatThreadArchiving]: true },
   });
 
   await waitFor(() => {
@@ -278,10 +277,18 @@ async function openAgentMentionWorkspace(newChat = false, singleAgent = false) {
     ]),
   });
   installAgents(agents);
+  // My Okou always chats with the default agent, at `/` for a new chat.
+  if (singleAgent) {
+    context.mocks.data.onboardingStatus({ defaultAgentId: AGENT_ID });
+  }
 
   await setupPage({
     context,
-    path: newChat ? `/agents/${AGENT_ID}/chat` : `/chats/${current.id}`,
+    path: !newChat
+      ? `/chats/${current.id}`
+      : singleAgent
+        ? "/"
+        : `/agents/${AGENT_ID}/chat?compose=1`,
     ...workspace.pageOptions,
     featureSwitches: {
       [FeatureSwitchKey.SingleAgent]: singleAgent,

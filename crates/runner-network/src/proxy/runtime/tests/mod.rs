@@ -177,9 +177,14 @@ async fn pidfd_signal_rejects_replacement_process_generation() {
         ..current
     };
 
-    signal_stable_process(&runtime, Some(&launch), stale)
-        .await
-        .unwrap();
+    signal_stable_process(
+        &runtime,
+        Some(&launch),
+        stale,
+        Instant::now() + PROCESS_EXIT_TIMEOUT,
+    )
+    .await
+    .unwrap();
 
     replacement.assert_responds();
 }
@@ -193,9 +198,14 @@ async fn pidfd_signal_rechecks_runtime_marker() {
     let mut replacement = ProbeChild::spawn(None);
     let current = process_identity(replacement.pid()).await;
 
-    signal_stable_process(&runtime, Some(&launch), current)
-        .await
-        .unwrap();
+    signal_stable_process(
+        &runtime,
+        Some(&launch),
+        current,
+        Instant::now() + PROCESS_EXIT_TIMEOUT,
+    )
+    .await
+    .unwrap();
 
     replacement.assert_responds();
 }
@@ -236,6 +246,105 @@ async fn close_launch_accepts_environment_error_after_process_becomes_zombie() {
 
     assert!(!launch.exists());
     drop(child);
+}
+
+#[tokio::test]
+async fn close_launch_accepts_environment_error_while_process_finishes_exit() {
+    let root = tempfile::tempdir().unwrap();
+    let runtime = test_runtime(root.path()).await;
+    let launch = root.path().join("launch-exiting-environment");
+    std::fs::create_dir(&launch).unwrap();
+    let mut child = ProbeChild::spawn(Some((CANONICAL_RUNTIME_MARKER_ENV, &launch)));
+    let pid = child.pid();
+    let gate = gate_live_environment_error(&runtime, pid);
+    let close = runtime.close_launch_path(launch.clone());
+    tokio::pin!(close);
+    tokio::select! {
+        result = &mut close => panic!("cleanup completed before the live recheck gate: {result:?}"),
+        entered = tokio::time::timeout(Duration::from_secs(2), gate.entered.notified()) => entered.unwrap(),
+    }
+
+    // Both stat observations found this real child live. Let it finish only
+    // after that snapshot, reproducing the pre-zombie permission-error window.
+    child.assert_responds();
+    assert!(launch.exists());
+    child.child.0.kill().unwrap();
+    gate.release.add_permits(1);
+
+    close.await.unwrap();
+
+    assert!(!launch.exists());
+    assert!(child.child.0.try_wait().unwrap().is_some());
+}
+
+fn gate_live_environment_error(
+    runtime: &MitmdumpRuntime,
+    pid: u32,
+) -> crate::test_fixtures::ReapGate {
+    runtime.set_test_environment_read_error(pid, || {
+        std::io::Error::from_raw_os_error(nix::libc::EACCES)
+    });
+    let gate = crate::test_fixtures::ReapGate::new();
+    runtime.set_test_environment_error_recheck_gate(pid, gate.clone());
+    gate
+}
+
+#[tokio::test]
+async fn close_launch_does_not_restart_exit_budget_after_environment_error() {
+    let root = tempfile::tempdir().unwrap();
+    let runtime = test_runtime(root.path()).await;
+    let launch = root.path().join("launch-expired-environment");
+    std::fs::create_dir(&launch).unwrap();
+    let mut child = ProbeChild::spawn(Some((CANONICAL_RUNTIME_MARKER_ENV, &launch)));
+    let gate = gate_live_environment_error(&runtime, child.pid());
+    let close = runtime.close_launch_path(launch.clone());
+    tokio::pin!(close);
+    tokio::select! {
+        result = &mut close => panic!("cleanup completed before the live recheck gate: {result:?}"),
+        entered = tokio::time::timeout(Duration::from_secs(2), gate.entered.notified()) => entered.unwrap(),
+    }
+
+    // Spend the existing snapshot budget before the exceptional wait starts.
+    // A fresh allowance in that wait would advance paused time a second time.
+    tokio::time::pause();
+    tokio::time::advance(PROCESS_EXIT_TIMEOUT).await;
+    let expired_at = Instant::now();
+    gate.release.add_permits(1);
+
+    let error = close.await.unwrap_err().to_string();
+
+    assert_eq!(Instant::now(), expired_at);
+    assert!(error.contains("Permission denied"));
+    assert!(error.contains("mitmdump exit budget elapsed"));
+    assert!(launch.exists());
+    child.assert_responds();
+}
+
+#[tokio::test]
+async fn cancelled_environment_exit_wait_preserves_launch_and_live_process() {
+    let root = tempfile::tempdir().unwrap();
+    let runtime = test_runtime(root.path()).await;
+    let launch = root.path().join("launch-cancelled-environment");
+    std::fs::create_dir(&launch).unwrap();
+    let mut child = ProbeChild::spawn(Some((CANONICAL_RUNTIME_MARKER_ENV, &launch)));
+    let gate = gate_live_environment_error(&runtime, child.pid());
+    {
+        let close = runtime.close_launch_path(launch.clone());
+        tokio::pin!(close);
+        tokio::select! {
+            result = &mut close => panic!("cleanup completed before the live recheck gate: {result:?}"),
+            entered = tokio::time::timeout(Duration::from_secs(2), gate.entered.notified()) => entered.unwrap(),
+        }
+        gate.release.add_permits(1);
+        // After the gate, the only suspension is the real pidfd exit wait.
+        assert!(futures_util::poll!(close.as_mut()).is_pending());
+    }
+
+    assert!(launch.exists());
+    child.assert_responds();
+    runtime.close_launch_path(launch.clone()).await.unwrap();
+    assert!(!launch.exists());
+    assert!(child.child.0.try_wait().unwrap().is_some());
 }
 
 #[tokio::test]

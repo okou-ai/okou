@@ -48,8 +48,6 @@ const ONBOARDING_GUARDED_PATHS = [
   ROUTES.works,
   "/team",
   "/team/:id",
-  "/talk/:id",
-  "/talk/:id/ideas",
   "/firewall-allow/:id",
   "/activity/:id",
   "/activity/:id/context",

@@ -1,40 +1,19 @@
 use std::os::unix::fs::symlink;
-use std::path::Path;
 use std::time::Duration;
 
-use nbd_cow::KeptCow;
 use nbd_cow::pool::DevicePoolHandle;
 
 use crate::api::ApiError;
 use crate::paths::{SandboxPaths, SnapshotOutputPaths, SockPaths};
-use crate::snapshot::cow::{snapshot_attempt_cow_file, snapshot_attempt_home_image_file};
+use crate::snapshot::cow::snapshot_attempt_home_image_file;
 use crate::snapshot::publish::SnapshotPublishAttempt;
-use crate::snapshot::tests::write_snapshot_artifacts;
+use crate::snapshot::tests::{write_kept_cow_for_test, write_snapshot_artifacts};
 
 use super::cleanup::{AttemptHomeImage, SnapshotCleanupPresence, SnapshotCleanupReport};
 
 use super::*;
 
 mod early_setup;
-
-async fn write_kept_cow_for_test(work: &Path, token: &str) -> KeptCow {
-    let cow_file = snapshot_attempt_cow_file(work, token);
-    let bitmap_file = cow_file.with_file_name("cow.img.bitmap");
-    let attempt_dir = cow_file.parent().expect("attempt dir");
-    tokio::fs::create_dir_all(attempt_dir)
-        .await
-        .expect("create attempt dir");
-    tokio::fs::write(&cow_file, b"cow")
-        .await
-        .expect("write cow");
-    tokio::fs::write(&bitmap_file, b"bitmap")
-        .await
-        .expect("write bitmap");
-    KeptCow {
-        cow_file,
-        bitmap_file,
-    }
-}
 
 #[tokio::test]
 async fn snapshot_cleanup_resources_presence_tracks_all_handoff_resources() {

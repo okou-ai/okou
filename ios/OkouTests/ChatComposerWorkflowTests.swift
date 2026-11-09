@@ -112,24 +112,25 @@ final class ChatComposerWorkflowTests: XCTestCase {
     try await focusMentionInput(input)
     try await type("First paragraph\n/release", in: input, conversation: conversation)
     let workflows = conversation.composer.editor.workflows
-    try await waitForBusinessResult { workflows.matches.contains { $0.id == "release" } }
+    // Keyboard candidates belong to the native table, not business Observation state.
+    _ = try await workflowCell("release", in: host.view)
     input.selectedRange = NSRange(location: 0, length: 5)
     try await waitForBusinessResult { workflows.query == nil }
     XCTAssertFalse(workflows.handleKey("\r", in: input))
     XCTAssertEqual(conversation.draft, "First paragraph\n/release")
     input.selectedRange = NSRange(location: input.text.utf16.count, length: 0)
-    try await waitForBusinessResult { workflows.matches.contains { $0.id == "release" } }
+    _ = try await workflowCell("release", in: host.view)
     XCTAssertTrue(workflows.handleKey(UIKeyCommand.inputEscape, in: input))
     XCTAssertFalse(workflows.handleKey("\r", in: input))
     XCTAssertEqual(conversation.draft, "First paragraph\n/release")
     XCTAssertTrue(input.isFirstResponder)
     try await type("/r12", in: input, conversation: conversation)
-    try await waitForBusinessResult { workflows.matches.contains { $0.id == "12" } }
+    _ = try await workflowCell("12", in: host.view)
     let numeric = try XCTUnwrap(workflows.matches.first { $0.id == "12" })
     workflows.insert(numeric)
     try await waitForBusinessResult { conversation.draft == "/report-12 " }
     try await type("/r14", in: input, conversation: conversation)
-    try await waitForBusinessResult { !workflows.isLoading }
+    _ = try await workflows.resources.store.get(workflows.resources.matches).value
     input.insertText("\n")
     XCTAssertEqual(conversation.draft, "/r14\n")
   }
@@ -161,6 +162,10 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
     try await type("/rel", in: input, conversation: conversation)
     _ = try await workflowCell("release", in: host.view)
+    // IME confirmation settles before UIKit exposes suggestion key commands again.
+    try await eventually {
+      input.keyCommands?.contains { $0.input == UIKeyCommand.inputDownArrow } == true
+    }
     let down = try XCTUnwrap(input.keyCommands?.first { $0.input == UIKeyCommand.inputDownArrow })
     _ = input.perform(down.action, with: down)
     let confirm = try XCTUnwrap(input.keyCommands?.first { $0.input == "\r" })
@@ -359,7 +364,128 @@ final class ChatComposerWorkflowTests: XCTestCase {
     let body = try XCTUnwrap(fixture.state.value.withLock { $0.messages.first })
     let sent = try JSONDecoder().decode(AttachmentFlowFixture.Message.self, from: body)
     XCTAssertEqual(sent.userMessage.parts.map(\.type), ["text"])
-    XCTAssertEqual(sent.userMessage.parts.first?.text, "Summarize /morning-brief ")
+    XCTAssertEqual(sent.userMessage.parts.first?.text, "Summarize /morning-brief")
+  }
+
+  func testCandidateGraphSharesHTTPAcrossQueriesAndRetriesOriginalFailure() async throws {
+    let gate = WorkflowGate()
+    let started = expectation(description: "Candidate HTTP read started")
+    let attempts = WorkflowCounter()
+    let fixture = AttachmentFlowFixture(workflows: { _ in
+      let attempt = attempts.value.withLock {
+        $0 += 1
+        return $0
+      }
+      if attempt == 1 {
+        started.fulfill()
+        await gate.wait()
+      }
+      if attempt == 2 {
+        return ChatHTTPResponse(status: 503, body: #"{"error":{"message":"Try again"}}"#)
+      }
+      return ChatHTTPResponse(body: workflowResponse)
+    })
+    let source = ComposerWorkflowSource(
+      client: fixture.http.client, storage: nil, didFail: { _ in })
+    let resources = ComposerWorkflowResources()
+    defer {
+      resources.dismiss()
+      source.close()
+      gate.open()
+    }
+    resources.update(query: "rel", recent: [])
+    resources.reload(source: source, agentID: AttachmentFlowFixture.agentID)
+    let first = try resources.store.get(resources.matches)
+    addTeardownBlock { @MainActor in
+      resources.dismiss()
+      gate.open()
+      _ = await first.result
+    }
+    await fulfillment(of: [started], timeout: 2)
+    resources.update(query: "morning", recent: [])
+    let latest = try resources.store.get(resources.matches)
+    gate.open()
+    let matches = try await latest.value
+    XCTAssertEqual(matches.values.map(\.id), ["morning"])
+    XCTAssertEqual(attempts.value.withLock { $0 }, 1)
+    resources.reload(source: source, agentID: AttachmentFlowFixture.agentID)
+    do {
+      _ = try await resources.store.get(resources.matches).value
+      XCTFail("The candidate resource must preserve its HTTP failure")
+    } catch let error as APIClientError {
+      XCTAssertEqual(error.statusCode, 503)
+    }
+    resources.reload(source: source, agentID: AttachmentFlowFixture.agentID)
+    let recovered = try await resources.store.get(resources.matches).value
+    XCTAssertEqual(recovered.values.map(\.id), ["morning"])
+  }
+
+  func testCandidateReplacementAndDismissalCancelTheirOriginalHTTP() async throws {
+    let oldGate = WorkflowGate()
+    let dismissedGate = WorkflowGate()
+    let pendingAgentID = "81000000-0000-4000-8000-000000000001"
+    let started = expectation(description: "Original candidate request reached HTTP")
+    let dismissedStarted = expectation(description: "Dismissed candidate request reached HTTP")
+    let pendingCount = WorkflowCounter()
+    let cancelled = expectation(description: "Original HTTP observed cancellation")
+    cancelled.expectedFulfillmentCount = 2
+    let fixture = AttachmentFlowFixture(workflows: { request in
+      let agent = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems?
+        .first { $0.name == "agentId" }?.value
+      if agent == pendingAgentID {
+        let attempt = pendingCount.value.withLock {
+          $0 += 1
+          return $0
+        }
+        if attempt == 1 {
+          started.fulfill()
+          await oldGate.wait()
+        } else {
+          dismissedStarted.fulfill()
+          await dismissedGate.wait()
+        }
+        XCTAssertTrue(Task.isCancelled)
+        cancelled.fulfill()
+      }
+      return ChatHTTPResponse(body: workflowResponse)
+    })
+    let source = ComposerWorkflowSource(
+      client: fixture.http.client, storage: nil, didFail: { _ in })
+    let resources = ComposerWorkflowResources()
+    defer {
+      resources.dismiss()
+      source.close()
+      oldGate.open()
+      dismissedGate.open()
+    }
+    resources.update(query: "rel", recent: [])
+    resources.reload(source: source, agentID: pendingAgentID)
+    let old = try resources.store.get(resources.matches)
+    addTeardownBlock { @MainActor in
+      resources.dismiss()
+      oldGate.open()
+      dismissedGate.open()
+      _ = await old.result
+    }
+    await fulfillment(of: [started], timeout: 2)
+    // A current Agent can resolve independently of its retired candidate request.
+    resources.reload(source: source, agentID: AttachmentFlowFixture.agentID)
+    let fresh = try await resources.store.get(resources.matches).value
+    XCTAssertEqual(fresh.values.first?.id, "rel")
+    resources.reload(source: source, agentID: pendingAgentID)
+    let dismissed = try resources.store.get(resources.matches)
+    addTeardownBlock { @MainActor in
+      resources.dismiss()
+      oldGate.open()
+      dismissedGate.open()
+      _ = await dismissed.result
+    }
+    await fulfillment(of: [dismissedStarted], timeout: 2)
+    resources.dismiss()
+    await fulfillment(of: [cancelled], timeout: 2)
+    XCTAssertFalse(resources.owns(fresh))
+    let empty = try await resources.store.get(resources.matches).value
+    XCTAssertTrue(empty.values.isEmpty)
   }
 
   private func workflowFixture(failSend: Bool = false) -> AttachmentFlowFixture {
@@ -443,25 +569,15 @@ private let workflowResponse =
 
 private final class WorkflowCounter: Sendable { let value = Mutex(0) }
 private final class WorkflowGate: Sendable {
-  private struct State {
-    var open = false
-    var waiters: [CheckedContinuation<Void, Never>] = []
+  private let stream: AsyncStream<Void>
+  private let continuation: AsyncStream<Void>.Continuation
+
+  init() {
+    let pair = AsyncStream<Void>.makeStream()
+    stream = pair.stream
+    continuation = pair.continuation
   }
-  private let state = Mutex(State())
-  func wait() async {
-    await withCheckedContinuation { continuation in
-      state.withLock {
-        if $0.open { continuation.resume() } else { $0.waiters.append(continuation) }
-      }
-    }
-  }
-  func open() {
-    let waiters = state.withLock { value in
-      value.open = true
-      let waiters = value.waiters
-      value.waiters = []
-      return waiters
-    }
-    for waiter in waiters { waiter.resume() }
-  }
+
+  func wait() async { for await _ in stream { return } }
+  func open() { continuation.finish() }
 }

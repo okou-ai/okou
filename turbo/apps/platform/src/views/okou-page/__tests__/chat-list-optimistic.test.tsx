@@ -132,7 +132,7 @@ async function openUnconfirmedConversation() {
 
   await setupPage({
     context,
-    path: `/agents/${CHAT_LIST_AGENT_ID}/chat`,
+    path: `/agents/${CHAT_LIST_AGENT_ID}/chat?compose=1`,
     auth,
     cachedChatThreadEvents: cachedChatListEvents(9, []),
   });

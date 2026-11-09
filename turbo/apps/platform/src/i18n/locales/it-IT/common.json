@@ -406,13 +406,13 @@
     "sidebar": {
       "ariaLabel": "Barra laterale",
       "chat": "Chat",
-      "collapse": "Comprimi la barra laterale",
+      "feedWaiting_one": "{{count}} in attesa",
+      "feedWaiting_many": "{{count}} in attesa",
+      "feedWaiting_other": "{{count}} in attesa",
       "hideChatList": "Nascondi elenco chat",
-      "manage": "Gestisci",
       "mobile": {
         "invite": "Invita",
-        "openAutomations": "Apri le automazioni su mobile",
-        "openMenu": "Apri il menu"
+        "openAutomations": "Apri le automazioni su mobile"
       },
       "navigation": {
         "agents": "Agenti",
@@ -478,8 +478,10 @@
       "nextImage": "Artefatto dell'immagine successiva",
       "openNewTab": "Apri in una nuova scheda",
       "openSplitView": "Apri in vista divisa",
+      "partiallyUnavailable": "Alcune azioni non sono disponibili",
       "previousImage": "Artefatto dell'immagine precedente",
       "resetZoom": "Reimposta lo zoom",
+      "retry": "Riprova",
       "share": "Condividi",
       "shareArtifact": "Condividi artefatto",
       "zoomIn": "Ingrandisci",
@@ -1015,8 +1017,11 @@
       "unavailableTitle": "Collegamento di autorizzazione non disponibile"
     },
     "computerUse": {
+      "actionFailed": "Impossibile autorizzare questo computer. Aggiorna la chat per riprovare.",
       "authorize": "Autorizza",
       "authorized": "Autorizzato",
+      "authorizedDescription": "Accesso al computer abilitato per le prossime esecuzioni in questa chat.",
+      "cardDescription": "Scegli un computer per questa chat. Questo disconnette il browser cloud.",
       "checkingCompatibility": "Verifica compatibilità",
       "description": "Scegli un computer online per {{assistantName}} da utilizzare in {{source}}.",
       "downloadMac": "Scarica per macOS",
@@ -1025,6 +1030,7 @@
       "macRequirement": "Richiede un Mac Apple Silicon con macOS 14 o successivo. I Mac Intel non sono supportati.",
       "noHostsDescription": "Apri {{desktopApplicationName}} sul tuo Mac per connetterlo.",
       "noHostsTitle": "Nessun computer online",
+      "selectComputer": "Seleziona un computer",
       "sources": {
         "chat": "questo thread di chat",
         "slack": "questo Slack thread",
@@ -1455,6 +1461,8 @@
   },
   "browserViewer": {
     "address": "Indirizzo",
+    "addressOpening": "Una pagina è ancora in apertura. Riprova tra poco.",
+    "addressPreparing": "Il browser non è ancora pronto. Riprova tra poco.",
     "allTabs": "Tutte le schede",
     "automatic": "Automatica",
     "back": "Indietro",
@@ -1495,11 +1503,11 @@
     "unavailable": "Vista del browser non disponibile",
     "unsupportedCapability": "Il browser non supporta questa operazione.",
     "untitledTab": "Scheda senza titolo",
+    "updatingView": "Aggiornamento della vista…",
     "windowSize": "Dimensioni finestra"
   },
   "chat": {
     "actions": {
-      "authorize": "Autorizza",
       "cancel": "Annulla",
       "confirm": "Conferma",
       "continue": "Continua",
@@ -1668,7 +1676,7 @@
     },
     "attachments": {
       "attach": "Allega",
-      "fileTooLarge": "{{filename}} supera il limite di 1 GB",
+      "fileTooLarge": "{{filename}} supera il limite di 512 MB",
       "imageUnavailable": "[Immagine non disponibile: {{filename}}]",
       "loadingFile": "Caricamento in corso {{filename}}",
       "previewFile": "Anteprima {{filename}}",
@@ -1881,6 +1889,102 @@
       "uncertain": "Controlla il browser",
       "uncertainDescription": "Il browser potrebbe aver ricevuto le informazioni. Chiedi all’agente di verificare il risultato."
     },
+    "capabilityHome": {
+      "back": "Tutte le funzionalità",
+      "capabilities": "Scopri le funzionalità di Okou",
+      "create": {
+        "description": "Dalla prima idea a un risultato pronto da condividere.",
+        "documentFormats": "Doc · PDF · Foglio",
+        "title": "Crea"
+      },
+      "explore": "Esplora",
+      "research": {
+        "items": {
+          "ads": "Esplorare creatività pubblicitarie",
+          "products": "Studiare prodotti",
+          "searchOpportunities": "Trovare opportunità di ricerca",
+          "tools": "Confrontare strumenti",
+          "topic": "Approfondire un argomento",
+          "traffic": "Confrontare il traffico web"
+        },
+        "prompt": "{{task}}. Chiarisci cosa voglio sapere, confronta le prove e riassumi i risultati principali con le fonti.",
+        "title": "Ricerca"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Programmi di affiliazione",
+          "creators": "Partnership con creator",
+          "customers": "Potenziali clienti",
+          "decisionMakers": "I decisori",
+          "podcasts": "Podcast da contattare",
+          "speakers": "Relatori per eventi"
+        },
+        "prompt": "Aiutami a trovare: {{task}}. Chiedimi prima obiettivo, criteri e ambito. Presenta una selezione con dettagli pertinenti e link alle fonti.",
+        "title": "Trova persone"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Collega i tuoi strumenti e passaggi.",
+          "title": "Flussi di lavoro avanzati"
+        },
+        "description": "Poche impostazioni. Molto lavoro in meno.",
+        "scheduled": {
+          "description": "Esegui al momento giusto.",
+          "items": {
+            "daily": "Routine quotidiana",
+            "once": "Promemoria singolo",
+            "weekly": "Riepilogo settimanale"
+          },
+          "prompt": "Aiutami a configurare: {{task}}. Chiedi cosa voglio fare, quando eseguirlo e quale fuso orario usare.",
+          "title": "Attività pianificate"
+        },
+        "suggestions": "Parti da un suggerimento e adattalo alle tue esigenze.",
+        "triggers": {
+          "description": "Avvia quando si verifica un evento.",
+          "eventPrompt": "Aiutami a impostare {{task}} con {{source}}. Flusso: {{event}} → {{action}} → {{result}}. Chiedi quale fonte, quali filtri e dove salvare i risultati. Prepara una bozza del workflow e conferma la configurazione prima di attivarlo.",
+          "items": {
+            "calendar": {
+              "action": "Studiare gli ospiti",
+              "event": "Evento cambiato",
+              "result": "Preparare sintesi",
+              "title": "Preparare riunioni"
+            },
+            "email": {
+              "action": "Estrarre richieste",
+              "event": "E-mail preferita",
+              "result": "Preparare risposta",
+              "title": "Risposte alle e-mail"
+            },
+            "news": {
+              "action": "Filtrare argomenti",
+              "event": "Parola trovata",
+              "result": "Riassumere notizie",
+              "title": "Rassegna stampa"
+            },
+            "slack": {
+              "action": "Estrarre azioni",
+              "event": "Menzione",
+              "result": "Elenco attività",
+              "title": "Attività da Slack"
+            },
+            "social": {
+              "action": "Filtrare interessi",
+              "event": "Nuovo post",
+              "result": "Riassumere post",
+              "title": "Monitoraggio X"
+            },
+            "webhook": {
+              "action": "Studiare l’azienda",
+              "event": "Modulo inviato",
+              "result": "Preparare seguito",
+              "title": "Seguire i contatti"
+            }
+          },
+          "monitorPrompt": "Aiutami a impostare {{task}} con {{source}}. Flusso: {{event}} → {{action}} → {{result}}. Chiedi quali feed, argomenti o account seguire, con quale frequenza e dove salvare il riepilogo. Controlla periodicamente, ignora gli elementi già elaborati e conferma prima di attivarlo.",
+          "title": "Trigger"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Visualizza dettagli"
     },
@@ -1950,7 +2054,6 @@
     },
     "computerUse": {
       "authorization": "Autorizzazione di Computer Use",
-      "authorizationDescription": "Seleziona un host desktop per le esecuzioni future in questo thread.",
       "checkingCompatibility": "Verifica compatibilità",
       "cloudBrowser": "Browser cloud",
       "connectMyComputer": "Collega il mio computer",
@@ -2038,7 +2141,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Non è stato possibile completare questa esecuzione",
-      "loadMessages": "Impossibile caricare i messaggi",
       "noModelProviderAction": "Gestisci abbonamenti",
       "noModelProviderPrefix": "Nessun provider di modelli è disponibile per questa esecuzione. Collega un abbonamento personale.",
       "providerIncompatibleAction": "Inizia una nuova sessione",
@@ -2117,6 +2219,11 @@
       "sourcePartsHeading_one": "{{count}} parte citata da {{description}}",
       "sourcePartsHeading_many": "{{count}} parti citate da {{description}}",
       "sourcePartsHeading_other": "{{count}} parti citate da {{description}}"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Avvia una nuova chat con questa selezione",
+      "sent": "Nuova chat creata"
     },
     "forward": {
       "action": "Inoltra",
@@ -2300,6 +2407,7 @@
       "unavailableSsh": "host SSH non disponibile"
     },
     "resources": {
+      "close": "Chiudi artefatti e chat",
       "collapse": "Comprimi",
       "copyLink": "Copia link",
       "emptyDescription": "File, siti web e altri artefatti creati in questa chat compariranno qui.",
@@ -2384,7 +2492,6 @@
       "number": "numero"
     },
     "sidebar": {
-      "allChats": "Tutte le chat",
       "archive": "Archivia chat",
       "archived": "Archiviate",
       "chatsWith": "Chatta con {{agentName}}",
@@ -2403,6 +2510,7 @@
       "mute": "Silenzia chat",
       "muted": "Silenziata",
       "newChatWith": "Nuova chat con {{agentName}}",
+      "newMenu": "Nuovo",
       "noArchived": "Nessuna chat archiviata",
       "noMuted": "Nessuna chat silenziata",
       "noUnread": "Nessuna chat non letta",
@@ -2648,12 +2756,9 @@
       "ideasLabel": "Idee per iniziare",
       "label": "Attività per iniziare",
       "more": "Altro",
-      "moreTemplates": "Altri modelli",
       "presentationTemplates": "Modelli di presentazione",
       "removeTask": "Rimuovi {{task}}",
       "shelf": {
-        "browseStyles": "Sfoglia tutti gli stili",
-        "browseTemplates": "Sfoglia tutti i modelli",
         "document": "Modelli di documenti",
         "image": "Stili immagine",
         "nextPage": "Pagina successiva",
@@ -2669,6 +2774,7 @@
         "website": "Sito web",
         "workflow": "Workflow"
       },
+      "viewAll": "Mostra tutto",
       "visualization": {
         "allCharts": "Tutti i grafici",
         "back": "Back to visualization options",
@@ -4081,7 +4187,6 @@
     "deniedTitle": "Accesso a Shell negato",
     "deny": "Rifiuta",
     "description": "L’agente richiede il permesso di utilizzare Shell sul tuo computer.",
-    "details": "Dettagli",
     "duration": "L’accesso dura 1 ora dopo l’approvazione",
     "expired": "Autorizzazione scaduta",
     "expiredTitle": "Accesso a Shell scaduto",
@@ -4089,7 +4194,6 @@
     "pendingSummary": "{{computer}} · 1 ora",
     "reasonTitle": "Motivo dell’accesso",
     "requestExpired": "Richiesta scaduta",
-    "review": "Verifica accesso",
     "revoke": "Revoca",
     "revoked": "Accesso a Shell revocato",
     "scope": "Un’ora di accesso per questa chat",
@@ -4303,7 +4407,6 @@
     "instructions": "Istruzioni",
     "loadError": "Impossibile caricare le istruzioni. Riprova.",
     "markdown": "Scrivi in testo semplice o Markdown",
-    "newChat": "Nuova chat",
     "placeholder": "Spiega a Okou come preferisci lavorare…",
     "reload": "Ricarica le istruzioni salvate",
     "retry": "Riprova",
@@ -5057,6 +5160,7 @@
     "moveTitle": "Move chat",
     "moveTo": "Sposta in {{name}}",
     "name": "Project name",
+    "new": "New Project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
@@ -5468,6 +5572,7 @@
         "credits": "Crediti",
         "fiveHourLimit": "Limite di 5 ore",
         "label": "Utilizzo degli abbonamenti",
+        "limitReached": "Limite raggiunto",
         "lowUsage": "Utilizzo degli abbonamenti: meno del 20% rimanente",
         "resetTimeUnavailable": "Reimposta ora non disponibile",
         "usage": "{{provider}} utilizzo",
@@ -6432,6 +6537,7 @@
     "loading": "Caricamento delle notifiche",
     "loadMore": "Mostra precedenti",
     "nextPage": "Pagina successiva",
+    "pageNavigation": "Pagine di questo messaggio",
     "pageOf": "Pagina {{current}} di {{total}}",
     "previousPage": "Pagina precedente",
     "readAll": "Segna tutte come lette",

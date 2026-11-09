@@ -14,11 +14,10 @@ import {
   PI_RESOURCE_EXTRACTOR_VERSION,
   piResourceIndexFits,
   piResourceIndexHash,
-  piResourceVersionIndexSchema,
   RESOURCE_ARCHIVE_MAX_BYTES,
 } from "../../lib/pi-resource-index";
 import { now, nowDate } from "../../lib/time";
-import { db$, writeDb$ } from "../external/db";
+import { writeDb$ } from "../external/db";
 import {
   downloadS3BufferWithMaxBytes$,
   S3ObjectSizeLimitError,
@@ -28,113 +27,6 @@ import { safeSync, settle, settleIncludingAbort } from "../utils";
 const tracer = trace.getTracer("pi-resource-index");
 const WORK_BATCH_SIZE = 32;
 const WORK_LEASE_MS = 5 * 60 * 1000;
-
-export function piResourceIndexQueueValues(
-  versionIds: readonly string[],
-  archiveSizes: ReadonlyMap<string, number>,
-) {
-  return versionIds.map((storageVersionId) => {
-    const sourceArchiveSize = archiveSizes.get(storageVersionId);
-    if (sourceArchiveSize === undefined) {
-      throw new Error("Cannot index an unregistered Storage version");
-    }
-    return {
-      storageVersionId,
-      extractorVersion: PI_RESOURCE_EXTRACTOR_VERSION,
-      sourceArchiveSize,
-    };
-  });
-}
-
-export const enqueuePiResourceVersionIndexes$ = command(
-  async (
-    { get, set },
-    versionIds: readonly string[],
-    signal: AbortSignal,
-  ): Promise<void> => {
-    const unique = [...new Set(versionIds)].sort();
-    if (unique.length === 0) {
-      return;
-    }
-    const versions = await get(db$)
-      .select({
-        id: storageVersions.id,
-        archiveSize: storageVersions.archiveSize,
-      })
-      .from(storageVersions)
-      .where(inArray(storageVersions.id, unique));
-    signal.throwIfAborted();
-    const sizes = new Map(
-      versions.map((version) => {
-        return [version.id, version.archiveSize] as const;
-      }),
-    );
-    const values = piResourceIndexQueueValues(unique, sizes);
-    const db = set(writeDb$);
-    const inserted = await db
-      .insert(piResourceVersionIndexes)
-      .values(values)
-      .onConflictDoNothing()
-      .returning({
-        storageVersionId: piResourceVersionIndexes.storageVersionId,
-      });
-    signal.throwIfAborted();
-    const insertedVersionIds = new Set(
-      inserted.map((row) => {
-        return row.storageVersionId;
-      }),
-    );
-    // A first insert establishes indexing work but is not an encoding repair.
-    // Only a pre-existing row whose immutable archive encoding changed is reset.
-    // Insert-first also serializes concurrent enqueues without relying on
-    // PostgreSQL's internal tuple metadata.
-    for (const value of values) {
-      if (insertedVersionIds.has(value.storageVersionId)) {
-        continue;
-      }
-      await db
-        .update(piResourceVersionIndexes)
-        .set(piResourceIndexRepairValues(value.sourceArchiveSize, nowDate()))
-        .where(
-          piResourceIndexRepairCondition(
-            value.storageVersionId,
-            value.sourceArchiveSize,
-          ),
-        );
-    }
-    signal.throwIfAborted();
-  },
-);
-
-export function piResourceIndexRepairValues(
-  sourceArchiveSize: number,
-  enqueuedAt: Date,
-) {
-  return {
-    status: "pending" as const,
-    projection: null,
-    projectionHash: null,
-    sourceArchiveSize,
-    leaseId: null,
-    leaseExpiresAt: null,
-    availableAt: enqueuedAt,
-    attemptCount: 0,
-    updatedAt: enqueuedAt,
-  };
-}
-export function piResourceIndexRepairCondition(
-  storageVersionId: string,
-  sourceArchiveSize: number,
-) {
-  return and(
-    eq(piResourceVersionIndexes.storageVersionId, storageVersionId),
-    eq(
-      piResourceVersionIndexes.extractorVersion,
-      PI_RESOURCE_EXTRACTOR_VERSION,
-    ),
-    sql`${piResourceVersionIndexes.sourceArchiveSize} IS DISTINCT FROM ${sourceArchiveSize}`,
-  );
-}
 
 export function piResourceProjectionValues(
   projection: PiResourceVersionIndex | undefined,
@@ -154,85 +46,6 @@ export function piResourceProjectionValues(
     updatedAt,
   };
 }
-
-interface PiResourceIndexReadRow {
-  readonly versionId: string;
-  readonly status: typeof piResourceVersionIndexes.$inferSelect.status;
-  readonly storageId: string;
-  readonly archiveSize: number | null;
-  readonly projection: typeof piResourceVersionIndexes.$inferSelect.projection;
-  readonly projectionHash: string | null;
-}
-
-export function piResourceVersionIndexesResult(
-  versionIds: readonly string[],
-  rows: readonly PiResourceIndexReadRow[],
-) {
-  const unique = [...new Set(versionIds)];
-  const indexes = new Map<
-    string,
-    {
-      readonly storageId: string;
-      readonly archiveSize: number;
-      readonly projection: PiResourceVersionIndex;
-    }
-  >();
-  const misses = { pending: 0, running: 0, unindexable: 0, missing: 0 };
-  misses.missing = unique.length - rows.length;
-  for (const row of rows) {
-    if (row.status !== "ready") {
-      misses[row.status]++;
-      continue;
-    }
-    const projection = piResourceVersionIndexSchema.parse(row.projection);
-    if (
-      row.archiveSize === null ||
-      piResourceIndexHash(projection) !== row.projectionHash
-    ) {
-      throw new Error("Pi resource version index failed integrity validation");
-    }
-    indexes.set(row.versionId, {
-      storageId: row.storageId,
-      archiveSize: row.archiveSize,
-      projection,
-    });
-  }
-  return { indexes, misses };
-}
-
-export const readPiResourceVersionIndexes$ = command(
-  async ({ get }, versionIds: readonly string[], signal: AbortSignal) => {
-    const unique = [...new Set(versionIds)];
-    if (unique.length === 0) {
-      return piResourceVersionIndexesResult(unique, []);
-    }
-    const rows = await get(db$)
-      .select({
-        versionId: piResourceVersionIndexes.storageVersionId,
-        status: piResourceVersionIndexes.status,
-        storageId: storageVersions.storageId,
-        archiveSize: piResourceVersionIndexes.sourceArchiveSize,
-        projection: piResourceVersionIndexes.projection,
-        projectionHash: piResourceVersionIndexes.projectionHash,
-      })
-      .from(piResourceVersionIndexes)
-      .innerJoin(
-        storageVersions,
-        eq(storageVersions.id, piResourceVersionIndexes.storageVersionId),
-      )
-      .where(
-        and(
-          inArray(piResourceVersionIndexes.storageVersionId, unique),
-          eq(
-            piResourceVersionIndexes.extractorVersion,
-            PI_RESOURCE_EXTRACTOR_VERSION,
-          ),
-        ),
-      );
-    signal.throwIfAborted();
-    return piResourceVersionIndexesResult(unique, rows);
-  },
-);
 
 const claimWork$ = command(
   async (

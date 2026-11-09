@@ -154,6 +154,7 @@ impl Drop for ActiveRunHandoffRequest {
 pub struct ActiveRunReusePublisher {
     reuse_state: watch::Sender<ActiveRunReuseState>,
     handoff: Arc<Mutex<ActiveRunHandoffBroker>>,
+    reuse_state_notify: Option<Arc<Notify>>,
 }
 
 pub enum ActiveRunHandoffDeliveryResult {
@@ -195,6 +196,15 @@ impl ActiveRunReusePublisher {
 
     pub fn handoff_signal(&self) -> SandboxFinalExecParkHandoff {
         lock_handoff(&self.handoff).signal.clone()
+    }
+
+    /// Observe this successor's request without accepting or cancelling it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn has_handoff_request(&self, successor_run_id: RunId) -> bool {
+        lock_handoff(&self.handoff)
+            .delivery
+            .as_ref()
+            .is_some_and(|delivery| delivery.successor_run_id == successor_run_id)
     }
 
     pub fn deliver_exact_handoff(
@@ -249,13 +259,17 @@ impl ActiveRunReusePublisher {
     }
 
     fn resolve_publishable(&self, next: ActiveRunReuseState) -> bool {
-        self.reuse_state.send_if_modified(|state| {
+        let resolved = self.reuse_state.send_if_modified(|state| {
             if !state.can_publish_exact() {
                 return false;
             }
             *state = next;
             true
-        })
+        });
+        if resolved && let Some(notify) = &self.reuse_state_notify {
+            notify.notify_one();
+        }
+        resolved
     }
 
     fn publish_without_handoff(&self, next: ActiveRunReuseState) -> bool {
@@ -273,6 +287,7 @@ impl ActiveRunReusePublisher {
         let (reuse_state, _reuse_state_rx) = watch::channel(ActiveRunReuseState::Pending);
         Self {
             reuse_state,
+            reuse_state_notify: None,
             handoff: Arc::new(Mutex::new(ActiveRunHandoffBroker {
                 predecessor_run_id: None,
                 signal: SandboxFinalExecParkHandoff::new(),
@@ -412,6 +427,9 @@ impl ActiveRunGuard {
         ActiveRunReusePublisher {
             reuse_state: self.reuse_state.clone(),
             handoff: Arc::clone(&self.handoff),
+            reuse_state_notify: self
+                .has_reuse_key
+                .then(|| Arc::clone(&self.active_runs.reuse_state_notify)),
         }
     }
 

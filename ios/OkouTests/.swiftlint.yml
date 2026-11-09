@@ -1,0 +1,4 @@
+# Fixtures may force known values; keep the remaining rules active.
+disabled_rules:
+  - force_cast
+  - force_try

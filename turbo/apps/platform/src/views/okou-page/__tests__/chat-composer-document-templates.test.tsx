@@ -170,7 +170,7 @@ test("Document purposes are directly selectable without losing the draft or sele
   expect(editor).toHaveTextContent("Prepare the invoice for my client.");
   expect(composerInlineTemplates()[0]).toHaveTextContent("Itemized invoice");
   expect(capture.sentMessages).toHaveLength(0);
-  click(control(shelf, "button", "More templates"));
+  click(control(shelf, "button", "View all"));
   const dialog = await screen.findByRole("dialog");
   expect(control(dialog, "button", "Reports")).toHaveAttribute(
     "aria-pressed",

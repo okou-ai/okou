@@ -1,6 +1,6 @@
 [package]
 name = "guest-storage-apply"
-version = "0.29.5"
+version = "0.31.0"
 edition.workspace = true
 
 [dependencies]
@@ -14,13 +14,15 @@ serde_json = { workspace = true, features = ["std"] }
 tar = { workspace = true, features = ["xattr"] }
 ureq = { workspace = true, features = ["gzip", "platform-verifier", "rustls"] }
 uuid = { workspace = true, features = ["std", "v4"] }
+sha2.workspace = true
+hex = { workspace = true, features = ["alloc"] }
+tempfile = { workspace = true, features = ["getrandom"] }
 guest-telemetry.workspace = true
 
 [dev-dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }
 httpmock = { workspace = true, features = ["cookies"] }
 proptest = { workspace = true, features = ["std"] }
-tempfile = { workspace = true, features = ["getrandom"] }
 
 [lints]
 workspace = true

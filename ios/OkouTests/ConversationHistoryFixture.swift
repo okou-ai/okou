@@ -19,12 +19,12 @@ final class ConversationHistoryFixture: Sendable {
     snapshot: ChatHTTPFixture.Handler? = nil,
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
-    additional: ChatHTTPFixture.Handler? = nil
+    detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil
   ) {
     self.init(
       rows: (0..<count).map { Self.row($0 + 1) }, beforeRequest: beforeRequest, snapshot: snapshot,
       threadSnapshot: threadSnapshot,
-      beforeEventRows: beforeEventRows, additional: additional)
+      beforeEventRows: beforeEventRows, detail: detail, additional: additional)
   }
 
   init(
@@ -34,7 +34,7 @@ final class ConversationHistoryFixture: Sendable {
     snapshot: ChatHTTPFixture.Handler? = nil, send: ChatHTTPFixture.Handler? = nil,
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
-    additional: ChatHTTPFixture.Handler? = nil
+    detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil
   ) {
     let rows = HistoryRows(initial)
     self.rows = rows
@@ -109,7 +109,9 @@ final class ConversationHistoryFixture: Sendable {
               {"rows":[\(values[after..<last].joined(separator: ","))],"cursor":{"lastEventId":\(cursorID),"lastSeqId":\(last)},"hasMore":\(last < values.count)}
               """)
         }
-      case path: return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
+      case path:
+        if let detail { return try await detail(request) }
+        return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
       case path + "/mark-read":
         return ChatHTTPResponse(body: "{\"lastReadAt\":\"2026-10-20T00:00:00Z\"}")
       case path + "/connector-selections": return ChatHTTPResponse(body: "{\"selections\":[]}")

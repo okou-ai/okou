@@ -113,7 +113,7 @@ jobs:
       - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.2
         with:
           workspaces: crates -> target
-          shared-key: ${{ matrix.cacheSuffix }}-ci
+          shared-key: ${{ matrix.cacheSuffix }}-release-${{ hashFiles('crates/Cargo.toml') }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - name: Configure pinned Kerberos cache
@@ -138,10 +138,11 @@ jobs:
           EXPECTED_BINARY_INPUT_DIGEST: ${{ steps.build.outputs.binary-input-digest }}
           EXPECTED_TARGET: ${{ matrix.target }}
           FRESH_METADATA_PATH: runner-binary-fresh/metadata.json
+          COMPILED_RUNNER_PATH: ${{ steps.build.outputs.runner-path }}
           RUNNER_PATH: runner-binary-fresh/runner
         run: |
           install -m 755 \
-            "crates/target/${TARGET_TRIPLE}/ci/runner" \
+            "$COMPILED_RUNNER_PATH" \
             "$RUNNER_PATH"
           .github/scripts/runner/runner-binary-cache.sh fresh-validate
 

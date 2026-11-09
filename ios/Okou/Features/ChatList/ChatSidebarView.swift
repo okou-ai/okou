@@ -1,3 +1,5 @@
+import CCStateSwiftUI
+import ChatData
 import ChatDomain
 import SwiftUI
 
@@ -11,14 +13,14 @@ struct ChatSidebarView: View {
   let close: () -> Void
   let newChat: (String?) -> Void
 
-  /// The web's chat filters: Inbox (or All chats without archiving), Unread, Archived, Muted.
+  /// The web's chat filters: Inbox, Unread, Archived, Muted.
   private enum ThreadFilter {
     case recent, unread, archived, muted
   }
 
   private func filterTitle(_ filter: ThreadFilter) -> LocalizedStringKey {
     switch filter {
-    case .recent: store.list.canArchiveChats ? "Inbox" : "All chats"
+    case .recent: "Inbox"
     case .unread: "Unread"
     case .archived: "Archived"
     case .muted: "Muted"
@@ -28,14 +30,14 @@ struct ChatSidebarView: View {
   @State private var showArchived = false
   @State private var showMuted = false
   @State private var showsSettings = false
+  @Environment(\.newChatActivation) private var newChatActivation
 
   private var workspaceName: String {
     authentication.workspaces.first(where: { $0.id == workspaceID })?.name ?? "Workspace"
   }
 
   @State private var menuLogos = OkouWorkspaceMenuLogos()
-  /// One caption2 line of Geist under each pinned agent's avatar.
-  @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
+  @Namespace private var searchTransition
   /// One leading edge for the header, every heading, row content and the footer buttons.
   private let rowInset = OkouControl.pageInset
 
@@ -57,7 +59,7 @@ struct ChatSidebarView: View {
       get: {
         if store.list.onlyUnread { return .unread }
         if showMuted { return .muted }
-        if store.list.canArchiveChats && showArchived { return .archived }
+        if showArchived { return .archived }
         return .recent
       },
       set: {
@@ -101,21 +103,54 @@ struct ChatSidebarView: View {
     .environment(\.defaultMinListRowHeight, 0)
     .environment(\.defaultMinListHeaderHeight, 0)
     .scrollContentBackground(.hidden)
-    .scrollEdgeEffectStyle(.soft, for: .top)
+    // The workspace title sits directly over chat titles: soft let them read through it, and
+    // the system's hard edge draws a white band on the warm sidebar. The header instead takes
+    // the sidebar's own colour, with a short fade where rows pass under it. The bottom has no
+    // edge effect, as everywhere in the app: rows pass plainly under the footer's glass.
+    .scrollEdgeEffectHidden(true, for: .top)
     .scrollEdgeEffectHidden(true, for: .bottom)
     .safeAreaBar(edge: .top, spacing: 0) {
-      header.padding(.horizontal, rowInset)
+      VStack(spacing: 0) {
+        // Sync problems float with the rest of the chat feedback, outside the sliding sidebar.
+        header.padding(.horizontal, rowInset)
+      }
+      .background {
+        OkouColor.sidebar
+          .ignoresSafeArea(edges: .top)
+          .overlay(alignment: .bottom) {
+            LinearGradient(
+              colors: [OkouColor.sidebar, OkouColor.sidebar.opacity(0)], startPoint: .top,
+              endPoint: .bottom
+            )
+            .frame(height: OkouSpace.lg)
+            .offset(y: OkouSpace.lg)
+            .allowsHitTesting(false)
+          }
+      }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
     .background(OkouColor.sidebar)
-    .sheet(
+    .onChange(of: newChatActivation) { _, _ in showsSettings = false }
+    // Search is a page of its own: it grows out of the search capsule and fills the screen.
+    .fullScreenCover(
       isPresented: Binding(
         get: { store.search.isPresented },
         set: { if !$0 { store.search.dismiss() } }
       )
     ) {
-      ChatSearchView(workspace: store, showsArchived: showArchived, didOpen: close)
-        .okouSheetBackground()
+      ChatSearchView(
+        workspace: store, showsArchived: showArchived, didOpen: close,
+        openAgent: { agentID in
+          store.search.dismiss()
+          newChat(agentID)
+        },
+        openWorkflow: { workflow in
+          store.search.dismiss()
+          newChat(workflow.agentId)
+          store.useWorkflow(named: workflow.name)
+        }
+      )
+      .navigationTransition(.zoom(sourceID: "search", in: searchTransition))
     }
   }
 
@@ -190,52 +225,28 @@ struct ChatSidebarView: View {
     }
   }
 
-  /// Pinned agents as one sideways row of avatars, so pinning many never pushes the chats
-  /// down; the first avatar sits on the list's text edge.
   private var pinnedAgentsSection: some View {
-    let agents = store.list.visiblePinnedAgents
-    return Section {
-      scrollingSectionHeading("Pinned Agents")
-      OkouChipRail(inset: rowInset - (OkouControl.agentTile - OkouAvatarSize.rail) / 2) {
-        ForEach(agents, id: \.agentId) { agent in
-          Button {
-            newChat(agent.agentId)
-          } label: {
-            OkouAgentTile(
-              avatarURL: agent.avatarUrl, name: agent.displayName ?? "Okou",
-              isDefault: agent.isDefaultAgent,
-              isSelected: store.selectedThreadID == nil
-                && store.selectedAgentID == agent.agentId,
-              hasUnread: store.list.unreadAgentIDs.contains(agent.agentId))
-          }
-          .buttonStyle(.plain)
-          .accessibilityIdentifier("agent-\(agent.agentId)")
-        }
-      }
-      // A List row does not size a sideways scroll view to its content; give it the tile's.
-      .frame(
-        height: OkouSpace.sm * 2 + OkouAvatarSize.rail + OkouSpace.six + agentNameLine
-      )
-      .listRowInsets(EdgeInsets())
-      .listRowSeparator(.hidden)
-      .listRowBackground(Color.clear)
+    StoreProvider(store.list.stateStore) {
+      SidebarPinnedAgents(workspace: store, newChat: newChat)
+        .id(ObjectIdentifier(store.list))
     }
   }
 
   private var threadSection: some View {
-    Section {
+    let showsStatusColumn = usesStatusColumn(visibleThreads)
+    return Section {
       threadMenu
       if threadFilter.wrappedValue == .recent {
         ForEach(recentGroups) { group in
           groupHeading(group.title)
           ForEach(Array(group.threads.enumerated()), id: \.element.id) { index, thread in
             threadRow(
-              thread, waveIndex: index, showsStatusColumn: usesStatusColumn(visibleThreads))
+              thread, waveIndex: index, showsStatusColumn: showsStatusColumn)
           }
         }
       } else {
         ForEach(visibleThreads) { thread in
-          threadRow(thread, showsStatusColumn: usesStatusColumn(visibleThreads))
+          threadRow(thread, showsStatusColumn: showsStatusColumn)
         }
       }
     }
@@ -340,30 +351,26 @@ struct ChatSidebarView: View {
       }
       .disabled(
         !store.list.canUpdate(thread.id) || store.list.isSavingRename || store.needsUpgrade)
-      if store.list.canArchiveChats {
-        Button(
-          thread.isArchived ? "Unarchive" : "Archive",
-          okouSymbol: thread.isArchived ? "archive-restore" : "archive"
-        ) {
-          Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
-        }
-        .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      Button(
+        thread.isArchived ? "Unarchive" : "Archive",
+        okouSymbol: thread.isArchived ? "archive-restore" : "archive"
+      ) {
+        Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
       }
+      .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
     }
     // Every row action is on the right swipe: a left swipe anywhere in the sidebar closes it.
     .swipeActions(edge: .leading, allowsFullSwipe: false) {
       if !thread.isMuted {
         readAction(thread, read: thread.isUnread).tint(OkouSwipeTint.readState)
       }
-      if store.list.canArchiveChats {
-        Button {
-          Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
-        } label: {
-          Label(thread.isArchived ? "Unarchive" : "Archive", okouSymbol: "archive")
-        }
-        .tint(OkouSwipeTint.neutral)
-        .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      Button {
+        Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
+      } label: {
+        Label(thread.isArchived ? "Unarchive" : "Archive", okouSymbol: "archive")
       }
+      .tint(OkouSwipeTint.neutral)
+      .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
     }
 
   }
@@ -373,12 +380,8 @@ struct ChatSidebarView: View {
       Picker("Chats", selection: threadFilter) {
         Text(filterTitle(.recent)).tag(ThreadFilter.recent)
         Text(filterTitle(.unread)).tag(ThreadFilter.unread)
-        if store.list.canArchiveChats {
-          Text(filterTitle(.archived)).tag(ThreadFilter.archived)
-        }
-        if store.list.canMuteChats {
-          Text(filterTitle(.muted)).tag(ThreadFilter.muted)
-        }
+        Text(filterTitle(.archived)).tag(ThreadFilter.archived)
+        Text(filterTitle(.muted)).tag(ThreadFilter.muted)
       }
       .pickerStyle(.inline)
       if let agentID = store.selectedAgentID {
@@ -432,17 +435,6 @@ struct ChatSidebarView: View {
     .disabled(store.list.updatingThreads.contains(thread.id) || store.list.markingAgentRead)
   }
 
-  private func scrollingSectionHeading(_ title: LocalizedStringKey) -> some View {
-    Text(title)
-      .font(.okou(.subheadline).weight(.semibold))
-      .foregroundStyle(OkouColor.mutedForeground)
-      .lineLimit(1)
-      .accessibilityAddTraits(.isHeader)
-      .listRowInsets(EdgeInsets(top: 14, leading: rowInset, bottom: 8, trailing: rowInset))
-      .listRowSeparator(.hidden)
-      .listRowBackground(Color.clear)
-  }
-
   /// Thumb-reach bar: the account (settings) on the left, search in the middle, and the one
   /// primary action, a new chat, on the right.
   private var footer: some View {
@@ -453,9 +445,7 @@ struct ChatSidebarView: View {
         let profile = authentication.profile
         OkouProfileAvatar(
           imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-          size: OkouControl.minimumTarget
-        )
-        .modifier(OkouGlassControl(shape: .circle))
+          size: OkouControl.minimumTarget)
       }
       .accessibilityLabel("Settings")
       .accessibilityIdentifier("settings")
@@ -469,18 +459,10 @@ struct ChatSidebarView: View {
       Button {
         store.search.present()
       } label: {
-        HStack(spacing: OkouSpace.sm) {
-          OkouIcon("search", size: OkouIconSize.standard)
-          Text("Search chats").lineLimit(1)
-          Spacer(minLength: 0)
-        }
-        .font(.okou(.body))
-        // A search field's hint, the same colour as the composer's placeholder.
-        .foregroundStyle(OkouColor.placeholder)
-        .padding(.horizontal, OkouSpace.lg)
-        .frame(maxWidth: .infinity)
-        .modifier(OkouGlassControl(shape: .capsule))
+        OkouSearchBar(prompt: "Search chats")
       }
+      .buttonStyle(.plain)
+      .matchedTransitionSource(id: "search", in: searchTransition)
       .accessibilityLabel("Search chats")
       .accessibilityIdentifier("search-chats")
       Button {
@@ -496,5 +478,80 @@ struct ChatSidebarView: View {
     .frame(height: ChatComposerView.compactHeight)
     .padding(.horizontal, rowInset)
     .padding(.top, OkouSpace.sm)
+  }
+}
+
+/// The rail observes workspace Tasks without tying their lifetime to sidebar visibility.
+private struct SidebarPinnedAgents: View {
+  @Bindable var workspace: WorkspaceStore
+  let newChat: (String?) -> Void
+  @LoadableValue private var agents: Loadable<[AgentRecord]>
+  @LoadableValue private var preferences: Loadable<SidebarPreferences>
+  @ResolvedValue private var pinnedAgents: [AgentRecord]?
+  /// One caption2 line of Geist under each avatar.
+  @ScaledMetric(relativeTo: .caption2) private var agentNameLine: CGFloat = 14
+  private let rowInset = OkouControl.pageInset
+
+  init(workspace: WorkspaceStore, newChat: @escaping (String?) -> Void) {
+    self.workspace = workspace
+    self.newChat = newChat
+    _agents = LoadableValue(task: workspace.list.agentsValue)
+    _preferences = LoadableValue(task: workspace.list.preferencesValue)
+    _pinnedAgents = ResolvedValue(task: workspace.list.pinnedAgentsValue)
+  }
+
+  private var isLoading: Bool { agents.state == .loading || preferences.state == .loading }
+
+  var body: some View {
+    Section {
+      Text("Pinned Agents")
+        .font(.okou(.subheadline).weight(.semibold))
+        .foregroundStyle(OkouColor.mutedForeground)
+        .lineLimit(1)
+        .accessibilityAddTraits(.isHeader)
+        .listRowInsets(EdgeInsets(top: 14, leading: rowInset, bottom: 8, trailing: rowInset))
+        .listRowSeparator(.hidden)
+        .listRowBackground(Color.clear)
+      // The confirmed snapshot also supplies cached/partially refreshed content on failure.
+      // Agents can publish the default tile before the preference-dependent task settles.
+      let visible = pinnedAgents ?? workspace.list.visiblePinnedAgents
+      OkouChipRail(inset: rowInset - (OkouControl.agentTile - OkouAvatarSize.rail) / 2) {
+        ForEach(visible, id: \.agentId) { agent in
+          Button {
+            newChat(agent.agentId)
+          } label: {
+            OkouAgentTile(
+              avatarURL: agent.avatarUrl, name: agent.displayName ?? "Okou",
+              isDefault: agent.isDefaultAgent,
+              isSelected: workspace.selectedThreadID == nil
+                && workspace.selectedAgentID == agent.agentId,
+              hasUnread: workspace.list.unreadAgentIDs.contains(agent.agentId))
+          }
+          .buttonStyle(.plain)
+          .accessibilityIdentifier("agent-\(agent.agentId)")
+        }
+      }
+      .frame(height: OkouSpace.sm * 2 + OkouAvatarSize.rail + OkouSpace.six + agentNameLine)
+      .listRowInsets(EdgeInsets())
+      .listRowSeparator(.hidden)
+      .listRowBackground(Color.clear)
+      if let error = agents.error {
+        failureRow(error, subject: String(localized: "Agents"))
+      }
+      if let error = preferences.error {
+        failureRow(error, subject: String(localized: "Pinned Agents"))
+      }
+    }
+  }
+
+  private func failureRow(_ error: Error, subject: String) -> some View {
+    OkouLoadErrorRow(
+      message: "\(subject): \(ChatRequestFailure.message(for: error))",
+      isRetrying: isLoading,
+      retry: { await workspace.refreshNavigation() }
+    )
+    .listRowInsets(.horizontal, rowInset)
+    .listRowSeparator(.hidden)
+    .listRowBackground(Color.clear)
   }
 }

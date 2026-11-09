@@ -16,6 +16,7 @@ use crate::orphan_reap::OrphanedActiveRuns;
 use crate::resource_budget::ResourceBudget;
 use crate::restored_session_identity::RestoredSessionIdentity;
 use crate::status::StatusTracker;
+use crate::tests::status_active_run_records;
 use runner_lifecycle::active_runs::ActiveRuns;
 use runner_provider::RunCancellationRegistry;
 use runner_types::ids::RunId;
@@ -658,24 +659,6 @@ async fn status_idle_reuse_keys_and_active_runs(
     run_ids.sort_unstable();
     (reuse_keys, run_ids)
 }
-async fn status_active_run_records(status_path: &std::path::Path) -> Vec<(String, String)> {
-    let raw = tokio::fs::read_to_string(status_path).await.unwrap();
-    let status: serde_json::Value = serde_json::from_str(&raw).unwrap();
-    let mut records: Vec<(String, String)> = status["active_runs"]
-        .as_array()
-        .unwrap()
-        .iter()
-        .map(|run| {
-            (
-                run["run_id"].as_str().unwrap().to_string(),
-                run["sandbox_id"].as_str().unwrap().to_string(),
-            )
-        })
-        .collect();
-    records.sort_unstable();
-    records
-}
-
 struct CleanupPanickedJobFixture {
     status_path: std::path::PathBuf,
     status: Arc<StatusTracker>,

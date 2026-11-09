@@ -1,6 +1,5 @@
 import { command, computed, state, type Command, type Computed } from "ccstate";
 import { pathParams$, searchParams$ } from "../route.ts";
-import { setSidebarExpanded$ } from "../okou-page/nav.ts";
 import { setPendingDeleteThreadId$ } from "../okou-page/sidebar-state.ts";
 import { threadMeta } from "./chat-thread-event-sourcing.ts";
 import { sidebarActiveThreadIds$ } from "./chat-thread-indicators-from-worker.ts";
@@ -8,11 +7,13 @@ import { pinChatThread$, unpinChatThread$ } from "./chat-event.ts";
 import {
   currentLeftThread$,
   currentRightThread$,
+  unloadRightThread$,
+} from "./chat-thread-panes.ts";
+import {
   loadLeftThread$,
   loadRightThread$,
   SIDEBAR_PARAM,
-  unloadRightThread$,
-} from "./chat-thread-panes.ts";
+} from "./chat-thread-pane-navigation.ts";
 import {
   openRenameChatThreadDialogForThreadId$,
   renameChatThreadFromInput$,
@@ -145,7 +146,6 @@ function createThreadSelectionCommand(threadId: string) {
   return command(({ get, set }, pane: SidebarChatThreadTargetPane) => {
     const mainThreadId = get(pathParams$)?.threadId;
     if (typeof mainThreadId !== "string") {
-      set(setSidebarExpanded$, false);
       return false;
     }
 
@@ -164,7 +164,6 @@ function createThreadSelectionCommand(threadId: string) {
       set(loadLeftThread$, threadId);
     }
 
-    set(setSidebarExpanded$, false);
     return true;
   });
 }

@@ -1,7 +1,15 @@
-# Mobile UI Authority
+# iOS Development
 
-Apply the repository-wide instructions, then read
-[the Mobile Design System](../docs/ios/mobile-design-system.md) before designing,
+Apply the repository-wide instructions and read
+[iOS development](../docs/ios/ios-development.md) for package boundaries, state
+owners, concurrency, and verification. For resource graphs, commands, native
+bindings, subscriptions, or cancellation, read
+[iOS ccstate](../docs/ios/ios-ccstate.md); browser/TypeScript ccstate syntax is not
+the native API contract. For tests, follow [iOS testing](../docs/ios/ios-testing.md).
+
+## Mobile UI Authority
+
+Read [the Mobile Design System](../docs/ios/mobile-design-system.md) before designing,
 implementing, or reviewing native UI.
 
 - Use `Okou/DesignSystem/` for shared tokens, assets, and UI primitives. Reuse the
@@ -20,3 +28,14 @@ implementing, or reviewing native UI.
   behavior. Visual references do not authorize replacing those contracts.
 - Run the synchronization checks and relevant native verification documented
   in the guide. Do not claim visual acceptance from a successful build alone.
+
+## Swift checks
+
+- Run `bash ios/scripts/lint.sh` after Swift changes. Install the pinned version
+  with `bash ios/scripts/install-swiftlint.sh`; see [the README](README.md#swiftlint).
+- `swift-format` owns formatting; SwiftLint owns the explicit safety rules in
+  `.swiftlint.yml`. The initial rules are SwiftSyntax-only, with no App build or
+  SourceKit requirement. Keep the macOS pin and CI image on the same release.
+- Test and test-support directories relax only force casts and force tries.
+  Fix production findings at their source; do not add a baseline, inline
+  suppression or broader exclusions just to pass CI.

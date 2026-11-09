@@ -24,9 +24,12 @@ export function normalChatInputWriteGate(previous?: string): SQL {
     : sql`${normalChatInputWritten} AND (SELECT ${count()} FROM ${sql.identifier(previous)}) >= 0`;
 }
 
-type NormalInputWriteValues<T extends PgTable> = {
-  readonly [K in keyof InferInsertModel<T>]?: InferInsertModel<T>[K] | SQL;
+type NormalInputInsertValues<T extends PgTable> = {
+  readonly [K in keyof InferInsertModel<T>]: InferInsertModel<T>[K] | SQL;
 };
+type NormalInputWriteValues<T extends PgTable> = Partial<
+  NormalInputInsertValues<T>
+>;
 
 function insertFields<T extends PgTable>(
   table: T,
@@ -54,7 +57,7 @@ function insertFields<T extends PgTable>(
 /** Conditional partial INSERT preserves omitted database defaults and encoders. */
 export function normalChatInputInsertSql<T extends PgTable>(
   table: T,
-  values: InferInsertModel<T>,
+  values: NormalInputInsertValues<T>,
   gate: SQL,
   onConflict: SQL,
   returning: SQL = sql`1`,
@@ -249,5 +252,9 @@ export function normalChatInputPublicationSql(
   return sql`WITH ${sql.join(ctes, sql`,\n`)}
     SELECT (SELECT id FROM inserted) AS id,
       (SELECT created_at::text FROM inserted) AS "createdAt",
-      (SELECT seq_id FROM inserted) AS "seqId", (${guard})::integer AS "atomicGuard"`;
+      (SELECT seq_id FROM inserted) AS "seqId",
+      (SELECT claim_id FROM normal_send_queue) AS "claimId",
+      (SELECT claim_expires_at::text FROM normal_send_queue) AS "claimExpiresAt",
+      (SELECT queued_at::text FROM normal_send_queue) AS "queuedAt",
+      (${guard})::integer AS "atomicGuard"`;
 }

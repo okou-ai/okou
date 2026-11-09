@@ -483,7 +483,7 @@ test("Subscribe shared chat data through the worker", async () => {
     expect(
       context.mocks.ably.hasSubscriptionOnChannel(
         realtimeChannel(),
-        "threadListChanged",
+        "chatIndicatorsChanged",
       ),
     ).toBeTruthy();
   });

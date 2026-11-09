@@ -1,4 +1,9 @@
-import { ArtifactDeleteButton } from "./artifact-deletion.tsx";
+import {
+  ArtifactDeleteButton,
+  ArtifactPreviewMoreMenu,
+} from "./artifact-deletion.tsx";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   ArtifactPreviewCloseButton,
   ArtifactPreviewDialogFrame,
@@ -61,18 +66,19 @@ import {
   attachmentSidebarRef,
   attachmentLightboxImageCanvasSignals,
   lightboxUrl$,
-  closeLightboxImmediately$,
+  annotateLightboxImage$,
   closeLightboxWithDialogExit$,
   lightboxDialogFullscreen$,
   navigateImageLightbox$,
   openAudioLightbox$,
   openDocumentLightbox$,
   openFileLightbox$,
-  openImageLightbox$,
   toggleLightboxDialogFullscreen$,
+  type AttachmentAnnotationTarget,
   type AttachmentArtifactMetadata,
   type AttachmentLightboxState,
 } from "../../signals/okou-page/attachment-chips.ts";
+import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import { openThreadArtifactSplitView$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { ArtifactImageNavigationRegion } from "./artifact-image-navigation-region.tsx";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
@@ -80,12 +86,10 @@ import {
   artifactPreviewUrlsMatch,
   attachmentFilenameFromUrl,
 } from "./attachment-url.ts";
-import type { ComposerAttachmentAnnotationActions } from "../../signals/okou-page/composer-business-actions.ts";
 import { AnnotationMarkLayer } from "./image-annotation-marks.tsx";
 import {
   annotationMarkCount,
   DEFAULT_ANNOTATION_INK,
-  type ImageAnnotationSignals,
 } from "../../signals/okou-page/image-annotation.ts";
 import {
   ArtifactActionSeparator,
@@ -689,7 +693,7 @@ function ArtifactDialogImageBody({
   const resourceUrl = resource.state === "hasData" ? resource.data : null;
   // Marks live on the draft rather than in the file, so the viewer has to draw
   // them too — otherwise reopening an annotated image shows a clean picture.
-  const annotation = preview.annotationTarget?.annotations ?? null;
+  const annotationTarget = preview.annotationTarget;
 
   return (
     <ArtifactDialogStage flush scrollable={false}>
@@ -737,8 +741,8 @@ function ArtifactDialogImageBody({
                 </div>
               }
               overlay={
-                annotation ? (
-                  <AnnotationMarkLayer annotation={annotation} />
+                annotationTarget ? (
+                  <DraftAnnotationMarks target={annotationTarget} />
                 ) : undefined
               }
             >
@@ -1386,8 +1390,10 @@ function ArtifactPreviewDialogActions({
   );
   const shareUrl = useLastResolved(preview.shareUrl$);
   const showShare = preview.shareAvailable !== false;
+  const refinedToolbar =
+    useGet(featureSwitch$)[FeatureSwitchKey.ArtifactPreviewToolbar];
   const showSplitView = preview.splitViewAvailable !== false;
-  const closeLightboxImmediately = useSet(closeLightboxImmediately$);
+  const annotateLightboxImage = useSet(annotateLightboxImage$);
   const annotationTarget =
     preview.kind === "image" ? preview.annotationTarget : undefined;
   const openInSplitView = () => {
@@ -1407,11 +1413,7 @@ function ArtifactPreviewDialogActions({
             return $.artifacts.annotation.open;
           })}
           onClick={() => {
-            // The editor owns the whole surface while it is open, so the
-            // read-only viewer steps aside — instantly, or the two dialogs
-            // cross-fade and the modal appears to jump.
-            annotationTarget.open();
-            closeLightboxImmediately();
+            annotateLightboxImage();
           }}
         >
           <Pencil size={18} />
@@ -1429,23 +1431,39 @@ function ArtifactPreviewDialogActions({
           url={preview.url}
         />
       )}
-      <ArtifactDownloadMenu
-        surface="dialog"
-        key={`${preview.url}:${artifact?.filename ?? artifactDialogFilename(preview)}`}
-        ariaLabel={t(($) => {
-          return $.artifacts.actions.downloadOptions;
-        })}
-        artifactKind={artifact?.artifactKind}
-        filename={artifact?.filename ?? artifactDialogFilename(preview)}
-        iconSize={18}
-        syncTarget={artifactDialogSyncTarget(artifact)}
-        url={preview.url}
-      />
-      <ArtifactDeleteButton
-        artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
-        origin={{ kind: "preview-dialog" }}
-        iconSize={18}
-      />
+      {refinedToolbar ? (
+        <ArtifactPreviewMoreMenu
+          key={preview.url}
+          surface="dialog"
+          artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+          origin={{ kind: "preview-dialog" }}
+          artifactKind={artifact?.artifactKind}
+          filename={artifact?.filename ?? artifactDialogFilename(preview)}
+          iconSize={18}
+          syncTarget={artifactDialogSyncTarget(artifact)}
+          url={preview.url}
+        />
+      ) : (
+        <>
+          <ArtifactDownloadMenu
+            surface="dialog"
+            key={`${preview.url}:${artifact?.filename ?? artifactDialogFilename(preview)}`}
+            ariaLabel={t(($) => {
+              return $.artifacts.actions.downloadOptions;
+            })}
+            artifactKind={artifact?.artifactKind}
+            filename={artifact?.filename ?? artifactDialogFilename(preview)}
+            iconSize={18}
+            syncTarget={artifactDialogSyncTarget(artifact)}
+            url={preview.url}
+          />
+          <ArtifactDeleteButton
+            artifactId={preview.catalogArtifactId ?? artifact?.artifactId}
+            origin={{ kind: "preview-dialog" }}
+            iconSize={18}
+          />
+        </>
+      )}
       <ArtifactActionSeparator />
       {showSplitView && (
         <ArtifactDialogSplitViewButton onClick={openInSplitView} />
@@ -1936,15 +1954,25 @@ function ComposerImagePreviewButton({
   );
 }
 
+type AttachmentPreviewHost = Pick<ComposerSignals, "openAttachmentPreview$">;
+
+/** Draws the draft's current marks over its previewed image. */
+function DraftAnnotationMarks({
+  target,
+}: {
+  target: AttachmentAnnotationTarget;
+}) {
+  const annotation = useGet(target.attachment.annotations$);
+  return annotation ? <AnnotationMarkLayer annotation={annotation} /> : null;
+}
+
 function AttachmentChip({
   attachment,
-  annotationSignals,
-  annotationActions,
+  previewHost,
   onRemove,
 }: {
   attachment: ChatAttachment;
-  annotationSignals: ImageAnnotationSignals;
-  annotationActions: ComposerAttachmentAnnotationActions;
+  previewHost: AttachmentPreviewHost;
   onRemove: () => void;
 }) {
   const { t } = useTranslation();
@@ -1955,11 +1983,7 @@ function AttachmentChip({
     infoLoadable.state === "hasData" && infoLoadable.data
       ? canonicalUserMessageFileUrl(infoLoadable.data.id)
       : undefined;
-  const openImageLightbox = useSet(openImageLightbox$);
-  const openAnnotationEditor = useSet(annotationSignals.openAnnotationEditor$);
-  const confirmAnnotations = useSet(
-    annotationActions.confirmAttachmentAnnotations$,
-  );
+  const openAttachmentPreview = useSet(previewHost.openAttachmentPreview$);
   const annotations = useGet(attachment.annotations$);
   const isImage = attachment.contentType.startsWith("image/");
   if (
@@ -1977,35 +2001,9 @@ function AttachmentChip({
           load={attachment.imageLoad}
           markCount={annotationMarkCount(annotations)}
           openImageLightbox={(previewUrl, imagePreview) => {
-            // A pending upload is not an artifact yet, so checking it must not
-            // take over an open artifact sidebar.
-            openImageLightbox({
+            openAttachmentPreview(attachment, {
               url: previewUrl,
-              filename: attachment.filename,
               preview: imagePreview,
-              // An attachment is the user's own input, not a published
-              // artifact, so it carries no sharing controls.
-              shareAvailable: false,
-              splitViewAvailable: false,
-              ...(!uploading
-                ? {
-                    annotationTarget: {
-                      annotations,
-                      open: () => {
-                        openAnnotationEditor({
-                          key: attachment.key,
-                          filename: attachment.filename,
-                          url: previewUrl,
-                          preview: imagePreview,
-                          annotations,
-                          commit: (next, signal) => {
-                            return confirmAnnotations(attachment, next, signal);
-                          },
-                        });
-                      },
-                    },
-                  }
-                : {}),
             });
           }}
           url={url}
@@ -2060,13 +2058,11 @@ function AttachmentChip({
 
 export function AttachmentChips({
   attachments,
-  annotationSignals,
-  annotationActions,
+  previewHost,
   onRemove,
 }: {
   attachments: ChatAttachment[];
-  annotationSignals: ImageAnnotationSignals;
-  annotationActions: ComposerAttachmentAnnotationActions;
+  previewHost: AttachmentPreviewHost;
   onRemove: (attachment: ChatAttachment) => void;
 }) {
   return (
@@ -2074,10 +2070,9 @@ export function AttachmentChips({
       {attachments.map((a) => {
         return (
           <AttachmentChip
-            annotationActions={annotationActions}
             key={a.key}
             attachment={a}
-            annotationSignals={annotationSignals}
+            previewHost={previewHost}
             onRemove={() => {
               return onRemove(a);
             }}

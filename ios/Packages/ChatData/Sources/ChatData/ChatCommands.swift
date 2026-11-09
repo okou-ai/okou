@@ -90,15 +90,28 @@ public actor ChatCommands {
     file: URL, filename: String, contentType: String,
     progress: @escaping @Sendable (Double) -> Void = { _ in }
   ) async throws -> ChatAttachment {
-    try await ChatAttachmentUpload(client: client).upload(
+    let uploaded = try await ChatAttachmentUpload(client: client).upload(
       file: file, filename: filename, contentType: contentType, progress: progress)
+    // Upload is already committed. A failed disposable cache must not turn it into a failed upload.
+    if let retained = try? ChatAttachmentFile.retaining(
+      file, filename: uploaded.filename, attachmentID: uploaded.id)
+    {
+      artifacts.retainUpload(retained, id: uploaded.id)
+    }
+    return uploaded
   }
 
   public func downloadAttachment(
     _ attachment: ChatMessageAttachment, thumbnail: Bool = false
   ) async throws -> ChatAttachmentFile? {
-    try await ChatAttachmentDownload(client: client).download(attachment, thumbnail: thumbnail)
+    let artifact = ChatArtifact(
+      source: .file(attachment.downloadID), filename: attachment.filename,
+      contentType: attachment.contentType, size: attachment.size)
+    if thumbnail { return try await artifacts.thumbnail(artifact, webURL: client.baseURL).1 }
+    return try await artifacts.download(artifact).1
   }
+
+  public nonisolated func closeFileCache() { artifacts.closeFileCache() }
 
   public func send(
     thread: ChatThread, text: String, attachments: [ChatAttachment] = [],
@@ -112,6 +125,7 @@ public actor ChatCommands {
     async throws -> SendReceipt
   {
     let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
+    let document = document?.trimmingWhitespace()
     guard !prompt.isEmpty || !attachments.isEmpty || document?.parts.isEmpty == false else {
       throw ChatError.invalidContract("Enter a message before sending.")
     }

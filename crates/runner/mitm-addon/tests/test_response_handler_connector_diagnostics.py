@@ -6,7 +6,7 @@ import urllib.parse
 import pytest
 from mitmproxy.test import tutils
 
-import connector_diagnostics
+import connector_auth_material
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 from tests.connector_diagnostic_helpers import (
@@ -296,7 +296,7 @@ def test_responseheaders_preserves_upstream_for_query_over_inspection_limit(
 ):
     reg_path = write_connector_diagnostic_capture_registry(tmp_path)
     query = "noise=" + "x" * (
-        connector_diagnostics.MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS - len("noise=") + 1
+        connector_auth_material.MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS - len("noise=") + 1
     )
     flow = real_flow(
         with_response=False,
@@ -338,23 +338,27 @@ def test_responseheaders_preserves_upstream_for_query_over_inspection_limit(
     ("query", "expect_diagnostic"),
     [
         (
-            "&".join(["x"] * connector_diagnostics.MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS),
+            "&".join(["x"] * connector_auth_material.MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS),
             True,
         ),
         (
-            "&".join(["x"] * (connector_diagnostics.MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS + 1)),
+            "&".join(["x"] * (connector_auth_material.MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS + 1)),
             False,
         ),
         (
             "noise="
             + "x"
-            * (connector_diagnostics.MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS - len("noise=")),
+            * (connector_auth_material.MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS - len("noise=")),
             True,
         ),
         (
             "noise="
             + "x"
-            * (connector_diagnostics.MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS - len("noise=") + 1),
+            * (
+                connector_auth_material.MAX_CONNECTOR_DIAGNOSTIC_QUERY_CHARACTERS
+                - len("noise=")
+                + 1
+            ),
             False,
         ),
     ],
@@ -405,7 +409,7 @@ async def test_query_inspection_boundaries_control_connector_401_diagnostic(
         "api_key=user=token",
         "api_key=%ZZ",
         "api_key=user-token&"
-        + "&".join(["x"] * (connector_diagnostics.MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS + 1)),
+        + "&".join(["x"] * (connector_auth_material.MAX_CONNECTOR_DIAGNOSTIC_QUERY_FIELDS + 1)),
     ],
     ids=["percent-plus", "duplicate", "first-equals", "invalid-percent", "auth-before-limit"],
 )

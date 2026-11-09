@@ -336,8 +336,18 @@ count attempts owned by the shared client.
 
 ### API heartbeat delivery recovery
 
-The Runner sends routine API heartbeats every 10s through one single-flight
-owner. In `starting`, `running` and `draining` modes, send timeouts, connect
+The Runner sends routine API heartbeats every 60s through one single-flight
+owner. Capacity, idle-pool ownership, lifecycle and reusable-inventory changes
+request prompt full snapshots; in-flight triggers coalesce into one live-state
+follow-up. The API considers reuse inventory fresh for 180s. Local status retry
+and passive host memory observation retain their independent 10s cadence.
+
+Failed background heartbeats in `running` and `draining` retry fresh state after
+10s without waiting for the routine timer. A new state report supersedes a
+scheduled retry. Startup still requires initial delivery success; shutdown
+drains owned work without starting a background retry loop.
+
+In `starting`, `running` and `draining` modes, send timeouts, connect
 failures and a typed TCP connection reset participate in one Runner-local
 heartbeat degradation episode. The first failure is INFO. If delivery keeps
 failing for at least 30s after the first observed failure, the next failed
@@ -354,9 +364,9 @@ visibility and do not advance an eligible episode.
 
 The shared transport can replay the same monotonic heartbeat snapshot once on a
 request-stage reset within the original timeout. Exhausted failures still enter
-this episode; the next scheduled heartbeat sends fresh Runner state using the
-existing cadence, single-flight ownership and freshness boundaries. Recovery
-proves that later heartbeat delivery resumed; it does not identify the reset
+this episode; the next report sends fresh Runner state using the retry cadence
+and single-flight ownership described above. Recovery proves that later
+heartbeat delivery resumed; it does not identify the reset
 initiator or prove whether an unlogged failed request reached server processing.
 
 Before closing [#35470](https://github.com/vm0-ai/okou/issues/35470), identify the
@@ -532,7 +542,7 @@ Both HTTP clients in the workspace use `rustls-platform-verifier` to read from t
 cargo build
 cargo build --release
 
-# Cross-compile with the faster CI/dev profile.
+# Cross-compile with the shared production, CI and development release profile.
 # Supported targets:
 #   aarch64-unknown-linux-musl
 #   x86_64-unknown-linux-musl
@@ -540,8 +550,8 @@ TARGET_TRIPLE=aarch64-unknown-linux-musl
 
 # Step 1: build guest binaries
 cargo build --target "$TARGET_TRIPLE" \
-  -p guest-agent -p guest-storage-apply -p guest-init -p claude-mock -p codex-mock -p guest-state-restore -p guest-tool-exec -p guest-write-file -p guest-home-mount -p runner-rpc-client \
-  --profile ci
+  -p guest-agent -p guest-storage-apply -p guest-init -p claude-mock -p codex-mock -p guest-state-restore -p guest-tool-exec -p guest-task-exec -p guest-write-file -p guest-home-mount -p runner-rpc-client \
+  --release
 
 # Step 2: build runner with embedded Guest binaries and the CLI tarball.
 # Build package.tgz + manifest.json from this same checkout first (see the Runner Image workflow).
@@ -549,17 +559,18 @@ cargo build --target "$TARGET_TRIPLE" \
 # Paths below are relative to crates/; set every Guest, CLI and manifest path or omit all.
 GUEST_CLI_PATH="../runner-cli-intermediate/package.tgz" \
 GUEST_CLI_MANIFEST_PATH="../runner-cli-intermediate/manifest.json" \
-GUEST_AGENT_PATH="target/$TARGET_TRIPLE/ci/guest-agent" \
-GUEST_STORAGE_APPLY_PATH="target/$TARGET_TRIPLE/ci/guest-storage-apply" \
-GUEST_INIT_PATH="target/$TARGET_TRIPLE/ci/guest-init" \
-CLAUDE_MOCK_PATH="target/$TARGET_TRIPLE/ci/claude-mock" \
-CODEX_MOCK_PATH="target/$TARGET_TRIPLE/ci/codex-mock" \
-GUEST_STATE_RESTORE_PATH="target/$TARGET_TRIPLE/ci/guest-state-restore" \
-GUEST_TOOL_EXEC_PATH="target/$TARGET_TRIPLE/ci/guest-tool-exec" \
-GUEST_WRITE_FILE_PATH="target/$TARGET_TRIPLE/ci/guest-write-file" \
-GUEST_HOME_MOUNT_PATH="target/$TARGET_TRIPLE/ci/guest-home-mount" \
-RUNNER_RPC_CLIENT_PATH="target/$TARGET_TRIPLE/ci/runner-rpc-client" \
-cargo build --target "$TARGET_TRIPLE" -p runner --profile ci
+GUEST_AGENT_PATH="target/$TARGET_TRIPLE/release/guest-agent" \
+GUEST_STORAGE_APPLY_PATH="target/$TARGET_TRIPLE/release/guest-storage-apply" \
+GUEST_INIT_PATH="target/$TARGET_TRIPLE/release/guest-init" \
+CLAUDE_MOCK_PATH="target/$TARGET_TRIPLE/release/claude-mock" \
+CODEX_MOCK_PATH="target/$TARGET_TRIPLE/release/codex-mock" \
+GUEST_STATE_RESTORE_PATH="target/$TARGET_TRIPLE/release/guest-state-restore" \
+GUEST_TOOL_EXEC_PATH="target/$TARGET_TRIPLE/release/guest-tool-exec" \
+GUEST_TASK_EXEC_PATH="target/$TARGET_TRIPLE/release/guest-task-exec" \
+GUEST_WRITE_FILE_PATH="target/$TARGET_TRIPLE/release/guest-write-file" \
+GUEST_HOME_MOUNT_PATH="target/$TARGET_TRIPLE/release/guest-home-mount" \
+RUNNER_RPC_CLIENT_PATH="target/$TARGET_TRIPLE/release/runner-rpc-client" \
+cargo build --target "$TARGET_TRIPLE" -p runner --release
 ```
 
 ## Testing

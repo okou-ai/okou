@@ -6,6 +6,8 @@ import {
 } from "@okouai/api-contracts/contracts/user-templates";
 import { ILLUSTRATION_TEMPLATE_ITEMS } from "@okouai/core/illustration-template-items";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core/presentation-template-items";
+import { DOCUMENT_TEMPLATE_ITEMS } from "@okouai/core/document-template-items";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
@@ -91,16 +93,25 @@ async function openShelf(
   task: string,
   label: string,
   draft = "Keep my launch brief",
+  home = false,
 ) {
   await setupPage({
     context,
     path: `/agents/${AGENT_ID}/chat`,
+    featureSwitches: { [FeatureSwitchKey.HomeCapabilities]: home },
   });
   const editor = await findComposerEditor();
   if (draft) {
     await fill(editor, draft);
   }
-  click(button(task, screen.getByRole("group", { name: "Choose a task" })));
+  click(
+    button(
+      task,
+      screen.getByRole("group", {
+        name: home ? "Explore Okou capabilities" : "Choose a task",
+      }),
+    ),
+  );
   const shelf = await screen.findByRole("group", { name: label });
   return { editor, shelf };
 }
@@ -126,6 +137,64 @@ function mockShelfCatalog(kind: UserTemplateKind) {
   });
   return { capture, own, shared };
 }
+
+test.each([
+  ...SHELVES,
+  {
+    task: "Document",
+    kind: "document",
+    label: "Document templates",
+    builtInTitle: DOCUMENT_TEMPLATE_ITEMS[0]!.title,
+  },
+] as const)(
+  "The $task homepage shelf orders import, custom templates and built-ins and uses the selected custom template",
+  async ({ task, kind, label, builtInTitle }) => {
+    const { capture, own, shared } = mockShelfCatalog(kind);
+    const { editor, shelf } = await openShelf(
+      task,
+      label,
+      "Keep my launch brief",
+      true,
+    );
+    const customTitle = await within(shelf).findByText(own.title);
+    const sharedTitle = within(shelf).getByText(shared.title);
+    const builtInTitleElement = within(shelf).getByText(builtInTitle);
+    const importLabel = {
+      presentation: "Import your own deck",
+      illustration: "Import your own",
+      document: "Import your own document",
+    }[kind];
+    const importInput = within(shelf).getByLabelText(importLabel);
+    expect(
+      importInput.compareDocumentPosition(customTitle) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      customTitle.compareDocumentPosition(builtInTitleElement) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    expect(
+      sharedTitle.compareDocumentPosition(builtInTitleElement) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    click(
+      button(
+        kind === "presentation" ? own.title : `Use template ${own.title}`,
+        shelf,
+      ),
+    );
+    await waitFor(() => {
+      expect(editor).toHaveTextContent(own.title);
+    });
+    expect(editor).toHaveTextContent("Keep my launch brief");
+    click(button("Send"));
+    await waitFor(() => {
+      expect(capture.selectedTemplates).toStrictEqual([
+        { type: "custom", selection: { userTemplateId: own.id } },
+      ]);
+    });
+  },
+);
 
 test.each(SHELVES)(
   "$task shows accessible custom templates only of its kind",
@@ -379,7 +448,7 @@ test("Document defaults to Custom when documents exist and separates built-in pu
   expect(editor).toHaveTextContent("Keep my launch brief");
   expect(editor).toHaveTextContent(own.title);
 
-  click(button("More templates", shelf));
+  click(button("View all", shelf));
   const dialog = await screen.findByRole("dialog");
   expect(button("Reports", dialog)).toHaveAttribute("aria-pressed", "true");
   await userEvent.setup({ delay: null }).keyboard("{Escape}");
@@ -430,7 +499,7 @@ test("A late document catalog and later refresh preserve an explicit category ch
   release.resolve();
   // Seeing the document in the picker proves that the pending response has
   // reached the UI before checking that it did not overwrite Reports.
-  click(button("More templates", shelf));
+  click(button("View all", shelf));
   const dialog = await screen.findByRole("dialog");
   // The picker opens at the shelf's Reports filter; its own Custom filter
   // lists the member's documents.
@@ -485,7 +554,7 @@ test.each(["shelf", "picker"] as const)(
     click(button("Custom", shelf));
     let importSurface = shelf;
     if (entry === "picker") {
-      click(button("More templates", shelf));
+      click(button("View all", shelf));
       importSurface = await screen.findByRole("dialog");
     }
     await userEvent.setup({ delay: null }).upload(

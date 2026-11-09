@@ -13,18 +13,16 @@ import {
   cn,
   Popover,
   PopoverContent,
-  PopoverTrigger,
   RunningIndicator,
+  Skeleton,
   Tooltip,
   TooltipContent,
-  TooltipProvider,
   TooltipTrigger,
 } from "@okouai/ui";
 import type { ArtifactSummary } from "@okouai/api-contracts/contracts/artifact-catalog";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { openThreadCatalogArtifact$ } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { rootSignal$ } from "../../signals/root-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { copyChatResourceArtifact$ } from "../../signals/chat-page/chat-resources.ts";
 import { FilePreviewIcon } from "./file-preview-icon.tsx";
@@ -34,6 +32,11 @@ import { HoverScrollTitle } from "./hover-scroll-title.tsx";
 import { useTitleReveal } from "./use-title-reveal.ts";
 import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
+import {
+  CHAT_HEADER_PANEL_CLASS,
+  ChatHeaderPanelHeader,
+} from "./chat-header-panel.tsx";
+import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import {
   ChatResourceSectionHeading,
   ChatResourceSectionToggle,
@@ -69,31 +72,10 @@ function ChatResourcesButtonInner({
   const { t } = useTranslation();
   // The old pane can remain mounted while the next thread's metadata loads.
   const transitioning = useChatHeaderTransitioning(thread);
-  const popupRef = useSet(thread.resources.popupOnRef$);
   const resources = thread.resources;
-  const chosen = useGet(resources.chosen$);
-  const instantOpening = useGet(resources.instantOpening$);
-  const finishOpening = useSet(resources.finishOpening$);
-  const [preference, press] = useLoadableSet(resources.press$);
-  const requested = useLastResolved(resources.requested$) ?? false;
-  const settled = useLastResolved(resources.settled$) ?? null;
-  // Only a current request waits for resources. A narrower layout releases the
-  // button while the underlying sources keep loading into their caches.
-  const resourceLoading =
-    (requested && settled === null) || preference.state === "loading";
-  const loading = transitioning || resourceLoading;
-  // An automatic opening waits for something to show; a press shows the panel
-  // even when it is empty.
-  const shown = settled !== null && requested && (settled || chosen !== null);
-  const pressed = shown || (resourceLoading && chosen === true);
-  const wide = useGet(resources.wide$);
-  const anchor = useGet(resources.anchor$);
-  const boundary = useGet(resources.boundary$);
-  const collisionBoundary = useGet(resources.collisionBoundary$);
-  const popupAnchor = useGet(resources.popupAnchor$);
+  const open = useGet(resources.open$);
   const setOpen = useSet(resources.setOpen$);
-  const rootSignal = useGet(rootSignal$);
-  const visible = !transitioning && shown && boundary !== null;
+  const visible = !transitioning && open;
   const copyLabel = t(($) => {
     return $.chat.resources.copyLink;
   });
@@ -107,68 +89,38 @@ function ChatResourcesButtonInner({
   return (
     <Popover
       open={visible}
-      modal={false}
-      onOpenChangeComplete={finishOpening}
-      onOpenChange={(nextOpen, details) => {
-        if (details.reason === "trigger-press") {
-          // The preference outlives the page.
-          if (!loading) {
-            detach(press(!shown, rootSignal), Reason.DomCallback);
-          }
-          return;
-        }
-        const outside =
-          details.reason === "outside-press" || details.reason === "focus-out";
-        if (
-          !nextOpen &&
-          outside &&
-          (wide ||
-            (details.event.target instanceof Node &&
-              anchor?.contains(details.event.target)))
-        ) {
-          details.cancel();
-          return;
-        }
+      onOpenChange={(nextOpen) => {
         setOpen(nextOpen);
       }}
     >
-      <ChatResourcesTrigger
+      <ChatHeaderIconButton
         thread={thread}
-        pressed={pressed}
-        open={shown}
-        loading={loading}
+        icon={<Package size={18} />}
+        label={t(($) => {
+          return $.chat.resources.title;
+        })}
         largeTarget={largeTarget}
+        usage={{ kind: "popup", popup: "popover" }}
       />
       <PopoverContent
-        ref={popupRef}
-        // Persistent resources share the chat's keyboard context.
-        role="region"
-        anchor={popupAnchor ?? undefined}
-        collisionBoundary={collisionBoundary ?? undefined}
-        collisionPadding={16}
-        collisionAvoidance={{
-          side: "none",
-          align: "shift",
-          fallbackAxisSide: "none",
-        }}
-        side="bottom"
-        sideOffset={0}
         align="end"
-        // Automatic opening must never take focus away from the composer.
-        initialFocus={false}
+        sideOffset={8}
         aria-label={t(($) => {
           return $.chat.resources.title;
         })}
-        className={cn(
-          "flex max-h-[min(720px,var(--available-height))] w-[376px] max-w-[var(--available-width)] flex-col overflow-hidden p-0",
-          // A press needs no transparent starting frame; positioning still owns
-          // hiding the popup until its coordinates are ready.
-          instantOpening &&
-            "data-open:transition-none data-starting-style:opacity-100 data-starting-style:[transform:none]",
-        )}
+        className={CHAT_HEADER_PANEL_CLASS}
       >
+        <ChatHeaderPanelHeader
+          icon={<Package size={18} />}
+          title={t(($) => {
+            return $.chat.resources.title;
+          })}
+          closeLabel={t(($) => {
+            return $.chat.resources.close;
+          })}
+        />
         {visible ? (
-          <ChatResourcesBody
+          <ChatResourcesContent
             thread={thread}
             copyLabel={copyLabel}
             copyGlyph={copyGlyph}
@@ -180,67 +132,56 @@ function ChatResourcesButtonInner({
   );
 }
 
-function ChatResourcesTrigger({
+/** Loads only while shown, then draws every source at once. */
+function ChatResourcesContent({
   thread,
-  pressed,
-  open,
-  loading,
-  largeTarget,
+  copyLabel,
+  copyGlyph,
+  copyTooltip,
 }: {
   readonly thread: ChatPanelSignals;
-  readonly pressed: boolean;
-  readonly open: boolean;
-  readonly loading: boolean;
-  readonly largeTarget: boolean;
+  readonly copyLabel: string;
+  readonly copyGlyph: ReactNode;
+  readonly copyTooltip: ReactNode;
 }) {
+  const ready = useLastResolved(thread.resources.ready$) ?? false;
+  return ready ? (
+    <ChatResourcesBody
+      thread={thread}
+      copyLabel={copyLabel}
+      copyGlyph={copyGlyph}
+      copyTooltip={copyTooltip}
+    />
+  ) : (
+    <ChatResourcesSkeleton />
+  );
+}
+
+/** One section of rows in the panel's own geometry, shown until it draws complete. */
+function ChatResourcesSkeleton() {
   const { t } = useTranslation();
-  const anchorRef = useSet(thread.resources.anchorOnRef$);
-  const blurControl = useSet(thread.resources.blurControl$);
-  const label = t(($) => {
-    return $.chat.resources.title;
-  });
-  const loadingLabel = t(($) => {
-    return $.chat.resources.loading;
-  });
   return (
-    <TooltipProvider delay={300}>
-      <Tooltip disabled={open}>
-        <TooltipTrigger
-          render={
-            <PopoverTrigger
-              ref={anchorRef}
-              aria-haspopup={undefined}
-              onBlur={(event) => {
-                // The resource button and popup form one keyboard interaction zone.
-                blurControl(event.relatedTarget);
-              }}
-              render={
-                <Button
-                  type="button"
-                  variant="quiet"
-                  size="icon-sm"
-                  iconSize="md"
-                  className={cn(
-                    "shrink-0 duration-150",
-                    largeTarget && "size-11",
-                    pressed &&
-                      "bg-primary/10 text-selected-foreground hover:text-selected-foreground",
-                  )}
-                  aria-label={label}
-                  aria-busy={loading}
-                  aria-disabled={loading || undefined}
-                  // Why presses do nothing must not depend on hover or motion.
-                  aria-description={loading ? loadingLabel : undefined}
-                />
-              }
-            />
-          }
-        >
-          <Package size={18} />
-        </TooltipTrigger>
-        <TooltipContent side="bottom">{label}</TooltipContent>
-      </Tooltip>
-    </TooltipProvider>
+    <div
+      role="status"
+      aria-label={t(($) => {
+        return $.chat.resources.loading;
+      })}
+      className="mt-1 min-h-0 flex-1 px-3 pb-3"
+    >
+      <div aria-hidden="true" className={RESOURCE_SECTION_CLASS}>
+        <div className="flex min-h-6 items-center px-2">
+          <Skeleton className="h-3 w-16" />
+        </div>
+        {[0, 1, 2].map((row) => {
+          return (
+            <div key={row} className="flex h-8.5 items-center gap-2 px-2">
+              <Skeleton className="size-5 shrink-0 rounded-md" />
+              <Skeleton className="h-3.5 w-3/5" />
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 

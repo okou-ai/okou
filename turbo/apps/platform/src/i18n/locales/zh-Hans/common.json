@@ -392,13 +392,11 @@
     "sidebar": {
       "ariaLabel": "侧边栏",
       "chat": "聊天",
-      "collapse": "收起侧边栏",
+      "feedWaiting_other": "{{count}} 条待处理",
       "hideChatList": "隐藏聊天列表",
-      "manage": "管理",
       "mobile": {
         "invite": "邀请",
-        "openAutomations": "打开自动化面板",
-        "openMenu": "打开菜单"
+        "openAutomations": "打开自动化面板"
       },
       "navigation": {
         "agents": "智能体",
@@ -464,8 +462,10 @@
       "nextImage": "下一张图片成果",
       "openNewTab": "在新标签页打开",
       "openSplitView": "在分屏中打开",
+      "partiallyUnavailable": "部分操作暂不可用",
       "previousImage": "上一张图片成果",
       "resetZoom": "重置缩放",
+      "retry": "重试",
       "share": "分享",
       "shareArtifact": "分享成果",
       "zoomIn": "放大",
@@ -997,8 +997,11 @@
       "unavailableTitle": "授权链接不可用"
     },
     "computerUse": {
+      "actionFailed": "未能授权这台电脑，请刷新聊天后重试。",
       "authorize": "授权",
       "authorized": "已授权",
+      "authorizedDescription": "已为此聊天的后续运行启用电脑访问。",
+      "cardDescription": "选择此聊天使用的电脑。这会断开云端浏览器。",
       "checkingCompatibility": "正在检查兼容性",
       "description": "选择一台在线的电脑，供 {{assistantName}} 在{{source}}中使用。",
       "downloadMac": "下载 macOS 版",
@@ -1007,6 +1010,7 @@
       "macRequirement": "需要搭载 Apple 芯片、系统为 macOS 14 或更高版本的 Mac，不支持 Intel 版 Mac。",
       "noHostsDescription": "在 Mac 上打开 {{desktopApplicationName}}，使设备上线。",
       "noHostsTitle": "没有在线的电脑",
+      "selectComputer": "选择电脑",
       "sources": {
         "chat": "这个聊天会话",
         "slack": "这个 Slack 会话",
@@ -1430,6 +1434,8 @@
   },
   "browserViewer": {
     "address": "地址",
+    "addressOpening": "页面仍在打开，请稍后重试。",
+    "addressPreparing": "浏览器尚未就绪，请稍后重试。",
     "allTabs": "所有标签页",
     "automatic": "自动",
     "back": "后退",
@@ -1470,11 +1476,11 @@
     "unavailable": "浏览器画面不可用",
     "unsupportedCapability": "浏览器不支持此操作。",
     "untitledTab": "未命名标签页",
+    "updatingView": "正在更新画面…",
     "windowSize": "窗口大小"
   },
   "chat": {
     "actions": {
-      "authorize": "授权",
       "cancel": "取消",
       "confirm": "确认",
       "continue": "继续",
@@ -1643,7 +1649,7 @@
     },
     "attachments": {
       "attach": "添加附件",
-      "fileTooLarge": "{{filename}} 超过 1 GB 上限",
+      "fileTooLarge": "{{filename}} 超过 512 MB 上限",
       "imageUnavailable": "[图片不可用：{{filename}}]",
       "loadingFile": "正在加载 {{filename}}",
       "previewFile": "预览 {{filename}}",
@@ -1849,6 +1855,102 @@
       "uncertain": "请检查浏览器",
       "uncertainDescription": "浏览器可能已收到这些信息。请让代理检查结果。"
     },
+    "capabilityHome": {
+      "back": "所有能力",
+      "capabilities": "探索 Okou 的能力",
+      "create": {
+        "description": "从一个想法，到可以分享的作品。",
+        "documentFormats": "文档 · PDF · 表格",
+        "title": "创作"
+      },
+      "explore": "探索",
+      "research": {
+        "items": {
+          "ads": "探索广告创意",
+          "products": "研究产品",
+          "searchOpportunities": "发现搜索机会",
+          "tools": "比较工具",
+          "topic": "研究一个主题",
+          "traffic": "比较网站流量"
+        },
+        "prompt": "{{task}}。先确认我想了解什么，再比较证据并总结关键发现，附上来源。",
+        "title": "研究"
+      },
+      "search": {
+        "items": {
+          "affiliates": "联盟营销计划",
+          "creators": "创作者合作",
+          "customers": "潜在客户",
+          "decisionMakers": "决策者",
+          "podcasts": "可投稿的播客",
+          "speakers": "活动嘉宾"
+        },
+        "prompt": "帮我寻找{{task}}。先向我确认目标、筛选条件和范围，再提供包含相关信息和来源链接的精选名单。",
+        "title": "找人"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "串联工具与多个步骤。",
+          "title": "高级工作流"
+        },
+        "description": "简单设置，让琐事自动完成。",
+        "scheduled": {
+          "description": "在合适的时间自动执行。",
+          "items": {
+            "daily": "每日例行任务",
+            "once": "一次性提醒",
+            "weekly": "每周回顾"
+          },
+          "prompt": "帮我设置{{task}}。先确认要做什么、执行时间和时区。",
+          "title": "定时任务"
+        },
+        "suggestions": "从一条建议开始，按你的需要调整。",
+        "triggers": {
+          "description": "事件发生时自动开始。",
+          "eventPrompt": "帮我使用 {{source}} 设置「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先确认具体来源、筛选条件和输出位置，准备工作流草稿，确认设置后再启用。",
+          "items": {
+            "calendar": {
+              "action": "研究参会人",
+              "event": "日程变更",
+              "result": "准备简报",
+              "title": "会前简报"
+            },
+            "email": {
+              "action": "提取需求",
+              "event": "邮件标星",
+              "result": "起草回复",
+              "title": "邮件回复"
+            },
+            "news": {
+              "action": "匹配主题",
+              "event": "关键词匹配",
+              "result": "整理摘要",
+              "title": "新闻摘要"
+            },
+            "slack": {
+              "action": "提取行动项",
+              "event": "有人 @你",
+              "result": "待办清单",
+              "title": "消息转待办"
+            },
+            "social": {
+              "action": "筛选兴趣",
+              "event": "新帖子",
+              "result": "提炼观点",
+              "title": "X 动态追踪"
+            },
+            "webhook": {
+              "action": "研究公司",
+              "event": "表单提交",
+              "result": "起草跟进",
+              "title": "线索跟进"
+            }
+          },
+          "monitorPrompt": "帮我使用 {{source}} 设置「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先确认要关注的订阅源、主题或账号、检查频率和摘要保存位置。定期检查，只处理未处理过的新内容，确认设置后再启用。",
+          "title": "触发器"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "查看详情"
     },
@@ -1918,7 +2020,6 @@
     },
     "computerUse": {
       "authorization": "Computer Use 授权",
-      "authorizationDescription": "为这个会话之后的运行选择一台 Desktop 主机。",
       "checkingCompatibility": "正在检查兼容性",
       "cloudBrowser": "云端浏览器",
       "connectMyComputer": "连接我的电脑",
@@ -2000,7 +2101,6 @@
     "documentTitle": "聊天",
     "errors": {
       "genericTitle": "这次运行没能完成",
-      "loadMessages": "消息加载失败",
       "noModelProviderAction": "管理订阅",
       "noModelProviderPrefix": "此次运行没有可用的模型提供方。请连接个人订阅。",
       "providerIncompatibleAction": "开始新会话",
@@ -2076,6 +2176,11 @@
       "sourcePartHeading": "引用自{{description}}",
       "sourcePartsHeading_one": "从{{description}}引用了 {{count}} 段内容",
       "sourcePartsHeading_other": "从{{description}}引用了 {{count}} 段内容"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "以选中内容创建新聊天",
+      "sent": "已创建新聊天"
     },
     "forward": {
       "action": "转发",
@@ -2253,6 +2358,7 @@
       "unavailableSsh": "不可用的 SSH 主机"
     },
     "resources": {
+      "close": "关闭成果和聊天",
       "collapse": "收起",
       "copyLink": "复制链接",
       "emptyDescription": "这个对话里生成的文件、网站等成果会显示在这里。",
@@ -2331,7 +2437,6 @@
       "number": "数字"
     },
     "sidebar": {
-      "allChats": "全部聊天",
       "archive": "归档聊天",
       "archived": "已归档",
       "chatsWith": "与{{agentName}}的聊天",
@@ -2350,6 +2455,7 @@
       "mute": "静音聊天",
       "muted": "已静音",
       "newChatWith": "与{{agentName}}新建聊天",
+      "newMenu": "新建",
       "noArchived": "没有已归档的聊天",
       "noMuted": "没有已静音的聊天",
       "noUnread": "没有未读聊天",
@@ -2591,12 +2697,9 @@
       "ideasLabel": "上手灵感",
       "label": "上手任务",
       "more": "更多",
-      "moreTemplates": "更多模板",
       "presentationTemplates": "演示文稿模板",
       "removeTask": "移除{{task}}",
       "shelf": {
-        "browseStyles": "浏览全部风格",
-        "browseTemplates": "浏览全部模板",
         "document": "文档模板",
         "image": "图片风格",
         "nextPage": "下一页",
@@ -2612,6 +2715,7 @@
         "website": "网站",
         "workflow": "工作流"
       },
+      "viewAll": "查看全部",
       "visualization": {
         "allCharts": "全部图表",
         "back": "返回可视化选项",
@@ -4014,7 +4118,6 @@
     "deniedTitle": "Shell 访问已拒绝",
     "deny": "拒绝",
     "description": "Agent 需要获得在你的电脑上使用 Shell 的权限。",
-    "details": "详情",
     "duration": "批准后可访问 1 小时",
     "expired": "授权已到期",
     "expiredTitle": "Shell 访问已过期",
@@ -4022,7 +4125,6 @@
     "pendingSummary": "{{computer}} · 1 小时",
     "reasonTitle": "申请用途",
     "requestExpired": "申请已过期",
-    "review": "查看授权",
     "revoke": "撤销",
     "revoked": "已撤销 Shell 授权",
     "scope": "当前聊天的一小时访问权限",
@@ -4232,7 +4334,6 @@
     "instructions": "指令",
     "loadError": "无法加载指令，请重试。",
     "markdown": "支持纯文本和 Markdown",
-    "newChat": "新聊天",
     "placeholder": "告诉 Okou 你喜欢怎样工作…",
     "reload": "重新加载已保存的指令",
     "retry": "重试",
@@ -4984,6 +5085,7 @@
     "moveTitle": "移动聊天",
     "moveTo": "移至 {{name}}",
     "name": "Project 名称",
+    "new": "新建 Project",
     "newChat": "新建聊天",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
@@ -5390,6 +5492,7 @@
         "credits": "积分",
         "fiveHourLimit": "5 小时额度",
         "label": "订阅用量",
+        "limitReached": "额度已用尽",
         "lowUsage": "订阅用量：剩余额度低于 20%",
         "resetTimeUnavailable": "重置时间不可用",
         "usage": "{{provider}}用量",
@@ -6344,6 +6447,7 @@
     "loading": "正在加载通知",
     "loadMore": "查看更早的通知",
     "nextPage": "下一页",
+    "pageNavigation": "消息中的页面",
     "pageOf": "第 {{current}} / {{total}} 页",
     "previousPage": "上一页",
     "readAll": "全部已读",

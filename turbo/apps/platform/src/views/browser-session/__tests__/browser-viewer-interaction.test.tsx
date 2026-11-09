@@ -112,6 +112,331 @@ function reportedCleanupError(
   return report.error;
 }
 
+test("A selected membership refresh preserves address selection before the first edit", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "Address",
+  });
+  await userEvent.click(address);
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.duplicate("example-page");
+  });
+  await proof.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(address).toBeEnabled();
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("https://example.com");
+  expect(address.selectionStart).toBe(2);
+  await act(async () => {
+    await proof.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("https://example.com");
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(2);
+  await userEvent.keyboard("x");
+  expect(address).toHaveValue("htxtps://example.com");
+  expect(address.selectionStart).toBe(3);
+});
+
+test("A selected membership refresh preserves local address text, focus and caret", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "Address",
+  });
+  await fill(address, "draft.example/path");
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.duplicate("example-page");
+  });
+  await proof.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  expect(address).toBeEnabled();
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(2);
+  await userEvent.keyboard("x{Enter}");
+  expect(address).toHaveValue("drxaft.example/path");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await act(async () => {
+    await proof.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(3);
+  expect(address).toHaveValue("drxaft.example/path");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://drxaft.example/path");
+  });
+  expect(browser.targets[0]?.url).toBe("http://drxaft.example/path");
+});
+
+test("A submission blocked by native readiness explains why it did not navigate", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText("Address");
+  await fill(address, "native-admission.example/path");
+  const form = address.closest("form");
+  if (!form) {
+    throw new Error("Address form missing");
+  }
+  const proof = browser.holdNextMembership("example-page");
+  await act(async () => {
+    browser.duplicate("example-page");
+    await proof.received;
+    fireEvent.submit(form);
+  });
+  const notice = await screen.findByText(
+    "The browser is not ready. Try again shortly.",
+  );
+  expect(notice).toBeInTheDocument();
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("native-admission.example/path");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await act(async () => {
+    await proof.release();
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Reload", { selector: "button" }),
+    ).toBeEnabled();
+  });
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://native-admission.example/path");
+  });
+});
+
+test("Address blur releases an unchanged baseline but retains an unsent edit", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText("Address");
+  await userEvent.click(address);
+  act(() => {
+    browser.event(
+      "Page.frameNavigated",
+      {
+        frame: {
+          id: "example-frame",
+          loaderId: "background-loader",
+          url: "https://background.example/",
+        },
+      },
+      browser.pageSession("example-page"),
+    );
+  });
+  expect(address).toHaveValue("https://example.com");
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).not.toHaveFocus();
+  expect(address).toHaveValue("https://background.example/");
+  await fill(address, "unsent.example/path");
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  act(() => {
+    browser.event(
+      "Page.frameNavigated",
+      {
+        frame: {
+          id: "example-frame",
+          loaderId: "later-background-loader",
+          url: "https://later-background.example/",
+        },
+      },
+      browser.pageSession("example-page"),
+    );
+  });
+  expect(address).not.toHaveFocus();
+  expect(address).toHaveValue("unsent.example/path");
+});
+
+test("Escape resets the address without surrendering its selected text to a document update", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText<HTMLInputElement>("Address");
+  await fill(address, "discarded.example/path");
+  await userEvent.keyboard("{Escape}");
+  expect(address).toHaveValue("https://example.com");
+  expect(address.selectionStart).toBe(0);
+  expect(address.selectionEnd).toBe("https://example.com".length);
+  act(() => {
+    browser.event(
+      "Page.frameNavigated",
+      {
+        frame: {
+          id: "example-frame",
+          loaderId: "after-reset",
+          url: "https://background.example/",
+        },
+      },
+      browser.pageSession("example-page"),
+    );
+  });
+  expect(address).toHaveFocus();
+  expect(address).toHaveValue("https://example.com");
+  expect(address.selectionStart).toBe(0);
+  expect(address.selectionEnd).toBe("https://example.com".length);
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).toHaveValue("https://background.example/");
+});
+
+test("An invalid local address remains a draft across membership reattachment", async () => {
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText("Address");
+  await fill(address, "two words");
+  await userEvent.keyboard("{Enter}");
+  await screen.findByRole("alert");
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.duplicate("example-page");
+  });
+  await proof.received;
+  await act(async () => {
+    await proof.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("two words");
+  expect(address).toHaveFocus();
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+});
+
+test.each(["untouched", "focused", "blurred", "edited-after-failure"] as const)(
+  "Creation failure preserves active editing and releases only clean interactions (editor=%s)",
+  async (editor) => {
+    const browser = await setupViewer(0);
+    const receipt = browser.holdNextNative("createTab");
+    await userEvent.click(
+      screen.getByLabelText("New tab", { selector: "button" }),
+    );
+    await receipt.received;
+    const address = screen.getByLabelText<HTMLInputElement>("Address");
+    const settings = screen.getByLabelText("Browser settings");
+    if (editor !== "untouched") {
+      await userEvent.keyboard("{Home}");
+    }
+    if (editor === "blurred") {
+      await userEvent.click(settings);
+      await userEvent.keyboard("{Escape}");
+    }
+    act(() => {
+      browser.move("created-1", 1);
+    });
+    await act(async () => {
+      await receipt.release();
+    });
+    await screen.findByRole("alert");
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(address).toBeEnabled();
+    const active = editor === "focused" || editor === "edited-after-failure";
+    expect(address).toHaveValue(active ? "" : "https://example.com");
+    const focused = editor === "blurred" ? settings : address;
+    expect(focused).toHaveFocus();
+    if (editor === "edited-after-failure") {
+      await userEvent.keyboard("retained.example/path{Enter}");
+    }
+    const retained = editor === "edited-after-failure";
+    expect(address).toHaveValue(
+      retained ? "retained.example/path" : active ? "" : "https://example.com",
+    );
+    expect(browser.targets[0]?.url).toBe("https://example.com");
+    await userEvent.click(settings);
+    await userEvent.keyboard("{Escape}");
+    expect(address).toHaveValue(
+      retained ? "retained.example/path" : "https://example.com",
+    );
+    expect(settings).toHaveFocus();
+    if (retained) {
+      await userEvent.click(address);
+      await userEvent.keyboard("{Escape}");
+    }
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    await fill(address, "after-failure.example/path");
+    await userEvent.keyboard("{Enter}");
+    await waitFor(() => {
+      expect(address).toHaveValue("http://after-failure.example/path");
+    });
+    expect(browser.targets[0]?.url).toBe("http://after-failure.example/path");
+  },
+);
+
+test("A failed creation retains its typed address without navigating the restored page", async () => {
+  const browser = await setupViewer(0);
+  const receipt = browser.holdNextNative("createTab");
+  await userEvent.click(
+    screen.getByLabelText("New tab", { selector: "button" }),
+  );
+  await receipt.received;
+  const address = screen.getByLabelText("Address");
+  await fill(address, "retained.example/path");
+  act(() => {
+    browser.move("created-1", 1);
+  });
+  await act(async () => {
+    await receipt.release();
+  });
+  await screen.findByRole("alert");
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("retained.example/path");
+  expect(address).toHaveFocus();
+  await userEvent.keyboard("{Enter}");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  expect(address).toHaveValue("retained.example/path");
+  await userEvent.keyboard("{Escape}");
+  expect(address).toHaveValue("https://example.com");
+  await fill(address, "chosen.example/path");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://chosen.example/path");
+  });
+  expect(browser.targets[0]?.url).toBe("http://chosen.example/path");
+});
+
+test("A failed creation in an empty window cannot bind its draft to an arriving tab", async () => {
+  const browser = mockViewer(0);
+  browser.targets.splice(0, 1);
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await screen.findByText("No tabs open");
+  const receipt = browser.holdNextNative("createTab");
+  click(screen.getByLabelText("New tab", { selector: "button" }));
+  await receipt.received;
+  const address = screen.getByLabelText("Address");
+  await fill(address, "failed-intent.example/path");
+  act(() => {
+    browser.move("created-1", 1);
+  });
+  await act(async () => {
+    await receipt.release();
+  });
+  await screen.findByRole("alert");
+  act(() => {
+    browser.move("other-page", 0);
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Other", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("failed-intent.example/path");
+  await userEvent.keyboard("{Enter}");
+  expect(browser.targets[0]?.url).toBe("https://other.example.com");
+  expect(address).toHaveValue("failed-intent.example/path");
+  await userEvent.keyboard("{Escape}");
+  expect(address).toHaveValue("https://other.example.com");
+});
+
 test.each([undefined, 0])(
   "New tabs stay blank through creation and can be closed in window %s",
   async (windowId) => {
@@ -126,7 +451,18 @@ test.each([undefined, 0])(
     await screen.findByText("Nothing open yet");
     expect(screen.queryByText("Browser view unavailable")).toBeNull();
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(screen.getByLabelText("Address")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeEnabled();
+    expect(screen.getByLabelText("Address")).toHaveFocus();
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    await fill(screen.getByLabelText("Address"), "draft.example/path");
+    await userEvent.keyboard("{Enter}");
+    expect(
+      screen.getByText("The browser is not ready. Try again shortly."),
+    ).toBeInTheDocument();
+    expect(screen.getByLabelText("Address")).toHaveFocus();
+    await userEvent.keyboard("x{Backspace}");
+    expect(screen.getByLabelText("Address")).toHaveValue("draft.example/path");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     await act(async () => {
       await created.release();
       await image.received;
@@ -136,15 +472,16 @@ test.each([undefined, 0])(
         screen.getByLabelText("New tab", { selector: '[role="tab"]' }),
       ).toHaveAttribute("aria-selected", "true");
     });
-    expect(screen.getByLabelText("Address")).toHaveValue("");
+    expect(screen.getByLabelText("Address")).toHaveValue("draft.example/path");
     expect(screen.getByText("Nothing open yet")).toBeInTheDocument();
     expect(screen.queryByText("Browser view unavailable")).toBeNull();
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(screen.getByLabelText("Address")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeEnabled();
     act(() => {
       image.release();
     });
     await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
       expect(screen.getByLabelText("Address")).toHaveFocus();
     });
     expect(
@@ -152,6 +489,7 @@ test.each([undefined, 0])(
         return target.targetId === "created-1";
       }),
     ).toMatchObject({ url: "about:blank", windowId: 0 });
+    expect(screen.getByLabelText("Address")).toHaveValue("draft.example/path");
     await userEvent.click(screen.getByLabelText("Close New tab"));
     const successor = windowId === undefined ? "Other" : "Example";
     await waitFor(() => {
@@ -373,6 +711,7 @@ test("Selecting another tab clears a delayed creation's blank presentation", asy
     "https://other.example.com",
   );
   expect(screen.queryByText("Nothing open yet")).toBeNull();
+  await fill(screen.getByLabelText("Address"), "later-choice.example/draft");
   await act(async () => {
     await created.release();
   });
@@ -386,9 +725,10 @@ test("Selecting another tab clears a delayed creation's blank presentation", asy
   ).toHaveAttribute("aria-selected", "true");
   expect(screen.queryByText("Nothing open yet")).toBeNull();
   expect(screen.queryByText("Browser view unavailable")).toBeNull();
-  expect(
-    screen.getByLabelText("Other", { selector: '[role="tab"]' }),
-  ).toHaveFocus();
+  expect(screen.getByLabelText("Address")).toHaveFocus();
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "later-choice.example/draft",
+  );
 });
 
 test("A pending creation preserves a later toolbar-control focus choice", async () => {
@@ -409,7 +749,7 @@ test("A pending creation preserves a later toolbar-control focus choice", async 
     await created.release();
   });
   await image.received;
-  expect(screen.getByLabelText("Address")).toBeDisabled();
+  expect(screen.getByLabelText("Address")).toBeEnabled();
   act(() => {
     image.release();
   });
@@ -482,6 +822,49 @@ test.each(["created", "existing"] as const)(
   },
 );
 
+test.each([false, true])(
+  "A new tab distinguishes automatic focus from interaction before its creation receipt (interaction=%s)",
+  async (interact) => {
+    const browser = await setupViewer(0);
+    const creation = browser.holdNextNative("createTab");
+    click(screen.getByLabelText("New tab", { selector: "button" }));
+    await creation.received;
+    const address = screen.getByLabelText<HTMLInputElement>("Address");
+    expect(address).toHaveFocus();
+    expect(address).toHaveValue("");
+    if (interact) {
+      await userEvent.keyboard("{Home}");
+    }
+    await act(async () => {
+      await creation.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    for (const page of ["first", "second"]) {
+      act(() => {
+        browser.event(
+          "Page.frameNavigated",
+          {
+            frame: {
+              id: "example-frame",
+              loaderId: `external-${page}`,
+              url: `https://${page}.example/`,
+            },
+          },
+          browser.pageSession("created-1"),
+        );
+      });
+      const expected = interact ? "" : `https://${page}.example/`;
+      expect(address).toHaveValue(expected);
+      expect(address).toHaveFocus();
+      expect(address.selectionStart).toBe(expected.length);
+    }
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    expect(address).toHaveValue("https://second.example/");
+  },
+);
+
 test.each(["first image", "input initialization"] as const)(
   "Selecting a tab waits for its %s before accepting another browser action",
   async (waitingFor) => {
@@ -500,7 +883,7 @@ test.each(["first image", "input initialization"] as const)(
       ).toHaveAttribute("aria-selected", "true");
     });
     expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
-    expect(screen.getByLabelText("Address")).toBeDisabled();
+    expect(screen.getByLabelText("Address")).toBeEnabled();
     expect(
       screen.getByLabelText("New tab", { selector: "button" }),
     ).toBeDisabled();
@@ -599,6 +982,111 @@ test.each([true, false])(
   },
 );
 
+test.each(["keyboard", "pointer", "composition"] as const)(
+  "A %s interaction after submission protects the still-focused address before another character",
+  async (interaction) => {
+    const browser = await setupViewer(0);
+    const navigation = browser.holdNext("Page.navigate");
+    const address = screen.getByRole<HTMLInputElement>("textbox", {
+      name: "Address",
+    });
+    await fill(address, "submitted.example/path");
+    await userEvent.keyboard("{Enter}");
+    await navigation.received;
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(address).toHaveFocus();
+    if (interaction === "keyboard") {
+      await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+    } else if (interaction === "pointer") {
+      await userEvent.pointer({
+        target: address,
+        keys: "[MouseLeft]",
+        offset: 2,
+      });
+    } else {
+      address.setSelectionRange(2, 2);
+      fireEvent.compositionStart(address);
+    }
+    expect(address.selectionStart).toBe(2);
+    await act(async () => {
+      await navigation.release();
+    });
+    await waitFor(() => {
+      expect(
+        screen.getByLabelText("Reload", { selector: "button" }),
+      ).toBeEnabled();
+    });
+    expect(address).toBeEnabled();
+    expect(address).toHaveFocus();
+    expect(address).toHaveValue("submitted.example/path");
+    expect(address.selectionStart).toBe(2);
+    if (interaction === "composition") {
+      fireEvent.compositionEnd(address);
+    }
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    expect(address).toHaveValue("http://submitted.example/path");
+    expect(browser.targets[0]?.url).toBe("http://submitted.example/path");
+  },
+);
+
+test("Refocusing a submitted address protects selection until the user leaves it", async () => {
+  const browser = await setupViewer(0);
+  const navigation = browser.holdNext("Page.navigate");
+  const address = screen.getByRole<HTMLInputElement>("textbox", {
+    name: "Address",
+  });
+  await fill(address, "submitted.example/path");
+  await userEvent.keyboard("{Enter}");
+  await navigation.received;
+  await userEvent.click(screen.getByLabelText("Browser settings"));
+  await userEvent.keyboard("{Escape}");
+  await userEvent.click(address);
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  await act(async () => {
+    await navigation.release();
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Reload", { selector: "button" }),
+    ).toBeEnabled();
+  });
+  expect(address).toHaveValue("submitted.example/path");
+  expect(address).toHaveFocus();
+  expect(address.selectionStart).toBe(2);
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).toHaveValue("http://submitted.example/path");
+  expect(browser.targets[0]?.url).toBe("http://submitted.example/path");
+});
+
+test("Leaving a clean refocus retains the pending navigation until its own receipt", async () => {
+  const browser = await setupViewer(0);
+  const navigation = browser.holdNext("Page.navigate");
+  const address = screen.getByLabelText("Address");
+  await fill(address, "submitted.example/path");
+  await userEvent.keyboard("{Enter}");
+  await navigation.received;
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("submitted.example", { selector: '[role="tab"]' }),
+    ).toHaveAttribute("aria-selected", "true");
+  });
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  await userEvent.click(address);
+  await userEvent.keyboard("{Home}{ArrowRight}{ArrowRight}");
+  await userEvent.click(screen.getByLabelText("Remote browser input"));
+  expect(address).not.toHaveFocus();
+  expect(address).toHaveValue("submitted.example/path");
+  await act(async () => {
+    await navigation.release();
+  });
+  await waitFor(() => {
+    expect(
+      screen.getByLabelText("Reload", { selector: "button" }),
+    ).toBeEnabled();
+  });
+  expect(address).toHaveValue("http://submitted.example/path");
+});
+
 test("An address submission waits for its navigation receipt across its own document change", async () => {
   const browser = await setupViewer(0);
   const navigation = browser.holdNext("Page.navigate");
@@ -611,16 +1099,24 @@ test("An address submission waits for its navigation receipt across its own docu
       screen.getByLabelText("first.example", { selector: '[role="tab"]' }),
     ).toHaveAttribute("aria-selected", "true");
   });
-  expect(address).toBeDisabled();
-
+  expect(address).toBeEnabled();
+  await fill(address, "second.example/ready");
+  await userEvent.keyboard("{Enter}");
+  expect(
+    screen.getByText("A page is still opening. Try again shortly."),
+  ).toBeInTheDocument();
+  expect(browser.targets[0]?.url).toBe("http://first.example/path");
   await act(async () => {
     await navigation.release();
   });
   await waitFor(() => {
-    expect(address).toBeEnabled();
+    expect(
+      screen.getByLabelText("Reload", { selector: "button" }),
+    ).toBeEnabled();
   });
   expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-  await fill(address, "second.example/ready");
+  expect(address).toHaveValue("second.example/ready");
+  expect(address).toHaveFocus();
   await userEvent.keyboard("{Enter}");
   await waitFor(() => {
     expect(address).toHaveValue("http://second.example/ready");
@@ -2256,7 +2752,7 @@ test("A search-like address reports the failed action and retains the remote pag
 
 test("A hidden page pauses input and resumes the selected tab when visible", async () => {
   const visibility = context.mocks.browser.visibilityState("visible");
-  await setupViewer();
+  const browser = await setupViewer();
   await userEvent.click(
     screen.getByLabelText("Other", { selector: '[role="tab"]' }),
   );
@@ -2270,8 +2766,52 @@ test("A hidden page pauses input and resumes the selected tab when visible", asy
   });
   await screen.findByText("Viewing paused");
   expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  const image = browser.holdTargetFrames("other-page");
   act(() => {
     visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(screen.queryByText("Connecting to browser…")).toBeNull();
+  const updating = screen.getByText("Updating view…");
+  expect(updating).toHaveAttribute("role", "status");
+  expect(updating.parentElement).toHaveTextContent(
+    "Kept while open; reclaimed after 10 idle minutes.",
+  );
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(async () => {
+    browser.event(
+      "Page.screencastFrame",
+      {
+        data: "AAAA",
+        sessionId: 991,
+        metadata: {
+          timestamp: 0.5,
+          offsetTop: 0,
+          pageScaleFactor: 1,
+          deviceWidth: browser.viewport.width,
+          deviceHeight: browser.viewport.height,
+          scrollOffsetX: 0,
+          scrollOffsetY: 0,
+        },
+      },
+      browser.pageSession("other-page"),
+    );
+    await waitFor(() => {
+      expect(browser.requests).toContainEqual(
+        expect.objectContaining({
+          method: "Page.screencastFrameAck",
+          params: { sessionId: 991 },
+        }),
+      );
+    });
+  });
+  expect(screen.getByText("Updating view…")).toBeInTheDocument();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
   });
   await waitFor(() => {
     expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
@@ -2279,6 +2819,626 @@ test("A hidden page pauses input and resumes the selected tab when visible", asy
   expect(screen.getByLabelText("Address")).toHaveValue(
     "https://other.example.com",
   );
+  expect(screen.queryByText("Updating view…")).not.toBeInTheDocument();
+});
+
+test("Rapid visibility changes retain the preview until original capture cleanup and a new image finish", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer();
+  const stop = browser.holdNext("Page.stopScreencast");
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await stop.received;
+  await screen.findByText("Viewing paused");
+  act(() => {
+    visibility.changeTo("visible");
+    visibility.changeTo("hidden");
+    visibility.changeTo("visible");
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(screen.queryByText("Connecting to browser…")).toBeNull();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  const image = browser.holdTargetFrames("example-page");
+  await act(async () => {
+    await stop.release();
+    await image.received;
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const address = screen.getByLabelText("Address");
+  await fill(address, "after-visibility.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://after-visibility.example/ready");
+  });
+});
+
+test.each([
+  "original stop",
+  "pending original stop",
+  "resume preparation",
+] as const)(
+  "A resume after a failed %s requires explicit recovery before accepting input",
+  async (failure) => {
+    const visibility = context.mocks.browser.visibilityState("visible");
+    const browser = await setupViewer(0);
+    if (failure !== "resume preparation") {
+      browser.failNext("Page.stopScreencast", "Original stop failed");
+    }
+    const stop = browser.holdNext("Page.stopScreencast");
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await stop.received;
+    await screen.findByText("Viewing paused");
+    if (failure === "resume preparation") {
+      browser.failNext("Page.createIsolatedWorld", "Resume preparation failed");
+    }
+    act(() => {
+      visibility.changeTo("visible");
+      if (failure === "original stop") {
+        visibility.changeTo("hidden");
+        visibility.changeTo("visible");
+      }
+    });
+    await act(stop.release);
+    await screen.findByText("Browser view unavailable");
+    const retry = await waitFor(() => {
+      const name =
+        failure !== "resume preparation" ? "Retry live image" : "Reconnect";
+      const button = queryAllByRoleFast("button").find((candidate) => {
+        return candidate.textContent?.trim() === name;
+      });
+      expect(button).toBeEnabled();
+      return button!;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    const image = browser.holdTargetFrames("example-page");
+    await userEvent.click(retry);
+    await act(async () => {
+      await image.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      image.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await screen.findByText("Viewing paused");
+    act(() => {
+      visibility.changeTo("visible");
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+  },
+);
+
+async function startCaptureDuringNavigation(
+  previouslyPaused = true,
+  failedReply = true,
+) {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer(0);
+  if (previouslyPaused) {
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await screen.findByText("Viewing paused");
+    act(() => {
+      visibility.changeTo("visible");
+    });
+  }
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  await userEvent.click(screen.getByLabelText("Browser settings"));
+  await userEvent.click(await screen.findByText("Image format"));
+  const menu = await screen.findByRole("menu", { name: "Image format" });
+  const png = queryAllByRoleFast("menuitemradio", menu).find((item) => {
+    return item.textContent?.trim() === "PNG";
+  });
+  if (!png) {
+    throw new Error("Missing PNG option");
+  }
+  if (failedReply) {
+    browser.failNext("Page.startScreencast", "Capture raced with navigation");
+  }
+  const capture = browser.holdNext("Page.startScreencast");
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    browser.event(
+      "Page.frameStartedNavigating",
+      { frameId: "example-frame" },
+      browser.pageSession("example-page"),
+    );
+  });
+  await userEvent.click(png);
+  await capture.received;
+  return { browser, capture, visibility, image };
+}
+
+test("An unchanged capture retries its navigation-related failure after navigation ends", async () => {
+  const { browser, capture, image } = await startCaptureDuringNavigation();
+  await act(capture.release);
+  expect(screen.queryByText("Browser view unavailable")).toBeNull();
+  act(() => {
+    browser.event(
+      "Page.frameStoppedLoading",
+      { frameId: "example-frame" },
+      browser.pageSession("example-page"),
+    );
+  });
+  await act(async () => {
+    await image.received;
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(browser.captures.at(-1)).toMatchObject({ format: "png" });
+});
+
+test.each(
+  (["first pause", "later pause"] as const).flatMap((history) => {
+    return (["success", "failure"] as const).flatMap((reply) => {
+      return (["before reply", "after reply"] as const).map((order) => {
+        return { history, reply, order };
+      });
+    });
+  }),
+)(
+  "A $history $order cancels the obsolete capture $reply and preserves its session",
+  async ({ history, reply, order }) => {
+    const { browser, capture, visibility, image } =
+      await startCaptureDuringNavigation(
+        history === "later pause",
+        reply === "failure",
+      );
+    const canvas = screen.getByRole("img", { name: "Live browser view" });
+    const attachments = browser.requests.filter((request) => {
+      return request.method === "Target.attachToTarget";
+    }).length;
+    if (order === "after reply") {
+      await act(capture.release);
+    }
+    const resumed = browser.holdNext("Page.startScreencast");
+    act(() => {
+      visibility.changeTo("hidden");
+      visibility.changeTo("visible");
+    });
+    expect(screen.getByRole("img", { name: "Live browser view" })).toBe(canvas);
+    expect(screen.queryByText("Connecting to browser…")).toBeNull();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    await act(async () => {
+      await resumed.received;
+      await resumed.release();
+    });
+    expect(screen.getByText("Updating view…")).toBeInTheDocument();
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      image.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    expect(browser.captures.at(-1)).toMatchObject({ format: "png" });
+    const stops = browser.requests.filter((request) => {
+      return request.method === "Page.stopScreencast";
+    }).length;
+    if (order === "before reply") {
+      await act(capture.release);
+    }
+    act(() => {
+      browser.event(
+        "Page.frameStoppedLoading",
+        { frameId: "example-frame" },
+        browser.pageSession("example-page"),
+      );
+    });
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    fireEvent.input(screen.getByLabelText("Remote browser input"), {
+      target: { value: "after capture navigation retry" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        params: { text: "after capture navigation retry" },
+      });
+    });
+    expect(screen.queryByText("Browser view unavailable")).toBeNull();
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Target.attachToTarget";
+      }),
+    ).toHaveLength(attachments);
+    expect(
+      browser.requests.filter((request) => {
+        return request.method === "Page.stopScreencast";
+      }),
+    ).toHaveLength(stops);
+  },
+);
+
+test.each(["preparation", "first image"] as const)(
+  "Pausing an explicit image retry during %s leaves its replacement owner usable",
+  async (phase) => {
+    const visibility = context.mocks.browser.visibilityState("visible");
+    const browser = await setupViewer(0);
+    act(() => {
+      browser.frame("!");
+    });
+    await screen.findByText("Browser view unavailable");
+    const retry = await waitFor(() => {
+      const button = queryAllByRoleFast("button").find((candidate) => {
+        return candidate.textContent?.trim() === "Retry live image";
+      });
+      expect(button).toBeEnabled();
+      return button!;
+    });
+    const old =
+      phase === "preparation"
+        ? browser.holdNext("Page.createIsolatedWorld")
+        : browser.holdTargetFrames("example-page");
+    await userEvent.click(retry);
+    await act(async () => {
+      await old.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      visibility.changeTo("hidden");
+    });
+    await screen.findByText("Viewing paused");
+    const fresh = browser.holdNext("Page.startScreencast");
+    const image = browser.holdTargetFrames("example-page");
+    act(() => {
+      visibility.changeTo("visible");
+    });
+    await act(async () => {
+      await fresh.received;
+      await fresh.release();
+      await image.received;
+    });
+    expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+    act(() => {
+      image.release();
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+    });
+    await act(async () => {
+      await old.release();
+    });
+    await userEvent.click(screen.getByLabelText("Remote browser input"));
+    fireEvent.input(screen.getByLabelText("Remote browser input"), {
+      target: { value: "after interrupted image retry" },
+      inputType: "insertText",
+    });
+    await waitFor(() => {
+      expect(browser.input.at(-1)).toMatchObject({
+        method: "Input.insertText",
+        params: { text: "after interrupted image retry" },
+      });
+    });
+    expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+    expect(screen.queryByText("Browser view unavailable")).toBeNull();
+  },
+);
+
+test("A visibility pause preserves local address editing without queuing an early submission", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer(0);
+  const address = screen.getByLabelText("Address");
+  await fill(address, "local-draft.example/path");
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  expect(address).toBeEnabled();
+  expect(address).toHaveValue("local-draft.example/path");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await userEvent.click(address);
+  await userEvent.keyboard("{Enter}");
+  expect(
+    screen.getByText("The browser is not ready. Try again shortly."),
+  ).toBeInTheDocument();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(address).toHaveValue("local-draft.example/path");
+  expect(browser.targets[0]?.url).toBe("https://example.com");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue("http://local-draft.example/path");
+  });
+});
+
+test("A visibility pause during membership revalidation retains the initialized preview until fresh proof and image", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer(0);
+  const proof = browser.holdNextMembership("example-page");
+  act(() => {
+    browser.nativeEvent("tab-created", undefined, { tabId: 12, windowId: 0 });
+  });
+  await proof.received;
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(screen.queryByText("Connecting to browser…")).toBeNull();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(async () => {
+    await proof.release();
+    await image.received;
+  });
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test("A document navigated while hidden is observed before the retained viewer accepts new input", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    browser.targets[0]!.url = "https://background.example/changed";
+    browser.event(
+      "Page.frameNavigated",
+      {
+        frame: {
+          id: "replacement-document-frame",
+          loaderId: "background-loader",
+          url: "https://background.example/changed",
+        },
+      },
+      browser.pageSession("example-page"),
+    );
+  });
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue(
+    "https://background.example/changed",
+  );
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  const address = screen.getByLabelText("Address");
+  await fill(address, "after-background-navigation.example/ready");
+  await userEvent.keyboard("{Enter}");
+  await waitFor(() => {
+    expect(address).toHaveValue(
+      "http://after-background-navigation.example/ready",
+    );
+  });
+});
+
+test("A resumed viewer can pause again while its replacement picture is still pending", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer();
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await image.received;
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  const capture = browser.holdNext("Page.startScreencast");
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await capture.received;
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(screen.queryByText("Connecting to browser…")).toBeNull();
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  await act(async () => {
+    await capture.release();
+    image.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+});
+
+test("A retained viewer waits for its original key release before accepting resumed input", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  fireEvent.keyDown(input, { key: "Shift", code: "ShiftLeft", keyCode: 16 });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.dispatchKeyEvent",
+      params: { type: "rawKeyDown", key: "Shift" },
+    });
+  });
+  const release = browser.holdNext("Input.dispatchKeyEvent");
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await release.received;
+  await screen.findByText("Viewing paused");
+  const image = browser.holdTargetFrames("example-page");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  expect(input).toBeDisabled();
+  await act(async () => {
+    await release.release();
+    await image.received;
+  });
+  expect(input).toBeDisabled();
+  act(() => {
+    image.release();
+  });
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+  });
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "after original release" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "after original release" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.dispatchKeyEvent";
+    }),
+  ).toMatchObject([
+    { params: { type: "rawKeyDown", key: "Shift" } },
+    { params: { type: "keyUp", key: "Shift" } },
+  ]);
+});
+
+test("An initially hidden viewer establishes usable content after becoming visible", async () => {
+  const visibility = context.mocks.browser.visibilityState("hidden");
+  mockViewer(0);
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await screen.findByText("Viewing paused");
+  expect(screen.getByLabelText("Remote browser input")).toBeDisabled();
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+test("Hiding during native page initialization restores only the current selection", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = mockViewer(0);
+  const initialization = browser.holdNext("Page.enable");
+  await setupPage({ context, path: `/browsers/${threadId}` });
+  await initialization.received;
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  await act(async () => {
+    await initialization.release();
+  });
+  await waitFor(() => {
+    expect(screen.getByLabelText("Remote browser input")).toBeEnabled();
+  });
+  expect(screen.getByLabelText("Address")).toHaveValue("https://example.com");
+});
+
+test("A visibility pause discards an unfinished composition before fresh text is accepted", async () => {
+  const visibility = context.mocks.browser.visibilityState("visible");
+  const browser = await setupViewer(0);
+  const input = screen.getByLabelText("Remote browser input");
+  await userEvent.click(input);
+  const preedit = browser.holdNext("Input.imeSetComposition");
+  fireEvent.compositionStart(input);
+  fireEvent.input(input, {
+    target: { value: "旧" },
+    inputType: "insertCompositionText",
+    isComposing: true,
+  });
+  await preedit.received;
+  act(() => {
+    visibility.changeTo("hidden");
+  });
+  await screen.findByText("Viewing paused");
+  act(() => {
+    visibility.changeTo("visible");
+  });
+  expect(input).toBeDisabled();
+  expect(screen.getByRole("img", { name: "Live browser view" })).toBeVisible();
+  await act(async () => {
+    await preedit.release();
+  });
+  await waitFor(() => {
+    expect(input).toBeEnabled();
+  });
+  fireEvent(
+    input,
+    Object.assign(new Event("compositionend", { bubbles: true }), {
+      data: "旧",
+    }),
+  );
+  await userEvent.click(input);
+  fireEvent.input(input, {
+    target: { value: "fresh text" },
+    inputType: "insertText",
+  });
+  await waitFor(() => {
+    expect(browser.input.at(-1)).toMatchObject({
+      method: "Input.insertText",
+      params: { text: "fresh text" },
+    });
+  });
+  expect(
+    browser.input.filter((request) => {
+      return request.method === "Input.insertText";
+    }),
+  ).toMatchObject([{ params: { text: "fresh text" } }]);
 });
 
 test("An old image cleanup cannot replace a newly selected tab", async () => {

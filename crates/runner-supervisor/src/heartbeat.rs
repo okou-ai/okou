@@ -23,7 +23,10 @@ use runner_types::types::{
 
 /// Period between routine heartbeat ticks sent to the server. First tick is
 /// deferred by one period via `interval_at`.
-pub const HEARTBEAT_PERIOD: Duration = Duration::from_secs(10);
+pub const HEARTBEAT_PERIOD: Duration = Duration::from_secs(60);
+
+/// Failed delivery must not wait for the slower routine report.
+pub(crate) const HEARTBEAT_RETRY_DELAY: Duration = Duration::from_secs(10);
 
 /// Resource shape projected from Runner configuration for heartbeat policy.
 #[derive(Clone)]
@@ -135,6 +138,7 @@ pub struct HeartbeatController {
     in_flight: Option<AbortOnDropHandle<ProviderResult<()>>>,
     pending: Option<HeartbeatRequest>,
     next_snapshot_sequence: u64,
+    retry_deadline: Option<tokio::time::Instant>,
 }
 
 /// One final basic snapshot, retained after controller work has drained.
@@ -188,6 +192,7 @@ impl HeartbeatController {
             in_flight: None,
             pending: None,
             next_snapshot_sequence: 1,
+            retry_deadline: None,
         }
     }
 
@@ -227,8 +232,15 @@ impl HeartbeatController {
 
     /// Observe the task from an enabled `tokio::select!` branch.
     pub async fn wait_for_send(&mut self) -> HeartbeatResult<()> {
-        let _ = self.wait_for_delivery().await?;
+        let delivery = self.wait_for_delivery().await?;
+        self.retry_deadline = delivery
+            .is_err()
+            .then(|| tokio::time::Instant::now() + HEARTBEAT_RETRY_DELAY);
         Ok(())
+    }
+
+    pub(crate) fn retry_deadline(&self) -> Option<tokio::time::Instant> {
+        self.retry_deadline
     }
 
     async fn wait_for_delivery(&mut self) -> HeartbeatResult<ProviderResult<()>> {
@@ -303,6 +315,7 @@ impl HeartbeatController {
     /// Cancelling this wait retains the send; dropping its controller aborts it.
     pub async fn drain(&mut self) -> HeartbeatResult<()> {
         self.pending = None;
+        self.retry_deadline = None;
         if let Some(send) = self.in_flight.as_mut() {
             let result = send.await;
             self.in_flight = None;
@@ -323,6 +336,7 @@ impl HeartbeatController {
 
     fn start(&mut self, mode: RunnerMode, request: HeartbeatRequest) -> HeartbeatResult<()> {
         debug_assert!(self.in_flight.is_none());
+        self.retry_deadline = None;
         let snapshot_sequence = self.next_snapshot_sequence;
         let next_snapshot_sequence = snapshot_sequence
             .checked_add(1)

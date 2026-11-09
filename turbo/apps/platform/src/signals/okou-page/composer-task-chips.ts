@@ -1,3 +1,4 @@
+import { createComposerHomeSignals } from "./composer-home.ts";
 import { command, computed, state } from "ccstate";
 import type { DocumentTemplateCategory } from "@okouai/core/document-template-items";
 import type { GenerationTemplateRequest } from "@okouai/api-contracts/contracts/chat-threads";
@@ -106,6 +107,7 @@ export function createComposerTaskChipsSignals(
   );
   const applyTask$ = command(({ set }, task: ComposerTask | null) => {
     set(workflows.close$);
+    set(home.show$);
     if (task === null || isComposerGeneralTask(task)) {
       set(internalGeneralTask$, task);
       set(create.setMode$, null, true);
@@ -127,11 +129,19 @@ export function createComposerTaskChipsSignals(
    * repeating it has to leave the surface the last one opened standing.
    */
   const openTask$ = command(({ get, set }, task: ComposerTask) => {
+    set(home.show$);
     if (get(task$) === task) {
       return;
     }
     set(applyTask$, task);
   });
+  const home = createComposerHomeSignals(
+    task$,
+    openTask$,
+    selectTask$,
+    workflowActions,
+    workflows.close$,
+  );
   const selectTemplate$ = command(
     (
       { set },
@@ -162,6 +172,7 @@ export function createComposerTaskChipsSignals(
     return task === null;
   });
   return {
+    home,
     task$,
     customTemplates$,
     selectTask$,

@@ -1,6 +1,5 @@
 import ChatData
 import ChatDomain
-import QuickLook
 import SwiftUI
 
 struct MessageAttachmentView: View {
@@ -85,67 +84,23 @@ struct MessageAttachmentView: View {
 
 struct MessageAttachmentPreview: View {
   let viewer: MessageAttachmentStore
-  @State private var quickLookURL: URL?
-  @State private var retainedFile: ChatAttachmentFile?
 
   var body: some View {
-    NavigationStack {
-      if let preview = viewer.preview {
-        Group {
-          if let file = preview.file {
-            let size = ByteCountFormatter.string(fromByteCount: Int64(file.size), countStyle: .file)
-            let canPreview = QLPreviewController.canPreview(file.url as NSURL)
-            OkouEmptyState(
-              verbatim: preview.attachment.filename, icon: "file",
-              description: canPreview
-                ? Text(verbatim: size)
-                : Text(verbatim: size) + Text(verbatim: " · ")
-                  + Text(
-                    "Preview is unavailable for this file type. Share it or save it to Files to open it in another app."
-                  )
-            ) {
-              if canPreview {
-                Button("Open preview") { quickLookURL = file.url }
-                  .buttonStyle(OkouButtonStyle(isPrimary: true, isCompact: true))
-              }
-              ShareLink(item: file.url) {
-                Label("Share or save file", okouSymbol: "share")
-              }
-              .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
-            }
-          } else if let error = preview.error {
-            OkouEmptyState(
-              verbatim: preview.attachment.filename, icon: "file-warning",
-              description: Text(error)
-            ) {
-              if preview.canRetry {
-                Button("Retry download") { viewer.open(preview.attachment) }
-                  .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
-              }
-            }
-          } else {
-            VStack(spacing: OkouSpace.lg) {
-              if let thumbnail = preview.thumbnail {
-                Image(uiImage: thumbnail).resizable().scaledToFit()
-              }
-              OkouLoadingRow("Opening attachment…").fixedSize()
-            }
-            .padding(OkouSpace.lg)
-          }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .navigationTitle("Attachment").navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-          OkouCloseToolbarItem { viewer.dismiss() }
-        }
-        .task(id: preview.file?.url) {
-          if let file = preview.file, QLPreviewController.canPreview(file.url as NSURL) {
-            retainedFile = file
-            quickLookURL = file.url
-          }
+    if let preview = viewer.preview {
+      let artifact = ChatArtifact(
+        source: .file(preview.attachment.downloadID), filename: preview.attachment.filename,
+        contentType: preview.attachment.contentType, size: preview.attachment.size)
+      MessagePreviewSheet(title: artifact.filename, dismiss: viewer.dismiss) {
+        MessageFilePreview(
+          kind: artifact.kind, symbol: artifact.symbol, file: preview.file,
+          thumbnail: preview.thumbnail, error: preview.error, canRetry: preview.canRetry,
+          retry: { viewer.open(preview.attachment) })
+      } actions: {
+        if let file = preview.file {
+          ShareLink(item: file.url) { OkouToolbarIcon("share") }
+            .accessibilityLabel("Share or save to Files")
         }
       }
     }
-    .quickLookPreview($quickLookURL)
   }
 }

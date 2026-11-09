@@ -23,6 +23,7 @@ pub struct ResourceBudget {
     max_concurrent: usize,
     state: Mutex<BudgetState>,
     availability: Notify,
+    changes: Notify,
 }
 
 #[derive(Clone, Copy)]
@@ -205,6 +206,7 @@ impl ResourceBudget {
                 running_count: 0,
             }),
             availability: Notify::new(),
+            changes: Notify::new(),
         }
     }
 
@@ -220,6 +222,8 @@ impl ResourceBudget {
         }
 
         Self::reserve_locked(&mut state, vcpu, memory_mb);
+        drop(state);
+        self.changes.notify_one();
         true
     }
 
@@ -274,8 +278,17 @@ impl ResourceBudget {
         let released_capacity = state.running_vcpu < before.0
             || state.running_memory_mb < before.1
             || state.running_count < before.2;
+        let changed = before
+            != (
+                state.running_vcpu,
+                state.running_memory_mb,
+                state.running_count,
+            );
         drop(state);
 
+        if changed {
+            budget.changes.notify_one();
+        }
         if released_capacity {
             budget.availability.notify_waiters();
         }
@@ -498,6 +511,14 @@ impl ResourceBudget {
         )
     }
 
+    /// Wait for allocation changes for the single state-reporting observer.
+    ///
+    /// Changes coalesce, including before the observer starts waiting. This is
+    /// separate from availability so reporting never consumes admission wakeups.
+    pub async fn changed(&self) {
+        self.changes.notified().await;
+    }
+
     /// Lock the budget state, recovering from poison if a thread panicked.
     fn lock(&self) -> MutexGuard<'_, BudgetState> {
         match self.state.lock() {
@@ -527,6 +548,8 @@ impl ResourceBudget {
         state.running_vcpu -= vcpu;
         state.running_memory_mb -= memory_mb;
         state.running_count -= 1;
+        drop(state);
+        self.changes.notify_one();
         Ok(())
     }
 }

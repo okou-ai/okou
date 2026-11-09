@@ -708,6 +708,7 @@ function connectorRuntimeState(
   const connectors = new Map<ConnectorSlug, ConnectorRuntimeCatalogConnector>();
   const createServerFirewalls = (): ConnectorServerFirewallCatalog => {
     return createAcceptedConnectorServerFirewallCatalogFromConnectors({
+      catalogIdentity: acceptedSnapshot.identity,
       connectors: acceptedSnapshot.artifact.connectors,
       runtimeMethodsForSlug: (connectorSlug) => {
         return [
@@ -785,6 +786,7 @@ function selectedArtifacts(args: {
 
 /** Plain captured entries only; metadata dependencies never grant execution. */
 export function materializeConnectorRuntimeLookup(args: {
+  readonly catalogIdentity: ExternalCatalogIdentity;
   readonly filteredMethodKeys: ReadonlySet<string>;
   readonly connectors: readonly ConnectorCatalogArtifactConnector[];
   readonly runtimeConnectorSlugs: readonly ConnectorSlug[];
@@ -809,6 +811,7 @@ export function materializeConnectorRuntimeLookup(args: {
   );
   const runtimeCatalog =
     createAcceptedConnectorServerFirewallCatalogFromConnectors({
+      catalogIdentity: args.catalogIdentity,
       connectors: runtimeArtifacts,
       runtimeMethodsForSlug: (connectorSlug) => {
         return [
@@ -827,6 +830,7 @@ export function materializeConnectorRuntimeLookup(args: {
   });
   const metadataCatalog =
     createAcceptedConnectorServerFirewallCatalogFromConnectors({
+      catalogIdentity: args.catalogIdentity,
       connectors: metadataArtifacts,
       runtimeMethodsForSlug: (connectorSlug) => {
         return [

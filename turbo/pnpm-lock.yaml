@@ -739,6 +739,9 @@ importers:
       '@clerk/ui':
         specifier: 1.33.1
         version: 1.33.1(@solana/web3.js@1.98.4(@typescript/typescript6@6.0.2)(bufferutil@4.1.0)(utf-8-validate@6.0.6))(@types/react@19.2.14)(@typescript/typescript6@6.0.2)(bs58@6.0.0)(bufferutil@4.1.0)(fastestsmallesttextencoderdecoder@1.0.22)(react-dom@19.2.6(react@19.2.6))(react@19.2.6)(utf-8-validate@6.0.6)
+      '@formatjs/intl-segmenter':
+        specifier: 12.3.1
+        version: 12.3.1
       '@okouai/api-contracts':
         specifier: workspace:*
         version: link:../../packages/api-contracts
@@ -2755,6 +2758,15 @@ packages:
 
   '@fontsource/noto-emoji@5.3.2':
     resolution: {integrity: sha512-N9CSzXJB04AVWYvFbuBgL2Dq964Zo91th/uOu/QLSuWBYuL9FWXGcEo6ZNwc/IJ7vmpm8KHaIKD7jF8pYm4taw==}
+
+  '@formatjs/fast-memoize@3.1.7':
+    resolution: {integrity: sha512-zXfhLpvA6T7+efdt9JLbBwZ00tT7NsBMDVnDu8rpHeNNv8KfRZAMo2gkG0k9lK/Nzc//3kJ9pImsfuJxk3KhUA==}
+
+  '@formatjs/intl-localematcher@0.10.1':
+    resolution: {integrity: sha512-gBqglQK9rXuHsLmM8wzTMBy4Xo4d0jamirIVKuEL8F1rwbskWdpMA1kZarSkny+uvr5q/K6GSzE0Rcq1wZLl3g==}
+
+  '@formatjs/intl-segmenter@12.3.1':
+    resolution: {integrity: sha512-NCM4nDjM4oDwy8AgcGST5YNsBAR7YEgthobNile9C7bQrAQ7qp4jdU/rZKWFL9QXhG2eK4LLIi+PhvYcDtJa0g==}
 
   '@formkit/auto-animate@0.8.4':
     resolution: {integrity: sha512-DHHC01EJ1p70Q0z/ZFRBIY8NDnmfKccQoyoM84Tgb6omLMat6jivCdf272Y8k3nf4Lzdin/Y4R9q8uFtU0GbnA==}
@@ -11178,6 +11190,16 @@ snapshots:
   '@fontpkg/sarasa-gothic-sc@0.36.0': {}
 
   '@fontsource/noto-emoji@5.3.2': {}
+
+  '@formatjs/fast-memoize@3.1.7': {}
+
+  '@formatjs/intl-localematcher@0.10.1':
+    dependencies:
+      '@formatjs/fast-memoize': 3.1.7
+
+  '@formatjs/intl-segmenter@12.3.1':
+    dependencies:
+      '@formatjs/intl-localematcher': 0.10.1
 
   '@formkit/auto-animate@0.8.4': {}
 

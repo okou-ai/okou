@@ -137,11 +137,10 @@ class RealApiClaimReportTests(unittest.TestCase):
     def write(self):
         for order, (inputs, api, events, witnesses, samples) in self.orders.items():
             root = self.root / order
-            for name, value in (("api-inputs.json", inputs), ("api-receipts.json", api), ("p1/report.json", self.collector)):
+            for name, value in (("api-inputs.json", inputs), ("api-receipts.json", api)):
                 (root/name).write_text(json.dumps(value))
-            (root/"p1/samples.jsonl").write_text("\n".join(json.dumps(s) for s in samples))
-            (root/"p1/stdout.log").write_text("\n".join([report.PREFIX+json.dumps(e) for e in events]
-                + [claim.PREFIX+json.dumps(e) for e in witnesses]))
+            report_test.write_report_fixture(root/"p1", self.collector, samples,
+                [(report.PREFIX, events), (claim.PREFIX, witnesses)])
 
     def validate(self):
         self.write()

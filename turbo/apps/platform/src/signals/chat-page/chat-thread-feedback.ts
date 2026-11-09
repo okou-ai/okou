@@ -1,4 +1,3 @@
-import type { createChatForwardComposerSignals } from "./chat-forward-composer.ts";
 import {
   command,
   computed,
@@ -18,11 +17,19 @@ import type {
 } from "../okou-page/chat-feedback.ts";
 import { writeToClipboard } from "../okou-page/clipboard.ts";
 import { clearChatListQuery$ } from "../okou-page/sidebar-state.ts";
+import { defaultAgentId$ } from "../agent.ts";
+import { ASSISTANT_NAME } from "../branding.ts";
+import { singleAgentEnabled$ } from "../single-agent.ts";
+import {
+  chatThreadMetaMap$,
+  type ThreadMeta,
+} from "./chat-thread-event-sourcing.ts";
 import { onDomEventFn, onRef, resetSignal, withCleanup } from "../utils.ts";
 import type {
   ChatForwardTarget,
   ChatForwardContext,
   ChatForwardSelection,
+  ChatForwardComposerState,
 } from "./chat-forward.ts";
 
 // Assistant messages and other agent-produced content, such as linked email
@@ -106,11 +113,12 @@ export interface ChatThreadFeedbackSignals {
   readonly copy$: Command<Promise<void>, [AbortSignal]>;
   readonly forwardSelection$: Computed<ChatForwardSelection | null>;
   readonly forwardTarget$: Computed<ChatForwardTarget | null>;
+  readonly forwardComposer$: Computed<Promise<ChatForwardComposerState> | null>;
   readonly prepareForwardComposer$: ReturnType<
     typeof createForwardState
   >["prepareForwardComposer$"];
   readonly resetForwardTarget$: Command<void, []>;
-  readonly startForward$: Command<boolean, []>;
+  readonly startForward$: Command<Promise<boolean>, [AbortSignal]>;
   readonly closeForward$: Command<void, []>;
   readonly setListenersRef$: Command<
     (() => void) | undefined,
@@ -469,24 +477,61 @@ function createStartFeedback(
   });
 }
 
+/**
+ * Builds the composer a forward is written in. The thread graph supplies it at
+ * construction because that composer is itself built from the thread graph.
+ */
+export type ChatForwardComposerFactory = (
+  target: ChatForwardTarget,
+  forward: ChatForwardContext,
+  onOptimisticSend: () => void,
+) => {
+  readonly prepare$: Command<
+    ChatForwardComposerState | Promise<ChatForwardComposerState>,
+    [AbortSignal]
+  >;
+};
+
 interface ForwardComposerRequest {
   readonly target: ChatForwardTarget;
   readonly forward: ChatForwardContext;
+  readonly fork?: boolean;
 }
 
-function showForwardSent(): void {
+/** The passage quotes its own thread, so its title travels with it. */
+function forwardContextFrom(
+  selection: ChatForwardSelection,
+  source: ThreadMeta,
+): ChatForwardContext {
+  return {
+    ...selection,
+    agentId: source.agentId,
+    titleSnapshot:
+      source.title ??
+      i18n.t(($) => {
+        return $.chat.newChat;
+      }),
+  };
+}
+
+function showForwardSent(fork: boolean): void {
   toast.success(
     i18n.t(($) => {
-      return $.chat.forward.sent;
+      return fork ? $.chat.fork.sent : $.chat.forward.sent;
     }),
   );
 }
 
-function createForwardState(closeSelection$: Command<void, []>) {
+function createForwardState(
+  closeSelection$: Command<void, []>,
+  createComposer: ChatForwardComposerFactory,
+) {
   const internalForwardSelection$ = state<ChatForwardSelection | null>(null);
+  const preparationResult$ = state<Promise<ChatForwardComposerState> | null>(
+    null,
+  );
   const request$ = state<
     | (ForwardComposerRequest & {
-        readonly createComposer: typeof createChatForwardComposerSignals;
         /** Ends the forward once the target composer's send is accepted. */
         readonly onOptimisticSend: () => void;
       })
@@ -495,7 +540,7 @@ function createForwardState(closeSelection$: Command<void, []>) {
   const preparation$ = computed((get) => {
     const request = get(request$);
     return request
-      ? request.createComposer(
+      ? createComposer(
           request.target,
           request.forward,
           request.onOptimisticSend,
@@ -509,9 +554,13 @@ function createForwardState(closeSelection$: Command<void, []>) {
   const forwardTarget$ = computed((get) => {
     return get(request$)?.target ?? null;
   });
+  const forwardComposer$ = computed((get) => {
+    return get(preparationResult$);
+  });
   const resetForwardTarget$ = command(({ set }) => {
     set(resetTarget$);
     set(request$, null);
+    set(preparationResult$, null);
   });
   const openForward$ = command(
     ({ set }, selection: ChatForwardSelection): void => {
@@ -527,14 +576,14 @@ function createForwardState(closeSelection$: Command<void, []>) {
     set(resetForwardTarget$);
   });
   // An accepted forward ends the dialog; the member stays on the source thread.
-  const finishForward$ = command(({ set }): void => {
+  const finishForward$ = command(({ get, set }): void => {
+    const fork = get(request$)?.fork === true;
     set(closeForward$);
-    showForwardSent();
+    showForwardSent(fork);
   });
-  const prepareForwardComposer$ = command(
+  const prepareRequest$ = command(
     async (
       { get, set },
-      createComposer: typeof createChatForwardComposerSignals,
       request: ForwardComposerRequest,
       parentSignal: AbortSignal,
     ) => {
@@ -542,7 +591,6 @@ function createForwardState(closeSelection$: Command<void, []>) {
       const signal = set(resetTarget$, parentSignal);
       set(request$, {
         ...request,
-        createComposer,
         onOptimisticSend: () => {
           set(finishForward$);
         },
@@ -551,13 +599,38 @@ function createForwardState(closeSelection$: Command<void, []>) {
       if (!preparation) {
         throw new Error("Forward target did not derive its composer");
       }
-      return await set(preparation.prepare$, signal);
+      const result = set(preparation.prepare$, signal);
+      set(preparationResult$, Promise.resolve(result));
+      return await result;
+    },
+  );
+  /** Writes the open forward's passage into the composer of `target`. */
+  const prepareForwardComposer$ = command(
+    async (
+      { get, set },
+      target: ChatForwardTarget,
+      signal: AbortSignal,
+    ): Promise<ChatForwardComposerState> => {
+      const selection = get(internalForwardSelection$);
+      const source = selection
+        ? get(chatThreadMetaMap$).get(selection.threadId)
+        : undefined;
+      if (!selection || !source) {
+        throw new Error("Forward source is unavailable");
+      }
+      return await set(
+        prepareRequest$,
+        { target, forward: forwardContextFrom(selection, source) },
+        signal,
+      );
     },
   );
   return {
     forwardSelection$,
     forwardTarget$,
+    forwardComposer$,
     prepareForwardComposer$,
+    prepareRequest$,
     resetForwardTarget$,
     openForward$,
     closeForward$,
@@ -566,24 +639,46 @@ function createForwardState(closeSelection$: Command<void, []>) {
 
 function createStartForward(
   selection$: State<CapturedFeedbackSelection | null>,
-  openForward$: Command<void, [ChatForwardSelection]>,
+  forward: ReturnType<typeof createForwardState>,
 ) {
-  return command(({ get, set }): boolean => {
-    const selection = get(selection$);
-    if (!selection?.threadId || !selection.runId) {
-      return false;
-    }
-    set(openForward$, {
-      quote: selection.text,
-      threadId: selection.threadId,
-      runId: selection.runId,
-      ...(selection.eventId !== undefined && selection.range !== undefined
-        ? { eventId: selection.eventId, range: selection.range }
-        : {}),
-      ...(selection.source ? { source: selection.source } : {}),
-    });
-    return true;
-  });
+  return command(
+    async ({ get, set }, signal: AbortSignal): Promise<boolean> => {
+      const selection = get(selection$);
+      if (!selection?.threadId || !selection.runId) {
+        return false;
+      }
+      const captured: ChatForwardSelection = {
+        quote: selection.text,
+        threadId: selection.threadId,
+        runId: selection.runId,
+        ...(selection.eventId !== undefined && selection.range !== undefined
+          ? { eventId: selection.eventId, range: selection.range }
+          : {}),
+        ...(selection.source ? { source: selection.source } : {}),
+      };
+      if (get(singleAgentEnabled$)) {
+        const agentId = await get(defaultAgentId$);
+        signal.throwIfAborted();
+        const source = get(chatThreadMetaMap$).get(captured.threadId);
+        if (!agentId || !source) {
+          throw new Error("Fork source or default Okou is unavailable");
+        }
+        set(forward.openForward$, captured);
+        await set(
+          forward.prepareRequest$,
+          {
+            target: { kind: "agent", id: agentId, title: ASSISTANT_NAME },
+            forward: forwardContextFrom(captured, source),
+            fork: true,
+          },
+          signal,
+        );
+      } else {
+        set(forward.openForward$, captured);
+      }
+      return true;
+    },
+  );
 }
 
 function createToolbarRef({
@@ -592,14 +687,12 @@ function createToolbarRef({
   close$,
   copy$,
   start$,
-  startForward$,
 }: {
   resetToolbarSignal$: ReturnType<typeof resetSignal>;
   pendingCopyCount$: State<number>;
   close$: Command<void, []>;
   copy$: Command<Promise<void>, [AbortSignal]>;
   start$: Command<void, []>;
-  startForward$: Command<boolean, []>;
 }) {
   return onRef(
     command(({ get, set }, el: HTMLElement, signal: AbortSignal) => {
@@ -623,7 +716,12 @@ function createToolbarRef({
           if (toolbarSignal.aborted) {
             return;
           }
-          if (event.defaultPrevented) {
+          if (
+            event.defaultPrevented ||
+            event.repeat ||
+            event.isComposing ||
+            event.keyCode === 229
+          ) {
             return;
           }
           if (matchShortcut("escape", event)) {
@@ -644,9 +742,14 @@ function createToolbarRef({
             set(start$);
             return;
           }
-          if (matchShortcut("f", event) && set(startForward$)) {
-            event.preventDefault();
-            return;
+          if (matchShortcut("f", event)) {
+            const forwardButton = el.querySelector<HTMLButtonElement>(
+              'button[aria-keyshortcuts="f"]',
+            );
+            if (forwardButton && !forwardButton.disabled) {
+              event.preventDefault();
+              forwardButton.click();
+            }
           }
         }),
         { signal: toolbarSignal },
@@ -810,9 +913,10 @@ export function createChatThreadFeedbackSignals(
   threadId: string,
   feedback: ComposerFeedbackSignals,
   isProgrammaticScrollEvent$: Command<boolean, [EventTarget | null]>,
+  createForwardComposer: ChatForwardComposerFactory,
 ): ChatThreadFeedbackSignals {
   const selection = createSelectionState(threadId);
-  const forward = createForwardState(selection.close$);
+  const forward = createForwardState(selection.close$, createForwardComposer);
   const start$ = createStartFeedback(
     selection.internalSelection$,
     selection.close$,
@@ -820,7 +924,7 @@ export function createChatThreadFeedbackSignals(
   );
   const startForward$ = createStartForward(
     selection.internalSelection$,
-    forward.openForward$,
+    forward,
   );
   const setToolbarRef$ = createToolbarRef({
     resetToolbarSignal$: selection.resetToolbarSignal$,
@@ -828,7 +932,6 @@ export function createChatThreadFeedbackSignals(
     close$: selection.close$,
     copy$: selection.copy$,
     start$,
-    startForward$,
   });
   const setListenersRef$ = createListenersRef({
     selection$: selection.internalSelection$,
@@ -844,6 +947,7 @@ export function createChatThreadFeedbackSignals(
     copy$: selection.copy$,
     forwardSelection$: forward.forwardSelection$,
     forwardTarget$: forward.forwardTarget$,
+    forwardComposer$: forward.forwardComposer$,
     prepareForwardComposer$: forward.prepareForwardComposer$,
     resetForwardTarget$: forward.resetForwardTarget$,
     startForward$,

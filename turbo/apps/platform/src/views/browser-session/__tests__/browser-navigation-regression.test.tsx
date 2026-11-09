@@ -203,7 +203,7 @@ test("A download acknowledgement preserves the confirmed document address withou
   await fill(address, "https://files.example/report.csv");
   await userEvent.keyboard("{Enter}");
   await navigation.received;
-  expect(address).toBeDisabled();
+  expect(address).toBeEnabled();
 
   await act(async () => {
     await navigation.release();
@@ -233,7 +233,7 @@ test("A redirect shows its committed URL after the navigation receipt", async ()
       }),
     ).toHaveAttribute("aria-selected", "true");
   });
-  expect(address).toBeDisabled();
+  expect(address).toBeEnabled();
 
   await act(async () => {
     await navigation.release();

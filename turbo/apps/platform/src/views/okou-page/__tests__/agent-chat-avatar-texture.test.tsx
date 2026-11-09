@@ -121,7 +121,7 @@ async function setupChatPage(): Promise<void> {
   context.mocks.browser.matchMedia(false);
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
   });
   await waitFor(() => {
     expect(avatarFrame()).toBeInTheDocument();
@@ -161,7 +161,7 @@ test("Keep an agent that cannot take a texture untextured and centred", async ()
   context.mocks.browser.matchMedia(false);
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
   });
   await waitFor(() => {
     expect(avatarFrame()).toBeInTheDocument();
@@ -205,7 +205,7 @@ test("Give the organization default agent its own texture", async () => {
   context.mocks.browser.matchMedia(false);
   await setupPage({
     context,
-    path: `/agents/${AGENT_ID}/chat`,
+    path: `/agents/${AGENT_ID}/chat?compose=1`,
   });
   await waitFor(() => {
     expect(avatarFrame()).toBeInTheDocument();

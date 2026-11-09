@@ -47,6 +47,8 @@ final class AuthenticationService {
   let clerk: Clerk?
   private var isRestoringSession = true
   private var clientRefreshGeneration = 0
+  private var clientRefreshTask:
+    (id: UUID, identity: Task<Result<Void, Error>, Never>, task: Task<Void, Never>)?
   private var resolvedWorkspaceIdentity: WorkspaceIdentity?
   private var workspaceSwitch: (id: UUID, sessionID: String, userID: String)?
   private(set) var isLoadingWorkspaces = false
@@ -74,12 +76,12 @@ final class AuthenticationService {
 
   var isLoading: Bool {
     if isRestoringSession { return true }
-    // A restored identity is not ready until membership validation and any
-    // automatic activation finish. Refreshing the same identity keeps chat mounted.
+    // A refreshed active session can enter its workspace while the switcher's
+    // membership list loads. Missing organizations still require resolution.
     guard let identity = workspaceIdentity,
       isAuthenticated || identity.status == .pending
     else { return false }
-    return resolvedWorkspaceIdentity != identity
+    return resolvedWorkspaceIdentity != identity && errorMessage == nil
   }
 
   var isSwitchingWorkspace: Bool {
@@ -134,15 +136,31 @@ final class AuthenticationService {
       imageURL: URL(string: user.imageUrl), hasImage: user.hasImage)
   }
 
-  var activeWorkspaceID: String? {
-    guard isAuthenticated,
-      !isSwitchingWorkspace,
-      workspacesSessionID == clerk?.session?.id,
-      workspacesUserID == userID,
-      let id = clerk?.session?.lastActiveOrganizationId,
-      workspaces.contains(where: { $0.id == id })
+  /// A restored SDK session can present its own local cache before network verification.
+  /// This does not authorize requests; accessToken waits for the refreshed identity.
+  var presentationWorkspaceID: String? {
+    guard isAuthenticated, let identity = workspaceIdentity, let id = identity.workspaceID
     else { return nil }
+    if workspacesSessionID == identity.sessionID, workspacesUserID == identity.userID,
+      !workspaces.contains(where: { $0.id == id })
+    {
+      return nil
+    }
     return id
+  }
+
+  var activeWorkspaceID: String? {
+    guard !isSwitchingWorkspace, let identity = workspaceIdentity,
+      resolvedWorkspaceIdentity == identity
+    else { return nil }
+    return presentationWorkspaceID
+  }
+
+  var presentationScopeID: String? {
+    guard let userID, let sessionID = clerk?.session?.id, let presentationWorkspaceID else {
+      return nil
+    }
+    return "\(userID):\(sessionID):\(presentationWorkspaceID)"
   }
 
   /// Changes on account, session, or workspace changes; a workspace store owns one scope.
@@ -162,35 +180,66 @@ final class AuthenticationService {
   /// Own this long-lived subscription with the app's root `.task`.
   func start() async {
     guard let clerk else { return }
+    defer {
+      clientRefreshTask?.identity.cancel()
+      clientRefreshTask?.task.cancel()
+      clientRefreshTask = nil
+    }
     let events = clerk.auth.events
-    await withDiscardingTaskGroup { group in
-      group.addTask { await self.refresh() }
-      for await event in events {
-        guard !Task.isCancelled else { break }
-        switch event {
-        case .sessionChanged(let oldSession, let newSession):
-          guard
-            oldSession?.id != newSession?.id
-              || oldSession?.user?.id != newSession?.user?.id
-              || oldSession?.status != newSession?.status
-              || oldSession?.lastActiveOrganizationId != newSession?.lastActiveOrganizationId
-          else { continue }
-          // A delayed membership response must not block sign-out or a newer identity.
-          if workspaceIdentity != resolvedWorkspaceIdentity {
-            group.addTask { await self.refreshWorkspaces() }
+    await withTaskCancellationHandler {
+      await withDiscardingTaskGroup { group in
+        group.addTask { await self.refresh() }
+        for await event in events {
+          guard !Task.isCancelled else { break }
+          switch event {
+          case .sessionChanged(let oldSession, let newSession):
+            guard
+              oldSession?.id != newSession?.id
+                || oldSession?.user?.id != newSession?.user?.id
+                || oldSession?.status != newSession?.status
+                || oldSession?.lastActiveOrganizationId != newSession?.lastActiveOrganizationId
+            else { continue }
+            // A delayed membership response must not block sign-out or a newer identity.
+            if workspaceIdentity != resolvedWorkspaceIdentity {
+              group.addTask { await self.refreshWorkspaces() }
+            }
+          case .signedOut, .accountDeleted:
+            clearWorkspaces()
+          default:
+            break
           }
-        case .signedOut, .accountDeleted:
-          clearWorkspaces()
-        default:
-          break
         }
+        group.cancelAll()
       }
-      group.cancelAll()
+    } onCancel: {
+      Task { @MainActor [weak self] in
+        self?.clientRefreshTask?.identity.cancel()
+        self?.clientRefreshTask?.task.cancel()
+      }
     }
   }
 
   func refresh() async {
-    guard let clerk else { return }
+    guard clerk != nil, !Task.isCancelled else { return }
+    _ = beginClientRefresh()
+    await clientRefreshTask?.task.value
+  }
+
+  private func beginClientRefresh() -> Task<Result<Void, Error>, Never> {
+    if let clientRefreshTask { return clientRefreshTask.identity }
+    let id = UUID()
+    let identity = Task { await self.restoreSession() }
+    let task = Task {
+      defer { if clientRefreshTask?.id == id { clientRefreshTask = nil } }
+      guard case .success = await identity.value, !Task.isCancelled else { return }
+      await refreshWorkspaces()
+    }
+    clientRefreshTask = (id, identity, task)
+    return identity
+  }
+
+  private func restoreSession() async -> Result<Void, Error> {
+    guard let clerk else { return .failure(AuthenticationError.notConfigured) }
     clientRefreshGeneration += 1
     let generation = clientRefreshGeneration
     let startingIdentity = workspaceIdentity
@@ -205,19 +254,23 @@ final class AuthenticationService {
         try await clerk.refreshEnvironment()
       }
       try Task.checkCancellation()
-      guard generation == clientRefreshGeneration else { return }
+      guard generation == clientRefreshGeneration else { return .failure(CancellationError()) }
       try await clerk.refreshClient()
       try Task.checkCancellation()
-      guard generation == clientRefreshGeneration else { return }
-      await refreshWorkspaces()
+      guard generation == clientRefreshGeneration else { return .failure(CancellationError()) }
+      if isAuthenticated, let identity = workspaceIdentity, identity.workspaceID != nil {
+        resolvedWorkspaceIdentity = identity
+        isRestoringSession = false
+      }
+      return .success(())
     } catch is CancellationError {
-      return
+      return .failure(CancellationError())
     } catch {
       guard generation == clientRefreshGeneration, startingIdentity == workspaceIdentity else {
-        return
+        return .failure(error)
       }
-      resolvedWorkspaceIdentity = workspaceIdentity
       errorMessage = error.localizedDescription
+      return .failure(error)
     }
   }
 
@@ -281,7 +334,6 @@ final class AuthenticationService {
       return
     } catch {
       guard generation == refreshGeneration, workspaceIdentity == identity else { return }
-      resolvedWorkspaceIdentity = identity
       errorMessage = error.localizedDescription
     }
   }
@@ -289,6 +341,14 @@ final class AuthenticationService {
   func switchWorkspace(_ workspaceID: String) async throws {
     guard let clerk, let session = clerk.session, let userID = clerk.user?.id else {
       throw AuthenticationError.signedOut
+    }
+    // A notification can target another workspace before its switcher list arrives.
+    if workspacesSessionID != session.id || workspacesUserID != userID {
+      await refresh()
+      try Task.checkCancellation()
+      guard clerk.session?.id == session.id, clerk.user?.id == userID else {
+        throw AuthenticationError.workspaceChanged
+      }
     }
     guard !isSwitchingWorkspace else { throw AuthenticationError.workspaceChanged }
     guard workspacesSessionID == session.id, workspacesUserID == userID,
@@ -333,8 +393,19 @@ final class AuthenticationService {
     else {
       throw AuthenticationError.signedOut
     }
+    guard !isSwitchingWorkspace, presentationWorkspaceID == workspaceID,
+      expectedScopeID == nil || expectedScopeID == presentationScopeID
+    else { throw AuthenticationError.workspaceChanged }
+    let presentedScope = presentationScopeID
+    if resolvedWorkspaceIdentity != workspaceIdentity {
+      let result = await beginClientRefresh().value
+      try Task.checkCancellation()
+      try result.get()
+    }
     guard activeWorkspaceID == workspaceID,
-      expectedScopeID == nil || expectedScopeID == scopeID
+      presentedScope == presentationScopeID,
+      expectedScopeID == nil || expectedScopeID == scopeID,
+      clerk.session?.id == session.id, clerk.user?.id == userID
     else { throw AuthenticationError.workspaceChanged }
     let startingScope = scopeID
     let token = try await session.getToken()
@@ -372,6 +443,9 @@ final class AuthenticationService {
   }
 
   private func clearWorkspaces() {
+    clientRefreshTask?.identity.cancel()
+    clientRefreshTask?.task.cancel()
+    clientRefreshTask = nil
     refreshGeneration += 1
     clientRefreshGeneration += 1
     isRestoringSession = false

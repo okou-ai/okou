@@ -22,6 +22,8 @@
 		000000000000000000000062 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000061 /* Sentry */; };
 		000000000000000000000063 /* Sentry in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000061 /* Sentry */; };
 		000000000000000000000072 /* BeautifulMermaid in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000071 /* BeautifulMermaid */; };
+		000000000000000000000082 /* CCState in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000081 /* CCState */; };
+		000000000000000000000084 /* CCStateSwiftUI in Frameworks */ = {isa = PBXBuildFile; productRef = 000000000000000000000083 /* CCStateSwiftUI */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -125,6 +127,8 @@
 				00000000000000000000002F /* ChatData in Frameworks */,
 				000000000000000000000062 /* Sentry in Frameworks */,
 				000000000000000000000072 /* BeautifulMermaid in Frameworks */,
+				000000000000000000000082 /* CCState in Frameworks */,
+				000000000000000000000084 /* CCStateSwiftUI in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -204,6 +208,8 @@
 				00000000000000000000002D /* ChatData */,
 				000000000000000000000061 /* Sentry */,
 				000000000000000000000071 /* BeautifulMermaid */,
+				000000000000000000000081 /* CCState */,
+				000000000000000000000083 /* CCStateSwiftUI */,
 			);
 			productName = Okou;
 			productReference = 000000000000000000000009 /* Okou.app */;
@@ -308,6 +314,7 @@
 				00000000000000000000002C /* XCLocalSwiftPackageReference "Packages/ChatData" */,
 				000000000000000000000060 /* XCRemoteSwiftPackageReference "sentry-cocoa" */,
 				000000000000000000000070 /* XCRemoteSwiftPackageReference "beautiful-mermaid-swift" */,
+				000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */,
 			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = 000000000000000000000007 /* Products */;
@@ -605,6 +612,14 @@
 				version = 1.0.4;
 			};
 		};
+		000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/lancy/swift-ccstate.git";
+			requirement = {
+				kind = revision;
+				revision = d75c85c8ff3d8c5f9ee224f852ca7b3ad851ab7c;
+			};
+		};
 /* End XCRemoteSwiftPackageReference section */
 
 /* Begin XCSwiftPackageProductDependency section */
@@ -652,6 +667,16 @@
 			isa = XCSwiftPackageProductDependency;
 			package = 000000000000000000000070 /* XCRemoteSwiftPackageReference "beautiful-mermaid-swift" */;
 			productName = BeautifulMermaid;
+		};
+		000000000000000000000081 /* CCState */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */;
+			productName = CCState;
+		};
+		000000000000000000000083 /* CCStateSwiftUI */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 000000000000000000000080 /* XCRemoteSwiftPackageReference "swift-ccstate" */;
+			productName = CCStateSwiftUI;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

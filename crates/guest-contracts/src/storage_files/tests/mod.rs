@@ -3,6 +3,7 @@ use crate::storage_manifest::{ArtifactEntry, Manifest, StorageEntry};
 
 fn storage_entry(mount_path: &str) -> StorageEntry {
     StorageEntry {
+        template_guidance: None,
         mount_path: mount_path.into(),
         archive_url: Some("file:///storage.tar.gz".into()),
         cached: false,
@@ -26,6 +27,7 @@ fn artifact_entry(mount_path: &str) -> ArtifactEntry {
 
 fn manifest(storages: Vec<StorageEntry>, artifacts: Vec<ArtifactEntry>) -> Manifest {
     Manifest {
+        archive_readiness: None,
         storages,
         artifacts,
         cleanup_paths: Vec::new(),

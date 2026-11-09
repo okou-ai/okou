@@ -1,5 +1,25 @@
 # Changelog
 
+## [0.13.0](https://github.com/okou-ai/okou/compare/runner-types-v0.12.9...runner-types-v0.13.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+## [0.12.9](https://github.com/okou-ai/okou/compare/runner-types-v0.12.8...runner-types-v0.12.9) (2026-11-07)
+
+## [0.12.8](https://github.com/okou-ai/okou/compare/runner-types-v0.12.7...runner-types-v0.12.8) (2026-11-07)
+
+## [0.12.7](https://github.com/okou-ai/okou/compare/runner-types-v0.12.6...runner-types-v0.12.7) (2026-11-06)
+
+## [0.12.6](https://github.com/okou-ai/okou/compare/runner-types-v0.12.5...runner-types-v0.12.6) (2026-11-06)
+
+
+### Bug Fixes
+
+* **runner:** accept single-character skill bundle names ([#45746](https://github.com/okou-ai/okou/issues/45746)) ([28abc7b](https://github.com/okou-ai/okou/commit/28abc7bf886d180768dfd065bbef021b34c8993f))
+
 ## [0.12.5](https://github.com/okou-ai/okou/compare/runner-types-v0.12.4...runner-types-v0.12.5) (2026-11-05)
 
 ## [0.12.4](https://github.com/okou-ai/okou/compare/runner-types-v0.12.3...runner-types-v0.12.4) (2026-11-04)

@@ -1,12 +1,21 @@
 import assert from "node:assert/strict";
-import { mkdtemp, mkdir, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
+import {
+  clearTimeout as nodeClearTimeout,
+  setTimeout as nodeSetTimeout,
+} from "node:timers";
 import { URL } from "node:url";
-import { runInNewContext } from "node:vm";
+import { createContext, runInContext, runInNewContext } from "node:vm";
 
 import { build, loadConfigFromFile } from "vite";
+import { getDocument } from "pdfjs-dist/legacy/build/pdf.mjs";
+import type {
+  PdfWorkerRequest,
+  PdfWorkerResponse,
+} from "../src/lib/message-pdf/types.ts";
 
 import { applicationResourcePriorityHtmlPlugin } from "./app-resource-priority-html.ts";
 import {
@@ -138,6 +147,148 @@ await test("built runtime supports resource scopes and URLs with missing or nati
     assert.equal(url.canParse("https://example.com:65536"), false);
     assert.equal(url.canParse("/page"), false);
     assert.equal(url.canParse("https://example.com", "invalid base"), false);
+  }
+});
+
+async function assertPdfLinkAnnotation(
+  blob: Blob,
+  expectedUrl: string,
+): Promise<void> {
+  const pdf = getDocument({
+    data: new Uint8Array(await blob.arrayBuffer()),
+    useSystemFonts: false,
+  });
+  try {
+    const document = await pdf.promise;
+    const page = await document.getPage(1);
+    const annotations: unknown[] = await page.getAnnotations();
+    assert.equal(annotations.length, 1);
+    const annotation = annotations[0];
+    assert.ok(
+      annotation && typeof annotation === "object" && "url" in annotation,
+    );
+    assert.equal(annotation.url, expectedUrl);
+  } finally {
+    await pdf.destroy();
+  }
+}
+
+await test("built PDF worker exports grapheme text and links with missing or native APIs", async () => {
+  const result = await build({
+    configFile: false,
+    logLevel: "silent",
+    build: {
+      write: false,
+      rolldownOptions: {
+        input: new URL(
+          "../src/lib/message-pdf/message-pdf-worker.ts",
+          import.meta.url,
+        ).pathname,
+        output: { format: "iife" },
+      },
+    },
+  });
+  assert.ok("output" in result);
+  const entry = result.output.find((output) => {
+    return output.type === "chunk" && output.isEntry;
+  });
+  assert.ok(entry?.type === "chunk");
+  assert.ok(Buffer.byteLength(entry.code) <= MESSAGE_PDF_WORKER_LIMIT_BYTES);
+  const font = async (filename: string) => {
+    return Uint8Array.from(
+      await readFile(
+        new URL(
+          `../test-fixtures/message-pdf-fonts/${filename}`,
+          import.meta.url,
+        ),
+      ),
+    ).buffer;
+  };
+  const request: PdfWorkerRequest = {
+    baseUrl: "https://app.okou.ai/",
+    tree: {
+      type: "root",
+      children: [
+        {
+          type: "element",
+          tagName: "p",
+          properties: {},
+          children: [
+            { type: "text", value: "Compatibility e\u0301 👩‍💻 " },
+            {
+              type: "element",
+              tagName: "a",
+              properties: { href: "https://example.com/reference" },
+              children: [{ type: "text", value: "Reference" }],
+            },
+          ],
+        },
+      ],
+    },
+    assets: { images: new Map(), diagrams: new Map() },
+    regularFont: await font("NotoSansCJKsc-Regular.otf"),
+    boldFont: await font("NotoSansCJKsc-Bold.otf"),
+    emojiFont: await font("noto-emoji-emoji-400-normal.woff"),
+  };
+  for (const native of [false, true]) {
+    const workerIntl = runInNewContext("Intl") as typeof Intl;
+    const nativeSegmenter = workerIntl.Segmenter;
+    if (!native) {
+      Reflect.deleteProperty(workerIntl, "Segmenter");
+    }
+    class WorkerURL extends URL {}
+    Object.defineProperty(WorkerURL, "canParse", {
+      configurable: true,
+      writable: true,
+      value: native ? URL.canParse : undefined,
+    });
+    const delivery: {
+      listener?: (event: { data: PdfWorkerRequest }) => Promise<void>;
+      response?: PdfWorkerResponse;
+    } = {};
+    const workerScope = createContext({
+      Intl: workerIntl,
+      URL: WorkerURL,
+      Blob,
+      AbortController,
+      AbortSignal,
+      DOMException,
+      navigator: { userAgent: "Mozilla/5.0" },
+      TextEncoder,
+      TextDecoder,
+      setTimeout: nodeSetTimeout,
+      clearTimeout: nodeClearTimeout,
+      queueMicrotask,
+      atob,
+      btoa,
+      addEventListener(_type: string, listener: typeof delivery.listener) {
+        delivery.listener = listener;
+      },
+      postMessage(response: PdfWorkerResponse) {
+        delivery.response = response;
+      },
+    });
+    runInContext("globalThis.self = globalThis", workerScope);
+    runInContext(entry.code, workerScope);
+    assert.ok(delivery.listener);
+    await delivery.listener({ data: request });
+    const response = delivery.response;
+    assert.ok(response?.ok);
+    assert.equal(response.blob.type, "application/pdf");
+    await assertPdfLinkAnnotation(
+      response.blob,
+      "https://example.com/reference",
+    );
+    assert.deepEqual(
+      Array.from(new workerIntl.Segmenter().segment("e\u0301👩‍💻"), (part) => {
+        return part.segment;
+      }),
+      ["e\u0301", "👩‍💻"],
+    );
+    if (native) {
+      assert.equal(workerIntl.Segmenter, nativeSegmenter);
+      assert.equal(WorkerURL.canParse, URL.canParse);
+    }
   }
 });
 
@@ -651,8 +802,6 @@ await test("rejects worker chunks with imports or forbidden packages", () => {
   );
 });
 
-const OPTIONAL_FONT_STYLESHEET = `<link rel="stylesheet" href="https://fonts.example.test/fallback.css" media="print" onload="this.media='all'">`;
-
 function clerkDiscoveryFixture(): string {
   return [
     "<!doctype html><html><head>",
@@ -660,7 +809,6 @@ function clerkDiscoveryFixture(): string {
     '<meta name="okou-clerk-ui-script" content="__OKOU_CLERK_UI_SCRIPT_URL__">',
     '<script id="okou-clerk-core-script" src="https://cdn.example.test/clerk.js" defer></script>',
     '<script data-okou-clerk-bootstrap="">window.__clerkConfigured = true;</script>',
-    OPTIONAL_FONT_STYLESHEET,
     '<script type="module" src="/src/main.js"></script>',
     "</head><body>",
     '<div id="app-bootstrap-skeleton"></div>',
@@ -723,15 +871,7 @@ function assertApplicationStylesheetPreload(htmlSource: string): void {
     htmlSource,
     /<link id="okou-main-stylesheet" rel="preload" as="style"[^>]*>/u,
   );
-  assert.deepEqual(
-    [...htmlSource.matchAll(/<link\b[^>]*\brel="stylesheet"[^>]*>/gu)].map(
-      (match) => {
-        return match[0];
-      },
-    ),
-    [OPTIONAL_FONT_STYLESHEET],
-    "only the non-blocking optional font stylesheet remains outside the managed preload",
-  );
+  assert.equal((htmlSource.match(/<link rel="stylesheet"/gu) ?? []).length, 0);
   assert.doesNotMatch(htmlSource, /\sfetchpriority=/u);
   assert.match(
     htmlSource,

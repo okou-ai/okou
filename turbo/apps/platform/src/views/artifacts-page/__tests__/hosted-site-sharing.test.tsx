@@ -30,7 +30,11 @@ const site = Object.freeze({
   isActive: true,
 });
 
-async function openSite({ sidebar = false, shareRows = false } = {}) {
+async function openSite({
+  sidebar = false,
+  shareRows = false,
+  refined = false,
+} = {}) {
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
     return respond(200, {
       artifacts: [artifact({ kind: "hosted-site", title: "Weekly report" })],
@@ -59,6 +63,7 @@ async function openSite({ sidebar = false, shareRows = false } = {}) {
     featureSwitches: {
       [FeatureSwitchKey.ArtifactSidebarPreview]: sidebar,
       [FeatureSwitchKey.HostedSiteShareRows]: shareRows,
+      [FeatureSwitchKey.ArtifactPreviewToolbar]: refined,
     },
   });
   click(await findArtifactAction("Weekly report"));
@@ -417,6 +422,66 @@ test("Unavailable banner settings do not claim that the banner is hidden", async
   expect(
     screen.queryByRole("switch", { name: "Show Okou banner" }),
   ).not.toBeInTheDocument();
+});
+
+test("More retries an initial banner read failure without exposing an unready setting", async () => {
+  const user = userEvent.setup({ delay: null });
+  const response = context.mocks.deferred<void>();
+  let unavailable = true;
+  context.mocks.api(hostContract.siteBanner, async ({ respond }) => {
+    await response.promise;
+    return unavailable
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Banner settings unavailable",
+          },
+        })
+      : respond(200, { siteId, showBanner: false, revision: null });
+  });
+
+  await openSite({ refined: true });
+  await openShare();
+  await expectPermission("Anyone with the link");
+  const share = screen.getByRole("dialog", { name: "Share" });
+  // The label accompanies the legacy loading skeleton; neither is a ready action.
+  expect(within(share).queryByText("Show Okou banner")).not.toBeInTheDocument();
+  expect(
+    within(share).queryByRole("switch", { name: "Show Okou banner" }),
+  ).not.toBeInTheDocument();
+
+  response.resolve();
+  await expect(
+    screen.findByText("Banner settings unavailable"),
+  ).resolves.toBeInTheDocument();
+  expect(within(share).queryByText("Show Okou banner")).not.toBeInTheDocument();
+  expect(
+    within(share).queryByRole("switch", { name: "Show Okou banner" }),
+  ).not.toBeInTheDocument();
+  await user.keyboard("{Escape}");
+  await waitFor(() => {
+    expect(share).not.toBeInTheDocument();
+  });
+
+  click(getButtonByName("More artifact actions"));
+  const more = await screen.findByRole("menu");
+  await expect(
+    within(more).findByText("Some actions are unavailable"),
+  ).resolves.toBeInTheDocument();
+  const retry = within(more).getByText("Retry");
+  expect(retry).not.toHaveAttribute("aria-disabled", "true");
+  unavailable = false;
+  click(retry);
+  await waitFor(() => {
+    expect(more).not.toBeInTheDocument();
+  });
+
+  await openShare();
+  const toggle = await screen.findByRole("switch", {
+    name: "Show Okou banner",
+  });
+  expect(toggle).not.toBeChecked();
+  expect(toggle).toBeEnabled();
 });
 
 test.each([false, true])(

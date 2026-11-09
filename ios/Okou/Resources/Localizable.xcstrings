@@ -1806,6 +1806,43 @@
         }
       }
     },
+    "Agents": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Agents" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Agentes" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Agents" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "एजेंट" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Agen" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Agenti" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "エージェント" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "에이전트" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Agentes" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "智能体" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "智慧代理" }
+        }
+      }
+    },
     "AI": {
       "localizations": {
         "de": {
@@ -1914,43 +1951,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "所有分類" }
-        }
-      }
-    },
-    "All chats": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Alle Chats" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Todas las conversaciones" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Toutes les discussions" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "सभी चैट" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Semua chat" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Tutte le chat" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "すべてのチャット" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "모든 채팅" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Todas as conversas" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "全部聊天" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "全部聊天" }
         }
       }
     },
@@ -2422,43 +2422,6 @@
         }
       }
     },
-    "Already have an account?": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Sie haben bereits ein Konto?" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "¿Ya tienes una cuenta?" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Vous avez déjà un compte ?" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "पहले से खाता है?" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Sudah punya akun?" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Hai già un account?" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "アカウントをお持ちですか？" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이미 계정이 있으신가요?" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Já tem uma conta?" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "已有账号？" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "已有帳號？" }
-        }
-      }
-    },
     "Also enable SSH: %@": {
       "localizations": {
         "de": {
@@ -2760,6 +2723,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "已封存" }
+        }
+      }
+    },
+    "Artifacts": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Artefakte" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Artefactos" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Artefacts" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आर्टिफ़ैक्ट" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Artefak" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Artefatti" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "成果物" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "결과물" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Artefatos" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "成果" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "成果" }
         }
       }
     },
@@ -3680,43 +3680,6 @@
         }
       }
     },
-    "Changes apply to this chat right away.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Änderungen gelten sofort für diesen Chat." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Los cambios se aplican a este chat al instante." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Les modifications s’appliquent immédiatement à cette discussion." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "बदलाव इस चैट पर तुरंत लागू होते हैं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Perubahan langsung berlaku untuk chat ini." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Le modifiche si applicano subito a questa chat." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "変更はすぐにこのチャットに適用されます。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "변경 사항은 이 채팅에 즉시 적용됩니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "As alterações valem para esta conversa imediatamente." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "更改会立即应用于此聊天。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "變更會立即套用到此聊天。" }
-        }
-      }
-    },
     "Changes apply to this chat.": {
       "extractionState": "manual",
       "localizations": {
@@ -3874,43 +3837,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "對話模型" }
-        }
-      }
-    },
-    "Chat titles": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Chattitel" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Títulos de los chats" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Titres des discussions" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "चैट शीर्षक" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Judul chat" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Titoli delle chat" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "チャットのタイトル" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "채팅 제목" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Títulos das conversas" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "聊天标题" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "聊天標題" }
         }
       }
     },
@@ -6078,43 +6004,6 @@
         }
       }
     },
-    "Continue with email": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Mit E-Mail fortfahren" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Continuar con correo electrónico" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Continuer avec l’e-mail" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "ईमेल से जारी रखें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Lanjutkan dengan email" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Continua con l’email" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "メールで続ける" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "이메일로 계속하기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Continuar com e-mail" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "使用邮箱继续" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "使用電子郵件繼續" }
-        }
-      }
-    },
     "Continue with one of your workspaces.": {
       "extractionState": "manual",
       "localizations": {
@@ -6765,43 +6654,6 @@
         }
       }
     },
-    "Create account": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Konto erstellen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Crear cuenta" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Créer un compte" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "खाता बनाएँ" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Buat akun" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Crea account" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "アカウントを作成" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "계정 만들기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Criar conta" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "创建账号" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "建立帳號" }
-        }
-      }
-    },
     "Create an investor pitch deck for my business. Ask me about the problem, the product, the traction so far, and what I am raising.": {
       "localizations": {
         "de": {
@@ -6873,43 +6725,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "建立自訂連接器" }
-        }
-      }
-    },
-    "Create your account": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Erstellen Sie Ihr Konto" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Crea tu cuenta" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Créez votre compte" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "अपना खाता बनाएँ" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Buat akun Anda" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Crea il tuo account" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "アカウントを作成" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "계정 만들기" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Crie sua conta" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "创建你的账号" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "建立你的帳號" }
         }
       }
     },
@@ -7214,43 +7029,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "預設（開啟）" }
-        }
-      }
-    },
-    "Default for new chats": {
-      "localizations": {
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "新对话的默认模型" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "新對話的預設模型" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "新しいチャットのデフォルト" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "새 채팅 기본값" }
-        },
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Standard für neue Chats" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Predeterminado para chats nuevos" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Par défaut pour les nouvelles discussions" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Predefinito per le nuove chat" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Padrão para novas conversas" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Default untuk chat baru" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "नई चैट के लिए डिफ़ॉल्ट" }
         }
       }
     },
@@ -9330,6 +9108,80 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "金融" }
+        }
+      }
+    },
+    "Find a file, site or deck by its name.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Finden Sie eine Datei, eine Website oder eine Präsentation über ihren Namen." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Encuentra un archivo, sitio o presentación por su nombre." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Trouvez un fichier, un site ou une présentation par son nom." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "किसी फ़ाइल, साइट या डेक को उसके नाम से ढूँढें।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Temukan file, situs, atau presentasi berdasarkan namanya." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Trova un file, un sito o una presentazione dal nome." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "ファイル、サイト、スライドを名前で探せます。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "파일, 사이트, 슬라이드를 이름으로 찾아보세요." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Encontre um arquivo, site ou apresentação pelo nome." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "按名称查找文件、网站或演示文稿。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "依名稱查找檔案、網站或簡報。" }
+        }
+      }
+    },
+    "Find a message by any word in it.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Finden Sie eine Nachricht über ein beliebiges Wort darin." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Encuentra un mensaje por cualquier palabra que contenga." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Trouvez un message grâce à n’importe quel mot qu’il contient." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "किसी भी शब्द से संदेश ढूँढें।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Temukan pesan dari kata apa pun di dalamnya." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Trova un messaggio da qualsiasi parola che contiene." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "含まれる言葉でメッセージを探せます。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "메시지에 들어 있는 단어로 찾아보세요." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Encontre uma mensagem por qualquer palavra que ela contenha." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "用消息里的任意词语查找。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "用訊息裡的任意詞語查找。" }
         }
       }
     },
@@ -11560,6 +11412,43 @@
         }
       }
     },
+    "Loading workflows…": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Workflows werden geladen…" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Cargando flujos de trabajo…" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Chargement des workflows…" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "वर्कफ़्लो लोड हो रहे हैं…" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Memuat alur kerja…" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Caricamento dei flussi di lavoro…" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "ワークフローを読み込み中…" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "워크플로 불러오는 중…" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Carregando fluxos de trabalho…" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "正在加载工作流…" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "正在載入工作流…" }
+        }
+      }
+    },
     "Loading workspaces…": {
       "extractionState": "manual",
       "localizations": {
@@ -11638,40 +11527,40 @@
         }
       }
     },
-    "Log in to your Okou workspace.": {
+    "Log in or create your account.": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Melden Sie sich bei Ihrem Okou-Arbeitsbereich an." }
+          "stringUnit": { "state": "translated", "value": "Melden Sie sich an oder erstellen Sie Ihr Konto." }
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "Inicia sesión en tu espacio de trabajo de Okou." }
+          "stringUnit": { "state": "translated", "value": "Inicia sesión o crea tu cuenta." }
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "Connectez-vous à votre espace de travail Okou." }
+          "stringUnit": { "state": "translated", "value": "Connectez-vous ou créez votre compte." }
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "अपने Okou वर्कस्पेस में लॉग इन करें।" }
+          "stringUnit": { "state": "translated", "value": "लॉग इन करें या अपना खाता बनाएँ।" }
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Masuk ke ruang kerja Okou Anda." }
+          "stringUnit": { "state": "translated", "value": "Masuk atau buat akun Anda." }
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "Accedi alla tua area di lavoro Okou." }
+          "stringUnit": { "state": "translated", "value": "Accedi o crea il tuo account." }
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "Okou ワークスペースにログインします。" }
+          "stringUnit": { "state": "translated", "value": "ログインするか、アカウントを作成します。" }
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "Okou 워크스페이스에 로그인하세요." }
+          "stringUnit": { "state": "translated", "value": "로그인하거나 계정을 만드세요." }
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Entre no seu espaço de trabalho do Okou." }
+          "stringUnit": { "state": "translated", "value": "Entre ou crie sua conta." }
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "登录你的 Okou 工作区。" }
+          "stringUnit": { "state": "translated", "value": "登录或创建你的账号。" }
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "登入你的 Okou 工作區。" }
+          "stringUnit": { "state": "translated", "value": "登入或建立你的帳號。" }
         }
       }
     },
@@ -12070,43 +11959,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "市場、內容與增長" }
-        }
-      }
-    },
-    "Meet your new AI coworker.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Lernen Sie Ihren neuen KI-Kollegen kennen." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Conoce a tu nuevo compañero de trabajo con IA." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Découvrez votre nouveau collègue IA." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "मिलिए अपने नए AI सहकर्मी से।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Kenalan dengan rekan kerja AI baru Anda." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Ecco il tuo nuovo collega IA." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "新しい AI の同僚をご紹介します。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "새로운 AI 동료를 만나보세요." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Conheça seu novo colega de trabalho com IA." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "认识一下你的新 AI 同事。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "認識一下你的新 AI 同事。" }
         }
       }
     },
@@ -12648,80 +12500,6 @@
         }
       }
     },
-    "More options": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Weitere Optionen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Más opciones" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Plus d'options" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "अधिक विकल्प" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Opsi lainnya" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Più opzioni" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "その他のオプション" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "추가 옵션" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Mais opções" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "更多选项" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "更多選項" }
-        }
-      }
-    },
-    "More sign-in options": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Weitere Anmeldeoptionen" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Más opciones de inicio de sesión" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Autres options de connexion" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "साइन इन के और विकल्प" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Opsi masuk lainnya" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Altre opzioni di accesso" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "その他のサインイン方法" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "다른 로그인 방법" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Mais opções de login" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "更多登录方式" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "更多登入方式" }
-        }
-      }
-    },
     "Mute chat": {
       "localizations": {
         "de": {
@@ -12867,43 +12645,6 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "今天有什麼新想法，%@？" }
-        }
-      }
-    },
-    "New to Okou?": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Neu bei Okou?" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "¿Nuevo en Okou?" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Nouveau sur Okou ?" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "Okou पर नए हैं?" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Baru di Okou?" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nuovo su Okou?" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "Okou は初めてですか？" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "Okou를 처음 사용하시나요?" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Novo no Okou?" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "初次使用 Okou？" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "第一次使用 Okou？" }
         }
       }
     },
@@ -13274,80 +13015,6 @@
             "state": "translated",
             "value": "已無法使用"
           }
-        }
-      }
-    },
-    "No matching chats or messages.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Keine passenden Chats oder Nachrichten." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "No hay chats ni mensajes que coincidan." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Aucune discussion ni aucun message correspondant." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "कोई मिलती-जुलती चैट या संदेश नहीं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tidak ada chat atau pesan yang cocok." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nessuna chat o messaggio corrispondente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "一致するチャットやメッセージはありません。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "일치하는 채팅이나 메시지가 없습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Nenhuma conversa ou mensagem encontrada." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "没有匹配的聊天或消息。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "沒有相符的聊天或訊息。" }
-        }
-      }
-    },
-    "No matching messages.": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Keine passenden Nachrichten." }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "No hay mensajes que coincidan." }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Aucun message correspondant." }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "कोई मिलता-जुलता संदेश नहीं।" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Tidak ada pesan yang cocok." }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Nessun messaggio corrispondente." }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "一致するメッセージはありません。" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "일치하는 메시지가 없습니다." }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Nenhuma mensagem encontrada." }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "没有匹配的消息。" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "沒有相符的訊息。" }
         }
       }
     },
@@ -14070,6 +13737,43 @@
         }
       }
     },
+    "Only this new chat uses these settings.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Diese Einstellungen gelten nur für diesen neuen Chat." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Esta configuración solo se usa en este chat nuevo." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Ces réglages s’appliquent uniquement à cette nouvelle discussion." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "ये सेटिंग केवल इस नई चैट पर लागू होती हैं।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Pengaturan ini hanya berlaku untuk chat baru ini." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Queste impostazioni si applicano solo a questa nuova chat." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "これらの設定はこの新しいチャットにのみ適用されます。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "이 설정은 이 새 채팅에만 적용됩니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Estas configurações se aplicam apenas a esta nova conversa." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "这些设置仅用于本次新对话。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "這些設定僅用於本次新對話。" }
+        }
+      }
+    },
     "Open authorization page": {
       "extractionState": "manual",
       "localizations": {
@@ -14674,40 +14378,40 @@
         }
       }
     },
-    "Opens a new Okou chat with your request in the message box, ready to review and send.": {
+    "Opens a new chat with the keyboard ready for typing.": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Öffnet einen neuen Okou-Chat mit Ihrer Anfrage im Nachrichtenfeld, bereit zum Prüfen und Senden." }
+          "stringUnit": { "state": "translated", "value": "Öffnet einen neuen Chat mit eingeblendeter Tastatur." }
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "Abre un nuevo chat de Okou con tu petición en el cuadro de mensaje, lista para revisar y enviar." }
+          "stringUnit": { "state": "translated", "value": "Abre un nuevo chat con el teclado listo para escribir." }
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "Ouvre une nouvelle discussion Okou avec votre demande dans le champ de message, prête à être vérifiée et envoyée." }
+          "stringUnit": { "state": "translated", "value": "Ouvre une nouvelle discussion avec le clavier prêt à saisir du texte." }
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "नई Okou चैट खोलता है और आपका अनुरोध संदेश बॉक्स में रखता है, ताकि आप उसे देखकर भेज सकें।" }
+          "stringUnit": { "state": "translated", "value": "टाइप करने के लिए तैयार कीबोर्ड के साथ नई चैट खोलता है।" }
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Membuka chat Okou baru dengan permintaan Anda di kolom pesan, siap ditinjau dan dikirim." }
+          "stringUnit": { "state": "translated", "value": "Membuka chat baru dengan papan ketik yang siap digunakan." }
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "Apre una nuova chat Okou con la tua richiesta nel campo del messaggio, pronta da controllare e inviare." }
+          "stringUnit": { "state": "translated", "value": "Apre una nuova chat con la tastiera pronta per scrivere." }
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "新しい Okou チャットを開き、リクエストをメッセージ欄に入力します。内容を確認してから送信できます。" }
+          "stringUnit": { "state": "translated", "value": "キーボードを表示して新しいチャットを開きます。" }
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "요청이 메시지 입력창에 입력된 새 Okou 채팅을 엽니다. 검토 후 보낼 수 있습니다." }
+          "stringUnit": { "state": "translated", "value": "키보드가 표시된 새 채팅을 엽니다." }
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Abre uma nova conversa no Okou com seu pedido no campo de mensagem, pronto para revisar e enviar." }
+          "stringUnit": { "state": "translated", "value": "Abre uma nova conversa com o teclado pronto para digitar." }
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "新建一个 Okou 聊天，并将你的请求填入输入框，供你检查后发送。" }
+          "stringUnit": { "state": "translated", "value": "打开新聊天并弹出键盘，方便直接输入。" }
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "開啟新的 Okou 聊天，並將你的請求填入輸入框，讓你檢查後傳送。" }
+          "stringUnit": { "state": "translated", "value": "開啟新聊天並顯示鍵盤，方便直接輸入。" }
         }
       }
     },
@@ -17005,43 +16709,6 @@
         }
       }
     },
-    "Request": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Anfrage" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Solicitud" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Demande" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "अनुरोध" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Permintaan" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Richiesta" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "リクエスト" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "요청" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Solicitação" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "请求" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "請求" }
-        }
-      }
-    },
     "Request expired": {
       "localizations": {
         "de": {
@@ -18690,40 +18357,77 @@
         }
       }
     },
-    "Search chat titles and messages across this workspace.": {
+    "Search": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Durchsuchen Sie Chattitel und Nachrichten in diesem Arbeitsbereich." }
+          "stringUnit": { "state": "translated", "value": "Suchen" }
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "Busca títulos de chats y mensajes en este espacio de trabajo." }
+          "stringUnit": { "state": "translated", "value": "Buscar" }
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "Recherchez dans les titres et les messages des discussions de cet espace de travail." }
+          "stringUnit": { "state": "translated", "value": "Rechercher" }
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "इस पूरे वर्कस्पेस में चैट शीर्षक और संदेश खोजें।" }
+          "stringUnit": { "state": "translated", "value": "खोजें" }
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Cari judul chat dan pesan di seluruh ruang kerja ini." }
+          "stringUnit": { "state": "translated", "value": "Cari" }
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "Cerca titoli e messaggi delle chat in quest'area di lavoro." }
+          "stringUnit": { "state": "translated", "value": "Cerca" }
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "このワークスペース全体でチャットのタイトルとメッセージを検索します。" }
+          "stringUnit": { "state": "translated", "value": "検索" }
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "이 워크스페이스 전체에서 채팅 제목과 메시지를 검색합니다." }
+          "stringUnit": { "state": "translated", "value": "검색" }
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Busque títulos de conversas e mensagens em todo este espaço de trabalho." }
+          "stringUnit": { "state": "translated", "value": "Buscar" }
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "在此工作区中搜索聊天标题和消息。" }
+          "stringUnit": { "state": "translated", "value": "搜索" }
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "在此工作區中搜尋聊天標題和訊息。" }
+          "stringUnit": { "state": "translated", "value": "搜尋" }
+        }
+      }
+    },
+    "Search artifacts": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Artefakte durchsuchen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Buscar artefactos" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Rechercher des artefacts" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आर्टिफ़ैक्ट खोजें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Cari artefak" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Cerca artefatti" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "成果物を検索" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "결과물 검색" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Buscar artefatos" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "搜索成果" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "搜尋成果" }
         }
       }
     },
@@ -18764,40 +18468,77 @@
         }
       }
     },
-    "Search workspace chats": {
+    "Search messages": {
       "localizations": {
         "de": {
-          "stringUnit": { "state": "translated", "value": "Chats im Arbeitsbereich durchsuchen" }
+          "stringUnit": { "state": "translated", "value": "Nachrichten durchsuchen" }
         },
         "es": {
-          "stringUnit": { "state": "translated", "value": "Buscar chats del espacio de trabajo" }
+          "stringUnit": { "state": "translated", "value": "Buscar mensajes" }
         },
         "fr": {
-          "stringUnit": { "state": "translated", "value": "Rechercher dans les discussions de l’espace de travail" }
+          "stringUnit": { "state": "translated", "value": "Rechercher des messages" }
         },
         "hi": {
-          "stringUnit": { "state": "translated", "value": "वर्कस्पेस की चैट खोजें" }
+          "stringUnit": { "state": "translated", "value": "संदेश खोजें" }
         },
         "id": {
-          "stringUnit": { "state": "translated", "value": "Cari chat ruang kerja" }
+          "stringUnit": { "state": "translated", "value": "Cari pesan" }
         },
         "it": {
-          "stringUnit": { "state": "translated", "value": "Cerca chat dell'area di lavoro" }
+          "stringUnit": { "state": "translated", "value": "Cerca messaggi" }
         },
         "ja": {
-          "stringUnit": { "state": "translated", "value": "ワークスペースのチャットを検索" }
+          "stringUnit": { "state": "translated", "value": "メッセージを検索" }
         },
         "ko": {
-          "stringUnit": { "state": "translated", "value": "워크스페이스 채팅 검색" }
+          "stringUnit": { "state": "translated", "value": "메시지 검색" }
         },
         "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Buscar conversas do espaço de trabalho" }
+          "stringUnit": { "state": "translated", "value": "Buscar mensagens" }
         },
         "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "搜索工作区聊天" }
+          "stringUnit": { "state": "translated", "value": "搜索消息" }
         },
         "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "搜尋工作區聊天" }
+          "stringUnit": { "state": "translated", "value": "搜尋訊息" }
+        }
+      }
+    },
+    "Searching artifacts…": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Artefakte werden durchsucht…" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Buscando artefactos…" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Recherche d’artefacts…" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "आर्टिफ़ैक्ट खोजे जा रहे हैं…" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Mencari artefak…" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Ricerca degli artefatti…" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "成果物を検索中…" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "결과물 검색 중…" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Buscando artefatos…" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "正在搜索成果…" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "正在搜尋成果…" }
         }
       }
     },
@@ -19176,6 +18917,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "服務" }
+        }
+      }
+    },
+    "Set as default for new chats": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Als Standard für neue Chats festlegen" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Establecer como predeterminado para chats nuevos" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Définir par défaut pour les nouvelles discussions" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "नई चैट के लिए डिफ़ॉल्ट सेट करें" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Jadikan default untuk chat baru" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Imposta come predefinito per le nuove chat" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "新しいチャットのデフォルトに設定" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "새 채팅의 기본값으로 설정" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Definir como padrão para novas conversas" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "设为新对话的默认配置" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "設為新對話的預設設定" }
         }
       }
     },
@@ -19854,6 +19632,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "登出" }
+        }
+      }
+    },
+    "Sign out of Okou?": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Von Okou abmelden?" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "¿Cerrar sesión en Okou?" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Se déconnecter d’Okou ?" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "Okou से साइन आउट करें?" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Keluar dari Okou?" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Uscire da Okou?" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "Okou からサインアウトしますか？" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "Okou에서 로그아웃하시겠습니까?" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Sair do Okou?" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "要退出 Okou 登录吗？" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "要登出 Okou 嗎？" }
         }
       }
     },
@@ -23274,43 +23089,6 @@
         }
       }
     },
-    "Use for new chats too": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "Auch für neue Chats verwenden" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "Usar también en chats nuevos" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "Utiliser aussi pour les nouvelles discussions" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "नई चैट के लिए भी इस्तेमाल करें" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "Gunakan juga untuk chat baru" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "Usa anche per le nuove chat" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "新しいチャットにも使う" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "새 채팅에도 사용" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "Usar também em novos chats" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "也用于新对话" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "也用於新對話" }
-        }
-      }
-    },
     "Use one reset credit": {
       "extractionState": "manual",
       "localizations": {
@@ -25180,43 +24958,6 @@
         }
       }
     },
-    "you@company.com": {
-      "localizations": {
-        "de": {
-          "stringUnit": { "state": "translated", "value": "name@firma.de" }
-        },
-        "es": {
-          "stringUnit": { "state": "translated", "value": "tu@empresa.com" }
-        },
-        "fr": {
-          "stringUnit": { "state": "translated", "value": "vous@entreprise.fr" }
-        },
-        "hi": {
-          "stringUnit": { "state": "translated", "value": "you@company.com" }
-        },
-        "id": {
-          "stringUnit": { "state": "translated", "value": "anda@perusahaan.com" }
-        },
-        "it": {
-          "stringUnit": { "state": "translated", "value": "tu@azienda.it" }
-        },
-        "ja": {
-          "stringUnit": { "state": "translated", "value": "you@company.com" }
-        },
-        "ko": {
-          "stringUnit": { "state": "translated", "value": "you@company.com" }
-        },
-        "pt-BR": {
-          "stringUnit": { "state": "translated", "value": "voce@empresa.com" }
-        },
-        "zh-Hans": {
-          "stringUnit": { "state": "translated", "value": "you@company.com" }
-        },
-        "zh-Hant": {
-          "stringUnit": { "state": "translated", "value": "you@company.com" }
-        }
-      }
-    },
     "Your account or workspace changed. Please try again in the current workspace.": {
       "extractionState": "manual",
       "localizations": {
@@ -25526,6 +25267,43 @@
         },
         "zh-Hant": {
           "stringUnit": { "state": "translated", "value": "你的工作階段已過期。請重新登入。" }
+        }
+      }
+    },
+    "You’ll need to sign in again to see your chats on this device.": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Sie müssen sich erneut anmelden, um Ihre Chats auf diesem Gerät zu sehen." }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Tendrás que volver a iniciar sesión para ver tus chats en este dispositivo." }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Vous devrez vous reconnecter pour voir vos chats sur cet appareil." }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "इस डिवाइस पर अपनी चैट देखने के लिए आपको फिर से साइन इन करना होगा।" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Anda perlu masuk lagi untuk melihat chat Anda di perangkat ini." }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Dovrai accedere di nuovo per vedere le tue chat su questo dispositivo." }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "このデバイスでチャットを見るには、もう一度サインインする必要があります。" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "이 기기에서 채팅을 보려면 다시 로그인해야 합니다." }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Você precisará entrar novamente para ver seus chats neste dispositivo." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "需要重新登录才能在这台设备上查看你的对话。" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "需要重新登入才能在這台裝置上查看你的對話。" }
         }
       }
     },

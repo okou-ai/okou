@@ -16,7 +16,7 @@ use super::super::support::read_guest_message;
 use crate::{CopyFileOptions, CopyFileResult, GuestControlClient, WriteFileEntry};
 
 pub(super) struct HostTempDir {
-    path: PathBuf,
+    directory: tempfile::TempDir,
 }
 
 pub(super) fn unique_temp_path(prefix: &str) -> PathBuf {
@@ -51,27 +51,23 @@ impl Drop for HostTempPath {
 
 impl HostTempDir {
     pub(super) fn new(prefix: &str) -> Self {
-        let path = unique_temp_path(prefix);
-        std::fs::create_dir_all(&path).unwrap();
-        Self { path }
+        let directory = tempfile::Builder::new()
+            .prefix(&format!("{prefix}-"))
+            .tempdir()
+            .unwrap();
+        Self { directory }
     }
 
     pub(super) fn path(&self) -> &Path {
-        &self.path
+        self.directory.path()
     }
 
     pub(super) fn join(&self, path: impl AsRef<Path>) -> PathBuf {
-        self.path.join(path)
+        self.path().join(path)
     }
 
     pub(super) fn assert_no_vm0tmp_files(&self) {
-        assert_no_vm0tmp_files(&self.path);
-    }
-}
-
-impl Drop for HostTempDir {
-    fn drop(&mut self) {
-        let _ = std::fs::remove_dir_all(&self.path);
+        assert_no_vm0tmp_files(self.path());
     }
 }
 

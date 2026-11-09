@@ -214,12 +214,13 @@ async fn atomic_write_timeout_keeps_ordering_and_coalesces_newer_generation() {
     release.add_permits(1);
     settled.await;
     assert!(
-        !tracker
+        tracker
             .persistence
             .delayed
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .active,
+            .active
+            .is_none(),
         "the timed-out writer should publish the coalesced snapshot"
     );
     let status = read_status(&path);
@@ -257,16 +258,280 @@ async fn atomic_write_task_abort_keeps_ordering_and_coalesces_newer_generation()
     release.add_permits(1);
     settled.await;
     assert!(
-        !tracker
+        tracker
             .persistence
             .delayed
             .lock()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .active,
+            .active
+            .is_none(),
         "the continued writer should publish the coalesced snapshot"
     );
     let status = read_status(&path);
     assert_eq!(status["mode"], "running");
+}
+
+#[tokio::test]
+async fn required_active_publication_confirms_after_a_retained_writer() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("status.json");
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Semaphore::new(0));
+    let tracker = Arc::new(StatusTracker::new_with_atomic_write_gate(
+        path.clone(),
+        1,
+        Arc::clone(&started),
+        Arc::clone(&release),
+    ));
+    let first_tracker = Arc::clone(&tracker);
+    let first = tokio::spawn(async move { first_tracker.write_initial().await });
+    started.notified().await;
+    first.abort();
+    assert!(first.await.unwrap_err().is_cancelled());
+
+    let run_id = RunId::new_v4();
+    let sandbox_id = SandboxId::new_v4();
+    let mut required = Box::pin(tracker.add_preparing_run(run_id, sandbox_id));
+    let first_poll = futures_util::poll!(&mut required);
+    let waited_for_confirmation = first_poll.is_pending();
+    let settled = tracker.persistence.settled.notified();
+    release.add_permits(1);
+    let result = match first_poll {
+        Poll::Ready(result) => result,
+        Poll::Pending => required.await,
+    };
+    settled.await;
+    let status = read_status(&path);
+    assert_eq!(status["active_runs"][0]["run_id"], run_id.to_string());
+    assert_eq!(
+        status["active_runs"][0]["sandbox_id"],
+        sandbox_id.to_string()
+    );
+    assert_eq!(status["active_runs"][0]["phase"], "preparing");
+    assert!(
+        waited_for_confirmation,
+        "required ownership must await confirmation instead of immediately rejecting deferral"
+    );
+    result.unwrap();
+}
+
+async fn retained_tracker() -> (tempfile::TempDir, Arc<StatusTracker>, Arc<Semaphore>) {
+    let dir = tempfile::tempdir().unwrap();
+    let started = Arc::new(Notify::new());
+    let release = Arc::new(Semaphore::new(0));
+    let tracker = Arc::new(StatusTracker::new_with_atomic_write_gate(
+        dir.path().join("status.json"),
+        1,
+        Arc::clone(&started),
+        Arc::clone(&release),
+    ));
+    let first_tracker = Arc::clone(&tracker);
+    let first = tokio::spawn(async move { first_tracker.write_initial().await });
+    started.notified().await;
+    first.abort();
+    assert!(first.await.unwrap_err().is_cancelled());
+    (dir, tracker, release)
+}
+
+#[tokio::test(start_paused = true)]
+async fn required_deferred_publication_keeps_its_deadline_and_cleanup_order() {
+    let (dir, tracker, release) = retained_tracker().await;
+    let run_id = RunId::new_v4();
+    let sandbox_id = SandboxId::new_v4();
+    let mut required = Box::pin(tracker.add_preparing_run(run_id, sandbox_id));
+    assert!(futures_util::poll!(&mut required).is_pending());
+    tokio::time::advance(Duration::from_secs(4)).await;
+    assert!(futures_util::poll!(&mut required).is_pending());
+    tokio::time::advance(Duration::from_secs(1)).await;
+    assert!(matches!(
+        required.await,
+        Err(StatusPersistenceError::Timeout { .. })
+    ));
+    assert!(tracker.persistence.ordering.try_lock().is_err());
+
+    tokio::time::resume();
+    let mut removal = Box::pin(tracker.remove_run_if_matching(run_id, sandbox_id));
+    assert!(matches!(
+        futures_util::poll!(&mut removal),
+        Poll::Ready(Err(StatusPersistenceError::Timeout { .. }))
+    ));
+    let settled = tracker.persistence.settled.notified();
+    release.add_permits(1);
+    settled.await;
+    let status = read_status(&dir.path().join("status.json"));
+    assert!(status["active_runs"].as_array().unwrap().is_empty());
+    assert_latest_generation_published(&tracker).await;
+}
+
+#[tokio::test]
+async fn cancelled_required_observer_cannot_restore_removed_ownership() {
+    let (dir, tracker, release) = retained_tracker().await;
+    let run_id = RunId::new_v4();
+    let sandbox_id = SandboxId::new_v4();
+    let mut cancelled = Box::pin(tracker.add_preparing_run(run_id, sandbox_id));
+    assert!(futures_util::poll!(&mut cancelled).is_pending());
+    drop(cancelled);
+
+    let mut removal = Box::pin(tracker.remove_run_if_matching(run_id, sandbox_id));
+    assert!(matches!(
+        futures_util::poll!(&mut removal),
+        Poll::Ready(Err(StatusPersistenceError::Timeout { .. }))
+    ));
+    let successor = RunId::new_v4();
+    let mut repeated_removal = Box::pin(tracker.remove_run_if_matching(run_id, sandbox_id));
+    assert!(matches!(
+        futures_util::poll!(&mut repeated_removal),
+        Poll::Ready(Err(StatusPersistenceError::Timeout { .. }))
+    ));
+    let successor_sandbox = SandboxId::new_v4();
+    let mut newer = Box::pin(tracker.add_preparing_run(successor, successor_sandbox));
+    assert!(futures_util::poll!(&mut newer).is_pending());
+    let settled = tracker.persistence.settled.notified();
+    release.add_permits(1);
+    newer.await.unwrap();
+    settled.await;
+
+    let status = read_status(&dir.path().join("status.json"));
+    let owners = status["active_runs"].as_array().unwrap();
+    assert_eq!(owners.len(), 1);
+    assert_eq!(owners[0]["run_id"], successor.to_string());
+    assert_eq!(owners[0]["sandbox_id"], successor_sandbox.to_string());
+    assert_latest_generation_published(&tracker).await;
+}
+
+#[tokio::test]
+async fn mode_inventory_and_retry_still_report_immediate_deferral() {
+    let (dir, tracker, release) = retained_tracker().await;
+    let sandbox_id = SandboxId::new_v4();
+    let mut mode = Box::pin(tracker.set_mode(RunnerMode::Draining));
+    let mode_poll = futures_util::poll!(&mut mode);
+    let mut inventory = Box::pin(tracker.set_idle_snapshot(IdlePoolSnapshot {
+        revision: 1,
+        idle_sandboxes: vec![],
+        blank_sandboxes: vec![BlankSandbox { sandbox_id }],
+    }));
+    let inventory_poll = futures_util::poll!(&mut inventory);
+    let mut retry = Box::pin(tracker.retry_unpublished_snapshot());
+    let retry_poll = futures_util::poll!(&mut retry);
+    let inventory_deferred = matches!(
+        inventory_poll,
+        Poll::Ready(Err(StatusPersistenceError::Timeout { .. }))
+    );
+    let retry_deferred = matches!(
+        retry_poll,
+        Poll::Ready(Err(StatusPersistenceError::Timeout { .. }))
+    );
+    let mode_deferred = matches!(
+        mode_poll,
+        Poll::Ready(Err(StatusPersistenceError::Timeout { .. }))
+    );
+    let settled = tracker.persistence.settled.notified();
+    release.add_permits(1);
+    if mode_poll.is_pending() {
+        let _ = mode.await;
+    }
+    if inventory_poll.is_pending() {
+        let _ = inventory.await;
+    }
+    if retry_poll.is_pending() {
+        let _ = retry.await;
+    }
+    settled.await;
+    let status = read_status(&dir.path().join("status.json"));
+    assert_eq!(status["mode"], "draining");
+    assert_eq!(
+        status["blank_sandboxes"][0]["sandbox_id"],
+        sandbox_id.to_string()
+    );
+    assert!(mode_deferred);
+    assert!(inventory_deferred);
+    assert!(retry_deferred);
+    assert_latest_generation_published(&tracker).await;
+}
+
+#[tokio::test(start_paused = true)]
+async fn unconfirmed_diagnostics_distinguish_deferral_from_elapsed_budget_without_identities() {
+    let (dir, tracker, release) = retained_tracker().await;
+    let (deferred, deferred_events) = tracing_test_support::capture_future_events(
+        tracker.set_idle_snapshot(IdlePoolSnapshot::default()),
+    )
+    .await;
+    assert!(matches!(
+        deferred,
+        Err(StatusPersistenceError::Timeout { .. })
+    ));
+    let deferred = tracing_test_support::find_captured_event(
+        &deferred_events,
+        "runner status publication unconfirmed",
+    )
+    .unwrap();
+    assert_eq!(deferred.fields["publication_phase"], "immediate_deferral");
+    assert_eq!(deferred.fields["elapsed_ms"], "0");
+
+    let run_id = RunId::new_v4();
+    let sandbox_id = SandboxId::new_v4();
+    let mut required = Box::pin(tracing_test_support::capture_future_events(
+        tracker.add_preparing_run(run_id, sandbox_id),
+    ));
+    assert!(futures_util::poll!(&mut required).is_pending());
+    tokio::time::advance(STATUS_PERSISTENCE_TIMEOUT).await;
+    let (result, events) = required.await;
+    assert!(matches!(
+        result,
+        Err(StatusPersistenceError::Timeout { .. })
+    ));
+    let expired =
+        tracing_test_support::find_captured_event(&events, "runner status publication unconfirmed")
+            .unwrap();
+    assert_eq!(expired.fields["publication_phase"], "retained_publication");
+    assert_eq!(expired.fields["elapsed_ms"], "5000");
+    assert_eq!(expired.fields["requested_generation"], "3");
+    assert_eq!(expired.fields["published_generation"], "0");
+    assert_eq!(expired.fields["retained_generation"], "1");
+    assert_eq!(expired.fields["retained_elapsed_ms"], "5000");
+    let diagnostic = format!("{events:?} {deferred_events:?}");
+    assert!(!diagnostic.contains(&run_id.to_string()));
+    assert!(!diagnostic.contains(&sandbox_id.to_string()));
+    assert!(!diagnostic.contains(dir.path().to_str().unwrap()));
+    tokio::time::resume();
+    let settled = tracker.persistence.settled.notified();
+    release.add_permits(1);
+    settled.await;
+    let status = read_status(&dir.path().join("status.json"));
+    assert_eq!(status["active_runs"][0]["run_id"], run_id.to_string());
+}
+
+#[tokio::test]
+async fn failed_retained_write_does_not_confirm_a_required_snapshot() {
+    let (dir, tracker, release) = retained_tracker().await;
+    let path = dir.path().join("status.json");
+    std::fs::create_dir(&path).unwrap();
+    let run_id = RunId::new_v4();
+    let sandbox_id = SandboxId::new_v4();
+    let mut required = Box::pin(tracker.add_preparing_run(run_id, sandbox_id));
+    assert!(futures_util::poll!(&mut required).is_pending());
+    let settled = tracker.persistence.settled.notified();
+    release.add_permits(1);
+    settled.await;
+    assert!(futures_util::poll!(&mut required).is_pending());
+    // Physical writes have both failed; only the remaining foreground budget
+    // expires below. No synthetic time can outrun the real filesystem work.
+    tokio::time::pause();
+    tokio::time::advance(STATUS_PERSISTENCE_TIMEOUT).await;
+    assert!(matches!(
+        required.await,
+        Err(StatusPersistenceError::Timeout { .. })
+    ));
+    tokio::time::resume();
+    std::fs::remove_dir(&path).unwrap();
+    tracker.set_mode(RunnerMode::Running).await.unwrap();
+    let status = read_status(&path);
+    assert_eq!(status["mode"], "running");
+    assert_eq!(status["active_runs"][0]["run_id"], run_id.to_string());
+    assert_eq!(
+        status["active_runs"][0]["sandbox_id"],
+        sandbox_id.to_string()
+    );
 }
 
 #[tokio::test]
@@ -388,8 +653,14 @@ async fn older_snapshot_does_not_replace_newer_publication() {
         (older, newer)
     };
 
-    tracker.persist_snapshot(newer).await.unwrap();
-    tracker.persist_snapshot(older).await.unwrap();
+    tracker
+        .persist_snapshot(newer, RetainedWritePolicy::Confirm)
+        .await
+        .unwrap();
+    tracker
+        .persist_snapshot(older, RetainedWritePolicy::Confirm)
+        .await
+        .unwrap();
 
     let status = read_status(&path);
     assert_eq!(status["mode"], "draining");

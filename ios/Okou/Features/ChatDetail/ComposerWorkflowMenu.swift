@@ -1,9 +1,29 @@
+import CCStateSwiftUI
 import ChatData
 import SwiftUI
 
 struct ComposerWorkflowMenu: View {
   let suggestions: ComposerWorkflowSuggestions
   let availableHeight: CGFloat
+  var body: some View {
+    StoreProvider(suggestions.resources.store) {
+      ComposerWorkflowContent(suggestions: suggestions, availableHeight: availableHeight)
+        .id(ObjectIdentifier(suggestions))
+    }
+  }
+}
+
+private struct ComposerWorkflowContent: View {
+  let suggestions: ComposerWorkflowSuggestions
+  let availableHeight: CGFloat
+  @LoadableValue private var results: Loadable<ComposerWorkflowResources.Matches>
+
+  init(suggestions: ComposerWorkflowSuggestions, availableHeight: CGFloat) {
+    self.suggestions = suggestions
+    self.availableHeight = availableHeight
+    _results = LoadableValue(task: suggestions.resources.matches)
+  }
+
   @State private var headerHeight: CGFloat = 44
 
   var body: some View {
@@ -46,37 +66,38 @@ struct ComposerWorkflowMenu: View {
 
   @ViewBuilder
   private var content: some View {
-    if suggestions.isLoading {
+    switch results {
+    case .loading:
       OkouLoadingRow("Loading Workflows…").padding(.horizontal, OkouSpace.lg)
-    } else if let error = suggestions.error {
+    case .hasError(let error):
       VStack(alignment: .leading, spacing: OkouSpace.sm) {
-        Text(error).font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
+        Text(error.localizedDescription).font(.okou(.caption)).foregroundStyle(
+          OkouColor.mutedForeground)
         Button("Retry Workflows") { suggestions.reload() }.frame(
           minHeight: OkouControl.minimumTarget)
       }.padding(.horizontal, OkouSpace.lg)
-    } else if suggestions.matches.isEmpty {
+    case .hasData(let result) where result.values.isEmpty:
       Text("No matching Workflows").font(.okou(.subheadline)).foregroundStyle(
         OkouColor.mutedForeground
       )
       .padding(OkouSpace.lg)
-    } else {
+    case .hasData(let result):
       ComposerWorkflowTable(
-        suggestions: suggestions, values: suggestions.matches,
-        selectedIndex: suggestions.selectedIndex
+        suggestions: suggestions, result: result, selectedIndex: suggestions.selectedIndex
       )
       .frame(
         height: max(
           0,
           min(
             264, availableHeight - headerHeight,
-            CGFloat(suggestions.matches.count) * 60 + OkouSpace.sm)))
+            CGFloat(result.values.count) * 60 + OkouSpace.sm)))
     }
   }
 }
 
 private struct ComposerWorkflowTable: UIViewRepresentable {
   let suggestions: ComposerWorkflowSuggestions
-  let values: [ComposerWorkflow]
+  let result: ComposerWorkflowResources.Matches
   let selectedIndex: Int
 
   func makeCoordinator() -> Coordinator { Coordinator() }
@@ -98,8 +119,11 @@ private struct ComposerWorkflowTable: UIViewRepresentable {
   func updateUIView(_ table: UITableView, context: Context) {
     let coordinator = context.coordinator
     coordinator.suggestions = suggestions
-    if coordinator.values != values {
-      coordinator.values = values
+    let values = result.values
+    let previous = coordinator.values
+    coordinator.result = result
+    suggestions.registerRows(coordinator) { [weak coordinator] in coordinator?.result }
+    if previous != values {
       table.reloadData()
     }
     if values.indices.contains(selectedIndex) {
@@ -115,6 +139,7 @@ private struct ComposerWorkflowTable: UIViewRepresentable {
   }
 
   static func dismantleUIView(_ table: UITableView, coordinator: Coordinator) {
+    coordinator.suggestions?.unregisterRows(coordinator)
     coordinator.suggestions = nil
     table.dataSource = nil
     table.delegate = nil
@@ -122,7 +147,8 @@ private struct ComposerWorkflowTable: UIViewRepresentable {
 
   final class Coordinator: NSObject, UITableViewDataSource, UITableViewDelegate {
     weak var suggestions: ComposerWorkflowSuggestions?
-    var values: [ComposerWorkflow] = []
+    var result: ComposerWorkflowResources.Matches?
+    var values: [ComposerWorkflow] { result?.values ?? [] }
     var selectedIndex = -1
     func tableView(_ tableView: UITableView, numberOfRowsInSection section: Int) -> Int {
       values.count

@@ -10,7 +10,10 @@ mod instruction_cleanup;
 mod preparation_failure;
 mod process;
 mod quarantine;
+mod readiness;
 mod rooted_extraction;
 mod scheduling;
 
 mod agent_instructions;
+
+mod template_guidance;

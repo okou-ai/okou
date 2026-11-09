@@ -220,6 +220,25 @@ describe("connector catalog public projection", () => {
     }).toThrow("public-leakage");
   });
 
+  it("keeps the source version private for contracted Skill descriptors", () => {
+    const artifact = catalogArtifact(VERSION_ID);
+    for (const connector of artifact.connectors) {
+      if (connector.skill.kind === "bundled") {
+        const skill = connector.skill;
+        connector.skill = {
+          kind: skill.kind,
+          versionId: skill.versionId,
+          size: skill.size,
+          archiveSize: skill.archiveSize,
+          fileCount: skill.fileCount,
+        };
+      }
+    }
+    expect(() => {
+      decodeCatalog(artifact);
+    }).toThrow("public-leakage");
+  });
+
   it.each([
     ["ABCD_EFGH", "prefix-abcd-efgh-suffix"],
     [PRIVATE_NAME, "Your token security api token"],

@@ -20,6 +20,11 @@ import {
 } from "./lib/telegram-auth-telemetry";
 
 const OTEL_SERVICE_NAME = "vm0-api";
+// Axiom ingest calls are the telemetry writes themselves. Tracing them adds a
+// span per write to the same Axiom org; ingest failures already surface as
+// Axiom client errors.
+const AXIOM_INGEST_URL =
+  /^https:\/\/api\.axiom\.co\/v1\/datasets\/[^/?#]+\/ingest(?:[?#]|$)/u;
 
 function buildAxiomTraceExporter(): OTLPTraceExporter {
   return new OTLPTraceExporter({
@@ -37,6 +42,9 @@ function setupOpenTelemetry() {
     attributes: { [ATTR_SERVICE_VERSION]: env("GIT_COMMIT_SHA") },
     traceExporter: buildAxiomTraceExporter(),
     spanProcessors: ["auto"],
+    instrumentationConfig: {
+      fetch: { ignoreUrls: [AXIOM_INGEST_URL] },
+    },
   });
 }
 

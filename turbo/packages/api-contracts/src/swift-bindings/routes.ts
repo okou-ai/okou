@@ -31,6 +31,18 @@ export const swiftRouteBindings = [
     route: computerUseSessionHostsContract.heartbeat,
   },
   {
+    swiftName: "computerUseHostCommandWait",
+    route: computerUseSessionHostsContract.wait,
+  },
+  {
+    swiftName: "computerUseHostState",
+    route: computerUseSessionHostsContract.state,
+  },
+  {
+    swiftName: "computerUseHostRealtimeToken",
+    route: computerUseSessionHostsContract.realtimeToken,
+  },
+  {
     swiftName: "computerUseHostStop",
     route: computerUseSessionHostsContract.stop,
   },

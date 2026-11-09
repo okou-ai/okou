@@ -61,7 +61,9 @@ final class NativeAuthFlowTests: XCTestCase {
     XCTAssertEqual(clerk.client?.signIn?.status, .needsSecondFactor)
   }
 
-  func testSignupKeepsRequiredFieldsAndExplicitConsentBeforeEmailVerification() async throws {
+  func testNewEmailCreatesTheAccountFromTheSameContinueWithConsentBeforeVerification()
+    async throws
+  {
     let fixture = try AuthenticationHTTPFixture()
     addTeardownBlock { await fixture.close() }
     let authentication = try await fixture.authentication()
@@ -72,10 +74,13 @@ final class NativeAuthFlowTests: XCTestCase {
     var completed = false
     let flow = NativeAuthFlow(clerk: clerk) { completed = true }
     addTeardownBlock { @MainActor in flow.cancel() }
-    flow.switchMode()
     flow.email = "new-member@example.invalid"
     await flow.startEmail()?.value
     XCTAssertNil(flow.error)
+    // Clerk had no account for the email, so the same Continue started a sign-up.
+    XCTAssertEqual(
+      server.requests.withLock { $0.first?["identifier"] }, "new-member@example.invalid")
+    XCTAssertEqual(flow.step, .profile)
     XCTAssertFalse(flow.canSubmitProfile)
     flow.firstName = "Native member"
     flow.password = "synthetic-test-password"
@@ -109,6 +114,13 @@ private final class NativeAuthIdentityFixture: Sendable {
     guard path.contains("/sign_ins") || path.contains("/sign_ups") else { return nil }
     let parameters = parameters(request)
     requests.withLock { $0.append(parameters) }
+    if path == "/v1/client/sign_ins", parameters["identifier"]?.hasPrefix("new-member") == true {
+      return ChatHTTPResponse(
+        status: 422,
+        body:
+          "{\"errors\":[{\"code\":\"form_identifier_not_found\",\"message\":\"Couldn't find your account.\",\"long_message\":\"Couldn't find your account.\"}]}"
+      )
+    }
     var client = Client(id: "client_startup", sessions: [], updatedAt: .now)
     if path.contains("/sign_ups") {
       var signUp = SignUp.mock

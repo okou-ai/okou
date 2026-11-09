@@ -1,5 +1,36 @@
 # Changelog
 
+## [0.10.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.9.2...runner-storage-v0.10.0) (2026-11-08)
+
+
+### Features
+
+* prepare template guidance bundle readers ([#45935](https://github.com/okou-ai/okou/issues/45935)) ([f7dce82](https://github.com/okou-ai/okou/commit/f7dce82c3f8feef4c1b1269552c69b839cfcf9c6))
+
+## [0.9.2](https://github.com/okou-ai/okou/compare/runner-storage-v0.9.1...runner-storage-v0.9.2) (2026-11-07)
+
+
+### Performance Improvements
+
+* **runner:** overlap ready storage with cold archive delivery ([#45841](https://github.com/okou-ai/okou/issues/45841)) ([109d67a](https://github.com/okou-ai/okou/commit/109d67a03b63a3e53938af322ae13a7dd6507a52))
+
+## [0.9.1](https://github.com/okou-ai/okou/compare/runner-storage-v0.9.0...runner-storage-v0.9.1) (2026-11-07)
+
+## [0.9.0](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.39...runner-storage-v0.9.0) (2026-11-07)
+
+
+### Features
+
+* **guest-storage:** add event-driven pending archive readiness ([#45766](https://github.com/okou-ai/okou/issues/45766)) ([2fe135a](https://github.com/okou-ai/okou/commit/2fe135ae51a7a4a3624917b3a987b43ab142b9b5))
+
+## [0.8.39](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.38...runner-storage-v0.8.39) (2026-11-06)
+
+## [0.8.38](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.37...runner-storage-v0.8.38) (2026-11-06)
+
+## [0.8.37](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.36...runner-storage-v0.8.37) (2026-11-06)
+
+## [0.8.36](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.35...runner-storage-v0.8.36) (2026-11-06)
+
 ## [0.8.35](https://github.com/okou-ai/okou/compare/runner-storage-v0.8.34...runner-storage-v0.8.35) (2026-11-06)
 
 

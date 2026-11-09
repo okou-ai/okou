@@ -68,7 +68,7 @@ def decode(raw):
     )
 
 
-def read_regular(root, name, limit):
+def _consume_regular(root, name, limit, consume, finish):
     fd = os.open(
         root / name, os.O_RDONLY | os.O_NOFOLLOW | os.O_CLOEXEC | os.O_NONBLOCK
     )
@@ -78,25 +78,39 @@ def read_regular(root, name, limit):
             stat.S_ISREG(before.st_mode) and before.st_size <= limit,
             "invalid original file",
         )
-        chunks = []
+        size = 0
         remaining = limit + 1
         while remaining:
             chunk = os.read(fd, min(remaining, 1024 * 1024))
             if not chunk:
                 break
-            chunks.append(chunk)
+            consume(chunk)
+            size += len(chunk)
             remaining -= len(chunk)
-        raw = b"".join(chunks)
+        result = finish()
         after = os.fstat(fd)
         require(
-            len(raw) <= limit
+            size <= limit
             and (before.st_dev, before.st_ino, before.st_size, before.st_ctime_ns)
             == (after.st_dev, after.st_ino, after.st_size, after.st_ctime_ns),
             "original file changed",
         )
-        return raw
+        return size, result
     finally:
         os.close(fd)
+
+
+def read_regular(root, name, limit):
+    chunks = []
+    _size, raw = _consume_regular(
+        root, name, limit, chunks.append, lambda: b"".join(chunks)
+    )
+    return raw
+
+
+def _hash_regular(root, name, limit):
+    digest = hashlib.sha256()
+    return _consume_regular(root, name, limit, digest.update, digest.hexdigest)
 
 
 def sha256(raw):
@@ -199,7 +213,7 @@ def replay(root, invocation, source_sha256):
         "changed qualification bounds",
     )
     require(set(capture["sources"]) == set(SOURCES), "missing original source")
-    sources = {name: sha256(read_regular(root, name, 65536)) for name in SOURCES}
+    sources = {name: _hash_regular(root, name, 65536)[1] for name in SOURCES}
     require(capture["sources"] == sources, "original source bytes changed")
     require(
         sha256(json.dumps(sources, sort_keys=True, separators=(",", ":")).encode())
@@ -423,10 +437,9 @@ def replay(root, invocation, source_sha256):
         == {k: retained[k] for k in ("device", "inode", "bytes")},
         "retained file generation mismatch",
     )
-    retained_raw = read_regular(root, "retained.bin", 64 * MIB)
+    retained_size, retained_sha256 = _hash_regular(root, "retained.bin", 64 * MIB)
     require(
-        len(retained_raw) == 64 * MIB
-        and sha256(retained_raw) == hash_value(retained["sha256"]),
+        retained_size == 64 * MIB and retained_sha256 == hash_value(retained["sha256"]),
         "retained file bytes changed",
     )
     require(

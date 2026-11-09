@@ -1,11 +1,10 @@
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import { createChatForwardComposerSignals } from "../../signals/chat-page/chat-forward-composer.ts";
-import { useLoadableSet } from "ccstate-react/experimental";
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import type { ChatThreadFeedbackSignals } from "../../signals/chat-page/chat-thread-feedback.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ArrowLeft, Loader2 } from "lucide-react";
-import { useGet, useLastResolved, useSet } from "ccstate-react";
+import { useGet, useLastResolved, useLoadable, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
 import {
   Command,
@@ -21,7 +20,6 @@ import {
 } from "@okouai/ui";
 import type { ComposerSignals } from "../../signals/okou-page/composer-signals.ts";
 import type {
-  ChatForwardContext,
   ChatForwardSelection,
   ChatForwardTarget,
 } from "../../signals/chat-page/chat-forward.ts";
@@ -40,7 +38,7 @@ import {
 } from "../../signals/okou-page/sidebar-state.ts";
 import { ChatComposer } from "./chat-composer.tsx";
 import { ASSISTANT_NAME } from "../../signals/branding.ts";
-import { AgentAvatarImg } from "./sidebar-shared.tsx";
+import { AgentAvatarImg, AvatarFromUrl } from "./sidebar-shared.tsx";
 import { IconTooltipButton } from "../components/icon-tooltip.tsx";
 
 function ForwardContent({ text }: { readonly text: string }) {
@@ -64,14 +62,23 @@ function ForwardTargetContent({
 }: {
   readonly target: ChatForwardTarget;
 }) {
+  const singleAgent = useGet(singleAgentEnabled$);
   const avatarAgentId = target.kind === "agent" ? target.id : target.agentId;
   return (
     <span className="flex min-w-0 items-center gap-2">
-      <AgentAvatarImg
-        name={avatarAgentId}
-        alt=""
-        className="h-8 w-8 shrink-0 rounded-lg object-cover object-top"
-      />
+      {singleAgent ? (
+        <AvatarFromUrl
+          avatarUrl={DEFAULT_AGENT_AVATAR_URL}
+          alt=""
+          className="h-8 w-8 shrink-0 rounded-lg object-cover object-top"
+        />
+      ) : (
+        <AgentAvatarImg
+          name={avatarAgentId}
+          alt=""
+          className="h-8 w-8 shrink-0 rounded-lg object-cover object-top"
+        />
+      )}
       <span className="truncate text-foreground">{target.title}</span>
     </span>
   );
@@ -91,18 +98,15 @@ function ForwardTargetPicker({
   const subagents = useLastResolved(subagents$) ?? [];
   const threadResult = useGet(workspaceSearchChatThreads$);
   const normalizedQuery = query.trim().toLowerCase();
-  const singleAgent = useGet(singleAgentEnabled$);
-  const matchingAgents = singleAgent
-    ? []
-    : rankAgentsForSearch(
-        [
-          ...(defaultAgentId
-            ? [{ agentId: defaultAgentId, displayName: defaultAgentName }]
-            : []),
-          ...subagents,
-        ],
-        normalizedQuery,
-      );
+  const matchingAgents = rankAgentsForSearch(
+    [
+      ...(defaultAgentId
+        ? [{ agentId: defaultAgentId, displayName: defaultAgentName }]
+        : []),
+      ...subagents,
+    ],
+    normalizedQuery,
+  );
   const threads =
     threadResult.query === normalizedQuery ? threadResult.chatThreads : [];
   return (
@@ -129,9 +133,6 @@ function ForwardTargetPicker({
         />
       </div>
       <CommandList className="max-h-[min(40vh,320px)] px-5 pb-3">
-        {singleAgent && defaultAgentId && (
-          <PersonalForwardTarget agentId={defaultAgentId} onSelect={onSelect} />
-        )}
         {matchingAgents.length > 0 ? (
           <CommandGroup
             heading={
@@ -206,18 +207,6 @@ function ForwardTargetPicker({
   );
 }
 
-function createForwardContext(
-  selection: ChatForwardSelection,
-  sourceAgentId: string,
-  sourceThreadTitle: string,
-): ChatForwardContext {
-  return {
-    ...selection,
-    agentId: sourceAgentId,
-    titleSnapshot: sourceThreadTitle,
-  };
-}
-
 function ForwardComposerSurface({
   composer,
 }: {
@@ -233,35 +222,21 @@ function ForwardComposerSurface({
 export function ChatForwardDialog({
   selection,
   feedback,
-  sourceAgentId,
-  sourceThreadTitle,
   onDismiss,
 }: {
   readonly selection: ChatForwardSelection;
   readonly feedback: ChatThreadFeedbackSignals;
-  readonly sourceAgentId: string;
-  readonly sourceThreadTitle: string;
   readonly onDismiss: () => void;
 }) {
   const { t } = useTranslation();
+  const singleAgent = useGet(singleAgentEnabled$);
   const target = useGet(feedback.forwardTarget$);
-  const [prepared, prepare] = useLoadableSet(feedback.prepareForwardComposer$);
+  const prepared = useLoadable(feedback.forwardComposer$);
+  const prepare = useSet(feedback.prepareForwardComposer$);
   const resetTarget = useSet(feedback.resetForwardTarget$);
   const signal = useGet(pageSignal$);
   const handleTargetSelect = (nextTarget: ChatForwardTarget) => {
-    const forward = createForwardContext(
-      selection,
-      sourceAgentId,
-      sourceThreadTitle,
-    );
-    detach(
-      prepare(
-        createChatForwardComposerSignals,
-        { target: nextTarget, forward },
-        signal,
-      ),
-      Reason.DomCallback,
-    );
+    detach(prepare(nextTarget, signal), Reason.DomCallback);
   };
   return (
     <Dialog
@@ -278,7 +253,7 @@ export function ChatForwardDialog({
       >
         <DialogHeader className="min-w-0 px-5 pb-3 pt-5">
           <div className="flex min-w-0 items-center gap-2 pr-8">
-            {target ? (
+            {target && !singleAgent ? (
               <IconTooltipButton
                 type="button"
                 onClick={() => {
@@ -304,49 +279,37 @@ export function ChatForwardDialog({
           </div>
           <DialogDescription className={target ? "sr-only" : undefined}>
             {t(($) => {
-              return $.chat.forward.description;
+              return singleAgent
+                ? $.chat.fork.description
+                : $.chat.forward.description;
             })}
           </DialogDescription>
         </DialogHeader>
-        {target ? null : <ForwardContent text={selection.quote} />}
+        {target || singleAgent ? null : (
+          <ForwardContent text={selection.quote} />
+        )}
         {target && prepared.state === "loading" ? (
           <div className="flex min-h-40 items-center justify-center text-muted-foreground">
             <Loader2 size={16} className="animate-spin" aria-hidden />
           </div>
-        ) : target && prepared.state === "hasData" ? (
+        ) : target && prepared.state === "hasData" && prepared.data ? (
           <ForwardComposerSurface composer={prepared.data.composer} />
+        ) : prepared.state === "hasError" ? (
+          <p role="alert" className="px-5 pb-5 text-sm text-muted-foreground">
+            {prepared.error instanceof Error
+              ? prepared.error.message
+              : t(($) => {
+                  return $.global.errors.requestFailed;
+                })}
+          </p>
+        ) : singleAgent ? (
+          <div className="flex min-h-40 items-center justify-center text-muted-foreground">
+            <Loader2 size={16} className="animate-spin" aria-hidden />
+          </div>
         ) : (
           <ForwardTargetPicker onSelect={handleTargetSelect} />
         )}
       </DialogContent>
     </Dialog>
-  );
-}
-
-function PersonalForwardTarget({
-  agentId,
-  onSelect,
-}: {
-  readonly agentId: string;
-  readonly onSelect: (target: ChatForwardTarget) => void;
-}) {
-  const { t } = useTranslation();
-  return (
-    <CommandItem
-      value="new-personal-chat"
-      onClick={() => {
-        onSelect({
-          kind: "agent",
-          id: agentId,
-          title: t(($) => {
-            return $.myOkou.newChat;
-          }),
-        });
-      }}
-    >
-      {t(($) => {
-        return $.myOkou.newChat;
-      })}
-    </CommandItem>
   );
 }

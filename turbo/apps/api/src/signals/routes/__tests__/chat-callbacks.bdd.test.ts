@@ -23,7 +23,6 @@ import {
   PRESENTATION_TEMPLATE_PICKER_ITEMS,
 } from "@okouai/core";
 import { randomUUID } from "node:crypto";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { describe, expect, it, onTestFinished } from "vitest";
 import { WebPushError } from "web-push";
 import { testContext } from "../../../__tests__/test-context";
@@ -42,7 +41,6 @@ import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createRunReadsApi } from "./helpers/api-bdd-run-reads";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { chatEventDisplayText } from "./helpers/chat-event";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 const context = testContext();
 const bdd = createBddApi(context);
 const api = createRunsApi(context);
@@ -1413,9 +1411,11 @@ describe("CHAT-02: completed chat callback", () => {
     { status: "completed", presence: "none" },
     { status: "failed", presence: "none" },
   ] as const)(
-    "$status push is suppressed only by $presence foreground presence",
+    "$status Web push observes $presence foreground presence while native alerts are delivered",
     async ({ status, presence }) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
+      const provider = await createApnsFixture(context);
+      await registerIosPush(context, { ...actor, orgId: actor.orgId! });
       const run = await startChatRun(actor, {
         agentId,
         prompt: "Notify my org",
@@ -1433,7 +1433,7 @@ describe("CHAT-02: completed chat callback", () => {
             `user-org-foreground:${actor.userId}:${foregroundOrg}`;
         return Promise.resolve({
           items: present
-            ? [{ clientId: actor.userId, connectionId: "desktop" }]
+            ? [{ clientId: actor.userId, connectionId: "web" }]
             : [],
         });
       });
@@ -1454,6 +1454,19 @@ describe("CHAT-02: completed chat callback", () => {
       expect(context.mocks.webpush.sendNotification).toHaveBeenCalledTimes(
         presence === "same-org" ? 0 : 1,
       );
+      expect(provider.requests).toHaveLength(1);
+      expect(provider.requests[0]?.payload).toMatchObject({
+        aps: {
+          alert: { body: expect.any(String) },
+          sound: "default",
+          badge: 1,
+        },
+        okou: {
+          threadId: run.threadId,
+          runId: run.runId,
+          notificationId: `${run.runId}:${status}`,
+        },
+      });
       const events = await chat.listThreadEvents(actor, run.threadId);
       expect(lifecycleMarkers(events.events, run.runId, status)).toHaveLength(
         1,
@@ -1461,8 +1474,10 @@ describe("CHAT-02: completed chat callback", () => {
     },
   );
 
-  it("does not fall back to push when the foreground query fails", async () => {
+  it("delivers native alerts when the Web foreground query fails", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
+    const provider = await createApnsFixture(context);
+    await registerIosPush(context, { ...actor, orgId: actor.orgId! });
     const run = await startChatRun(actor, { agentId, prompt: "Notify me" });
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
@@ -1481,6 +1496,11 @@ describe("CHAT-02: completed chat callback", () => {
       { clientId: actor.userId, limit: 1 },
     );
     expect(context.mocks.webpush.sendNotification).not.toHaveBeenCalled();
+    expect(provider.requests).toHaveLength(1);
+    expect(provider.requests[0]?.payload).toMatchObject({
+      aps: { alert: { body: expect.any(String) }, sound: "default" },
+      okou: { runId: run.runId, notificationId: `${run.runId}:completed` },
+    });
     const events = await chat.listThreadEvents(actor, run.threadId);
     expect(events.events).toContainEqual(
       expect.objectContaining({ content: "Completed answer" }),
@@ -1520,14 +1540,6 @@ describe("CHAT-02: completed chat callback", () => {
     "consumes the whole thread's unread state without push or unarchive for a Slack %s run",
     async (status) => {
       const { actor, runnerGroup } = await entitledChatActor();
-      if (!actor.orgId) {
-        throw new Error("Expected organization");
-      }
-      await updateFeatureSwitchesForUser(
-        context,
-        { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-        { [FeatureSwitchKey.ChatThreadArchiving]: true },
-      );
       integrations.configureSlackAppMocks();
       await integrations.configureNativeSubscriptionModels(actor);
       const slackUserId = `U_${randomUUID().replaceAll("-", "")}`;
@@ -1689,17 +1701,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("keeps muted runs active but suppresses terminal unread, push and automatic unarchive", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected organization");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      {
-        [FeatureSwitchKey.ChatThreadArchiving]: true,
-        [FeatureSwitchKey.ChatThreadMuting]: true,
-      },
-    );
     await chatCallbacks.registerPushSubscription(actor);
     chatCallbacks.enableVapid();
     async function readIndicators() {
@@ -1764,14 +1765,6 @@ describe("CHAT-02: completed chat callback", () => {
 
   it("unarchives the thread when a completed or failed run makes it unread, but not on cancellation", async () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
-    if (!actor.orgId) {
-      throw new Error("Expected the chat actor to be org-scoped");
-    }
-    await updateFeatureSwitchesForUser(
-      context,
-      { userId: actor.userId, orgId: actor.orgId, orgRole: actor.orgRole },
-      { [FeatureSwitchKey.ChatThreadArchiving]: true },
-    );
     async function startArchivedRun(prompt: string) {
       const run = await startChatRun(actor, { agentId, prompt });
       await chat.requestSetThreadArchived(actor, run.threadId, true, [204]);
@@ -5088,6 +5081,9 @@ describe("CHAT-02: push notification gating", () => {
         supportsNotificationState: false,
       },
     );
+    context.mocks.ably.presenceGet.mockResolvedValue({
+      items: [{ clientId: actor.userId, connectionId: "web" }],
+    });
     const run = await startChatRun(actor, {
       agentId,
       prompt: "Legacy notification client",
@@ -5138,13 +5134,6 @@ describe("CHAT-02: push notification gating", () => {
     const { actor, agentId, runnerGroup } = await entitledChatActor();
     const provider = await createApnsFixture(context);
     await registerIosPush(context, { ...actor, orgId: actor.orgId! });
-    await updateFeatureSwitchesForUser(
-      context,
-      { ...actor, orgId: actor.orgId! },
-      {
-        chatThreadMuting: true,
-      },
-    );
     const run = await startChatRun(actor, {
       agentId,
       prompt: "Badge lifecycle",
@@ -5290,26 +5279,16 @@ describe("CHAT-02: push notification gating", () => {
     await jwtVerify(jwt, provider.publicKey, { issuer: "TESTTEAM01" });
   }, 60_000);
 
-  it.each(["foreground", "revoked", "muted", "membership"] as const)(
+  it.each(["revoked", "muted", "membership"] as const)(
     "withholds native run alerts for %s eligibility",
     async (scenario) => {
       const { actor, agentId, runnerGroup } = await entitledChatActor();
       const provider = await createApnsFixture(context);
-      await updateFeatureSwitchesForUser(
-        context,
-        { ...actor, orgId: actor.orgId! },
-        { chatThreadMuting: true },
-      );
       await registerIosPush(context, { ...actor, orgId: actor.orgId! });
       const run = await startChatRun(actor, {
         agentId,
         prompt: "native eligibility",
       });
-      if (scenario === "foreground") {
-        context.mocks.ably.presenceGet.mockResolvedValue({
-          items: [{ clientId: actor.userId }],
-        });
-      }
       if (scenario === "revoked") {
         context.mocks.clerk.sessions.getSession.mockResolvedValue({
           id: `sess_${actor.userId}`,
@@ -5332,12 +5311,12 @@ describe("CHAT-02: push notification gating", () => {
         await claimChatRun(runnerGroup, run.runId),
       );
       await flushWaitUntilForTest();
-      if (scenario === "muted" || scenario === "foreground") {
+      if (scenario === "muted") {
         expect(
           provider.requests.map((request) => {
             return request.payload;
           }),
-        ).toStrictEqual([{ aps: { badge: scenario === "muted" ? 0 : 1 } }]);
+        ).toStrictEqual([{ aps: { badge: 0 } }]);
       } else {
         expect(provider.requests).toHaveLength(0);
       }

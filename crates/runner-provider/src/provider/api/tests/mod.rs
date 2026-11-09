@@ -36,6 +36,7 @@ mod finalizing_source;
 mod parallel_claim;
 mod preferred_claim_retry;
 mod silent_connection;
+mod template_guidance;
 
 fn api_client_for_url(api_url: String) -> ApiClient {
     ApiClient::new(
@@ -4172,6 +4173,49 @@ async fn api_claim_normalization_ignores_forged_runner_application_metadata() {
         response.context.instruction_file.unwrap().storage_mount,
         "/home/user/.vm0/agent-instructions/codex"
     );
+    request.assert_calls_async(1).await;
+}
+
+#[tokio::test]
+async fn api_provider_claim_accepts_single_character_connector_skill() {
+    let server = MockServer::start_async().await;
+    let run_id: RunId = RUNNER_CLAIM_RESPONSE_FIXTURE_RUN_ID.parse().unwrap();
+    let mut body: Value = serde_json::from_str(RUNNER_CLAIM_RESPONSE_FIXTURE).unwrap();
+    body["contentBundles"]["skills"][0]["mountPath"] =
+        serde_json::json!("/home/user/.codex/skills/x");
+    let claim_path = format!("/api/runners/jobs/{run_id}/claim");
+    let request = server
+        .mock_async(|when, then| {
+            when.method(POST)
+                .path(claim_path.as_str())
+                .query_param("workflowSkills", "2");
+            then.status(200).json_body(body);
+        })
+        .await;
+    let provider = api_provider_for_test(
+        server.base_url(),
+        CancellationToken::new(),
+        Arc::new(PollWakeups::new(false)),
+    );
+    let claimed = provider
+        .claim(JobCandidate::new(
+            run_id,
+            crate::profile::DEFAULT_PROFILE.to_string(),
+        ))
+        .await
+        .expect("a valid one-character Connector Skill must be claimable");
+    let skills = &claimed
+        .context()
+        .storage_manifest
+        .as_ref()
+        .unwrap()
+        .storages;
+    let skill = skills
+        .iter()
+        .find(|entry| entry.mount_path == "/home/user/.codex/skills/x")
+        .expect("the claimed X Skill must reach the execution storage plan");
+    assert_eq!(skill.vas_version_id, "b".repeat(64));
+    assert_eq!(skill.archive_size, Some(256));
     request.assert_calls_async(1).await;
 }
 

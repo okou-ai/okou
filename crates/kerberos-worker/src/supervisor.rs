@@ -33,7 +33,8 @@ static RUNNING: OnceLock<Arc<Semaphore>> = OnceLock::new();
 static PACKAGE_INTEGRITY: OnceLock<Result<(), Error>> = OnceLock::new();
 
 #[cfg(native_kerberos)]
-const BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/native/kerberos-worker"));
+// Share the multi-megabyte payload across codegen units without relying on LTO.
+static BINARY: &[u8] = include_bytes!(concat!(env!("OUT_DIR"), "/native/kerberos-worker"));
 #[cfg(native_kerberos)]
 const BINARY_DIGEST: &str = env!("KERBEROS_WORKER_SHA256");
 #[cfg(native_kerberos)]
@@ -41,7 +42,7 @@ const NOTICES_DIGEST: &str = env!("KERBEROS_WORKER_NOTICES_SHA256");
 #[cfg(not(native_kerberos))]
 const NOTICES_DIGEST: &str = "";
 #[cfg(not(native_kerberos))]
-const BINARY: &[u8] = &[];
+static BINARY: &[u8] = &[];
 #[cfg(not(native_kerberos))]
 const BINARY_DIGEST: &str = "";
 #[cfg(native_kerberos)]

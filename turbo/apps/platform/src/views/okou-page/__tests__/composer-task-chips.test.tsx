@@ -504,7 +504,7 @@ test("Browsing the catalog opens the existing library in the matching category",
   await fill(editor, "Keep my draft");
   const tasks = screen.getByRole("group", { name: "Choose a task" });
   click(button("Presentation", tasks));
-  click(button("More templates"));
+  click(button("View all"));
   const dialog = await screen.findByRole("dialog");
   expect(tabByText("Presentation")).toHaveAttribute("aria-selected", "true");
   click(button("Close", dialog));
@@ -518,9 +518,9 @@ test.each([
   {
     task: "Website",
     shelf: "Website templates",
-    browse: "Browse all templates",
+    browse: "View all",
   },
-  { task: "Image", shelf: "Image styles", browse: "Browse all styles" },
+  { task: "Image", shelf: "Image styles", browse: "View all" },
 ])(
   "$task shows a cover shelf carrying its whole catalog and attaches a template",
   async ({ task, shelf, browse }) => {

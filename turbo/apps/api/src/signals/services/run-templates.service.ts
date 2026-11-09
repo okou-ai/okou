@@ -1,3 +1,9 @@
+import {
+  templateGuidanceBundleSchema,
+  templateGuidanceMountPath,
+  type StoredTemplateGuidanceBundle,
+  type TemplateGuidanceBundle,
+} from "@okouai/api-contracts/contracts/template-guidance-bundle";
 import { presentationTemplates } from "@okouai/db/schema/presentation-template";
 import { userTemplates } from "@okouai/db/schema/user-template";
 import { computed, type Computed } from "ccstate";
@@ -59,7 +65,10 @@ export function createRunTemplates(
       return [];
     }
     const rows = await get(db$)
-      .select({ id: presentationTemplates.id })
+      .select({
+        id: presentationTemplates.id,
+        guidanceBundle: presentationTemplates.guidanceBundle,
+      })
       .from(presentationTemplates)
       .where(
         and(
@@ -71,13 +80,16 @@ export function createRunTemplates(
           ),
         ),
       );
-    const accessible = new Set(
+    const accessible = new Map(
       rows.map((row) => {
-        return row.id;
+        return [row.id, row];
       }),
     );
-    return ids.filter((id) => {
-      return accessible.has(id);
+    return ids.flatMap((id) => {
+      const row = accessible.get(id);
+      return row
+        ? [{ templateId: id, guidanceBundle: row.guidanceBundle }]
+        : [];
     });
   });
   const mounted$ = computed(async (get) => {
@@ -90,7 +102,11 @@ export function createRunTemplates(
       return [];
     }
     const rows = await get(db$)
-      .select({ id: userTemplates.id, manifest: userTemplates.manifest })
+      .select({
+        id: userTemplates.id,
+        manifest: userTemplates.manifest,
+        guidanceBundle: userTemplates.guidanceBundle,
+      })
       .from(userTemplates)
       .where(
         and(
@@ -104,12 +120,20 @@ export function createRunTemplates(
       );
     const kinds = new Map(
       rows.map((row) => {
-        return [row.id, row.manifest.kind];
+        return [row.id, row];
       }),
     );
     return ids.flatMap((id) => {
-      const kind = kinds.get(id);
-      return kind === undefined ? [] : [{ templateId: id, kind }];
+      const row = kinds.get(id);
+      return row === undefined
+        ? []
+        : [
+            {
+              templateId: id,
+              kind: row.manifest.kind,
+              guidanceBundle: row.guidanceBundle,
+            },
+          ];
     });
   });
   return computed(async (get): Promise<RunTemplatesResult> => {
@@ -131,13 +155,20 @@ export function createRunTemplates(
 
 function buildRunTemplateGuidance(args: {
   readonly templates: readonly LiveGenerationTemplate[];
-  readonly presentations: readonly string[];
-  readonly mounted: readonly MountedUserTemplate[];
+  readonly presentations: readonly {
+    readonly templateId: string;
+    readonly guidanceBundle: TemplateGuidanceBundle | null;
+  }[];
+  readonly mounted: readonly (MountedUserTemplate & {
+    readonly guidanceBundle: TemplateGuidanceBundle | null;
+  })[];
   readonly disabledPaidTools: readonly string[];
 }): RunTemplatesResult {
   const { templates, presentations, mounted, disabledPaidTools } = args;
   const guidance = buildGenerationTemplatesPrompt(templates, {
-    mountedUserPresentationTemplateIds: presentations,
+    mountedUserPresentationTemplateIds: presentations.map((row) => {
+      return row.templateId;
+    }),
     mountedUserTemplates: mounted,
     includeManagedImageInstructions:
       !disabledPaidTools.includes("image-generation"),
@@ -145,14 +176,58 @@ function buildRunTemplateGuidance(args: {
   if (guidance.status === "invalid") {
     return { error: { code: "BAD_REQUEST", message: guidance.message } };
   }
+  // #45716 C03: retained NULL owners use legacy Storage until the separately
+  // reviewed backfill and legacy-writer/rollback retirement are complete.
+  const references: StoredTemplateGuidanceBundle[] = [
+    ...presentations.flatMap((row) => {
+      return row.guidanceBundle === null
+        ? []
+        : [
+            {
+              ownerKind: "presentation-template" as const,
+              templateId: row.templateId,
+              beforeMountPaths: [],
+              ...templateGuidanceBundleSchema.parse(row.guidanceBundle),
+            },
+          ];
+    }),
+    ...mounted.flatMap((row) => {
+      return row.guidanceBundle === null
+        ? []
+        : [
+            {
+              ownerKind: "user-template" as const,
+              templateId: row.templateId,
+              beforeMountPaths: [],
+              ...templateGuidanceBundleSchema.parse(row.guidanceBundle),
+            },
+          ];
+    }),
+  ];
+  const bundlesByMount = new Map(
+    references.map((ref) => {
+      return [templateGuidanceMountPath(ref), ref];
+    }),
+  );
   return {
     systemPromptVariables: { generationTemplatePrompt: guidance.prompt },
     userPromptVariables: {},
     skillVolumes: [
-      ...userPresentationTemplateVolumes(presentations),
+      ...userPresentationTemplateVolumes(
+        presentations.map((row) => {
+          return row.templateId;
+        }),
+      ),
       ...userTemplateVolumes(mounted),
     ].map((volume) => {
-      return { ...volume, source: "request_additional_volume" as const };
+      const reference = bundlesByMount.get(volume.mountPath);
+      return reference
+        ? {
+            source: "request_additional_volume" as const,
+            mountPath: volume.mountPath,
+            templateGuidanceBundle: reference,
+          }
+        : { ...volume, source: "request_additional_volume" as const };
     }),
   };
 }

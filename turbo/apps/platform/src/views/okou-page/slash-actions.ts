@@ -46,8 +46,7 @@ import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import { modelCatalog$ } from "../../signals/external/model-catalog.ts";
 import { availableRunModels$ } from "../../signals/external/run-models.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
-import { ROUTES } from "../../signals/route-paths.ts";
-import { detachedNavigateTo$ } from "../../signals/route.ts";
+import { navigateToAgentChat$ } from "../../signals/okou-page/agent-chat-navigation.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import {
   formatChatEffort,
@@ -401,15 +400,13 @@ function useThreadActions(
 ): SlashAction[] {
   const { t } = useTranslation();
   const pageSignal = useGet(pageSignal$);
-  const navigate = useSet(detachedNavigateTo$);
+  const navigateToAgentChat = useSet(navigateToAgentChat$);
   const openRename = useSet(openRenameChatThreadDialogForThreadId$);
   const pin = useSet(pinChatThread$);
   const unpin = useSet(unpinChatThread$);
   const setArchived = useSet(setChatThreadArchivedWithFeedback$);
   const startSharing = useSet(startComposerThreadSharing$);
   const meta = useGet(chatThreadMetaMap$);
-  const archiving =
-    useGet(featureSwitch$)[FeatureSwitchKey.ChatThreadArchiving] === true;
   const threadId = composer.threadId;
   if (threadId === undefined) {
     return [];
@@ -428,9 +425,7 @@ function useThreadActions(
       keywords: ["new", "chat"],
       run: () => {
         leave();
-        navigate(ROUTES.agentChat, {
-          pathParams: { agentId: composer.agentId },
-        });
+        navigateToAgentChat(composer.agentId);
       },
     },
     {
@@ -465,23 +460,21 @@ function useThreadActions(
       },
     },
   ];
-  if (archiving) {
-    actions.push({
-      id: "archive",
-      Icon: Archive,
-      label: t(($) => {
-        return $.chat.composer.slashActions.archive;
-      }),
-      keywords: ["archive"],
-      run: () => {
-        leave();
-        detach(
-          setArchived({ threadId, archived: true }, pageSignal),
-          Reason.DomCallback,
-        );
-      },
-    });
-  }
+  actions.push({
+    id: "archive",
+    Icon: Archive,
+    label: t(($) => {
+      return $.chat.composer.slashActions.archive;
+    }),
+    keywords: ["archive"],
+    run: () => {
+      leave();
+      detach(
+        setArchived({ threadId, archived: true }, pageSignal),
+        Reason.DomCallback,
+      );
+    },
+  });
   actions.push({
     id: "share",
     Icon: Share2,

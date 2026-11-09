@@ -90,8 +90,10 @@ export function connectorCatalogSlugSourceFromRows<
 >(
   rows: readonly CatalogSlugRow<Entry>[],
   requestedSlugs: readonly ConnectorSlug[],
-): ConnectorCatalogSlugSource<Entry> {
-  currentFromRows(rows);
+): ConnectorCatalogSlugSource<Entry> & {
+  readonly identity: ExternalCatalogIdentity;
+} {
+  const current = currentFromRows(rows);
   const entries = new Map(
     rows.flatMap(({ entry }) => {
       return entry === null ? [] : [[entry.slug, entry] as const];
@@ -101,11 +103,13 @@ export function connectorCatalogSlugSourceFromRows<
     const entry = entries.get(slug);
     return entry === undefined ? [] : [entry];
   });
+  const capability = connectorCatalogExecutableCapabilityState();
   const filtered = evaluateConnectorCatalogCompatibility({
     artifact: { connectors },
-    capability: connectorCatalogExecutableCapabilityState(),
+    capability,
   });
   return {
+    identity: catalogIdentityFromCapture(current, capability.digest),
     connectors,
     filteredMethodKeys: new Set(
       filtered.map((method) => {
@@ -130,7 +134,9 @@ export function connectorCatalogSlugRuntimeFromRows(
     ...metadataConnectorSlugs,
   ]);
   return materializeConnectorRuntimeLookup({
-    ...source,
+    connectors: source.connectors,
+    filteredMethodKeys: source.filteredMethodKeys,
+    catalogIdentity: source.identity,
     runtimeConnectorSlugs: uniqueSortedConnectorSlugs(runtimeConnectorSlugs),
     metadataConnectorSlugs: uniqueSortedConnectorSlugs(metadataConnectorSlugs),
   });
@@ -237,6 +243,7 @@ export function connectorRuntimeAuthSelectionFromRows(
   const lookup = materializeConnectorRuntimeAuthLookup(source);
   const firewallCatalog =
     createAcceptedConnectorServerFirewallCatalogFromConnectors({
+      catalogIdentity: source.identity,
       connectors: source.connectors.flatMap(
         ({ slug, mcp, label, firewall }) => {
           return label === null || firewall === null

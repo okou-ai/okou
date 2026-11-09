@@ -392,13 +392,11 @@
     "sidebar": {
       "ariaLabel": "Bilah samping",
       "chat": "Chat",
-      "collapse": "Ciutkan sidebar",
+      "feedWaiting_other": "{{count}} menunggu",
       "hideChatList": "Sembunyikan daftar chat",
-      "manage": "Kelola",
       "mobile": {
         "invite": "Undang",
-        "openAutomations": "Buka otomatisasi mobile",
-        "openMenu": "Buka menu"
+        "openAutomations": "Buka otomatisasi mobile"
       },
       "navigation": {
         "agents": "Agen",
@@ -464,8 +462,10 @@
       "nextImage": "Artefak gambar berikutnya",
       "openNewTab": "Buka di tab baru",
       "openSplitView": "Buka dalam tampilan terbagi",
+      "partiallyUnavailable": "Beberapa tindakan tidak tersedia",
       "previousImage": "Artefak gambar sebelumnya",
       "resetZoom": "Atur ulang zoom",
+      "retry": "Coba lagi",
       "share": "Bagikan",
       "shareArtifact": "Bagikan artefak",
       "zoomIn": "Perbesar",
@@ -997,8 +997,11 @@
       "unavailableTitle": "Tautan otorisasi tidak tersedia"
     },
     "computerUse": {
+      "actionFailed": "Tidak dapat mengizinkan komputer ini. Muat ulang obrolan untuk mencoba lagi.",
       "authorize": "Otorisasi",
       "authorized": "Diotorisasi",
+      "authorizedDescription": "Akses komputer diaktifkan untuk proses berikutnya dalam obrolan ini.",
+      "cardDescription": "Pilih komputer untuk obrolan ini. Ini akan memutus peramban cloud.",
       "checkingCompatibility": "Memeriksa kompatibilitas",
       "description": "Pilih komputer online untuk digunakan {{assistantName}} di {{source}}.",
       "downloadMac": "Unduh untuk macOS",
@@ -1007,6 +1010,7 @@
       "macRequirement": "Memerlukan Mac Apple silicon dengan macOS 14 atau yang lebih baru. Mac Intel tidak didukung.",
       "noHostsDescription": "Buka {{desktopApplicationName}} di Mac Anda agar perangkat terhubung.",
       "noHostsTitle": "Tidak ada komputer online",
+      "selectComputer": "Pilih komputer",
       "sources": {
         "chat": "thread chat ini",
         "slack": "thread Slack ini",
@@ -1430,6 +1434,8 @@
   },
   "browserViewer": {
     "address": "Alamat",
+    "addressOpening": "Halaman masih dibuka. Coba lagi sebentar lagi.",
+    "addressPreparing": "Browser belum siap. Coba lagi sebentar lagi.",
     "allTabs": "Semua tab",
     "automatic": "Otomatis",
     "back": "Kembali",
@@ -1470,11 +1476,11 @@
     "unavailable": "Tampilan browser tidak tersedia",
     "unsupportedCapability": "Browser tidak mendukung operasi ini.",
     "untitledTab": "Tab tanpa judul",
+    "updatingView": "Memperbarui tampilan…",
     "windowSize": "Ukuran jendela"
   },
   "chat": {
     "actions": {
-      "authorize": "Otorisasi",
       "cancel": "Batal",
       "confirm": "Konfirmasi",
       "continue": "Lanjutkan",
@@ -1643,7 +1649,7 @@
     },
     "attachments": {
       "attach": "Lampirkan",
-      "fileTooLarge": "{{filename}} melebihi batas 1 GB",
+      "fileTooLarge": "{{filename}} melebihi batas 512 MB",
       "imageUnavailable": "[Gambar tidak tersedia: {{filename}}]",
       "loadingFile": "Memuat {{filename}}",
       "previewFile": "Pratinjau {{filename}}",
@@ -1849,6 +1855,102 @@
       "uncertain": "Periksa browser",
       "uncertainDescription": "Browser mungkin telah menerima informasi. Minta agen untuk memeriksa hasilnya."
     },
+    "capabilityHome": {
+      "back": "Semua kemampuan",
+      "capabilities": "Jelajahi kemampuan Okou",
+      "create": {
+        "description": "Dari ide pertama hingga hasil yang siap dibagikan.",
+        "documentFormats": "Doc · PDF · Sheet",
+        "title": "Buat"
+      },
+      "explore": "Jelajahi",
+      "research": {
+        "items": {
+          "ads": "Jelajahi materi iklan",
+          "products": "Riset produk",
+          "searchOpportunities": "Temukan peluang pencarian",
+          "tools": "Bandingkan alat",
+          "topic": "Riset suatu topik",
+          "traffic": "Bandingkan trafik situs"
+        },
+        "prompt": "{{task}}. Perjelas apa yang ingin saya pelajari, lalu bandingkan bukti dan rangkum temuan utama beserta sumbernya.",
+        "title": "Riset"
+      },
+      "search": {
+        "items": {
+          "affiliates": "Program afiliasi",
+          "creators": "Kemitraan kreator",
+          "customers": "Calon pelanggan",
+          "decisionMakers": "Pengambil keputusan",
+          "podcasts": "Podcast untuk dihubungi",
+          "speakers": "Pembicara acara"
+        },
+        "prompt": "Bantu saya menemukan: {{task}}. Tanyakan target, kriteria, dan cakupan saya terlebih dahulu. Berikan daftar pilihan dengan detail relevan dan tautan sumber.",
+        "title": "Temukan orang"
+      },
+      "workflow": {
+        "advanced": {
+          "description": "Hubungkan alat dan langkah kerja Anda.",
+          "title": "Alur kerja lanjutan"
+        },
+        "description": "Sedikit pengaturan. Banyak pekerjaan terselesaikan.",
+        "scheduled": {
+          "description": "Jalankan pada waktu yang tepat.",
+          "items": {
+            "daily": "Rutinitas harian",
+            "once": "Pengingat sekali",
+            "weekly": "Tinjauan mingguan"
+          },
+          "prompt": "Bantu saya menyiapkan: {{task}}. Tanyakan tugas, waktu pelaksanaan, dan zona waktu yang digunakan.",
+          "title": "Tugas terjadwal"
+        },
+        "suggestions": "Mulai dari saran, lalu sesuaikan dengan kebutuhan Anda.",
+        "triggers": {
+          "description": "Mulai saat suatu peristiwa terjadi.",
+          "eventPrompt": "Bantu saya menyiapkan {{task}} menggunakan {{source}}. Alur: {{event}} → {{action}} → {{result}}. Tanyakan sumber, filter, dan tujuan hasil. Siapkan draf alur kerja dan konfirmasi pengaturan sebelum mengaktifkannya.",
+          "items": {
+            "calendar": {
+              "action": "Teliti peserta",
+              "event": "Acara diubah",
+              "result": "Siapkan ringkasan",
+              "title": "Persiapan rapat"
+            },
+            "email": {
+              "action": "Ambil permintaan",
+              "event": "Email berbintang",
+              "result": "Draf balasan",
+              "title": "Balasan email"
+            },
+            "news": {
+              "action": "Saring topik",
+              "event": "Kata kunci cocok",
+              "result": "Rangkum berita",
+              "title": "Ringkasan berita"
+            },
+            "slack": {
+              "action": "Ambil tindakan",
+              "event": "Disebut",
+              "result": "Daftar tugas",
+              "title": "Tugas dari Slack"
+            },
+            "social": {
+              "action": "Saring minat",
+              "event": "Postingan baru",
+              "result": "Rangkum postingan",
+              "title": "Pantauan X"
+            },
+            "webhook": {
+              "action": "Teliti perusahaan",
+              "event": "Formulir dikirim",
+              "result": "Draf tindak lanjut",
+              "title": "Tindak lanjut prospek"
+            }
+          },
+          "monitorPrompt": "Bantu saya menyiapkan {{task}} menggunakan {{source}}. Alur: {{event}} → {{action}} → {{result}}. Tanyakan feed, topik atau akun yang dipantau, frekuensi pemeriksaan, dan lokasi ringkasan. Periksa secara berkala, lewati item yang sudah diproses, dan konfirmasi pengaturan sebelum mengaktifkannya.",
+          "title": "Pemicu"
+        }
+      }
+    },
     "cards": {
       "viewDetails": "Lihat detail"
     },
@@ -1918,7 +2020,6 @@
     },
     "computerUse": {
       "authorization": "Otorisasi Computer Use",
-      "authorizationDescription": "Pilih host Desktop untuk eksekusi mendatang di thread ini.",
       "checkingCompatibility": "Memeriksa kompatibilitas",
       "cloudBrowser": "Browser cloud",
       "connectMyComputer": "Hubungkan komputer saya",
@@ -2000,7 +2101,6 @@
     "documentTitle": "Chat",
     "errors": {
       "genericTitle": "Proses ini tidak dapat diselesaikan",
-      "loadMessages": "Gagal memuat pesan",
       "noModelProviderAction": "Kelola langganan",
       "noModelProviderPrefix": "Tidak ada penyedia model yang tersedia untuk eksekusi ini. Hubungkan langganan pribadi.",
       "providerIncompatibleAction": "Mulai sesi baru",
@@ -2076,6 +2176,11 @@
       "sourcePartHeading": "Dikutip dari {{description}}",
       "sourcePartsHeading_one": "{{count}} bagian dikutip dari {{description}}",
       "sourcePartsHeading_other": "{{count}} bagian dikutip dari {{description}}"
+    },
+    "fork": {
+      "action": "Fork",
+      "description": "Mulai obrolan baru dengan pilihan ini",
+      "sent": "Obrolan baru dibuat"
     },
     "forward": {
       "action": "Teruskan",
@@ -2253,6 +2358,7 @@
       "unavailableSsh": "host SSH tidak tersedia"
     },
     "resources": {
+      "close": "Tutup artefak dan obrolan",
       "collapse": "Ciutkan",
       "copyLink": "Salin tautan",
       "emptyDescription": "File, situs web, dan artefak lain yang dibuat di chat ini akan muncul di sini.",
@@ -2331,7 +2437,6 @@
       "number": "nomor"
     },
     "sidebar": {
-      "allChats": "Semua chat",
       "archive": "Arsipkan chat",
       "archived": "Diarsipkan",
       "chatsWith": "Chat dengan {{agentName}}",
@@ -2350,6 +2455,7 @@
       "mute": "Bisukan chat",
       "muted": "Dibisukan",
       "newChatWith": "Chat baru dengan {{agentName}}",
+      "newMenu": "Baru",
       "noArchived": "Tidak ada chat yang diarsipkan",
       "noMuted": "Tidak ada chat yang dibisukan",
       "noUnread": "Tidak ada chat belum dibaca",
@@ -2591,12 +2697,9 @@
       "ideasLabel": "Ide untuk memulai",
       "label": "Mulai tugas",
       "more": "Lainnya",
-      "moreTemplates": "Template lainnya",
       "presentationTemplates": "Template presentasi",
       "removeTask": "Hapus {{task}}",
       "shelf": {
-        "browseStyles": "Jelajahi semua gaya",
-        "browseTemplates": "Jelajahi semua templat",
         "document": "Templat dokumen",
         "image": "Gaya gambar",
         "nextPage": "Halaman berikutnya",
@@ -2612,6 +2715,7 @@
         "website": "Situs web",
         "workflow": "Alur kerja"
       },
+      "viewAll": "Lihat semua",
       "visualization": {
         "allCharts": "Semua bagan",
         "back": "Back to visualization options",
@@ -4014,7 +4118,6 @@
     "deniedTitle": "Akses Shell ditolak",
     "deny": "Tolak",
     "description": "Agen memerlukan izin untuk menggunakan Shell di komputer Anda.",
-    "details": "Detail",
     "duration": "Akses berlaku selama 1 jam setelah disetujui",
     "expired": "Otorisasi kedaluwarsa",
     "expiredTitle": "Akses Shell kedaluwarsa",
@@ -4022,7 +4125,6 @@
     "pendingSummary": "{{computer}} · 1 jam",
     "reasonTitle": "Alasan akses",
     "requestExpired": "Permintaan kedaluwarsa",
-    "review": "Tinjau akses",
     "revoke": "Cabut",
     "revoked": "Akses Shell dicabut",
     "scope": "Akses satu jam untuk chat ini",
@@ -4232,7 +4334,6 @@
     "instructions": "Instruksi",
     "loadError": "Instruksi tidak dapat dimuat. Coba lagi.",
     "markdown": "Tulis dengan teks biasa atau Markdown",
-    "newChat": "Chat baru",
     "placeholder": "Beri tahu Okou cara kerja yang Anda sukai…",
     "reload": "Muat ulang instruksi tersimpan",
     "retry": "Coba lagi",
@@ -4984,6 +5085,7 @@
     "moveTitle": "Move chat",
     "moveTo": "Pindahkan ke {{name}}",
     "name": "Project name",
+    "new": "New Project",
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
@@ -5390,6 +5492,7 @@
         "credits": "Kredit",
         "fiveHourLimit": "Batas 5 jam",
         "label": "Penggunaan langganan",
+        "limitReached": "Batas tercapai",
         "lowUsage": "Penggunaan langganan: tersisa kurang dari 20%",
         "resetTimeUnavailable": "Waktu reset tidak tersedia",
         "usage": "Penggunaan {{provider}}",
@@ -6344,6 +6447,7 @@
     "loading": "Memuat notifikasi",
     "loadMore": "Tampilkan yang lebih lama",
     "nextPage": "Halaman berikutnya",
+    "pageNavigation": "Halaman dalam pesan ini",
     "pageOf": "Halaman {{current}} dari {{total}}",
     "previousPage": "Halaman sebelumnya",
     "readAll": "Tandai semua sudah dibaca",

@@ -2,7 +2,6 @@ import {
   bigint,
   boolean,
   check,
-  foreignKey,
   pgTable,
   uuid,
   varchar,
@@ -21,7 +20,6 @@ import type {
   OrgCustomConnectorQueryInjections,
 } from "@okouai/db/jsonb-contracts/org-custom-connector";
 
-import { storageVersions } from "./storage";
 import { connectorSkillBundleColumns } from "../columns/connector-skill-bundle";
 
 export type {
@@ -78,8 +76,9 @@ export const orgCustomConnectors = pgTable(
     skillStorageVersionId: varchar("skill_storage_version_id", {
       length: 64,
     }),
-    // Outgoing writers can leave this reference stale; activation must match
-    // its source version against skillStorageVersionId after writer drain.
+    // Retain the source-ID column for preceding claim readers. New publishers
+    // use the complete bundle SHA-256; historical Storage-derived IDs stay valid.
+    // The field no longer references the generic Storage registry.
     ...connectorSkillBundleColumns(),
     storageVersion: bigint("storage_version", { mode: "number" })
       .notNull()
@@ -99,11 +98,6 @@ export const orgCustomConnectors = pgTable(
       index("idx_org_custom_connectors_skill_storage_version").on(
         table.skillStorageVersionId,
       ),
-      foreignKey({
-        name: "fk_org_custom_connectors_skill_storage_version",
-        columns: [table.skillStorageVersionId],
-        foreignColumns: [storageVersions.id],
-      }).onDelete("restrict"),
       check(
         "chk_org_custom_connectors_slug",
         sql`left(${table.slug}, 1) = '_'`,

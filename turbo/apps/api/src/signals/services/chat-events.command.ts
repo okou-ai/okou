@@ -97,7 +97,10 @@ import {
   resolveRunSelectionModel,
   type ModelSelectionBootstrap,
 } from "./model-selection.service";
-import { queuedChatThreadEnqueuePlan } from "./queued-chat-thread.service";
+import {
+  queuedChatThreadPublicationPlan,
+  type PublishedChatThreadLease,
+} from "./queued-chat-thread.service";
 import { mcpClientDisplayName } from "./mcp-client-display-name.service";
 
 import {
@@ -550,12 +553,6 @@ function isNormalSendBody(body: SendBody): body is NormalSendBody {
   return "prompt" in body && body.prompt !== undefined;
 }
 const ATTACHMENT_METADATA_CONCURRENCY = 4;
-function unwrapSettledResult<T>(result: PromiseSettledResult<T>): T {
-  if (result.status === "rejected") {
-    throw result.reason;
-  }
-  return result.value;
-}
 /**
  * Resolve the stored object behind each attached file. The canonical input
  * asset rows recorded with the input need its key and size, and the lookup is
@@ -572,18 +569,43 @@ const resolveIncomingAttachFileMetadata$ = command(
     signal: AbortSignal,
   ): Promise<ChatEventAttachFileMetadata[]> => {
     const files = userMessagePhysicalFiles(args.userMessage);
-    const metadata: ChatEventAttachFileMetadata[] = [];
-    for (
-      let offset = 0;
-      offset < files.length;
-      offset += ATTACHMENT_METADATA_CONCURRENCY
-    ) {
-      const wave = files.slice(
-        offset,
-        offset + ATTACHMENT_METADATA_CONCURRENCY,
-      );
-      const results = await Promise.allSettled(
-        wave.map(async (file) => {
+    type AttachmentObject = NonNullable<
+      Awaited<ReturnType<(typeof uploadedArtifactObject$)["write"]>>
+    >;
+    interface Lookup {
+      readonly file: (typeof files)[number];
+      result?: Awaited<
+        ReturnType<typeof settleIncludingAbort<AttachmentObject>>
+      >;
+    }
+    const lookups = new Map<string, Lookup>();
+    const references = files.map((file) => {
+      // Public-object resolution uses the filename hint. The request fixes
+      // storage configuration and sends no variant; content type is a per-
+      // reference snapshot, not a lookup argument. Reuse never crosses sends.
+      const key = JSON.stringify([
+        args.userId,
+        args.orgId,
+        file.fileId,
+        file.filenameSnapshot,
+      ]);
+      let lookup = lookups.get(key);
+      if (!lookup) {
+        lookup = { file };
+        lookups.set(key, lookup);
+      }
+      return { file, lookup };
+    });
+    const pending = lookups.values();
+    let failed = false;
+    const resolve = async () => {
+      for (const lookup of pending) {
+        if (failed || signal.aborted) {
+          return;
+        }
+        const file = lookup.file;
+        lookup.result = await settleIncludingAbort(async () => {
+          signal.throwIfAborted();
           const object = await set(
             uploadedArtifactObject$,
             {
@@ -594,27 +616,48 @@ const resolveIncomingAttachFileMetadata$ = command(
             },
             signal,
           );
-          return { file, object };
-        }),
-      );
-      signal.throwIfAborted();
-      for (const result of results) {
-        const { file, object } = unwrapSettledResult(result);
-        signal.throwIfAborted();
-        if (!object) {
-          throw new Error(`User-message attachment not found: ${file.fileId}`);
-        }
-        metadata.push({
-          id: file.fileId,
-          filename: file.filenameSnapshot,
-          contentType: file.contentType,
-          size: object.size,
-          objectKey: object.key,
-          publicBrand: linkLayoutSegment(object.layout),
+          signal.throwIfAborted();
+          if (!object) {
+            throw new Error(
+              `User-message attachment not found: ${file.fileId}`,
+            );
+          }
+          return object;
         });
+        if (!lookup.result.ok) {
+          failed = true;
+          return;
+        }
       }
-    }
-    return metadata;
+    };
+    await joinAll(
+      Array.from(
+        { length: Math.min(ATTACHMENT_METADATA_CONCURRENCY, lookups.size) },
+        resolve,
+      ),
+    );
+    // Cancellation wins; otherwise surface the earliest reference's failure,
+    // after joining all started reads. Before a slow failure is observed, up
+    // to U - 1 other unique lookups may run, but only four can be active.
+    signal.throwIfAborted();
+    return references.map(({ file, lookup }) => {
+      const result = lookup.result;
+      if (!result) {
+        throw new Error("Attachment metadata resolution is incomplete");
+      }
+      if (!result.ok) {
+        throw result.error;
+      }
+      const object = result.value;
+      return {
+        id: file.fileId,
+        filename: file.filenameSnapshot,
+        contentType: file.contentType,
+        size: object.size,
+        objectKey: object.key,
+        publicBrand: linkLayoutSegment(object.layout),
+      };
+    });
   },
 );
 function authorizeSendAgent(
@@ -1448,6 +1491,9 @@ const normalSendPublicationRowSchema = object({
   id: uuid().nullable(),
   createdAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
   seqId: pgInt8ToSafeIntegerSchema.nullable(),
+  claimId: uuid().nullable(),
+  claimExpiresAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
+  queuedAt: pgTimestampWithoutTimezoneToDateSchema.nullable(),
   atomicGuard: literal(0),
 });
 interface NormalSendPublicationFailure {
@@ -1593,6 +1639,13 @@ function normalSendPublicAssetWrite(
 
 type NormalInputPlan = ReturnType<typeof normalSendInputPlan>;
 type NormalInputAsset = NormalInputPlan["attachments"][number];
+const NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE = 1000;
+type NormalInputAssetOwnerRead =
+  | {
+      readonly ok: true;
+      readonly value: typeof runUploadedFiles.$inferSelect | undefined;
+    }
+  | { readonly ok: false; readonly error: unknown };
 interface NormalInputAssetSnapshot {
   readonly index: number;
   readonly asset: NormalInputAsset;
@@ -1606,6 +1659,39 @@ interface NormalInputAssetSnapshot {
       }
     | { readonly ok: false; readonly error: unknown }
     | null;
+}
+function normalSendAssetSnapshots(
+  attachments: readonly NormalInputAsset[],
+  owners: ReadonlyMap<string, NormalInputAssetOwnerRead>,
+): NormalInputAssetSnapshot[] {
+  return attachments.map((asset, index) => {
+    if (asset.plan) {
+      return { index, asset, loaded: null };
+    }
+    const owner = owners.get(asset.owner.file.id.toLowerCase());
+    if (!owner) {
+      throw new Error("Private attachment owner read is missing");
+    }
+    if (!owner.ok) {
+      // Preparation failures still belong to the input-insertion SQL guard.
+      return { index, asset, loaded: owner };
+    }
+    const loaded = safeSync(() => {
+      const owned = owner.value;
+      return {
+        owned,
+        plan: canonicalPrivateWebInputPlan({ ...asset.owner, owned }),
+      };
+    });
+    return {
+      index,
+      asset,
+      loaded:
+        "ok" in loaded
+          ? { ok: true, value: loaded.ok }
+          : { ok: false, error: loaded.error },
+    };
+  });
 }
 type NormalPreparedEvent =
   | { readonly ok: true; readonly value: ReturnType<typeof prepareChatEvent> }
@@ -1860,6 +1946,7 @@ function normalSendAssetWrites(
 function normalSendFinalWrites(
   args: NormalSendArgs,
   input: NormalInputPlan,
+  claimId: string,
   previous?: string,
 ) {
   const event = input.event;
@@ -1881,7 +1968,10 @@ function normalSendFinalWrites(
     });
     after = "normal_send_get_started";
   }
-  const queue = queuedChatThreadEnqueuePlan(input.queueInput);
+  const queue = queuedChatThreadPublicationPlan({
+    ...input.queueInput,
+    claimId,
+  });
   writes.push({
     name: "normal_send_queue",
     statement: normalChatInputInsertSql(
@@ -1893,6 +1983,7 @@ function normalSendFinalWrites(
         [queue.conflict.target],
         queue.conflict.set,
       ),
+      sql`claim_id, claim_expires_at, queued_at`,
     ),
   });
   return writes;
@@ -1902,6 +1993,7 @@ function normalSendPreparedPublication(
   input: NormalInputPlan,
   target: readonly zInfer<typeof chatEventReplacementTargetSchema>[] | null,
   snapshots: readonly NormalInputAssetSnapshot[],
+  claimId: string,
 ) {
   const thread = input.thread;
   const base = normalSendBasePublication(args, input, target);
@@ -1934,7 +2026,7 @@ function normalSendPreparedPublication(
       writes: [
         ...selection.writes,
         ...assets.writes,
-        ...normalSendFinalWrites(args, input, assets.after),
+        ...normalSendFinalWrites(args, input, claimId, assets.after),
       ],
       guards: [...base.guards, ...assets.guards],
     },
@@ -1962,33 +2054,52 @@ const appendNormalSendInput$ = command(
           : null
         : [input.replacementTarget];
     signal.throwIfAborted();
-    const snapshots: NormalInputAssetSnapshot[] = [];
-    for (const [index, asset] of input.attachments.entries()) {
-      if (asset.plan) {
-        snapshots.push({ index, asset, loaded: null });
-        continue;
-      }
+    // Match PostgreSQL's UUID spelling without changing the input references.
+    const privateIds = [
+      ...new Set(
+        input.attachments.flatMap((asset) => {
+          return asset.plan ? [] : [asset.owner.file.id.toLowerCase()];
+        }),
+      ),
+    ];
+    const owners = new Map<string, NormalInputAssetOwnerRead>();
+    for (
+      let offset = 0;
+      offset < privateIds.length;
+      offset += NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE
+    ) {
+      const ids = privateIds.slice(
+        offset,
+        offset + NORMAL_SEND_PRIVATE_OWNER_BATCH_SIZE,
+      );
       const loaded = await settle(
         (async () => {
-          const [owned] = await db
+          return await db
             .select()
             .from(runUploadedFiles)
-            .where(eq(runUploadedFiles.id, asset.owner.file.id))
-            .limit(1);
-          return {
-            owned,
-            plan: canonicalPrivateWebInputPlan({ ...asset.owner, owned }),
-          };
+            .where(inArray(runUploadedFiles.id, ids));
         })(),
       );
       signal.throwIfAborted();
-      snapshots.push({ index, asset, loaded });
+      const rows = new Map(
+        loaded.ok
+          ? loaded.value.map((row) => {
+              return [row.id, row] as const;
+            })
+          : [],
+      );
+      for (const id of ids) {
+        owners.set(id, loaded.ok ? { ok: true, value: rows.get(id) } : loaded);
+      }
     }
+    const snapshots = normalSendAssetSnapshots(input.attachments, owners);
+    const claimId = randomUUID();
     const prepared = normalSendPreparedPublication(
       args,
       input,
       target,
       snapshots,
+      claimId,
     );
     const created = prepared.createdPlan;
     const query = normalChatInputPublicationSql({
@@ -2028,9 +2139,25 @@ const appendNormalSendInput$ = command(
     if (row.createdAt === null || row.seqId === null) {
       throw new Error("Normal chat input publication is incomplete");
     }
+    const enqueueCommit = { eventId: row.id, committedAt: now() };
+    let publishedLease: PublishedChatThreadLease | undefined;
+    if (row.claimId === claimId) {
+      if (row.claimExpiresAt === null || row.queuedAt === null) {
+        throw new Error("Normal chat publication lease receipt is incomplete");
+      }
+      publishedLease = {
+        ...input.queueInput,
+        userId: args.userId,
+        agentId: args.body.agentId,
+        claimId: row.claimId,
+        claimExpiresAt: row.claimExpiresAt,
+        queuedAt: row.queuedAt,
+      };
+    }
     return {
       inserted: { id: row.id, createdAt: row.createdAt, seqId: row.seqId },
-      enqueueCommit: { eventId: row.id, committedAt: now() },
+      enqueueCommit,
+      publishedLease,
     };
   },
 );
@@ -2151,13 +2278,21 @@ const publishEnqueuedNormalSend$ = command(
       readonly thread: SendThread;
       readonly touchedAt: Date;
       readonly enqueueCommit?: ChatInputEnqueueCommit;
+      readonly publishedLease?: PublishedChatThreadLease;
       readonly context: AgentRunContextSignals;
       readonly requestFacts: ChatThreadRequestFacts;
     },
     signal: AbortSignal,
   ): Promise<void> => {
-    const { args, thread, touchedAt, enqueueCommit, context, requestFacts } =
-      input;
+    const {
+      args,
+      thread,
+      touchedAt,
+      enqueueCommit,
+      publishedLease,
+      context,
+      requestFacts,
+    } = input;
     if (
       thread.kind === "existing" &&
       thread.computerAccess.computerUseHostId !==
@@ -2173,6 +2308,7 @@ const publishEnqueuedNormalSend$ = command(
           orgId: args.orgId,
           chatThreadId: thread.threadId,
           ...(enqueueCommit ? { enqueueCommit } : {}),
+          ...(publishedLease ? { publishedLease } : {}),
           context,
           requestFacts,
         },
@@ -2180,9 +2316,9 @@ const publishEnqueuedNormalSend$ = command(
       ),
     );
     signal.throwIfAborted();
-    // A claimed lease proves the thread had no active run, so no running run
-    // can steer this input: a launch consumes it and a full organization
-    // leaves it queued. Otherwise a running run may hold the lease.
+    // The pick reobserves active Runs after publication. A busy thread returns
+    // none so its running Run is notified; a launch consumes the input and an
+    // idle thread at full organization capacity leaves it queued.
     const claimed =
       picked.ok &&
       (picked.value.kind === "launched" || picked.value.kind === "org-full");
@@ -2497,6 +2633,7 @@ export const sendNormalEvent$ = command(
         const {
           inserted: { createdAt },
           enqueueCommit,
+          publishedLease,
         } = committed;
         // Schedule before observing abort; touch, realtime and the running-run
         // notice follow this pick's outcome.
@@ -2508,6 +2645,7 @@ export const sendNormalEvent$ = command(
               thread,
               touchedAt: createdAt,
               ...(enqueueCommit ? { enqueueCommit } : {}),
+              ...(publishedLease ? { publishedLease } : {}),
               context,
               requestFacts: normalSendRequestFacts(
                 args,

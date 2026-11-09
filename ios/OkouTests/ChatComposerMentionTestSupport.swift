@@ -49,7 +49,7 @@ final class MentionNavigationFixture: Sendable {
           body: String(decoding: try JSONSerialization.data(withJSONObject: values), as: UTF8.self))
       case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
       case "/api/feature-switches":
-        return ChatHTTPResponse(body: "{\"effectiveSwitches\":{\"chatThreadArchiving\":true}}")
+        return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot":
         var threads: [[String: Any]] = (1...30).map {
           Self.row(

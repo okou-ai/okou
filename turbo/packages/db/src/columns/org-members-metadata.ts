@@ -32,9 +32,6 @@ export function orgMembersMetadataColumns() {
     cloudBrowserEnabledByDefault: boolean("cloud_browser_enabled_by_default")
       .notNull()
       .default(true),
-    chatResourcesEnabledByDefault: boolean("chat_resources_enabled_by_default")
-      .notNull()
-      .default(true),
     theme: text("theme").$type<ThemePreference>(),
     colorTheme: text("color_theme").$type<ColorTheme>(),
     selectedModel: varchar("selected_model", { length: 255 })

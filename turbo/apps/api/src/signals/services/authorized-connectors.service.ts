@@ -7,10 +7,7 @@ import {
   customConnectorSlugSchema,
   type CustomConnectorSlug,
 } from "@okouai/api-contracts/contracts/custom-connectors";
-import {
-  getCustomConnectorSkillName,
-  getCustomConnectorSkillStorageName,
-} from "@okouai/core/storage-names";
+import { getCustomConnectorSkillName } from "@okouai/core/storage-names";
 import { connectorCatalogEntries } from "@okouai/db/runtime/connector-catalog";
 import { computed, type Computed } from "ccstate";
 import { and, eq, inArray } from "drizzle-orm";
@@ -26,10 +23,10 @@ import {
 } from "./connector-catalog-runtime.service";
 import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
 
-type AuthorizedConnectorSkill = { readonly skillName: string } & (
-  | { readonly contentBundle: ContentBundle }
-  | { readonly storageName: string; readonly versionId: string }
-);
+interface AuthorizedConnectorSkill {
+  readonly skillName: string;
+  readonly contentBundle: ContentBundle;
+}
 
 function requiredSkillBundle(
   row:
@@ -74,13 +71,11 @@ export function createAuthorizedConnectors(
     >
   >,
   catalog$: Computed<Promise<ConnectorRuntimeSelection | null>>,
-  bundleDelivery$: Computed<Promise<boolean>>,
 ): Computed<Promise<AuthorizedConnectors>> {
   return computed(async (get) => {
-    const [selection, catalog, bundleDelivery] = await Promise.all([
+    const [selection, catalog] = await Promise.all([
       get(selection$),
       get(catalog$),
-      get(bundleDelivery$),
     ]);
     const scope = agentConnectorScopeFromRows({
       connectorRows: selection.builtinConnectorSlugs.map((connectorSlug) => {
@@ -96,15 +91,6 @@ export function createAuthorizedConnectors(
     }
     if (!catalog) {
       throw new Error("Scoped connector catalog is missing from bootstrap");
-    }
-    if (!bundleDelivery) {
-      return authorizedConnectorsFromBundles({
-        scope,
-        catalog,
-        bundleDelivery,
-        builtinBundles: new Map(),
-        customBundles: new Map(),
-      });
     }
     const builtinSlugs = connectorScopeForRuntimeSnapshot(
       scope,
@@ -157,7 +143,6 @@ export function createAuthorizedConnectors(
     return authorizedConnectorsFromBundles({
       scope,
       catalog,
-      bundleDelivery,
       builtinBundles,
       customBundles,
     });
@@ -167,13 +152,11 @@ export function createAuthorizedConnectors(
 function authorizedConnectorsFromBundles({
   scope,
   catalog,
-  bundleDelivery,
   builtinBundles,
   customBundles,
 }: {
   readonly scope: AgentConnectorScopeSnapshot;
   readonly catalog: ConnectorRuntimeSelection;
-  readonly bundleDelivery: boolean;
   readonly builtinBundles: ReadonlyMap<
     string,
     {
@@ -205,17 +188,10 @@ function authorizedConnectorsFromBundles({
         connector.skill.kind === "none"
           ? null
           : {
-              ...(bundleDelivery
-                ? {
-                    contentBundle: requiredSkillBundle(
-                      builtinBundles.get(connectorSlug),
-                      connector.skill.versionId,
-                    ),
-                  }
-                : {
-                    storageName: connector.skill.storageName,
-                    versionId: connector.skill.versionId,
-                  }),
+              contentBundle: requiredSkillBundle(
+                builtinBundles.get(connectorSlug),
+                connector.skill.versionId,
+              ),
               skillName: connectorSlug,
             },
     };
@@ -232,19 +208,10 @@ function authorizedConnectorsFromBundles({
           connector.skillStorageVersionId === null
             ? null
             : {
-                ...(bundleDelivery
-                  ? {
-                      contentBundle: requiredSkillBundle(
-                        customBundles.get(connector.customConnectorId),
-                        connector.skillStorageVersionId,
-                      ),
-                    }
-                  : {
-                      storageName: getCustomConnectorSkillStorageName(
-                        connector.customConnectorId,
-                      ),
-                      versionId: connector.skillStorageVersionId,
-                    }),
+                contentBundle: requiredSkillBundle(
+                  customBundles.get(connector.customConnectorId),
+                  connector.skillStorageVersionId,
+                ),
                 skillName: getCustomConnectorSkillName(
                   slug.data,
                   connector.customConnectorId,

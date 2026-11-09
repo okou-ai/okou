@@ -508,18 +508,18 @@ async fn bounded_inventory_preserves_profile_caps_and_completion_order_across_ro
     let inventory = f.cache.home_cache_inventory_for_profiles(&configured).await;
     assert!(!inventory.incomplete);
     assert!(inventory.truncated);
-    assert_eq!(inventory.states(), cap_held_home_states(expected));
+    let states = inventory.states();
+    assert_eq!(states, cap_held_home_states(expected));
     assert_eq!(f.cache.held_state_root_scan_count(), 2);
     assert!(inventory.completion_times.len() <= MAX_HELD_HOME_STATES);
     assert!(inventory.entries.len() <= MAX_HELD_HOME_STATES * MAX_HOME_CACHES_PER_REUSE_KEY);
-    assert_eq!(inventory.projected_cache_keys().len(), MAX_HELD_HOME_STATES);
-    let shared = inventory
-        .states()
+    let shared = states
         .into_iter()
         .find(|state| state.reuse_key == "shared")
         .unwrap();
     assert_eq!(shared.last_completed_at, "2026-04-01T00:00:00Z");
     assert_eq!(shared.home_caches.len(), MAX_HOME_CACHES_PER_REUSE_KEY);
+    assert_eq!(inventory.projected_cache_keys().len(), MAX_HELD_HOME_STATES);
 }
 
 #[tokio::test]

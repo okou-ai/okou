@@ -311,7 +311,7 @@ function uploadedSkillMarkdown(): string {
   for (const [command] of context.mocks.s3.send.mock.calls) {
     const input = commandInput(command);
     if (
-      !String(input.Key).endsWith("/archive.tar.gz") ||
+      !String(input.Key).startsWith("bundles/v1/") ||
       !Buffer.isBuffer(input.Body)
     ) {
       continue;
@@ -1233,7 +1233,6 @@ function createFeishuIntegrationFixture(platform: FeishuPlatform) {
     await own(() => {
       return enableFeishuIntegration(platform, actor, {
         [FeatureSwitchKey.OkouDebug]: true,
-        [FeatureSwitchKey.ConnectorSkillBundleDelivery]: true,
       });
     });
     authOrgApi.acceptAgentStorageWrites();
@@ -2708,7 +2707,15 @@ export function registerFeishuIntegrationTests(
         context.mocks.s3.send.mockImplementation(async (command: unknown) => {
           const input = commandInput(command);
           if (
-            String(input.Key).endsWith("/archive.tar.gz") &&
+            command instanceof HeadObjectCommand &&
+            String(input.Key).startsWith("bundles/v1/")
+          ) {
+            throw Object.assign(new Error("Bundle missing"), {
+              name: "NotFound",
+            });
+          }
+          if (
+            String(input.Key).startsWith("bundles/v1/") &&
             Buffer.isBuffer(input.Body)
           ) {
             archiveKeys.push(String(input.Key));
@@ -2747,7 +2754,7 @@ export function registerFeishuIntegrationTests(
             return response.status;
           }),
         ).toStrictEqual([200, 200]);
-        expect(new Set(archiveKeys).size).toBe(2);
+        expect(new Set(archiveKeys).size).toBe(1);
         const builtinConnectorList = await own(() => {
           return accept(
             customConnectorClient.list({

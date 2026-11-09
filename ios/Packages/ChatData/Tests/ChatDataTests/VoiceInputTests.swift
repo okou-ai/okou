@@ -6,6 +6,50 @@ import XCTest
 @testable import ChatData
 
 final class VoiceInputTests: XCTestCase {
+  func testDetectionFailureRetainsAudioForRetryAfterReopening() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fixture = voiceRecoveryHTTPFixture()
+    let client = VoiceInputClient(client: fixture.client)
+    let storage = VoiceDraftStorage(directory: root)
+    let original = try VoiceDraftSession(
+      client: client, storage: storage,
+      activityDetection: VoiceActivityFixture(failure: URLError(.cannotDecodeContentData)))
+    let id = try await original.begin(
+      context: VoiceEditorContext(before: "", selected: "", after: ""))
+    _ = try await original.append(Data(repeating: 1, count: 32_000), recordingID: id)
+    do {
+      _ = try await original.finish(recordingID: id)
+      XCTFail("Failed detection must not complete or discard the recording")
+    } catch let failure as URLError {
+      XCTAssertEqual(failure.code, .cannotDecodeContentData)
+    }
+    let reopened = try VoiceDraftSession(
+      client: client, storage: storage, activityDetection: VoiceActivityFixture())
+    let text = try await reopened.finish(recordingID: id)
+    XCTAssertEqual(text, "Recovered speech")
+  }
+
+  func testNewDetectionPolicyReconsidersSkippedAudioAndCachedEmptyText() async throws {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+    defer { try? FileManager.default.removeItem(at: root) }
+    let fixture = voiceRecoveryHTTPFixture()
+    let client = VoiceInputClient(client: fixture.client)
+    let storage = VoiceDraftStorage(directory: root)
+    let original = try VoiceDraftSession(
+      client: client, storage: storage, activityDetection: VoiceActivityFixture(speech: false))
+    let id = try await original.begin(
+      context: VoiceEditorContext(before: "", selected: "", after: ""))
+    _ = try await original.append(Data(repeating: 1, count: 32_000), recordingID: id)
+    let empty = try await original.finish(recordingID: id)
+    XCTAssertEqual(empty, "")
+    let reopened = try VoiceDraftSession(
+      client: client, storage: storage,
+      activityDetection: VoiceActivityFixture(policyVersion: "fixture-v2"))
+    let text = try await reopened.finish(recordingID: id)
+    XCTAssertEqual(text, "Recovered speech")
+  }
+
   func testIncrementalWavRequestsResumeAfterFailureAndPolishAllSpeech() async throws {
     let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
     defer { try? FileManager.default.removeItem(at: root) }
@@ -59,7 +103,8 @@ final class VoiceInputTests: XCTestCase {
     let quota = try await client.quota()
     XCTAssertTrue(quota.allowed)
     let storage = VoiceDraftStorage(directory: root)
-    let session = try VoiceDraftSession(client: client, storage: storage)
+    let session = try VoiceDraftSession(
+      client: client, storage: storage, activityDetection: VoiceActivityFixture())
     let id = try await session.begin(
       context: VoiceEditorContext(before: "Existing notes ", selected: "", after: ""))
     _ = try await session.append(Data(repeating: 1, count: 16 * 16_000 * 2), recordingID: id)
@@ -69,10 +114,12 @@ final class VoiceInputTests: XCTestCase {
       XCTFail("The provider failure must retain the recording")
     } catch let error as APIClientError { XCTAssertEqual(error.serverCode, "PROVIDER_UNAVAILABLE") }
     state.withLock { $0.failTail = false }
-    let reopened = try VoiceDraftSession(client: client, storage: storage)
+    let reopened = try VoiceDraftSession(
+      client: client, storage: storage, activityDetection: VoiceActivityFixture())
     let text = try await reopened.finish(recordingID: id)
     XCTAssertEqual(text, "First sentence. Second sentence.")
-    let retained = try VoiceDraftSession(client: client, storage: storage)
+    let retained = try VoiceDraftSession(
+      client: client, storage: storage, activityDetection: VoiceActivityFixture())
     let savedText = try await retained.finish(recordingID: id)
     XCTAssertEqual(savedText, text)
     XCTAssertEqual(state.withLock { $0.requests }, 3)
@@ -120,7 +167,8 @@ final class VoiceInputTests: XCTestCase {
     }
     let client = VoiceInputClient(client: fixture.client)
     let original = try VoiceDraftSession(
-      client: client, storage: storage().voiceDraft(for: .agent("one")))
+      client: client, storage: storage().voiceDraft(for: .agent("one")),
+      activityDetection: VoiceActivityFixture())
     let context = VoiceEditorContext(before: "", selected: "", after: "")
     let originalID = try await original.begin(context: context)
     _ = try await original.append(Data(repeating: 1, count: 32_000), recordingID: originalID)
@@ -132,12 +180,14 @@ final class VoiceInputTests: XCTestCase {
       storage().voiceDraft(for: .thread("one")),
     ]
     for other in others {
-      let independent = try VoiceDraftSession(client: client, storage: other)
+      let independent = try VoiceDraftSession(
+        client: client, storage: other, activityDetection: VoiceActivityFixture())
       _ = try await independent.begin(context: context)
       try await independent.discard()
     }
     let reopened = try VoiceDraftSession(
-      client: client, storage: storage().voiceDraft(for: .agent("one")))
+      client: client, storage: storage().voiceDraft(for: .agent("one")),
+      activityDetection: VoiceActivityFixture())
     let text = try await reopened.finish(recordingID: originalID)
     XCTAssertEqual(text, "Owner speech")
   }
@@ -150,6 +200,20 @@ private struct SegmentOptions: Decodable {
 }
 private struct PolishRequest: Decodable { let segments: [String] }
 
+private func voiceRecoveryHTTPFixture() -> ChatHTTPFixture {
+  ChatHTTPFixture { request in
+    switch request.url?.path {
+    case "/api/voice-io/transcribe/segment":
+      let wav = try voicePart("file", request: request)
+      XCTAssertEqual(wav.count, 44 + 32_000)
+      return ChatHTTPResponse(body: #"{"transcript":"Recovered speech","language":"en"}"#)
+    case "/api/voice-io/polish/segments":
+      return ChatHTTPResponse(body: #"{"text":"Recovered speech"}"#)
+    default: throw URLError(.unsupportedURL)
+    }
+  }
+}
+
 private func voicePart(_ name: String, request: URLRequest) throws -> Data {
   let type = try XCTUnwrap(request.value(forHTTPHeaderField: "Content-Type"))
   let boundary = try XCTUnwrap(type.components(separatedBy: "boundary=").last)
@@ -160,4 +224,17 @@ private func voicePart(_ name: String, request: URLRequest) throws -> Data {
   let end = try XCTUnwrap(
     data.range(of: Data("\r\n--\(boundary)".utf8), in: header.upperBound..<data.endIndex))
   return data.subdata(in: header.upperBound..<end.lowerBound)
+}
+
+// Model inference is an external native capability; protocol/storage tests keep
+// their supplied PCM unchanged. App tests exercise the real bundled model.
+private struct VoiceActivityFixture: VoiceActivityDetection {
+  var policyVersion = "fixture-v1"
+  var speech = true
+  var failure: URLError?
+
+  func mayContainSpeech(_ pcm: Data) throws -> Bool {
+    if let failure { throw failure }
+    return speech
+  }
 }
