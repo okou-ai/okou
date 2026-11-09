@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.22.65](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.64...guest-control-proto-v0.22.65) (2026-11-09)
+
+
+### Performance Improvements
+
+* **runner:** combine prewarmed blanks with cached homes ([#45982](https://github.com/okou-ai/okou/issues/45982)) ([1f635c4](https://github.com/okou-ai/okou/commit/1f635c4ff9baa72a4203a727dde742058d8def9f))
+
 ## [0.22.64](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.63...guest-control-proto-v0.22.64) (2026-11-08)
 
 ## [0.22.63](https://github.com/okou-ai/okou/compare/guest-control-proto-v0.22.62...guest-control-proto-v0.22.63) (2026-11-07)
