@@ -60,7 +60,7 @@ public actor HostRuntime {
       // New Desktop -> old API compatibility (#45809). Remove this negotiation
       // and its legacy heartbeat loop after pre-presence APIs have drained and
       // are no longer supported rollback targets.
-      usesPresence = ["presence", "presence-only"].contains(registration.livenessMode?.rawValue ?? "")
+      usesPresence = registration.livenessMode?.rawValue == "presence"
       channelName = registration.commandNotifications.channelName
     }
     func body(_ value: JSONValue) -> JSONValue {
@@ -86,6 +86,7 @@ public actor HostRuntime {
   private var stateDiagnostics = HostRequestDiagnostics(request: .state)
   private var notificationReady = false
   private var notificationTask: Task<Void, Never>?
+  private var notificationReports: [UUID: Task<Void, Never>] = [:]
   private var notificationStops = 0
   private var drainTask: Task<Void, Never>?
   private var commandRetryTask: Task<Void, Never>?
@@ -484,6 +485,10 @@ public actor HostRuntime {
     notificationReady = false
     await notifications.stop()
     await task?.value
+    let reports = Array(notificationReports.values)
+    notificationReports.removeAll()
+    for report in reports { report.cancel() }
+    for report in reports { await report.value }
   }
   private func notificationLoop(
     subscription: CommandNotificationSubscription, generation current: Int, connection: Connection
@@ -512,31 +517,26 @@ public actor HostRuntime {
           }
           return response.body
         })
-      await withDiscardingTaskGroup { reports in
-        defer { reports.cancelAll() }
-        for await event in events {
-          guard !Task.isCancelled, running, acceptingCommands, generation == current else { return }
-          switch event {
-          case .ready:
-            notificationReady = true
-            if connection.usesPresence { requestStateRefresh(generation: current, connection: connection) }
-            requestCommandRefresh(generation: current, connection: connection)
-            reports.addTask { await self.reportNotificationEvent("ready", connection: connection) }
-          case .refresh:
-            requestCommandRefresh(generation: current, connection: connection)
-          case .unavailable(let message, let code):
-            notificationReady = false
-            if connection.usesPresence {
-              state.status = "recovering"
-              state.lastError = message
-            }
-            state.errors.insert(message, at: 0)
-            state.errors = Array(state.errors.prefix(50))
-            await publish()
-            reports.addTask {
-              await self.reportNotificationEvent("unavailable", reasonCode: code, connection: connection)
-            }
+      for await event in events {
+        guard !Task.isCancelled, running, acceptingCommands, generation == current else { return }
+        switch event {
+        case .ready:
+          notificationReady = true
+          if connection.usesPresence { requestStateRefresh(generation: current, connection: connection) }
+          requestCommandRefresh(generation: current, connection: connection)
+          scheduleNotificationReport("ready", connection: connection)
+        case .refresh:
+          requestCommandRefresh(generation: current, connection: connection)
+        case .unavailable(let message, let code):
+          notificationReady = false
+          if connection.usesPresence {
+            state.status = "recovering"
+            state.lastError = message
           }
+          state.errors.insert(message, at: 0)
+          state.errors = Array(state.errors.prefix(50))
+          await publish()
+          scheduleNotificationReport("unavailable", reasonCode: code, connection: connection)
         }
       }
     } catch is CancellationError {
@@ -550,6 +550,16 @@ public actor HostRuntime {
       state.errors.insert(error.localizedDescription, at: 0)
       state.errors = Array(state.errors.prefix(50))
       await publish()
+    }
+  }
+  private func scheduleNotificationReport(
+    _ event: String, reasonCode: Int? = nil, connection: Connection
+  ) {
+    guard connection.usesPresence else { return }
+    let id = UUID()
+    notificationReports[id] = Task {
+      await self.reportNotificationEvent(event, reasonCode: reasonCode, connection: connection)
+      self.notificationReports[id] = nil
     }
   }
   private func reportNotificationEvent(

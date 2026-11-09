@@ -774,11 +774,8 @@ export const computerUseSessionHostsContract = c.router({
       200: sessionHostGenerationSchema.extend({
         hostId: uuid(),
         commandNotifications: computerUseCommandNotificationsSchema,
-        livenessMode: zEnum([
-          "heartbeat",
-          "presence",
-          "presence-only",
-        ]).optional(),
+        livenessMode: zEnum(["heartbeat", "presence"]).optional(),
+        presenceOnly: boolean().optional(),
       }),
       426: desktopUpgradeRequiredSchema,
       ...sessionHostResponses,

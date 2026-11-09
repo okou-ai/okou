@@ -115,7 +115,10 @@ const register$ = command(async ({ get, set }, signal: AbortSignal) => {
     body: {
       hostId: result.hostId,
       ...(result.livenessMode !== "heartbeat"
-        ? { livenessMode: result.livenessMode }
+        ? { livenessMode: "presence" as const }
+        : {}),
+      ...(result.livenessMode === "presence-only"
+        ? { presenceOnly: true }
         : {}),
       connectionGeneration: result.connectionGeneration,
       commandNotifications: {

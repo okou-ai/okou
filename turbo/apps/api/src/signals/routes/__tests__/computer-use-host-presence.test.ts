@@ -351,7 +351,10 @@ describe("Desktop host presence", () => {
 describe("Presence-only Desktop", () => {
   it("uses presence for a fresh host and reports an unavailable provider explicitly", async () => {
     const s = await scenario(true);
-    expect(s.registered.body.livenessMode).toBe("presence-only");
+    expect(s.registered.body).toMatchObject({
+      livenessMode: "presence",
+      presenceOnly: true,
+    });
     context.mocks.ably.presenceGet.mockRejectedValue(
       new Error("Ably unavailable"),
     );

@@ -1687,7 +1687,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       let path = connection.request.url!.path
       if path.hasSuffix("/register") {
         var registration = registeredHostResponse()
-        registration["livenessMode"] = .string("presence-only")
+        registration["livenessMode"] = .string("presence")
+        registration["presenceOnly"] = .bool(true)
         connection.reply(registration)
       } else if path.hasSuffix("/state") {
         switch synced.next() {
@@ -1744,7 +1745,8 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
       if path.hasSuffix("/register") {
         XCTAssertEqual(connection.body["presenceOnly"], .bool(true))
         var registration = registeredHostResponse()
-        registration["livenessMode"] = .string("presence-only")
+        registration["livenessMode"] = .string("presence")
+        registration["presenceOnly"] = .bool(true)
         connection.reply(registration)
       } else if path.hasSuffix("/connection-events") {
         if connection.body["event"].string == "unavailable" {
@@ -1774,6 +1776,7 @@ final class HostLifecycleTests: XCTestCase, @unchecked Sendable {
     await fulfillment(of: [streamStarted], timeout: 3)
     await notifications.unavailable()
     await fulfillment(of: [unavailable], timeout: 3)
+    XCTAssertEqual(claims.value, 0)
     await notifications.reconnect()
     await fulfillment(of: [reported], timeout: 4)
     await runtime.stop()

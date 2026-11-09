@@ -26,13 +26,11 @@ public struct ComputerUseHostRegistration: Codable, Equatable, Sendable {
 
     public static let heartbeat = Self(rawValue: "heartbeat")
     public static let presence = Self(rawValue: "presence")
-    public static let presenceOnly = Self(rawValue: "presence-only")
 
     /// Every value the contract declared when this file was generated.
     public static let knownValues: [LivenessMode] = [
       .heartbeat,
       .presence,
-      .presenceOnly,
     ]
   }
 
@@ -40,17 +38,29 @@ public struct ComputerUseHostRegistration: Codable, Equatable, Sendable {
   public let hostId: String
   public let commandNotifications: CommandNotifications
   public let livenessMode: LivenessMode?
+  public let presenceOnly: Bool?
 
   public init(
     connectionGeneration: Int,
     hostId: String,
     commandNotifications: CommandNotifications,
-    livenessMode: LivenessMode? = nil
+    livenessMode: LivenessMode? = nil,
+    presenceOnly: Bool? = nil
   ) {
     self.connectionGeneration = connectionGeneration
     self.hostId = hostId
     self.commandNotifications = commandNotifications
     self.livenessMode = livenessMode
+    self.presenceOnly = presenceOnly
+  }
+}
+
+/// Queue availability from the bounded command wait; it never claims work.
+public struct ComputerUseHostCommandWait: Codable, Equatable, Sendable {
+  public let hasPendingCommands: Bool
+
+  public init(hasPendingCommands: Bool) {
+    self.hasPendingCommands = hasPendingCommands
   }
 }
 
