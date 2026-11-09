@@ -8,26 +8,42 @@ DECLARE
   after_fingerprint text;
   revision_count bigint;
   unmaterialized_count bigint;
+  invalid_source record;
 BEGIN
-  IF EXISTS (
-    SELECT 1 FROM official_workflow_definition_revisions r
-    WHERE jsonb_typeof(r.payload) IS DISTINCT FROM 'object'
-      OR r.payload->'schemaVersion' IS NULL
-      OR r.payload->'schemaVersion' NOT IN ('2'::jsonb, '3'::jsonb)
-      OR r.payload->>'name' IS DISTINCT FROM r.definition_name
-      OR r.payload->>'revision' IS DISTINCT FROM r.revision
-      OR jsonb_typeof(r.payload->'workflow') IS DISTINCT FROM 'object'
-      OR jsonb_typeof(r.payload->'workflow'->'displayName') IS DISTINCT FROM 'string'
-      OR jsonb_typeof(r.payload->'workflow'->'description') IS DISTINCT FROM 'string'
-      OR jsonb_typeof(r.payload->'workflow'->'instruction') IS DISTINCT FROM 'string'
-      OR jsonb_typeof(r.payload->'workflow'->'files') IS DISTINCT FROM 'array'
-      OR jsonb_typeof(r.payload->'blueprints') IS DISTINCT FROM 'array'
-      OR jsonb_path_exists(r.payload, '$.workflow.files[*] ? (
-        @.type() != "object" || !exists(@.path) || @.path.type() != "string" ||
-        !exists(@.content) || @.content.type() != "string"
-      )')
-  ) THEN
-    RAISE EXCEPTION 'C05: a retained Official revision lacks complete immutable source';
+  -- Version 1 is retained immutable source, including its original blueprint
+  -- derivation/runtime metadata. Archival completeness is independent of the
+  -- current execution format; rewriting the version would change its identity.
+  SELECT definition_name, revision, failed_checks INTO invalid_source
+  FROM (
+    SELECT r.definition_name, r.revision, array_remove(ARRAY[
+      CASE WHEN jsonb_typeof(r.payload) IS DISTINCT FROM 'object' THEN 'payload-not-object'::text END,
+      CASE WHEN r.payload->'schemaVersion' IS NULL THEN 'schema-version-missing'::text END,
+      CASE WHEN r.payload->'schemaVersion' NOT IN ('1'::jsonb, '2'::jsonb, '3'::jsonb) THEN 'unsupported-schema-version'::text END,
+      CASE WHEN r.payload->>'name' IS DISTINCT FROM r.definition_name THEN 'name-mismatch'::text END,
+      CASE WHEN r.payload->>'revision' IS DISTINCT FROM r.revision THEN 'revision-mismatch'::text END,
+      CASE WHEN jsonb_typeof(r.payload->'workflow') IS DISTINCT FROM 'object' THEN 'workflow-not-object'::text END,
+      CASE WHEN jsonb_typeof(r.payload->'workflow'->'displayName') IS DISTINCT FROM 'string' THEN 'display-name-not-string'::text END,
+      CASE WHEN jsonb_typeof(r.payload->'workflow'->'description') IS DISTINCT FROM 'string' THEN 'description-not-string'::text END,
+      CASE WHEN jsonb_typeof(r.payload->'workflow'->'instruction') IS DISTINCT FROM 'string' THEN 'instruction-not-string'::text END,
+      CASE WHEN jsonb_typeof(r.payload->'workflow'->'files') IS DISTINCT FROM 'array' THEN 'files-not-array'::text END,
+      CASE WHEN jsonb_typeof(r.payload->'blueprints') IS DISTINCT FROM 'array' THEN 'blueprints-not-array'::text END,
+      CASE WHEN jsonb_path_exists(r.payload, '$.workflow.files[*] ? (
+          @.type() != "object" || !exists(@.path) || @.path.type() != "string" ||
+          !exists(@.content) || @.content.type() != "string"
+        )') THEN 'invalid-file-entry'::text END
+    ], NULL) AS failed_checks
+    FROM official_workflow_definition_revisions r
+  ) source_state
+  WHERE cardinality(failed_checks) > 0
+  ORDER BY definition_name, revision
+  LIMIT 1;
+  IF FOUND THEN
+    RAISE EXCEPTION 'C05: a retained Official revision lacks complete immutable source'
+      USING DETAIL = jsonb_build_object(
+        'definitionName', invalid_source.definition_name,
+        'revision', invalid_source.revision,
+        'failedChecks', invalid_source.failed_checks
+      )::text;
   END IF;
 
   IF EXISTS (
