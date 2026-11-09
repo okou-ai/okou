@@ -478,6 +478,12 @@ const refreshAfterUnavailableSuggestion$ = command(
         (offeredIds.has(candidate.item.id) || get(candidate.acted$))
       );
     });
+    // The open review retains its original entries and must skip removed cards.
+    for (const candidate of loaded) {
+      if (!kept.includes(candidate)) {
+        set(candidate.unavailable$, true);
+      }
+    }
     const keptIds = new Set(
       kept.map((candidate) => {
         return candidate.item.id;

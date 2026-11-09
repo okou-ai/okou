@@ -566,6 +566,84 @@ test("An unsuccessful feedback save stays in the review and advances after retry
   await within(dialog).findByRole("article", { name: "Suggested action 2" });
 });
 
+test("The open review completes when an unavailable-card refresh withdraws its remaining cards", async () => {
+  const items = numberedSuggestions(2);
+  const pool = mockPool(items);
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const card = await screen.findByRole("region", { name: "Suggestions" });
+  await within(card).findByRole("heading", { name: items[0].title });
+  click(button(items[0].title, "button", card));
+  const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
+  await within(dialog).findByRole("article", { name: items[0].title });
+  pool.withdrawAll();
+  const offered = numberedSuggestions(3)[2];
+  pool.publish(offered);
+  click(button("Already done", "button", dialog));
+  await screen.findByText(SUGGESTION_UNAVAILABLE);
+  const completeTitle = await within(dialog).findByRole("heading", {
+    name: "All caught up",
+  });
+  expect(completeTitle).toHaveFocus();
+  click(button("Close", "button", dialog));
+  await within(card).findByRole("heading", { name: offered.title });
+  click(button(offered.title, "button", card));
+  const nextReview = await screen.findByRole("dialog", { name: "Suggestions" });
+  await within(nextReview).findByRole("article", { name: offered.title });
+});
+
+test("Retrying unavailable feedback completes the review after the server pool empties", async () => {
+  const items = numberedSuggestions(2);
+  const pool = mockPool(items);
+  let failing = true;
+  context.mocks.api(suggestionsContract.feedback, ({ respond }) => {
+    return failing
+      ? respond(500, {
+          error: {
+            code: "INTERNAL_SERVER_ERROR",
+            message: "Feedback temporarily unavailable",
+          },
+        })
+      : respond(409, {
+          error: {
+            code: "CONFLICT",
+            message:
+              "Suggestion is no longer available. Refresh your suggestions.",
+          },
+        });
+  });
+  await setupPage({
+    context,
+    path: "/",
+    featureSwitches: {
+      ...features,
+      [FeatureSwitchKey.HomeCapabilities]: true,
+      [FeatureSwitchKey.SingleAgent]: true,
+    },
+  });
+  const card = await screen.findByRole("region", { name: "Suggestions" });
+  await within(card).findByRole("heading", { name: items[0].title });
+  click(button(items[0].title, "button", card));
+  const dialog = await screen.findByRole("dialog", { name: "Suggestions" });
+  click(button("Already done", "button", dialog));
+  const error = await within(dialog).findByRole("alert");
+  pool.withdrawAll();
+  failing = false;
+  click(button("Try again", "button", error));
+  await screen.findByText(SUGGESTION_UNAVAILABLE);
+  const completeTitle = await within(dialog).findByRole("heading", {
+    name: "All caught up",
+  });
+  expect(completeTitle).toHaveFocus();
+});
+
 test("Homepage feedback menu supports Undo from the empty state", async () => {
   mockPool();
   await setupPage({
