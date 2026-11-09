@@ -18,6 +18,7 @@ private enum ConnectorAccountChoice: String {
 struct ComposerChatConnectorAccounts: View {
   let store: ComposerConnectorStore
   let connector: ChatComposerConnector
+  @State private var permissionDestination: ComposerConnectorPermissionResources?
   @State private var accounts: [ChatConnectorAccount] = []
   @State private var cursor: String?
   @State private var search = ""
@@ -69,14 +70,15 @@ struct ComposerChatConnectorAccounts: View {
       }
       Section {
         if let slug = connector.target.connectorSlug, store.canConfigurePermissions(slug: slug) {
-          NavigationLink {
-            ComposerConnectorPermissions(
-              store: store, slug: slug, label: connector.label)
+          Button {
+            permissionDestination = store.openPermissions(slug: slug, label: connector.label)
           } label: {
-            Label {
-              Text("Permissions").foregroundStyle(.primary)
-            } icon: {
-              Image(systemName: "slider.horizontal.3").foregroundStyle(.secondary)
+            HStack {
+              OkouRowLabel("Permissions", okouSymbol: "sliders-horizontal")
+              Spacer(minLength: OkouSpace.sm)
+              OkouIcon("chevron-right", size: OkouIconSize.inline)
+                .foregroundStyle(OkouColor.mutedForeground)
+                .accessibilityHidden(true)
             }
           }
         }
@@ -98,6 +100,7 @@ struct ComposerChatConnectorAccounts: View {
     }
     .navigationTitle(connector.label)
     .navigationBarTitleDisplayMode(.inline)
+    .connectorPermissionDestination(store: store, destination: $permissionDestination)
     .searchable(text: $search, prompt: "Find accounts")
     .task(id: search) { await load() }
     .refreshable {
