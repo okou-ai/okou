@@ -3,7 +3,7 @@ import { hostContract } from "@okouai/api-contracts/contracts/host";
 import type { hostedSiteVisibilityStatusSchema } from "@okouai/api-contracts/contracts/hosted-site-access";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
-import { beforeEach, expect, test } from "vitest";
+import { beforeEach, expect, test, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
 import type { infer as zInfer } from "zod";
 import {
@@ -21,7 +21,22 @@ import {
   queryButtonByName,
 } from "./artifact-catalog-test-helpers.ts";
 
+vi.hoisted(() => {
+  // Product analytics resolves the deployment environment at module load.
+  window.location.href = "https://app.okou.ai/";
+});
+
 const context = testContext();
+
+function artifactActions(telemetry: ReturnType<typeof context.mocks.posthog>) {
+  return telemetry.events
+    .filter((event) => {
+      return event.name === "artifact_action_clicked";
+    })
+    .map((event) => {
+      return event.properties;
+    });
+}
 const siteId = "00000000-0000-4000-8000-000000000008";
 const site = Object.freeze({
   siteId,
@@ -487,6 +502,8 @@ test("More retries an initial banner read failure without exposing an unready se
 test.each([false, true])(
   "owners hide the default banner from the Site share settings (sidebar: %s)",
   async (sidebar) => {
+    const telemetry = context.mocks.posthog();
+    const surface = sidebar ? "sidebar" : "dialog";
     mockSiteAlias();
     const visibility: SiteVisibilityStatus = {
       siteId,
@@ -515,7 +532,11 @@ test.each([false, true])(
       name: "Show Okou banner",
     });
     expect(toggle).toBeChecked();
+    expect(artifactActions(telemetry)).toStrictEqual([]);
     click(toggle);
+    expect(artifactActions(telemetry)).toStrictEqual([
+      { action: "banner_visibility_change", surface, show_banner: false },
+    ]);
     await waitFor(() => {
       return expect(toggle).not.toBeChecked();
     });
@@ -525,10 +546,15 @@ test.each([false, true])(
     await waitFor(() => {
       return expect(toggle).toBeChecked();
     });
+    expect(artifactActions(telemetry)).toStrictEqual([
+      { action: "banner_visibility_change", surface, show_banner: false },
+      { action: "banner_visibility_change", surface, show_banner: true },
+    ]);
   },
 );
 
 test("a stale banner edit preserves the last confirmed preference", async () => {
+  const telemetry = context.mocks.posthog();
   mockSiteAlias();
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, { siteId, visibility: "public", revision: null });
@@ -556,6 +582,13 @@ test("a stale banner edit preserves the last confirmed preference", async () => 
     return expect(toggle).not.toHaveAttribute("aria-disabled", "true");
   });
   expect(toggle).toBeChecked();
+  expect(artifactActions(telemetry)).toStrictEqual([
+    {
+      action: "banner_visibility_change",
+      surface: "dialog",
+      show_banner: false,
+    },
+  ]);
 });
 
 function mockSiteAlias() {

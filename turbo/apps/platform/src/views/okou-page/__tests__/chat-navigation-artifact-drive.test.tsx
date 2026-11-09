@@ -25,7 +25,7 @@ import {
 import { act, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { HttpResponse } from "msw";
-import { expect, test, describe, it } from "vitest";
+import { expect, test, describe, it, vi } from "vitest";
 
 import {
   click,
@@ -56,7 +56,22 @@ import {
   roleItemNamed,
 } from "./chat-navigation-artifact-test-helpers.ts";
 
+vi.hoisted(() => {
+  // Product analytics resolves the deployment environment at module load.
+  window.location.href = "https://app.okou.ai/";
+});
+
 const context = testContext();
+
+function artifactActions(telemetry: ReturnType<typeof context.mocks.posthog>) {
+  return telemetry.events
+    .filter((event) => {
+      return event.name === "artifact_action_clicked";
+    })
+    .map((event) => {
+      return event.properties;
+    });
+}
 
 const DRIVE_ARTIFACT_ID = "a0000000-0000-4000-a000-000000000940";
 const DRIVE_FILE_ID = "f0000000-0000-4000-a000-000000000940";
@@ -531,6 +546,7 @@ test.each([
 ])(
   "Offer a link to the uploaded file after $action with refined toolbar $refined",
   async ({ action, url, refined }) => {
+    const telemetry = context.mocks.posthog();
     mockWideScreen();
     installDriveMocks(context, "connected", {
       filename: "report.txt",
@@ -556,6 +572,13 @@ test.each([
     expect(link).toHaveAttribute("href", url);
     expect(link).toHaveAttribute("target", "_blank");
     expect(link).toHaveAttribute("rel", "noopener noreferrer");
+    expect(artifactActions(telemetry)).toStrictEqual([
+      {
+        action: "google_drive_sync",
+        surface: "page",
+        target: action === "Upload to Google Docs" ? "document" : "file",
+      },
+    ]);
   },
 );
 
@@ -911,6 +934,7 @@ test.each(["original", "google"] as const)(
 );
 
 test("Connect Google Drive and sync an artifact", async () => {
+  const telemetry = context.mocks.posthog();
   mockWideScreen();
   const authorizationPopup = installAuthorizationPopup();
   const drive = installDriveMocks(context, "not-connected");
@@ -922,7 +946,11 @@ test("Connect Google Drive and sync an artifact", async () => {
   });
 
   await openDriveArtifactMenu();
+  expect(artifactActions(telemetry)).toStrictEqual([]);
   click(roleItemNamed("menuitem", "Connect Google Drive"));
+  expect(artifactActions(telemetry)).toStrictEqual([
+    { action: "google_drive_sync", surface: "page", target: "file" },
+  ]);
 
   await waitFor(() => {
     expect(authorizationPopup.open.calls).toHaveLength(1);
@@ -954,6 +982,9 @@ test("Connect Google Drive and sync an artifact", async () => {
     ]);
   });
   await expectSyncCompletedPreview();
+  expect(artifactActions(telemetry)).toStrictEqual([
+    { action: "google_drive_sync", surface: "page", target: "file" },
+  ]);
 });
 
 test("Reconnect the Google Drive account selected for the artifact", async () => {
@@ -1325,21 +1356,25 @@ describe("google editor conversion", () => {
       contentType:
         "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       app: "Docs",
+      target: "document",
     },
     {
       filename: "table.csv",
       contentType: "text/csv",
       app: "Sheets",
+      target: "spreadsheet",
     },
     {
       filename: "deck.pptx",
       contentType:
         "application/vnd.openxmlformats-officedocument.presentationml.presentation",
       app: "Slides",
+      target: "presentation",
     },
   ] as const)(
     "replaces the $app upload action with its editor link without refreshing the preview",
-    async ({ filename, contentType, app }) => {
+    async ({ filename, contentType, app, target }) => {
+      const telemetry = context.mocks.posthog();
       mockWideScreen();
       const drive = installDriveMocks(context, "connected", {
         filename,
@@ -1398,6 +1433,9 @@ describe("google editor conversion", () => {
         "true",
       );
       expect(drive.syncRequests).toHaveLength(1);
+      expect(artifactActions(telemetry)).toStrictEqual([
+        { action: "google_drive_sync", surface: "page", target },
+      ]);
     },
   );
 
