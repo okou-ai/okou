@@ -3,7 +3,8 @@
 This module owns header/query injection, auth.base forwarding, local failure
 policy and credential resolution. Flow-local SigV4 request preparation and
 signing writeback live in aws_sigv4_flow. Cache state and platform API calls
-live in dedicated owner modules.
+live in dedicated owner modules. auth_base_transport owns raw forwarded-response
+materialization and representation metadata.
 """
 
 import asyncio
@@ -45,6 +46,7 @@ from auth_base_transport import (
     forwarded_auth_base_client_header_pairs,
     header_pairs,
     resolved_auth_header_pairs,
+    set_forwarded_response,
 )
 from aws_sigv4 import (
     AwsSigV4BodyHash,
@@ -100,11 +102,6 @@ class _FirewallAuthPlanFailure(Enum):
 type CurrentFirewallAuthorizationGuard = Callable[[], bool]
 
 
-_HTTP_STATUS_INFORMATIONAL_MIN = 100
-_HTTP_STATUS_SUCCESS_MIN = 200
-_HTTP_STATUS_NO_CONTENT = 204
-_HTTP_STATUS_RESET_CONTENT = 205
-_HTTP_STATUS_NOT_MODIFIED = 304
 _HTTP_STATUS_CLIENT_ERROR_MIN = 400
 _HTTP_STATUS_SERVER_ERROR_MIN = 500
 _HTTP_STATUS_BAD_GATEWAY = 502
@@ -1355,36 +1352,7 @@ async def _apply_url_rewrite(
             admission=admission,
             pre_submit_guard=revalidate_current_firewall_authorization,
         )
-        is_head_representation = flow.request.method == "HEAD" and not (
-            _HTTP_STATUS_INFORMATIONAL_MIN <= status < _HTTP_STATUS_SUCCESS_MIN
-            or status in (_HTTP_STATUS_NO_CONTENT, _HTTP_STATUS_RESET_CONTENT)
-        )
-        preserves_representation_length = is_head_representation or (
-            flow.request.method == "GET" and status == _HTTP_STATUS_NOT_MODIFIED
-        )
-        representation_content_length: str | None = None
-        if preserves_representation_length:
-            content_lengths = resp_headers.get_all("Content-Length")
-            if len(content_lengths) == 1:
-                candidate = content_lengths[0].strip(" \t")
-                if candidate.isascii() and candidate.isdigit():
-                    representation_content_length = candidate
-        content_encodings = [
-            value
-            for name, value in header_pairs(resp_headers)
-            if name.lower() == "content-encoding"
-        ]
-        if content_encodings:
-            del resp_headers["Content-Encoding"]
-        # The forwarder returns representation bytes, but Response.make expects
-        # decoded content. Hide the codings while it normalizes response framing.
-        flow.response = http.Response.make(status, resp_raw_content, resp_headers)
-        if preserves_representation_length:
-            del flow.response.headers["Content-Length"]
-            if representation_content_length is not None:
-                flow.response.headers["Content-Length"] = representation_content_length
-        if content_encodings:
-            flow.response.headers.set_all("Content-Encoding", content_encodings)
+        set_forwarded_response(flow, status, resp_raw_content, resp_headers)
     except ForwardRequestPreSubmitRejectedError:
         return FirewallAuthHandlingResult.LOCAL_RESPONSE
     except ForwardedRequestTooLargeError:
