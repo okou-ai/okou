@@ -1,5 +1,12 @@
 # Changelog
 
+## [8.824.4](https://github.com/okou-ai/okou/compare/core-v8.824.3...core-v8.824.4) (2026-11-09)
+
+
+### Refactoring
+
+* **api:** retire template guidance storage fallback ([#46072](https://github.com/okou-ai/okou/issues/46072)) ([1fcf82a](https://github.com/okou-ai/okou/commit/1fcf82a3b88713b5d959146aff4455618056ac12))
+
 ## [8.824.3](https://github.com/okou-ai/okou/compare/core-v8.824.2...core-v8.824.3) (2026-11-09)
 
 

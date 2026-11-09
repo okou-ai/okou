@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.30.0](https://github.com/okou-ai/okou/compare/ios-v0.29.3...ios-v0.30.0) (2026-11-09)
+
+
+### Features
+
+* **ios:** add voice input home screen and app shortcuts ([#46037](https://github.com/okou-ai/okou/issues/46037)) ([ffc5932](https://github.com/okou-ai/okou/commit/ffc59321492cdb183cd3ea80a4cf1b2218484c0b))
+
+
+### Bug Fixes
+
+* **ios:** persist unread indicators across notification prefetch and app launches ([#46005](https://github.com/okou-ai/okou/issues/46005)) ([b20437b](https://github.com/okou-ai/okou/commit/b20437beaffe414c9605ed6675d32e9b85ddd2ef))
+
 ## [0.29.3](https://github.com/okou-ai/okou/compare/ios-v0.29.2...ios-v0.29.3) (2026-11-09)
 
 
