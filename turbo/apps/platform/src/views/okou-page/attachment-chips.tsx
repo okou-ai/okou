@@ -48,6 +48,7 @@ import type { ChatAttachment } from "../../signals/okou-page/chat-draft";
 import type { AttachmentPreviewSignals } from "../../signals/attachment-resource-url.ts";
 import type { ChatPanelSignals } from "../../signals/chat-page/chat-panel-signals.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
+import { captureArtifactAction } from "../../lib/posthog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import {
@@ -921,6 +922,10 @@ function ArtifactDialogGenericFileBody({
           disabled={downloading}
           aria-busy={downloading}
           onClick={() => {
+            captureArtifactAction({
+              action: "download",
+              surface: "file_preview",
+            });
             detach(
               downloadAttachment({ filename, url: preview.url }, pageSignal),
               Reason.DomCallback,
@@ -1654,6 +1659,10 @@ export function FileAttachmentChip({
           });
           return;
         }
+        captureArtifactAction({
+          action: "download",
+          surface: "attachment_chip",
+        });
         detach(
           downloadAttachment({ filename, url }, pageSignal),
           Reason.DomCallback,

@@ -1,6 +1,6 @@
 import { screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
 import { strFromU8, unzipSync } from "fflate";
 import { HttpResponse } from "msw";
 import {
@@ -37,7 +37,22 @@ import {
 import { mockOAuthCompletions } from "./connector-page-test-helpers.ts";
 import { findNamedMenuItem } from "./chat-attachment-test-helpers.ts";
 
+vi.hoisted(() => {
+  // Product analytics resolves the deployment environment at module load.
+  window.location.href = "https://app.okou.ai/";
+});
+
 const context = testContext();
+
+function artifactActions(telemetry: ReturnType<typeof context.mocks.posthog>) {
+  return telemetry.events
+    .filter((event) => {
+      return event.name === "artifact_action_clicked";
+    })
+    .map((event) => {
+      return event.properties;
+    });
+}
 const FILE_ID = "a0000000-0000-4000-a000-000000000761";
 const CATALOG_ID = "a0000000-0000-4000-a000-000000000762";
 const CONNECTION_ID = "a0000000-0000-4000-a000-000000000763";
@@ -389,6 +404,7 @@ test("Keyboard activation of footer Export preserves the menu and dismissal focu
 });
 
 test("Each table exports its own real workbook with literal values and source URLs", async () => {
+  const telemetry = context.mocks.posthog();
   const browser = context.mocks.browser.blobDownload({ deferRead: true });
   await openTables();
   const buttons = queryAllByRoleFast("button").filter((button) => {
@@ -436,11 +452,16 @@ test("Each table exports its own real workbook with literal values and source UR
       return "inlineStr";
     }),
   );
+  expect(artifactActions(telemetry)).toStrictEqual([
+    { action: "download", surface: "inline_table" },
+    { action: "download", surface: "inline_table" },
+  ]);
 });
 
 test.each(["ready", "authorize", "connect", "reconnect"] as const)(
   "Cloud exports preserve the selected account and upload mode (%s)",
   async (accountState) => {
+    const telemetry = context.mocks.posthog();
     const storedFiles: ArrayBuffer[] = [];
     const beforeConnectPopupCounts: number[] = [];
     const saves: { artifactId: string; connectionId?: string; mode: string }[] =
@@ -576,6 +597,14 @@ test.each(["ready", "authorize", "connect", "reconnect"] as const)(
     expect(sheet(storedFiles[0]!).querySelector('c[r="A2"]')?.textContent).toBe(
       "张敏",
     );
+    expect(artifactActions(telemetry)).toStrictEqual([
+      { action: "google_drive_sync", surface: "inline_table", target: "file" },
+      {
+        action: "google_drive_sync",
+        surface: "inline_table",
+        target: "spreadsheet",
+      },
+    ]);
   },
 );
 
@@ -715,6 +744,12 @@ test.each([
 ])(
   "A $failure failure leaves the table save available for retry",
   async ({ failure, destination, error }) => {
+    const telemetry = context.mocks.posthog();
+    const intent = {
+      action: "google_drive_sync",
+      surface: "inline_table",
+      target: destination.mode === "google" ? "spreadsheet" : "file",
+    };
     let recovered = false;
     const savedUrl = `https://drive.google.test/retried-${destination.mode}`;
     mockTableCloudFiles();
@@ -739,6 +774,7 @@ test.each([
     let menu = await openExportMenu();
     click(await findNamedMenuItem(destination.action, menu));
     await expect(screen.findByText(error)).resolves.toBeInTheDocument();
+    expect(artifactActions(telemetry)).toStrictEqual([intent]);
     menu = await openExportMenu();
     const retry = await findNamedMenuItem(destination.action, menu);
 
@@ -746,6 +782,7 @@ test.each([
     click(retry);
     await expectSavedToast(destination.saved, savedUrl);
     await openExportMenu();
+    expect(artifactActions(telemetry)).toStrictEqual([intent, intent]);
   },
 );
 

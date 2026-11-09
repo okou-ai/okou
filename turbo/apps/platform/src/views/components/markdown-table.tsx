@@ -23,6 +23,7 @@ import {
 import type { Element } from "hast";
 import { formatAppNumber } from "../../i18n/format.ts";
 import { getMarkdownTableDimensions } from "../../lib/markdown-table-dimensions.ts";
+import { captureArtifactAction } from "../../lib/posthog.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { currentChatThreadId$ } from "../../signals/agent-chat.ts";
 import {
@@ -67,6 +68,15 @@ function ExportableTable({
   const { rows: rowCount, columns: columnCount } =
     getMarkdownTableDimensions(node);
   const run = (mode: "excel" | "original" | "google") => {
+    captureArtifactAction(
+      mode === "excel"
+        ? { action: "download", surface: "inline_table" }
+        : {
+            action: "google_drive_sync",
+            surface: "inline_table",
+            target: mode === "google" ? "spreadsheet" : "file",
+          },
+    );
     detach(
       exportTable(node, mode, signal),
       Reason.DomCallback,
