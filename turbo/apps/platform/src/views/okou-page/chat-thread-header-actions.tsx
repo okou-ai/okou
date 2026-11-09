@@ -9,6 +9,8 @@ import {
   Clock,
   Ellipsis,
   Globe,
+  Mail,
+  Check,
   Pencil,
   Pin,
   PinOff,
@@ -25,6 +27,7 @@ import { openRenameChatThreadDialogForThreadId$ } from "../../signals/chat-page/
 import {
   openThreadAutomations$,
   openThreadBrowserSession$,
+  openThreadMailList$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import { useChatHeaderTransitioning } from "./chat-header-actions.ts";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
@@ -32,10 +35,10 @@ import { setChatThreadArchivedWithFeedback$ } from "../../signals/chat-page/chat
 import { setChatThreadMutedWithFeedback$ } from "../../signals/chat-page/chat-thread-mute.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
+import { ThreadMailButton } from "./thread-mail.tsx";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 
-// The header has no menu on desktop, so a muted chat says so here,
-// and the same button unmutes it. An unmuted chat adds nothing.
+// Keep muted status visible without opening the menu.
 export function ChatThreadMutedButton({
   thread,
 }: {
@@ -226,5 +229,88 @@ export function MobileChatThreadMoreMenu({
         <MobileBrowserMenuItem thread={thread} />
       </DropdownMenuContent>
     </DropdownMenu>
+  );
+}
+
+export function DesktopChatThreadMoreMenu({
+  thread,
+}: {
+  readonly thread: ChatPanelSignals;
+}) {
+  const { t } = useTranslation();
+  const anchor = useGet(thread.mail.menuAnchor$);
+  const anchorRef = useSet(thread.mail.menuAnchorRef$);
+  const transitioning = useChatHeaderTransitioning(thread);
+  const openAutomations = useSet(openThreadAutomations$);
+  const reloadAutomations = useSet(thread.headerAutomations.reloadAutomations$);
+  const openBrowser = useSet(openThreadBrowserSession$);
+  const openMail = useSet(openThreadMailList$);
+  const mailOpen = useGet(thread.mail.open$);
+  const target = useGet(thread.sidebar.target$);
+  return (
+    <>
+      <DropdownMenu>
+        <ChatHeaderIconButton
+          ref={anchorRef}
+          thread={thread}
+          icon={<Ellipsis size={18} />}
+          label={t(($) => {
+            return $.chat.actions.more;
+          })}
+          textLabel={t(($) => {
+            return $.chat.actions.more;
+          })}
+          usage={{ kind: "popup", popup: "menu" }}
+        />
+        <DropdownMenuContent
+          align="end"
+          className="min-w-48"
+          // The email popover takes focus when selected; dismissal returns here.
+          finalFocus={mailOpen ? false : undefined}
+        >
+          <DropdownMenuItem
+            disabled={transitioning}
+            onClick={() => {
+              reloadAutomations();
+              openAutomations(thread);
+            }}
+          >
+            <Clock size={16} />
+            {t(($) => {
+              return $.chat.automations.title;
+            })}
+            {target?.type === "automations" && (
+              <Check className="ml-auto" size={16} />
+            )}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={transitioning}
+            onClick={() => {
+              return openMail(thread);
+            }}
+          >
+            <Mail size={16} />
+            {t(($) => {
+              return $.chat.mail.manager.open;
+            })}
+          </DropdownMenuItem>
+          <DropdownMenuItem
+            disabled={transitioning}
+            onClick={() => {
+              return openBrowser(thread.threadId);
+            }}
+          >
+            <Globe size={16} />
+            {t(($) => {
+              return $.chat.thread.openBrowser;
+            })}
+            {target?.type === "browser" && (
+              <Check className="ml-auto" size={16} />
+            )}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+      <ThreadMailButton thread={thread} menuAnchor={anchor} />
+    </>
   );
 }

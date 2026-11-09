@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import {
   Button,
   cn,
@@ -41,6 +41,8 @@ export function ChatHeaderIconButton({
   icon,
   label,
   tooltip = label,
+  textLabel,
+  ref,
   largeTarget = false,
   usage,
 }: {
@@ -48,6 +50,8 @@ export function ChatHeaderIconButton({
   readonly icon: ReactNode;
   readonly label: string;
   readonly tooltip?: string;
+  readonly textLabel?: string;
+  readonly ref?: Ref<HTMLElement>;
   /** Touch layouts use a 44px target. */
   readonly largeTarget?: boolean;
   readonly usage: ChatHeaderIconButtonUsage;
@@ -56,9 +60,10 @@ export function ChatHeaderIconButton({
   const transitioning = useChatHeaderTransitioning(thread);
   const button = (
     <Button
+      ref={ref}
       type="button"
       variant="quiet"
-      size="icon-sm"
+      size={textLabel ? "sm" : "icon-sm"}
       iconSize="md"
       // Settling buttons stay focusable but take no presses.
       disabled={transitioning}
@@ -87,7 +92,10 @@ export function ChatHeaderIconButton({
   return (
     <TooltipProvider delay={300}>
       <Tooltip>
-        <TooltipTrigger render={trigger}>{icon}</TooltipTrigger>
+        <TooltipTrigger render={trigger}>
+          {icon}
+          {textLabel}
+        </TooltipTrigger>
         <TooltipContent side="bottom">{tooltip}</TooltipContent>
       </Tooltip>
     </TooltipProvider>

@@ -12,7 +12,6 @@ import { ExternalSourceMessageAnnotation } from "./external-source-message-annot
 import { ChatResourcesButton } from "./chat-resources.tsx";
 import { ChatPanelEmptyState } from "./chat-panel-empty-state.tsx";
 import { CapabilityHomeContent } from "./capability-home-page.tsx";
-import { ThreadMailButton } from "./thread-mail.tsx";
 import { ChatHeaderIconButton } from "./chat-header-icon-button.tsx";
 import { MessagePdfAction } from "./message-pdf-action.tsx";
 import type { ThinkingMessage } from "@okouai/api-contracts/contracts/chat-thread-activity-summary";
@@ -62,7 +61,6 @@ import {
   Trophy,
   Image,
   ChartLine,
-  Globe,
   Video,
   File,
   Copy,
@@ -154,7 +152,10 @@ import {
   thinkingBrandMotionImg,
 } from "./platform-assets.ts";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
-import { ChatThreadMutedButton } from "./chat-thread-header-actions.tsx";
+import {
+  DesktopChatThreadMoreMenu,
+  ChatThreadMutedButton,
+} from "./chat-thread-header-actions.tsx";
 import { isMobileTextInputDevice } from "../../lib/visual-viewport-keyboard.ts";
 import { Markdown, MarkdownEventBody } from "../components/markdown.tsx";
 import { hasChatEventBodyContent } from "../../signals/chat-page/chat-event-body-blocks.ts";
@@ -242,7 +243,6 @@ import type {
 import {
   activeThreadSidebar$,
   openThreadAutomations$,
-  openThreadBrowserSession$,
 } from "../../signals/chat-page/thread-sidebar-coordinator.ts";
 import type { ThreadSidebarSignals } from "../../signals/chat-page/thread-sidebar.ts";
 import { ThreadSidebarSlot } from "./thread-sidebar.tsx";
@@ -496,28 +496,6 @@ export function AutomationMenuButton({
   );
 }
 
-function BrowserMenuButton({ thread }: { thread: ChatPanelSignals }) {
-  const { t } = useTranslation();
-  const sidebarTarget = useGet(thread.sidebar.target$);
-  const openBrowserSidebar = useSet(openThreadBrowserSession$);
-  return (
-    <ChatHeaderIconButton
-      thread={thread}
-      icon={<Globe size={18} />}
-      label={t(($) => {
-        return $.chat.thread.openBrowser;
-      })}
-      usage={{
-        kind: "sidebar",
-        pressed: sidebarTarget?.type === "browser",
-        onClick: () => {
-          openBrowserSidebar(thread.threadId);
-        },
-      }}
-    />
-  );
-}
-
 export function ChatThreadHeaderTitle({
   thread,
 }: {
@@ -633,6 +611,9 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
           <ChatHeaderIconButton
             thread={thread}
             icon={<Share2 size={18} />}
+            textLabel={t(($) => {
+              return $.chat.sharing.create;
+            })}
             label={t(($) => {
               return $.chat.sharing.start;
             })}
@@ -647,10 +628,8 @@ function DesktopChatThreadHeader({ thread }: { thread: ChatPanelSignals }) {
               },
             }}
           />
-          <AutomationMenuButton thread={thread} />
-          <ThreadMailButton thread={thread} />
-          <BrowserMenuButton thread={thread} />
-          <ChatResourcesButton thread={thread} />
+          <ChatResourcesButton thread={thread} showLabel />
+          <DesktopChatThreadMoreMenu thread={thread} />
         </div>
       </SettledChatThreadActions>
     </header>

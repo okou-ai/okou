@@ -90,22 +90,30 @@ export function ThreadMailLink({
 export function ThreadMailButton({
   thread,
   largeTarget = false,
+  menuAnchor,
 }: {
   readonly thread: ChatPanelSignals;
   readonly largeTarget?: boolean;
+  readonly menuAnchor?: HTMLElement | null;
 }) {
   const exists = useGet(thread.threadExists$);
   return exists ? (
-    <ThreadMailButtonInner thread={thread} largeTarget={largeTarget} />
+    <ThreadMailButtonInner
+      thread={thread}
+      largeTarget={largeTarget}
+      menuAnchor={menuAnchor}
+    />
   ) : null;
 }
 
 function ThreadMailButtonInner({
   thread,
   largeTarget,
+  menuAnchor,
 }: {
   readonly thread: ChatPanelSignals;
   readonly largeTarget: boolean;
+  readonly menuAnchor?: HTMLElement | null;
 }) {
   const { t } = useTranslation();
   const open = useGet(thread.mail.open$);
@@ -129,16 +137,19 @@ function ThreadMailButtonInner({
           }
         }}
       >
-        <ChatHeaderIconButton
-          thread={thread}
-          icon={<Mail size={18} />}
-          label={t(($) => {
-            return $.chat.mail.manager.open;
-          })}
-          largeTarget={largeTarget}
-          usage={{ kind: "popup", popup: "popover" }}
-        />
+        {menuAnchor === undefined && (
+          <ChatHeaderIconButton
+            thread={thread}
+            icon={<Mail size={18} />}
+            label={t(($) => {
+              return $.chat.mail.manager.open;
+            })}
+            largeTarget={largeTarget}
+            usage={{ kind: "popup", popup: "popover" }}
+          />
+        )}
         <PopoverContent
+          anchor={menuAnchor}
           align="end"
           sideOffset={8}
           aria-label={t(($) => {
@@ -147,7 +158,11 @@ function ThreadMailButtonInner({
           finalFocus={
             target?.type === "email-draft" && target.fromMailList
               ? false
-              : undefined
+              : menuAnchor === undefined
+                ? undefined
+                : () => {
+                    return menuAnchor;
+                  }
           }
           className={CHAT_HEADER_PANEL_CLASS}
         >

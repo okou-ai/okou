@@ -1,3 +1,4 @@
+import { selectDesktopHeaderAction } from "./chat-header-test-helpers.ts";
 import {
   browserContract,
   type BrowserSession,
@@ -811,7 +812,7 @@ test.each(["event", "snapshot"] as const)(
       },
     });
     await expectConversationReady();
-    click(buttonByName("Open browser"));
+    await selectDesktopHeaderAction("Open browser");
     const sidebar = liveBrowserSidebar();
     await waitFor(() => {
       expect(
@@ -1052,7 +1053,7 @@ async function openManyTabBrowser() {
   );
   await openConversation([], true);
   await expectConversationReady();
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const sidebar = liveBrowserSidebar();
   await waitFor(() => {
     expect(
@@ -1337,7 +1338,7 @@ test("The embedded Okou viewer retains its sizing preference when the menu reope
   mockBrowserApi(liveBrowserSession());
   await openConversation([]);
   await expectConversationReady();
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const sidebar = liveBrowserSidebar();
   const address = await within(sidebar).findByDisplayValue(
     "https://example.com",
@@ -1404,7 +1405,7 @@ test.each(["https://viewer.example/live", null])(
     );
     await openConversation([]);
     await expectConversationReady();
-    click(buttonByName("Open browser"));
+    await selectDesktopHeaderAction("Open browser");
     const sidebar = liveBrowserSidebar();
     await waitFor(() => {
       expect(
@@ -1457,7 +1458,7 @@ test("Resizing the browser sidebar synchronizes the remote display to the commit
   const { native } = mockBrowserApi(liveBrowserSession());
   await openConversation([]);
   await expectConversationReady();
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   await waitFor(() => {
     expect(native.viewport).toStrictEqual({ width: 900, height: 600 });
   });
@@ -1488,7 +1489,7 @@ test("The embedded Okou viewer owns its shortcuts while the conversation keeps i
   mockBrowserApi(liveBrowserSession());
   await openConversation(completedConversationEvents());
   await expectConversationReady();
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const address = await screen.findByDisplayValue("https://example.com");
   expect(address).toBeEnabled();
   await user.click(address);
@@ -1523,7 +1524,7 @@ test("The chat browser sidebar forwards a touch tap exactly once", async () => {
   const { native } = mockBrowserApi(liveBrowserSession());
   await openConversation([]);
   await expectConversationReady();
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const input = await within(liveBrowserSidebar()).findByLabelText(
     "Remote browser input",
   );
@@ -1619,7 +1620,7 @@ test("Start and close a browser from the thread sidebar", async () => {
   await openConversation(completedConversationEvents(), true);
   await expectConversationReady();
 
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const sidebar = await screen.findByRole("complementary", {
     name: "Cloud browser",
   });
@@ -1640,7 +1641,7 @@ test("Start and close a browser from the thread sidebar", async () => {
   expect(screen.getByRole("textbox", { name: "Message" })).toBeVisible();
   expect(browser.closeRequests()).toBe(1);
 
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const reopened = await screen.findByRole("complementary", {
     name: "Cloud browser",
   });
@@ -1839,7 +1840,7 @@ test("Take over the cloud browser without stopping the working run and hand it b
     featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
   });
   await expectConversationReady();
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const sidebar = liveBrowserSidebar();
   await within(sidebar).findByDisplayValue("https://example.com");
   const viewer = within(sidebar).getByRole("region", {
@@ -1988,7 +1989,7 @@ test.each(["mouse", "keyboard", "composition", "touch"] as const)(
       featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
     });
     await expectConversationReady();
-    click(buttonByName("Open browser"));
+    await selectDesktopHeaderAction("Open browser");
     const sidebar = liveBrowserSidebar();
     await within(sidebar).findByDisplayValue("https://example.com");
     const viewer = within(sidebar).getByRole("region", {
@@ -2121,7 +2122,7 @@ test.each([true, false])(
       featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: refined },
     });
     await expectConversationReady();
-    click(buttonByName("Open browser"));
+    await selectDesktopHeaderAction("Open browser");
     const sidebar = liveBrowserSidebar();
     await within(sidebar).findByDisplayValue("https://example.com");
     const viewer = within(sidebar).getByRole("region", {
@@ -2203,7 +2204,7 @@ test("A delayed handback cannot clear a newer run's page-input takeover", async 
     featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
   });
   await expectConversationReady();
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const sidebar = liveBrowserSidebar();
   await within(sidebar).findByDisplayValue("https://example.com");
   const viewer = within(sidebar).getByRole("region", {
@@ -2323,7 +2324,7 @@ test("A failed handback does not poison the next explicit handback", async () =>
     featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
   });
   await expectConversationReady();
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const sidebar = liveBrowserSidebar();
   await within(sidebar).findByDisplayValue("https://example.com");
   const viewer = within(sidebar).getByRole("region", {
@@ -2389,7 +2390,7 @@ test("Hand back after using the cloud browser between runs continues in one step
     featureSwitches: { [FeatureSwitchKey.CloudBrowserPanel]: true },
   });
   await expectConversationReady();
-  click(buttonByName("Open browser"));
+  await selectDesktopHeaderAction("Open browser");
   const sidebar = liveBrowserSidebar();
   await within(sidebar).findByDisplayValue("https://example.com");
   const viewer = within(sidebar).getByRole("region", {
