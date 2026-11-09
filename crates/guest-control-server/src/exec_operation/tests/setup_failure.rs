@@ -40,8 +40,14 @@ pub(super) struct SetupFailureChild {
 impl SetupFailureChild {
     pub(super) fn new() -> Self {
         let directory = tempfile::tempdir().unwrap();
-        let ready = UnixDatagram::bind(directory.path().join("ready.sock")).unwrap();
+        let socket_path = directory.path().join("ready.sock");
+        let ready = UnixDatagram::bind(&socket_path).unwrap();
         ready.set_read_timeout(Some(TEST_BOUND)).unwrap();
+        // Production-style release tests drop from root to the sandbox user.
+        // Keep the socket private, but accessible to the actual workload UID.
+        let uid = crate::user::shell_command_uid(false).unwrap();
+        std::os::unix::fs::chown(directory.path(), Some(uid), None).unwrap();
+        std::os::unix::fs::chown(&socket_path, Some(uid), None).unwrap();
         Self {
             directory,
             ready: Arc::new(ready),
