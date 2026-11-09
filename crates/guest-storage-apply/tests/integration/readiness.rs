@@ -59,6 +59,103 @@ fn spawn(manifest: &Manifest, runtime: &Path) -> std::io::Result<CommandExecutio
     CommandExecution::spawn(&mut command, Some(&bytes))
 }
 
+#[test]
+fn borrowed_notification_instance_preserves_publication_abort_and_operation_isolation() {
+    use guest_telemetry::storage_notifications::{self, NotificationOwner};
+    use std::io::Write;
+    use std::os::fd::OwnedFd;
+    use std::os::unix::net::UnixStream;
+    use std::process::Stdio;
+
+    let dir = tempfile::tempdir().unwrap();
+    let owner = NotificationOwner::default();
+    let runtime = dir.path().join("runtime");
+    for abort in [false, true, false] {
+        let lease = owner.lease().unwrap();
+        let operation = dir.path().join(uuid::Uuid::new_v4().to_string());
+        fs::create_dir(&operation).unwrap();
+        let (mut manifest, descriptor) = manifest(&operation).unwrap();
+        manifest.cleanup_paths = ["ready", "pending"]
+            .map(|name| operation.join(name).display().to_string())
+            .to_vec();
+        let (mut sender, helper) = UnixStream::pair().unwrap();
+        sender
+            .set_write_timeout(Some(Duration::from_secs(5)))
+            .unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_guest-storage-apply"));
+        command
+            .arg("--manifest-stdin")
+            .env("OKOU_RUN_ID", "borrowed-notifications")
+            .env(runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV, &runtime)
+            .env(guest_contracts::env::STORAGE_NOTIFICATION_STDIN_ENV, "1");
+        let execution =
+            CommandExecution::spawn_with_stdin(&mut command, Stdio::from(OwnedFd::from(helper)))
+                .unwrap();
+        storage_notifications::send(&sender, lease.descriptor()).unwrap();
+        sender
+            .write_all(&serde_json::to_vec(&manifest).unwrap())
+            .unwrap();
+        drop(sender);
+        wait_for(&operation.join("ready/.applied"));
+        assert!(
+            !operation.join("pending/value").exists(),
+            "previous operation markers must not release this source"
+        );
+        let publication = if abort {
+            descriptor.failed_path(&runtime)
+        } else {
+            descriptor.ready_path(&runtime, 0)
+        };
+        runtime_paths::write_private_new(publication, []).unwrap();
+        let output = execution.wait().unwrap();
+        assert_eq!(
+            output.status.success(),
+            !abort,
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        if !abort {
+            assert_eq!(fs::read(operation.join("pending/value")).unwrap(), b"stale");
+        }
+        // The CLI is reaped before reset; no failed watcher or old queued event
+        // may survive into the next operation on this same kernel instance.
+        lease.finish().unwrap();
+    }
+}
+
+#[test]
+fn advertised_wrong_notification_capability_fails_before_input_mutation() {
+    use guest_telemetry::storage_notifications;
+    use std::io::Write;
+    use std::os::fd::{AsFd, OwnedFd};
+    use std::os::unix::net::UnixStream;
+    use std::process::Stdio;
+
+    let dir = tempfile::tempdir().unwrap();
+    let target = dir.path().join("sentinel");
+    fs::write(&target, b"unchanged").unwrap();
+    let (mut sender, helper) = UnixStream::pair().unwrap();
+    let capability = fs::File::open(&target).unwrap();
+    let mut command = Command::new(env!("CARGO_BIN_EXE_guest-storage-apply"));
+    command
+        .arg("--manifest-stdin")
+        .env("OKOU_RUN_ID", "wrong-notification")
+        .env(
+            runtime_paths::CANONICAL_GUEST_RUNTIME_DIR_ENV,
+            dir.path().join("runtime"),
+        )
+        .env(guest_contracts::env::STORAGE_NOTIFICATION_STDIN_ENV, "1");
+    let execution =
+        CommandExecution::spawn_with_stdin(&mut command, Stdio::from(OwnedFd::from(helper)))
+            .unwrap();
+    storage_notifications::send(&sender, capability.as_fd()).unwrap();
+    // The child rejects the descriptor independently of any manifest parsing.
+    let _ = sender.write_all(&serde_json::to_vec(&json!({"cleanupPaths":[target]})).unwrap());
+    drop(sender);
+    assert!(!execution.wait().unwrap().status.success());
+    assert_eq!(fs::read(&target).unwrap(), b"unchanged");
+}
+
 struct RestoreSearchPermission(std::path::PathBuf);
 
 impl Drop for RestoreSearchPermission {

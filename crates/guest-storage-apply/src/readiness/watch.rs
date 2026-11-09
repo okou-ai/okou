@@ -2,10 +2,10 @@ use super::{Readiness, State};
 use std::ffi::CString;
 use std::fs::File;
 use std::io::{self, Read, Write};
-use std::os::fd::{AsRawFd, FromRawFd};
+use std::os::fd::{AsRawFd, FromRawFd, OwnedFd};
 use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::thread::{self, JoinHandle};
 use std::time::Instant;
 
@@ -17,9 +17,67 @@ fn owned_fd(fd: libc::c_int) -> io::Result<File> {
     Ok(unsafe { File::from_raw_fd(fd) })
 }
 
-pub(super) fn arm(path: &Path) -> io::Result<File> {
-    // SAFETY: inotify_init1 has no pointer arguments and returns a new descriptor.
-    let events = owned_fd(unsafe { libc::inotify_init1(libc::IN_CLOEXEC | libc::IN_NONBLOCK) })?;
+static NOTIFICATIONS: OnceLock<File> = OnceLock::new();
+
+pub(super) fn install(events: OwnedFd) -> io::Result<()> {
+    NOTIFICATIONS.set(File::from(events)).map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::AlreadyExists,
+            "storage notifications already installed",
+        )
+    })
+}
+
+pub(super) struct Events {
+    file: File,
+    watch: Option<i32>,
+}
+
+impl Events {
+    fn remove_watch(&mut self) -> io::Result<()> {
+        let Some(watch) = self.watch else {
+            return Ok(());
+        };
+        // SAFETY: this descriptor owns the one watch added for this operation.
+        if unsafe { libc::inotify_rm_watch(self.file.as_raw_fd(), watch) } < 0 {
+            let error = io::Error::last_os_error();
+            // The kernel removes a watch when its directory is unlinked. The
+            // live monitor/final scan still report that namespace failure.
+            if error.raw_os_error() != Some(libc::EINVAL) {
+                return Err(error);
+            }
+        }
+        self.watch = None;
+        Ok(())
+    }
+}
+
+impl AsRawFd for Events {
+    fn as_raw_fd(&self) -> std::os::fd::RawFd {
+        self.file.as_raw_fd()
+    }
+}
+
+impl Read for Events {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        self.file.read(bytes)
+    }
+}
+
+impl Drop for Events {
+    fn drop(&mut self) {
+        let _ = self.remove_watch();
+    }
+}
+
+pub(super) fn arm(path: &Path) -> io::Result<Events> {
+    let events = match NOTIFICATIONS.get() {
+        Some(events) => events.try_clone()?,
+        None => {
+            // SAFETY: inotify_init1 has no pointer arguments and returns a new descriptor.
+            owned_fd(unsafe { libc::inotify_init1(libc::IN_CLOEXEC | libc::IN_NONBLOCK) })?
+        }
+    };
     let path = CString::new(path.as_os_str().as_bytes()).map_err(io::Error::other)?;
     let mask = libc::IN_CREATE
         | libc::IN_ATTRIB
@@ -31,10 +89,14 @@ pub(super) fn arm(path: &Path) -> io::Result<File> {
         | libc::IN_MOVE_SELF
         | libc::IN_UNMOUNT;
     // SAFETY: events is live, and path is a NUL-terminated owned-directory fd path.
-    if unsafe { libc::inotify_add_watch(events.as_raw_fd(), path.as_ptr(), mask) } < 0 {
+    let watch = unsafe { libc::inotify_add_watch(events.as_raw_fd(), path.as_ptr(), mask) };
+    if watch < 0 {
         return Err(io::Error::last_os_error());
     }
-    Ok(events)
+    Ok(Events {
+        file: events,
+        watch: Some(watch),
+    })
 }
 
 pub(crate) struct Watcher {
@@ -95,7 +157,20 @@ impl Drop for Watcher {
 }
 
 fn monitor(
-    mut events: File,
+    mut events: Events,
+    stop: &File,
+    state: &State,
+    deadline: Instant,
+    notify: &impl Fn(io::Result<()>),
+) -> io::Result<()> {
+    let result = monitor_events(&mut events, stop, state, deadline, notify);
+    let retired = events.remove_watch();
+    result?;
+    retired
+}
+
+fn monitor_events(
+    events: &mut Events,
     stop: &File,
     state: &State,
     deadline: Instant,

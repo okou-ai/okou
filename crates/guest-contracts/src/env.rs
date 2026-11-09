@@ -18,6 +18,10 @@ pub const CANONICAL_API_URL_ENV: &str = "OKOU_API_BACKEND_URL";
 /// file path resolution.
 pub const RUN_ID_ENV: &str = "OKOU_RUN_ID";
 
+/// Fixed storage helper stdin starts with one private notification descriptor.
+/// Server and helper are delivered in the same embedded Guest artifact.
+pub const STORAGE_NOTIFICATION_STDIN_ENV: &str = "OKOU_STORAGE_NOTIFICATION_STDIN_V1";
+
 /// Sensitive backend API bearer token for guest-agent calls.
 ///
 /// This value is runner-owned and must not be exposed through user-provided

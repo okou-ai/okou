@@ -77,10 +77,14 @@ pub(super) struct CommandExecution {
 
 impl CommandExecution {
     pub(super) fn spawn(command: &mut Command, stdin: Option<&[u8]>) -> io::Result<Self> {
+        Self::spawn_with_stdin(command, stdin_file(stdin)?)
+    }
+
+    pub(super) fn spawn_with_stdin(command: &mut Command, stdin: Stdio) -> io::Result<Self> {
         let stdout = tempfile::tempfile()?;
         let stderr = tempfile::tempfile()?;
         command
-            .stdin(stdin_file(stdin)?)
+            .stdin(stdin)
             .stdout(Stdio::from(stdout.try_clone()?))
             .stderr(Stdio::from(stderr.try_clone()?));
 

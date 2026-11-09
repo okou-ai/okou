@@ -20,6 +20,10 @@ enum ManifestInput {
 }
 
 fn main() {
+    if let Err(error) = guest_storage_apply::install_storage_notifications_from_stdin() {
+        log_error!(LOG_TAG, "Storage notification bootstrap failed: {error}");
+        std::process::exit(1);
+    }
     let runtime_dir = install_runtime_log_paths().unwrap_or_else(|error| {
         log_error!(LOG_TAG, "{error}");
         std::process::exit(1);

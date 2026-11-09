@@ -83,6 +83,33 @@ use std::fs;
 use std::path::Path;
 use std::time::Instant;
 
+/// Adopt the fixed server's private stdin capability before reading its payload.
+/// Standalone invocations without the bootstrap retain a private watcher.
+pub fn install_storage_notifications_from_stdin() -> std::io::Result<()> {
+    let Some(value) = std::env::var_os(guest_contracts::env::STORAGE_NOTIFICATION_STDIN_ENV) else {
+        return Ok(());
+    };
+    if value == "0" {
+        return Ok(());
+    }
+    if value != "1" {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "invalid storage notification bootstrap mode",
+        ));
+    }
+    #[cfg(target_os = "linux")]
+    {
+        let descriptor = guest_telemetry::storage_notifications::receive(std::io::stdin())?;
+        readiness::install_notifications(descriptor)
+    }
+    #[cfg(not(target_os = "linux"))]
+    Err(std::io::Error::new(
+        std::io::ErrorKind::Unsupported,
+        "storage notification bootstrap requires Linux",
+    ))
+}
+
 const LOG_TAG: &str = "sandbox:guest-storage-apply";
 
 /// Apply the manifest read from `manifest_path`.

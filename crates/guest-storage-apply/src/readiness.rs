@@ -17,12 +17,17 @@ use std::time::Instant;
 #[cfg(target_os = "linux")]
 mod watch;
 
+#[cfg(target_os = "linux")]
+pub(crate) fn install_notifications(events: std::os::fd::OwnedFd) -> io::Result<()> {
+    watch::install(events)
+}
+
 pub(crate) struct Readiness {
     state: Arc<State>,
     #[cfg(target_os = "linux")]
     deadline: Instant,
     #[cfg(target_os = "linux")]
-    events: std::fs::File,
+    events: watch::Events,
 }
 
 struct State {

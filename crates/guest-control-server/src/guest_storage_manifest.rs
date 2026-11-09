@@ -1,7 +1,11 @@
 use guest_contracts::agent_instructions::InstructionOperation;
 use guest_contracts::storage_resources::StorageResourceUsage;
+#[cfg(target_os = "linux")]
+use guest_telemetry::storage_notifications::{self, NotificationOwner};
 use serde::{Serialize, Serializer};
 use std::io;
+#[cfg(target_os = "linux")]
+use std::os::{fd::OwnedFd, unix::net::UnixStream};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -138,6 +142,8 @@ struct GuestStorageManifestWorkerContext {
     program: GuestStorageManifestProgram,
     process_containment_mode: ProcessContainmentMode,
     drain_deadline: Duration,
+    #[cfg(target_os = "linux")]
+    notifications: Arc<NotificationOwner>,
 }
 
 pub(crate) struct GuestStorageManifestWorker {
@@ -160,6 +166,8 @@ impl GuestStorageManifestWorker {
                     program,
                     process_containment_mode,
                     drain_deadline,
+                    #[cfg(target_os = "linux")]
+                    notifications: Arc::default(),
                 },
                 handle_worker_request,
                 THREAD_WORKER,
@@ -233,6 +241,8 @@ fn handle_worker_request(
         &context.program,
         context.process_containment_mode,
         context.drain_deadline,
+        #[cfg(target_os = "linux")]
+        &context.notifications,
     )
 }
 
@@ -243,6 +253,7 @@ fn handle_request(
     program: &GuestStorageManifestProgram,
     process_containment_mode: ProcessContainmentMode,
     drain_deadline: Duration,
+    #[cfg(target_os = "linux")] notifications: &NotificationOwner,
 ) -> io::Result<()> {
     let worker_wait_us = microseconds(request.enqueue_ready.elapsed());
     let GuestStorageManifestRequest {
@@ -270,6 +281,8 @@ fn handle_request(
         process_containment_mode,
         drain_deadline,
         resources: &mut resources,
+        #[cfg(target_os = "linux")]
+        notifications,
     });
     let response_prepare_started = Instant::now();
     let stdout = captured_or_empty(&output.stdout);
@@ -366,6 +379,34 @@ struct RunManifestInput<'a> {
     connection_cancel: &'a AtomicBool,
     process_containment_mode: ProcessContainmentMode,
     drain_deadline: Duration,
+    #[cfg(target_os = "linux")]
+    notifications: &'a NotificationOwner,
+}
+
+enum StorageStdin {
+    Pipe(std::process::ChildStdin),
+    #[cfg(target_os = "linux")]
+    Notification {
+        stream: UnixStream,
+        events: OwnedFd,
+    },
+}
+
+impl StorageStdin {
+    fn write(self, input: Vec<u8>) -> io::Result<FixedInputWriter> {
+        match self {
+            Self::Pipe(stdin) => FixedInputWriter::spawn(stdin, input, THREAD_STDIN),
+            #[cfg(target_os = "linux")]
+            Self::Notification { mut stream, events } => {
+                FixedInputWriter::spawn_task(THREAD_STDIN, move || {
+                    use std::io::Write;
+                    use std::os::fd::AsFd;
+                    storage_notifications::send(&stream, events.as_fd())?;
+                    stream.write_all(&input)
+                })
+            }
+        }
+    }
 }
 
 fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
@@ -381,6 +422,8 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         process_containment_mode,
         drain_deadline,
         resources,
+        #[cfg(target_os = "linux")]
+        notifications,
     } = input;
     let started = Instant::now();
     let drain_cancel = match DrainCancellation::new() {
@@ -390,21 +433,6 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
                 ExecTermination::StartFailed,
                 started,
                 format!("Failed to initialize storage output drain cancellation: {error}"),
-            );
-        }
-    };
-    let process_containment = match program.create_containment(
-        seq,
-        process_containment_mode,
-        run_id,
-        instruction_operation.is_none(),
-    ) {
-        Ok(process_containment) => process_containment,
-        Err(error) => {
-            return failed_output(
-                ExecTermination::StartFailed,
-                started,
-                format!("Failed to initialize storage helper process containment: {error}"),
             );
         }
     };
@@ -431,6 +459,67 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         .stdin(CommandStdio::Piped)
         .stdout(CommandStdio::Piped)
         .stderr(CommandStdio::Piped);
+    // Only the fixed production storage helper understands this private stdin
+    // bootstrap. Instruction and external test programs retain their pipe input.
+    #[cfg(target_os = "linux")]
+    let notification_lease = if instruction_operation.is_none()
+        && matches!(program, GuestStorageManifestProgram::Production)
+    {
+        match notifications.lease() {
+            Ok(lease) => Some(lease),
+            Err(error) => {
+                return failed_output(
+                    ExecTermination::StartFailed,
+                    started,
+                    format!("Failed to acquire storage notifications: {error}"),
+                );
+            }
+        }
+    } else {
+        None
+    };
+    #[cfg(target_os = "linux")]
+    let notification_stdin = if let Some(lease) = &notification_lease {
+        let mut prepare = || -> io::Result<_> {
+            let (stream, helper) = UnixStream::pair()?;
+            stream.set_write_timeout(Some(Duration::from_millis(u64::from(timeout_ms.max(1)))))?;
+            let events = lease.descriptor().try_clone_to_owned()?;
+            command.stdin(CommandStdio::Owned(helper.into()));
+            Ok(StorageStdin::Notification { stream, events })
+        };
+        match prepare() {
+            Ok(stdin) => Some(stdin),
+            Err(error) => {
+                return failed_output(
+                    ExecTermination::StartFailed,
+                    started,
+                    format!("Failed to prepare storage notification stdin: {error}"),
+                );
+            }
+        }
+    } else {
+        None
+    };
+    command.env(guest_contracts::env::STORAGE_NOTIFICATION_STDIN_ENV, "0");
+    #[cfg(target_os = "linux")]
+    if notification_stdin.is_some() {
+        command.env(guest_contracts::env::STORAGE_NOTIFICATION_STDIN_ENV, "1");
+    }
+    let process_containment = match program.create_containment(
+        seq,
+        process_containment_mode,
+        run_id,
+        instruction_operation.is_none(),
+    ) {
+        Ok(process_containment) => process_containment,
+        Err(error) => {
+            return failed_output(
+                ExecTermination::StartFailed,
+                started,
+                format!("Failed to initialize storage helper process containment: {error}"),
+            );
+        }
+    };
     let mut child = match command.spawn(false, &process_containment) {
         Ok(child) => child,
         Err(error) => {
@@ -444,7 +533,10 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         }
     };
 
-    let Some(stdin) = child.stdin.take() else {
+    let stdin = child.stdin.take().map(StorageStdin::Pipe);
+    #[cfg(target_os = "linux")]
+    let stdin = notification_stdin.or(stdin);
+    let Some(stdin) = stdin else {
         return abort_spawned(
             child,
             process_containment,
@@ -526,7 +618,7 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
             );
         }
     };
-    let stdin_writer = match FixedInputWriter::spawn(stdin, manifest_json, THREAD_STDIN) {
+    let stdin_writer = match stdin.write(manifest_json) {
         Ok(writer) => writer,
         Err(error) => {
             drain_cancel.cancel();
@@ -587,9 +679,24 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
             &format!("storage helper stdin writer finished with error: {error}"),
         );
     }
+    #[cfg(target_os = "linux")]
+    let containment_settled = containment_result.is_ok();
     if let Err(error) = containment_result {
         termination = ExecTermination::WaitFailed;
         diagnostic = append_cleanup_failure(diagnostic, Some(&error));
+    }
+    #[cfg(target_os = "linux")]
+    if let Some(lease) = notification_lease
+        && containment_settled
+        && let Err(error) = lease.finish()
+    {
+        termination = ExecTermination::WaitFailed;
+        let reset = format!("Failed to reset storage notifications: {error}");
+        diagnostic = if diagnostic.is_empty() {
+            reset
+        } else {
+            format!("{diagnostic}; {reset}")
+        };
     }
 
     GuestStorageManifestOutput {

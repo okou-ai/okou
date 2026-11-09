@@ -12,13 +12,20 @@ impl FixedInputWriter {
         input: Vec<u8>,
         thread_name: &'static str,
     ) -> io::Result<Self> {
+        Self::spawn_task(thread_name, move || {
+            let result = stdin.write_all(&input);
+            drop(stdin);
+            result
+        })
+    }
+
+    pub(crate) fn spawn_task(
+        thread_name: &'static str,
+        write: impl FnOnce() -> io::Result<()> + Send + 'static,
+    ) -> io::Result<Self> {
         let handle = thread::Builder::new()
             .name(thread_name.to_string())
-            .spawn(move || {
-                let result = stdin.write_all(&input);
-                drop(stdin);
-                result
-            })?;
+            .spawn(write)?;
         Ok(Self { handle })
     }
 
