@@ -2,7 +2,7 @@ use guest_contracts::agent_instructions::InstructionOperation;
 use guest_contracts::storage_resources::StorageResourceUsage;
 #[cfg(target_os = "linux")]
 use guest_telemetry::storage_notifications::{self, NotificationOwner};
-use serde::{Serialize, Serializer};
+use serde::{Deserialize, Serialize, Serializer};
 use std::io;
 #[cfg(target_os = "linux")]
 use std::os::{fd::OwnedFd, unix::net::UnixStream};
@@ -409,6 +409,85 @@ impl StorageStdin {
     }
 }
 
+#[derive(Deserialize)]
+struct ManifestMode {
+    #[serde(default, rename = "archiveReadiness")]
+    readiness: Option<ReadinessMode>,
+}
+
+#[derive(Deserialize)]
+struct ReadinessMode {
+    #[serde(default, rename = "checkOnly")]
+    check_only: bool,
+}
+
+fn eligibility_query(
+    bytes: &[u8],
+    runtime: &Path,
+    timeout_ms: u32,
+    cancelled: &AtomicBool,
+    started: Instant,
+) -> Option<GuestStorageManifestOutput> {
+    if !serde_json::from_slice::<ManifestMode>(bytes)
+        .ok()
+        .and_then(|mode| mode.readiness)
+        .is_some_and(|mode| mode.check_only)
+    {
+        return None;
+    }
+    let control = || {
+        if cancelled.load(Ordering::Acquire) {
+            Err(io::Error::new(
+                io::ErrorKind::Interrupted,
+                "storage query cancelled",
+            ))
+        } else if started.elapsed() >= Duration::from_millis(u64::from(timeout_ms)) {
+            Err(io::Error::new(
+                io::ErrorKind::TimedOut,
+                "storage query deadline",
+            ))
+        } else {
+            Ok(())
+        }
+    };
+    let result = (|| {
+        control()?;
+        let manifest = serde_json::from_slice::<guest_contracts::storage_manifest::Manifest>(bytes)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
+        guest_telemetry::storage_eligibility::eligible(&manifest, Some(runtime), control)
+    })();
+    Some(match result {
+        Ok(eligible) => GuestStorageManifestOutput {
+            termination: ExecTermination::Exited { exit_code: 0 },
+            duration_ms: elapsed_ms(started),
+            stdout: BoundedDrainResult {
+                captured: Some(if eligible {
+                    b"true\n".to_vec()
+                } else {
+                    b"false\n".to_vec()
+                }),
+                capture_truncated: false,
+                stream_truncated: false,
+            },
+            stderr: BoundedDrainResult {
+                captured: Some(Vec::new()),
+                capture_truncated: false,
+                stream_truncated: false,
+            },
+            diagnostic: String::new(),
+        },
+        Err(error) => failed_output(
+            match error.kind() {
+                io::ErrorKind::Interrupted => ExecTermination::Cancelled,
+                io::ErrorKind::TimedOut => ExecTermination::TimedOut,
+                _ => ExecTermination::Exited { exit_code: 1 },
+            },
+            started,
+            format!("Guest archive eligibility check failed: {error}"),
+        ),
+    })
+}
+
 fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
     let RunManifestInput {
         instruction_operation,
@@ -426,6 +505,21 @@ fn run_manifest(input: RunManifestInput<'_>) -> GuestStorageManifestOutput {
         notifications,
     } = input;
     let started = Instant::now();
+    // The fixed query is pure admission and stays on this single-active worker.
+    // Application, instruction and external programs retain their process owner.
+    if instruction_operation.is_none()
+        && matches!(program, GuestStorageManifestProgram::Production)
+        && !manifest_json.starts_with(guest_contracts::storage_files::INPUT_MAGIC)
+        && let Some(output) = eligibility_query(
+            &manifest_json,
+            Path::new(runtime_dir),
+            timeout_ms,
+            connection_cancel,
+            started,
+        )
+    {
+        return output;
+    }
     let drain_cancel = match DrainCancellation::new() {
         Ok(cancel) => Arc::new(cancel),
         Err(error) => {
@@ -761,3 +855,6 @@ fn failed_output(
 fn elapsed_ms(started: Instant) -> u32 {
     u32::try_from(started.elapsed().as_millis()).unwrap_or(u32::MAX)
 }
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests;

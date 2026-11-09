@@ -3,11 +3,10 @@
 use crate::cleanup_directory::CleanupDirectory;
 use guest_contracts::runtime_paths;
 use guest_contracts::storage_manifest::Manifest;
-use guest_contracts::storage_paths::normalize_path;
 use std::fs::OpenOptions;
 use std::io;
 use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
@@ -37,25 +36,6 @@ struct State {
 
 fn invalid(message: &'static str) -> io::Error {
     io::Error::new(io::ErrorKind::InvalidInput, message)
-}
-
-fn overlaps(left: &Path, right: &Path) -> bool {
-    left.starts_with(right) || right.starts_with(left)
-}
-
-// A sufficient namespace proof, not a prediction of cleanup or execution.
-// Inspect shallow prefixes without following aliases; an absent tail can be
-// created normally. File/symlink obstructions remain ordinary application's job.
-fn directory_path_is_unaliased(path: &Path) -> io::Result<bool> {
-    for prefix in path.ancestors().collect::<Vec<_>>().into_iter().rev() {
-        match std::fs::symlink_metadata(prefix) {
-            Ok(metadata) if !metadata.is_dir() => return Ok(false),
-            Ok(_) => {}
-            Err(error) if error.kind() == io::ErrorKind::NotFound => return Ok(true),
-            Err(error) => return Err(error),
-        }
-    }
-    Ok(true)
 }
 
 impl Readiness {
@@ -107,60 +87,7 @@ impl Readiness {
     }
 
     pub(crate) fn eligible(manifest: &Manifest, runtime: Option<&Path>) -> io::Result<bool> {
-        let descriptor = manifest
-            .archive_readiness
-            .as_ref()
-            .ok_or_else(|| invalid("missing archive readiness descriptor"))?;
-        descriptor.validate(manifest).map_err(invalid)?;
-        if !cfg!(target_os = "linux") {
-            return Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "archive readiness requires Linux",
-            ));
-        }
-        let runtime = runtime
-            .filter(|path| path.is_absolute() && normalize_path(path) == *path)
-            .ok_or_else(|| invalid("pending archives require a private absolute runtime"))?;
-        // The private control namespace is required even when input overlap is
-        // ineligible. Its errors must not become an ordinary-application choice.
-        if !directory_path_is_unaliased(runtime)? {
-            return Err(invalid(
-                "private runtime has a non-directory or aliased prefix",
-            ));
-        }
-        for target in manifest
-            .storages
-            .iter()
-            .map(|entry| PathBuf::from(&entry.mount_path))
-            .chain(
-                manifest
-                    .artifacts
-                    .iter()
-                    .map(|entry| PathBuf::from(&entry.mount_path)),
-            )
-            .chain(manifest.cleanup_paths.iter().map(PathBuf::from))
-            // Conservatively cover each cleanup directory without interpreting
-            // managed filenames, preservation, repair or deletion semantics.
-            .chain(
-                manifest
-                    .instruction_cleanups
-                    .iter()
-                    .map(|entry| PathBuf::from(&entry.mount_path)),
-            )
-        {
-            let logical_target = normalize_path(&target);
-            if !target.is_absolute() || logical_target != target || overlaps(&target, runtime) {
-                return Ok(false);
-            }
-            match directory_path_is_unaliased(&target) {
-                Ok(true) => {}
-                // Input access is not a prerequisite for an optimization:
-                // preserved entries may require no IO, and cleanup may replace
-                // old paths. Ordinary application alone owns required failures.
-                Ok(false) | Err(_) => return Ok(false),
-            }
-        }
-        Ok(true)
+        guest_telemetry::storage_eligibility::eligible(manifest, runtime, || Ok(()))
     }
 
     pub(crate) fn gate(&self, url: &str) -> Option<Arc<AtomicBool>> {

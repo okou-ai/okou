@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::json;
+use std::path::PathBuf;
 use std::sync::mpsc;
 
 fn fixture() -> Result<(tempfile::TempDir, Manifest, PathBuf), Box<dyn std::error::Error>> {

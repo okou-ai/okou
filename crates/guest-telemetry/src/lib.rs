@@ -7,6 +7,9 @@
 pub mod log;
 pub mod telemetry;
 
+/// Shared read-only admission for Guest storage publication.
+pub mod storage_eligibility;
+
 /// Connection-owned readiness resources for fixed Guest storage helpers.
 #[cfg(target_os = "linux")]
 pub mod storage_notifications;
