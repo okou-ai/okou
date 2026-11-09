@@ -68,6 +68,7 @@ struct ComposerChatConnectorAccounts: View {
     }
   }
 
+  @ViewBuilder
   private func accountRow(_ account: ChatConnectorAccount, access: ChatConnectorAccess.Account)
     -> some View
   {
