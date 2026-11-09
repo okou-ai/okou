@@ -1,4 +1,4 @@
-export const SUGGESTION_CURATION_REFERENCE = {
+export const SUGGESTION_CURATION_REFERENCE = Object.freeze({
   path: "references/suggestions.md",
   content: `# Suggestion source and publishing reference
 
@@ -44,4 +44,4 @@ Use the user's language and everyday words. The title names a recognizable subje
 
 Keep technical identifiers, exact source timestamps, links, execution details and necessary evidence in applicable drafts. Replace superseded background instead of appending scan diaries. Use dates only when they affect the decision, in the user's known timezone with readable wording; label the source timezone when the user's is unknown. Never invent a timezone. Keep relative wording current. Independently required actions belong on separate cards only when each merits attention; do not fill an option or card quota.
 `,
-};
+});
