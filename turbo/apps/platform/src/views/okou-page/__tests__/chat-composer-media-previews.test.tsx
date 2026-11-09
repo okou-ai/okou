@@ -77,6 +77,7 @@ test.each([
     const localUrl = thumbnailUrl.split("#")[0];
     expect(blobs.blobForUrl(localUrl)).toBe(file);
     expect(openPreview).toBeEnabled();
+    expect(openPreview).toHaveAttribute("aria-busy", "true");
     expect(getNamedButton(`Cancel upload ${filename}`)).toBeInTheDocument();
     expect(screen.getByRole("progressbar")).toBeInTheDocument();
     if (kind === "image") {
@@ -108,6 +109,7 @@ test.each([
 
     transfer.resolve();
     await findNamedButton(`Remove ${filename}`);
+    expect(openPreview).toHaveAttribute("aria-busy", "false");
     expect(openPreview.querySelector(tag)).toBe(thumbnail);
     expect(thumbnail).toHaveAttribute("src", thumbnailUrl);
     click(openPreview);

@@ -1892,6 +1892,7 @@ function ComposerMediaPreviewButton({
   markCount,
   openPreview,
   url,
+  uploading,
 }: {
   preview: AttachmentPreviewSignals | null;
   kind: "image" | "video";
@@ -1900,6 +1901,7 @@ function ComposerMediaPreviewButton({
   markCount: number;
   openPreview: (url: string, preview: AttachmentPreviewSignals) => void;
   url: string | undefined;
+  uploading: boolean;
 }) {
   const { t } = useTranslation();
   const status = useGet(load.status$);
@@ -1931,6 +1933,7 @@ function ComposerMediaPreviewButton({
         type="button"
         disabled
         aria-label={label}
+        aria-busy={uploading}
         className="group/image-preview relative h-9 w-9 overflow-hidden rounded-lg border border-foreground/10 transition-colors hover:border-foreground/25"
       >
         <PlaceholderIcon
@@ -1948,6 +1951,7 @@ function ComposerMediaPreviewButton({
         openPreview(url, preview);
       }}
       aria-label={label}
+      aria-busy={uploading}
       className="group/image-preview relative h-9 w-9 overflow-hidden rounded-lg border border-foreground/10 transition-colors hover:border-foreground/25"
     >
       {status !== "loaded" && (
@@ -1969,7 +1973,12 @@ function ComposerMediaPreviewButton({
         loaded={status === "loaded"}
         url={url}
       />
-      <span className="absolute inset-0 flex items-center justify-center bg-black/0 transition-colors group-hover/image-preview:bg-black/30">
+      <span
+        className={cn(
+          "pointer-events-none absolute inset-0 flex items-center justify-center transition-colors group-hover/image-preview:bg-black/30",
+          uploading ? "bg-black/30" : "bg-black/0",
+        )}
+      >
         <PreviewIcon
           size={18}
           className={cn(
@@ -2050,6 +2059,7 @@ function AttachmentChip({
             });
           }}
           url={url}
+          uploading={uploading}
         />
       ) : (
         <span className={FILE_CHIP_CLASSES}>
