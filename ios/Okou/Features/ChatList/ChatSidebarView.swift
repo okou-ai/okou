@@ -393,7 +393,8 @@ struct ChatSidebarView: View {
           store.selectedThreadID == thread.id
             ? OkouColor.stateSelected : .clear
         )
-        .padding(.horizontal, OkouSpace.md)
+        .padding(.leading, OkouSpace.md + indentation)
+        .padding(.trailing, OkouSpace.md)
     )
     .accessibilityIdentifier("chat-\(thread.id)")
     .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
