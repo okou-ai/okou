@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.59"
+version = "0.109.60"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2057,7 +2057,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.168"
+version = "0.1.169"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -4053,7 +4053,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.54"
+version = "0.244.55"
 dependencies = [
  "api-contracts",
  "async-trait",
