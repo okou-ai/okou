@@ -75,7 +75,8 @@ export function listedThreadIds(
   });
 }
 
-function groupProjectThreadIds(
+/** The ids of the given chats under the Project each belongs to, in order. */
+export function groupProjectThreadIds(
   threads: readonly EventDrivenChatThread[],
 ): ReadonlyMap<string, readonly string[]> {
   const groups = new Map<string, string[]>();
