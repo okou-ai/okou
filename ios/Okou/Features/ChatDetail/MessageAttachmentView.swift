@@ -107,19 +107,41 @@ struct MessageAttachmentPreview: View {
 
   var body: some View {
     if let preview = viewer.preview {
-      let artifact = ChatArtifact(
-        source: .file(preview.attachment.downloadID), filename: preview.attachment.filename,
-        contentType: preview.attachment.contentType, size: preview.attachment.size)
-      MessagePreviewSheet(title: artifact.filename, dismiss: viewer.dismiss) {
-        MessageFilePreview(
-          kind: artifact.kind, symbol: artifact.symbol, file: preview.file,
-          thumbnail: preview.thumbnail, error: preview.error, canRetry: preview.canRetry,
-          retry: { viewer.open(preview.attachment) })
-      } actions: {
-        if let file = preview.file {
-          ShareLink(item: file.url) { OkouToolbarIcon("share") }
-            .accessibilityLabel("Share or save to Files")
-        }
+      StoreProvider(preview.store) {
+        MessageAttachmentPreviewValue(preview: preview, dismiss: viewer.dismiss)
+      }
+      .id(preview.id)
+    }
+  }
+}
+
+private struct MessageAttachmentPreviewValue: View {
+  let preview: MessageAttachmentPreviewResource
+  let dismiss: () -> Void
+  @LoadableValue private var download: Loadable<ChatAttachmentFile?>
+
+  init(preview: MessageAttachmentPreviewResource, dismiss: @escaping () -> Void) {
+    self.preview = preview
+    self.dismiss = dismiss
+    _download = LoadableValue(task: preview.file)
+  }
+
+  var body: some View {
+    let artifact = ChatArtifact(
+      source: .file(preview.attachment.downloadID), filename: preview.attachment.filename,
+      contentType: preview.attachment.contentType, size: preview.attachment.size)
+    let file = download.data ?? nil
+    let failure = download.error
+    MessagePreviewSheet(title: artifact.filename, dismiss: dismiss) {
+      MessageFilePreview(
+        kind: artifact.kind, symbol: artifact.symbol, file: file,
+        thumbnail: preview.thumbnail, error: failure.map(MessageAttachmentStore.message(for:)),
+        canRetry: failure.map(ChatRequestFailure.canRetry) ?? true,
+        retry: preview.retry)
+    } actions: {
+      if let file {
+        ShareLink(item: file.url) { OkouToolbarIcon("share") }
+          .accessibilityLabel("Share or save to Files")
       }
     }
   }
