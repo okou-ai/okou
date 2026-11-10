@@ -51,7 +51,7 @@ final class AttachmentDraftTests: XCTestCase {
     let thumbnail = try await reads.store.get(read.value).value.image
     XCTAssertNotNil(thumbnail)
     submission.viewer.open(attachment)
-    let cachedURL = try XCTUnwrap(submission.viewer.preview?.file?.url)
+    let cachedURL = try await previewURL(in: submission.viewer)
     XCTAssertEqual(try Data(contentsOf: cachedURL), bytes)
     submission.viewer.dismiss()
     release.yield(())
@@ -60,7 +60,8 @@ final class AttachmentDraftTests: XCTestCase {
 
     let conversation = try XCTUnwrap(store.selectedConversation)
     conversation.attachmentViewer.open(attachment)
-    XCTAssertEqual(conversation.attachmentViewer.preview?.file?.url, cachedURL)
+    let conversationURL = try await previewURL(in: conversation.attachmentViewer)
+    XCTAssertEqual(conversationURL, cachedURL)
     let artifact = ChatArtifact(
       source: .file(attachment.id), filename: attachment.filename,
       contentType: attachment.contentType)
@@ -76,7 +77,7 @@ final class AttachmentDraftTests: XCTestCase {
     await conversation.send()
     XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 2)
     conversation.attachmentViewer.open(attachment)
-    let nextURL = try XCTUnwrap(conversation.attachmentViewer.preview?.file?.url)
+    let nextURL = try await previewURL(in: conversation.attachmentViewer)
     XCTAssertEqual(try Data(contentsOf: nextURL), bytes)
     conversation.attachmentViewer.dismiss()
     store.close()
@@ -627,6 +628,12 @@ final class AttachmentDraftTests: XCTestCase {
     let correctedBody = try XCTUnwrap(
       JSONSerialization.jsonObject(with: correctedRequest) as? [String: Any])
     XCTAssertEqual((correctedBody["connectorSelections"] as? [[String: Any]])?.count, 0)
+  }
+
+  private func previewURL(in viewer: MessageAttachmentStore) async throws -> URL {
+    let preview = try XCTUnwrap(viewer.preview)
+    let file = try await preview.store.get(preview.file).value
+    return try XCTUnwrap(file?.url)
   }
 
   private func makeFile(filename: String = "notes.txt", content: Data = Data("notes".utf8)) throws

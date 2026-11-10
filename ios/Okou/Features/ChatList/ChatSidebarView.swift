@@ -273,7 +273,7 @@ struct ChatSidebarView: View {
         .listRowBackground(Color.clear)
       }
       ForEach(contents.projects) { group in
-        projectRow(group.project)
+        projectRow(group)
         if store.projects.isExpanded(group.id) {
           if group.threads.isEmpty {
             Text("No chats yet")
@@ -282,9 +282,12 @@ struct ChatSidebarView: View {
               .listRowSeparator(.hidden)
               .listRowBackground(Color.clear)
           }
-          ForEach(group.threads.prefix(store.projects.limit(for: group.id))) { thread in
+          ForEach(
+            Array(group.threads.prefix(store.projects.limit(for: group.id)).enumerated()),
+            id: \.element.id
+          ) { index, thread in
             threadRow(
-              thread, showsStatusColumn: usesStatusColumn(group.threads),
+              thread, waveIndex: index, showsStatusColumn: usesStatusColumn(group.threads),
               indentation: OkouSpace.xxl)
           }
           if group.threads.count > store.projects.limit(for: group.id) {
@@ -297,13 +300,14 @@ struct ChatSidebarView: View {
           }
         }
       }
-      ForEach(contents.threads) { thread in
-        threadRow(thread, showsStatusColumn: usesStatusColumn(contents.threads))
+      ForEach(Array(contents.threads.enumerated()), id: \.element.id) { index, thread in
+        threadRow(thread, waveIndex: index, showsStatusColumn: usesStatusColumn(contents.threads))
       }
     }
   }
 
-  private func projectRow(_ project: ChatProject) -> some View {
+  private func projectRow(_ group: ChatListContents.ProjectGroup) -> some View {
+    let project = group.project
     let expanded = store.projects.isExpanded(project.id)
     return Button {
       withAnimation(reduceMotion ? nil : OkouMotion.transition) {
@@ -315,6 +319,7 @@ struct ChatSidebarView: View {
           .foregroundStyle(OkouColor.mutedForeground)
         Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
         Spacer(minLength: 0)
+        OkouChatTrailingMark(trailing: projectTrailing(group.threads))
       }
       .frame(minHeight: OkouControl.listRow)
       .contentShape(Rectangle())
@@ -370,7 +375,7 @@ struct ChatSidebarView: View {
   }
 
   private func threadRow(
-    _ thread: ChatThread,
+    _ thread: ChatThread, waveIndex: Int,
     showsStatusColumn: Bool = false, indentation: CGFloat = 0
   ) -> some View {
     Button {
@@ -378,7 +383,7 @@ struct ChatSidebarView: View {
       close()
     } label: {
       let parts = thread.titleParts
-      let trailing: OkouChatTrailing = thread.pinnedAt != nil ? .pinned : .none
+      let trailing = chatTrailing(thread, waveIndex: waveIndex)
       if showsStatusColumn {
         // Every row in the section fills the column, so titles share one left edge.
         OkouChatRowLabel(parts.text, trailing: trailing) {
@@ -424,6 +429,21 @@ struct ChatSidebarView: View {
       .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
     }
 
+  }
+
+  private func chatTrailing(_ thread: ChatThread, waveIndex: Int) -> OkouChatTrailing {
+    if thread.indicator == .active {
+      return .running(phase: Double(waveIndex) / OkouMotion.runningWaveRows)
+    }
+    if !thread.isMuted && thread.indicator == .unread { return .unread }
+    if thread.pinnedAt != nil { return .pinned }
+    return .none
+  }
+
+  private func projectTrailing(_ threads: [ChatThread]) -> OkouChatTrailing {
+    if threads.contains(where: { $0.indicator == .active }) { return .running(phase: 0) }
+    if threads.contains(where: { !$0.isMuted && $0.indicator == .unread }) { return .unread }
+    return .none
   }
 
   /// The chat filter, top right. On the default Chats it is a glass circle; any other filter

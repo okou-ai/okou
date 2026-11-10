@@ -24,6 +24,19 @@ struct OkouChatRowLabel<Status: View>: View {
         .font(.okou(.body))
         .lineLimit(1)
       Spacer(minLength: 0)
+      OkouChatTrailingMark(trailing: trailing)
+    }
+    .frame(minHeight: OkouControl.listRow)
+    .contentShape(Rectangle())
+  }
+}
+
+/// Shared trailing status for a chat or its Project's summary row.
+struct OkouChatTrailingMark: View {
+  let trailing: OkouChatTrailing
+
+  var body: some View {
+    Group {
       switch trailing {
       case .none:
         EmptyView()
@@ -41,12 +54,11 @@ struct OkouChatRowLabel<Status: View>: View {
           .accessibilityLabel("Unread")
       case .pinned:
         OkouIcon("pin", size: OkouIconSize.inline)
+          .frame(width: OkouIconSize.standard)
           .foregroundStyle(OkouColor.mutedForeground)
           .accessibilityHidden(true)
       }
     }
-    .frame(minHeight: OkouControl.listRow)
-    .contentShape(Rectangle())
   }
 }
 

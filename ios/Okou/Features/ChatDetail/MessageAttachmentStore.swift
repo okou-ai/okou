@@ -7,22 +7,10 @@ import UIKit
 /// Detail-scoped downloads. Leaving the detail or closing its workspace cancels all work.
 @MainActor @Observable
 final class MessageAttachmentStore {
-  struct Preview: Identifiable {
-    let id = UUID()
-    let attachment: ChatMessageAttachment
-    let thumbnail: UIImage?
-    var file: ChatAttachmentFile?
-    var error: String?
-    var canRetry = true
-  }
-
-  private(set) var preview: Preview?
+  private(set) var preview: MessageAttachmentPreviewResource?
   private let commands: ChatCommands
   private let didFail: @MainActor (Error) -> Void
-  private var downloads: [UUID: Task<ChatAttachmentFile?, Error>] = [:]
   private(set) var reads: MessageAttachmentResources
-  private var previewTask: Task<Void, Never>?
-  private var generation = UUID()
   private var closed = false
 
   init(commands: ChatCommands, didFail: @escaping @MainActor (Error) -> Void) {
@@ -38,77 +26,26 @@ final class MessageAttachmentStore {
 
   func open(_ attachment: ChatMessageAttachment) {
     guard !closed else { return }
-    previewTask?.cancel()
-    let artifact = ChatArtifact(
-      source: .file(attachment.downloadID), filename: attachment.filename,
-      contentType: attachment.contentType, size: attachment.size)
-    let item = Preview(
+    preview?.close()
+    preview = MessageAttachmentPreviewResource(
       attachment: attachment, thumbnail: cachedThumbnail(attachment),
-      file: commands.artifacts.uploadedFile(artifact))
-    preview = item
-    if item.file != nil { return }
-    previewTask = Task { [weak self] in
-      guard let self else { return }
-      do {
-        let file = try await download(attachment, thumbnail: false)
-        guard !Task.isCancelled, preview?.id == item.id else { return }
-        preview?.file = file
-      } catch {
-        guard !Task.isCancelled, preview?.id == item.id else { return }
-        preview?.error = Self.message(for: error)
-        preview?.canRetry = ChatRequestFailure.canRetry(error)
-      }
-    }
+      commands: commands, didFail: didFail)
   }
 
   func dismiss() {
-    previewTask?.cancel()
-    previewTask = nil
+    preview?.close()
     preview = nil
   }
 
   func deactivate() {
-    generation = UUID()
     dismiss()
     reads.close()
     if !closed { reads = MessageAttachmentResources(commands: commands, didFail: didFail) }
-    for task in downloads.values { task.cancel() }
-    downloads.removeAll()
   }
 
   func close() {
     closed = true
     deactivate()
-  }
-
-  private func download(_ attachment: ChatMessageAttachment, thumbnail: Bool) async throws
-    -> ChatAttachmentFile?
-  {
-    guard !closed else { throw CancellationError() }
-    let scope = generation
-    let id = UUID()
-    let task = Task<ChatAttachmentFile?, Error> {
-      try await commands.downloadAttachment(attachment, thumbnail: thumbnail)
-    }
-    downloads[id] = task
-    defer { downloads[id] = nil }
-    do {
-      let file = try await withTaskCancellationHandler {
-        try await task.value
-      } onCancel: {
-        task.cancel()
-      }
-      try Task.checkCancellation()
-      guard !closed, generation == scope else { throw CancellationError() }
-      return file
-    } catch {
-      if !closed, generation == scope, !Task.isCancelled,
-        let status = (error as? APIClientError)?.statusCode, [401, 426].contains(status)
-      {
-        didFail(error)
-      }
-      throw error
-    }
   }
 
   static func message(for error: Error) -> String {
