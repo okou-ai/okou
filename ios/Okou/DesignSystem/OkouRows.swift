@@ -54,6 +54,7 @@ struct OkouChatTrailingMark: View {
           .accessibilityLabel("Unread")
       case .pinned:
         OkouIcon("pin", size: OkouIconSize.inline)
+          .frame(width: OkouIconSize.standard)
           .foregroundStyle(OkouColor.mutedForeground)
           .accessibilityHidden(true)
       }

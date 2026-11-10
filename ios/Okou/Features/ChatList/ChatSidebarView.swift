@@ -520,7 +520,6 @@ struct ChatSidebarView: View {
         .lineLimit(1)
         .padding(.horizontal, OkouSpace.lg)
         .modifier(OkouGlassControl(shape: .capsule))
-
       }
     }
     .buttonStyle(.plain)
