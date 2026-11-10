@@ -149,11 +149,13 @@ function loadRunnerClaimResponseFixture(): unknown {
 }
 
 describe("runner claim response contract", () => {
-  it.each([true, false])(
+  it.each([true, false, undefined])(
     "round-trips minimum intent with preview authorization %s",
     (previewBypassAuthorized) => {
       const input = {
-        previewBypassAuthorized,
+        ...(previewBypassAuthorized === undefined
+          ? {}
+          : { previewBypassAuthorized }),
         platformEnvironment: {
           OKOU_TOKEN: "captured-run-authorization",
           OKOU_DISABLED_PAID_TOOLS: "[]",
@@ -172,7 +174,6 @@ describe("runner claim response contract", () => {
     },
   );
   it.each([
-    { field: "previewBypassAuthorized", value: undefined },
     { field: "previewBypassAuthorized", value: null },
     { field: "previewBypassAuthorized", value: "true" },
     { field: "nativeContinuation", value: undefined },

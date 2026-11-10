@@ -1036,8 +1036,8 @@ export const storedExecutionContextSchema = preparedExecutionContextBaseSchema
     apiStartTime: true,
   })
   .extend({
-    // Captured authorization; Claim loads the current deployment secret.
-    previewBypassAuthorized: boolean(),
+    // Preview-only admission authorization; absence grants no bypass.
+    previewBypassAuthorized: boolean().optional(),
     platformEnvironment: object({
       OKOU_TOKEN: string().optional(),
       [DISABLED_PAID_TOOLS_ENV_VAR]: string(),

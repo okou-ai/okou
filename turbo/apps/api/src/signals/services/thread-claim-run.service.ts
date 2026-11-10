@@ -5048,7 +5048,7 @@ function prepareRunnerLaunchInput(input: {
   }
   const context: StoredExecutionContext = {
     nativeContinuation,
-    previewBypassAuthorized: input.previewBypassAuthorized,
+    ...(input.previewBypassAuthorized ? { previewBypassAuthorized: true } : {}),
     ...(args.resolved.agentId !== null
       ? {
           customWorkflowSelection: {
