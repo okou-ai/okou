@@ -12038,7 +12038,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     });
 
     describe("RUN-03: user-runner protocol and runner authentication", () => {
-      it("uses accepted preview headers or cookies with the current masked Claim secret", async () => {
+      it("preserves preview authorization with the current masked Claim secret", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const { actor, agentId } = await entitledRunActor();
@@ -12047,19 +12047,29 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {
             prompt: "preview bypass from header",
             headers: { "x-vercel-protection-bypass": previewBypass },
+            environment: "preview",
+            authorized: true,
           },
           {
             prompt: "preview bypass from cookie",
             headers: {
               cookie: `other=value; x-vercel-protection-bypass=${previewBypass}`,
             },
+            environment: "preview",
+            authorized: true,
+          },
+          {
+            prompt: "ordinary admission without preview bypass authorization",
+            headers: { "x-vercel-protection-bypass": "untrusted-bypass" },
+            environment: "development",
+            authorized: false,
           },
         ] as const;
 
         for (const request of requests) {
-          mockEnv("ENV", "preview");
+          mockEnv("ENV", request.environment);
           mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", previewBypass);
-          // The send carries the bypass; its pick runs inside that request.
+          // Admission captures only the bypass accepted in this request.
           const clientEventId = randomUUID();
           const sent = await chat.requestSendEvent(
             actor,
@@ -12095,6 +12105,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             throw new Error("Expected the preview send to launch a run");
           }
           const claimBypass = `${previewBypass}-rotated`;
+          // Current preview access cannot upgrade this Run's admission receipt.
+          mockEnv("ENV", "preview");
           mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", claimBypass);
           const claim = await api.claimRunnerJob(
             runId,
@@ -12103,10 +12115,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               "x-vercel-protection-bypass": claimBypass,
             },
           );
-          expect(claim.platformEnvironment).toMatchObject({
-            VERCEL_AUTOMATION_BYPASS_SECRET: claimBypass,
-          });
-          expect(claim.secretValues).toContain(claimBypass);
+          if (request.authorized) {
+            expect(claim.platformEnvironment).toMatchObject({
+              VERCEL_AUTOMATION_BYPASS_SECRET: claimBypass,
+            });
+            expect(claim.secretValues).toContain(claimBypass);
+          } else {
+            expect(claim.platformEnvironment).not.toHaveProperty(
+              "VERCEL_AUTOMATION_BYPASS_SECRET",
+            );
+            expect(claim.secretValues).not.toContain(claimBypass);
+          }
           expect(claim.environment).not.toHaveProperty(
             "VERCEL_AUTOMATION_BYPASS_SECRET",
           );
