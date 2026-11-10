@@ -7366,6 +7366,10 @@
       "description": "Verbinden Sie sich über diese Kanäle mit {{displayName}}",
       "title": "Wo {{displayName}} funktioniert"
     },
+    "sections": {
+      "connected": "Verbunden",
+      "more": "Weitere Kanäle"
+    },
     "slack": {
       "adminInstall": "Bitten Sie Ihren Administrator, die Slack-Integration zu installieren",
       "description": "Teamkommunikation und Zusammenarbeit",

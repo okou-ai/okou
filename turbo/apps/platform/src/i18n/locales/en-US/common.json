@@ -7364,6 +7364,10 @@
       "description": "Connect with {{displayName}} through these channels",
       "title": "Where {{displayName}} works"
     },
+    "sections": {
+      "connected": "Connected",
+      "more": "More channels"
+    },
     "slack": {
       "adminInstall": "Ask your admin to install the Slack integration",
       "description": "Team communication and collaboration",

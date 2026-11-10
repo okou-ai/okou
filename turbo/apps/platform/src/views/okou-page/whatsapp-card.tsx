@@ -3,7 +3,11 @@ import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { QRCodeSVG } from "qrcode.react";
-import { Button, buttonVariants, surfaceVariants } from "@okouai/ui";
+import { Button, buttonVariants, cn } from "@okouai/ui";
+import {
+  integrationCardLayout,
+  type IntegrationCardLayout,
+} from "./components/integration-card-layout.ts";
 import {
   Dialog,
   DialogContent,
@@ -124,8 +128,9 @@ export function WhatsappConnectContent({
   );
 }
 
-export function WhatsappCard() {
+export function WhatsappCard({ layout }: { layout: IntegrationCardLayout }) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   const statusLoadable = useLastLoadable(whatsappLinkStatus$);
   const status =
     statusLoadable.state === "hasData" ? statusLoadable.data : null;
@@ -142,19 +147,24 @@ export function WhatsappCard() {
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <div
-        data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
-      >
-        <div className="flex items-center gap-4 p-4">
-          <WhatsappMark size={28} className="shrink-0 text-green-600" />
+      <div data-slot="integration-card" className={classes.frame}>
+        <div className={classes.header}>
+          <WhatsappMark
+            size={classes.iconSize}
+            className="shrink-0 text-green-600"
+          />
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="text-sm font-medium text-foreground">
               {t(($) => {
                 return $.works.whatsapp.name;
               })}
             </div>
-            <p className="text-sm text-muted-foreground">
+            <p
+              className={cn(
+                "text-sm text-muted-foreground",
+                classes.description,
+              )}
+            >
               {status && !status.configured
                 ? t(($) => {
                     return $.works.whatsapp.unavailable;

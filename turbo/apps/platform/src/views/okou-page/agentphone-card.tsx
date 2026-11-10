@@ -1,7 +1,11 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { CircleCheck, EllipsisVertical } from "lucide-react";
-import { surfaceVariants, Button } from "@okouai/ui";
+import { Button } from "@okouai/ui";
+import {
+  integrationCardLayout,
+  type IntegrationCardLayout,
+} from "./components/integration-card-layout.ts";
 import {
   Popover,
   PopoverContent,
@@ -140,8 +144,9 @@ function AgentPhoneCardActions({
   );
 }
 
-export function AgentPhoneCard() {
+export function AgentPhoneCard({ layout }: { layout: IntegrationCardLayout }) {
   const { t } = useTranslation();
+  const classes = integrationCardLayout(layout);
   const statusLoadable = useLastLoadable(agentPhoneLinkStatus$);
   const [connectionCodeLoadable, createConnectionCode] = useLoadableSet(
     createAgentPhoneLinkCode$,
@@ -161,13 +166,10 @@ export function AgentPhoneCard() {
 
   return (
     <>
-      <div
-        data-slot="integration-card"
-        className={surfaceVariants({ className: "flex flex-col" })}
-      >
-        <div className="flex items-center gap-4 p-4">
-          <div className="shrink-0 inline-flex h-7 w-7 items-center justify-center overflow-hidden">
-            <img src={imessageIconImg} alt="" className="h-7 w-7" />
+      <div data-slot="integration-card" className={classes.frame}>
+        <div className={classes.header}>
+          <div className={classes.iconFrame}>
+            <img src={imessageIconImg} alt="" className="size-full" />
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="flex min-w-0 items-center gap-2">

@@ -548,3 +548,30 @@ test("Slack permission refresh reports actual scope recovery on the original Wor
   ).not.toBeInTheDocument();
   expect(pathname()).toBe("/works");
 });
+
+test("Works lists connected channels before the remaining channels", async () => {
+  mockSlack(context, {
+    isConnected: true,
+    isInstalled: true,
+    isAdmin: true,
+    workspaceName: "Okou HQ",
+  });
+  context.mocks.data.agentPhoneIntegration({
+    linked: true,
+    phoneHandle: PHONE_HANDLE,
+    agentPhoneNumber: "+19039853128",
+    configured: true,
+  });
+
+  await setupIntegrationsPage(context);
+
+  const connected = await screen.findByRole("region", { name: /^Connected/u });
+  expect(within(connected).getByText("Slack")).toBeInTheDocument();
+  expect(within(connected).getByText("Phone")).toBeInTheDocument();
+  expect(within(connected).queryByText("GitHub")).toBeNull();
+
+  const more = screen.getByRole("region", { name: /^More channels/u });
+  expect(within(more).getByText("GitHub")).toBeInTheDocument();
+  expect(within(more).getByText("Discord")).toBeInTheDocument();
+  expect(within(more).queryByText("Slack")).toBeNull();
+});

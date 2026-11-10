@@ -54,6 +54,10 @@ function setupDiscordPage() {
   });
 }
 
+function findDiscordCard(): Promise<HTMLElement> {
+  return screen.findByRole("region", { name: "Discord" });
+}
+
 test.each([
   {
     name: "unconfigured admin",
@@ -847,7 +851,9 @@ test("A connected member disconnects from the overflow menu on Works", async () 
   });
   await setupDiscordPage();
 
-  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  await expect(
+    within(await findDiscordCard()).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
   const card = getIntegrationCard("Discord");
   expect(
     within(card).getByText(/^Connected(?: \(.+\))?$/u),
@@ -877,7 +883,9 @@ test("A failed disconnect preserves the connection", async () => {
     });
   });
   await setupDiscordPage();
-  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  await expect(
+    within(await findDiscordCard()).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
   click(getAction("button", "More options", getIntegrationCard("Discord")));
   click(getAction("button", "Disconnect Discord"));
 
@@ -1005,7 +1013,9 @@ test("Discord status converges after a connection change from another surface", 
     guildName: "Updated team",
   };
   context.mocks.ably.trigger("discord:changed");
-  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  await expect(
+    within(await findDiscordCard()).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
   expect(
     within(getIntegrationCard("Discord")).getByText(/^Connected(?: \(.+\))?$/u),
   ).toBeInTheDocument();
@@ -1078,9 +1088,12 @@ test.each([false, true])(
     expect(connection).not.toBeDisabled();
 
     refreshReady.resolve();
-    await expect(
-      within(card).findByText("Connected"),
-    ).resolves.toBeInTheDocument();
+    // A refreshed connection can move the card into the connected section.
+    await waitFor(() => {
+      expect(
+        within(getIntegrationCard("Discord")).getByText("Connected"),
+      ).toBeInTheDocument();
+    });
   },
 );
 
@@ -1119,7 +1132,9 @@ test("Works keeps its startup screen until Discord and Slack status are ready", 
 
   statusReady.resolve();
   await page.ready;
-  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  await expect(
+    within(await findDiscordCard()).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
   expect(skeleton).toHaveAttribute("aria-hidden", "true");
   expect(document.getElementById("root")).not.toHaveAttribute("inert");
 });
@@ -1135,7 +1150,9 @@ test("A status error hides stale controls and recovers when returning to Works",
     return respond(200, status());
   });
   await setupDiscordPage();
-  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  await expect(
+    within(await findDiscordCard()).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
   const card = getIntegrationCard("Discord");
   denied = true;
   context.mocks.ably.trigger("discord:changed");
@@ -1324,21 +1341,26 @@ test.each([
     denyRefresh = refreshError;
     context.mocks.ably.trigger("discord:changed");
     await refreshStarted.promise;
-    expect(screen.getByText("Connected")).toBeInTheDocument();
+    expect(
+      within(getIntegrationCard("Discord")).getByText("Connected"),
+    ).toBeInTheDocument();
     expect(
       screen.getByRole("combobox", {
         name: "Default workspace for Discord",
       }),
     ).toBeDisabled();
     refreshReady.resolve();
+    // "Connected" also labels the connected section heading.
     await expect(
-      screen.findByText(refreshMessage),
-    ).resolves.toBeInTheDocument();
+      screen.findAllByText(refreshMessage),
+    ).resolves.not.toHaveLength(0);
     if (denyRefresh) {
       denyRefresh = false;
       context.mocks.ably.trigger("discord:changed");
     }
-    await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+    await expect(
+      within(await findDiscordCard()).findByText("Connected"),
+    ).resolves.toBeInTheDocument();
     const select = screen.getByRole("combobox", {
       name: "Default workspace for Discord",
     });
@@ -1507,7 +1529,9 @@ test("Disconnecting stays pending until the refreshed status arrives", async () 
     return respond(200, { ok: true });
   });
   await setupDiscordPage();
-  await expect(screen.findByText("Connected")).resolves.toBeInTheDocument();
+  await expect(
+    within(await findDiscordCard()).findByText("Connected"),
+  ).resolves.toBeInTheDocument();
   click(getAction("button", "More options", getIntegrationCard("Discord")));
   click(getAction("button", "Disconnect Discord"));
 

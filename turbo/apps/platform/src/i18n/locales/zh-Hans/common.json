@@ -7343,6 +7343,10 @@
       "description": "通过这些渠道与{{displayName}}协作",
       "title": "{{displayName}}的工作渠道"
     },
+    "sections": {
+      "connected": "已连接",
+      "more": "更多渠道"
+    },
     "slack": {
       "adminInstall": "请管理员安装 Slack 集成",
       "description": "团队沟通与协作",

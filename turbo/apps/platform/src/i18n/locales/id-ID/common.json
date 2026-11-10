@@ -7343,6 +7343,10 @@
       "description": "Hubungkan dengan {{displayName}} melalui saluran ini",
       "title": "Tempat {{displayName}} bekerja"
     },
+    "sections": {
+      "connected": "Terhubung",
+      "more": "Saluran lainnya"
+    },
     "slack": {
       "adminInstall": "Minta admin Anda untuk memasang integrasi Slack",
       "description": "Komunikasi dan kolaborasi tim",

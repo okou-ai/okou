@@ -7343,6 +7343,10 @@
       "description": "これらのチャネルを通じて {{displayName}} に接続します",
       "title": "{{displayName}}の連携先"
     },
+    "sections": {
+      "connected": "接続済み",
+      "more": "その他のチャネル"
+    },
     "slack": {
       "adminInstall": "Slack 統合をインストールするように管理者に依頼してください",
       "description": "チームのコミュニケーションとコラボレーション",

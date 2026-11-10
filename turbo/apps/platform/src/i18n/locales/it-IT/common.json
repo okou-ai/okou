@@ -7443,6 +7443,10 @@
       "description": "Connettiti con {{displayName}} attraverso questi canali",
       "title": "Dove lavora {{displayName}}"
     },
+    "sections": {
+      "connected": "Connessi",
+      "more": "Altri canali"
+    },
     "slack": {
       "adminInstall": "Chiedi al tuo amministratore di installare l'integrazione Slack",
       "description": "Comunicazione e collaborazione del team",

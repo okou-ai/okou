@@ -31,6 +31,7 @@ import { ROUTES } from "../route-paths.ts";
 import { setupDiscordConnectPage$ } from "../okou-page/discord-connect-page.ts";
 import { discordConnectParams } from "../okou-page/discord-connect-params.ts";
 import { i18n } from "../../i18n/index.ts";
+import { settleWorksChannelPlacement$ } from "./works-channel-placement.ts";
 
 const initWorksRedirect$ = command(({ get, set }) => {
   const params = new URLSearchParams(get(searchParams$));
@@ -88,9 +89,8 @@ export const setupWorksPage$ = command(
     set(initWorksRedirect$);
     set(initSlackOrg$);
 
-    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
-    await withCleanup(
-      Promise.all([
+    const watchChannels = async () => {
+      await Promise.all([
         set(watchSlackConnection$, signal),
         set(watchTeamsConnection$, signal),
         set(watchDiscordConnection$, signal),
@@ -100,11 +100,16 @@ export const setupWorksPage$ = command(
         set(watchAgentPhoneConnection$, signal),
         set(watchWhatsappConnection$, signal),
         set(watchEmailConnection$, signal),
-      ]),
-      async () => {
-        await set(hideAppSkeleton$, signal);
-      },
-    );
+      ]);
+      // The watchers own the first status reads; place channels once those
+      // reads are current.
+      await set(settleWorksChannelPlacement$, signal);
+    };
+
+    // eslint-disable-next-line ccstate/no-with-cleanup -- Legacy 20261022: existing withCleanup only; do not add new usages.
+    await withCleanup(watchChannels(), async () => {
+      await set(hideAppSkeleton$, signal);
+    });
     signal.throwIfAborted();
   },
 );
