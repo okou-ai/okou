@@ -33,7 +33,7 @@ const GUEST_WIDE_TASK_OOM_INJECTED_MARKER: &str = "@guest-wide-task-oom-injected
 const RUNTIME_ONLY_OOM_MARKER: &str = "@runtime-only-oom";
 const HANG_AFTER_RESULT_MARKER: &str = "@hang-after-result";
 
-#[derive(Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum MockScenario<'a> {
     ActiveInputSmoke { expected_follow_ups: usize },
     ActiveInputSmokeReady { expected_follow_ups: usize },
@@ -68,313 +68,176 @@ pub(crate) enum MockScenario<'a> {
     Shell,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ScenarioMatchKind {
-    Exact,
-    Prefix,
-    PrefixPayload,
-    FirstLinePayload,
+enum ScenarioMatcher {
+    Exact(MockScenario<'static>),
+    Prefix(MockScenario<'static>),
+    PrefixPayload(for<'a> fn(&'a str) -> MockScenario<'a>),
+    FirstLinePayload(for<'a> fn(&'a str) -> MockScenario<'a>),
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ScenarioKind {
-    ActiveInputSmoke,
-    ActiveInputSmokeReady,
-    EchoJsonl,
-    EchoJsonlAndHang,
-    EchoJsonlFile,
-    FailNoNewline,
-    FailInvalidUtf8,
-    FailInvalidUtf8Long,
-    Fail,
-    StdoutOverLimit { newline: bool },
-    StdoutInvalidUtf8,
-    StdoutRecordBoundaries,
-    StuckTool { deaf: bool, close_stdout: bool },
-    OrphanPipe,
-    HangAfterResult { deaf: bool },
-    HangAfterResultThenEvent,
-    HangAfterResultPeriodicEvents,
-    HangAfterErrorResult,
-    ExitAfterResult,
-    WriteEnvJson,
-    AppendPromptTransport,
-    ParallelShellToolOom,
-    GuestWideToolOom,
-    GuestWideToolOomInjected,
-    ManagedTaskOom,
-    GuestWideTaskOom,
-    GuestWideTaskOomInjected,
-    RuntimeOnlyOom,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
 struct ScenarioRule {
     marker: &'static str,
-    match_kind: ScenarioMatchKind,
-    scenario_kind: ScenarioKind,
-}
-
-enum ScenarioMatch<'a> {
-    Marker,
-    Payload(&'a str),
+    matcher: ScenarioMatcher,
 }
 
 const SCENARIO_RULES: &[ScenarioRule] = &[
     ScenarioRule {
         marker: ACTIVE_INPUT_SMOKE_MARKER,
-        match_kind: ScenarioMatchKind::PrefixPayload,
-        scenario_kind: ScenarioKind::ActiveInputSmoke,
+        matcher: ScenarioMatcher::PrefixPayload(|payload| parse_active_input_smoke(payload, false)),
     },
     ScenarioRule {
         marker: ACTIVE_INPUT_SMOKE_READY_MARKER,
-        match_kind: ScenarioMatchKind::PrefixPayload,
-        scenario_kind: ScenarioKind::ActiveInputSmokeReady,
+        matcher: ScenarioMatcher::PrefixPayload(|payload| parse_active_input_smoke(payload, true)),
     },
     ScenarioRule {
         marker: ECHO_HANG_MARKER,
-        match_kind: ScenarioMatchKind::FirstLinePayload,
-        scenario_kind: ScenarioKind::EchoJsonlAndHang,
+        matcher: ScenarioMatcher::FirstLinePayload(|payload| {
+            MockScenario::EchoJsonlAndHang(payload)
+        }),
     },
     ScenarioRule {
         marker: ECHO_MARKER,
-        match_kind: ScenarioMatchKind::FirstLinePayload,
-        scenario_kind: ScenarioKind::EchoJsonl,
+        matcher: ScenarioMatcher::FirstLinePayload(|payload| MockScenario::EchoJsonl(payload)),
     },
     ScenarioRule {
         marker: ECHO_FILE_MARKER,
-        match_kind: ScenarioMatchKind::FirstLinePayload,
-        scenario_kind: ScenarioKind::EchoJsonlFile,
+        matcher: ScenarioMatcher::FirstLinePayload(|path| MockScenario::EchoJsonlFile(path)),
     },
     ScenarioRule {
         marker: FAIL_NO_NEWLINE_MARKER,
-        match_kind: ScenarioMatchKind::PrefixPayload,
-        scenario_kind: ScenarioKind::FailNoNewline,
+        matcher: ScenarioMatcher::PrefixPayload(|msg| MockScenario::FailNoNewline(msg)),
     },
     ScenarioRule {
         marker: FAIL_INVALID_UTF8_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::FailInvalidUtf8,
+        matcher: ScenarioMatcher::Exact(MockScenario::FailInvalidUtf8),
     },
     ScenarioRule {
         marker: FAIL_INVALID_UTF8_LONG_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::FailInvalidUtf8Long,
+        matcher: ScenarioMatcher::Exact(MockScenario::FailInvalidUtf8Long),
     },
     ScenarioRule {
         marker: FAIL_MARKER,
-        match_kind: ScenarioMatchKind::PrefixPayload,
-        scenario_kind: ScenarioKind::Fail,
+        matcher: ScenarioMatcher::PrefixPayload(|msg| MockScenario::Fail(msg)),
     },
     ScenarioRule {
         marker: STDOUT_OVER_LIMIT_NO_NEWLINE_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::StdoutOverLimit { newline: false },
+        matcher: ScenarioMatcher::Exact(MockScenario::StdoutOverLimit { newline: false }),
     },
     ScenarioRule {
         marker: STDOUT_OVER_LIMIT_NEWLINE_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::StdoutOverLimit { newline: true },
+        matcher: ScenarioMatcher::Exact(MockScenario::StdoutOverLimit { newline: true }),
     },
     ScenarioRule {
         marker: STDOUT_INVALID_UTF8_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::StdoutInvalidUtf8,
+        matcher: ScenarioMatcher::Exact(MockScenario::StdoutInvalidUtf8),
     },
     ScenarioRule {
         marker: STDOUT_RECORD_BOUNDARIES_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::StdoutRecordBoundaries,
+        matcher: ScenarioMatcher::Exact(MockScenario::StdoutRecordBoundaries),
     },
     ScenarioRule {
         marker: STUCK_TOOL_CLOSED_STDOUT_DEAF_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::StuckTool {
+        matcher: ScenarioMatcher::Prefix(MockScenario::StuckTool {
             deaf: true,
             close_stdout: true,
-        },
+        }),
     },
     ScenarioRule {
         marker: STUCK_TOOL_DEAF_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::StuckTool {
+        matcher: ScenarioMatcher::Prefix(MockScenario::StuckTool {
             deaf: true,
             close_stdout: false,
-        },
+        }),
     },
     ScenarioRule {
         marker: STUCK_TOOL_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::StuckTool {
+        matcher: ScenarioMatcher::Prefix(MockScenario::StuckTool {
             deaf: false,
             close_stdout: false,
-        },
+        }),
     },
     ScenarioRule {
         marker: ORPHAN_PIPE_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::OrphanPipe,
+        matcher: ScenarioMatcher::Prefix(MockScenario::OrphanPipe),
     },
     ScenarioRule {
         marker: HANG_AFTER_RESULT_DEAF_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::HangAfterResult { deaf: true },
+        matcher: ScenarioMatcher::Prefix(MockScenario::HangAfterResult { deaf: true }),
     },
     ScenarioRule {
         marker: HANG_AFTER_RESULT_THEN_EVENT_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::HangAfterResultThenEvent,
+        matcher: ScenarioMatcher::Prefix(MockScenario::HangAfterResultThenEvent),
     },
     ScenarioRule {
         marker: HANG_AFTER_RESULT_PERIODIC_EVENTS_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::HangAfterResultPeriodicEvents,
+        matcher: ScenarioMatcher::Prefix(MockScenario::HangAfterResultPeriodicEvents),
     },
     ScenarioRule {
         marker: HANG_AFTER_ERROR_RESULT_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::HangAfterErrorResult,
+        matcher: ScenarioMatcher::Prefix(MockScenario::HangAfterErrorResult),
     },
     ScenarioRule {
         marker: EXIT_AFTER_RESULT_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::ExitAfterResult,
+        matcher: ScenarioMatcher::Prefix(MockScenario::ExitAfterResult),
     },
     ScenarioRule {
         marker: WRITE_ENV_JSON_MARKER,
-        match_kind: ScenarioMatchKind::PrefixPayload,
-        scenario_kind: ScenarioKind::WriteEnvJson,
+        matcher: ScenarioMatcher::PrefixPayload(|path| MockScenario::WriteEnvJson(path)),
     },
     ScenarioRule {
         marker: APPEND_PROMPT_TRANSPORT_MARKER,
-        match_kind: ScenarioMatchKind::PrefixPayload,
-        scenario_kind: ScenarioKind::AppendPromptTransport,
+        matcher: ScenarioMatcher::PrefixPayload(|payload| {
+            MockScenario::AppendPromptTransport(payload)
+        }),
     },
     ScenarioRule {
         marker: PARALLEL_SHELL_TOOL_OOM_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::ParallelShellToolOom,
+        matcher: ScenarioMatcher::Exact(MockScenario::ParallelShellToolOom),
     },
     ScenarioRule {
         marker: GUEST_WIDE_TOOL_OOM_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::GuestWideToolOom,
+        matcher: ScenarioMatcher::Exact(MockScenario::GuestWideToolOom),
     },
     ScenarioRule {
         marker: GUEST_WIDE_TOOL_OOM_INJECTED_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::GuestWideToolOomInjected,
+        matcher: ScenarioMatcher::Exact(MockScenario::GuestWideToolOomInjected),
     },
     ScenarioRule {
         marker: MANAGED_TASK_OOM_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::ManagedTaskOom,
+        matcher: ScenarioMatcher::Exact(MockScenario::ManagedTaskOom),
     },
     ScenarioRule {
         marker: GUEST_WIDE_TASK_OOM_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::GuestWideTaskOom,
+        matcher: ScenarioMatcher::Exact(MockScenario::GuestWideTaskOom),
     },
     ScenarioRule {
         marker: GUEST_WIDE_TASK_OOM_INJECTED_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::GuestWideTaskOomInjected,
+        matcher: ScenarioMatcher::Exact(MockScenario::GuestWideTaskOomInjected),
     },
     ScenarioRule {
         marker: RUNTIME_ONLY_OOM_MARKER,
-        match_kind: ScenarioMatchKind::Exact,
-        scenario_kind: ScenarioKind::RuntimeOnlyOom,
+        matcher: ScenarioMatcher::Exact(MockScenario::RuntimeOnlyOom),
     },
     ScenarioRule {
         marker: HANG_AFTER_RESULT_MARKER,
-        match_kind: ScenarioMatchKind::Prefix,
-        scenario_kind: ScenarioKind::HangAfterResult { deaf: false },
+        matcher: ScenarioMatcher::Prefix(MockScenario::HangAfterResult { deaf: false }),
     },
 ];
 
 impl ScenarioRule {
     fn parse<'a>(&self, prompt: &'a str) -> Option<MockScenario<'a>> {
-        let scenario_match = match self.match_kind {
-            ScenarioMatchKind::Exact if prompt == self.marker => ScenarioMatch::Marker,
-            ScenarioMatchKind::Prefix if prompt.starts_with(self.marker) => ScenarioMatch::Marker,
-            ScenarioMatchKind::PrefixPayload => {
-                ScenarioMatch::Payload(prompt.strip_prefix(self.marker)?)
+        match &self.matcher {
+            ScenarioMatcher::Exact(scenario) => (prompt == self.marker).then_some(*scenario),
+            ScenarioMatcher::Prefix(scenario) => {
+                prompt.starts_with(self.marker).then_some(*scenario)
             }
-            ScenarioMatchKind::FirstLinePayload => {
-                ScenarioMatch::Payload(first_line_payload(prompt, self.marker)?)
+            ScenarioMatcher::PrefixPayload(construct) => {
+                Some(construct(prompt.strip_prefix(self.marker)?))
             }
-            _ => return None,
-        };
-
-        self.scenario_kind.to_mock_scenario(scenario_match)
-    }
-}
-
-impl ScenarioKind {
-    fn to_mock_scenario<'a>(self, scenario_match: ScenarioMatch<'a>) -> Option<MockScenario<'a>> {
-        let scenario = match (self, scenario_match) {
-            (Self::ActiveInputSmoke, ScenarioMatch::Payload(payload)) => {
-                parse_active_input_smoke(payload, false)
+            ScenarioMatcher::FirstLinePayload(construct) => {
+                Some(construct(first_line_payload(prompt, self.marker)?))
             }
-            (Self::ActiveInputSmokeReady, ScenarioMatch::Payload(payload)) => {
-                parse_active_input_smoke(payload, true)
-            }
-            (Self::EchoJsonl, ScenarioMatch::Payload(payload)) => MockScenario::EchoJsonl(payload),
-            (Self::EchoJsonlAndHang, ScenarioMatch::Payload(payload)) => {
-                MockScenario::EchoJsonlAndHang(payload)
-            }
-            (Self::EchoJsonlFile, ScenarioMatch::Payload(path)) => {
-                MockScenario::EchoJsonlFile(path)
-            }
-            (Self::FailNoNewline, ScenarioMatch::Payload(msg)) => MockScenario::FailNoNewline(msg),
-            (Self::Fail, ScenarioMatch::Payload(msg)) => MockScenario::Fail(msg),
-            (Self::WriteEnvJson, ScenarioMatch::Payload(path)) => MockScenario::WriteEnvJson(path),
-            (Self::AppendPromptTransport, ScenarioMatch::Payload(payload)) => {
-                MockScenario::AppendPromptTransport(payload)
-            }
-            (Self::FailInvalidUtf8, ScenarioMatch::Marker) => MockScenario::FailInvalidUtf8,
-            (Self::FailInvalidUtf8Long, ScenarioMatch::Marker) => MockScenario::FailInvalidUtf8Long,
-            (Self::StdoutOverLimit { newline }, ScenarioMatch::Marker) => {
-                MockScenario::StdoutOverLimit { newline }
-            }
-            (Self::StdoutInvalidUtf8, ScenarioMatch::Marker) => MockScenario::StdoutInvalidUtf8,
-            (Self::StdoutRecordBoundaries, ScenarioMatch::Marker) => {
-                MockScenario::StdoutRecordBoundaries
-            }
-            (Self::StuckTool { deaf, close_stdout }, ScenarioMatch::Marker) => {
-                MockScenario::StuckTool { deaf, close_stdout }
-            }
-            (Self::OrphanPipe, ScenarioMatch::Marker) => MockScenario::OrphanPipe,
-            (Self::HangAfterResult { deaf }, ScenarioMatch::Marker) => {
-                MockScenario::HangAfterResult { deaf }
-            }
-            (Self::HangAfterResultThenEvent, ScenarioMatch::Marker) => {
-                MockScenario::HangAfterResultThenEvent
-            }
-            (Self::HangAfterResultPeriodicEvents, ScenarioMatch::Marker) => {
-                MockScenario::HangAfterResultPeriodicEvents
-            }
-            (Self::HangAfterErrorResult, ScenarioMatch::Marker) => {
-                MockScenario::HangAfterErrorResult
-            }
-            (Self::ExitAfterResult, ScenarioMatch::Marker) => MockScenario::ExitAfterResult,
-            (Self::ParallelShellToolOom, ScenarioMatch::Marker) => {
-                MockScenario::ParallelShellToolOom
-            }
-            (Self::GuestWideToolOom, ScenarioMatch::Marker) => MockScenario::GuestWideToolOom,
-            (Self::GuestWideToolOomInjected, ScenarioMatch::Marker) => {
-                MockScenario::GuestWideToolOomInjected
-            }
-            (Self::ManagedTaskOom, ScenarioMatch::Marker) => MockScenario::ManagedTaskOom,
-            (Self::GuestWideTaskOom, ScenarioMatch::Marker) => MockScenario::GuestWideTaskOom,
-            (Self::GuestWideTaskOomInjected, ScenarioMatch::Marker) => {
-                MockScenario::GuestWideTaskOomInjected
-            }
-            (Self::RuntimeOnlyOom, ScenarioMatch::Marker) => MockScenario::RuntimeOnlyOom,
-            _ => return None,
-        };
-
-        Some(scenario)
+        }
     }
 }
 
