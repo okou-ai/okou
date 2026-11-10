@@ -1,3 +1,4 @@
+import type { ChatEventRow } from "@okouai/api-contracts/contracts/chat-event-rows";
 import {
   command,
   computed,
@@ -7,7 +8,7 @@ import {
   type State,
 } from "ccstate";
 import { chatEventFromRow } from "@okouai/api-contracts/contracts/chat-event-row-projection";
-import type { ChatEvent as PersistedChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
+import type { ChatEvent as ApiChatEvent } from "@okouai/api-contracts/contracts/chat-threads";
 import { captureTaskCompletedSuccessfully } from "../../lib/posthog.ts";
 import type { ChatEventDataKey } from "../../shared-database/data-key.ts";
 import { queryChatEventSharedDatabase$ } from "../shared-database.ts";
@@ -31,7 +32,20 @@ export type AppendOptimisticEventCommand = Command<
   [OptimisticChatEventInput, AbortSignal]
 >;
 
+type PersistedChatEvent = ApiChatEvent & Pick<ChatEvent, "contextType">;
+
 type PersistentChatEvents$ = State<PersistedChatEvent[]>;
+
+/**
+ * Email provenance is already on raw rows, including pre-label messages.
+ * Keep it as Web display metadata without changing the canonical message.
+ */
+function storedChatEvent(row: ChatEventRow): PersistedChatEvent {
+  return {
+    ...chatEventFromRow(row),
+    contextType: row.contextType,
+  };
+}
 
 function completedRunIdsFromEvents(
   events: readonly PersistedChatEvent[],
@@ -178,7 +192,7 @@ function createSharedDatabaseEventSignals({
         return;
       }
       const events = rows.map((row) => {
-        return chatEventFromRow(row);
+        return storedChatEvent(row);
       });
       set(persistentChatEvents$, (previous) => {
         return mergePersistentEvents([previous, events]);
@@ -204,7 +218,7 @@ function createSharedDatabaseEventSignals({
       await set(
         mergePersistentEvents$,
         rows.map((row) => {
-          return chatEventFromRow(row);
+          return storedChatEvent(row);
         }),
         signal,
       );

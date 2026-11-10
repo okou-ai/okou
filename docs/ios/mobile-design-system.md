@@ -660,7 +660,10 @@ feature; the catalog shows each one.
   component catalog. Its empty, unfocused surface is at least 44 pt tall
   (`composerCompactHeight`), with 6 pt vertical text padding and separate 44 pt
   action targets. Larger text can grow the surface. Expansion retains the same
-  mounted editor and reserves a bottom row for the actions.
+  mounted editor and reserves a bottom row for the actions. Leading and trailing
+  action targets keep the same horizontal anchors through expansion. The composer
+  uses the 24 pt page inset; its resting actions share the sidebar footer's vertical
+  center with 6 pt below the surface. Focused editing keeps 8 pt above the keyboard.
 - **A tap outside the composer puts the keyboard away.** A tap anywhere on the transcript
   (`KeyboardDismissTap`, which never takes the tap from links, cards or selection) or on the
   new-chat page ends editing, so an empty composer folds back to one line.

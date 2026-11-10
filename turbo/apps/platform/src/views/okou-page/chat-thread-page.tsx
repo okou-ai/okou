@@ -406,16 +406,20 @@ function isUserMessageNonContentPart(
 }
 
 type UserMessageHiddenPart = Extract<
-  UserMessagePart,
+  UserMessageRenderPart["part"],
   {
     readonly type: "source" | "automation" | "model";
   }
 >;
 
 function isUserMessageHiddenPart(
-  part: UserMessagePart,
+  part: UserMessageRenderPart["part"],
 ): part is UserMessageHiddenPart {
-  return isUserMessageNonContentPart(part) || part.type === "model";
+  return (
+    part.type === "source" ||
+    part.type === "automation" ||
+    part.type === "model"
+  );
 }
 
 function runModelDisplayName(

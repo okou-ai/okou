@@ -1160,12 +1160,11 @@ const registerUserMessageRenderDocument$ = command(
     { set },
     document: UserMessageDocument,
     registries: UserMessagePartRegistries,
+    contextType: ChatEvent["contextType"],
   ): UserMessageRenderDocument => {
     const readableDocument = userMessageDocumentSchema.parse(document);
-    return {
-      // Registration uses the raw document identity across window updates.
-      document,
-      parts: readableDocument.parts.flatMap((part, index) => {
+    const parts: UserMessageRenderPart[] = readableDocument.parts.flatMap(
+      (part, index) => {
         if (part.type === "additional_info") {
           return [];
         }
@@ -1178,7 +1177,19 @@ const registerUserMessageRenderDocument$ = command(
             ? { ...rendered, suggestionContext: context }
             : rendered,
         ];
-      }),
+      },
+    );
+    if (contextType === "email") {
+      parts.push({
+        type: "source",
+        kind: "external",
+        part: { type: "source", kind: "email" },
+      });
+    }
+    return {
+      // Registration uses the raw document identity across window updates.
+      document,
+      parts,
     };
   },
 );
@@ -2054,10 +2065,12 @@ function createPagedEventResources({
         next ??= new Map(current);
         next.set(
           event.id,
-          set(registerUserMessageRenderDocument$, document, {
-            artifactCardSignals,
-            agentReferenceSignals,
-          }),
+          set(
+            registerUserMessageRenderDocument$,
+            document,
+            { artifactCardSignals, agentReferenceSignals },
+            event.contextType,
+          ),
         );
       }
       if (next) {
