@@ -11,6 +11,7 @@ struct OkouApp: App {
   private static var isDesignPreview: Bool {
     #if DEBUG
       ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
+        || isChatSyncStatus
     #else
       false
     #endif
@@ -20,6 +21,14 @@ struct OkouApp: App {
   private static var isResultStyles: Bool {
     #if DEBUG
       ProcessInfo.processInfo.arguments.contains("--result-styles")
+    #else
+      false
+    #endif
+  }
+
+  private static var isChatSyncStatus: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.arguments.contains("--chat-sync-status")
     #else
       false
     #endif
@@ -42,7 +51,9 @@ struct OkouApp: App {
     WindowGroup {
       Group {
         #if DEBUG
-          if Self.isResultStyles {
+          if Self.isChatSyncStatus {
+            NavigationStack { ChatSyncStatusGallery() }
+          } else if Self.isResultStyles {
             NavigationStack { ResultStylesPage() }
           } else if Self.isDesignPreview {
             NavigationStack { OkouDesignSystemCatalog() }

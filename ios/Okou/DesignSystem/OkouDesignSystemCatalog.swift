@@ -297,6 +297,11 @@
             ChatFeedbackSurface(
               message: "Chat archived", icon: "circle-check", actionTitle: "Undo", action: {},
               dismiss: {})
+            NavigationLink {
+              ChatSyncStatusGallery()
+            } label: {
+              Text(verbatim: "Chat sync feedback")
+            }
           }
           section("Workspace identities") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 56))]) {
