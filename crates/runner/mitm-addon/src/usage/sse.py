@@ -216,7 +216,7 @@ class SseUsageScanner:
         byte = chunk[i]
         if _is_line_ending(byte):
             self._start_data_line()
-            self._finish_data_or_discard_line(byte)
+            self._finish_line(byte)
             return i + 1
 
         self._start_data_line()
@@ -232,7 +232,7 @@ class SseUsageScanner:
 
         if line_end > i:
             self._handler.on_data(chunk[i:line_end])
-        self._finish_data_or_discard_line(chunk[line_end])
+        self._finish_line(chunk[line_end])
         return line_end + 1
 
     def _consume_discard_line(self, chunk: bytes, i: int) -> int:
@@ -240,19 +240,16 @@ class SseUsageScanner:
         if line_end == -1:
             return len(chunk)
 
-        self._finish_data_or_discard_line(chunk[line_end])
+        self._finish_line(chunk[line_end])
         return line_end + 1
 
     def _finish_control_line(self, line_ending: int) -> None:
         line = bytes(self._line_buf)
         self._line_buf.clear()
         self._process_control_line(line)
-        self._state = "line"
-        self._line_ending_hint = line_ending
-        if line_ending == _CR:
-            self._skip_next_lf = True
+        self._finish_line(line_ending)
 
-    def _finish_data_or_discard_line(self, line_ending: int) -> None:
+    def _finish_line(self, line_ending: int) -> None:
         self._state = "line"
         self._line_ending_hint = line_ending
         if line_ending == _CR:
