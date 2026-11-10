@@ -4053,7 +4053,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.59"
+version = "0.244.60"
 dependencies = [
  "api-contracts",
  "async-trait",
@@ -4778,7 +4778,7 @@ dependencies = [
 
 [[package]]
 name = "sandbox-firecracker"
-version = "0.53.86"
+version = "0.53.87"
 dependencies = [
  "api-contracts",
  "async-trait",

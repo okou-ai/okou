@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.33.1](https://github.com/okou-ai/okou/compare/ios-v0.33.0...ios-v0.33.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** prioritize unread status in collapsed projects ([#46372](https://github.com/okou-ai/okou/issues/46372)) ([1da2394](https://github.com/okou-ai/okou/commit/1da2394344850424f2080a7287a44842095dfbd6))
+
 ## [0.33.0](https://github.com/okou-ai/okou/compare/ios-v0.32.0...ios-v0.33.0) (2026-11-10)
 
 
