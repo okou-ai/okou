@@ -57,15 +57,10 @@ final class ConnectorAuthorizationFlow: Identifiable {
   }
 }
 
-/// Owns card reads and one cancellable authorization attempt for this conversation's scope.
+/// Owns one explicit authorization attempt; repeatable card reads have a separate resource owner.
 @MainActor @Observable
 final class ConnectorActionStore {
-  enum State {
-    case loading, unavailable
-    case failed(String)
-    case ready(ChatConnectorStatus)
-  }
-  private(set) var states: [String: State] = [:]
+  let resources: ConnectorActionResources
   private(set) var active: ConnectorAuthorizationFlow?
   private(set) var notices: [String: String] = [:]
   var activationError: String?
@@ -74,12 +69,6 @@ final class ConnectorActionStore {
   private let thread: ChatThread?
   private let didContinue: @MainActor () async -> Void
   private let didFail: @MainActor (Error) -> Void
-  private var known: [String: ChatConnectorAction] = [:]
-  private struct Read {
-    let id = UUID()
-    let task: Task<ChatConnectorStatus?, Error>
-  }
-  private var reads: [String: Read] = [:]
   private var task: Task<Void, Never>?
   private var callbackIDs: [String: String] = [:]
   private var closed = false
@@ -94,57 +83,35 @@ final class ConnectorActionStore {
     }
   ) {
     self.service = service
+    resources = ConnectorActionResources(service: service, didFail: didFail)
     self.commands = commands
     self.thread = thread
     self.didContinue = didContinue
     self.didFail = didFail
     self.pollSleep = pollSleep
   }
-  func refresh(_ action: ChatConnectorAction) async {
-    guard !closed, !Task.isCancelled else { return }
-    known[action.id] = action
-    if action.kind == .unavailable {
-      states[action.id] = .unavailable
-      return
-    }
-    let read: Read
-    if let pending = reads[action.id] {
-      read = pending
-    } else {
-      read = Read(task: Task { [service] in try await service.status(action) })
-      reads[action.id] = read
-    }
-    defer { if reads[action.id]?.id == read.id { reads[action.id] = nil } }
-    do {
-      let status = try await read.task.value
-      guard !closed, !Task.isCancelled else { return }
-      states[action.id] = status.map(State.ready) ?? .unavailable
-    } catch is CancellationError {
-    } catch {
-      guard !closed else { return }
-      states[action.id] = .failed(ChatRequestFailure.message(for: error))
-      didFail(error)
-    }
-  }
-  func refreshKnown() async {
-    for action in Array(known.values) { await refresh(action) }
-  }
+  func refreshKnown() async { await resources.refreshKnown() }
   func activate(_ action: ChatConnectorAction) {
     guard !closed, active == nil else { return }
     activationError = nil
     task?.cancel()
     task = Task { [weak self] in
       guard let self else { return }
-      await refresh(action)
-      guard !closed, !Task.isCancelled else { return }
-      guard case .ready(let status) = states[action.id] else {
-        if case .failed(let message) = states[action.id] {
-          activationError = message
-        } else {
+      let status: ChatConnectorStatus
+      do {
+        guard let current = try await resources.refresh(action) else {
           activationError = "This connector is no longer available. Refresh and try again."
+          return
         }
+        status = current
+      } catch is CancellationError {
+        return
+      } catch {
+        guard !closed, !Task.isCancelled else { return }
+        activationError = ChatRequestFailure.message(for: error)
         return
       }
+      guard !closed, !Task.isCancelled else { return }
       notices[action.id] = nil
       active = ConnectorAuthorizationFlow(action: action, status: status)
     }
@@ -368,7 +335,8 @@ final class ConnectorActionStore {
       try check(flow)
       callbackIDs[flow.action.id] = nil
     }
-    states[flow.action.id] = .ready(verified)
+    // Verified readback belongs to the protocol; it is not a second card loading phase.
+    resources.invalidate(flow.action)
     notices[flow.action.id] =
       flow.action.callbackPrompt == nil
       ? (verified.chatAccountAccess
@@ -403,10 +371,8 @@ final class ConnectorActionStore {
   func close() {
     closed = true
     cancel()
-    for read in reads.values { read.task.cancel() }
-    reads = [:]
-    known = [:]
-    states = [:]
+    resources.close()
+    notices = [:]
     callbackIDs = [:]
   }
 }

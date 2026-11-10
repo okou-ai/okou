@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import SafariServices
 import SwiftUI
@@ -6,11 +7,48 @@ struct ConnectorActionCard: View {
   let action: ChatConnectorAction
   let store: ConnectorActionStore
   let loadsState: Bool
-  @ScaledMetric(relativeTo: .body) private var informationHeight: CGFloat = 80
+  @State private var read: ConnectorActionStatusRead?
 
-  private var state: ConnectorActionStore.State {
-    action.kind == .unavailable ? .unavailable : (store.states[action.id] ?? .loading)
+  var body: some View {
+    Group {
+      if action.kind == .unavailable {
+        ConnectorActionCardContent(action: action, store: store, state: .hasData(nil))
+      } else if let read, read.key == ConnectorActionResources.Key(action) {
+        StoreProvider(store.resources.store) {
+          ConnectorActionCardValue(action: action, store: store, read: read)
+        }
+      } else {
+        ConnectorActionCardContent(action: action, store: store, state: .loading)
+      }
+    }
+    .task(id: action) {
+      // Mounting attaches a consumer. Its disappearance never cancels the shared read.
+      if loadsState { read = store.resources.status(action) }
+    }
   }
+}
+
+private struct ConnectorActionCardValue: View {
+  let action: ChatConnectorAction
+  let store: ConnectorActionStore
+  @LoadableValue private var status: Loadable<ChatConnectorStatus?>
+
+  init(action: ChatConnectorAction, store: ConnectorActionStore, read: ConnectorActionStatusRead) {
+    self.action = action
+    self.store = store
+    _status = LoadableValue(task: read.value)
+  }
+
+  var body: some View {
+    ConnectorActionCardContent(action: action, store: store, state: status)
+  }
+}
+
+private struct ConnectorActionCardContent: View {
+  let action: ChatConnectorAction
+  let store: ConnectorActionStore
+  let state: Loadable<ChatConnectorStatus?>
+  @ScaledMetric(relativeTo: .body) private var informationHeight: CGFloat = 80
 
   var body: some View {
     Group {
@@ -28,11 +66,11 @@ struct ConnectorActionCard: View {
           case .loading:
             // The heading already says "Loading connector…"; the action slot keeps its height.
             Color.clear.frame(height: OkouControl.minimumTarget).accessibilityHidden(true)
-          case .unavailable:
+          case .hasData(nil):
             Color.clear.frame(height: 44).accessibilityHidden(true).allowsHitTesting(false)
-          case .failed:
+          case .hasError:
             Button("Review connection") { store.activate(action) }
-          case .ready(let status):
+          case .hasData(let status?):
             HStack {
               Button(button(status)) { store.activate(action) }
                 .disabled(complete(status) || store.active != nil)
@@ -45,7 +83,6 @@ struct ConnectorActionCard: View {
       }
     }
     .accessibilityIdentifier("connector-action-card")
-    .task(id: action.id) { if loadsState { await store.refresh(action) } }
   }
 
   @ViewBuilder private var information: some View {
@@ -56,7 +93,7 @@ struct ConnectorActionCard: View {
       ) {
         EmptyView()
       }
-    case .unavailable:
+    case .hasData(nil):
       ChatCardHeader(
         title: String(localized: "Action unavailable"), icon: "link",
         titleLineLimit: 1
@@ -64,14 +101,14 @@ struct ConnectorActionCard: View {
         Text("This action no longer matches an available connector in this chat.")
           .lineLimit(2, reservesSpace: true)
       }
-    case .failed:
+    case .hasError:
       ChatCardHeader(
         title: String(localized: "Connection details unavailable"), icon: "link",
         titleLineLimit: 1
       ) {
         Text("Open this connection to try again.").lineLimit(2, reservesSpace: true)
       }
-    case .ready(let status):
+    case .hasData(let status?):
       ChatCardHeader(title: status.label, icon: "link", titleLineLimit: 1) {
         Text(
           status.account?.label

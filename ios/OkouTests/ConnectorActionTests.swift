@@ -26,6 +26,7 @@ final class ConnectorActionTests: XCTestCase {
   }
   private func store(
     _ fixture: ChatHTTPFixture,
+    didFail: @escaping @MainActor (Error) -> Void = { _ in },
     pollSleep: @escaping @Sendable (Duration) async throws -> Void = {
       try await Task.sleep(for: $0)
     }
@@ -38,8 +39,161 @@ final class ConnectorActionTests: XCTestCase {
       pinOrder: nil, modelSettings: [:], serviceTier: nil, indicator: nil)
     return ConnectorActionStore(
       service: commands.connectorActions, commands: commands, thread: thread, didContinue: {},
-      didFail: { _ in }, pollSleep: pollSleep)
+      didFail: didFail, pollSleep: pollSleep)
   }
+  func testNormalizedRowsShareTheOriginalReadAfterAWaiterDisappearsAndCachePressure() async throws {
+    let started = expectation(description: "The original status HTTP reached its gate")
+    let gate = ModelResponseGate()
+    let changed = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      if request.url?.path == "/api/connector-catalog/slack" {
+        started.fulfill()
+        await gate.wait()
+      }
+      return try XCTUnwrap(F.response(request, connected: !changed.withLock { $0 }))
+    }
+    let store = store(fixture)
+    let action = try descriptor(fixture)
+    let sameRead = try XCTUnwrap(
+      ChatConnectorAction.parse(
+        "/connectors/SLACK/authorize?threadId=\(F.threadID)&callbackPrompt=Another&agentId=\(F.agentID)",
+        webURL: fixture.baseURL, agentID: F.agentID, threadID: F.threadID))
+    let firstRead = store.resources.status(action)
+    let first = try store.resources.store.get(firstRead.value)
+    let row = Task { try await first.value }
+    addTeardownBlock { @MainActor in
+      store.close()
+      row.cancel()
+      gate.open()
+      _ = await row.result
+    }
+    await fulfillment(of: [started], timeout: 3)
+    row.cancel()
+    for index in 0..<80 {
+      _ = store.resources.status(
+        .configuration(
+          target: .builtin("fixture-\(index)"), agentID: F.agentID, threadID: F.threadID))
+    }
+    let secondRead = store.resources.status(sameRead)
+    let second = try store.resources.store.get(secondRead.value)
+    gate.open()
+    let result = try await second.value
+    XCTAssertTrue(try XCTUnwrap(result).connected)
+    _ = await row.result
+    changed.withLock { $0 = true }
+    // A remounted row sees the original completed result until an explicit refresh.
+    let remounted = store.resources.status(sameRead)
+    let cached = try await store.resources.store.get(remounted.value).value
+    XCTAssertTrue(try XCTUnwrap(cached).connected)
+  }
+
+  func testStatusFailuresStayCachedUntilExplicitRetryAndKeepHTTPMeaning() async throws {
+    for code in [401, 403, 426, 503] {
+      let recovered = Mutex(false)
+      let fixture = ChatHTTPFixture { request in
+        if request.url?.path == "/api/connector-catalog/slack", !recovered.withLock({ $0 }) {
+          return ChatHTTPResponse(status: code, body: "{\"error\":{\"message\":\"Unavailable\"}}")
+        }
+        return try XCTUnwrap(F.response(request))
+      }
+      var reported: [Int] = []
+      let store = store(
+        fixture,
+        didFail: { error in
+          if let status = (error as? APIClientError)?.statusCode { reported.append(status) }
+        })
+      defer { store.close() }
+      let action = try descriptor(fixture)
+      let read = store.resources.status(action)
+      do {
+        _ = try await store.resources.store.get(read.value).value
+        XCTFail("The original HTTP failure must remain a failed resource")
+      } catch {
+        XCTAssertEqual((error as? APIClientError)?.statusCode, code)
+      }
+      XCTAssertTrue(reported.contains(code))
+      recovered.withLock { $0 = true }
+      let remounted = store.resources.status(action)
+      do {
+        _ = try await store.resources.store.get(remounted.value).value
+        XCTFail("Observing a failed resource must not retry it")
+      } catch {
+        XCTAssertEqual((error as? APIClientError)?.statusCode, code)
+      }
+      let retried = try await store.resources.refresh(action)
+      XCTAssertTrue(try XCTUnwrap(retried).complete)
+    }
+  }
+
+  func testRetryDoesNotInvalidateAnotherExactAccountResource() async throws {
+    let recovered = Mutex(false)
+    let fixture = ChatHTTPFixture { request in
+      if request.url?.path == "/api/connector-accounts/connections", !recovered.withLock({ $0 }) {
+        return ChatHTTPResponse(status: 503, body: "{\"error\":{\"message\":\"Try again\"}}")
+      }
+      return try XCTUnwrap(F.response(request, connected: !recovered.withLock { $0 }))
+    }
+    let store = store(fixture)
+    defer { store.close() }
+    let exact = store.resources.status(try descriptor(fixture, reconnect: true))
+    let first = try await store.resources.store.get(exact.value).value
+    XCTAssertTrue(try XCTUnwrap(first).connected)
+    let action = try descriptor(fixture)
+    let failed = store.resources.status(action)
+    do {
+      _ = try await store.resources.store.get(failed.value).value
+      XCTFail("Expected the default account inventory failure")
+    } catch {
+      XCTAssertEqual((error as? APIClientError)?.statusCode, 503)
+    }
+    recovered.withLock { $0 = true }
+    let retried = try await store.resources.refresh(action)
+    XCTAssertFalse(try XCTUnwrap(retried).connected)
+    let unchanged = try await store.resources.store.get(exact.value).value
+    XCTAssertTrue(try XCTUnwrap(unchanged).connected)
+  }
+
+  func testScopeCloseCancelsOriginalStatusHTTPAndRejectsLateAndFutureResults() async throws {
+    let started = expectation(description: "Status HTTP reached its controlled response gate")
+    let cancelled = expectation(description: "Scope closure cancelled the original HTTP")
+    let responded = expectation(description: "The late HTTP handler finished")
+    let gate = ModelResponseGate()
+    let fixture = ChatHTTPFixture { request in
+      if request.url?.path == "/api/connector-catalog/slack" {
+        await withTaskCancellationHandler {
+          started.fulfill()
+          await gate.wait()
+        } onCancel: {
+          cancelled.fulfill()
+        }
+        responded.fulfill()
+      }
+      return try XCTUnwrap(F.response(request))
+    }
+    let store = store(fixture)
+    let action = try descriptor(fixture)
+    let read = store.resources.status(action)
+    let original = try store.resources.store.get(read.value)
+    addTeardownBlock { @MainActor in
+      store.close()
+      gate.open()
+      _ = await original.result
+    }
+    await fulfillment(of: [started], timeout: 3)
+    store.close()
+    await fulfillment(of: [cancelled], timeout: 3)
+    gate.open()
+    await fulfillment(of: [responded], timeout: 3)
+    do {
+      _ = try await original.value
+      XCTFail("A retired scope cannot publish a late status result")
+    } catch {}
+    XCTAssertThrowsError(try store.resources.store.get(read.value))
+    XCTAssertThrowsError(try store.resources.store.get(store.resources.status(action).value))
+    store.activate(action)
+    XCTAssertNil(store.active)
+  }
+
   func testNoAuthConnectionVerifiesServerStateAndContinuesWithoutClearingSelection() async throws {
     let linked = Mutex(false)
     let prompts = Mutex<[String]>([])
@@ -59,15 +213,17 @@ final class ConnectorActionTests: XCTestCase {
     }
     let store = store(fixture)
     defer { store.close() }
+    let earlier = store.resources.status(try descriptor(fixture, callbackQuery: "Do+not+continue"))
+    _ = try await store.resources.store.get(earlier.value).value
     let action = try descriptor(fixture, callbackQuery: "I+connected+Slack%2BChat")
     store.activate(action)
     try await waitForBusinessResult { store.active != nil }
     store.submit()
     try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(prompts.withLock { $0 }, ["I connected Slack+Chat"])
-    guard case .ready(let status) = store.states[action.id] else {
-      return XCTFail("Missing verified status")
-    }
+    let read = store.resources.status(action)
+    let result = try await store.resources.store.get(read.value).value
+    let status = try XCTUnwrap(result)
     XCTAssertTrue(status.complete)
   }
   func testSavedAccountsWithoutDefaultDoNotOpenAnAddFlow() async throws {
@@ -85,10 +241,7 @@ final class ConnectorActionTests: XCTestCase {
     defer { store.close() }
     let action = try descriptor(fixture)
     store.activate(action)
-    try await waitForBusinessResult {
-      if case .failed = store.states[action.id] { return true }
-      return false
-    }
+    try await waitForBusinessResult { store.activationError != nil }
     XCTAssertNil(store.active)
   }
   func testExactReconnectRejectsASiblingReceiptAndAllowsRetry() async throws {
@@ -138,6 +291,11 @@ final class ConnectorActionTests: XCTestCase {
     store.submit()
     try await waitForBusinessResult { store.active?.error != nil && store.active?.busy == false }
     XCTAssertTrue(try XCTUnwrap(store.active).canSubmit)
+    for index in 0..<80 {
+      _ = store.resources.status(
+        .configuration(
+          target: .builtin("fixture-\(index)"), agentID: F.agentID, threadID: F.threadID))
+    }
     store.submit()
     try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(starts.withLock { $0 }, 1)
@@ -218,13 +376,13 @@ final class ConnectorActionTests: XCTestCase {
       try await waitForBusinessResult { !flow.busy }
       XCTAssertNil(store.active)
       if closing {
-        XCTAssertTrue(store.states.isEmpty)
+        XCTAssertThrowsError(try store.resources.store.get(store.resources.status(action).value))
         XCTAssertTrue(prompts.withLock { $0.isEmpty })
       } else {
         XCTAssertEqual(prompts.withLock { $0 }, ["Continue"])
-        guard case .ready(let status) = store.states[action.id] else {
-          return XCTFail("The delayed success must continue while its scope is open")
-        }
+        let read = store.resources.status(action)
+        let result = try await store.resources.store.get(read.value).value
+        let status = try XCTUnwrap(result)
         XCTAssertTrue(status.complete)
       }
     }
@@ -452,9 +610,9 @@ final class ConnectorActionTests: XCTestCase {
     store.submit()
     try await waitForBusinessResult { store.active == nil }
     XCTAssertEqual(callbacks.withLock { $0 }, 1)
-    guard case .ready(let status) = store.states[action.id] else {
-      return XCTFail("Expected confirmed status")
-    }
+    let read = store.resources.status(action)
+    let result = try await store.resources.store.get(read.value).value
+    let status = try XCTUnwrap(result)
     XCTAssertTrue(status.selected)
   }
 
@@ -503,7 +661,8 @@ final class ConnectorActionTests: XCTestCase {
     store.close()
     await fulfillment(of: [cancelled], timeout: 3)
     XCTAssertNil(store.active)
-    XCTAssertTrue(store.states.isEmpty)
+    XCTAssertThrowsError(
+      try store.resources.store.get(store.resources.status(try descriptor(fixture)).value))
     XCTAssertEqual(polls.withLock { $0 }, 1)
   }
 
