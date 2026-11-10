@@ -247,7 +247,7 @@ private struct WorkspaceRootView: View {
 
         ChatSidebarView(
           store: store, authentication: authentication, workspaceID: workspaceID,
-          notifications: notifications,
+          notifications: notifications, sidebar: sidebar,
           headerHeight: headerHeight,
           accountError: $accountError,
           close: closeSidebar,

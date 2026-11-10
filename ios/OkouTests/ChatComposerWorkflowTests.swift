@@ -250,7 +250,10 @@ final class ChatComposerWorkflowTests: XCTestCase {
     defer { replacement.close() }
     await replacement.refreshNavigation()
     host.rootView = WorkflowNewChatHost(workspace: replacement)
-    try await eventually { self.inputs(in: host.view).first !== old }
+    try await eventually {
+      guard let current = self.inputs(in: host.view).first else { return false }
+      return current !== old
+    }
     let current = try XCTUnwrap(inputs(in: host.view).first)
     try await focusMentionInput(current)
     current.insertText("/")
@@ -564,6 +567,8 @@ private struct WorkflowNewChatHost: View {
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .composerWorkflowOverlay()
+    // Production replaces the workspace root at its scope boundary.
+    .id(ObjectIdentifier(workspace))
   }
 }
 

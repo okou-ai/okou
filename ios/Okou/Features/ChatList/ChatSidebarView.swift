@@ -7,24 +7,11 @@ struct ChatSidebarView: View {
   let authentication: AuthenticationService
   let workspaceID: String
   let notifications: NotificationService
+  let sidebar: SidebarInteraction
   let headerHeight: CGFloat
   @Binding var accountError: String?
   let close: () -> Void
   let newChat: () -> Void
-
-  /// The shared chat filters, with Chats as the native default label.
-  private enum ThreadFilter {
-    case recent, unread, archived, muted
-  }
-
-  private func filterTitle(_ filter: ThreadFilter) -> LocalizedStringKey {
-    switch filter {
-    case .recent: "Chats"
-    case .unread: "Unread"
-    case .archived: "Archived"
-    case .muted: "Muted"
-    }
-  }
 
   private struct ProjectEditor {
     let dialog: OkouNameDialog.Request
@@ -68,7 +55,7 @@ struct ChatSidebarView: View {
 
   private var visibleThreads: [ChatThread] { contents.threads }
 
-  private var threadFilter: Binding<ThreadFilter> {
+  private var threadFilter: Binding<ChatListFilter> {
     Binding(
       get: {
         if store.list.onlyUnread { return .unread }
@@ -449,42 +436,9 @@ struct ChatSidebarView: View {
   /// The chat filter, top right. On the default Chats it is a glass circle; any other filter
   /// names itself in a capsule, so a filtered list never reads as missing chats.
   private var threadFilterMenu: some View {
-    let filter = threadFilter.wrappedValue
-    return Menu {
-      Picker("Chats", selection: threadFilter) {
-        Label(filterTitle(.recent), okouSymbol: "message-circle").tag(ThreadFilter.recent)
-        Label(filterTitle(.unread), okouSymbol: "mail").tag(ThreadFilter.unread)
-        Label(filterTitle(.archived), okouSymbol: "archive").tag(ThreadFilter.archived)
-        Label(filterTitle(.muted), okouSymbol: "bell-off").tag(ThreadFilter.muted)
-      }
-      .pickerStyle(.inline)
-      if let agentID = store.selectedAgentID {
-        Divider()
-        Button("Mark all as read", okouSymbol: "check-check") {
-          Task { await store.list.markAgentRead(agentID) }
-        }
-        .disabled(
-          store.list.markingAgentRead || !store.list.updatingThreads.isEmpty
-            || !store.list.unreadAgentIDs.contains(agentID))
-      }
-    } label: {
-      if filter == .recent {
-        OkouToolbarIcon("list-filter").modifier(OkouGlassControl(shape: .circle))
-      } else {
-        HStack(spacing: OkouSpace.six) {
-          OkouToolbarIcon("list-filter")
-          Text(filterTitle(filter)).font(.okou(.callout).weight(.medium))
-        }
-        .lineLimit(1)
-        .padding(.horizontal, OkouSpace.lg)
-        .modifier(OkouGlassControl(shape: .capsule))
-      }
-    }
-    .buttonStyle(.plain)
-    .fixedSize()
-    .accessibilityLabel("Chat list")
-    .accessibilityValue(Text(filterTitle(filter)))
-    .accessibilityIdentifier("chat-list-filter")
+    ChatListFilterMenu(sidebar: sidebar, store: store, selection: threadFilter)
+      .frame(height: OkouControl.minimumTarget)
+      .fixedSize(horizontal: true, vertical: false)
   }
 
   private func readAction(_ thread: ChatThread, read: Bool) -> some View {
