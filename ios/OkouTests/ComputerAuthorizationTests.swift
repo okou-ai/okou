@@ -215,7 +215,7 @@ private final class ComputerAuthorizationFixture: Sendable {
     var appliedHostID: String?
     var loseGrantResponse = false
     var loseInputResponse = false
-    var inputs: [[String: JSONValue]] = []
+    var inputs: [[String: MessageJSON]] = []
   }
   final class ServerState: Sendable {
     private let storage = Mutex(State())
@@ -250,7 +250,7 @@ private final class ComputerAuthorizationFixture: Sendable {
               value.grantWrites += 1
               value.status = "approved"
               let body = try JSONDecoder().decode(
-                [String: JSONValue].self, from: chatRequestBody(request))
+                [String: MessageJSON].self, from: chatRequestBody(request))
               value.appliedHostID = body["computerUseHostId"]?.string
               if value.loseGrantResponse {
                 value.loseGrantResponse = false
@@ -294,7 +294,7 @@ private final class ComputerAuthorizationFixture: Sendable {
           )
         }
         if path.hasSuffix("/event-rows") {
-          let rows = value.inputs.map { input -> [String: JSONValue] in
+          let rows = value.inputs.map { input -> [String: MessageJSON] in
             [
               "id": .string(Self.requestID), "chatThreadId": .string(Self.threadID),
               "seqId": .number(1), "createdAt": .string("2026-11-10T00:00:00Z"),
@@ -310,7 +310,7 @@ private final class ComputerAuthorizationFixture: Sendable {
         }
         if path == "/api/chat/events" {
           let input = try JSONDecoder().decode(
-            [String: JSONValue].self, from: chatRequestBody(request))
+            [String: MessageJSON].self, from: chatRequestBody(request))
           value.inputs.append(input)
           if value.loseInputResponse {
             value.loseInputResponse = false
