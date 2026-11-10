@@ -164,13 +164,15 @@ describe("email-native signup", () => {
     });
     await original.send();
     const invitation = sentEmails().find((email) => {
-      return email.text.includes("CONFIRM ");
+      return email.text.includes("\nCONFIRM\n");
     });
-    const line = invitation?.text.match(/^CONFIRM [0-9]{8}$/mu)?.[0];
+    const line = invitation?.text.match(/^CONFIRM$/mu)?.[0];
     expect(line).toBeTruthy();
     expect(invitation?.text).toContain("https://www.okou.ai/en/terms-of-use");
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
-    return { sender, original, line: line! };
+    const replyTo = invitation?.replyTo;
+    expect(replyTo).toMatch(/^okou\+confirm-[a-f0-9]{32}@okou\.io$/u);
+    return { sender, original, line: line!, replyTo: replyTo! };
   }
 
   function signupProvider(
@@ -271,8 +273,8 @@ describe("email-native signup", () => {
     const { actor, group } = signupProvider(pending.sender);
     const confirmation = incoming({
       sender: pending.sender,
-      text: pending.line,
-      inReplyTo: sentEmails()[0]!.headers["Message-ID"],
+      text: "\n cOnFiRm \t\r\n\nOn Tuesday, Okou wrote:\n> CONFIRM",
+      to: [pending.replyTo],
     });
     await confirmation.send();
     expect(
@@ -293,7 +295,11 @@ describe("email-native signup", () => {
       context.mocks.clerk.organizations.createOrganization,
     ).toHaveBeenCalledTimes(1);
     await confirmation.send();
-    await incoming({ sender: pending.sender, text: pending.line }).send();
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
     await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
       needsOnboarding: false,
       onboardingComplete: true,
@@ -367,6 +373,7 @@ describe("email-native signup", () => {
     );
     await flushWaitUntilForTest();
     expect(sentEmails().at(-1)).toMatchObject({
+      replyTo: "okou@okou.io",
       to: pending.sender,
       text: "Your first email request is complete",
     });
@@ -388,7 +395,7 @@ describe("email-native signup", () => {
         text: expect.stringContaining("did not pass our security checks"),
       },
     ]);
-    expect(sentEmails()[0]!.text).not.toContain("CONFIRM ");
+    expect(sentEmails()[0]!.text).not.toContain("CONFIRM");
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
     expect(
       context.mocks.clerk.organizations.createOrganization,
@@ -440,26 +447,34 @@ describe("email-native signup", () => {
     },
   );
 
-  it("does not treat a confirmation quoted below an ordinary reply as consent", async () => {
-    await setupApp({
-      context,
-      routes: integrationsEmailRoutes,
-      isolatePg: true,
-    });
-    const pending = await pendingSignup();
-    await incoming({
-      sender: pending.sender,
-      text: `Thanks, what does this do?\n\n> ${pending.line}`,
-    }).send();
-    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
-    expect(
-      sentEmails().filter((email) => {
-        return email.text.includes("CONFIRM ");
-      }),
-    ).toHaveLength(2);
-  });
+  it.each([
+    "Thanks, what does this do?\n\n> CONFIRM",
+    "> CONFIRM",
+    "Please CONFIRM this account",
+  ])(
+    "does not register when the reply only contains or quotes CONFIRM: %s",
+    async (text) => {
+      await setupApp({
+        context,
+        routes: integrationsEmailRoutes,
+        isolatePg: true,
+      });
+      const pending = await pendingSignup();
+      await incoming({
+        sender: pending.sender,
+        text,
+        to: [pending.replyTo],
+      }).send();
+      expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+      expect(
+        sentEmails().filter((email) => {
+          return email.text.includes("\nCONFIRM\n");
+        }),
+      ).toHaveLength(1);
+    },
+  );
 
-  it("rejects another mailbox's confirmation code without creating or running anything", async () => {
+  it("rejects another mailbox's confirmation reply address without creating or running anything", async () => {
     await setupApp({
       context,
       routes: integrationsEmailRoutes,
@@ -468,7 +483,11 @@ describe("email-native signup", () => {
     const pending = await pendingSignup();
     const other = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     verifiedDirectory(other);
-    await incoming({ sender: other.email, text: pending.line }).send();
+    await incoming({
+      sender: other.email,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
     expect(sentEmails().at(-1)?.text).toContain("invalid or expired");
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
     await expect(createdThreads(other)).resolves.toStrictEqual({
@@ -486,6 +505,7 @@ describe("email-native signup", () => {
     const confirmation = incoming({
       sender: pending.sender,
       text: pending.line,
+      to: [pending.replyTo],
     });
     mockNow(now() + 25 * 60 * 60 * 1000);
     await confirmation.send();
@@ -493,26 +513,28 @@ describe("email-native signup", () => {
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
   });
 
-  it("accepts the correct short code after four mistakes, without counting webhook replays twice", async () => {
+  it("rejects a forged reply address and still accepts the issued confirmation", async () => {
     await setupApp({
       context,
       routes: integrationsEmailRoutes,
       isolatePg: true,
     });
     const pending = await pendingSignup();
-    const wrong =
-      pending.line === "CONFIRM 00000000"
-        ? "CONFIRM 00000001"
-        : "CONFIRM 00000000";
-    const replayed = incoming({ sender: pending.sender, text: wrong });
-    await replayed.send();
-    await replayed.send();
-    for (let index = 0; index < 3; index += 1) {
-      await incoming({ sender: pending.sender, text: wrong }).send();
-    }
+    const forged = incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [`okou+confirm-${randomUUID().replaceAll("-", "")}@okou.io`],
+    });
+    await forged.send();
+    await forged.send();
+    expect(sentEmails().at(-1)?.text).toContain("invalid or expired");
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
     const { actor } = signupProvider(pending.sender);
-    await incoming({ sender: pending.sender, text: pending.line }).send();
-    expect(context.mocks.clerk.users.createUser).toHaveBeenCalledTimes(1);
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
     await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
       onboardingComplete: true,
       hasDefaultAgent: true,
@@ -522,31 +544,50 @@ describe("email-native signup", () => {
     });
   });
 
-  it("blocks a short code after five incorrect guesses and permits a fresh confirmation", async () => {
+  it("requires the issued reply address even when CONFIRM references the original request", async () => {
     await setupApp({
       context,
       routes: integrationsEmailRoutes,
       isolatePg: true,
     });
     const pending = await pendingSignup();
-    const wrong =
-      pending.line === "CONFIRM 00000000"
-        ? "CONFIRM 00000001"
-        : "CONFIRM 00000000";
-    for (let index = 0; index < 5; index += 1) {
-      await incoming({ sender: pending.sender, text: wrong }).send();
-    }
-    signupProvider(pending.sender);
-    await incoming({ sender: pending.sender, text: pending.line }).send();
-    expect(sentEmails().at(-1)?.text).toContain(
-      "Too many incorrect confirmation attempts",
-    );
-    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
     await incoming({
       sender: pending.sender,
-      text: "Please send a fresh confirmation for this request",
+      text: pending.line,
+      inReplyTo: pending.original.messageId,
     }).send();
-    expect(sentEmails().at(-1)?.text).toMatch(/^CONFIRM [0-9]{8}$/mu);
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    expect(sentEmails()).toMatchObject([
+      { text: expect.stringContaining("\nCONFIRM\n") },
+      { text: expect.stringContaining("\nCONFIRM\n") },
+    ]);
+    const { actor } = signupProvider(pending.sender);
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
+    const snapshot = await createdThreads(actor);
+    expect(snapshot.chatThreads).toHaveLength(1);
+    const { events } = await files.listThreadEvents(
+      actor,
+      snapshot.chatThreads[0]!.id,
+    );
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.prompt",
+        userMessage: expect.objectContaining({
+          parts: expect.arrayContaining([
+            {
+              type: "text",
+              text: expect.stringContaining(
+                "Please compare these options after signup",
+              ),
+            },
+          ]),
+        }),
+      }),
+    );
   });
 
   it("does not accuse a sender when the Clerk precheck is unavailable, and recovers on redelivery", async () => {
@@ -567,7 +608,7 @@ describe("email-native signup", () => {
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
     await message.send();
     expect(sentEmails()).toMatchObject([
-      { text: expect.stringContaining("CONFIRM ") },
+      { text: expect.stringContaining("\nCONFIRM\n") },
     ]);
   });
 
@@ -584,6 +625,7 @@ describe("email-native signup", () => {
       const confirmation = incoming({
         sender: pending.sender,
         text: pending.line,
+        to: [pending.replyTo],
       });
       await expect(confirmation.send(true)).rejects.toBeInstanceOf(
         ClerkTransportTestError,
@@ -617,7 +659,7 @@ describe("email-native signup", () => {
     }
     expect(
       sentEmails().filter((email) => {
-        return email.text.includes("CONFIRM ");
+        return email.text.includes("\nCONFIRM\n");
       }),
     ).toHaveLength(3);
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
@@ -639,7 +681,11 @@ describe("email-native signup", () => {
         },
       ]),
     );
-    await incoming({ sender: pending.sender, text: pending.line }).send();
+    await incoming({
+      sender: pending.sender,
+      text: pending.line,
+      to: [pending.replyTo],
+    }).send();
     expect(sentEmails().at(-1)?.text).toContain(
       "did not pass our security checks",
     );
@@ -651,6 +697,7 @@ describe("email-native signup", () => {
 
 function incoming(options: {
   readonly sender: string;
+  readonly to?: readonly string[];
   readonly messageId?: string;
   readonly subject?: string;
   readonly text?: string;
@@ -673,7 +720,7 @@ function incoming(options: {
       return HttpResponse.json({
         id,
         from: options.sender,
-        to: ["okou@okou.io"],
+        to: options.to ?? ["okou@okou.io"],
         message_id: messageId,
         subject: options.subject ?? "A request",
         text: options.text ?? "Please compare these options",
@@ -692,7 +739,7 @@ function incoming(options: {
   );
   const event = {
     type: "email.received",
-    data: { email_id: id, to: ["okou@okou.io"] },
+    data: { email_id: id, to: options.to ?? ["okou@okou.io"] },
   };
   const signedHeaders = webhooks.signedResendWebhookHeaders(event);
   return {
@@ -746,6 +793,7 @@ function sentEmails() {
     return object({
       to: string(),
       text: string(),
+      replyTo: string().optional(),
       headers: record(string(), string()),
       attachments: array(
         object({ filename: string(), contentType: string(), path: string() }),

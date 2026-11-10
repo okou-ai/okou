@@ -16,6 +16,7 @@ export interface EmailChannelMessage {
   readonly references: readonly string[];
   readonly userLinkId?: string;
   readonly signupRequestId?: string;
+  readonly replyTo?: string;
   readonly attachment?: {
     readonly filename: string;
     readonly contentType: string;
@@ -29,7 +30,7 @@ export function emailChannelOutboxValues(args: EmailChannelMessage) {
     fromAddress: "Okou <okou@okou.io>",
     toAddresses: args.to,
     subject: args.subject,
-    replyTo: EMAIL_CHANNEL_ADDRESS,
+    replyTo: args.replyTo ?? EMAIL_CHANNEL_ADDRESS,
     headers: {
       "Message-ID": args.messageId,
       "In-Reply-To": args.inReplyTo,

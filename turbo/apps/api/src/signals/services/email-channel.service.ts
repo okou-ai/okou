@@ -52,7 +52,7 @@ import {
 import { enqueueEmailText$ } from "./email-channel-delivery.service";
 import {
   confirmEmailSignup$,
-  emailSignupConfirmation,
+  isEmailSignupReplyAddress,
   rejectUnsafeEmailSignup$,
   sendEmailSignupConnectionConflict$,
   sendEmailSignupConfirmation$,
@@ -740,12 +740,17 @@ const dispatchEmailChannelMessage$ = command(
       readonly message: typeof emailChannelMessages.$inferSelect;
       readonly link: typeof emailUserLinks.$inferSelect | undefined;
       readonly needsSignup: boolean;
+      readonly signupReplyTo: string | undefined;
     },
     signal: AbortSignal,
   ) => {
-    const { message, link, needsSignup } = args;
-    if (emailSignupConfirmation(message.text)) {
-      const signup = await set(confirmEmailSignup$, message, signal);
+    const { message, link, needsSignup, signupReplyTo } = args;
+    if (signupReplyTo) {
+      const signup = await set(
+        confirmEmailSignup$,
+        { confirmation: message, replyTo: signupReplyTo },
+        signal,
+      );
       if (!signup) {
         return;
       }
@@ -802,12 +807,20 @@ export const handleReceivedChannelEmail$ = command(
     const received = receivedChannelEmailSchema.parse(await response.json());
     signal.throwIfAborted();
     const sender = normalizeMailbox(received.from);
+    const recipients = received.to.map(normalizeMailbox);
+    const signupReplyAddresses = [
+      ...new Set(
+        recipients.filter((address): address is string => {
+          return address !== null && isEmailSignupReplyAddress(address);
+        }),
+      ),
+    ];
     // Only provider-computed authentication is authority. Message headers are forgeable.
     if (
       received.id !== id ||
-      !received.to.some((to) => {
-        return normalizeMailbox(to) === EMAIL_CHANNEL_ADDRESS;
-      }) ||
+      (!recipients.includes(EMAIL_CHANNEL_ADDRESS) &&
+        signupReplyAddresses.length === 0) ||
+      signupReplyAddresses.length > 1 ||
       !sender ||
       sender === EMAIL_CHANNEL_ADDRESS ||
       !isAuthenticatedSender(received.authentication)
@@ -875,6 +888,7 @@ export const handleReceivedChannelEmail$ = command(
       {
         message,
         link,
+        signupReplyTo: signupReplyAddresses[0],
         needsSignup:
           senderState.kind === "unconnected" && !senderState.hasAccount,
       },
