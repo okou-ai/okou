@@ -7285,6 +7285,36 @@
       "title": "Workflows",
       "viewAutomations": "View automations"
     },
+    "migration": {
+      "fromAgent": "From agent",
+      "fromNamedAgent": "From {{agent}}",
+      "howItWorks": {
+        "automateBody": "Add a schedule or a trigger, like a new email, and Okou runs it for you.",
+        "automateTitle": "Let it run on its own",
+        "description": "A workflow is a job you set up once. Okou does it the same way every time.",
+        "migratedBody_one": "{{agents}} is a workflow now. Its automations keep running.",
+        "migratedBody_other": "{{agents}} are workflows now. Their automations keep running.",
+        "shareBody": "Public workflows are shared with your workspace. Private ones are just for you.",
+        "shareTitle": "Share it or keep it",
+        "title": "How workflows work",
+        "useBody": "Type / and pick a workflow, then add what's different this time.",
+        "useTitle": "Use one in any chat"
+      },
+      "includes": {
+        "description": "This workflow used to run as {{agent}}, so it still runs with that agent's instructions. Remove it if you don't need them.",
+        "label": "Includes",
+        "remove": "Remove",
+        "removeAria": "Stop including /{{slug}}"
+      },
+      "notice": {
+        "description_one": "{{agents}} is now a workflow, along with the workflows it ran. Automations keep their schedule and owner. Type /{{slug}} in chat to use it, or see how workflows work.",
+        "description_other": "{{agents}} are now workflows, along with the workflows they ran. Automations keep their schedule and owner. Type /{{slug}} in chat to use one, or see how workflows work.",
+        "gotIt": "Got it",
+        "seeHow": "See how",
+        "title": "Your agents are now workflows"
+      },
+      "renamedFrom": "Renamed from /{{slug}} when agents became workflows."
+    },
     "skillImport": {
       "action": "Import skills",
       "description": "Run this prompt where your skills live. Each one becomes a private workflow.",

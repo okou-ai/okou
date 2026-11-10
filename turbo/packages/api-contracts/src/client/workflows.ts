@@ -226,6 +226,16 @@ export const workflowsDetailContract: ClientDescriptor<
       404: true,
     },
   },
+  removeInclude: {
+    method: "DELETE",
+    path: "/api/workflows/:workflowId/includes/:includeName",
+    statuses: {
+      200: true,
+      401: true,
+      403: true,
+      404: true,
+    },
+  },
   update: {
     method: "PATCH",
     path: "/api/workflows/:workflowId",

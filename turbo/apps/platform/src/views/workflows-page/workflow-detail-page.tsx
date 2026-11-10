@@ -257,6 +257,10 @@ import {
 import { WorkflowTooltip } from "./workflows-page.tsx";
 import { AutomationListIcon } from "../okou-page/workflow-automations-page.tsx";
 import { emptyAutomationsImg } from "../okou-page/platform-assets.ts";
+import {
+  WorkflowIncludesRows,
+  WorkflowRenamedFromNote,
+} from "./agent-migration.tsx";
 import { WorkflowWebhookUpgradeDialog } from "./workflow-webhook-upgrade-dialog.tsx";
 import {
   GoogleCalendarRecoveryDialogs,
@@ -1537,7 +1541,9 @@ function WorkflowMetadataFields({
           spellCheck={false}
           className="h-9 w-full"
         />
+        <WorkflowRenamedFromNote detail={detail} />
       </InlineSettingsRow>
+      <WorkflowIncludesRows detail={detail} disabled={disabled} />
       <InlineSettingsRow
         label={copy.description}
         description={

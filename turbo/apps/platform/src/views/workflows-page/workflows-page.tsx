@@ -90,6 +90,11 @@ import {
   workflowTitle,
 } from "./workflow-shared.tsx";
 import { WorkflowWebhookUpgradeDialog } from "./workflow-webhook-upgrade-dialog.tsx";
+import {
+  AgentMigrationNotice,
+  HowWorkflowsWorkDialog,
+  WorkflowMigrationBadge,
+} from "./agent-migration.tsx";
 
 type WorkflowAutomationEntryMap = ReadonlyMap<
   string,
@@ -615,6 +620,9 @@ function WorkflowRow({
             <span className="min-w-0 truncate text-sm font-medium underline decoration-dotted decoration-foreground/40 decoration-[1px] underline-offset-2">
               {title}
             </span>
+            {singleAgent ? (
+              <WorkflowMigrationBadge workflow={workflow} />
+            ) : null}
             {singleAgent && workflow.shadowedBy ? (
               <Badge className="shrink-0 text-xs text-muted-foreground">
                 {i18n.t(($) => {
@@ -1403,6 +1411,7 @@ export function WorkflowsPage() {
 
       <main className="flex-1 overflow-auto px-4 pb-safe-or-8 pt-3 [scrollbar-gutter:stable] sm:px-6">
         <div className="mx-auto flex max-w-[900px] flex-col gap-4">
+          {singleAgent ? <AgentMigrationNotice /> : null}
           <WorkflowFilterBar
             filter={filter}
             sortMode={sortMode}
@@ -1444,6 +1453,7 @@ export function WorkflowsPage() {
 
       <CreateWorkflowAutomationDialog />
       <WorkflowWebhookUpgradeDialog />
+      <HowWorkflowsWorkDialog />
     </div>
   );
 }

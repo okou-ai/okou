@@ -1340,6 +1340,22 @@ export type WorkflowAutomationUpdateRequest = zInfer<
  * `canManage` reflects the caller's effective rights (agent write-permission
  * for public workflows; ownership for private ones).
  */
+/**
+ * How a workflow arrived from a legacy agent. `agent` marks the workflow the
+ * agent itself became; `agent-workflow` marks a workflow that used to belong
+ * to that agent. `renamedFrom` is set when the slug was prefixed to stay
+ * unique, and `includes` lists workflows still loaded on every run to keep the
+ * former agent's instructions in effect. Absent for workflows that were not
+ * migrated.
+ */
+const workflowMigrationSchema = object({
+  source: zEnum(["agent", "agent-workflow"]),
+  agentDisplayName: string(),
+  migratedAt: iso.datetime(),
+  renamedFrom: workflowNameSchema.nullable(),
+  includes: array(workflowNameSchema),
+});
+
 export const workflowSummarySchema = object({
   id: uuid(),
   agentId: uuid(),
@@ -1369,6 +1385,7 @@ export const workflowSummarySchema = object({
     .nullable()
     .optional(),
   importSource: workflowImportSourceSchema.nullable(),
+  migration: workflowMigrationSchema.nullable().optional(),
 });
 
 export const workflowDetailResponseSchema = workflowSummarySchema.extend({
@@ -1532,6 +1549,21 @@ export const workflowsDetailContract = c.router({
       404: apiErrorSchema,
     },
     summary: "Get a workflow with its instruction and files",
+  },
+  removeInclude: {
+    method: "DELETE",
+    path: "/api/workflows/:workflowId/includes/:includeName",
+    headers: authHeadersSchema,
+    pathParams: workflowIdParams.extend({ includeName: workflowNameSchema }),
+    body: c.noBody(),
+    responses: {
+      200: workflowSummarySchema,
+      401: apiErrorSchema,
+      403: apiErrorSchema,
+      404: apiErrorSchema,
+    },
+    summary:
+      "Stop loading a former agent's workflow on every run of a migrated workflow",
   },
   update: {
     method: "PATCH",

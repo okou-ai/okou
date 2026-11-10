@@ -7264,6 +7264,36 @@
       "title": "Alur kerja",
       "viewAutomations": "Lihat otomatisasi"
     },
+    "migration": {
+      "fromAgent": "Dari agen",
+      "fromNamedAgent": "Dari {{agent}}",
+      "howItWorks": {
+        "automateBody": "Tambahkan jadwal atau pemicu, seperti email baru, dan Okou menjalankannya untuk Anda.",
+        "automateTitle": "Biarkan berjalan sendiri",
+        "description": "Workflow adalah pekerjaan yang Anda siapkan sekali. Okou mengerjakannya dengan cara yang sama setiap kali.",
+        "migratedBody_one": "{{agents}} kini menjadi workflow. Otomatisasinya tetap berjalan.",
+        "migratedBody_other": "{{agents}} kini menjadi workflow. Otomatisasinya tetap berjalan.",
+        "shareBody": "Workflow publik dibagikan ke workspace Anda. Workflow pribadi hanya untuk Anda.",
+        "shareTitle": "Bagikan atau simpan sendiri",
+        "title": "Cara kerja workflow",
+        "useBody": "Ketik / dan pilih workflow, lalu tambahkan apa yang berbeda kali ini.",
+        "useTitle": "Gunakan di chat mana pun"
+      },
+      "includes": {
+        "description": "Workflow ini dulu berjalan sebagai {{agent}}, jadi tetap memakai instruksi agen tersebut. Hapus jika tidak diperlukan.",
+        "label": "Menyertakan",
+        "remove": "Hapus",
+        "removeAria": "Berhenti menyertakan /{{slug}}"
+      },
+      "notice": {
+        "description_one": "{{agents}} kini menjadi workflow, bersama workflow yang dijalankannya. Otomatisasi tetap dengan jadwal dan pemiliknya. Ketik /{{slug}} di chat untuk memakainya, atau lihat cara kerja workflow.",
+        "description_other": "{{agents}} kini menjadi workflow, bersama workflow yang dijalankannya. Otomatisasi tetap dengan jadwal dan pemiliknya. Ketik /{{slug}} di chat untuk memakainya, atau lihat cara kerja workflow.",
+        "gotIt": "Mengerti",
+        "seeHow": "Lihat caranya",
+        "title": "Agen Anda kini menjadi workflow"
+      },
+      "renamedFrom": "Diganti nama dari /{{slug}} saat agen menjadi workflow."
+    },
     "skillImport": {
       "action": "Impor skill",
       "description": "Jalankan prompt ini di tempat skill Anda berada. Setiap skill menjadi alur kerja pribadi.",
