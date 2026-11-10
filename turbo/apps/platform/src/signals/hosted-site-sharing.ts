@@ -32,34 +32,25 @@ type Visibility = zInfer<typeof hostedSiteVisibilitySchema>;
 
 function createSiteVisibilitySignals(
   sourceUrl: string,
+  site$: Computed<Promise<SiteUrl | null>>,
   retryRevision$: State<number>,
 ) {
   const reload$ = state(0);
-  const currentSource$ = computed((get) => {
-    return currentHostedSiteUrl(sourceUrl, get(hostedSiteUrlChanges$));
-  });
   const details$ = computed(async (get) => {
     get(retryRevision$);
-    const url = new URL(get(currentSource$));
-    if (!url.hostname.endsWith(`.${resolveEditableHostedSiteDomain()}`)) {
+    const site = await get(site$);
+    if (
+      !site ||
+      !new URL(site.url).hostname.endsWith(
+        `.${resolveEditableHostedSiteDomain()}`,
+      )
+    ) {
       return null;
     }
     get(reload$);
-    // Resolve the publication, then let the visibility endpoint authorize ownership.
-    const alias = await accept(
-      get(apiClient$)(hostContract).resolveAlias({
-        params: { publicSlug: url.hostname.split(".")[0]! },
-        query: { publicBrand: "okou" },
-        fetchOptions: { cache: "no-store" },
-      }),
-      [200],
-    );
-    if (!alias.body.pointer) {
-      return null;
-    }
     const result = await accept(
       get(apiClient$)(hostContract).siteVisibility({
-        params: { siteId: alias.body.pointer.siteId },
+        params: { siteId: site.siteId },
         fetchOptions: { cache: "no-store" },
       }),
       [200, 404],
@@ -287,7 +278,7 @@ function createHostedSiteShareSession(sourceUrl: string) {
   );
   const open$ = state(false);
   const editor = createSiteUrlEditorSignals(details$, saved$);
-  const visibility = createSiteVisibilitySignals(sourceUrl, reload$);
+  const visibility = createSiteVisibilitySignals(sourceUrl, details$, reload$);
   const banner = createHostedSiteBannerSignals(visibility.visibility$);
   const hasSettings$ = computed(async (get) => {
     const [details, permissions] = await Promise.all([

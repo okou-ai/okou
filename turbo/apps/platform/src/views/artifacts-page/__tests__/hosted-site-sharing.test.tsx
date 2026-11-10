@@ -845,17 +845,12 @@ test.each([false, true])(
   },
 );
 
-test("a pending Share copies the link once permissions resolve without owner settings", async () => {
+test("a pending Share copies the link once ownership resolves without owner settings", async () => {
   mockSiteAlias();
-  context.mocks.api(hostContract.siteUrl, ({ respond }) => {
-    return respond(404, {
-      error: { code: "NOT_FOUND", message: "Published website not found" },
-    });
-  });
   const requested = createDeferredPromise<void>(context.signal);
   const response = createDeferredPromise<void>(context.signal);
   const clipboard = context.mocks.browser.clipboardWriteText();
-  context.mocks.api(hostContract.siteVisibility, async ({ respond }) => {
+  context.mocks.api(hostContract.siteUrl, async ({ respond }) => {
     requested.resolve();
     await response.promise;
     return respond(404, {
