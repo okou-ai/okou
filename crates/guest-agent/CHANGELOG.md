@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.109.62](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.61...guest-agent-v0.109.62) (2026-11-10)
+
+
+### Documentation
+
+* **guest-agent:** clarify heartbeat stopped semantics ([#46349](https://github.com/okou-ai/okou/issues/46349)) ([dac4516](https://github.com/okou-ai/okou/commit/dac45168bd4dc52a72f7e13dd5c89a81bb2f878c))
+
+## [0.109.61](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.60...guest-agent-v0.109.61) (2026-11-10)
+
 ## [0.109.60](https://github.com/okou-ai/okou/compare/guest-agent-v0.109.59...guest-agent-v0.109.60) (2026-11-10)
 
 

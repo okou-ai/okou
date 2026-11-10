@@ -3200,11 +3200,10 @@
     "enableByDefault": "默认启用 {{account}}",
     "enabledAccounts": "{{value}} 个已启用",
     "manageAccounts": "管理账号",
-    "noAccount": "未选择账号",
     "noEnabledAccount": "当前聊天未启用任何账号",
     "permissions": "权限",
     "permissionsDescription": "这些规则适用于你所有聊天和账号中的此连接器。",
-    "settingsDescription": "选择默认启用的账号，以及新聊天的默认账号。"
+    "settingsDescription": "选择默认启用的账号。"
   },
   "connectors": {
     "access": {

@@ -158,6 +158,7 @@ readonly DESKTOP_MANIFEST_R2_READER_PATH=.github/rollback-floors/desktop-manifes
 readonly DATA_ROUTER_STATELESS_MCP_API_PATH=.github/rollback-floors/data-router-stateless-mcp-api
 readonly HOME_CACHE_CAPACITY_READER_PATH=.github/rollback-floors/home-cache-capacity-reader
 readonly WORKFLOW_ATTACHMENTS_DIRECT_PATH=.github/rollback-floors/workflow-attachments-direct
+readonly WORKFLOW_PUBLICATION_BRIDGE_RETIREMENT_PATH=turbo/packages/db/src/migrations/1538_retire_workflow_publication_bridge.sql
 readonly STORAGE_DEBUG_CONTRACTS_PATH=.github/rollback-floors/storage-debug-contracts
 readonly PI_MEMORY_RETIRED_PATH=.github/rollback-floors/pi-memory-retired
 # Completion now accepts only storageOutputs. The selected Runner must embed
@@ -294,6 +295,18 @@ if [[ ! "$workflow_attachments_direct_commit" =~ ^[0-9a-f]{40}$ ]]; then
 fi
 if ! git merge-base --is-ancestor "$workflow_attachments_direct_commit" "$TARGET_COMMIT"; then
   fail "Rollback target predates direct Workflow attachment ownership: ${workflow_attachments_direct_commit}."
+fi
+
+# #46196 removed publication token/generation reads from Workflow APIs and 026.
+# The later contraction drops both tables; resolve the prepared main commit,
+# rather than the contraction commit, so compatible earlier artifacts remain valid.
+workflow_publication_bridge_retirement_commit=$(git log --reverse --first-parent --diff-filter=A --format=%H \
+  origin/main -- "$WORKFLOW_PUBLICATION_BRIDGE_RETIREMENT_PATH" | sed -n '1p')
+if [[ ! "$workflow_publication_bridge_retirement_commit" =~ ^[0-9a-f]{40}$ ]]; then
+  fail "Cannot resolve the merged Workflow publication bridge retirement on main."
+fi
+if ! git merge-base --is-ancestor "$workflow_publication_bridge_retirement_commit" "$TARGET_COMMIT"; then
+  fail "Rollback target predates the Workflow publication bridge retirement: ${workflow_publication_bridge_retirement_commit}."
 fi
 
 # New Official artifacts omit the definition snapshot. Earlier publishers cannot

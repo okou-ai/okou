@@ -1,10 +1,23 @@
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { chatThreadEventsContract } from "@okouai/api-contracts/contracts/chat-threads";
+import {
+  chatEventRowsResponse,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
+import {
+  mockChatEventRows,
+  normalizeMockChatEvents,
+  type MockChatEventInput,
+} from "./chat-event-test-helpers.ts";
 import { screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
 import { setupPage } from "./chat-lifecycle-test-helpers.ts";
-import type { MockChatEventInput } from "./chat-event-test-helpers.ts";
+import {
+  parseChatClipboardPayload,
+  readClipboardItemText,
+  readSingleRichClipboardWrite,
+} from "./chat-clipboard-test-helpers.ts";
 import {
   assistantEvent,
   completedEvent,
@@ -14,6 +27,7 @@ import {
   promptEvent,
   queryButton,
   RUN_PATH,
+  RUN_THREAD_ID,
   usageEvent,
   createChatRunFixtures,
 } from "./chat-run-test-fixtures.ts";
@@ -161,6 +175,77 @@ test("Return to the conversation that started a chat message", async () => {
     return label.closest("a") === null;
   });
   expect(unlinkedPhoneLabel).toBeInTheDocument();
+});
+
+test("Label existing Email messages from their raw context without adding a mail-provider link", async () => {
+  const user = userEvent.setup({ delay: null });
+  const clipboard = context.mocks.browser.clipboardWrite();
+  const events: MockChatEventInput[] = [
+    promptEvent({
+      id: "email-source-prompt",
+      runId: RUN_A,
+      seqId: 1,
+      text: "Subject: Travel report\n\nPlease review this email.",
+    }),
+    promptEvent({
+      id: "web-source-prompt",
+      runId: RUN_B,
+      seqId: 2,
+      text: "A follow-up sent from the Web app.",
+    }),
+    completedEvent({ id: "email-source-complete", runId: RUN_B, seqId: 3 }),
+  ];
+  installRunChat({ chatEvents: events });
+  const rows = mockChatEventRows(
+    normalizeMockChatEvents(events, RUN_THREAD_ID),
+  ).map((row) => {
+    return row.id === "email-source-prompt"
+      ? { ...row, contextType: "email" as const, contextId: "email-context" }
+      : row;
+  });
+  context.mocks.api(chatThreadEventsContract.rows, ({ query, respond }) => {
+    return respond(
+      200,
+      chatEventRowsResponse(
+        rows.filter((row) => {
+          return row.seqId > query.sinceSeqId;
+        }),
+        query,
+      ),
+    );
+  });
+
+  await setupPage({ context, path: RUN_PATH });
+
+  const label = await screen.findByText("Email");
+  const emailMessage = label.closest<HTMLElement>("[data-role='user']");
+  if (!emailMessage) {
+    throw new Error("Email user message was not available");
+  }
+  expect(emailMessage).toHaveTextContent("Please review this email.");
+  expect(label.closest("a")).toBeNull();
+  const webMessage = screen.getByText("A follow-up sent from the Web app.");
+  expect(webMessage.closest("[data-role='user']")).not.toHaveTextContent(
+    "Email",
+  );
+  const copyButton = queryButton("Copy message", emailMessage);
+  if (!copyButton) {
+    throw new Error("Email copy action was not available");
+  }
+  await user.click(copyButton);
+  const item = await readSingleRichClipboardWrite(clipboard);
+  const copied = parseChatClipboardPayload(
+    await readClipboardItemText(item, "text/html"),
+  );
+  expect(copied.userMessage).toStrictEqual({
+    version: 1,
+    parts: [
+      {
+        type: "text",
+        text: "Subject: Travel report\n\nPlease review this email.",
+      },
+    ],
+  });
 });
 
 test.each([

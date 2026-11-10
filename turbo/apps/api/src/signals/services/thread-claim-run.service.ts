@@ -307,8 +307,6 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import { piModelConfigObservation } from "../../lib/pi-model-config-observation";
-import { getDatasetName, ingestToAxiom } from "../external/axiom";
 import {
   normalizeRunMetadata,
   type RunMetadataValues,
@@ -321,13 +319,6 @@ import { isPersonalSubscriptionProviderType } from "./model-provider-account.ser
 import { modelProviderWriteTypeForLaunch } from "./model-selection.service";
 import type { OfficialWorkflowContextFacts } from "./official-workflow-context.signals";
 import type { OrgPlanCapabilities } from "./org-plan-entitlement-read.service";
-import {
-  environmentRecordToEntries,
-  executionFirewallsToAxiomEntries,
-  featureFlagsRecordToEntries,
-  networkPoliciesRecordToEntries,
-  type RunContextAxiomSnapshot,
-} from "./run-context-snapshot.service";
 import { runnerJobQueueTimestamps } from "./runner-job-queue-lifecycle.service";
 
 import { teamsDeliveryTargetSchema } from "./teams-chat-callback-payload";
@@ -4346,7 +4337,6 @@ interface PersistedAtomicLaunchRows {
 
 interface PreparedRunnerLaunch {
   readonly runnerJobPayload: RunnerJobPayload;
-  readonly runContextSnapshot: RunContextAxiomSnapshot;
   readonly runStorageMounts: readonly PersistedStorageMount[];
 }
 
@@ -4372,7 +4362,6 @@ type AtomicLaunchCommitResult =
       readonly run: RunRecord;
       readonly runnerJobPayload: RunnerJobPayload;
       readonly runnerJobCreatedAt: Date;
-      readonly runContextSnapshot: RunContextAxiomSnapshot;
       readonly queueFirstClaim: QueueFirstRunClaimed | undefined;
       readonly reusePreparation?: RunnerReusePreparation;
       readonly publicationReturnedAt: number;
@@ -4633,38 +4622,6 @@ function launchRunMetadataValues(args: LaunchRunRowsArgs): RunMetadataValues {
     apiStartedAt: new Date(args.apiStartTime),
     firstAssistantEventAcknowledgedAt: null,
     summary: null,
-  });
-}
-
-// Telemetry ingestion is best effort: no caller branches on the outcome and a
-// failed ingest carries no operator action.
-function bestEffortTelemetry(record: () => unknown): void {
-  safeSync(record);
-}
-
-function ingestRunContextSnapshot(
-  snapshot: RunContextAxiomSnapshot,
-  officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"],
-  seedSkillBundles: PreparedExecutionContext["seedSkillBundles"],
-  templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"],
-): void {
-  bestEffortTelemetry(() => {
-    return ingestToAxiom(getDatasetName("run-context"), [
-      {
-        ...snapshot,
-        officialWorkflowBundles: (officialWorkflowBundles ?? []).map(
-          (bundle) => {
-            return {
-              sha256: bundle.sha256,
-              archiveBytes: bundle.archiveBytes,
-              mountPath: bundle.mountPath,
-            };
-          },
-        ),
-        seedSkillBundles,
-        ...(templateGuidanceBundles?.length ? { templateGuidanceBundles } : {}),
-      },
-    ]);
   });
 }
 
@@ -4941,13 +4898,6 @@ function committedAtomicLaunchResponse(args: {
     args.transactionReturnedAt,
   );
   args.phaseTiming.appendTo(args.timing);
-  ingestRunContextSnapshot(
-    args.committed.runContextSnapshot,
-    args.committed.runnerJobPayload.executionContext.officialWorkflowBundles,
-    args.committed.runnerJobPayload.executionContext.seedSkillBundles,
-    args.committed.runnerJobPayload.executionContext.templateGuidanceBundles,
-  );
-  const runContextRegisteredAt = now();
   const dispatchedProfile = args.committed.runnerJobPayload.profile;
   args.timing.flush({
     runId: args.committed.run.id,
@@ -4975,7 +4925,6 @@ function committedAtomicLaunchResponse(args: {
     timing: {
       activationOrigin: "direct",
       commitReturnedAt: args.transactionReturnedAt,
-      runContextRegisteredAt,
       dispatchTimingsRegisteredAt,
     },
   };
@@ -5340,9 +5289,6 @@ function buildPreparedExecutionContextDraft(
     args.environment,
     args.body.secrets,
   );
-  const secretNames = executionSecrets.secrets
-    ? Object.keys(executionSecrets.secrets)
-    : [];
   const secretValues = executionSecrets.secrets
     ? Object.values(executionSecrets.secrets)
     : [];
@@ -5426,8 +5372,6 @@ function buildPreparedExecutionContextDraft(
       ...modelUsageExecutionFields(args),
       codexRuntimeConfig: args.modelProvider?.codexRuntimeConfig ?? null,
     },
-    secretNames,
-    secretValues,
   };
 }
 
@@ -5500,16 +5444,13 @@ function preparedRunnerGroup(): string {
 
 /**
  * Final runner launch from explicit facts: the stored context draft with its
- * prepared storage, Pi launch resources, run-context snapshot, runner job
+ * prepared storage, Pi launch resources, runner job
  * payload and exact persisted Run storage mounts.
  */
 function assembleRunnerLaunch(args: {
-  readonly runId: string;
-  readonly userId: string;
   readonly chatThreadId: string | undefined;
   readonly launchSnapshot: AgentRunFullLaunchSnapshot;
   readonly runnerGroup: string;
-  readonly body: CreateRunBody;
   readonly preparedStorage: PreparedAgentRunStorage;
   readonly contextDraft: BuiltPreparedExecutionContextDraft;
   readonly piResources: PreparedPiLaunchResources | undefined;
@@ -5524,12 +5465,6 @@ function assembleRunnerLaunch(args: {
     args.launchSnapshot.framework,
   );
   const persistedStorageMounts = builtContext.persistedStorageMounts;
-  const runContextSnapshot = buildRunContextSnapshot({
-    runId: args.runId,
-    userId: args.userId,
-    body: args.body,
-    builtContext: { ...builtContext, context: storedContext },
-  });
   const cliAgentSessionId =
     storedContext.piSessionId ??
     storedContext.nativeContinuation?.sessionId ??
@@ -5542,7 +5477,6 @@ function assembleRunnerLaunch(args: {
       reuseKey: runnerReuseKey(args.chatThreadId),
       executionContext: storedContext,
     }),
-    runContextSnapshot,
     runStorageMounts: persistedStorageMounts,
   };
 }
@@ -5584,14 +5518,11 @@ function finalizedMaterializedLaunch(
   storage: MaterializedRunnerStorage,
   contextDraft: BuiltPreparedExecutionContextDraft,
 ): PreparedRunnerLaunch {
-  const { args, group, body } = storage.input;
+  const { args, group } = storage.input;
   return assembleRunnerLaunch({
-    runId: args.run.id,
-    userId: args.userId,
     chatThreadId: args.chatThreadId,
     launchSnapshot: args.launchSnapshot,
     runnerGroup: group,
-    body,
     preparedStorage: storage.preparedStorage.prepared,
     contextDraft,
     piResources: storage.piResources,
@@ -6054,9 +5985,6 @@ function runnerJobPayload(args: {
 interface BuiltPreparedExecutionContext {
   readonly context: PreparedExecutionContext;
   readonly persistedStorageMounts: readonly PersistedStorageMount[];
-  readonly secretNames: readonly string[];
-  // Plain secret values used for run-context redaction; values, not names.
-  readonly secretValues: readonly string[];
 }
 
 function isOfficialRunnerGroup(group: string): boolean {
@@ -6076,67 +6004,6 @@ function withoutOkouNamespaceEntries<T>(
     }
   }
   return compactRecord(untrusted) ?? null;
-}
-
-function sanitizeEnvironment(
-  environment: Record<string, string> | null | undefined,
-  secretValues: readonly string[],
-): Record<string, string> {
-  const secrets = new Set(secretValues);
-  const sanitized: Record<string, string> = {};
-  for (const [key, value] of Object.entries(environment ?? {})) {
-    sanitized[key] = secrets.has(value) ? "***" : value;
-  }
-  return sanitized;
-}
-
-function buildRunContextSnapshot(args: {
-  readonly runId: string;
-  readonly userId: string;
-  readonly body: Pick<CreateRunBody, "prompt" | "appendSystemPrompt">;
-  readonly builtContext: BuiltPreparedExecutionContext;
-}): RunContextAxiomSnapshot {
-  const storedContext = args.builtContext.context;
-  const sanitizedEnvironment = sanitizeEnvironment(
-    {
-      ...storedContext.environment,
-      ...storedContext.platformEnvironment,
-    },
-    args.builtContext.secretValues,
-  );
-  const cliAgentSessionId =
-    storedContext.piSessionId ??
-    storedContext.nativeContinuation?.sessionId ??
-    null;
-  const snapshot: RunContextAxiomSnapshot = {
-    _time: nowDate().toISOString(),
-    runId: args.runId,
-    userId: args.userId,
-    prompt: args.body.prompt,
-    appendSystemPrompt: args.body.appendSystemPrompt ?? null,
-    sessionId: cliAgentSessionId,
-    cliAgentType: storedContext.cliAgentType,
-    ...piModelConfigObservation(
-      storedContext.cliAgentType,
-      storedContext.piModelConfig,
-    ),
-    secretNames: [...args.builtContext.secretNames],
-    environmentEntries: environmentRecordToEntries(sanitizedEnvironment),
-    firewalls: executionFirewallsToAxiomEntries(storedContext.firewalls),
-    networkPolicyEntries: networkPoliciesRecordToEntries(
-      storedContext.networkPolicies,
-    ),
-    storageMounts: storedContext.storageMounts.map((mount) => {
-      return {
-        name: mount.name,
-        version: mount.versionId,
-        mountPath: mount.mountPath,
-        writeback: mount.writeback === true,
-      };
-    }),
-    featureFlagEntries: featureFlagsRecordToEntries(storedContext.featureFlags),
-  };
-  return snapshot;
 }
 
 function preparedExecutionContextWithPiResources(
@@ -6289,7 +6156,6 @@ function pendingLaunchCommitResult(
   return {
     ...persisted,
     runnerJobPayload: args.persistence.payload,
-    runContextSnapshot: args.launch.runContextSnapshot,
     queueFirstClaim: admission.queueFirstClaim,
     reusePreparation,
     publicationReturnedAt,

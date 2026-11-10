@@ -259,9 +259,9 @@ struct ChatComposerView: View {
         value: hasText)
     }
     .animation(reduceMotion ? nil : .easeInOut(duration: 0.22), value: voiceActive)
-    .padding(.horizontal, OkouSpace.lg)
+    .padding(.horizontal, OkouControl.pageInset)
     .padding(.top, OkouSpace.sm)
-    .padding(.bottom, isFocused ? 8 : 0)
+    .padding(.bottom, isFocused ? OkouSpace.sm : OkouSpace.six)
     .fixedSize(horizontal: false, vertical: true)
     .sensoryFeedback(.impact(weight: .light), trigger: sendFeedback)
     .sensoryFeedback(.impact(weight: .medium), trigger: stopFeedback)

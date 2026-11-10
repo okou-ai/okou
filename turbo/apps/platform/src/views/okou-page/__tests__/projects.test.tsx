@@ -701,6 +701,229 @@ test("A folded Project keeps the open chat's place: up selects the Project and d
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
 });
 
+test("Clicking a Project's name opens its page and unfolds its chats, then toggles them there", async () => {
+  const { b } = await setupProjectNavigation(223, "/chats/:b");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(namedLink(projectRows(), "Thread A2")).toBeNull();
+
+  const user = userEvent.setup({ delay: null });
+  await user.click(projectLink("Launch"));
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/projects/${id}`);
+  });
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(namedLink(projectRows(), "Thread A2")).toBeInTheDocument();
+
+  // On the Project's page, clicking its name again folds and unfolds it
+  // without opening the page again.
+  await user.click(projectLink("Launch"));
+  expect(location.pathname).toBe(`/projects/${id}`);
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(namedLink(projectRows(), "Thread A2")).toBeNull();
+
+  await user.click(projectLink("Launch"));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(namedLink(projectRows(), "Thread A2")).toBeInTheDocument();
+
+  // Back leaves the Project's page for the chat that opened it.
+  act(() => {
+    window.history.back();
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${b.id}`);
+  });
+});
+
+test("Clicking a folded Project's name from one of its chats unfolds it", async () => {
+  await setupProjectNavigation(225, "/chats/:a");
+  const user = userEvent.setup({ delay: null });
+  await user.click(projectToggle("Launch"));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+
+  await user.click(projectLink("Launch"));
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/projects/${id}`);
+  });
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+});
+
+test("A Project's folder names its fold action and shortcut", async () => {
+  await setupProjectNavigation(226, "/chats/:b");
+  const user = userEvent.setup({ delay: null });
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(projectToggle("Launch")).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowRight Control+Shift+ArrowRight",
+  );
+
+  await user.hover(projectToggle("Launch"));
+  const expand = await screen.findByRole("tooltip");
+  expect(expand).toHaveTextContent("Expand");
+  expect(expand.querySelector("kbd")).toHaveTextContent("→");
+
+  await user.click(projectToggle("Launch"));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(projectToggle("Launch")).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowLeft Control+Shift+ArrowLeft",
+  );
+  // Clicking closes the tooltip; hovering again names the new action.
+  await user.unhover(projectToggle("Launch"));
+  await user.hover(projectToggle("Launch"));
+  await waitFor(() => {
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Collapse");
+  });
+  expect(screen.getByRole("tooltip").querySelector("kbd")).toHaveTextContent(
+    "←",
+  );
+});
+
+test("Opening a Project's name in a new tab leaves its chats folded", async () => {
+  await setupProjectNavigation(224, "/chats/:b");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+
+  fireEvent.click(projectLink("Launch"), { ctrlKey: true });
+  fireEvent.click(projectLink("Launch"), { metaKey: true });
+
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(namedLink(projectRows(), "Thread A2")).toBeNull();
+});
+
+// The name link also reads out the state a folded Project's chats add up to.
+function projectTrigger(projectId = id) {
+  const trigger = projectRow(projectId).querySelector<HTMLElement>(
+    "[data-project-trigger]",
+  );
+  if (!trigger) {
+    throw new Error("Project link not found");
+  }
+  return trigger;
+}
+function projectStateIndicator(name: string, projectId = id) {
+  return within(
+    button(`Options for ${name}`, projectRows(projectId)),
+  ).queryByTestId("project-state-indicator");
+}
+function runningIndicatorPhase(indicator: HTMLElement | null): number {
+  const dot = indicator?.firstElementChild;
+  if (!(dot instanceof HTMLElement)) {
+    throw new Error("Running indicator is missing");
+  }
+  const phase = dot.style.getPropertyValue("--running-indicator-phase");
+  expect(phase).not.toBe("");
+  return Number(phase);
+}
+
+test("A folded Project rests on the running or unread state of the chats it hides, and an unfolded one leaves it to them", async () => {
+  const researchId = "30000000-0000-4000-8000-000000000072";
+  const quietId = "30000000-0000-4000-8000-000000000074";
+  const ordinary = continuityThread(225, 1, "Ordinary chat");
+  // Research lists an unread chat on each side of its running one.
+  const researchOlderUnread = {
+    ...continuityThread(225, 2, "Research plan"),
+    projectId: researchId,
+  };
+  const researchRunning = {
+    ...continuityThread(225, 3, "Research build"),
+    projectId: researchId,
+  };
+  const researchUnread = {
+    ...continuityThread(225, 4, "Research notes"),
+    projectId: researchId,
+  };
+  const launchUnread = {
+    ...continuityThread(225, 5, "Launch notes"),
+    projectId: id,
+  };
+  const quiet = {
+    ...continuityThread(225, 6, "Quiet chat"),
+    projectId: quietId,
+  };
+  // The list leaves an archived chat out, so its run is not Quiet's to report.
+  const quietArchivedRunning = {
+    ...continuityThread(225, 7, "Quiet archive"),
+    projectId: quietId,
+    archived: true,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 225,
+    threads: [
+      ordinary,
+      researchOlderUnread,
+      researchRunning,
+      researchUnread,
+      launchUnread,
+      quiet,
+      quietArchivedRunning,
+    ],
+  });
+  metadata([
+    { id: researchId, name: "Research" },
+    { id: quietId, name: "Quiet" },
+  ]);
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: {},
+      threads: {
+        [researchOlderUnread.id]: "unread",
+        [researchRunning.id]: "active",
+        [researchUnread.id]: "unread",
+        [launchUnread.id]: "unread",
+        [quietArchivedRunning.id]: "active",
+      },
+      unreadAt: {
+        [researchOlderUnread.id]: at,
+        [researchUnread.id]: at,
+        [launchUnread.id]: at,
+      },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+
+  // A running chat outranks an unread one, as it does on a chat's own row.
+  await waitFor(() => {
+    expect(projectTrigger(researchId)).toHaveAccessibleName("Research Running");
+  });
+  expect(projectTrigger()).toHaveAccessibleName("Launch Unread");
+  expect(projectTrigger(quietId)).toHaveAccessibleName("Quiet");
+  // The state rests where the menu dots would, in step with the list's wave:
+  // Research is the second row.
+  expect(projectStateIndicator("Launch")).toBeInTheDocument();
+  expect(projectStateIndicator("Quiet", quietId)).toBeNull();
+  expect(
+    runningIndicatorPhase(projectStateIndicator("Research", researchId)),
+  ).toBeCloseTo(-11 / 12, 10);
+
+  click(projectToggle("Research", researchId));
+  await waitFor(() => {
+    expect(threadLink(researchRunning.id)).toHaveAccessibleName(
+      "Research build Running",
+    );
+  });
+  expect(threadLink(researchUnread.id)).toHaveAccessibleName(
+    "Research notes Unread",
+  );
+  expect(projectTrigger(researchId)).toHaveAccessibleName("Research");
+  expect(projectStateIndicator("Research", researchId)).toBeNull();
+
+  click(projectToggle("Research", researchId));
+  expect(projectTrigger(researchId)).toHaveAccessibleName("Research Running");
+
+  // The Unread list leaves the running chat out, so Research hides only
+  // unread chats there.
+  openChatListMenu();
+  click(menuItemByText("Unread"));
+  await waitFor(() => {
+    expect(projectTrigger(researchId)).toHaveAccessibleName("Research Unread");
+  });
+  expect(projectTrigger()).toHaveAccessibleName("Launch Unread");
+});
+
 test("A Project page moves down into its chats when unfolded and past them when folded", async () => {
   const { a1, b } = await setupProjectNavigation(115, `/projects/${id}`);
   await waitFor(() => {

@@ -1,5 +1,39 @@
 # Changelog
 
+## [10.19.6](https://github.com/okou-ai/okou/compare/cli-v10.19.5...cli-v10.19.6) (2026-11-10)
+
+
+### Bug Fixes
+
+* **chat:** allow direct access to hidden chats without listing them ([#46322](https://github.com/okou-ai/okou/issues/46322)) ([2eba399](https://github.com/okou-ai/okou/commit/2eba399504c64b51bcce672f760712192b1cc21e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.47.0
+    * @okouai/core bumped to 8.825.5
+    * @okouai/pi-agent-runtime bumped to 1.51.95
+
+## [10.19.5](https://github.com/okou-ai/okou/compare/cli-v10.19.4...cli-v10.19.5) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * devDependencies
+    * @okouai/api-contracts bumped to 2.46.4
+    * @okouai/core bumped to 8.825.4
+    * @okouai/pi-agent-runtime bumped to 1.51.94
+
+## [10.19.4](https://github.com/okou-ai/okou/compare/cli-v10.19.3...cli-v10.19.4) (2026-11-10)
+
+
+### Bug Fixes
+
+* **cli:** keep deployment links out of host delivery output ([#46269](https://github.com/okou-ai/okou/issues/46269)) ([a13dc6b](https://github.com/okou-ai/okou/commit/a13dc6b1eb43beffdd47e18e56ed66c97184f3cf))
+
 ## [10.19.3](https://github.com/okou-ai/okou/compare/cli-v10.19.2...cli-v10.19.3) (2026-11-10)
 
 

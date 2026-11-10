@@ -1,5 +1,39 @@
 # Changelog
 
+## [0.33.0](https://github.com/okou-ai/okou/compare/ios-v0.32.0...ios-v0.33.0) (2026-11-10)
+
+
+### Features
+
+* **ios:** add pr staging device builds and fix project selection ([#46329](https://github.com/okou-ai/okou/issues/46329)) ([9cb770d](https://github.com/okou-ai/okou/commit/9cb770d1ebc1ae457a7ac6c9bec42234230a642c))
+* **ios:** show chat states in the sidebar and push the chat aside ([#46347](https://github.com/okou-ai/okou/issues/46347)) ([dbdeb62](https://github.com/okou-ai/okou/commit/dbdeb62e2ddb9daadb4a3110e4966ab0321d8257))
+
+
+### Bug Fixes
+
+* **ios:** align composer actions with the sidebar footer ([#46341](https://github.com/okou-ai/okou/issues/46341)) ([8d93fb9](https://github.com/okou-ai/okou/commit/8d93fb9e5d4747f03bd6c0e640c297e6b081ba52))
+
+## [0.32.0](https://github.com/okou-ai/okou/compare/ios-v0.31.6...ios-v0.32.0) (2026-11-10)
+
+
+### Features
+
+* **app:** keep connector account selection internal ([#46315](https://github.com/okou-ai/okou/issues/46315)) ([ffa08a3](https://github.com/okou-ai/okou/commit/ffa08a3ffa9ada48ff12bf01a82549577a889aa6))
+
+
+### Bug Fixes
+
+* **ios:** complete computer access authorization cards ([#46297](https://github.com/okou-ai/okou/issues/46297)) ([10193ca](https://github.com/okou-ai/okou/commit/10193cafd27dcf463de9fb27cde359b2fc239d88))
+
+## [0.31.6](https://github.com/okou-ai/okou/compare/ios-v0.31.5...ios-v0.31.6) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** hide expanded project status indicators ([#46289](https://github.com/okou-ai/okou/issues/46289)) ([91d429b](https://github.com/okou-ai/okou/commit/91d429b80ad08ecd93382220678f26871bfb8d19))
+* **ios:** share compact composer geometry with the design system ([#46285](https://github.com/okou-ai/okou/issues/46285)) ([3340655](https://github.com/okou-ai/okou/commit/33406555bdd75ea4da78ea1a8325a1f044c21bab))
+* **ios:** suspend sidebar swipes while the filter menu is open ([#46282](https://github.com/okou-ai/okou/issues/46282)) ([84637e1](https://github.com/okou-ai/okou/commit/84637e196985af3edffe638b4fb707905f5a29d6))
+
 ## [0.31.5](https://github.com/okou-ai/okou/compare/ios-v0.31.4...ios-v0.31.5) (2026-11-10)
 
 

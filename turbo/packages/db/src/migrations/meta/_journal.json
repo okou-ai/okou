@@ -3225,8 +3225,15 @@
     {
       "idx": 1539,
       "version": "7",
-      "when": 1794295046589,
-      "tag": "1539_email-multi-account-connections",
+      "when": 1794301793947,
+      "tag": "1539_drop_workflow_publication_fence",
+      "breakpoints": true
+    },
+    {
+      "idx": 1540,
+      "version": "7",
+      "when": 1794304820376,
+      "tag": "1540_email_multi_account_connections",
       "breakpoints": true
     }
   ]

@@ -1065,7 +1065,7 @@ checksum = "1c133bc6a41be0d194c306b5506d15e6feeea7b1d6604bd3f8310dfb2ca96486"
 
 [[package]]
 name = "claude-mock"
-version = "0.22.97"
+version = "0.22.98"
 dependencies = [
  "api-contracts",
  "cli-test-support",
@@ -2018,7 +2018,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent"
-version = "0.109.60"
+version = "0.109.62"
 dependencies = [
  "aho-corasick",
  "api-contracts",
@@ -2057,7 +2057,7 @@ dependencies = [
 
 [[package]]
 name = "guest-agent-tests"
-version = "0.1.169"
+version = "0.1.171"
 dependencies = [
  "api-contracts",
  "base64 0.23.1",
@@ -2123,7 +2123,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-server"
-version = "0.24.89"
+version = "0.24.90"
 dependencies = [
  "chrono",
  "cli-test-support",
@@ -2141,7 +2141,7 @@ dependencies = [
 
 [[package]]
 name = "guest-control-tests"
-version = "0.12.159"
+version = "0.12.160"
 dependencies = [
  "cli-test-support",
  "guest-contracts",
@@ -2170,7 +2170,7 @@ dependencies = [
 
 [[package]]
 name = "guest-init"
-version = "0.20.75"
+version = "0.20.76"
 dependencies = [
  "guest-contracts",
  "guest-control-server",
@@ -4053,7 +4053,7 @@ dependencies = [
 
 [[package]]
 name = "runner"
-version = "0.244.56"
+version = "0.244.59"
 dependencies = [
  "api-contracts",
  "async-trait",

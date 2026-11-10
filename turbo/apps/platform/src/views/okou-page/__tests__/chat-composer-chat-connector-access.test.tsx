@@ -64,7 +64,7 @@ function installAccess(
     rejectSelection?: boolean;
     custom?: boolean;
     noPermissions?: boolean;
-    beforeSaveResponse?: () => Promise<void>;
+    beforeSaveResponse?: (signal: AbortSignal) => Promise<void>;
   } = {},
 ) {
   const accessTarget = options.custom
@@ -202,7 +202,7 @@ function installAccess(
   );
   context.mocks.api(
     chatConnectorAccessContract.setThreadOverride,
-    async ({ params, body, respond }) => {
+    async ({ request, params, body, respond }) => {
       access(params.threadId);
       const chat = chats.get(params.threadId)!;
       if (body.enabled === null) {
@@ -210,13 +210,13 @@ function installAccess(
       } else {
         chat.overrides.set(params.connectionId, body.enabled);
       }
-      await options.beforeSaveResponse?.();
+      await options.beforeSaveResponse?.(request.signal);
       return respond(200, access(params.threadId));
     },
   );
   context.mocks.api(
     chatConnectorAccessContract.setThreadCurrent,
-    async ({ params, body, respond }) => {
+    async ({ request, params, body, respond }) => {
       if (rejectSelection) {
         rejectSelection = false;
         return respond(403, {
@@ -228,7 +228,7 @@ function installAccess(
       }
       access(params.threadId);
       chats.get(params.threadId)!.current = body.connectionId;
-      await options.beforeSaveResponse?.();
+      await options.beforeSaveResponse?.(request.signal);
       return respond(200, access(params.threadId));
     },
   );
@@ -247,10 +247,6 @@ function installAccess(
   });
   return {
     access,
-    selectFromRun: (threadId: string, connectionId: string) => {
-      access(threadId);
-      chats.get(threadId)!.current = connectionId;
-    },
   };
 }
 
@@ -509,73 +505,47 @@ test.each([false, true])(
   },
 );
 
-test("Refresh the displayed account after a Run changes the Chat selection", async () => {
-  const fixture = installAccess();
+test("Finish a saved Chat allowance after closing and reopening its menu", async () => {
+  const user = userEvent.setup({ delay: null });
+  const committed = context.mocks.deferred<void>();
+  const response = context.mocks.deferred<void>();
+  installAccess({
+    beforeSaveResponse: () => {
+      committed.resolve();
+      return response.promise;
+    },
+  });
   await setup();
-  const row = await openMenu();
-  expect(row).toHaveTextContent("Work");
-  fixture.selectFromRun(SCOUT_THREAD_ID, personal.id);
-  context.mocks.ably.trigger(`chatThreadDetailChanged:${SCOUT_THREAD_ID}`);
+  click(await openMenu());
+  await chooseAccess(user, "Work", "Off");
+  await committed.promise;
+  await user.keyboard("{Escape}");
   await waitFor(() => {
-    expect(row).toHaveTextContent("Personal");
+    return expect(
+      screen.queryByRole("dialog", { name: "Connectors" }),
+    ).toBeNull();
+  });
+  const reopened = await openMenu();
+  expect(reopened).toHaveTextContent("2 enabled");
+  response.resolve();
+  await waitFor(() => {
+    return expect(reopened).toHaveTextContent("1 enabled");
   });
 });
 
-test.each(["selection", "override"] as const)(
-  "Finish a saved Chat %s after closing and reopening its menu",
-  async (kind) => {
-    const user = userEvent.setup({ delay: null });
-    const committed = context.mocks.deferred<void>();
-    const response = context.mocks.deferred<void>();
-    installAccess({
-      beforeSaveResponse: () => {
-        committed.resolve();
-        return response.promise;
-      },
-    });
-    await setup();
-    click(await openMenu());
-    if (kind === "selection") {
-      click(await findFastControl("radio", "Personal"));
-    } else {
-      await chooseAccess(user, "Work", "Off");
-    }
-    await committed.promise;
-    await user.keyboard("{Escape}");
-    await waitFor(() => {
-      return expect(
-        screen.queryByRole("dialog", { name: "Connectors" }),
-      ).toBeNull();
-    });
-    const reopened = await openMenu();
-    expect(reopened).toHaveTextContent("Work");
-    response.resolve();
-    await waitFor(() => {
-      return expect(reopened).toHaveTextContent("Personal");
-    });
-    expect(reopened).toHaveTextContent(
-      kind === "selection" ? "2 enabled" : "1 enabled",
-    );
-  },
-);
-
 test("Release a pending account save and its cached state when leaving the Chat", async () => {
   const user = userEvent.setup({ delay: null });
-  const fixture = installAccess();
   const started = context.mocks.deferred<AbortSignal>();
   const response = context.mocks.deferred<void>();
-  context.mocks.api(
-    chatConnectorAccessContract.setThreadCurrent,
-    async ({ request, params, body, respond }) => {
-      fixture.selectFromRun(params.threadId, body.connectionId);
-      started.resolve(request.signal);
-      await response.promise;
-      return respond(200, fixture.access(params.threadId));
+  installAccess({
+    beforeSaveResponse: (signal) => {
+      started.resolve(signal);
+      return response.promise;
     },
-  );
+  });
   await setup();
   click(await openMenu());
-  click(await findFastControl("radio", "Personal"));
+  await chooseAccess(user, "Work", "Off");
   const requestSignal = await started.promise;
   await user.keyboard("{Escape}");
   click(await findFastControl("button", "New chat"));
@@ -585,50 +555,33 @@ test("Release a pending account save and its cached state when leaving the Chat"
   });
   response.resolve();
   await findComposer();
-  await expect(openMenu()).resolves.toHaveTextContent("Work");
+  await expect(openMenu()).resolves.toHaveTextContent("2 enabled");
 });
 
-test("Persist current account and nullable Chat overrides across menu reopening", async () => {
+test("Persist per-account allowance and inheritance across menu reopening", async () => {
   const user = userEvent.setup({ delay: null });
   installAccess();
   await setup();
   const row = await openMenu();
-  expect(row).toHaveTextContent("Work");
   expect(row).toHaveTextContent("2 enabled");
   await user.click(row);
-  await user.click(await findFastControl("radio", "Personal"));
-  await waitFor(() => {
-    return expect(
-      queryAllByRoleFast("radio").find((radio) => {
-        return radio.getAttribute("aria-label") === "Personal";
-      }),
-    ).toBeChecked();
-  });
   await chooseAccess(user, "Personal", "Off");
-  await waitFor(() => {
-    return expect(
-      queryAllByRoleFast("radio").find((radio) => {
-        return radio.getAttribute("aria-label") === "Work";
-      }),
-    ).toBeChecked();
-  });
+  await expect(
+    screen.findByRole("combobox", { name: "Personal access" }),
+  ).resolves.toHaveTextContent("Off");
   await user.keyboard("{Escape}");
   const reopened = await openMenu();
-  expect(reopened).toHaveTextContent("Work");
   expect(reopened).toHaveTextContent("1 enabled");
   await user.click(reopened);
   await expect(
     screen.findByRole("combobox", { name: "Personal access" }),
   ).resolves.toHaveTextContent("Off");
   await chooseAccess(user, "Personal", "Default (On)");
-  await user.click(await findFastControl("radio", "Personal"));
-  await waitFor(() => {
-    return expect(
-      queryAllByRoleFast("radio").find((radio) => {
-        return radio.getAttribute("aria-label") === "Personal";
-      }),
-    ).toBeChecked();
-  });
+  await expect(
+    screen.findByRole("combobox", { name: "Personal access" }),
+  ).resolves.toHaveTextContent("Default (On)");
+  await user.keyboard("{Escape}");
+  await expect(openMenu()).resolves.toHaveTextContent("2 enabled");
 });
 
 test.each([{ label: "GitHub", custom: false }])(
@@ -638,7 +591,6 @@ test.each([{ label: "GitHub", custom: false }])(
     installAccess({ allOff: true, custom });
     await setup();
     const row = await openMenu(label);
-    expect(row).toHaveTextContent("No account selected");
     expect(row).toHaveTextContent("0 enabled");
     await user.click(row);
     await screen.findByText("No account is on for this chat");
@@ -706,7 +658,7 @@ function expectRetainedDraft(path: string, composer: HTMLElement) {
   expect(composer).toHaveTextContent("Use my personal GitHub account");
 }
 
-test("Keep the displayed current account when enabling several accounts before the first Run", async () => {
+test("Preserve the internally resolved account when enabling several accounts before the first Run", async () => {
   const user = userEvent.setup({ delay: null });
   const fixture = installAccess({ allOff: true });
   context.mocks.api(chatEventsContract.send, ({ body, respond }) => {
@@ -714,7 +666,9 @@ test("Keep the displayed current account when enabling several accounts before t
       throw new Error("Expected Chat identity");
     }
     if (fixture.access(body.threadId).currentConnectionId !== personal.id) {
-      throw new Error("First Run used a different account from the composer");
+      throw new Error(
+        "First Run used a different account from allowance resolution",
+      );
     }
     return respond(201, {
       threadId: body.threadId,
@@ -724,28 +678,20 @@ test("Keep the displayed current account when enabling several accounts before t
   await setup(`/agents/${SCOUT_AGENT_ID}/chat`);
   await user.click(await openMenu());
   await chooseAccess(user, "Personal", "On");
-  await waitFor(() => {
-    expect(
-      queryAllByRoleFast("radio").find((radio) => {
-        return radio.getAttribute("aria-label") === "Personal";
-      }),
-    ).toBeChecked();
-  });
+  await expect(
+    screen.findByRole("combobox", { name: "Personal access" }),
+  ).resolves.toHaveTextContent("On");
   await chooseAccess(user, "Work", "On");
-  await waitFor(() => {
-    expect(
-      queryAllByRoleFast("radio").find((radio) => {
-        return radio.getAttribute("aria-label") === "Personal";
-      }),
-    ).toBeChecked();
-  });
+  await expect(
+    screen.findByRole("combobox", { name: "Work access" }),
+  ).resolves.toHaveTextContent("On");
   await user.keyboard("{Escape}");
-  await fill(await findComposer(), "Use the account shown in the menu");
+  await fill(await findComposer(), "Use my personal GitHub account");
   click(await findFastControl("button", "Send"));
   await waitFor(() => {
     expect(window.location.pathname).toMatch(/^\/chats\//u);
   });
-  await expect(openMenu()).resolves.toHaveTextContent("Personal");
+  await expect(openMenu()).resolves.toHaveTextContent("2 enabled");
 });
 
 test.each([false, true])(
@@ -778,7 +724,7 @@ test.each([false, true])(
       screen.findByRole("combobox", { name: "Personal access" }),
     ).resolves.toHaveTextContent("Default (Off)");
     await chooseAccess(user, "Personal", "On");
-    await user.click(await findFastControl("radio", "Personal"));
+    await chooseAccess(user, "Work", "Off");
     await user.keyboard("{Escape}");
     const composer = await findComposer();
     await fill(composer, "Use my personal GitHub account");
@@ -792,7 +738,6 @@ test.each([false, true])(
       return expect(window.location.pathname).toMatch(/^\/chats\//u);
     });
     const row = await openMenu();
-    expect(row).toHaveTextContent("Personal");
-    expect(row).toHaveTextContent("2 enabled");
+    expect(row).toHaveTextContent("1 enabled");
   },
 );

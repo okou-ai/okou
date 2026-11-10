@@ -12,12 +12,11 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
   private var cornerRadius: CGFloat {
     isExpanded ? 28 : OkouControl.composerCompactHeight / 2
   }
-  private var actionInset: CGFloat { isExpanded ? OkouSpace.six : 0 }
 
   var body: some View {
     content()
-      .padding(.leading, isExpanded ? 18 : actionSize + actionInset + OkouSpace.sm)
-      .padding(.trailing, isExpanded ? 18 : trailingWidth + actionInset + OkouSpace.sm)
+      .padding(.leading, isExpanded ? 18 : actionSize + OkouSpace.sm)
+      .padding(.trailing, isExpanded ? 18 : trailingWidth + OkouSpace.sm)
       .padding(.top, isExpanded ? 17 : OkouSpace.six)
       .padding(.bottom, isExpanded ? 62 : OkouSpace.six)
       .frame(
@@ -27,8 +26,7 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
       .glassEffect(.regular, in: RoundedRectangle(cornerRadius: cornerRadius))
       .overlay(alignment: isExpanded ? .bottomLeading : .leading) {
         leading()
-          .padding(.leading, actionInset)
-          .padding(.bottom, isExpanded ? actionInset : 0)
+          .padding(.bottom, isExpanded ? OkouSpace.six : 0)
       }
       .overlay(alignment: isExpanded ? .bottomTrailing : .trailing) {
         trailing()
@@ -37,9 +35,8 @@ struct OkouComposerSurface<Content: View, Leading: View, Trailing: View>: View {
           } action: {
             trailingWidth = $0
           }
-          .padding(.leading, isExpanded ? actionSize + actionInset + OkouSpace.xs : 0)
-          .padding(.trailing, actionInset)
-          .padding(.bottom, isExpanded ? actionInset : 0)
+          .padding(.leading, isExpanded ? actionSize + OkouSpace.xs : 0)
+          .padding(.bottom, isExpanded ? OkouSpace.six : 0)
       }
   }
 }

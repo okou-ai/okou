@@ -781,6 +781,7 @@ describe("CHAT-02: completed chat callback", () => {
       `chatThreadMessageCreated:${first.threadId}`,
       null,
     );
+    await claimChatRunJob(runnerGroup, claimed.runId);
     const autoContext = await waitForRunContext(actor, claimed.runId);
     expect(autoContext.body.prompt).toBe(
       "[Template #1: Playful Launch Presentation (presentation)]queued next turn",
@@ -801,7 +802,6 @@ describe("CHAT-02: completed chat callback", () => {
       "CLAUDE_CODE_OAUTH_TOKEN",
     );
 
-    await claimChatRunJob(runnerGroup, claimed.runId);
     await api.requestCancelRun(actor, claimed.runId, [200]);
     await waitForRunStatus(actor, claimed.runId, "cancelled");
   }, 90_000);
@@ -4205,6 +4205,7 @@ describe("CHAT-02: auto-send after failures", () => {
         threadId: anchor.threadId,
         prompt: probePrompt,
       });
+      const probeClaim = await claimChatRunJob(runnerGroup, probe.runId);
       const probeContext = await waitForRunContext(actor, probe.runId);
       expect(probeContext.body.prompt).toBe(probePrompt);
       if (status === "failed") {
@@ -4224,7 +4225,6 @@ describe("CHAT-02: auto-send after failures", () => {
         await api.requestCancelRun(actor, probe.runId, [200]);
         await waitForRunStatus(actor, probe.runId, "cancelled");
       } else {
-        const probeClaim = await claimChatRunJob(runnerGroup, probe.runId);
         expect(probeClaim.nativeContinuation).toMatchObject({
           sessionId: cliAgentSessionIdForChatRun(dense.runId),
           generationRunId: dense.runId,
@@ -4303,11 +4303,13 @@ describe("CHAT-02: auto-send after failures", () => {
       threadId: anchor.threadId,
       prompt: "normal incomplete context probe",
     });
+    const normalHeaders = await claimChatRun(runnerGroup, normal.runId);
     const normalContext = await waitForRunContext(actor, normal.runId);
     expect(normalContext.body.appendSystemPrompt).toContain(templatePrompt);
     expect(normalContext.body.appendSystemPrompt).toContain(feedbackPrompt);
     await api.requestCancelRun(actor, normal.runId, [200]);
     await waitForRunStatus(actor, normal.runId, "cancelled");
+    await failChatRun(normal.runId, normalHeaders, "Context probe cancelled");
     await flushWaitUntilForTest();
 
     const failedForQueue = await startChatRun(actor, {
@@ -4353,6 +4355,7 @@ describe("CHAT-02: auto-send after failures", () => {
     if (!promoted?.runId) {
       throw new Error("Expected the queued probe to be promoted");
     }
+    await claimChatRunJob(runnerGroup, promoted.runId);
     const queuedContext = await waitForRunContext(actor, promoted.runId);
     expect(queuedContext.body.appendSystemPrompt).toContain(templatePrompt);
     expect(queuedContext.body.appendSystemPrompt).toContain(feedbackPrompt);
@@ -4443,6 +4446,7 @@ describe("CHAT-02: auto-send after failures", () => {
           })
         ).runId;
       }
+      await claimChatRunJob(runnerGroup, probeRunId);
       const probeContext = await waitForRunContext(actor, probeRunId);
       const appended = probeContext.body.appendSystemPrompt ?? "";
       expect(appended).toContain("# Incomplete Rounds Context");
@@ -4560,6 +4564,7 @@ describe("CHAT-02: auto-send after failures", () => {
       threadId: anchor.threadId,
       prompt: "probe the revoked boundary",
     });
+    await claimChatRunJob(runnerGroup, probe.runId);
     const probeContext = await waitForRunContext(actor, probe.runId);
     expect(probeContext.body.appendSystemPrompt).toContain(firstFailedPrompt);
 
@@ -4694,6 +4699,7 @@ describe("CHAT-02: auto-send after failures", () => {
         filenameSnapshot: "queued-notes.txt",
       }),
     );
+    await claimChatRunJob(runnerGroup, claimed.runId);
     const autoContext = await waitForRunContext(actor, claimed.runId);
     expect(autoContext.body.prompt).toContain("queued with files");
     expect(autoContext.body.prompt).toContain(
@@ -4853,6 +4859,7 @@ describe("CHAT-02: auto-send after failures", () => {
       threadId: anchor.threadId,
       prompt: normalPrompt,
     });
+    const normalHeaders = await claimChatRun(runnerGroup, normal.runId);
     const normalContext = await waitForRunContext(actor, normal.runId);
     const normalAppended = normalContext.body.appendSystemPrompt ?? "";
     expect(normalAppended).toContain("# Incomplete Rounds Context");
@@ -4863,7 +4870,6 @@ describe("CHAT-02: auto-send after failures", () => {
       }),
     );
 
-    const normalHeaders = await claimChatRun(runnerGroup, normal.runId);
     const queuedPrompt = "queued callback frontier probe";
     await queueChatEvent(actor, {
       agentId,
@@ -4894,6 +4900,7 @@ describe("CHAT-02: auto-send after failures", () => {
       throw new Error("Expected the queued frontier probe to auto-send");
     }
 
+    await claimChatRunJob(runnerGroup, autoSent.runId);
     const callbackContext = await waitForRunContext(actor, autoSent.runId);
     const callbackAppended = callbackContext.body.appendSystemPrompt ?? "";
     expect(callbackAppended).toContain("# Incomplete Rounds Context");
@@ -5069,6 +5076,7 @@ describe("CHAT-02: auto-send across a model switch", () => {
       throw new Error("Expected the queued message to be auto-claimed");
     }
 
+    await claimChatRunJob(runnerGroup, claimed.runId);
     const autoContext = await waitForRunContext(actor, claimed.runId);
     expect(autoContext.body.sessionId).toBe(`bdd-cli-${second.runId}`);
     expect(autoContext.body.environment.ANTHROPIC_MODEL).toBe(

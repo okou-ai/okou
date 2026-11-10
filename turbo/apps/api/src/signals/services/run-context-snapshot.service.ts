@@ -1,4 +1,5 @@
 import { storedTemplateGuidanceBundleSchema } from "@okouai/api-contracts/contracts/template-guidance-bundle";
+import type { PreparedExecutionContext } from "@okouai/api-contracts/contracts/runners";
 import {
   runContextStorageMountSchema,
   type RunContextResponse,
@@ -27,7 +28,12 @@ import {
   type infer as zInfer,
 } from "zod";
 
-import type { PiModelConfigObservation } from "../../lib/pi-model-config-observation";
+import {
+  piModelConfigObservation,
+  type PiModelConfigObservation,
+} from "../../lib/pi-model-config-observation";
+import { getDatasetName, ingestToAxiom } from "../external/axiom";
+import { safeSync } from "../utils";
 
 type UnknownRecord = Record<string, unknown>;
 type NetworkPolicy = NetworkPolicies[string];
@@ -102,8 +108,8 @@ type RunContextAxiomInlineFirewall = zInfer<
 type RunContextAxiomFirewall =
   RunContextBuiltinFirewall | RunContextAxiomInlineFirewall;
 
-// Pi generation observations are creation-time only. Historical snapshots may
-// also carry retired field classifications; neither enters RunContextResponse.
+// Historical snapshots may carry retired field classifications; those and
+// Pi generation observations do not enter RunContextResponse.
 export type RunContextAxiomSnapshot = Omit<
   RunContextResponse,
   "vars" | "environment" | "firewalls" | "networkPolicies" | "featureFlags"
@@ -118,6 +124,76 @@ export type RunContextAxiomSnapshot = Omit<
     readonly networkPolicyEntries: readonly RunContextNetworkPolicyEntry[];
     readonly featureFlagEntries: readonly RunContextFeatureFlagEntry[];
   };
+
+/** Record the exact winning Claim, after all configuration has been resolved. */
+export function recordClaimedRunContextSnapshot(args: {
+  readonly runId: string;
+  readonly userId: string;
+  readonly prompt: string;
+  readonly appendSystemPrompt: string | null;
+  readonly claimedAt: Date;
+  readonly context: PreparedExecutionContext;
+  readonly secretNames: readonly string[];
+  readonly secretValues: readonly string[] | null;
+}): void {
+  const context = args.context;
+  const secrets = new Set(args.secretValues);
+  const environment = Object.fromEntries(
+    Object.entries({
+      ...context.environment,
+      ...context.platformEnvironment,
+    }).map(([name, value]) => {
+      return [name, secrets.has(value) ? "***" : value];
+    }),
+  );
+  const snapshot: RunContextAxiomSnapshot = {
+    _time: args.claimedAt.toISOString(),
+    runId: args.runId,
+    userId: args.userId,
+    prompt: args.prompt,
+    appendSystemPrompt: args.appendSystemPrompt,
+    sessionId:
+      context.piSessionId ?? context.nativeContinuation?.sessionId ?? null,
+    cliAgentType: context.cliAgentType,
+    ...piModelConfigObservation(context.cliAgentType, context.piModelConfig),
+    secretNames: [...args.secretNames],
+    environmentEntries: environmentRecordToEntries(environment),
+    firewalls: executionFirewallsToAxiomEntries(context.firewalls),
+    networkPolicyEntries: networkPoliciesRecordToEntries(
+      context.networkPolicies,
+    ),
+    storageMounts: context.storageMounts.map((mount) => {
+      return {
+        name: mount.name,
+        version: mount.versionId,
+        mountPath: mount.mountPath,
+        writeback: mount.writeback === true,
+      };
+    }),
+    featureFlagEntries: featureFlagsRecordToEntries(context.featureFlags),
+    ...(context.templateGuidanceBundles?.length
+      ? { templateGuidanceBundles: context.templateGuidanceBundles }
+      : {}),
+  };
+  // Diagnostic ingestion is best effort and cannot change Claim ownership.
+  safeSync(() => {
+    return ingestToAxiom(getDatasetName("run-context"), [
+      {
+        ...snapshot,
+        officialWorkflowBundles: (context.officialWorkflowBundles ?? []).map(
+          (bundle) => {
+            return {
+              sha256: bundle.sha256,
+              archiveBytes: bundle.archiveBytes,
+              mountPath: bundle.mountPath,
+            };
+          },
+        ),
+        seedSkillBundles: context.seedSkillBundles,
+      },
+    ]);
+  });
+}
 
 interface NormalizedRunContextSnapshot {
   readonly runId?: string;

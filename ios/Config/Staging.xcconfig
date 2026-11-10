@@ -1,0 +1,11 @@
+#include "Release.xcconfig"
+
+// Optimized QA builds use the same TEST instance as the Web staging app.
+OKOU_API_BASE_URL = https:/$()/staging-api.vm6.ai
+OKOU_WEB_BASE_URL = https:/$()/staging-app-okou-app-preview.vm0.workers.dev
+CLERK_PUBLISHABLE_KEY = $(OKOU_STAGING_CLERK_PUBLISHABLE_KEY)
+OKOU_SENTRY_DSN =
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) STAGING
+
+// Device providers re-sign the app with their own team; use its default Keychain group.
+OKOU_CLERK_KEYCHAIN_ACCESS_GROUP =

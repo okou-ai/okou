@@ -48,6 +48,7 @@ function snapshotThread(options: {
   readonly title: string;
   readonly sortAt: string;
   readonly archived?: boolean;
+  readonly hidden?: boolean;
 }) {
   return {
     archived: false,
@@ -194,6 +195,39 @@ describe("okou chat list command", () => {
     mockExit.mockClear();
     vi.unstubAllEnvs();
     await rm(cacheDirectory, { recursive: true, force: true });
+  });
+
+  it("excludes hidden threads before counting and limiting list output", async () => {
+    mockStableThreadSnapshot([
+      snapshotThread({
+        id: THREAD_ID,
+        agentId: AGENT_ID,
+        title: "Visible chat",
+        sortAt: "2026-11-02T00:00:00.000Z",
+      }),
+      snapshotThread({
+        id: SECOND_THREAD_ID,
+        agentId: AGENT_ID,
+        title: "Hidden Learning chat",
+        sortAt: "2026-11-02T01:00:00.000Z",
+        hidden: true,
+      }),
+    ]);
+
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "list",
+      "--limit",
+      "1",
+      "--json",
+    ]);
+
+    expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toEqual({
+      agentId: AGENT_ID,
+      total: 1,
+      threads: [expect.objectContaining({ id: THREAD_ID })],
+    });
   });
 
   it("lists no threads when the organization has no snapshot row", async () => {
@@ -734,6 +768,16 @@ describe("okou chat list command", () => {
         }),
         projectId,
       };
+    });
+    all.unshift({
+      ...snapshotThread({
+        id: OTHER_THREAD_ID,
+        agentId: AGENT_ID,
+        title: "Hidden Project chat",
+        sortAt: "2026-11-02T01:00:00.000Z",
+        hidden: true,
+      }),
+      projectId,
     });
     server.use(
       http.get(`http://localhost:3000/api/projects/${projectId}`, () => {

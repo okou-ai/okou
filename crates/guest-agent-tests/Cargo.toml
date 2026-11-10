@@ -1,6 +1,6 @@
 [package]
 name = "guest-agent-tests"
-version = "0.1.169"
+version = "0.1.171"
 edition.workspace = true
 description = "Isolated guest-agent integration tests with compiled shared fixtures"
 publish = false
@@ -12,7 +12,7 @@ path = "../guest-agent/tests/common/mod.rs"
 
 [dependencies]
 cli-test-support = { workspace = true, features = ["test-support"] }
-guest-agent.workspace = true
+guest-agent = { workspace = true, features = ["test-support"] }
 guest-contracts.workspace = true
 guest-telemetry = { workspace = true, features = ["test-support"] }
 libc = { workspace = true, features = ["std"] }

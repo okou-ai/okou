@@ -22,10 +22,11 @@ extension XCTestCase {
         }
       }
     }
-    await fulfillment(of: [ready], timeout: timeout)
+    let result = await XCTWaiter.fulfillment(of: [ready], timeout: timeout)
     observation.cancel()
     await observation.value
-    _ = try XCTUnwrap(predicate() ? true : nil, message(), file: file, line: line)
+    _ = try XCTUnwrap(
+      result == .completed && predicate() ? true : nil, message(), file: file, line: line)
   }
 
   func waitForFileRemoval(

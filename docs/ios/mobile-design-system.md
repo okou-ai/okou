@@ -114,7 +114,7 @@ not copied from CSS and are not all mandated by Apple.
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
-| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 50 ms waveform sample, 25 % sidebar parallax)                                                                                           |
+| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 2 s working shimmer, fold spring, 50 ms waveform sample, 25 % sidebar parallax)                                                         |
 | Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
 | Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                               |
 
@@ -170,7 +170,10 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   raw 24 pt assets into `UIAction` or repair each menu with a different thumbnail.
   The manifest owns any per-glyph optical correction: the outline `pencil` uses
   0.8 scale around the viewBox center to match native pencil footprint. Its source
-  paths remain unchanged. Do not scatter scaleEffect adjustments across features.
+  paths remain unchanged, and the scaled group's stroke is widened by 1/scale so the
+  drawn line keeps the set's 2-unit weight beside unscaled glyphs (a pencil next to a
+  pin must not look like another icon set). Do not scatter scaleEffect adjustments
+  across features.
 - Use named roles throughout features. Keep larger card/media placeholders and
   small inline accessories intentional; they are not exceptions to fix by a
   global scale multiplier. Caption labels explicitly request an inline icon.
@@ -262,7 +265,10 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   component catalog. Its empty, unfocused surface is at least 44 pt tall
   (`composerCompactHeight`), with 6 pt vertical text padding and separate 44 pt
   action targets. Larger text can grow the surface. Expansion retains the same
-  mounted editor and reserves a bottom row for the actions.
+  mounted editor and reserves a bottom row for the actions. Leading and trailing
+  action targets keep the same horizontal anchors through expansion. The composer
+  uses the 24 pt page inset; its resting actions share the sidebar footer's vertical
+  center with 6 pt below the surface. Focused editing keeps 8 pt above the keyboard.
 - Viewing sheets and immediately applied settings use `OkouCloseButton`. Use Done
   for a completed operation, Save for an explicit commit, and Back within a sheet.
   Do not imply a pending save where selections already apply immediately.
@@ -274,8 +280,9 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   own content (the sidebar's chat filter is its glass control); a row that needs the full width widens
   outside the `Menu`. A full-width label makes the system open the menu from the middle
   of the row.
-- **Swipes move between pages.** A right swipe anywhere in a chat opens the full-screen
-  sidebar and a left swipe anywhere in the sidebar closes it; content that scrolls
+- **Swipes move between pages.** A right swipe anywhere in a chat opens the sidebar and a
+  left swipe anywhere in the sidebar closes it, as does a tap on the chat's strip beside it;
+  a swipe is never the only way back. Content that scrolls
   sideways (a code block or a table) keeps the finger, and from there the chat still opens
   the sidebar from its leading edge (`SidebarGesturePolicy`).
   A page swipe never also taps the row under it. Chat rows keep their actions on the
@@ -308,6 +315,11 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   (`OkouValueRow`) — use `OkouColor.trailingValue` (gray-700): visibly lighter than the
   `foreground` label and than supporting text, as Settings draws them, but still AA on
   white. Never the placeholder grey (gray-600): a value is content, not a hint.
+- **A chat row's quiet marks** — the status column's chat glyph, the draft pencil, a
+  section's fold chevron — use `OkouColor.quietMark` (gray-500), so they sit well behind the
+  titles as the web's faded sidebar glyphs (35–70 % opacity) do. That is under 3:1 on the
+  sidebar, so a mark never carries meaning alone: the pencil has its VoiceOver label ("Draft")
+  and the fold its heading's value.
 - **Section footers** use `okouSectionNote()`: 13 pt `muted-foreground`. A control's
   explanation (Fast mode cost, effort, scope of a switch) goes in the footer under its
   card, never as a row inside it — the system Settings pattern. One footer per card.
@@ -452,18 +464,23 @@ single floating line, and colour is a small accent for status only.
 
 ### Navigation and lists
 
-- **The sidebar is full screen**, as in Grok, because chat titles are long. The chat and
-  the list cross-fade through a blur (`OkouElevation.sidebarBlur`, 12 pt): the chat
-  drifts a quarter screen right as it blurs and fades away, the list drifts in from a
-  quarter screen left (`OkouMotion.sidebarParallax`) as it comes into focus, and the edge
-  each page leads with fades out over up to 35 % of the screen while it moves
-  (`OkouMotion.sidebarFeather`). Neither page slides as a card, so no edge, corner or
-  shadow ever crosses the screen.
+- **The sidebar takes 85 % of the width** (`OkouControl.sidebarShare`) and pushes the chat
+  aside, as ChatGPT does. The chat becomes a card: corners grow to `OkouRadius.page` (44 pt,
+  continuous) as the list opens, edged by a very faint hairline (`border` at
+  `sidebarEdgeLineOpacity` 50 %) and a soft shadow (`sidebarEdgeRadius` 16 pt,
+  `sidebarEdgeOpacity` 12 %) drawn by a card-shaped fill behind it. Its strip is frosted by the
+  thinnest material at 60 % (`OkouElevation.sidebarFrost`) — light, and the messages still show
+  through — laid on top of the chat rather than blurring it: a `.blur` on the chat re-renders
+  the transcript, which re-read its safe area and jumped when the list closed, and the system
+  materials have no strength setting of their own. A tap anywhere on the strip returns to the
+  chat ("Close sidebar" for VoiceOver), so leaving the list never depends on knowing the swipe.
+  The list drifts in from a quarter of its width to the left (`OkouMotion.sidebarParallax`)
+  as the chat slides over it.
 - **Sidebar layout**: the workspace switcher top left and the chat filter (Lucide
   `list-filter`) top right, both 44 pt glass controls. The filter is a circle on the
   default Chats and a capsule naming any other filter ("Unread"), so a filtered list never
-  reads as missing chats. There is no back button: a left swipe returns to the chat, and
-  VoiceOver's escape gesture does the same. The switcher is the workspace's
+  reads as missing chats. There is no back button: the chat's strip beside the list, a left
+  swipe and VoiceOver's escape gesture all return to the chat. The switcher is the workspace's
   logo as a glass button (`OkouWorkspaceGlassLogo`: the logo round at 28 pt,
   `OkouAvatarSize.glassControl`, so it sits concentric in the circle), with the workspace
   name beside it and no arrow, as in Slack. The switcher opens the system menu with every workspace's
@@ -506,16 +523,34 @@ single floating line, and colour is a small accent for status only.
   use `OkouColor.placeholder` (gray-600), lighter than supporting text.
 - **Sidebar order**: the chat filter is the header's menu (the web's Inbox — All chats
   without archiving — / Unread / Archived / Muted, then Mark all read), so the list starts
-  with its rows; chats grouped Pinned / Today / Yesterday /
-  Previous 7 days / Earlier. Everything starts on the `pageInset` edge.
+  12 pt below the header. Pinned chats lead under a "Pinned" heading instead of a pin on
+  each row, as Manus and other sidebars mark them; a pinned chat inside a project stays first
+  in its project. The heading is Manus's size (`OkouListHeading`: 15 pt subheadline in
+  supporting text, a 44 pt row) with a 20 pt chevron at the row's end; the whole row folds the
+  section, the chevron turns from down to right with it, and the choice is remembered across
+  launches. Folded, its name shimmers while one of its chats works and the unread dot sits
+  before the chevron, as a folded project's row does. A hairline (`OkouListDivider`) then
+  sets the pinned chats off from the projects and chats below, which need no heading. Pinned
+  and projects fold with `OkouMotion.disclosure`, a soft spring with no bounce, so rows and
+  chevron settle together. Pinned's fold lives in `@AppStorage`, whose updates arrive outside
+  a `withAnimation` transaction, so the list animates on the value itself
+  (`.animation(_:value:)`). Everything starts on the `pageInset` edge.
 - **Rows** share one layout: optional status column, title (body, one line), trailing
   state. The status column holds the web's title status emoji (✅ Done, ⏳ Waiting, …);
   it appears in a section only when one of that section's chats has a status, and
   rows without one show a quiet `message-circle` glyph so titles stay on one edge.
   The emoji stays in the title so web and iOS agree; archive is a separate flag.
-- **Trailing state** is the running indicator, an unread dot (8 pt `running` sky blue, as on
-  the web; amber is kept for a primary commit), or nothing. Status is
-  never a system spinner.
+- **Working** shimmers the chat's title (`OkouShimmerText`) instead of taking the trailing
+  slot, so a working chat keeps its draft in view. A folded project's name, and a folded
+  Pinned heading, shimmer while one of their chats works.
+- **Trailing state** shows one state, in the web's order: an unread dot (8 pt `running` sky
+  blue, as on the web; amber is kept for a primary commit) once a run finished or failed since
+  the chat was read, with the title in medium weight; a `pencil` for an unsent draft; or
+  nothing. The pencil is 20 pt in `OkouColor.quietMark` (gray-500), as is the status column's
+  quiet chat glyph, so a row draws one line weight (a glyph's stroke grows with its size);
+  every trailing mark is centred in one 20 pt column so they line up down the list. A chat still in memory takes its
+  draft from its own composer, so leaving it with text typed marks it at once; other chats use
+  the API's draft list (`/api/chat-thread-drafts`). Status is never a system spinner.
 - **Chat header** has no title: the menu glass circle and the model capsule on the left, the
   chat's "…" menu on the right, over a soft blur. The selected row in the sidebar says which chat
   is open. The "…" menu is titled with the chat and starts with Pin chat.
@@ -526,9 +561,15 @@ single floating line, and colour is a small accent for status only.
 
 - **Running** uses `OkouRunningIndicator`, the web's breathing dot: a `running`
   (sky-600) dot breathing between 0.64× / 34 % and 0.88× / 52 % with a ring that
-  spreads to 1.56× once per 2.4 s cycle. All indicators share one clock; list rows
-  trail by `rowIndex / 12` so several running chats move as a wave. It is used in
-  the sidebar and in the transcript's "working" line.
+  spreads to 1.56× once per 2.4 s cycle. All indicators share one clock. It is the
+  transcript's "working" line.
+- **Working text** uses `OkouShimmerText`, the web's `ShimmerText` made stronger for a list
+  read at a glance: the text in `placeholder` grey with a band of `foreground` (flat across
+  42–58 % of a gradient twice the text's width, about a third of the text, fading out by
+  30 % and 70 %) sweeping left to right once per 2 s (`OkouMotion.shimmerText`; the web's
+  thinking label takes 3.5 s), so a band is crossing for nearly all of every cycle. Only the
+  gradient moves, never the glyphs. Under Reduce Motion the text breathes like a skeleton
+  (1 → 0.7 → 1 over 2 s) instead.
 - **New-chat greeting** (`NewChatGreeting`) is stacked and centred: Okou's avatar,
   then the tagline. Avatar and words enter like the web — opacity, 8 pt blur and 14 pt rise over 720 ms
   (cubic-bezier 0.22, 1, 0.36, 1), each word 70 ms after the previous, whole words
@@ -646,7 +687,8 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouFloatingPanelStyle`                                                      | Card surface plus the floating shadow for suggestion panels over the transcript                                                                                                                                                                                                                                                                                                              |
 | `okouGroupedBackground()`                                                     | The one ground for grouped List/Form sheets                                                                                                                                                                                                                                                                                                                                                  |
 | `okouSheetBackground()`                                                       | A sheet's opaque ground, set on the view the sheet presents (beside its detents), never inside its navigation stack                                                                                                                                                                                                                                                                          |
-| `OkouRunningIndicator`                                                        | Web's breathing running dot; `phaseOffset` staggers list rows into a wave                                                                                                                                                                                                                                                                                                                    |
+| `OkouRunningIndicator`                                                        | Web's breathing running dot, the transcript's working line                                                                                                                                                                                                                                                                                                                                   |
+| `OkouShimmerText`                                                             | Working text: a band of `foreground` sweeping across `placeholder` grey every 2 s, stronger than the web's thinking label (`okouShimmerText()`)                                                                                                                                                                                                                                              |
 | `ChatCardHeader` / `ChatCardButtonStyle` (`.standard`, `.detail`, `.primary`) | Web card heading (16 pt brand-text glyph, callout medium title, one detail style) and card actions (outline, primary, text; destructive role in red)                                                                                                                                                                                                                                         |
 | `NewChatGreeting`                                                             | New-chat greeting with Web's word-by-word entrance                                                                                                                                                                                                                                                                                                                                           |
 | `ConnectorLogo`                                                               | Partner catalog logo (PNG/SVG) in a 24 pt slot with a glyph fallback                                                                                                                                                                                                                                                                                                                         |
@@ -656,10 +698,12 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouRowLabel`                                                                | Row title with its leading graphic in the shared 28 pt slot                                                                                                                                                                                                                                                                                                                                  |
 | `OkouValueRow`                                                                | A grouped row with a trailing value (system Settings style): the title keeps one line, the 17 pt `trailingValue` value yields and truncates in the middle                                                                                                                                                                                                                                    |
 | `OkouInlineCodeChip`                                                          | Web-style inline code in Markdown: padding and a 4 pt corner, on the sentence's baseline without growing the line; short spans only, off under VoiceOver                                                                                                                                                                                                                                     |
-| `OkouProfileAvatar`                                                           | The signed-in person's photo in a circle with a hairline; account glyph without a photo (sidebar Settings, Settings profile row)                                                                                                                                                                                                                                                             |
+| `OkouProfileAvatar`                                                           | The signed-in person's photo in a circle with a hairline; without one the web's initial on `muted` (sidebar Settings, Settings profile row)                                                                                                                                                                                                                                                  |
 | `OkouActionTile` / `OkouMediaThumbnail` / `OkouSelectionMark`                 | An 88 pt media-strip tile (Camera), a photo thumbnail with a hairline, and its pick mark (open ring, then amber with an ink check)                                                                                                                                                                                                                                                           |
 | `OkouCloseToolbarItem`                                                        | The close button in its one place: the toolbar's trailing end                                                                                                                                                                                                                                                                                                                                |
-| `OkouChatRowLabel` / `OkouChatStatusMark`                                     | A sidebar chat: status column (emoji or quiet glyph), one body line, trailing running / unread / pinned                                                                                                                                                                                                                                                                                      |
+| `OkouChatRowLabel` / `OkouChatStatusMark`                                     | A sidebar chat: status column (emoji or quiet glyph), one body line (medium when unread, shimmering while working), trailing unread / draft                                                                                                                                                                                                                                                  |
+| `OkouListHeading`                                                             | A list section's name (Pinned) at Manus's size, 15 pt supporting text; `isExpanded` adds the end chevron that turns with the fold, `isWorking` shimmers it                                                                                                                                                                                                                                   |
+| `OkouListDivider`                                                             | A hairline in `border` between list sections (Pinned and the chats below)                                                                                                                                                                                                                                                                                                                    |
 | `OkouActionRow`                                                               | A plain sheet's action row (Add to chat): row label in body, 48 pt, page edge, destructive red, optional trailing note                                                                                                                                                                                                                                                                       |
 | `OkouAccountRowLabel`                                                         | The Settings account: 40 pt mark, name in body medium, email in footnote supporting text                                                                                                                                                                                                                                                                                                     |
 | `OkouResultCard` / `OkouResultTile` / `OkouPreviewState`                      | A result in the transcript: card heading over a 16:9 cover (website, slides, document) or a fixed 200 × 180 tile with the whole picture; loading pulse, picture, or the kind's glyph                                                                                                                                                                                                         |

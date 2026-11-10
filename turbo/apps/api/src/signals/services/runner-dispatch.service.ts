@@ -31,7 +31,6 @@ export type RunnerJobPreActivationTiming =
   | {
       readonly activationOrigin: "direct";
       readonly commitReturnedAt: number;
-      readonly runContextRegisteredAt: number;
       readonly dispatchTimingsRegisteredAt: number;
     }
   | {
@@ -72,10 +71,6 @@ function runnerNotificationAttributionEvents(
           {
             actionType: "runner_notification_queue_to_commit_return",
             completedAt: timing.preActivation.commitReturnedAt,
-          },
-          {
-            actionType: "runner_notification_queue_to_run_context_registered",
-            completedAt: timing.preActivation.runContextRegisteredAt,
           },
           {
             actionType:

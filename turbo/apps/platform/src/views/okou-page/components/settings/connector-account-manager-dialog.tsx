@@ -131,15 +131,12 @@ function AccountStatus({ account }: { account: ConnectorAccountConnection }) {
 
 function AccountDefaultRadio({
   account,
-  disabled,
 }: {
   readonly account: ConnectorAccountConnection;
-  readonly disabled?: boolean;
 }) {
   const { t } = useTranslation();
   return (
     <Radio
-      disabled={disabled}
       value={account.id}
       aria-label={
         account.isDefault
@@ -256,7 +253,7 @@ function AccountRow({
   listed,
   onReconnect,
   onReviewScopes,
-  defaultEnabled,
+  showDefault,
   enableControl,
 }: {
   readonly target: ConnectorAccountTarget;
@@ -264,7 +261,7 @@ function AccountRow({
   readonly listed: boolean;
   readonly onReconnect: (account: ConnectorAccountConnection) => void;
   readonly onReviewScopes?: (account: ConnectorAccountConnection) => void;
-  readonly defaultEnabled?: boolean;
+  readonly showDefault: boolean;
   readonly enableControl?: ReactNode;
 }) {
   const { t } = useTranslation();
@@ -290,7 +287,7 @@ function AccountRow({
           <p className="truncate text-sm font-medium text-foreground">
             {label}
           </p>
-          {account.isDefault && (
+          {showDefault && account.isDefault && (
             <Badge
               aria-hidden="true"
               className="shrink-0 text-[10px] font-medium text-muted-foreground"
@@ -330,10 +327,7 @@ function AccountRow({
       </div>
       <div className="flex shrink-0 items-center gap-3">
         {enableControl}
-        <AccountDefaultRadio
-          account={account}
-          disabled={defaultEnabled === false}
-        />
+        {showDefault && <AccountDefaultRadio account={account} />}
         <AccountActions
           account={account}
           onReconnect={onReconnect}
@@ -430,22 +424,46 @@ function AccountsCard({
   const editingAccount = renameDraft?.account;
   const { rows, displayedRows, messageKey } = accountManagerRows(
     loadable,
-    defaultConnection,
+    defaultSignals ? null : defaultConnection,
     search,
     editingAccount,
   );
+  const accountRows = displayedRows.map((account, index) => {
+    return (
+      <div key={account.id}>
+        {index > 0 ? (
+          <div className="mx-5 h-0 border-t border-t-gray-400" />
+        ) : null}
+        <AccountRow
+          target={target}
+          account={account}
+          listed={rows.some((row) => {
+            return row.id === account.id;
+          })}
+          onReconnect={onReconnect}
+          onReviewScopes={onReviewScopes}
+          showDefault={defaultSignals === null}
+          enableControl={
+            <OptionalAccountEnabledToggle
+              account={account}
+              defaults={defaults}
+              signals={defaultSignals}
+            />
+          }
+        />
+      </div>
+    );
+  });
   return (
     <>
       {messageKey ? <AccountsMessage messageKey={messageKey} /> : null}
-      {displayedRows.length > 0 ? (
+      {displayedRows.length > 0 && defaultSignals ? (
+        <div className="overflow-hidden rounded-xl bg-card border border-surface-border">
+          {accountRows}
+        </div>
+      ) : displayedRows.length > 0 ? (
         <RadioGroup
-          value={
-            defaultSignals
-              ? (defaults?.find((account) => {
-                  return account.isDefault;
-                })?.connectionId ?? null)
-              : (defaultConnection?.id ?? null)
-          }
+          value={defaultConnection?.id ?? null}
           disabled={setDefaultLoadable.state === "loading"}
           onValueChange={(connectionId: string) => {
             detach(
@@ -455,36 +473,7 @@ function AccountsCard({
           }}
           className="overflow-hidden rounded-xl bg-card border border-surface-border"
         >
-          {displayedRows.map((account, index) => {
-            return (
-              <div key={account.id}>
-                {index > 0 ? (
-                  <div className="mx-5 h-0 border-t border-t-gray-400" />
-                ) : null}
-                <AccountRow
-                  target={target}
-                  account={account}
-                  listed={rows.some((row) => {
-                    return row.id === account.id;
-                  })}
-                  onReconnect={onReconnect}
-                  onReviewScopes={onReviewScopes}
-                  defaultEnabled={accountDefaultEnablement(
-                    defaults,
-                    account.id,
-                    defaultSignals !== null,
-                  )}
-                  enableControl={
-                    <OptionalAccountEnabledToggle
-                      account={account}
-                      defaults={defaults}
-                      signals={defaultSignals}
-                    />
-                  }
-                />
-              </div>
-            );
-          })}
+          {accountRows}
         </RadioGroup>
       ) : null}
     </>

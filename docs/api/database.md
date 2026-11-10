@@ -340,14 +340,24 @@ imports, so an existing import does not exempt additional uses in the same file.
 The DB schema aggregator is not classified as a Storage access module: importing
 the general database connection must remain available to independent entities.
 
-The candidate baseline may only remove entries or lower counts relative to
-base/main. Current references must match it exactly; remove stale entries and
+Outside explicitly approved one-time amendments, the candidate baseline may
+only remove entries or lower counts relative to base/main. Current references
+must match it exactly; remove stale entries and
 lower counts when migrating a consumer. A deleted entry cannot be restored.
 Initial activation additionally checks the candidate inventory against actual
 base/main source. Once the checker exists on main, a missing main inventory
 cannot reopen bootstrap. `node scripts/check-storage-dependencies.mjs --inventory`
 prints the current reference inventory for inspection; it does not authorize or
 automatically apply changes to the baseline.
+
+An explicitly reviewed policy amendment may register exact file/dependency
+ceilings in the checker. The candidate inventory acknowledges the amendment
+in `amendments`; only an amendment absent from base/main can raise its named
+ceilings once. Once base/main acknowledges it, ordinary reduction-only checks
+apply again. Acknowledgments cannot be removed, so later reductions cannot
+reuse an old approval to restore dependencies. Inventory output preserves them.
+Unknown or duplicate amendment IDs are rejected. This does not exempt an entire
+file or disable reference counting, exact inventory matching, or other guards.
 
 This is a static dependency ratchet, not a runtime or complete data-flow proof.
 It does not recursively classify callers of every existing wrapper. Reusing

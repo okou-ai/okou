@@ -26,10 +26,6 @@ use uuid::Uuid;
 
 const HANG_ON_TURN_START_READY_FILE: &str = ".codex-mock-turn-start-ready";
 const HANG_ON_TURN_START_READY_EVENT: &str = "codex_mock_turn_start_ready";
-const TURN_COMPLETE_BEFORE_HEARTBEAT_READY_FILE: &str =
-    ".codex-mock-turn-complete-before-heartbeat-ready";
-const TURN_COMPLETE_BEFORE_HEARTBEAT_READY_EVENT: &str =
-    "codex_mock_turn_complete_before_heartbeat_ready";
 const SESSION_HISTORY_READY_FILE: &str = ".codex-mock-session-history-ready";
 const SESSION_HISTORY_READY_EVENT: &str = "codex_mock_session_history_ready";
 const WAIT_ON_TURN_STEER_READY_FILE: &str = ".codex-mock-turn-steer-ready";
@@ -399,7 +395,9 @@ impl AppServerState {
             write_large_stdout_notification(output, &thread_id, &turn_id)?;
             write_json_line(output, &turn_completed_notification(&thread_id, &turn_id))?;
         }
-        write_success(output, id, json!({ "turn": turn(&turn_id) }))?;
+        if self.scenario != Scenario::RuntimeTurnCompleteBeforeHeartbeat {
+            write_success(output, id.clone(), json!({ "turn": turn(&turn_id) }))?;
+        }
         if self.scenario == Scenario::UnexpectedThreadOutputItemStarted {
             write_json_line(
                 output,
@@ -479,15 +477,6 @@ impl AppServerState {
                         )?;
                     } else {
                         write_turn_notifications(output, &thread_id, &turn_id, &response_text)?;
-                        if self.scenario == Scenario::RuntimeTurnCompleteBeforeHeartbeat {
-                            let home = std::env::var_os("HOME").ok_or_else(|| {
-                                io::Error::new(io::ErrorKind::NotFound, "HOME is not set")
-                            })?;
-                            std::fs::write(
-                                PathBuf::from(home).join(TURN_COMPLETE_BEFORE_HEARTBEAT_READY_FILE),
-                                TURN_COMPLETE_BEFORE_HEARTBEAT_READY_EVENT,
-                            )?;
-                        }
                     }
                 }
                 MockTurnOutput::Checkpoint {
@@ -511,6 +500,11 @@ impl AppServerState {
                         &response_text,
                     )?;
                 }
+            }
+            if self.scenario == Scenario::RuntimeTurnCompleteBeforeHeartbeat {
+                // The request reader must buffer completion before it can read
+                // this reply. The test then gates client-side arbitration.
+                write_success(output, id, json!({ "turn": turn(&turn_id) }))?;
             }
         } else if matches!(turn_output, MockTurnOutput::Checkpoint { .. }) {
             return Err(io::Error::new(

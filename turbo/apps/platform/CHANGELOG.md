@@ -13,6 +13,51 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1111.0](https://github.com/okou-ai/okou/compare/app-v0.1110.0...app-v0.1111.0) (2026-11-10)
+
+
+### Features
+
+* **platform:** show running chats on folded projects ([#46334](https://github.com/okou-ai/okou/issues/46334)) ([f577d8e](https://github.com/okou-ai/okou/commit/f577d8e24d6671a10b2d6fc7ce7fd7018ca3dde2))
+
+
+### Bug Fixes
+
+* **app:** fold or unfold a project by clicking its name on its page ([#46332](https://github.com/okou-ai/okou/issues/46332)) ([ef37bc0](https://github.com/okou-ai/okou/commit/ef37bc0fca0f8247ae4a7acda5d62a23b2328ad9))
+* **chat:** allow direct access to hidden chats without listing them ([#46322](https://github.com/okou-ai/okou/issues/46322)) ([2eba399](https://github.com/okou-ai/okou/commit/2eba399504c64b51bcce672f760712192b1cc21e))
+* **email:** add thread context and message source labels ([#46348](https://github.com/okou-ai/okou/issues/46348)) ([c25e9f1](https://github.com/okou-ai/okou/commit/c25e9f1e62bfa7a1b557ac5bcc770ddbb5821ded))
+* **platform:** return the chat list to the inbox from the Chat rail link ([#46342](https://github.com/okou-ai/okou/issues/46342)) ([471baa0](https://github.com/okou-ai/okou/commit/471baa0bbb0b9f3db367d39b309b9ceacfb6414b))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.47.0
+    * @okouai/core bumped to 8.825.5
+
+## [0.1110.0](https://github.com/okou-ai/okou/compare/app-v0.1109.1...app-v0.1110.0) (2026-11-10)
+
+
+### Features
+
+* **app:** keep connector account selection internal ([#46315](https://github.com/okou-ai/okou/issues/46315)) ([ffa08a3](https://github.com/okou-ai/okou/commit/ffa08a3ffa9ada48ff12bf01a82549577a889aa6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.4
+    * @okouai/core bumped to 8.825.4
+
+## [0.1109.1](https://github.com/okou-ai/okou/compare/app-v0.1109.0...app-v0.1109.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* preserve handoff session access and recover failed task entry ([#46268](https://github.com/okou-ai/okou/issues/46268)) ([f68a92e](https://github.com/okou-ai/okou/commit/f68a92e1d2838100fcaaa2d7601d1b0338bc7e2a))
+
 ## [0.1109.0](https://github.com/okou-ai/okou/compare/app-v0.1108.0...app-v0.1109.0) (2026-11-10)
 
 

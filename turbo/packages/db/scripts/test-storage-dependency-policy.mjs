@@ -232,3 +232,73 @@ await test("initial registration cannot admit same-PR dependencies, and activate
   f.write(baselinePath, JSON.stringify(f.inventory()));
   f.check(invalidBase, false, /bootstrap is closed/);
 });
+
+await test("an approved amendment is bounded, consumed once, and cannot restore later reductions", (t) => {
+  const f = fixture(t);
+  const base = f.activate();
+  const claimOwner =
+    "turbo/apps/api/src/signals/services/execution-storage.service.ts";
+  const approvedCode = [
+    'import { storages } from "@okouai/db/schema/storage";',
+    `export const load = () => [${Array(25).fill("storages").join(",")}];`,
+  ].join("\n");
+  f.write(claimOwner, approvedCode);
+  const claimConsumers = [
+    "turbo/apps/api/src/signals/services/claim-execution-context.ts",
+    "turbo/apps/api/src/signals/services/claim-runtime-context.ts",
+  ];
+  const consumerCode =
+    'import { load } from "./execution-storage.service"; load();';
+  for (const file of claimConsumers) f.write(file, consumerCode);
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(base, false, /grew from 0 to 26/);
+  f.write(
+    baselinePath,
+    JSON.stringify({
+      ...f.inventory(),
+      amendments: ["claim-source-reconstruction"],
+    }),
+  );
+  f.check(base, true);
+
+  f.write(claimConsumers[0], consumerCode + "\nload();");
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(base, false, /grew from 2 to 3/);
+  f.write(claimConsumers[0], consumerCode);
+
+  f.write(claimOwner, approvedCode + "\nstorages;");
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(base, false, /grew from 26 to 27/);
+  f.write(claimOwner, approvedCode);
+  f.write(
+    feature,
+    'import { storages } from "@okouai/db/schema/storage"; storages;',
+  );
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(base, false, /New legacy Storage dependencies are prohibited/);
+  f.write(feature, "export {};");
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  const approved = f.commit();
+
+  f.write(claimOwner, ownerCode);
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(approved, true);
+  const reduced = f.commit();
+  f.write(claimOwner, approvedCode);
+  f.write(baselinePath, JSON.stringify(f.inventory()));
+  f.check(reduced, false, /grew from 2 to 26/);
+  f.write(claimOwner, ownerCode);
+  const inventory = f.inventory();
+  f.write(baselinePath, JSON.stringify({ ...inventory, amendments: [] }));
+  f.check(reduced, false, /acknowledgments cannot be removed/);
+  for (const amendments of [
+    null,
+    {},
+    "claim-source-reconstruction",
+    ["unknown"],
+    ["claim-source-reconstruction", "claim-source-reconstruction"],
+  ]) {
+    f.write(baselinePath, JSON.stringify({ ...inventory, amendments }));
+    f.check(reduced, false, /Invalid Storage policy amendment/);
+  }
+});

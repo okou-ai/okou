@@ -11,7 +11,7 @@ struct OkouApp: App {
   private static var isDesignPreview: Bool {
     #if DEBUG
       ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
-        || isChatSyncStatus
+        || isChatSyncStatus || isComputerAuthorizationPreview
     #else
       false
     #endif
@@ -34,7 +34,22 @@ struct OkouApp: App {
     #endif
   }
 
+  private static var isComputerAuthorizationPreview: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.arguments.contains("--computer-access-cards")
+    #else
+      false
+    #endif
+  }
+
   init() {
+    #if DEBUG || STAGING
+      if case .success(let configuration) = configuration {
+        StagingPreviewAccess.configure(
+          apiURL: configuration.apiURL,
+          bypass: ProcessInfo.processInfo.environment["OKOU_PREVIEW_API_BYPASS"])
+      }
+    #endif
     if !Self.isDesignPreview { CrashReporting.start() }
     OkouNavigationBar.applyBackIndicator()
     OkouNavigationBar.applySearchField()
@@ -51,7 +66,9 @@ struct OkouApp: App {
     WindowGroup {
       Group {
         #if DEBUG
-          if Self.isChatSyncStatus {
+          if Self.isComputerAuthorizationPreview {
+            NavigationStack { ComputerAuthorizationGallery() }
+          } else if Self.isChatSyncStatus {
             NavigationStack { ChatSyncStatusGallery() }
           } else if Self.isResultStyles {
             NavigationStack { ResultStylesPage() }
@@ -226,24 +243,18 @@ private struct WorkspaceRootView: View {
 
   var body: some View {
     GeometryReader { geometry in
-      // Full width: chat titles are long. The two pages cross-fade through a blur, as in Grok:
-      // the chat drifts a quarter screen right as it blurs away and the list drifts in from a
-      // quarter screen left as it comes into focus. Neither slides as a card, so no edge of
-      // either page ever crosses the screen.
-      let sidebarWidth = geometry.size.width
+      // The sidebar takes most of the width and pushes the chat aside, as ChatGPT and Gmail do:
+      // a strip of the chat stays on screen, dimmed, and a tap on it returns there, so leaving
+      // the list never depends on knowing the swipe. The list drifts in from a quarter of its
+      // width to the left as the chat slides over it.
+      let sidebarWidth = (geometry.size.width * OkouControl.sidebarShare).rounded()
       let sidebarProgress =
         min(
           max((sidebar.isOpen ? sidebarWidth : 0) + (sidebar.translation ?? 0), 0), sidebarWidth)
         / sidebarWidth
       let drift = sidebarWidth * OkouMotion.sidebarParallax
-      let topInset = geometry.safeAreaInsets.top
-      let screenHeight = geometry.size.height + topInset + geometry.safeAreaInsets.bottom
-      // The edge each page leads with fades out over part of the screen while it moves, so the
-      // two pages meet in the blur instead of along a line.
-      let chatFeather = min(sidebarProgress, OkouMotion.sidebarFeather)
-      let sidebarFeather = min(1 - sidebarProgress, OkouMotion.sidebarFeather)
       ZStack(alignment: .leading) {
-        OkouColor.background.ignoresSafeArea()
+        OkouColor.sidebar.ignoresSafeArea()
 
         ChatSidebarView(
           store: store, authentication: authentication, workspaceID: workspaceID,
@@ -254,17 +265,6 @@ private struct WorkspaceRootView: View {
           newChat: startNewChat
         )
         .frame(width: sidebarWidth, height: geometry.size.height)
-        .blur(radius: OkouElevation.sidebarBlur * (1 - sidebarProgress))
-        .opacity(sidebarProgress)
-        .mask(alignment: .top) {
-          LinearGradient(
-            stops: [
-              .init(color: .black, location: 1 - sidebarFeather), .init(color: .clear, location: 1),
-            ], startPoint: .leading, endPoint: .trailing
-          )
-          .frame(width: sidebarWidth, height: screenHeight)
-          .offset(y: -topInset)
-        }
         .offset(x: -drift * (1 - sidebarProgress))
         .allowsHitTesting(sidebar.isOpen)
         .accessibilityHidden(!sidebar.isOpen)
@@ -344,19 +344,56 @@ private struct WorkspaceRootView: View {
         .accessibilityHidden(sidebar.isOpen)
         .allowsHitTesting(!sidebar.isOpen)
         .sensoryFeedback(.selection, trigger: sidebar.isOpen)
-        .blur(radius: OkouElevation.sidebarBlur * sidebarProgress)
-        .mask(alignment: .top) {
-          LinearGradient(
-            stops: [
-              .init(color: .clear, location: 0), .init(color: .black, location: chatFeather),
-            ],
-            startPoint: .leading, endPoint: .trailing
-          )
-          .frame(width: sidebarWidth, height: screenHeight)
-          .offset(y: -topInset)
+        // The strip of the chat beside the list frosts lightly as the list opens: the thinnest
+        // material laid on top at part strength, not a blur of the chat itself, so the transcript
+        // is never re-rendered (a blurred transcript re-read its safe area and jumped on the way
+        // back) and its messages still show through the frost. The page turns into a card with large corners and a very faint edge.
+        .overlay {
+          Rectangle().fill(.ultraThinMaterial)
+            .opacity(OkouElevation.sidebarFrost * sidebarProgress)
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
         }
-        .opacity(1 - sidebarProgress)
-        .offset(x: drift * sidebarProgress)
+        .mask {
+          RoundedRectangle(cornerRadius: OkouRadius.page * sidebarProgress, style: .continuous)
+            .ignoresSafeArea()
+        }
+        .overlay {
+          RoundedRectangle(cornerRadius: OkouRadius.page * sidebarProgress, style: .continuous)
+            .strokeBorder(
+              OkouColor.border.opacity(OkouElevation.sidebarEdgeLineOpacity * sidebarProgress),
+              lineWidth: OkouSpace.hairline
+            )
+            .ignoresSafeArea()
+            .allowsHitTesting(false)
+        }
+        .background {
+          // The edge's shadow comes from a plain card-shaped fill, so dragging never re-renders
+          // the chat's own content for it.
+          RoundedRectangle(cornerRadius: OkouRadius.page * sidebarProgress, style: .continuous)
+            .fill(OkouColor.background)
+            .shadow(
+              color: .black.opacity(OkouElevation.sidebarEdgeOpacity * sidebarProgress),
+              radius: OkouElevation.sidebarEdgeRadius
+            )
+            .ignoresSafeArea()
+        }
+        .offset(x: sidebarWidth * sidebarProgress)
+
+        // The strip is the way back: a tap anywhere on it returns to the chat. It lies over the
+        // chat, which takes no touches while the list is open.
+        Color.clear
+          .contentShape(Rectangle())
+          .frame(width: max(geometry.size.width - sidebarWidth * sidebarProgress, 0))
+          .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .trailing)
+          .ignoresSafeArea()
+          .onTapGesture { closeSidebar() }
+          .allowsHitTesting(sidebar.isOpen)
+          .accessibilityElement()
+          .accessibilityLabel("Close sidebar")
+          .accessibilityAddTraits(.isButton)
+          .accessibilityAction { closeSidebar() }
+          .accessibilityHidden(!sidebar.isOpen)
       }
       .frame(width: geometry.size.width, height: geometry.size.height, alignment: .leading)
       .gesture(

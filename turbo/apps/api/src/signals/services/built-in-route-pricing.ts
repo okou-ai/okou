@@ -162,7 +162,7 @@ interface ModelUsageContext {
   readonly modelUsageLongContextMinTotalInputTokens: number;
 }
 
-function billableFirewallsForPermissions(args: {
+export function billableFirewallsForPermissions(args: {
   readonly modelProvider: ResolvedModelProviderEnvironment | null;
   readonly permissions: PermissionManifest | undefined;
 }): string[] {
