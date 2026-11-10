@@ -1,6 +1,11 @@
 import { useGet, useLastResolved, useSet } from "ccstate-react";
 import { useTranslation } from "react-i18next";
-import { Badge, cn, getShortcutLabel } from "@okouai/ui";
+import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
+import {
+  avatarTextureUrl,
+  defaultAgentAvatarTextures,
+} from "@okouai/core/agent-avatar-texture";
+import { cn } from "@okouai/ui";
 import { defaultAgentChatPageActive$ } from "../../signals/agent.ts";
 import { assistantName$ } from "../../signals/branding.ts";
 import {
@@ -10,87 +15,84 @@ import {
 } from "../../signals/okou-page/agent-suggestion-session.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
-import { OkouLogomark } from "../components/okou-logomark.tsx";
 import { Link } from "../router/link.tsx";
+import { AvatarTextureLayer } from "./avatar-svg-preview.tsx";
 
 const ENTRY_ROW =
-  "flex h-8 w-full min-w-0 items-center rounded-lg pr-2 text-left text-sm text-nav-copy motion-safe:transition-colors motion-safe:duration-[180ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
+  "flex h-16 w-full min-w-0 items-center gap-3 rounded-lg px-2 text-left text-sm text-nav-copy motion-safe:transition-colors motion-safe:duration-[180ms] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring";
 
-const SHORTCUT_HINT =
-  "shrink-0 whitespace-nowrap pl-2 font-sans text-xs text-nav-copy-muted";
+// The default avatar's own brand tile, the one the chat home greeting draws
+// behind the same artwork.
+const OKOU_AVATAR_TEXTURE_URL = avatarTextureUrl(
+  defaultAgentAvatarTextures()[0]!,
+);
 
-function ShortcutHint({
-  label,
-  className,
-}: {
-  label: string;
-  className: string;
-}) {
-  return (
-    <kbd aria-hidden="true" className={cn(SHORTCUT_HINT, className)}>
-      {label}
-    </kbd>
-  );
+/** The badge stops at two characters so it keeps the corner it sits in. */
+function waitingBadgeLabel(count: number): string {
+  return count > 9 ? "9+" : String(count);
 }
 
-function RestingShortcutHint({ label }: { label: string | null }) {
-  return label === null ? null : (
-    <ShortcutHint
-      label={label}
-      className="md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/okou-row:opacity-100 group-focus-visible/okou-row:opacity-100"
-    />
+/**
+ * Okou's face peeking into its tile: the artwork is turned 30° clockwise and
+ * cropped so the face enters from the lower left with the bun at the upper
+ * right, over the avatar's brand texture. The count takes the lower right
+ * corner, clear of the bun.
+ */
+function OkouRowAvatar({ count }: { count: number }) {
+  return (
+    <span aria-hidden="true" className="relative size-10 shrink-0">
+      <span className="absolute inset-0 overflow-hidden rounded-[10px] border border-surface-border">
+        <AvatarTextureLayer url={OKOU_AVATAR_TEXTURE_URL} />
+        <img
+          src={DEFAULT_AGENT_AVATAR_URL}
+          alt=""
+          className="absolute -left-[15px] -top-2 h-auto w-[61.5px] max-w-none rotate-30"
+        />
+      </span>
+      {count === 0 ? null : (
+        <span
+          data-testid="okou-row-waiting-badge"
+          className="absolute -bottom-[5px] -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-[3px] text-[10px] font-semibold leading-none tabular-nums text-primary-foreground"
+        >
+          {waitingBadgeLabel(count)}
+        </span>
+      )}
+    </span>
   );
 }
 
 /**
- * The trailing slot holds the waiting count and the New chat shortcut hint.
- * They share one slot, like a chat row's resting indicator and its menu: the
- * count rests there and hover or keyboard focus swaps in the hint, so neither
- * pushes the other aside.
+ * The count is drawn on the avatar for sight and named after the row's label
+ * for assistive technology, so the badge itself stays hidden from it.
  */
-function OkouRowTrailing({ shortcutLabel }: { shortcutLabel: string | null }) {
+function CountedOkouRowAvatar() {
+  const count = useLastResolved(waitingSuggestionCount$) ?? 0;
+  return <OkouRowAvatar count={count} />;
+}
+
+function WaitingCountLabel() {
   const { t } = useTranslation();
   const count = useLastResolved(waitingSuggestionCount$) ?? 0;
   if (count === 0) {
-    return <RestingShortcutHint label={shortcutLabel} />;
+    return null;
   }
   return (
-    <>
-      {/* The label stays outside the swapped badge so hiding the digit on
-          hover or focus keeps the count in the row's accessible name. */}
-      <span className="sr-only">
-        {t(
-          ($) => {
-            return $.appShell.sidebar.suggestionsWaiting;
-          },
-          { count },
-        )}
-      </span>
-      <Badge
-        aria-hidden="true"
-        className={cn(
-          "shrink-0 text-xs font-medium tabular-nums text-nav-copy-muted",
-          shortcutLabel !== null &&
-            "md:group-hover/okou-row:hidden group-focus-visible/okou-row:hidden",
-        )}
-      >
-        {count}
-      </Badge>
-      {shortcutLabel === null ? null : (
-        <ShortcutHint
-          label={shortcutLabel}
-          className="hidden md:group-hover/okou-row:block group-focus-visible/okou-row:block"
-        />
+    <span className="sr-only">
+      {t(
+        ($) => {
+          return $.appShell.sidebar.suggestionsWaiting;
+        },
+        { count },
       )}
-    </>
+    </span>
   );
 }
 
 /**
- * Okou's own entry, first in the chat list: it opens home and counts the
- * suggestion cards waiting there. The glyph takes the Project folders' slot so
- * the names line up. In My Okou home is the new chat, so the row is named New
- * chat.
+ * Okou's own entry, first in the chat list: it opens home, where a new chat
+ * starts, and counts the suggestion cards waiting there. In My Okou the row
+ * still declares the New chat shortcut, while its visible hint is the hover
+ * tooltip on the rail's Chat link, which opens the same page.
  */
 export function OkouChatListRow() {
   const enabled = useGet(suggestionsEnabled$);
@@ -98,12 +100,10 @@ export function OkouChatListRow() {
   const active = useLastResolved(defaultAgentChatPageActive$) === true;
   const assistantName = useGet(assistantName$);
   const followCount = useSet(followWaitingSuggestionCountOnRef$);
-  const { t } = useTranslation();
   if (!enabled && !singleAgent) {
     return null;
   }
   const newChat = GLOBAL_KEYBOARD_SHORTCUTS.newChat;
-  const shortcutLabel = singleAgent ? getShortcutLabel(newChat.binding) : null;
   return (
     <Link
       ref={enabled ? followCount : undefined}
@@ -111,26 +111,13 @@ export function OkouChatListRow() {
       aria-current={active ? "page" : undefined}
       aria-keyshortcuts={singleAgent ? newChat.ariaKeyShortcuts : undefined}
       className={cn(
-        "group/okou-row",
         ENTRY_ROW,
         active ? "bg-state-selected font-medium" : "hover:bg-state-hover",
       )}
     >
-      <span className="flex w-8 shrink-0 items-center justify-center px-2">
-        <OkouLogomark className="size-4 shrink-0 opacity-70" />
-      </span>
-      <span className="min-w-0 flex-1 truncate">
-        {singleAgent
-          ? t(($) => {
-              return $.chat.newChat;
-            })
-          : assistantName}
-      </span>
-      {enabled ? (
-        <OkouRowTrailing shortcutLabel={shortcutLabel} />
-      ) : (
-        <RestingShortcutHint label={shortcutLabel} />
-      )}
+      {enabled ? <CountedOkouRowAvatar /> : <OkouRowAvatar count={0} />}
+      <span className="min-w-0 flex-1 truncate">{assistantName}</span>
+      {enabled ? <WaitingCountLabel /> : null}
     </Link>
   );
 }

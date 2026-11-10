@@ -225,7 +225,7 @@ function releasePageDom() {
   vi.mocked(window.history.back).mockRestore();
 }
 
-test("My Okou's Project rows carry only their menu, since New chat leads the list", async () => {
+test("My Okou's Project rows carry only their menu, since the Okou row leads the list", async () => {
   const thread = continuityThread(222, 1, "Ordinary chat");
   const workspace = installContinuityWorkspace(context, {
     caseId: 222,

@@ -203,8 +203,17 @@ function AccountDropdownContainer() {
 const RAIL_FRAME =
   "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center py-[18px]";
 
+// A tooltip trigger renders through this link, so the trigger's props and ref,
+// including its DOM `id`, reach the anchor; the link keeps its own label, state
+// and classes. The nav item is `navId` so it never shadows that `id`. The
+// tooltip reads `aria-label` from the element to title itself.
+type RailLinkAnchorProps = Omit<
+  ComponentProps<typeof Link>,
+  "pathname" | "options" | "children" | "className"
+>;
+
 function LabeledRailLink({
-  id,
+  navId,
   navPath,
   navOptions,
   label,
@@ -213,8 +222,10 @@ function LabeledRailLink({
   isActive,
   showBadge,
   onNavigate,
-}: {
-  id: SidebarNavId;
+  onClick,
+  ...anchorProps
+}: RailLinkAnchorProps & {
+  navId: SidebarNavId;
   navPath: string;
   navOptions?: Parameters<typeof Link>[0]["options"];
   label: string;
@@ -226,7 +237,7 @@ function LabeledRailLink({
 }) {
   const { t } = useTranslation();
   const caption = (() => {
-    switch (id) {
+    switch (navId) {
       case "chat": {
         return t(($) => {
           return $.appShell.sidebar.chat;
@@ -249,9 +260,11 @@ function LabeledRailLink({
   })();
   return (
     <Link
+      {...anchorProps}
       pathname={navPath as Parameters<typeof Link>[0]["pathname"]}
       options={navOptions}
       onClick={(event) => {
+        onClick?.(event);
         // Only a click that navigates here, not one opening a new tab.
         if (onNavigate && shouldHandleLinkClick(event)) {
           onNavigate();
@@ -340,23 +353,48 @@ function LabeledChatRailLink() {
   // My Okou's chat page is `/` itself.
   const agentChatId = singleAgent ? null : defaultAgentId;
   const { t } = useTranslation();
+  const label = t(($) => {
+    return $.appShell.sidebar.chat;
+  });
+  const linkProps = {
+    navId: "chat",
+    navPath: agentChatId ? ROUTES.agentChat : ROUTES.home,
+    navOptions: agentChatId
+      ? { pathParams: { agentId: agentChatId } }
+      : undefined,
+    label,
+    icon: MessageCircle as NavIcon,
+    isActive:
+      activeId !== null &&
+      ["home", "agentChat", "agentIdeas", "chat"].includes(activeId),
+    showBadge: false,
+    onNavigate: showInbox,
+  } as const;
+  if (!singleAgent) {
+    // New chat follows the current agent here, while Chat opens the default
+    // agent, so the shortcut does not belong to this link.
+    return <LabeledRailLink {...linkProps} />;
+  }
+  // In My Okou, Chat and New chat both open home, so Chat carries the New chat
+  // shortcut and names it on hover like the chat list header's buttons.
   return (
-    <LabeledRailLink
-      id="chat"
-      navPath={agentChatId ? ROUTES.agentChat : ROUTES.home}
-      navOptions={
-        agentChatId ? { pathParams: { agentId: agentChatId } } : undefined
-      }
-      label={t(($) => {
-        return $.appShell.sidebar.chat;
-      })}
-      icon={MessageCircle as NavIcon}
-      isActive={
-        activeId !== null &&
-        ["home", "agentChat", "agentIdeas", "chat"].includes(activeId)
-      }
-      showBadge={false}
-      onNavigate={showInbox}
+    <ShortcutTooltipGroup
+      side="right"
+      className="w-full"
+      items={[
+        {
+          shortcut: GLOBAL_KEYBOARD_SHORTCUTS.newChat.binding,
+          trigger: (
+            <LabeledRailLink
+              {...linkProps}
+              aria-label={label}
+              aria-keyshortcuts={
+                GLOBAL_KEYBOARD_SHORTCUTS.newChat.ariaKeyShortcuts
+              }
+            />
+          ),
+        },
+      ]}
     />
   );
 }
@@ -368,7 +406,7 @@ function LabeledManageRailLinks() {
     return (
       <LabeledRailLink
         key={item.id}
-        id={item.id}
+        navId={item.id}
         navPath={item.pathname}
         label={item.label}
         icon={item.icon}
@@ -387,7 +425,7 @@ function LabeledFooterRailLinks() {
     return (
       <LabeledRailLink
         key={item.id}
-        id={item.id}
+        navId={item.id}
         navPath={item.pathname}
         label={item.label}
         icon={item.icon}
