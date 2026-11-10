@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.8...runner-executor-v0.21.9) (2026-11-10)
+
+
+### Performance Improvements
+
+* **runner:** overlap split storage application with source preparation ([#46416](https://github.com/okou-ai/okou/issues/46416)) ([753d1b5](https://github.com/okou-ai/okou/commit/753d1b55b6b937b554f20673bc4bb97fd09541b9))
+
 ## [0.21.8](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.7...runner-executor-v0.21.8) (2026-11-10)
 
 ## [0.21.7](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.6...runner-executor-v0.21.7) (2026-11-10)

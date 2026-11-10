@@ -10,6 +10,23 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.57.1](https://github.com/okou-ai/okou/compare/api-v2.57.0...api-v2.57.1) (2026-11-10)
+
+
+### Refactoring
+
+* **api:** persist only irrecoverable execution inputs ([#46382](https://github.com/okou-ai/okou/issues/46382)) ([cee3bd3](https://github.com/okou-ai/okou/commit/cee3bd3b92c6d8b28bde8da1dd81876ee144b811))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.1
+    * @okouai/core bumped to 8.826.1
+    * @okouai/db bumped to 2.25.1
+    * @okouai/pi-agent-runtime bumped to 1.51.97
+
 ## [2.57.0](https://github.com/okou-ai/okou/compare/api-v2.56.0...api-v2.57.0) (2026-11-10)
 
 

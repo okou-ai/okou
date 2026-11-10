@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.6...runner-storage-v0.10.7) (2026-11-10)
+
+
+### Performance Improvements
+
+* **runner:** overlap split storage application with source preparation ([#46416](https://github.com/okou-ai/okou/issues/46416)) ([753d1b5](https://github.com/okou-ai/okou/commit/753d1b55b6b937b554f20673bc4bb97fd09541b9))
+
 ## [0.10.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.5...runner-storage-v0.10.6) (2026-11-10)
 
 
