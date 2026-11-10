@@ -28,12 +28,10 @@ struct ChatSidebarView: View {
 
   private struct ProjectEditor {
     let dialog: OkouNameDialog.Request
-    let projectID: String?
-    let fromThreadID: String?
+    let projectID: String
   }
 
   @State private var projectEditor: ProjectEditor?
-  @State private var pendingProjectEditor: ProjectEditor?
   @State private var membershipThread: ChatThread?
   @State private var deletingProject: ChatProject?
   @State private var projectAction: Task<Void, Never>?
@@ -148,21 +146,7 @@ struct ChatSidebarView: View {
         cancel: { projectEditor = nil }, save: saveProjectName
       ).frame(width: 0, height: 0)
     }
-    .sheet(
-      item: $membershipThread,
-      onDismiss: {
-        if let pendingProjectEditor {
-          showEditor(pendingProjectEditor)
-          self.pendingProjectEditor = nil
-        }
-      }
-    ) { thread in
-      ChatProjectPicker(workspace: store, thread: thread) {
-        pendingProjectEditor = editor(fromThreadID: thread.id)
-        membershipThread = nil
-      }
-      .okouSheetBackground()
-    }
+    .chatProjectMembershipPicker(workspace: store, thread: $membershipThread)
     .alert(
       "Delete project?",
       isPresented: Binding(
@@ -355,14 +339,13 @@ struct ChatSidebarView: View {
     .disabled(store.needsUpgrade || store.projects.pending.contains(project.id))
   }
 
-  private func editor(project: ChatProject? = nil, fromThreadID: String? = nil) -> ProjectEditor {
+  private func editor(project: ChatProject) -> ProjectEditor {
     ProjectEditor(
       dialog: OkouNameDialog.Request(
-        title: project == nil
-          ? String(localized: "New project") : String(localized: "Rename project"),
-        placeholder: String(localized: "Project name"), name: project?.name ?? "",
+        title: String(localized: "Rename project"),
+        placeholder: String(localized: "Project name"), name: project.name,
         maximumLength: 120, accessibilityIdentifier: "project-name"),
-      projectID: project?.id, fromThreadID: fromThreadID)
+      projectID: project.id)
   }
 
   private func saveProjectName(_ name: String) {
@@ -370,19 +353,14 @@ struct ChatSidebarView: View {
     projectEditor = nil
     projectAction?.cancel()
     projectAction = Task {
-      let saved: Bool
-      if let id = request.projectID {
-        saved = await store.projects.rename(id, name: name)
-      } else {
-        saved = await store.projects.create(name: name, fromThreadID: request.fromThreadID) != nil
-      }
+      let saved = await store.projects.rename(request.projectID, name: name)
       guard !Task.isCancelled, !saved else { return }
       projectEditor = ProjectEditor(
         dialog: OkouNameDialog.Request(
           title: request.dialog.title, placeholder: request.dialog.placeholder,
           name: name, error: store.projects.actionError,
           maximumLength: 120, accessibilityIdentifier: "project-name"),
-        projectID: request.projectID, fromThreadID: request.fromThreadID)
+        projectID: request.projectID)
     }
   }
 
@@ -427,31 +405,11 @@ struct ChatSidebarView: View {
     .accessibilityAddTraits(store.selectedThreadID == thread.id ? .isSelected : [])
     .accessibilityValue(thread.pinnedAt != nil ? "Pinned" : "")
     .contextMenu {
-      Button("Move to project", okouSymbol: "folder-input") { membershipThread = thread }
-        .disabled(store.needsUpgrade || !store.list.canUpdate(thread.id))
-      if !thread.isMuted {
-        readAction(thread, read: false)
-      }
-      Button(
-        thread.pinnedAt == nil ? "Pin" : "Unpin",
-        okouSymbol: thread.pinnedAt == nil ? "pin" : "pin-off"
-      ) {
-        Task { await store.list.togglePinned(thread.id) }
-      }
-      .disabled(!store.list.canPin(thread.id) || store.needsUpgrade)
-      Button("Rename", okouSymbol: "pencil") {
-        store.list.beginRename(thread.id)
-      }
-      .disabled(
-        !store.list.canUpdate(thread.id) || store.list.isSavingRename || store.needsUpgrade)
-      Button(
-        thread.isArchived ? "Unarchive" : "Archive",
-        okouSymbol: thread.isArchived ? "archive-restore" : "archive"
-      ) {
-        Task { await store.setArchived(thread.id, archived: !thread.isArchived) }
-      }
-      .disabled(!store.list.canUpdate(thread.id) || store.needsUpgrade)
+      ChatThreadMenuContent(
+        menu: ChatThreadMenu(
+          workspace: store, threadID: thread.id, moveToProject: { membershipThread = $0 }))
     }
+    .menuOrder(.fixed)
     // Every row action is on the right swipe: a left swipe anywhere in the sidebar closes it.
     .swipeActions(edge: .leading, allowsFullSwipe: false) {
       if !thread.isMuted {
