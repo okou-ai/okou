@@ -50,6 +50,7 @@ export function createNativeWindowProvider(context: TestContext) {
     emptySnapshot: boolean;
     beforeCreateReply?: (target: NativeTarget) => Promise<void> | void;
     onSocketClose?: () => void;
+    onWithheldReply?: () => void;
     windowError?: string;
     closeSucceeds: boolean;
     closeReply: "reply" | "withhold" | "disconnect";
@@ -84,6 +85,10 @@ export function createNativeWindowProvider(context: TestContext) {
   let nextTabId = 1;
   let nativeSequence = 0;
   const tabIds = new Map<string, number>();
+  function withholdReply() {
+    state.onWithheldReply?.();
+    return true;
+  }
   function windowInfo(windowId: number, populate: boolean) {
     const targets = [...state.targets.values()].filter((target) => {
       return target.windowId === windowId;
@@ -254,7 +259,7 @@ export function createNativeWindowProvider(context: TestContext) {
           state.windowReply === "withhold") ||
           (request.method === "closeWindow" && state.closeReply === "withhold"))
       ) {
-        return true;
+        return withholdReply();
       }
       const startedSequence = nativeSequence;
       const value = request ? await invokeNative(request) : bootstrap;
@@ -304,7 +309,7 @@ export function createNativeWindowProvider(context: TestContext) {
         return false;
       }
       if (state.windowReply === "withhold") {
-        return true;
+        return withholdReply();
       }
       if (command.method === "Browser.getWindowForTarget") {
         const targetId = String(command.params.targetId);
