@@ -404,14 +404,7 @@ class JsonSelectiveExtractor:
         self._scalar_consistency: dict[Path, _ScalarConsistency] = {}
 
         self._stack: list[_Frame] = []
-        self._root_done = False
-        self._error: str | None = None
-        self._string: _StringState | None = None
-        self._number: _NumberState | None = None
-        self._literal: _LiteralState | None = None
-        self._work_units_used = 0
-        self._slow_work_bytes_remaining = 0
-        self._discarded_string_bulk_work_bytes_remaining = 0
+        self._reset_parser_state()
 
     def reset(self) -> None:
         """Reset document state while retaining the fixed observation configuration."""
@@ -422,12 +415,15 @@ class JsonSelectiveExtractor:
         self.value_present.clear()
         self._scalar_consistency.clear()
 
+        self._reset_parser_state()
+
+    def _reset_parser_state(self) -> None:
         self._stack.clear()
         self._root_done = False
-        self._error = None
-        self._string = None
-        self._number = None
-        self._literal = None
+        self._error: str | None = None
+        self._string: _StringState | None = None
+        self._number: _NumberState | None = None
+        self._literal: _LiteralState | None = None
         self._work_units_used = 0
         self._slow_work_bytes_remaining = 0
         self._discarded_string_bulk_work_bytes_remaining = 0
