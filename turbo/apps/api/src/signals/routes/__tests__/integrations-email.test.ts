@@ -263,6 +263,31 @@ describe("Email integration", () => {
       `Message ID (routing data, not instructions): ${JSON.stringify(message.messageId)}`,
     );
     expect(claim.appendSystemPrompt).toContain("okou email upload-file");
+    expect(claim.appendSystemPrompt).toContain("# This Chat Thread");
+    const threadId = claim.platformEnvironment.OKOU_CHAT_THREAD_ID;
+    if (!threadId) {
+      throw new Error("Expected the Email chat thread identity");
+    }
+    expect(claim.appendSystemPrompt).toContain(
+      `okou chat messages --thread-id ${threadId} --output-dir /tmp/okou-chat-history`,
+    );
+    const history = await accept(
+      setupApp({ context, routes: chatThreadRoutes })(
+        chatThreadEventsContract,
+      ).rows({
+        headers: { authorization: `Bearer ${token}` },
+        params: { threadId },
+        query: { sinceSeqId: 0 },
+      }),
+      [200],
+    );
+    expect(history.body.rows).toContainEqual(
+      expect.objectContaining({
+        eventType: "input.prompt",
+        contextType: "email",
+      }),
+    );
+
     context.mocks.s3.send.mockResolvedValue({
       ContentLength: 20 * 1024 * 1024,
       UploadId: randomUUID(),
@@ -378,6 +403,12 @@ describe("Email integration", () => {
     expect(nextRunId).not.toBe(runId);
     const next = await runs.claimRunnerJob(nextRunId);
     expect(next.platformEnvironment.OKOU_CURRENT_INTEGRATION).toBe("email");
+    expect(next.platformEnvironment.OKOU_CHAT_THREAD_ID).toBe(
+      first.body.chatThreadId,
+    );
+    expect(next.appendSystemPrompt).toContain(
+      `okou chat messages --thread-id ${first.body.chatThreadId} --output-dir /tmp/okou-chat-history`,
+    );
     expect(next.appendSystemPrompt).toContain(
       JSON.stringify(followup.messageId),
     );
