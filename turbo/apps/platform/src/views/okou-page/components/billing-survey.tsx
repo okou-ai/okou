@@ -76,7 +76,7 @@ function SurveyOptions<Answer extends string>({
           return (
             <label
               key={answer}
-              className="flex min-h-8 cursor-pointer items-center gap-2.5 rounded-md px-1 text-sm text-foreground"
+              className="flex min-h-8 items-center gap-2.5 rounded-md px-1 text-sm text-foreground"
             >
               <Radio value={answer} />
               <span className="min-w-0 break-words">{label(answer)}</span>

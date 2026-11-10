@@ -155,6 +155,21 @@ export const clientContractImportManifest = [
     ],
     bindings: [
       {
+        name: "BILLING_SURVEY_CHECKOUT_KINDS",
+        source: "validators/billing",
+        imported: "BILLING_SURVEY_CHECKOUT_KINDS",
+      },
+      {
+        name: "CHECKOUT_ABANDONED_SURVEY_ANSWERS",
+        source: "validators/billing",
+        imported: "CHECKOUT_ABANDONED_SURVEY_ANSWERS",
+      },
+      {
+        name: "CREDITS_EXHAUSTED_SURVEY_ANSWERS",
+        source: "validators/billing",
+        imported: "CREDITS_EXHAUSTED_SURVEY_ANSWERS",
+      },
+      {
         name: "USAGE_PACKS_USD",
         source: "validators/billing",
         imported: "USAGE_PACKS_USD",
