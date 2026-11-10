@@ -8,6 +8,8 @@ import textwrap
 import unittest
 from pathlib import Path
 
+from cancellation_cases import CANCELLATION_CASES
+
 IOS = Path(__file__).resolve().parents[3]
 BINARY = (
     os.environ.get("SWIFTLINT_BIN")
@@ -18,6 +20,7 @@ BINARY = (
 )
 
 CASES = [
+    *CANCELLATION_CASES,
     (
         "typed cancellation cannot become resource data",
         "okou_resource_failures",

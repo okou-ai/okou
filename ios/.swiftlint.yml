@@ -16,6 +16,8 @@ only_rules:
   - okou_native_requests
   - okou_resource_failures
   - okou_test_synchronization
+  - okou_check_after_await
+  - okou_resource_cancellation
 
 included:
   - Okou
