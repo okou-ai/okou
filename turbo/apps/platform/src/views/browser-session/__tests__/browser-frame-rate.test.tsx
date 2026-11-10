@@ -205,6 +205,20 @@ test("Unavailable feature has no FPS setting", async () => {
   ).toBeFalsy();
 });
 
+test("FPS can be enabled with keyboard menu navigation", async () => {
+  await viewer();
+  await userEvent.click(screen.getByLabelText("Browser settings"));
+  await userEvent.keyboard("{End}{Enter}");
+  await screen.findByRole("menu", { name: "FPS" });
+  await userEvent.keyboard("{End}{Enter}");
+  await expect(
+    screen.findByRole("img", { name: "— FPS" }),
+  ).resolves.toBeInTheDocument();
+  await waitFor(() => {
+    expect(screen.getByLabelText("Browser settings")).toHaveFocus();
+  });
+});
+
 test("The overlay follows the contained image origin when the viewer is resized", async () => {
   await viewer();
   click(screen.getByLabelText("Browser settings"));
