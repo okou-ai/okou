@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.31.4](https://github.com/okou-ai/okou/compare/ios-v0.31.3...ios-v0.31.4) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** remove duplicate sidebar folder chevrons ([#46244](https://github.com/okou-ai/okou/issues/46244)) ([2b10dcb](https://github.com/okou-ai/okou/commit/2b10dcbfd28ed18167663f93eac5a2a05bb28279))
+
+
+### Refactoring
+
+* **ios:** share connector icons through ccstate ([#46192](https://github.com/okou-ai/okou/issues/46192)) ([55ce894](https://github.com/okou-ai/okou/commit/55ce8948e47e102aaf614c48e0f31b8f953b7924))
+
 ## [0.31.3](https://github.com/okou-ai/okou/compare/ios-v0.31.2...ios-v0.31.3) (2026-11-10)
 
 
