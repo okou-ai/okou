@@ -408,29 +408,69 @@ interface DiscoveredAutomaticOAuthAuthority {
   readonly authorizationServerMetadata: AuthorizationServerMetadata;
 }
 
+async function discoverAutomaticOAuthResourceMetadata(
+  args: {
+    readonly endpoint: string;
+    readonly resourceMetadataUrl: URL | null;
+  },
+  signal: AbortSignal,
+): Promise<
+  | {
+      readonly kind: "found";
+      readonly metadata: OAuthProtectedResourceMetadata;
+    }
+  | { readonly kind: "missing"; readonly error: McpAutomaticOAuthError }
+> {
+  const fetchFn = fetchWithSignal(signal);
+  const statuses: (number | undefined)[] = [];
+  const discovered = await settle(
+    discoverOAuthProtectedResourceMetadata(
+      args.endpoint,
+      args.resourceMetadataUrl
+        ? { resourceMetadataUrl: args.resourceMetadataUrl }
+        : undefined,
+      async (input, init) => {
+        // The SDK throws a generic error for absent metadata. A failed fetch
+        // must not look like absence after an earlier discovery location's 404.
+        const index = statuses.push(undefined) - 1;
+        const response = await fetchFn(input, init);
+        statuses[index] = response.status;
+        return response;
+      },
+    ),
+    signal,
+  );
+  signal.throwIfAborted();
+  if (discovered.ok) {
+    return { kind: "found", metadata: discovered.value };
+  }
+  const error = automaticOAuthRemoteFailure(
+    "protected resource discovery",
+    discovered.error,
+  );
+  if (
+    statuses.length > 0 &&
+    statuses.every((status) => {
+      return status === 404;
+    })
+  ) {
+    return { kind: "missing", error };
+  }
+  throw error;
+}
+
 async function discoverAutomaticOAuthAuthority(
   args: {
     readonly endpoint: string;
     readonly resourceMetadataUrl: URL | null;
+    readonly protectedResourceMetadata: OAuthProtectedResourceMetadata;
     readonly challengeScope?: string;
     readonly additionalScopes?: readonly string[];
   },
   signal: AbortSignal,
 ): Promise<DiscoveredAutomaticOAuthAuthority> {
   const fetchFn = fetchWithSignal(signal);
-  const protectedResourceMetadata = await automaticOAuthRemote(
-    "protected resource discovery",
-    signal,
-    async () => {
-      return await discoverOAuthProtectedResourceMetadata(
-        args.endpoint,
-        args.resourceMetadataUrl
-          ? { resourceMetadataUrl: args.resourceMetadataUrl }
-          : undefined,
-        fetchFn,
-      );
-    },
-  );
+  const { protectedResourceMetadata } = args;
   const resource = requiredHttpsUrl(
     protectedResourceMetadata.resource,
     "protected resource",
@@ -888,8 +928,20 @@ async function discoverCurrentAutomaticOAuthAuthority(
     probe.kind === "none"
       ? null
       : extractWWWAuthenticateParams(probe.context.response);
+  const resourceMetadataUrl = parameters?.resourceMetadataUrl ?? null;
+  const discovered = await discoverAutomaticOAuthResourceMetadata(
+    { endpoint, resourceMetadataUrl },
+    signal,
+  );
+  if (discovered.kind === "missing") {
+    throw discovered.error;
+  }
   return await discoverAutomaticOAuthAuthority(
-    { endpoint, resourceMetadataUrl: parameters?.resourceMetadataUrl ?? null },
+    {
+      endpoint,
+      resourceMetadataUrl,
+      protectedResourceMetadata: discovered.metadata,
+    },
     signal,
   );
 }
@@ -1021,16 +1073,29 @@ export async function prepareMcpAutomaticOAuthAuthorization(
       return await probeAutomaticOAuthChallenge(args.endpoint, signal);
     },
   );
-  if (probe.kind === "none") {
-    return probe;
+  const challengeParameters =
+    probe.kind === "none"
+      ? null
+      : extractWWWAuthenticateParams(probe.context.response);
+  const resourceMetadataUrl = challengeParameters?.resourceMetadataUrl ?? null;
+  const discovered = await discoverAutomaticOAuthResourceMetadata(
+    { endpoint: args.endpoint, resourceMetadataUrl },
+    signal,
+  );
+  if (discovered.kind === "missing") {
+    // Public-only Automatic servers need no OAuth metadata. Declared scopes
+    // or an authentication challenge require an authority, even after a 404.
+    if (probe.kind === "none" && !args.additionalScopes?.length) {
+      return probe;
+    }
+    throw discovered.error;
   }
-  const challenge = probe.context;
-  const challengeParameters = extractWWWAuthenticateParams(challenge.response);
   const authority = await discoverAutomaticOAuthAuthority(
     {
       endpoint: args.endpoint,
-      resourceMetadataUrl: challengeParameters.resourceMetadataUrl ?? null,
-      challengeScope: challengeParameters.scope,
+      resourceMetadataUrl,
+      protectedResourceMetadata: discovered.metadata,
+      challengeScope: challengeParameters?.scope,
       additionalScopes: args.additionalScopes,
     },
     signal,

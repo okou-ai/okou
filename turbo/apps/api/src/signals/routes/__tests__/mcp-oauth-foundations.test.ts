@@ -226,6 +226,50 @@ describe("MCP OAuth foundations", () => {
     expect(new URL(authorizationUrl).searchParams.get("scope")).toBeNull();
   });
 
+  it.each(["cimd", "dcr"] as const)(
+    "authorizes mixed custom MCP through %s despite public initialization",
+    async (registration) => {
+      const oauth = await automaticOAuthFixture({
+        registration,
+        authentication: "mixed",
+        metadataScopes: ["read", "write"],
+        initialExpiresIn: 3600,
+      });
+      const authorizationUrl =
+        await oauth.connectors.startCustomConnectorOAuth2(
+          oauth.actor,
+          oauth.connector.id,
+          oauth.agent.agentId,
+        );
+      const url = new URL(authorizationUrl);
+      expect(url.searchParams.get("scope")).toBe("read write");
+      expect(url.searchParams.get("client_id")).toBe(
+        registration === "cimd"
+          ? "https://api.okou.ai/api/oauth/mcp/client-metadata/okou.json"
+          : "automatic-dcr-client",
+      );
+      const state = url.searchParams.get("state");
+      if (!state) {
+        throw new Error("Expected OAuth state");
+      }
+      const completed =
+        await oauth.connectors.completeCustomConnectorOAuth2CallbackResult({
+          state,
+          code: randomUUID(),
+          iss: oauth.provider.issuer,
+        });
+      expect(completed.body.status).toBe("success");
+      await expect(
+        oauth.connectors.listCustomConnectorAccounts(
+          oauth.actor,
+          oauth.connector.id,
+        ),
+      ).resolves.toMatchObject([
+        { connectionStatus: "connected", oauthScopes: ["read", "write"] },
+      ]);
+    },
+  );
+
   it("publishes exact public Okou client metadata from configured origins", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");
     mockEnv("OKOU_WEB_URL", "https://www.okou.ai");
