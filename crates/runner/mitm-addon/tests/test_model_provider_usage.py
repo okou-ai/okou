@@ -9,10 +9,7 @@ import flow_metadata_keys as metadata_keys
 import mitm_addon
 import usage
 from tests.flow_helpers import header_map, response_stream
-from tests.jsonl_log_helpers import (
-    jsonl_exists_after_flush,
-    read_jsonl_entries_after_flush,
-)
+from tests.jsonl_log_helpers import read_jsonl_entries_after_flush
 from tests.model_provider_flow_helpers import (
     make_model_provider_sse_flow,
     make_model_provider_usage_reporting_flow,
@@ -498,7 +495,6 @@ class TestReportModelProviderUsage:
         with mitm_ctx(api_url="https://api.okou.ai"):
             usage.report_model_provider_usage(flow, "run-abc-123")
 
-        assert jsonl_exists_after_flush(proxy_log)
         [entry] = read_jsonl_entries_after_flush(proxy_log)
         assert entry["level"] == "error"
         assert entry["message"] == "Cannot report usage event: missing sandbox_token or api_url"
@@ -525,7 +521,6 @@ class TestReportModelProviderUsage:
             usage.report_model_provider_usage(flow, "run-abc-123")
             usage.flush_usage_events(trigger="test")
 
-        assert jsonl_exists_after_flush(proxy_log)
         [entry] = read_jsonl_entries_after_flush(proxy_log)
         assert entry["level"] == "error"
         assert entry["message"] == "Cannot report usage event: missing sandbox_token or api_url"

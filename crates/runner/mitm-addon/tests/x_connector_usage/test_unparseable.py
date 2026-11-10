@@ -207,7 +207,6 @@ def test_unparseable_no_hints_writes_error_to_proxy_log(x_usage, tmp_path, real_
     )
     proxy_log = tmp_path / "proxy.jsonl"
     assert x_usage.call_and_get_billing(flow) == []
-    assert jsonl_exists_after_flush(proxy_log)
     content = read_jsonl_text_after_flush(proxy_log)
     assert sensitive_query not in content
     entries = [json.loads(line) for line in content.splitlines()]
@@ -510,7 +509,6 @@ def test_oversized_fallback_query_suppresses_request_hints(x_usage, tmp_path, re
 
     assert x_usage.call_and_get_billing(flow) == []
 
-    assert jsonl_exists_after_flush(proxy_log)
     content = read_jsonl_text_after_flush(proxy_log)
     assert "unparseable" in content.lower()
     assert '"level":"error"' in content or '"level": "error"' in content
@@ -726,7 +724,6 @@ def test_x_json_parse_error_with_request_hints_uses_fallback_without_error_log(
 
     assert p["category"] == expected_category
     assert p["quantity"] == expected_quantity
-    assert jsonl_exists_after_flush(proxy_log)
     entries = read_jsonl_entries_after_flush(proxy_log)
     assert all(entry["level"] != "error" for entry in entries)
     assert all("unparseable" not in entry["message"].lower() for entry in entries)
@@ -944,7 +941,6 @@ def test_billable_counts_fallback_empty_id_segments_are_no_hint(x_usage, tmp_pat
     flow = x_usage.make_flow(real_flow, tmp_path, query="ids=,,", body=b"not json")
     proxy_log = tmp_path / "proxy.jsonl"
     assert x_usage.call_and_get_billing(flow) == []
-    assert jsonl_exists_after_flush(proxy_log)
     content = read_jsonl_text_after_flush(proxy_log)
     assert "unparseable" in content.lower()
     assert '"level":"error"' in content or '"level": "error"' in content
