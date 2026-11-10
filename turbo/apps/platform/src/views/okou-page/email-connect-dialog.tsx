@@ -41,10 +41,11 @@ function EmailAddressRow({
   return (
     <div role="group" aria-label={email} className="space-y-2">
       <div className="flex items-center justify-between gap-3 text-sm">
-        <span className="min-w-0 truncate">{email}</span>
+        <span className="min-w-0 break-all">{email}</span>
         <Button
           type="button"
           size="sm"
+          className="shrink-0"
           variant={connected ? "outline" : "default"}
           disabled={operation.state === "loading"}
           onClick={() => {
