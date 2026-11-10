@@ -146,7 +146,10 @@ async function setupHostedSite(
       isActive: true,
     });
   });
-  context.mocks.api(hostContract.resolveAlias, ({ respond }) => {
+  context.mocks.api(hostContract.resolveAlias, ({ params, respond }) => {
+    if (params.publicSlug !== currentSlug) {
+      return respond(200, { pointer: null });
+    }
     return respond(200, {
       pointer: {
         version: 1,
@@ -235,6 +238,24 @@ async function renameHostedSite(shareMenu: HTMLElement, slug: string) {
   });
   expect(buttonNamed("Copy link", shareMenu)).toBeEnabled();
 }
+
+test.each([false, true])(
+  "owners see visibility and banner settings from chat deployment links (sidebar=%s)",
+  async (sidebar) => {
+    const preview = await setupHostedSite(sidebar);
+    const menu = await openHostedSiteShare(preview, sidebar);
+    const banner = await within(menu).findByRole("switch", {
+      name: "Show Okou banner",
+    });
+    expect(banner).toBeChecked();
+    expect(banner).toBeEnabled();
+    const publicAccess = queryAllByRoleFast("radio", menu).find((row) => {
+      return row.getAttribute("aria-label") === "Anyone with the link";
+    });
+    expect(publicAccess).toHaveAttribute("aria-checked", "true");
+    expect(publicAccess).toBeEnabled();
+  },
+);
 
 test.each([false, true])(
   "consecutive site renames preserve the title, link and Share/Resources copy addresses (sidebar=%s)",
