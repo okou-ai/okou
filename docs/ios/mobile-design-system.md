@@ -538,8 +538,9 @@ single floating line, and colour is a small accent for status only.
   rows without one show a quiet `message-circle` glyph so titles stay on one edge.
   The emoji stays in the title so web and iOS agree; archive is a separate flag.
 - **Working** shimmers the chat's title (`OkouShimmerText`) instead of taking the trailing
-  slot, so a working chat keeps its draft in view. A folded project's name, and a folded
-  Pinned heading, shimmer while one of their chats works.
+  slot, so a working chat keeps its draft in view. A folded project's name shimmers only
+  when one of its chats works and none is unread; unread takes priority. A folded Pinned
+  heading shimmers while one of its chats works.
 - **Trailing state** shows one state, in the web's order: an unread dot (8 pt `running` sky
   blue, as on the web; amber is kept for a primary commit) once a run finished or failed since
   the chat was read, with the title in medium weight; a `pencil` for an unsent draft; or
