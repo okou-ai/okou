@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import ChatDomain
 import SwiftUI
@@ -12,6 +13,24 @@ struct ChatSidebarView: View {
   @Binding var accountError: String?
   let close: () -> Void
   let newChat: () -> Void
+  @LoadableValue private var projectRead: Loadable<[ChatProject]>
+
+  init(
+    store: WorkspaceStore, authentication: AuthenticationService, workspaceID: String,
+    notifications: NotificationService, sidebar: SidebarInteraction, headerHeight: CGFloat,
+    accountError: Binding<String?>, close: @escaping () -> Void, newChat: @escaping () -> Void
+  ) {
+    self.store = store
+    self.authentication = authentication
+    self.workspaceID = workspaceID
+    self.notifications = notifications
+    self.sidebar = sidebar
+    self.headerHeight = headerHeight
+    _accountError = accountError
+    self.close = close
+    self.newChat = newChat
+    _projectRead = LoadableValue(task: store.projects.listValue, keepLast: true)
+  }
 
   private struct ProjectEditor {
     let dialog: OkouNameDialog.Request
@@ -152,9 +171,7 @@ struct ChatSidebarView: View {
       Button("Delete project", role: .destructive) {
         projectAction?.cancel()
         projectAction = Task {
-          if await store.projects.delete(project.id), store.newChatProjectID == project.id {
-            store.removeNewChatProject()
-          }
+          await store.deleteProject(project.id)
         }
       }
     } message: { _ in
@@ -256,8 +273,8 @@ struct ChatSidebarView: View {
     let pinned = contents.threads.filter { $0.pinnedAt != nil }
     let chats = contents.threads.filter { $0.pinnedAt == nil }
     return Section {
-      if let error = store.projects.readError {
-        OkouBanner(Text(error), icon: "folder", tone: .problem) {
+      if case .hasError(let error) = projectRead {
+        OkouBanner(Text(error.localizedDescription), icon: "folder", tone: .problem) {
           Button("Retry") { Task { await store.projects.refresh() } }
         }
         .listRowSeparator(.hidden)

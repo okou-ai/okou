@@ -1,3 +1,5 @@
+import CCStateSwiftUI
+import ChatData
 import ChatDomain
 import SwiftUI
 
@@ -20,9 +22,12 @@ private struct ChatProjectMembershipPicker: ViewModifier {
   func body(content: Content) -> some View {
     content
       .sheet(item: $thread, onDismiss: presentNameDialog) { thread in
-        ChatProjectPicker(workspace: workspace, thread: thread) {
-          creationThreadID = thread.id
-          self.thread = nil
+        StoreProvider(workspace.projects.stateStore) {
+          ChatProjectPicker(workspace: workspace, thread: thread) {
+            creationThreadID = thread.id
+            self.thread = nil
+          }
+          .id(ObjectIdentifier(workspace))
         }
         .okouSheetBackground()
       }
@@ -70,6 +75,14 @@ struct ChatProjectPicker: View {
   let workspace: WorkspaceStore
   let thread: ChatThread
   let create: () -> Void
+  @LoadableValue private var projectRead: Loadable<[ChatProject]>
+
+  init(workspace: WorkspaceStore, thread: ChatThread, create: @escaping () -> Void) {
+    self.workspace = workspace
+    self.thread = thread
+    self.create = create
+    _projectRead = LoadableValue(task: workspace.projects.listValue, keepLast: true)
+  }
   @Environment(\.dismiss) private var dismiss
   @State private var query = ""
   @State private var moving = false
@@ -78,6 +91,11 @@ struct ChatProjectPicker: View {
   var body: some View {
     NavigationStack {
       List {
+        if case .hasError(let error) = projectRead {
+          OkouBanner(Text(error.localizedDescription), icon: "folder", tone: .problem) {
+            Button("Retry") { Task { await workspace.projects.refresh() } }
+          }
+        }
         ForEach(
           workspace.projects.projects.filter {
             query.isEmpty || $0.name.localizedCaseInsensitiveContains(query)

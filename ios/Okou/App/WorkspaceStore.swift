@@ -714,6 +714,12 @@ final class WorkspaceStore {
 
   func removeNewChatProject() { newChatProjectID = nil }
 
+  func deleteProject(_ id: String) async {
+    if await projects.delete(id), !closed, newChatProjectID == id {
+      removeNewChatProject()
+    }
+  }
+
   var canOpenNewChatFromSystem: Bool {
     isForeground && defaultAgentID != nil && !isCreating && !needsUpgrade && !closed
   }

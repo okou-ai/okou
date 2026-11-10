@@ -196,6 +196,7 @@ public actor ChatCache {
   }
 
   public func saveProjects(_ projects: [ChatProject]) throws {
+    try Task.checkCancellation()
     let data = try JSONEncoder().encode(projects)
     try withDatabase { database in
       let write = try database.prepare(

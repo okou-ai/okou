@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatData
 import Foundation
 import SwiftUI
@@ -260,13 +261,17 @@ private struct WorkspaceRootView: View {
           if authentication.presentation?.userID == userID,
             authentication.presentation?.preparedWorkspaceID == workspaceID
           {
-            ChatSidebarView(
-              store: store, authentication: authentication, workspaceID: workspaceID,
-              notifications: notifications, sidebar: sidebar,
-              headerHeight: headerHeight,
-              accountError: $accountError,
-              close: closeSidebar,
-              newChat: startNewChat)
+            StoreProvider(store.projects.stateStore) {
+              ChatSidebarView(
+                store: store, authentication: authentication, workspaceID: workspaceID,
+                notifications: notifications, sidebar: sidebar,
+                headerHeight: headerHeight,
+                accountError: $accountError,
+                close: closeSidebar,
+                newChat: startNewChat
+              )
+              .id(ObjectIdentifier(store))
+            }
           }
         }
         .frame(width: sidebarWidth, height: geometry.size.height)

@@ -72,7 +72,11 @@ public actor ChatSync {
   }
 
   public func persistProjects(_ projects: [ChatProject]) async {
-    do { try await cache?.saveProjects(projects) } catch {
+    do {
+      try Task.checkCancellation()
+      try await cache?.saveProjects(projects)
+    } catch is CancellationError {
+    } catch {
       Logger(subsystem: "ai.okou.ios", category: "ChatCache")
         .error("Cannot save Projects: \(error.localizedDescription, privacy: .public)")
     }
