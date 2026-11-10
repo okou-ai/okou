@@ -34,7 +34,9 @@ printf 'git %s\n' "$*" >>"$MOCK_BOUNDARY_LOG"
 case "${1:-}" in
   fetch|cat-file) exit 0 ;;
   merge-base)
-    if [ "${3:-}" = "deadc0dedeadc0dedeadc0dedeadc0dedeadc0de" ]; then
+    if [ "${3:-}" = "${MOCK_WORKFLOW_PUBLICATION_BRIDGE_COMMIT-c11cc11cc11cc11cc11cc11cc11cc11cc11cc11c}" ]; then
+      [ "${MOCK_WORKFLOW_PUBLICATION_BRIDGE_VALID:-1}" = "1" ]
+    elif [ "${3:-}" = "deadc0dedeadc0dedeadc0dedeadc0dedeadc0de" ]; then
       [ "${MOCK_SINGLE_CHARACTER_SKILL_CAPABILITY_FREE_API_VALID:-1}" = "1" ]
     elif [ "${3:-}" = "f00df00df00df00df00df00df00df00df00df00d" ]; then
       [ "${MOCK_SINGLE_CHARACTER_SKILL_API_VALID:-1}" = "1" ]
@@ -351,6 +353,10 @@ case "${1:-}" in
     fi
     if [[ "$*" == *rollback-floors/seed-skill-bundle-only-api* ]]; then
       printf '%s\n' "${MOCK_SEED_SKILL_BUNDLE_ONLY_API_COMMIT-7373737373737373737373737373737373737373}"
+      exit 0
+    fi
+    if [[ "$*" == *1538_retire_workflow_publication_bridge.sql* ]]; then
+      printf '%s\n' "${MOCK_WORKFLOW_PUBLICATION_BRIDGE_COMMIT-c11cc11cc11cc11cc11cc11cc11cc11cc11cc11c}"
       exit 0
     fi
     if [[ "$*" == *packages/core/src/official-workflow-artifact.ts* ]]; then
@@ -2207,6 +2213,26 @@ assert_failure "Rollback target predates direct Workflow attachment ownership" \
 assert_failure "predates verified Workflow attachment delivery" \
   run_resolver "${tmp_dir}/workflow-attachment-runner.output" MOCK_WORKFLOW_ATTACHMENT_RUNNER_VALID=0
 [ ! -s "${tmp_dir}/workflow-attachment-runner.output" ] || fail "unverified Workflow Runner must not publish outputs"
+
+for expectation in \
+  "MOCK_WORKFLOW_PUBLICATION_BRIDGE_COMMIT=|Cannot resolve the merged Workflow publication bridge retirement on main" \
+  "MOCK_WORKFLOW_PUBLICATION_BRIDGE_COMMIT=invalid|Cannot resolve the merged Workflow publication bridge retirement on main" \
+  "MOCK_WORKFLOW_PUBLICATION_BRIDGE_VALID=0|Rollback target predates the Workflow publication bridge retirement"; do
+  : >"${tmp_dir}/boundaries.log"
+  assert_failure "${expectation#*|}" \
+    run_resolver "${tmp_dir}/workflow-publication-bridge.output" "${expectation%%|*}"
+  [ ! -s "${tmp_dir}/workflow-publication-bridge.output" ] || fail "table-dependent Workflow API must not publish outputs"
+  if grep -Eq '^(curl|ssh|git (show|rev-list)) ' "${tmp_dir}/boundaries.log"; then
+    fail "Workflow publication bridge floor must reject before artifact or host access"
+  fi
+done
+
+# The prepared release itself remains eligible after table contraction.
+: >"${tmp_dir}/boundaries.log"
+run_resolver "${tmp_dir}/workflow-publication-bridge-exact.output" \
+  "MOCK_WORKFLOW_PUBLICATION_BRIDGE_COMMIT=${target_commit}" >/dev/null
+grep -Fq "target_commit=${target_commit}" "${tmp_dir}/workflow-publication-bridge-exact.output" || fail "prepared Workflow API must remain eligible"
+grep -Fxq "git log --reverse --first-parent --diff-filter=A --format=%H origin/main -- turbo/packages/db/src/migrations/1538_retire_workflow_publication_bridge.sql" "${tmp_dir}/boundaries.log" || fail "Workflow publication bridge floor must use preparation history on current main"
 
 
 : >"${tmp_dir}/boundaries.log"
