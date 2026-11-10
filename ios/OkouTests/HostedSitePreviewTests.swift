@@ -35,27 +35,35 @@ final class HostedSitePreviewTests: XCTestCase {
     defer { viewer.close() }
     let resource = try XCTUnwrap(viewer.resource("https://court.okou.app/lessons?week=2#serve"))
     viewer.open(resource)
-    try await waitForBusinessResult { viewer.preview?.contentURL != nil }
+    var preview = try XCTUnwrap(viewer.preview)
+    var content = try await preview.store.get(preview.content).value
     XCTAssertEqual(
-      viewer.preview?.contentURL?.absoluteString,
+      content.contentURL?.absoluteString,
       "https://preview-1.example.invalid/lessons?week=2#serve")
 
-    XCTAssertTrue(viewer.renewHTMLSignature(status: 404))
-    try await waitForBusinessResult {
-      viewer.preview?.contentURL?.host == "preview-2.example.invalid"
-    }
+    XCTAssertTrue(viewer.renewHTMLSignature(status: 404, content: content))
+    preview = try XCTUnwrap(viewer.preview)
+    content = try await preview.store.get(preview.content).value
     XCTAssertEqual(
-      viewer.preview?.contentURL?.absoluteString,
+      content.contentURL?.absoluteString,
       "https://preview-2.example.invalid/lessons?week=2#serve")
-    XCTAssertEqual(viewer.preview?.artifact.source, resource.source)
-    XCTAssertFalse(viewer.renewHTMLSignature(status: 403))
+    XCTAssertEqual(content.artifact.source, resource.source)
+    XCTAssertFalse(viewer.renewHTMLSignature(status: 403, content: content))
 
+    let retiredContent = content
     viewer.retry()
-    try await waitForBusinessResult {
-      viewer.preview?.contentURL?.host == "preview-3.example.invalid"
-    }
+    XCTAssertFalse(viewer.renewHTMLSignature(status: 403, content: retiredContent))
+    preview = try XCTUnwrap(viewer.preview)
+    content = try await preview.store.get(preview.content).value
+    XCTAssertEqual(content.contentURL?.host, "preview-3.example.invalid")
     // A missing page under a still-valid grant is not an expired credential.
-    XCTAssertFalse(viewer.renewHTMLSignature(status: 404))
+    XCTAssertFalse(viewer.renewHTMLSignature(status: 404, content: content))
+    // Explicit retry starts a new attempt with its own single automatic renewal.
+    XCTAssertTrue(viewer.renewHTMLSignature(status: 403, content: content))
+    preview = try XCTUnwrap(viewer.preview)
+    content = try await preview.store.get(preview.content).value
+    XCTAssertEqual(content.contentURL?.host, "preview-4.example.invalid")
+    XCTAssertFalse(viewer.renewHTMLSignature(status: 403, content: content))
   }
 
   func testSitePreviewRenewalCannotRetainAccessAfterTheAuthorityDeniesIt() async throws {
@@ -84,12 +92,16 @@ final class HostedSitePreviewTests: XCTestCase {
     defer { viewer.close() }
     let resource = try XCTUnwrap(viewer.resource("https://court.okou.app/"))
     viewer.open(resource)
-    try await waitForBusinessResult { viewer.preview?.contentURL != nil }
+    let original = try XCTUnwrap(viewer.preview)
+    let content = try await original.store.get(original.content).value
     denied.withLock { $0 = true }
 
-    XCTAssertTrue(viewer.renewHTMLSignature(status: 404))
-    try await waitForBusinessResult { viewer.preview?.error != nil }
-    XCTAssertEqual(viewer.preview?.error, "You do not have permission to view this result.")
-    XCTAssertNil(viewer.preview?.contentURL)
+    XCTAssertTrue(viewer.renewHTMLSignature(status: 404, content: content))
+    let renewed = try XCTUnwrap(viewer.preview)
+    let deniedResult = await (try renewed.store.get(renewed.content)).result
+    XCTAssertThrowsError(try deniedResult.get()) { error in
+      XCTAssertEqual(
+        MessageArtifactStore.message(for: error), "You do not have permission to view this result.")
+    }
   }
 }

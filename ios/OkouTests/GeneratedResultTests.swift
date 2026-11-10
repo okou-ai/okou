@@ -29,14 +29,16 @@ final class GeneratedResultTests: XCTestCase {
     XCTAssertEqual(videoCard.artifact.filename, "Campaign recording.mp4")
     let text = try XCTUnwrap(original.artifacts.resource("/artifacts/text000001.txt"))
     original.artifacts.open(text)
-    try await waitForBusinessResult { original.artifacts.preview?.file != nil }
-    let firstFile = try XCTUnwrap(original.artifacts.preview?.file)
+    let firstPreview = try XCTUnwrap(original.artifacts.preview)
+    let firstContent = try await firstPreview.store.get(firstPreview.content).value
+    let firstFile = try XCTUnwrap(firstContent.file)
     XCTAssertTrue(
       try String(contentsOf: firstFile.url, encoding: .utf8).hasPrefix("Synthetic generated text"))
     original.artifacts.deactivate()
     replacement.artifacts.open(text)
-    try await waitForBusinessResult { replacement.artifacts.preview?.file != nil }
-    let nextFile = try XCTUnwrap(replacement.artifacts.preview?.file)
+    let nextPreview = try XCTUnwrap(replacement.artifacts.preview)
+    let nextContent = try await nextPreview.store.get(nextPreview.content).value
+    let nextFile = try XCTUnwrap(nextContent.file)
     XCTAssertEqual(
       try String(contentsOf: nextFile.url, encoding: .utf8), "Result owned by the second workspace")
   }
@@ -50,33 +52,30 @@ final class GeneratedResultTests: XCTestCase {
       try XCTUnwrap(viewer.resource("/artifacts/" + $0))
     }
     viewer.open(images[0], images: images)
-    for (index, image) in images.enumerated() {
-      try await waitForBusinessResult {
-        viewer.preview?.file != nil && viewer.preview?.artifact.source == image.source
-      }
-      let file = try XCTUnwrap(viewer.preview?.file)
+    for (index, _) in images.enumerated() {
+      let preview = try XCTUnwrap(viewer.preview)
+      let content = try await preview.store.get(preview.content).value
+      let file = try XCTUnwrap(content.file)
       let expectedName = index == 0 ? "Campaign study.png" : "Campaign alternate.png"
-      XCTAssertEqual(viewer.preview?.artifact.filename, expectedName)
+      XCTAssertEqual(content.artifact.filename, expectedName)
       XCTAssertEqual(
         try Data(contentsOf: file.url),
         try XCTUnwrap(fixture.files.first { $0.filename == expectedName }).bytes)
-      XCTAssertEqual(viewer.canNavigateImage(-1), index > 0)
-      XCTAssertEqual(viewer.canNavigateImage(1), index < images.count - 1)
-      if index < images.count - 1 { viewer.navigateImage(1) }
+      XCTAssertEqual(viewer.canNavigateImage(-1, content: content), index > 0)
+      XCTAssertEqual(viewer.canNavigateImage(1, content: content), index < images.count - 1)
+      if index < images.count - 1 { viewer.navigateImage(1, content: content) }
     }
     viewer.dismiss()
-    for name in ["json000001.json", "csv0000001.csv"] {
+    for name in ["json000001.json", "csv0000001.csv", "word000001.docx"] {
       let resource = try XCTUnwrap(viewer.resource("/artifacts/" + name))
       viewer.open(resource)
-      try await waitForBusinessResult {
-        viewer.preview?.file != nil || viewer.preview?.error != nil
-      }
-      XCTAssertNil(viewer.preview?.error, name)
       let preview = try XCTUnwrap(viewer.preview)
-      if name == "json000001.json" { XCTAssertTrue(preview.text?.text.contains("\n") == true) }
+      let content = try await preview.store.get(preview.content).value
+      XCTAssertNotNil(content.file)
+      if name == "json000001.json" { XCTAssertTrue(content.text?.text.contains("\n") == true) }
       if name == "csv0000001.csv" {
         XCTAssertEqual(
-          preview.text?.rows, [["Region", "Revenue"], ["North, coast", "120"], ["South", "180"]])
+          content.text?.rows, [["Region", "Revenue"], ["North, coast", "120"], ["South", "180"]])
       }
       viewer.dismiss()
     }
@@ -91,29 +90,37 @@ final class GeneratedResultTests: XCTestCase {
     let source = try XCTUnwrap(viewer.resource("/artifacts/text000001.txt"))
     fixture.state.denied.withLock { $0 = true }
     viewer.open(source)
-    try await waitForBusinessResult { viewer.preview?.error != nil }
-    XCTAssertTrue(viewer.preview?.error?.contains("permission") == true)
-    XCTAssertEqual(viewer.preview?.canRetry, false)
+    let deniedPreview = try XCTUnwrap(viewer.preview)
+    let denied = await (try deniedPreview.store.get(deniedPreview.content)).result
+    XCTAssertThrowsError(try denied.get()) { error in
+      XCTAssertTrue(MessageArtifactStore.message(for: error).contains("permission"))
+      XCTAssertFalse(ChatRequestFailure.canRetry(error))
+    }
     fixture.state.denied.withLock { $0 = false }
     for status in [403, 404] {
       fixture.state.storageStatus.withLock { $0 = status }
       viewer.retry()
-      try await waitForBusinessResult { viewer.preview?.error != nil }
-      XCTAssertTrue(viewer.preview?.error?.contains(status == 403 ? "denied" : "deleted") == true)
-      XCTAssertEqual(viewer.preview?.canRetry, status == 403)
+      let preview = try XCTUnwrap(viewer.preview)
+      let result = await (try preview.store.get(preview.content)).result
+      XCTAssertThrowsError(try result.get()) { error in
+        XCTAssertTrue(
+          MessageArtifactStore.message(for: error).contains(status == 403 ? "denied" : "deleted"))
+        XCTAssertEqual(ChatRequestFailure.canRetry(error), status == 403)
+      }
     }
     fixture.state.storageStatus.withLock { $0 = nil }
     viewer.retry()
-    try await waitForBusinessResult { viewer.preview?.file != nil }
-    let url = try XCTUnwrap(viewer.preview?.file?.url)
+    let preview = try XCTUnwrap(viewer.preview)
+    let content = try await preview.store.get(preview.content).value
+    let url = try XCTUnwrap(content.file?.url)
     viewer.deactivate()
     XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
     XCTAssertNil(viewer.preview)
     viewer.open(source)
-    try await waitForBusinessResult { viewer.preview?.file != nil }
-    let current = try XCTUnwrap(viewer.preview?.file?.url)
+    let current = try XCTUnwrap(viewer.preview)
+    let currentContent = try await current.store.get(current.content).value
+    XCTAssertEqual(currentContent.file?.url, url)
     viewer.close()
-    XCTAssertTrue(FileManager.default.fileExists(atPath: current.path))
     XCTAssertNil(viewer.preview)
     viewer.open(source)
     XCTAssertNil(viewer.preview)
@@ -126,35 +133,45 @@ final class GeneratedResultTests: XCTestCase {
     defer { conversation.close() }
     let viewer = conversation.artifacts
     viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
-    try await waitForBusinessResult { viewer.preview?.file != nil }
-    let file = try XCTUnwrap(viewer.preview?.file)
+    let preview = try XCTUnwrap(viewer.preview)
+    let content = try await preview.store.get(preview.content).value
+    let file = try XCTUnwrap(content.file)
     let failedCatalog = await (try viewer.reads.store.get(viewer.reads.catalog)).result
     XCTAssertThrowsError(try failedCatalog.get()) { error in
       XCTAssertEqual((error as? APIClientError)?.statusCode, 503)
     }
-    let requests = fixture.state.storageRequests.withLock { $0.count }
-    let resolutions = fixture.state.resolutions.withLock { $0 }
     fixture.state.catalogUnavailable.withLock { $0 = false }
-    await viewer.refreshDetails()
+    viewer.refreshDetails()
     let recoveredCatalog = try await viewer.reads.store.get(viewer.reads.catalog).value
     XCTAssertFalse(recoveredCatalog.isEmpty)
-    XCTAssertEqual(viewer.preview?.file?.url, file.url)
-    XCTAssertEqual(viewer.preview?.artifact.filename, "Notes.txt")
-    XCTAssertEqual(fixture.state.storageRequests.withLock { $0.count }, requests)
-    XCTAssertEqual(fixture.state.resolutions.withLock { $0 }, resolutions)
+    let retained = try await preview.store.get(preview.content).value
+    XCTAssertEqual(retained.file?.url, file.url)
+    XCTAssertEqual(viewer.reads.metadata(retained.artifact).filename, "Notes.txt")
   }
 
-  func testShareConsumerKeepsAuthorizedFileAfterPreviewDismissal() async throws {
+  func testShareConsumerKeepsAuthorizedFileAfterPreviewAndFileCacheClose() async throws {
     let fixture = try await GeneratedResultFixture.make(owner: self)
-    let conversation = fixture.history.conversation()
-    defer { conversation.close() }
-    let viewer = conversation.artifacts
-    viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
-    try await waitForBusinessResult { viewer.preview?.file != nil }
-    viewer.share()
-    var consumer = viewer.sharing
+    let commands = ChatCommands(
+      client: fixture.history.http.client, sync: ChatSync(client: fixture.history.http.client))
+    let viewer = MessageArtifactStore(
+      service: commands.artifacts, threadID: ConversationHistoryFixture.threadID,
+      webURL: fixture.history.http.baseURL,
+      markdown: MessageMarkdownCache(baseURL: fixture.history.http.baseURL),
+      didFail: { XCTFail("Unexpected access failure: \($0)") })
+    defer { viewer.close() }
+    func openShare() async throws -> MessageArtifactStore.Share {
+      viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
+      let preview = try XCTUnwrap(viewer.preview)
+      let content = try await preview.store.get(preview.content).value
+      let file = try XCTUnwrap(content.file)
+      viewer.share(file, previewID: preview.id)
+      return try XCTUnwrap(viewer.sharing)
+    }
+    var consumer: MessageArtifactStore.Share? = try await openShare()
     let url = try XCTUnwrap(consumer?.file.url)
     viewer.dismiss()
+    viewer.close()
+    commands.closeFileCache()
     XCTAssertNil(viewer.preview)
     XCTAssertNil(viewer.sharing)
     try withExtendedLifetime(consumer) {
@@ -163,55 +180,30 @@ final class GeneratedResultTests: XCTestCase {
         "Synthetic generated text\nRead, copy, share, or save to Files.")
     }
     consumer = nil
-    viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
-    try await waitForBusinessResult { viewer.preview?.file != nil }
-    XCTAssertEqual(viewer.preview?.file?.url, url)
+    XCTAssertFalse(FileManager.default.fileExists(atPath: url.path))
   }
 
-  func testLeavingDetailCancelsPendingAuthorizationAndCannotPublishIntoReentry() async throws {
-    let entered = expectation(description: "Artifact authorization started")
-    let (stream, continuation) = AsyncStream<Void>.makeStream()
-    defer { continuation.finish() }
-    let first = Mutex(true)
-    let server = try ChatFileHTTPServer { _ in .init(body: Data("New detail scope".utf8)) }
-    addTeardownBlock { await server.stop() }
-    let origin = try await server.start()
-    let fixture = ChatHTTPFixture { request in
-      if request.url?.path.hasSuffix("/artifacts") == true {
-        return ChatHTTPResponse(body: "{\"runs\":[]}")
-      }
-      let waits = first.withLock { value in
-        let result = value
-        value = false
-        return result
-      }
-      if waits {
-        entered.fulfill()
-        for await _ in stream { break }
-      }
-      return ChatHTTPResponse(
-        body: """
-          {"url":"\(origin)/content","downloadUrl":"\(origin)/file","filename":"Notes.txt","contentType":"text/plain"}
-          """)
+  func testPreviewSizeRejectionDoesNotPreventFullFileSharing() async throws {
+    let text = String(repeating: "A", count: 2 * 1024 * 1024 + 1)
+    let fixture = try await GeneratedResultFixture.make(owner: self, text: text)
+    let conversation = fixture.history.conversation()
+    defer { conversation.close() }
+    let viewer = conversation.artifacts
+    viewer.open(try XCTUnwrap(viewer.resource("/artifacts/text000001.txt")))
+    let preview = try XCTUnwrap(viewer.preview)
+    let rejected = await (try preview.store.get(preview.content)).result
+    XCTAssertThrowsError(try rejected.get()) { error in
+      XCTAssertEqual((error as? URLError)?.code, .dataLengthExceedsMaximum)
     }
-    let commands = ChatCommands(client: fixture.client, sync: ChatSync(client: fixture.client))
-    let markdown = MessageMarkdownCache(baseURL: fixture.baseURL)
-    let viewer = MessageArtifactStore(
-      service: commands.artifacts, threadID: "thread", webURL: fixture.baseURL,
-      markdown: markdown, didFail: { _ in XCTFail("Cancellation must not expire the account") })
-    defer { viewer.close() }
-    let resource = try XCTUnwrap(viewer.resource("/artifacts/text000001.txt"))
-    viewer.open(resource)
-    await fulfillment(of: [entered], timeout: 3)
-    viewer.deactivate()
-    continuation.yield(())
-    XCTAssertNil(viewer.preview)
-    viewer.open(resource)
-    try await waitForBusinessResult { viewer.preview?.file != nil }
-    XCTAssertEqual(viewer.preview?.text?.text, "New detail scope")
-    let url = try XCTUnwrap(viewer.preview?.file?.url)
-    viewer.dismiss()
-    XCTAssertTrue(FileManager.default.fileExists(atPath: url.path))
+    viewer.downloadForSharing()
+    let downloaded = try await preview.store.get(preview.download).value
+    let file = try XCTUnwrap(downloaded)
+    XCTAssertEqual(try String(contentsOf: file.url, encoding: .utf8), text)
+    viewer.share(file, previewID: preview.id)
+    XCTAssertEqual(viewer.sharing?.file.url, file.url)
+    // The independent download does not erase the preview's useful size error.
+    let stillRejected = await (try preview.store.get(preview.content)).result
+    XCTAssertThrowsError(try stillRejected.get())
   }
 
 }

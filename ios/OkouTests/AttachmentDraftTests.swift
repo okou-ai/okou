@@ -66,7 +66,9 @@ final class AttachmentDraftTests: XCTestCase {
       source: .file(attachment.id), filename: attachment.filename,
       contentType: attachment.contentType)
     conversation.artifacts.open(artifact)
-    XCTAssertEqual(conversation.artifacts.preview?.file?.url, cachedURL)
+    let artifactPreview = try XCTUnwrap(conversation.artifacts.preview)
+    let artifactContent = try await artifactPreview.store.get(artifactPreview.content).value
+    XCTAssertEqual(artifactContent.file?.url, cachedURL)
     conversation.attachmentViewer.dismiss()
     conversation.artifacts.dismiss()
 
