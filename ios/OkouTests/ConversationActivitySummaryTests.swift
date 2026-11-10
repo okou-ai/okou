@@ -1,3 +1,5 @@
+import CCState
+import CCStateSwiftUI
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
@@ -35,24 +37,24 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let scenario = ActivityScenario()
     let clock = ActivityClock()
     let conversation = scenario.conversation(clock: clock)
+    let probe = ActivitySummaryProbe(conversation.activitySummary, owner: self)
     defer { conversation.close() }
     await conversation.refresh()
-    XCTAssertNil(conversation.activitySummary.text)
+    XCTAssertNil(probe.text)
     XCTAssertEqual(scenario.state.requests.withLock { $0 }, 0)
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await waitForBusinessResult { conversation.activitySummary.text == "Checking the sources" }
+    try await waitForBusinessResult { probe.text == "Checking the sources" }
     let messages = conversation.messages
     let items = conversation.visibleItems
     let history = conversation.history
     try await waitForSleep(clock, .seconds(5))
     clock.advance(.seconds(5))
-    try await waitForBusinessResult { conversation.activitySummary.text == "Comparing the results" }
-    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 1)
+    try await waitForBusinessResult { probe.text == "Comparing the results" }
     try await waitForSleep(clock, .seconds(15))
     clock.advance(.seconds(15))
     try await waitForRequest(scenario, after: 1)
-    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 2)
-    XCTAssertEqual(conversation.activitySummary.text, "Comparing the results")
+    try await waitForBusinessResult { probe.isSettled }
+    XCTAssertEqual(probe.text, "Comparing the results")
     XCTAssertEqual(conversation.messages, messages)
     XCTAssertEqual(conversation.visibleItems, items)
     XCTAssertEqual(conversation.history, history)
@@ -72,7 +74,8 @@ final class ConversationActivitySummaryTests: XCTestCase {
       try await waitForSleep(clock, .seconds(15))
       clock.advance(.seconds(15))
       try await waitForRequest(scenario, after: previous)
-      try await waitForBusinessResult { conversation.activitySummary.text == nil }
+      try await waitForBusinessResult { probe.isSettled && probe.text == nil }
+      if response.status != 200 { XCTAssertEqual(probe.errorStatus, response.status) }
       XCTAssertNil(conversation.error)
       XCTAssertEqual(conversation.history, history)
 
@@ -81,7 +84,7 @@ final class ConversationActivitySummaryTests: XCTestCase {
       try await waitForSleep(clock, .seconds(15))
       clock.advance(.seconds(15))
       try await waitForBusinessResult {
-        conversation.activitySummary.text == "Checking the sources"
+        probe.text == "Checking the sources"
       }
     }
   }
@@ -91,37 +94,36 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let clock = ActivityClock()
     let visible = ActivityVisibility()
     let conversation = scenario.conversation(clock: clock, visible: { visible.active })
+    let probe = ActivitySummaryProbe(conversation.activitySummary, owner: self)
     defer { conversation.close() }
     await conversation.refresh()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    try await waitForBusinessResult { probe.text != nil }
     let replacementOwner = UUID()
     conversation.setDetailVisible(true, owner: replacementOwner)
     conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
-    XCTAssertNotNil(conversation.activitySummary.text)
+    XCTAssertNotNil(probe.text)
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
     visible.active = false
     conversation.reconcileActivitySummary()
-    XCTAssertNil(conversation.activitySummary.text)
+    XCTAssertNil(probe.text)
     try await waitForNoSleep(clock)
     visible.active = true
     conversation.reconcileActivitySummary()
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
-    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 2)
+    try await waitForBusinessResult { probe.text != nil }
     conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
-    XCTAssertNil(conversation.activitySummary.text)
+    XCTAssertNil(probe.text)
     try await waitForNoSleep(clock)
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
-    XCTAssertEqual(scenario.state.requests.withLock { $0 }, 3)
+    try await waitForBusinessResult { probe.text != nil }
     scenario.append(type: "run.completed")
     await conversation.refresh()
     XCTAssertEqual(conversation.history?.executionState, .completed)
-    XCTAssertNil(conversation.activitySummary.text)
+    XCTAssertNil(probe.text)
     try await waitForNoSleep(clock)
     conversation.close()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    XCTAssertNil(conversation.activitySummary.text)
+    XCTAssertNil(probe.text)
     try await waitForNoSleep(clock)
   }
 
@@ -130,32 +132,183 @@ final class ConversationActivitySummaryTests: XCTestCase {
     let clock = ActivityClock()
     let started = expectation(description: "Old run HTTP started")
     let cancelled = expectation(description: "Old HTTP cancelled")
-    let release = ActivityClock()
+    let gate = ModelResponseGate()
+    scenario.state.response.withLock {
+      $0 = ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#)
+    }
     scenario.state.hold.withLock {
       $0 = {
         started.fulfill()
-        do { try await release.sleep(.seconds(1)) } catch { cancelled.fulfill() }
+        await withTaskCancellationHandler {
+          await gate.wait()
+        } onCancel: {
+          cancelled.fulfill()
+        }
       }
     }
+    addTeardownBlock { gate.open() }
     let conversation = scenario.conversation(clock: clock)
-    defer { conversation.close() }
+    let probe = ActivitySummaryProbe(conversation.activitySummary, owner: self)
+    defer {
+      gate.open()
+      conversation.close()
+    }
     await conversation.refresh()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
     await fulfillment(of: [started], timeout: 3)
-    try await waitForSleep(release, .seconds(1))
+    let old = try conversation.activitySummary.stateStore.get(conversation.activitySummary.value)
     scenario.state.hold.withLock { $0 = nil }
+    scenario.state.response.withLock { $0 = nil }
     let newer = "10000000-0000-4000-8000-000000000004"
     scenario.append(type: "input.prompt", run: newer)
     await conversation.refresh()
     await fulfillment(of: [cancelled], timeout: 3)
-    try await waitForBusinessResult { conversation.activitySummary.text == "Checking the sources" }
+    try await waitForBusinessResult { probe.text == "Checking the sources" }
     XCTAssertEqual(conversation.history?.activityRunID, newer)
-    release.advance(.seconds(1))
+    gate.open()
+    _ = await old.result
+    XCTAssertEqual(probe.text, "Checking the sources")
     scenario.append(type: "control.interrupt", run: newer)
     await conversation.refresh()
     XCTAssertEqual(conversation.history?.executionState, .stopping)
-    XCTAssertNil(conversation.activitySummary.text)
+    XCTAssertNil(probe.text)
     try await waitForNoSleep(clock)
+  }
+
+  func testSameSizeRefreshPreservesTheNextPhraseDeadline() async throws {
+    let scenario = ActivityScenario()
+    let clock = ActivityClock()
+    let gate = ModelResponseGate()
+    let started = expectation(description: "The first summary is waiting for HTTP")
+    scenario.state.hold.withLock {
+      $0 = {
+        started.fulfill()
+        await gate.wait()
+      }
+    }
+    let conversation = scenario.conversation(clock: clock)
+    let probe = ActivitySummaryProbe(conversation.activitySummary, owner: self)
+    defer {
+      gate.open()
+      conversation.close()
+    }
+    await conversation.refresh()
+    conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+    await fulfillment(of: [started], timeout: 3)
+    try await waitForSleep(clock, .seconds(15))
+    // HTTP completes one second after read demand, so rotation and refresh are out of phase.
+    clock.elapse(.seconds(1))
+    scenario.state.hold.withLock { $0 = nil }
+    gate.open()
+    try await waitForBusinessResult { probe.text == "Checking the sources" }
+    try await waitForSleep(clock, .seconds(5))
+    clock.elapse(.seconds(5))
+    try await waitForBusinessResult { probe.text == "Comparing the results" }
+    try await waitForSleep(clock, .seconds(5))
+    clock.elapse(.seconds(5))
+    try await waitForBusinessResult { probe.text == "Checking the sources" }
+    try await waitForSleep(clock, .seconds(5))
+    clock.elapse(.seconds(4))
+    try await waitForRequest(scenario, after: 1)
+    try await waitForBusinessResult { probe.isSettled }
+    // The old 5-second deadline is still due one second after the 15-second refresh.
+    clock.elapse(.seconds(1))
+    try await waitForBusinessResult { probe.text == "Comparing the results" }
+  }
+
+  func testHidingAndClosingCancelPendingHTTPAndFenceRetiredDemand() async throws {
+    for closesScope in [false, true] {
+      let scenario = ActivityScenario()
+      let clock = ActivityClock()
+      let gate = ModelResponseGate()
+      let started = expectation(description: "The summary read reached HTTP")
+      let cancelled = expectation(description: "The original summary HTTP was cancelled")
+      scenario.state.hold.withLock {
+        $0 = {
+          started.fulfill()
+          await withTaskCancellationHandler {
+            await gate.wait()
+          } onCancel: {
+            cancelled.fulfill()
+          }
+        }
+      }
+      let conversation = scenario.conversation(clock: clock)
+      let probe = ActivitySummaryProbe(conversation.activitySummary, owner: self)
+      defer {
+        gate.open()
+        conversation.close()
+      }
+      await conversation.refresh()
+      conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+      await fulfillment(of: [started], timeout: 3)
+      let pending = try conversation.activitySummary.stateStore.get(
+        conversation.activitySummary.value)
+      if closesScope {
+        conversation.close()
+      } else {
+        conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
+      }
+      await fulfillment(of: [cancelled], timeout: 3)
+      gate.open()
+      if case .success = await pending.result { XCTFail("A retired read published a summary") }
+      try await waitForBusinessResult { probe.isSettled }
+      XCTAssertNil(probe.text)
+      try await waitForNoSleep(clock)
+      if closesScope {
+        conversation.activitySummary.demand(ActivityScenario.run)
+        let retired = try await conversation.activitySummary.stateStore.get(
+          conversation.activitySummary.value
+        ).value
+        XCTAssertNil(retired)
+      }
+    }
+  }
+
+  func testVoiceOverStopsOnlyRotationWhileSummaryReadsRecover() async throws {
+    let scenario = ActivityScenario()
+    let clock = ActivityClock()
+    let conversation = scenario.conversation(clock: clock)
+    let probe = ActivitySummaryProbe(conversation.activitySummary, owner: self)
+    defer { conversation.close() }
+    await conversation.refresh()
+    conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+    try await waitForBusinessResult { probe.text == "Checking the sources" }
+    conversation.activitySummary.phrases.setRotates(false)
+    try await waitForNoSleep(clock, duration: .seconds(5))
+    scenario.state.response.withLock {
+      $0 = ChatHTTPResponse(status: 401, body: #"{"error":{"message":"Unauthenticated"}}"#)
+    }
+    try await waitForSleep(clock, .seconds(15))
+    clock.advance(.seconds(15))
+    try await waitForBusinessResult { probe.errorStatus == 401 }
+    XCTAssertNil(conversation.error)
+    scenario.state.response.withLock { $0 = nil }
+    try await waitForSleep(clock, .seconds(15))
+    clock.advance(.seconds(15))
+    try await waitForBusinessResult { probe.text == "Checking the sources" }
+    XCTAssertFalse(clock.hasSleeper(.seconds(5)))
+    conversation.activitySummary.phrases.setRotates(true)
+    try await waitForSleep(clock, .seconds(5))
+    clock.advance(.seconds(5))
+    try await waitForBusinessResult { probe.text == "Comparing the results" }
+  }
+
+  func testUpgradeResponseReachesWorkspaceScopeHandling() async throws {
+    let scenario = ActivityScenario()
+    scenario.state.response.withLock {
+      $0 = ChatHTTPResponse(status: 426, body: #"{"error":{"message":"Upgrade required"}}"#)
+    }
+    let workspace = scenario.workspace()
+    defer { workspace.close() }
+    await workspace.refreshNavigation()
+    await workspace.refresh()
+    workspace.setForeground(true)
+    workspace.selectedThreadID = ActivityScenario.thread
+    let conversation = try XCTUnwrap(workspace.selectedConversation)
+    await conversation.refresh()
+    conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+    try await waitForBusinessResult { workspace.needsUpgrade }
   }
 
   func testWorkspaceSelectionForegroundAndCloseOwnTheDemand() async throws {
@@ -168,19 +321,20 @@ final class ConversationActivitySummaryTests: XCTestCase {
     workspace.setForeground(true)
     workspace.selectedThreadID = ActivityScenario.thread
     let conversation = try XCTUnwrap(workspace.selectedConversation)
+    let probe = ActivitySummaryProbe(conversation.activitySummary, owner: self)
     await conversation.refresh()
     conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    try await waitForBusinessResult { probe.text != nil }
     workspace.setForeground(false)
-    XCTAssertNil(conversation.activitySummary.text)
+    XCTAssertNil(probe.text)
     workspace.setForeground(true)
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    try await waitForBusinessResult { probe.text != nil }
     workspace.selectedThreadID = nil
-    XCTAssertNil(conversation.activitySummary.text)
+    XCTAssertNil(probe.text)
     workspace.selectedThreadID = ActivityScenario.thread
-    try await waitForBusinessResult { conversation.activitySummary.text != nil }
+    try await waitForBusinessResult { probe.text != nil }
     workspace.close()
-    XCTAssertNil(conversation.activitySummary.text)
+    XCTAssertNil(probe.text)
   }
 }
 
@@ -188,27 +342,38 @@ final class ConversationActivitySummaryTests: XCTestCase {
 
 @MainActor @Observable
 private final class ActivityClock {
-  private var sleepers: [UUID: (Duration, CheckedContinuation<Void, Error>)] = [:]
+  private var now: Duration = .zero
+  private var sleepers:
+    [UUID: (duration: Duration, deadline: Duration, reply: CheckedContinuation<Void, Error>)] = [:]
 
   func sleep(_ duration: Duration) async throws {
     let id = UUID()
     try await withTaskCancellationHandler {
       try Task.checkCancellation()
-      try await withCheckedThrowingContinuation { sleepers[id] = (duration, $0) }
+      try await withCheckedThrowingContinuation { sleepers[id] = (duration, now + duration, $0) }
     } onCancel: {
       Task { @MainActor in self.cancel(id) }
     }
   }
 
   private func cancel(_ id: UUID) {
-    sleepers.removeValue(forKey: id)?.1.resume(throwing: CancellationError())
+    sleepers.removeValue(forKey: id)?.reply.resume(throwing: CancellationError())
   }
 
   func advance(_ duration: Duration) {
     let ready = sleepers.filter { $0.value.0 == duration }
     for (id, value) in ready {
       sleepers.removeValue(forKey: id)
-      value.1.resume()
+      value.reply.resume()
+    }
+  }
+
+  func elapse(_ duration: Duration) {
+    now += duration
+    let ready = sleepers.filter { $0.value.deadline <= now }
+    for (id, value) in ready {
+      sleepers.removeValue(forKey: id)
+      value.reply.resume()
     }
   }
 
@@ -254,8 +419,9 @@ private final class ActivityScenario: Sendable {
           return $0
         }
         defer { requestEvents.yield(count) }
+        let override = state.response.withLock({ $0 })
         if let wait = state.hold.withLock({ $0 }) { await wait() }
-        if let override = state.response.withLock({ $0 }) { return override }
+        if let override { return override }
         let body =
           try JSONSerialization.jsonObject(with: chatRequestBody(request)) as? [String: String]
         return ChatHTTPResponse(
@@ -331,4 +497,67 @@ private final class ActivityHTTPState: Sendable {
   let response = Mutex<ChatHTTPResponse?>(nil)
   let hold = Mutex<(@Sendable () async -> Void)?>(nil)
   let rows = Mutex<[String]>([])
+}
+
+/// Observe the production resource without mounting a second UI journey for each HTTP outcome.
+@MainActor @Observable
+private final class ActivitySummaryProbe {
+  private let summary: ConversationActivitySummary
+  private var value: Loadable<ChatActivitySummary?> = .loading
+  private(set) var isSettled = false
+  @ObservationIgnored private var subscription: Subscription?
+  @ObservationIgnored private var readers: [Task<Void, Never>] = []
+  @ObservationIgnored private var generation = UUID()
+
+  var text: String? {
+    guard case .hasData(let result) = value, let result, result.status == .available else {
+      return nil
+    }
+    return summary.phrases.text(in: result.messages)
+  }
+
+  var errorStatus: Int? {
+    guard case .hasError(let error) = value else { return nil }
+    return (error as? APIClientError)?.statusCode
+  }
+
+  init(_ summary: ConversationActivitySummary, owner: XCTestCase) {
+    self.summary = summary
+    owner.addTeardownBlock { @MainActor [self] in
+      do { try subscription?.cancel() } catch {
+        XCTFail("Cannot detach summary observer: \(error)")
+      }
+      for reader in readers { reader.cancel() }
+      for reader in readers { await reader.value }
+    }
+    do {
+      subscription = try summary.stateStore.watch(summary.value) { [weak self] in self?.read() }
+      read()
+    } catch { XCTFail("Cannot observe summary: \(error)") }
+  }
+
+  private func read() {
+    readers.last?.cancel()
+    let owner = UUID()
+    generation = owner
+    isSettled = false
+    do {
+      let run = try summary.stateStore.get(summary.demandedRun)
+      if case .hasData(let result) = value, result?.runId != run { value = .loading }
+      let pending = try summary.stateStore.get(summary.value)
+      readers.append(
+        Task { [weak self] in
+          let result = await pending.result
+          guard let self, !Task.isCancelled, generation == owner else { return }
+          switch result {
+          case .success(let data): value = .hasData(data)
+          case .failure(let error): value = .hasError(error)
+          }
+          isSettled = true
+        })
+    } catch {
+      value = .hasError(error)
+      isSettled = true
+    }
+  }
 }
