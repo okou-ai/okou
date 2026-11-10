@@ -8,3 +8,9 @@ ENABLE_NS_ASSERTIONS = NO
 VALIDATE_PRODUCT = YES
 
 APS_ENVIRONMENT = production
+
+// QA-only configuration; this branch is never merged or promoted.
+SWIFT_ACTIVE_COMPILATION_CONDITIONS = $(inherited) DEBUG
+OKOU_API_BASE_URL = https:/$()/staging-api.vm6.ai
+OKOU_WEB_BASE_URL = https:/$()/staging-app-okou-app-preview.vm0.workers.dev
+CLERK_PUBLISHABLE_KEY = pk_test_aW5mb3JtZWQtY2FsZi02LmNsZXJrLmFjY291bnRzLmRldiQ

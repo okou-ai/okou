@@ -66,7 +66,11 @@ struct OkouApp: App {
           } else if Self.isResultStyles {
             NavigationStack { ResultStylesPage() }
           } else if Self.isDesignPreview {
-            NavigationStack { OkouDesignSystemCatalog() }
+            if ProcessInfo.processInfo.arguments.contains("--composer-preview") {
+              NativeComposerAlignmentPreview()
+            } else {
+              NavigationStack { OkouDesignSystemCatalog() }
+            }
           } else {
             productRoot
           }
