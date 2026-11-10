@@ -20,7 +20,6 @@ import request_streaming
 from body_limits import BODY_CAPTURE_LIMIT, STREAM_BUFFER_LIMIT
 from tests.flow_helpers import header_map, response_stream
 from tests.jsonl_log_helpers import (
-    jsonl_exists_after_flush,
     read_jsonl_entries_after_flush,
     read_jsonl_text_after_flush,
 )
@@ -1390,7 +1389,6 @@ def test_error_status_logs_warning(tmp_path, real_flow):
 
     mitm_addon.response(flow)
 
-    assert jsonl_exists_after_flush(proxy_log)
     [entry] = read_jsonl_entries_after_flush(proxy_log)
     assert entry["message"] == "Response 500: https://api.example.com/fail"
     assert "user:pass" not in entry["message"]

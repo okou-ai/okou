@@ -8,7 +8,6 @@ import pytest
 import flow_metadata_keys as metadata_keys
 import usage
 from tests.jsonl_log_helpers import (
-    jsonl_exists_after_flush,
     read_jsonl_entries_after_flush,
     read_jsonl_text_after_flush,
 )
@@ -307,7 +306,6 @@ def test_handles_unknown_includes_key(x_usage, tmp_path, real_flow):
         "includes.future_widget": 3,
     }
     proxy_log = tmp_path / "proxy.jsonl"
-    assert jsonl_exists_after_flush(proxy_log)
     content = read_jsonl_text_after_flush(proxy_log)
     assert "future_widget" in content
     assert "unrecognised" in content.lower()
