@@ -56,22 +56,25 @@ function OkouRowTrailing({ shortcutLabel }: { shortcutLabel: string | null }) {
   }
   return (
     <>
+      {/* The label stays outside the swapped badge so hiding the digit on
+          hover or focus keeps the count in the row's accessible name. */}
+      <span className="sr-only">
+        {t(
+          ($) => {
+            return $.appShell.sidebar.suggestionsWaiting;
+          },
+          { count },
+        )}
+      </span>
       <Badge
+        aria-hidden="true"
         className={cn(
           "shrink-0 text-xs font-medium tabular-nums text-nav-copy-muted",
           shortcutLabel !== null &&
             "md:group-hover/okou-row:hidden group-focus-visible/okou-row:hidden",
         )}
       >
-        <span aria-hidden="true">{count}</span>
-        <span className="sr-only">
-          {t(
-            ($) => {
-              return $.appShell.sidebar.suggestionsWaiting;
-            },
-            { count },
-          )}
-        </span>
+        {count}
       </Badge>
       {shortcutLabel === null ? null : (
         <ShortcutHint
