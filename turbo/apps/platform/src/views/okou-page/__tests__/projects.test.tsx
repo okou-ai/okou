@@ -755,13 +755,14 @@ function runningIndicatorPhase(indicator: HTMLElement | null): number {
   return Number(phase);
 }
 
-test("A folded Project rests on its chats' running or unread state, and an unfolded one leaves it to the chats", async () => {
+test("A folded Project rests on the running or unread state of the chats it hides, and an unfolded one leaves it to them", async () => {
   const researchId = "30000000-0000-4000-8000-000000000072";
   const quietId = "30000000-0000-4000-8000-000000000074";
   const ordinary = continuityThread(225, 1, "Ordinary chat");
-  const launchUnread = {
-    ...continuityThread(225, 2, "Launch notes"),
-    projectId: id,
+  // Research lists an unread chat on each side of its running one.
+  const researchOlderUnread = {
+    ...continuityThread(225, 2, "Research plan"),
+    projectId: researchId,
   };
   const researchRunning = {
     ...continuityThread(225, 3, "Research build"),
@@ -771,13 +772,31 @@ test("A folded Project rests on its chats' running or unread state, and an unfol
     ...continuityThread(225, 4, "Research notes"),
     projectId: researchId,
   };
+  const launchUnread = {
+    ...continuityThread(225, 5, "Launch notes"),
+    projectId: id,
+  };
   const quiet = {
-    ...continuityThread(225, 5, "Quiet chat"),
+    ...continuityThread(225, 6, "Quiet chat"),
     projectId: quietId,
+  };
+  // The list leaves an archived chat out, so its run is not Quiet's to report.
+  const quietArchivedRunning = {
+    ...continuityThread(225, 7, "Quiet archive"),
+    projectId: quietId,
+    archived: true,
   };
   const workspace = installContinuityWorkspace(context, {
     caseId: 225,
-    threads: [ordinary, launchUnread, researchRunning, researchUnread, quiet],
+    threads: [
+      ordinary,
+      researchOlderUnread,
+      researchRunning,
+      researchUnread,
+      launchUnread,
+      quiet,
+      quietArchivedRunning,
+    ],
   });
   metadata([
     { id: researchId, name: "Research" },
@@ -787,11 +806,17 @@ test("A folded Project rests on its chats' running or unread state, and an unfol
     return respond(200, {
       agents: {},
       threads: {
-        [launchUnread.id]: "unread",
+        [researchOlderUnread.id]: "unread",
         [researchRunning.id]: "active",
         [researchUnread.id]: "unread",
+        [launchUnread.id]: "unread",
+        [quietArchivedRunning.id]: "active",
       },
-      unreadAt: { [launchUnread.id]: at, [researchUnread.id]: at },
+      unreadAt: {
+        [researchOlderUnread.id]: at,
+        [researchUnread.id]: at,
+        [launchUnread.id]: at,
+      },
     });
   });
   await setupPage({
@@ -829,6 +854,15 @@ test("A folded Project rests on its chats' running or unread state, and an unfol
 
   click(projectToggle("Research", researchId));
   expect(projectTrigger(researchId)).toHaveAccessibleName("Research Running");
+
+  // The Unread list leaves the running chat out, so Research hides only
+  // unread chats there.
+  openChatListMenu();
+  click(menuItemByText("Unread"));
+  await waitFor(() => {
+    expect(projectTrigger(researchId)).toHaveAccessibleName("Research Unread");
+  });
+  expect(projectTrigger()).toHaveAccessibleName("Launch Unread");
 });
 
 test("A Project page moves down into its chats when unfolded and past them when folded", async () => {
