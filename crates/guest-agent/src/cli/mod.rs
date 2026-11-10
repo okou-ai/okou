@@ -49,6 +49,9 @@ mod provider_event_normalization;
 mod reasoning_effort;
 mod record_labels;
 mod termination;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod test_support;
 
 pub use codex_setup::setup_codex_for_config;
 pub use codex_startup::CodexStartupTiming;
@@ -958,6 +961,8 @@ pub struct CliExecutionControls<'a> {
     pi_startup: Option<&'a PiStartupTiming>,
     workload_containment: Option<&'a crate::workload_containment::WorkloadContainment>,
     session_metadata: SessionMetadataStore,
+    #[cfg(feature = "test-support")]
+    codex_turn_start_gate: Option<test_support::CodexTurnStartGate>,
 }
 
 impl<'a> CliExecutionControls<'a> {
@@ -975,6 +980,8 @@ impl<'a> CliExecutionControls<'a> {
             pi_startup: None,
             workload_containment: None,
             session_metadata: SessionMetadataStore::default(),
+            #[cfg(feature = "test-support")]
+            codex_turn_start_gate: None,
         }
     }
 
@@ -998,6 +1005,14 @@ impl<'a> CliExecutionControls<'a> {
     #[must_use]
     pub fn with_session_metadata_store(mut self, store: SessionMetadataStore) -> Self {
         self.session_metadata = store;
+        self
+    }
+
+    /// Pause before Codex event arbitration to coordinate native test peers.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_codex_turn_start_gate(mut self, gate: test_support::CodexTurnStartGate) -> Self {
+        self.codex_turn_start_gate = Some(gate);
         self
     }
 }
@@ -1082,6 +1097,8 @@ async fn execute_cli_inner(
         pi_startup,
         workload_containment,
         session_metadata,
+        #[cfg(feature = "test-support")]
+            codex_turn_start_gate: _,
     } = controls;
 
     let replay_user_messages =

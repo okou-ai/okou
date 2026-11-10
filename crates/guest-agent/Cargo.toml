@@ -3,6 +3,9 @@ name = "guest-agent"
 version = "0.109.61"
 edition.workspace = true
 
+[features]
+test-support = []
+
 [dependencies]
 aho-corasick = { workspace = true, features = ["perf-literal", "std"] }
 api-contracts.workspace = true
