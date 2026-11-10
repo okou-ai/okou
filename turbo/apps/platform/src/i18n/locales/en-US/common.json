@@ -6469,6 +6469,23 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "Back to workflows",
+      "disabledAt": "Disabled at {{time}}",
+      "loadFailed": "Couldn’t load this automation",
+      "loadingAutomation": "Loading automation",
+      "otherWorkspace": "This automation is in {{workspace}}. Switch workspace to view it.",
+      "reason_one": "Automatically disabled after {{count}} consecutive execution failure.",
+      "reason_other": "Automatically disabled after {{count}} consecutive execution failures.",
+      "switchFailed": "Couldn’t switch workspace. Try again or use the workspace switcher.",
+      "switchWorkspace": "Switch workspace",
+      "systemManaged": "This automation is managed by the system. Its current status is shown below.",
+      "systemSource": "System notification",
+      "unavailable": "Automation not found or you do not have access",
+      "viewAutomation": "View automation",
+      "workspace": "Workspace",
+      "workspaceFallback": "Original workspace"
+    },
     "close": "Close",
     "countUnavailable": "Unread count unavailable",
     "detailFailed": "Couldn’t load this notification",

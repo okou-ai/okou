@@ -6540,6 +6540,24 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "Voltar aos fluxos de trabalho",
+      "disabledAt": "Desativada em {{time}}",
+      "loadFailed": "Não foi possível carregar esta automação",
+      "loadingAutomation": "Carregando automação",
+      "otherWorkspace": "Esta automação está em {{workspace}}. Troque de espaço de trabalho para visualizá-la.",
+      "reason_one": "Desativada automaticamente após {{count}} falha de execução consecutiva.",
+      "reason_many": "Desativada automaticamente após {{count}} falhas de execução consecutivas.",
+      "reason_other": "Desativada automaticamente após {{count}} falhas de execução consecutivas.",
+      "switchFailed": "Não foi possível trocar de espaço de trabalho. Tente novamente ou use o seletor de espaços de trabalho.",
+      "switchWorkspace": "Trocar de espaço de trabalho",
+      "systemManaged": "Esta automação é gerenciada pelo sistema. O estado atual é mostrado abaixo.",
+      "systemSource": "Notificação do sistema",
+      "unavailable": "Automação não encontrada ou acesso não permitido",
+      "viewAutomation": "Ver automação",
+      "workspace": "Espaço de trabalho",
+      "workspaceFallback": "Espaço de trabalho original"
+    },
     "close": "Fechar",
     "countUnavailable": "Contagem de notificações não lidas indisponível",
     "detailFailed": "Não foi possível carregar esta notificação",

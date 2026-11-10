@@ -6471,6 +6471,23 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "Zurück zu Workflows",
+      "disabledAt": "Deaktiviert am {{time}}",
+      "loadFailed": "Diese Automatisierung konnte nicht geladen werden",
+      "loadingAutomation": "Automatisierung wird geladen",
+      "otherWorkspace": "Diese Automatisierung befindet sich in {{workspace}}. Wechsle den Arbeitsbereich, um sie anzuzeigen.",
+      "reason_one": "Nach {{count}} fehlgeschlagener Ausführung in Folge automatisch deaktiviert.",
+      "reason_other": "Nach {{count}} fehlgeschlagenen Ausführungen in Folge automatisch deaktiviert.",
+      "switchFailed": "Der Arbeitsbereich konnte nicht gewechselt werden. Versuche es erneut oder nutze die Arbeitsbereichsauswahl.",
+      "switchWorkspace": "Arbeitsbereich wechseln",
+      "systemManaged": "Diese Automatisierung wird vom System verwaltet. Ihr aktueller Status wird unten angezeigt.",
+      "systemSource": "Systembenachrichtigung",
+      "unavailable": "Automatisierung nicht gefunden oder kein Zugriff",
+      "viewAutomation": "Automatisierung anzeigen",
+      "workspace": "Arbeitsbereich",
+      "workspaceFallback": "Ursprünglicher Arbeitsbereich"
+    },
     "close": "Schließen",
     "countUnavailable": "Anzahl ungelesener Benachrichtigungen nicht verfügbar",
     "detailFailed": "Diese Benachrichtigung konnte nicht geladen werden",

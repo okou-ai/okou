@@ -5,6 +5,7 @@
  */
 export enum FeatureSwitchKey {
   UserNotifications = "userNotifications",
+  AutomationDisableNotifications = "automationDisableNotifications",
   EmailIntegration = "emailIntegration",
   HomeCapabilities = "homeCapabilities",
   PastedTextAttachments = "pastedTextAttachments",

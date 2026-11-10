@@ -6450,6 +6450,23 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "Kembali ke alur kerja",
+      "disabledAt": "Dinonaktifkan pada {{time}}",
+      "loadFailed": "Tidak dapat memuat otomatisasi ini",
+      "loadingAutomation": "Memuat otomatisasi",
+      "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
+      "reason_one": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",
+      "reason_other": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",
+      "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
+      "switchWorkspace": "Ganti ruang kerja",
+      "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
+      "systemSource": "Notifikasi sistem",
+      "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
+      "viewAutomation": "Lihat otomatisasi",
+      "workspace": "Ruang kerja",
+      "workspaceFallback": "Ruang kerja asal"
+    },
     "close": "Tutup",
     "countUnavailable": "Jumlah notifikasi belum dibaca tidak tersedia",
     "detailFailed": "Tidak dapat memuat notifikasi ini",

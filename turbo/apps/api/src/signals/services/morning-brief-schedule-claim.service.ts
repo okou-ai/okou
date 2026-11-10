@@ -23,6 +23,10 @@ import { nowDate } from "../../lib/time";
 import { db$, writeDb$ } from "../external/db";
 import { settle } from "../utils";
 import { workflowAutomationColumns } from "./autonomy-budget-schema.service";
+import {
+  prepareAutomationDisabledNotification$,
+  type PreparedAutomationDisabledNotification,
+} from "./automation-disabled-notification.service";
 import { advanceTimeAutomationAfterCompletion } from "./time-automation";
 
 import {
@@ -285,6 +289,7 @@ interface PreparedMorningBriefScheduleSettlement {
   readonly claim: typeof morningBriefScheduleClaims.$inferSelect;
   readonly settledAt: Date;
   readonly plan: ReturnType<typeof officialMorningBriefSettlementPlan>;
+  readonly notification: PreparedAutomationDisabledNotification | null;
 }
 
 const morningBriefSettlementPublicationRow = object({
@@ -343,15 +348,24 @@ const prepareMorningBriefSchedulePublication$ = command(
       return null;
     }
     const settledAt = nowDate();
+    const plan = officialMorningBriefSettlementPlan(
+      observed.automation,
+      args,
+      settledAt,
+    );
+    const notification = plan?.shouldDisable
+      ? await set(
+          prepareAutomationDisabledNotification$,
+          observed.automation,
+          settledAt,
+        )
+      : null;
     return {
       automationRevision: observed.revision,
       claim,
       settledAt,
-      plan: officialMorningBriefSettlementPlan(
-        observed.automation,
-        args,
-        settledAt,
-      ),
+      plan,
+      notification,
     };
   },
 );
@@ -374,6 +388,7 @@ const publishMorningBriefScheduleSettlement$ = command(
       settlement: args.settlement,
       settledAt: prepared.settledAt,
       advance: prepared.plan?.advance ?? null,
+      notification: prepared.notification,
     });
     const executed = await settle(
       (async () => {
