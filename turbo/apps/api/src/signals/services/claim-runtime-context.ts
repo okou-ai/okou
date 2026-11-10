@@ -603,7 +603,7 @@ function createClaimPlatform(
       ]);
     const framework = claimFramework(run);
     const integration = claimIntegration(originalInput);
-    const bypass = context.platformEnvironment.VERCEL_AUTOMATION_BYPASS_SECRET
+    const bypass = context.previewBypassAuthorized
       ? previewAutomationBypassSecret()
       : undefined;
     return {

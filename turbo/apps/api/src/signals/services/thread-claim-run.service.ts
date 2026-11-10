@@ -5946,6 +5946,8 @@ function queuedExecutionContext(
   );
   return {
     ...queued,
+    previewBypassAuthorized:
+      !!platformEnvironment.VERCEL_AUTOMATION_BYPASS_SECRET,
     networkPolicies:
       capturedPolicies.length > 0
         ? Object.fromEntries(capturedPolicies)

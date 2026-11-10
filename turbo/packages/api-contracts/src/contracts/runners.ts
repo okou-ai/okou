@@ -1026,7 +1026,11 @@ const storedExecutionContextObjectSchema = object({
   piModelConfig: piModelConfigSchema.optional(),
 });
 
-export const storedExecutionContextSchema = storedExecutionContextObjectSchema;
+export const storedExecutionContextSchema =
+  storedExecutionContextObjectSchema.extend({
+    // Captured authorization, separate from the deployment's runtime secret.
+    previewBypassAuthorized: boolean().optional(),
+  });
 
 /** Irrecoverable Claim inputs; reconstructible fields on a full queue row are ignored. */
 export const claimExecutionInputSchema = storedExecutionContextObjectSchema
@@ -1038,11 +1042,22 @@ export const claimExecutionInputSchema = storedExecutionContextObjectSchema
     apiStartTime: true,
   })
   .extend({
+    previewBypassAuthorized: boolean().optional(),
     platformEnvironment: object({
       OKOU_TOKEN: string().optional(),
       [DISABLED_PAID_TOOLS_ENV_VAR]: string(),
       VERCEL_AUTOMATION_BYPASS_SECRET: string().optional(),
     }),
+  })
+  // Old API writers and queued rows lack the boolean. Remove this receipt
+  // fallback in #46278 after the new writer's cutover/drain and JSON backfill.
+  .transform((context) => {
+    return {
+      ...context,
+      previewBypassAuthorized:
+        context.previewBypassAuthorized ??
+        !!context.platformEnvironment.VERCEL_AUTOMATION_BYPASS_SECRET,
+    };
   });
 
 /** Complete preparation also serves registration, diagnostics and Claim. */

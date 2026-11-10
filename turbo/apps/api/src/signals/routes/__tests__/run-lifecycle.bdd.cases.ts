@@ -12038,7 +12038,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     });
 
     describe("RUN-03: user-runner protocol and runner authentication", () => {
-      it("uses accepted preview headers or cookies with the current masked Claim secret", async () => {
+      it("preserves preview authorization with the current masked Claim secret", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const { actor, agentId } = await entitledRunActor();
@@ -12047,12 +12047,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {
             prompt: "preview bypass from header",
             headers: { "x-vercel-protection-bypass": previewBypass },
+            authorized: true,
           },
           {
             prompt: "preview bypass from cookie",
             headers: {
               cookie: `other=value; x-vercel-protection-bypass=${previewBypass}`,
             },
+            authorized: true,
+          },
+          {
+            prompt: "preview without accepted bypass authorization",
+            headers: { "x-vercel-protection-bypass": "untrusted-bypass" },
+            authorized: false,
           },
         ] as const;
 
@@ -12103,10 +12110,17 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
               "x-vercel-protection-bypass": claimBypass,
             },
           );
-          expect(claim.platformEnvironment).toMatchObject({
-            VERCEL_AUTOMATION_BYPASS_SECRET: claimBypass,
-          });
-          expect(claim.secretValues).toContain(claimBypass);
+          if (request.authorized) {
+            expect(claim.platformEnvironment).toMatchObject({
+              VERCEL_AUTOMATION_BYPASS_SECRET: claimBypass,
+            });
+            expect(claim.secretValues).toContain(claimBypass);
+          } else {
+            expect(claim.platformEnvironment).not.toHaveProperty(
+              "VERCEL_AUTOMATION_BYPASS_SECRET",
+            );
+            expect(claim.secretValues).not.toContain(claimBypass);
+          }
           expect(claim.environment).not.toHaveProperty(
             "VERCEL_AUTOMATION_BYPASS_SECRET",
           );

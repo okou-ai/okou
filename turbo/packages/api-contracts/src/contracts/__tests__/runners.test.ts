@@ -154,6 +154,7 @@ function loadRunnerClaimResponseFixture(): unknown {
 describe("runner claim response contract", () => {
   it("round-trips minimum execution intent without materialized runtime fields", () => {
     const input = {
+      previewBypassAuthorized: false,
       platformEnvironment: {
         OKOU_TOKEN: "captured-run-authorization",
         OKOU_DISABLED_PAID_TOOLS: "[]",
@@ -254,6 +255,83 @@ describe("runner claim response contract", () => {
       expect(emptyTrustedContext.platformEnvironment).toStrictEqual({});
     },
   );
+});
+
+describe("queued preview bypass authorization", () => {
+  const input = {
+    nativeContinuation: {
+      sessionId: null,
+      generationRunId: null,
+      recoveryPrompt: null,
+    },
+    platformEnvironment: { OKOU_DISABLED_PAID_TOOLS: "[]" },
+  };
+  const fullContext = {
+    ...input,
+    storageMounts: [],
+    seedSkillBundles: [],
+    environment: null,
+    encryptedSecrets: null,
+    secretValueEnvironmentKeys: null,
+  };
+
+  it.each([
+    { authorized: undefined, receipt: undefined, expected: false },
+    { authorized: undefined, receipt: "", expected: false },
+    { authorized: undefined, receipt: "queued-secret", expected: true },
+    { authorized: true, receipt: undefined, expected: true },
+    { authorized: false, receipt: undefined, expected: false },
+    { authorized: false, receipt: "queued-secret", expected: false },
+    { authorized: true, receipt: "queued-secret", expected: true },
+  ])(
+    "normalizes authorized=$authorized and retained receipt=$receipt to $expected",
+    ({ authorized, receipt, expected }) => {
+      const decoded = claimExecutionInputSchema.parse({
+        ...input,
+        previewBypassAuthorized: authorized,
+        platformEnvironment: {
+          ...input.platformEnvironment,
+          VERCEL_AUTOMATION_BYPASS_SECRET: receipt,
+        },
+      });
+      expect(decoded.previewBypassAuthorized).toBe(expected);
+    },
+  );
+
+  it.each([null, "true", "false", 1])(
+    "rejects malformed authorization %s instead of using the retained receipt",
+    (previewBypassAuthorized) => {
+      const queued = {
+        ...fullContext,
+        previewBypassAuthorized,
+        platformEnvironment: {
+          ...input.platformEnvironment,
+          VERCEL_AUTOMATION_BYPASS_SECRET: "queued-secret",
+        },
+      };
+      expect(storedExecutionContextSchema.safeParse(queued).success).toBe(
+        false,
+      );
+      expect(claimExecutionInputSchema.safeParse(queued).success).toBe(false);
+    },
+  );
+
+  it("preserves the stored receipt outside the complete runtime contract", () => {
+    const stored = storedExecutionContextSchema.parse({
+      ...fullContext,
+      previewBypassAuthorized: true,
+    });
+    expect(
+      storedExecutionContextSchema.parse(JSON.parse(JSON.stringify(stored)))
+        .previewBypassAuthorized,
+    ).toBe(true);
+    const prepared = preparedExecutionContextSchema.parse({
+      ...stored,
+      cliAgentType: "claude-code",
+      connectorRuntimeTargets: [],
+    });
+    expect(prepared).not.toHaveProperty("previewBypassAuthorized");
+  });
 });
 
 describe("stored Seed Skill bundle contract", () => {
