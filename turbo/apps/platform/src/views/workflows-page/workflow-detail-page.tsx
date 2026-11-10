@@ -258,6 +258,7 @@ import { WorkflowTooltip } from "./workflows-page.tsx";
 import { AutomationListIcon } from "../okou-page/workflow-automations-page.tsx";
 import { emptyAutomationsImg } from "../okou-page/platform-assets.ts";
 import {
+  automationNotificationTarget$,
   switchAutomationNotificationWorkspace$,
   workflowAutomationNotificationAccess$,
 } from "../../signals/workflows-page/workflow-automation-notification.ts";
@@ -961,12 +962,18 @@ function copyText(value: string): void {
 export function WorkflowAutomationNotificationPage() {
   const { t } = useTranslation();
   const access = useLoadable(workflowAutomationNotificationAccess$);
+  const target = useGet(automationNotificationTarget$);
   const retry = useSet(reloadWorkflows$);
   const signal = useGet(pageSignal$);
   const [switching, switchWorkspace] = useLoadableSet(
     switchAutomationNotificationWorkspace$,
   );
-  if (access.state === "hasData" && access.data.status === "ready") {
+  if (
+    !target ||
+    (access.state === "hasData" && access.data.status === "ready")
+  ) {
+    // Ordinary tabs clear the query in place. Keep their mounted page and focus;
+    // normal workflow API authorization still owns access without that query.
     return <WorkflowDetailPage />;
   }
   return (

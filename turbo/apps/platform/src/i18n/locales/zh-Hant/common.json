@@ -6456,7 +6456,6 @@
       "disabledAt": "停用時間：{{time}}",
       "loadFailed": "無法載入此自動化",
       "loadingAutomation": "正在載入自動化",
-      "nameFallback": "排程自動化",
       "otherWorkspace": "此自動化位於 {{workspace}}。請切換工作區以查看。",
       "reason_one": "連續執行失敗 {{count}} 次後，已被系統自動停用。",
       "reason_other": "連續執行失敗 {{count}} 次後，已被系統自動停用。",

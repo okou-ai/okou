@@ -4,14 +4,23 @@ import {
   chatThreadMetadataContract,
   chatThreadMuteContract,
 } from "@okouai/api-contracts/contracts/chat-threads";
-import { cronExecuteWorkflowAutomationsContract } from "@okouai/api-contracts/contracts/cron";
+import {
+  cronExecuteWorkflowAutomationsContract,
+  cronOfficialWorkflowCatalogContract,
+} from "@okouai/api-contracts/contracts/cron";
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
+import {
+  MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+  MORNING_BRIEF_OFFICIAL_DEFINITION_NAME,
+  morningBriefPreferenceContract,
+} from "@okouai/api-contracts/contracts/morning-brief-preference";
 import {
   userNotificationsContract,
   type UserNotification,
 } from "@okouai/api-contracts/contracts/user-notifications";
 import {
   workflowAutomationsContract,
+  workflowsCollectionContract,
   type WorkflowAutomationSummary,
 } from "@okouai/api-contracts/contracts/workflows";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
@@ -25,15 +34,19 @@ import { flushWaitUntilForTest } from "../../context/wait-until";
 import { chatThreadGetRoutes } from "../chat-threads-get";
 import { chatThreadMuteRoutes } from "../chat-threads-mute";
 import { cronExecuteWorkflowAutomationsRoutes } from "../cron-execute-workflow-automations";
+import { cronOfficialWorkflowCatalogRoutes } from "../cron-official-workflow-catalog";
 import { featureSwitchesRoutes } from "../feature-switches";
+import { morningBriefPreferenceRoutes } from "../morning-brief-preference";
 import { userNotificationRoutes } from "../user-notifications";
 import { workflowAutomationsRoutes } from "../workflow-automations";
+import { workflowsRoutes } from "../workflows";
 import type { ApiTestUser } from "./helpers/api-bdd";
 import { createRunsApi } from "./helpers/api-bdd-runs";
 import { createWebhookCallbackApi } from "./helpers/api-bdd-webhooks";
 import { createWorkflowsBddApi } from "./helpers/api-bdd-workflows";
 import { createPublicAutomationRunApi } from "./helpers/public-automation-run";
 import { createRouteMocks } from "./helpers/route-test";
+import { installWorkflowVolumeS3Fixture } from "./helpers/workflow-volume-s3";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -228,6 +241,7 @@ function expectDisableNotice(
   notification: UserNotification,
   scenario: Scenario,
   disabledAt: string,
+  recoveryScheduled = false,
 ) {
   expect(notification.readAt).toBeNull();
   expect(notification.title.length).toBeGreaterThan(0);
@@ -241,7 +255,7 @@ function expectDisableNotice(
       automationName: scenario.workflowName,
       disabledAt,
       consecutiveFailures: 3,
-      recoveryScheduled: false,
+      recoveryScheduled,
     },
   });
   if (notification.payload.type !== "rich_text") {
@@ -523,6 +537,160 @@ describe("recurring automation auto-disable bell notifications", () => {
       new Date(now()).toISOString(),
     );
     await expect(unreadCount(scenario.actor)).resolves.toBe(2);
+  });
+
+  it("notifies once for a journaled Morning Brief after three Runner failures and retains its recovery anchor", async () => {
+    // Both the catalog publisher and schedule scanner operate across tenants.
+    const cron = await setupApp({
+      context,
+      routes: [
+        ...cronOfficialWorkflowCatalogRoutes,
+        ...cronExecuteWorkflowAutomationsRoutes,
+      ],
+      isolatePg: true,
+    });
+    mockEnv("CRON_SECRET", CRON_SECRET);
+    mockNow(new Date("2030-01-01T12:00:00.000Z"));
+    const { actor, defaultAgentId } = await workflows.setupWorkflowOrg({
+      model: "claude-fable-5-1",
+      timezone: "UTC",
+    });
+    const runnerGroup = runs.configureRunnerGroup();
+    runs.acceptStorageDownloads();
+    runs.acceptTelemetryIngest();
+    installWorkflowVolumeS3Fixture(context);
+    const published = await accept(
+      cron(cronOfficialWorkflowCatalogContract).sync({
+        headers: { authorization: `Bearer ${CRON_SECRET}` },
+      }),
+      [200],
+    );
+    expect(published.body).toMatchObject({
+      outcome: "accepted",
+      diagnostics: [],
+    });
+    await notificationSwitches(actor, true);
+    const enabled = await accept(
+      setupApp({ context, routes: morningBriefPreferenceRoutes })(
+        morningBriefPreferenceContract,
+      ).update({
+        headers: authHeaders(actor),
+        body: { enabled: true },
+      }),
+      [200],
+    );
+    expect(enabled.body).toStrictEqual({
+      enabled: true,
+      status: "enabled",
+      unavailableReason: null,
+    });
+    await flushWaitUntilForTest();
+    const listed = await accept(
+      setupApp({ context, routes: workflowsRoutes })(
+        workflowsCollectionContract,
+      ).list({ headers: authHeaders(actor), query: {} }),
+      [200],
+    );
+    const workflow = listed.body.find((item) => {
+      return (
+        item.official?.definitionName === MORNING_BRIEF_OFFICIAL_DEFINITION_NAME
+      );
+    });
+    if (!workflow) {
+      throw new Error("Expected the preference to install Morning Brief");
+    }
+    expect(workflow).toMatchObject({
+      agentId: defaultAgentId,
+      ownerUserId: actor.userId,
+      official: { installationState: "installed" },
+    });
+    const automations = await accept(
+      automationsClient().list({
+        headers: authHeaders(actor),
+        params: { workflowId: workflow.id },
+      }),
+      [200],
+    );
+    expect(automations.body).toHaveLength(1);
+    const [automation] = automations.body;
+    if (!automation) {
+      throw new Error("Expected the canonical Morning Brief schedule");
+    }
+    expect(automation).toMatchObject({
+      enabled: true,
+      ownerUserId: actor.userId,
+      kind: "schedule",
+      schedule: { type: "cron", timezone: "UTC" },
+      official: {
+        blueprintKey: MORNING_BRIEF_OFFICIAL_BLUEPRINT_KEY,
+        reconciliationStatus: "current",
+        intendedEnabled: true,
+      },
+    });
+    const scenario: Scenario = {
+      actor,
+      workflowId: workflow.id,
+      workflowName: workflow.name,
+      runnerGroup,
+      automationId: automation.id,
+    };
+    for (let failure = 1; failure < 3; failure++) {
+      await completeFailedOccurrence(scenario);
+      expect((await readAutomation(scenario)).enabled).toBeTruthy();
+      await expect(inbox(actor)).resolves.toStrictEqual([]);
+      await expect(unreadCount(actor)).resolves.toBe(0);
+    }
+    const threshold = await completeFailedOccurrence(scenario);
+    const disabledAt = new Date(now()).toISOString();
+    const disabled = await readAutomation(scenario);
+    expect(disabled).toMatchObject({
+      enabled: false,
+      official: { intendedEnabled: true },
+    });
+    if (!disabled.nextRunAt) {
+      throw new Error("Expected Morning Brief to retain a recovery anchor");
+    }
+    expect(new Date(disabled.nextRunAt).getTime()).toBeGreaterThan(now());
+    const delivered = await inbox(actor);
+    expect(delivered).toHaveLength(1);
+    const [notice] = delivered;
+    if (!notice) {
+      throw new Error("Expected the owner's Morning Brief disable notice");
+    }
+    expectDisableNotice(
+      await readNotification(actor, notice.id),
+      scenario,
+      disabledAt,
+      true,
+    );
+    await expect(unreadCount(actor)).resolves.toBe(1);
+
+    await webhooks.requestAgentComplete(
+      threshold.completion,
+      threshold.headers,
+      [200],
+    );
+    await flushWaitUntilForTest();
+    expect(
+      (await inbox(actor)).map((item) => {
+        return item.id;
+      }),
+    ).toStrictEqual([notice.id]);
+    await expect(unreadCount(actor)).resolves.toBe(1);
+    await expect(readAutomation(scenario)).resolves.toMatchObject({
+      enabled: false,
+      nextRunAt: disabled.nextRunAt,
+    });
+    const peer = workflows.user({ orgId: actor.orgId });
+    await notificationSwitches(peer, true);
+    await expect(inbox(peer)).resolves.toStrictEqual([]);
+    await accept(
+      notificationsClient().get({
+        headers: authHeaders(peer),
+        params: { id: notice.id },
+      }),
+      [404],
+    );
   });
 
   it.each([

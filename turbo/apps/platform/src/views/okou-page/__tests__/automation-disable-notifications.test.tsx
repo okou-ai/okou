@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -171,7 +172,7 @@ function mockAutomationDestination(detail = workflow()) {
 }
 
 function control(
-  role: "button" | "link",
+  role: "button" | "link" | "tab",
   name: string,
   container: ParentNode = document.body,
 ): HTMLElement {
@@ -328,9 +329,44 @@ test("View automation rechecks access and focuses the exact current automation w
   );
 });
 
+test.each([
+  { tab: "Instructions", route: "instructions" },
+  { tab: "Settings", route: "info" },
+])(
+  "A valid notification destination hands $tab over to the normal workflow page",
+  async ({ tab, route }) => {
+    mockAutomationDestination();
+    await setupPage({ context, path: destination(), auth: auth() });
+    const selected = await screen.findByRole("group", { name: "Every 1 hour" });
+    expect(selected).toHaveAttribute("aria-current", "true");
+
+    await userEvent.click(control("tab", tab));
+
+    await expect(
+      tab === "Instructions"
+        ? screen.findByText("Prepare the summary.")
+        : screen.findByDisplayValue("Daily summary workflow"),
+    ).resolves.toBeInTheDocument();
+    expect(pathname()).toBe(`/workflows/${WORKFLOW_ID}/${route}`);
+    expect(search()).toBe("");
+    expect(control("tab", tab)).toHaveAttribute("aria-selected", "true");
+    expect(control("tab", tab)).toHaveFocus();
+
+    click(control("tab", "Automations"));
+
+    const automationRow = await screen.findByRole("group", {
+      name: "Every 1 hour",
+    });
+    expect(within(automationRow).getByRole("switch")).not.toBeChecked();
+    expect(pathname()).toBe(`/workflows/${WORKFLOW_ID}/automations`);
+    expect(search()).toBe("");
+  },
+);
+
 test.each([403, 404] as const)(
   "An automation API %i produces safe no-access feedback rather than a recovery action",
   async (status) => {
+    mockAutomationDestination();
     context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
       return respond(status, {
         error: {
@@ -344,6 +380,7 @@ test.each([403, 404] as const)(
       screen.findByText("Automation not found or you do not have access"),
     ).resolves.toBeInTheDocument();
     expect(control("link", "Back to workflows")).toBeInTheDocument();
+    expect(queryAllByRoleFast("tab")).toHaveLength(0);
     expect(document.body).not.toHaveTextContent(WORKFLOW_ID);
     expect(document.body).not.toHaveTextContent(AUTOMATION_ID);
   },

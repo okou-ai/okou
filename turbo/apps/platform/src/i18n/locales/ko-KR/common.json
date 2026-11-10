@@ -6456,7 +6456,6 @@
       "disabledAt": "비활성화 시간: {{time}}",
       "loadFailed": "이 자동화를 불러올 수 없습니다",
       "loadingAutomation": "자동화 불러오는 중",
-      "nameFallback": "예약된 자동화",
       "otherWorkspace": "이 자동화는 {{workspace}}에 있습니다. 워크스페이스를 전환하여 확인하세요.",
       "reason_one": "{{count}}회 연속 실행 실패 후 자동으로 비활성화되었습니다.",
       "reason_other": "{{count}}회 연속 실행 실패 후 자동으로 비활성화되었습니다.",

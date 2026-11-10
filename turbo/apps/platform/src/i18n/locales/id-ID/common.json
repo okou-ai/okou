@@ -6456,7 +6456,6 @@
       "disabledAt": "Dinonaktifkan pada {{time}}",
       "loadFailed": "Tidak dapat memuat otomatisasi ini",
       "loadingAutomation": "Memuat otomatisasi",
-      "nameFallback": "Otomatisasi terjadwal",
       "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
       "reason_one": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",
       "reason_other": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",

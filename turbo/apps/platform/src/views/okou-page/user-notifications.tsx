@@ -212,17 +212,14 @@ function AutomationDisabledNotification({
     t(($) => {
       return $.userNotifications.automationDisabled.workspaceFallback;
     });
-  const automationName =
-    metadata.automationName.trim() ||
-    t(($) => {
-      return $.userNotifications.automationDisabled.nameFallback;
-    });
   return (
     <>
       <div ref={mounted} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
         <NotificationHeader item={item} automationDisabled={metadata} />
         <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain text-sm leading-relaxed">
-          <h2 className="break-words font-semibold">{automationName}</h2>
+          <h2 className="break-words font-semibold">
+            {metadata.automationName}
+          </h2>
           <p>
             {t(
               ($) => {

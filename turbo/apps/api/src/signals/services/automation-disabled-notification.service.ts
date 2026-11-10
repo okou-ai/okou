@@ -58,15 +58,15 @@ export const prepareAutomationDisabledNotification$ = command(
       )
       .limit(1);
     signal?.throwIfAborted();
+    if (!workflow) {
+      return null;
+    }
     return {
       automationId: automation.id,
       workflowId: automation.workflowId,
       orgId: automation.orgId,
       userId: automation.ownerUserId,
-      automationName: (workflow?.name.trim() || "Scheduled automation").slice(
-        0,
-        200,
-      ),
+      automationName: workflow.name,
       disabledAt: disabledAt.toISOString(),
       // This identity belongs to this attempted transition, not the automation's lifetime.
       deliveryKey: `automation-disabled:${automation.id}:${crypto.randomUUID()}`,

@@ -6475,7 +6475,6 @@
       "disabledAt": "Disabled at {{time}}",
       "loadFailed": "Couldn’t load this automation",
       "loadingAutomation": "Loading automation",
-      "nameFallback": "Scheduled automation",
       "otherWorkspace": "This automation is in {{workspace}}. Switch workspace to view it.",
       "reason_one": "Automatically disabled after {{count}} consecutive execution failure.",
       "reason_other": "Automatically disabled after {{count}} consecutive execution failures.",

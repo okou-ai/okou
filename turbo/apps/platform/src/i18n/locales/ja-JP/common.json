@@ -6456,7 +6456,6 @@
       "disabledAt": "無効化日時：{{time}}",
       "loadFailed": "この自動化を読み込めませんでした",
       "loadingAutomation": "自動化を読み込み中",
-      "nameFallback": "スケジュールされた自動化",
       "otherWorkspace": "この自動化は {{workspace}} にあります。ワークスペースを切り替えて確認してください。",
       "reason_one": "実行が {{count}} 回連続で失敗したため、自動的に無効になりました。",
       "reason_other": "実行が {{count}} 回連続で失敗したため、自動的に無効になりました。",

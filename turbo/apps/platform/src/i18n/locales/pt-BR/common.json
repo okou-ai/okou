@@ -6546,7 +6546,6 @@
       "disabledAt": "Desativada em {{time}}",
       "loadFailed": "Não foi possível carregar esta automação",
       "loadingAutomation": "Carregando automação",
-      "nameFallback": "Automação programada",
       "otherWorkspace": "Esta automação está em {{workspace}}. Troque de espaço de trabalho para visualizá-la.",
       "reason_one": "Desativada automaticamente após {{count}} falha de execução consecutiva.",
       "reason_many": "Desativada automaticamente após {{count}} falhas de execução consecutivas.",

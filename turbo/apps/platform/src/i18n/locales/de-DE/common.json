@@ -6477,7 +6477,6 @@
       "disabledAt": "Deaktiviert am {{time}}",
       "loadFailed": "Diese Automatisierung konnte nicht geladen werden",
       "loadingAutomation": "Automatisierung wird geladen",
-      "nameFallback": "Geplante Automatisierung",
       "otherWorkspace": "Diese Automatisierung befindet sich in {{workspace}}. Wechsle den Arbeitsbereich, um sie anzuzeigen.",
       "reason_one": "Nach {{count}} fehlgeschlagener Ausführung in Folge automatisch deaktiviert.",
       "reason_other": "Nach {{count}} fehlgeschlagenen Ausführungen in Folge automatisch deaktiviert.",
