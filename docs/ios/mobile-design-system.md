@@ -540,6 +540,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | `OkouSegmentControl`        | Large segmented shape in the web's segment colours: grey track, white raised selection                                                                          |
 | `OkouAddIndicator`          | A catalog card's trailing "+" (add now) or chevron (added; the card opens it), 32 pt in a 44 pt target                                                          |
 | `OkouNameDialog`            | Native name alert (new or renamed project, renamed chat): one field, Cancel and a preferred Save, off while the name is empty or too long                       |
+| `OkouComposerSurface`       | The composer's glass surface: 44 pt compact with 44 pt actions either side; expanded keeps the editor and puts the actions on a bottom row                      |
 
 #### Lists and rows
 
@@ -630,6 +631,11 @@ feature; the catalog shows each one.
   (`interrupt`) alone while a run is active and the draft is empty.
 - **The composer never truncates a draft.** With text in it the editor keeps its
   open height (up to six lines, then it scrolls), focused or not.
+- **Composer geometry** belongs to `OkouComposerSurface`, shared by the chat and
+  component catalog. Its empty, unfocused surface is at least 44 pt tall
+  (`composerCompactHeight`), with 6 pt vertical text padding and separate 44 pt
+  action targets. Larger text can grow the surface. Expansion retains the same
+  mounted editor and reserves a bottom row for the actions.
 - **A tap outside the composer puts the keyboard away.** A tap anywhere on the transcript
   (`KeyboardDismissTap`, which never takes the tap from links, cards or selection) or on the
   new-chat page ends editing, so an empty composer folds back to one line.
@@ -780,6 +786,8 @@ in the app: **Settings ▸ Developer ▸ Design system** (and **Results in a cha
 inside Settings, so Back returns to Settings and ✕ closes Settings from every catalog
 page (`OkouDesignSystemCatalog(close:)`). Release builds do not
 expose any of it.
+Add `--composer-preview` alongside `--mobile-design-system` to open the catalog
+on its Chat page, at the composer.
 `--result-styles` opens only the results page (`ResultStylesGallery`): every way a
 result looks in a chat, each state under a caption, with a live website snapshot and
 Quick Look covers of a generated deck and document.

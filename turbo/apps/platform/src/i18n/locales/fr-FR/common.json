@@ -4420,6 +4420,7 @@
     "documentTitles": {
       "make": "Bienvenue chez {{brandName}}"
     },
+    "handoffUnavailable": "Impossible de restaurer la tâche liée. Vous pouvez continuer normalement ; votre brouillon est conservé.",
     "make": {
       "promptLabel": "Prompt d’onboarding",
       "promptTitle": "Adaptez cette tâche à vos besoins"

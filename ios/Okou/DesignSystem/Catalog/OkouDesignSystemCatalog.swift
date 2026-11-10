@@ -10,6 +10,9 @@
   struct OkouDesignSystemCatalog: View {
     /// Closes whatever pushed the catalog (Settings), from the index and from every page.
     var close: (() -> Void)? = nil
+    /// `--composer-preview` opens the Chat page, where the composer is, on launch.
+    @State private var opensComposerPreview = ProcessInfo.processInfo.arguments.contains(
+      "--composer-preview")
 
     var body: some View {
       List {
@@ -48,6 +51,9 @@
       .navigationBarTitleDisplayMode(.inline)
       .toolbar {
         if let close { OkouCloseToolbarItem(action: close) }
+      }
+      .navigationDestination(isPresented: $opensComposerPreview) {
+        OkouCatalogTopic.chat.page(close: close)
       }
       .modifier(OkouAppearance())
     }

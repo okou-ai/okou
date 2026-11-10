@@ -170,6 +170,13 @@ export const setupPromptPage$ = command(
     const params = get(searchParams$);
     const handoff = await set(loadMarketingHandoff$, signal);
     signal.throwIfAborted();
+    if (params.get("handoff") && !handoff) {
+      set(detachedNavigateTo$, "/", {
+        searchParams: get(searchParams$),
+        replace: true,
+      });
+      return;
+    }
     const { prompt, requestedModel, template, hasContent } =
       promptRequestContent(params, handoff?.manifest);
     const resolvedGenerationTemplate =
@@ -209,6 +216,13 @@ export const setupPromptPage$ = command(
       ? await set(createMarketingHandoffDraft$, handoff.hash, signal)
       : undefined;
     signal.throwIfAborted();
+    if (handoff && !draft) {
+      set(detachedNavigateTo$, "/", {
+        searchParams: get(searchParams$),
+        replace: true,
+      });
+      return;
+    }
     const rootSignal = get(rootSignal$);
     await set(
       sendNewThread$,

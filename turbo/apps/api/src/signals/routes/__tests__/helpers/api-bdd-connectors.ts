@@ -1318,7 +1318,12 @@ const GOOGLE_DRIVE_UPLOAD_SESSION_URL =
  */
 export function mockGoogleDriveArtifactUpload(
   file: GoogleDriveFileFixture,
-  options: { readonly reuseUploadedFile?: boolean } = {},
+  options: {
+    readonly reuseUploadedFile?: boolean;
+    readonly createFolderResponse?: (request: Request) => Response;
+    readonly sessionResponse?: (request: Request) => Response;
+    readonly contentResponse?: (request: Request) => Response;
+  } = {},
 ): GoogleDriveArtifactUploadRecorder {
   const recorded: GoogleDriveArtifactUploadRecorder = {
     bodies: [],
@@ -1331,6 +1336,15 @@ export function mockGoogleDriveArtifactUpload(
     folderAuthorizationHeaders: [],
     folderQueries: [],
   };
+
+  const createFolderResponse = options.createFolderResponse;
+  if (createFolderResponse) {
+    server.use(
+      http.post(GOOGLE_DRIVE_FILES_URL, ({ request }) => {
+        return createFolderResponse(request);
+      }),
+    );
+  }
 
   server.use(
     http.get(GOOGLE_DRIVE_FILES_URL, ({ request }) => {
@@ -1367,17 +1381,20 @@ export function mockGoogleDriveArtifactUpload(
       recorded.uploadContentTypeHeaders.push(
         request.headers.get("x-upload-content-type"),
       );
-      return new HttpResponse(null, {
-        status: 200,
-        headers: { Location: GOOGLE_DRIVE_UPLOAD_SESSION_URL },
-      });
+      return (
+        options.sessionResponse?.(request) ??
+        new HttpResponse(null, {
+          status: 200,
+          headers: { Location: GOOGLE_DRIVE_UPLOAD_SESSION_URL },
+        })
+      );
     }),
     http.put(GOOGLE_DRIVE_UPLOAD_SESSION_URL, async ({ request }) => {
       recorded.contentLengthHeaders.push(request.headers.get("content-length"));
       recorded.contentTypeHeaders.push(request.headers.get("content-type"));
       recorded.contentRangeHeaders.push(request.headers.get("content-range"));
       recorded.bodies.push(new Uint8Array(await request.arrayBuffer()));
-      return HttpResponse.json(file);
+      return options.contentResponse?.(request) ?? HttpResponse.json(file);
     }),
   );
 

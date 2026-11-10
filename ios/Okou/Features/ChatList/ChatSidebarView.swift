@@ -306,7 +306,9 @@ struct ChatSidebarView: View {
           .foregroundStyle(OkouColor.mutedForeground)
         Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
         Spacer(minLength: 0)
-        OkouChatTrailingMark(trailing: projectTrailing(group.threads))
+        if !expanded {
+          OkouChatTrailingMark(trailing: projectTrailing(group.threads))
+        }
       }
       .frame(minHeight: OkouControl.listRow)
       .contentShape(Rectangle())
@@ -494,7 +496,7 @@ struct ChatSidebarView: View {
       .accessibilityIdentifier("new-chat")
     }
     .buttonStyle(.plain)
-    .frame(height: ChatComposerView.compactHeight)
+    .frame(height: OkouControl.minimumTarget + OkouSpace.md)
     .padding(.horizontal, rowInset)
     .padding(.top, OkouSpace.sm)
   }

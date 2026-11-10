@@ -52,23 +52,32 @@ export const grantMarketingContent$ = command(
     args: {
       resourceType: "manifest" | "file";
       resourceHash: string;
-      subject: string;
+      subjects: readonly string[];
     },
     signal: AbortSignal,
   ) => {
-    const expiresAt = args.subject.startsWith("session:")
-      ? new Date(nowDate().getTime() + 7 * 24 * 60 * 60 * 1000)
-      : null;
+    const sessionExpiry = new Date(
+      nowDate().getTime() + 7 * 24 * 60 * 60 * 1000,
+    );
     await set(writeDb$)
       .insert(marketingContentGrants)
-      .values({ ...args, expiresAt })
+      .values(
+        args.subjects.map((subject) => {
+          return {
+            resourceType: args.resourceType,
+            resourceHash: args.resourceHash,
+            subject,
+            expiresAt: subject.startsWith("session:") ? sessionExpiry : null,
+          };
+        }),
+      )
       .onConflictDoUpdate({
         target: [
           marketingContentGrants.resourceType,
           marketingContentGrants.resourceHash,
           marketingContentGrants.subject,
         ],
-        set: { expiresAt },
+        set: { expiresAt: sql`excluded.expires_at` },
       });
     signal.throwIfAborted();
   },
@@ -123,25 +132,16 @@ export const claimMarketingManifest$ = command(
         return { resource_type: "file", resource_hash: file.hash };
       }),
     ];
-    // Consuming the guest manifest and publishing all user grants commit together.
-    // A concurrent loser cannot publish grants from the same guest authorization.
+    // A valid browser session can authorize every account using that session.
+    // Keep its grants until expiry while atomically publishing the user's grants.
     const rows = parseRawRows(
       object({ allowed: boolean() }),
       await db.execute(sql`
-      WITH direct AS (
+      WITH permitted AS (
         SELECT 1 FROM ${table}
         WHERE resource_type = 'manifest' AND resource_hash = ${args.hash}
-          AND subject IN (${subject}, 'public')
+          AND subject IN (${subject}, 'public', ${args.sessionSubject})
           AND (expires_at IS NULL OR expires_at > ${current.toISOString()})
-      ), claimed AS (
-        DELETE FROM ${table}
-        WHERE resource_type = 'manifest' AND resource_hash = ${args.hash}
-          AND subject = ${args.sessionSubject}
-          AND expires_at > ${current.toISOString()}
-          AND NOT EXISTS (SELECT 1 FROM direct)
-        RETURNING resource_hash
-      ), permitted AS (
-        SELECT 1 FROM direct UNION ALL SELECT 1 FROM claimed
       ), published AS (
         INSERT INTO ${table} (resource_type, resource_hash, subject)
         SELECT resource_type, resource_hash, ${subject}
@@ -149,39 +149,16 @@ export const claimMarketingManifest$ = command(
           AS content(resource_type text, resource_hash text)
         WHERE EXISTS (SELECT 1 FROM permitted)
         ON CONFLICT DO NOTHING RETURNING resource_hash
-      ), removed_files AS (
-        DELETE FROM ${table}
-        WHERE resource_type = 'file' AND subject = ${args.sessionSubject}
-          AND resource_hash IN (
-            SELECT resource_hash FROM jsonb_to_recordset(${JSON.stringify(resources)}::jsonb)
-              AS content(resource_type text, resource_hash text)
-            WHERE resource_type = 'file'
-          )
-          AND EXISTS (SELECT 1 FROM permitted)
-        RETURNING resource_hash
       )
       SELECT EXISTS (SELECT 1 FROM permitted) AS allowed
     `),
     );
     signal.throwIfAborted();
-    if (rows[0]?.allowed) {
-      return true;
+    const outcome = rows[0];
+    if (!outcome) {
+      throw new Error("Marketing authorization query returned no outcome");
     }
-    // A concurrent request by this same user may have committed after our snapshot.
-    const [transferred] = await db
-      .select({ subject: table.subject })
-      .from(table)
-      .where(
-        and(
-          eq(table.resourceType, "manifest"),
-          eq(table.resourceHash, args.hash),
-          eq(table.subject, subject),
-          or(isNull(table.expiresAt), gt(table.expiresAt, current)),
-        ),
-      )
-      .limit(1);
-    signal.throwIfAborted();
-    return transferred !== undefined;
+    return outcome.allowed;
   },
 );
 
@@ -217,7 +194,7 @@ export const storeMarketingManifest$ = command(
     args: {
       bucket: string;
       manifest: MarketingHandoffManifest;
-      subject: string;
+      subjects: readonly string[];
     },
     signal: AbortSignal,
   ) => {
@@ -250,7 +227,7 @@ export const storeMarketingManifest$ = command(
       {
         resourceType: "manifest",
         resourceHash: hash,
-        subject: args.subject,
+        subjects: args.subjects,
       },
       signal,
     );

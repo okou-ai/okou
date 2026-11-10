@@ -4347,6 +4347,7 @@
     "documentTitles": {
       "make": "歡迎使用 {{brandName}}"
     },
+    "handoffUnavailable": "無法還原連結中的任務。你可以繼續正常使用，現有草稿已保留。",
     "make": {
       "promptLabel": "新手引導提示詞",
       "promptTitle": "依你的需求調整任務"
