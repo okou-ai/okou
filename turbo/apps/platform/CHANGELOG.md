@@ -13,6 +13,32 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1112.0](https://github.com/okou-ai/okou/compare/app-v0.1111.1...app-v0.1112.0) (2026-11-10)
+
+
+### Features
+
+* add workflow and email follow-up suggestions ([#46409](https://github.com/okou-ai/okou/issues/46409)) ([dcd6403](https://github.com/okou-ai/okou/commit/dcd6403fd62681e52300224fa020d8c7b9f443d2))
+* **app:** classify artifact download intent by type ([#46396](https://github.com/okou-ai/okou/issues/46396)) ([d101cfa](https://github.com/okou-ai/okou/commit/d101cfa122a9424fdbfc24332faf1ae53af3cc78))
+* **app:** show okou's tilted avatar in the okou row and move its shortcut to chat ([#46391](https://github.com/okou-ai/okou/issues/46391)) ([99d36de](https://github.com/okou-ai/okou/commit/99d36dedaa706ad13799e90ebb6df21fa7d1ada3))
+* **email:** support multiple workspace sender connections ([#46296](https://github.com/okou-ai/okou/issues/46296)) ([f9761e3](https://github.com/okou-ai/okou/commit/f9761e3378b4a881a28d855962f8d87199b6a5d1))
+* **notifications:** notify owners when schedules are auto-disabled ([#46353](https://github.com/okou-ai/okou/issues/46353)) ([dbe6412](https://github.com/okou-ai/okou/commit/dbe6412be838f46e3200b9998358fb120f386dbb))
+
+
+### Bug Fixes
+
+* **app:** hide chat mention avatars in single-agent mode ([#46389](https://github.com/okou-ai/okou/issues/46389)) ([3d173fb](https://github.com/okou-ai/okou/commit/3d173fb00f41dfebb9707f71780d1f95085c31df))
+* **email:** clarify workspace connection and show success toast ([#46399](https://github.com/okou-ai/okou/issues/46399)) ([321c716](https://github.com/okou-ai/okou/commit/321c7160da2c7a4156d5151c1d1639e99ef984bd))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.0
+    * @okouai/core bumped to 8.826.0
+    * @okouai/ui bumped to 1.20.0
+
 ## [0.1111.1](https://github.com/okou-ai/okou/compare/app-v0.1111.0...app-v0.1111.1) (2026-11-10)
 
 

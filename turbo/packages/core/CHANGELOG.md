@@ -1,5 +1,20 @@
 # Changelog
 
+## [8.826.0](https://github.com/okou-ai/okou/compare/core-v8.825.5...core-v8.826.0) (2026-11-10)
+
+
+### Features
+
+* add workflow and email follow-up suggestions ([#46409](https://github.com/okou-ai/okou/issues/46409)) ([dcd6403](https://github.com/okou-ai/okou/commit/dcd6403fd62681e52300224fa020d8c7b9f443d2))
+* **notifications:** notify owners when schedules are auto-disabled ([#46353](https://github.com/okou-ai/okou/issues/46353)) ([dbe6412](https://github.com/okou-ai/okou/commit/dbe6412be838f46e3200b9998358fb120f386dbb))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.48.0
+
 ## [8.825.5](https://github.com/okou-ai/okou/compare/core-v8.825.4...core-v8.825.5) (2026-11-10)
 
 

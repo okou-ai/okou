@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.34.0](https://github.com/okou-ai/okou/compare/ios-v0.33.1...ios-v0.34.0) (2026-11-10)
+
+
+### Features
+
+* add workflow and email follow-up suggestions ([#46409](https://github.com/okou-ai/okou/issues/46409)) ([dcd6403](https://github.com/okou-ai/okou/commit/dcd6403fd62681e52300224fa020d8c7b9f443d2))
+
+
+### Refactoring
+
+* **ios:** own shared agent navigation reads ([#46408](https://github.com/okou-ai/okou/issues/46408)) ([99108df](https://github.com/okou-ai/okou/commit/99108df2c8a5ddfc4f9761172876afa9fc96ba91))
+
 ## [0.33.1](https://github.com/okou-ai/okou/compare/ios-v0.33.0...ios-v0.33.1) (2026-11-10)
 
 
