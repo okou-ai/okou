@@ -1,7 +1,7 @@
 import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2 } from "lucide-react";
-import { Button, CopyButton, buttonVariants } from "@okouai/ui";
+import { Badge, Button, CopyButton, buttonVariants } from "@okouai/ui";
 import {
   Dialog,
   DialogContent,
@@ -19,11 +19,18 @@ import {
   emailLinkStatus$,
   setEmailConnectDialogOpen$,
 } from "../../signals/okou-page/email.ts";
+import { currentUserInfo$ } from "../../signals/auth.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { QuestFigure, QuestSplitLayout } from "./get-started-quest-shell.tsx";
 
-function EmailAddressRow({ email }: { readonly email: string }) {
+function EmailAddressRow({
+  email,
+  primary,
+}: {
+  readonly email: string;
+  readonly primary: boolean;
+}) {
   const { t } = useTranslation();
   const [operation, remove] = useLoadableSet(deleteEmailConnection$);
   const signal = useGet(pageSignal$);
@@ -31,23 +38,31 @@ function EmailAddressRow({ email }: { readonly email: string }) {
     <div role="group" aria-label={email} className="space-y-2">
       <div className="flex items-center justify-between gap-3 text-sm">
         <span className="min-w-0 break-all">{email}</span>
-        <Button
-          type="button"
-          size="sm"
-          className="shrink-0"
-          variant="outline"
-          disabled={operation.state === "loading"}
-          onClick={() => {
-            detach(remove(email, signal), Reason.DomCallback);
-          }}
-        >
-          {operation.state === "loading" ? (
-            <Loader2 size={14} className="animate-spin" aria-hidden="true" />
-          ) : null}
-          {t(($) => {
-            return $.connectors.actions.delete;
-          })}
-        </Button>
+        {primary ? (
+          <Badge className="shrink-0">
+            {t(($) => {
+              return $.works.email.signInEmail;
+            })}
+          </Badge>
+        ) : (
+          <Button
+            type="button"
+            size="sm"
+            className="shrink-0"
+            variant="outline"
+            disabled={operation.state === "loading"}
+            onClick={() => {
+              detach(remove(email, signal), Reason.DomCallback);
+            }}
+          >
+            {operation.state === "loading" ? (
+              <Loader2 size={14} className="animate-spin" aria-hidden="true" />
+            ) : null}
+            {t(($) => {
+              return $.connectors.actions.delete;
+            })}
+          </Button>
+        )}
       </div>
       {operation.state === "hasError" ? (
         <p role="alert" className="text-sm text-destructive">
@@ -66,6 +81,11 @@ export function EmailConnectDialog() {
   const setOpen = useSet(setEmailConnectDialogOpen$);
   const finalFocus = useSet(emailConnectionFinalFocus$);
   const status = useLastLoadable(emailLinkStatus$);
+  const user = useLastLoadable(currentUserInfo$);
+  const primaryEmail =
+    user.state === "hasData"
+      ? user.data?.primaryEmailAddress?.emailAddress.toLowerCase()
+      : undefined;
   return (
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogContent
@@ -92,7 +112,9 @@ export function EmailConnectDialog() {
               })}
             </DialogDescription>
           </DialogHeader>
-          {status.state === "hasData" && status.data.configured ? (
+          {status.state === "hasData" &&
+          status.data.configured &&
+          user.state === "hasData" ? (
             <>
               <a
                 href={`mailto:${status.data.address}`}
@@ -101,7 +123,13 @@ export function EmailConnectDialog() {
                 {status.data.address}
               </a>
               {status.data.emails.map((email) => {
-                return <EmailAddressRow key={email} email={email} />;
+                return (
+                  <EmailAddressRow
+                    key={email}
+                    email={email}
+                    primary={email === primaryEmail}
+                  />
+                );
               })}
               <EmailAddAddressCode address={status.data.address} />
               <p className="text-xs text-muted-foreground">
@@ -110,10 +138,12 @@ export function EmailConnectDialog() {
                 })}
               </p>
             </>
-          ) : status.state === "hasError" || status.state === "hasData" ? (
+          ) : status.state === "hasError" ||
+            user.state === "hasError" ||
+            (status.state === "hasData" && !status.data.configured) ? (
             <p role="alert" className="text-sm text-destructive">
               {t(($) => {
-                return status.state === "hasError"
+                return status.state === "hasError" || user.state === "hasError"
                   ? $.works.email.loadError
                   : $.works.email.unavailable;
               })}

@@ -25,13 +25,63 @@ import {
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { writeDb$ } from "../external/db";
 import { publishUserSignal } from "../external/realtime";
-import { clerk$ } from "../external/clerk";
+import { clerk$, type ClerkUser } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { loadUserFeatureSwitchContext$ } from "./feature-switches.service";
 import { nowDate } from "../../lib/time";
 import { env } from "../../lib/env";
 import { email } from "zod";
+
+export function signInEmailAddress(user: ClerkUser): string | null {
+  return (
+    user.emailAddresses
+      .find((address) => {
+        return address.id === user.primaryEmailAddressId;
+      })
+      ?.emailAddress.toLowerCase() ?? null
+  );
+}
+
+export const connectSignInEmail$ = command(
+  async (
+    { set },
+    args: { readonly user: ClerkUser; readonly orgId: string },
+    signal: AbortSignal,
+  ) => {
+    const address = args.user.emailAddresses.find((entry) => {
+      return (
+        entry.id === args.user.primaryEmailAddressId &&
+        entry.verification?.status === "verified"
+      );
+    });
+    if (args.user.banned || !address) {
+      return null;
+    }
+    const emailAddress = address.emailAddress.toLowerCase();
+    const [existing] = await set(writeDb$)
+      .select()
+      .from(emailUserLinks)
+      .where(eq(emailUserLinks.emailAddress, emailAddress))
+      .limit(1);
+    signal.throwIfAborted();
+    if (existing && !existing.disconnectedAt) {
+      return existing.userId === args.user.id && existing.orgId === args.orgId
+        ? existing
+        : null;
+    }
+    return await set(
+      linkEmailIdentity$,
+      {
+        email: emailAddress,
+        userId: args.user.id,
+        orgId: args.orgId,
+        reconnect: true,
+      },
+      signal,
+    );
+  },
+);
 
 export const linkEmailIdentity$ = command(
   async (

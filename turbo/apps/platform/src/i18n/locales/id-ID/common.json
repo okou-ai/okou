@@ -7345,6 +7345,7 @@
       "open": "Buka email",
       "options": "Opsi email",
       "resumed": "{{email}} terhubung. Permintaan awal Anda akan dijawab dalam percakapan email yang sama.",
+      "signInEmail": "Email login",
       "title": "Email",
       "unavailable": "Email belum tersedia untuk ruang kerja ini"
     },

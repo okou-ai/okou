@@ -7445,6 +7445,7 @@
       "open": "Abrir correo",
       "options": "Opciones de correo",
       "resumed": "{{email}} está conectado. Tu solicitud original se responderá en la misma conversación de correo.",
+      "signInEmail": "Correo de acceso",
       "title": "Correo electrónico",
       "unavailable": "El correo electrónico aún no está disponible en este espacio de trabajo"
     },

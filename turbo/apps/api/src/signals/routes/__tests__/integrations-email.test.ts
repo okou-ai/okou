@@ -110,24 +110,26 @@ async function prepareEmailFile(token: string) {
   return completed.body;
 }
 
-function verifiedDirectory(actor: ApiTestUser) {
+function verifiedDirectory(actor: ApiTestUser, primaryEmail = actor.email) {
   mocks.clerk.session(actor.userId, actor.orgId, "org:admin");
   mockClerkUsers(context, [
     {
       id: actor.userId,
-      primaryEmailAddressId: "email_verified",
+      primaryEmailAddressId: primaryEmail,
       firstName: "Email",
       lastName: "User",
       imageUrl: "",
       username: null,
       privateMetadata: {},
-      emailAddresses: [
-        {
-          id: "email_verified",
-          emailAddress: actor.email,
-          verification: { status: "verified" },
+      emailAddresses: [...new Set([actor.email, primaryEmail])].map(
+        (emailAddress) => {
+          return {
+            id: emailAddress,
+            emailAddress,
+            verification: { status: "verified" },
+          };
         },
-      ],
+      ),
     },
   ]);
   context.mocks.clerk.users.getOrganizationMembershipList.mockResolvedValue({
@@ -493,12 +495,13 @@ describe("Email integration", () => {
   });
 
   it("rejects Email attachment delivery after its mailbox disconnects", async () => {
-    const { actor, token } = await claimEmailFileRun();
+    const sender = `${randomUUID()}@example.com`;
+    const { token } = await claimEmailFileRun(sender);
     const file = await prepareEmailFile(token);
     await accept(
       emailClient().unlink({
         headers: authHeaders(),
-        body: { emailAddress: actor.email },
+        body: { emailAddress: sender },
       }),
       [204],
     );
@@ -509,7 +512,11 @@ describe("Email integration", () => {
       }),
       [403],
     );
-    expect(sentEmails()).toStrictEqual([]);
+    expect(
+      sentEmails().flatMap((email) => {
+        return email.attachments ?? [];
+      }),
+    ).toStrictEqual([]);
   });
 
   it("does not infer an email recipient for a Web-originated run", async () => {
@@ -712,8 +719,10 @@ describe("Email integration", () => {
   });
 
   it("revokes pending reply delivery when its sender disconnects", async () => {
-    const { actor, group } = await entitledActor();
-    await incoming({ sender: actor.email }).send();
+    const { group } = await entitledActor();
+    const sender = `${randomUUID()}@example.com`;
+    await incoming({ sender, text: await connectionCode() }).send();
+    await incoming({ sender }).send();
     await runs.heartbeatRunner(group);
     const polled = await runs.pollRunner(group);
     const runId = polled.body.job?.runId;
@@ -724,7 +733,7 @@ describe("Email integration", () => {
     await accept(
       emailClient().unlink({
         headers: authHeaders(),
-        body: { emailAddress: actor.email },
+        body: { emailAddress: sender },
       }),
       [204],
     );
@@ -757,7 +766,11 @@ describe("Email integration", () => {
       [200],
     );
     await flushWaitUntilForTest();
-    expect(sentEmails()).toStrictEqual([]);
+    expect(
+      sentEmails().filter((email) => {
+        return email.text === "Reply after disconnect";
+      }),
+    ).toStrictEqual([]);
   });
 
   it("does not join another sender's chat through copied reference headers", async () => {
@@ -784,9 +797,19 @@ describe("Email integration", () => {
     );
   });
 
-  it("connects only verified account addresses and requires explicit reconnection after disconnect", async () => {
+  it("automatically connects the login email and prevents its deletion", async () => {
     const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     verifiedDirectory(actor);
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    const deleted = await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: actor.email },
+      }),
+      [403],
+    );
+    expect(deleted.body.error.message).toContain("always connected");
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
     await accept(
       emailClient().connectAddress({
         headers: authHeaders(),
@@ -794,66 +817,12 @@ describe("Email integration", () => {
       }),
       [403],
     );
-    await accept(
-      emailClient().connectAddress({
-        headers: authHeaders(),
-        body: { emailAddress: actor.email },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([actor.email]);
-    await accept(
-      emailClient().unlink({
-        headers: authHeaders(),
-        body: { emailAddress: actor.email },
-      }),
-      [204],
-    );
-    await incoming({ sender: actor.email }).send();
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([]);
-    await accept(
-      emailClient().connectAddress({
-        headers: authHeaders(),
-        body: { emailAddress: actor.email },
-      }),
-      [200],
-    );
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([actor.email]);
   });
 
-  it("does not auto-connect an account from a forged sender", async () => {
-    const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
-    verifiedDirectory(actor);
+  it("rejects a forged login sender without starting a task or replying", async () => {
+    const { actor } = await entitledActor();
     await incoming({ sender: actor.email, authenticated: false }).send();
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([]);
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(0);
     expect(sentEmails()).toStrictEqual([]);
   });
 
@@ -866,14 +835,6 @@ describe("Email integration", () => {
     await expect(createdThreads(actor)).resolves.toStrictEqual({
       chatThreads: [],
     });
-    expect(
-      (
-        await accept(
-          emailClient().getLinkStatus({ headers: authHeaders() }),
-          [200],
-        )
-      ).body.emails,
-    ).toStrictEqual([]);
     await incoming({
       sender: actor.email,
       authentication: { spf: "gray", dkim: "pass", dmarc: "gray" },
@@ -1139,10 +1100,45 @@ async function connectionCode() {
 async function connectedEmails() {
   return (
     await accept(emailClient().getLinkStatus({ headers: authHeaders() }), [200])
-  ).body.emails;
+  ).body.emails.sort();
 }
 
 describe("Email multi-account connections", () => {
+  it("keeps a changed login email connected even if it was previously deleted as an additional address", async () => {
+    const { actor } = await entitledActor();
+    const primary = `${randomUUID()}@example.com`;
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+    await incoming({ sender: primary, text: await connectionCode() }).send();
+    await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: primary },
+      }),
+      [204],
+    );
+    verifiedDirectory(actor, primary);
+    await incoming({ sender: primary, text: "Analyze my report" }).send();
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+    await expect(connectedEmails()).resolves.toStrictEqual(
+      [actor.email, primary].sort(),
+    );
+    await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: primary },
+      }),
+      [403],
+    );
+    await accept(
+      emailClient().unlink({
+        headers: authHeaders(),
+        body: { emailAddress: actor.email },
+      }),
+      [204],
+    );
+    await expect(connectedEmails()).resolves.toStrictEqual([primary]);
+  });
+
   it("processes an ordinary message with a numeric subject as a task", async () => {
     const { actor } = await entitledActor();
     await incoming({
@@ -1190,7 +1186,9 @@ describe("Email multi-account connections", () => {
       sender: `${randomUUID()}@example.com`,
       text: code,
     }).send();
-    await expect(connectedEmails()).resolves.toStrictEqual([sender]);
+    await expect(connectedEmails()).resolves.toStrictEqual(
+      [actor.email, sender].sort(),
+    );
     expect(
       sentEmails().filter((email) => {
         return email.text.startsWith("Email connected.");
@@ -1204,7 +1202,7 @@ describe("Email multi-account connections", () => {
       [204],
     );
     await message.send();
-    await expect(connectedEmails()).resolves.toStrictEqual([]);
+    await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
   });
 
   it("rejects another workspace with a reply and allows moving only after disconnect and a fresh proof", async () => {
@@ -1216,7 +1214,7 @@ describe("Email multi-account connections", () => {
     const second = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
     verifiedDirectory(second);
     await incoming({ sender, text: await connectionCode() }).send();
-    await expect(connectedEmails()).resolves.toStrictEqual([]);
+    await expect(connectedEmails()).resolves.toStrictEqual([second.email]);
     expect(sentEmails()).toContainEqual(
       expect.objectContaining({
         to: sender,
@@ -1226,7 +1224,9 @@ describe("Email multi-account connections", () => {
       }),
     );
     verifiedDirectory(first);
-    await expect(connectedEmails()).resolves.toStrictEqual([sender]);
+    await expect(connectedEmails()).resolves.toStrictEqual(
+      [first.email, sender].sort(),
+    );
     await accept(
       emailClient().unlink({
         headers: authHeaders(),
@@ -1235,12 +1235,14 @@ describe("Email multi-account connections", () => {
       [204],
     );
     await firstCodeMessage.send();
-    await expect(connectedEmails()).resolves.toStrictEqual([]);
+    await expect(connectedEmails()).resolves.toStrictEqual([first.email]);
     verifiedDirectory(second);
     await incoming({ sender, text: await connectionCode() }).send();
-    await expect(connectedEmails()).resolves.toStrictEqual([sender]);
+    await expect(connectedEmails()).resolves.toStrictEqual(
+      [second.email, sender].sort(),
+    );
     verifiedDirectory(first);
-    await expect(connectedEmails()).resolves.toStrictEqual([]);
+    await expect(connectedEmails()).resolves.toStrictEqual([first.email]);
   });
 
   it.each(["expired", "forged"] as const)(
@@ -1259,7 +1261,7 @@ describe("Email multi-account connections", () => {
         text: code,
         authenticated: reason !== "forged",
       }).send();
-      await expect(connectedEmails()).resolves.toStrictEqual([]);
+      await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
     },
   );
 
@@ -1276,7 +1278,9 @@ describe("Email multi-account connections", () => {
       text: code,
     });
     await Promise.all([first.send(), second.send()]);
-    await expect(connectedEmails()).resolves.toHaveLength(1);
+    const linked = await connectedEmails();
+    expect(linked).toContain(actor.email);
+    expect(linked).toHaveLength(2);
   });
 
   it("delivers private attachments to a code-verified address outside the login account", async () => {

@@ -7445,6 +7445,7 @@
       "open": "Ouvrir l’e-mail",
       "options": "Options e-mail",
       "resumed": "{{email}} est connecté. Votre demande initiale recevra une réponse dans la même conversation par e-mail.",
+      "signInEmail": "E-mail de connexion",
       "title": "E-mail",
       "unavailable": "L’e-mail n’est pas encore disponible pour cet espace de travail"
     },

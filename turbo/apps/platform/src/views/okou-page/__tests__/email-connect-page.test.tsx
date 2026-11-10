@@ -282,3 +282,56 @@ test("manages multiple connections and adds another mailbox without leaving Work
     expect(getAction("button", "Email options", card)).toHaveFocus();
   });
 });
+
+test("keeps the login email connected while other emails can be deleted", async () => {
+  const secondary = "removable@example.com";
+  let emails = [emailAddress, secondary];
+  context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      address: "okou@okou.io",
+      configured: true,
+      emails,
+      availableEmails: [emailAddress],
+    });
+  });
+  context.mocks.api(integrationsEmailContract.unlink, ({ body, respond }) => {
+    expect(body.emailAddress).toBe(secondary);
+    emails = [emailAddress];
+    return respond(204);
+  });
+  await setupPage({
+    context,
+    path: "/works",
+    featureSwitches: featureSwitches(),
+    auth: {
+      user: {
+        id: "user_email_primary",
+        fullName: "Email User",
+        email: emailAddress,
+      },
+    },
+  });
+  const card = getIntegrationCard("Email");
+  await waitFor(() => {
+    expect(getAction("button", "Email options", card)).toBeEnabled();
+  });
+  click(getAction("button", "Email options", card));
+  click(getAction("button", "Manage"));
+  const dialog = await screen.findByRole("dialog", {
+    name: "Email connections",
+  });
+  expect(
+    within(emailRow(dialog, emailAddress)).getByText("Login email"),
+  ).toBeInTheDocument();
+  click(getAction("button", "Delete", emailRow(dialog, secondary)));
+  await waitFor(() => {
+    expect(within(dialog).queryByText(secondary)).not.toBeInTheDocument();
+  });
+  expect(
+    within(emailRow(dialog, emailAddress)).getByText("Login email"),
+  ).toBeInTheDocument();
+  click(getAction("button", "Close", dialog));
+  await waitFor(() => {
+    expect(getAction("button", "Email options", card)).toHaveFocus();
+  });
+});

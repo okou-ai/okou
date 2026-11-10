@@ -32,6 +32,8 @@ import {
   createEmailConnectionCode$,
   connectedMailAccounts$,
   syncConnectedMailAccounts$,
+  connectSignInEmail$,
+  signInEmailAddress,
 } from "../services/email-connection.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -52,6 +54,8 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   const accounts = await set(connectedMailAccounts$, auth, signal);
   if (!user.banned) {
+    await set(connectSignInEmail$, { user, orgId: auth.orgId }, signal);
+    signal.throwIfAborted();
     await set(
       syncConnectedMailAccounts$,
       { userId: auth.userId, orgId: auth.orgId, accounts },
@@ -207,6 +211,13 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   signal.throwIfAborted();
   if (!body.ok) {
     return body.response;
+  }
+  const user = await get(clerk$).users.getUser(auth.userId, undefined, signal);
+  signal.throwIfAborted();
+  if (signInEmailAddress(user) === body.data.emailAddress.toLowerCase()) {
+    return resourceUnavailable(
+      "Your login email is always connected and cannot be deleted.",
+    );
   }
   await set(writeDb$)
     .update(emailUserLinks)

@@ -7368,6 +7368,7 @@
       "open": "E-Mail öffnen",
       "options": "E-Mail-Optionen",
       "resumed": "{{email}} ist verbunden. Deine ursprüngliche Anfrage wird in derselben E-Mail-Unterhaltung beantwortet.",
+      "signInEmail": "Anmelde-E-Mail",
       "title": "E-Mail",
       "unavailable": "E-Mail ist für diesen Arbeitsbereich noch nicht verfügbar"
     },

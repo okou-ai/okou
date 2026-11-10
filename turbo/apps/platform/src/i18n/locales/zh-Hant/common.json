@@ -7345,6 +7345,7 @@
       "open": "開啟郵件",
       "options": "郵件選項",
       "resumed": "{{email}} 已連線，原始請求將繼續在同一個郵件會話中回覆。",
+      "signInEmail": "登入信箱",
       "title": "郵件",
       "unavailable": "此工作區尚未開放郵件整合"
     },

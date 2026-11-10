@@ -7366,6 +7366,7 @@
       "open": "Open email",
       "options": "Email options",
       "resumed": "{{email}} is connected. Your original request will be answered in the same email conversation.",
+      "signInEmail": "Login email",
       "title": "Email",
       "unavailable": "Email is not available for this workspace yet"
     },

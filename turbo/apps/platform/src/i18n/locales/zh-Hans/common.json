@@ -7345,6 +7345,7 @@
       "open": "打开邮件",
       "options": "邮件选项",
       "resumed": "{{email}} 已连接，原始请求将继续在同一个邮件会话中回复。",
+      "signInEmail": "登录邮箱",
       "title": "邮件",
       "unavailable": "此工作区暂未开放邮件集成"
     },
