@@ -30,16 +30,31 @@ import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
 import type { RouteEntry } from "../route-entry";
 
-const enabled$ = command(async ({ get, set }, signal: AbortSignal) => {
+const emailAccount$ = command(async ({ get, set }, signal: AbortSignal) => {
   const auth = get(organizationAuthContext$);
-  return isFeatureEnabled(
-    FeatureSwitchKey.EmailIntegration,
-    await set(loadUserFeatureSwitchContext$, auth.orgId, auth.userId, signal),
-  );
+  const [features, user] = await Promise.all([
+    set(loadUserFeatureSwitchContext$, auth.orgId, auth.userId, signal),
+    get(clerk$).users.getUser(auth.userId, undefined, signal),
+  ]);
+  signal.throwIfAborted();
+  const primaryEmail = user.emailAddresses.find((address) => {
+    return (
+      address.id === user.primaryEmailAddressId &&
+      address.verification?.status === "verified"
+    );
+  });
+  return {
+    user,
+    enabled: isFeatureEnabled(FeatureSwitchKey.EmailIntegration, {
+      ...features,
+      email: primaryEmail?.emailAddress,
+    }),
+  };
 });
 
 const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(enabled$, signal))) {
+  const { user, enabled } = await set(emailAccount$, signal);
+  if (!enabled) {
     return resourceUnavailable("Email integration is not available");
   }
   const auth = get(organizationAuthContext$);
@@ -53,8 +68,6 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
         isNull(emailUserLinks.disconnectedAt),
       ),
     );
-  signal.throwIfAborted();
-  const user = await get(clerk$).users.getUser(auth.userId, undefined, signal);
   signal.throwIfAborted();
   return {
     status: 200 as const,
@@ -81,7 +94,8 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const addressBody$ = bodyResultOf(contract.connectAddress);
 const connectAddress$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(enabled$, signal))) {
+  const { user, enabled } = await set(emailAccount$, signal);
+  if (!enabled) {
     return resourceUnavailable("Email integration is not available");
   }
   const auth = get(organizationAuthContext$);
@@ -91,8 +105,6 @@ const connectAddress$ = command(async ({ get, set }, signal: AbortSignal) => {
     return body.response;
   }
   const email = body.data.emailAddress.toLowerCase();
-  const user = await get(clerk$).users.getUser(auth.userId, undefined, signal);
-  signal.throwIfAborted();
   if (!ownsVerifiedEmail(user, email)) {
     return resourceUnavailable(
       "Connect a verified email address belonging to your account.",
@@ -114,7 +126,8 @@ const connectAddress$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const connectBody$ = bodyResultOf(contract.connect);
 const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(enabled$, signal))) {
+  const { user, enabled } = await set(emailAccount$, signal);
+  if (!enabled) {
     return resourceUnavailable("Email integration is not available");
   }
   const auth = get(organizationAuthContext$);
@@ -143,8 +156,6 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
       "Invalid or expired email connection link. Send a new email to Okou.",
     );
   }
-  const user = await get(clerk$).users.getUser(auth.userId, undefined, signal);
-  signal.throwIfAborted();
   if (!ownsVerifiedEmail(user, message.sender)) {
     return resourceUnavailable(
       "Sign in with the verified email address that sent the original message.",
@@ -168,7 +179,7 @@ const connect$ = command(async ({ get, set }, signal: AbortSignal) => {
 
 const unlinkBody$ = bodyResultOf(contract.unlink);
 const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
-  if (!(await set(enabled$, signal))) {
+  if (!(await set(emailAccount$, signal)).enabled) {
     return resourceUnavailable("Email integration is not available");
   }
   const auth = get(organizationAuthContext$);

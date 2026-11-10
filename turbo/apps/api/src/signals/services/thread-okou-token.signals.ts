@@ -13,6 +13,7 @@ interface OkouTokenInput {
   readonly userId: string;
   readonly runId: string;
   readonly orgId: string;
+  readonly email: FeatureSwitchContext["email"];
   readonly featureOverrides: FeatureSwitchContext["overrides"];
   readonly options: Parameters<typeof generateOkouToken>[4];
 }
@@ -56,6 +57,7 @@ export function createOkouTokenInputSignals(
       userId: bootstrap.userId,
       runId: get(threadContext.runIds$).runId,
       orgId: bootstrap.orgId,
+      email: features.email,
       featureOverrides: features.overrides,
       options: {
         isDefaultAgent: agent !== null && agent.id === agent.defaultAgentId,
@@ -79,6 +81,7 @@ export const prepareOkouTokenEnvironment$ = command(
     const features = {
       userId: input.userId,
       orgId: input.orgId,
+      email: input.email,
       overrides: input.featureOverrides,
     };
     const okouToken = generateOkouToken(
