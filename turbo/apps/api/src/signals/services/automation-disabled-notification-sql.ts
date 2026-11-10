@@ -1,6 +1,7 @@
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
 import { userNotifications } from "@okouai/db/schema/user-notification";
 import { sql, type SQL, type SQLWrapper } from "drizzle-orm";
+import { escapeText } from "entities";
 import type { PreparedAutomationDisabledNotification } from "./automation-disabled-notification.service";
 
 /** Physical columns shared by UPDATE RETURNING and the notification's CTE source. */
@@ -19,11 +20,10 @@ export function automationDisableTransitionColumns() {
 }
 
 function escapeMarkdownText(value: string): string {
-  return value
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll(/([\\`*_{}[\]()#+.!|~-])/g, String.raw`\$1`);
+  return escapeText(value).replaceAll(
+    /([\\`*_{}[\]()#+.!|~-])/g,
+    String.raw`\$1`,
+  );
 }
 
 /** The source must be an enabled-row failure UPDATE RETURNING, never a stored-row scan. */

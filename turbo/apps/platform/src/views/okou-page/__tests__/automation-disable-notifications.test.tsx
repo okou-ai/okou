@@ -338,8 +338,9 @@ test("View automation rechecks access and focuses the exact current automation w
   );
 });
 
-for (const status of [403, 404] as const) {
-  test(`An automation API ${status} produces safe no-access feedback rather than a recovery action`, async () => {
+test.each([403, 404] as const)(
+  "An automation API %i produces safe no-access feedback rather than a recovery action",
+  async (status) => {
     context.mocks.api(workflowAutomationsContract.get, ({ respond }) => {
       return respond(status, {
         error: {
@@ -355,8 +356,8 @@ for (const status of [403, 404] as const) {
     expect(control("link", "Back to workflows")).toBeInTheDocument();
     expect(document.body).not.toHaveTextContent(WORKFLOW_ID);
     expect(document.body).not.toHaveTextContent(AUTOMATION_ID);
-  });
-}
+  },
+);
 
 test("A cross-workspace notification uses the normal explicit workspace switch and preserves the exact destination", async () => {
   mockAutomationDestination();
