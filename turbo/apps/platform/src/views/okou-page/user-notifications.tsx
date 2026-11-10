@@ -641,7 +641,7 @@ function InboxHeader({ inbox }: { readonly inbox: NotificationInbox }) {
   );
 }
 
-function NotificationInboxView() {
+function NotificationInboxView({ desktop }: { readonly desktop: boolean }) {
   const { t } = useTranslation();
   const inbox = useGet(notificationInbox$);
   const summary = useLastLoadable(inbox.summary$);
@@ -653,19 +653,32 @@ function NotificationInboxView() {
   const count =
     summary.state === "hasData" ? summary.data.unreadCount : undefined;
   const id = inbox.descriptionId;
+  const label = t(($) => {
+    return $.userNotifications.title;
+  });
   return (
     <>
       <Popover open={open && selectedId === null} onOpenChange={setOpen}>
         <PopoverTrigger
           render={
-            <IconButton
-              type="button"
-              aria-label={t(($) => {
-                return $.userNotifications.title;
-              })}
-              aria-describedby={id}
-              className="relative size-8 shrink-0 text-muted-foreground pointer-coarse:size-11"
-            />
+            desktop ? (
+              <IconButton
+                type="button"
+                aria-label={label}
+                aria-describedby={id}
+                className="relative size-8 shrink-0 text-muted-foreground pointer-coarse:size-11"
+              />
+            ) : (
+              <Button
+                type="button"
+                variant="quiet"
+                size="icon"
+                iconSize="lg"
+                aria-label={label}
+                aria-describedby={id}
+                className="relative min-h-11 min-w-11 shrink-0"
+              />
+            )
           }
         >
           <Bell className="size-4" aria-hidden="true" />
@@ -743,5 +756,7 @@ export function UserNotificationsEntry({
 }) {
   const enabled = useGet(featureSwitch$)[FeatureSwitchKey.UserNotifications];
   const isDesktop = useMediaQuery(SIDEBAR_DESKTOP_MEDIA_QUERY);
-  return enabled && desktop === isDesktop ? <NotificationInboxView /> : null;
+  return enabled && desktop === isDesktop ? (
+    <NotificationInboxView desktop={desktop} />
+  ) : null;
 }
