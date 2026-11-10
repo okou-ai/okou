@@ -2,6 +2,8 @@ import { command, computed, state, type Computed } from "ccstate";
 import { emailConnectBodySchema } from "@okouai/api-contracts/validators/integrations-email";
 import { integrationsEmailContract } from "@okouai/api-contracts/client/integrations-email";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { toast } from "@okouai/ui/components/ui/sonner";
+import { i18n } from "../../i18n/index.ts";
 import { apiClient$ } from "../api-client.ts";
 import { accept } from "../../lib/accept.ts";
 import { searchParams$ } from "../route.ts";
@@ -60,6 +62,12 @@ const connectOriginalEmail$ = command(async ({ get }, signal: AbortSignal) => {
     { showErrorToast: false },
   );
   signal.throwIfAborted();
+  toast.success(
+    i18n.t(($) => {
+      return $.works.email.connected;
+    }),
+    { description: response.body.emailAddress },
+  );
   return response.body;
 });
 export const connectEmailFromLink$ = command(

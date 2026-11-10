@@ -165,7 +165,7 @@ const sendEmailConnectPrompt$ = command(
         messageId: `<connect.${message.id}@okou.io>`,
         inReplyTo: message.messageId,
         references: message.references,
-        text: `Hi, I'm Okou. Open this private link to sign in or create your account with this email address. I'll connect your email and continue your original request automatically, so you don't need to resend it.\n\n[Continue with Okou](${url.toString()})\n\nEach new email starts a separate conversation. Reply within an email conversation to keep its context. This integration does not support HIPAA-regulated use.`,
+        text: `Hi, I'm Okou. Open this private link to connect your email to your active workspace. If needed, sign in and choose a workspace. I'll connect your email and continue your original request automatically.\n\n[Connect email](${url.toString()})\n\nEach new email starts a separate conversation. Reply within an email conversation to keep its context. This integration does not support HIPAA-regulated use.`,
       },
       signal,
     );

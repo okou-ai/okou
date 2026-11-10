@@ -1,5 +1,5 @@
 import { beforeEach, expect, test } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import { integrationsEmailContract } from "@okouai/api-contracts/contracts/integrations-email";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import {
@@ -34,16 +34,35 @@ beforeEach(() => {
   });
 });
 
-test("automatically connects the original email after authentication", async () => {
+test("connects in the active workspace without asking a multi-workspace user to choose again", async () => {
   let requestBody: unknown;
   context.mocks.api(integrationsEmailContract.connect, ({ body, respond }) => {
     requestBody = body;
     return respond(200, { emailAddress });
   });
-  await setupPage({ context, path, featureSwitches: featureSwitches() });
+  await setupPage({
+    context,
+    path,
+    featureSwitches: featureSwitches(),
+    auth: {
+      user: { id: "email-owner", fullName: "Email Owner" },
+      organization: {
+        activeOrg: { id: "org_active", name: "Active workspace" },
+        memberships: [{ id: "org_other" }, { id: "org_active" }],
+      },
+    },
+  });
   await expect(
-    screen.findByText("Email connected"),
+    screen.findByRole("heading", { name: "Email connected" }),
   ).resolves.toBeInTheDocument();
+  const notifications = await screen.findByRole("region", {
+    name: /Notifications/u,
+  });
+  await expect(
+    within(notifications).findByText("Email connected"),
+  ).resolves.toBeInTheDocument();
+  expect(within(notifications).getByText(emailAddress)).toBeInTheDocument();
+  expect(window.location.pathname).toBe("/settings/email");
   expect(requestBody).toStrictEqual(proof());
   expect(control("link", "Open email")).toHaveAttribute(
     "href",
@@ -65,6 +84,7 @@ test("explains an expired connection without asking the user to resend account d
   await expect(
     screen.findByText(/Invalid or expired email connection link/u),
   ).resolves.toBeInTheDocument();
+  expect(screen.queryByText("Email connected")).not.toBeInTheDocument();
 });
 
 test("disconnects a verified address and offers explicit reconnection", async () => {
