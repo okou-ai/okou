@@ -1,5 +1,12 @@
 # Changelog
 
+## [10.19.4](https://github.com/okou-ai/okou/compare/cli-v10.19.3...cli-v10.19.4) (2026-11-10)
+
+
+### Bug Fixes
+
+* **cli:** keep deployment links out of host delivery output ([#46269](https://github.com/okou-ai/okou/issues/46269)) ([a13dc6b](https://github.com/okou-ai/okou/commit/a13dc6b1eb43beffdd47e18e56ed66c97184f3cf))
+
 ## [10.19.3](https://github.com/okou-ai/okou/compare/cli-v10.19.2...cli-v10.19.3) (2026-11-10)
 
 

@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { uuid } from "zod";
 import { completeHostedSite } from "../../lib/api/domains/host";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { hostedSiteDeliveryInstructions } from "../../lib/host/delivery";
 
 export const completeHostedSiteCommand = new Command("complete")
   .description(
@@ -12,6 +13,7 @@ export const completeHostedSiteCommand = new Command("complete")
     "Deployment ID returned by a previous publish attempt",
   )
   .option("--json", "Output the completed deployment as JSON")
+  .addHelpText("after", `\nNotes:\n  - ${hostedSiteDeliveryInstructions}`)
   .action(
     withErrorHandler(
       async (
@@ -20,11 +22,13 @@ export const completeHostedSiteCommand = new Command("complete")
         command: Command,
       ) => {
         const options = command.optsWithGlobals<{ readonly json?: boolean }>();
-        const result = await completeHostedSite(uuid().parse(deploymentId));
+        const { artifactUrl: _artifactUrl, ...result } =
+          await completeHostedSite(uuid().parse(deploymentId));
+        const url = result.aliasUrl ?? result.url;
         console.log(
           options.json
-            ? JSON.stringify(result)
-            : `Hosted site deployed: ${result.aliasUrl ?? result.url}`,
+            ? JSON.stringify({ ...result, url })
+            : `Hosted site deployed: ${url}`,
         );
       },
     ),

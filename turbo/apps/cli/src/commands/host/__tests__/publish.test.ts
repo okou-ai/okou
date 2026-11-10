@@ -91,7 +91,7 @@ describe("okou host publish command", () => {
       publicSlug: "demo-site-a1b2",
     },
   ])(
-    "uploads a $label bundle and returns complete artifact URLs in text and JSON",
+    "uploads a $label bundle and returns delivery URLs in text and JSON",
     async ({ privateArtifact, publicSlug }) => {
       const aliasUrl = `https://${publicSlug}.sites.example.com`;
       const artifactUrl = privateArtifact
@@ -101,8 +101,7 @@ describe("okou host publish command", () => {
           )}`
         : ARTIFACT_URL;
       const url = privateArtifact ? artifactUrl : aliasUrl;
-      const expectedArtifactUrl = artifactUrl;
-      const expectedUrl = privateArtifact ? expectedArtifactUrl : aliasUrl;
+      const expectedUrl = privateArtifact ? artifactUrl : aliasUrl;
       const alias = privateArtifact ? {} : { aliasUrl };
       const index = "<!doctype html><main>Hosted site</main>";
       let uploadedRobots = false;
@@ -203,12 +202,13 @@ describe("okou host publish command", () => {
       const stdout = mockConsoleLog.mock.calls.flat().join("\n");
       expect(stdout).toContain("✓ Hosted site deployed");
       expect(stdout).toContain(`Site: ${publicSlug}`);
-      expect(stdout).toContain(`Artifact: ${expectedArtifactUrl}`);
       if (privateArtifact) {
+        expect(stdout).toContain(`URL: ${expectedUrl}`);
         expect(stdout).not.toContain(aliasUrl);
         expect(stdout).not.toContain("Alias:");
       } else {
         expect(stdout).toContain(`Alias: ${aliasUrl}`);
+        expect(stdout).not.toContain(ARTIFACT_URL);
       }
       expect(stdout).toContain("Artifact presentation context:");
       expect(stdout).toContain(`[Demo site](<${expectedUrl}>)`);
@@ -235,10 +235,15 @@ describe("okou host publish command", () => {
 
       const jsonOutput = mockConsoleLog.mock.calls.flat().join("\n");
       const parsed = JSON.parse(jsonOutput) as Record<string, unknown>;
-      expect(parsed).toMatchObject({
+      expect(parsed).toEqual({
+        siteId: "00000000-0000-4000-8000-000000000001",
+        title: "Demo site",
+        visibility: "public",
         publicSlug,
         deploymentId: "00000000-0000-4000-8000-000000000002",
-        artifactUrl: expectedArtifactUrl,
+        deploymentVersion: 1,
+        isActive: !privateArtifact,
+        activeDeploymentVersion: 1,
         url: expectedUrl,
         ...alias,
         fileCount: 2,

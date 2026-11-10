@@ -5,6 +5,7 @@ import { agentsByIdContract, agentsMainContract } from "../contracts/agents";
 import { artifactCatalogContract } from "../contracts/artifact-catalog";
 import { artifactReferencesContract } from "../contracts/artifact-references";
 import { billingStatusContract } from "../contracts/billing";
+import { browserAuthorizationRequestsContract } from "../contracts/browser";
 import { chatEventsContract } from "../contracts/chat-event-send";
 import { chatConnectorAccessContract } from "../contracts/chat-connector-access";
 import { chatRemoteAccessContract } from "../contracts/chat-remote-access";
@@ -32,6 +33,7 @@ import {
 import { claudeCodeDeviceAuthContract } from "../contracts/claude-code-device-auth";
 import { codexDeviceAuthContract } from "../contracts/codex-device-auth";
 import { connectedConnectorsContract } from "../contracts/connected-connectors";
+import { computerUseAuthorizationRequestsContract } from "../contracts/computer-use";
 import { connectorAccountsContract } from "../contracts/connector-accounts";
 import { connectorPermissionsContract } from "../contracts/connector-permissions";
 import { connectorCatalogContract } from "../contracts/connector-catalog";
@@ -122,6 +124,22 @@ const iosContracts: readonly {
     route: artifactReferencesContract.resolve,
   },
   { id: "ios.billingStatusContract.get", route: billingStatusContract.get },
+  {
+    id: "ios.browserAuthorizationRequestsContract.get",
+    route: browserAuthorizationRequestsContract.get,
+  },
+  {
+    id: "ios.browserAuthorizationRequestsContract.apply",
+    route: browserAuthorizationRequestsContract.apply,
+  },
+  {
+    id: "ios.computerUseAuthorizationRequestsContract.get",
+    route: computerUseAuthorizationRequestsContract.get,
+  },
+  {
+    id: "ios.computerUseAuthorizationRequestsContract.apply",
+    route: computerUseAuthorizationRequestsContract.apply,
+  },
   {
     id: "ios.chatConnectorAccessContract.accountDefaults",
     route: chatConnectorAccessContract.accountDefaults,

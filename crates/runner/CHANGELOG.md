@@ -1,5 +1,16 @@
 # Changelog
 
+## [0.244.57](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.56...runner-rs-v0.244.57) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** simplify best-effort body decode results ([#46299](https://github.com/okou-ai/okou/issues/46299)) ([2ea5bc5](https://github.com/okou-ai/okou/commit/2ea5bc5eed18a208d46bba2bb009c9ca8d5e6ea6))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.56](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.55...runner-rs-v0.244.56) (2026-11-10)
 
 ## [0.244.55](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.54...runner-rs-v0.244.55) (2026-11-10)

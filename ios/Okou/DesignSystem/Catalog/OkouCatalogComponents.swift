@@ -268,6 +268,14 @@
           } label: {
             Text(verbatim: "Chat sync feedback")
           }
+          NavigationLink {
+            ComputerAuthorizationGallery()
+              .toolbar {
+                if let close { OkouCloseToolbarItem(action: close) }
+              }
+          } label: {
+            Text(verbatim: "Computer access cards")
+          }
         }
         OkouCatalogSection("Empty states") {
           OkouEmptyState("No results", icon: "search", description: Text("Try another search."))

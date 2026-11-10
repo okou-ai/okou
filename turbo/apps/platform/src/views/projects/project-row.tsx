@@ -48,6 +48,7 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { selectedProjectId$ } from "../../signals/projects/project-navigation.ts";
 import { Link } from "../router/link.tsx";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatThreadStateText } from "../okou-page/sidebar-shared.tsx";
 import {
@@ -341,6 +342,7 @@ function ProjectTrigger({
 }) {
   const { t } = useTranslation();
   const toggle = useSet(toggleProject$);
+  const expand = useSet(expandProject$);
   const edit = useGet(projectInlineRename$);
   const renaming = edit?.rowId === rowId;
   const startRename = useSet(startProjectInlineRename$);
@@ -354,7 +356,8 @@ function ProjectTrigger({
           renaming && "invisible",
         )}
       >
-        {/* The folder folds the Project's chats; the name opens its page. */}
+        {/* The folder folds the Project's chats; the name opens its page and
+            unfolds its chats. */}
         <button
           type="button"
           aria-expanded={expanded}
@@ -380,6 +383,13 @@ function ProjectTrigger({
           options={{ pathParams: { projectId: project.id } }}
           data-project-trigger=""
           aria-current={active ? "page" : undefined}
+          onClick={(event) => {
+            // Unfold only when the click opens the page here, not in a new
+            // tab or window.
+            if (shouldHandleLinkClick(event)) {
+              expand(project.id);
+            }
+          }}
           onDoubleClick={(event) => {
             if (
               event.metaKey ||

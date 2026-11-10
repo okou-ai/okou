@@ -179,9 +179,10 @@ private struct MessageRenderUnitView: View {
       if let approvals = message.approvals {
         MailDraftCard(store: approvals.mailDraft(id), loadsState: message.loadsActions)
       }
-    case .shellAuthorization(let id):
+    case .computerAuthorization(let action):
       if let approvals = message.approvals {
-        ShellAuthorizationCard(store: approvals.shell(id), loadsState: message.loadsActions)
+        ComputerAuthorizationCard(
+          store: approvals.computer(action), loadsState: message.loadsActions)
       }
     case .artifact(let resource, let label, let destination):
       if let viewer = message.artifacts {

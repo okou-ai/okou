@@ -11,7 +11,7 @@ struct OkouApp: App {
   private static var isDesignPreview: Bool {
     #if DEBUG
       ProcessInfo.processInfo.arguments.contains("--mobile-design-system") || isResultStyles
-        || isChatSyncStatus
+        || isChatSyncStatus || isComputerAuthorizationPreview
     #else
       false
     #endif
@@ -34,6 +34,14 @@ struct OkouApp: App {
     #endif
   }
 
+  private static var isComputerAuthorizationPreview: Bool {
+    #if DEBUG
+      ProcessInfo.processInfo.arguments.contains("--computer-access-cards")
+    #else
+      false
+    #endif
+  }
+
   init() {
     if !Self.isDesignPreview { CrashReporting.start() }
     OkouNavigationBar.applyBackIndicator()
@@ -51,7 +59,9 @@ struct OkouApp: App {
     WindowGroup {
       Group {
         #if DEBUG
-          if Self.isChatSyncStatus {
+          if Self.isComputerAuthorizationPreview {
+            NavigationStack { ComputerAuthorizationGallery() }
+          } else if Self.isChatSyncStatus {
             NavigationStack { ChatSyncStatusGallery() }
           } else if Self.isResultStyles {
             NavigationStack { ResultStylesPage() }

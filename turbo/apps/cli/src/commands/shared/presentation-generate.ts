@@ -14,6 +14,7 @@ import {
 } from "@okouai/core/presentation-generation-instructions";
 import { canonicalizeRegistryId } from "./resource-listing";
 import { hostedSiteVisibilityInstructions } from "../../lib/host/visibility";
+import { hostedSiteDeliveryInstructions } from "../../lib/host/delivery";
 import {
   createArtifactVisibilityOption,
   type ArtifactVisibility,
@@ -128,6 +129,7 @@ ${formatPresentationTemplateListing(templates)}`;
           : '"<presentation title>"';
         const hostCommand = `okou host <output-dir> --site ${options.siteSlug ?? "<slug>"} --title ${displayTitle} --artifact-kind presentation-html${visibilityFlag} --preview ./generated/previews/cover.png --json`;
         const deliveryInstructions = [
+          `- For hosted HTML delivery: ${hostedSiteDeliveryInstructions}`,
           options.visibility === undefined
             ? `- Uploaded and generated files default to only-me. ${hostedSiteVisibilityInstructions}`
             : `- Deliver the final deck with ${options.visibility} visibility.`,

@@ -12,10 +12,10 @@ enum MessageActionBody {
     case permissionBatch(ChatPermissionBatchAction)
     case unavailablePermission(String)
     case mailDraft(String)
-    case shellAuthorization(String)
+    case computerAuthorization(ChatComputerAuthorizationAction)
   }
 
-  /// `/mail/drafts/<uuid>` and `/computer-use/shell/authorize/<uuid>` on the web origin.
+  /// Mail draft references on the configured web origin.
   static func approvalBlock(_ value: String, webURL: URL) -> Block? {
     let url = URL(string: value, relativeTo: webURL)?.absoluteURL
     guard let url, url.host() == webURL.host(), url.scheme == webURL.scheme else { return nil }
@@ -23,11 +23,6 @@ enum MessageActionBody {
     if parts.count == 3, parts[0] == "mail", parts[1] == "drafts", UUID(uuidString: parts[2]) != nil
     {
       return .mailDraft(parts[2].lowercased())
-    }
-    if parts.count == 4, parts[0] == "computer-use", parts[1] == "shell", parts[2] == "authorize",
-      UUID(uuidString: parts[3]) != nil
-    {
-      return .shellAuthorization(parts[3].lowercased())
     }
     return nil
   }
@@ -68,6 +63,10 @@ enum MessageActionBody {
         let block: Block
         if let approval = approvalBlock(value, webURL: webURL) {
           block = approval
+        } else if let action = ChatComputerAuthorizationAction.parse(
+          value, webURL: webURL, threadID: threadID)
+        {
+          block = .computerAuthorization(action)
         } else if let action = ChatConnectorAction.parse(
           value, webURL: webURL, agentID: agentID, threadID: threadID)
         {

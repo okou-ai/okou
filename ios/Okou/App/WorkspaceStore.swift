@@ -340,6 +340,7 @@ final class WorkspaceStore {
     let awaitingSelectedThread = selectedThreadID != nil && selectedConversation == nil
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
     // Model catch-up must stay fresh, but it does not gate the chat list or messages.
+    async let accessRefresh: Void = refreshComputerAuthorizations(batch)
     async let modelRefresh: Void = refreshModels(batch)
     async let projectRefresh: Void = refreshProjects(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
@@ -358,6 +359,7 @@ final class WorkspaceStore {
     if awaitingSelectedThread, selectedThreadID == selectedBeforeRefresh {
       await selectedConversation?.refresh()
     }
+    await accessRefresh
     await modelRefresh
     await projectRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
@@ -368,6 +370,16 @@ final class WorkspaceStore {
     }
     await trimConversations(limit: conversationLimit)
     requestHistoryWarming()
+  }
+
+  private func refreshComputerAuthorizations(_ batch: Set<ChatInvalidation>) async {
+    guard let conversation = selectedConversation else { return }
+    if batch.contains(.computerAccess) || batch.contains(.reconnected)
+      || batch.contains(.detail(threadID: conversation.thread.id))
+      || batch.contains(.history(threadID: conversation.thread.id))
+    {
+      await conversation.approvals.refreshComputers()
+    }
   }
 
   private func refreshModels(_ batch: Set<ChatInvalidation>) async {
