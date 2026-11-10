@@ -231,9 +231,10 @@ type ArtifactAction =
       readonly target: "file" | "document" | "spreadsheet" | "presentation";
     }
   | {
-      readonly action: "banner_visibility_change";
+      readonly action: "banner_share";
       readonly surface: "dialog" | "sidebar";
-      readonly show_banner: boolean;
+      readonly target: "hosted_site";
+      readonly show_banner: boolean | "unknown";
     };
 
 /** Capture user intent before authorization or transfer; never include file data. */

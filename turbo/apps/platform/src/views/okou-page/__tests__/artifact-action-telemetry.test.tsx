@@ -1,5 +1,9 @@
 import { artifactCatalogContract } from "@okouai/api-contracts/contracts/artifact-catalog";
-import { artifactReferencesContract } from "@okouai/api-contracts/contracts/artifact-references";
+import {
+  artifactReferencePath,
+  artifactReferencesContract,
+} from "@okouai/api-contracts/contracts/artifact-references";
+import { artifactSharesContract } from "@okouai/api-contracts/contracts/artifact-shares";
 import { sharedThreadsContract } from "@okouai/api-contracts/contracts/shared-threads";
 import { screen, waitFor, within } from "@testing-library/react";
 import { HttpResponse } from "msw";
@@ -51,10 +55,16 @@ function artifactActions(posthog: ReturnType<typeof context.mocks.posthog>) {
     });
 }
 
-test("A generic catalog preview counts body and menu downloads, not opening them", async () => {
+test("A generic ZIP preview counts downloads but copies its link without hosted-site analytics", async () => {
   const posthog = context.mocks.posthog();
   const browser = context.mocks.browser.blobDownload();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   const filename = "confidential-release-bundle.zip";
+  const fileId = "f0000000-0000-4000-a000-000000000002";
+  const ownerUrl = new URL(
+    artifactReferencePath(fileId, filename),
+    "https://app.okou.ai",
+  ).href;
   const url = `https://artifacts.example.com/${filename}?signature=private-token`;
   const summary = artifact({ title: filename });
   context.mocks.api(artifactCatalogContract.list, ({ respond }) => {
@@ -65,13 +75,36 @@ test("A generic catalog preview counts body and menu downloads, not opening them
       ...summary,
       kind: "file",
       file: {
-        id: "f0000000-0000-4000-a000-000000000002",
+        id: fileId,
         filename,
         contentType: "application/zip",
         size: 2048,
-        url,
+        url: ownerUrl,
         previewImageUrl: null,
       },
+    });
+  });
+  context.mocks.api(artifactReferencesContract.resolve, ({ respond }) => {
+    return respond(200, {
+      url,
+      downloadUrl: url,
+      filename,
+      contentType: "application/zip",
+      expiresAt: "2099-01-01T00:00:00Z",
+      target: { kind: "file", id: fileId },
+    });
+  });
+  context.mocks.api(artifactSharesContract.status, ({ respond }) => {
+    return respond(200, {
+      ownerUrl,
+      shareId: null,
+      audience: "private",
+      organization: { id: "org_test", name: "Acme" },
+      selectedTarget: null,
+      selectedVersion: null,
+      candidateVersion: null,
+      url: null,
+      shortUrl: null,
     });
   });
 
@@ -109,6 +142,15 @@ test("A generic catalog preview counts body and menu downloads, not opening them
     expect(browser.downloads).toHaveLength(2);
   });
   expect(browser.downloads[1]).toStrictEqual({ filename, url, blob: null });
+
+  click(await findNamedButton("Share", dialog));
+  const share = await screen.findByRole("dialog", { name: "Share" });
+  const copy = await findNamedButton("Copy link", share);
+  expect(copy).toBeEnabled();
+  click(copy);
+
+  await expect(findNamedButton("Copied", share)).resolves.toBeInTheDocument();
+  expect(clipboard.writes).toStrictEqual([ownerUrl]);
   expect(artifactActions(posthog)).toStrictEqual([
     { action: "download", surface: "file_preview" },
     { action: "download", surface: "dialog" },

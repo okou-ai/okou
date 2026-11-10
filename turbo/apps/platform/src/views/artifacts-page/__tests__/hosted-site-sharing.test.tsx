@@ -5,6 +5,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { beforeEach, expect, test, vi } from "vitest";
 import userEvent from "@testing-library/user-event";
+import { posthog } from "posthog-js/dist/module.slim";
 import type { infer as zInfer } from "zod";
 import {
   click,
@@ -418,7 +419,9 @@ test("Public Site previews render the anonymous URL", async () => {
 
 type SiteVisibilityStatus = zInfer<typeof hostedSiteVisibilityStatusSchema>;
 
-test("Unavailable banner settings do not claim that the banner is hidden", async () => {
+test("Unavailable banner settings stay unknown when copying the site link", async () => {
+  const telemetry = context.mocks.posthog();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   mockSiteAlias();
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, { siteId, visibility: "public", revision: null });
@@ -437,6 +440,70 @@ test("Unavailable banner settings do not claim that the banner is hidden", async
   expect(
     screen.queryByRole("switch", { name: "Show Okou banner" }),
   ).not.toBeInTheDocument();
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
+  expect(artifactActions(telemetry)).toStrictEqual([
+    {
+      action: "banner_share",
+      surface: "dialog",
+      target: "hosted_site",
+      show_banner: "unknown",
+    },
+  ]);
+});
+
+test("Copy link snapshots a pending banner as unknown without delaying the copy", async () => {
+  const telemetry = context.mocks.posthog();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const response = context.mocks.deferred<void>();
+  context.mocks.api(hostContract.siteBanner, async ({ respond }) => {
+    await response.promise;
+    return respond(200, { siteId, showBanner: false, revision: null });
+  });
+  await openSite();
+  await openShare();
+  await waitFor(() => {
+    expect(getButtonByName("Copy link")).toBeEnabled();
+  });
+  const copyButton = getButtonByName("Copy link");
+  click(copyButton);
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
+  expect(artifactActions(telemetry)).toStrictEqual([
+    {
+      action: "banner_share",
+      surface: "dialog",
+      target: "hosted_site",
+      show_banner: "unknown",
+    },
+  ]);
+
+  response.resolve();
+  const toggle = await screen.findByRole("switch", {
+    name: "Show Okou banner",
+  });
+  expect(toggle).not.toBeChecked();
+  click(copyButton);
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url, site.url]);
+  });
+  expect(artifactActions(telemetry)).toStrictEqual([
+    {
+      action: "banner_share",
+      surface: "dialog",
+      target: "hosted_site",
+      show_banner: "unknown",
+    },
+    {
+      action: "banner_share",
+      surface: "dialog",
+      target: "hosted_site",
+      show_banner: false,
+    },
+  ]);
 });
 
 test("More retries an initial banner read failure without exposing an unready setting", async () => {
@@ -499,20 +566,69 @@ test("More retries an initial banner read failure without exposing an unready se
   expect(toggle).toBeEnabled();
 });
 
-test.each([false, true])(
-  "owners hide the default banner from the Site share settings (sidebar: %s)",
-  async (sidebar) => {
+test("Copy link records click intent even when the clipboard write fails", async () => {
+  const telemetry = context.mocks.posthog();
+  vi.spyOn(navigator.clipboard, "writeText").mockRejectedValue(
+    new DOMException("Clipboard unavailable", "NotAllowedError"),
+  );
+  await openSite();
+  await openShare();
+  const toggle = await screen.findByRole("switch", {
+    name: "Show Okou banner",
+  });
+  expect(toggle).toBeChecked();
+  click(getButtonByName("Copy link"));
+  await screen.findByText("Failed to copy link");
+  expect(getButtonByName("Copy link")).toBeEnabled();
+  expect(artifactActions(telemetry)).toStrictEqual([
+    {
+      action: "banner_share",
+      surface: "dialog",
+      target: "hosted_site",
+      show_banner: true,
+    },
+  ]);
+});
+
+test("Copy link succeeds even when the analytics SDK throws", async () => {
+  context.mocks.posthog();
+  const clipboard = context.mocks.browser.clipboardWriteText();
+  const analyticsError = new Error("Analytics unavailable");
+  window.addEventListener(
+    "error",
+    (event) => {
+      if (event.error === analyticsError) {
+        event.preventDefault();
+      }
+    },
+    { signal: context.signal },
+  );
+  await openSite();
+  await openShare();
+  await waitFor(() => {
+    expect(getButtonByName("Copy link")).toBeEnabled();
+  });
+  vi.spyOn(posthog, "capture").mockImplementationOnce(() => {
+    throw analyticsError;
+  });
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(getButtonByName("Copied")).toBeEnabled();
+  });
+  expect(clipboard.writes).toStrictEqual([site.url]);
+});
+
+test.each([
+  { sidebar: false, shareRows: false },
+  { sidebar: true, shareRows: false },
+  { sidebar: false, shareRows: true },
+  { sidebar: true, shareRows: true },
+])(
+  "Copy link records the confirmed banner preference (sidebar: $sidebar, rows: $shareRows)",
+  async ({ sidebar, shareRows }) => {
     const telemetry = context.mocks.posthog();
+    const clipboard = context.mocks.browser.clipboardWriteText();
     const surface = sidebar ? "sidebar" : "dialog";
-    mockSiteAlias();
-    const visibility: SiteVisibilityStatus = {
-      siteId,
-      visibility: "public",
-      revision: null,
-    };
-    context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
-      return respond(200, visibility);
-    });
     let banner = { siteId, showBanner: true, revision: null as string | null };
     context.mocks.api(hostContract.siteBanner, ({ respond }) => {
       return respond(200, banner);
@@ -526,35 +642,86 @@ test.each([false, true])(
       };
       return respond(200, banner);
     });
-    await openSite({ sidebar });
+    await openSite({ sidebar, shareRows });
     await openShare(sidebar ? "Share artifact" : "Share");
     const toggle = await screen.findByRole("switch", {
       name: "Show Okou banner",
     });
     expect(toggle).toBeChecked();
     expect(artifactActions(telemetry)).toStrictEqual([]);
-    click(toggle);
-    expect(artifactActions(telemetry)).toStrictEqual([
-      { action: "banner_visibility_change", surface, show_banner: false },
-    ]);
+    const copyButton = getButtonByName("Copy link");
+    click(copyButton);
     await waitFor(() => {
-      return expect(toggle).not.toBeChecked();
+      expect(clipboard.writes).toStrictEqual([site.url]);
+    });
+    expect(artifactActions(telemetry)).toStrictEqual([
+      {
+        action: "banner_share",
+        surface,
+        target: "hosted_site",
+        show_banner: true,
+      },
+    ]);
+
+    click(toggle);
+    await waitFor(() => {
+      expect(toggle).not.toBeChecked();
     });
     await screen.findByText("Banner updated");
     await expectPermission("Anyone with the link");
-    click(toggle);
+    click(copyButton);
     await waitFor(() => {
-      return expect(toggle).toBeChecked();
+      expect(clipboard.writes).toStrictEqual([site.url, site.url]);
     });
     expect(artifactActions(telemetry)).toStrictEqual([
-      { action: "banner_visibility_change", surface, show_banner: false },
-      { action: "banner_visibility_change", surface, show_banner: true },
+      {
+        action: "banner_share",
+        surface,
+        target: "hosted_site",
+        show_banner: true,
+      },
+      {
+        action: "banner_share",
+        surface,
+        target: "hosted_site",
+        show_banner: false,
+      },
+    ]);
+
+    click(toggle);
+    await waitFor(() => {
+      expect(toggle).toBeChecked();
+    });
+    click(copyButton);
+    await waitFor(() => {
+      expect(clipboard.writes).toStrictEqual([site.url, site.url, site.url]);
+    });
+    expect(artifactActions(telemetry)).toStrictEqual([
+      {
+        action: "banner_share",
+        surface,
+        target: "hosted_site",
+        show_banner: true,
+      },
+      {
+        action: "banner_share",
+        surface,
+        target: "hosted_site",
+        show_banner: false,
+      },
+      {
+        action: "banner_share",
+        surface,
+        target: "hosted_site",
+        show_banner: true,
+      },
     ]);
   },
 );
 
-test("a stale banner edit preserves the last confirmed preference", async () => {
+test("a stale banner edit preserves the confirmed preference when copying", async () => {
   const telemetry = context.mocks.posthog();
+  const clipboard = context.mocks.browser.clipboardWriteText();
   mockSiteAlias();
   context.mocks.api(hostContract.siteVisibility, ({ respond }) => {
     return respond(200, { siteId, visibility: "public", revision: null });
@@ -579,14 +746,19 @@ test("a stale banner edit preserves the last confirmed preference", async () => 
   click(toggle);
   await screen.findByText("Website banner changed; reload before editing");
   await waitFor(() => {
-    return expect(toggle).not.toHaveAttribute("aria-disabled", "true");
+    expect(toggle).not.toHaveAttribute("aria-disabled", "true");
   });
   expect(toggle).toBeChecked();
+  click(getButtonByName("Copy link"));
+  await waitFor(() => {
+    expect(clipboard.writes).toStrictEqual([site.url]);
+  });
   expect(artifactActions(telemetry)).toStrictEqual([
     {
-      action: "banner_visibility_change",
+      action: "banner_share",
       surface: "dialog",
-      show_banner: false,
+      target: "hosted_site",
+      show_banner: true,
     },
   ]);
 });
