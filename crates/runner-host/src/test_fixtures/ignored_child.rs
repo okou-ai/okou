@@ -1,4 +1,5 @@
 use std::ffi::OsStr;
+use std::future::{Future, poll_fn};
 use std::io;
 #[cfg(target_os = "linux")]
 use std::os::fd::{AsRawFd, FromRawFd, OwnedFd, RawFd};
@@ -385,8 +386,15 @@ pub async fn run_ignored_child_test(
     child_env: &[(&str, Option<&str>)],
     timeout: Duration,
 ) -> IgnoredChildOutput {
-    run_ignored_child_test_with_readiness(child_test_name, env_guard, child_env, timeout, None)
-        .await
+    run_ignored_child_test_with_readiness(
+        child_test_name,
+        env_guard,
+        child_env,
+        timeout,
+        None,
+        None,
+    )
+    .await
 }
 
 async fn run_ignored_child_test_with_readiness(
@@ -395,6 +403,7 @@ async fn run_ignored_child_test_with_readiness(
     child_env: &[(&str, Option<&str>)],
     timeout: Duration,
     readiness_path: Option<&Path>,
+    output_waiting: Option<tokio::sync::oneshot::Sender<()>>,
 ) -> IgnoredChildOutput {
     let (env_guard_key, env_guard_value) = env_guard;
     assert!(
@@ -478,7 +487,25 @@ async fn run_ignored_child_test_with_readiness(
     } else {
         Some(kill_ignored_child(&mut child, &child_session).await)
     };
-    let output_result = match tokio::time::timeout(CHILD_OUTPUT_TIMEOUT, &mut output_task).await {
+    let output_result = {
+        let mut output =
+            std::pin::pin!(tokio::time::timeout(CHILD_OUTPUT_TIMEOUT, &mut output_task));
+        match output_waiting {
+            Some(waiting) if failures.is_empty() => {
+                match poll_fn(|cx| std::task::Poll::Ready(output.as_mut().poll(cx))).await {
+                    std::task::Poll::Ready(result) => result,
+                    std::task::Poll::Pending => {
+                        // The child has exited and the real output reader and
+                        // its original deadline have both been polled Pending.
+                        let _ = waiting.send(());
+                        output.await
+                    }
+                }
+            }
+            _ => output.await,
+        }
+    };
+    let output_result = match output_result {
         Ok(result) => result,
         Err(_) => {
             failures.push(format!(
