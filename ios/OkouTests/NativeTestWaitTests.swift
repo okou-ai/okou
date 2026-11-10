@@ -11,9 +11,10 @@ final class NativeTestWaitTests: XCTestCase {
       "Verify that a missed business deadline stops dependent actions",
       issueMatcher: { @Sendable issue in
         let description = issue.compactDescription
-        guard description.contains(message)
-          || (description.contains("Exceeded timeout")
-            && description.contains("NativeTestWaitTests.swift"))
+        guard
+          description.contains(message)
+            || (description.contains("Exceeded timeout")
+              && description.contains("NativeTestWaitTests.swift"))
         else { return false }
         // Deliver the result only after XCTest has recorded the missed deadline.
         lateResult.withLock { $0 = true }
