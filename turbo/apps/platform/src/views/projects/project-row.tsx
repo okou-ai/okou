@@ -29,9 +29,13 @@ import {
   projectDialog$,
 } from "../../signals/projects/project-ui.ts";
 import {
+  collapseProject$,
+  expandProject$,
   showMoreProjectThreads$,
   toggleProject$,
 } from "../../signals/projects/project-expansion.ts";
+import { GLOBAL_KEYBOARD_SHORTCUTS } from "../../lib/global-keyboard-shortcuts.ts";
+import { ChatThreadMenuShortcut } from "../okou-page/chat-thread-menu-shortcut.tsx";
 import type {
   ChatThreadListRow,
   ProjectChatThreadListRow,
@@ -59,14 +63,56 @@ interface ProjectRowProps {
   readonly layout: ProjectRowLayout;
 }
 
+function ProjectFoldMenuItem({
+  project,
+  expanded,
+}: {
+  project: Project;
+  expanded: boolean;
+}) {
+  const { t } = useTranslation();
+  const collapse = useSet(collapseProject$);
+  const expand = useSet(expandProject$);
+  const shortcut = expanded
+    ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
+    : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
+  const label = expanded
+    ? t(($) => {
+        return $.projects.collapse;
+      })
+    : t(($) => {
+        return $.projects.expand;
+      });
+  const Icon = expanded ? Folder : FolderOpen;
+  return (
+    <DropdownMenuItem
+      aria-label={label}
+      aria-keyshortcuts={shortcut.ariaKeyShortcuts}
+      onClick={() => {
+        if (expanded) {
+          collapse(project.id);
+        } else {
+          expand(project.id);
+        }
+      }}
+    >
+      <Icon size={16} />
+      {label}
+      <ChatThreadMenuShortcut shortcut={shortcut.binding} />
+    </DropdownMenuItem>
+  );
+}
+
 function ProjectMenu({
   project,
   touch,
   unread,
+  expanded,
 }: {
   project: Project;
   touch: boolean;
   unread: boolean;
+  expanded: boolean;
 }) {
   const { t } = useTranslation();
   const editor = useSet(openProjectEditor$);
@@ -111,7 +157,12 @@ function ProjectMenu({
           <Ellipsis />
         )}
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" finalFocus={dialog ? false : undefined}>
+      <DropdownMenuContent
+        align="end"
+        finalFocus={dialog ? false : undefined}
+        data-project-menu-content-id={project.id}
+      >
+        <ProjectFoldMenuItem project={project} expanded={expanded} />
         <DropdownMenuItem
           onClick={() => {
             return editor({ projectId: project.id }, project.name);
@@ -144,10 +195,12 @@ function ProjectActions({
   touch,
   layout,
   unread,
+  expanded,
   creating,
   onNewChat,
 }: ProjectRowProps & {
   unread: boolean;
+  expanded: boolean;
   creating: boolean;
   /** Null when the row only carries its menu, as in My Okou's chat list. */
   onNewChat: (() => void) | null;
@@ -181,7 +234,12 @@ function ProjectActions({
           <Plus />
         </Button>
       ) : null}
-      <ProjectMenu project={project} touch={touch} unread={unread} />
+      <ProjectMenu
+        project={project}
+        touch={touch}
+        unread={unread}
+        expanded={expanded}
+      />
     </div>
   );
 }
@@ -405,6 +463,7 @@ export function ProjectRow({
         touch={touch}
         layout={layout}
         unread={showUnread}
+        expanded={expanded}
         creating={creation.state === "loading"}
         onNewChat={singleAgent ? null : newChat}
       />

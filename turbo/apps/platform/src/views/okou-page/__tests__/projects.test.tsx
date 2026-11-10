@@ -625,7 +625,11 @@ function activeListItem() {
       ?.querySelector('[aria-current="page"]') ?? null
   );
 }
-async function setupProjectNavigation(caseId: number, path: string) {
+async function setupProjectNavigation(
+  caseId: number,
+  path: string,
+  extraProjects: readonly { id: string; name: string }[] = [],
+) {
   // Project: A1, A, A2 (newest first); B stays outside it.
   const b = continuityThread(caseId, 1, "Thread B");
   const a2 = { ...continuityThread(caseId, 2, "Thread A2"), projectId: id };
@@ -637,7 +641,7 @@ async function setupProjectNavigation(caseId: number, path: string) {
   });
   // A Project page lists the default Agent's chats, so these belong to it.
   context.mocks.data.onboardingStatus({ defaultAgentId: b.agentId });
-  metadata();
+  metadata(extraProjects);
   await setupPage({
     context,
     path: path
@@ -722,6 +726,105 @@ test("A Project page moves down into its chats when unfolded and past them when 
   });
   expect(threadLink(a1.id)).toHaveAttribute("aria-current", "page");
 });
+function pressProjectFold(direction: "ArrowLeft" | "ArrowRight") {
+  return userEvent
+    .setup({ delay: null })
+    .keyboard(`{Control>}{Shift>}{${direction}}{/Shift}{/Control}`);
+}
+
+test("Project fold shortcuts fold and unfold the open chat's Project unless the composer holds text", async () => {
+  const { a } = await setupProjectNavigation(116, "/chats/:a");
+  await waitFor(() => {
+    expect(threadLink(a.id)).toHaveAttribute("aria-current", "page");
+  });
+  const composer = await screen.findByRole("textbox", { name: "Message" });
+  composer.focus();
+
+  await pressProjectFold("ArrowLeft");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(activeListItem()).toBeNull();
+  expect(location.pathname).toBe(`/chats/${a.id}`);
+
+  await pressProjectFold("ArrowRight");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(threadLink(a.id)).toHaveAttribute("aria-current", "page");
+
+  // Typed text keeps the keys for selecting to the line edge.
+  await userEvent.setup({ delay: null }).type(composer, "Draft");
+  await pressProjectFold("ArrowLeft");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(composer).toHaveTextContent("Draft");
+});
+
+test("A Project page folds its own Project, and a chat outside Projects folds none", async () => {
+  const { b } = await setupProjectNavigation(117, `/projects/${id}`);
+  await waitFor(() => {
+    expect(projectLink("Launch")).toHaveAttribute("aria-current", "page");
+  });
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  (await screen.findByRole("textbox", { name: "Message" })).focus();
+
+  await pressProjectFold("ArrowRight");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  await pressProjectFold("ArrowLeft");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+
+  fireEvent.keyDown(document.body, { key: "?", code: "Slash", shiftKey: true });
+  const dialog = (await screen.findByText("Keyboard Shortcuts")).closest(
+    '[role="dialog"]',
+  );
+  expect(dialog).toHaveTextContent("Collapse Project");
+  expect(dialog).toHaveTextContent("Expand Project");
+  await userEvent.setup({ delay: null }).keyboard("{Escape}");
+  await waitFor(() => {
+    expect(screen.queryByText("Keyboard Shortcuts")).toBeNull();
+  });
+
+  await pressChatNavigation("ArrowDown");
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${b.id}`);
+  });
+  (await screen.findByRole("textbox", { name: "Message" })).focus();
+  await pressProjectFold("ArrowRight");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+});
+
+test("A Project's menu folds it with the shortcut shown, and the keys act on the menu's Project", async () => {
+  const campaignId = "30000000-0000-4000-8000-000000000072";
+  const { a } = await setupProjectNavigation(118, "/chats/:a", [
+    { id: campaignId, name: "Campaign" },
+  ]);
+  await waitFor(() => {
+    expect(threadLink(a.id)).toHaveAttribute("aria-current", "page");
+  });
+  const user = userEvent.setup({ delay: null });
+
+  await user.click(button("Options for Launch", projectRows()));
+  const collapse = await findMenuItem("Collapse");
+  expect(collapse).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowLeft Control+Shift+ArrowLeft",
+  );
+  expect(collapse.querySelector("kbd")).toHaveTextContent("←");
+  await user.click(collapse);
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+
+  await user.click(button("Options for Campaign", projectRows(campaignId)));
+  const expand = await findMenuItem("Expand");
+  expect(expand).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowRight Control+Shift+ArrowRight",
+  );
+  // The open menu's Project takes the keys, not the open chat's.
+  await pressProjectFold("ArrowRight");
+  expect(projectToggle("Campaign", campaignId)).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  await findMenuItem("Collapse");
+});
+
 test("ordinary lists hide assigned chats and @Project inserts captured identity without navigating", async () => {
   const ordinary = continuityThread(91, 1, "Ordinary chat");
   const member = {
