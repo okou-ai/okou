@@ -90,8 +90,9 @@ function WaitingCountLabel() {
 
 /**
  * Okou's own entry, first in the chat list: it opens home, where a new chat
- * starts, and counts the suggestion cards waiting there. In My Okou the New
- * chat shortcut lives on the rail's Chat link, which opens the same page.
+ * starts, and counts the suggestion cards waiting there. In My Okou the row
+ * still declares the New chat shortcut, while its visible hint is the hover
+ * tooltip on the rail's Chat link, which opens the same page.
  */
 export function OkouChatListRow() {
   const enabled = useGet(suggestionsEnabled$);

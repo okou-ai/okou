@@ -203,8 +203,9 @@ function AccountDropdownContainer() {
 const RAIL_FRAME =
   "hidden md:flex h-full w-[72px] shrink-0 flex-col items-center py-[18px]";
 
-// A tooltip trigger renders through this link, so the trigger's props and ref
-// reach the anchor; the link keeps its own label, state and classes. The
+// A tooltip trigger renders through this link, so the trigger's props and ref,
+// including its DOM `id`, reach the anchor; the link keeps its own label, state
+// and classes. The nav item is `navId` so it never shadows that `id`. The
 // tooltip reads `aria-label` from the element to title itself.
 type RailLinkAnchorProps = Omit<
   ComponentProps<typeof Link>,
@@ -212,7 +213,7 @@ type RailLinkAnchorProps = Omit<
 >;
 
 function LabeledRailLink({
-  id,
+  navId,
   navPath,
   navOptions,
   label,
@@ -224,7 +225,7 @@ function LabeledRailLink({
   onClick,
   ...anchorProps
 }: RailLinkAnchorProps & {
-  id: SidebarNavId;
+  navId: SidebarNavId;
   navPath: string;
   navOptions?: Parameters<typeof Link>[0]["options"];
   label: string;
@@ -236,7 +237,7 @@ function LabeledRailLink({
 }) {
   const { t } = useTranslation();
   const caption = (() => {
-    switch (id) {
+    switch (navId) {
       case "chat": {
         return t(($) => {
           return $.appShell.sidebar.chat;
@@ -356,7 +357,7 @@ function LabeledChatRailLink() {
     return $.appShell.sidebar.chat;
   });
   const linkProps = {
-    id: "chat",
+    navId: "chat",
     navPath: agentChatId ? ROUTES.agentChat : ROUTES.home,
     navOptions: agentChatId
       ? { pathParams: { agentId: agentChatId } }
@@ -405,7 +406,7 @@ function LabeledManageRailLinks() {
     return (
       <LabeledRailLink
         key={item.id}
-        id={item.id}
+        navId={item.id}
         navPath={item.pathname}
         label={item.label}
         icon={item.icon}
@@ -424,7 +425,7 @@ function LabeledFooterRailLinks() {
     return (
       <LabeledRailLink
         key={item.id}
-        id={item.id}
+        navId={item.id}
         navPath={item.pathname}
         label={item.label}
         icon={item.icon}
