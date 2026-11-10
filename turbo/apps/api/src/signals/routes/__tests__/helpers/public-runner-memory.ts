@@ -5,11 +5,13 @@ import { Header } from "tar";
 import type { TestContext } from "../../../../__tests__/test-context";
 import { server } from "../../../../mocks/server";
 import { mockOptionalEnv } from "../../../../lib/env";
+import { now } from "../../../../lib/time";
 import { createBddApi, type ApiTestUserOptions } from "./api-bdd";
 import { createRunsApi, expectCanonicalStorageManifest } from "./api-bdd-runs";
 import { createWebhookCallbackApi } from "./api-bdd-webhooks";
 import { createFirewallApi } from "./api-bdd-firewall";
 import { createPublicFirewallFixture } from "./public-firewall-fixture";
+import { storageTextFile } from "./api-bdd-storage-files";
 
 export function memoryArchive(path: string, content: string): Buffer {
   return memoryFilesArchive([{ path, content }]);
@@ -52,7 +54,7 @@ export function createPublicRunnerMemory(
         throw new Error("Expected an owned storage object key");
       }
       return Promise.resolve(
-        `https://r2.example.com/owned-memory/${encodeURIComponent(key)}`,
+        `https://r2.example.com/owned-memory/${encodeURIComponent(key)}?signedAt=${now()}`,
       );
     });
     context.mocks.s3.send.mockImplementation((command: unknown) => {
@@ -117,7 +119,7 @@ export function createPublicRunnerMemory(
     });
     return agent.agentId;
   }
-  async function claim(
+  async function enqueue(
     agentId: string,
     prompt: string,
     model = "claude-fable-5-1",
@@ -130,6 +132,9 @@ export function createPublicRunnerMemory(
       model,
     });
     fixture.registerRun(run.runId);
+    return run;
+  }
+  async function claimQueued(run: Awaited<ReturnType<typeof enqueue>>) {
     const execution = await api.claimRunnerJob(run.runId);
     fixture.registerClaim(run.runId, execution.sandboxToken);
     const manifest = expectCanonicalStorageManifest(execution.storageManifest);
@@ -147,6 +152,88 @@ export function createPublicRunnerMemory(
       headers: { authorization: `Bearer ${execution.sandboxToken}` },
     };
   }
+  async function claim(
+    agentId: string,
+    prompt: string,
+    model = "claude-fable-5-1",
+  ) {
+    return await claimQueued(await enqueue(agentId, prompt, model));
+  }
+  async function publish(
+    claimed: Awaited<ReturnType<typeof claim>>,
+    files: readonly { path: string; content: string }[],
+  ) {
+    const entries = files.map((file) => {
+      return storageTextFile(file.path, file.content);
+    });
+    const prepared = await webhooks.requestAgentStoragePrepare(
+      {
+        runId: claimed.run.runId,
+        storageId: claimed.memory.storageId,
+        parentVersionId: claimed.memory.versionId,
+        files: entries,
+      },
+      claimed.headers,
+      [200],
+    );
+    if (prepared.status !== 200 || !prepared.body.uploads) {
+      throw new Error("Expected authorized storage uploads");
+    }
+    objects.set(prepared.body.uploads.archive.key, memoryFilesArchive(files));
+    objects.set(
+      prepared.body.uploads.manifest.key,
+      Buffer.from(
+        JSON.stringify({
+          version: 1,
+          files: entries,
+          createdAt: new Date(0).toISOString(),
+        }),
+      ),
+    );
+    await webhooks.requestAgentStorageCommit(
+      {
+        runId: claimed.run.runId,
+        storageId: claimed.memory.storageId,
+        parentVersionId: claimed.memory.versionId,
+        versionId: prepared.body.versionId,
+        files: entries,
+      },
+      claimed.headers,
+      [200],
+    );
+    await webhooks.requestAgentComplete(
+      {
+        runId: claimed.run.runId,
+        exitCode: 0,
+        completion: {
+          cliAgentType: "claude-code",
+          cliAgentSessionId: `memory-writer-${claimed.run.runId}`,
+          cliAgentSessionHistoryDisposition: "native_only",
+          storageOutputs: [
+            {
+              name: claimed.memory.name,
+              mountPath: claimed.memory.mountPath,
+              version: prepared.body.versionId,
+              ...(claimed.memory.missingRootPolicy === undefined
+                ? {}
+                : { missingRootPolicy: claimed.memory.missingRootPolicy }),
+            },
+          ],
+        },
+      },
+      claimed.headers,
+      [200],
+    );
+    return prepared.body.versionId;
+  }
+  async function cancel(claimed: Awaited<ReturnType<typeof claim>>) {
+    await api.requestCancelRun(fixture.actor, claimed.run.runId, [200]);
+    await webhooks.requestAgentComplete(
+      { runId: claimed.run.runId, exitCode: 1, error: "Owned Run cancelled" },
+      claimed.headers,
+      [200],
+    );
+  }
   return {
     ...fixture,
     api,
@@ -154,6 +241,10 @@ export function createPublicRunnerMemory(
     webhooks,
     initializeNative,
     claim,
+    enqueue,
+    claimQueued,
+    publish,
+    cancel,
     objects,
     installObjects,
   };

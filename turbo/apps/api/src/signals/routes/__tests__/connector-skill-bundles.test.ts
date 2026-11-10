@@ -19,13 +19,13 @@ const context = testContext();
 
 describe("Connector Skill bundle delivery", () => {
   it.each([false, true])(
-    "delivers the selected custom Skill bundle by default (Chat accounts: %s)",
+    "delivers current custom configuration and Skill bytes (Chat accounts: %s)",
     async (chatAccounts) => {
       const owner = await publicChatActor(context);
       owner.ownsFeatureSwitches();
       const fixture = createChatEventsFixture(context);
       const api = createConnectorBddApi(context);
-      const { selected, s3 } = await owner.run(async () => {
+      const { selected, s3, connectionId } = await owner.run(async () => {
         const s3 = installWorkflowVolumeS3Fixture(context);
         const selected = await api.createCustomConnector(owner.actor, {
           displayName: "Default bundle delivery",
@@ -36,21 +36,56 @@ describe("Connector Skill bundle delivery", () => {
           authMode: "none",
           skillMarkdown: "Selected Skill instructions.",
         });
-        await api.setCustomConnectorValues(owner.actor, selected.id, []);
+        const account = await api.setCustomConnectorValues(
+          owner.actor,
+          selected.id,
+          [],
+        );
         await api.updateAgentCustomConnectors(owner.actor, owner.agentId, [
           selected.id,
         ]);
         await api.updateFeatureSwitches(owner.actor, {
           [FeatureSwitchKey.ConnectorChatAccountAccess]: chatAccounts,
         });
-        return { selected, s3 };
+        return { selected, s3, connectionId: account.connectionId };
       });
       const run = await owner.sendChatRun(owner.actor, {
         agentId: owner.agentId,
         model: "claude-fable-5-1",
         prompt: "Use the selected custom Skill",
       });
+      await owner.run(async () => {
+        await api.updateCustomConnector(owner.actor, selected.id, {
+          displayName: "Default bundle delivery",
+          prefixTemplates: ["https://updated-skill.example.test/api/"],
+          fields: [],
+          headerInjections: [],
+          queryInjections: [],
+          authMode: "none",
+          skillMarkdown: "Selected Skill instructions.",
+        });
+        await api.setCustomConnectorValues(owner.actor, selected.id, [], {
+          intent: "reconnect",
+          connectionId,
+        });
+      });
       const claimed = await owner.claimChatRun(owner.runnerGroup, run.runId);
+      const firewall = claimed.claim.firewalls?.find((entry) => {
+        return (
+          entry.kind === "inline" && entry.customConnectorId === selected.id
+        );
+      });
+      expect(firewall).toMatchObject({
+        kind: "inline",
+        customConnectorId: selected.id,
+        firewall: {
+          apis: [
+            expect.objectContaining({
+              base: "https://updated-skill.example.test/api/",
+            }),
+          ],
+        },
+      });
       const mountPath = `/home/user/.claude/skills/${getCustomConnectorSkillName(selected.slug, selected.id)}`;
       const bundle = claimed.claim.contentBundles.skills.find((candidate) => {
         return candidate.mountPath === mountPath;
@@ -87,7 +122,7 @@ describe("Connector Skill bundle delivery", () => {
       model: "gpt-6-luna",
     },
   ] as const)(
-    "delivers only authorized $framework Skill bytes and selects a fresh revision for the next Run",
+    "delivers current authorized $framework Skill bytes at Claim and for the next Run",
     async ({ framework, root, model }) => {
       const owner = await publicChatActor(context);
       owner.ownsFeatureSwitches();
@@ -139,12 +174,12 @@ describe("Connector Skill bundle delivery", () => {
         prompt: "Use the selected Connector Skill",
         model,
       });
-      // Publication after Run capture cannot replace its selected immutable bytes.
+      // A queued Run reads the current authorized publication at Claim.
       await owner.run(() => {
         installWorkflowVolumeS3Fixture(context, s3.objects);
         return api.updateCustomConnector(owner.actor, selected.id, {
           ...body,
-          skillMarkdown: "Updated instructions for the next Run.",
+          skillMarkdown: "Updated instructions while the Run is queued.",
         });
       });
       const first = await owner.claimChatRun(owner.runnerGroup, run.runId);
@@ -164,13 +199,20 @@ describe("Connector Skill bundle delivery", () => {
         readClaimedContentBundle(s3.objects, bundle)
           .get("SKILL.md")
           ?.toString(),
-      ).toContain(body.skillMarkdown);
+      ).toContain("Updated instructions while the Run is queued.");
       await owner.run(() => {
         return fixture.failChatRun(
           run.runId,
           first.sandboxHeaders,
           "Captured Skill inspected",
         );
+      });
+      await owner.run(() => {
+        installWorkflowVolumeS3Fixture(context, s3.objects);
+        return api.updateCustomConnector(owner.actor, selected.id, {
+          ...body,
+          skillMarkdown: "Updated instructions for the next Run.",
+        });
       });
       const next = await owner.sendChatRun(owner.actor, {
         agentId: owner.agentId,

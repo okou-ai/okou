@@ -1,6 +1,8 @@
 import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
+import console from "node:console";
+import { existsSync, readFileSync } from "node:fs";
 import { posix, resolve } from "node:path";
+import process from "node:process";
 
 import tseslint from "typescript-eslint";
 
@@ -29,6 +31,32 @@ const MODULES = new Set(
     return "turbo/packages/db/src/" + name;
   }),
 );
+// #46270 explicitly permits exact-version Storage reconstruction in Claim.
+// Acknowledgment in the base inventory consumes this amendment permanently.
+const APPROVED_AMENDMENTS = new Map([
+  [
+    "claim-source-reconstruction",
+    [
+      {
+        file: "turbo/apps/api/src/signals/services/claim-execution-context.ts",
+        dependency:
+          "module:turbo/apps/api/src/signals/services/execution-storage.service",
+        uses: 2,
+      },
+      {
+        file: "turbo/apps/api/src/signals/services/claim-runtime-context.ts",
+        dependency:
+          "module:turbo/apps/api/src/signals/services/execution-storage.service",
+        uses: 2,
+      },
+      {
+        file: "turbo/apps/api/src/signals/services/execution-storage.service.ts",
+        dependency: "module:turbo/packages/db/src/schema/storage",
+        uses: 26,
+      },
+    ],
+  ],
+]);
 const repo = execFileSync("git", ["rev-parse", "--show-toplevel"], {
   encoding: "utf8",
 }).trim();
@@ -322,10 +350,23 @@ function inventory(sources) {
   });
 }
 
+function parseAmendments(amendments = []) {
+  if (
+    !Array.isArray(amendments) ||
+    new Set(amendments).size !== amendments.length ||
+    amendments.some((id) => {
+      return !APPROVED_AMENDMENTS.has(id);
+    })
+  )
+    throw new Error("Invalid Storage policy amendment acknowledgment.");
+  return amendments;
+}
+
 function parseBaseline(text) {
   const value = JSON.parse(text);
   if (value?.version !== 1 || !Array.isArray(value.sites))
     throw new Error("Invalid Storage dependency inventory.");
+  const amendments = parseAmendments(value.amendments);
   const keys = new Set();
   for (const site of value.sites) {
     if (
@@ -346,7 +387,31 @@ function parseBaseline(text) {
     if (keys.has(key)) throw new Error("Duplicate Storage dependency entry.");
     keys.add(key);
   }
-  return value.sites;
+  return { sites: value.sites, amendments };
+}
+
+function amendedCeilings(current, base) {
+  if (
+    base.amendments.some((id) => {
+      return !current.amendments.includes(id);
+    })
+  )
+    throw new Error(
+      "Storage policy amendment acknowledgments cannot be removed.",
+    );
+  const ceilings = new Map(
+    base.sites.map((site) => {
+      return [JSON.stringify([site.file, site.dependency]), site];
+    }),
+  );
+  for (const id of current.amendments) {
+    if (base.amendments.includes(id)) continue;
+    for (const site of APPROVED_AMENDMENTS.get(id)) {
+      const key = JSON.stringify([site.file, site.dependency]);
+      if (site.uses > (ceilings.get(key)?.uses ?? 0)) ceilings.set(key, site);
+    }
+  }
+  return [...ceilings.values()];
 }
 
 function compare(actual, allowed, exact) {
@@ -408,10 +473,14 @@ if (
     "Usage: node scripts/check-storage-dependencies.mjs <full-base-main-sha> | --inventory",
   );
 if (base === "--inventory") {
+  const amendments = existsSync(resolve(repo, BASELINE))
+    ? parseBaseline(readFileSync(resolve(repo, BASELINE), "utf8")).amendments
+    : [];
   console.log(
     JSON.stringify(
       {
         version: 1,
+        ...(amendments.length ? { amendments } : {}),
         sites: inventory(currentSources()).map(({ line: _line, ...site }) => {
           return site;
         }),
@@ -433,19 +502,22 @@ if (base === "--inventory") {
       );
     // Initial activation may register only dependencies actually in base/main,
     // never new references introduced alongside the candidate baseline.
-    allowed = inventory(
-      sourceFiles(git(["ls-tree", "-r", "--name-only", "-z", base])).map(
-        (file) => {
-          return { file, code: git(["show", base + ":" + file]) };
-        },
+    allowed = {
+      amendments: [],
+      sites: inventory(
+        sourceFiles(git(["ls-tree", "-r", "--name-only", "-z", base])).map(
+          (file) => {
+            return { file, code: git(["show", base + ":" + file]) };
+          },
+        ),
       ),
-    );
+    };
   }
-  compare(current, allowed, false);
-  compare(inventory(currentSources()), current, true);
+  compare(current.sites, amendedCeilings(current, allowed), false);
+  compare(inventory(currentSources()), current.sites, true);
   console.log(
     "Storage dependency policy passed: " +
-      current.length +
+      current.sites.length +
       " exact file/dependency entries; base " +
       base +
       ".",

@@ -93,6 +93,9 @@ describe("Runner built-in claim authorization", () => {
       const { claim } = await owned.claimChatRun(runnerGroup, queued.runId);
       expect(claim).toMatchObject({
         cliAgentType: "pi",
+        billableFirewalls: ["model-provider:openrouter-codex"],
+        modelUsageProvider: "@preset/okou-1-0",
+        modelUsageLongContextMinTotalInputTokens: 100_001,
         piModelConfig: {
           provider: "openrouter",
           baseUrl: "https://openrouter.ai/api/v1",
@@ -163,6 +166,9 @@ describe("Runner built-in claim authorization", () => {
       );
       expect(response.body).toMatchObject({
         cliAgentType: "pi",
+        billableFirewalls: [],
+        modelUsageProvider: "gpt-6-luna",
+        modelUsageLongContextMinTotalInputTokens: 0,
         piModelConfig: { provider: "openai-codex" },
       });
       await expect(api.readRun(actor, queued.runId)).resolves.toMatchObject({

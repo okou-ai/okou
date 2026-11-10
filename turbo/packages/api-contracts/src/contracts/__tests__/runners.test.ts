@@ -7,6 +7,7 @@ import {
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
   claimCompatibleStoredExecutionContextSchema,
+  claimExecutionInputSchema,
   claimPreparedExecutionContextSchema,
   connectorRuntimeSyncResultSchema,
   elapsedSinceApiStartMs,
@@ -151,6 +152,24 @@ function loadRunnerClaimResponseFixture(): unknown {
 }
 
 describe("runner claim response contract", () => {
+  it("round-trips minimum execution intent without materialized runtime fields", () => {
+    const input = {
+      platformEnvironment: {
+        OKOU_TOKEN: "captured-run-authorization",
+        OKOU_DISABLED_PAID_TOOLS: "[]",
+      },
+      nativeContinuation: {
+        sessionId: null,
+        generationRunId: null,
+        recoveryPrompt: null,
+      },
+      apiStartTime: 1_794_288_000_000,
+      featureFlags: { connectorChatAccountAccess: true },
+    };
+    expect(
+      claimExecutionInputSchema.parse(JSON.parse(JSON.stringify(input))),
+    ).toStrictEqual(input);
+  });
   it.each([".claude", ".codex", ".pi/agent"])(
     "accepts the X Connector Skill in the %s claim response",
     (root) => {

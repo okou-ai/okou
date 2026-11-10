@@ -10,7 +10,10 @@ import {
   connectorSlugSchema,
 } from "@okouai/api-contracts/contracts/connector-identity";
 import { isIntegrationManagedCustomConnectorProviderAdapter } from "@okouai/api-contracts/contracts/custom-connectors";
-import type { SecretConnectorMetadata } from "@okouai/api-contracts/contracts/runners";
+import type {
+  ConnectorRuntimeTargetRegistration,
+  SecretConnectorMetadata,
+} from "@okouai/api-contracts/contracts/runners";
 import {
   connectorAuthMethodRuntimeMetadata,
   type ConnectorRuntimeBindingEntry,
@@ -19,6 +22,7 @@ import { computed, type Computed } from "ccstate";
 import { isFeatureEnabled } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreadConnectorAccessOverrides } from "@okouai/db/schema/chat-thread-connector-access";
+import { chatThreadConnectorSelections } from "@okouai/db/schema/chat-thread-connector-selection";
 import { eq } from "drizzle-orm";
 import { db$ } from "../external/db";
 import { badRequestMessage } from "../../lib/error";
@@ -120,24 +124,31 @@ export function createConnectedAccountsSignals(
     execution,
     dispatchTiming$,
   );
-  const accounts = createThreadAccountSignals(
-    execution,
-    connectorSourceId$,
-    inputs,
-  );
+  const accounts = createThreadAccountSignals(connectorSourceId$, inputs);
+  const connectors$ = computed(async (get) => {
+    return await get(execution.connectors$);
+  });
+  return createConnectorMaterialization(connectors$, inputs, accounts);
+}
+
+function createConnectorMaterialization(
+  connectors$: AgentRunContextSignals["connectors$"],
+  inputs: ConnectorInputSignals,
+  accounts: ThreadAccountSignals,
+): ConnectedAccounts {
   const prepared = createConnectorPreparationSignals(inputs, accounts);
   const storedRows = createStoredConnectorRowSignals(
-    execution,
+    connectors$,
     accounts,
     prepared,
   );
   const stored = createStoredConnectorSnapshotSignals(
-    execution,
+    connectors$,
     inputs,
     storedRows,
   );
   const customStorage = createCustomConnectorStorageSignals(
-    execution,
+    connectors$,
     inputs,
     accounts,
   );
@@ -158,6 +169,9 @@ export function createConnectedAccountsSignals(
   const { preparation$ } = prepared;
   const { storedConnectorSnapshot$ } = stored;
   const { customConnectorContext$ } = custom;
+  const threadSelections$ = computed(async (get) => {
+    return await get(accounts.threadSelections$);
+  });
   const connectorSnapshot$ = computed(
     async (
       get,
@@ -211,7 +225,7 @@ export function createConnectedAccountsSignals(
   return {
     connectorSelection$: prepared.connectorSelection$,
     connectorSnapshot$,
-    threadSelections$: accounts.threadSelections$,
+    threadSelections$,
     selectedStoredConnectorSources$: stored.selectedStoredConnectorSources$,
   };
 }
@@ -219,7 +233,7 @@ export function createConnectedAccountsSignals(
 type ConnectorInputSignals = ReturnType<typeof createConnectorInputSignals>;
 
 function createChatAccountInputSignals(
-  execution: AgentRunContextSignals,
+  execution: Pick<AgentRunContextSignals, "featureSwitches$" | "connectors$">,
   connectorInput$: Computed<Promise<{ readonly chatThreadId: string }>>,
 ) {
   const chatAccountsEnabled$ = computed(async (get) => {
@@ -262,6 +276,172 @@ function createChatAccountInputSignals(
       });
   });
   return { chatAccountsEnabled$, effectiveAccounts$ };
+}
+
+/** Preserve registered account bindings and resolve current native-only selections. */
+interface ClaimConnectedAccountsArgs {
+  readonly identity$: Computed<
+    Promise<{
+      readonly userId: string;
+      readonly orgId: string;
+      readonly agentId: string;
+      readonly chatThreadId: string;
+    }>
+  >;
+  readonly targets$: Computed<
+    Promise<readonly ConnectorRuntimeTargetRegistration[]>
+  >;
+  readonly scope$: AgentRunContextSignals["connectorScope$"];
+  readonly catalog$: AgentRunContextSignals["catalog$"];
+  readonly definitions$: AgentRunContextSignals["customConnectorDefinitions$"];
+  readonly connectors$: AgentRunContextSignals["connectors$"];
+  readonly policies$: AgentRunContextSignals["permissionPolicies$"];
+  readonly features$: AgentRunContextSignals["featureSwitches$"];
+  readonly timing$: DispatchTiming$;
+}
+
+function createClaimAccountInputs(args: ClaimConnectedAccountsArgs) {
+  const connectorInput$ = computed(async (get) => {
+    const [identity, targets] = await Promise.all([
+      get(args.identity$),
+      get(args.targets$),
+    ]);
+    const rows = await get(db$)
+      .select({
+        connectorId: chatThreadConnectorSelections.connectorId,
+        connectorSlug: chatThreadConnectorSelections.connectorSlug,
+        customConnectorId: chatThreadConnectorSelections.customConnectorId,
+      })
+      .from(chatThreadConnectorSelections)
+      .where(
+        eq(chatThreadConnectorSelections.chatThreadId, identity.chatThreadId),
+      );
+    const registered = new Set(targets.map(connectorAccountTargetKey));
+    return {
+      ...identity,
+      threadSelectionRows: [
+        ...rows.filter((row) => {
+          return !registered.has(
+            connectorAccountTargetKey(runConnectorTargetFromRow(row)),
+          );
+        }),
+        ...targets.flatMap((target) => {
+          return target.sourceId
+            ? [
+                {
+                  connectorId: target.sourceId,
+                  connectorSlug:
+                    target.kind === "builtin" ? target.connectorSlug : null,
+                  customConnectorId:
+                    target.kind === "custom" ? target.customConnectorId : null,
+                },
+              ]
+            : [];
+        }),
+      ],
+      timing: get(args.timing$),
+    };
+  });
+  const currentAccounts = createChatAccountInputSignals(
+    { featureSwitches$: args.features$, connectors$: args.connectors$ },
+    connectorInput$,
+  );
+  const effectiveAccounts$ = computed(async (get) => {
+    const [rows, targets] = await Promise.all([
+      get(currentAccounts.effectiveAccounts$),
+      get(args.targets$),
+    ]);
+    const pinned = new Map(
+      targets.map((target) => {
+        return [connectorAccountTargetKey(target), target.sourceId];
+      }),
+    );
+    return rows.filter((row) => {
+      const key = connectorAccountTargetKey(runConnectorTargetFromRow(row));
+      return !pinned.has(key) || pinned.get(key) === row.connectorId;
+    });
+  });
+  return {
+    connectorInput$,
+    chatAccounts: { ...currentAccounts, effectiveAccounts$ },
+  };
+}
+
+function createClaimConnectorScope(args: ClaimConnectedAccountsArgs) {
+  return computed(async (get): Promise<EffectiveConnectorScope> => {
+    const [scope, targets, catalog] = await Promise.all([
+      get(args.scope$),
+      get(args.targets$),
+      get(args.catalog$),
+    ]);
+    const allowed = runConnectorScope(scope);
+    if (allowed.allowedConnectorSlugs.length > 0 && !catalog) {
+      throw new Error("Scoped connector catalog is missing from Claim");
+    }
+    return {
+      ...allowed,
+      customConnectorGrants: isFeatureEnabled(
+        FeatureSwitchKey.ConnectorChatAccountAccess,
+        await get(args.features$),
+      )
+        ? []
+        : allowed.customConnectorGrants,
+      allowedConnectorSlugs: allowed.allowedConnectorSlugs.filter((slug) => {
+        // Native-only environment bindings have no firewall registration.
+        return (
+          (catalog !== null &&
+            !catalog.serverFirewalls.has(slug) &&
+            !catalog.serverFirewalls.isMcp(slug)) ||
+          targets.some((target) => {
+            return target.kind === "builtin" && target.connectorSlug === slug;
+          })
+        );
+      }),
+      allowedCustomConnectorIds: allowed.allowedCustomConnectorIds.filter(
+        (id) => {
+          return targets.some((target) => {
+            return target.kind === "custom" && target.customConnectorId === id;
+          });
+        },
+      ),
+    };
+  });
+}
+
+export function createClaimConnectedAccounts(
+  args: ClaimConnectedAccountsArgs,
+): ConnectedAccounts {
+  const { connectorInput$, chatAccounts } = createClaimAccountInputs(args);
+  const connectorScope$ = createClaimConnectorScope(args);
+  const inputs: ConnectorInputSignals = {
+    connectorInput$,
+    connectorScope$,
+    connectorCatalog$: computed(async (get) => {
+      const [scope, catalog] = await Promise.all([
+        get(connectorScope$),
+        get(args.catalog$),
+      ]);
+      return runConnectorCatalogSelection(scope, catalog);
+    }),
+    featureSwitchContext$: args.features$,
+    customConnectorDefinitions$: args.definitions$,
+    ownedThread$: computed(async (get) => {
+      return { agentId: (await get(args.identity$)).agentId };
+    }),
+    ...chatAccounts,
+    memberPermissionPolicies$: computed(async (get) => {
+      return (await get(chatAccounts.chatAccountsEnabled$))
+        ? await get(args.policies$)
+        : undefined;
+    }),
+  };
+  const accounts = createThreadAccountSignals(
+    computed(() => {
+      return Promise.resolve(undefined);
+    }),
+    inputs,
+  );
+  return createConnectorMaterialization(args.connectors$, inputs, accounts);
 }
 
 function createConnectorInputSignals(
@@ -382,7 +562,6 @@ function createConnectorInputSignals(
 type ThreadAccountSignals = ReturnType<typeof createThreadAccountSignals>;
 
 function createThreadAccountSignals(
-  execution: AgentRunContextSignals,
   connectorSourceId$: ConnectorSourceId$,
   inputs: ConnectorInputSignals,
 ) {
@@ -591,7 +770,7 @@ type StoredConnectorRowSignals = ReturnType<
 >;
 
 function createStoredConnectorRowSignals(
-  execution: AgentRunContextSignals,
+  connectors$: AgentRunContextSignals["connectors$"],
   accounts: ThreadAccountSignals,
   prepared: ConnectorPreparationSignals,
 ) {
@@ -601,7 +780,7 @@ function createStoredConnectorRowSignals(
     async (
       get,
     ): Promise<readonly StoredConnectorMaterializationSnapshotRow[]> => {
-      const bootstrap = await get(execution.connectors$);
+      const bootstrap = await get(connectors$);
       const byId = new Map(
         bootstrap.connectorSources.flatMap((result) => {
           return result.kind === "available"
@@ -672,7 +851,7 @@ function createStoredConnectorRowSignals(
 }
 
 function createStoredConnectorSnapshotSignals(
-  execution: AgentRunContextSignals,
+  connectors$: AgentRunContextSignals["connectors$"],
   inputs: ConnectorInputSignals,
   storedRows: StoredConnectorRowSignals,
 ) {
@@ -688,13 +867,11 @@ function createStoredConnectorSnapshotSignals(
         return row.connectorId;
       }),
     );
-    return (await get(execution.connectors$)).connectorSources.filter(
-      (result) => {
-        const source =
-          result.kind === "available" ? result.snapshot.source : result.source;
-        return source.kind === "builtin" && ids.has(source.sourceId);
-      },
-    );
+    return (await get(connectors$)).connectorSources.filter((result) => {
+      const source =
+        result.kind === "available" ? result.snapshot.source : result.source;
+      return source.kind === "builtin" && ids.has(source.sourceId);
+    });
   });
   const storedConnectorSnapshot$ = computed(
     async (
@@ -751,7 +928,7 @@ type CustomConnectorStorageSignals = ReturnType<
 >;
 
 function createCustomConnectorStorageSignals(
-  execution: AgentRunContextSignals,
+  connectors$: AgentRunContextSignals["connectors$"],
   inputs: ConnectorInputSignals,
   accounts: ThreadAccountSignals,
 ) {
@@ -780,7 +957,7 @@ function createCustomConnectorStorageSignals(
         return source.sourceId;
       }),
     );
-    const context = await get(execution.connectors$);
+    const context = await get(connectors$);
     return {
       sources: context.connectorSources.filter((result) => {
         const source =

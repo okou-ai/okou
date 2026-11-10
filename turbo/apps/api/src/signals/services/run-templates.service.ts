@@ -41,7 +41,7 @@ export function createRunTemplates(
   event$: Computed<
     Promise<Pick<PickedThreadInputEvent, "userId" | "userMessage"> | null>
   >,
-  orgId: string,
+  orgId$: Computed<Promise<string>>,
   disabledPaidTools$: Computed<Promise<readonly string[]>>,
 ): Computed<Promise<RunTemplatesResult>> {
   const selection$ = computed(async (get) => {
@@ -58,6 +58,7 @@ export function createRunTemplates(
     };
   });
   const presentations$ = computed(async (get) => {
+    const orgId = await get(orgId$);
     const selection = await get(selection$);
     if (!selection) {
       return [];
@@ -102,6 +103,7 @@ export function createRunTemplates(
     });
   });
   const mounted$ = computed(async (get) => {
+    const orgId = await get(orgId$);
     const selection = await get(selection$);
     if (!selection) {
       return [];

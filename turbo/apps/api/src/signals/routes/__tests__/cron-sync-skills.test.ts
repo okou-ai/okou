@@ -250,7 +250,7 @@ describe("Seed Skill bundles through sync-skills", () => {
     expect((await sync()).body).toMatchObject({ total: 0, failed: 0 });
   });
 
-  it("pins prepared Claude Code Seed bundles across later syncs", async () => {
+  it("loads current Claude Code Seed bundles at Claim and retains delivered bytes", async () => {
     const root = "/home/user/.claude/skills";
     const app = await setupApp({
       context,
@@ -293,6 +293,16 @@ describe("Seed Skill bundles through sync-skills", () => {
       owned.runnerGroup,
       run.runId,
     );
+    const laterSource = await sourceArchive("later gen instructions");
+    await owned.run(async () => {
+      githubSource("1".repeat(40), laterSource.archive);
+      await accept(
+        app(cronSyncSkillsContract).sync({
+          headers: { authorization: `Bearer ${CRON_SECRET}` },
+        }),
+        [200],
+      );
+    });
     expect(claim.cliAgentType).toBe("claude-code");
     expect(
       claim.contentBundles.skills.map((bundle) => {
@@ -308,7 +318,7 @@ describe("Seed Skill bundles through sync-skills", () => {
         return entry.mountPath === `${root}/${name}`;
       })!;
       const expected = new Map(
-        [...source.files]
+        [...changed.files]
           .filter(([path]) => {
             return path.startsWith(`${name}/`);
           })
@@ -347,7 +357,7 @@ describe("Seed Skill bundles through sync-skills", () => {
       return bundle.mountPath === `${root}/gen`;
     })!;
     expect(readClaimedContentBundle(s3.objects, selected)).toStrictEqual(
-      new Map([["SKILL.md", changed.files.get("gen/SKILL.md")]]),
+      new Map([["SKILL.md", laterSource.files.get("gen/SKILL.md")]]),
     );
     expect(selected.sha256).not.toBe(
       claim.contentBundles.skills.find((bundle) => {

@@ -25,6 +25,7 @@ import {
 } from "zod";
 
 import { MIN_EPOCH_MS_TIMESTAMP } from "./api-start-time";
+import { DISABLED_PAID_TOOLS_ENV_VAR } from "./paid-tools";
 import {
   executionFirewallInlineEntrySchema,
   executionFirewallsSchema,
@@ -1026,6 +1027,23 @@ const storedExecutionContextObjectSchema = object({
 });
 
 export const storedExecutionContextSchema = storedExecutionContextObjectSchema;
+
+/** Irrecoverable Claim inputs; reconstructible fields on a full queue row are ignored. */
+export const claimExecutionInputSchema = storedExecutionContextObjectSchema
+  .pick({
+    nativeContinuation: true,
+    customWorkflowSelection: true,
+    featureFlags: true,
+    realAgentInPreview: true,
+    apiStartTime: true,
+  })
+  .extend({
+    platformEnvironment: object({
+      OKOU_TOKEN: string().optional(),
+      [DISABLED_PAID_TOOLS_ENV_VAR]: string(),
+      VERCEL_AUTOMATION_BYPASS_SECRET: string().optional(),
+    }),
+  });
 
 /** Complete preparation also serves registration, diagnostics and Claim. */
 const preparedExecutionContextObjectSchema =

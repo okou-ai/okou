@@ -757,7 +757,7 @@ describe("connector catalog valid lifecycle", () => {
     }
   }, 30_000);
 
-  it("pins a published connector skill before a normal update", async () => {
+  it("loads the current published connector skill when a queued Run is claimed", async () => {
     const owned = await publicChatActor(context, { clockTime: now() });
     const fixture = createChatEventsFixture(context);
     await owned.run(async () => {
@@ -824,7 +824,7 @@ describe("connector catalog valid lifecycle", () => {
       });
       await owned.run(flushWaitUntilForTest);
     };
-    await check(first.runId, published);
+    await check(first.runId, updated);
     const later = await owned.sendChatRun(owned.actor, {
       agentId: owned.agentId,
       prompt: "Use the updated published skill",
