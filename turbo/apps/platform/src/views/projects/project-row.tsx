@@ -3,6 +3,8 @@ import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import {
+  ChevronDown,
+  ChevronRight,
   Ellipsis,
   Folder,
   FolderOpen,
@@ -23,6 +25,7 @@ import {
   TooltipProvider,
   TooltipTrigger,
   cn,
+  getShortcutLabel,
 } from "@okouai/ui";
 import type { Project } from "@okouai/api-contracts/validators/projects";
 import { projectsEnabled$ } from "../../signals/projects/projects.ts";
@@ -326,6 +329,84 @@ function ProjectRenameForm({
   );
 }
 
+/**
+ * The folder folds the Project's chats. Hovering the row turns it into the fold
+ * arrow, and its tooltip names the action and shortcut.
+ */
+function ProjectFoldToggle({
+  project,
+  layout,
+  expanded,
+}: {
+  readonly project: Project;
+  readonly layout: ProjectRowLayout;
+  readonly expanded: boolean;
+}) {
+  const { t } = useTranslation();
+  const toggle = useSet(toggleProject$);
+  const Icon = expanded ? FolderOpen : Folder;
+  const Chevron = expanded ? ChevronDown : ChevronRight;
+  const shortcut = expanded
+    ? GLOBAL_KEYBOARD_SHORTCUTS.collapseProject
+    : GLOBAL_KEYBOARD_SHORTCUTS.expandProject;
+  const label = expanded
+    ? t(($) => {
+        return $.projects.collapse;
+      })
+    : t(($) => {
+        return $.projects.expand;
+      });
+  return (
+    <TooltipProvider delay={200}>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              aria-expanded={expanded}
+              aria-label={t(
+                ($) => {
+                  return $.projects.toggle;
+                },
+                { name: project.name },
+              )}
+              aria-keyshortcuts={shortcut.ariaKeyShortcuts}
+              onClick={() => {
+                return toggle(project.id);
+              }}
+              className={cn(
+                "group/project-fold flex shrink-0 items-center justify-center rounded-lg text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
+                layout === "list" ? "h-14 w-10 pl-3 pr-1" : "h-8 w-8 px-1",
+              )}
+            >
+              <span className="flex size-6 shrink-0 items-center justify-center rounded-md opacity-70 group-hover/project-fold:bg-nested-fill group-hover/project-fold:opacity-100">
+                <Icon
+                  size={16}
+                  className="md:group-hover/project:hidden group-focus-visible/project-fold:hidden"
+                />
+                <Chevron
+                  size={16}
+                  className="hidden md:group-hover/project:block group-focus-visible/project-fold:block"
+                />
+              </span>
+            </button>
+          }
+        />
+        <TooltipContent
+          role="tooltip"
+          side="bottom"
+          className="flex flex-col items-center gap-1 py-1.5"
+        >
+          <span>{label}</span>
+          <kbd className="whitespace-nowrap font-sans text-xs opacity-70">
+            {getShortcutLabel(shortcut.binding)}
+          </kbd>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
+  );
+}
+
 function ProjectTrigger({
   project,
   touch,
@@ -340,13 +421,11 @@ function ProjectTrigger({
   readonly rowId: string;
   readonly unread: boolean;
 }) {
-  const { t } = useTranslation();
   const toggle = useSet(toggleProject$);
   const expand = useSet(expandProject$);
   const edit = useGet(projectInlineRename$);
   const renaming = edit?.rowId === rowId;
   const startRename = useSet(startProjectInlineRename$);
-  const Icon = expanded ? FolderOpen : Folder;
   const rowHeight = layout === "list" ? "h-14" : "h-8";
   return (
     <div className="grid min-w-0 flex-1">
@@ -359,26 +438,11 @@ function ProjectTrigger({
         {/* The folder folds the Project's chats. The name opens its page and
             unfolds its chats; on that page, clicking it again folds or
             unfolds them. */}
-        <button
-          type="button"
-          aria-expanded={expanded}
-          aria-label={t(
-            ($) => {
-              return $.projects.toggle;
-            },
-            { name: project.name },
-          )}
-          onClick={() => {
-            return toggle(project.id);
-          }}
-          className={cn(
-            "flex shrink-0 items-center justify-center rounded-lg text-nav-copy focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring",
-            rowHeight,
-            layout === "list" ? "w-10 pl-3 pr-1" : "w-8 px-2",
-          )}
-        >
-          <Icon size={16} className="shrink-0 opacity-70" />
-        </button>
+        <ProjectFoldToggle
+          project={project}
+          layout={layout}
+          expanded={expanded}
+        />
         <Link
           pathname="/projects/:projectId"
           options={{ pathParams: { projectId: project.id } }}

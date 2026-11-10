@@ -738,6 +738,37 @@ test("Clicking a folded Project's name from one of its chats unfolds it", async 
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
 });
 
+test("A Project's folder names its fold action and shortcut", async () => {
+  await setupProjectNavigation(226, "/chats/:b");
+  const user = userEvent.setup({ delay: null });
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(projectToggle("Launch")).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowRight Control+Shift+ArrowRight",
+  );
+
+  await user.hover(projectToggle("Launch"));
+  const expand = await screen.findByRole("tooltip");
+  expect(expand).toHaveTextContent("Expand");
+  expect(expand.querySelector("kbd")).toHaveTextContent("→");
+
+  await user.click(projectToggle("Launch"));
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
+  expect(projectToggle("Launch")).toHaveAttribute(
+    "aria-keyshortcuts",
+    "Meta+Shift+ArrowLeft Control+Shift+ArrowLeft",
+  );
+  // Clicking closes the tooltip; hovering again names the new action.
+  await user.unhover(projectToggle("Launch"));
+  await user.hover(projectToggle("Launch"));
+  await waitFor(() => {
+    expect(screen.getByRole("tooltip")).toHaveTextContent("Collapse");
+  });
+  expect(screen.getByRole("tooltip").querySelector("kbd")).toHaveTextContent(
+    "←",
+  );
+});
+
 test("Opening a Project's name in a new tab leaves its chats folded", async () => {
   await setupProjectNavigation(224, "/chats/:b");
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
