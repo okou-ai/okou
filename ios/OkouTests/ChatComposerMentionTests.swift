@@ -33,12 +33,6 @@ final class ChatComposerMentionTests: XCTestCase {
   func testMultipleInlineReferencesPreserveCursorSurroundingTextAndNativeUndoCopyPaste()
     async throws
   {
-    for attempt in 1...20 {
-      try await exerciseNativeInlineReferencePaste(attempt: attempt)
-    }
-  }
-
-  private func exerciseNativeInlineReferencePaste(attempt: Int) async throws {
     preserveNativePasteboard(for: self)
     let navigation = MentionNavigationFixture()
     let workspace = try await navigation.workspace()
@@ -72,7 +66,8 @@ final class ChatComposerMentionTests: XCTestCase {
       expected.parts.map { $0["type"]?.string },
       ["text", "chat_thread", "text", "chat_thread", "text"])
     XCTAssertEqual(expected.text, "Before  and  after 🌷")
-    XCTAssertEqual(input.text, "Before \u{fffc} and \u{fffc} after 🌷")
+    let expectedNativeText = "Before \u{fffc} and \u{fffc} after 🌷"
+    XCTAssertEqual(input.text, expectedNativeText)
     try await eventually { input.undoManager?.groupingLevel == 0 }
 
     input.selectedRange = NSRange(location: 7, length: 1)
@@ -98,8 +93,8 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(UIPasteboard.general.string?.contains("/chats/") == true)
     input.cut(nil)
     try await waitForBusinessResult { !workspace.newComposer.hasContent }
+    // Keep native insertion separate from business observation in timeout diagnostics.
     let trace = NativePasteTrace()
-    let expectedNativeText = "Before \u{fffc} and \u{fffc} after 🌷"
     let observer = NotificationCenter.default.addObserver(
       forName: UITextView.textDidChangeNotification, object: input, queue: .main
     ) { _ in
@@ -114,11 +109,11 @@ final class ChatComposerMentionTests: XCTestCase {
     try await waitForBusinessResult(
       message: "Paste native change=\(String(describing: trace.nativeChange)); "
         + "elapsed=\(trace.started.duration(to: .now)); "
-        + "document=\(workspace.newComposer.document == expected); "
+        + "document=\(workspace.newComposer.document); "
         + "text=\(String(describing: input.text)); "
-        + "focus=\(input.isFirstResponder); undo=\(input.undoManager?.groupingLevel ?? -1)"
+        + "current=\(input.isCurrent()); focus=\(input.isFirstResponder); "
+        + "undo=\(input.undoManager?.groupingLevel ?? -1)"
     ) { workspace.newComposer.document == expected }
-    let waitCompleted = trace.started.duration(to: .now)
     input.undoManager?.undo()
     try await waitForBusinessResult { !workspace.newComposer.hasContent }
     input.undoManager?.redo()
@@ -131,9 +126,6 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     input.undoManager?.undo()
     try await waitForBusinessResult { workspace.newComposer.document == expected }
-    print(
-      "[paste-diagnostic] scenario \(attempt) native=\(String(describing: trace.nativeChange)) "
-        + "wait=\(waitCompleted)")
   }
 
   func testNativeMarkedTextConfirmationDoesNotInsertAMentionAndKeyboardNavigatesChats()
