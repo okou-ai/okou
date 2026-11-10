@@ -373,8 +373,12 @@ final class WorkspaceStore {
   }
 
   private func refreshComputerAuthorizations(_ batch: Set<ChatInvalidation>) async {
-    if batch.contains(.computerAccess) || batch.contains(.reconnected) {
-      await selectedConversation?.approvals.refreshComputers()
+    guard let conversation = selectedConversation else { return }
+    if batch.contains(.computerAccess) || batch.contains(.reconnected)
+      || batch.contains(.detail(threadID: conversation.thread.id))
+      || batch.contains(.history(threadID: conversation.thread.id))
+    {
+      await conversation.approvals.refreshComputers()
     }
   }
 

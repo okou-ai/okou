@@ -68,10 +68,8 @@ struct ComputerAuthorizationCardContent: View {
       ChatActionCard {
         ChatCardHeader(title: title, icon: icon) {
           Text(description(status)).lineLimit(2, reservesSpace: true)
-          if let error {
-            Text(error).foregroundStyle(OkouColor.destructive)
-              .lineLimit(2).accessibilityAddTraits(.updatesFrequently)
-          }
+          Text(error ?? " ").foregroundStyle(OkouColor.destructive)
+            .lineLimit(1, reservesSpace: true).accessibilityHidden(error == nil)
         }
         .frame(minHeight: informationHeight, alignment: .top)
       } actions: {
