@@ -34,7 +34,7 @@ final class WorkspaceResources {
     self.available = available
     self.catalog = catalog
     self.features = features
-    let agents = WorkspaceRead("agents", sleep: sleep, lifetime: lifetime) {
+    let agents = WorkspaceRead<[AgentRecord]>("agents", sleep: sleep, lifetime: lifetime) {
       try await client.request("/api/agents")
     }
     self.agents = agents
