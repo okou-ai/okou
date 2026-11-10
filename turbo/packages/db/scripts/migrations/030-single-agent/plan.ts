@@ -132,11 +132,14 @@ export function plan(
       if (workflow.bundle === null) block("MissingWorkflowBundle", key);
       const target = {
         ...workflow,
+        owner: source.visibility === "private" ? source.owner : workflow.owner,
         visibility:
           source.visibility === "private"
             ? ("private" as const)
             : workflow.visibility,
       };
+      if (target.owner !== workflow.owner && !members.has(target.owner))
+        block("TargetOwnerNotInMembershipCache", key);
       const permissionChanges = [...members.keys()].sort().flatMap((userId) => {
         const before = rights(workflow, source, userId);
         const after = rights(target, destination, userId);
@@ -167,6 +170,10 @@ export function plan(
         targetName: name,
         targetOwner: target.owner,
         targetVisibility: target.visibility,
+        ownershipChange:
+          target.owner === workflow.owner
+            ? null
+            : { before: workflow.owner, after: target.owner },
         permissionChanges,
         republishBundle: true,
       };
@@ -246,7 +253,11 @@ export function plan(
     movedWorkflows.map((row) => {
       return [
         row.source.id,
-        { ...row.source, visibility: row.targetVisibility },
+        {
+          ...row.source,
+          owner: row.targetOwner,
+          visibility: row.targetVisibility,
+        },
       ];
     }),
   );
@@ -300,9 +311,9 @@ export function plan(
       return a.id.localeCompare(b.id);
     });
   return {
-    format: "single-agent-plan-v3",
+    format: "single-agent-plan-v4",
     executable: false,
-    privateAgentWorkflowPolicy: "private-preserve-workflow-owner",
+    privateAgentWorkflowPolicy: "private-use-agent-owner",
     agentPrefixes: naming.agentPrefixes,
     scope: { orgId, target: snapshot.target, database: snapshot.database },
     capturedAt: snapshot.capturedAt,
