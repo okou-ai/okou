@@ -175,6 +175,27 @@ final class ConversationActivitySummaryTests: XCTestCase {
     try await waitForNoSleep(clock)
   }
 
+  func testRetainedPhaseCannotDisplayAcrossSameRunDemandReplacement() async throws {
+    let scenario = ActivityScenario()
+    let clock = ActivityClock()
+    let conversation = scenario.conversation(clock: clock)
+    defer { conversation.close() }
+    await conversation.refresh()
+    conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+    let summary = conversation.activitySummary
+    let previousResult = try await summary.stateStore.get(summary.value).value
+    let previous = try XCTUnwrap(previousResult)
+    XCTAssertEqual(previous.messages(for: previous.demand).first?.text, "Checking the sources")
+    conversation.setDetailVisible(false, owner: ActivityScenario.detailOwner)
+    conversation.setDetailVisible(true, owner: ActivityScenario.detailOwner)
+    let nextDemand = try summary.stateStore.get(summary.activeDemand)
+    // A Loadable may retain its previous successful phase until the new Task completes.
+    XCTAssertTrue(previous.messages(for: nextDemand).isEmpty)
+    let currentResult = try await summary.stateStore.get(summary.value).value
+    let current = try XCTUnwrap(currentResult)
+    XCTAssertEqual(current.messages(for: nextDemand).first?.text, "Checking the sources")
+  }
+
   func testSameSizeRefreshPreservesTheNextPhraseDeadline() async throws {
     let scenario = ActivityScenario()
     let clock = ActivityClock()
@@ -503,17 +524,18 @@ private final class ActivityHTTPState: Sendable {
 @MainActor @Observable
 private final class ActivitySummaryProbe {
   private let summary: ConversationActivitySummary
-  private var value: Loadable<ChatActivitySummary?> = .loading
+  private var value: Loadable<ConversationActivitySummary.Read?> = .loading
+  private var currentDemand: ConversationActivitySummary.Demand?
   private(set) var isSettled = false
   @ObservationIgnored private var subscription: Subscription?
   @ObservationIgnored private var readers: [Task<Void, Never>] = []
   @ObservationIgnored private var generation = UUID()
 
   var text: String? {
-    guard case .hasData(let result) = value, let result, result.status == .available else {
+    guard case .hasData(let result) = value, let result else {
       return nil
     }
-    return summary.phrases.text(in: result.messages)
+    return summary.phrases.text(in: result.messages(for: currentDemand))
   }
 
   var errorStatus: Int? {
@@ -542,8 +564,9 @@ private final class ActivitySummaryProbe {
     generation = owner
     isSettled = false
     do {
-      let run = try summary.stateStore.get(summary.demandedRun)
-      if case .hasData(let result) = value, result?.runId != run { value = .loading }
+      let demand = try summary.stateStore.get(summary.activeDemand)
+      currentDemand = demand
+      if case .hasData(let result) = value, result?.demand != demand { value = .loading }
       let pending = try summary.stateStore.get(summary.value)
       readers.append(
         Task { [weak self] in

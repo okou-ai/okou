@@ -6,9 +6,23 @@ import Observation
 /// One visible detail owns the original read; summary failures never change authoritative chat state.
 @MainActor
 final class ConversationActivitySummary {
+  struct Demand: Equatable, Sendable {
+    let runID: String
+    let id = UUID()
+  }
+
+  struct Read: Equatable, Sendable {
+    let demand: Demand
+    let summary: ChatActivitySummary
+
+    func messages(for current: Demand?) -> [ChatActivitySummary.Message] {
+      demand == current && summary.status == .available ? summary.messages : []
+    }
+  }
+
   let stateStore = CCState.Store()
   let phrases: ConversationActivityPhrases
-  private let runID = CCState.State<String?>(nil)
+  private let demandInput = CCState.State<Demand?>(nil)
   private let revision = CCState.State(0)
   private let closed = CCState.State(false)
   private let changeDemand: Command<Void, String?>
@@ -19,7 +33,7 @@ final class ConversationActivitySummary {
   private let threadID: String
   private let sleep: @Sendable (Duration) async throws -> Void
   private var polling: Task<Void, Never>?
-  private var request: Task<ChatActivitySummary?, Error>?
+  private var request: Task<Read?, Error>?
 
   init(
     sync: ChatSync, threadID: String, didRequireUpgrade: @escaping @MainActor (Error) -> Void,
@@ -30,46 +44,46 @@ final class ConversationActivitySummary {
     self.threadID = threadID
     self.sleep = sleep
     phrases = ConversationActivityPhrases(sleep: sleep)
-    let runID = runID
+    let demandInput = demandInput
     let revision = revision
     let closed = closed
     changeDemand = Command { context, next in
       guard try !context.get(closed) else { throw CancellationError() }
-      guard try context.get(runID) != next else { return }
-      try context.set(runID, next)
+      guard try context.get(demandInput)?.runID != next else { return }
+      try context.set(demandInput, next.map { Demand(runID: $0) })
     }
     reload = Command { context in
-      guard try !context.get(closed), try context.get(runID) != nil else {
+      guard try !context.get(closed), try context.get(demandInput) != nil else {
         throw CancellationError()
       }
       try context.set(revision, update: { $0 + 1 })
     }
     retire = Command { context in
       try context.set(closed, true)
-      try context.set(runID, nil)
+      try context.set(demandInput, nil)
     }
   }
 
-  lazy var demandedRun = Computed { [runID] get in try get(runID) }
+  lazy var activeDemand = Computed { [demandInput] get in try get(demandInput) }
   lazy var value = makeValue()
 
-  private func makeValue() -> Computed<Task<ChatActivitySummary?, Error>> {
+  private func makeValue() -> Computed<Task<Read?, Error>> {
     Computed { [weak self] get, options in
       guard let self else { throw CancellationError() }
       let isClosed = try get(closed)
-      let run = try get(runID)
+      let demand = try get(demandInput)
       _ = try get(revision)
       let signal = options.signal
-      let task = Task<ChatActivitySummary?, Error> { @MainActor [weak self, sync, threadID] in
-        guard !isClosed, let run else { return nil }
+      let task = Task<Read?, Error> { @MainActor [weak self, sync, threadID] in
+        guard !isClosed, let demand else { return nil }
         do {
           try Task.checkCancellation()
-          let result = try await sync.activitySummary(threadID: threadID, runID: run)
+          let result = try await sync.activitySummary(threadID: threadID, runID: demand.runID)
           try Task.checkCancellation()
           try signal.checkCancellation()
           // Only native selection/cadence is retained, never a second summary or error cache.
           self?.phrases.use(result.status == .available ? result.messages.map(\.id) : [])
-          return result
+          return Read(demand: demand, summary: result)
         } catch {
           if !Task.isCancelled, !signal.isCancelled {
             self?.phrases.use([])
@@ -86,7 +100,9 @@ final class ConversationActivitySummary {
 
   func demand(_ next: String?) {
     do {
-      guard try !stateStore.get(closed), try stateStore.get(runID) != next else { return }
+      guard try !stateStore.get(closed), try stateStore.get(demandInput)?.runID != next else {
+        return
+      }
       polling?.cancel()
       polling = nil
       request?.cancel()

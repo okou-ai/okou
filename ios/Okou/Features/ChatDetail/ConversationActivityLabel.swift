@@ -18,13 +18,13 @@ struct ConversationActivityLabel: View {
 private struct ConversationActivityValue: View {
   let summary: ConversationActivitySummary
   let state: ChatExecutionState
-  @LoadableValue private var demandedRun: Loadable<String?>
-  @LoadableValue private var value: Loadable<ChatActivitySummary?>
+  @LoadableValue private var demand: Loadable<ConversationActivitySummary.Demand?>
+  @LoadableValue private var value: Loadable<ConversationActivitySummary.Read?>
 
   init(summary: ConversationActivitySummary, state: ChatExecutionState) {
     self.summary = summary
     self.state = state
-    _demandedRun = LoadableValue(summary.demandedRun)
+    _demand = LoadableValue(summary.activeDemand)
     _value = LoadableValue(task: summary.value, keepLast: true)
   }
 
@@ -32,10 +32,10 @@ private struct ConversationActivityValue: View {
   @Environment(\.accessibilityVoiceOverEnabled) private var voiceOver
 
   private var messages: [ChatActivitySummary.Message] {
-    guard case .hasData(let run) = demandedRun, case .hasData(let result) = value,
-      let result, result.runId == run, result.status == .available
+    guard case .hasData(let demand) = demand, case .hasData(let result) = value,
+      let result
     else { return [] }
-    return result.messages
+    return result.messages(for: demand)
   }
 
   var body: some View {
