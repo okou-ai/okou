@@ -1,6 +1,7 @@
 import ChatData
 import ChatDataTestSupport
 import ChatDomain
+import Observation
 import SwiftUI
 import XCTest
 
@@ -33,6 +34,13 @@ final class ChatComposerMentionTests: XCTestCase {
   func testMultipleInlineReferencesPreserveCursorSurroundingTextAndNativeUndoCopyPaste()
     async throws
   {
+    for attempt in 1...5 {
+      print("[paste-diagnostic] scenario \(attempt) started")
+      try await exerciseNativeInlineReferencePaste()
+    }
+  }
+
+  private func exerciseNativeInlineReferencePaste() async throws {
     preserveNativePasteboard(for: self)
     let navigation = MentionNavigationFixture()
     let workspace = try await navigation.workspace()
@@ -92,8 +100,37 @@ final class ChatComposerMentionTests: XCTestCase {
     XCTAssertTrue(UIPasteboard.general.string?.contains("/chats/") == true)
     input.cut(nil)
     try await waitForBusinessResult { !workspace.newComposer.hasContent }
+    let pasteStarted = ContinuousClock.now
+    let expectedNativeText = "Before \u{fffc} and \u{fffc} after 🌷"
+    let observer = NotificationCenter.default.addObserver(
+      forName: UITextView.textDidChangeNotification, object: input, queue: .main
+    ) { _ in
+      MainActor.assumeIsolated {
+        print(
+          "[paste-diagnostic] native change elapsed=\(pasteStarted.duration(to: .now)) "
+            + "document=\(workspace.newComposer.document == expected) "
+            + "text=\(input.text == expectedNativeText) "
+            + "undo=\(input.undoManager?.groupingLevel ?? -1)")
+      }
+    }
+    defer { NotificationCenter.default.removeObserver(observer) }
+    _ = withObservationTracking {
+      workspace.newComposer.document
+    } onChange: {
+      print("[paste-diagnostic] document invalidation elapsed=\(pasteStarted.duration(to: .now))")
+    }
     input.paste(nil)
-    try await waitForBusinessResult { workspace.newComposer.document == expected }
+    print(
+      "[paste-diagnostic] paste returned elapsed=\(pasteStarted.duration(to: .now)) "
+        + "document=\(workspace.newComposer.document == expected) "
+        + "focus=\(input.isFirstResponder) undo=\(input.undoManager?.groupingLevel ?? -1)")
+    try await waitForBusinessResult {
+      let matches = workspace.newComposer.document == expected
+      print(
+        "[paste-diagnostic] predicate elapsed=\(pasteStarted.duration(to: .now)) matches=\(matches)")
+      return matches
+    }
+    print("[paste-diagnostic] wait returned elapsed=\(pasteStarted.duration(to: .now))")
     input.undoManager?.undo()
     try await waitForBusinessResult { !workspace.newComposer.hasContent }
     input.undoManager?.redo()
