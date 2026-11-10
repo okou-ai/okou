@@ -329,7 +329,7 @@ with both the PR head and actual checkout SHA, environment, version, and SHA-256
 checksums. Artifacts expire after seven days. These QA archives are separate from
 the canonical merge-group archives consumed by production publication.
 
-`Config/Staging.xcconfig` uses the shared staging API, the deployed Web Worker
+The project's `Staging` configuration uses `Config/Staging.xcconfig` for the shared staging API, the deployed Web Worker
 preview, and the same Clerk TEST instance as Web. CI supplies the public
 `CLERK_PUBLISHABLE_KEY_PREVIEW` repository variable. No signing, App Store Connect,
 BrowserStack, or Preview Protection credentials are embedded in these artifacts;

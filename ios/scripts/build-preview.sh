@@ -23,8 +23,8 @@ version=$(<ios/version.txt)
 resolved=ios/Okou.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved
 cp "$resolved" "$work/Package.resolved.before"
 xcode_args=(
-  -project ios/Okou.xcodeproj -scheme Okou -configuration Release
-  -xcconfig ios/Config/Staging.xcconfig -destination 'generic/platform=iOS'
+  -project ios/Okou.xcodeproj -scheme Okou -configuration Staging
+  -destination 'generic/platform=iOS'
   -derivedDataPath "$work/DerivedData" -clonedSourcePackagesDirPath "$work/SourcePackages"
   -onlyUsePackageVersionsFromResolvedFile -disableAutomaticPackageResolution -skipPackageUpdates
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY= DEVELOPMENT_TEAM=
