@@ -673,6 +673,89 @@ describe("builtin MCP automatic authentication", () => {
     ).toStrictEqual([]);
   });
 
+  it.each([false, true])(
+    "bounds stalled optional metadata without losing OAuth (reconnect: %s)",
+    async (reconnectOAuth) => {
+      const f = fixture();
+      const provider = mockAutomaticMcpOAuthProvider(context, {
+        registration: reconnectOAuth ? "cimd" : "none",
+        authentication: reconnectOAuth ? "mixed" : "none",
+        initialExpiresIn: 3600,
+      });
+      let connectionId: string | undefined;
+      if (reconnectOAuth) {
+        const started = await beginOAuth(f);
+        await callback(started.state, provider.issuer);
+        connectionId = (await accept(receipt(f, started.oauthAttemptId), [200]))
+          .body.connectionId;
+      }
+      const original = await accept(
+        accounts().connections({ headers, query: f.target }),
+        [200],
+      );
+      const requested = createDeferredPromise<void>(context.signal);
+      const release = createDeferredPromise<void>(context.signal);
+      onTestFinished(() => {
+        if (!release.settled()) {
+          release.resolve(undefined);
+        }
+      });
+      const deadline = new AbortController();
+      context.mocks.abortSignal.timeout.mockImplementation((milliseconds) => {
+        return milliseconds === 5000 ? deadline.signal : undefined;
+      });
+      server.use(
+        http.get(
+          new URL("/.well-known/oauth-protected-resource", f.endpoint).href,
+          async () => {
+            requested.resolve(undefined);
+            await release.promise;
+            return new HttpResponse(null, { status: 503 });
+          },
+        ),
+      );
+      const pending = Promise.allSettled([
+        accept(
+          automatic().start({
+            headers,
+            params: { connectorSlug: f.slug },
+            body: {
+              authMethod: f.methodId,
+              account: connectionId
+                ? { intent: "reconnect", connectionId }
+                : { intent: "add" },
+            },
+          }),
+          [200, 503],
+        ),
+      ]);
+      await requested.promise;
+      deadline.abort(
+        new DOMException(
+          "The operation was aborted due to timeout",
+          "TimeoutError",
+        ),
+      );
+      const [finished] = await pending;
+      release.resolve(undefined);
+      if (finished.status === "rejected") {
+        throw finished.reason;
+      }
+      expect(finished.value.status).toBe(reconnectOAuth ? 503 : 200);
+      const current = await accept(
+        accounts().connections({ headers, query: f.target }),
+        [200],
+      );
+      if (reconnectOAuth) {
+        expect(current.body).toStrictEqual(original.body);
+      } else {
+        expect(current.body.connections).toMatchObject([
+          { connectionStatus: "connected", oauthScopes: null },
+        ]);
+      }
+    },
+  );
+
   it("rejects unsafe optional metadata redirects after public initialization", async () => {
     const f = fixture();
     mockAutomaticMcpOAuthProvider(context, {

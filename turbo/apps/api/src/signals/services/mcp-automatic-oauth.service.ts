@@ -45,6 +45,8 @@ import {
   type McpAutomaticOAuthUserInfo,
 } from "./mcp-oauth-identity.service";
 
+const MCP_OPTIONAL_RESOURCE_DISCOVERY_TIMEOUT_MS = 5000;
+
 export interface McpAutomaticOAuthDcrRegistration {
   readonly id: string;
   readonly issuer: string;
@@ -412,6 +414,7 @@ async function discoverAutomaticOAuthResourceMetadata(
   args: {
     readonly endpoint: string;
     readonly resourceMetadataUrl: URL | null;
+    readonly optional: boolean;
   },
   signal: AbortSignal,
 ): Promise<
@@ -424,7 +427,16 @@ async function discoverAutomaticOAuthResourceMetadata(
       readonly error: McpAutomaticOAuthError;
     }
 > {
-  const fetchFn = fetchWithSignal(signal);
+  // Optional discovery must not hold an already-public connection indefinitely.
+  // Keep its deadline separate from owner cancellation, which always propagates.
+  const fetchFn = fetchWithSignal(
+    args.optional
+      ? AbortSignal.any([
+          signal,
+          AbortSignal.timeout(MCP_OPTIONAL_RESOURCE_DISCOVERY_TIMEOUT_MS),
+        ])
+      : signal,
+  );
   const statuses: (number | undefined)[] = [];
   const discovered = await settle(
     discoverOAuthProtectedResourceMetadata(
@@ -946,7 +958,7 @@ async function discoverCurrentAutomaticOAuthAuthority(
       : extractWWWAuthenticateParams(probe.context.response);
   const resourceMetadataUrl = parameters?.resourceMetadataUrl ?? null;
   const discovered = await discoverAutomaticOAuthResourceMetadata(
-    { endpoint, resourceMetadataUrl },
+    { endpoint, resourceMetadataUrl, optional: false },
     signal,
   );
   if (discovered.kind !== "found") {
@@ -1097,7 +1109,11 @@ export async function prepareMcpAutomaticOAuthAuthorization(
       : extractWWWAuthenticateParams(probe.context.response);
   const resourceMetadataUrl = challengeParameters?.resourceMetadataUrl ?? null;
   const discovered = await discoverAutomaticOAuthResourceMetadata(
-    { endpoint: args.endpoint, resourceMetadataUrl },
+    {
+      endpoint: args.endpoint,
+      resourceMetadataUrl,
+      optional: probe.kind === "none" && !args.additionalScopes?.length,
+    },
     signal,
   );
   // Public access can survive unavailable or non-OAuth resource metadata.
