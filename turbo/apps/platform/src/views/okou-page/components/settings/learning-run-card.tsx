@@ -4,6 +4,7 @@ import { useGet, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Brain } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Link } from "../../../router/link.tsx";
 import {
   debugLearningAutomation$,
   debugLearningEnabled$,
@@ -24,7 +25,7 @@ export function LearningRunCard() {
     return null;
   }
   const target = automation.state === "hasData" ? automation.data : null;
-  const queued = starting.state === "hasData";
+  const response = starting.state === "hasData" ? starting.data : null;
   const error = starting.state === "hasError" ? starting.error : undefined;
 
   return (
@@ -88,12 +89,25 @@ export function LearningRunCard() {
           })}
         </p>
       )}
-      {queued && (
+      {response && (
         <p role="status" className="text-sm text-muted-foreground">
           {t(($) => {
             return $.settings.preferences.debug.learning.queued;
           })}
         </p>
+      )}
+      {response && (
+        <div className="flex items-center gap-4">
+          <Link
+            pathname="/chats/:threadId"
+            options={{ pathParams: { threadId: response.chatThreadId } }}
+            className="text-sm text-primary hover:underline"
+          >
+            {t(($) => {
+              return $.settings.preferences.debug.learning.openChat;
+            })}
+          </Link>
+        </div>
       )}
       {error !== undefined && !isAbortError(error) && (
         <p role="alert" className="text-sm text-destructive">

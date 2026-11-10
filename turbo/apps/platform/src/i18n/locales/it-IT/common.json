@@ -5948,6 +5948,7 @@
         "learning": {
           "description": "Esamina le attività recenti e aggiorna la memoria personale una volta. La pianificazione notturna non cambia.",
           "notInstalled": "Attiva l'apprendimento nelle Preferenze prima di eseguirlo qui.",
+          "openChat": "Apri conversazione",
           "queued": "Apprendimento in coda.",
           "requestFailed": "Non è stato possibile confermare la richiesta.",
           "run": "Esegui apprendimento",
