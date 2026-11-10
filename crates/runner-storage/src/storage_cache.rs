@@ -402,7 +402,7 @@ impl FreshArchiveDeliveryAdmission {
         }
         // Construction remains lazy after admission and failures are not
         // cached. There is no await while holding this initialization lock.
-        let client = Client::builder()
+        let client = archive_client_builder()
             .redirect(reqwest::redirect::Policy::none())
             .pool_max_idle_per_host(FRESH_DELIVERY_RUNNER_LIMIT)
             .pool_idle_timeout(FRESH_DELIVERY_HTTP_IDLE_TIMEOUT)
@@ -425,6 +425,16 @@ impl Default for FreshArchiveDeliveryAdmission {
     fn default() -> Self {
         Self::new()
     }
+}
+
+// Archives are already compressed and their hashes identify the original bytes.
+// Preserve that contract even when another crate enables a reqwest codec.
+fn archive_client_builder() -> reqwest::ClientBuilder {
+    Client::builder()
+        .no_gzip()
+        .no_brotli()
+        .no_deflate()
+        .no_zstd()
 }
 
 struct FreshArchivePhaseRecord {

@@ -161,7 +161,7 @@ impl StorageCacheBackgroundFillCoordinator {
             queue_capacity > 0,
             "background fill queue capacity must be positive"
         );
-        let http = Client::builder().build().map_err(|error| {
+        let http = super::archive_client_builder().build().map_err(|error| {
             RunnerError::Internal(format!("build background fill http client: {error}"))
         })?;
         let (commands, receiver) = mpsc::channel(queue_capacity);
@@ -929,7 +929,7 @@ async fn run_background_fill_groups(
     groups: Vec<(CacheTargetGroup, BackgroundFillAction)>,
     home: HomePaths,
 ) -> Vec<SandboxOpRecord> {
-    let http = match Client::builder().build() {
+    let http = match super::archive_client_builder().build() {
         Ok(http) => http,
         Err(error) => {
             warn!(%error, "storage_cache: failed to build background fill http client");
