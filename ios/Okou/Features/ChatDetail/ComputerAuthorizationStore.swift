@@ -145,7 +145,7 @@ final class ComputerAuthorizationStore {
             throw ChatError.invalidContract("This authorization is no longer available.")
           }
           if needsContinuation, let prompt = action.callbackPrompt {
-            let history = try await sync.history(threadID: thread.id)
+            let history = try await sync.eventHistory(threadID: thread.id)
             try checkOwner(generation)
             if !history.persistedEventIDs.contains(current.id.lowercased()) {
               _ = try await commands.send(

@@ -308,9 +308,6 @@ private final class ComputerAuthorizationFixture: Sendable {
               "{\"rows\":\(String(decoding: data, as: UTF8.self)),\"cursor\":{\"lastEventId\":\(rows.isEmpty ? "null" : "\"\(Self.requestID)\""),\"lastSeqId\":\(rows.count)},\"hasMore\":false}"
           )
         }
-        if path == "/api/chat-threads/\(Self.threadID)" {
-          return ChatHTTPResponse(body: "{\"cancellationRecoveryPending\":false}")
-        }
         if path == "/api/chat/events" {
           let input = try JSONDecoder().decode(
             [String: MessageJSON].self, from: chatRequestBody(request))
