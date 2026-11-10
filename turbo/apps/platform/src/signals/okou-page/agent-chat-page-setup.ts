@@ -3,7 +3,7 @@ import { hydrateProjects$ } from "../projects/projects.ts";
 import { resetProjectUi$ } from "../projects/project-ui.ts";
 import {
   loadMarketingHandoff$,
-  importMarketingHandoffFiles$,
+  createMarketingHandoffDraft$,
   finishMarketingHandoff$,
 } from "../prompt-page/marketing-handoff.ts";
 import { command } from "ccstate";
@@ -53,21 +53,30 @@ const restoreMarketingAgentDraft$ = command(
     const params = get(searchParams$);
     const handoff = await set(loadMarketingHandoff$, signal);
     if (!handoff) {
-      throw new Error("Marketing handoff is unavailable");
+      await set(agentDraft.load$, signal);
+      return;
     }
     const imported = await set(
-      importMarketingHandoffFiles$,
+      createMarketingHandoffDraft$,
       handoff.hash,
       signal,
     );
-    const targetDraft = agentDraft.draft;
-    set(targetDraft.clear$);
-    set(targetDraft.setInput$, handoff.manifest.prompt);
-    await set(targetDraft.restoreAttachments$, imported, signal);
-    signal.throwIfAborted();
-    if (get(targetDraft.attachments$).length !== imported.length) {
-      throw new Error("The received attachments are no longer available");
+    if (!imported) {
+      await set(agentDraft.load$, signal);
+      return;
     }
+    const targetDraft = agentDraft.draft;
+    await set(
+      targetDraft.seed$,
+      {
+        content: handoff.manifest.prompt,
+        userMessage: null,
+        generationTemplate: undefined,
+        attachments: get(imported.attachments$),
+      },
+      signal,
+    );
+    signal.throwIfAborted();
     await set(agentDraft.queueDraftSync$, signal);
     signal.throwIfAborted();
     set(finishMarketingHandoff$, handoff);

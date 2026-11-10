@@ -4420,6 +4420,7 @@
     "documentTitles": {
       "make": "Bem-vindo ao {{brandName}}"
     },
+    "handoffUnavailable": "Não foi possível restaurar a tarefa do link. Você pode continuar normalmente; seu rascunho foi preservado.",
     "make": {
       "promptLabel": "Prompt de onboarding",
       "promptTitle": "Personalize esta tarefa"

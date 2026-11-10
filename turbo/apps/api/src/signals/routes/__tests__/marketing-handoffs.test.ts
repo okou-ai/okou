@@ -14,6 +14,7 @@ import {
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
 import { testContext, accept } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
+import { mockNow, now } from "../../../lib/time";
 import { mockEnv } from "../../../lib/env";
 import { marketingHandoffsRoutes } from "../marketing-handoffs";
 import { webFileUrlRoutes } from "../web-file-url";
@@ -314,30 +315,152 @@ describe("Marketing content handoff", () => {
     }
   });
 
-  it("transfers a guest grant to the signed-in user rather than exposing it to the next account", async () => {
+  it("authorizes every account with the same cookie and retains their independent grants", async () => {
+    const firstActor = actor;
     const cookie = await guestCookie();
     const created = await create(manifest(), cookie, false);
-    expect(
-      (
-        await api().resolve({
+    for (let index = 0; index < 3; index++) {
+      if (index > 0) {
+        authenticateActor();
+      }
+      await accept(
+        api().resolve({
           params: created.body,
           body: {},
           headers: auth,
           extraHeaders: { origin, cookie },
-        })
-      ).status,
-    ).toBe(200);
+        }),
+        [200],
+      );
+      await accept(
+        api().resolve({
+          params: created.body,
+          body: {},
+          headers: auth,
+          extraHeaders: { origin },
+        }),
+        [200],
+      );
+    }
     authenticateActor();
-    expect(
-      (
-        await api().resolve({
-          params: created.body,
-          body: {},
-          headers: auth,
-          extraHeaders: { origin, cookie },
-        })
-      ).status,
-    ).toBe(404);
+    const unrelatedCookie = await guestCookie();
+    const unrelatedHeaders: Record<string, string>[] = [
+      { origin },
+      { origin, cookie: unrelatedCookie },
+    ];
+    for (const headers of unrelatedHeaders) {
+      const result = await api().resolve({
+        params: created.body,
+        body: {},
+        headers: auth,
+        extraHeaders: headers,
+      });
+      expect(result.status).toBe(404);
+    }
+    mocks.clerk.session(firstActor.userId, firstActor.orgId);
+    await accept(
+      api().resolve({
+        params: created.body,
+        body: {},
+        headers: auth,
+        extraHeaders: { origin },
+      }),
+      [200],
+    );
+  });
+
+  it("does not authorize a new account with an expired cookie", async () => {
+    const cookie = await guestCookie();
+    const created = await create(manifest(), cookie, false);
+    await accept(
+      api().resolve({
+        params: created.body,
+        body: {},
+        headers: auth,
+        extraHeaders: { origin, cookie },
+      }),
+      [200],
+    );
+    mockNow(now() + 7 * 24 * 60 * 60 * 1000 + 1);
+    // Receiving once keeps that account's grant after the browser grant expires.
+    await accept(
+      api().resolve({
+        params: created.body,
+        body: {},
+        headers: auth,
+        extraHeaders: { origin },
+      }),
+      [200],
+    );
+    authenticateActor();
+    const result = await api().resolve({
+      params: created.body,
+      body: {},
+      headers: auth,
+      extraHeaders: { origin, cookie },
+    });
+    expect(result.status).toBe(404);
+  });
+
+  it("shares authenticated submissions and their files with the submitting browser session", async () => {
+    const cookie = await guestCookie();
+    const uploaded = await accept(
+      api().upload({
+        body: {
+          filename: "shared.txt",
+          contentType: "text/plain",
+          data: Buffer.from("shared browser task").toString("base64"),
+        },
+        headers: auth,
+        extraHeaders: { origin, cookie },
+      }),
+      [200],
+    );
+    const original = await create(
+      { ...manifest(), files: [uploaded.body] },
+      cookie,
+    );
+    authenticateActor();
+    await accept(
+      api().resolve({
+        params: original.body,
+        body: {},
+        headers: auth,
+        extraHeaders: { origin, cookie },
+      }),
+      [200],
+    );
+    const edited = await create(
+      { ...manifest("Edited by the second account"), files: [uploaded.body] },
+      cookie,
+    );
+    const imported = await accept(
+      api().import({
+        params: edited.body,
+        body: { intentId },
+        headers: auth,
+        extraHeaders: { origin },
+      }),
+      [200],
+    );
+    expect(imported.body.files).toMatchObject([
+      { filename: uploaded.body.filename, size: uploaded.body.size },
+    ]);
+    authenticateActor();
+    // The original cookie retains file access for editing before resolving a manifest.
+    await create(
+      { ...manifest("Edited by the third account"), files: [uploaded.body] },
+      cookie,
+    );
+    await accept(
+      api().resolve({
+        params: edited.body,
+        body: {},
+        headers: auth,
+        extraHeaders: { origin, cookie },
+      }),
+      [200],
+    );
   });
 
   it("rejects a tampered guest session", async () => {
@@ -356,7 +479,7 @@ describe("Marketing content handoff", () => {
     ).toBe(404);
   });
 
-  it("atomically transfers a guest grant when two accounts try to receive it concurrently", async () => {
+  it("authorizes two accounts receiving from the same browser session concurrently", async () => {
     const firstActor = actor;
     const cookie = await guestCookie();
     const created = await create(manifest(), cookie, false);
@@ -394,7 +517,7 @@ describe("Marketing content handoff", () => {
           return response.status;
         })
         .sort(),
-    ).toStrictEqual([200, 404]);
+    ).toStrictEqual([200, 200]);
   });
 
   it("keeps guest-uploaded files authorized after sign-in and prompt editing", async () => {

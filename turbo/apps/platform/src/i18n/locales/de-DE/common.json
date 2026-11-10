@@ -4364,6 +4364,7 @@
     "documentTitles": {
       "make": "Willkommen bei {{brandName}}"
     },
+    "handoffUnavailable": "Die verknüpfte Aufgabe konnte nicht wiederhergestellt werden. Du kannst normal fortfahren; dein vorhandener Entwurf bleibt erhalten.",
     "make": {
       "promptLabel": "Onboarding-Eingabeaufforderung",
       "promptTitle": "Passe diese Aufgabe an"

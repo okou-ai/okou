@@ -4347,6 +4347,7 @@
     "documentTitles": {
       "make": "{{brandName}} へようこそ"
     },
+    "handoffUnavailable": "リンク先のタスクを復元できませんでした。そのまま利用を続けられます。既存の下書きは保持されています。",
     "make": {
       "promptLabel": "オンボーディングプロンプト",
       "promptTitle": "タスクを自分に合わせて調整"
