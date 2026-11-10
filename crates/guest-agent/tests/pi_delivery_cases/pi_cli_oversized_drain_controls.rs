@@ -3,6 +3,7 @@
 use crate::common;
 
 use std::future::Future;
+use std::io::Write;
 use std::os::fd::OwnedFd;
 use std::os::unix::fs::PermissionsExt;
 use std::path::PathBuf;
@@ -42,13 +43,21 @@ impl OpenRecordFixture {
         let event_path = tmp.path().join("unterminated-agent-end");
         // The extra MiB exceeds pipe capacity, so finishing cat proves the
         // guest consumed bytes past the ordinary limit, into the discard path.
-        std::fs::write(
-            &event_path,
-            format!(
-                "{{\"type\":\"agent_end\",\"messages\":[\"{}",
-                "x".repeat(ORDINARY_CLI_STDOUT_MAX_LINE_BYTES + 1024 * 1024),
-            ),
-        )?;
+        {
+            let mut event = std::fs::File::create(&event_path)?;
+            event.write_all(b"{\"type\":\"agent_end\",\"messages\":[\"")?;
+            let padding = [b'x'; 64 * 1024];
+            let mut remaining = ORDINARY_CLI_STDOUT_MAX_LINE_BYTES + 1024 * 1024;
+            while remaining > 0 {
+                let count = remaining.min(padding.len());
+                event.write_all(
+                    padding
+                        .get(..count)
+                        .ok_or("invalid fixture padding chunk")?,
+                )?;
+                remaining -= count;
+            }
+        }
         let okou = bin_dir.join("okou");
         std::fs::write(
             &okou,
