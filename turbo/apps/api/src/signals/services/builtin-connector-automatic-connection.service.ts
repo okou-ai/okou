@@ -23,14 +23,14 @@ function automaticConnectionOwnerCondition(owner: AutomaticConnectionOwner) {
   );
 }
 
-export const automaticAccountExists$ = command(
+export const readAutomaticReconnectAccount$ = command(
   async (
     { set },
     args: AutomaticConnectionOwner & { readonly connectionId: string },
     signal: AbortSignal,
-  ): Promise<boolean> => {
+  ) => {
     const [account] = await set(writeDb$)
-      .select({ id: connectors.id })
+      .select({ automaticAuthType: connectors.automaticAuthType })
       .from(connectors)
       .where(
         and(
@@ -40,12 +40,13 @@ export const automaticAccountExists$ = command(
       )
       .limit(1);
     signal.throwIfAborted();
-    return account !== undefined;
+    return account ?? null;
   },
 );
 
 export interface AutomaticConnectionPublication extends AutomaticConnectionOwner {
   readonly account: ConnectorAccountMutationIntent;
+  readonly preserveOAuth?: boolean;
   readonly authMethod: string;
   readonly storageVersion: number;
   readonly binding: Omit<
@@ -227,6 +228,10 @@ export const publishAutomaticConnection$ = command(
               .where(
                 and(
                   reconnectOwner,
+                  // A public result cannot erase OAuth accepted while discovery ran.
+                  input.preserveOAuth
+                    ? sql`${connectors.automaticAuthType} IS DISTINCT FROM 'oauth'`
+                    : undefined,
                   // Two references keep this read CTE materialized: both the ID
                   // and tuple version belong to the statement's original row.
                   inArray(

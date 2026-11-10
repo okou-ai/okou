@@ -5,12 +5,13 @@ import { CUSTOM_CONNECTOR_AUTOMATIC_OAUTH_ERROR_CODES } from "@okouai/api-contra
 import { mcpOAuthContract } from "@okouai/api-contracts/contracts/mcp-oauth";
 import { runnersJobClaimContract } from "@okouai/api-contracts/contracts/runners";
 import { HttpResponse, http } from "msw";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, onTestFinished } from "vitest";
 
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { server } from "../../../mocks/server";
+import { createDeferredPromise } from "../../utils";
 import { flushWaitUntilForTest } from "../../context/wait-until";
 import { mcpOAuthClientMetadataRoutes } from "../mcp-oauth-client-metadata";
 import { runnersRoutes } from "../runners";
@@ -269,6 +270,175 @@ describe("MCP OAuth foundations", () => {
       ]);
     },
   );
+
+  it("preserves a custom OAuth account when reconnect metadata is unavailable", async () => {
+    const oauth = await automaticOAuthFixture({
+      authentication: "mixed",
+      initialExpiresIn: 3600,
+    });
+    const authorizationUrl = await oauth.connectors.startCustomConnectorOAuth2(
+      oauth.actor,
+      oauth.connector.id,
+      oauth.agent.agentId,
+    );
+    const state = new URL(authorizationUrl).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected OAuth state");
+    }
+    await oauth.connectors.completeCustomConnectorOAuth2CallbackResult({
+      state,
+      code: randomUUID(),
+      iss: oauth.provider.issuer,
+    });
+    const original = await oauth.connectors.listCustomConnectorAccounts(
+      oauth.actor,
+      oauth.connector.id,
+    );
+    const [account] = original;
+    if (!account) {
+      throw new Error("Expected an OAuth account");
+    }
+    mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "mixed",
+      resourceMetadataStatus: 503,
+    });
+    await oauth.connectors.requestStartCustomConnectorOAuth2(
+      oauth.actor,
+      oauth.connector.id,
+      [502],
+      oauth.agent.agentId,
+      { intent: "reconnect", connectionId: account.id },
+    );
+    await expect(
+      oauth.connectors.listCustomConnectorAccounts(
+        oauth.actor,
+        oauth.connector.id,
+      ),
+    ).resolves.toStrictEqual(original);
+  });
+
+  it("preserves custom OAuth accepted while an anonymous reconnect was discovering metadata", async () => {
+    const oauth = await automaticOAuthFixture({
+      registration: "none",
+      authentication: "none",
+    });
+    await oauth.connectors.requestStartCustomConnectorOAuth2(
+      oauth.actor,
+      oauth.connector.id,
+      [200],
+      oauth.agent.agentId,
+    );
+    const [account] = await oauth.connectors.listCustomConnectorAccounts(
+      oauth.actor,
+      oauth.connector.id,
+    );
+    if (!account) {
+      throw new Error("Expected a public account");
+    }
+    const intent = { intent: "reconnect" as const, connectionId: account.id };
+    const requested = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+    });
+    server.use(
+      http.get(
+        new URL(
+          "/.well-known/oauth-protected-resource",
+          oauth.provider.endpoint,
+        ).href,
+        async () => {
+          requested.resolve(undefined);
+          await release.promise;
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
+    );
+    const pending = Promise.allSettled([
+      oauth.connectors.requestStartCustomConnectorOAuth2(
+        oauth.actor,
+        oauth.connector.id,
+        [409],
+        oauth.agent.agentId,
+        intent,
+      ),
+    ]);
+    await requested.promise;
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "mixed",
+      initialExpiresIn: 3600,
+    });
+    const url = await oauth.connectors.startCustomConnectorOAuth2(
+      oauth.actor,
+      oauth.connector.id,
+      oauth.agent.agentId,
+      intent,
+    );
+    const state = new URL(url).searchParams.get("state");
+    if (!state) {
+      throw new Error("Expected OAuth state");
+    }
+    await oauth.connectors.completeCustomConnectorOAuth2CallbackResult({
+      state,
+      code: randomUUID(),
+      iss: provider.issuer,
+    });
+    const upgraded = await oauth.connectors.listCustomConnectorAccounts(
+      oauth.actor,
+      oauth.connector.id,
+    );
+    expect(upgraded).toMatchObject([{ oauthScopes: ["read", "write"] }]);
+    release.resolve(undefined);
+    const [finished] = await pending;
+    if (finished.status === "rejected") {
+      throw finished.reason;
+    }
+    await expect(
+      oauth.connectors.listCustomConnectorAccounts(
+        oauth.actor,
+        oauth.connector.id,
+      ),
+    ).resolves.toStrictEqual(upgraded);
+  });
+
+  it("connects a public custom MCP when optional metadata is an HTML page", async () => {
+    const oauth = await automaticOAuthFixture({
+      registration: "none",
+      authentication: "none",
+    });
+    server.use(
+      http.get(
+        new URL(
+          "/.well-known/oauth-protected-resource",
+          oauth.provider.endpoint,
+        ).href,
+        () => {
+          return new HttpResponse("<!doctype html><title>Not found</title>", {
+            headers: { "content-type": "text/html" },
+          });
+        },
+      ),
+    );
+    const response = await oauth.connectors.requestStartCustomConnectorOAuth2(
+      oauth.actor,
+      oauth.connector.id,
+      [200],
+      oauth.agent.agentId,
+    );
+    expect(response.body).toMatchObject({ result: "connected" });
+    await expect(
+      oauth.connectors.listCustomConnectorAccounts(
+        oauth.actor,
+        oauth.connector.id,
+      ),
+    ).resolves.toMatchObject([
+      { connectionStatus: "connected", oauthScopes: null },
+    ]);
+  });
 
   it("publishes exact public Okou client metadata from configured origins", async () => {
     mockEnv("OKOU_API_BACKEND_URL", "https://api.okou.ai");

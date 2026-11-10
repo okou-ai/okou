@@ -778,7 +778,10 @@ const readAutomaticOAuthStartPreflight$ = command(
         )
         .limit(1);
       return existing
-        ? { kind: "ready" as const }
+        ? {
+            kind: "ready" as const,
+            hasOAuthAccount: existing.authMethod === "oauth",
+          }
         : { kind: "missing" as const };
     }
     // Add allows siblings and has no external-ID match. Still execute the
@@ -795,7 +798,7 @@ const readAutomaticOAuthStartPreflight$ = command(
       )
       .orderBy(connectors.id)
       .limit(2);
-    return { kind: "ready" as const };
+    return { kind: "ready" as const, hasOAuthAccount: false };
   },
 );
 
@@ -843,6 +846,7 @@ const prepareAutomaticOAuthStart$ = command(
           state,
           cimdClientId: client.cimdClientId,
           dcrClientMetadata: client.dcrClientMetadata,
+          hasOAuthAccount: preflight.hasOAuthAccount,
           featureContext,
         },
         signal,
@@ -1006,6 +1010,7 @@ type AutomaticNoAuthConnector = CustomConnectorRow & {
 interface AutomaticNoAuthPersistenceContext {
   readonly connector: AutomaticNoAuthConnector;
   readonly args: StartCustomConnectorOAuth2Args;
+  readonly preserveOAuth: boolean;
 }
 
 function automaticNoAuthCredentialContractRef(
@@ -1116,6 +1121,7 @@ const commitAutomaticNoAuthConnection$ = command(
       }
       const statement = automaticNoAuthPublicationSql(
         noAuthWriteArgs(args, connector, resolution),
+        context.preserveOAuth,
       );
       signal.throwIfAborted();
       const [row] = parseRawRows(
@@ -1275,6 +1281,7 @@ export const startCustomConnectorOAuth2$ = command(
           {
             connector,
             args,
+            preserveOAuth: automatic.result.discoveryUnavailable,
           },
           signal,
         );

@@ -419,7 +419,10 @@ async function discoverAutomaticOAuthResourceMetadata(
       readonly kind: "found";
       readonly metadata: OAuthProtectedResourceMetadata;
     }
-  | { readonly kind: "missing"; readonly error: McpAutomaticOAuthError }
+  | {
+      readonly kind: "missing" | "unavailable";
+      readonly error: McpAutomaticOAuthError;
+    }
 > {
   const fetchFn = fetchWithSignal(signal);
   const statuses: (number | undefined)[] = [];
@@ -430,8 +433,8 @@ async function discoverAutomaticOAuthResourceMetadata(
         ? { resourceMetadataUrl: args.resourceMetadataUrl }
         : undefined,
       async (input, init) => {
-        // The SDK throws a generic error for absent metadata. A failed fetch
-        // must not look like absence after an earlier discovery location's 404.
+        // The SDK uses generic errors for HTTP discovery failures. Record the
+        // fetch outcome to distinguish optional metadata from unexpected errors.
         const index = statuses.push(undefined) - 1;
         const response = await fetchFn(input, init);
         statuses[index] = response.status;
@@ -448,13 +451,26 @@ async function discoverAutomaticOAuthResourceMetadata(
     "protected resource discovery",
     discovered.error,
   );
+  const status = statuses.at(-1);
   if (
+    error.kind !== "unsafe" &&
     statuses.length > 0 &&
-    statuses.every((status) => {
-      return status === 404;
+    statuses.every((completedStatus) => {
+      return completedStatus === 404;
     })
   ) {
     return { kind: "missing", error };
+  }
+  if (
+    error.kind !== "unsafe" &&
+    statuses.length > 0 &&
+    (status === undefined ||
+      status < 200 ||
+      status >= 300 ||
+      discovered.error instanceof SyntaxError ||
+      discovered.error instanceof ZodError)
+  ) {
+    return { kind: "unavailable", error };
   }
   throw error;
 }
@@ -933,7 +949,7 @@ async function discoverCurrentAutomaticOAuthAuthority(
     { endpoint, resourceMetadataUrl },
     signal,
   );
-  if (discovered.kind === "missing") {
+  if (discovered.kind !== "found") {
     throw discovered.error;
   }
   return await discoverAutomaticOAuthAuthority(
@@ -1036,6 +1052,7 @@ export async function prepareMcpAutomaticOAuthReauthorization(
 
 export interface McpAutomaticNoAuth {
   readonly kind: "none";
+  readonly discoveryUnavailable: boolean;
 }
 
 type AutomaticOAuthBoundClientContext = {
@@ -1058,6 +1075,7 @@ export async function prepareMcpAutomaticOAuthAuthorization(
     readonly dcrStore: McpAutomaticOAuthDcrPreparationStore;
     readonly endpoint: string;
     readonly additionalScopes?: readonly string[];
+    readonly hasOAuthAccount?: boolean;
     readonly authorizationPrompt?: string | null;
     readonly redirectUri: string;
     readonly state: string;
@@ -1082,12 +1100,22 @@ export async function prepareMcpAutomaticOAuthAuthorization(
     { endpoint: args.endpoint, resourceMetadataUrl },
     signal,
   );
-  if (discovered.kind === "missing") {
-    // Public-only Automatic servers need no OAuth metadata. Declared scopes
-    // or an authentication challenge require an authority, even after a 404.
-    if (probe.kind === "none" && !args.additionalScopes?.length) {
-      return probe;
+  // Public access can survive unavailable or non-OAuth resource metadata.
+  // Challenges, declared scopes and advertised OAuth still require validation.
+  if (
+    probe.kind === "none" &&
+    !args.additionalScopes?.length &&
+    (discovered.kind !== "found" ||
+      !discovered.metadata.authorization_servers?.length)
+  ) {
+    if (discovered.kind === "missing" || !args.hasOAuthAccount) {
+      return {
+        kind: "none",
+        discoveryUnavailable: discovered.kind !== "missing",
+      };
     }
+  }
+  if (discovered.kind !== "found") {
     throw discovered.error;
   }
   const authority = await discoverAutomaticOAuthAuthority(

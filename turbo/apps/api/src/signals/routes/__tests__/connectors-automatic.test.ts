@@ -14,6 +14,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { mockEnv } from "../../../lib/env";
 import { now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
+import { createDeferredPromise } from "../../utils";
 import { builtinConnectorsAutomaticRoutes } from "../connectors-automatic";
 import { builtinConnectorsSlugCallbackRoutes } from "../connectors-slug-callback";
 import { connectorAccountRoutes } from "../connector-accounts";
@@ -344,6 +345,133 @@ describe("builtin MCP automatic authentication", () => {
     });
   });
 
+  it("preserves an OAuth account when reconnect metadata is unavailable", async () => {
+    const f = fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "mixed",
+      initialExpiresIn: 3600,
+    });
+    const started = await beginOAuth(f);
+    await callback(started.state, provider.issuer);
+    const completed = await accept(receipt(f, started.oauthAttemptId), [200]);
+    const connectionId = completed.body.connectionId;
+    const original = await accept(
+      accounts().connection({
+        headers,
+        params: { connectionId },
+        query: f.target,
+      }),
+      [200],
+    );
+    mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "mixed",
+      resourceMetadataStatus: 503,
+    });
+    await accept(
+      automatic().start({
+        headers,
+        params: { connectorSlug: f.slug },
+        body: {
+          authMethod: f.methodId,
+          account: { intent: "reconnect", connectionId },
+        },
+      }),
+      [503],
+    );
+    expect(
+      (
+        await accept(
+          accounts().connection({
+            headers,
+            params: { connectionId },
+            query: f.target,
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual(original.body);
+  });
+
+  it("preserves OAuth accepted while an anonymous reconnect was discovering metadata", async () => {
+    const f = fixture();
+    mockAutomaticMcpOAuthProvider(context, {
+      registration: "none",
+      authentication: "none",
+    });
+    const connected = await begin(f);
+    if (connected.body.result !== "connected") {
+      throw new Error("Expected a public connection");
+    }
+    const connectionId = connected.body.connectionId;
+    const requested = createDeferredPromise<void>(context.signal);
+    const release = createDeferredPromise<void>(context.signal);
+    onTestFinished(() => {
+      if (!release.settled()) {
+        release.resolve(undefined);
+      }
+    });
+    server.use(
+      http.get(
+        new URL("/.well-known/oauth-protected-resource", f.endpoint).href,
+        async () => {
+          requested.resolve(undefined);
+          await release.promise;
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
+    );
+    const pending = Promise.allSettled([
+      accept(
+        automatic().start({
+          headers,
+          params: { connectorSlug: f.slug },
+          body: {
+            authMethod: f.methodId,
+            account: { intent: "reconnect", connectionId },
+          },
+        }),
+        [409],
+      ),
+    ]);
+    await requested.promise;
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "mixed",
+      initialExpiresIn: 3600,
+    });
+    const started = await beginOAuth(f, connectionId);
+    await callback(started.state, provider.issuer);
+    await accept(receipt(f, started.oauthAttemptId), [200]);
+    const upgraded = await accept(
+      accounts().connection({
+        headers,
+        params: { connectionId },
+        query: f.target,
+      }),
+      [200],
+    );
+    expect(upgraded.body.oauthScopes).toStrictEqual(["read", "write"]);
+    release.resolve(undefined);
+    const [finished] = await pending;
+    if (finished.status === "rejected") {
+      throw finished.reason;
+    }
+    expect(
+      (
+        await accept(
+          accounts().connection({
+            headers,
+            params: { connectionId },
+            query: f.target,
+          }),
+          [200],
+        )
+      ).body,
+    ).toStrictEqual(upgraded.body);
+  });
+
   it("requires OAuth metadata for declared scopes even when initialization is public", async () => {
     const f = fixture("declared-scopes");
     mockAutomaticMcpOAuthProvider(context, {
@@ -370,22 +498,88 @@ describe("builtin MCP automatic authentication", () => {
   });
 
   it.each([
+    { name: "403 Forbidden", kind: "http", status: 403 },
+    { name: "405 Method Not Allowed", kind: "http", status: 405 },
+    { name: "503 Service Unavailable", kind: "http", status: 503 },
+    { name: "an HTML page", kind: "html", status: 200 },
+    { name: "unrelated JSON", kind: "json", status: 200 },
+    { name: "no OAuth authority", kind: "no-authority", status: 200 },
+  ] as const)(
+    "keeps public access when optional metadata returns $name",
+    async ({ kind, status }) => {
+      const f = fixture();
+      mockAutomaticMcpOAuthProvider(context, {
+        registration: "none",
+        authentication: "none",
+      });
+      server.use(
+        http.get(
+          new URL("/.well-known/oauth-protected-resource", f.endpoint).href,
+          () => {
+            switch (kind) {
+              case "http": {
+                return new HttpResponse(null, { status });
+              }
+              case "html": {
+                return new HttpResponse(
+                  "<!doctype html><title>Not found</title>",
+                  {
+                    headers: { "content-type": "text/html" },
+                  },
+                );
+              }
+              case "json": {
+                return HttpResponse.json({ status: "ok" });
+              }
+              case "no-authority": {
+                return HttpResponse.json({ resource: f.endpoint });
+              }
+            }
+          },
+        ),
+      );
+      const connected = await begin(f);
+      expect(connected.body).toMatchObject({
+        result: "connected",
+        connectionId: expect.any(String),
+      });
+      if (connected.body.result !== "connected") {
+        throw new Error("Expected a public connection");
+      }
+      const account = await accept(
+        accounts().connection({
+          headers,
+          params: { connectionId: connected.body.connectionId },
+          query: f.target,
+        }),
+        [200],
+      );
+      expect(account.body).toMatchObject({
+        connectionStatus: "connected",
+        oauthScopes: null,
+      });
+    },
+  );
+
+  it.each([
     {
-      name: "temporary discovery failure",
+      name: "required OAuth discovery failure",
+      variant: "declared-scopes",
       status: 503,
       resourceMetadataStatus: 503,
       resource: undefined,
     },
     {
       name: "foreign resource metadata",
+      variant: "oauth",
       status: 409,
       resourceMetadataStatus: undefined,
       resource: "https://foreign-mcp.example.test/",
     },
   ] as const)(
     "rejects $name after public initialization",
-    async ({ status, resourceMetadataStatus, resource }) => {
-      const f = fixture();
+    async ({ variant, status, resourceMetadataStatus, resource }) => {
+      const f = fixture(variant);
       mockAutomaticMcpOAuthProvider(context, {
         registration: "cimd",
         authentication: "mixed",
@@ -411,17 +605,88 @@ describe("builtin MCP automatic authentication", () => {
     },
   );
 
-  it("does not treat a network failure after a discovery 404 as public-only", async () => {
+  it.each([
+    { variant: "oauth", expectedStatus: 200 },
+    { variant: "declared-scopes", expectedStatus: 409 },
+  ] as const)(
+    "handles optional discovery network failure for $variant",
+    async ({ variant, expectedStatus }) => {
+      const f = fixture(variant);
+      mockAutomaticMcpOAuthProvider(context, {
+        registration: "cimd",
+        authentication: "mixed",
+      });
+      server.use(
+        http.get(
+          new URL("/.well-known/oauth-protected-resource", f.endpoint).href,
+          () => {
+            return HttpResponse.error();
+          },
+        ),
+      );
+      const response = await accept(
+        automatic().start({
+          headers,
+          params: { connectorSlug: f.slug },
+          body: { authMethod: f.methodId, account: { intent: "add" } },
+        }),
+        [expectedStatus],
+      );
+      const connections = (
+        await accept(
+          accounts().connections({ headers, query: f.target }),
+          [200],
+        )
+      ).body.connections;
+      if (response.status === 200) {
+        expect(response.body.result).toBe("connected");
+        expect(connections).toMatchObject([
+          { connectionStatus: "connected", oauthScopes: null },
+        ]);
+      } else {
+        expect(connections).toStrictEqual([]);
+      }
+    },
+  );
+
+  it("requires OAuth after a challenge even when resource discovery is unavailable", async () => {
     const f = fixture();
     mockAutomaticMcpOAuthProvider(context, {
       registration: "cimd",
-      authentication: "mixed",
+      resourceMetadataStatus: 503,
+    });
+    await accept(
+      automatic().start({
+        headers,
+        params: { connectorSlug: f.slug },
+        body: { authMethod: f.methodId, account: { intent: "add" } },
+      }),
+      [503],
+    );
+    expect(
+      (
+        await accept(
+          accounts().connections({ headers, query: f.target }),
+          [200],
+        )
+      ).body.connections,
+    ).toStrictEqual([]);
+  });
+
+  it("rejects unsafe optional metadata redirects after public initialization", async () => {
+    const f = fixture();
+    mockAutomaticMcpOAuthProvider(context, {
+      registration: "none",
+      authentication: "none",
     });
     server.use(
       http.get(
         new URL("/.well-known/oauth-protected-resource", f.endpoint).href,
         () => {
-          return HttpResponse.error();
+          return new HttpResponse(null, {
+            status: 302,
+            headers: { location: "http://metadata.example.test/metadata" },
+          });
         },
       ),
     );
@@ -431,7 +696,42 @@ describe("builtin MCP automatic authentication", () => {
         params: { connectorSlug: f.slug },
         body: { authMethod: f.methodId, account: { intent: "add" } },
       }),
-      [409],
+      [400],
+    );
+    expect(
+      (
+        await accept(
+          accounts().connections({ headers, query: f.target }),
+          [200],
+        )
+      ).body.connections,
+    ).toStrictEqual([]);
+  });
+
+  it("does not downgrade an advertised OAuth authority when AS discovery fails", async () => {
+    const f = fixture();
+    const provider = mockAutomaticMcpOAuthProvider(context, {
+      registration: "cimd",
+      authentication: "mixed",
+    });
+    server.use(
+      http.get(
+        `${provider.issuer}/.well-known/oauth-authorization-server`,
+        () => {
+          return new HttpResponse(null, { status: 503 });
+        },
+      ),
+      http.get(`${provider.issuer}/.well-known/openid-configuration`, () => {
+        return new HttpResponse(null, { status: 503 });
+      }),
+    );
+    await accept(
+      automatic().start({
+        headers,
+        params: { connectorSlug: f.slug },
+        body: { authMethod: f.methodId, account: { intent: "add" } },
+      }),
+      [503],
     );
     expect(
       (
