@@ -883,6 +883,25 @@ export const DOCUMENT_TEMPLATE_ITEMS: readonly DocumentTemplateItem[] = [
     ],
   },
   {
+    id: "document-template:meeting-notes",
+    slug: "document-meeting-notes",
+    source: {
+      repo: "nexu-io/open-design",
+      ref: "3fb620af423534643677c7c6fae76be088fa770a",
+      path: "design-templates/meeting-notes/example.html",
+      licensePath: "LICENSE",
+    },
+    title: "Meeting notes",
+    description:
+      "Record attendees, agenda, decisions, action owners and due dates, and the next meeting.",
+    category: "business-record",
+    previewImageUrl:
+      "https://static.vm0.io/vm0/artifact-templates/document/meeting-notes-v1-20261110-84fb506742d9/document-meeting-notes/page-01.png",
+    previewPages: [
+      "https://static.vm0.io/vm0/artifact-templates/document/meeting-notes-v1-20261110-84fb506742d9/document-meeting-notes/page-01.png",
+    ],
+  },
+  {
     id: "document-template:receipt",
     slug: "document-receipt",
     source: {
