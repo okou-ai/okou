@@ -671,6 +671,11 @@ const handleEmailConnectionCode$ = command(
       signal,
     );
     signal.throwIfAborted();
+    if (result.kind === "unknown") {
+      return (
+        emailConnectionCodeFromText(args.text) !== null || !args.text.trim()
+      );
+    }
     if (result.kind === "ignored") {
       return true;
     }

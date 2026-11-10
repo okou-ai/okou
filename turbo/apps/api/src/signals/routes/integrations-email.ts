@@ -31,6 +31,7 @@ import {
   linkEmailIdentity$,
   createEmailConnectionCode$,
   connectedMailAccounts$,
+  syncConnectedMailAccounts$,
 } from "../services/email-connection.service";
 import type { RouteEntry } from "../route-entry";
 
@@ -47,6 +48,17 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
     return resourceUnavailable("Email integration is not available");
   }
   const auth = get(organizationAuthContext$);
+  const user = await get(clerk$).users.getUser(auth.userId, undefined, signal);
+  signal.throwIfAborted();
+  const accounts = await set(connectedMailAccounts$, auth, signal);
+  if (!user.banned) {
+    await set(
+      syncConnectedMailAccounts$,
+      { userId: auth.userId, orgId: auth.orgId, accounts },
+      signal,
+    );
+    signal.throwIfAborted();
+  }
   const links = await set(writeDb$)
     .select({ email: emailUserLinks.emailAddress })
     .from(emailUserLinks)
@@ -59,9 +71,6 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
     )
     .orderBy(emailUserLinks.createdAt, emailUserLinks.id);
   signal.throwIfAborted();
-  const user = await get(clerk$).users.getUser(auth.userId, undefined, signal);
-  signal.throwIfAborted();
-  const accounts = await set(connectedMailAccounts$, auth, signal);
   return {
     status: 200 as const,
     body: {

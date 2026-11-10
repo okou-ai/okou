@@ -1,5 +1,6 @@
 import { mockNow, now } from "../../../lib/time";
 import { randomUUID } from "node:crypto";
+import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { beforeEach, describe, expect, it, onTestFinished } from "vitest";
 import { http, HttpResponse } from "msw";
 import { array, object, string, record } from "zod";
@@ -31,6 +32,7 @@ import {
   mockGmailConnectorOAuth,
 } from "./helpers/api-bdd-connectors";
 import { createUniqueStaffOrgIdFixture } from "../../../test-fixtures/staff-org";
+import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const bdd = createBddApi(context);
@@ -1125,12 +1127,14 @@ describe("Email integration", () => {
 });
 
 async function connectionCode() {
-  return (
+  const code = (
     await accept(
       emailClient().createLinkCode({ headers: authHeaders() }),
       [200],
     )
   ).body.code;
+  expect(code).toMatch(/^\d{8}$/u);
+  return code;
 }
 async function connectedEmails() {
   return (
@@ -1139,6 +1143,16 @@ async function connectedEmails() {
 }
 
 describe("Email multi-account connections", () => {
+  it("processes an ordinary message with a numeric subject as a task", async () => {
+    const { actor } = await entitledActor();
+    await incoming({
+      sender: actor.email,
+      subject: "20261110",
+      text: "Analyze this report",
+    }).send();
+    expect((await createdThreads(actor)).chatThreads).toHaveLength(1);
+  });
+
   it("binds multiple non-login email addresses to one owner without starting tasks for connection codes", async () => {
     const { actor } = await entitledActor();
     const first = `${randomUUID()}@gmail.example`;
@@ -1295,12 +1309,28 @@ describe("Email multi-account connections", () => {
     );
   });
 
-  it.each(["gmail", "outlook-mail"] as const)(
-    "automatically adds multiple %s accounts and manages Email connections independently",
-    async (provider) => {
-      const actor = bdd.user({ orgId: createUniqueStaffOrgIdFixture() });
+  it.each([
+    { provider: "gmail", alreadyConnected: false },
+    { provider: "outlook-mail", alreadyConnected: false },
+    { provider: "gmail", alreadyConnected: true },
+    { provider: "outlook-mail", alreadyConnected: true },
+  ] as const)(
+    "automatically adds $provider accounts (existing: $alreadyConnected) and preserves individual deletion",
+    async ({ provider, alreadyConnected }) => {
+      const orgId = createUniqueStaffOrgIdFixture();
+      const actor = bdd.user({ orgId });
       verifiedDirectory(actor);
-      const addresses = [actor.email, `${randomUUID()}@example.com`];
+      if (alreadyConnected) {
+        await updateFeatureSwitchesForUser(
+          context,
+          { userId: actor.userId, orgId },
+          {
+            [FeatureSwitchKey.EmailIntegration]: false,
+          },
+        );
+      }
+      const secondEmail = `${randomUUID()}@example.com`;
+      const addresses = [actor.email, secondEmail];
       for (const address of addresses) {
         if (provider === "gmail") {
           mockGmailConnectorOAuth({ email: address, subject: randomUUID() });
@@ -1347,6 +1377,15 @@ describe("Email multi-account connections", () => {
         );
         expect(completed.body).toMatchObject({ status: "success" });
       }
+      if (alreadyConnected) {
+        await updateFeatureSwitchesForUser(
+          context,
+          { userId: actor.userId, orgId },
+          {
+            [FeatureSwitchKey.EmailIntegration]: true,
+          },
+        );
+      }
       verifiedDirectory(actor);
       await expect(connectedEmails()).resolves.toStrictEqual(
         expect.arrayContaining(addresses),
@@ -1377,12 +1416,13 @@ describe("Email multi-account connections", () => {
       await accept(
         emailClient().unlink({
           headers: authHeaders(),
-          body: { emailAddress: actor.email },
+          body: { emailAddress: secondEmail },
         }),
         [204],
       );
-      await incoming({ sender: actor.email }).send();
-      await expect(connectedEmails()).resolves.toStrictEqual([addresses[1]]);
+      await incoming({ sender: secondEmail }).send();
+      await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
+      await expect(connectedEmails()).resolves.toStrictEqual([actor.email]);
     },
   );
 });

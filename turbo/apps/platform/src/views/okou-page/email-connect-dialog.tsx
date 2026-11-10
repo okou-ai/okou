@@ -1,4 +1,4 @@
-import { useGet, useLastLoadable, useSet } from "ccstate-react";
+import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { Loader2 } from "lucide-react";
 import { Button, CopyButton, buttonVariants } from "@okouai/ui";
@@ -11,32 +11,21 @@ import {
 } from "@okouai/ui/components/ui/dialog";
 import { useTranslation } from "react-i18next";
 import {
-  connectVerifiedEmail$,
-  disconnectEmail$,
+  deleteEmailConnection$,
   createEmailConnectionCode$,
-  emailConnectionDialogMode$,
+  emailConnectionCode$,
   emailConnectDialogOpen$,
   emailConnectionFinalFocus$,
   emailLinkStatus$,
   setEmailConnectDialogOpen$,
 } from "../../signals/okou-page/email.ts";
-import { assistantName$ } from "../../signals/branding.ts";
-import { ApiError } from "../../lib/api-error.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { QuestFigure, QuestSplitLayout } from "./get-started-quest-shell.tsx";
 
-function EmailAddressRow({
-  email,
-  connected = false,
-}: {
-  readonly email: string;
-  readonly connected?: boolean;
-}) {
+function EmailAddressRow({ email }: { readonly email: string }) {
   const { t } = useTranslation();
-  const [operation, connect] = useLoadableSet(
-    connected ? disconnectEmail$ : connectVerifiedEmail$,
-  );
+  const [operation, remove] = useLoadableSet(deleteEmailConnection$);
   const signal = useGet(pageSignal$);
   return (
     <div role="group" aria-label={email} className="space-y-2">
@@ -46,29 +35,24 @@ function EmailAddressRow({
           type="button"
           size="sm"
           className="shrink-0"
-          variant={connected ? "outline" : "default"}
+          variant="outline"
           disabled={operation.state === "loading"}
           onClick={() => {
-            detach(connect(email, signal), Reason.DomCallback);
+            detach(remove(email, signal), Reason.DomCallback);
           }}
         >
           {operation.state === "loading" ? (
             <Loader2 size={14} className="animate-spin" aria-hidden="true" />
           ) : null}
           {t(($) => {
-            return connected
-              ? $.connectors.actions.disconnect
-              : $.connectors.actions.connect;
+            return $.connectors.actions.delete;
           })}
         </Button>
       </div>
       {operation.state === "hasError" ? (
         <p role="alert" className="text-sm text-destructive">
           {t(($) => {
-            return operation.error instanceof ApiError &&
-              operation.error.status === 409
-              ? $.works.email.connectedElsewhere
-              : $.works.email.loadError;
+            return $.works.email.loadError;
           })}
         </p>
       ) : null}
@@ -78,8 +62,6 @@ function EmailAddressRow({
 
 export function EmailConnectDialog() {
   const { t } = useTranslation();
-  const assistantName = useGet(assistantName$);
-  const mode = useGet(emailConnectionDialogMode$);
   const open = useGet(emailConnectDialogOpen$);
   const setOpen = useSet(setEmailConnectDialogOpen$);
   const finalFocus = useSet(emailConnectionFinalFocus$);
@@ -100,20 +82,13 @@ export function EmailConnectDialog() {
         >
           <DialogHeader>
             <DialogTitle className="pr-7">
-              {t(
-                ($) => {
-                  return mode === "manage"
-                    ? $.works.email.manageTitle
-                    : $.works.email.connectTitle;
-                },
-                { assistantName },
-              )}
+              {t(($) => {
+                return $.works.email.manageTitle;
+              })}
             </DialogTitle>
             <DialogDescription>
               {t(($) => {
-                return mode === "manage"
-                  ? $.works.email.manageDescription
-                  : $.works.email.connectDescription;
+                return $.works.email.manageDescription;
               })}
             </DialogDescription>
           </DialogHeader>
@@ -125,20 +100,9 @@ export function EmailConnectDialog() {
               >
                 {status.data.address}
               </a>
-              {mode === "manage"
-                ? status.data.emails.map((email) => {
-                    return (
-                      <EmailAddressRow key={email} email={email} connected />
-                    );
-                  })
-                : null}
-              {status.data.availableEmails
-                .filter((email) => {
-                  return !status.data.emails.includes(email);
-                })
-                .map((email) => {
-                  return <EmailAddressRow key={email} email={email} />;
-                })}
+              {status.data.emails.map((email) => {
+                return <EmailAddressRow key={email} email={email} />;
+              })}
               <EmailAddAddressCode address={status.data.address} />
               <p className="text-xs text-muted-foreground">
                 {t(($) => {
@@ -174,8 +138,10 @@ export function EmailConnectDialog() {
 function EmailAddAddressCode({ address }: { readonly address: string }) {
   const { t } = useTranslation();
   const signal = useGet(pageSignal$);
-  const [operation, generate] = useLoadableSet(createEmailConnectionCode$);
-  const code = operation.state === "hasData" ? operation.data : null;
+  const generate = useSet(createEmailConnectionCode$);
+  const operation = useLoadable(emailConnectionCode$);
+  const lastCode = useLastLoadable(emailConnectionCode$);
+  const code = lastCode.state === "hasData" ? lastCode.data : null;
   return (
     <div className="space-y-3">
       <Button
@@ -209,7 +175,7 @@ function EmailAddAddressCode({ address }: { readonly address: string }) {
             })}
           </p>
           <div className="flex min-w-0 items-center justify-between gap-2">
-            <code className="min-w-0 break-all font-mono text-xs">
+            <code className="min-w-0 break-all font-mono text-sm tracking-wide">
               {code.code}
             </code>
             <CopyButton

@@ -1,5 +1,4 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
-import { useLoadableSet } from "ccstate-react/experimental";
 import { CircleCheck, EllipsisVertical, Mail } from "lucide-react";
 import { Badge, Button, surfaceVariants } from "@okouai/ui";
 import {
@@ -16,10 +15,9 @@ import {
 } from "@okouai/ui/components/ui/tooltip";
 import { useTranslation } from "react-i18next";
 import {
-  disconnectEmail$,
+  addEmailConnection$,
   emailLinkStatus$,
   setEmailConnectDialogOpen$,
-  openEmailManageDialog$,
   emailConnectDialogOpen$,
   emailConnectionTriggerRef$,
 } from "../../signals/okou-page/email.ts";
@@ -27,44 +25,12 @@ import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { EmailConnectDialog } from "./email-connect-dialog.tsx";
 
-function EmailDisconnectAction({ email }: { readonly email: string }) {
-  const { t } = useTranslation();
-  const [operation, disconnect] = useLoadableSet(disconnectEmail$);
-  const signal = useGet(pageSignal$);
-  return (
-    <div>
-      <button
-        type="button"
-        disabled={operation.state === "loading"}
-        className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground disabled:pointer-events-none disabled:opacity-50"
-        onClick={() => {
-          detach(disconnect(email, signal), Reason.DomCallback);
-        }}
-      >
-        <span className="shrink-0">
-          {t(($) => {
-            return operation.state === "loading"
-              ? $.connectors.actions.disconnecting
-              : $.connectors.actions.disconnect;
-          })}
-        </span>
-      </button>
-      {operation.state === "hasError" ? (
-        <p role="alert" className="px-3 py-2 text-sm text-destructive">
-          {t(($) => {
-            return $.works.email.loadError;
-          })}
-        </p>
-      ) : null}
-    </div>
-  );
-}
-
 export function EmailCard() {
   const { t } = useTranslation();
   const status = useLastLoadable(emailLinkStatus$);
   const setConnectOpen = useSet(setEmailConnectDialogOpen$);
-  const manage = useSet(openEmailManageDialog$);
+  const addEmail = useSet(addEmailConnection$);
+  const signal = useGet(pageSignal$);
   const dialogOpen = useGet(emailConnectDialogOpen$);
   const setTrigger = useSet(emailConnectionTriggerRef$);
   const emails = status.state === "hasData" ? status.data.emails : [];
@@ -136,15 +102,14 @@ export function EmailCard() {
                 >
                   <PopoverClose
                     className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground"
-                    onClick={manage}
+                    onClick={() => {
+                      setConnectOpen(true);
+                    }}
                   >
                     {t(($) => {
                       return $.works.email.manage;
                     })}
                   </PopoverClose>
-                  {emails.length === 1 ? (
-                    <EmailDisconnectAction email={email} />
-                  ) : null}
                 </PopoverContent>
               </Popover>
             </>
@@ -156,11 +121,11 @@ export function EmailCard() {
               size="sm"
               className="h-8 shrink-0 gap-1.5 rounded-lg"
               onClick={() => {
-                setConnectOpen(true);
+                detach(addEmail(signal), Reason.DomCallback);
               }}
             >
               {t(($) => {
-                return $.connectors.actions.connect;
+                return $.works.email.addEmail;
               })}
             </Button>
           ) : (

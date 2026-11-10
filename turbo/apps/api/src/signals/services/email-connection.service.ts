@@ -1,5 +1,5 @@
 import { command } from "ccstate";
-import { createHmac, randomBytes, randomUUID } from "node:crypto";
+import { createHmac, randomInt, randomUUID } from "node:crypto";
 import {
   and,
   count,
@@ -118,11 +118,11 @@ export const linkEmailIdentity$ = command(
 );
 
 const EMAIL_CODE_TTL_MS = 10 * 60 * 1000;
-const EMAIL_CODE_PATTERN = /^OKOU-[A-F0-9]{16}$/iu;
+const EMAIL_CODE_PATTERN = /^\d{8}$/u;
 
 export function emailConnectionCodeFromText(text: string): string | null {
   const firstLine = text.trim().split(/\r?\n/u)[0] ?? "";
-  return EMAIL_CODE_PATTERN.test(firstLine) ? firstLine.toUpperCase() : null;
+  return EMAIL_CODE_PATTERN.test(firstLine) ? firstLine : null;
 }
 
 function hashEmailCode(code: string): string {
@@ -137,20 +137,30 @@ export const createEmailConnectionCode$ = command(
     owner: { readonly orgId: string; readonly userId: string },
     signal: AbortSignal,
   ) => {
-    const code = `OKOU-${randomBytes(8).toString("hex").toUpperCase()}`;
     const createdAt = nowDate();
     const expiresAt = new Date(createdAt.getTime() + EMAIL_CODE_TTL_MS);
-    await set(writeDb$)
-      .insert(emailConnectionCodes)
-      .values({
-        userId: owner.userId,
-        orgId: owner.orgId,
-        codeHash: hashEmailCode(code),
-        createdAt,
-        expiresAt,
-      });
-    signal.throwIfAborted();
-    return { code, expiresAt: expiresAt.toISOString() };
+    const db = set(writeDb$);
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const code = randomInt(10 ** 8)
+        .toString()
+        .padStart(8, "0");
+      const [created] = await db
+        .insert(emailConnectionCodes)
+        .values({
+          userId: owner.userId,
+          orgId: owner.orgId,
+          codeHash: hashEmailCode(code),
+          createdAt,
+          expiresAt,
+        })
+        .onConflictDoNothing({ target: emailConnectionCodes.codeHash })
+        .returning({ codeHash: emailConnectionCodes.codeHash });
+      signal.throwIfAborted();
+      if (created) {
+        return { code, expiresAt: expiresAt.toISOString() };
+      }
+    }
+    throw new Error("Email connection code generation failed");
   },
 );
 
@@ -261,7 +271,7 @@ export const consumeEmailConnectionCode$ = command(
       .limit(1);
     signal.throwIfAborted();
     if (!code) {
-      return { kind: "ignored" } as const;
+      return { kind: "unknown" } as const;
     }
     const user = await findClerkUser(get(clerk$), code.userId, signal);
     signal.throwIfAborted();
@@ -337,6 +347,45 @@ export const connectedMailAccounts$ = command(
       );
     signal.throwIfAborted();
     return accounts;
+  },
+);
+
+/** Import current OAuth accounts once; deleted and foreign bindings keep their existing ownership. */
+export const syncConnectedMailAccounts$ = command(
+  async (
+    { set },
+    args: {
+      readonly userId: string;
+      readonly orgId: string;
+      readonly accounts: readonly { readonly email: string | null }[];
+    },
+    signal: AbortSignal,
+  ) => {
+    const addresses = [
+      ...new Set(
+        args.accounts.flatMap((account) => {
+          const address = email().safeParse(account.email?.toLowerCase());
+          return address.success ? [address.data] : [];
+        }),
+      ),
+    ];
+    if (addresses.length === 0) {
+      return;
+    }
+    const created = await set(writeDb$)
+      .insert(emailUserLinks)
+      .values(
+        addresses.map((emailAddress) => {
+          return { emailAddress, userId: args.userId, orgId: args.orgId };
+        }),
+      )
+      .onConflictDoNothing({ target: emailUserLinks.emailAddress })
+      .returning({ id: emailUserLinks.id });
+    signal.throwIfAborted();
+    if (created.length > 0) {
+      await publishUserSignal([args.userId], "email:changed");
+      signal.throwIfAborted();
+    }
   },
 );
 
