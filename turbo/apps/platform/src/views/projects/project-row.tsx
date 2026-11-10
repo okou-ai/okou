@@ -49,9 +49,11 @@ import type {
 } from "../../signals/chat-page/chat-thread-list-rows.ts";
 import { rootSignal$ } from "../../signals/root-signal.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
-import { selectedProjectId$ } from "../../signals/projects/project-navigation.ts";
+import {
+  clickProjectName$,
+  selectedProjectId$,
+} from "../../signals/projects/project-navigation.ts";
 import { Link } from "../router/link.tsx";
-import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatThreadStateText } from "../okou-page/sidebar-shared.tsx";
 import {
@@ -421,8 +423,7 @@ function ProjectTrigger({
   readonly rowId: string;
   readonly unread: boolean;
 }) {
-  const toggle = useSet(toggleProject$);
-  const expand = useSet(expandProject$);
+  const clickName = useSet(clickProjectName$);
   const edit = useGet(projectInlineRename$);
   const renaming = edit?.rowId === rowId;
   const startRename = useSet(startProjectInlineRename$);
@@ -449,17 +450,7 @@ function ProjectTrigger({
           data-project-trigger=""
           aria-current={active ? "page" : undefined}
           onClick={(event) => {
-            // Only a click that opens the page here changes the fold, not one
-            // opening a new tab or window, nor the second click of a rename
-            // double-click.
-            if (!shouldHandleLinkClick(event) || event.detail > 1) {
-              return;
-            }
-            if (active) {
-              toggle(project.id);
-            } else {
-              expand(project.id);
-            }
+            clickName(project.id, event);
           }}
           onDoubleClick={(event) => {
             if (

@@ -702,7 +702,7 @@ test("A folded Project keeps the open chat's place: up selects the Project and d
 });
 
 test("Clicking a Project's name opens its page and unfolds its chats, then toggles them there", async () => {
-  await setupProjectNavigation(223, "/chats/:b");
+  const { b } = await setupProjectNavigation(223, "/chats/:b");
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
   expect(namedLink(projectRows(), "Thread A2")).toBeNull();
 
@@ -713,8 +713,10 @@ test("Clicking a Project's name opens its page and unfolds its chats, then toggl
   });
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
   expect(namedLink(projectRows(), "Thread A2")).toBeInTheDocument();
+  const composer = await screen.findByRole("textbox", { name: "Message" });
 
-  // On the Project's page, clicking its name again folds and unfolds it.
+  // On the Project's page, clicking its name again folds and unfolds it
+  // without opening the page again.
   await user.click(projectLink("Launch"));
   expect(location.pathname).toBe(`/projects/${id}`);
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
@@ -723,6 +725,15 @@ test("Clicking a Project's name opens its page and unfolds its chats, then toggl
   await user.click(projectLink("Launch"));
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
   expect(namedLink(projectRows(), "Thread A2")).toBeInTheDocument();
+  expect(screen.getByRole("textbox", { name: "Message" })).toBe(composer);
+
+  // Back leaves the Project's page for the chat that opened it.
+  act(() => {
+    window.history.back();
+  });
+  await waitFor(() => {
+    expect(location.pathname).toBe(`/chats/${b.id}`);
+  });
 });
 
 test("Clicking a folded Project's name from one of its chats unfolds it", async () => {
