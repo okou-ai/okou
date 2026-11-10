@@ -134,17 +134,11 @@ class _DeliveryCompletion:
     dropped_batches: list[_PendingBatch]
 
 
-@dataclass(frozen=True)
-class _BatchAdmissionResult:
-    admitted_batch_count: int
-    retained_batches: list[_PendingBatch]
-
-
 class _BatchEnqueueError(Exception):
-    def __init__(self, original: Exception, admission_result: _BatchAdmissionResult) -> None:
+    def __init__(self, original: Exception, admitted_batch_count: int) -> None:
         super().__init__(str(original))
         self.original = original
-        self.admission_result = admission_result
+        self.admitted_batch_count = admitted_batch_count
 
 
 @dataclass(frozen=True)
