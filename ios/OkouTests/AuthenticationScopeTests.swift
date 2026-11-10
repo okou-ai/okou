@@ -454,6 +454,13 @@ final class AuthenticationScopeTests: XCTestCase {
     // The old workspace's read remains usable after the native workspace owner is replaced.
     let shared = try await resources.read()
     XCTAssertEqual(shared, workspaces)
+    provider.state.withLock { $0.failMemberships = true }
+    await authentication.refreshWorkspaces()
+    await assertMembershipFailure(authentication)
+    XCTAssertEqual(authentication.workspaces, workspaces)
+    // Confirmation remains useful for selection, while SDK activation still decides access.
+    try await authentication.switchWorkspace("org_one")
+    try await assertToken(authentication)
     try await authentication.signOut()
     do {
       _ = try await resources.read()

@@ -139,52 +139,62 @@ private struct WorkspaceMembershipChoices: View {
   var body: some View {
     switch memberships {
     case .loading:
-      OkouLoadingRow("Loading workspaces…")
+      if let confirmed = resources.confirmed, !confirmed.isEmpty {
+        choices(confirmed)
+      } else {
+        OkouLoadingRow("Loading workspaces…")
+      }
     case .hasError(let error):
+      if let confirmed = resources.confirmed, !confirmed.isEmpty { choices(confirmed) }
       OkouLoadErrorRow(message: error.localizedDescription) {
         await authentication.refreshWorkspaces()
       }
     case .hasData(let workspaces):
-      if workspaces.isEmpty {
-        VStack(alignment: .leading, spacing: OkouSpace.lg) {
-          Text("Finish setting up your workspace on the web, then return here.")
-            .foregroundStyle(OkouColor.mutedForeground)
-          Link("Open Okou on the web", destination: webURL)
-            .buttonStyle(OkouButtonStyle(isPrimary: false))
-          Button("Refresh workspaces") { Task { await authentication.refreshWorkspaces() } }
-            .buttonStyle(OkouButtonStyle(isPrimary: false))
-        }
-      } else {
-        VStack(spacing: OkouSpace.md) {
-          ForEach(workspaces) { workspace in
-            Button {
-              Task {
-                do {
-                  try await authentication.switchWorkspace(workspace.id)
-                } catch {
-                  actionError = error.localizedDescription
-                }
+      choices(workspaces)
+    }
+  }
+
+  @ViewBuilder
+  private func choices(_ workspaces: [WorkspacePresentation]) -> some View {
+    if workspaces.isEmpty {
+      VStack(alignment: .leading, spacing: OkouSpace.lg) {
+        Text("Finish setting up your workspace on the web, then return here.")
+          .foregroundStyle(OkouColor.mutedForeground)
+        Link("Open Okou on the web", destination: webURL)
+          .buttonStyle(OkouButtonStyle(isPrimary: false))
+        Button("Refresh workspaces") { Task { await authentication.refreshWorkspaces() } }
+          .buttonStyle(OkouButtonStyle(isPrimary: false))
+      }
+    } else {
+      VStack(spacing: OkouSpace.md) {
+        ForEach(workspaces) { workspace in
+          Button {
+            Task {
+              do {
+                try await authentication.switchWorkspace(workspace.id)
+              } catch {
+                actionError = error.localizedDescription
               }
-            } label: {
-              HStack(spacing: OkouSpace.md) {
-                OkouWorkspaceLogo(
-                  workspaceID: workspace.id, name: workspace.name,
-                  imageURL: workspace.imageURL, hasImage: workspace.hasImage
-                )
-                .accessibilityHidden(true)
-                Text(workspace.name)
-                  .font(.okou(.body).weight(.medium))
-                  .multilineTextAlignment(.leading)
-                Spacer(minLength: OkouSpace.sm)
-                OkouIcon("chevron-right", size: OkouIconSize.accessory)
-                  .foregroundStyle(OkouColor.mutedForeground)
-                  .accessibilityHidden(true)
-              }
-              .frame(maxWidth: .infinity, alignment: .leading)
             }
-            .buttonStyle(OkouProviderButtonStyle())
-            .disabled(authentication.isSwitchingWorkspace)
+          } label: {
+            HStack(spacing: OkouSpace.md) {
+              OkouWorkspaceLogo(
+                workspaceID: workspace.id, name: workspace.name,
+                imageURL: workspace.imageURL, hasImage: workspace.hasImage
+              )
+              .accessibilityHidden(true)
+              Text(workspace.name)
+                .font(.okou(.body).weight(.medium))
+                .multilineTextAlignment(.leading)
+              Spacer(minLength: OkouSpace.sm)
+              OkouIcon("chevron-right", size: OkouIconSize.accessory)
+                .foregroundStyle(OkouColor.mutedForeground)
+                .accessibilityHidden(true)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
           }
+          .buttonStyle(OkouProviderButtonStyle())
+          .disabled(authentication.isSwitchingWorkspace)
         }
       }
     }
