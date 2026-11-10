@@ -70,12 +70,18 @@ final class FailureRecoveryResources {
   }
 
   func readAccounts() async throws -> [PersonalSubscription] {
-    guard !closed, let subscriptions else { throw CancellationError() }
-    // A different shared reader can replace HTTP while this command is suspended.
-    let values = try await subscriptions.read()
-    try Task.checkCancellation()
-    guard !closed else { throw CancellationError() }
-    return values
+    guard let accounts else { throw CancellationError() }
+    while !closed {
+      try Task.checkCancellation()
+      let task = try store.get(accounts)
+      let result = await task.result
+      try Task.checkCancellation()
+      // Retired failures must stop before evaluating another owner's replacement read.
+      guard !closed else { throw CancellationError() }
+      if task != (try store.get(accounts)) { continue }
+      return try result.get()
+    }
+    throw CancellationError()
   }
 
   func start() throws {

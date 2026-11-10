@@ -717,7 +717,12 @@ final class FailureRecoveryTests: XCTestCase {
       $0.accountGate = oldGate
       $0.accountRequested = { oldStarted.fulfill() }
     }
-    let refreshing = Task { await conversation.refreshFailureAccounts() }
+    let oldFinished = expectation(
+      description: "Retired waiter exits while the new response is held")
+    let refreshing = Task {
+      await conversation.refreshFailureAccounts()
+      oldFinished.fulfill()
+    }
     addTeardownBlock {
       refreshing.cancel()
       oldGate.open()
@@ -746,6 +751,7 @@ final class FailureRecoveryTests: XCTestCase {
     await fulfillment(of: [newStarted], timeout: 3)
     oldGate.open()
     _ = await oldRead.result
+    await fulfillment(of: [oldFinished], timeout: 3)
     newGate.open()
     await refreshing.value
     let failure = try XCTUnwrap(conversation.messages.last?.failure)
