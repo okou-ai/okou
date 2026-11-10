@@ -356,8 +356,9 @@ function ProjectTrigger({
           renaming && "invisible",
         )}
       >
-        {/* The folder folds the Project's chats; the name opens its page and
-            unfolds its chats. */}
+        {/* The folder folds the Project's chats. The name opens its page and
+            unfolds its chats; on that page, clicking it again folds or
+            unfolds them. */}
         <button
           type="button"
           aria-expanded={expanded}
@@ -384,9 +385,15 @@ function ProjectTrigger({
           data-project-trigger=""
           aria-current={active ? "page" : undefined}
           onClick={(event) => {
-            // Unfold only when the click opens the page here, not in a new
-            // tab or window.
-            if (shouldHandleLinkClick(event)) {
+            // Only a click that opens the page here changes the fold, not one
+            // opening a new tab or window, nor the second click of a rename
+            // double-click.
+            if (!shouldHandleLinkClick(event) || event.detail > 1) {
+              return;
+            }
+            if (active) {
+              toggle(project.id);
+            } else {
               expand(project.id);
             }
           }}
