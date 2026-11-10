@@ -29,9 +29,11 @@ hashes. Raw Instructions, Workflow bodies, Chat titles/messages, trigger payload
 and connection strings are not emitted. Unexpected failures print only the error
 class; raw database errors can contain source values or credentials.
 
-`inventory` reads the named org using one SQL statement, giving all selected
-tables a consistent statement snapshot. Postgres enforces read-only execution
-through `default_transaction_read_only=on`; the resulting snapshot must attest
+`inventory` reserves one connection and initializes its server session with
+explicit SQL for `default_transaction_read_only=on` and the existing 60-second
+statement timeout. This does not depend on a gateway forwarding startup settings.
+It then reads the named org using one SQL statement, giving all selected tables
+a consistent statement snapshot. The resulting snapshot must attest
 `transaction_read_only=on`. It selects no other org's rows. No S3 publication,
 connector, runtime execution or feature-switch change occurs. The environment
 label is supplied by the operator; it does not verify branch lineage or serving
@@ -122,7 +124,8 @@ DATABASE_URL=<local-disposable-database-admin-url> pnpm test:single-agent-migrat
 
 The test creates and deletes its own uniquely named database, applies the actual
 repository schema, and runs the CLI as a subprocess. It checks tenant isolation,
-Postgres read-only attestation, no source-row changes, private report creation,
+Postgres read-only attestation through a local gateway that strips optional
+startup settings, no source-row changes, private report creation,
 offline deterministic planning, preserved empty personal content, owner-separated
 Projects and prior membership, enabled/disabled Automations and execution Chat
 bindings, permission blockers, name/length conflicts, strict scope validation and

@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
 import { createHash, randomUUID } from "node:crypto";
 import { mkdtemp, readFile, rm, stat, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -20,6 +21,7 @@ const admin = postgres(databaseUrl, { max: 1, onnotice: () => {} });
 const testUrl = new URL(databaseUrl);
 testUrl.pathname = `/${databaseName}`;
 const sql = postgres(testUrl.toString(), { max: 1, onnotice: () => {} });
+let proxy: ReturnType<typeof spawn> | undefined;
 const directory = await mkdtemp(join(tmpdir(), "single-agent-test-"));
 const cli = fileURLToPath(new URL("./cli.ts", import.meta.url));
 const org = `org-${randomUUID()}`;
@@ -144,6 +146,30 @@ async function state() {
 }
 
 try {
+  proxy = spawn(
+    process.execPath,
+    [
+      "--import",
+      "tsx",
+      fileURLToPath(new URL("./test-startup-proxy.ts", import.meta.url)),
+      testUrl.hostname,
+      testUrl.port || "5432",
+    ],
+    { stdio: ["ignore", "pipe", "ignore"] },
+  );
+  assert.ok(proxy.stdout);
+  const ready = await Promise.race([
+    once(proxy.stdout, "data"),
+    once(proxy, "exit").then(() => {
+      throw new Error("Startup proxy exited before readiness");
+    }),
+  ]);
+  const proxyAddress = object({ port: number().int().positive() }).parse(
+    JSON.parse(String(ready[0])),
+  );
+  const proxyUrl = new URL(testUrl);
+  proxyUrl.hostname = "127.0.0.1";
+  proxyUrl.port = String(proxyAddress.port);
   await admin.unsafe(`CREATE DATABASE "${databaseName}"`);
   await applyPendingMigrations(sql);
   await sql`INSERT INTO agents (id, org_id, owner, name, display_name, visibility, instructions, instructions_bundle)
@@ -200,7 +226,7 @@ try {
       inventoryFile,
     ],
     0,
-    testUrl.toString(),
+    proxyUrl.toString(),
   );
   const inventoryBytes = await readFile(inventoryFile);
   assert.ok(!inventoryBytes.includes(canary));
@@ -590,6 +616,11 @@ try {
     "Single Agent preparation: tenant isolation, read-only inventory, offline deterministic plans, permissions, personal empty values, private Projects, enabled/disabled Automations and fail-closed conflicts passed",
   );
 } finally {
+  if (proxy?.pid && proxy.exitCode === null && proxy.signalCode === null) {
+    const closed = once(proxy, "exit");
+    proxy.kill();
+    await closed;
+  }
   await sql.end();
   await admin.unsafe(`DROP DATABASE IF EXISTS "${databaseName}"`);
   await admin.end();

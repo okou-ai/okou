@@ -7,17 +7,18 @@ export async function inventory(
   orgId: string,
   target: string,
 ) {
-  const db = postgres(connection, {
+  const pool = postgres(connection, {
     max: 1,
     connect_timeout: 10,
-    connection: {
-      default_transaction_read_only: true,
-      statement_timeout: 60_000,
-    },
     onnotice: () => {},
   });
   try {
-    const rows = await db`
+    const db = await pool.reserve();
+    try {
+      // Gateways can discard startup settings; initialize the reserved server session.
+      await db`SET default_transaction_read_only = on`;
+      await db`SET statement_timeout = '60s'`;
+      const rows = await db`
       WITH selected_agents AS MATERIALIZED (
         SELECT id FROM agents WHERE org_id = ${orgId}
       )
@@ -68,9 +69,12 @@ export async function inventory(
           ORDER BY p.id), '[]'::jsonb) FROM projects p WHERE p.org_id = o.org_id)
       ) AS snapshot FROM org_metadata o WHERE o.org_id = ${orgId}
     `;
-    if (rows.length !== 1) throw new PlanningError("OrganizationNotFound");
-    return parseSnapshot(rows[0]?.snapshot);
+      if (rows.length !== 1) throw new PlanningError("OrganizationNotFound");
+      return parseSnapshot(rows[0]?.snapshot);
+    } finally {
+      db.release();
+    }
   } finally {
-    await db.end();
+    await pool.end();
   }
 }
