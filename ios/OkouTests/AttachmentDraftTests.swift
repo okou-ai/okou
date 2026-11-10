@@ -51,7 +51,9 @@ final class AttachmentDraftTests: XCTestCase {
     let thumbnail = try await reads.store.get(read.value).value.image
     XCTAssertNotNil(thumbnail)
     submission.viewer.open(attachment)
-    let cachedURL = try XCTUnwrap(submission.viewer.preview?.file?.url)
+    let submissionPreview = try XCTUnwrap(submission.viewer.preview)
+    let submissionFile = try await submissionPreview.store.get(submissionPreview.file).value
+    let cachedURL = try XCTUnwrap(submissionFile?.url)
     XCTAssertEqual(try Data(contentsOf: cachedURL), bytes)
     submission.viewer.dismiss()
     release.yield(())
@@ -60,7 +62,9 @@ final class AttachmentDraftTests: XCTestCase {
 
     let conversation = try XCTUnwrap(store.selectedConversation)
     conversation.attachmentViewer.open(attachment)
-    XCTAssertEqual(conversation.attachmentViewer.preview?.file?.url, cachedURL)
+    let conversationPreview = try XCTUnwrap(conversation.attachmentViewer.preview)
+    let conversationFile = try await conversationPreview.store.get(conversationPreview.file).value
+    XCTAssertEqual(conversationFile?.url, cachedURL)
     let artifact = ChatArtifact(
       source: .file(attachment.id), filename: attachment.filename,
       contentType: attachment.contentType)
@@ -76,7 +80,9 @@ final class AttachmentDraftTests: XCTestCase {
     await conversation.send()
     XCTAssertEqual(fixture.state.value.withLock { $0.messages.count }, 2)
     conversation.attachmentViewer.open(attachment)
-    let nextURL = try XCTUnwrap(conversation.attachmentViewer.preview?.file?.url)
+    let nextPreview = try XCTUnwrap(conversation.attachmentViewer.preview)
+    let nextFile = try await nextPreview.store.get(nextPreview.file).value
+    let nextURL = try XCTUnwrap(nextFile?.url)
     XCTAssertEqual(try Data(contentsOf: nextURL), bytes)
     conversation.attachmentViewer.dismiss()
     store.close()
