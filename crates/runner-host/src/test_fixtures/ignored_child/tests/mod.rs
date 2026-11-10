@@ -218,19 +218,45 @@ async fn assert_output_timeout_cleans_up_descendant(exit_code: &'static str) {
     let readiness_value = readiness_path.to_str().unwrap().to_owned();
     let child_test_name =
         "test_fixtures::ignored_child::tests::run_ignored_child_test_output_timeout_child";
-    let task = tokio::spawn(async move {
+    let (entered, output_waiting) = tokio::sync::oneshot::channel();
+    let mut task = tokio::spawn(async move {
         run_ignored_child_test_with_readiness(
             child_test_name,
             (OUTPUT_TIMEOUT_CHILD_ENV, &readiness_value),
             &[(OUTPUT_TIMEOUT_EXIT_ENV, Some(exit_code))],
             Duration::from_secs(5),
             Some(&task_readiness_path),
+            Some(entered),
         )
         .await;
     });
-    let result = task.await;
+    if output_waiting.await.is_err() {
+        let result = task.await;
+        panic!("child output wait ended before its timer phase: {result:?}");
+    }
+    // Child exit and inherited-pipe admission happened on running time. Advance
+    // only the armed output timer, resuming before any awakened task can do IO.
+    tokio::time::pause();
+    let before = tokio::time::Instant::now();
+    let mut advancing = std::pin::pin!(tokio::time::advance(CHILD_OUTPUT_TIMEOUT));
+    let advanced = poll_fn(|cx| std::task::Poll::Ready(advancing.as_mut().poll(cx))).await;
+    let elapsed = before.elapsed();
+    tokio::time::resume();
+    assert_eq!(elapsed, CHILD_OUTPUT_TIMEOUT);
+    if advanced.is_pending() {
+        advancing.await;
+    }
+    let (result, completed_in_time) =
+        match tokio::time::timeout(Duration::from_secs(2), &mut task).await {
+            Ok(result) => (result, true),
+            Err(_) => (task.await, false),
+        };
     let identity = read_descendant_identity(&readiness_path);
     assert_descendant_exited(&identity).await;
+    assert!(
+        completed_in_time,
+        "armed child output deadline did not finish on running time: {result:?}"
+    );
 
     let panic = result
         .expect_err("inherited output pipe must fail the fixture")
@@ -331,6 +357,7 @@ async fn run_ignored_child_test_timeout_kills_separate_process_group_descendant(
             &[],
             Duration::from_millis(10),
             Some(&task_readiness_path),
+            None,
         )
         .await;
     });
