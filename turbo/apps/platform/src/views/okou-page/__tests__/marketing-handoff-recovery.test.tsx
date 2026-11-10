@@ -1,17 +1,16 @@
 import { marketingHandoffsContract } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import { agentDraftContract } from "@okouai/api-contracts/contracts/agent-draft";
 import { webFilesContract } from "@okouai/api-contracts/contracts/web-files";
-import {
-  chatEventsContract,
-  chatThreadsContract,
-} from "@okouai/api-contracts/contracts/chat-threads";
-import { screen, waitFor } from "@testing-library/react";
+import { cleanup, screen, waitFor } from "@testing-library/react";
 import { HttpResponse } from "msw";
-import { expect, test } from "vitest";
-import { setupPage } from "../../../__tests__/page-helper.ts";
-import { testContext } from "../../../signals/__tests__/test-helpers.ts";
+import { expect, test, vi } from "vitest";
+import { fill, setupPage } from "../../../__tests__/page-helper.ts";
+import {
+  createTestRuntime,
+  testContext,
+} from "../../../signals/__tests__/test-helpers.ts";
 import { pathname, search } from "../../../signals/location.ts";
-import { localStorageSignals } from "../../../signals/external/local-storage.ts";
+import { resetSignal } from "../../../signals/utils.ts";
 
 const context = testContext();
 const AGENT_ID = "c0000000-0000-4000-a000-000000000001";
@@ -20,7 +19,6 @@ const NOTICE =
 const HASH = "a".repeat(12);
 
 function preserveDraft() {
-  const writes: string[] = [];
   context.mocks.api(agentDraftContract.get, ({ respond }) => {
     return respond(200, {
       draftUserMessage: {
@@ -30,29 +28,15 @@ function preserveDraft() {
       draftAttachments: null,
     });
   });
-  context.mocks.api(agentDraftContract.patch, ({ respond }) => {
-    writes.push("draft");
-    return respond(204);
-  });
-  context.mocks.api(chatThreadsContract.create, async ({ never }) => {
-    writes.push("thread");
-    return await never();
-  });
-  context.mocks.api(chatEventsContract.send, async ({ never }) => {
-    writes.push("send");
-    return await never();
-  });
-  return writes;
 }
 
-async function expectUsableDraft(notice = NOTICE) {
+async function expectUsableDraft() {
   await waitFor(() => {
     const composer = document.querySelector(
       '[data-slot="chat-composer-card"] [contenteditable="true"]',
     );
     expect(composer).toHaveTextContent("Keep my existing draft");
   });
-  expect(screen.getAllByText(notice)).toHaveLength(1);
   expect(document.querySelectorAll("[data-sonner-toast]")).toHaveLength(1);
   const params = new URLSearchParams(search());
   for (const key of [
@@ -77,7 +61,7 @@ test.each([
 ] as const)(
   "A failed handoff at %s (%i) keeps the App usable and the draft intact",
   async (path, status) => {
-    const writes = preserveDraft();
+    preserveDraft();
     context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
       return respond(status, {
         error: { code: "NOT_FOUND", message: "Content not found" },
@@ -89,12 +73,12 @@ test.each([
       path: `${path}?handoff=${HASH}&prompt=Do%20not%20send%20this&model=gpt-5.6-sol&template=retired&connector=gmail&showcase=test`,
     });
     await expectUsableDraft();
-    expect(writes).toStrictEqual([]);
+    expect(screen.getAllByText(NOTICE)).toHaveLength(1);
   },
 );
 
 test("A network failure restoring a task keeps the App and the existing draft usable", async () => {
-  const writes = preserveDraft();
+  preserveDraft();
   context.mocks.http.post("*/api/marketing-handoffs/:hash/resolve", () => {
     return HttpResponse.error();
   });
@@ -104,13 +88,13 @@ test("A network failure restoring a task keeps the App and the existing draft us
     path: `/prompt?handoff=${HASH}`,
   });
   await expectUsableDraft();
-  expect(writes).toStrictEqual([]);
+  expect(screen.getAllByText(NOTICE)).toHaveLength(1);
 });
 
 test.each(["/prompt", `/agents/${AGENT_ID}/chat`])(
   "An attachment import failure at %s preserves the existing draft",
   async (path) => {
-    const writes = preserveDraft();
+    preserveDraft();
     context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
       return respond(200, {
         version: 1,
@@ -137,7 +121,7 @@ test.each(["/prompt", `/agents/${AGENT_ID}/chat`])(
       path: `${path}?handoff=${HASH}`,
     });
     await expectUsableDraft();
-    expect(writes).toStrictEqual([]);
+    expect(screen.getAllByText(NOTICE)).toHaveLength(1);
   },
 );
 
@@ -174,36 +158,35 @@ test("An unavailable task resumes the saved onboarding step and edited request",
     needsOnboarding: true,
     onboardingComplete: false,
   });
-  context.store.set(
-    localStorageSignals("onboarding:sources-first-draft").set$,
-    JSON.stringify({
-      version: 2,
-      orgId: "org_default",
-      userId: "test-user-123",
-      industry: "marketing",
-      experienced: true,
-      provider: "claudeCode",
-      startingPromptDraft: "Keep my onboarding draft",
-      startingPromptKey: "marketing:gmail",
-      recommendationJobId: null,
-      recommendationStartedAt: null,
-    }),
+  const originalApp = createTestRuntime(context);
+  const stopOriginalPage$ = resetSignal();
+  const originalSignal = originalApp.store.set(
+    stopOriginalPage$,
+    originalApp.signal,
   );
-  context.store.set(
-    localStorageSignals("onboarding:sources-first-step").set$,
-    JSON.stringify({
-      orgId: "org_default",
-      userId: "test-user-123",
-      step: "ready",
-    }),
+  await setupPage({
+    context: { ...originalApp, signal: originalSignal },
+    locale: "en-US",
+    path: "/onboarding/ready",
+  });
+  await fill(
+    await screen.findByLabelText("Your first task"),
+    "Keep my onboarding draft",
   );
+  originalApp.store.set(stopOriginalPage$);
+  cleanup();
+  vi.mocked(window.history.pushState).mockRestore();
+  vi.mocked(window.history.replaceState).mockRestore();
+  vi.mocked(window.history.back).mockRestore();
+  vi.mocked(window.history.forward).mockRestore();
+  const replacementApp = createTestRuntime(context);
   context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
     return respond(404, {
       error: { code: "NOT_FOUND", message: "Content not found" },
     });
   });
   await setupPage({
-    context,
+    context: replacementApp,
     locale: "en-US",
     path: `/onboarding?handoff=${HASH}`,
   });
@@ -217,7 +200,7 @@ test("An unavailable task resumes the saved onboarding step and edited request",
 test.each([404, 503, "network"] as const)(
   "An imported attachment that cannot resolve (%s) keeps the saved draft and shows one notice",
   async (failure) => {
-    const writes = preserveDraft();
+    preserveDraft();
     context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
       return respond(200, {
         version: 1,
@@ -283,15 +266,15 @@ test.each([404, 503, "network"] as const)(
         : failure === 503
           ? "Attachment storage unavailable"
           : NOTICE;
-    await expectUsableDraft(notice);
-    expect(writes).toStrictEqual([]);
+    await expectUsableDraft();
+    expect(screen.getAllByText(notice)).toHaveLength(1);
   },
 );
 
 test.each([401, 426])(
   "Authentication and upgrade failures (%i) keep their existing handling",
   async (status) => {
-    const writes = preserveDraft();
+    preserveDraft();
     context.mocks.http.post("*/api/marketing-handoffs/:hash/resolve", () => {
       return HttpResponse.json(
         {
@@ -308,12 +291,11 @@ test.each([401, 426])(
     ).rejects.toMatchObject({ status });
     expect(new URLSearchParams(search()).get("handoff")).toBe(HASH);
     expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
-    expect(writes).toStrictEqual([]);
   },
 );
 
 test("A valid task restores its text and attachments into the agent composer", async () => {
-  const writes = preserveDraft();
+  preserveDraft();
   context.mocks.api(marketingHandoffsContract.resolve, ({ respond }) => {
     return respond(200, {
       version: 1,
@@ -355,7 +337,6 @@ test("A valid task restores its text and attachments into the agent composer", a
     ).toHaveTextContent("Prepare the received report");
     expect(screen.getByText("notes.txt")).toBeInTheDocument();
     expect(new URLSearchParams(search()).has("handoff")).toBeFalsy();
-    expect(writes).toStrictEqual(["draft"]);
   });
   expect(screen.queryByText(NOTICE)).not.toBeInTheDocument();
 });

@@ -22,8 +22,8 @@ const L = logger("MarketingHandoff");
 // upgrades, cancellation, and programming errors still belong to their owners.
 async function receiveMarketingHandoff<T>(
   request: Promise<T>,
+  httpErrorNotified: boolean,
   signal: AbortSignal,
-  httpErrorNotified = false,
 ): Promise<{ ok: true; value: T } | { ok: false; notified: boolean }> {
   const [result] = await Promise.allSettled([request]);
   signal.throwIfAborted();
@@ -171,6 +171,7 @@ export const loadMarketingHandoff$ = command(
         signal,
         { showErrorToast: false },
       ),
+      false,
       signal,
     );
     signal.throwIfAborted();
@@ -248,6 +249,7 @@ export const createMarketingHandoffDraft$ = command(
     const owner = get(handoffOwner$);
     const files = await receiveMarketingHandoff(
       set(importMarketingHandoffFiles$, hash, signal),
+      false,
       signal,
     );
     if (owner !== get(handoffOwner$)) {
@@ -262,8 +264,8 @@ export const createMarketingHandoffDraft$ = command(
     // files. Reuse its notice without replacing the user's active draft.
     const restored = await receiveMarketingHandoff(
       set(draft.restoreAttachments$, files.value, signal),
-      signal,
       true,
+      signal,
     );
     signal.throwIfAborted();
     if (owner !== get(handoffOwner$)) {

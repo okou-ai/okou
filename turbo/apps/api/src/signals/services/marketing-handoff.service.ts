@@ -154,7 +154,11 @@ export const claimMarketingManifest$ = command(
     `),
     );
     signal.throwIfAborted();
-    return rows[0]?.allowed ?? false;
+    const outcome = rows[0];
+    if (!outcome) {
+      throw new Error("Marketing authorization query returned no outcome");
+    }
+    return outcome.allowed;
   },
 );
 
