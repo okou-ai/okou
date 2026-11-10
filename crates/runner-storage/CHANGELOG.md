@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.6](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.5...runner-storage-v0.10.6) (2026-11-10)
+
+
+### Refactoring
+
+* **runner-storage:** isolate background fill lifecycle ([#46283](https://github.com/okou-ai/okou/issues/46283)) ([ca9865a](https://github.com/okou-ai/okou/commit/ca9865a050a9b6f9858e0fe5147389c36c10e6e6))
+
 ## [0.10.5](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.4...runner-storage-v0.10.5) (2026-11-10)
 
 ## [0.10.4](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.3...runner-storage-v0.10.4) (2026-11-09)
