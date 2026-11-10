@@ -10,7 +10,7 @@ import {
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
-import { computed } from "ccstate";
+import { computed, type Computed } from "ccstate";
 import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
 import { array, object, string, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
@@ -21,7 +21,10 @@ import {
 import { db$ } from "../external/db";
 import { usagePricingByKey } from "./built-in-route-pricing";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
-import type { MemberModelBootstrap } from "./model-bootstrap.service";
+import {
+  memberModelBootstrapFromSources,
+  type MemberModelBootstrap,
+} from "./model-bootstrap.service";
 
 function providerProjection() {
   return {
@@ -162,6 +165,25 @@ export function memberAccountSourceFromSnapshot(
       return row.secret ? [{ kind: "encrypted" as const, ...row.secret }] : [];
     }),
   };
+}
+
+/** Current member accounts for a pinned execution identity, without default selection. */
+export function createMemberModelSources(
+  identity$: Computed<
+    Promise<{ readonly orgId: string; readonly userId: string }>
+  >,
+) {
+  return computed(async (get): Promise<MemberModelBootstrap> => {
+    const { orgId, userId } = await get(identity$);
+    const sources = memberModelSourcesAggregate(orgId, userId);
+    const [row] = await get(db$)
+      .select({ payload: sources.payload })
+      .from(modelProviders)
+      .leftJoin(modelProviderAccounts, sources.joins.account)
+      .leftJoin(modelProviderAccountSecrets, sources.joins.secret)
+      .where(sources.joins.provider);
+    return memberModelBootstrapFromSources(sources.decode(row?.payload ?? []));
+  });
 }
 
 /** Global identity: metadata and managed secret are one authoritative snapshot. */

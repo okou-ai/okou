@@ -2073,6 +2073,7 @@ describe("RUN-04: agent run telemetry families", () => {
       body: {
         apl: `['vm0-run-context-dev']
 | where runId == "${agentRun.runId}"
+| sort by _time desc
 | limit 1`,
         startTime: new Date(runCreatedAtMs - HOUR_MS).toISOString(),
         endTime: new Date(runCreatedAtMs + HOUR_MS).toISOString(),

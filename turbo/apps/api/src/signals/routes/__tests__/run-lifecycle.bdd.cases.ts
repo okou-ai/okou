@@ -7899,7 +7899,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(disconnectedSkillMount?.mountPath).toBe(
             `/home/user/.claude/skills/custom-${slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
           );
-          expect(disconnectedSkillMount?.sha256).toBe(initialSkill.sha256);
+          expect(disconnectedSkillMount?.sha256).not.toBe(initialSkill.sha256);
 
           await connectors.setCustomConnectorValues(actor, custom.id, [
             { key: "workspace", kind: "variable", value: "restored" },

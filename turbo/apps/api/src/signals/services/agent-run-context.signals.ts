@@ -82,7 +82,10 @@ import {
 import type { ConnectorRuntimeSelection } from "./connector-catalog-runtime.service";
 import type { CustomConnectorExecutionDefinition } from "./custom-connector-definition-selection";
 import { customConnectorPermissionBundleDependencySlug } from "./custom-connector-permission-bundle.service";
-import type { AgentConnectorSelection } from "./execution-agent-connectors.service";
+import type {
+  AgentConnectorSelection,
+  AgentConnectorSelectionScope,
+} from "./execution-agent-connectors.service";
 import { createAgentSelectionContext } from "./execution-agent-selection-context.service";
 import type { SelectedAgentWorkflow } from "./execution-agent-workflows.service";
 import type { ConnectorPermissionGrant } from "./execution-connector-permissions.service";
@@ -818,8 +821,13 @@ type BootstrapEnvironmentSnapshot =
     ? T
     : never;
 
-function createAgentEnvironment(userId: string, orgId: string) {
+function createAgentEnvironment(
+  identity$: Computed<
+    Promise<{ readonly userId: string; readonly orgId: string }>
+  >,
+) {
   return computed(async (get) => {
+    const { userId, orgId } = await get(identity$);
     const db = get(db$);
     const variableRows = bootstrapVariableRows(userId, orgId);
     const variableSnapshot = bootstrapVariableSnapshot(variableRows);
@@ -1031,20 +1039,25 @@ function createConnectorContextGroups(
   agentId: string,
   featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
 ) {
+  const identity$ = computed(() => {
+    return Promise.resolve({ userId, orgId, agentId });
+  });
+  return createExecutionConnectorSources(identity$, featureSwitches$);
+}
+
+/** Connect current connector sources to an already-authorized execution identity. */
+export function createExecutionConnectorSources(
+  identity$: Computed<Promise<AgentConnectorSelectionScope>>,
+  featureSwitches$: Computed<Promise<BootstrapFeatureSwitchContext>>,
+) {
   const { connectorSelection$, permissionGrants$, workflows$ } =
-    createAgentSelectionContext(
-      {
-        userId,
-        orgId,
-        agentId,
-      },
-      featureSwitches$,
-    );
-  const environmentSnapshot$ = createAgentEnvironment(userId, orgId);
+    createAgentSelectionContext(identity$, featureSwitches$);
+  const environmentSnapshot$ = createAgentEnvironment(identity$);
   const customConnectorDefinitions$ = computed(async (get) => {
     return (await get(connectorSelection$)).customConnectorDefinitions;
   });
   const connectorSnapshot$ = computed(async (get) => {
+    const { userId, orgId } = await get(identity$);
     const [snapshot, definitions] = await Promise.all([
       get(environmentSnapshot$),
       get(customConnectorDefinitions$),
@@ -1090,6 +1103,7 @@ function createConnectorContextGroups(
     };
   });
   const bodyEnvironment$ = computed(async (get) => {
+    const { agentId } = await get(identity$);
     const snapshot = await get(environmentSnapshot$);
     return resolveRunBodyEnvironment({
       runVars: selectedAgentRunVariables(agentId),

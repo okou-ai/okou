@@ -89,6 +89,7 @@ export function runContext(
         vars: agentRuns.vars,
         secretNames: agentRuns.secretNames,
         createdAt: agentRuns.createdAt,
+        startedAt: agentRuns.startedAt,
       })
       .from(agentRuns)
       .where(eq(agentRuns.id, runId))
@@ -106,11 +107,11 @@ export function runContext(
     const dataset = getDatasetName("run-context");
     const apl = `['${dataset}']
 | where runId == "${sanitizedRunId}"
+| sort by _time desc
 | limit 1`;
 
-    // The snapshot timestamp is captured immediately before the run row is
-    // inserted. Pad both sides to tolerate timing skew while keeping the scan
-    // bounded around this run.
+    // Include the actual Claim after a long queue. The latest observation
+    // describes the configuration that execution received.
     const createdAtMs = run.createdAt.getTime();
     const results = (await get(
       queryAxiom(apl, {
@@ -120,7 +121,8 @@ export function runContext(
           createdAtMs - RUN_CONTEXT_QUERY_PADDING_MS,
         ).toISOString(),
         endTime: new Date(
-          createdAtMs + RUN_CONTEXT_QUERY_PADDING_MS,
+          Math.max(createdAtMs, run.startedAt?.getTime() ?? createdAtMs) +
+            RUN_CONTEXT_QUERY_PADDING_MS,
         ).toISOString(),
       }),
     )) as Record<string, unknown>[];

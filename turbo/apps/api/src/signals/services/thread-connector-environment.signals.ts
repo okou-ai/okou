@@ -56,8 +56,17 @@ function isConnectorRuntimeError(
  * environment entries, decrypted secrets, firewalls and runtime targets.
  */
 export function createConnectorEnvironmentSignals(
-  bootstrap: AgentRunContextSignals,
-  threadContext: ThreadContext,
+  bootstrap: Pick<
+    AgentRunContextSignals,
+    "bodyEnvironment$" | "permissionPolicies$" | "featureSwitches$"
+  >,
+  threadContext: Pick<
+    ThreadContext,
+    | "connectorSelection$"
+    | "connectorSnapshot$"
+    | "selectedConnectorSources$"
+    | "dispatchTiming$"
+  >,
 ) {
   const runtimeInputs = createConnectorRuntimeInputSignals(
     bootstrap,
@@ -76,8 +85,14 @@ type ConnectorRuntimeInputSignals = ReturnType<
 >;
 
 function createConnectorRuntimeInputSignals(
-  execution: AgentRunContextSignals,
-  threadContext: ThreadContext,
+  execution: Pick<
+    AgentRunContextSignals,
+    "bodyEnvironment$" | "permissionPolicies$" | "featureSwitches$"
+  >,
+  threadContext: Pick<
+    ThreadContext,
+    "connectorSelection$" | "connectorSnapshot$" | "dispatchTiming$"
+  >,
 ) {
   const { connectorSelection$, connectorSnapshot$, dispatchTiming$ } =
     threadContext;
@@ -174,7 +189,7 @@ function createEagerSecretPlanSignals(inputs: ConnectorRuntimeInputSignals) {
 type ConnectorSecretSignals = ReturnType<typeof createConnectorSecretSignals>;
 
 function createConnectorSecretSignals(
-  threadContext: ThreadContext,
+  threadContext: Pick<ThreadContext, "selectedConnectorSources$">,
   plan: EagerSecretPlanSignals,
 ) {
   const { selectedConnectorSources$ } = threadContext;
@@ -282,7 +297,7 @@ function createConnectorSecretSignals(
 
 /** The connector source's contribution to the Run environment. */
 function createConnectorEnvironmentSignal(
-  threadContext: ThreadContext,
+  threadContext: Pick<ThreadContext, "connectorSnapshot$">,
   connectorSecrets: ConnectorSecretSignals,
 ) {
   const { connectorSnapshot$ } = threadContext;

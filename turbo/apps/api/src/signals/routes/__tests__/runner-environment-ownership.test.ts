@@ -55,6 +55,7 @@ describe("runner environment ownership", () => {
       OKOU_TOKEN: expect.any(String),
       OKOU_AGENT_ID: agent.agentId,
     });
+    expect(claim.secretValues).toContain(claim.platformEnvironment.OKOU_TOKEN);
     for (const key of Object.keys(claim.platformEnvironment)) {
       expect(claim.environment).not.toHaveProperty(key);
     }
