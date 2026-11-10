@@ -103,7 +103,8 @@ async def test_transport_partitions_preserve_rows_resources_and_failures(
             assert emitted == chunk
             forwarded.extend(chunk)
             # The production transport checkpoint, not a test parser drain.
-            await mitm_addon.responseinspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                await mitm_addon.responseinspection(flow)
         assert response_stream(flow)(b"") == b""
         assert mitm_addon.response(flow) is None
         usage.flush_usage_events(trigger="test")
@@ -170,7 +171,8 @@ async def test_long_lived_stream_reuses_quantum_without_a_lifetime_limit(
         for _ in range(20):
             wire = gzip.compress(b"{}\n" * 100)
             assert response_stream(flow)(wire) == wire
-            await mitm_addon.responseinspection(flow)
+            if response_streaming.has_pending_response_inspection(flow):
+                await mitm_addon.responseinspection(flow)
         wire = gzip.compress(b'{"data":{"id":"1"}}\n')
         assert response_stream(flow)(wire) == wire
         await mitm_addon.responseinspection(flow)
