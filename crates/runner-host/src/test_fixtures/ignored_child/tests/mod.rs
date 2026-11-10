@@ -246,8 +246,11 @@ async fn assert_output_timeout_cleans_up_descendant(exit_code: &'static str) {
     if advanced.is_pending() {
         advancing.await;
     }
+    // Keep the complete original cleanup budget after the output timer fires.
     let (result, completed_in_time) =
-        match tokio::time::timeout(Duration::from_secs(2), &mut task).await {
+        match tokio::time::timeout(CHILD_KILL_WAIT_TIMEOUT + Duration::from_secs(2), &mut task)
+            .await
+        {
             Ok(result) => (result, true),
             Err(_) => (task.await, false),
         };
