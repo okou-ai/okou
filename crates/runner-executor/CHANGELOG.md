@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.21.10](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.9...runner-executor-v0.21.10) (2026-11-10)
+
+
+### Performance Improvements
+
+* **runner:** negotiate gzip for api json responses ([#46459](https://github.com/okou-ai/okou/issues/46459)) ([c02d10c](https://github.com/okou-ai/okou/commit/c02d10cd31ce971e6e6b50f6fab80aa03af140a9))
+
 ## [0.21.9](https://github.com/okou-ai/okou/compare/runner-executor-v0.21.8...runner-executor-v0.21.9) (2026-11-10)
 
 

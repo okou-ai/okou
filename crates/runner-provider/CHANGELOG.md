@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.17.7](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.6...runner-provider-v0.17.7) (2026-11-10)
+
+
+### Performance Improvements
+
+* **runner:** negotiate gzip for api json responses ([#46459](https://github.com/okou-ai/okou/issues/46459)) ([c02d10c](https://github.com/okou-ai/okou/commit/c02d10cd31ce971e6e6b50f6fab80aa03af140a9))
+
 ## [0.17.6](https://github.com/okou-ai/okou/compare/runner-provider-v0.17.5...runner-provider-v0.17.6) (2026-11-10)
 
 
