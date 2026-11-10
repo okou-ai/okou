@@ -6544,8 +6544,6 @@
     "automationDisabled": {
       "backToWorkflows": "Voltar aos fluxos de trabalho",
       "disabledAt": "Desativada em {{time}}",
-      "disabledImpact": "Ela parou de executar conforme a programação anterior. Confira as informações sobre as falhas antes de reativá-la explicitamente.",
-      "historical": "Este é o registro de um evento passado. Abra a automação para conferir o estado atual. Ler esta mensagem não ativa nem executa a automação.",
       "loadFailed": "Não foi possível carregar esta automação",
       "loadingAutomation": "Carregando automação",
       "nameFallback": "Automação programada",
@@ -6553,7 +6551,6 @@
       "reason_one": "Desativada automaticamente após {{count}} falha de execução consecutiva.",
       "reason_many": "Desativada automaticamente após {{count}} falhas de execução consecutivas.",
       "reason_other": "Desativada automaticamente após {{count}} falhas de execução consecutivas.",
-      "recoveryImpact": "Ela foi pausada e o sistema agendou uma tentativa de recuperação. Confira o estado atual antes de fazer alterações.",
       "switchFailed": "Não foi possível trocar de espaço de trabalho. Tente novamente ou use o seletor de espaços de trabalho.",
       "switchWorkspace": "Trocar de espaço de trabalho",
       "systemManaged": "Esta automação é gerenciada pelo sistema. O estado atual é mostrado abaixo.",

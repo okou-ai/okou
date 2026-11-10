@@ -6544,8 +6544,6 @@
     "automationDisabled": {
       "backToWorkflows": "Torna ai workflow",
       "disabledAt": "Disattivata il {{time}}",
-      "disabledImpact": "Non viene più eseguita secondo la pianificazione precedente. Controlla le informazioni sugli errori prima di riattivarla esplicitamente.",
-      "historical": "Questo è un evento passato. Apri l’automazione per verificarne lo stato attuale. Leggere questo messaggio non la attiva né la esegue.",
       "loadFailed": "Impossibile caricare questa automazione",
       "loadingAutomation": "Caricamento dell’automazione",
       "nameFallback": "Automazione pianificata",
@@ -6553,7 +6551,6 @@
       "reason_one": "Disattivata automaticamente dopo {{count}} errore di esecuzione consecutivo.",
       "reason_many": "Disattivata automaticamente dopo {{count}} errori di esecuzione consecutivi.",
       "reason_other": "Disattivata automaticamente dopo {{count}} errori di esecuzione consecutivi.",
-      "recoveryImpact": "È stata sospesa e il sistema ha pianificato un tentativo di ripristino. Controlla lo stato attuale prima di apportare modifiche.",
       "switchFailed": "Impossibile cambiare area di lavoro. Riprova o usa il selettore delle aree di lavoro.",
       "switchWorkspace": "Cambia area di lavoro",
       "systemManaged": "Questa automazione è gestita dal sistema. Lo stato attuale è mostrato di seguito.",

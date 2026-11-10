@@ -231,13 +231,6 @@ function AutomationDisabledNotification({
               { count: metadata.consecutiveFailures },
             )}
           </p>
-          <p>
-            {t(($) => {
-              return metadata.recoveryScheduled
-                ? $.userNotifications.automationDisabled.recoveryImpact
-                : $.userNotifications.automationDisabled.disabledImpact;
-            })}
-          </p>
           <dl className="space-y-1">
             <dt className="text-xs text-muted-foreground">
               {t(($) => {
@@ -246,11 +239,6 @@ function AutomationDisabledNotification({
             </dt>
             <dd className="break-words">{workspaceName}</dd>
           </dl>
-          <p className="text-xs text-muted-foreground">
-            {t(($) => {
-              return $.userNotifications.automationDisabled.historical;
-            })}
-          </p>
           <Link
             pathname={ROUTES.workflowDetailAutomations}
             options={{

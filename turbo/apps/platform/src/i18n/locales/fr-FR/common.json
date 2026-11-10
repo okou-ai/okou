@@ -6544,8 +6544,6 @@
     "automationDisabled": {
       "backToWorkflows": "Retour aux workflows",
       "disabledAt": "Désactivée le {{time}}",
-      "disabledImpact": "Elle ne s’exécute plus selon son calendrier précédent. Consultez les informations sur les échecs avant de la réactiver explicitement.",
-      "historical": "Ceci décrit un événement passé. Ouvrez l’automatisation pour vérifier son état actuel. Lire ce message ne l’active ni ne l’exécute.",
       "loadFailed": "Impossible de charger cette automatisation",
       "loadingAutomation": "Chargement de l’automatisation",
       "nameFallback": "Automatisation planifiée",
@@ -6553,7 +6551,6 @@
       "reason_one": "Désactivée automatiquement après {{count}} échec d’exécution consécutif.",
       "reason_many": "Désactivée automatiquement après {{count}} échecs d’exécution consécutifs.",
       "reason_other": "Désactivée automatiquement après {{count}} échecs d’exécution consécutifs.",
-      "recoveryImpact": "Elle a été mise en pause et le système a prévu une tentative de récupération. Vérifiez son état actuel avant toute modification.",
       "switchFailed": "Impossible de changer d’espace de travail. Réessayez ou utilisez le sélecteur d’espace de travail.",
       "switchWorkspace": "Changer d’espace de travail",
       "systemManaged": "Cette automatisation est gérée par le système. Son état actuel est indiqué ci-dessous.",

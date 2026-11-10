@@ -287,11 +287,6 @@ test("A historical disablement uses system attribution, membership name, actual 
       "Automatically disabled after 3 consecutive execution failures.",
     ),
   ).toBeInTheDocument();
-  expect(
-    within(dialog).getByText(
-      "It stopped running on its previous schedule. Review the failure information before explicitly re-enabling it.",
-    ),
-  ).toBeInTheDocument();
   const timestamp = dialog.querySelector("time");
   expect(timestamp).toHaveAttribute("datetime", DISABLED_AT);
   expect(timestamp).toHaveTextContent("2026");
@@ -311,11 +306,6 @@ test("A recovery pause stays readable without a workspace name and never display
     }),
   );
   expect(within(dialog).getByText("Original workspace")).toBeInTheDocument();
-  expect(
-    within(dialog).getByText(
-      "It was paused and the system scheduled a recovery attempt. Check its current status before making changes.",
-    ),
-  ).toBeInTheDocument();
   expect(dialog).not.toHaveTextContent("org_no_longer_accessible");
   await screen.findByText("0 unread notifications");
 });
