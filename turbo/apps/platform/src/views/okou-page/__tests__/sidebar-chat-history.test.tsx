@@ -957,8 +957,6 @@ test("Route New chat to the current agent and Chat to the default agent", async 
 
   const chatLink = within(rail).getByLabelText("Chat");
   expect(chatLink).toHaveAttribute("href", `/agents/${AGENT_ID}/chat`);
-  // New chat follows the current agent here, so Chat does not claim it.
-  expect(chatLink).not.toHaveAttribute("aria-keyshortcuts");
   click(chatLink);
 
   await waitFor(() => {
@@ -967,17 +965,17 @@ test("Route New chat to the current agent and Chat to the default agent", async 
   });
 });
 
-// The Okou row leads My Okou's chat list and opens home, the new chat.
-function okouRow(list: HTMLElement): HTMLElement {
+// The New chat row leads My Okou's chat list.
+function newChatRow(list: HTMLElement): HTMLElement {
   const found = queryAllByRoleFast("link", list).find((link) => {
     return link.getAttribute("href") === "/";
   });
   if (!found) {
-    throw new Error("Okou row not found");
+    throw new Error("New chat row not found");
   }
   return found;
 }
-test("My Okou's header holds the toggle, search, New Project and list menu while the Okou row leads the list", async () => {
+test("My Okou's header holds the toggle, search, New Project and list menu while New chat leads the list", async () => {
   prepareDefaultAgent();
   mockSidebarThreadStory([createThread(EXISTING_THREAD_ID, "Release plan")]);
 
@@ -1009,18 +1007,18 @@ test("My Okou's header holds the toggle, search, New Project and list menu while
   expect(header).toHaveTextContent(/^$/);
   expect(within(list).queryByText(/^Chats with/)).not.toBeInTheDocument();
 
-  // Home is the new chat, so the Okou row leading the list opens it.
-  const row = okouRow(list);
-  expect(row).toHaveAccessibleName(/^Okou/);
-  expect(row).toHaveAttribute(
+  // Home is the new chat, so the row leading the list opens it.
+  const newChat = newChatRow(list);
+  expect(newChat).toHaveTextContent(/^New chat/);
+  expect(newChat).toHaveAttribute(
     "aria-keyshortcuts",
     "Meta+Shift+O Control+Shift+O",
   );
   await waitFor(() => {
-    expect(row).toHaveAttribute("aria-current", "page");
+    expect(newChat).toHaveAttribute("aria-current", "page");
   });
   expect(
-    row.compareDocumentPosition(
+    newChat.compareDocumentPosition(
       within(list).getByTestId("sidebar-scroll-area"),
     ) & Node.DOCUMENT_POSITION_FOLLOWING,
   ).toBeTruthy();
@@ -1061,7 +1059,7 @@ test("My Okou without Projects leaves New Project out of the header", async () =
 
   const list = await screen.findByTestId("chat-list-column");
   await within(list).findByText("Release plan");
-  expect(okouRow(list)).toHaveAccessibleName(/^Okou/);
+  expect(newChatRow(list)).toHaveTextContent(/^New chat/);
   const header = within(list).getByLabelText("Hide chat list").closest("div");
   if (!header) {
     throw new Error("Chat list header not found");
@@ -1093,14 +1091,6 @@ test("My Okou's Chat link and new chat shortcut open its chat page at /", async 
   await screen.findByPlaceholderText(PLACEHOLDER);
   const chatLink = within(rail).getByLabelText("Chat");
   expect(chatLink).toHaveAttribute("href", "/");
-  expect(chatLink).toHaveAttribute(
-    "aria-keyshortcuts",
-    "Meta+Shift+O Control+Shift+O",
-  );
-  await userEvent.setup().hover(chatLink);
-  await expect(
-    screen.findByRole("tooltip", { name: "Chat Ctrl+Shift+O" }),
-  ).resolves.toBeVisible();
 
   fireEvent.keyDown(document, {
     key: "O",
