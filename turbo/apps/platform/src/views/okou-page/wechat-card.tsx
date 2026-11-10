@@ -71,10 +71,7 @@ export function WechatCard({ layout }: { layout: IntegrationCardLayout }) {
               })}
             </div>
             <p
-              className={cn(
-                "text-sm text-muted-foreground",
-                classes.description,
-              )}
+              className={cn("text-sm text-muted-foreground", classes.overflow)}
             >
               {status?.status === "reconnect_required"
                 ? t(($) => {

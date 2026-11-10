@@ -575,3 +575,19 @@ test("Works lists connected channels before the remaining channels", async () =>
   expect(within(more).getByText("Discord")).toBeInTheDocument();
   expect(within(more).queryByText("Slack")).toBeNull();
 });
+
+test("Works install buttons show a short label and keep the provider name", async () => {
+  mockSlack(context, {
+    isConnected: false,
+    isInstalled: false,
+    isAdmin: true,
+    installUrl: "https://slack.com/oauth/v2/authorize?state=install",
+  });
+
+  await setupIntegrationsPage(context);
+
+  const install = await screen.findByRole("button", {
+    name: "Install to Slack",
+  });
+  expect(install).toHaveTextContent(/^Install$/u);
+});

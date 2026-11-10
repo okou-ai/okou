@@ -7288,6 +7288,7 @@
       "connect": "연결",
       "disconnect": "연결 해제",
       "disconnecting": "연결 해제 중…",
+      "install": "설치",
       "moreOptions": "추가 옵션",
       "uninstall": "제거",
       "uninstalling": "제거 중…",

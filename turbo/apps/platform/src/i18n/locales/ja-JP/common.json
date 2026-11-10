@@ -7288,6 +7288,7 @@
       "connect": "接続する",
       "disconnect": "切断する",
       "disconnecting": "切断中…",
+      "install": "インストール",
       "moreOptions": "その他のオプション",
       "uninstall": "アンインストール",
       "uninstalling": "アンインストール中…",

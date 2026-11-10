@@ -7309,6 +7309,7 @@
       "connect": "Connect",
       "disconnect": "Disconnect",
       "disconnecting": "Disconnecting…",
+      "install": "Install",
       "moreOptions": "More options",
       "uninstall": "Uninstall",
       "uninstalling": "Uninstalling…",

@@ -150,12 +150,15 @@ function ProviderCardActions({
           variant="outline"
           size="sm"
           className="h-8 shrink-0 gap-1.5 rounded-lg"
+          aria-label={installLabel}
           onClick={() => {
             return openFreshOAuth(installUrl);
           }}
         >
           <Download size={14} />
-          {installLabel}
+          {t(($) => {
+            return $.works.actions.install;
+          })}
         </Button>
       )}
       {(isInstalled || independentIdentity) && !isConnected && connectUrl && (
@@ -327,10 +330,7 @@ function SlackCard({
               })}
             </div>
             <div
-              className={cn(
-                "text-sm text-muted-foreground",
-                classes.description,
-              )}
+              className={cn("text-sm text-muted-foreground", classes.overflow)}
             >
               {!isInstalled && !isAdmin
                 ? t(($) => {
@@ -511,10 +511,7 @@ function DiscordCard({ layout }: { layout: IntegrationCardLayout }) {
           </div>
           <div className="flex min-w-0 flex-1 flex-col gap-1">
             <div className="text-sm font-medium text-foreground">{title}</div>
-            <DiscordCardDescription
-              data={data}
-              className={classes.description}
-            />
+            <DiscordCardDescription data={data} className={classes.overflow} />
           </div>
           <DiscordAuthorizationActions
             data={data}
@@ -661,10 +658,7 @@ function TeamsCard({
               })}
             </div>
             <div
-              className={cn(
-                "text-sm text-muted-foreground",
-                classes.description,
-              )}
+              className={cn("text-sm text-muted-foreground", classes.overflow)}
             >
               {description}
             </div>
@@ -767,7 +761,7 @@ function GithubCard({ layout }: { layout: IntegrationCardLayout }) {
             })}
           </div>
           <div
-            className={cn("text-sm text-muted-foreground", classes.description)}
+            className={cn("text-sm text-muted-foreground", classes.overflow)}
           >
             {adminInstallRequired
               ? t(($) => {
@@ -790,6 +784,9 @@ function GithubCard({ layout }: { layout: IntegrationCardLayout }) {
             href={githubData.installUrl}
             target="_blank"
             rel="noreferrer"
+            aria-label={t(($) => {
+              return $.works.github.install;
+            })}
             className={cn(
               buttonVariants({ variant: "outline", size: "sm" }),
               "h-8 shrink-0 gap-1.5 rounded-lg",
@@ -797,7 +794,7 @@ function GithubCard({ layout }: { layout: IntegrationCardLayout }) {
           >
             <Download size={14} />
             {t(($) => {
-              return $.works.github.install;
+              return $.works.actions.install;
             })}
           </a>
         ) : null}
@@ -897,7 +894,7 @@ function TelegramCard({ layout }: { layout: IntegrationCardLayout }) {
             </div>
           </div>
           <div
-            className={cn("text-sm text-muted-foreground", classes.description)}
+            className={cn("text-sm text-muted-foreground", classes.overflow)}
           >
             {botsLoadable.state === "hasError"
               ? t(($) => {

@@ -17,7 +17,7 @@ export function integrationCardLayout(layout: IntegrationCardLayout) {
       icon: "size-7",
       iconFrame: `${ICON_FRAME} size-7`,
       iconSize: 28,
-      description: "",
+      overflow: "",
     };
   }
   return {
@@ -26,6 +26,6 @@ export function integrationCardLayout(layout: IntegrationCardLayout) {
     icon: "size-5",
     iconFrame: `${ICON_FRAME} size-5`,
     iconSize: 20,
-    description: "truncate",
+    overflow: "truncate",
   };
 }
