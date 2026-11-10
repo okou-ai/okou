@@ -44,7 +44,7 @@ checks the requested org against the snapshot, and binds its output to the exact
 input bytes with SHA-256. It uses no database. Repeating the command against the
 same inventory produces identical plan bytes. Treat an inventory as trusted
 operator input; its hash detects different input, not forgery or stale state.
-Plans use `single-agent-plan-v4`; inventories remain
+Plans use `single-agent-plan-v5`; inventories remain
 `single-agent-inventory-v1`. Regenerate earlier plans from their inventory to
 apply the approved naming and private-Agent-owner policies. No executable
 consumer of any plan version is implemented.
@@ -106,11 +106,18 @@ Exit codes:
   the original source row intact. Public-Agent Workflows keep their original
   owner and visibility. Each move names its `targetOwner` and `targetVisibility`.
   Private Agent Instructions become a private Workflow owned by the Agent owner.
-  All Automations, including disabled ones, retain their owner and state; row
+  Retained Automations, including disabled ones, keep their owner and state; row
   fingerprints pin their full database configuration without exporting trigger
   contents. Automation execution Chat bindings are inventoried separately.
-  Both Automations and bindings record their owner's before/after Workflow
-  visibility and block inaccessible target Workflows. This static visibility
+  On a source private Agent, Automation or binding owners different from the
+  Agent owner are invalid execution associations. Plan their deletion in
+  `automationDeletions` / `automationThreadDeletions`, retaining source IDs,
+  revisions, Automation fingerprints and original Chat IDs for review/recovery.
+  This applies to enabled and disabled records; never reassign execution users
+  or create private Workflow copies to keep these associations alive. Removing
+  a binding does not remove its Chat, messages, Workflow or Project membership.
+  Retained Automations and bindings record their owner's before/after Workflow
+  visibility and block other inaccessible target Workflows. This static visibility
   check does not establish runtime eligibility or trigger delivery.
   Non-default Official Workflow installations block pending their own mapping.
 - Compare Workflow view/manage/publish rights before and after the host change
@@ -157,6 +164,10 @@ lists the remaining gates:
   inputs, Automation listener/webhook/delivery state and event/cache projections.
   Chats selected here are those bound to this org's Agents; this is not a complete
   inventory of unbound or retired runtime references.
+- Before executing planned association deletions, journal full source and
+  dependent rows, inspect foreign-key effects and queued work, and preserve Chat
+  and Run history. Inventory fingerprints/revisions alone cannot restore deleted
+  configuration; the future apply/recovery protocol must own that journal.
 - Implement a versioned, drift-checked `apply` and recovery protocol, then finish
   integrated acceptance #45473 before the staff cutover rehearsal.
 
@@ -180,7 +191,8 @@ Projects and prior membership, enabled/disabled Automations and execution Chat
 bindings, permission blockers, name/length conflicts, strict scope validation and
 overwrite refusal. It covers Agent-owner private conversion, recorded
 ownership/access changes, unchanged public-Agent visibility, post-privatization name-scope collisions, and
-lost Workflow access for both enabled/disabled Automations and execution Chat
+private-Agent non-owner cleanup, preserved Chat/source data, and other lost
+Workflow access for both enabled/disabled Automations and execution Chat
 bindings. The migration CI job runs this same test. This is tool verification,
 not staff production rehearsal or runtime acceptance.
 Naming coverage includes bounded/deduplicated readable prefixes, non-Latin

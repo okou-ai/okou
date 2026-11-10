@@ -44,9 +44,10 @@ const rightsSchema = object({
 });
 
 const planSchema = object({
-  format: literal("single-agent-plan-v4"),
+  format: literal("single-agent-plan-v5"),
   executable: literal(false),
   privateAgentWorkflowPolicy: literal("private-use-agent-owner"),
+  privateAgentAssociationPolicy: literal("delete-non-owner-associations"),
   inventorySha256: string(),
   agentPrefixes: object({
     format: literal("single-agent-prefixes-v1"),
@@ -61,6 +62,8 @@ const planSchema = object({
     projectGroups: number(),
     chatMoves: number(),
     automations: number(),
+    automationDeletions: number(),
+    automationThreadDeletions: number(),
     enabledAutomations: number(),
   }),
   movedWorkflows: array(
@@ -121,6 +124,34 @@ const planSchema = object({
       chatThreadId: string().nullable(),
       owner: string(),
       workflowAccess: object({ before: boolean(), after: boolean() }),
+    }),
+  ),
+  automationDeletions: array(
+    object({
+      key: string(),
+      sourceAgentId: string(),
+      source: object({
+        id: string(),
+        workflowId: string(),
+        owner: string(),
+        enabled: boolean(),
+        kind: string(),
+        revision: string(),
+        fingerprint: string(),
+      }),
+    }),
+  ),
+  automationThreadDeletions: array(
+    object({
+      key: string(),
+      sourceAgentId: string(),
+      source: object({
+        id: string(),
+        workflowId: string(),
+        owner: string(),
+        chatThreadId: string().nullable(),
+        revision: string(),
+      }),
     }),
   ),
   blockers: array(object({ code: string(), key: string() })),
@@ -284,6 +315,8 @@ try {
     projectGroups: 2,
     chatMoves: 3,
     automations: 2,
+    automationDeletions: 0,
+    automationThreadDeletions: 0,
     enabledAutomations: 1,
   });
   assert.equal(
@@ -907,32 +940,83 @@ try {
     thread.owner = administrator;
     thread.chatThreadId = administratorChat.id;
   }
-  const brokenAccess = await prepare(
+  const cleanup = await prepare(
     automationAccess,
-    "automation-access-loss",
+    "private-agent-association-cleanup",
   );
-  assert.equal(
-    brokenAccess.result.blockers.filter((row) => {
-      return row.code === "AutomationOwnerCannotAccessTargetWorkflow";
-    }).length,
-    2,
-    "both enabled and disabled Automations block when their unchanged owner loses access",
-  );
-  assert.ok(
-    brokenAccess.result.blockers.some((row) => {
-      return row.code === "AutomationThreadOwnerCannotAccessTargetWorkflow";
+  assert.equal(cleanup.result.automations.length, 0);
+  assert.equal(cleanup.result.automationThreads.length, 0);
+  assert.equal(cleanup.result.summary.automationDeletions, 2);
+  assert.equal(cleanup.result.summary.automationThreadDeletions, 1);
+  assert.deepEqual(
+    cleanup.result.automationDeletions.map((row) => {
+      return row.source;
     }),
-    "execution Chat bindings cannot retain a now-inaccessible Workflow",
+    automationAccess.automations,
   );
-  for (const automation of brokenAccess.result.automations) {
-    assert.equal(automation.owner, administrator);
-    assert.deepEqual(automation.workflowAccess, { before: true, after: false });
-  }
+  assert.deepEqual(
+    cleanup.result.automationThreadDeletions.map((row) => {
+      return row.source;
+    }),
+    automationAccess.automationThreads,
+  );
   assert.ok(
-    brokenAccess.result.blockers.some((row) => {
+    !cleanup.result.blockers.some((row) => {
+      return (
+        row.code === "AutomationOwnerCannotAccessTargetWorkflow" ||
+        row.code === "AutomationThreadOwnerCannotAccessTargetWorkflow"
+      );
+    }),
+    "private-Agent non-owner associations are explicit cleanup actions rather than unresolved access blockers",
+  );
+  assert.ok(
+    cleanup.result.blockers.some((row) => {
       return row.code === "TargetWorkflowScopeCollision";
     }),
     "reassigned same-name copies block instead of merging into the Agent owner's private scope",
+  );
+  assert.equal(cleanup.result.movedWorkflows.length, 2);
+  assert.deepEqual(
+    cleanup.result.projectGroups
+      .flatMap((row) => {
+        return row.chats.map((chat) => {
+          return chat.id;
+        });
+      })
+      .sort(),
+    planned.projectGroups
+      .flatMap((row) => {
+        return row.chats.map((chat) => {
+          return chat.id;
+        });
+      })
+      .sort(),
+    "deleting bindings never deletes or transfers the actual Chats",
+  );
+
+  const publicInaccessible = structuredClone(differentOwner);
+  const publicInaccessibleAgent = publicInaccessible.agents.find((row) => {
+    return row.id === oldAgent;
+  });
+  assert.ok(publicInaccessibleAgent);
+  publicInaccessibleAgent.visibility = "public";
+  const publicBlocked = await prepare(
+    publicInaccessible,
+    "public-access-still-blocks",
+  );
+  assert.equal(publicBlocked.result.automationDeletions.length, 0);
+  assert.equal(publicBlocked.result.automationThreadDeletions.length, 0);
+  assert.equal(
+    publicBlocked.result.blockers.filter((row) => {
+      return row.code === "AutomationOwnerCannotAccessTargetWorkflow";
+    }).length,
+    2,
+    "unapproved public-Agent access failures must not become cleanup actions",
+  );
+  assert.ok(
+    publicBlocked.result.blockers.some((row) => {
+      return row.code === "AutomationThreadOwnerCannotAccessTargetWorkflow";
+    }),
   );
 
   const rejectedFile = join(directory, "rejected.json");

@@ -10,6 +10,11 @@ import { PlanningError, type Snapshot } from "./snapshot";
 type Agent = Snapshot["agents"][number];
 type Workflow = Snapshot["workflows"][number];
 type Blocker = { code: string; key: string };
+type AssociationDeletion<T> = {
+  key: string;
+  sourceAgentId: string;
+  source: T;
+};
 
 export function plan(
   snapshot: Snapshot,
@@ -267,6 +272,16 @@ export function plan(
       after: rights(targets.get(workflow.id)!, destination, owner).view,
     };
   };
+  const privateAgentOwnerMismatch = (workflow: Workflow, owner: string) => {
+    const source = agents.get(workflow.agentId)!;
+    return source.visibility === "private" && source.owner !== owner;
+  };
+  const automationDeletions: AssociationDeletion<
+    Snapshot["automations"][number]
+  >[] = [];
+  const automationThreadDeletions: AssociationDeletion<
+    Snapshot["automationThreads"][number]
+  >[] = [];
   const automations = [...snapshot.automations]
     .sort((a, b) => {
       return a.id.localeCompare(b.id);
@@ -276,6 +291,14 @@ export function plan(
       if (!workflow) throw new PlanningError("AutomationWorkflowOutsideScope");
       if (workflow.agentId === destination.id) return [];
       const key = `automation:${automation.id}`;
+      if (privateAgentOwnerMismatch(workflow, automation.owner)) {
+        automationDeletions.push({
+          key,
+          sourceAgentId: workflow.agentId,
+          source: automation,
+        });
+        return [];
+      }
       ownerCheck(automation.owner, key);
       const workflowAccess = ownerWorkflowAccess(workflow, automation.owner);
       if (!workflowAccess.after)
@@ -289,13 +312,24 @@ export function plan(
         },
       ];
     });
-  const automationThreads = snapshot.automationThreads
+  const automationThreads = [...snapshot.automationThreads]
+    .sort((a, b) => {
+      return a.id.localeCompare(b.id);
+    })
     .flatMap((thread) => {
       const workflow = workflows.get(thread.workflowId);
       if (!workflow)
         throw new PlanningError("AutomationThreadWorkflowOutsideScope");
       if (workflow.agentId === destination.id) return [];
       const key = `automation-thread:${thread.id}`;
+      if (privateAgentOwnerMismatch(workflow, thread.owner)) {
+        automationThreadDeletions.push({
+          key,
+          sourceAgentId: workflow.agentId,
+          source: thread,
+        });
+        return [];
+      }
       ownerCheck(thread.owner, key);
       const workflowAccess = ownerWorkflowAccess(workflow, thread.owner);
       if (!workflowAccess.after)
@@ -306,14 +340,12 @@ export function plan(
           block("AutomationChatOutsideOwnerAgentScope", key);
       }
       return [{ ...thread, workflowAccess }];
-    })
-    .sort((a, b) => {
-      return a.id.localeCompare(b.id);
     });
   return {
-    format: "single-agent-plan-v4",
+    format: "single-agent-plan-v5",
     executable: false,
     privateAgentWorkflowPolicy: "private-use-agent-owner",
+    privateAgentAssociationPolicy: "delete-non-owner-associations",
     agentPrefixes: naming.agentPrefixes,
     scope: { orgId, target: snapshot.target, database: snapshot.database },
     capturedAt: snapshot.capturedAt,
@@ -333,6 +365,8 @@ export function plan(
         return sum + row.chats.length;
       }, 0),
       automations: automations.length,
+      automationDeletions: automationDeletions.length,
+      automationThreadDeletions: automationThreadDeletions.length,
       enabledAutomations: automations.filter((row) => {
         return row.enabled;
       }).length,
@@ -343,6 +377,8 @@ export function plan(
     projectGroups,
     automations,
     automationThreads,
+    automationDeletions,
+    automationThreadDeletions,
     blockers: blockers.sort((a, b) => {
       return a.key.localeCompare(b.key) || a.code.localeCompare(b.code);
     }),
@@ -352,6 +388,7 @@ export function plan(
       "Provenance review of earlier automatic personal seed rows; all saved rows are preserved in this plan",
       "Authored name references, account permissions, external routes and dependent FK inventory",
       "Native continuation, queued inputs, Automation listener/delivery state and lifecycle projections",
+      "Journal full deleted rows and dependent FK/queue state for recovery; preserve Chat and Run history",
       "Versioned apply/recovery implementation and integrated acceptance under #45473",
     ],
   };
