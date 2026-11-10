@@ -302,6 +302,11 @@
             } label: {
               Text(verbatim: "Chat sync feedback")
             }
+            NavigationLink {
+              ComputerAuthorizationGallery()
+            } label: {
+              Text(verbatim: "Computer access cards")
+            }
           }
           section("Workspace identities") {
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 56))]) {
