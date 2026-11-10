@@ -996,10 +996,6 @@ const storedExecutionContextObjectSchema = object({
   firewalls: executionFirewallsSchema.optional(),
   // Per-firewall network policies: which permissions are granted + unknownPolicy
   networkPolicies: networkPoliciesSchema.optional(),
-  // Tools to make available in Claude CLI (passed as --tools)
-  tools: array(string()).optional(),
-  // Settings JSON to pass to Claude CLI (passed as --settings)
-  settings: string().optional(),
   // Captured Claim decisions: singleAgent and connectorChatAccountAccess.
   // Retained contexts may contain additional flags; those are not execution input.
   featureFlags: record(string(), boolean()).optional(),

@@ -5413,8 +5413,6 @@ function buildPreparedExecutionContextDraft(
       firewalls: permissions?.firewalls,
       networkPolicies: permissions?.networkPolicies,
       connectorRuntimeTargets: [...args.environment.runtimeTargets],
-      tools: args.body.tools,
-      settings: args.body.settings,
       featureFlags: {
         [FeatureSwitchKey.SingleAgent]: isFeatureEnabled(
           FeatureSwitchKey.SingleAgent,
@@ -5779,8 +5777,6 @@ function createRunBody(args: {
     additionalVolumes: args.body.additionalVolumes,
     realAgentInPreview: args.body.realAgentInPreview,
     captureNetworkBodies: args.body.captureNetworkBodies,
-    tools: args.body.tools,
-    settings: args.body.settings,
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
     appendSystemPrompt: args.prompt.appendedSystemPrompt,
