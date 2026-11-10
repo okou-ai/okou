@@ -43,7 +43,7 @@ final class MailDraftCardTests: XCTestCase {
     let remounted = registry.mailDraft("draft")
     let retained = try await remounted.stateStore.get(remounted.value).value
     XCTAssertEqual(retained, draft)
-    XCTAssertTrue(fixture.requests.withLock { $0.allSatisfy { $0.httpMethod == "GET" } })
+    XCTAssertTrue(fixture.requests.values.withLock { $0.allSatisfy { $0.httpMethod == "GET" } })
   }
 
   func testFailureIsCachedUntilExplicitRetryAndMissingDraftRemainsUnavailable() async throws {
@@ -71,7 +71,7 @@ final class MailDraftCardTests: XCTestCase {
     XCTAssertEqual(recovered?.status, .draft)
     let stillMissing = try await missing.stateStore.get(missing.value).value
     XCTAssertNil(stillMissing)
-    XCTAssertTrue(fixture.requests.withLock { $0.allSatisfy { $0.httpMethod == "GET" } })
+    XCTAssertTrue(fixture.requests.values.withLock { $0.allSatisfy { $0.httpMethod == "GET" } })
   }
 
   func testSupersededReadCannotReplaceTheConfirmedSend() async throws {
@@ -207,7 +207,7 @@ final class MailDraftCardTests: XCTestCase {
         assertHTTPStatus(result, 426)
         await card.send()
         await card.discard()
-        XCTAssertTrue(fixture.requests.withLock { $0.allSatisfy { $0.httpMethod == "GET" } })
+        XCTAssertTrue(fixture.requests.values.withLock { $0.allSatisfy { $0.httpMethod == "GET" } })
       } else {
         XCTAssertEqual(try result.get()?.status, .draft)
       }
@@ -336,7 +336,7 @@ final class MailDraftCardTests: XCTestCase {
 
 private final class MailCardHTTPFixture: Sendable {
   let http: ChatHTTPFixture
-  let requests = Mutex<[URLRequest]>([])
+  let requests = MailCardRequests()
 
   init(handler: @escaping ChatHTTPFixture.Handler) {
     let requests = requests
@@ -344,7 +344,7 @@ private final class MailCardHTTPFixture: Sendable {
       guard request.url?.path.hasPrefix("/api/mail/drafts/") == true else {
         throw URLError(.unsupportedURL)
       }
-      requests.withLock { $0.append(request) }
+      requests.values.withLock { $0.append(request) }
       return try await handler(request)
     }
   }
@@ -364,4 +364,8 @@ private final class MailCardHTTPFixture: Sendable {
         "gmailThreadId":null}}
         """)
   }
+}
+
+private final class MailCardRequests: Sendable {
+  let values = Mutex<[URLRequest]>([])
 }
