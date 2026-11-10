@@ -130,14 +130,14 @@ final class ComposerSuggestionNativeTable: UITableView {
 
 private final class SuggestionCell: UITableViewCell {
   private var item: ComposerSuggestionItem?
-  private var focused = false
+  private var keyboardFocused = false
   private var activate: () -> Void = {}
 
   func configure(
     _ item: ComposerSuggestionItem, focused: Bool, activate: @escaping () -> Void
   ) {
     self.item = item
-    self.focused = focused
+    self.keyboardFocused = focused
     self.activate = activate
     // Hosted rows draw their semantic focus layer; UIKit's default selection
     // otherwise covers it with an opaque system gray on current iOS.
@@ -155,8 +155,8 @@ private final class SuggestionCell: UITableViewCell {
   }
 
   func setFocused(_ focused: Bool) {
-    guard self.focused != focused else { return }
-    self.focused = focused
+    guard self.keyboardFocused != focused else { return }
+    self.keyboardFocused = focused
     updateContent()
   }
 
@@ -167,7 +167,7 @@ private final class SuggestionCell: UITableViewCell {
 
   private func updateContent() {
     guard let item else { return }
-    let showsFocus = focused || isHighlighted
+    let showsFocus = keyboardFocused || isHighlighted
     contentConfiguration = UIHostingConfiguration {
       OkouSuggestionRow(title: item.title, detail: item.detail, command: item.command)
         .padding(.horizontal, OkouSpace.lg)
