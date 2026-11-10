@@ -64,7 +64,7 @@ export function EmailConnectDialog() {
   const status = useLastLoadable(emailLinkStatus$);
   return (
     <Dialog open={open} onOpenChange={setOpen}>
-      <DialogContent smMaxWidth={680}>
+      <DialogContent smMaxWidth={680} contentClassName="grid-cols-1">
         <QuestSplitLayout
           figure={
             <div className="hidden sm:contents">
