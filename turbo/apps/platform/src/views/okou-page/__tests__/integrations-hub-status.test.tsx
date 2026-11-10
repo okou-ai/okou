@@ -586,8 +586,7 @@ test("Works install buttons show a short label and keep the provider name", asyn
 
   await setupIntegrationsPage(context);
 
-  const install = await screen.findByRole("button", {
-    name: "Install to Slack",
-  });
+  await expect(screen.findByText("Slack")).resolves.toBeInTheDocument();
+  const install = getAction("button", "Install to Slack");
   expect(install).toHaveTextContent(/^Install$/u);
 });
