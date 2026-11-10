@@ -330,8 +330,6 @@ struct ChatSidebarView: View {
       }
     } label: {
       HStack(spacing: OkouSpace.sm) {
-        OkouIcon(expanded ? "chevron-down" : "chevron-right", size: OkouIconSize.inline)
-          .foregroundStyle(OkouColor.mutedForeground)
         OkouIcon(expanded ? "folder-open" : "folder", size: OkouIconSize.standard)
           .foregroundStyle(OkouColor.mutedForeground)
         Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
