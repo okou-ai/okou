@@ -114,23 +114,58 @@ export function plan(
       ownerCheck(workflow.owner, key);
       if (workflow.official !== null) block("NonDefaultOfficialWorkflow", key);
       if (workflow.bundle === null) block("MissingWorkflowBundle", key);
+      const target = {
+        ...workflow,
+        visibility:
+          source.visibility === "private"
+            ? ("private" as const)
+            : workflow.visibility,
+      };
       const permissionChanges = [...members.keys()].sort().flatMap((userId) => {
         const before = rights(workflow, source, userId);
-        const after = rights(workflow, destination, userId);
-        return JSON.stringify(before) === JSON.stringify(after)
-          ? []
-          : [{ userId, before, after }];
+        const after = rights(target, destination, userId);
+        const changed = (["view", "manage", "publish"] as const).filter(
+          (key) => {
+            return before[key] !== after[key];
+          },
+        );
+        if (!changed.length) return [];
+        const acceptedChanges = changed.filter((key) => {
+          return source.visibility === "private" && key !== "publish";
+        });
+        const unresolvedChanges = changed.filter((key) => {
+          return !acceptedChanges.includes(key);
+        });
+        return [{ userId, before, after, acceptedChanges, unresolvedChanges }];
       });
-      if (permissionChanges.length) block("WorkflowRightsChange", key);
+      if (
+        permissionChanges.some((row) => {
+          return row.unresolvedChanges.length > 0;
+        })
+      )
+        block("WorkflowRightsChange", key);
       return {
         key,
         source: workflow,
         targetAgentId: destination.id,
         targetName: name,
+        targetOwner: target.owner,
+        targetVisibility: target.visibility,
         permissionChanges,
         republishBundle: true,
       };
     });
+  const targetScopes = new Set<string>();
+  for (const moved of movedWorkflows) {
+    const scope = JSON.stringify([
+      moved.targetName,
+      moved.targetVisibility,
+      moved.targetVisibility === "private" ? moved.targetOwner : null,
+    ]);
+    if (targetScopes.has(scope))
+      block("TargetWorkflowScopeCollision", moved.key);
+    else targetScopes.add(scope);
+  }
   const convertedInstructions = snapshot.agents
     .filter((row) => {
       return row.id !== destination.id;
@@ -186,6 +221,20 @@ export function plan(
       };
     });
   const projectGroups = planProjects(snapshot, destination.id, block);
+  const targets = new Map(
+    movedWorkflows.map((row) => {
+      return [
+        row.source.id,
+        { ...row.source, visibility: row.targetVisibility },
+      ];
+    }),
+  );
+  const ownerWorkflowAccess = (workflow: Workflow, owner: string) => {
+    return {
+      before: rights(workflow, agents.get(workflow.agentId)!, owner).view,
+      after: rights(targets.get(workflow.id)!, destination, owner).view,
+    };
+  };
   const automations = [...snapshot.automations]
     .sort((a, b) => {
       return a.id.localeCompare(b.id);
@@ -194,36 +243,45 @@ export function plan(
       const workflow = workflows.get(automation.workflowId);
       if (!workflow) throw new PlanningError("AutomationWorkflowOutsideScope");
       if (workflow.agentId === destination.id) return [];
-      ownerCheck(automation.owner, `automation:${automation.id}`);
+      const key = `automation:${automation.id}`;
+      ownerCheck(automation.owner, key);
+      const workflowAccess = ownerWorkflowAccess(workflow, automation.owner);
+      if (!workflowAccess.after)
+        block("AutomationOwnerCannotAccessTargetWorkflow", key);
       return [
         {
           ...automation,
           targetAgentId: destination.id,
+          workflowAccess,
           preserveIdentityAndState: true,
         },
       ];
     });
   const automationThreads = snapshot.automationThreads
-    .filter((thread) => {
+    .flatMap((thread) => {
       const workflow = workflows.get(thread.workflowId);
       if (!workflow)
         throw new PlanningError("AutomationThreadWorkflowOutsideScope");
-      if (workflow.agentId === destination.id) return false;
+      if (workflow.agentId === destination.id) return [];
       const key = `automation-thread:${thread.id}`;
       ownerCheck(thread.owner, key);
+      const workflowAccess = ownerWorkflowAccess(workflow, thread.owner);
+      if (!workflowAccess.after)
+        block("AutomationThreadOwnerCannotAccessTargetWorkflow", key);
       if (thread.chatThreadId !== null) {
         const chat = chats.get(thread.chatThreadId);
         if (!chat || chat.owner !== thread.owner)
           block("AutomationChatOutsideOwnerAgentScope", key);
       }
-      return true;
+      return [{ ...thread, workflowAccess }];
     })
     .sort((a, b) => {
       return a.id.localeCompare(b.id);
     });
   return {
-    format: "single-agent-plan-v1",
+    format: "single-agent-plan-v2",
     executable: false,
+    privateAgentWorkflowPolicy: "private-preserve-workflow-owner",
     scope: { orgId, target: snapshot.target, database: snapshot.database },
     capturedAt: snapshot.capturedAt,
     inventorySha256,

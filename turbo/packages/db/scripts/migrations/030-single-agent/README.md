@@ -44,6 +44,10 @@ checks the requested org against the snapshot, and binds its output to the exact
 input bytes with SHA-256. It uses no database. Repeating the command against the
 same inventory produces identical plan bytes. Treat an inventory as trusted
 operator input; its hash detects different input, not forgery or stale state.
+Plans use `single-agent-plan-v2`; inventories remain
+`single-agent-inventory-v1`. Regenerate earlier plans from their inventory to
+apply the owner-private policy. No executable consumer of either plan version
+is implemented.
 
 Exit codes:
 
@@ -60,22 +64,35 @@ Exit codes:
 - For each other Agent, plan `<agentName>--instruction`; for its existing
   Workflows, plan `<agentName>--wf-<workflowName>`. Canonical Agent names are
   lowercased. Validate with the product's Workflow name contract (64 characters).
-  Preserve same-source public/private overrides under one name. Block other
-  collisions, existing default-Agent names and overlong names; never truncate,
-  overwrite or invent a suffix.
+  Keep same-source overrides under one name when their target visibility/owner
+  scopes remain distinct. Privatization can collapse a public Workflow and its
+  same-owner private override into one scope; block that conflict without
+  merging or renaming either ID. Block other collisions, existing default-Agent
+  names and overlong names; never truncate, overwrite or invent a suffix.
 - Keep existing Workflow and Automation IDs. Workflow plans retain owner,
-  visibility, source revision and immutable bundle reference, and require
-  republishing the renamed generated `SKILL.md`. All Automations, including
-  disabled ones, retain their state; row fingerprints pin their full database
-  configuration without exporting trigger contents. Automation execution Chat
-  bindings are inventoried separately, with owner/scope checks.
+  source revision and immutable bundle reference, and require republishing the
+  renamed generated `SKILL.md`. Every Workflow from a private Agent becomes
+  private under its original Workflow owner, even when the Agent has a different
+  owner. Public-Agent Workflows keep their original visibility. Each move names
+  its `targetOwner` and `targetVisibility`; the source row remains unchanged.
+  Private Agent Instructions become a private Workflow owned by the Agent owner.
+  All Automations, including disabled ones, retain their owner and state; row
+  fingerprints pin their full database configuration without exporting trigger
+  contents. Automation execution Chat bindings are inventoried separately.
+  Both Automations and bindings record their owner's before/after Workflow
+  visibility and block inaccessible target Workflows. This static visibility
+  check does not establish runtime eligibility or trigger delivery.
   Non-default Official Workflow installations block pending their own mapping.
 - Compare Workflow view/manage/publish rights before and after the host change
   using the current host visibility/owner rules and cached org membership.
-  Report per-member differences as blockers, including visibility expansion on
-  private hosts and lost publish/maintenance rights. Converted Instructions also
-  block changed maintenance rights. The cache is preliminary evidence, not live
-  membership authority.
+  Record all per-member differences. For private-Agent Workflows, view/manage
+  changes are accepted by the explicit owner-private policy: the original
+  Workflow owner can maintain it and the former Agent owner loses any additional
+  access. List these as `acceptedChanges`; all publish-right changes and all
+  public-Agent permission differences remain `unresolvedChanges` and block.
+  Converted Instructions also block changed maintenance rights. No runtime
+  permission or publication policy is changed. The cache is preliminary
+  evidence, not live membership authority.
 - Initialize members with no personal Instructions row once from the public
   default Agent's snapshotted Instructions. Preserve every saved row, including
   deliberately empty content. Earlier automatically seeded rows also remain
@@ -129,5 +146,8 @@ startup settings, no source-row changes, private report creation,
 offline deterministic planning, preserved empty personal content, owner-separated
 Projects and prior membership, enabled/disabled Automations and execution Chat
 bindings, permission blockers, name/length conflicts, strict scope validation and
-overwrite refusal. The migration CI job runs this same test. This is tool
-verification, not staff production rehearsal or runtime acceptance.
+overwrite refusal. It covers owner-private conversion, recorded access narrowing,
+unchanged public-Agent visibility, post-privatization name-scope collisions, and
+lost Workflow access for both enabled/disabled Automations and execution Chat
+bindings. The migration CI job runs this same test. This is tool verification,
+not staff production rehearsal or runtime acceptance.

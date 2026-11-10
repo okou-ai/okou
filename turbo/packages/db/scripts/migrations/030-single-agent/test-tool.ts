@@ -44,7 +44,9 @@ const rightsSchema = object({
 });
 
 const planSchema = object({
+  format: literal("single-agent-plan-v2"),
   executable: literal(false),
+  privateAgentWorkflowPolicy: literal("private-preserve-workflow-owner"),
   inventorySha256: string(),
   summary: object({
     workflowMoves: number(),
@@ -59,15 +61,25 @@ const planSchema = object({
   movedWorkflows: array(
     object({
       targetName: string(),
-      source: object({ id: string() }),
+      targetOwner: string(),
+      targetVisibility: string(),
+      source: object({ id: string(), owner: string(), visibility: string() }),
       permissionChanges: array(
-        object({ userId: string(), before: rightsSchema, after: rightsSchema }),
+        object({
+          userId: string(),
+          before: rightsSchema,
+          after: rightsSchema,
+          acceptedChanges: array(string()),
+          unresolvedChanges: array(string()),
+        }),
       ),
     }),
   ),
   convertedInstructions: array(
     object({
       targetName: string(),
+      owner: string(),
+      visibility: string(),
       automaticallyInvoke: literal(false),
       maintenanceChanges: array(string()),
     }),
@@ -90,12 +102,19 @@ const planSchema = object({
   automations: array(
     object({
       id: string(),
+      owner: string(),
+      workflowId: string(),
       enabled: boolean(),
+      workflowAccess: object({ before: boolean(), after: boolean() }),
       preserveIdentityAndState: literal(true),
     }),
   ),
   automationThreads: array(
-    object({ chatThreadId: string().nullable(), owner: string() }),
+    object({
+      chatThreadId: string().nullable(),
+      owner: string(),
+      workflowAccess: object({ before: boolean(), after: boolean() }),
+    }),
   ),
   blockers: array(object({ code: string(), key: string() })),
 });
@@ -278,13 +297,19 @@ try {
     !planned.blockers.some((row) => {
       return row.code === "TargetNameCollision";
     }),
-    "private override shares the public workflow's name",
+    "same-source overrides keep their typed name",
+  );
+  assert.ok(
+    planned.blockers.some((row) => {
+      return row.code === "TargetWorkflowScopeCollision";
+    }),
+    "privatizing a public override must not collide with its same-owner private Workflow",
   );
   assert.ok(
     planned.blockers.some((row) => {
       return row.code === "WorkflowRightsChange";
     }),
-    "visibility expansion and lost publish rights block migration",
+    "unapproved publish-right changes still block migration",
   );
   const privateMove = planned.movedWorkflows.find((row) => {
     return row.source.id === workflow;
@@ -293,6 +318,14 @@ try {
     return row.source.id === publicWorkflow;
   });
   assert.ok(privateMove && publicMove);
+  assert.ok(
+    planned.movedWorkflows.every((row) => {
+      return row.targetVisibility === "private" && row.targetOwner === owner;
+    }),
+    "all Workflows from private Agents become private without changing owner",
+  );
+  assert.equal(planned.convertedInstructions[0]?.owner, owner);
+  assert.equal(planned.convertedInstructions[0]?.visibility, "private");
   assert.deepEqual(
     privateMove.permissionChanges,
     [
@@ -300,31 +333,16 @@ try {
         userId: owner,
         before: { view: true, manage: true, publish: true },
         after: { view: true, manage: true, publish: false },
+        acceptedChanges: [],
+        unresolvedChanges: ["publish"],
       },
     ],
     "private Workflow owner loses publish permission on the public default host",
   );
   assert.deepEqual(
-    publicMove.permissionChanges.find((row) => {
-      return row.userId === administrator;
-    }),
-    {
-      userId: administrator,
-      before: { view: false, manage: false, publish: false },
-      after: { view: true, manage: true, publish: false },
-    },
-    "moving a public Workflow out of a private host exposes it to org admins",
-  );
-  assert.deepEqual(
-    publicMove.permissionChanges.find((row) => {
-      return row.userId === "saved-user";
-    }),
-    {
-      userId: "saved-user",
-      before: { view: false, manage: false, publish: false },
-      after: { view: true, manage: false, publish: false },
-    },
-    "ordinary members gain read access but never management rights",
+    publicMove.permissionChanges,
+    [],
+    "a formerly public Workflow on a private Agent does not expose content to other members or admins",
   );
   assert.equal(
     planned.personalInstructions.find((row) => {
@@ -384,8 +402,17 @@ try {
   );
   assert.equal((await stat(output)).mode & 0o777, 0o600);
   assert.deepEqual(planned.automationThreads, [
-    { chatThreadId: executionChat.id, owner },
+    {
+      chatThreadId: executionChat.id,
+      owner,
+      workflowAccess: { before: true, after: true },
+    },
   ]);
+  for (const automation of planned.automations) {
+    assert.equal(automation.owner, owner);
+    assert.equal(automation.workflowId, workflow);
+    assert.deepEqual(automation.workflowAccess, { before: true, after: true });
+  }
   const secondOutput = join(directory, "repeat.json");
   run(
     [
@@ -513,6 +540,19 @@ try {
     }),
     "a former public Agent owner cannot silently lose Instruction maintenance rights",
   );
+  assert.equal(
+    maintenance.result.movedWorkflows.find((row) => {
+      return row.source.id === publicWorkflow;
+    })?.targetVisibility,
+    "public",
+    "public-Agent Workflows keep their existing visibility",
+  );
+  assert.ok(
+    !maintenance.result.blockers.some((row) => {
+      return row.code === "TargetWorkflowScopeCollision";
+    }),
+    "public/private overrides retain separate scopes on public Agents",
+  );
   const differentOwner = structuredClone(snapshot);
   const separatelyOwned = differentOwner.workflows.find((row) => {
     return row.id === workflow;
@@ -532,9 +572,88 @@ try {
         userId: administrator,
         before: { view: true, manage: true, publish: false },
         after: { view: true, manage: true, publish: true },
+        acceptedChanges: [],
+        unresolvedChanges: ["publish"],
       },
     ],
     "Workflow owners retain view/manage rights even when a different user owns the private host",
+  );
+  assert.equal(
+    ownerAccess.result.movedWorkflows.find((row) => {
+      return row.source.id === workflow;
+    })?.targetOwner,
+    administrator,
+    "the private Agent owner never acquires another member's private Workflow",
+  );
+
+  const privacy = structuredClone(snapshot);
+  const privacyAgent = privacy.agents.find((row) => {
+    return row.id === oldAgent;
+  });
+  assert.ok(privacyAgent);
+  privacyAgent.owner = administrator;
+  privacy.workflows = privacy.workflows.filter((row) => {
+    return row.id === publicWorkflow;
+  });
+  privacy.automations = [];
+  privacy.automationThreads = [];
+  const narrowed = await prepare(privacy, "accepted-private-access", 0);
+  assert.equal(narrowed.result.blockers.length, 0);
+  assert.deepEqual(narrowed.result.movedWorkflows[0]?.permissionChanges, [
+    {
+      userId: administrator,
+      before: { view: true, manage: true, publish: false },
+      after: { view: false, manage: false, publish: false },
+      acceptedChanges: ["view", "manage"],
+      unresolvedChanges: [],
+    },
+    {
+      userId: owner,
+      before: { view: true, manage: false, publish: false },
+      after: { view: true, manage: true, publish: false },
+      acceptedChanges: ["manage"],
+      unresolvedChanges: [],
+    },
+  ]);
+
+  const automationAccess = structuredClone(snapshot);
+  const formerlyShared = automationAccess.workflows.find((row) => {
+    return row.id === publicWorkflow;
+  });
+  assert.ok(formerlyShared);
+  formerlyShared.owner = administrator;
+  for (const automation of automationAccess.automations) {
+    automation.workflowId = publicWorkflow;
+  }
+  for (const thread of automationAccess.automationThreads) {
+    thread.workflowId = publicWorkflow;
+  }
+  const brokenAccess = await prepare(
+    automationAccess,
+    "automation-access-loss",
+  );
+  assert.equal(
+    brokenAccess.result.blockers.filter((row) => {
+      return row.code === "AutomationOwnerCannotAccessTargetWorkflow";
+    }).length,
+    2,
+    "both enabled and disabled Automations block when their unchanged owner loses access",
+  );
+  assert.ok(
+    brokenAccess.result.blockers.some((row) => {
+      return row.code === "AutomationThreadOwnerCannotAccessTargetWorkflow";
+    }),
+    "execution Chat bindings cannot retain a now-inaccessible Workflow",
+  );
+  for (const automation of brokenAccess.result.automations) {
+    assert.equal(automation.owner, owner);
+    assert.deepEqual(automation.workflowAccess, { before: true, after: false });
+  }
+  assert.ok(
+    !brokenAccess.result.blockers.some((row) => {
+      return row.code === "TargetWorkflowScopeCollision";
+    }),
+    "same-name private Workflows with different owners remain separate valid scopes",
   );
 
   const rejectedFile = join(directory, "rejected.json");
