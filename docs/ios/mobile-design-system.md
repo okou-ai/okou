@@ -189,6 +189,9 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   drew a ~35 pt circle inside its 44 pt frame and looked smaller than the UIKit glass
   "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`.
   Paired controls in one bar are the same size.
+  The sidebar filter uses `ChatListFilterMenu` with that native configuration so
+  `SidebarMenuButton` can suspend page swipes through the menu's dismissal
+  animation, until UIKit has returned the lifted button to its source.
 - **Send / stop / mic** share the composer's trailing slot: the mic alone on an empty
   draft, mic then send (`.glassProminent`, `primary`) once there is content, and stop
   (`interrupt`) alone while a run is active and the draft is empty.
