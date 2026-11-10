@@ -35,6 +35,13 @@ struct OkouApp: App {
   }
 
   init() {
+    #if DEBUG || STAGING
+      if case .success(let configuration) = configuration {
+        StagingPreviewAccess.configure(
+          apiURL: configuration.apiURL,
+          bypass: ProcessInfo.processInfo.environment["OKOU_PREVIEW_API_BYPASS"])
+      }
+    #endif
     if !Self.isDesignPreview { CrashReporting.start() }
     OkouNavigationBar.applyBackIndicator()
     OkouNavigationBar.applySearchField()

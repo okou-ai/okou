@@ -110,6 +110,7 @@ jobs:
           bash ios/scripts/test-ci.sh
           node --test ios/scripts/testflight.test.mjs
           python3 ios/scripts/archive-proof.test.py
+          python3 ios/scripts/preview-artifact.test.py
           python3 ios/scripts/upload-sentry-symbols.test.py
           python3 ios/scripts/distribution-profile.test.py
           python3 ios/scripts/archive-promotion.test.py
@@ -304,6 +305,49 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  build-preview:
+    needs: detect
+    if: needs.detect.outputs.needed == 'true' && github.event_name != 'merge_group' && github.event_name != 'push'
+    runs-on: xcode-27
+    timeout-minutes: 15
+    env:
+      DEVELOPER_DIR: /Applications/Xcode_27.1.app/Contents/Developer
+      IOS_TEST_DESTINATION: platform=iOS Simulator,name=iPhone 18 Pro,OS=27.0
+      OKOU_STAGING_CLERK_PUBLISHABLE_KEY: ${{ vars.CLERK_PUBLISHABLE_KEY_PREVIEW }}
+      PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+      PR_NUMBER: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Configure staging archive workspace
+        run: echo "IOS_ARCHIVE_DIR=$RUNNER_TEMP/okou-ios-promotion" >> "$GITHUB_ENV"
+      - name: Restore device build caches
+        uses: ./.github/actions/setup-ios-build-cache
+        with:
+          target: archive
+      - name: Build and validate staging device IPA
+        run: bash ios/scripts/build-preview.sh
+      - name: Upload staging device artifacts
+        id: preview
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-staging-${{ github.sha }}-${{ github.run_attempt }}
+          path: ${{ env.IOS_ARCHIVE_DIR }}/preview
+          if-no-files-found: error
+          retention-days: 7
+      - name: Link staging device build
+        env:
+          ARTIFACT_URL: ${{ steps.preview.outputs.artifact-url }}
+        run: |
+          {
+            echo '### iOS staging device build'
+            echo "[Download IPA, archive, and manifest]($ARTIFACT_URL)"
+            echo "- Built checkout: $GITHUB_SHA; PR head: ${PR_HEAD_SHA:-not a PR}"
+            echo '- Unsigned IPA for BrowserStack re-signing; not directly installable on a personal iPhone.'
+            echo '- Uses staging services and Clerk TEST; no TestFlight publication.'
+          } >> "$GITHUB_STEP_SUMMARY"
+
   build-archive:
     # Compile in parallel with simulator validation to stay inside the queue deadline.
     needs: detect
@@ -395,6 +439,7 @@ jobs:
         swiftlint,
         test-packages,
         build-test,
+        build-preview,
         build-archive,
         publish-archive,
       ]
@@ -416,6 +461,7 @@ jobs:
           IOS_NEEDED: ${{ needs.detect.outputs.needed }}
           PACKAGES_RESULT: ${{ needs.test-packages.result }}
           BUILD_RESULT: ${{ needs.build-test.result }}
+          PREVIEW_RESULT: ${{ needs.build-preview.result }}
           ARCHIVE_RESULT: ${{ needs.build-archive.result }}
           PUBLISH_RESULT: ${{ needs.publish-archive.result }}
         run: bash ios/scripts/ci-gate.sh

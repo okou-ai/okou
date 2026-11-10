@@ -17,7 +17,7 @@
     <key>UIBackgroundModes</key><array><string>remote-notification</string></array>
     <key>APNsEnvironment</key><string>$(APS_ENVIRONMENT)</string>
     <key>NotificationAppGroup</key><string>group.ai.okou.ios</string>
-    <key>ClerkKeychainAccessGroup</key><string>C5UWSXYB67.ai.okou.ios</string>
+    <key>ClerkKeychainAccessGroup</key><string>$(OKOU_CLERK_KEYCHAIN_ACCESS_GROUP)</string>
     <key>APIBaseURL</key><string>$(OKOU_API_BASE_URL)</string>
     <key>WebBaseURL</key><string>$(OKOU_WEB_BASE_URL)</string>
     <key>ClerkPublishableKey</key><string>$(CLERK_PUBLISHABLE_KEY)</string>
