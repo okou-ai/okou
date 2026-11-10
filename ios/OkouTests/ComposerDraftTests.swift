@@ -10,6 +10,55 @@ import XCTest
 
 @MainActor
 final class ComposerDraftTests: XCTestCase {
+  func testWhitespaceOnlyDraftsClearCloudContentWithoutTrimmingMeaningfulText() async throws {
+    for target in [ChatDraftTarget.agent(draftAgentID), .thread(draftThreadID)] {
+      let server = DraftServer()
+      let storage = server.storage()
+      let composer = server.composer(storage: storage, target: target)
+      defer { composer.close() }
+      let repository = ChatDraftRepository(client: server.http.client)
+
+      composer.text = " \r\n\t\u{00a0}"
+      await composer.synchronize()
+      let blank = try await repository.load(target)
+      XCTAssertEqual(blank, ComposerDraft())
+
+      let text = "  Keep\n\n    this indentation  \n"
+      composer.text = text
+      await composer.synchronize()
+      let saved = try await repository.load(target)
+      XCTAssertEqual(saved.draftUserMessage?.text, text)
+
+      composer.text = "\n\n  "
+      await composer.synchronize()
+      let cleared = try await repository.load(target)
+      XCTAssertEqual(cleared, ComposerDraft())
+      composer.close()
+      let reopened = server.composer(storage: storage, target: target)
+      defer { reopened.close() }
+      await reopened.synchronize()
+      XCTAssertTrue(reopened.text.isEmpty)
+      XCTAssertNil(reopened.conflictingRemote)
+    }
+  }
+
+  func testWhitespaceTextPreservesDraftAttachmentsAndReferences() async throws {
+    let remote = try richDraft()
+    let server = DraftServer(remote: remote)
+    let composer = server.composer()
+    defer { composer.close() }
+    await composer.synchronize()
+    try await waitForBusinessResult { composer.attachments.isReady }
+
+    composer.text = " \n\t"
+    await composer.synchronize()
+    let saved = try await ChatDraftRepository(client: server.http.client).load(.agent(draftAgentID))
+    XCTAssertEqual(saved.draftAttachments, remote.draftAttachments)
+    XCTAssertEqual(
+      saved.draftUserMessage?.parts.filter { $0["type"]?.string != "text" },
+      remote.draftUserMessage?.parts.filter { $0["type"]?.string != "text" })
+  }
+
   func testRetiredEditorCannotOverwriteTheReplacementDraftAfterClearAndRestart() async throws {
     let server = DraftServer()
     let storage = server.storage()
@@ -768,7 +817,11 @@ private final class DraftServer: Sendable {
           status: 503, body: #"{"error":{"message":"Upload unavailable for the interrupted file"}}"#
         )
       }
-      guard path == "/api/agents/\(draftAgentID)/draft" else { throw URLError(.unsupportedURL) }
+      let draftPaths = [
+        "/api/agents/\(draftAgentID)/draft", "/api/chat-threads/\(draftThreadID)/draft",
+        "/api/chat-threads/\(draftThreadID)",
+      ]
+      guard draftPaths.contains(path) else { throw URLError(.unsupportedURL) }
       if request.httpMethod == "PATCH" {
         let index = state.value.withLock { value in
           value.writes += 1
@@ -791,9 +844,11 @@ private final class DraftServer: Sendable {
       scope: ChatCacheScope(apiBaseURL: http.baseURL, userID: "user", workspaceID: "org"),
       directory: directory)
   }
-  @MainActor func composer(storage: ChatDraftStorage? = nil) -> ComposerDraftStore {
+  @MainActor func composer(
+    storage: ChatDraftStorage? = nil, target: ChatDraftTarget = .agent(draftAgentID)
+  ) -> ComposerDraftStore {
     ComposerDraftStore(
-      target: .agent(draftAgentID),
+      target: target,
       commands: ChatCommands(client: http.client, sync: ChatSync(client: http.client)),
       repository: ChatDraftRepository(client: http.client), storage: storage, didFail: { _ in },
       syncSleep: { _ in })
@@ -806,6 +861,7 @@ private final class DraftServerState: Sendable {
 }
 
 private let draftAgentID = "43000000-0000-4000-8000-000000000002"
+private let draftThreadID = "43000000-0000-4000-8000-000000000003"
 
 private final class DraftGate: Sendable {
   let stream: AsyncStream<Void>
