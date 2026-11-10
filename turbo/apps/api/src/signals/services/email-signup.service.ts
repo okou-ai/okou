@@ -1,10 +1,22 @@
 import { command } from "ccstate";
-import { and, count, eq, gte, isNull, notLike } from "drizzle-orm";
+import {
+  and,
+  count,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  isNotNull,
+  notInArray,
+  notLike,
+  sql,
+} from "drizzle-orm";
 import { createHmac, timingSafeEqual } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
-import { uuid } from "zod";
 import { disposableEmailBlocklistSet } from "disposable-email-domains-js";
 import { emailChannelMessages } from "@okouai/db/schema/email-integration";
+import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { env } from "../../lib/env";
 import { now } from "../../lib/time";
 import {
@@ -17,31 +29,32 @@ import {
 } from "../external/clerk";
 import { writeDb$ } from "../external/db";
 import { settle } from "../utils";
-import { enqueueEmailText$ } from "./email-channel-delivery.service";
+import {
+  EMAIL_SIGNUP_REQUEST_HEADER,
+  enqueueEmailText$,
+} from "./email-channel-delivery.service";
 import { fetchUserProfileMap$ } from "./user-profile-directory.service";
 
 type EmailMessage = typeof emailChannelMessages.$inferSelect;
 const NAMESPACE = "105a832b-9db8-47a7-8d40-a3ff48a7bf7a";
 const SIGNUP_TTL_MS = 24 * 60 * 60 * 1000;
+const SIGNUP_MAX_FAILED_ATTEMPTS = 5;
+const SIGNUP_REPLY_PATTERN = /^[ \t\r\n]*CONFIRM ([0-9]{8})[ \t]*(?:\r?\n|$)/u;
 const disposable = disposableEmailBlocklistSet();
+const signupRequestId = sql`${emailOutbox.headers}->>${EMAIL_SIGNUP_REQUEST_HEADER}`;
 
-function signupSignature(message: EmailMessage): string {
-  return createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
+function signupCode(message: EmailMessage): string {
+  const digest = createHmac("sha256", env("SECRETS_ENCRYPTION_KEY"))
     .update(
       `email-signup:v1:${message.id}:${message.sender}:${message.createdAt.getTime()}`,
     )
-    .digest("hex")
-    .slice(0, 32);
+    .digest();
+  return (digest.readBigUInt64BE() % 100_000_000n).toString().padStart(8, "0");
 }
 
 /** Only the explicit first line is consent; quoted messages are never accepted. */
 export function emailSignupConfirmation(text: string) {
-  const line = text.trimStart().split(/\r?\n/u, 1)[0] ?? "";
-  const match = /^CONFIRM ([a-f0-9-]{36})\.([a-f0-9]{32})\s*$/u.exec(line);
-  const id = uuid().safeParse(match?.[1]);
-  return id.success && match?.[2]
-    ? { messageId: id.data, signature: match[2] }
-    : null;
+  return SIGNUP_REPLY_PATTERN.exec(text)?.[1] ?? null;
 }
 
 function domainIsDisposable(domain: string): boolean {
@@ -100,10 +113,11 @@ const signupReply$ = command(
       readonly message: EmailMessage;
       readonly kind: string;
       readonly text: string;
+      readonly signupRequestId?: string;
     },
     signal: AbortSignal,
   ) => {
-    const { message, kind, text } = args;
+    const { message, kind, text, signupRequestId } = args;
     const id = uuidv5(`${kind}:${message.id}`, NAMESPACE);
     await set(
       enqueueEmailText$,
@@ -117,6 +131,7 @@ const signupReply$ = command(
         inReplyTo: message.messageId,
         references: message.references,
         text,
+        ...(signupRequestId ? { signupRequestId } : {}),
       },
       signal,
     );
@@ -169,31 +184,29 @@ export const sendEmailSignupConfirmation$ = command(
     const db = set(writeDb$);
     const [senderCount] = await db
       .select({ value: count() })
-      .from(emailChannelMessages)
+      .from(emailOutbox)
       .where(
         and(
-          eq(emailChannelMessages.sender, message.sender),
-          isNull(emailChannelMessages.routeId),
-          notLike(emailChannelMessages.providerEmailId, "outbound:%"),
-          gte(emailChannelMessages.createdAt, new Date(now() - SIGNUP_TTL_MS)),
+          eq(emailOutbox.toAddresses, message.sender),
+          isNotNull(signupRequestId),
+          gte(emailOutbox.createdAt, new Date(now() - SIGNUP_TTL_MS)),
         ),
       );
     signal.throwIfAborted();
     const [globalCount] = await db
       .select({ value: count() })
-      .from(emailChannelMessages)
+      .from(emailOutbox)
       .where(
         and(
-          isNull(emailChannelMessages.routeId),
-          notLike(emailChannelMessages.providerEmailId, "outbound:%"),
-          gte(emailChannelMessages.createdAt, new Date(now() - 60 * 60 * 1000)),
+          isNotNull(signupRequestId),
+          gte(emailOutbox.createdAt, new Date(now() - 60 * 60 * 1000)),
         ),
       );
     signal.throwIfAborted();
     if (!senderCount || !globalCount) {
       throw new Error("Email signup admission counts are unavailable");
     }
-    if (senderCount.value > 3 || globalCount.value > 100) {
+    if (senderCount.value >= 3 || globalCount.value >= 100) {
       return;
     }
     await set(
@@ -201,7 +214,8 @@ export const sendEmailSignupConfirmation$ = command(
       {
         message,
         kind: "signup-confirmation",
-        text: `Hi, I'm Okou. To create your account and workspace and continue your original request, reply with this exact line at the start of your email:\n\nCONFIRM ${message.id}.${signupSignature(message)}\n\nBy sending that confirmation, you agree to the [Terms of Use](https://www.okou.ai/en/terms-of-use) and acknowledge the [Privacy Policy](https://www.okou.ai/en/privacy-policy). The code expires in 24 hours and works only from this email address. You don't need to visit a website or resend your request.\n\nThis integration does not support HIPAA-regulated use. If you didn't request an account, ignore this email.`,
+        signupRequestId: message.id,
+        text: `Hi, I'm Okou. To create your account and workspace and continue your original request, reply with this exact line at the start of your email:\n\nCONFIRM ${signupCode(message)}\n\nBy sending that confirmation, you agree to the [Terms of Use](https://www.okou.ai/en/terms-of-use) and acknowledge the [Privacy Policy](https://www.okou.ai/en/privacy-policy). This 8-digit code expires in 24 hours and works only from this email address. You don't need to visit a website or resend your request.\n\nThis integration does not support HIPAA-regulated use. If you didn't request an account, ignore this email.`,
       },
       signal,
     );
@@ -332,32 +346,44 @@ const provisionEmailOrganization$ = command(
   },
 );
 
-export const confirmEmailSignup$ = command(
-  async ({ set }, confirmation: EmailMessage, signal: AbortSignal) => {
-    const token = emailSignupConfirmation(confirmation.text);
-    if (!token) {
-      return null;
-    }
-    const [original] = await set(writeDb$)
-      .select()
-      .from(emailChannelMessages)
+const resolveEmailSignupConfirmation$ = command(
+  async (
+    { set },
+    args: { readonly confirmation: EmailMessage; readonly code: string },
+    signal: AbortSignal,
+  ) => {
+    const { confirmation, code } = args;
+    const db = set(writeDb$);
+    const candidates = await db
+      .select({
+        message: getTableColumns(emailChannelMessages),
+        issuedAt: emailOutbox.createdAt,
+      })
+      .from(emailOutbox)
+      .innerJoin(
+        emailChannelMessages,
+        eq(signupRequestId, sql`${emailChannelMessages.id}::text`),
+      )
       .where(
         and(
-          eq(emailChannelMessages.id, token.messageId),
           eq(emailChannelMessages.sender, confirmation.sender),
           eq(emailChannelMessages.authenticated, true),
+          eq(emailOutbox.toAddresses, confirmation.sender),
+          inArray(emailOutbox.status, ["sent", "sending"]),
+          gte(emailOutbox.createdAt, new Date(now() - SIGNUP_TTL_MS)),
         ),
       )
-      .limit(1);
+      .orderBy(desc(emailOutbox.createdAt))
+      .limit(3);
     signal.throwIfAborted();
-    if (
-      !original ||
-      original.createdAt.getTime() + SIGNUP_TTL_MS < now() ||
-      !timingSafeEqual(
-        Buffer.from(token.signature, "hex"),
-        Buffer.from(signupSignature(original), "hex"),
-      )
-    ) {
+    const matching = candidates.filter(({ message }) => {
+      return timingSafeEqual(
+        Buffer.from(code),
+        Buffer.from(signupCode(message)),
+      );
+    });
+    const selected = matching.length === 1 ? matching[0] : undefined;
+    if (!selected || selected.issuedAt.getTime() + SIGNUP_TTL_MS < now()) {
       await set(
         signupReply$,
         {
@@ -367,6 +393,69 @@ export const confirmEmailSignup$ = command(
         },
         signal,
       );
+      return null;
+    }
+    const original = selected.message;
+    // A consumed canonical input is the one-time-use receipt, including retries.
+    if (
+      original.routeId &&
+      !original.text.trim() &&
+      original.attachmentIds.length === 0
+    ) {
+      return null;
+    }
+    const issuedCodes = candidates
+      .filter(({ issuedAt }) => {
+        return issuedAt.getTime() + SIGNUP_TTL_MS >= now();
+      })
+      .map(({ message }) => {
+        return signupCode(message);
+      });
+    const replyCode = sql`substring(${emailChannelMessages.text} from ${SIGNUP_REPLY_PATTERN.source})`;
+    const [failed] = await db
+      .select({ value: count() })
+      .from(emailChannelMessages)
+      .where(
+        and(
+          eq(emailChannelMessages.sender, confirmation.sender),
+          notLike(emailChannelMessages.providerEmailId, "outbound:%"),
+          gte(emailChannelMessages.createdAt, selected.issuedAt),
+          isNotNull(replyCode),
+          notInArray(replyCode, issuedCodes),
+        ),
+      );
+    signal.throwIfAborted();
+    if (!failed) {
+      throw new Error("Email signup attempt count is unavailable");
+    }
+    if (failed.value >= SIGNUP_MAX_FAILED_ATTEMPTS) {
+      await set(
+        signupReply$,
+        {
+          message: confirmation,
+          kind: "confirmation-attempt-limit",
+          text: "Too many incorrect confirmation attempts. Send your original request in a new email to receive a new code.",
+        },
+        signal,
+      );
+      return null;
+    }
+    return original;
+  },
+);
+
+export const confirmEmailSignup$ = command(
+  async ({ set }, confirmation: EmailMessage, signal: AbortSignal) => {
+    const code = emailSignupConfirmation(confirmation.text);
+    if (!code) {
+      return null;
+    }
+    const original = await set(
+      resolveEmailSignupConfirmation$,
+      { confirmation, code },
+      signal,
+    );
+    if (!original) {
       return null;
     }
     if (!(await set(signupAddressAllowed$, confirmation.sender, signal))) {

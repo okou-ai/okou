@@ -166,7 +166,7 @@ describe("email-native signup", () => {
     const invitation = sentEmails().find((email) => {
       return email.text.includes("CONFIRM ");
     });
-    const line = invitation?.text.match(/^CONFIRM [^\r\n]+$/mu)?.[0];
+    const line = invitation?.text.match(/^CONFIRM [0-9]{8}$/mu)?.[0];
     expect(line).toBeTruthy();
     expect(invitation?.text).toContain("https://www.okou.ai/en/terms-of-use");
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
@@ -491,6 +491,62 @@ describe("email-native signup", () => {
     await confirmation.send();
     expect(sentEmails().at(-1)?.text).toContain("invalid or expired");
     expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+  });
+
+  it("accepts the correct short code after four mistakes, without counting webhook replays twice", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const wrong =
+      pending.line === "CONFIRM 00000000"
+        ? "CONFIRM 00000001"
+        : "CONFIRM 00000000";
+    const replayed = incoming({ sender: pending.sender, text: wrong });
+    await replayed.send();
+    await replayed.send();
+    for (let index = 0; index < 3; index += 1) {
+      await incoming({ sender: pending.sender, text: wrong }).send();
+    }
+    const { actor } = signupProvider(pending.sender);
+    await incoming({ sender: pending.sender, text: pending.line }).send();
+    expect(context.mocks.clerk.users.createUser).toHaveBeenCalledTimes(1);
+    await expect(bdd.readOnboardingStatus(actor)).resolves.toMatchObject({
+      onboardingComplete: true,
+      hasDefaultAgent: true,
+    });
+    await expect(createdThreads(actor)).resolves.toMatchObject({
+      chatThreads: [expect.anything()],
+    });
+  });
+
+  it("blocks a short code after five incorrect guesses and permits a fresh confirmation", async () => {
+    await setupApp({
+      context,
+      routes: integrationsEmailRoutes,
+      isolatePg: true,
+    });
+    const pending = await pendingSignup();
+    const wrong =
+      pending.line === "CONFIRM 00000000"
+        ? "CONFIRM 00000001"
+        : "CONFIRM 00000000";
+    for (let index = 0; index < 5; index += 1) {
+      await incoming({ sender: pending.sender, text: wrong }).send();
+    }
+    signupProvider(pending.sender);
+    await incoming({ sender: pending.sender, text: pending.line }).send();
+    expect(sentEmails().at(-1)?.text).toContain(
+      "Too many incorrect confirmation attempts",
+    );
+    expect(context.mocks.clerk.users.createUser).not.toHaveBeenCalled();
+    await incoming({
+      sender: pending.sender,
+      text: "Please send a fresh confirmation for this request",
+    }).send();
+    expect(sentEmails().at(-1)?.text).toMatch(/^CONFIRM [0-9]{8}$/mu);
   });
 
   it("does not accuse a sender when the Clerk precheck is unavailable, and recovers on redelivery", async () => {

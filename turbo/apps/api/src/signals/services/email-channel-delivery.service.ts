@@ -5,6 +5,7 @@ import { waitUntil } from "../context/wait-until";
 import { now, nowDate } from "../../lib/time";
 import { drainEmailOutboxBatch$ } from "./email-common.service";
 const EMAIL_CHANNEL_ADDRESS = "okou@okou.io";
+export const EMAIL_SIGNUP_REQUEST_HEADER = "X-Okou-Signup-Request";
 export interface EmailChannelMessage {
   readonly id: string;
   readonly to: string;
@@ -14,6 +15,7 @@ export interface EmailChannelMessage {
   readonly inReplyTo: string;
   readonly references: readonly string[];
   readonly userLinkId?: string;
+  readonly signupRequestId?: string;
   readonly attachment?: {
     readonly filename: string;
     readonly contentType: string;
@@ -34,6 +36,9 @@ export function emailChannelOutboxValues(args: EmailChannelMessage) {
       References: [...args.references, args.inReplyTo].slice(-100).join(" "),
       "Auto-Submitted": "auto-replied",
       "X-Auto-Response-Suppress": "All",
+      ...(args.signupRequestId
+        ? { [EMAIL_SIGNUP_REQUEST_HEADER]: args.signupRequestId }
+        : {}),
     },
     template: {
       template: "email-channel",
