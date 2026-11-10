@@ -1,5 +1,4 @@
 import { readonlyConnectorSkills } from "./helpers/readonly-connector-skills";
-import { commitMemoryVersion } from "./helpers/memory";
 import { captureSessionStorageMocks } from "./helpers/prepared-session-history";
 import { publicChatActor } from "./helpers/public-chat-actor";
 import { publicRunOwner } from "./helpers/public-run-owner";
@@ -1373,100 +1372,46 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         await api.requestCancelRun(actor, run.runId, [200]);
       });
 
-      it("rejects a launch when context encryption and storage presigning fail", async () => {
+      it("keeps the admitted Run pending when Claim encryption fails and retries the same Run", async () => {
         const api = createRunsApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor(
           {},
           NATIVE_RUNNER_ROUTE,
         );
         await api.heartbeatRunner(runnerGroup);
-        const initial = await api.createThreadRun(actor, {
+        let failEncryption = true;
+        useSecretKmsProbe(() => {
+          return failEncryption
+            ? Promise.reject(new Error("Claim context encryption unavailable"))
+            : undefined;
+        });
+        const created = await api.createThreadRun(actor, {
           agentId,
-          prompt: "publish memory for preparation overlap",
-        });
-        const initialClaim = await api.claimRunnerJob(initial.runId);
-        const sandboxHeaders = {
-          authorization: `Bearer ${initialClaim.sandboxToken}`,
-        };
-        await commitMemoryVersion(
-          context,
-          {
-            runId: initial.runId,
-            sandboxHeaders,
-            storageManifest: initialClaim.storageManifest,
-          },
-          [{ path: "MEMORY.md", content: "Preparation overlap memory" }],
-        );
-        await createWebhookCallbackApi(context).requestAgentComplete(
-          {
-            runId: initial.runId,
-            exitCode: 0,
-            completion: {
-              cliAgentType: "claude-code",
-              cliAgentSessionId: `preparation-overlap-${initial.runId}`,
-              cliAgentSessionHistoryDisposition: "native_only",
-            },
-          },
-          sandboxHeaders,
-          [200],
-        );
-        const prompt = `storage and context preparation should overlap ${randomUUID()}`;
-
-        const kmsStarted = createDeferredPromise<void>(context.signal);
-        const storageStarted = createDeferredPromise<void>(context.signal);
-        const releaseStorage = createDeferredPromise<void>(context.signal);
-        const storageFinished = createDeferredPromise<void>(context.signal);
-        onTestFinished(() => {
-          if (!releaseStorage.settled()) {
-            releaseStorage.resolve(undefined);
-          }
-        });
-        const storageError = new Error(
-          "later storage manifest presign failure",
-        );
-        const contextError = new Error(
-          "first execution context encryption failure",
-        );
-        context.mocks.s3.getSignedUrl.mockImplementation(async () => {
-          if (!storageStarted.settled()) {
-            storageStarted.resolve(undefined);
-          }
-          await releaseStorage.promise;
-          if (!storageFinished.settled()) {
-            storageFinished.resolve(undefined);
-          }
-          throw storageError;
-        });
-        useSecretKmsProbe(async () => {
-          if (!kmsStarted.settled()) {
-            kmsStarted.resolve(undefined);
-          }
-          await storageStarted.promise;
-          throw contextError;
+          prompt: "retry Claim encryption for the admitted Run",
         });
 
-        // Both external preparation failures settle; the caller sees a rejected input.
-        const failed = api.readThreadLaunchFailure(actor, { agentId, prompt });
-        await kmsStarted.promise;
-        await storageStarted.promise;
-        releaseStorage.resolve(undefined);
-        await expect(failed).resolves.toStrictEqual({
-          inputError: "internal_error",
-        });
-        await storageFinished.promise;
-        const runs = await createRunReadsApi(context).requestListLogs(
-          actor,
-          { limit: 100 },
-          [200],
+        const failed = await api.requestClaimRunnerJob(
+          true,
+          created.runId,
+          [500],
         );
-        expect(
-          runs.body.data.filter((run) => {
-            return run.prompt === prompt;
-          }),
-        ).toStrictEqual([]);
+        expect(failed.status).toBe(500);
+        expect((await api.readRun(actor, created.runId)).status).toBe(
+          "pending",
+        );
+
+        failEncryption = false;
+        const claimed = await api.claimRunnerJob(created.runId);
+        expect(claimed.environment).toMatchObject({
+          CLAUDE_CODE_OAUTH_TOKEN: expect.any(String),
+        });
+        expect((await api.readRun(actor, created.runId)).status).toBe(
+          "running",
+        );
+        await api.requestCancelRun(actor, created.runId, [200]);
       });
 
-      it("rejects failed session storage and recovers the complete storage manifest", async () => {
+      it("claims the same pending Run with its complete storage manifest after signing recovers", async () => {
         const api = createRunsApi(context);
         const webhooks = createWebhookCallbackApi(context);
         const { actor, agentId, runnerGroup } = await entitledRunActor(
@@ -1578,25 +1523,19 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           },
         );
 
-        // Observe the rejected input while retaining ownership of pending presigns.
-        const continueSession = (prompt: string) => {
-          return api.createThreadRun(actor, {
-            agentId,
-            threadId: initialRun.threadId,
-            prompt,
-          });
-        };
-        const failedContinuation = (prompt: string) => {
-          return api.readThreadLaunchFailure(actor, {
-            agentId,
-            threadId: initialRun.threadId,
-            prompt,
-          });
-        };
-        const overlapPrompt = `failed canonical session storage ${randomUUID()}`;
-        await expect(failedContinuation(overlapPrompt)).resolves.toStrictEqual({
-          inputError: "internal_error",
+        // Admission fixes the session's mounts; Claim signs their current URLs.
+        const continuationPrompt = `failed canonical session storage ${randomUUID()}`;
+        const largeRun = await api.createThreadRun(actor, {
+          agentId,
+          threadId: initialRun.threadId,
+          prompt: continuationPrompt,
         });
+        const failed = await api.requestClaimRunnerJob(
+          true,
+          largeRun.runId,
+          [500],
+        );
+        expect(failed.status).toBe(500);
         const runs = await createRunReadsApi(context).requestListLogs(
           actor,
           { limit: 100 },
@@ -1604,14 +1543,15 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
         );
         expect(
           runs.body.data.filter((run) => {
-            return run.prompt === overlapPrompt;
+            return run.prompt === continuationPrompt;
           }),
-        ).toStrictEqual([]);
+        ).toStrictEqual([
+          expect.objectContaining({ id: largeRun.runId, status: "pending" }),
+        ]);
 
         context.mocks.s3.getSignedUrl.mockResolvedValue(
           "https://r2.example.com/storage/archive.tar.gz?sig=bdd",
         );
-        const largeRun = await continueSession("large Storage continuation");
         const largeClaim = await api.claimRunnerJob(largeRun.runId);
         const largeManifest = expectCanonicalStorageManifest(
           largeClaim.storageManifest,

@@ -13,7 +13,7 @@ import { setupApp } from "../../../__tests__/test-helpers";
 import { billingUsagePackCreditsRoutes } from "../billing-usage-pack-credits";
 import { integrationsPhoneMessageRoutes } from "../integrations-phone-message";
 import { integrationsAgentPhoneRoutes } from "../integrations-agentphone";
-import { mockEnv } from "../../../lib/env";
+import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { mockNow, now } from "../../../lib/time";
 import { server } from "../../../mocks/server";
 import { flushWaitUntilForTest } from "../../context/wait-until";
@@ -3527,13 +3527,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       body: "fail this queued Okou launch",
     });
 
-    mockEnv("SECRETS_KMS_KEY_ID", undefined);
+    // The replacement API cannot admit queued work without an executor.
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
     const beforeCompletion = sends.messages.length;
     await expect(
       completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0),
-    ).rejects.toThrow(
-      "SECRETS_KMS_KEY_ID is required for KMS secret encryption",
-    );
+    ).rejects.toThrow("No executor configured: set RUNNER_DEFAULT_GROUP");
 
     const completionBodies = sends.messages
       .slice(beforeCompletion)
@@ -3611,13 +3610,12 @@ describe("INT-03: AgentPhone linked-run lifecycle through public APIs", () => {
       participants: [{ identifier: phone }],
     });
 
-    mockEnv("SECRETS_KMS_KEY_ID", undefined);
+    // The replacement API cannot admit queued work without an executor.
+    mockOptionalEnv("RUNNER_DEFAULT_GROUP", undefined);
     const beforeCompletion = sends.messages.length;
     await expect(
       completeSandboxRun(activeRun.sandboxToken, activeRun.runId, 0),
-    ).rejects.toThrow(
-      "SECRETS_KMS_KEY_ID is required for KMS secret encryption",
-    );
+    ).rejects.toThrow("No executor configured: set RUNNER_DEFAULT_GROUP");
     expect(
       sends.messages.slice(beforeCompletion).map((send) => {
         return send.body;
