@@ -612,8 +612,8 @@ async fn collect_response_body(
     Ok(body.freeze())
 }
 
-async fn collect_api_success_body(response: Response) -> Result<Bytes, AgentError> {
-    collect_response_body(response, constants::API_SUCCESS_RESPONSE_BODY_MAX_BYTES)
+async fn collect_api_success_json(response: Response) -> Result<Option<Value>, AgentError> {
+    let body = collect_response_body(response, constants::API_SUCCESS_RESPONSE_BODY_MAX_BYTES)
         .await
         .map_err(|error| match error {
             ResponseBodyCollectionError::TooLarge => {
@@ -622,7 +622,13 @@ async fn collect_api_success_body(response: Response) -> Result<Bytes, AgentErro
             ResponseBodyCollectionError::Transport(error) => {
                 AgentError::Http(format_reqwest_error(error))
             }
-        })
+        })?;
+    if body.is_empty() {
+        return Ok(None);
+    }
+    let value =
+        serde_json::from_slice(&body).map_err(|error| AgentError::Http(error.to_string()))?;
+    Ok(Some(value))
 }
 
 impl HttpClient {
@@ -653,13 +659,7 @@ impl HttpClient {
         let resp = self
             .post_json_response(url, body, max_attempts, Some(observer), None)
             .await?;
-        let body = collect_api_success_body(resp).await?;
-        if body.is_empty() {
-            return Ok(None);
-        }
-        let value =
-            serde_json::from_slice(&body).map_err(|error| AgentError::Http(error.to_string()))?;
-        Ok(Some(value))
+        collect_api_success_json(resp).await
     }
 
     pub(crate) async fn post_json_bytes(
@@ -700,13 +700,7 @@ impl HttpClient {
             .post_json_response(url, body, max_attempts, None, request_timeout)
             .await?;
 
-        let body = collect_api_success_body(resp).await?;
-        if body.is_empty() {
-            return Ok(None);
-        }
-        let val: Value =
-            serde_json::from_slice(&body).map_err(|error| AgentError::Http(error.to_string()))?;
-        Ok(Some(val))
+        collect_api_success_json(resp).await
     }
 
     pub(crate) async fn post_event_bytes(
