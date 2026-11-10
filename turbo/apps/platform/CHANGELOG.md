@@ -13,6 +13,22 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1107.0](https://github.com/okou-ai/okou/compare/app-v0.1106.1...app-v0.1107.0) (2026-11-10)
+
+
+### Features
+
+* **platform:** fold projects with mod+shift+left/right and from the project menu ([#46136](https://github.com/okou-ai/okou/issues/46136)) ([aa9cc73](https://github.com/okou-ai/okou/commit/aa9cc730404bb417047d86e13b2c0bf8ff4c56df))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.3
+    * @okouai/connectors bumped to 3.21.7
+    * @okouai/core bumped to 8.825.3
+
 ## [0.1106.1](https://github.com/okou-ai/okou/compare/app-v0.1106.0...app-v0.1106.1) (2026-11-10)
 
 
