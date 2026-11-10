@@ -1145,6 +1145,8 @@ type DriveTokenResult<T> =
   | { readonly type: "ok"; readonly value: T }
   | { readonly type: "unauthorized" };
 
+type DriveUploadResult<T> = DriveTokenResult<T> | BadRequestResponse;
+
 async function findDriveFolder(
   args: {
     readonly accessToken: string;
@@ -1153,7 +1155,7 @@ async function findDriveFolder(
     readonly attempt: "initial" | "after_refresh";
   },
   signal: AbortSignal,
-): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema> | null>> {
+): Promise<DriveUploadResult<zInfer<typeof driveFolderSchema> | null>> {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
   url.searchParams.set(
     "q",
@@ -1198,7 +1200,7 @@ async function findDriveFolder(
       providerReasons: await readDriveErrorReasons(response, signal),
       attempt: args.attempt,
     });
-    throw badRequestMessage(
+    return badRequestMessage(
       `Google Drive folder lookup failed with HTTP ${String(response.status)}`,
     );
   }
@@ -1210,7 +1212,7 @@ async function createDriveFolder(args: {
   readonly accessToken: string;
   readonly parentFolderId: string | null;
   readonly name: string;
-}): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema>>> {
+}): Promise<DriveUploadResult<zInfer<typeof driveFolderSchema>>> {
   const url = new URL(GOOGLE_DRIVE_FILES_URL);
   url.searchParams.set("fields", "id,name");
 
@@ -1246,7 +1248,7 @@ async function createDriveFolder(args: {
     return { type: "unauthorized" };
   }
   if (!response.ok) {
-    throw badRequestMessage(
+    return badRequestMessage(
       `Google Drive folder creation failed with HTTP ${String(response.status)}`,
     );
   }
@@ -1264,9 +1266,9 @@ async function ensureDriveFolder(
     readonly attempt: "initial" | "after_refresh";
   },
   signal: AbortSignal,
-): Promise<DriveTokenResult<zInfer<typeof driveFolderSchema>>> {
+): Promise<DriveUploadResult<zInfer<typeof driveFolderSchema>>> {
   const existing = await findDriveFolder(args, signal);
-  if (existing.type === "unauthorized") {
+  if (isBadRequestResponse(existing) || existing.type !== "ok") {
     return existing;
   }
   if (existing.value) {
@@ -1282,7 +1284,7 @@ async function ensureArtifactFolder(
     readonly attempt: "initial" | "after_refresh";
   },
   signal: AbortSignal,
-): Promise<DriveTokenResult<string>> {
+): Promise<DriveUploadResult<string>> {
   let parentFolderId: string | null = null;
   const names = args.threadId
     ? ["Okou Artifacts", `chat-${args.threadId}`]
@@ -1297,13 +1299,13 @@ async function ensureArtifactFolder(
       },
       signal,
     );
-    if (folder.type === "unauthorized") {
+    if (isBadRequestResponse(folder) || folder.type !== "ok") {
       return folder;
     }
     parentFolderId = folder.value.id;
   }
   if (!parentFolderId) {
-    throw badRequestMessage(
+    return badRequestMessage(
       "Google Drive artifact folder could not be resolved",
     );
   }
@@ -1331,7 +1333,7 @@ async function uploadDriveFile(args: {
   readonly contentType: string;
   readonly targetMimeType?: string | undefined;
   readonly file: Buffer;
-}): Promise<Response> {
+}): Promise<Response | BadRequestResponse> {
   const metadata = JSON.stringify({
     name: args.filename,
     // Naming a Google editor type here is what asks Drive to convert; the
@@ -1388,7 +1390,7 @@ async function uploadDriveFile(args: {
   }
   const location = session.headers.get("location");
   if (!location) {
-    throw badRequestMessage("Google Drive did not open an upload session");
+    return badRequestMessage("Google Drive did not open an upload session");
   }
 
   const body = new Uint8Array(args.file.byteLength);
@@ -1439,7 +1441,7 @@ async function uploadArtifactWithToken(
     readonly attempt: "initial" | "after_refresh";
   },
   signal: AbortSignal,
-): Promise<DriveTokenResult<Response>> {
+): Promise<DriveUploadResult<Response>> {
   const folder = await ensureArtifactFolder(
     {
       accessToken: args.accessToken,
@@ -1448,7 +1450,7 @@ async function uploadArtifactWithToken(
     },
     signal,
   );
-  if (folder.type === "unauthorized") {
+  if (isBadRequestResponse(folder) || folder.type !== "ok") {
     return folder;
   }
   const response = await uploadDriveFile({
@@ -1464,6 +1466,9 @@ async function uploadArtifactWithToken(
     targetMimeType: args.targetMimeType,
     file: args.file,
   });
+  if (!(response instanceof Response)) {
+    return response;
+  }
   if (response.status === 401) {
     return { type: "unauthorized" };
   }
@@ -1495,9 +1500,9 @@ async function isUnsupportedConversion(response: Response): Promise<boolean> {
 
 async function parseUploadResponse(
   response: Response,
-): Promise<DriveSyncResult> {
+): Promise<DriveSyncResult | BadRequestResponse> {
   if (!response.ok) {
-    throw badRequestMessage(
+    return badRequestMessage(
       `Google Drive upload failed with HTTP ${String(response.status)}`,
     );
   }
@@ -1844,7 +1849,7 @@ interface ArtifactUploadSource {
 
 interface DriveUploadAttempt {
   readonly accessToken: string;
-  readonly result: DriveTokenResult<Response>;
+  readonly result: DriveUploadResult<Response>;
 }
 
 /** Upload once, then retry under a refreshed token when Drive rejects it. */
@@ -1883,7 +1888,7 @@ const uploadArtifactRefreshingToken$ = command(
     const accessToken = params.tokens.accessToken;
     const result = await upload(accessToken, "initial");
     signal.throwIfAborted();
-    if (result.type !== "unauthorized") {
+    if (isBadRequestResponse(result) || result.type !== "unauthorized") {
       return { accessToken, result };
     }
 
@@ -2215,6 +2220,9 @@ async function finishDriveUpload(
   }
   let body = await parseUploadResponse(response);
   signal.throwIfAborted();
+  if (isBadRequestResponse(body)) {
+    return body;
+  }
   if (conversionTarget) {
     const verified = await verifyWorkspaceImport(
       {
@@ -2390,6 +2398,9 @@ const uploadResolvedArtifact$ = command(
     signal.throwIfAborted();
     const { accessToken, result } = upload;
 
+    if (isBadRequestResponse(result)) {
+      return result;
+    }
     if (result.type === "unauthorized") {
       return badRequestMessage("Google Drive upload failed with HTTP 401");
     }
