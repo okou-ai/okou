@@ -223,6 +223,9 @@ final class AuthenticationScopeTests: XCTestCase {
     let (provider, authentication) = try await session()
     await provider.memberships.hold()
     let refresh = try await refreshUntilRequest(authentication, at: provider.memberships)
+    // The server changes after capturing the held response. Both consumers must
+    // finish with that original result, not a second read of the changed server.
+    provider.state.withLock { $0.workspaceIDs = ["org_two"] }
     let overlapping = Task.immediate { await authentication.refresh() }
     addTeardownBlock { await overlapping.value }
     await provider.memberships.releaseAll()
@@ -493,6 +496,50 @@ final class AuthenticationScopeTests: XCTestCase {
     XCTAssertNil(previous.confirmed)
     XCTAssertEqual(authentication.workspaces.map(\.id), ["org_two"])
     try await assertToken(authentication)
+  }
+
+  func testLaterPageFailureDoesNotPublishPartialMembershipsAndRetryLoadsTheWholeList()
+    async throws
+  {
+    let expected = ["org_one"] + (1..<205).map { "org_page_\($0)" }
+    let (provider, authentication) = try await session {
+      $0.workspaceIDs = expected
+      $0.failMembershipOffset = 100
+    }
+    await authentication.refresh()
+    await assertMembershipFailure(authentication)
+    XCTAssertTrue(authentication.workspaces.isEmpty)
+    // A refreshed SDK session still authorizes its active workspace independently.
+    try await assertToken(authentication)
+    provider.state.withLock { $0.failMembershipOffset = nil }
+    await authentication.refreshWorkspaces()
+    XCTAssertEqual(authentication.workspaces.map(\.id), expected)
+    try await authentication.switchWorkspace(expected[204])
+    try await assertToken(authentication)
+  }
+
+  func testRootRetirementCancelsTheOriginalReadAndRejectsFutureDemand() async throws {
+    let (provider, authentication) = try await session()
+    await authentication.refresh()
+    await provider.memberships.hold()
+    let refresh = try await refreshUntilRequest(authentication, at: provider.memberships)
+    let resources = try XCTUnwrap(authentication.accountResources)
+    let original = try resources.store.get(resources.value)
+    let startup = Task.immediate { await authentication.start() }
+    addTeardownBlock {
+      startup.cancel()
+      await provider.memberships.releaseAll()
+      await startup.value
+    }
+    startup.cancel()
+    try await waitForBusinessResult { original.isCancelled }
+    await provider.memberships.releaseAll()
+    await refresh.task.value
+    await startup.value
+    do {
+      _ = try await resources.read()
+      XCTFail("Root retirement must fence future demand on its old account resource")
+    } catch is CancellationError {}
   }
 
   private func assertMembershipFailure(_ authentication: AuthenticationService) async {

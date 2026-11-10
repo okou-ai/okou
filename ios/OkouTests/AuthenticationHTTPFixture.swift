@@ -18,6 +18,7 @@ final class AuthenticationHTTPFixture: Sendable {
     var pending = false
     var signedOut = false
     var failMemberships = false
+    var failMembershipOffset: Int?
     var failActivation = false
   }
 
@@ -259,10 +260,12 @@ final class AuthenticationHTTPFixture: Sendable {
     case "/v1/me/organization_memberships":
       let snapshot = state.withLock { $0 }
       await memberships.enter()
-      if snapshot.failMemberships { return failure("Memberships unavailable") }
       let query = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?.queryItems ?? []
       let offset = Int(query.first(where: { $0.name == "offset" })?.value ?? "0") ?? 0
       let limit = Int(query.first(where: { $0.name == "limit" })?.value ?? "100") ?? 100
+      if snapshot.failMemberships || snapshot.failMembershipOffset == offset {
+        return failure("Memberships unavailable")
+      }
       let rows = snapshot.workspaceIDs.dropFirst(offset).prefix(limit).map { id in
         var membership = OrganizationMembership.mockWithoutUserData
         membership.id = "membership_" + id
