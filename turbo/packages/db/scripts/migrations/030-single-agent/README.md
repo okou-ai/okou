@@ -67,6 +67,7 @@ Exit codes:
   disabled ones, retain their state; row fingerprints pin their full database
   configuration without exporting trigger contents. Automation execution Chat
   bindings are inventoried separately, with owner/scope checks.
+  Non-default Official Workflow installations block pending their own mapping.
 - Compare Workflow view/manage/publish rights before and after the host change
   using the current host visibility/owner rules and cached org membership.
   Report per-member differences as blockers, including visibility expansion on
@@ -93,7 +94,8 @@ Exit codes:
 This first stage does not establish that the org can be migrated. The plan always
 lists the remaining gates:
 
-- Verify live membership, per-member modes and earlier seed provenance.
+- Verify live membership, per-member modes, converted-Instruction publication
+  rights and earlier seed provenance.
 - Download and verify actual bundle bytes, authored text, attachments and size
   limits. This inventory records text hashes/byte counts and bundle references;
   it does not validate archive contents or produce renamed bundles.

@@ -71,13 +71,18 @@ export function plan(
     );
   };
   const rights = (
-    workflow: Pick<Workflow, "owner" | "visibility" | "official">,
+    workflow: Pick<
+      Workflow,
+      "owner" | "visibility" | "official" | "officialState"
+    >,
     agent: Agent,
     userId: string,
   ) => {
     const visible =
-      (agent.visibility === "public" || agent.owner === userId) &&
-      (workflow.owner === userId || workflow.visibility === "public");
+      (workflow.official === null || workflow.officialState === "installed") &&
+      (workflow.owner === userId ||
+        (workflow.visibility === "public" &&
+          (agent.visibility === "public" || agent.owner === userId)));
     return {
       view: visible,
       manage:
@@ -251,7 +256,7 @@ export function plan(
       return a.key.localeCompare(b.key) || a.code.localeCompare(b.code);
     }),
     requiredBeforeApply: [
-      "Live membership and per-member mode verification; cache is not authority",
+      "Live membership, per-member mode and converted-Instruction publication rights verification; cache is not authority",
       "Source bundle download and byte/content-limit verification; references alone are not acceptance",
       "Provenance review of earlier automatic personal seed rows; all saved rows are preserved in this plan",
       "Authored name references, account permissions, external routes and dependent FK inventory",

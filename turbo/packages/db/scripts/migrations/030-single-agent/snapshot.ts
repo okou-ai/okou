@@ -59,6 +59,7 @@ export const snapshotSchema = object({
       visibility,
       revision,
       official: string().nullable(),
+      officialState: zEnum(["installing", "installed"]).nullable(),
       bundle: contentBundleSchema.nullable(),
     }).strict(),
   ),

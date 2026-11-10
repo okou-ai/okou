@@ -19,7 +19,7 @@ export async function inventory(
   try {
     const rows = await db`
       WITH selected_agents AS MATERIALIZED (
-        SELECT * FROM agents WHERE org_id = ${orgId}
+        SELECT id FROM agents WHERE org_id = ${orgId}
       )
       SELECT jsonb_build_object(
         'format', 'single-agent-inventory-v1', 'target', ${target}::text,
@@ -47,6 +47,7 @@ export async function inventory(
           'id', w.id, 'agentId', w.agent_id, 'name', w.name,
           'owner', w.owner_user_id, 'visibility', w.visibility,
           'revision', w.xmin::text, 'official', w.official_definition_name,
+          'officialState', w.official_installation_state,
           'bundle', w.content_bundle) ORDER BY w.id), '[]'::jsonb)
           FROM workflows w WHERE w.org_id = o.org_id),
         'automations', (SELECT coalesce(jsonb_agg(jsonb_build_object(

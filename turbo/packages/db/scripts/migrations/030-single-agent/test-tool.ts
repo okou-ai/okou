@@ -35,6 +35,11 @@ const foreignWorkflow = randomUUID();
 const priorProject = randomUUID();
 const canary = "private-source-body-must-never-appear-in-reports";
 const bundle = { sha256: "a".repeat(64), archiveBytes: 123 };
+const rightsSchema = object({
+  view: boolean(),
+  manage: boolean(),
+  publish: boolean(),
+});
 
 const planSchema = object({
   executable: literal(false),
@@ -52,11 +57,18 @@ const planSchema = object({
   movedWorkflows: array(
     object({
       targetName: string(),
-      permissionChanges: array(object({ userId: string() })),
+      source: object({ id: string() }),
+      permissionChanges: array(
+        object({ userId: string(), before: rightsSchema, after: rightsSchema }),
+      ),
     }),
   ),
   convertedInstructions: array(
-    object({ targetName: string(), automaticallyInvoke: literal(false) }),
+    object({
+      targetName: string(),
+      automaticallyInvoke: literal(false),
+      maintenanceChanges: array(string()),
+    }),
   ),
   personalInstructions: array(
     object({
@@ -248,6 +260,46 @@ try {
     }),
     "visibility expansion and lost publish rights block migration",
   );
+  const privateMove = planned.movedWorkflows.find((row) => {
+    return row.source.id === workflow;
+  });
+  const publicMove = planned.movedWorkflows.find((row) => {
+    return row.source.id === publicWorkflow;
+  });
+  assert.ok(privateMove && publicMove);
+  assert.deepEqual(
+    privateMove.permissionChanges,
+    [
+      {
+        userId: owner,
+        before: { view: true, manage: true, publish: true },
+        after: { view: true, manage: true, publish: false },
+      },
+    ],
+    "private Workflow owner loses publish permission on the public default host",
+  );
+  assert.deepEqual(
+    publicMove.permissionChanges.find((row) => {
+      return row.userId === administrator;
+    }),
+    {
+      userId: administrator,
+      before: { view: false, manage: false, publish: false },
+      after: { view: true, manage: true, publish: false },
+    },
+    "moving a public Workflow out of a private host exposes it to org admins",
+  );
+  assert.deepEqual(
+    publicMove.permissionChanges.find((row) => {
+      return row.userId === "saved-user";
+    }),
+    {
+      userId: "saved-user",
+      before: { view: false, manage: false, publish: false },
+      after: { view: true, manage: false, publish: false },
+    },
+    "ordinary members gain read access but never management rights",
+  );
   assert.equal(
     planned.personalInstructions.find((row) => {
       return row.userId === owner;
@@ -417,6 +469,46 @@ try {
     cleanPlan.result.executable,
     false,
     "absence of detected blockers never authorizes apply",
+  );
+  const publicSource = structuredClone(snapshot);
+  const sharedAgent = publicSource.agents.find((row) => {
+    return row.id === oldAgent;
+  });
+  assert.ok(sharedAgent);
+  sharedAgent.visibility = "public";
+  const maintenance = await prepare(publicSource, "instruction-maintenance");
+  assert.deepEqual(
+    maintenance.result.convertedInstructions[0]?.maintenanceChanges,
+    [owner],
+  );
+  assert.ok(
+    maintenance.result.blockers.some((row) => {
+      return row.code === "InstructionWorkflowRightsChange";
+    }),
+    "a former public Agent owner cannot silently lose Instruction maintenance rights",
+  );
+  const differentOwner = structuredClone(snapshot);
+  const separatelyOwned = differentOwner.workflows.find((row) => {
+    return row.id === workflow;
+  });
+  assert.ok(separatelyOwned);
+  separatelyOwned.owner = administrator;
+  const ownerAccess = await prepare(
+    differentOwner,
+    "workflow-owner-on-private-host",
+  );
+  assert.deepEqual(
+    ownerAccess.result.movedWorkflows.find((row) => {
+      return row.source.id === workflow;
+    })?.permissionChanges,
+    [
+      {
+        userId: administrator,
+        before: { view: true, manage: true, publish: false },
+        after: { view: true, manage: true, publish: true },
+      },
+    ],
+    "Workflow owners retain view/manage rights even when a different user owns the private host",
   );
 
   const rejectedFile = join(directory, "rejected.json");
