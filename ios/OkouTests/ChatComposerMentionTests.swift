@@ -127,7 +127,8 @@ final class ChatComposerMentionTests: XCTestCase {
     try await waitForBusinessResult {
       let matches = workspace.newComposer.document == expected
       print(
-        "[paste-diagnostic] predicate elapsed=\(pasteStarted.duration(to: .now)) matches=\(matches)")
+        "[paste-diagnostic] predicate elapsed=\(pasteStarted.duration(to: .now)) matches=\(matches)"
+      )
       return matches
     }
     print("[paste-diagnostic] wait returned elapsed=\(pasteStarted.duration(to: .now))")
