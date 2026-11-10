@@ -223,9 +223,5 @@ export function replayChatThreadEvents(
   for (const event of events) {
     applyEvent(threads, event, pendingThreadUpdates);
   }
-  return [...threads.values()]
-    .filter((thread) => {
-      return !thread.hidden;
-    })
-    .sort(compareThreadOrder);
+  return [...threads.values()].sort(compareThreadOrder);
 }

@@ -127,7 +127,7 @@
             OkouChatRowLabel("!45375 Sidebar entries open in one tap", trailing: .unread) {
               OkouChatStatusMark(emoji: "✅")
             }
-            OkouChatRowLabel("Design tokens review", trailing: .running(phase: 0)) {
+            OkouChatRowLabel("Design tokens review", isWorking: true) {
               OkouChatStatusMark(emoji: nil)
             }
           }
@@ -136,7 +136,8 @@
         OkouCatalogSection("Bottom bar") {
           // Account, search capsule, new chat: every bar control is the same clear glass.
           HStack(spacing: OkouSpace.md) {
-            OkouProfileAvatar(imageURL: nil, hasImage: false, size: OkouControl.minimumTarget)
+            OkouProfileAvatar(
+              imageURL: nil, hasImage: false, size: OkouControl.minimumTarget, name: "Tong")
             OkouSearchBar(prompt: "Search chats")
             Button {
             } label: {
@@ -193,7 +194,8 @@
             OkouAccountRowLabel(
               Text(verbatim: "Tong Xing"), detail: Text(verbatim: "tong@example.com")
             ) {
-              OkouProfileAvatar(imageURL: nil, hasImage: false, size: OkouAvatarSize.account)
+              OkouProfileAvatar(
+                imageURL: nil, hasImage: false, size: OkouAvatarSize.account, name: "Tong")
             }
             Divider()
             OkouRowLabel(Text(verbatim: "Max & Zoe, Inc"), slot: OkouAvatarSize.account) {

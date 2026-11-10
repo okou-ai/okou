@@ -1,4 +1,7 @@
-import { unreadProjectIds$ } from "../../signals/projects/project-threads.ts";
+import {
+  projectIndicatorStates$,
+  type ProjectIndicatorState,
+} from "../../signals/projects/project-threads.ts";
 import { useGet, useSet, useLastResolved } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
@@ -50,7 +53,10 @@ import { selectedProjectId$ } from "../../signals/projects/project-navigation.ts
 import { Link } from "../router/link.tsx";
 import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { detach, Reason } from "../../signals/utils.ts";
-import { ChatThreadStateText } from "../okou-page/sidebar-shared.tsx";
+import {
+  ChatThreadStateIndicator,
+  ChatThreadStateText,
+} from "../okou-page/sidebar-shared.tsx";
 import {
   cancelProjectInlineRename$,
   commitProjectInlineRename$,
@@ -111,12 +117,14 @@ function ProjectFoldMenuItem({
 function ProjectMenu({
   project,
   touch,
-  unread,
+  indicator,
+  rowIndex,
   expanded,
 }: {
   project: Project;
   touch: boolean;
-  unread: boolean;
+  indicator: ProjectIndicatorState | null;
+  rowIndex: number;
   expanded: boolean;
 }) {
   const { t } = useTranslation();
@@ -147,14 +155,14 @@ function ProjectMenu({
           />
         }
       >
-        {unread ? (
+        {indicator !== null ? (
           <>
             <span
               aria-hidden="true"
-              data-testid="project-unread-indicator"
+              data-testid="project-state-indicator"
               className="flex items-center justify-center md:group-hover/project:hidden group-focus-visible/project-menu:hidden md:group-data-[popup-open]/project-menu:hidden"
             >
-              <span className="h-2 w-2 rounded-full bg-sky-600" />
+              <ChatThreadStateIndicator state={indicator} rowIndex={rowIndex} />
             </span>
             <Ellipsis className="hidden md:group-hover/project:block group-focus-visible/project-menu:block md:group-data-[popup-open]/project-menu:block" />
           </>
@@ -199,23 +207,28 @@ function ProjectActions({
   project,
   touch,
   layout,
-  unread,
+  indicator,
+  rowIndex,
   expanded,
   creating,
   onNewChat,
 }: ProjectRowProps & {
-  unread: boolean;
+  indicator: ProjectIndicatorState | null;
+  rowIndex: number;
   expanded: boolean;
   creating: boolean;
   /** Null when the row only carries its menu, as in My Okou's chat list. */
   onNewChat: (() => void) | null;
 }) {
   const { t } = useTranslation();
+  // The state glyph stands where the menu dots would, so it keeps the menu
+  // visible at rest and only the other actions wait for hover or focus.
+  const resting = indicator !== null;
   return (
     <div
       className={cn(
         "group/project-actions flex shrink-0 items-center group-hover/project:opacity-100 focus-within:opacity-100 has-[[data-popup-open]]:opacity-100",
-        !unread && "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0",
+        !resting && "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0",
         layout === "list" ? "gap-1" : "gap-0.5",
       )}
     >
@@ -227,7 +240,7 @@ function ProjectActions({
           className={cn(
             "shrink-0",
             touch && "min-h-11 min-w-11",
-            unread &&
+            resting &&
               "md:[@media(hover:hover)_and_(pointer:fine)]:opacity-0 group-hover/project:opacity-100 group-focus-within/project-actions:opacity-100 group-has-[[data-popup-open]]/project:opacity-100",
           )}
           aria-label={t(($) => {
@@ -242,7 +255,8 @@ function ProjectActions({
       <ProjectMenu
         project={project}
         touch={touch}
-        unread={unread}
+        indicator={indicator}
+        rowIndex={rowIndex}
         expanded={expanded}
       />
     </div>
@@ -333,12 +347,12 @@ function ProjectTrigger({
   expanded,
   active,
   rowId,
-  unread,
+  indicator,
 }: ProjectRowProps & {
   readonly expanded: boolean;
   readonly active: boolean;
   readonly rowId: string;
-  readonly unread: boolean;
+  readonly indicator: ProjectIndicatorState | null;
 }) {
   const { t } = useTranslation();
   const toggle = useSet(toggleProject$);
@@ -409,7 +423,7 @@ function ProjectTrigger({
           )}
         >
           <span className="truncate">{project.name}</span>
-          <ChatThreadStateText state={unread ? "unread" : null} />
+          <ChatThreadStateText state={indicator} />
         </Link>
       </div>
       {renaming && (
@@ -428,10 +442,13 @@ function ProjectTrigger({
 /** A Project's own row: it folds its chats and starts new ones inside it. */
 export function ProjectRow({
   row,
+  rowIndex,
   touch,
   layout,
 }: {
   readonly row: ProjectChatThreadListRow;
+  /** The row's position in the whole chat list. */
+  readonly rowIndex: number;
   readonly touch: boolean;
   readonly layout: ProjectRowLayout;
 }) {
@@ -439,8 +456,10 @@ export function ProjectRow({
   const { project, expanded } = row;
   // A Project's page makes its row the list's current item.
   const active = useGet(selectedProjectId$) === project.id;
-  const unread = useLastResolved(unreadProjectIds$)?.has(project.id) ?? false;
-  const showUnread = !expanded && unread;
+  const state =
+    useLastResolved(projectIndicatorStates$)?.get(project.id) ?? null;
+  // An unfolded Project leaves each state to the chat row that owns it.
+  const indicator = expanded ? null : state;
   const [creation, create] = useLoadableSet(newProjectThread$);
   const signal = useGet(rootSignal$);
   // My Okou starts chats from the list's New chat row, so a Project row keeps
@@ -463,7 +482,7 @@ export function ProjectRow({
         expanded={expanded}
         active={active}
         rowId={`project-${touch ? "touch" : "sidebar"}-${project.id}`}
-        unread={showUnread}
+        indicator={indicator}
       />
       {creation.state === "hasError" && (
         <span role="alert" className="shrink-0 px-1 text-xs text-destructive">
@@ -476,7 +495,8 @@ export function ProjectRow({
         project={project}
         touch={touch}
         layout={layout}
-        unread={showUnread}
+        indicator={indicator}
+        rowIndex={rowIndex}
         expanded={expanded}
         creating={creation.state === "loading"}
         onNewChat={singleAgent ? null : newChat}

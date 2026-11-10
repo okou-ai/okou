@@ -160,9 +160,12 @@ export function createThreadContext(
     automationContext$,
     automationTarget$,
   );
+  const templateOrgId$ = computed(() => {
+    return Promise.resolve(orgId);
+  });
   const templates$ = createRunTemplates(
     pickedEvent$,
-    orgId,
+    templateOrgId$,
     disabledPaidTools$,
   );
   const computerUseHostGrant$ = createThreadHostGrant(bootstrap, thread$);

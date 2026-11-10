@@ -8328,6 +8328,43 @@
         }
       }
     },
+    "Draft": {
+      "localizations": {
+        "de": {
+          "stringUnit": { "state": "translated", "value": "Entwurf" }
+        },
+        "es": {
+          "stringUnit": { "state": "translated", "value": "Borrador" }
+        },
+        "fr": {
+          "stringUnit": { "state": "translated", "value": "Brouillon" }
+        },
+        "hi": {
+          "stringUnit": { "state": "translated", "value": "ड्राफ़्ट" }
+        },
+        "id": {
+          "stringUnit": { "state": "translated", "value": "Draf" }
+        },
+        "it": {
+          "stringUnit": { "state": "translated", "value": "Bozza" }
+        },
+        "ja": {
+          "stringUnit": { "state": "translated", "value": "下書き" }
+        },
+        "ko": {
+          "stringUnit": { "state": "translated", "value": "초안" }
+        },
+        "pt-BR": {
+          "stringUnit": { "state": "translated", "value": "Rascunho" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "草稿" }
+        },
+        "zh-Hant": {
+          "stringUnit": { "state": "translated", "value": "草稿" }
+        }
+      }
+    },
     "Draft sync delayed": {
       "localizations": {
         "de": {

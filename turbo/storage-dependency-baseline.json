@@ -1,5 +1,6 @@
 {
   "version": 1,
+  "amendments": ["claim-source-reconstruction"],
   "sites": [
     {
       "file": "turbo/apps/api/src/scripts/dev-seed.ts",
@@ -72,13 +73,23 @@
       "dependency": "module:turbo/packages/db/src/schema/skill"
     },
     {
+      "file": "turbo/apps/api/src/signals/services/claim-execution-context.ts",
+      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service",
+      "uses": 2
+    },
+    {
+      "file": "turbo/apps/api/src/signals/services/claim-runtime-context.ts",
+      "dependency": "module:turbo/apps/api/src/signals/services/execution-storage.service",
+      "uses": 2
+    },
+    {
       "file": "turbo/apps/api/src/signals/services/execution-global-model-context.service.ts",
       "uses": 5,
       "dependency": "module:turbo/packages/db/src/schema/skill"
     },
     {
       "file": "turbo/apps/api/src/signals/services/execution-storage.service.ts",
-      "uses": 4,
+      "uses": 26,
       "dependency": "module:turbo/packages/db/src/schema/storage"
     },
     {

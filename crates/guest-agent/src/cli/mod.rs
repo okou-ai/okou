@@ -49,6 +49,9 @@ mod provider_event_normalization;
 mod reasoning_effort;
 mod record_labels;
 mod termination;
+#[cfg(feature = "test-support")]
+#[doc(hidden)]
+pub mod test_support;
 
 pub use codex_setup::setup_codex_for_config;
 pub use codex_startup::CodexStartupTiming;
@@ -322,10 +325,13 @@ pub enum HeartbeatStatus {
     /// heartbeat failure.
     Failed(HeartbeatFailure),
 
-    /// The heartbeat loop stopped cleanly.
+    /// The heartbeat task completed successfully, not necessarily the CLI execution.
     ///
-    /// During CLI execution this is a non-error completion signal for the
-    /// heartbeat race.
+    /// If observed before execution completes, the Codex app-server backend
+    /// treats this as an execution error and terminates the app-server. The
+    /// shared Claude Code/Pi JSONL path instead ends its event loop without
+    /// introducing a heartbeat error, then settles the actual process exit.
+    /// See [`HeartbeatMonitor`] for the required heartbeat lifetime.
     Stopped,
 
     /// The heartbeat task itself failed, such as a task panic or join error.
@@ -342,6 +348,10 @@ pub enum HeartbeatStatus {
 /// `Some(receiver)` races CLI execution against heartbeat completion. `None`
 /// disables heartbeat monitoring for that run, which is useful for tests and
 /// callers that do not own a heartbeat task.
+///
+/// Keep the monitored heartbeat task alive throughout active CLI execution.
+/// Sending [`HeartbeatStatus::Stopped`] is not equivalent to disabling
+/// monitoring with `None`; its execution outcome depends on the backend.
 pub type HeartbeatMonitor = Option<oneshot::Receiver<HeartbeatStatus>>;
 
 #[derive(Clone, Copy)]
@@ -958,6 +968,8 @@ pub struct CliExecutionControls<'a> {
     pi_startup: Option<&'a PiStartupTiming>,
     workload_containment: Option<&'a crate::workload_containment::WorkloadContainment>,
     session_metadata: SessionMetadataStore,
+    #[cfg(feature = "test-support")]
+    codex_turn_start_gate: Option<test_support::CodexTurnStartGate>,
 }
 
 impl<'a> CliExecutionControls<'a> {
@@ -975,6 +987,8 @@ impl<'a> CliExecutionControls<'a> {
             pi_startup: None,
             workload_containment: None,
             session_metadata: SessionMetadataStore::default(),
+            #[cfg(feature = "test-support")]
+            codex_turn_start_gate: None,
         }
     }
 
@@ -998,6 +1012,14 @@ impl<'a> CliExecutionControls<'a> {
     #[must_use]
     pub fn with_session_metadata_store(mut self, store: SessionMetadataStore) -> Self {
         self.session_metadata = store;
+        self
+    }
+
+    /// Pause before Codex event arbitration to coordinate native test peers.
+    #[cfg(feature = "test-support")]
+    #[must_use]
+    pub fn with_codex_turn_start_gate(mut self, gate: test_support::CodexTurnStartGate) -> Self {
+        self.codex_turn_start_gate = Some(gate);
         self
     }
 }
@@ -1082,6 +1104,8 @@ async fn execute_cli_inner(
         pi_startup,
         workload_containment,
         session_metadata,
+        #[cfg(feature = "test-support")]
+            codex_turn_start_gate: _,
     } = controls;
 
     let replay_user_messages =

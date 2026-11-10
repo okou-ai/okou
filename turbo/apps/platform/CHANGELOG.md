@@ -13,6 +13,21 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1110.0](https://github.com/okou-ai/okou/compare/app-v0.1109.1...app-v0.1110.0) (2026-11-10)
+
+
+### Features
+
+* **app:** keep connector account selection internal ([#46315](https://github.com/okou-ai/okou/issues/46315)) ([ffa08a3](https://github.com/okou-ai/okou/commit/ffa08a3ffa9ada48ff12bf01a82549577a889aa6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.4
+    * @okouai/core bumped to 8.825.4
+
 ## [0.1109.1](https://github.com/okou-ai/okou/compare/app-v0.1109.0...app-v0.1109.1) (2026-11-10)
 
 

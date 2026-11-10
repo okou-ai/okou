@@ -34,8 +34,8 @@ function isEnvironmentError(value: unknown): value is EnvironmentError {
 
 /** The selected model provider's environment, secrets and firewall. */
 export function createModelProviderEnvironmentSignals(
-  bootstrap: AgentRunContextSignals,
-  threadContext: ThreadContext,
+  bootstrap: Pick<AgentRunContextSignals, "bodyEnvironment$">,
+  threadContext: Pick<ThreadContext, "modelRoute$">,
 ) {
   return computed(async (get): Promise<Environment | EnvironmentError> => {
     const [modelProvider, body] = await Promise.all([
@@ -190,31 +190,42 @@ export function createPaidToolEnvironmentSignals(
     if (isEnvironmentError(selection)) {
       return selection;
     }
-    const allowFrameworkTools =
-      !selection.piExecution &&
-      (modelProvider === null ||
-        !isBuiltInModelProviderType(modelProvider.type));
-    const frameworkWebSearch =
-      allowFrameworkTools &&
-      disabledTools.includes("web-search") &&
-      (framework === "claude-code" || framework === "codex");
-    const frameworkImageGeneration =
-      allowFrameworkTools &&
-      disabledTools.includes("image-generation") &&
-      framework === "codex";
     return {
       ...emptyEnvironment(),
-      platformEnvironment: {
-        [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
-        ...(frameworkWebSearch
-          ? { [ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR]: "true" }
-          : {}),
-        ...(frameworkImageGeneration
-          ? { [ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR]: "true" }
-          : {}),
-      },
+      platformEnvironment: paidToolPlatformEnvironment({
+        disabledTools,
+        framework,
+        modelProviderType: modelProvider?.type ?? null,
+        piExecution: selection.piExecution,
+      }),
     };
   });
+}
+
+export function paidToolPlatformEnvironment(args: {
+  readonly disabledTools: readonly string[];
+  readonly framework: string;
+  readonly modelProviderType: string | null;
+  readonly piExecution: boolean;
+}): Record<string, string> {
+  const { disabledTools, framework, modelProviderType, piExecution } = args;
+  const allowFrameworkTools =
+    !piExecution &&
+    (modelProviderType === null ||
+      !isBuiltInModelProviderType(modelProviderType));
+  return {
+    [DISABLED_PAID_TOOLS_ENV_VAR]: JSON.stringify(disabledTools),
+    ...(allowFrameworkTools &&
+    disabledTools.includes("web-search") &&
+    (framework === "claude-code" || framework === "codex")
+      ? { [ENABLE_FRAMEWORK_WEB_SEARCH_ENV_VAR]: "true" }
+      : {}),
+    ...(allowFrameworkTools &&
+    disabledTools.includes("image-generation") &&
+    framework === "codex"
+      ? { [ENABLE_FRAMEWORK_IMAGE_GENERATION_ENV_VAR]: "true" }
+      : {}),
+  };
 }
 
 /**

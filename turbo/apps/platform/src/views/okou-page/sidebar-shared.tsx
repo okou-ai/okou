@@ -1,14 +1,17 @@
 import { useGet, useLastResolved } from "ccstate-react";
 import { useTranslation } from "react-i18next";
+import { BellOff, Pencil } from "lucide-react";
 import { DEFAULT_AGENT_AVATAR_URL } from "@okouai/core/agent-avatar";
 import {
   agentAvatarTexture,
   avatarTextureUrl,
   defaultAgentAvatarTextures,
 } from "@okouai/core/agent-avatar-texture";
+import { RunningIndicator } from "@okouai/ui";
 import { cn } from "@okouai/ui/lib/utils";
 import { agents$ } from "../../signals/agent.ts";
 import { currentChatAgentDisplayName$ } from "../../signals/agent-chat.ts";
+import type { SidebarChatThreadIndicatorState } from "../../signals/chat-page/sidebar-chat-thread-item.ts";
 import { resolveAvatarUrl, resolveAvatarSvgConfig } from "./avatar-utils.ts";
 import { AvatarSvgPreview, AvatarTextureLayer } from "./avatar-svg-preview.tsx";
 import { isLegacyAvatarSvgConfig } from "./avatar-svg-utils.ts";
@@ -38,6 +41,39 @@ export function useChatThreadsTitleLabels() {
       { agentName },
     ),
   };
+}
+
+// One spatial cycle spans 12 rows: 200ms per row at the existing 2.4s cadence.
+const RUNNING_INDICATOR_WAVE_ROWS = 12;
+
+/**
+ * The state glyph a chat list row rests on. A folded Project draws the same
+ * glyph for the chats it hides, so `rowIndex` is the row's position in the
+ * whole list: running rows of either kind then breathe as one wave.
+ */
+export function ChatThreadStateIndicator({
+  state,
+  rowIndex,
+}: {
+  readonly state: SidebarChatThreadIndicatorState;
+  readonly rowIndex: number;
+}) {
+  if (state === "running") {
+    return (
+      <RunningIndicator phaseOffset={rowIndex / RUNNING_INDICATOR_WAVE_ROWS} />
+    );
+  }
+  if (state === "muted") {
+    return <BellOff size={16} className="opacity-35" />;
+  }
+  if (state === "unread") {
+    return <span className="h-2 w-2 rounded-full bg-sky-600" />;
+  }
+  return (
+    <span className="flex items-center justify-center text-sidebar-foreground">
+      <Pencil className="opacity-35" size={16} />
+    </span>
+  );
 }
 
 export function ChatThreadStateText({

@@ -152,10 +152,11 @@ function agentSelectionQueries(
 }
 
 export function createAgentSelectionContext(
-  scope: AgentConnectorSelectionScope,
+  scope$: Computed<Promise<AgentConnectorSelectionScope>>,
   featureSwitches$: Computed<Promise<FeatureSwitchContext>>,
 ) {
   const raw$ = computed(async (get) => {
+    const scope = await get(scope$);
     const chatAccounts = isFeatureEnabled(
       FeatureSwitchKey.ConnectorChatAccountAccess,
       await get(featureSwitches$),
@@ -206,6 +207,7 @@ export function createAgentSelectionContext(
     );
   });
   const workflows$ = computed(async (get) => {
+    const scope = await get(scope$);
     return workflowsForRunFromRows(
       array(contextProjectionSchema(workflowColumns)).parse(
         (await get(raw$)).workflows,

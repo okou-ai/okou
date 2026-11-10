@@ -4,11 +4,7 @@ import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { proactiveLearningRoutes } from "../proactive-preferences";
 import { createRouteMocks } from "./helpers/route-test";
-import {
-  createPublicRunnerMemory,
-  memoryFilesArchive,
-} from "./helpers/public-runner-memory";
-import { storageTextFile } from "./helpers/api-bdd-storage-files";
+import { createPublicRunnerMemory } from "./helpers/public-runner-memory";
 import { createChatEventsFixture } from "./helpers/chat-events-fixture";
 import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 import { readClaimedPiMemory } from "./helpers/pi-memory-session";
@@ -65,74 +61,11 @@ describe("ordinary Pi published personal Memory", () => {
             content: `Verified harbor fact ${suffix}`,
           },
         ];
-        const entries = files.map((file) => {
-          return storageTextFile(file.path, file.content);
-        });
-        const prepared = await fixture.webhooks.requestAgentStoragePrepare(
-          {
-            runId: claimed.run.runId,
-            storageId: claimed.memory.storageId,
-            parentVersionId: claimed.memory.versionId,
-            files: entries,
-          },
-          claimed.headers,
-          [200],
-        );
-        if (prepared.status !== 200 || !prepared.body.uploads) {
-          throw new Error("Expected authorized storage uploads");
-        }
-        fixture.objects.set(
-          prepared.body.uploads.archive.key,
-          memoryFilesArchive(files),
-        );
-        fixture.objects.set(
-          prepared.body.uploads.manifest.key,
-          Buffer.from(
-            JSON.stringify({
-              version: 1,
-              files: entries,
-              createdAt: new Date(0).toISOString(),
-            }),
-          ),
-        );
-        await fixture.webhooks.requestAgentStorageCommit(
-          {
-            runId: claimed.run.runId,
-            storageId: claimed.memory.storageId,
-            parentVersionId: claimed.memory.versionId,
-            versionId: prepared.body.versionId,
-            files: entries,
-          },
-          claimed.headers,
-          [200],
-        );
-        await fixture.webhooks.requestAgentComplete(
-          {
-            runId: claimed.run.runId,
-            exitCode: 0,
-            completion: {
-              cliAgentType: "claude-code",
-              cliAgentSessionId: `memory-writer-${claimed.run.runId}`,
-              cliAgentSessionHistoryDisposition: "native_only",
-              storageOutputs: [
-                {
-                  name: claimed.memory.name,
-                  mountPath: claimed.memory.mountPath,
-                  version: prepared.body.versionId,
-                  ...(claimed.memory.missingRootPolicy === undefined
-                    ? {}
-                    : { missingRootPolicy: claimed.memory.missingRootPolicy }),
-                },
-              ],
-            },
-          },
-          claimed.headers,
-          [200],
-        );
+        const version = await fixture.publish(claimed, files);
         expect(
           (await fixture.api.readRun(actor, claimed.run.runId)).status,
         ).toBe("completed");
-        return prepared.body.versionId;
+        return version;
       }
       const writer = await fixture.claim(
         agentId,
@@ -149,6 +82,11 @@ describe("ordinary Pi published personal Memory", () => {
         mountPath: "/home/user/.pi/agent/memory",
       });
       expect(selected.execution.featureFlags?.proactiveLearning).toBeFalsy();
+      const queued = await fixture.enqueue(
+        agentId,
+        "Keep the accepted Memory version while queued",
+        "gpt-6-luna",
+      );
       const laterWriter = await fixture.claim(
         agentId,
         "Publish a newer version after reader startup",
@@ -176,6 +114,9 @@ describe("ordinary Pi published personal Memory", () => {
           return record.type === "tool_execution_end";
         }),
       ).toHaveLength(4);
+      const claimedQueued = await fixture.claimQueued(queued);
+      expect(claimedQueued.memory).toStrictEqual(selected.memory);
+      await fixture.cancel(claimedQueued);
       const next = await fixture.claim(
         agentId,
         "A new Run selects the newly published version",

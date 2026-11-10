@@ -124,6 +124,7 @@ import { connectorCheckRoutes } from "../connector-check";
 import { automaticMcpCatalogFixture } from "./helpers/connector-automatic-catalog";
 
 import { createRouteMocks } from "./helpers/route-test";
+import { readProjectedChatEvents } from "./helpers/chat-event-test-reader";
 
 /**
  * RUN-01..04 and CHAIN-RUN: successful run dispatch and lifecycle.
@@ -7899,7 +7900,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           expect(disconnectedSkillMount?.mountPath).toBe(
             `/home/user/.claude/skills/custom-${slug.slice(1, 49)}-${custom.id.replaceAll("-", "").slice(0, 8)}`,
           );
-          expect(disconnectedSkillMount?.sha256).toBe(initialSkill.sha256);
+          expect(disconnectedSkillMount?.sha256).not.toBe(initialSkill.sha256);
 
           await connectors.setCustomConnectorValues(actor, custom.id, [
             { key: "workspace", kind: "variable", value: "restored" },
@@ -12037,7 +12038,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
     });
 
     describe("RUN-03: user-runner protocol and runner authentication", () => {
-      it("passes a valid preview bypass header or cookie into the run environment", async () => {
+      it("uses accepted preview headers or cookies with the current masked Claim secret", async () => {
         const api = createRunsApi(context);
         const chat = createChatFilesBddApi(context);
         const { actor, agentId } = await entitledRunActor();
@@ -12072,27 +12073,44 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             { extraHeaders: request.headers },
           );
           await flushWaitUntilForTest();
-          mockEnv("ENV", "development");
 
           expect(sent.status).toBe(201);
           if (sent.status !== 201) {
             throw new Error("Expected the preview send to be accepted");
           }
-          const runId = (
-            await chat.listThreadEvents(actor, sent.body.threadId)
-          ).events.find((event) => {
+          createRouteMocks(context).clerk.session(
+            actor.userId,
+            actor.orgId,
+            actor.orgRole,
+          );
+          const events = await readProjectedChatEvents(context, {
+            threadId: sent.body.threadId,
+            headers: { authorization: "Bearer clerk-session" },
+            extraHeaders: request.headers,
+          });
+          const runId = events.find((event) => {
             return event.revokesEventId === clientEventId;
           })?.runId;
           if (!runId) {
             throw new Error("Expected the preview send to launch a run");
           }
-          const claim = await api.claimRunnerJob(runId);
+          const claimBypass = `${previewBypass}-rotated`;
+          mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", claimBypass);
+          const claim = await api.claimRunnerJob(
+            runId,
+            {},
+            {
+              "x-vercel-protection-bypass": claimBypass,
+            },
+          );
           expect(claim.platformEnvironment).toMatchObject({
-            VERCEL_AUTOMATION_BYPASS_SECRET: previewBypass,
+            VERCEL_AUTOMATION_BYPASS_SECRET: claimBypass,
           });
+          expect(claim.secretValues).toContain(claimBypass);
           expect(claim.environment).not.toHaveProperty(
             "VERCEL_AUTOMATION_BYPASS_SECRET",
           );
+          mockEnv("ENV", "development");
           await api.requestCancelRun(actor, runId, [200]);
         }
       });

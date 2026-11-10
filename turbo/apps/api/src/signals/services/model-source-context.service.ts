@@ -10,8 +10,8 @@ import {
   modelProviderAccountSecrets,
 } from "@okouai/db/schema/model-provider-account";
 import { usagePricing } from "@okouai/db/runtime/usage-pricing";
-import { computed } from "ccstate";
-import { and, eq, getTableColumns, isNull, sql } from "drizzle-orm";
+import { computed, type Computed } from "ccstate";
+import { and, eq, getTableColumns, sql } from "drizzle-orm";
 import { array, object, string, unknown as zUnknown } from "zod";
 import { zodDriverValueDecoder } from "../../lib/db-structured-result";
 import {
@@ -20,8 +20,12 @@ import {
 } from "./context-rowset";
 import { db$ } from "../external/db";
 import { usagePricingByKey } from "./built-in-route-pricing";
+import { personalSubscriptionAccountAccessCondition } from "./model-provider-account.service";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
-import type { MemberModelBootstrap } from "./model-bootstrap.service";
+import {
+  memberModelBootstrapFromSources,
+  type MemberModelBootstrap,
+} from "./model-bootstrap.service";
 
 function providerProjection() {
   return {
@@ -53,13 +57,17 @@ function providerFacts(rows: readonly ProviderRow[]) {
   ];
 }
 
-function memberModelSourcePredicates(orgId: string, userId: string) {
+function memberModelSourcePredicates(
+  orgId: string,
+  userId: string,
+  runId?: string,
+) {
   return {
     account: and(
       eq(modelProviderAccounts.modelProviderId, modelProviders.id),
       eq(modelProviderAccounts.orgId, orgId),
       eq(modelProviderAccounts.userId, userId),
-      isNull(modelProviderAccounts.disconnectedAt),
+      personalSubscriptionAccountAccessCondition(runId),
     ),
     secret: eq(
       modelProviderAccountSecrets.modelProviderAccountId,
@@ -80,9 +88,14 @@ const sourceSecretSchema = object({
 /**
  * The same member-source join as one JSON aggregate, for statements that
  * already read this member. Column decoders still own timestamps and enums.
+ * A live Run identity also authorizes its retained bound account.
  */
-export function memberModelSourcesAggregate(orgId: string, userId: string) {
-  const on = memberModelSourcePredicates(orgId, userId);
+export function memberModelSourcesAggregate(
+  orgId: string,
+  userId: string,
+  runId?: string,
+) {
+  const on = memberModelSourcePredicates(orgId, userId, runId);
   const accountColumns = getTableColumns(modelProviderAccounts);
   const payload = sql`COALESCE(jsonb_agg(jsonb_build_object(
       'provider', ${contextJsonProjection(providerProjection().provider)},
@@ -162,6 +175,32 @@ export function memberAccountSourceFromSnapshot(
       return row.secret ? [{ kind: "encrypted" as const, ...row.secret }] : [];
     }),
   };
+}
+
+/** Include an admitted Run's retained account, without default account selection. */
+export function createRunModelSources(
+  identity$: Computed<
+    Promise<{
+      readonly orgId: string;
+      readonly userId: string;
+      readonly runId: string;
+    }>
+  >,
+) {
+  return computed(async (get): Promise<MemberModelBootstrap> => {
+    const { orgId, userId, runId } = await get(identity$);
+    const sources = memberModelSourcesAggregate(orgId, userId, runId);
+    const [row] = await get(db$)
+      .select({ payload: sources.payload })
+      .from(modelProviders)
+      .leftJoin(modelProviderAccounts, sources.joins.account)
+      .leftJoin(modelProviderAccountSecrets, sources.joins.secret)
+      .where(sources.joins.provider);
+    if (!row) {
+      throw new Error("Member model source query returned no row");
+    }
+    return memberModelBootstrapFromSources(sources.decode(row.payload));
+  });
 }
 
 /** Global identity: metadata and managed secret are one authoritative snapshot. */

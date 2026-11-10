@@ -1,9 +1,11 @@
 """Response encoding inspection risk integration tests."""
 
 import pytest
+import zstandard
 from mitmproxy import http
 from mitmproxy.test import tutils
 
+import body_decoding
 import flow_metadata_keys as metadata_keys
 import mitm_addon
 from tests.flow_helpers import header_map, response_stream
@@ -179,19 +181,31 @@ class TestResponseEncodingInspectionRisk:
         flow = self._model_flow(
             real_flow,
             tmp_path,
-            content_encoding="br",
+            content_encoding="zstd",
             content_type="text/event-stream",
         )
         assert flow.response is not None
         flow.response.status_code = 429
+        upstream_body = zstandard.ZstdCompressor().compress(
+            b"event: error\n"
+            b'data: {"error":{"type":"rate_limit_error","message":"Rate limit exceeded"}}\n\n'
+        )
+        flow.response.headers["content-length"] = str(len(upstream_body))
+        flow.response.headers["retry-after"] = "60"
+        upstream_headers = flow.response.headers.fields
+        # Keep this fixture on the decoder-unavailable branch if codec support changes.
+        assert not body_decoding.can_stream_decode_usage(flow.response.headers)
 
         with mitm_ctx():
             mitm_addon.responseheaders(flow)
 
-        assert not jsonl_exists_after_flush(tmp_path / "proxy.jsonl")
         assert flow.response.status_code == 429
-        upstream_chunk = b"upstream-error-brotli"
-        assert response_stream(flow)(upstream_chunk) == upstream_chunk
+        assert flow.response.headers.fields == upstream_headers
+        stream = response_stream(flow)
+        midpoint = len(upstream_body) // 2
+        for chunk in (upstream_body[:midpoint], upstream_body[midpoint:], b""):
+            assert stream(chunk) == chunk
+        assert not jsonl_exists_after_flush(tmp_path / "proxy.jsonl")
 
     def test_billable_model_without_canonical_model_still_rejects_uninspectable_response(
         self, real_flow, tmp_path, mitm_ctx

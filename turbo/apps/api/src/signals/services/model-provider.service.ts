@@ -30,10 +30,7 @@ import {
   type ModelCredentialValues,
 } from "./execution-model-runtime";
 import type { ModelSourceSnapshot } from "./execution-model-source.service";
-import {
-  catalogSubscriptionUpstreamModel,
-  type ModelCatalog,
-} from "./model-catalog.service";
+import type { ModelCatalog } from "./model-catalog.service";
 export const deleteUserModelProvider$ = command(
   async (
     { get, set },
@@ -154,13 +151,13 @@ export function prepareSubscriptionModelEnvironment(
   source: ModelSourceSnapshot,
   selectedModel: string,
   options: {
-    readonly catalog: ModelCatalog;
     readonly userId: string;
     readonly sourceId: string;
     readonly piExecution: boolean | undefined;
+    readonly upstreamModel: string;
   },
 ): ResolvedModelProviderEnvironment | null {
-  const { catalog, userId, sourceId, piExecution } = options;
+  const { upstreamModel, userId, sourceId, piExecution } = options;
   const type = source.configuration.providerType;
   if (
     source.identity.kind !== "member" ||
@@ -187,14 +184,6 @@ export function prepareSubscriptionModelEnvironment(
       throw new Error("Codex account routing identity is missing");
     }
     credentials = { ...credentials, CHATGPT_ACCOUNT_ID: identity };
-  }
-  const upstreamModel = catalogSubscriptionUpstreamModel(
-    catalog,
-    selectedModel,
-    type,
-  );
-  if (!upstreamModel) {
-    return null;
   }
   const compiled = compileModelRuntime({
     source,

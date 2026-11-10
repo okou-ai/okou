@@ -35,7 +35,7 @@ async function connectorActor() {
           context,
         ).deletePersonalModelProviderAccount(actor, id);
       }
-      for (const slug of ["openai", "x"] as const) {
+      for (const slug of ["openai", "runtime", "x"] as const) {
         for (const account of await connectors.listBuiltinConnectorAccounts(
           actor,
           slug,
@@ -147,7 +147,7 @@ describe("Run connector selection through normal user changes", () => {
     await fixture.cancel(run.runId, claim.sandboxToken);
   });
 
-  it("keeps prepared connector selections while a subsequent Run uses the user's new selection", async () => {
+  it("uses current native connector selections at Claim and keeps the delivered Run configuration", async () => {
     const fixture = await connectorActor();
     const { actor, agentId, api, connectors } = fixture;
     const connection = await connectors.connectManualGrant(
@@ -157,24 +157,34 @@ describe("Run connector selection through normal user changes", () => {
       { apiKey: `bootstrap-owned-${randomUUID()}` },
       agentId,
     );
+    const runtime = await connectors.connectManualGrant(
+      actor,
+      "runtime",
+      "api-token",
+      { apiKey: `runtime-owned-${randomUUID()}` },
+      agentId,
+    );
     await api.enableAgentConnectors(actor, agentId, ["openai"]);
     const prepared = await fixture.send("use the prepared connector selection");
-    await api.enableAgentConnectors(actor, agentId, ["x"]);
+    await api.enableAgentConnectors(actor, agentId, ["runtime"]);
     const claimed = await fixture.claim(prepared.runId);
-    expect(claimed.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
-      sourceId: connection.id,
+    expect(claimed.secretConnectorMetadataMap?.RUNTIME_API_KEY).toMatchObject({
+      sourceId: runtime.id,
     });
-    expect(claimed.environment ?? {}).not.toHaveProperty("X_TOKEN");
-    expect(claimed.secretConnectorMap ?? {}).not.toHaveProperty("X_TOKEN");
+    expect(claimed.environment ?? {}).not.toHaveProperty("OPENAI_TOKEN");
+    expect(claimed.secretConnectorMap ?? {}).not.toHaveProperty("OPENAI_TOKEN");
+    await api.enableAgentConnectors(actor, agentId, ["openai"]);
+    expect(claimed.environment).toHaveProperty("RUNTIME_API_KEY");
     await fixture.cancel(prepared.runId, claimed.sandboxToken);
     const next = await fixture.send(
       "use the new connector selection",
       prepared.threadId,
     );
     const nextClaim = await fixture.claim(next.runId);
-    expect(nextClaim.secretConnectorMetadataMap?.OPENAI_TOKEN).toBeUndefined();
-    expect(nextClaim.environment).toHaveProperty("X_TOKEN");
-    expect(nextClaim.secretConnectorMap).toHaveProperty("X_TOKEN");
+    expect(nextClaim.secretConnectorMetadataMap?.OPENAI_TOKEN).toMatchObject({
+      sourceId: connection.id,
+    });
+    expect(nextClaim.environment).not.toHaveProperty("RUNTIME_API_KEY");
     await fixture.cancel(next.runId, nextClaim.sandboxToken);
   });
 });

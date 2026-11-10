@@ -187,7 +187,7 @@ struct ChatSettingsView: View {
     ) {
       OkouProfileAvatar(
         imageURL: profile?.imageURL, hasImage: profile?.hasImage ?? false,
-        size: OkouAvatarSize.account,
+        size: OkouAvatarSize.account, name: profile?.name ?? profile?.email,
         cachedImage: authentication.presentation?.image("profile"), usesSharedImage: true)
     }
   }

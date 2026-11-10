@@ -262,6 +262,7 @@ const iosContracts: readonly {
     route: chatThreadUsageContract.read,
   },
   { id: "ios.chatThreadsContract.create", route: chatThreadsContract.create },
+  { id: "ios.chatThreadsContract.drafts", route: chatThreadsContract.drafts },
   { id: "ios.chatThreadsContract.events", route: chatThreadsContract.events },
   {
     id: "ios.chatThreadsContract.indicators",
