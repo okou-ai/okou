@@ -475,6 +475,8 @@ final class AuthenticationScopeTests: XCTestCase {
       $0.activeWorkspaceID = "org_two"
     }
     try await authentication.clerk?.refreshClient()
+    // Native consumers cannot receive the previous graph even before auth event reconciliation.
+    XCTAssertNil(authentication.accountResources)
     let replacement = Task.immediate { await authentication.refresh() }
     addTeardownBlock {
       replacement.cancel()

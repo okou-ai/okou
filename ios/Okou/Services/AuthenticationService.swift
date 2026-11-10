@@ -45,7 +45,7 @@ final class AuthenticationService {
     )?
   private var resolvedWorkspaceIdentity: WorkspaceIdentity?
   private var workspaceSwitch: (id: UUID, sessionID: String, userID: String)?
-  private(set) var accountResources: AccountMembershipResources?
+  private var membershipResources: AccountMembershipResources?
   private(set) var errorMessage: String?
   private var verifiedAccountScope: AccountMembershipResources.Scope?
   private var membershipRefresh: (id: UUID, task: Task<Void, Never>)?
@@ -56,12 +56,13 @@ final class AuthenticationService {
       environment: clerk.publishableKey, userID: identity.userID, sessionID: identity.sessionID)
   }
 
-  private var currentAccountResources: AccountMembershipResources? {
-    guard accountResources?.scope == accountScope else { return nil }
-    return accountResources
+  /// UI must never subscribe to the old graph while the SDK identity event is queued.
+  var accountResources: AccountMembershipResources? {
+    guard membershipResources?.scope == accountScope else { return nil }
+    return membershipResources
   }
 
-  var workspaces: [Workspace] { currentAccountResources?.confirmed ?? [] }
+  var workspaces: [Workspace] { accountResources?.confirmed ?? [] }
 
   private struct WorkspaceIdentity: Equatable {
     let sessionID: String
@@ -175,7 +176,7 @@ final class AuthenticationService {
     }
     guard let presentation, presentation.userID == userID, presentationScopeID == scope
     else { return }
-    if currentAccountResources?.confirmed != nil {
+    if accountResources?.confirmed != nil {
       await presentation.replaceWorkspaces(workspaces, activeID: workspaceID)
     }
     guard presentationScopeID == scope, !Task.isCancelled else { return }
@@ -189,7 +190,7 @@ final class AuthenticationService {
   var presentationWorkspaceID: String? {
     guard isAuthenticated, let identity = workspaceIdentity, let id = identity.workspaceID
     else { return nil }
-    if currentAccountResources?.confirmed != nil, !workspaces.contains(where: { $0.id == id }) {
+    if accountResources?.confirmed != nil, !workspaces.contains(where: { $0.id == id }) {
       return nil
     }
     return id
@@ -247,7 +248,7 @@ final class AuthenticationService {
                 || oldSession?.lastActiveOrganizationId != newSession?.lastActiveOrganizationId
             else { continue }
             // A delayed membership response must not block sign-out or a newer identity.
-            let previousScope = accountResources?.scope
+            let previousScope = membershipResources?.scope
             synchronizeAccountResources()
             if previousScope != accountScope {
               group.addTask { await self.refresh() }
@@ -338,16 +339,16 @@ final class AuthenticationService {
   func closeAccountResources() {
     membershipRefresh?.task.cancel()
     membershipRefresh = nil
-    accountResources?.close()
-    accountResources = nil
+    membershipResources?.close()
+    membershipResources = nil
     verifiedAccountScope = nil
   }
 
   private func synchronizeAccountResources() {
-    guard accountResources?.scope != accountScope else { return }
+    guard membershipResources?.scope != accountScope else { return }
     closeAccountResources()
     guard let scope = accountScope, let clerk, let user = clerk.user else { return }
-    accountResources = AccountMembershipResources(scope: scope) { page in
+    membershipResources = AccountMembershipResources(scope: scope) { page in
       // SDK membership reads use its authorized session, never cached names or API credentials.
       guard clerk.session?.id == scope.sessionID, clerk.user?.id == scope.userID else {
         throw AuthenticationError.workspaceChanged
@@ -368,7 +369,7 @@ final class AuthenticationService {
 
   func refreshWorkspaces() async {
     synchronizeAccountResources()
-    guard let resources = currentAccountResources else {
+    guard let resources = accountResources else {
       if clerk?.session == nil { await clearWorkspaces() }
       return
     }
@@ -383,7 +384,7 @@ final class AuthenticationService {
       do {
         let workspaces = try await resources.read(refresh: true)
         try Task.checkCancellation()
-        guard currentAccountResources === resources, verifiedAccountScope == resources.scope else {
+        guard accountResources === resources, verifiedAccountScope == resources.scope else {
           return
         }
         let activeID = clerk?.session?.lastActiveOrganizationId
@@ -391,7 +392,7 @@ final class AuthenticationService {
           try await switchWorkspace(workspace.id)
         }
         try Task.checkCancellation()
-        guard currentAccountResources === resources else { return }
+        guard accountResources === resources else { return }
         resolvedWorkspaceIdentity = workspaceIdentity
         if presentation != nil { await preparePresentation() }
       } catch is CancellationError {
@@ -410,7 +411,7 @@ final class AuthenticationService {
       throw AuthenticationError.signedOut
     }
     // A notification can target another workspace before its switcher list arrives.
-    if currentAccountResources?.confirmed == nil || verifiedAccountScope != accountScope {
+    if accountResources?.confirmed == nil || verifiedAccountScope != accountScope {
       await refresh()
       try Task.checkCancellation()
       guard clerk.session?.id == session.id, clerk.user?.id == userID else {
@@ -418,7 +419,7 @@ final class AuthenticationService {
       }
     }
     guard !isSwitchingWorkspace else { throw AuthenticationError.workspaceChanged }
-    guard verifiedAccountScope == accountScope, currentAccountResources?.confirmed != nil,
+    guard verifiedAccountScope == accountScope, accountResources?.confirmed != nil,
       workspaces.contains(where: { $0.id == workspaceID })
     else {
       throw AuthenticationError.workspaceUnavailable
@@ -437,7 +438,7 @@ final class AuthenticationService {
         clerk.user?.id == userID,
         clerk.session?.lastActiveOrganizationId == workspaceID,
         verifiedAccountScope == accountScope,
-        currentAccountResources?.confirmed != nil,
+        accountResources?.confirmed != nil,
         workspaces.contains(where: { $0.id == workspaceID })
       else { throw AuthenticationError.workspaceChanged }
       resolvedWorkspaceIdentity = workspaceIdentity
