@@ -35,7 +35,7 @@ import { createGlobalModelContext } from "./execution-global-model-context.servi
 import { createAcceptedExecutionStorageObjects } from "./execution-storage.service";
 import { createUserFeatureSwitchContext } from "./feature-switches.service";
 import {
-  createMemberModelSources,
+  createRunModelSources,
   managedSourceFromSnapshot,
   memberAccountSourceFromSnapshot,
 } from "./model-source-context.service";
@@ -101,13 +101,13 @@ export class ClaimRuntimeUnavailableError extends Error {
 /** All dependencies belong to this Claim; no captured runtime snapshot participates. */
 export function createClaimRuntimeContext(input$: ClaimInput$) {
   const identities = createClaimIdentities(input$);
-  const { run$, identity$, features$, memberIdentity$ } = identities;
+  const { run$, identity$, features$ } = identities;
   const sources = createExecutionConnectorSources(identity$, features$);
   const global = createGlobalModelContext();
   const preferences$ = createClaimPreferences(run$);
   const disabledTools$ = createClaimDisabledTools(input$);
   const connectors = createClaimConnectorContext(input$, identities, sources);
-  const model$ = createClaimModel(run$, memberIdentity$, global);
+  const model$ = createClaimModel(run$, global);
   const modelRoute$ = computed(async (get) => {
     return (await get(model$))?.provider ?? null;
   });
@@ -223,7 +223,7 @@ function createClaimIdentities(input$: ClaimInput$) {
       overrides,
     };
   });
-  return { run$, memberIdentity$, identity$, features$ };
+  return { run$, identity$, features$ };
 }
 
 function createClaimPreferences(run$: ClaimRun$) {
@@ -319,12 +319,12 @@ function createClaimConnectorContext(
   return { bodyEnvironment$, connectorEnvironment$ };
 }
 
-function createClaimModel(
-  run$: ClaimRun$,
-  memberIdentity$: ClaimIdentities["memberIdentity$"],
-  global: GlobalModels,
-) {
-  const memberModels$ = createMemberModelSources(memberIdentity$);
+function createClaimModel(run$: ClaimRun$, global: GlobalModels) {
+  const memberIdentity$ = computed(async (get) => {
+    const run = await get(run$);
+    return { orgId: run.orgId, userId: run.userId, runId: run.id };
+  });
+  const memberModels$ = createRunModelSources(memberIdentity$);
   return computed(async (get) => {
     const run = await get(run$);
     if (run.modelProvider === null) {
