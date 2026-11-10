@@ -258,6 +258,11 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   (send, a card's `.primary` action), never for list text.
 - **The composer never truncates a draft.** With text in it the editor keeps its
   open height (up to six lines, then it scrolls), focused or not.
+- **Composer geometry** belongs to `OkouComposerSurface`, shared by the chat and
+  component catalog. Its empty, unfocused surface is at least 44 pt tall
+  (`composerCompactHeight`), with 6 pt vertical text padding and separate 44 pt
+  action targets. Larger text can grow the surface. Expansion retains the same
+  mounted editor and reserves a bottom row for the actions.
 - Viewing sheets and immediately applied settings use `OkouCloseButton`. Use Done
   for a completed operation, Save for an explicit commit, and Back within a sheet.
   Do not imply a pending save where selections already apply immediately.
@@ -676,6 +681,8 @@ initializing authentication or product services. In a Debug build it is also
 in the app: **Settings ▸ Developer ▸ Design system** (and **Results in a chat**) pushes it
 inside Settings, so Back returns to Settings and ✕ closes Settings. Release builds do not
 expose any of it.
+Add `--composer-preview` alongside `--mobile-design-system` to open the catalog
+at its navigation and composer section.
 `--result-styles` opens only the results page (`ResultStylesGallery`): every way a
 result looks in a chat, each state under a caption, with a live website snapshot and
 Quick Look covers of a generated deck and document.
