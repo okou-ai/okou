@@ -112,6 +112,8 @@ func isDeferred(_ closure: ClosureExprSyntax) -> Bool {
     return true
   }
   let name = callName(call.calledExpression)
+  // Authorization decisions run when the card's controls are activated.
+  if name == "ComputerAuthorizationCardContent" && label == "decide" { return true }
   if name == "Button", label.isEmpty, call.arguments.contains(where: { $0.label?.text == "action" })
   {
     return false  // An explicit action makes the trailing closure the label builder.

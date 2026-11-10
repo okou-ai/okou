@@ -296,6 +296,60 @@ CASES = [
     """,
     ),
     (
+        "authorization callbacks preserve eager render checks",
+        "okou_render_effects",
+        """
+        import SwiftUI
+        struct Screen: View {
+          let store: Owner
+          var body: some View {
+            ComputerAuthorizationCardContent(
+              decide: { decision in Task { await store.decide(decision) } },
+              retry: { Task { await store.refresh() } })
+            ChatActionCard {
+              Text("Authorize")
+            } actions: {
+              let _ = Task { await store.decide(.approve) } // violation
+              Text("Actions")
+            }
+            UnregisteredView(decide: {
+              let _ = Task { await store.decide(.approve) } // violation
+              Text("Content")
+            })
+          }
+        }
+    """,
+    ),
+    (
+        "authorization callbacks reuse graph definitions",
+        "okou_stable_graph",
+        """
+        import CCState
+        import SwiftUI
+        struct Screen: View {
+          var body: some View {
+            ComputerAuthorizationCardContent(
+              decide: { decision in
+                let command = Command { context in } // violation
+              },
+              retry: {})
+          }
+        }
+    """,
+    ),
+    (
+        "authorization callbacks cannot capture graph accessors",
+        "okou_accessor_escape",
+        """
+        import CCState
+        let read = Computed { get in
+          ComputerAuthorizationCardContent(
+            decide: { _ in try? get(input) }, // violation
+            retry: {})
+        }
+    """,
+    ),
+    (
         "semantic methods reuse graph definitions",
         "okou_stable_graph",
         """
