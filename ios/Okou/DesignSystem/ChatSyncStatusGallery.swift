@@ -25,7 +25,7 @@
           }
           .buttonStyle(.bordered)
         }
-        .padding(OkouSpace.pageInset)
+        .padding(OkouControl.pageInset)
       }
       .background(OkouColor.background)
       .navigationTitle(Text(verbatim: "Chat sync feedback"))
