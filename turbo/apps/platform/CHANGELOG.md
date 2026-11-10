@@ -13,6 +13,13 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1109.1](https://github.com/okou-ai/okou/compare/app-v0.1109.0...app-v0.1109.1) (2026-11-10)
+
+
+### Bug Fixes
+
+* preserve handoff session access and recover failed task entry ([#46268](https://github.com/okou-ai/okou/issues/46268)) ([f68a92e](https://github.com/okou-ai/okou/commit/f68a92e1d2838100fcaaa2d7601d1b0338bc7e2a))
+
 ## [0.1109.0](https://github.com/okou-ai/okou/compare/app-v0.1108.0...app-v0.1109.0) (2026-11-10)
 
 
