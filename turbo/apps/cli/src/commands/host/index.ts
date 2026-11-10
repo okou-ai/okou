@@ -153,7 +153,14 @@ Notes:
           hostedSiteDeliveryInstructions,
         );
         if (options.json) {
-          console.log(JSON.stringify({ ...result, ...presentation.json }));
+          const { artifactUrl: _artifactUrl, ...delivery } = result;
+          console.log(
+            JSON.stringify({
+              ...delivery,
+              url: result.aliasUrl ?? result.url,
+              ...presentation.json,
+            }),
+          );
           return;
         }
 
@@ -163,9 +170,6 @@ Notes:
         console.log(chalk.dim(`  Visibility: ${result.visibility}`));
         if (result.deploymentVersion !== undefined) {
           console.log(chalk.dim(`  Version: v${result.deploymentVersion}`));
-        }
-        if (result.artifactUrl) {
-          console.log(`  Artifact: ${result.artifactUrl}`);
         }
         if (result.aliasUrl) {
           const target =

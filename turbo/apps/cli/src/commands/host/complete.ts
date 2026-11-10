@@ -22,11 +22,13 @@ export const completeHostedSiteCommand = new Command("complete")
         command: Command,
       ) => {
         const options = command.optsWithGlobals<{ readonly json?: boolean }>();
-        const result = await completeHostedSite(uuid().parse(deploymentId));
+        const { artifactUrl: _artifactUrl, ...result } =
+          await completeHostedSite(uuid().parse(deploymentId));
+        const url = result.aliasUrl ?? result.url;
         console.log(
           options.json
-            ? JSON.stringify(result)
-            : `Hosted site deployed: ${result.aliasUrl ?? result.url}`,
+            ? JSON.stringify({ ...result, url })
+            : `Hosted site deployed: ${url}`,
         );
       },
     ),
