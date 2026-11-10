@@ -11,6 +11,8 @@ final class WorkspaceResources {
   private let invalidateReads: Command<Void, Set<ChatInvalidation>>
   let navigation: Computed<Task<[AgentRecord], Error>>
   let reloadNavigation: Command<Void, Void>
+  let projectList: Computed<Task<[ChatProject], Error>>
+  let reloadProjects: Command<Void, Void>
   private let preference: WorkspaceRead<ModelPreference>
   private let available: WorkspaceRead<AvailableRunModels>
   private let catalog: WorkspaceRead<ModelCatalog>
@@ -40,8 +42,11 @@ final class WorkspaceResources {
     self.agents = agents
     navigation = agents.value
     reloadNavigation = agents.reload
-    projects = WorkspaceRead(
+    let projects = WorkspaceRead(
       "Projects", sleep: sleep, lifetime: lifetime, read: ChatProjects(client: client).list)
+    self.projects = projects
+    projectList = projects.value
+    reloadProjects = projects.reload
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
@@ -83,12 +88,6 @@ final class WorkspaceResources {
   func loadCatalog() throws -> Task<ModelCatalog, Error> {
     try catalog.retryFailed(in: store)
     return try store.get(catalog.value)
-  }
-
-  func projectList(refresh: Bool) throws -> Task<[ChatProject], Error> {
-    if refresh { try store.set(projects.reload) }
-    try projects.retryFailed(in: store)
-    return try store.get(projects.value)
   }
 
   func invalidate(_ changes: Set<ChatInvalidation>) throws {
