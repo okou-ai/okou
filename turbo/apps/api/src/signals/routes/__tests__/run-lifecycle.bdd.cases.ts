@@ -12047,6 +12047,7 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
           {
             prompt: "preview bypass from header",
             headers: { "x-vercel-protection-bypass": previewBypass },
+            environment: "preview",
             authorized: true,
           },
           {
@@ -12054,19 +12055,21 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             headers: {
               cookie: `other=value; x-vercel-protection-bypass=${previewBypass}`,
             },
+            environment: "preview",
             authorized: true,
           },
           {
-            prompt: "preview without accepted bypass authorization",
+            prompt: "ordinary admission without preview bypass authorization",
             headers: { "x-vercel-protection-bypass": "untrusted-bypass" },
+            environment: "development",
             authorized: false,
           },
         ] as const;
 
         for (const request of requests) {
-          mockEnv("ENV", "preview");
+          mockEnv("ENV", request.environment);
           mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", previewBypass);
-          // The send carries the bypass; its pick runs inside that request.
+          // Admission captures only the bypass accepted in this request.
           const clientEventId = randomUUID();
           const sent = await chat.requestSendEvent(
             actor,
@@ -12102,6 +12105,8 @@ export function registerRunLifecycleTests(group: RunLifecycleTestGroup): void {
             throw new Error("Expected the preview send to launch a run");
           }
           const claimBypass = `${previewBypass}-rotated`;
+          // Current preview access cannot upgrade this Run's admission receipt.
+          mockEnv("ENV", "preview");
           mockEnv("VERCEL_AUTOMATION_BYPASS_SECRET", claimBypass);
           const claim = await api.claimRunnerJob(
             runId,
