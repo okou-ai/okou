@@ -62,9 +62,18 @@ struct ComposerSuggestionTable: UIViewRepresentable {
     _ proposal: ProposedViewSize, uiView: ComposerSuggestionNativeTable, context: Context
   ) -> CGSize? {
     guard let width = proposal.width else { return nil }
-    uiView.bounds.size.width = width
-    uiView.layoutIfNeeded()
-    return CGSize(width: width, height: min(maximumHeight, uiView.contentSize.height))
+    // SwiftUI may measure while its graph is updating. Laying out hosted cells
+    // here re-enters that graph; UIKit owns their layout after measurement.
+    let estimatedHeight = items.reduce(OkouSpace.sm) { height, item in
+      height
+        + (item.detail?.isEmpty == false
+          ? OkouControl.minimumTarget + OkouSpace.sm * 2 : OkouControl.listRow)
+    }
+    let measuredHeight = uiView.contentSize.height + uiView.contentInset.bottom
+    return CGSize(
+      width: width,
+      height: min(
+        maximumHeight, uiView.contentSize.height > 0 ? measuredHeight : estimatedHeight))
   }
 
   static func dismantleUIView(_ table: ComposerSuggestionNativeTable, coordinator: Coordinator) {
