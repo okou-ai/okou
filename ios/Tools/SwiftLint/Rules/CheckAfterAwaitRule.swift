@@ -141,6 +141,10 @@ private final class PublicationAnalysis {
           iteration.suspended = false
         }
         flow = merge([flow, block(loop.body.statements, flow: iteration, locals: locals)])
+      } else if let loop = item.item.as(RepeatStmtSyntax.self) {
+        // The body runs before its condition, with normal branch and catch semantics.
+        flow = block(loop.body.statements, flow: flow, locals: locals)
+        if flow.reachable { inspect(loop.condition, flow: &flow, locals: locals) }
       } else if let expression = expression?.as(SwitchExprSyntax.self)
         ?? item.item.as(SwitchExprSyntax.self)
       {

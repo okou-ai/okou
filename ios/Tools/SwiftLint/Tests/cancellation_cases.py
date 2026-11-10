@@ -2,6 +2,45 @@
 
 CANCELLATION_CASES = [
     (
+        "repeat bodies preserve guarded publication and terminating refresh branches",
+        "okou_check_after_await",
+        """
+        import CCState
+        let safe = asyncCommand { context, value in
+          repeat {
+            do {
+              let result = try await service.load()
+              try Task.checkCancellation()
+              guard currentRevision == requestedRevision else {
+                await service.refresh()
+                return
+              }
+              try context.set(saved, result)
+            } catch is CancellationError {
+              return
+            } catch {
+              guard !Task.isCancelled else { return }
+              if shouldReport {
+                try context.set(failure, error)
+              }
+            }
+          } while shouldRefresh
+        }
+        let unsafe = asyncCommand { context, value in
+          repeat {
+            let result = await service.load()
+            try context.set(saved, result) // violation
+          } while shouldRefresh
+        }
+        let following = asyncCommand { context, value in
+          repeat {
+            await service.load()
+          } while shouldRefresh
+          try context.set(saved, value) // violation
+        }
+    """,
+    ),
+    (
         "boolean guards prove the actual continuing path",
         "okou_check_after_await",
         """
