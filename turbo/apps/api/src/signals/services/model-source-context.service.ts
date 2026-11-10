@@ -182,7 +182,10 @@ export function createMemberModelSources(
       .leftJoin(modelProviderAccounts, sources.joins.account)
       .leftJoin(modelProviderAccountSecrets, sources.joins.secret)
       .where(sources.joins.provider);
-    return memberModelBootstrapFromSources(sources.decode(row?.payload ?? []));
+    if (!row) {
+      throw new Error("Member model source query returned no row");
+    }
+    return memberModelBootstrapFromSources(sources.decode(row.payload));
   });
 }
 
