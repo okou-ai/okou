@@ -265,49 +265,7 @@ function createChatConnectorMutations({
       signal.throwIfAborted();
     },
   );
-  const select$ = command(
-    async ({ get, set }, connectionId: string, signal: AbortSignal) => {
-      const active = await get(active$);
-      signal.throwIfAborted();
-      if (
-        !active?.access.accounts.some((account) => {
-          return account.connectionId === connectionId && account.enabled;
-        })
-      ) {
-        return;
-      }
-      if (threadId) {
-        await accept(
-          get(apiClient$)(chatConnectorAccessContract).setThreadCurrent({
-            params: { threadId },
-            body: { target: active.target, connectionId },
-            fetchOptions: { signal },
-          }),
-          [200],
-          signal,
-        );
-        await set(refreshTarget$, active.target, signal);
-        await get(active$);
-        signal.throwIfAborted();
-      } else {
-        set(pending$, (pending) => {
-          return {
-            ...pending,
-            selections: [
-              ...pending.selections.filter((selection) => {
-                return (
-                  connectorAccountTargetKey(selection.target) !==
-                  connectorAccountTargetKey(active.target)
-                );
-              }),
-              { target: active.target, connectionId },
-            ],
-          };
-        });
-      }
-    },
-  );
-  return { setOverride$, select$ };
+  return { setOverride$ };
 }
 
 /** One composer's Chat preferences; opening the menu owns its account reads. */
@@ -379,7 +337,7 @@ export function createChatConnectorAccessSignals(threadId?: string) {
       set(list.setTarget$, target.target, signal);
     },
   );
-  const { setOverride$, select$ } = createChatConnectorMutations({
+  const { setOverride$ } = createChatConnectorMutations({
     pending$,
     target$,
     active$,
@@ -418,7 +376,6 @@ export function createChatConnectorAccessSignals(threadId?: string) {
     openTarget$,
     closeTarget$,
     setOverride$,
-    select$,
     reload$: cache.reload$,
     retry$: cache.retry$,
     current$,

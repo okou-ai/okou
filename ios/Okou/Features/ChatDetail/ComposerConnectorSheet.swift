@@ -178,15 +178,7 @@ private struct ComposerConnectorSheetContent: View {
             Text(connector.label)
               .font(.okou(.body)).foregroundStyle(OkouColor.foreground).lineLimit(1)
             if let access = connector.access {
-              Group {
-                if let account = connector.currentAccount {
-                  Text("\(account.label) · \(access.enabledCount) enabled")
-                } else if access.available {
-                  Text("Account unavailable")
-                } else {
-                  Text("Off")
-                }
-              }
+              Text("\(access.enabledCount) enabled")
               .font(.okou(.footnote)).foregroundStyle(OkouColor.mutedForeground).lineLimit(1)
             }
           }

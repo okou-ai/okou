@@ -36,7 +36,7 @@ import {
 
 const context = testContext();
 
-async function openRepairableDefaultAccountManager({
+async function openAccountAvailabilityManager({
   defaultAccount,
   enabledAccounts,
 }: {
@@ -176,47 +176,37 @@ async function openRepairableDefaultAccountManager({
   return { manager, toggle };
 }
 
-test("Disabling the default promotes an enabled sibling", async () => {
-  const { manager, toggle } = await openRepairableDefaultAccountManager({
+test("Manage each saved account's default availability independently", async () => {
+  const { toggle } = await openAccountAvailabilityManager({
     defaultAccount: "Work",
     enabledAccounts: ["Work", "Personal"],
   });
-  await waitFor(() => {
-    expect(accountRadio(manager, "Work")).toBeChecked();
-  });
+  await expect(toggle("Work")).resolves.toBeChecked();
+  await expect(toggle("Personal")).resolves.toBeChecked();
   click(await toggle("Work"));
-  await waitFor(() => {
-    expect(accountRadio(manager, "Personal")).toBeChecked();
-  });
+  await expect(toggle("Work")).resolves.not.toBeChecked();
+  await expect(toggle("Personal")).resolves.toBeChecked();
 });
 
-test("Enabling the first account after disabling the last restores a default", async () => {
-  const { manager, toggle } = await openRepairableDefaultAccountManager({
+test("Disable all saved accounts and enable an account again", async () => {
+  const { toggle } = await openAccountAvailabilityManager({
     defaultAccount: "Personal",
     enabledAccounts: ["Personal"],
   });
-  await waitFor(() => {
-    expect(accountRadio(manager, "Personal")).toBeChecked();
-  });
+  await expect(toggle("Personal")).resolves.toBeChecked();
   click(await toggle("Personal"));
-  await waitFor(() => {
-    expect(accountRadio(manager, "Personal")).not.toBeChecked();
-    expect(accountRadio(manager, "Work")).not.toBeChecked();
-  });
+  await expect(toggle("Personal")).resolves.not.toBeChecked();
+  await expect(toggle("Work")).resolves.not.toBeChecked();
   click(await toggle("Work"));
-  await waitFor(() => {
-    expect(accountRadio(manager, "Work")).toBeChecked();
-  });
+  await expect(toggle("Work")).resolves.toBeChecked();
 });
 
-test("Deleting the default promotes a sibling enabled in the open manager", async () => {
-  const { manager, toggle } = await openRepairableDefaultAccountManager({
+test("Disconnect an account while retaining another enabled account", async () => {
+  const { manager, toggle } = await openAccountAvailabilityManager({
     defaultAccount: "Work",
     enabledAccounts: ["Work"],
   });
-  await waitFor(() => {
-    expect(accountRadio(manager, "Work")).toBeChecked();
-  });
+  await expect(toggle("Work")).resolves.toBeChecked();
   click(await toggle("Personal"));
   await waitFor(() => {
     expect(
@@ -237,7 +227,7 @@ test("Deleting the default promotes a sibling enabled in the open manager", asyn
   });
   click(getConnectorAction("button", "Disconnect account", confirmation));
   await waitFor(() => {
-    expect(accountRadio(manager, "Personal")).toBeChecked();
+    expect(within(manager).queryByRole("group", { name: "Work" })).toBeNull();
   });
   await expect(toggle("Personal")).resolves.toBeChecked();
 });

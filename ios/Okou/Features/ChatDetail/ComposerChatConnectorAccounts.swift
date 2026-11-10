@@ -43,7 +43,7 @@ struct ComposerChatConnectorAccounts: View {
     } header: {
       Text("This chat").okouSectionHeader()
     } footer: {
-      Text("Choose the current account and which accounts this chat can use.").okouSectionNote()
+      Text("Choose which accounts this chat can use.").okouSectionNote()
     }
     Section {
       if let slug = resources.connector.target.connectorSlug,
@@ -73,25 +73,15 @@ struct ComposerChatConnectorAccounts: View {
     -> some View
   {
     HStack(spacing: OkouSpace.md) {
-      Button {
-        Task { await resources.apply(.select(account.id)) }
-      } label: {
-        HStack(spacing: OkouSpace.sm) {
-          OkouIcon(page.selectedID == account.id ? "circle-check" : "circle")
-            .accessibilityHidden(true)
-          VStack(alignment: .leading, spacing: OkouSpace.three) {
-            Text(account.label).foregroundStyle(OkouColor.foreground).lineLimit(1)
-            if !account.ready {
-              Text("Reconnect required").font(.okou(.caption))
-                .foregroundStyle(OkouColor.mutedForeground)
-            }
-          }
-          Spacer(minLength: 0)
-        }.frame(minHeight: OkouControl.minimumTarget).contentShape(Rectangle())
+      VStack(alignment: .leading, spacing: OkouSpace.three) {
+        Text(account.label).foregroundStyle(OkouColor.foreground).lineLimit(1)
+        if !account.ready {
+          Text("Reconnect required").font(.okou(.caption))
+            .foregroundStyle(OkouColor.mutedForeground)
+        }
       }
-      .buttonStyle(.plain).disabled(busy || !access.enabled || !account.ready)
-      .accessibilityLabel("Use \(account.label)")
-      .accessibilityValue(page.selectedID == account.id ? "Selected" : "")
+      .frame(minHeight: OkouControl.minimumTarget, alignment: .leading)
+      Spacer(minLength: 0)
       Picker(
         "Access for \(account.label)",
         selection: Binding(
@@ -126,23 +116,9 @@ struct ComposerConnectorDefaults: View {
       ForEach(page.accounts) { account in
         if let choice = page.defaults.first(where: { $0.connectionId == account.id }) {
           HStack(spacing: OkouSpace.md) {
-            Button {
-              Task { await resources.apply(.defaultAccount(account.id)) }
-            } label: {
-              HStack(spacing: OkouSpace.sm) {
-                OkouIcon(choice.isDefault ? "circle-check" : "circle").accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: OkouSpace.three) {
-                  Text(account.label).foregroundStyle(OkouColor.foreground).lineLimit(1)
-                  if choice.isDefault {
-                    Text("Default").font(.okou(.caption)).foregroundStyle(OkouColor.mutedForeground)
-                  }
-                }
-                Spacer(minLength: 0)
-              }.frame(minHeight: OkouControl.minimumTarget).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain).disabled(busy || !choice.defaultEnabled)
-            .accessibilityLabel("Use \(account.label) as default")
-            .accessibilityValue(choice.isDefault ? "Selected" : "")
+            Text(account.label).foregroundStyle(OkouColor.foreground).lineLimit(1)
+              .frame(minHeight: OkouControl.minimumTarget, alignment: .leading)
+            Spacer(minLength: 0)
             Toggle(
               "Enable \(account.label) by default",
               isOn: Binding(
@@ -162,10 +138,7 @@ struct ComposerConnectorDefaults: View {
     } header: {
       Text("Saved accounts").okouSectionHeader()
     } footer: {
-      Text(
-        "Enabled accounts are available to chats by default. Choose one enabled default account."
-      )
-      .okouSectionNote()
+      Text("Enabled accounts are available to chats by default.").okouSectionNote()
     }
   }
 }
