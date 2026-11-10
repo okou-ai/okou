@@ -1649,8 +1649,8 @@ describe("selected eager Axiom operation payload", () => {
         model: "claude-fable-5-1",
         prompt: "Verify selected eager observations",
       });
-      const actualDecrypts = kms.decryptCalls;
       const claimed = await fixture.claimChatRun(runnerGroup, run.runId);
+      const actualDecrypts = kms.decryptCalls;
       expect(claimed.claim.environment).toMatchObject({
         FIGMA_TOKEN: "fixture-figma-token",
         ...(expectedCount ? { OPENAI_TOKEN: "eager-transport-token" } : {}),
@@ -1665,6 +1665,7 @@ describe("selected eager Axiom operation payload", () => {
         connector_context_schema: string().optional(),
         connector_context_builtin_decrypt_count: number().optional(),
         connector_context_builtin_decrypt_count_bucket: string().optional(),
+        preparation_phase: string().optional(),
         duration_ms: number().optional(),
         _time: string().optional(),
       });
@@ -1689,6 +1690,7 @@ describe("selected eager Axiom operation payload", () => {
         expect(matches).toHaveLength(1);
         expect(matches[0]).toMatchObject({
           connector_context_builtin_decrypt_count: actualDecrypts,
+          preparation_phase: "claim",
           connector_context_builtin_decrypt_count_bucket:
             expectedCount === 2 ? "2_4" : String(expectedCount),
           duration_ms: expect.any(Number),

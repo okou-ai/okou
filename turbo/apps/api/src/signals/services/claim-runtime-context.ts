@@ -143,6 +143,7 @@ export function createClaimRuntimeContext(input$: ClaimInput$) {
     packages$,
     environment$,
     storage$,
+    connectorTiming$: connectors.timing$,
   });
 }
 
@@ -316,7 +317,7 @@ function createClaimConnectorContext(
       dispatchTiming$: timing$,
     },
   );
-  return { bodyEnvironment$, connectorEnvironment$ };
+  return { bodyEnvironment$, connectorEnvironment$, timing$ };
 }
 
 function createClaimModel(run$: ClaimRun$, global: GlobalModels) {
@@ -710,6 +711,9 @@ function createClaimPreparedContext(
     readonly packages$: ReturnType<typeof createClaimPackages>;
     readonly environment$: ReturnType<typeof createClaimEnvironment>;
     readonly storage$: ReturnType<typeof createClaimStorage>;
+    readonly connectorTiming$: ReturnType<
+      typeof createClaimConnectorContext
+    >["timing$"];
   },
 ) {
   return computed(async (get) => {
@@ -764,6 +768,7 @@ function createClaimPreparedContext(
       context: prepared,
       secrets: environment.secrets ?? null,
       storageCacheWrites: storage.cacheWrites,
+      connectorOperationTimings: get(dependencies.connectorTiming$).snapshot(),
     };
   });
 }

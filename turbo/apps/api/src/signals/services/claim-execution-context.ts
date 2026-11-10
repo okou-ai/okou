@@ -70,6 +70,7 @@ export function createClaimExecutionContext(
         hydrationMs: undefined,
         secrets: null,
         storageCacheWrites: [],
+        connectorOperationTimings: [],
       };
     }
     const startedAt = monotonicNow();
@@ -91,6 +92,7 @@ export function createClaimExecutionContext(
       hydrationMs: monotonicNow() - startedAt,
       secrets: runtime.value.secrets,
       storageCacheWrites: runtime.value.storageCacheWrites,
+      connectorOperationTimings: runtime.value.connectorOperationTimings,
     };
   });
 }

@@ -127,6 +127,10 @@ import {
 import { dispatchCompleteSideEffects$ } from "../services/agent-run-lifecycle.service";
 import { scheduleReleasedSlotPicks$ } from "../services/agent-run-slot-scheduling.service";
 import {
+  recordClaimPreparationTimings,
+  type ApiDispatchTimingRecord,
+} from "../services/api-dispatch-timing.service";
+import {
   commitFailedQueuedRun$,
   type ReleasedRunSlot,
 } from "../services/agent-run-terminal-transition.service";
@@ -1909,8 +1913,15 @@ function scheduleSuccessfulClaimSideEffects(args: {
   readonly secretNames: readonly string[];
   readonly secretValues: ExecutionContext["secretValues"];
   readonly networkPolicies: ExecutionContext["networkPolicies"];
+  readonly connectorOperationTimings: readonly ApiDispatchTimingRecord[];
 }): void {
   const { job, run } = args.jobWithRun;
+  recordClaimPreparationTimings({
+    runId: run.id,
+    runnerGroup: job.runnerGroup,
+    profile: job.profile,
+    records: args.connectorOperationTimings,
+  });
   recordClaimedRunContextSnapshot({
     runId: run.id,
     userId: run.userId,
@@ -2297,6 +2308,7 @@ const resolveStoredExecutionContextForClaim$ = command(
       hydrationMs,
       secrets,
       storageCacheWrites,
+      connectorOperationTimings,
     } = materialized;
     args.timing.recordElapsed(
       "claim_route_context_parse",
@@ -2351,6 +2363,7 @@ const resolveStoredExecutionContextForClaim$ = command(
     return {
       compatible: true as const,
       storageCacheWrites,
+      connectorOperationTimings,
       secretNames: Object.keys(secrets ?? {}),
       value: {
         ...storedContextResult.data,
@@ -2477,6 +2490,7 @@ const claimAuthorizedJob$ = command(
     );
     scheduleSuccessfulClaimSideEffects({
       jobWithRun,
+      connectorOperationTimings: storedContextResult.connectorOperationTimings,
       authType: args.authType,
       storedContext,
       claimRequestStartedAtMs: args.claimRequestStartedAtMs,
