@@ -19,13 +19,15 @@ final class ConversationHistoryFixture: Sendable {
     snapshot: ChatHTTPFixture.Handler? = nil,
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
+    eventRows: ChatHTTPFixture.Handler? = nil,
     detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
     self.init(
       rows: (0..<count).map { Self.row($0 + 1) }, beforeRequest: beforeRequest, snapshot: snapshot,
       threadSnapshot: threadSnapshot,
-      beforeEventRows: beforeEventRows, detail: detail, additional: additional,
+      beforeEventRows: beforeEventRows, eventRows: eventRows, detail: detail,
+      additional: additional,
       indicators: indicators)
   }
 
@@ -36,6 +38,7 @@ final class ConversationHistoryFixture: Sendable {
     snapshot: ChatHTTPFixture.Handler? = nil, send: ChatHTTPFixture.Handler? = nil,
     threadSnapshot: ChatHTTPFixture.Handler? = nil,
     beforeEventRows: (@Sendable (URLRequest) async throws -> Void)? = nil,
+    eventRows: ChatHTTPFixture.Handler? = nil,
     detail: ChatHTTPFixture.Handler? = nil, additional: ChatHTTPFixture.Handler? = nil,
     indicators: ChatHTTPFixture.Handler? = nil
   ) {
@@ -105,6 +108,7 @@ final class ConversationHistoryFixture: Sendable {
             "{\"error\":{\"code\":\"CHAT_EVENT_SNAPSHOT_NOT_FOUND\",\"message\":\"No snapshot\"}}")
       case path + "/event-rows":
         try await beforeEventRows?(request)
+        if let eventRows { return try await eventRows(request) }
         let after =
           URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
           .queryItems?.first { $0.name == "sinceSeqId" }?.value.flatMap(Int.init) ?? 0

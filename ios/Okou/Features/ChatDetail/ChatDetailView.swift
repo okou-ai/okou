@@ -1,3 +1,4 @@
+import CCStateSwiftUI
 import ChatDomain
 import SwiftUI
 import Textual
@@ -181,8 +182,18 @@ struct ChatDetailView: View {
   }
 
   var body: some View {
+    StoreProvider(conversation.reads.store) {
+      ConversationReadValue(reads: conversation.reads) { history, recovery in
+        content(historyRead: history, recoveryRead: recovery)
+      }
+    }
+  }
+
+  private func content(
+    historyRead: Loadable<ChatHistory?>, recoveryRead: Loadable<Bool?>
+  ) -> some View {
     let displayedMessages = conversation.visibleMessages
-    ConversationCollectionView(
+    return ConversationCollectionView(
       rows: rows, markdown: conversation.messageMarkdown, renderContext: renderContext,
       measurements: conversation.measurements,
       contentInsets: EdgeInsets(
@@ -191,7 +202,7 @@ struct ChatDetailView: View {
       scroll: scrolling.scroll,
       followsBottom: scrolling.followsBottom, sidebar: sidebar,
       sendTransition: scrolling.sendTransition,
-      isLoadingHistory: conversation.isLoading && conversation.history == nil,
+      isLoadingHistory: historyRead.state == .loading && conversation.history == nil,
       phaseChanged: scrolling.phaseChanged, metricsChanged: scrolling.metricsChanged,
       rowsPresented: { id in
         scrolling.rowsPresented(firstItemID: id)
@@ -209,12 +220,14 @@ struct ChatDetailView: View {
     }
     .ignoresSafeArea(.container, edges: .vertical)
     .overlay {
-      if conversation.history == nil && conversation.historySyncError != nil {
+      if conversation.history == nil, let error = historyRead.error,
+        !(error is CancellationError)
+      {
         OkouEmptyState(
           "Unable to load chat", icon: "message-circle-warning",
           description: Text("Check your connection and try again. Your draft is still here.")
         ) {
-          Button("Try again") { Task { await conversation.refresh() } }
+          Button("Try again") { Task { await conversation.refresh(read: .history) } }
             .buttonStyle(OkouButtonStyle(isPrimary: false, isCompact: true))
         }
       }
@@ -313,8 +326,9 @@ struct ChatDetailView: View {
         if let issue = conversation.stopIssue {
           OkouBanner(Text(issue), icon: "circle-stop") {
             Button("Check status") { Task { await conversation.refresh() } }
-              .disabled(conversation.isLoading)
-            if conversation.historySyncError == nil && history.canStop {
+              .disabled(historyRead.state == .loading || recoveryRead.state == .loading)
+            if conversation.historySyncError == nil && recoveryRead.error == nil && history.canStop
+            {
               Button("Stop again") { Task { await conversation.stop() } }
                 .disabled(conversation.isStopping)
             }
@@ -597,4 +611,22 @@ private struct ConversationEarlierMessagesButton: View {
     .accessibilityIdentifier("load-earlier-messages")
     .padding(.horizontal, OkouSpace.xl)
   }
+}
+
+/// These are the original resident Tasks, not another per-view HTTP request or phase mirror.
+private struct ConversationReadValue<Content: View>: View {
+  @LoadableValue private var history: Loadable<ChatHistory?>
+  @LoadableValue private var recovery: Loadable<Bool?>
+  let content: (Loadable<ChatHistory?>, Loadable<Bool?>) -> Content
+
+  init(
+    reads: ConversationReadResources,
+    @ViewBuilder content: @escaping (Loadable<ChatHistory?>, Loadable<Bool?>) -> Content
+  ) {
+    _history = LoadableValue(task: reads.history)
+    _recovery = LoadableValue(task: reads.recovery)
+    self.content = content
+  }
+
+  var body: some View { content(history, recovery) }
 }
