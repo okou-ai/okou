@@ -1,10 +1,11 @@
 import { useGet, useLastLoadable, useSet } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { CircleCheck, EllipsisVertical, Mail } from "lucide-react";
-import { Badge, Button, cn, surfaceVariants } from "@okouai/ui";
+import { Badge, Button, surfaceVariants } from "@okouai/ui";
 import {
   Popover,
   PopoverContent,
+  PopoverClose,
   PopoverTrigger,
 } from "@okouai/ui/components/ui/popover";
 import {
@@ -18,18 +19,15 @@ import {
   disconnectEmail$,
   emailLinkStatus$,
   setEmailConnectDialogOpen$,
+  openEmailManageDialog$,
+  emailConnectDialogOpen$,
+  emailConnectionTriggerRef$,
 } from "../../signals/okou-page/email.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { EmailConnectDialog } from "./email-connect-dialog.tsx";
 
-function EmailDisconnectAction({
-  email,
-  showAddress,
-}: {
-  readonly email: string;
-  readonly showAddress: boolean;
-}) {
+function EmailDisconnectAction({ email }: { readonly email: string }) {
   const { t } = useTranslation();
   const [operation, disconnect] = useLoadableSet(disconnectEmail$);
   const signal = useGet(pageSignal$);
@@ -50,12 +48,6 @@ function EmailDisconnectAction({
               : $.connectors.actions.disconnect;
           })}
         </span>
-        {showAddress ? (
-          <>
-            {" "}
-            <span className="truncate">{email}</span>
-          </>
-        ) : null}
       </button>
       {operation.state === "hasError" ? (
         <p role="alert" className="px-3 py-2 text-sm text-destructive">
@@ -72,6 +64,9 @@ export function EmailCard() {
   const { t } = useTranslation();
   const status = useLastLoadable(emailLinkStatus$);
   const setConnectOpen = useSet(setEmailConnectDialogOpen$);
+  const manage = useSet(openEmailManageDialog$);
+  const dialogOpen = useGet(emailConnectDialogOpen$);
+  const setTrigger = useSet(emailConnectionTriggerRef$);
   const emails = status.state === "hasData" ? status.data.emails : [];
   const email = emails[0];
   return (
@@ -119,6 +114,7 @@ export function EmailCard() {
                 <PopoverTrigger
                   render={
                     <Button
+                      ref={setTrigger}
                       showTooltip
                       type="button"
                       variant="quiet"
@@ -134,25 +130,27 @@ export function EmailCard() {
                 />
                 <PopoverContent
                   align="end"
-                  className={cn(
-                    "flex flex-col gap-0.5 p-2",
-                    emails.length > 1 ? "w-64" : "w-40",
-                  )}
+                  className="flex w-40 flex-col gap-0.5 p-2"
+                  // Manage hands focus to the dialog, which returns to the card action.
+                  finalFocus={dialogOpen ? false : undefined}
                 >
-                  {emails.map((address) => {
-                    return (
-                      <EmailDisconnectAction
-                        key={address}
-                        email={address}
-                        showAddress={emails.length > 1}
-                      />
-                    );
-                  })}
+                  <PopoverClose
+                    className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-state-hover hover:text-accent-foreground"
+                    onClick={manage}
+                  >
+                    {t(($) => {
+                      return $.works.email.manage;
+                    })}
+                  </PopoverClose>
+                  {emails.length === 1 ? (
+                    <EmailDisconnectAction email={email} />
+                  ) : null}
                 </PopoverContent>
               </Popover>
             </>
           ) : status.state === "hasData" && status.data.configured ? (
             <Button
+              ref={setTrigger}
               type="button"
               variant="outline"
               size="sm"

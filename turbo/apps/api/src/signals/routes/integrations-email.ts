@@ -16,7 +16,6 @@ import { publishUserSignal } from "../external/realtime";
 import { loadUserFeatureSwitchContext$ } from "../services/feature-switches.service";
 import {
   EMAIL_CHANNEL_ADDRESS,
-  linkEmailIdentity$,
   processEmailChannelMessage$,
   validEmailConnectionSignature,
   ownsVerifiedEmail,
@@ -28,6 +27,11 @@ import {
 } from "../../lib/error";
 import { optionalEnv } from "../../lib/env";
 import { nowDate } from "../../lib/time";
+import {
+  linkEmailIdentity$,
+  createEmailConnectionCode$,
+  connectedMailAccounts$,
+} from "../services/email-connection.service";
 import type { RouteEntry } from "../route-entry";
 
 const enabled$ = command(async ({ get, set }, signal: AbortSignal) => {
@@ -52,10 +56,12 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
         eq(emailUserLinks.orgId, auth.orgId),
         isNull(emailUserLinks.disconnectedAt),
       ),
-    );
+    )
+    .orderBy(emailUserLinks.createdAt, emailUserLinks.id);
   signal.throwIfAborted();
   const user = await get(clerk$).users.getUser(auth.userId, undefined, signal);
   signal.throwIfAborted();
+  const accounts = await set(connectedMailAccounts$, auth, signal);
   return {
     status: 200 as const,
     body: {
@@ -68,13 +74,20 @@ const getLinkStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
       }),
       availableEmails: user.banned
         ? []
-        : user.emailAddresses
-            .filter((entry) => {
-              return entry.verification?.status === "verified";
-            })
-            .map((entry) => {
-              return entry.emailAddress.toLowerCase();
-            }),
+        : [
+            ...new Set([
+              ...accounts.flatMap((account) => {
+                return account.email ? [account.email.toLowerCase()] : [];
+              }),
+              ...user.emailAddresses
+                .filter((entry) => {
+                  return entry.verification?.status === "verified";
+                })
+                .map((entry) => {
+                  return entry.emailAddress.toLowerCase();
+                }),
+            ]),
+          ],
     },
   };
 });
@@ -93,14 +106,23 @@ const connectAddress$ = command(async ({ get, set }, signal: AbortSignal) => {
   const email = body.data.emailAddress.toLowerCase();
   const user = await get(clerk$).users.getUser(auth.userId, undefined, signal);
   signal.throwIfAborted();
-  if (!ownsVerifiedEmail(user, email)) {
+  const accounts = await set(connectedMailAccounts$, auth, signal);
+  const account = accounts.find((entry) => {
+    return entry.email?.toLowerCase() === email;
+  });
+  if (user.banned || (!ownsVerifiedEmail(user, email) && !account)) {
     return resourceUnavailable(
       "Connect a verified email address belonging to your account.",
     );
   }
   const link = await set(
     linkEmailIdentity$,
-    { email, userId: auth.userId, orgId: auth.orgId, reconnect: true },
+    {
+      email,
+      userId: auth.userId,
+      orgId: auth.orgId,
+      reconnect: true,
+    },
     signal,
   );
   signal.throwIfAborted();
@@ -193,11 +215,32 @@ const unlink$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 204 as const, body: undefined };
 });
 
+const createLinkCode$ = command(async ({ get, set }, signal: AbortSignal) => {
+  if (
+    !(await set(enabled$, signal)) ||
+    !optionalEnv("RESEND_API_KEY") ||
+    !optionalEnv("RESEND_WEBHOOK_SECRET")
+  ) {
+    return resourceUnavailable("Email integration is not available");
+  }
+  const owner = get(organizationAuthContext$);
+  const user = await get(clerk$).users.getUser(owner.userId, undefined, signal);
+  signal.throwIfAborted();
+  if (user.banned) {
+    return resourceUnavailable("Email integration is not available");
+  }
+  return {
+    status: 200 as const,
+    body: await set(createEmailConnectionCode$, owner, signal),
+  };
+});
+
 const auth = {
   requireOrganization: true,
   missingOrganizationStatus: 401,
 } as const;
 export const integrationsEmailRoutes: readonly RouteEntry[] = [
+  { route: contract.createLinkCode, handler: authRoute(auth, createLinkCode$) },
   { route: contract.connectAddress, handler: authRoute(auth, connectAddress$) },
   { route: contract.getLinkStatus, handler: authRoute(auth, getLinkStatus$) },
   { route: contract.connect, handler: authRoute(auth, connect$) },

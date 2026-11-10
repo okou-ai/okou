@@ -14,7 +14,6 @@ import { conflict } from "../../lib/error";
 import { db$, writeDb$ } from "../external/db";
 import { clerk$ } from "../external/clerk";
 import { findClerkUser } from "../external/clerk-users";
-import { ownsVerifiedEmail } from "./email-channel.service";
 import { getMemberRoleAndUpdateCache$ } from "./auth.service";
 import { emailChannelOutboxValues } from "./email-channel-delivery.service";
 import { emailTemplateSchema } from "./email-common.service";
@@ -101,7 +100,7 @@ export const emailFileDestination$ = command(
     }
     const user = await findClerkUser(get(clerk$), args.userId, signal);
     signal.throwIfAborted();
-    if (!user || !ownsVerifiedEmail(user, destination.emailAddress)) {
+    if (!user || user.banned) {
       return null;
     }
     const role = await set(

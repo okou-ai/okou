@@ -1,3 +1,4 @@
+import { connectEmailFromMailAccount$ } from "./email-connection.service";
 import {
   builtinDeletionSqlResultSchema,
   deletionProjectionPreparationRead,
@@ -2386,6 +2387,17 @@ export const finalizeBuiltinConnectorTokenConnection$ = command(
       signal,
     );
     signal.throwIfAborted();
+    await set(
+      connectEmailFromMailAccount$,
+      {
+        orgId: prepared.orgId,
+        userId: prepared.userId,
+        connectorSlug: prepared.runtimeMethod.connectorSlug,
+        email: prepared.userInfo.email,
+        featureSwitchContext: prepared.featureSwitchContext,
+      },
+      signal,
+    );
     return {
       status: "connected",
       connector: storedBuiltinConnectorRowToResponse(

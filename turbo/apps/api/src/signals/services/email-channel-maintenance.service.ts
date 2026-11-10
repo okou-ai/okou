@@ -3,6 +3,7 @@ import { and, eq, isNull, lt } from "drizzle-orm";
 import { uuid, string } from "zod";
 import {
   emailChannelMessages,
+  emailConnectionCodes,
   emailUserLinks,
 } from "@okouai/db/schema/email-integration";
 import { writeDb$ } from "../external/db";
@@ -40,6 +41,10 @@ export const cleanupUnconnectedEmailMessages$ = command(
   async ({ set }, signal: AbortSignal) => {
     const cutoff = new Date(nowDate().getTime() - 30 * 24 * 60 * 60 * 1000);
     await set(writeDb$)
+      .delete(emailConnectionCodes)
+      .where(lt(emailConnectionCodes.expiresAt, cutoff));
+    signal.throwIfAborted();
+    await set(writeDb$)
       .delete(emailChannelMessages)
       .where(
         and(
@@ -65,6 +70,19 @@ export const deleteEmailOwnerData$ = command(
       | { readonly kind: "user"; readonly userId: string },
     signal: AbortSignal,
   ) => {
+    await set(writeDb$)
+      .delete(emailConnectionCodes)
+      .where(
+        owner.kind === "owner"
+          ? and(
+              eq(emailConnectionCodes.orgId, owner.orgId),
+              eq(emailConnectionCodes.userId, owner.userId),
+            )
+          : owner.kind === "organization"
+            ? eq(emailConnectionCodes.orgId, owner.orgId)
+            : eq(emailConnectionCodes.userId, owner.userId),
+      );
+    signal.throwIfAborted();
     await set(writeDb$)
       .delete(emailUserLinks)
       .where(

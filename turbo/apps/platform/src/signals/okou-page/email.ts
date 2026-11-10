@@ -7,14 +7,53 @@ import { accept } from "../../lib/accept.ts";
 import { searchParams$ } from "../route.ts";
 import { setAblyLoop$ } from "../realtime.ts";
 import { featureSwitch$ } from "../external/feature-switch.ts";
+import { onRef } from "../utils.ts";
 
 const reload$ = state(0);
-const internalConnectDialogOpen$ = state(false);
+const internalEmails$ = state<readonly string[] | null>(null);
+const internalDialogMode$ = state<"connect" | "manage" | null>(null);
+const internalTrigger$ = state<HTMLButtonElement | null>(null);
+export const emailConnectionTriggerRef$ = onRef(
+  command(({ set }, element: HTMLButtonElement, signal: AbortSignal) => {
+    set(internalTrigger$, element);
+    signal.addEventListener(
+      "abort",
+      () => {
+        set(internalTrigger$, null);
+      },
+      { once: true },
+    );
+  }),
+);
+export const emailConnectionFinalFocus$ = command(({ get }) => {
+  return get(internalTrigger$);
+});
+export const emailConnectionDialogMode$ = computed((get) => {
+  return get(internalDialogMode$);
+});
+export const openEmailManageDialog$ = command(({ set }) => {
+  set(internalDialogMode$, "manage");
+});
+export const createEmailConnectionCode$ = command(
+  async ({ get }, signal: AbortSignal) => {
+    const response = await accept(
+      get(apiClient$)(integrationsEmailContract).createLinkCode({
+        headers: {},
+        fetchOptions: { signal },
+      }),
+      [200],
+      signal,
+      { showErrorToast: false },
+    );
+    signal.throwIfAborted();
+    return response.body;
+  },
+);
 export const emailConnectDialogOpen$ = computed((get) => {
-  return get(internalConnectDialogOpen$);
+  return get(internalDialogMode$) !== null;
 });
 export const setEmailConnectDialogOpen$ = command(({ set }, open: boolean) => {
-  set(internalConnectDialogOpen$, open);
+  set(internalDialogMode$, open ? "connect" : null);
 });
 const connectionRequest$ = state<Promise<{
   readonly emailAddress: string;
@@ -113,7 +152,9 @@ export const connectVerifiedEmail$ = command(
     );
     signal.throwIfAborted();
     set(reloadEmailLinkStatus$);
-    set(setEmailConnectDialogOpen$, false);
+    if (get(internalDialogMode$) === "connect") {
+      set(setEmailConnectDialogOpen$, false);
+    }
   },
 );
 const reloadEmailLinkStatus$ = command(({ set }) => {
@@ -123,10 +164,17 @@ const reloadEmailLinkStatus$ = command(({ set }) => {
 });
 const refreshEmailFromChange$ = command(
   async ({ get, set }, signal: AbortSignal) => {
+    const previous = get(internalEmails$);
     set(reloadEmailLinkStatus$);
     const status = await get(emailLinkStatus$);
     signal.throwIfAborted();
-    if (status.emails.length > 0) {
+    set(internalEmails$, status.emails);
+    if (
+      get(internalDialogMode$) === "connect" &&
+      status.emails.some((email) => {
+        return !(previous ?? []).includes(email);
+      })
+    ) {
       set(setEmailConnectDialogOpen$, false);
     }
     return false;
@@ -137,12 +185,22 @@ export const watchEmailConnection$ = command(
     if (!get(featureSwitch$)[FeatureSwitchKey.EmailIntegration]) {
       return;
     }
+    set(internalEmails$, null);
     set(
       setAblyLoop$,
       {
         topic: "email:changed",
         loopCommand$: refreshEmailFromChange$,
         options: { runOnSubscribe: true },
+      },
+      signal,
+    );
+    set(
+      setAblyLoop$,
+      {
+        topic: "connector:changed",
+        loopCommand$: refreshEmailFromChange$,
+        options: { runOnSubscribe: false },
       },
       signal,
     );
