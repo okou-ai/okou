@@ -361,7 +361,6 @@ const allEventDrivenChatThreads$ = computed((get) => {
   return replayChatThreadEvents(
     get(chatThreadsSnapshot$),
     get(allChatThreadsEvents$),
-    { includeHidden: true },
   );
 });
 

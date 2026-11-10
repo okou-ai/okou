@@ -90,7 +90,8 @@ describe("okou chat get command", () => {
     );
   });
 
-  it("prints JSON output when --json is passed", async () => {
+  it("prints a hidden thread as JSON when its ID is specified", async () => {
+    vi.stubEnv("OKOU_CHAT_THREAD_ID", undefined);
     server.use(
       http.get(GET_URL, () => {
         return HttpResponse.json({
@@ -98,11 +99,19 @@ describe("okou chat get command", () => {
           agentId: AGENT_ID,
           title: "Launch plan",
           selectedModel: "claude-sonnet-5",
+          hidden: true,
         });
       }),
     );
 
-    await chatCommand.parseAsync(["node", "cli", "get", "--json"]);
+    await chatCommand.parseAsync([
+      "node",
+      "cli",
+      "get",
+      "--thread-id",
+      THREAD_ID,
+      "--json",
+    ]);
 
     expect(JSON.parse(String(mockConsoleLog.mock.calls[0]?.[0]))).toStrictEqual(
       {
@@ -110,6 +119,7 @@ describe("okou chat get command", () => {
         agentId: AGENT_ID,
         title: "Launch plan",
         selectedModel: "claude-sonnet-5",
+        hidden: true,
         url: `http://localhost:3000/chats/${THREAD_ID}`,
       },
     );
