@@ -484,11 +484,8 @@ final class ThreadListStore {
     let pending = optimisticChanges.last {
       $0.change.kind == .projectUpdated && $0.change.chatThreadId == id
     }
-    guard current.projectId != projectID
-      || (pending.map { $0.change.projectId == projectID } ?? false)
-    else {
-      return false
-    }
+    let retry = pending.map { $0.change.projectId == projectID } ?? false
+    guard current.projectId != projectID || retry else { return false }
     let eventID: String
     if let pending, pending.change.projectId == projectID {
       eventID = pending.id
