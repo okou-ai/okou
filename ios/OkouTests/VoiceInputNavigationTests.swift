@@ -178,19 +178,15 @@ final class VoiceInputNavigationTests: XCTestCase {
     workspace.newChatDraft = "Keep the pending draft"
     let voice = try XCTUnwrap(workspace.newComposer.voice)
     addTeardownBlock { @MainActor in await voice.discard() }
-    let host = UIHostingController(
-      rootView: VoiceEntryHarness(workspace: workspace, isAuthenticated: false))
-    let window = try await mountMentionHost(host)
-    addTeardownBlock { @MainActor in unmount(window) }
     let requests = NewChatRequests.shared
     defer {
       if let id = requests.pendingID { requests.consume(id) }
     }
 
     _ = try await VoiceInputIntent().perform()
-    NewChatSceneDelegate().sceneDidEnterBackground(try XCTUnwrap(window.windowScene))
-    host.rootView = VoiceEntryHarness(workspace: workspace, isAuthenticated: true)
-    try await hostingPresentationFrame()
+    let scene = try XCTUnwrap(UIApplication.shared.connectedScenes.first as? UIWindowScene)
+    NewChatSceneDelegate().sceneDidEnterBackground(scene)
+    XCTAssertFalse(requests.open(in: workspace))
     XCTAssertEqual(workspace.selectedThreadID, AttachmentFlowFixture.threadID)
     XCTAssertEqual(voice.phase, .idle)
     XCTAssertEqual(workspace.newChatDraft, "Keep the pending draft")

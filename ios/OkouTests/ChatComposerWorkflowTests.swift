@@ -38,7 +38,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertEqual(
       workspace.newComposer.document.parts.filter { $0["type"]?.string != "text" }, references)
     XCTAssertTrue(input.isFirstResponder)
-    try await hostingPresentationFrame()
+    try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
     try await eventually { input.text.contains("/rel after") }
     XCTAssertEqual(
@@ -85,7 +85,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     XCTAssertTrue(input.isFirstResponder)
     XCTAssertTrue(source.recentIDs().isEmpty)
     XCTAssertTrue(fixture.state.value.withLock { $0.messages.isEmpty })
-    try await hostingPresentationFrame()
+    try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
     try await waitForBusinessResult { conversation.draft == "🌷 Keep /rel tail" }
     input.undoManager?.redo()

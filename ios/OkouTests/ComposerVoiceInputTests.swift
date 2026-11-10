@@ -579,8 +579,7 @@ final class ComposerVoiceInputTests: XCTestCase {
 
   func testLateMicrophonePermissionCannotStartRecordingInAReplacementDraft() async throws {
     let fixture = VoiceComposerFixture()
-    let root = temporaryRoot()
-    defer { try? FileManager.default.removeItem(at: root) }
+    let root = temporaryRootWithTeardown()
     let capture = VoiceCaptureFixture()
     let gate = VoiceResponseGate(
       started: expectation(description: "Microphone permission requested"))
