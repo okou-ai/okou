@@ -245,42 +245,50 @@ separately from compilation, automated tests, and release publication.
 
 ## SwiftLint
 
-SwiftLint 0.65.1 checks safety and lint directives; Xcode's existing
-`swift-format` checks continue to own formatting. Install the official macOS
-binary and run the shared entry point from the repository root:
+SwiftLint 0.65.1 includes the repository's [native rules](../docs/ios/ios-lint.md)
+through its SwiftLintExtraRules extension. `swift-format` owns formatting.
+Build the pinned source and run the shared entry point from the repository root:
 
 ```sh
 bash ios/scripts/install-swiftlint.sh
 bash ios/scripts/lint.sh
+python3 ios/Tools/SwiftLint/Tests/rules.test.py
 ```
 
-The installer reads `.swiftlint-version`, verifies the release archive's SHA-256
-and binary version, and publishes it under ignored `ios/.tools/`. Its stdout is
-only the binary path; `--path-only` uses an existing installation without a
-download. It requires Bash, curl, shasum and unzip. `lint.sh` uses
-`SWIFTLINT_BIN`, a `swiftlint` on PATH, or that local installation, in that order;
-the binary must match the pinned version. It never installs or fixes code.
+A first installation requires Python 3.9+, Git, and a compatible Swift toolchain
+(Xcode 27.1 on macOS; CI uses Swift 6.4.2 on Ubuntu 24.04). It fetches the exact
+commit in `.swiftlint-version`, uses upstream's locked SwiftPM dependencies,
+and overlays only the native rule module. No App build or SourceKit is required.
+`SWIFTLINT_BUILD_JOBS` controls compiler parallelism (default 2). The native
+SwiftPM engine and per-file compilation bound cold-build compiler memory.
+Toolchain upgrades must revalidate that build mode.
 
-The explicit rules are `force_cast`, `force_try`, `duplicate_imports`,
-`unused_closure_parameter`, `invalid_swiftlint_command` and
-`superfluous_disable_command`. They use SwiftSyntax and run without SourceKit.
-App, Push, both packages, package manifests and test sources are included;
-generated Swift and build output are excluded. Test/test-support overrides allow
-only force casts and force tries. All other checks remain active there.
-Do not grow those exceptions, add suppressions or introduce a baseline to hide
-production findings.
+The installer publishes a binary, license and receipt under ignored
+`ios/.tools/swiftlint/`. Stdout is only the verified binary path. `--path-only`
+verifies an existing binary without a compiler, network or build. Source/rule
+fingerprints and the binary SHA-256 are checked before execution. `lint.sh` uses
+an explicitly supplied `SWIFTLINT_BIN`, otherwise the verified local installation;
+an ordinary official binary cannot replace the custom build. The lint entry
+point never downloads, builds or fixes code.
 
-Run the wrapper rather than passing `--config` to SwiftLint: explicit config
-paths disable its directory-specific configuration discovery. The wrapper uses
-strict mode and rejects configuration warnings, including unknown rule names.
-CI emits GitHub annotations; local output uses Xcode diagnostics.
+The six safety/directive rules remain active alongside the six `okou_*` rules
+listed in `.swiftlint.yml`. App, Push, packages, tests and rule implementations
+are included. Generated Swift and build output are excluded. Test/test-support
+overrides relax only force casts and force tries; do not add baselines,
+suppressions or broader exclusions to hide findings.
 
-CI uses the official Linux image pinned by digest in `ios.yml`. Linux callers
-can use that same image, mounting the repository and running
-`bash ios/scripts/lint.sh` with a Bash entry point. To upgrade, update the macOS
-version/checksum and CI image together, then run the full lint and
-`bash ios/scripts/test-lint.sh` with that installed version. Installer regression
-tests run with `python3 ios/scripts/install-swiftlint.test.py`.
+Run the wrapper rather than passing `--config`: explicit config paths disable
+directory-specific overrides. Strict mode and configuration-warning checks
+reject unknown rules. CI emits GitHub annotations; local output uses Xcode
+diagnostics.
+
+CI builds/caches the custom binary in a dedicated Linux job, runs its real CLI
+fixtures, and transfers the binary plus receipt to the existing five-minute lint
+job. Both jobs use the same digest-pinned Swift image. The artifact name survives
+downstream-only reruns; every use still verifies current inputs. Update source
+revision/version and relevant toolchain pins together. Validate with the commands
+above, `bash ios/scripts/test-lint.sh`, and
+`python3 ios/scripts/install-swiftlint.test.py`.
 
 ## CI
 

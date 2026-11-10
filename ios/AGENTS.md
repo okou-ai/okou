@@ -33,9 +33,10 @@ implementing, or reviewing native UI.
 
 - Run `bash ios/scripts/lint.sh` after Swift changes. Install the pinned version
   with `bash ios/scripts/install-swiftlint.sh`; see [the README](README.md#swiftlint).
-- `swift-format` owns formatting; SwiftLint owns the explicit safety rules in
-  `.swiftlint.yml`. The initial rules are SwiftSyntax-only, with no App build or
-  SourceKit requirement. Keep the macOS pin and CI image on the same release.
+- `swift-format` owns formatting; SwiftLint owns the explicit safety and
+  [native syntax rules](../docs/ios/ios-lint.md) in `.swiftlint.yml`. Use the
+  source/receipt-verified custom binary on macOS and Linux. It needs neither
+  SourceKit nor an App build; keep source and toolchain pins aligned.
 - Test and test-support directories relax only force casts and force tries.
   Fix production findings at their source; do not add a baseline, inline
   suppression or broader exclusions just to pass CI.

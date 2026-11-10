@@ -194,7 +194,8 @@ mechanism supported by the measurement. Simulator timing does not establish
 device performance; fewer properties or lines do not establish a speedup.
 
 Review state ownership, resource cancellation, cache bounds, confirmed-write
-semantics, and native interaction explicitly. SwiftLint currently checks the
-safety rules configured in `ios/.swiftlint.yml`; it does not enforce CCState
-ownership. A lint pass, successful build, passing tests, native acceptance,
-release availability, and observed production behavior are separate evidence.
+semantics, and native interaction explicitly. SwiftLint checks the configured
+safety rules and [native graph/request syntax boundaries](ios-lint.md); a pass
+does not prove complete ownership. A lint pass, successful build, passing tests,
+native acceptance, release availability, and observed production behavior are
+separate evidence.

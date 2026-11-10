@@ -1,4 +1,3 @@
-# Keep the CI image in .github/workflows/ios.yml on the same release.
+# Immutable upstream source used by the native-rule build on macOS and Linux.
 version=0.65.1
-# SHA-256 of the official portable_swiftlint.zip macOS release asset.
-sha256=c1e429b0599cf1b516f369a2d9ec04eaf0e436f3c12b637df8851fa52ff694d0
+revision=6aba03e3d8302b33f106e0f922210f35ca4b52cf
