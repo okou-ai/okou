@@ -137,6 +137,8 @@ struct ChatSidebarView: View {
       }
     }
     .safeAreaBar(edge: .bottom, spacing: 0) { footer }
+    // VoiceOver's escape gesture returns to the chat, as the left swipe does.
+    .accessibilityAction(.escape, close)
     .background(OkouColor.sidebar)
     .task { await store.projects.activate() }
     .onDisappear { projectAction?.cancel() }
@@ -201,8 +203,9 @@ struct ChatSidebarView: View {
   }
 
   /// As Slack's: the workspace's logo as a glass button that opens the switcher, its name
-  /// beside it with no arrow, and on the right the way back to the chat the sidebar covers.
-  /// The name leaves once rows scroll under the bar; the glass buttons stay.
+  /// beside it with no arrow, and on the right the chat filter. A left swipe returns to the
+  /// chat the sidebar covers. The name leaves once rows scroll under the bar; the glass
+  /// buttons stay.
   private var header: some View {
     HStack(spacing: OkouSpace.md) {
       workspaceSwitcher
@@ -217,12 +220,7 @@ struct ChatSidebarView: View {
         .animation(OkouMotion.transition, value: isScrolled)
         // The switcher's label already names the workspace.
         .accessibilityHidden(true)
-      Button(action: close) {
-        OkouToolbarIcon("chevrons-right").modifier(OkouGlassControl(shape: .circle))
-      }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Back to chat")
-      .accessibilityIdentifier("back-to-chat")
+      threadFilterMenu
     }
     .frame(minHeight: headerHeight)
   }
@@ -275,7 +273,6 @@ struct ChatSidebarView: View {
   private var threadSection: some View {
     let contents = contents
     return Section {
-      threadMenu
       if let error = store.projects.readError {
         OkouBanner(Text(error), icon: "folder", tone: .problem) {
           Button("Retry") { Task { await store.projects.refresh() } }
@@ -471,50 +468,45 @@ struct ChatSidebarView: View {
 
   }
 
-  private var threadMenu: some View {
-    HStack {
-      Menu {
-        Picker("Chats", selection: threadFilter) {
-          Text(filterTitle(.recent)).tag(ThreadFilter.recent)
-          Text(filterTitle(.unread)).tag(ThreadFilter.unread)
-          Text(filterTitle(.archived)).tag(ThreadFilter.archived)
-          Text(filterTitle(.muted)).tag(ThreadFilter.muted)
-        }
-        .pickerStyle(.inline)
-        if let agentID = store.selectedAgentID {
-          Divider()
-          Button("Mark all as read") {
-            Task { await store.list.markAgentRead(agentID) }
-          }
-          .disabled(
-            store.list.markingAgentRead || !store.list.updatingThreads.isEmpty
-              || !store.list.unreadAgentIDs.contains(agentID))
-        }
-      } label: {
-        HStack(spacing: 5) {
-          Text(filterTitle(threadFilter.wrappedValue))
-            .lineLimit(1)
-          OkouIcon("chevron-down", size: OkouIconSize.inline)
-            .accessibilityHidden(true)
-        }
-        .font(.okou(.subheadline).weight(.semibold))
-        .foregroundStyle(OkouColor.mutedForeground)
-        .frame(minHeight: OkouControl.minimumTarget)
-        .contentShape(Rectangle())
+  /// The chat filter, top right. On the default Chats it is a glass circle; any other filter
+  /// names itself in a capsule, so a filtered list never reads as missing chats.
+  private var threadFilterMenu: some View {
+    let filter = threadFilter.wrappedValue
+    return Menu {
+      Picker("Chats", selection: threadFilter) {
+        Label(filterTitle(.recent), okouSymbol: "message-circle").tag(ThreadFilter.recent)
+        Label(filterTitle(.unread), okouSymbol: "mail").tag(ThreadFilter.unread)
+        Label(filterTitle(.archived), okouSymbol: "archive").tag(ThreadFilter.archived)
+        Label(filterTitle(.muted), okouSymbol: "bell-off").tag(ThreadFilter.muted)
       }
-      .buttonStyle(.plain)
-      .accessibilityLabel("Chat list")
-      .accessibilityValue(Text(filterTitle(threadFilter.wrappedValue)))
-      .accessibilityAddTraits(.isHeader)
-      .accessibilityIdentifier("chat-list-filter")
-      // The menu opens from what it is attached to: the label's own width, so it drops from
-      // "Chats ⌄" on the left instead of from the middle of a full-width row.
-      .frame(maxWidth: .infinity, alignment: .leading)
+      .pickerStyle(.inline)
+      if let agentID = store.selectedAgentID {
+        Divider()
+        Button("Mark all as read", okouSymbol: "check-check") {
+          Task { await store.list.markAgentRead(agentID) }
+        }
+        .disabled(
+          store.list.markingAgentRead || !store.list.updatingThreads.isEmpty
+            || !store.list.unreadAgentIDs.contains(agentID))
+      }
+    } label: {
+      if filter == .recent {
+        OkouToolbarIcon("list-filter").modifier(OkouGlassControl(shape: .circle))
+      } else {
+        HStack(spacing: OkouSpace.six) {
+          OkouToolbarIcon("list-filter")
+          Text(filterTitle(filter)).font(.okou(.callout).weight(.medium))
+        }
+        .lineLimit(1)
+        .padding(.horizontal, OkouSpace.lg)
+        .modifier(OkouGlassControl(shape: .capsule))
+      }
     }
     .buttonStyle(.plain)
-    .listRowInsets(EdgeInsets(top: 2, leading: rowInset, bottom: 0, trailing: rowInset))
-    .listRowSeparator(.hidden)
-    .listRowBackground(Color.clear)
+    .fixedSize()
+    .accessibilityLabel("Chat list")
+    .accessibilityValue(Text(filterTitle(filter)))
+    .accessibilityIdentifier("chat-list-filter")
   }
 
   private func readAction(_ thread: ChatThread, read: Bool) -> some View {
