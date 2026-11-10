@@ -356,11 +356,18 @@ const allChatThreadsEvents$ = computed((get) => {
   return [...persisted, ...optimistic] satisfies ChatThreadEventView[];
 });
 
-export const eventDrivenChatThreads$ = computed((get) => {
+// Hidden threads remain addressable; visibility only filters list consumers.
+const allEventDrivenChatThreads$ = computed((get) => {
   return replayChatThreadEvents(
     get(chatThreadsSnapshot$),
     get(allChatThreadsEvents$),
   );
+});
+
+export const eventDrivenChatThreads$ = computed((get) => {
+  return get(allEventDrivenChatThreads$).filter((thread) => {
+    return !thread.hidden;
+  });
 });
 
 export function optimisticChatThreadCreateUnsettled(threadId: string) {
@@ -371,7 +378,7 @@ export function optimisticChatThreadCreateUnsettled(threadId: string) {
 
 const canonicalThreadMetaMap$ = computed((get) => {
   const metaById = new Map<string, ThreadMeta>();
-  for (const thread of get(eventDrivenChatThreads$)) {
+  for (const thread of get(allEventDrivenChatThreads$)) {
     metaById.set(thread.id, {
       id: thread.id,
       agentId: thread.agentId,
