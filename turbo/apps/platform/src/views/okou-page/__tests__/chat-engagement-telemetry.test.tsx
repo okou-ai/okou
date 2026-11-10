@@ -203,67 +203,113 @@ describe("chat engagement telemetry", () => {
     ]);
   });
 
-  it("reports the selected recommended follow-up", async () => {
-    const threadId = "e7000000-0000-4000-a000-000000000103";
-    const followupPrompt = "Create a presentation outline";
-    mockChatLifecycle(context, {
-      threadId,
-      chatEvents: [
-        {
-          id: "msg-recommend-user",
-          role: "user",
-          content: "Package the launch plan",
-          runId: "run-recommend-telemetry",
-          createdAt: "2026-09-04T10:00:00Z",
-        },
-        {
-          id: "msg-recommend-assistant",
-          role: "assistant",
-          content: "The launch plan is ready.",
-          runId: "run-recommend-telemetry",
-          createdAt: "2026-09-04T10:00:10Z",
-        },
-        {
-          id: "msg-recommend-completed",
-          role: "assistant",
-          content: null,
-          runId: "run-recommend-telemetry",
-          runLifecycleEvent: "completed",
-          followups: [
+  it.each([
+    { touch: false, layout: "rows" },
+    { touch: true, layout: "quick-reply-rail" },
+  ])(
+    "reports recommendation frequency by kind in $layout",
+    async ({ touch, layout }) => {
+      context.mocks.browser.matchMedia((query) => {
+        return touch && query === "(pointer: coarse)";
+      });
+      const threadId = "e7000000-0000-4000-a000-000000000103";
+      const followupPrompt = "Create a presentation outline";
+      const workflowPrompt = "Save this process as a workflow";
+      const emailPrompt = "After I send it, notify me when they reply";
+      mockChatLifecycle(context, {
+        threadId,
+        chatEvents: [
+          {
+            id: "msg-recommend-user",
+            role: "user",
+            content: "Package the launch plan",
+            runId: "run-recommend-telemetry",
+            createdAt: "2026-09-04T10:00:00Z",
+          },
+          {
+            id: "msg-recommend-assistant",
+            role: "assistant",
+            content: "The launch plan is ready.",
+            runId: "run-recommend-telemetry",
+            createdAt: "2026-09-04T10:00:10Z",
+          },
+          {
+            id: "msg-recommend-completed",
+            role: "assistant",
+            content: null,
+            runId: "run-recommend-telemetry",
+            runLifecycleEvent: "completed",
+            followups: [
+              {
+                prompt: followupPrompt,
+                kind: "generate",
+                generationType: "presentation",
+              },
+              {
+                prompt: workflowPrompt,
+                kind: "workflow",
+              },
+              {
+                prompt: emailPrompt,
+                kind: "email",
+              },
+            ],
+            createdAt: "2026-09-04T10:00:20Z",
+          },
+        ],
+      });
+
+      await setupPage({ context, path: `/chats/${threadId}` });
+
+      click(
+        await waitFor(() => {
+          return buttonByText(followupPrompt);
+        }),
+      );
+
+      click(buttonByText(workflowPrompt));
+      click(buttonByText(emailPrompt));
+      // Re-selecting existing draft text is another click, not another impression.
+      click(buttonByText(workflowPrompt));
+
+      expect(capturedEvents("chat_recommended_followups_shown")).toStrictEqual([
+        [
+          "chat_recommended_followups_shown",
+          {
+            chat_thread_id: threadId,
+            assistant_message_id: "msg-recommend-completed:followups",
+            followup_layout: layout,
+            followup_count: 3,
+            workflow_followup_count: 1,
+            email_followup_count: 1,
+            followup_kinds: ["generate", "workflow", "email"],
+            generation_types: ["presentation"],
+          },
+        ],
+      ]);
+      expect(
+        capturedEvents("chat_recommended_followup_selected"),
+      ).toStrictEqual(
+        [
+          { index: 0, kind: "generate", generationType: "presentation" },
+          { index: 1, kind: "workflow", generationType: undefined },
+          { index: 2, kind: "email", generationType: undefined },
+          { index: 1, kind: "workflow", generationType: undefined },
+        ].map(({ index, kind, generationType }) => {
+          return [
+            "chat_recommended_followup_selected",
             {
-              prompt: followupPrompt,
-              kind: "generate",
-              generationType: "presentation",
+              chat_thread_id: threadId,
+              assistant_message_id: "msg-recommend-completed:followups",
+              followup_layout: layout,
+              followup_index: index,
+              followup_count: 3,
+              followup_kind: kind,
+              generation_type: generationType,
             },
-            {
-              prompt: "Draft launch copy",
-              kind: "talk",
-            },
-          ],
-          createdAt: "2026-09-04T10:00:20Z",
-        },
-      ],
-    });
-
-    await setupPage({ context, path: `/chats/${threadId}` });
-
-    click(
-      await waitFor(() => {
-        return buttonByText(followupPrompt);
-      }),
-    );
-
-    expect(capturedEvents("chat_recommended_followup_selected")).toStrictEqual([
-      [
-        "chat_recommended_followup_selected",
-        {
-          assistant_message_id: "msg-recommend-completed:followups",
-          followup_index: 0,
-          followup_count: 2,
-          followup_kind: "generate",
-          generation_type: "presentation",
-        },
-      ],
-    ]);
-  });
+          ];
+        }),
+      );
+    },
+  );
 });

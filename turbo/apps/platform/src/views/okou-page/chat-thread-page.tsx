@@ -3756,6 +3756,8 @@ function recommendedFollowupShownKey(
 function reportRecommendedFollowupsShown(
   element: HTMLDivElement | null,
   source: RecommendedFollowupSource,
+  threadId: string,
+  layout: "rows" | "quick-reply-rail",
 ): void {
   if (!element) {
     return;
@@ -3768,7 +3770,9 @@ function reportRecommendedFollowupsShown(
   element.dataset.followupsShownKey = shownKey;
 
   captureRecommendedFollowupsShown({
+    threadId,
     messageId: source.eventId,
+    layout,
     followups: source.followups,
   });
 }
@@ -3785,11 +3789,12 @@ function RecommendedFollowupList({
   // composer auto-focus heuristic. A desktop window dragged narrow must still
   // render the flat list, so container width is not the deciding factor.
   const showFollowupCards = isMobileTextInputDevice();
+  const layout = showFollowupCards ? "quick-reply-rail" : "rows";
   const selectOrAppendComposerText = useSet(
     thread.composer.editor.selectOrAppendText$,
   );
   const handleRecommendedFollowupsRef = (element: HTMLDivElement | null) => {
-    reportRecommendedFollowupsShown(element, source);
+    reportRecommendedFollowupsShown(element, source, thread.threadId, layout);
   };
 
   const handleSelect = (
@@ -3797,7 +3802,9 @@ function RecommendedFollowupList({
     followupIndex: number,
   ) => {
     captureRecommendedFollowupSelected({
+      threadId: thread.threadId,
       messageId: source.eventId,
+      layout,
       followupIndex,
       followupCount: source.followups.length,
       followup,
@@ -3815,7 +3822,7 @@ function RecommendedFollowupList({
       // The layout is decided by the device, not by width, so it is not
       // observable through a media query. Tests and e2e read this instead of
       // the styling classes.
-      data-followup-layout={showFollowupCards ? "quick-reply-rail" : "rows"}
+      data-followup-layout={layout}
       className={cn(
         // The flat list pulls out by the row buttons' own px-2 so its text
         // aligns with the message column. The rail carries a deeper inner
