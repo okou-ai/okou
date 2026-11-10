@@ -87,7 +87,7 @@ export const integrationsEmailContract = c.router({
         emailSources: record(
           string(),
           union([literal("gmail"), literal("outlook")]),
-        ).optional(),
+        ),
       }),
       401: apiErrorSchema,
       403: apiErrorSchema,

@@ -1671,8 +1671,7 @@
       "sending": "Invio in corso…",
       "sent": "Inviato in una nuova chat",
       "unavailable": "Questo suggerimento non è più disponibile. I suggerimenti sono stati aggiornati.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "Usa suggerimento"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "Allega",
@@ -7442,7 +7441,7 @@
       "loadError": "Impossibile caricare il collegamento email",
       "loginNotice": "L’e-mail di accesso rimane collegata.",
       "manage": "Gestisci",
-      "manageDescription": "Tutti gli indirizzi e-mail che usi con Okou.",
+      "manageDescription": "Invia il codice dall’indirizzo e-mail che vuoi aggiungere.",
       "manageTitle": "Connessioni e-mail",
       "newCode": "Genera un nuovo codice",
       "open": "Apri email",

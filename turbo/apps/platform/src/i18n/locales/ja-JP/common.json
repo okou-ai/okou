@@ -1644,8 +1644,7 @@
       "sending": "送信中…",
       "sent": "新しいチャットに送信しました",
       "unavailable": "この提案は利用できなくなりました。提案を更新しました。",
-      "undoFeedback": "Undo",
-      "useSuggestion": "提案を使う"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "添付する",
@@ -7342,7 +7341,7 @@
       "loadError": "メール接続を読み込めませんでした",
       "loginNotice": "ログイン用メールは常に接続されます。",
       "manage": "管理",
-      "manageDescription": "Okou との会話に使うすべてのメールアドレス。",
+      "manageDescription": "追加するメールアドレスからコードを送信してください。",
       "manageTitle": "メールの接続",
       "newCode": "新しいコードを生成",
       "open": "メールを開く",

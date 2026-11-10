@@ -10,7 +10,10 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { v5 as uuidv5 } from "uuid";
 import { array, object, string, uuid, record, type infer as zInfer } from "zod";
 import { accept } from "@okouai/connectors/accept";
-import { isFeatureEnabled } from "@okouai/core/feature-switch";
+import {
+  isFeatureEnabled,
+  type FeatureSwitchContext,
+} from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { chatThreads } from "@okouai/db/runtime/chat-thread";
 import {
@@ -53,6 +56,13 @@ import {
   connectSignInEmail$,
   signInEmailAddress,
 } from "./email-connection.service";
+import {
+  confirmEmailSignup$,
+  isEmailSignupReplyAddress,
+  rejectUnsafeEmailSignup$,
+  sendEmailSignupConnectionConflict$,
+  sendEmailSignupConfirmation$,
+} from "./email-signup.service";
 
 export const EMAIL_CHANNEL_ADDRESS = "okou@okou.io";
 const EVENT_NAMESPACE = "511cc626-e844-4718-80d1-9d38d994e1ac";
@@ -97,6 +107,16 @@ function header(
 
 function messageReferences(value: string | undefined): string[] {
   return value?.match(/<[^<>\s]+>/gu)?.slice(-100) ?? [];
+}
+
+function emailIntegrationEnabled(
+  features: FeatureSwitchContext,
+  sender: string,
+): boolean {
+  return isFeatureEnabled(FeatureSwitchKey.EmailIntegration, {
+    ...features,
+    email: sender,
+  });
 }
 
 function ownsVerifiedEmail(user: ClerkUser, email: string): boolean {
@@ -434,7 +454,7 @@ export const processEmailChannelMessage$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (!isFeatureEnabled(FeatureSwitchKey.EmailIntegration, features)) {
+    if (!emailIntegrationEnabled(features, message.sender)) {
       return;
     }
     await set(
@@ -549,10 +569,7 @@ const restoreSignInEmail$ = command(
       signal,
     );
     signal.throwIfAborted();
-    if (
-      !isFeatureEnabled(FeatureSwitchKey.EmailIntegration, features) ||
-      role.kind !== "member"
-    ) {
+    if (!emailIntegrationEnabled(features, sender) || role.kind !== "member") {
       return null;
     }
     return await set(connectSignInEmail$, { user, orgId: link.orgId }, signal);
@@ -585,7 +602,7 @@ const resolveEmailSender$ = command(
         signal,
       );
       signal.throwIfAborted();
-      return isFeatureEnabled(FeatureSwitchKey.EmailIntegration, features)
+      return emailIntegrationEnabled(features, sender)
         ? ({ kind: "connected", link } as const)
         : ({ kind: "ignored" } as const);
     }
@@ -625,7 +642,7 @@ const resolveEmailSender$ = command(
           signal,
         );
         signal.throwIfAborted();
-        if (isFeatureEnabled(FeatureSwitchKey.EmailIntegration, context)) {
+        if (emailIntegrationEnabled(context, sender)) {
           mayOnboard = true;
         }
       }
@@ -638,7 +655,7 @@ const resolveEmailSender$ = command(
           signal,
         );
         signal.throwIfAborted();
-        if (!isFeatureEnabled(FeatureSwitchKey.EmailIntegration, features)) {
+        if (!emailIntegrationEnabled(features, sender)) {
           return { kind: "ignored" } as const;
         }
         link =
@@ -651,15 +668,15 @@ const resolveEmailSender$ = command(
       }
     }
     const allowed = link
-      ? isFeatureEnabled(
-          FeatureSwitchKey.EmailIntegration,
-          await set(
+      ? isFeatureEnabled(FeatureSwitchKey.EmailIntegration, {
+          ...(await set(
             loadUserFeatureSwitchContext$,
             link.orgId,
             link.userId,
             signal,
-          ),
-        )
+          )),
+          email: sender,
+        })
       : mayOnboard;
     signal.throwIfAborted();
     if (!allowed) {
@@ -667,7 +684,7 @@ const resolveEmailSender$ = command(
     }
     return link
       ? ({ kind: "connected", link } as const)
-      : ({ kind: "unconnected" } as const);
+      : ({ kind: "unconnected", hasAccount: users.data.length > 0 } as const);
   },
 );
 
@@ -701,9 +718,13 @@ const handleEmailConnectionCode$ = command(
       readonly received: zInfer<typeof receivedChannelEmailSchema>;
       readonly sender: string;
       readonly text: string;
+      readonly signupReplyTo: string | undefined;
     },
     signal: AbortSignal,
   ) => {
+    if (args.signupReplyTo) {
+      return false;
+    }
     const { received, sender } = args;
     const id = received.id;
     const code =
@@ -751,6 +772,66 @@ const handleEmailConnectionCode$ = command(
   },
 );
 
+const dispatchEmailChannelMessage$ = command(
+  async (
+    { set },
+    args: {
+      readonly message: typeof emailChannelMessages.$inferSelect;
+      readonly link: typeof emailUserLinks.$inferSelect | undefined;
+      readonly needsSignup: boolean;
+      readonly signupReplyTo: string | undefined;
+    },
+    signal: AbortSignal,
+  ) => {
+    const { message, link, needsSignup, signupReplyTo } = args;
+    if (signupReplyTo) {
+      const signup = await set(
+        confirmEmailSignup$,
+        { confirmation: message, replyTo: signupReplyTo },
+        signal,
+      );
+      if (!signup) {
+        return;
+      }
+      if (!signup.orgId) {
+        await set(sendEmailConnectPrompt$, signup.original, signal);
+        return;
+      }
+      const signupLink = await set(
+        linkEmailIdentity$,
+        {
+          email: message.sender,
+          userId: signup.userId,
+          orgId: signup.orgId,
+        },
+        signal,
+      );
+      if (signupLink) {
+        await set(
+          processEmailChannelMessage$,
+          { message: signup.original, link: signupLink },
+          signal,
+        );
+      } else {
+        await set(sendEmailSignupConnectionConflict$, message, signal);
+      }
+    } else if (link) {
+      await set(processEmailChannelMessage$, { message, link }, signal);
+      signal.throwIfAborted();
+    } else {
+      if (await set(rejectUnsafeEmailSignup$, message, signal)) {
+        return;
+      }
+      if (needsSignup) {
+        await set(sendEmailSignupConfirmation$, message, signal);
+      } else {
+        await set(sendEmailConnectPrompt$, message, signal);
+      }
+      signal.throwIfAborted();
+    }
+  },
+);
+
 export const handleReceivedChannelEmail$ = command(
   async ({ set }, providerEmailId: string, signal: AbortSignal) => {
     const id = uuid().parse(providerEmailId);
@@ -765,12 +846,20 @@ export const handleReceivedChannelEmail$ = command(
     const received = receivedChannelEmailSchema.parse(await response.json());
     signal.throwIfAborted();
     const sender = normalizeMailbox(received.from);
+    const recipients = received.to.map(normalizeMailbox);
+    const signupReplyAddresses = [
+      ...new Set(
+        recipients.filter((address): address is string => {
+          return address !== null && isEmailSignupReplyAddress(address);
+        }),
+      ),
+    ];
     // Only provider-computed authentication is authority. Message headers are forgeable.
     if (
       received.id !== id ||
-      !received.to.some((to) => {
-        return normalizeMailbox(to) === EMAIL_CHANNEL_ADDRESS;
-      }) ||
+      (!recipients.includes(EMAIL_CHANNEL_ADDRESS) &&
+        signupReplyAddresses.length === 0) ||
+      signupReplyAddresses.length > 1 ||
       !sender ||
       sender === EMAIL_CHANNEL_ADDRESS ||
       !isAuthenticatedSender(received.authentication)
@@ -784,7 +873,11 @@ export const handleReceivedChannelEmail$ = command(
       received.text ?? (received.html ? plainTextFromHtml(received.html) : "");
     const text = body;
     if (
-      await set(handleEmailConnectionCode$, { received, sender, text }, signal)
+      await set(
+        handleEmailConnectionCode$,
+        { received, sender, text, signupReplyTo: signupReplyAddresses[0] },
+        signal,
+      )
     ) {
       return;
     }
@@ -812,6 +905,7 @@ export const handleReceivedChannelEmail$ = command(
         subject: received.subject,
         text,
         authenticated: true,
+        createdAt: nowDate(),
         attachmentIds: received.attachments.map((item) => {
           return item.id;
         }),
@@ -838,13 +932,17 @@ export const handleReceivedChannelEmail$ = command(
     if (!message) {
       throw new Error("Email ingress receipt is unavailable");
     }
-    if (link) {
-      await set(processEmailChannelMessage$, { message, link }, signal);
-      signal.throwIfAborted();
-    } else {
-      await set(sendEmailConnectPrompt$, message, signal);
-      signal.throwIfAborted();
-    }
+    await set(
+      dispatchEmailChannelMessage$,
+      {
+        message,
+        link,
+        signupReplyTo: signupReplyAddresses[0],
+        needsSignup:
+          senderState.kind === "unconnected" && !senderState.hasAccount,
+      },
+      signal,
+    );
   },
 );
 

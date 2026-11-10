@@ -107,7 +107,7 @@ function EmailConnectionsTable({
   primaryEmail,
 }: {
   readonly emails: readonly string[];
-  readonly sources: Readonly<Record<string, "gmail" | "outlook">> | undefined;
+  readonly sources: Readonly<Record<string, "gmail" | "outlook">>;
   readonly primaryEmail: string | undefined;
 }) {
   const { t } = useTranslation();
@@ -147,7 +147,7 @@ function EmailConnectionsTable({
               key={email}
               email={email}
               primary={email === primaryEmail}
-              source={sources?.[email]}
+              source={sources[email]}
             />
           );
         })}
@@ -335,9 +335,6 @@ function EmailConnectionCodePanel({
           <a
             href={`mailto:${address}`}
             className="break-all underline-offset-4 hover:text-foreground hover:underline"
-            title={t(($) => {
-              return $.works.email.codeInstructions;
-            })}
           >
             {t(
               ($) => {

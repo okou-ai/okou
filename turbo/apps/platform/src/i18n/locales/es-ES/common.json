@@ -1671,8 +1671,7 @@
       "sending": "Enviando…",
       "sent": "Enviado a un nuevo chat",
       "unavailable": "Esa sugerencia ya no está disponible. Se han actualizado las sugerencias.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "Usar sugerencia"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "Adjuntar",
@@ -7442,7 +7441,7 @@
       "loadError": "No se pudo cargar tu conexión de correo",
       "loginNotice": "Tu correo de acceso permanece conectado.",
       "manage": "Administrar",
-      "manageDescription": "Todas las direcciones de correo que usas con Okou.",
+      "manageDescription": "Envía el código desde el correo que quieres añadir.",
       "manageTitle": "Conexiones de correo",
       "newCode": "Generar un nuevo código",
       "open": "Abrir correo",

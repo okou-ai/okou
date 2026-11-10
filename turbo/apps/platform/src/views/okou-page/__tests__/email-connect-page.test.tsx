@@ -34,6 +34,7 @@ beforeEach(() => {
       configured: true,
       emails: [],
       availableEmails: [emailAddress],
+      emailSources: {},
     });
   });
 });
@@ -81,6 +82,7 @@ test("adds an email from the Works card with a short code and updates the open d
       configured: true,
       emails,
       availableEmails: [emailAddress],
+      emailSources: {},
     });
   });
   context.mocks.api(integrationsEmailContract.createLinkCode, ({ respond }) => {
@@ -99,6 +101,9 @@ test("adds an email from the Works card with a short code and updates the open d
   const dialog = await screen.findByRole("dialog", {
     name: "Email connections",
   });
+  expect(
+    within(dialog).getByText("Send the code from the email you want to add."),
+  ).toBeInTheDocument();
   await expect(within(dialog).findByText(code)).resolves.toBeInTheDocument();
   expect(getAction("link", "Open email", dialog)).toHaveAttribute(
     "href",
@@ -127,21 +132,38 @@ test("adds an email from the Works card with a short code and updates the open d
   });
 });
 
-test("opens unsigned email settings in the Works dialog", async () => {
+test("opens unsigned email settings with the login email connected", async () => {
+  context.mocks.api(integrationsEmailContract.getLinkStatus, ({ respond }) => {
+    return respond(200, {
+      address: "okou@okou.io",
+      configured: true,
+      emails: [emailAddress],
+      availableEmails: [emailAddress],
+      emailSources: {},
+    });
+  });
   await setupPage({
     context,
     path: "/settings/email",
     featureSwitches: featureSwitches(),
+    auth: {
+      user: {
+        id: "user_email_settings_primary",
+        fullName: "Email User",
+        email: emailAddress,
+      },
+    },
   });
   const dialog = await screen.findByRole("dialog", {
     name: "Email connections",
   });
   expect(window.location.pathname).toBe("/works");
+  expect(within(dialog).getByText(emailAddress)).toBeInTheDocument();
   expect(getAction("button", "Add email", dialog)).toBeEnabled();
   click(getAction("button", "Close", dialog));
   await waitFor(() => {
     expect(
-      getAction("button", "Add email", getIntegrationCard("Email")),
+      getAction("button", "Email options", getIntegrationCard("Email")),
     ).toHaveFocus();
   });
 });
@@ -191,6 +213,7 @@ test("deletes each linked address from Manage and returns focus to Add email", a
       configured: true,
       emails,
       availableEmails: [emailAddress, secondEmail],
+      emailSources: {},
     });
   });
   context.mocks.api(integrationsEmailContract.unlink, ({ body, respond }) => {
@@ -317,6 +340,7 @@ test("keeps the login email connected while other emails can be deleted", async 
       configured: true,
       emails,
       availableEmails: [emailAddress],
+      emailSources: {},
     });
   });
   context.mocks.api(integrationsEmailContract.unlink, ({ body, respond }) => {

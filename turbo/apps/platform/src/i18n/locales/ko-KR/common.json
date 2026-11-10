@@ -1644,8 +1644,7 @@
       "sending": "보내는 중…",
       "sent": "새 채팅으로 보냈습니다",
       "unavailable": "이 제안은 더 이상 사용할 수 없습니다. 제안을 새로고침했습니다.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "제안 사용"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "첨부",
@@ -7342,7 +7341,7 @@
       "loadError": "이메일 연결을 불러올 수 없습니다",
       "loginNotice": "로그인 이메일은 항상 연결됩니다.",
       "manage": "관리",
-      "manageDescription": "Okou와 대화할 때 사용하는 모든 이메일 주소입니다.",
+      "manageDescription": "추가할 이메일 주소에서 코드를 보내세요.",
       "manageTitle": "이메일 연결",
       "newCode": "새 코드 생성",
       "open": "이메일 열기",

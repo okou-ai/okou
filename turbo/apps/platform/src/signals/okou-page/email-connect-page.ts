@@ -30,10 +30,7 @@ export const setupEmailConnectPage$ = command(
       await set(setupWorksPage$, signal);
       const status = await get(emailLinkStatus$);
       signal.throwIfAborted();
-      set(
-        setEmailConnectDialogOpen$,
-        status.configured && status.emails.length === 0,
-      );
+      set(setEmailConnectDialogOpen$, status.configured);
       return;
     }
     set(resetEmailConnection$);

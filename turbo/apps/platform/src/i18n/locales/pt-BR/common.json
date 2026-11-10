@@ -1671,8 +1671,7 @@
       "sending": "Enviando…",
       "sent": "Enviado para uma nova conversa",
       "unavailable": "Essa sugestão não está mais disponível. As sugestões foram atualizadas.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "Usar sugestão"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "Anexar",
@@ -7442,7 +7441,7 @@
       "loadError": "Não foi possível carregar sua conexão de e-mail",
       "loginNotice": "Seu e-mail de login permanece conectado.",
       "manage": "Gerenciar",
-      "manageDescription": "Todos os endereços de e-mail que você usa com o Okou.",
+      "manageDescription": "Envie o código pelo e-mail que deseja adicionar.",
       "manageTitle": "Conexões de e-mail",
       "newCode": "Gerar novo código",
       "open": "Abrir e-mail",

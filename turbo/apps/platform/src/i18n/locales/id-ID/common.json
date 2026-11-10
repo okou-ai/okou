@@ -1644,8 +1644,7 @@
       "sending": "Mengirim…",
       "sent": "Dikirim ke chat baru",
       "unavailable": "Saran itu sudah tidak tersedia. Daftar saran telah diperbarui.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "Gunakan saran"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "Lampirkan",
@@ -7342,7 +7341,7 @@
       "loadError": "Tidak dapat memuat koneksi email Anda",
       "loginNotice": "Email login Anda tetap terhubung.",
       "manage": "Kelola",
-      "manageDescription": "Semua alamat email yang Anda gunakan dengan Okou.",
+      "manageDescription": "Kirim kode dari alamat email yang ingin ditambahkan.",
       "manageTitle": "Koneksi email",
       "newCode": "Buat kode baru",
       "open": "Buka email",

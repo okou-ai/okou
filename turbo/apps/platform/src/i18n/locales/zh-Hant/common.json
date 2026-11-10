@@ -1644,8 +1644,7 @@
       "sending": "正在傳送…",
       "sent": "已傳送到新聊天",
       "unavailable": "這則建議已無法使用，建議清單已重新整理。",
-      "undoFeedback": "復原",
-      "useSuggestion": "使用建議"
+      "undoFeedback": "復原"
     },
     "attachments": {
       "attach": "新增附件",
@@ -7342,7 +7341,7 @@
       "loadError": "無法載入信箱連線",
       "loginNotice": "登入信箱始終保持連接。",
       "manage": "管理",
-      "manageDescription": "管理用於與 Okou 對話的所有信箱。",
+      "manageDescription": "從要新增的信箱寄出驗證碼。",
       "manageTitle": "信箱連線",
       "newCode": "產生新驗證碼",
       "open": "開啟郵件",

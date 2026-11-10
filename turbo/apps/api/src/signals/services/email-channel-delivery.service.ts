@@ -2,9 +2,10 @@ import { command } from "ccstate";
 import { emailOutbox } from "@okouai/db/runtime/email-outbox";
 import { writeDb$ } from "../external/db";
 import { waitUntil } from "../context/wait-until";
-import { now } from "../../lib/time";
+import { now, nowDate } from "../../lib/time";
 import { drainEmailOutboxBatch$ } from "./email-common.service";
 const EMAIL_CHANNEL_ADDRESS = "okou@okou.io";
+export const EMAIL_SIGNUP_REQUEST_HEADER = "X-Okou-Signup-Request";
 export interface EmailChannelMessage {
   readonly id: string;
   readonly to: string;
@@ -14,6 +15,8 @@ export interface EmailChannelMessage {
   readonly inReplyTo: string;
   readonly references: readonly string[];
   readonly userLinkId?: string;
+  readonly signupRequestId?: string;
+  readonly replyTo?: string;
   readonly attachment?: {
     readonly filename: string;
     readonly contentType: string;
@@ -27,13 +30,16 @@ export function emailChannelOutboxValues(args: EmailChannelMessage) {
     fromAddress: "Okou <okou@okou.io>",
     toAddresses: args.to,
     subject: args.subject,
-    replyTo: EMAIL_CHANNEL_ADDRESS,
+    replyTo: args.replyTo ?? EMAIL_CHANNEL_ADDRESS,
     headers: {
       "Message-ID": args.messageId,
       "In-Reply-To": args.inReplyTo,
       References: [...args.references, args.inReplyTo].slice(-100).join(" "),
       "Auto-Submitted": "auto-replied",
       "X-Auto-Response-Suppress": "All",
+      ...(args.signupRequestId
+        ? { [EMAIL_SIGNUP_REQUEST_HEADER]: args.signupRequestId }
+        : {}),
     },
     template: {
       template: "email-channel",
@@ -50,7 +56,7 @@ export const enqueueEmailText$ = command(
   async ({ set }, args: EmailChannelMessage, signal: AbortSignal) => {
     await set(writeDb$)
       .insert(emailOutbox)
-      .values(emailChannelOutboxValues(args))
+      .values({ ...emailChannelOutboxValues(args), createdAt: nowDate() })
       .onConflictDoNothing({ target: emailOutbox.id });
     signal.throwIfAborted();
     waitUntil(set(drainEmailOutboxBatch$, { currentTimeMs: now() }, signal));

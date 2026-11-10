@@ -1647,8 +1647,7 @@
       "sending": "Wird gesendet…",
       "sent": "An einen neuen Chat gesendet",
       "unavailable": "Dieser Vorschlag ist nicht mehr verfügbar. Die Vorschläge wurden aktualisiert.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "Vorschlag verwenden"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "Anhängen",
@@ -7365,7 +7364,7 @@
       "loadError": "Die E-Mail-Verbindung konnte nicht geladen werden",
       "loginNotice": "Deine Anmelde-E-Mail bleibt verbunden.",
       "manage": "Verwalten",
-      "manageDescription": "Alle E-Mail-Adressen, die du mit Okou nutzt.",
+      "manageDescription": "Sende den Code von der E-Mail-Adresse, die du hinzufügen möchtest.",
       "manageTitle": "E-Mail-Verbindungen",
       "newCode": "Neuen Code erstellen",
       "open": "E-Mail öffnen",
