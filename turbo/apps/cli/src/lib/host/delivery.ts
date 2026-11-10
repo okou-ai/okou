@@ -1,0 +1,2 @@
+export const hostedSiteDeliveryInstructions =
+  "For normal user delivery, return aliasUrl (Alias) exactly, falling back to url only when aliasUrl is absent. Prefer the supplied inlineMarkdownLink or previewMarkdownBlock. When an alias is available, use artifactUrl (Artifact, the immutable dpl-... deployment snapshot) only if the user explicitly requests a fixed version. If isActive is false, explain that the alias serves another active version.";

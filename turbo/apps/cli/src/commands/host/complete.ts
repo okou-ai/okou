@@ -2,6 +2,7 @@ import { Command } from "commander";
 import { uuid } from "zod";
 import { completeHostedSite } from "../../lib/api/domains/host";
 import { withErrorHandler } from "../../lib/command/with-error-handler";
+import { hostedSiteDeliveryInstructions } from "../../lib/host/delivery";
 
 export const completeHostedSiteCommand = new Command("complete")
   .description(
@@ -12,6 +13,7 @@ export const completeHostedSiteCommand = new Command("complete")
     "Deployment ID returned by a previous publish attempt",
   )
   .option("--json", "Output the completed deployment as JSON")
+  .addHelpText("after", `\nNotes:\n  - ${hostedSiteDeliveryInstructions}`)
   .action(
     withErrorHandler(
       async (
