@@ -109,7 +109,6 @@ def _no_stream_decode_error() -> str | None:
 def _create_zlib_stream_decode_session(
     feed: _StreamDecodeFeed,
     *,
-    encoding_label: str,
     wbits: int,
     max_decoded_chunk: int,
     should_continue: _StreamDecodeShouldContinue | None,
@@ -386,7 +385,6 @@ def create_stream_decode_session(
         )
     return _create_zlib_stream_decode_session(
         feed,
-        encoding_label=encoding,
         wbits=_STREAM_ZLIB_WBITS_BY_ENCODING[encoding],
         max_decoded_chunk=max_decoded_chunk,
         should_continue=should_continue,
