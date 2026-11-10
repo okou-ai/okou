@@ -1,6 +1,11 @@
 name: iOS access cards BrowserStack preview
 on:
   workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact PR source revision for native acceptance
+        required: true
+        type: string
 permissions:
   contents: read
 jobs:
@@ -14,6 +19,8 @@ jobs:
       GIT_CONFIG_VALUE_0: HTTP/1.1
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          ref: ${{ inputs.source_sha }}
       - name: Record preview source
         run: |
           mkdir -p "$RUNNER_TEMP/access-preview/output"
