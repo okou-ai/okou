@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.244.63](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.62...runner-rs-v0.244.63) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** bind header-auth rollback to its probe ([#46444](https://github.com/okou-ai/okou/issues/46444)) ([3acdf46](https://github.com/okou-ai/okou/commit/3acdf4618210f2e608daa80ead0c142bba4aebb7))
+* **runner:** remove unused whole-host a-label validator ([#46466](https://github.com/okou-ai/okou/issues/46466)) ([8101f29](https://github.com/okou-ai/okou/commit/8101f29b144cc24a932fd4a80256839ab45a2bcc))
+
+
+### Performance Improvements
+
+* **runner:** negotiate gzip for api json responses ([#46459](https://github.com/okou-ai/okou/issues/46459)) ([c02d10c](https://github.com/okou-ai/okou/commit/c02d10cd31ce971e6e6b50f6fab80aa03af140a9))
+
 ## [0.244.62](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.61...runner-rs-v0.244.62) (2026-11-10)
 
 ### Release Dependencies

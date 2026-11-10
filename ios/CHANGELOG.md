@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.34.2](https://github.com/okou-ai/okou/compare/ios-v0.34.1...ios-v0.34.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** arbitrate sidebar closing against list scrolling ([#46415](https://github.com/okou-ai/okou/issues/46415)) ([eb98a9b](https://github.com/okou-ai/okou/commit/eb98a9bac54f0fb76edf3ee990bec9aefe68c6af))
+* **ios:** preserve computer access cards during refresh ([#46435](https://github.com/okou-ai/okou/issues/46435)) ([3bc99f8](https://github.com/okou-ai/okou/commit/3bc99f8f811b6c4575ab1bef423a37054a183010))
+
 ## [0.34.1](https://github.com/okou-ai/okou/compare/ios-v0.34.0...ios-v0.34.1) (2026-11-10)
 
 

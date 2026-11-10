@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.24.92](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.91...guest-control-server-v0.24.92) (2026-11-10)
+
+
+### Refactoring
+
+* **guest-control:** isolate exec terminal logging policy ([#46460](https://github.com/okou-ai/okou/issues/46460)) ([549c923](https://github.com/okou-ai/okou/commit/549c92318c5b3c3be651f7a4d91b58702c125a61))
+
 ## [0.24.91](https://github.com/okou-ai/okou/compare/guest-control-server-v0.24.90...guest-control-server-v0.24.91) (2026-11-10)
 
 

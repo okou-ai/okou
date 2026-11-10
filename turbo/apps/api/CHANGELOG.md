@@ -10,6 +10,18 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.57.2](https://github.com/okou-ai/okou/compare/api-v2.57.1...api-v2.57.2) (2026-11-10)
+
+
+### Bug Fixes
+
+* **api:** allow verified memory cache cleanup across runs ([#46461](https://github.com/okou-ai/okou/issues/46461)) ([0122027](https://github.com/okou-ai/okou/commit/0122027f0fee256b8d439891ed3435304aeb2aa3))
+
+
+### Performance Improvements
+
+* **api:** reuse claim catalog and permission inputs ([#46454](https://github.com/okou-ai/okou/issues/46454)) ([46f2ac7](https://github.com/okou-ai/okou/commit/46f2ac7fd9056b0c3ffd59f611381dbf7d3092a2))
+
 ## [2.57.1](https://github.com/okou-ai/okou/compare/api-v2.57.0...api-v2.57.1) (2026-11-10)
 
 

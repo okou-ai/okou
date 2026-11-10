@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.10.8](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.7...runner-storage-v0.10.8) (2026-11-10)
+
+
+### Performance Improvements
+
+* **runner:** negotiate gzip for api json responses ([#46459](https://github.com/okou-ai/okou/issues/46459)) ([c02d10c](https://github.com/okou-ai/okou/commit/c02d10cd31ce971e6e6b50f6fab80aa03af140a9))
+
 ## [0.10.7](https://github.com/okou-ai/okou/compare/runner-storage-v0.10.6...runner-storage-v0.10.7) (2026-11-10)
 
 
