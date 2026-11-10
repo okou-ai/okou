@@ -295,7 +295,9 @@ private struct WorkspaceRootView: View {
                     agentID: store.defaultAgentID, agents: store.list.agents,
                     threads: store.list.threads),
                   workflowSource: store.composerWorkflows, agentID: store.defaultAgentID,
-                  placeholder: String(localized: "Message \(store.currentAgentName)"))
+                  placeholder: String(localized: "Message \(store.currentAgentName)"),
+                  project: store.newChatProject,
+                  removeProject: store.removeNewChatProject)
               }
               .animation(
                 reduceMotion ? nil : .easeInOut(duration: 0.22),

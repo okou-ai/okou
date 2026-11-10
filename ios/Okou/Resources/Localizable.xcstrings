@@ -2463,6 +2463,127 @@
         }
       }
     },
+    "Delete project": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Delete project" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除项目" }
+        }
+      }
+    },
+    "Delete project?": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Delete project?" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "删除项目？" }
+        }
+      }
+    },
+    "Move to project": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Move to project" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "移动到项目" }
+        }
+      }
+    },
+    "New project": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "New project" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "新建项目" }
+        }
+      }
+    },
+    "No chats yet": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "No chats yet" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "暂无聊天" }
+        }
+      }
+    },
+    "Project name": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Project name" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "项目名称" }
+        }
+      }
+    },
+    "Project: %@": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Project: %@" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "项目：%@" }
+        }
+      }
+    },
+    "Remove from project": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Remove from project" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "移出项目" }
+        }
+      }
+    },
+    "Rename project": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Rename project" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "重命名项目" }
+        }
+      }
+    },
+    "Search projects": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Search projects" }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "搜索项目" }
+        }
+      }
+    },
+    "Your chats will be kept and moved out of this project.": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": { "state": "translated", "value": "Your chats will be kept and moved out of this project." }
+        },
+        "zh-Hans": {
+          "stringUnit": { "state": "translated", "value": "聊天将保留，并移出此项目。" }
+        }
+      }
+    },
     "and": {
       "localizations": {
         "de": {

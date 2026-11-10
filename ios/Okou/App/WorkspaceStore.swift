@@ -35,6 +35,10 @@ final class WorkspaceStore {
   }
   var selectedAgentID: String? { selectedConversation?.thread.agentID ?? defaultAgentID }
   var defaultAgentID: String? { list.agents.first(where: \.isDefaultAgent)?.agentId }
+  private(set) var newChatProjectID: String?
+  var newChatProject: ChatProject? {
+    projects.projects.first { $0.id == newChatProjectID }
+  }
   var newChatDraft: String {
     get { newComposer.text }
     set { newComposer.text = newValue }
@@ -89,6 +93,10 @@ final class WorkspaceStore {
     didFail: { [weak self] in self?.handle($0) },
     didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
     readRetrySleep: readRetrySleep)
+  @ObservationIgnored lazy var projects = ChatProjectStore(
+    client: client, resources: resources, sync: sync,
+    didFail: { [weak self] in self?.handle($0) },
+    didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) })
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
   @ObservationIgnored private var lastUse: [String: UInt64] = [:]
   private var clock: UInt64 = 0
@@ -154,6 +162,7 @@ final class WorkspaceStore {
       }
     }
     await list.restoreCached()
+    await projects.restore(userID: userID, workspaceID: workspaceID, apiURL: client.baseURL)
     guard canContinueStartup(generation) else { return }
     prepareDefaultDraft(from: list.agents)
     await withTaskCancellationHandler {
@@ -240,6 +249,7 @@ final class WorkspaceStore {
     composerWorkflows.close()
     newModelSelection.close()
     list.close()
+    projects.close()
     resources.close()
     threadFeedback = nil
     search.close()
@@ -329,6 +339,7 @@ final class WorkspaceStore {
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
     // Model catch-up must stay fresh, but it does not gate the chat list or messages.
     async let modelRefresh: Void = refreshModels(batch)
+    async let projectRefresh: Void = refreshProjects(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
       await list.refresh()
@@ -346,6 +357,7 @@ final class WorkspaceStore {
       await selectedConversation?.refresh()
     }
     await modelRefresh
+    await projectRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil,
       full || selectedConversation?.modelSelection?.needsThreadReadback == true
@@ -363,6 +375,12 @@ final class WorkspaceStore {
       await modelStore.refresh(batch)
     } else if full {
       do { try resources.invalidate(batch) } catch { handle(error) }
+    }
+  }
+
+  private func refreshProjects(_ batch: Set<ChatInvalidation>) async {
+    if projects.active && (batch.contains(.reconnected) || batch.contains(.threadList)) {
+      await projects.refresh()
     }
   }
 
@@ -631,17 +649,20 @@ final class WorkspaceStore {
     newChatDraft = token + newChatDraft
   }
 
-  func startNewChat() {
+  func startNewChat(projectID: String? = nil) {
     guard !isCreating, !needsUpgrade, !closed else { return }
     newChatSubmission?.close()
     newChatSubmission = nil
     chatLinkRequestID = UUID()
     chatLinkThreadID = nil
     selectedThreadID = nil
+    newChatProjectID = projectID
     newComposer.requestSync()
     newModelSelection.resetNewChat()
     error = nil
   }
+
+  func removeNewChatProject() { newChatProjectID = nil }
 
   var canOpenNewChatFromSystem: Bool {
     isForeground && defaultAgentID != nil && !isCreating && !needsUpgrade && !closed
@@ -675,6 +696,7 @@ final class WorkspaceStore {
       newModelSelection.captureNewChatSelection()
     }
     let effort = newModelSelection.requestedEffort
+    let projectID = newChatProjectID
     newModelSelection.isSending = true
     isCreating = true
     let task = Task<ChatThread?, Never> { [weak self] in
@@ -687,7 +709,7 @@ final class WorkspaceStore {
       do {
         let thread = try await commands.createThread(
           modelSelection: selection, reasoningEffort: effort,
-          composerOptions: composerOptions)
+          composerOptions: composerOptions, projectID: projectID)
         try Task.checkCancellation()
         guard !closed else { return nil }
         list.insertCreated(thread)

@@ -186,6 +186,24 @@ public actor ChatCache {
     }
   }
 
+  public func loadProjects() throws -> [ChatProject]? {
+    try withDatabase { database in
+      let query = try database.prepare("SELECT snapshot FROM project_list WHERE id = 1")
+      guard try query.step() else { return nil }
+      return try JSONDecoder().decode([ChatProject].self, from: query.blob(at: 0))
+    }
+  }
+
+  public func saveProjects(_ projects: [ChatProject]) throws {
+    let data = try JSONEncoder().encode(projects)
+    try withDatabase { database in
+      let write = try database.prepare(
+        "INSERT OR REPLACE INTO project_list (id, snapshot) VALUES (1, ?)")
+      try write.bind(data, at: 1)
+      try write.run()
+    }
+  }
+
   public func loadIndicators() throws -> CachedChatIndicators? {
     try withDatabase { try readIndicatorState($0).snapshot }
   }
@@ -663,6 +681,13 @@ private final class CacheDatabase {
     try execute(
       """
       CREATE TABLE IF NOT EXISTS sidebar_navigation (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        snapshot BLOB NOT NULL
+      )
+      """)
+    try execute(
+      """
+      CREATE TABLE IF NOT EXISTS project_list (
         id INTEGER PRIMARY KEY CHECK (id = 1),
         snapshot BLOB NOT NULL
       )
