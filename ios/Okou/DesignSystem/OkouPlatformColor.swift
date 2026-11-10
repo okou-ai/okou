@@ -34,6 +34,10 @@ extension OkouColor {
   /// label and than supporting text, as Settings draws its secondary label, yet still AA
   /// contrast on white — unlike gray-600, the placeholder grey, which a value must not look like.
   static let trailingValue = gray700
+  /// A chat row's quiet marks (the status column's chat glyph and the draft pencil):
+  /// gray-600, still 3:1 on the sidebar in both appearances, so the marks sit behind the titles
+  /// as the web's faded sidebar glyphs do instead of reading as heavy as supporting text.
+  static let quietMark = gray600
 }
 
 /// Swipe-action fills. The system always draws a swipe action's icon and label in white, so a

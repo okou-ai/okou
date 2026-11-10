@@ -71,7 +71,10 @@ def main():
                 parser.error(f"Review invalid optical scale for {name}")
             if scale != 1:
                 offset = 12 * (1 - scale)
-                group = f'<g transform="translate({offset:g} {offset:g}) scale({scale:g})">'
+                # Shrink the glyph, not its line: the group's stroke grows by 1/scale so the
+                # drawn stroke stays `stroke` units, the same weight as every other icon.
+                group = (f'<g transform="translate({offset:g} {offset:g}) scale({scale:g})" '
+                         f'stroke-width="{stroke / scale:g}">')
                 svg = re.sub(r"(<svg\b[\s\S]*?>)([\s\S]*?)(</svg>)",
                              lambda match: match[1] + group + match[2] + "</g>" + match[3], svg)
             directory = ASSETS / f"Lucide-{name}.imageset"

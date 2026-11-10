@@ -51,6 +51,9 @@ final class WorkspaceStore {
   private let draftRepository: ChatDraftRepository?
   private var draftAgentID: String?
   private var agentDraftTask: Task<Void, Never>?
+  /// Chats the API last reported with an unsent draft, updated as this device lets a chat go.
+  private var draftThreadIDs: Set<String> = []
+  @ObservationIgnored private var draftsRevision = 0
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
   var synchronizationState: ChatSynchronizationState? {
@@ -211,6 +214,13 @@ final class WorkspaceStore {
 
   private(set) var selectedConversation: ConversationStore?
 
+  /// Whether a chat holds text or files the user has not sent. A chat still in memory answers
+  /// from its own composer, so leaving a chat marks it at once; others use the API's list.
+  func hasDraft(_ threadID: String) -> Bool {
+    if let composer = conversations[threadID]?.composer { return composer.hasContent }
+    return draftThreadIDs.contains(threadID)
+  }
+
   func conversation(for id: String) -> ConversationStore? {
     guard !closed, let thread = list.threads.first(where: { $0.id == id }) else { return nil }
     clock &+= 1
@@ -345,7 +355,9 @@ final class WorkspaceStore {
     async let projectRefresh: Void = refreshProjects(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
+      async let drafts: Void = refreshDrafts()
       await list.refresh()
+      await drafts
     } else if batch.contains(.readCursor)
       || batch.contains(where: {
         if case .history = $0 { return true }
@@ -860,10 +872,32 @@ final class WorkspaceStore {
         chatLinkThreadID != id,
         conversation.canRelease, conversations[id] === conversation
       else { continue }
+      noteDraft(id, conversation.composer.hasContent)
       conversation.close()
       conversations[id] = nil
       lastUse[id] = nil
     }
+  }
+
+  /// The draft list never gates the chat list: a failed read keeps the last one until the
+  /// next list refresh, and a read that overlaps a local change is dropped.
+  private func refreshDrafts() async {
+    guard let draftRepository else { return }
+    let revision = draftsRevision
+    do {
+      let ids = try await draftRepository.threadIDs()
+      guard !closed, !Task.isCancelled, revision == draftsRevision else { return }
+      draftThreadIDs = ids
+    } catch {
+      handle(error)
+    }
+  }
+
+  /// What this device knew about a chat's draft when it released the chat's composer.
+  private func noteDraft(_ id: String, _ hasDraft: Bool) {
+    draftsRevision &+= 1
+    guard draftThreadIDs.contains(id) != hasDraft else { return }
+    if hasDraft { draftThreadIDs.insert(id) } else { draftThreadIDs.remove(id) }
   }
 
   private func handle(_ failure: Error) {
