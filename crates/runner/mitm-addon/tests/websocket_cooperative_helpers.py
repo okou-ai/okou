@@ -7,7 +7,7 @@ from tests.model_provider_websocket_helpers import append_websocket_message
 
 
 def costly_message(side, repetitions):
-    text = "中" * repetitions
+    text = "中"
     if side == "client":
         event = {
             "type": "response.create",
@@ -24,7 +24,8 @@ def costly_message(side, repetitions):
             "type": "response.completed" if side == "terminal" else "response.created",
             "response": response,
         }
-    return json.dumps(event).encode()
+    envelope = json.dumps(event).encode()
+    return envelope.replace(b"\\u4e2d", b"\\u4e2d" * repetitions, 1)
 
 
 async def deliver(flow, body, *, from_client=False):

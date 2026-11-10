@@ -68,14 +68,16 @@ def model_json_body(
     )
     # Put usage first: accepted prefix fields must still wait for the document.
     body: dict[str, object] = {"id": case.message_id, "model": case.model, "usage": quantities}
-    text = "中" * characters
+    text = "中"
     if protocol == "chat":
         body["choices"] = [{"message": {"role": "assistant", "content": text}}]
     elif protocol == "responses":
         body["output"] = [{"type": "message", "content": [{"type": "output_text", "text": text}]}]
     else:
         body["content"] = [{"type": "text", "text": text}]
-    return json.dumps(body, ensure_ascii=ensure_ascii, separators=(",", ":")).encode()
+    envelope = json.dumps(body, ensure_ascii=ensure_ascii, separators=(",", ":")).encode()
+    encoded_text = b"\\u4e2d" if ensure_ascii else "中".encode()
+    return envelope.replace(encoded_text, encoded_text * characters, 1)
 
 
 def encode_model_json(body: bytes, encoding: str) -> bytes:
