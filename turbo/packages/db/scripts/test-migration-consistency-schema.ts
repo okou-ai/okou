@@ -53,6 +53,7 @@ import { validateAgentRunLaunchSnapshotSchema } from "./test-agent-run-launch-sn
 import { validateAgentRunOfficialWorkflowProvenanceSchema } from "./test-agent-run-official-workflow-provenance";
 import { validateOfficialWorkflowStorageRetirement } from "./test-official-workflow-storage-retirement";
 import { validateWorkflowPublicationContraction } from "./test-workflow-publication-contraction";
+import { validatePreviewBypassAuthorizationBackfill } from "./test-preview-bypass-authorization-backfill";
 import { validateSeedSkillBundleSchema } from "./test-seed-skill-bundle-schema";
 import { validateConnectorSkillBundleSchema } from "./test-connector-skill-bundle-schema";
 import { validateChatConnectorAccessSchema } from "./test-chat-connector-access-schema";
@@ -3245,6 +3246,7 @@ async function main(): Promise<void> {
     // Transition regression uses retained SQL before fresh-schema generation.
     await validateOfficialWorkflowStorageRetirement(dbUrl1);
     await validateWorkflowPublicationContraction(dbUrl1);
+    await validatePreviewBypassAuthorizationBackfill(dbUrl1);
     await validateSeedSkillBundleSchema(dbUrl1);
     await validateConnectorSkillBundleSchema(dbUrl1);
     await validateChatConnectorAccessSchema(dbUrl1);

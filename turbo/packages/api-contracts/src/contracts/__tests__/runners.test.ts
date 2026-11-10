@@ -149,25 +149,28 @@ function loadRunnerClaimResponseFixture(): unknown {
 }
 
 describe("runner claim response contract", () => {
-  it("round-trips minimum execution intent without materialized runtime fields", () => {
-    const input = {
-      previewBypassAuthorized: false,
-      platformEnvironment: {
-        OKOU_TOKEN: "captured-run-authorization",
-        OKOU_DISABLED_PAID_TOOLS: "[]",
-      },
-      nativeContinuation: {
-        sessionId: null,
-        generationRunId: null,
-        recoveryPrompt: null,
-      },
-      apiStartTime: 1_794_288_000_000,
-      featureFlags: { connectorChatAccountAccess: true },
-    };
-    expect(
-      storedExecutionContextSchema.parse(JSON.parse(JSON.stringify(input))),
-    ).toStrictEqual(input);
-  });
+  it.each([true, false])(
+    "round-trips minimum intent with preview authorization %s",
+    (previewBypassAuthorized) => {
+      const input = {
+        previewBypassAuthorized,
+        platformEnvironment: {
+          OKOU_TOKEN: "captured-run-authorization",
+          OKOU_DISABLED_PAID_TOOLS: "[]",
+        },
+        nativeContinuation: {
+          sessionId: null,
+          generationRunId: null,
+          recoveryPrompt: null,
+        },
+        apiStartTime: 1_794_288_000_000,
+        featureFlags: { connectorChatAccountAccess: true },
+      };
+      expect(
+        storedExecutionContextSchema.parse(JSON.parse(JSON.stringify(input))),
+      ).toStrictEqual(input);
+    },
+  );
   it.each([
     { field: "previewBypassAuthorized", value: undefined },
     { field: "previewBypassAuthorized", value: null },
@@ -341,6 +344,7 @@ describe("prepared Seed Skill bundle contract", () => {
 describe("stored Workflow selection contract", () => {
   it("preserves explicit claim-time invocation and mount-precedence intent", () => {
     const context = {
+      previewBypassAuthorized: false,
       platformEnvironment: { OKOU_DISABLED_PAID_TOOLS: "[]" },
       nativeContinuation: {
         sessionId: null,

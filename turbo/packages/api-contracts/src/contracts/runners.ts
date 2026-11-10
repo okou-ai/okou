@@ -998,6 +998,7 @@ const preparedExecutionContextBaseSchema = object({
   // Per-firewall network policies: which permissions are granted + unknownPolicy
   networkPolicies: networkPoliciesSchema.optional(),
   // Captured decisions: singleAgent and connectorChatAccountAccess.
+  // They must match the admitted token, prompt and connector account choices.
   featureFlags: record(string(), boolean()).optional(),
   billableFirewalls: array(string()).optional(),
   // Provider the proxy reports model token usage under: a Built-in route's
