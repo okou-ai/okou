@@ -1,0 +1,2 @@
+export const hostedSiteDeliveryInstructions =
+  "For user delivery, return aliasUrl (Alias) exactly, falling back to url only when aliasUrl is absent. Prefer the supplied inlineMarkdownLink or previewMarkdownBlock. The alias serves the site's current version. If isActive is false, explain that the alias serves another active version. For an explicitly requested fixed-version link, use okou host versions <site>.";
