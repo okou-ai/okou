@@ -730,6 +730,107 @@ test("Opening a Project's name in a new tab leaves its chats folded", async () =
   expect(namedLink(projectRows(), "Thread A2")).toBeNull();
 });
 
+// The name link also reads out the state a folded Project's chats add up to.
+function projectTrigger(projectId = id) {
+  const trigger = projectRow(projectId).querySelector<HTMLElement>(
+    "[data-project-trigger]",
+  );
+  if (!trigger) {
+    throw new Error("Project link not found");
+  }
+  return trigger;
+}
+function projectStateIndicator(name: string, projectId = id) {
+  return within(
+    button(`Options for ${name}`, projectRows(projectId)),
+  ).queryByTestId("project-state-indicator");
+}
+function runningIndicatorPhase(indicator: HTMLElement | null): number {
+  const dot = indicator?.firstElementChild;
+  if (!(dot instanceof HTMLElement)) {
+    throw new Error("Running indicator is missing");
+  }
+  const phase = dot.style.getPropertyValue("--running-indicator-phase");
+  expect(phase).not.toBe("");
+  return Number(phase);
+}
+
+test("A folded Project rests on its chats' running or unread state, and an unfolded one leaves it to the chats", async () => {
+  const researchId = "30000000-0000-4000-8000-000000000072";
+  const quietId = "30000000-0000-4000-8000-000000000074";
+  const ordinary = continuityThread(225, 1, "Ordinary chat");
+  const launchUnread = {
+    ...continuityThread(225, 2, "Launch notes"),
+    projectId: id,
+  };
+  const researchRunning = {
+    ...continuityThread(225, 3, "Research build"),
+    projectId: researchId,
+  };
+  const researchUnread = {
+    ...continuityThread(225, 4, "Research notes"),
+    projectId: researchId,
+  };
+  const quiet = {
+    ...continuityThread(225, 5, "Quiet chat"),
+    projectId: quietId,
+  };
+  const workspace = installContinuityWorkspace(context, {
+    caseId: 225,
+    threads: [ordinary, launchUnread, researchRunning, researchUnread, quiet],
+  });
+  metadata([
+    { id: researchId, name: "Research" },
+    { id: quietId, name: "Quiet" },
+  ]);
+  context.mocks.api(chatThreadsContract.indicators, ({ respond }) => {
+    return respond(200, {
+      agents: {},
+      threads: {
+        [launchUnread.id]: "unread",
+        [researchRunning.id]: "active",
+        [researchUnread.id]: "unread",
+      },
+      unreadAt: { [launchUnread.id]: at, [researchUnread.id]: at },
+    });
+  });
+  await setupPage({
+    context,
+    path: `/chats/${ordinary.id}`,
+    ...workspace.pageOptions,
+    featureSwitches: { [FeatureSwitchKey.Projects]: true },
+  });
+
+  // A running chat outranks an unread one, as it does on a chat's own row.
+  await waitFor(() => {
+    expect(projectTrigger(researchId)).toHaveAccessibleName("Research Running");
+  });
+  expect(projectTrigger()).toHaveAccessibleName("Launch Unread");
+  expect(projectTrigger(quietId)).toHaveAccessibleName("Quiet");
+  // The state rests where the menu dots would, in step with the list's wave:
+  // Research is the second row.
+  expect(projectStateIndicator("Launch")).toBeInTheDocument();
+  expect(projectStateIndicator("Quiet", quietId)).toBeNull();
+  expect(
+    runningIndicatorPhase(projectStateIndicator("Research", researchId)),
+  ).toBeCloseTo(-11 / 12, 10);
+
+  click(projectToggle("Research", researchId));
+  await waitFor(() => {
+    expect(threadLink(researchRunning.id)).toHaveAccessibleName(
+      "Research build Running",
+    );
+  });
+  expect(threadLink(researchUnread.id)).toHaveAccessibleName(
+    "Research notes Unread",
+  );
+  expect(projectTrigger(researchId)).toHaveAccessibleName("Research");
+  expect(projectStateIndicator("Research", researchId)).toBeNull();
+
+  click(projectToggle("Research", researchId));
+  expect(projectTrigger(researchId)).toHaveAccessibleName("Research Running");
+});
+
 test("A Project page moves down into its chats when unfolded and past them when folded", async () => {
   const { a1, b } = await setupProjectNavigation(115, `/projects/${id}`);
   await waitFor(() => {
