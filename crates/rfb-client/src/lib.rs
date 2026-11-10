@@ -548,11 +548,17 @@ where
 /// Authenticate an owned RFB 3.8 stream using one exact RSA-AES profile.
 ///
 /// The caller must acquire the complete SHA256 RSA public-key-wire pin out of
-/// band. Authentication-only `ne` modes do not protect later traffic: a future
-/// product caller must independently enforce its verified outer transport. No
-/// owner/Runner profile is enabled by this engine API. Cancellation/failure drops
-/// the owned stream; bounded CPU jobs may finish separately, retaining permits
-/// and dropping their private inputs without keeping the stream alive.
+/// band. Runner calls this entry point for saved Owner profiles resolved by the
+/// private API; this engine API itself grants no authority. Full RA2/RA2_256
+/// modes retain authenticated EAX records for the session. Authentication-only
+/// `ne` modes do not protect later traffic: Runner requires authorized,
+/// host-key-verified SSH to a literal server loopback destination, a live
+/// authenticated Tailscale peer stream, or Cloudflare Access with verified
+/// server-local origin TLS. Direct raw routes are rejected for `ne` modes.
+/// Other callers must independently enforce verified outer protection for `ne`.
+/// Cancellation/failure drops the owned stream; bounded CPU jobs may finish
+/// separately, retaining permits and dropping their private inputs without
+/// keeping the stream alive.
 /// Server keys are limited to 2048/3072/4096 bits and exponent 65537; every client
 /// handshake generates a fresh, fixed 2048-bit ephemeral key.
 pub async fn authenticate_rsa_aes<S>(

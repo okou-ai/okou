@@ -91,7 +91,7 @@
         OkouCatalogSection("Header") {
           // The switcher: the workspace's logo as a glass button, its name beside it with no
           // arrow; the menu lists each workspace's logo beside its name, a check on the
-          // current one. "Back to chat" is the glass circle on the right.
+          // current one. The chat filter is the glass circle on the right.
           let name = OkouCatalogSamples.workspaces.first { $0.id == workspace }?.name ?? ""
           HStack(spacing: OkouSpace.md) {
             Menu {
@@ -114,7 +114,7 @@
             .buttonStyle(.plain)
             Text(verbatim: name).font(.okou(.headline))
             Spacer(minLength: 0)
-            OkouToolbarIcon("chevrons-right").modifier(OkouGlassControl(shape: .circle))
+            OkouToolbarIcon("list-filter").modifier(OkouGlassControl(shape: .circle))
           }
         }
         OkouCatalogSection("Chats") {

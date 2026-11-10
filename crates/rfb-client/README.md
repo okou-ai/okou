@@ -120,14 +120,16 @@ QEMU-specific 263 path refuses QEMU 264; it does not claim generic standards
 X509SASL 264 support. The independent positive and negative fixture, cleanup,
 and version pins are in [`tests/QEMU_SASL.md`](tests/QEMU_SASL.md).
 
-`authenticate_rsa_aes` is a separate **engine-only** entry point for RA2 (5),
+`authenticate_rsa_aes` is a separate engine entry point for RA2 (5),
 RA2_256 (129), RA2ne (6) and RA2ne_256 (130). It requires an independently
-acquired full public-key-wire SHA256 pin and exact 255-byte credential subtype.
-Server RSA parameters are bounded; each attempt uses a fresh fixed client key
+acquired full public-key-wire SHA256 pin and one exact credential subtype
+(password-only or username/password, 1–255 exact UTF-8 bytes per field without NUL).
+Server RSA parameters are bounded; each attempt uses a fresh 2048-bit client key
 and bounded blocking crypto jobs. Full variants retain owned authenticated EAX
 records for the session; `ne` explicitly returns raw after encrypted credentials
-and requires protective outer transport in any future product. No owner/Runner
-profile is introduced. Protocol, key-pin bytes, backend erasure limits and the
+and requires protective outer transport under the current
+[RSA-AES product policy](#rsa-aes-product-integration). The engine API itself
+grants no authority. Protocol, key-pin bytes, backend erasure limits and the
 independent eight-case matrix are in [`tests/RSA_AES.md`](tests/RSA_AES.md).
 
 Success returns `Authenticated::into_stream()`, positioned immediately after
@@ -144,6 +146,37 @@ for its authenticated records. Other profiles start no task. The owned transport
 is fixed at authentication: verified TLS for X509, RSA-AES EAX for full RSA modes,
 or the separately selected supplied raw stream for Apple and RSA `ne`.
 No fallback changes that variant.
+
+## RSA-AES product integration
+
+The [Owner editor](../../turbo/apps/platform/src/views/okou-page/vnc-fields.tsx)
+offers saved RSA-AES profiles for all four modes and both credential subtypes.
+The [private API handoff](../../turbo/apps/api/src/signals/services/runner-vnc.service.ts)
+resolves the saved profile as `resolved_rsa_aes`;
+[Runner session startup](../runner-remote/src/vnc/sessions.rs) calls this engine
+with the selected mode, pin and credentials. Saved authority and independent
+VNC/route authorization belong to those callers, not this engine API.
+
+RA2 and RA2_256 retain authenticated EAX records for the full session and admit
+direct routes. Authentication-only RA2ne and RA2ne_256 do not protect subsequent
+RFB traffic. They require a verified full-session protective route ending on the
+RFB server: authorized, host-key-verified SSH to a literal server loopback
+destination (`127.0.0.1` or `::1`), a live authenticated Tailscale peer stream,
+or an authorized Cloudflare Access carrier with verified server-local origin
+TLS. Direct raw routes and Cloudflare Access without origin TLS are rejected.
+
+The API [configuration validator](../../turbo/apps/api/src/signals/services/vnc-configuration.utils.ts),
+[stored-route validator](../../turbo/apps/api/src/signals/services/vnc-stored-route.ts)
+and [Runner admission](../runner-remote/src/vnc/authority.rs) enforce these route
+requirements. Saved admission metadata alone does not prove protection: Runner
+also checks the [actual native stream](../runner-remote/src/vnc/native.rs) for a
+live authenticated Tailscale peer or verified origin TLS before `ne` RFB
+authentication.
+
+These source paths do not establish deployment, product rollout or independently
+verified Owner-to-Runner acceptance. The independent TigerVNC matrix in
+[`tests/RSA_AES.md`](tests/RSA_AES.md) remains engine-only evidence; its loopback
+`ne` captures do not authorize production raw-network use.
 
 ## Apple product transport policy
 

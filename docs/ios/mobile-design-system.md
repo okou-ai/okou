@@ -182,9 +182,9 @@ appearance. A 24-unit SVG viewBox is a drawing coordinate system, not a required
   and `background`; tiles, placeholders, media backdrops, zebra rows and tracks use the
   `state-hover` or `nested-fill` layers instead.
 - **Glass controls** use `OkouGlassControl`: native `.glassEffect(.regular.interactive())`
-  drawn on an exact 44 pt shape — `.circle` for a single glyph (menu, back to chat),
+  drawn on an exact 44 pt shape — `.circle` for a single glyph (menu, chat filter),
   `.capsule` at the same 44 pt height for a labeled control (the sidebar's search
-  field). Every bar control is the same clear glass, the sidebar's new chat included —
+  field, a chat filter other than Chats). Every bar control is the same clear glass, the sidebar's new chat included —
   no dark-tinted "prominent" circle. `.buttonStyle(.glass)`
   drew a ~35 pt circle inside its 44 pt frame and looked smaller than the UIKit glass
   "…" menu beside it. UIKit menu entries keep `UIButton.Configuration.glass()`.
@@ -332,7 +332,7 @@ Reusable views, grouped by what they do. Each group is a folder in
   once at launch): Apple's SF chevron was half again as tall and heavier than the Lucide
   glyphs beside it, so a pushed page's Back never matched the header's menu or the ✕.
 - **A menu opens from what it is attached to.** A `Menu`'s label is only as wide as its
-  own content (the Inbox filter is "Inbox ⌄"); a row that needs the full width widens
+  own content (the sidebar's chat filter is its glass control); a row that needs the full width widens
   outside the `Menu`. A full-width label makes the system open the menu from the middle
   of the row.
 - **Search is a page, not a sheet**, as ChatGPT, Claude and Perplexity open theirs: the
@@ -655,8 +655,11 @@ feature; the catalog shows each one.
   each page leads with fades out over up to 35 % of the screen while it moves
   (`OkouMotion.sidebarFeather`). Neither page slides as a card, so no edge, corner or
   shadow ever crosses the screen.
-- **Sidebar layout**: the workspace switcher top left and "back to chat" (»,
-  `chevrons-right`) top right, both 44 pt glass circles. The switcher is the workspace's
+- **Sidebar layout**: the workspace switcher top left and the chat filter (Lucide
+  `list-filter`) top right, both 44 pt glass controls. The filter is a circle on the
+  default Chats and a capsule naming any other filter ("Unread"), so a filtered list never
+  reads as missing chats. There is no back button: a left swipe returns to the chat, and
+  VoiceOver's escape gesture does the same. The switcher is the workspace's
   logo as a glass button (`OkouWorkspaceGlassLogo`: the logo round at 28 pt,
   `OkouAvatarSize.glassControl`, so it sits concentric in the circle), with the workspace
   name beside it and no arrow, as in Slack. The switcher opens the system menu with every workspace's
@@ -665,8 +668,9 @@ feature; the catalog shows each one.
   tile once (28 pt, `OkouAvatarSize.menu`) with the logo's own rounded corners. A thumb-reach bottom bar: the account's own photo
   (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a search capsule fills the
   middle, and new chat is the prominent circle on the right.
-- **Sidebar order**: the chat filter (the web's Inbox — All chats without archiving — /
-  Unread / Archived / Muted, then Mark all read); chats grouped Pinned / Today / Yesterday /
+- **Sidebar order**: the chat filter is the header's menu (the web's Inbox — All chats
+  without archiving — / Unread / Archived / Muted, then Mark all read), so the list starts
+  with its rows; chats grouped Pinned / Today / Yesterday /
   Previous 7 days / Earlier. Everything starts on the `pageInset` edge.
 - **Swipes move between pages.** A right swipe anywhere in a chat opens the full-screen
   sidebar and a left swipe anywhere in the sidebar closes it; content that scrolls
