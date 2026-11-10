@@ -1,5 +1,18 @@
 # Changelog
 
+## [0.244.53](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.52...runner-rs-v0.244.53) (2026-11-10)
+
+
+### Refactoring
+
+* **runner:** centralize blocking response projection ([#46195](https://github.com/okou-ai/okou/issues/46195)) ([9ad9015](https://github.com/okou-ai/okou/commit/9ad90151ac42e0bb25ec36366b52096d8f50b375))
+* **runner:** centralize bounded sigv4 prebinding probe ([#46202](https://github.com/okou-ai/okou/issues/46202)) ([50fd640](https://github.com/okou-ai/okou/commit/50fd640337f08bf18dc7ed8350311cb8daa95dc3))
+* **runner:** give webhook delivery one lifecycle owner ([#46210](https://github.com/okou-ai/okou/issues/46210)) ([4b53ef8](https://github.com/okou-ai/okou/commit/4b53ef87efbb63f7463d89a20334a575312bf4a4))
+
+### Release Dependencies
+
+* Release of `turbo/apps/cli`
+
 ## [0.244.52](https://github.com/okou-ai/okou/compare/runner-rs-v0.244.51...runner-rs-v0.244.52) (2026-11-09)
 
 ### Release Dependencies
