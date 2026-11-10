@@ -12,7 +12,9 @@
         let bypass, !bypass.isEmpty,
         let cookie = HTTPCookie(properties: [
           .name: "x-vercel-protection-bypass", .value: bypass,
-          .originURL: apiURL, .path: "/api/", .secure: "TRUE",
+          .originURL: apiURL,
+          .path: apiURL.appendingPathComponent("api").path,
+          .secure: "TRUE",
           .expires: Date().addingTimeInterval(3600),
         ])
       else { return }
