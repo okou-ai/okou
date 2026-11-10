@@ -1,6 +1,6 @@
 # Retire legacy custom Workflow Storage
 
-One-time operator for Epic #42362, after the Workflow claim reader has cut over
+One-time operator for Epic #45716, after the Workflow claim reader has cut over
 to database instructions and Workflow-owned R2 attachments. Run from
 `turbo/packages/db` using the repository-supported Node.js version and installed
 workspace dependencies. This tool is not a production startup migration.
@@ -23,8 +23,10 @@ Before **either** write mode, independently verify and record in the Epic:
 - Every supported Runner has the claim-time Workflow document/attachment reader;
   no legacy queued work, active Run, retained sandbox producer or other old
   consumer still needs generic Workflow Storage.
-- All ordinary Workflows have valid, owned attachment descriptors; no Workflow
-  publication tokens remain. An empty instruction may legitimately be SQL NULL.
+- All ordinary Workflows have valid, owned attachment descriptors. An empty
+  instruction may legitimately be SQL NULL.
+- The Stage 1 Workflow publication reservation writer is no longer serving or
+  draining, and is excluded by the enforced rollback floor.
 - Rollback versions that read or publish `custom-skill@…` Storage are excluded.
   Retaining terminal Run history is not a promise that those old archives remain
   replayable by old software.
@@ -37,6 +39,13 @@ these deployment facts. A terminal Run, an expired queue row, or elapsed time
 alone is insufficient evidence of consumer retirement. Database checks protect
 known references at planning, metadata removal and immediately before object
 deletion. They cannot stop an incompatible old writer from returning later.
+
+Plans retain `format: 1`; new inventories omit the obsolete
+`pendingPublications` counter. Previously reviewed plans remain usable with
+their original bytes and checksum for job recovery and audit. The retired
+counter is not a live publication gate. Exact target checks, source fingerprints,
+consumer protections and job identities remain in force. Future cleanup still
+requires fresh, complete dry-run pages and independently verified consumer gates.
 
 The former generic `storage-object-cleanup` worker was retired in #42250.
 Consequently this tool owns its **own explicit, bounded local execution** of
@@ -187,8 +196,8 @@ automatically certified as cleanup damage. An unexplained change blocks final
 acceptance. Recovered failure history remains visible even after completion.
 
 `batch_complete` certifies only that plan. Final acceptance also requires every
-plan/page accounted for and zero global legacy Storage, versions, Workflow
-publication tokens, unconverted Workflows and unfinished retirement jobs.
+plan/page accounted for and zero global legacy Storage, versions, unconverted
+Workflows and unfinished retirement jobs.
 `globalInventoryEmpty` reports the observation at `observedAt`; it is not a
 transaction spanning all audit statements. Recheck global totals at the end.
 Review current claim/startup runtime evidence and the externally verified
@@ -197,7 +206,7 @@ consumer/rollback gates before removing temporary credentials.
 Completed jobs establish bounded R2 listing and successful deletion responses
 through a final empty page. They do not establish independent third-party R2
 relisting, reclaimed bytes, or fresh controlled Agent execution tests. Retain
-these limits in the acceptance report. Keep Epic #42362 open until its cleanup,
+these limits in the acceptance report. Keep Epic #45716 open until its cleanup,
 runtime verification and contraction criteria are satisfied. Remove this
 one-time operator and its test registration only after that acceptance.
 

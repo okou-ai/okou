@@ -1,10 +1,4 @@
 import type { ContentBundle } from "@okouai/api-contracts/contracts/content-bundle";
-import {
-  workflowVisibilityPublicationSql,
-  workflowVisibilityGenerationChanged,
-} from "../services/workflow-visibility-publication-sql";
-import { boolean, literal, object } from "zod";
-import { parseRawRows } from "../../lib/db-raw-rows";
 import { agentRuns } from "@okouai/db/runtime/agent-run";
 import {
   readWorkflowCopySnapshot$,
@@ -41,7 +35,6 @@ import {
 } from "@okouai/db/schema/workflow";
 import {
   and,
-  DrizzleQueryError,
   eq,
   isNull,
   isNotNull,
@@ -1665,22 +1658,6 @@ interface VisibilityTransition {
   readonly member: WorkflowMember;
 }
 
-const workflowVisibilityPublicationRow = object({
-  changed: boolean(),
-  guard: literal(0),
-});
-
-function isWorkflowVisibilityGenerationChange(error: unknown): boolean {
-  return (
-    error instanceof DrizzleQueryError &&
-    error.cause instanceof Error &&
-    "code" in error.cause &&
-    error.cause.code === "22P02" &&
-    error.cause.message ===
-      `invalid input syntax for type integer: "${workflowVisibilityGenerationChanged}"`
-  );
-}
-
 const applyWorkflowVisibility$ = command(
   async (
     { set },
@@ -1701,29 +1678,36 @@ const applyWorkflowVisibility$ = command(
     signal: AbortSignal,
   ): Promise<boolean | ReturnType<typeof conflict>> => {
     const db = set(writeDb$);
-    const query = workflowVisibilityPublicationSql(args, nowDate());
     const visibilityChanged = await settle(
-      (async () => {
-        const result = await settle(
-          (async () => {
-            return parseRawRows(
-              workflowVisibilityPublicationRow,
-              await db.execute(query),
-            );
-          })(),
-        );
-        if (!result.ok) {
-          if (isWorkflowVisibilityGenerationChange(result.error)) {
-            return false;
-          }
-          throw result.error;
-        }
-        const row = result.value[0];
-        if (!row) {
-          throw new Error("Workflow visibility publication returned no row");
-        }
-        return row.changed;
-      })(),
+      db
+        .update(workflows)
+        .set({
+          visibility: args.visibility,
+          updatedBy: args.updatedByUserId,
+          updatedAt: nowDate(),
+        })
+        .where(
+          and(
+            eq(workflows.id, args.workflow.id),
+            eq(workflows.orgId, args.workflow.orgId),
+            eq(workflows.agentId, args.workflow.agentId),
+            eq(workflows.ownerUserId, args.workflow.ownerUserId),
+            eq(workflows.visibility, args.workflow.visibility),
+            isNull(workflows.officialDefinitionName),
+            exists(
+              db
+                .select({ id: agents.id })
+                .from(agents)
+                .where(
+                  and(
+                    eq(agents.id, args.workflow.agentId),
+                    eq(agents.orgId, args.workflow.orgId),
+                  ),
+                ),
+            ),
+          ),
+        )
+        .returning({ id: workflows.id }),
       signal,
     );
     if (!visibilityChanged.ok) {
@@ -1738,7 +1722,7 @@ const applyWorkflowVisibility$ = command(
       return workflowSlugConflict(args.visibility, args.workflow.name);
     }
     signal.throwIfAborted();
-    return visibilityChanged.value;
+    return visibilityChanged.value.length === 1;
   },
 );
 

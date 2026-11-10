@@ -11,7 +11,6 @@ import { SEED_SKILLS } from "@okouai/core/seed-skills";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
 import { workflowAutomations } from "@okouai/db/runtime/workflow-automation";
-import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
 import { contentBundleAvailableCondition } from "./content-bundle-claim";
 
 export const claimedWorkflowSchema = zObject({
@@ -141,11 +140,6 @@ export function workflowClaimSelectionSql(input: WorkflowClaimInput): SQL {
           AND (NOT ${selection?.protectedMountPaths === undefined}
             OR locked_run."triggerSource" NOT IN ('automation-schedule', 'automation-event')
             OR locked_run."workflowAutomationId" IS NOT NULL)
-          AND NOT EXISTS (
-            SELECT 1 FROM ${storagePublicationTokens} INNER JOIN selected_workflows
-              ON ${storagePublicationTokens.publicationKey} = 'workflow:' || selected_workflows.id::text
-            WHERE ${and(eq(storagePublicationTokens.orgId, sql`locked_run."orgId"`), eq(storagePublicationTokens.agentId, sql`locked_run."agentId"`))}
-          )
           AND EXISTS (SELECT 1 FROM selected_agent)
           AND (COALESCE(${automationId}::uuid, locked_run."workflowAutomationId") IS NULL OR EXISTS (
             SELECT 1 FROM ${workflowAutomations} INNER JOIN ${workflows} ON ${eq(workflows.id, workflowAutomations.workflowId)}
