@@ -223,7 +223,7 @@ final class ThreadListStore {
           let cachedUnread = response.indicators == nil ? await sync.cachedIndicators() : nil
           try Task.checkCancellation()
           guard !closed, refreshGeneration == generation else { return }
-          optimisticChanges.removeAll { response.eventIDs.contains($0.id) }
+          settleOptimisticChanges(eventIDs: response.eventIDs)
           // A read started before creation cannot remove its acknowledged thread.
           guard creation == creationRevision else {
             refreshAgain = true
@@ -475,6 +475,52 @@ final class ThreadListStore {
     didRefresh(result)
   }
 
+  private func settleOptimisticChanges(eventIDs: Set<String>) {
+    var confirmedMemberships: [String: Int] = [:]
+    for (index, event) in optimisticChanges.enumerated()
+    where event.change.kind == .projectUpdated && eventIDs.contains(event.id) {
+      confirmedMemberships[event.change.chatThreadId] = index
+    }
+    optimisticChanges = optimisticChanges.enumerated().filter { index, event in
+      !eventIDs.contains(event.id)
+        && (event.change.kind != .projectUpdated
+          || index > (confirmedMemberships[event.change.chatThreadId] ?? -1))
+    }.map(\.element)
+  }
+
+  @discardableResult
+  func setProject(
+    _ id: String, projectID: String?, onFailure: (@MainActor (String) -> Void)? = nil,
+    didBegin: @MainActor () -> Void = {}
+  ) async -> Bool {
+    guard canUpdate(id), !Task.isCancelled,
+      let current = threads.first(where: { $0.id == id })
+    else { return false }
+    let pending = optimisticChanges.last {
+      $0.change.kind == .projectUpdated && $0.change.chatThreadId == id
+    }
+    let retry = pending.map { $0.change.projectId == projectID } ?? false
+    guard current.projectId != projectID || retry else { return false }
+    let eventID: String
+    if let pending, pending.change.projectId == projectID {
+      eventID = pending.id
+    } else {
+      eventID = ChatProjects.operationID()
+      optimisticChanges.append(
+        (
+          eventID,
+          ChatThreadChange(
+            kind: .projectUpdated, chatThreadId: id, agentId: current.agentID,
+            projectId: projectID, createdAt: current.updatedAt)
+        ))
+    }
+    projectThreads(threads)
+    return await updateThread(id, onFailure: onFailure, didBegin: didBegin) { [client] in
+      try await ChatProjects(client: client).move(
+        threadID: id, projectID: projectID, eventID: eventID)
+    }
+  }
+
   func dismissError() {
     actionError = nil
   }
@@ -602,6 +648,7 @@ final class ThreadListStore {
   @discardableResult
   private func updateThread(
     _ id: String, onFailure: (@MainActor (String) -> Void)? = nil,
+    didBegin: @MainActor () -> Void = {},
     command: @escaping @MainActor () async throws -> Void
   ) async -> Bool {
     guard !updatingThreads.contains(id), !closed, !blocked, !Task.isCancelled else { return false }
@@ -633,6 +680,7 @@ final class ThreadListStore {
       }
     }
     updateTasks[id] = task
+    didBegin()
     await task.value
     return succeeded && !closed && !blocked
   }

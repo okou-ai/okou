@@ -594,6 +594,28 @@ final class WorkspaceStore {
   }
 
   @discardableResult
+  func moveToProject(
+    _ id: String, projectID: String?, didBegin: @MainActor () -> Void = {}
+  ) async -> Bool {
+    guard !closed, !needsUpgrade else { return false }
+    return await list.setProject(
+      id, projectID: projectID,
+      onFailure: { [weak self] message in
+        guard let self, !closed, !needsUpgrade else { return }
+        threadFeedback = ChatThreadFeedback(
+          threadID: id, message: message, actionTitle: "Retry", persists: true, kind: .error
+        ) { [weak self] in
+          await self?.moveToProject(id, projectID: projectID)
+        }
+      },
+      didBegin: {
+        if threadFeedback?.threadID == id { threadFeedback = nil }
+        if let projectID { projects.expand(projectID) }
+        didBegin()
+      })
+  }
+
+  @discardableResult
   func setArchived(
     _ id: String, archived: Bool, leaveDetail: Bool = false,
     restoreOnUndo: Bool = false, reopenOnSuccess: Bool = false,

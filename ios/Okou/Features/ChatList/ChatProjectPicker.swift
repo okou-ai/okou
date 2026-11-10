@@ -123,10 +123,10 @@ struct ChatProjectPicker: View {
   private func move(to projectID: String?) {
     moving = true
     moveTask = Task {
-      let moved = await workspace.projects.move(threadID: thread.id, projectID: projectID)
+      // The list retains the mutation before the picker dismisses and cancels its waiter.
+      await workspace.moveToProject(thread.id, projectID: projectID) { dismiss() }
       guard !Task.isCancelled else { return }
       moving = false
-      if moved { dismiss() }
     }
   }
 }

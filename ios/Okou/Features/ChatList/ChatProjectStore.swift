@@ -174,18 +174,6 @@ final class ChatProjectStore {
     return true
   }
 
-  @discardableResult
-  func move(threadID: String, projectID: String?) async -> Bool {
-    let result = await mutate(key: threadID, payload: "move:\(projectID ?? "")") {
-      [service] eventID in
-      try await service.move(threadID: threadID, projectID: projectID, eventID: eventID)
-    }
-    guard result != nil, !closed else { return false }
-    if let projectID { expand(projectID) }
-    await didChangeMembership()
-    return true
-  }
-
   /// Failed explicit retries retain their operation identity; a changed intent gets a new one.
   private func mutate<Value: Sendable>(
     key: String, payload: String,

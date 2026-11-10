@@ -8,6 +8,90 @@ import XCTest
 
 @MainActor
 final class ChatThreadActionsTests: XCTestCase {
+  func testProjectMovesUpdateBeforeConfirmationAndSurvivePickerCancellation() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    store.selectChat(ThreadActionsFixture.thread)
+    let original = try XCTUnwrap(store.list.threads.first)
+    let destinations: [String?] = [
+      ThreadActionsFixture.project, ThreadActionsFixture.otherProject, nil,
+    ]
+    for projectID in destinations {
+      let gate = ThreadActionGate()
+      defer { gate.open() }
+      let requested = expectation(description: "Project write reached HTTP")
+      fixture.state.value.withLock {
+        $0.nextGate = gate
+        $0.nextWriteRequested = { requested.fulfill() }
+      }
+      var pickerOpen = true
+      let moving = Task {
+        await store.moveToProject(ThreadActionsFixture.thread, projectID: projectID) {
+          pickerOpen = false
+        }
+      }
+      addTeardownBlock { @MainActor in
+        store.close()
+        moving.cancel()
+        gate.open()
+        _ = await moving.value
+      }
+      await fulfillment(of: [requested], timeout: 3)
+      XCTAssertFalse(pickerOpen)
+      XCTAssertEqual(store.list.threads.first?.projectId, projectID)
+      XCTAssertEqual(store.selectedConversation?.thread.projectId, projectID)
+      XCTAssertEqual(store.selectedThreadID, original.id)
+      XCTAssertEqual(store.list.threads.first?.sortAt, original.sortAt)
+      if let projectID { XCTAssertTrue(store.projects.isExpanded(projectID)) }
+
+      moving.cancel()
+      await store.refresh()
+      XCTAssertEqual(store.list.threads.first?.projectId, projectID)
+      gate.open()
+      let moved = await moving.value
+      XCTAssertTrue(moved)
+    }
+    fixture.remote(
+      kind: "project_updated", extra: ",\"projectId\":\"\(ThreadActionsFixture.project)\"")
+    await store.refresh()
+    XCTAssertEqual(store.selectedConversation?.thread.projectId, ThreadActionsFixture.project)
+    XCTAssertEqual(fixture.writes.map(\.action), ["project", "project", "project"])
+  }
+
+  func testFailedProjectMoveRetriesItsIdentityAndSettlesEarlierFailedMoves() async throws {
+    let fixture = ThreadActionsFixture()
+    let store = fixture.workspace()
+    defer { store.close() }
+    await store.refresh()
+    fixture.state.value.withLock { $0.failNext["project"] = 503 }
+    let failed = await store.moveToProject(
+      ThreadActionsFixture.thread, projectID: ThreadActionsFixture.project)
+    XCTAssertFalse(failed)
+    XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
+    await store.refresh()
+    XCTAssertEqual(store.list.threads.first?.projectId, ThreadActionsFixture.project)
+    await (try XCTUnwrap(store.threadFeedback)).action()
+    let ids = fixture.writes.compactMap(\.eventID)
+    XCTAssertEqual(ids.count, 2)
+    XCTAssertEqual(ids.first, ids.last)
+    XCTAssertEqual(try XCTUnwrap(ids.first).split(separator: "-")[2].first, "7")
+    XCTAssertNil(store.threadFeedback)
+
+    fixture.state.value.withLock { $0.failNext["project"] = 503 }
+    await store.moveToProject(
+      ThreadActionsFixture.thread, projectID: ThreadActionsFixture.otherProject)
+    let moved = await store.moveToProject(ThreadActionsFixture.thread, projectID: nil)
+    XCTAssertTrue(moved)
+    // A later confirmed choice also settles the earlier move that never persisted.
+    fixture.remote(
+      kind: "project_updated", extra: ",\"projectId\":\"\(ThreadActionsFixture.project)\"")
+    await store.refresh()
+    XCTAssertEqual(store.list.threads.first?.projectId, ThreadActionsFixture.project)
+    XCTAssertEqual(Set(fixture.writes.compactMap(\.eventID)).count, 3)
+  }
+
   func testOpenMenuUsesTheLatestTitleWhenSettingStatusOrMovingToProject() async throws {
     let fixture = ThreadActionsFixture()
     let store = fixture.workspace()
@@ -409,6 +493,8 @@ private final class ThreadActionsFixture: Sendable {
   static let createdThread = "78000000-0000-4000-8000-000000000004"
   static let agent = "78000000-0000-4000-8000-000000000002"
   static let otherAgent = "78000000-0000-4000-8000-000000000003"
+  static let project = "78000000-0000-4000-8000-000000000071"
+  static let otherProject = "78000000-0000-4000-8000-000000000072"
   static let date = "2026-10-21T00:00:00Z"
   struct Write: Sendable {
     let action: String
@@ -438,6 +524,37 @@ private final class ThreadActionsFixture: Sendable {
     self.state = state
     http = ChatHTTPFixture { request in
       let path = request.url?.path ?? ""
+      if request.httpMethod == "PUT", path == "/api/chat-threads/\(Self.thread)/project" {
+        struct Membership: Decodable {
+          let eventId: String
+          let projectId: String?
+        }
+        let body = try JSONDecoder().decode(Membership.self, from: chatRequestBody(request))
+        let (gate, status, requested) = state.value.withLock { state in
+          state.writes.append(Write(action: "project", eventID: body.eventId, title: nil))
+          let gate = state.nextGate
+          let requested = state.nextWriteRequested
+          state.nextGate = nil
+          state.nextWriteRequested = nil
+          return (gate, state.failNext.removeValue(forKey: "project") ?? 200, requested)
+        }
+        requested?()
+        await gate?.wait()
+        try Task.checkCancellation()
+        if status != 200 {
+          return ChatHTTPResponse(
+            status: status, body: #"{"error":{"message":"Project move unavailable"}}"#)
+        }
+        let project = body.projectId.map { "\"\($0)\"" } ?? "null"
+        state.value.withLock {
+          $0.events.append(
+            Self.event(
+              kind: "project_updated", id: body.eventId, seq: $0.events.count + 1,
+              extra: ",\"projectId\":\(project)"))
+        }
+        return ChatHTTPResponse(
+          body: "{\"threadId\":\"\(Self.thread)\",\"projectId\":\(project)}")
+      }
       if request.httpMethod == "POST", path == "/api/chat-threads" {
         let (gate, requested) = state.value.withLock { state in
           state.writes.append(Write(action: "create", eventID: nil, title: nil))
