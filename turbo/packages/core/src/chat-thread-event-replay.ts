@@ -202,6 +202,7 @@ function applyEvent(
 export function replayChatThreadEvents(
   snapshot: readonly ChatThreadSnapshotProjection[],
   events: readonly ReplayChatThreadEvent[],
+  options: { readonly includeHidden?: boolean } = {},
 ): EventDrivenChatThread[] {
   const threads = new Map<string, EventDrivenChatThread>();
   for (const thread of snapshot) {
@@ -225,7 +226,7 @@ export function replayChatThreadEvents(
   }
   return [...threads.values()]
     .filter((thread) => {
-      return !thread.hidden;
+      return options.includeHidden || !thread.hidden;
     })
     .sort(compareThreadOrder);
 }
