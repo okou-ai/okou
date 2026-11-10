@@ -9,14 +9,21 @@ underlying ownership contracts. Setup commands belong in the
 
 ## Enforced Boundaries
 
-| Rule                     | Contract                                                                                                                                                  | Web counterpart                                                       |
-| ------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------- |
-| `okou_render_effects`    | No known imperative requests, graph writes/construction, Task launches, subscriptions, or external state assignments during native projection.            | `no-side-effect-in-render`                                            |
-| `okou_stable_graph`      | Construct graph definitions at the owner, not inside graph callbacks, UI actions, or repeatedly invoked operation methods.                                | `no-command-in-command` and signal identity guidance                  |
-| `okou_private_atoms`     | Keep mutable CCState atoms private or fileprivate, including their enclosing owner; expose read signals and semantic commands.                            | `no-export-state`                                                     |
-| `okou_accessor_escape`   | Do not pass, store, return, or capture graph accessors into known deferred callbacks; ordinary helper parameters cannot expose Getter/CommandContext.     | `no-accessor-escape`, `no-getter-setter-params`                       |
-| `okou_native_requests`   | Raw URLSession operations and method references belong at their transport definition sites.                                                               | `no-direct-fetch`                                                     |
-| `okou_resource_failures` | Preserve failures inside Computed/computedTask/Command/asyncCommand; reject optional try and unfiltered catches that fabricate successful empty outcomes. | Error-swallowing helper restrictions and loadable-owned request state |
+| Rule                        | Contract                                                                                                                                                                                | Web counterpart                                                   |
+| --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------- |
+| `okou_render_effects`       | No known imperative requests, graph writes/construction, Task launches, subscriptions, or external state assignments during native projection.                                          | `no-side-effect-in-render`                                        |
+| `okou_stable_graph`         | Construct graph definitions at the owner, not inside graph callbacks, UI actions, or repeatedly invoked operation methods.                                                              | `no-command-in-command` and signal identity guidance              |
+| `okou_private_atoms`        | Keep mutable CCState atoms private or fileprivate, including their enclosing owner; expose read signals and semantic commands.                                                          | `no-export-state`                                                 |
+| `okou_accessor_escape`      | Do not pass, store, return, or capture graph accessors into known deferred callbacks; ordinary helper parameters cannot expose Getter/CommandContext.                                   | `no-accessor-escape`, `no-getter-setter-params`                   |
+| `okou_native_requests`      | Raw URLSession operations and method references belong at their transport definition sites.                                                                                             | `no-direct-fetch`                                                 |
+| `okou_resource_failures`    | Preserve failures inside Computed/computedTask/Command/asyncCommand; reject optional try and unfiltered empty outcomes, plus cancellation catches that return successful resource data. | Error-swallowing helper restrictions and cancellation propagation |
+| `okou_test_synchronization` | Reject known fixed-duration sleeps and fixed-count yield loops in XCTest/Swift Testing code.                                                                                            | `no-test-delay` and test synchronization guidance                 |
+
+The existing SwiftLint rules also check discarded throwing Tasks
+(`unhandled_throwing_task`), discarded block-based notification observer handles
+(`discarded_notification_center_observer`), and exposed SwiftUI `@State` /
+`@StateObject` properties (`private_swiftui_state`). A retained Task must still
+have a real result/cleanup owner; retaining an observer does not prove teardown.
 
 ## Native Semantics
 
@@ -42,10 +49,22 @@ underlying ownership contracts. Setup commands belong in the
   public asset requests. Business callers use typed ChatData services. Review
   changes to those owners as transport changes; do not broaden exclusions to
   hide feature-local requests.
-- Typed cancellation/domain catches and cleanup followed by rethrowing the
-  original error remain valid. A failed read must not become successful empty
-  data. Request phases belong to CCStateSwiftUI loadables; drafts, confirmed
-  snapshots, and protocol phases follow their own business contracts.
+- Typed domain catches, cancellation rethrows, and cleanup followed by rethrowing
+  the original error remain valid. In a Computed/computedTask resource read,
+  a cancellation catch cannot return successful data. A semantic command or
+  native presentation operation may deliberately end a cancelled action.
+  An explicitly typed `Computed/Signal<Task<Void, Never>>` is a completion-only
+  owner bridge; ending its cancelled work does not publish resource data.
+  A data-producing `Task<Value, Never>` still cannot fabricate successful data
+  from cancellation.
+  Request phases belong to CCStateSwiftUI loadables; drafts, confirmed snapshots,
+  and protocol phases follow their own business contracts.
+- Tests await observable completion or an owned gate. Fixed sleep durations,
+  including local constant aliases, and constant-bounded `for` loops with
+  `Task.yield()` are checked. Forwarding a duration through an injected clock,
+  bounded XCTest expectation timeouts, and waits that observe a result remain
+  valid. Production protocol polling retains its owner, server cadence and
+  cancellation contract; it is not a test synchronization primitive.
 
 ## Static Analysis Limits
 
