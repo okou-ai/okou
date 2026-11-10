@@ -1,6 +1,6 @@
 # RSA-AES engine interoperability (opt-in)
 
-This is **engine-only** evidence for #37499 under #35045. It does not expose a saved Owner/API/Runner profile or prove an Owner→Agent→Runner PNG. No RealVNC SystemAuth/SSO/MFA, RA2r or unspecified server compatibility is claimed.
+This is **engine-only** evidence for #37499 under #35045. It does not establish product rollout or prove an Owner→Agent→Runner PNG. The existing saved-profile/private-handoff/Runner integration and enforced route requirements are described in the [RSA-AES product policy](../README.md#rsa-aes-product-integration). No RealVNC SystemAuth/SSO/MFA, RA2r or unspecified server compatibility is claimed.
 
 ## Exact policy and wire
 
@@ -12,7 +12,7 @@ RSA PKCS#1 v1.5 random exchange and SHA1-128/SHA256-256 derivation/proof follow 
 
 The owned record layer authenticates U16 big-endian length as AAD, uses a 16-byte EAX tag and independent little-endian 128-bit counters from zero, refuses 2^32 records/nonce reuse, bounds payload at 65535 bytes and one read/pending-write frame, and releases plaintext only after constant-time MAC verification. Empty-frame/per-poll work is bounded. Record/RFB boundaries need not align. Accepted buffered writes are drained by flush/next write; uncertain IO closes rather than replays.
 
-Full variants retain EAX through SecurityResult and the whole session. `ne` explicitly flushes encrypted credentials, refuses unread encrypted plaintext and switches to raw before SecurityResult. **It does not protect the desktop stream**; any future product admission requires separately verified outer protection. Concrete stream selection never falls back. Okou-owned credentials, directional keys and plaintext buffers zeroize; RustCrypto EAX's internal temporary key copies have no immediate-erasure guarantee. No secret-bearing cause/Debug output is exposed.
+Full variants retain EAX through SecurityResult and the whole session. `ne` explicitly flushes encrypted credentials, refuses unread encrypted plaintext and switches to raw before SecurityResult. **It does not protect the desktop stream**; product callers must separately enforce verified outer protection under that policy. Concrete stream selection never falls back. Okou-owned credentials, directional keys and plaintext buffers zeroize; RustCrypto EAX's internal temporary key copies have no immediate-erasure guarantee. No secret-bearing cause/Debug output is exposed.
 
 ## Independent installed-release fixture
 
