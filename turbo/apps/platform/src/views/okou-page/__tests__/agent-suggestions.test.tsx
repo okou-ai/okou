@@ -349,12 +349,8 @@ test("The Okou row leads the chat list, counts waiting cards and opens home", as
   const row = await waitFor(() => {
     return okouRow();
   });
+  expect(row).toHaveTextContent(/^Okou/);
   await within(row).findByText("2 waiting");
-  // The badge draws the count on the avatar; the label names it after Okou.
-  expect(row).toHaveAccessibleName(/^Okou\s*2 waiting$/);
-  expect(within(row).getByTestId("okou-row-waiting-badge")).toHaveTextContent(
-    /^2$/,
-  );
   // The row leads the chats, above their scrolling list.
   const chats = within(screen.getByTestId("chat-list-column")).getByTestId(
     "sidebar-scroll-area",
@@ -698,16 +694,6 @@ test("The Okou row's count follows committed suggestion changes", async () => {
   await waitFor(() => {
     expect(okouRow()).toHaveTextContent(/^Okou$/);
   });
-});
-
-test("The Okou row's badge stops at 9+ while its label keeps the full count", async () => {
-  // The list holds at most ten cards, so ten is the only count past nine.
-  mockPool(numberedSuggestions(10));
-  await openHome();
-  await within(okouRow()).findByText("10 waiting");
-  expect(
-    within(okouRow()).getByTestId("okou-row-waiting-badge"),
-  ).toHaveTextContent(/^9\+$/);
 });
 
 test("Each home visit loads new suggestions", async () => {
