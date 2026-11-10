@@ -3200,11 +3200,10 @@
     "enableByDefault": "Aktifkan {{account}} secara default",
     "enabledAccounts": "{{value}} aktif",
     "manageAccounts": "Kelola akun",
-    "noAccount": "Tidak ada akun dipilih",
     "noEnabledAccount": "Tidak ada akun aktif untuk chat ini",
     "permissions": "Izin",
     "permissionsDescription": "Aturan ini berlaku untuk konektor ini di semua chat dan akun Anda.",
-    "settingsDescription": "Pilih akun yang aktif secara default dan akun default untuk chat baru."
+    "settingsDescription": "Pilih akun yang aktif secara default."
   },
   "connectors": {
     "access": {

@@ -3263,11 +3263,10 @@
     "enableByDefault": "Activar {{account}} de forma predeterminada",
     "enabledAccounts": "{{value}} activas",
     "manageAccounts": "Gestionar cuentas",
-    "noAccount": "Ninguna cuenta seleccionada",
     "noEnabledAccount": "Ninguna cuenta está activa en este chat",
     "permissions": "Permisos",
     "permissionsDescription": "Estas reglas se aplican a este conector en todos tus chats y cuentas.",
-    "settingsDescription": "Elige las cuentas activas por defecto y la cuenta predeterminada para nuevos chats."
+    "settingsDescription": "Elige las cuentas activas por defecto."
   },
   "connectors": {
     "access": {

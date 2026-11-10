@@ -3214,11 +3214,10 @@
     "enableByDefault": "{{account}} को डिफ़ॉल्ट रूप से चालू करें",
     "enabledAccounts": "{{value}} चालू",
     "manageAccounts": "खाते प्रबंधित करें",
-    "noAccount": "कोई खाता नहीं चुना गया",
     "noEnabledAccount": "इस चैट के लिए कोई खाता चालू नहीं है",
     "permissions": "अनुमतियाँ",
     "permissionsDescription": "ये नियम आपकी सभी चैट और खातों में इस कनेक्टर पर लागू होते हैं।",
-    "settingsDescription": "डिफ़ॉल्ट रूप से चालू खाते और नई चैट के लिए डिफ़ॉल्ट खाता चुनें।"
+    "settingsDescription": "डिफ़ॉल्ट रूप से चालू खाते चुनें।"
   },
   "connectors": {
     "access": {

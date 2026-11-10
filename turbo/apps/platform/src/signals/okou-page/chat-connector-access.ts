@@ -194,7 +194,7 @@ function pendingConnectorOverride(
       enabled === null
         ? overrides
         : [...overrides, { target: access.target, connectionId, enabled }],
-    // Capture the displayed current account even when enabling several accounts
+    // Capture the resolved current account even when enabling several accounts
     // in a new Chat; sequential server initialization must choose the same one.
     selections: current
       ? [

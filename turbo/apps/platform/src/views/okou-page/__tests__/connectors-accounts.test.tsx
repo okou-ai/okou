@@ -177,12 +177,15 @@ async function openAccountAvailabilityManager({
 }
 
 test("Manage each saved account's default availability independently", async () => {
-  const { toggle } = await openAccountAvailabilityManager({
+  const { manager, toggle } = await openAccountAvailabilityManager({
     defaultAccount: "Work",
     enabledAccounts: ["Work", "Personal"],
   });
   await expect(toggle("Work")).resolves.toBeChecked();
   await expect(toggle("Personal")).resolves.toBeChecked();
+  expect(
+    within(manager).getByText("Choose which accounts are on by default."),
+  ).toBeInTheDocument();
   click(await toggle("Work"));
   await expect(toggle("Work")).resolves.not.toBeChecked();
   await expect(toggle("Personal")).resolves.toBeChecked();
