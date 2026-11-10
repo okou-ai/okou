@@ -164,12 +164,8 @@ final class PermissionActionStore {
     do { return .success(try await resource.load()) } catch { return .failure(error) }
   }
 
-  func confirm() async {
-    guard !closed, isActive, operation == nil, !Task.isCancelled else { return }
-    let visit = generation
-    guard case .success(let reviewed) = await readResult(),
-      generation == visit, !Task.isCancelled, operation == nil, canConfirm(reviewed)
-    else { return }
+  func confirm(_ reviewed: ChatPermissionSnapshot) async {
+    guard canConfirm(reviewed), operation == nil, !Task.isCancelled else { return }
     isSaving = true
     error = nil
     let generation = generation

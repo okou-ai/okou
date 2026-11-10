@@ -255,7 +255,8 @@ private struct PermissionBatchDetailsContent: View {
           }
         }
         Button {
-          Task { await store.confirm() }
+          guard let reviewed = snapshot else { return }
+          Task { await store.confirm(reviewed) }
         } label: {
           ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
         }

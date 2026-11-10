@@ -44,12 +44,12 @@ final class PermissionBatchTests: XCTestCase {
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
     card.duration = .week
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNil(card.error)
     let snapshot1 = try await card.resource.load()
     XCTAssertTrue(snapshot1.allAllowed)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
-    await card.confirm()
+    try await confirm(card)
     await card.refresh()
     let saved = try await ChatBatchPermissions(client: fixture.http.client).load(card.action)
     XCTAssertTrue(saved.allAllowed)
@@ -65,13 +65,13 @@ final class PermissionBatchTests: XCTestCase {
     let fixture = fixture(state)
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNotNil(card.error)
     let snapshot2 = try await card.resource.load()
     XCTAssertEqual(snapshot2.allowedCount, 2)
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     fixture.state.withLock { $0.failConnector = nil }
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNil(card.error)
     let snapshot3 = try await card.resource.load()
     XCTAssertTrue(snapshot3.allAllowed)
@@ -90,13 +90,13 @@ final class PermissionBatchTests: XCTestCase {
     let fixture = fixture(state)
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
-    await card.confirm()
+    try await confirm(card)
     let snapshot4 = try await card.resource.load()
     XCTAssertTrue(snapshot4.allAllowed)
     let snapshot5 = try await card.resource.load()
     XCTAssertTrue(card.needsContinuation(snapshot5))
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNil(card.error)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
     XCTAssertEqual(
@@ -111,16 +111,16 @@ final class PermissionBatchTests: XCTestCase {
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
     let reviewed = try await card.resource.load()
-    await card.confirm()
+    try await confirm(card)
     XCTAssertTrue(card.requiresReadback)
     XCTAssertFalse(card.canConfirm(reviewed))
-    await card.confirm()
+    await card.confirm(reviewed)
     XCTAssertEqual(
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     fixture.state.withLock { $0.grantReadStatus = 200 }
     await card.refresh()
-    await card.confirm()
+    try await confirm(card)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
     XCTAssertEqual(
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
@@ -132,11 +132,12 @@ final class PermissionBatchTests: XCTestCase {
     let fixture = fixture(state)
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
-    await card.confirm()
+    try await confirm(card)
     let snapshot6 = try await card.resource.load()
     XCTAssertTrue(card.needsContinuation(snapshot6))
     fixture.state.withLock { $0.grants.removeAll { $0.permission == "mail.send" } }
-    await card.confirm()
+    await card.refresh()
+    await card.confirm(snapshot6)
     XCTAssertNotNil(card.error)
     let snapshot7 = try await card.resource.load()
     XCTAssertFalse(snapshot7.allAllowed)
@@ -144,7 +145,7 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertEqual(
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
     // The next confirmation now approves the missing permission, not a continuation.
-    await card.confirm()
+    try await confirm(card)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
     XCTAssertEqual(
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 2)
@@ -156,10 +157,10 @@ final class PermissionBatchTests: XCTestCase {
     let fixture = fixture(state)
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
-    await card.confirm()
+    try await confirm(card)
     let snapshot8 = try await card.resource.load()
     XCTAssertTrue(card.needsContinuation(snapshot8))
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNil(card.error)
     let snapshot9 = try await card.resource.load()
     XCTAssertFalse(card.needsContinuation(snapshot9))
@@ -174,7 +175,7 @@ final class PermissionBatchTests: XCTestCase {
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
     card.duration = .day
-    await card.confirm()
+    try await confirm(card)
     fixture.state.withLock {
       $0.grants.removeAll { $0.permission == "mail.send" }
       $0.threadAgentID = UUID().uuidString
@@ -184,7 +185,7 @@ final class PermissionBatchTests: XCTestCase {
     XCTAssertFalse(snapshot10.allAllowed)
     XCTAssertEqual(card.duration, .day)
     let writes = fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNotNil(card.error)
     XCTAssertEqual(
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, writes)
@@ -192,6 +193,23 @@ final class PermissionBatchTests: XCTestCase {
     conversation.close()
     await card.refresh()
     XCTAssertFalse(card.canConfirm(reviewed))
+  }
+
+  func testConfirmKeepsTheReviewedScopeWhenAnotherReaderRefreshes() async throws {
+    let fixture = fixture()
+    let (conversation, card) = try await setup(fixture)
+    defer { conversation.close() }
+    let reviewed = try await card.resource.load()
+    XCTAssertFalse(reviewed.connectorScoped)
+    // A shared reader may publish a newer scope after the user has reviewed the request.
+    fixture.state.withLock { $0.shared = true }
+    await card.refresh()
+    let updated = try await card.resource.load()
+    XCTAssertTrue(updated.connectorScoped)
+    await card.confirm(reviewed)
+    XCTAssertNotNil(card.error)
+    XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
+    XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
   }
 
   func testAlreadyAllowedRequestOnlyContinuesOnExplicitConfirmation() async throws {
@@ -205,7 +223,7 @@ final class PermissionBatchTests: XCTestCase {
     let snapshot11 = try await card.resource.load()
     XCTAssertTrue(snapshot11.allAllowed)
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
-    await card.confirm()
+    try await confirm(card)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permissions" })
     XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod != "PUT" } })
   }
@@ -226,16 +244,16 @@ final class PermissionBatchTests: XCTestCase {
       gate.open()
       conversation.close()
     }
-    let operation = Task { await card.confirm() }
+    let operation = Task { try await confirm(card) }
     await fulfillment(of: [started], timeout: 3)
     let reviewed = try await card.resource.load()
     conversation.close()
     gate.open()
-    await operation.value
+    try await operation.value
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     XCTAssertFalse(card.canConfirm(reviewed))
     let count = fixture.state.withLock { $0.requests.count }
-    await card.confirm()
+    await card.confirm(reviewed)
     await card.refresh()
     XCTAssertEqual(fixture.state.withLock { $0.requests.count }, count)
   }
@@ -314,7 +332,7 @@ final class PermissionBatchTests: XCTestCase {
     } catch let error as APIClientError { XCTAssertEqual(error.statusCode, 401) }
     fixture.state.withLock { $0.grantReadStatus = 200 }
     await card.refresh()
-    await card.confirm()
+    try await confirm(card)
     let partial = try await other.resource.load()
     XCTAssertEqual(partial.allowedCount, 2)
     XCTAssertTrue(conversation.permissionActions.isBusy)
@@ -324,7 +342,7 @@ final class PermissionBatchTests: XCTestCase {
     await card.refresh()
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     fixture.state.withLock { $0.failConnector = nil }
-    await card.confirm()
+    try await confirm(card)
     let current = try await other.resource.load()
     XCTAssertTrue(current.allAllowed)
     let writes = fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" } }
@@ -338,6 +356,11 @@ final class PermissionBatchTests: XCTestCase {
 
   private func fixture(_ state: F.State = .init()) -> F {
     F(initial: state, onUnhandledRequest: { XCTFail($0) })
+  }
+
+  private func confirm(_ card: PermissionBatchStore) async throws {
+    let reviewed = try await card.resource.load()
+    await card.confirm(reviewed)
   }
 
   private func setup(_ fixture: F) async throws -> (ConversationStore, PermissionBatchStore) {

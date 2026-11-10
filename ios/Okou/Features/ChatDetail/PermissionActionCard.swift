@@ -306,8 +306,9 @@ private struct PermissionActionDetailsContent: View {
       }
       VStack(spacing: OkouSpace.ten) {
         Button {
+          guard let reviewed = snapshot else { return }
           confirmingContinuation = store.needsContinuation
-          Task { await store.confirm() }
+          Task { await store.confirm(reviewed) }
         } label: {
           ChatSettingsActionLabel(title: confirmationTitle, isBusy: store.isSaving)
         }

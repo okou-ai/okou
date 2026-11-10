@@ -75,13 +75,8 @@ final class PermissionBatchStore {
     }
   }
 
-  func confirm() async {
-    guard !closed, isActive, operation == nil, !Task.isCancelled else { return }
-    let visit = generation
-    let reviewed: ChatPermissionBatchSnapshot
-    do { reviewed = try await resource.load() } catch { return }
-    guard generation == visit, !Task.isCancelled, operation == nil, canConfirm(reviewed)
-    else { return }
+  func confirm(_ reviewed: ChatPermissionBatchSnapshot) async {
+    guard canConfirm(reviewed), operation == nil, !Task.isCancelled else { return }
     isSaving = true
     isContinuing = reviewed.allAllowed && action.callbackPrompt != nil && !hasContinued
     error = nil

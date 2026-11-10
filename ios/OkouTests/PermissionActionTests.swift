@@ -80,7 +80,7 @@ final class PermissionActionTests: XCTestCase {
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
     fixture.state.withLock { $0.threadAgentID = UUID().uuidString }
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNotNil(card.error)
     XCTAssertTrue(fixture.state.withLock { $0.requests.allSatisfy { $0.httpMethod == "GET" } })
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
@@ -100,12 +100,12 @@ final class PermissionActionTests: XCTestCase {
       gate.open()
       conversation.close()
     }
-    let operation = Task { await card.confirm() }
+    let operation = Task { try await confirm(card) }
     await fulfillment(of: [started], timeout: 3)
     let reviewed = try await card.resource.load()
     conversation.close()
     gate.open()
-    await operation.value
+    try await operation.value
     // Canceling an HTTP request cannot roll back a write the server already accepted.
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     XCTAssertFalse(card.canConfirm(reviewed))
@@ -122,13 +122,13 @@ final class PermissionActionTests: XCTestCase {
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
     card.duration = .week
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNil(card.error)
     let snapshot6 = try await card.resource.load()
     XCTAssertTrue(card.applied(snapshot6))
     let refreshed = try await ChatPermissions(client: fixture.http.client).load(card.action)
     XCTAssertEqual(refreshed.grants.first?.action, .allow)
-    await card.confirm()
+    try await confirm(card)
     await conversation.refresh()
     let requests = fixture.state.withLock { $0.requests }
     XCTAssertEqual(requests.filter { $0.httpMethod == "PUT" }.count, 1)
@@ -147,10 +147,10 @@ final class PermissionActionTests: XCTestCase {
     let fixture = PermissionHTTPFixture(initial: state)
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNotNil(card.error)
     XCTAssertTrue(card.needsContinuation)
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNil(card.error)
     XCTAssertFalse(card.needsContinuation)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permission" })
@@ -166,13 +166,13 @@ final class PermissionActionTests: XCTestCase {
     let fixture = PermissionHTTPFixture(initial: state)
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNotNil(card.error)
     let snapshot7 = try await card.resource.load()
     XCTAssertTrue(card.applied(snapshot7))
     XCTAssertTrue(card.needsContinuation)
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNil(card.error)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permission" })
     XCTAssertEqual(
@@ -204,16 +204,16 @@ final class PermissionActionTests: XCTestCase {
       gate.open()
       conversation.close()
     }
-    let operation = Task { await card.confirm() }
+    let operation = Task { try await confirm(card) }
     // No view, subscription or resource waiter starts this read: Confirm owns it.
     await fulfillment(of: [readbackStarted], timeout: 3)
     XCTAssertTrue(fixture.state.withLock { $0.events.isEmpty })
     gate.open()
-    await operation.value
+    try await operation.value
     let current = try await card.resource.load()
     XCTAssertTrue(card.applied(current))
     XCTAssertTrue(card.needsContinuation)
-    await card.confirm()
+    try await confirm(card)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permission" })
     XCTAssertEqual(
       fixture.state.withLock { $0.requests.filter { $0.httpMethod == "PUT" }.count }, 1)
@@ -224,11 +224,11 @@ final class PermissionActionTests: XCTestCase {
     state.failApplyOnce = true
     let fixture = PermissionHTTPFixture(initial: state)
     let (conversation, card) = try await setup(fixture, action: "deny")
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNotNil(card.error)
     let snapshot8 = try await card.resource.load()
     XCTAssertFalse(card.applied(snapshot8))
-    await card.confirm()
+    try await confirm(card)
     XCTAssertNil(card.error)
     let saved = try await ChatPermissions(client: fixture.http.client).load(card.action)
     XCTAssertEqual(saved.grants.first?.action, .deny)
@@ -236,7 +236,7 @@ final class PermissionActionTests: XCTestCase {
     let reviewed = try await card.resource.load()
     conversation.close()
     let requests = fixture.state.withLock { $0.requests.count }
-    await card.confirm()
+    await card.confirm(reviewed)
     await card.refresh()
     XCTAssertEqual(fixture.state.withLock { $0.requests.count }, requests)
   }
@@ -347,7 +347,7 @@ final class PermissionActionTests: XCTestCase {
     let fixture = PermissionHTTPFixture(initial: state)
     let (conversation, card) = try await setup(fixture)
     defer { conversation.close() }
-    await card.confirm()
+    try await confirm(card)
     XCTAssertTrue(card.needsContinuation)
     XCTAssertTrue(conversation.permissionActions.isBusy)
     card.resource.invalidate()
@@ -357,13 +357,18 @@ final class PermissionActionTests: XCTestCase {
     let refreshed = try await card.resource.load()
     XCTAssertTrue(card.applied(refreshed))
     XCTAssertTrue(card.needsContinuation)
-    await card.confirm()
+    try await confirm(card)
     XCTAssertFalse(card.needsContinuation)
     XCTAssertFalse(conversation.permissionActions.isBusy)
     XCTAssertTrue(conversation.messages.contains { $0.text == "Continue after permission" })
     let requests = fixture.state.withLock { $0.requests }
     XCTAssertEqual(requests.filter { $0.httpMethod == "PUT" }.count, 1)
     XCTAssertEqual(requests.filter { $0.url!.path == "/api/chat/events" }.count, 1)
+  }
+
+  private func confirm(_ card: PermissionActionStore) async throws {
+    let reviewed = try await card.resource.load()
+    await card.confirm(reviewed)
   }
 
   private func setup(
