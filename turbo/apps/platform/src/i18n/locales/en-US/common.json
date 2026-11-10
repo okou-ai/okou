@@ -1647,8 +1647,7 @@
       "sending": "Sending…",
       "sent": "Sent to a new chat",
       "unavailable": "That suggestion is no longer available. Suggestions have been refreshed.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "Use suggestion"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "Attach",

@@ -587,7 +587,6 @@ function AgentSuggestionCard({
   readonly onCustomDirection: (item: Suggestion) => void;
   readonly embedded?: boolean;
 }) {
-  const { t } = useTranslation();
   const start = useSet(startAgentSuggestion$);
   const focusTitle = useSet(focusSuggestionTitleOnRef$);
   const submitFeedback = useSet(
@@ -622,11 +621,6 @@ function AgentSuggestionCard({
           </p>
         </div>
         <div className="flex flex-col gap-2 pt-1">
-          <p className="text-xs text-muted-foreground">
-            {t(($) => {
-              return $.chat.agentSuggestions.useSuggestion;
-            })}
-          </p>
           {item.options.map((option) => {
             return (
               <AgentSuggestionOption

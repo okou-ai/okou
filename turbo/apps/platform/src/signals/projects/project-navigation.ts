@@ -36,7 +36,7 @@ export const locateProject$ = command(({ get, set }, projectId: string) => {
  * A click on a Project's name in the chat list. Elsewhere, the link opens the
  * Project's page and the click unfolds its chats. On that page the click folds
  * or unfolds them instead and cancels the link: navigating to the open page
- * again would push a duplicate history entry and rerun the page's setup.
+ * again would reload it, rerunning the page's setup.
  */
 export const clickProjectName$ = command(
   ({ get, set }, projectId: string, event: MouseEvent<HTMLAnchorElement>) => {

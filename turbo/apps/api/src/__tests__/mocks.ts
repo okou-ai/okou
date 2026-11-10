@@ -164,6 +164,7 @@ export interface ApiTestMocks {
     readonly authenticateRequest: AsyncMock;
     readonly verifyWebhook: AsyncMock;
     readonly organizations: {
+      readonly createOrganization: AsyncMock;
       readonly createOrganizationInvitation: AsyncMock;
       readonly getOrganization: AsyncMock;
       readonly getOrganizationInvitationList: AsyncMock;
@@ -177,6 +178,7 @@ export interface ApiTestMocks {
       readonly updateOrganizationLogo: AsyncMock;
     };
     readonly users: {
+      readonly createUser: AsyncMock;
       readonly getUser: AsyncMock;
       readonly getUserList: AsyncMock;
       readonly getOrganizationMembershipList: AsyncMock;
@@ -184,6 +186,9 @@ export interface ApiTestMocks {
     };
     readonly m2m: {
       readonly createToken: AsyncMock;
+    };
+    readonly blocklistIdentifiers: {
+      readonly getBlocklistIdentifierList: AsyncMock;
     };
   };
   readonly browserUseCdp: {
@@ -394,6 +399,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     authenticateRequest: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     verifyWebhook: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     organizations: {
+      createOrganization: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       createOrganizationInvitation:
         vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getOrganization: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
@@ -413,6 +419,7 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
       updateOrganizationLogo: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
     },
     users: {
+      createUser: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getUser: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
       getUserList: vi
         .fn<(...args: unknown[]) => Promise<unknown>>()
@@ -423,6 +430,11 @@ const apiTestMocks: ApiTestMocks = vi.hoisted((): ApiTestMocks => {
     },
     m2m: {
       createToken: vi.fn<(...args: unknown[]) => Promise<unknown>>(),
+    },
+    blocklistIdentifiers: {
+      getBlocklistIdentifierList: vi
+        .fn<(...args: unknown[]) => Promise<unknown>>()
+        .mockResolvedValue({ data: [], totalCount: 0 }),
     },
   };
 
@@ -1574,6 +1586,7 @@ export function resetApiTestMocks(): void {
   apiTestMocks.clerk.authenticateRequest.mockReset();
   apiTestMocks.clerk.verifyWebhook.mockReset();
   apiTestMocks.clerk.organizations.createOrganizationInvitation.mockReset();
+  apiTestMocks.clerk.organizations.createOrganization.mockReset();
   apiTestMocks.clerk.organizations.getOrganization.mockReset();
   apiTestMocks.clerk.organizations.getOrganizationInvitationList.mockReset();
   apiTestMocks.clerk.organizations.getOrganizationMembershipList.mockReset();
@@ -1585,11 +1598,16 @@ export function resetApiTestMocks(): void {
   apiTestMocks.clerk.organizations.updateOrganizationMembership.mockReset();
   apiTestMocks.clerk.organizations.updateOrganizationLogo.mockReset();
   apiTestMocks.clerk.users.getUser.mockReset();
+  apiTestMocks.clerk.users.createUser.mockReset();
   apiTestMocks.clerk.users.getUserList.mockReset();
   apiTestMocks.clerk.users.getUserList.mockResolvedValue({ data: [] });
   apiTestMocks.clerk.users.getOrganizationMembershipList.mockReset();
   apiTestMocks.clerk.users.updateUserMetadata.mockReset();
   apiTestMocks.clerk.m2m.createToken.mockReset();
+  apiTestMocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockReset();
+  apiTestMocks.clerk.blocklistIdentifiers.getBlocklistIdentifierList.mockResolvedValue(
+    { data: [], totalCount: 0 },
+  );
   apiTestMocks.s3.send.mockReset();
   apiTestMocks.s3.getSignedUrl.mockReset();
   apiTestMocks.s3.getSignedUrl.mockImplementation(

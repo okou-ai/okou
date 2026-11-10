@@ -1644,8 +1644,7 @@
       "sending": "보내는 중…",
       "sent": "새 채팅으로 보냈습니다",
       "unavailable": "이 제안은 더 이상 사용할 수 없습니다. 제안을 새로고침했습니다.",
-      "undoFeedback": "Undo",
-      "useSuggestion": "제안 사용"
+      "undoFeedback": "Undo"
     },
     "attachments": {
       "attach": "첨부",
