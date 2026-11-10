@@ -56,7 +56,6 @@ struct ChatSidebarView: View {
     authentication.workspacePresentation(workspaceID)?.name ?? "Workspace"
   }
 
-  @Namespace private var searchTransition
   /// One leading edge for the header, every heading, row content and the footer buttons.
   private let rowInset = OkouControl.pageInset
 
@@ -178,8 +177,7 @@ struct ChatSidebarView: View {
       Text("Your chats will be kept and moved out of this project.")
     }
     .onChange(of: newChatActivation) { _, _ in showsSettings = false }
-    // Search is a page of its own: it grows out of the search capsule and fills the screen.
-    .fullScreenCover(
+    .sheet(
       isPresented: Binding(
         get: { store.search.isPresented },
         set: { if !$0 { store.search.dismiss() } }
@@ -193,7 +191,9 @@ struct ChatSidebarView: View {
           store.useWorkflow(named: workflow.name)
         }
       )
-      .navigationTransition(.zoom(sourceID: "search", in: searchTransition))
+      .presentationDetents([.large])
+      .presentationDragIndicator(.visible)
+      .okouSheetBackground(OkouColor.background)
     }
   }
 
@@ -555,7 +555,6 @@ struct ChatSidebarView: View {
         OkouSearchBar(prompt: "Search chats")
       }
       .buttonStyle(.plain)
-      .matchedTransitionSource(id: "search", in: searchTransition)
       .accessibilityLabel("Search chats")
       .accessibilityIdentifier("search-chats")
       Button {

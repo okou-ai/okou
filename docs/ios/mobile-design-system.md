@@ -489,10 +489,14 @@ single floating line, and colour is a small accent for status only.
   tile once (28 pt, `OkouAvatarSize.menu`) with the logo's own rounded corners. A thumb-reach bottom bar: the account's own photo
   (`OkouProfileAvatar`, 44 pt) opens Settings on the left, a search capsule fills the
   middle, and new chat is the prominent circle on the right.
-- **Search is a page, not a sheet**, as ChatGPT, Claude and Perplexity open theirs: the
-  sidebar's search capsule zooms into a full-screen page (`fullScreenCover` with the zoom
-  transition from the capsule), white like a page, the field at the top, ✕ trailing.
-  The page is `OkouSearchPage`; build any other full search page on it.
+- **Search opens in a native sheet**, sliding up like the app's other sheets. Use a large
+  detent to leave room for results above the keyboard, a visible drag indicator, and the
+  trailing close button. Set `okouSheetBackground(OkouColor.background)` at the sheet's root.
+  `OkouSearchPage` owns the shared search surface; its header, filters and results share
+  `OkouColor.background` in light and dark appearances, with transparent list-row backgrounds.
+  - Opening search focuses the system field and brings up the keyboard immediately. Focus
+    belongs to the search presentation, not a query or filter update; dismissing the keyboard
+    while browsing results must not cause it to open again.
   - The field is the system's (it rises into the bar while typing), drawn with the app's
     glyph: Lucide `search` in placeholder grey (`OkouNavigationBar.applySearchField()`).
   - It has no clear button (`okouSearchPageField()`): the ✕ that ends search sits right
@@ -672,7 +676,7 @@ substitutes. A missing upload falls back to that workspace's deterministic mark.
 | `OkouIcon`, `OkouToolbarIcon`, `Label(okouSymbol:)`, `Button(okouSymbol:)`    | Shared product icon assets; preserve native labels, menu behavior, and button roles                                                                                                                                                                                                                                                                                                          |
 | `OkouLineIcon`                                                                | A glyph centred on the first line of the text beside it in a `.firstTextBaseline` row (feedback, search results); a bare glyph there rides high because it has no baseline                                                                                                                                                                                                                   |
 | `OkouSearchBar`                                                               | The sidebar's search button: 44 pt clear glass capsule, Lucide `search` glyph, placeholder grey. The search page keeps the system field and its interaction, drawn with the same glyphs (`OkouNavigationBar.applySearchField()`)                                                                                                                                                             |
-| `OkouSearchPage`                                                              | A full search page: the system field (rising into the bar while typing; no clear button, the app's ✕ via `okouSearchPageField()`), a filter row pinned on a solid header, results as a plain list, and one `OkouEmptyState` centred over what is left of the screen, above the keyboard. Built on `OkouUnderNavigationBar`, so filters and results move with the field. Catalog: Search page |
+| `OkouSearchPage`                                                              | A search surface in a large native sheet: the system field focused on opening (no clear button, the app's ✕ via `okouSearchPageField()`), a filter row pinned on a solid header, transparent rows on the page background, and one `OkouEmptyState` centred above the keyboard. Built on `OkouUnderNavigationBar`, so filters and results move with the field. Catalog: Search sheet |
 | `OkouUnderNavigationBar`                                                      | A page laid out under the navigation bar by UIKit, so it moves with the bar when the bar changes height (the search field rising into it); takes `OkouAppearance` again in its own hosting controller                                                                                                                                                                                        |
 | `OkouEmptyState`                                                              | Quiet empty, failed or unavailable screen: muted glyph on a soft circle, 17 pt medium title, 15 pt muted description, up to two outline actions; `verbatim:` for a content title                                                                                                                                                                                                             |
 | `OkouLoadErrorRow` / `OkouLoadingRow`                                         | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                                                                                                                                                                                                                             |
