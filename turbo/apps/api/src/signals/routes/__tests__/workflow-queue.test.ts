@@ -15,7 +15,7 @@ import { mockEnv, mockOptionalEnv } from "../../../lib/env";
 import { computeHmacSignature } from "../../../lib/event-consumer/hmac";
 import { mockNow, now, withNowScopeForTest } from "../../../lib/time";
 import { flushWaitUntilForTest } from "../../context/wait-until";
-import { clearAllDetached } from "../../utils";
+import { clearAllDetached, settleIncludingAbort } from "../../utils";
 import { chatEventsRoutes } from "../chat-events";
 import { chatThreadRoutes } from "../chat-threads";
 import { chatInputStatusRoutes } from "../chat-input-status";
@@ -993,20 +993,29 @@ describe("workflow queue", () => {
     await runsApi.requestCancelRun(scenario.actor, scheduleRunId, [200]);
   });
 
-  it("revokes an automation input when deletion wins during run preparation", async () => {
+  it("revokes queued automation input while an admitted Run prepares its Claim", async () => {
     const scenario = await setup();
     const automation = await createScheduleAutomation(scenario);
-    const kms = holdSecretKms(1, context.signal);
-    onTestFinished(() => {
-      kms.release();
-    });
+    const admitted = await runAutomationNow(automation.automationId);
+    const admittedRunId = await latestThreadRunId(admitted.body.chatThreadId);
     const requested = await requestAutomationNow(automation.automationId);
     const threadId = requested.body.chatThreadId;
-    await kms.entered;
+    await flushWaitUntilForTest();
     const [queuedEvent] = await pendingAutomationEvents(threadId);
     if (!queuedEvent) {
-      throw new Error("Expected the input waiting for run preparation");
+      throw new Error("Expected the input queued behind the admitted Run");
     }
+    await runsApi.heartbeatRunner(scenario.runnerGroup);
+    // Runtime encryption belongs to Claim; the second input is still queued.
+    const kms = holdSecretKms(1, context.signal);
+    const claiming = settleIncludingAbort(
+      runsApi.requestClaimRunnerJob(true, admittedRunId, [404]),
+    );
+    onTestFinished(async () => {
+      kms.release();
+      await claiming;
+    });
+    await kms.entered;
 
     await accept(
       automationsClient().delete({
@@ -1016,6 +1025,19 @@ describe("workflow queue", () => {
       [204],
     );
     kms.release();
+    const claimed = await claiming;
+    if (!claimed.ok) {
+      throw claimed.error;
+    }
+    expect(claimed.value.body).toMatchObject({
+      error: {
+        code: "NOT_FOUND",
+        message: "Workflow is no longer available for this claim",
+      },
+    });
+    await expect(
+      runsApi.readRun(scenario.actor, admittedRunId),
+    ).resolves.toMatchObject({ status: "pending" });
     await flushWaitUntilForTest();
 
     expect(
@@ -1028,10 +1050,15 @@ describe("workflow queue", () => {
       }),
     ).toStrictEqual([]);
 
+    await runsApi.requestCancelRun(scenario.actor, admittedRunId, [200]);
+    await flushWaitUntilForTest();
     const successor = await createScheduleAutomation(scenario);
     expect(successor.threadId).toBe(threadId);
     await runAutomationNow(successor.automationId);
-    const [successorRunId] = await workflowRunIds(threadId);
+    const runIds = await workflowRunIds(threadId);
+    expect(runIds).toHaveLength(2);
+    expect(runIds[0]).toBe(admittedRunId);
+    const successorRunId = runIds[1];
     if (!successorRunId) {
       throw new Error("Expected the successor automation to start");
     }
