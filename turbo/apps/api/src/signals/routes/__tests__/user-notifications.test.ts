@@ -1,12 +1,10 @@
 import { randomUUID } from "node:crypto";
 import { expect, test } from "vitest";
-import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { userNotificationsContract } from "@okouai/api-contracts/contracts/user-notifications";
 import { accept, testContext } from "../../../__tests__/test-context";
 import { setupApp } from "../../../__tests__/test-helpers";
 import { userNotificationRoutes } from "../user-notifications";
 import { createRouteMocks } from "./helpers/route-test";
-import { updateFeatureSwitchesForUser } from "./helpers/feature-switches";
 
 const context = testContext();
 const mocks = createRouteMocks(context);
@@ -18,17 +16,13 @@ function client() {
   );
 }
 
-async function enabledClient() {
-  await updateFeatureSwitchesForUser(
-    context,
-    { userId: `user_${randomUUID()}`, orgId: STAFF_ORG_ID },
-    { [FeatureSwitchKey.UserNotifications]: true },
-  );
+function staffClient() {
+  mocks.clerk.session(`user_${randomUUID()}`, STAFF_ORG_ID);
   return client();
 }
 
-test("a staff user can explicitly enable an empty personal inbox and safely mark all as read", async () => {
-  const api = await enabledClient();
+test("a staff user can open an empty personal inbox by default and safely mark all as read", async () => {
+  const api = staffClient();
   expect((await accept(api.summary({ headers }), [200])).body).toStrictEqual({
     unreadCount: 0,
   });
@@ -44,35 +38,32 @@ test("a staff user can explicitly enable an empty personal inbox and safely mark
 });
 
 test("missing notification details and receipts return the same scoped not-found result", async () => {
-  const api = await enabledClient();
+  const api = staffClient();
   const id = randomUUID();
   expect((await api.get({ headers, params: { id } })).status).toBe(404);
   expect((await api.markRead({ headers, params: { id } })).status).toBe(404);
 });
 
 test("a partial paging cursor is rejected", async () => {
-  const api = await enabledClient();
+  const api = staffClient();
   expect(
     (await api.list({ headers, query: { beforeId: randomUUID() } })).status,
   ).toBe(400);
 });
 
-test.each([STAFF_ORG_ID, `org_${randomUUID()}`])(
-  "the rollout gate rejects every notification operation by default in %s",
-  async (orgId) => {
-    mocks.clerk.session(`user_${randomUUID()}`, orgId);
-    const api = client();
-    expect((await api.summary({ headers })).status).toBe(403);
-    expect((await api.list({ headers })).status).toBe(403);
-    expect(
-      (await api.get({ headers, params: { id: randomUUID() } })).status,
-    ).toBe(403);
-    expect(
-      (await api.markRead({ headers, params: { id: randomUUID() } })).status,
-    ).toBe(403);
-    expect((await api.markAllRead({ headers })).status).toBe(403);
-  },
-);
+test("the rollout gate rejects every notification operation by default outside staff", async () => {
+  mocks.clerk.session(`user_${randomUUID()}`, `org_${randomUUID()}`);
+  const api = client();
+  expect((await api.summary({ headers })).status).toBe(403);
+  expect((await api.list({ headers })).status).toBe(403);
+  expect(
+    (await api.get({ headers, params: { id: randomUUID() } })).status,
+  ).toBe(403);
+  expect(
+    (await api.markRead({ headers, params: { id: randomUUID() } })).status,
+  ).toBe(403);
+  expect((await api.markAllRead({ headers })).status).toBe(403);
+});
 
 test("requests without authentication cannot read notifications", async () => {
   const api = client();
