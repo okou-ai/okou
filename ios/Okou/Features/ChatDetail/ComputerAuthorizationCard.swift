@@ -67,7 +67,13 @@ struct ComputerAuthorizationCardContent: View {
       let status = request?.effectiveStatus(at: context.date)
       ChatActionCard {
         ChatCardHeader(title: title, icon: icon) {
-          Text(description(status)).lineLimit(2, reservesSpace: true)
+          if kind == .shell {
+            Text(request?.computerName ?? String(localized: "Your computer"))
+              .lineLimit(1, reservesSpace: true)
+            Text(description(status)).lineLimit(1, reservesSpace: true)
+          } else {
+            Text(description(status)).lineLimit(2, reservesSpace: true)
+          }
           Text(error ?? " ").foregroundStyle(OkouColor.destructive)
             .lineLimit(1, reservesSpace: true).accessibilityHidden(error == nil)
         }
