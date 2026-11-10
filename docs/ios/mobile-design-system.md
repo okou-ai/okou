@@ -631,8 +631,8 @@ single floating line, and colour is a small accent for status only.
 
 ### Agent artwork
 
-`OkouAgentAvatar` is shared by chat rows, the new-chat greeting, assistant
-messages, and mention suggestions. The default agent uses the canonical Okou
+`OkouAgentAvatar` is shared by chat rows, the new-chat greeting, and assistant
+messages. The default agent uses the canonical Okou
 avatar. Other agents show an uploaded bitmap image or a neutral tile with their
 name's initial. Keep the existing typography, semantic colors, native sizing,
 and accessible name in the shared component.
@@ -642,6 +642,15 @@ Preset identifiers and SVG URLs use the initial tile. Keep persisted avatar
 values with their owning service; this presentation policy does not rewrite
 another client's avatar configuration. Unavailable custom images use the same
 initial tile.
+
+Composer chat and workflow suggestions use text-first `OkouSuggestionRow` content
+inside `OkouSuggestionPanel`. Chat titles have no avatar or reserved artwork
+column and may wrap to two lines. Workflow names retain a trailing slash command
+and an optional description. Both pickers share the same editor-anchored overlay,
+native table, dismissal, and semantic focus layer; the editor retains first
+responder while the list scrolls or inserts a candidate. Empty queries have no
+implicit selection. The table measures self-sizing content within the available
+height rather than forcing the editor to move with the candidate count.
 
 ### Workspace artwork
 

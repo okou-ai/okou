@@ -45,6 +45,8 @@ enum OkouControl {
   static let readableWidth: CGFloat = 440
   /// Chat rows in the sidebar.
   static let listRow: CGFloat = 48
+  /// Maximum scrollable content height for composer chat and workflow candidates.
+  static let suggestionListHeight: CGFloat = 264
   /// A row in a grouped card (Settings and every sheet): the height the system gives a row
   /// with a 28 pt icon slot or a switch, so a row of text alone is no shorter beside it.
   static let groupedRow: CGFloat = 52

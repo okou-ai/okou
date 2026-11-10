@@ -126,6 +126,38 @@
             }
           }
           .id("composer-preview")
+          section("Composer suggestions") {
+            OkouSuggestionPanel(
+              title: "Chats",
+              availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
+              dismissLabel: "Dismiss chat suggestions", dismissIdentifier: "catalog-dismiss-chats",
+              dismiss: {}
+            ) { _ in
+              VStack(alignment: .leading, spacing: 0) {
+                ForEach(["iOS CCState", "storage 退役", "📅 iOS CI", "Axiom review"], id: \.self) {
+                  title in
+                  OkouSuggestionRow(title: title)
+                    .padding(.horizontal, OkouSpace.lg)
+                    .padding(.vertical, OkouSpace.sm)
+                }
+              }
+              .padding(.bottom, OkouSpace.sm)
+            }
+            OkouSuggestionPanel(
+              title: "Workflows",
+              availableHeight: OkouControl.suggestionListHeight + OkouControl.minimumTarget,
+              dismissLabel: "Dismiss Workflow suggestions",
+              dismissIdentifier: "catalog-dismiss-workflows", dismiss: {}
+            ) { _ in
+              OkouSuggestionRow(
+                title: "Daily error review", detail: "Review production errors",
+                command: "/error-review"
+              )
+              .padding(.horizontal, OkouSpace.lg)
+              .padding(.vertical, OkouSpace.sm)
+              .padding(.bottom, OkouSpace.sm)
+            }
+          }
           section("Chat rows") {
             // Chat rows, as the sidebar draws them: the folding Pinned heading, a hairline,
             // status emoji, the quiet glyph and the trailing states in their order (unread,

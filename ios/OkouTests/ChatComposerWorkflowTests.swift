@@ -516,7 +516,7 @@ final class ChatComposerWorkflowTests: XCTestCase {
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
     .background(Color(uiColor: .systemBackground))
-    .composerWorkflowOverlay()
+    .composerSuggestionOverlay()
   }
   private func inputs(in view: UIView) -> [ComposerTextView] {
     if let view = view as? ComposerTextView { return [view] }
@@ -566,7 +566,7 @@ private struct WorkflowNewChatHost: View {
       workflowSource: workspace.composerWorkflows, agentID: workspace.selectedAgentID
     )
     .frame(maxHeight: .infinity, alignment: .bottom)
-    .composerWorkflowOverlay()
+    .composerSuggestionOverlay()
     // Production replaces the workspace root at its scope boundary.
     .id(ObjectIdentifier(workspace))
   }
