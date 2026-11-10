@@ -442,7 +442,7 @@ function HostedSiteShareActions({
     // Analytics must not prevent the user's copy operation from starting.
     detach(copy(signal), Reason.DomCallback);
     captureArtifactAction({
-      action: "copy_link",
+      action: "banner_share",
       surface,
       target: "hosted_site",
       show_banner:

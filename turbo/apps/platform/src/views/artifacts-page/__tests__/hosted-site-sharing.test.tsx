@@ -446,7 +446,7 @@ test("Unavailable banner settings stay unknown when copying the site link", asyn
   });
   expect(artifactActions(telemetry)).toStrictEqual([
     {
-      action: "copy_link",
+      action: "banner_share",
       surface: "dialog",
       target: "hosted_site",
       show_banner: "unknown",
@@ -474,7 +474,7 @@ test("Copy link snapshots a pending banner as unknown without delaying the copy"
   });
   expect(artifactActions(telemetry)).toStrictEqual([
     {
-      action: "copy_link",
+      action: "banner_share",
       surface: "dialog",
       target: "hosted_site",
       show_banner: "unknown",
@@ -492,13 +492,13 @@ test("Copy link snapshots a pending banner as unknown without delaying the copy"
   });
   expect(artifactActions(telemetry)).toStrictEqual([
     {
-      action: "copy_link",
+      action: "banner_share",
       surface: "dialog",
       target: "hosted_site",
       show_banner: "unknown",
     },
     {
-      action: "copy_link",
+      action: "banner_share",
       surface: "dialog",
       target: "hosted_site",
       show_banner: false,
@@ -582,7 +582,7 @@ test("Copy link records click intent even when the clipboard write fails", async
   expect(getButtonByName("Copy link")).toBeEnabled();
   expect(artifactActions(telemetry)).toStrictEqual([
     {
-      action: "copy_link",
+      action: "banner_share",
       surface: "dialog",
       target: "hosted_site",
       show_banner: true,
@@ -656,7 +656,7 @@ test.each([
     });
     expect(artifactActions(telemetry)).toStrictEqual([
       {
-        action: "copy_link",
+        action: "banner_share",
         surface,
         target: "hosted_site",
         show_banner: true,
@@ -675,13 +675,13 @@ test.each([
     });
     expect(artifactActions(telemetry)).toStrictEqual([
       {
-        action: "copy_link",
+        action: "banner_share",
         surface,
         target: "hosted_site",
         show_banner: true,
       },
       {
-        action: "copy_link",
+        action: "banner_share",
         surface,
         target: "hosted_site",
         show_banner: false,
@@ -698,19 +698,19 @@ test.each([
     });
     expect(artifactActions(telemetry)).toStrictEqual([
       {
-        action: "copy_link",
+        action: "banner_share",
         surface,
         target: "hosted_site",
         show_banner: true,
       },
       {
-        action: "copy_link",
+        action: "banner_share",
         surface,
         target: "hosted_site",
         show_banner: false,
       },
       {
-        action: "copy_link",
+        action: "banner_share",
         surface,
         target: "hosted_site",
         show_banner: true,
@@ -755,7 +755,7 @@ test("a stale banner edit preserves the confirmed preference when copying", asyn
   });
   expect(artifactActions(telemetry)).toStrictEqual([
     {
-      action: "copy_link",
+      action: "banner_share",
       surface: "dialog",
       target: "hosted_site",
       show_banner: true,

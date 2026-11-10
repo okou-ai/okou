@@ -231,7 +231,7 @@ type ArtifactAction =
       readonly target: "file" | "document" | "spreadsheet" | "presentation";
     }
   | {
-      readonly action: "copy_link";
+      readonly action: "banner_share";
       readonly surface: "dialog" | "sidebar";
       readonly target: "hosted_site";
       readonly show_banner: boolean | "unknown";
