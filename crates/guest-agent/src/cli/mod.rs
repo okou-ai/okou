@@ -325,10 +325,13 @@ pub enum HeartbeatStatus {
     /// heartbeat failure.
     Failed(HeartbeatFailure),
 
-    /// The heartbeat loop stopped cleanly.
+    /// The heartbeat task completed successfully, not necessarily the CLI execution.
     ///
-    /// During CLI execution this is a non-error completion signal for the
-    /// heartbeat race.
+    /// If observed before execution completes, the Codex app-server backend
+    /// treats this as an execution error and terminates the app-server. The
+    /// shared Claude Code/Pi JSONL path instead ends its event loop without
+    /// introducing a heartbeat error, then settles the actual process exit.
+    /// See [`HeartbeatMonitor`] for the required heartbeat lifetime.
     Stopped,
 
     /// The heartbeat task itself failed, such as a task panic or join error.
@@ -345,6 +348,10 @@ pub enum HeartbeatStatus {
 /// `Some(receiver)` races CLI execution against heartbeat completion. `None`
 /// disables heartbeat monitoring for that run, which is useful for tests and
 /// callers that do not own a heartbeat task.
+///
+/// Keep the monitored heartbeat task alive throughout active CLI execution.
+/// Sending [`HeartbeatStatus::Stopped`] is not equivalent to disabling
+/// monitoring with `None`; its execution outcome depends on the backend.
 pub type HeartbeatMonitor = Option<oneshot::Receiver<HeartbeatStatus>>;
 
 #[derive(Clone, Copy)]
