@@ -1,9 +1,8 @@
 import type { WorkflowUpdateRequest } from "@okouai/api-contracts/contracts/workflows";
 import { agents } from "@okouai/db/schema/agent";
 import { workflows } from "@okouai/db/schema/workflow";
-import { storagePublicationTokens } from "@okouai/db/schema/storage-publication-fence";
 import { command } from "ccstate";
-import { and, eq, exists, isNull, or, sql, type SQL } from "drizzle-orm";
+import { and, eq, exists, isNull, or, sql } from "drizzle-orm";
 import { nowDate } from "../../lib/time";
 import { pgBooleanDecoder } from "../../lib/db-structured-result";
 import { writeDb$ } from "../external/db";
@@ -25,21 +24,6 @@ interface UpdateWorkflowInput {
   readonly body: WorkflowUpdateRequest;
   readonly updatedByUserId: string;
   readonly member: WorkflowMember;
-}
-
-/** Outgoing Stage 1 publication takes the Workflow row before its token. */
-function retireLegacyWorkflowPublication(
-  workflow: WorkflowRow,
-  admitted: SQL,
-): SQL {
-  return sql`DELETE FROM ${storagePublicationTokens}
-    WHERE ${and(
-      eq(storagePublicationTokens.orgId, workflow.orgId),
-      eq(storagePublicationTokens.agentId, workflow.agentId),
-      eq(storagePublicationTokens.publicationKey, `workflow:${workflow.id}`),
-      admitted,
-    )}
-    RETURNING token`;
 }
 
 function replacedWorkflowAttachments(
@@ -151,8 +135,8 @@ export const updateWorkflow$ = command(
             eq(workflows.ownerUserId, workflow.ownerUserId),
             eq(workflows.visibility, workflow.visibility),
             isNull(workflows.officialDefinitionName),
-            // Even value-preserving Stage 1 metadata writes create a new row
-            // version. Their token can be invisible to this statement's snapshot.
+            // Reject a concurrent edit even when its values or clock timestamp
+            // match the observed row.
             sql`${workflows}.xmin::text = ${args.observedXmin}`,
             exists(
               db
@@ -202,16 +186,8 @@ export const updateWorkflow$ = command(
           db.select({ id: updated.id }).from(updated).getSQL(),
         ),
       );
-    const legacy = db
-      .$with("retired_workflow_publication", {})
-      .as(
-        retireLegacyWorkflowPublication(
-          workflow,
-          exists(db.select({ id: updated.id }).from(updated)),
-        ),
-      );
     const rows = await db
-      .with(candidate, updated, retired, restored, legacy)
+      .with(candidate, updated, retired, restored)
       .select({ id: updated.id })
       .from(updated);
     signal.throwIfAborted();

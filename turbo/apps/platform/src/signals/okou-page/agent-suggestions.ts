@@ -22,6 +22,7 @@ import {
   linkAgentSuggestionThread$,
   restoreAgentSuggestion$,
   settleAgentSuggestion$,
+  advanceHomeSuggestion$,
 } from "./agent-suggestion-session.ts";
 import { createInPlaceAgentComposerSignals } from "./agent-composer-signals.ts";
 import { createRestoredAttachment } from "./chat-draft.ts";
@@ -118,6 +119,7 @@ const suggestionComposerGraph$ = computed((get) => {
       session.agentId,
       agentDraft,
       session.onOptimisticSend,
+      session.entry.item.title,
     ),
   };
 });
@@ -154,6 +156,9 @@ const finishAgentSuggestionComposer$ = command(
       { type: "sent", threadId },
       pageSignal,
     );
+    if (!pageSignal.aborted) {
+      set(advanceHomeSuggestion$, session.entry);
+    }
   },
 );
 
@@ -273,6 +278,7 @@ const sendAgentSuggestionOption$ = command(
       sendNewThreadWithoutNavigation$,
       {
         agentId,
+        title: entry.item.title,
         draft,
         preserveAgentDraft: true,
         prompt,

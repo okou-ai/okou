@@ -19,6 +19,7 @@ import {
 import type { ChatEvent } from "../chat-page/chat-event-types.ts";
 import { createChatEventProjectionSignals } from "../chat-page/chat-event-projection-signals.ts";
 import { createComposerConnectorSignals } from "./connectors.ts";
+import { createComposerProjectSignals } from "../projects/composer-project.ts";
 import { createPendingRemoteAccessSignals } from "../remote-access.ts";
 import {
   chatPageModelSelection$,
@@ -87,6 +88,7 @@ const noOpEventAction$ = command(
 
 interface AgentComposerOptions {
   readonly forward?: ChatForwardContext;
+  readonly title?: string;
   /**
    * A dialog composer sends from its own unsaved draft and keeps the current
    * page, leaving the Agent's saved composer untouched.
@@ -134,6 +136,7 @@ function createAgentSubmitMessage(
         send,
         {
           agentId,
+          title: options.title,
           ...(options.projectId ? { projectId: options.projectId } : {}),
           draft,
           prompt: submission.prompt,
@@ -194,8 +197,14 @@ function createAgentComposerSignalsWithDraft(
     options,
   );
 
-  return createComposerSignals({
+  // A dialog composer sends from its own draft without leaving the page, so
+  // only the page's own composer can move its chat into a Project.
+  const project = options.inPlace
+    ? undefined
+    : createComposerProjectSignals(agentId, options.projectId ?? null);
+  const composer = createComposerSignals({
     agentId,
+    ...(project ? { project } : {}),
     connector,
     pendingRemoteAccess,
     draft: {
@@ -221,6 +230,7 @@ function createAgentComposerSignalsWithDraft(
     removeQueuedMessage$: noOpEventAction$,
     removeAutomationEvent$: noOpEventAction$,
   });
+  return project ? { ...composer, project } : composer;
 }
 
 export function createForwardAgentComposerSignals(
@@ -240,10 +250,12 @@ export function createInPlaceAgentComposerSignals(
   agentId: string,
   agentDraft: EnsuredAgentDraft,
   onOptimisticSend: (threadId: string) => void,
+  title: string,
 ) {
   return createAgentComposerSignalsWithDraft(agentId, agentDraft, {
     inPlace: true,
     onOptimisticSend,
+    title,
   });
 }
 

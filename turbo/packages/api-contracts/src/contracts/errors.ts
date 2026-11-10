@@ -964,3 +964,52 @@ export function formatRunErrorForExternalSurface(params: {
     ? errorMessage
     : CHAT_RUN_TRANSIENT_ERROR_MESSAGE;
 }
+
+/** Subscription limits belong to the captured personal account, not Okou billing. */
+export function formatPersonalSubscriptionUsageLimitForExternalSurface(params: {
+  readonly failureReason?: RunFailureReasonToken | null;
+  readonly modelProviderType: ModelProviderType | null | undefined;
+  readonly message: string;
+  readonly modelProvidersUrl: string;
+}): string | undefined {
+  const subscription =
+    params.modelProviderType === "codex-oauth-token"
+      ? "ChatGPT (Codex)"
+      : params.modelProviderType === "claude-code-oauth-token"
+        ? "Claude"
+        : undefined;
+  if (subscription === undefined) {
+    return undefined;
+  }
+  // The run error contract also accepts unstructured native quota messages.
+  const nativeLimit =
+    /^you(?:'|’)ve hit your (?:usage|session|weekly|5[- ]hour|five[- ]hour|opus(?:\s+[\w.-]+)?|sonnet(?:\s+[\w.-]+)?|haiku(?:\s+[\w.-]+)?) limit\b/iu.test(
+      params.message.trim(),
+    ) || isClaudeCodeLimitError(params.message);
+  if (params.failureReason !== "usage_limit") {
+    if (params.failureReason !== undefined && params.failureReason !== null) {
+      return undefined;
+    }
+    if (!nativeLimit) {
+      return undefined;
+    }
+  }
+  const hasQuotaDetails =
+    nativeLimit ||
+    /\b(?:usage[_ -]limit|(?:session|weekly|5[- ]hour|five[- ]hour) limit)\b/iu.test(
+      params.message,
+    );
+
+  const parts = [
+    `Your ${subscription} subscription has reached its usage limit.`,
+  ];
+  if (hasQuotaDetails && params.message !== CHAT_RUN_USAGE_LIMIT_MESSAGE) {
+    parts.push(params.message);
+  }
+  parts.push(
+    "Wait for your subscription allowance to reset, or switch to an available subscription account.",
+    `Manage subscriptions: ${params.modelProvidersUrl}`,
+    'After restoring access, reply "continue" in this conversation.',
+  );
+  return parts.join("\n\n");
+}

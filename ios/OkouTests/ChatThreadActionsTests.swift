@@ -85,7 +85,7 @@ final class ChatThreadActionsTests: XCTestCase {
       $0.nextGate = gate
       $0.nextWriteRequested = { requested.fulfill() }
     }
-    let creating = Task { await store.createChat(agentID: ThreadActionsFixture.agent) }
+    let creating = Task { await store.createChat() }
     addTeardownBlock { @MainActor in
       store.close()
       creating.cancel()
@@ -252,7 +252,7 @@ final class ChatThreadActionsTests: XCTestCase {
     XCTAssertEqual(fixture.writes.map(\.action), ["archive", "unarchive"])
   }
 
-  func testFailedArchiveRetryReusesEventAndRetainsDetailUndoDestinationAcrossAgentChange()
+  func testFailedArchiveRetryReusesEventAndRetainsDetailUndoDestinationFromNewChat()
     async throws
   {
     let fixture = ThreadActionsFixture(muted: true)
@@ -265,9 +265,9 @@ final class ChatThreadActionsTests: XCTestCase {
     await store.setArchived(ThreadActionsFixture.thread, archived: true, leaveDetail: true)
     XCTAssertNil(store.selectedThreadID)
     XCTAssertEqual(store.threadFeedback?.actionTitle, "Retry")
-    store.startNewChat(agentID: ThreadActionsFixture.otherAgent)
+    store.startNewChat()
     await (try XCTUnwrap(store.threadFeedback)).action()
-    XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.otherAgent)
+    XCTAssertEqual(store.selectedAgentID, ThreadActionsFixture.agent)
     XCTAssertEqual(
       fixture.writes.filter { $0.action == "archive" }.map(\.eventID),
       Array(repeating: try XCTUnwrap(fixture.writes.first?.eventID), count: 2))
@@ -529,7 +529,7 @@ private final class ThreadActionsFixture: Sendable {
           body:
             "[{\"agentId\":\"\(Self.agent)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"},{\"agentId\":\"\(Self.otherAgent)\",\"isDefaultAgent\":false,\"displayName\":\"Research\"}]"
         )
-      case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
+
       case "/api/feature-switches":
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat-threads/snapshot":

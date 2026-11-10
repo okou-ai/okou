@@ -12,7 +12,6 @@ final class WorkspaceStartupModelTests: XCTestCase {
     defer { release.open() }
     let navigation = expectation(
       description: "Navigation is pending while startup resources refresh")
-    navigation.expectedFulfillmentCount = 2
     let fixture = WorkspaceStartupFixture(beforeNavigationRead: {
       navigation.fulfill()
       await release.wait()
@@ -139,9 +138,6 @@ final class WorkspaceStartupFixture: Sendable {
             body:
               "[{\"agentId\":\"\(ConversationHistoryFixture.agentID)\",\"displayName\":\"Startup fixture\",\"isDefaultAgent\":true}]"
           )
-        case "/api/user-preferences":
-          try await beforeNavigationRead?()
-          return ChatHTTPResponse(body: #"{"pinnedAgentIds":[]}"#)
         case "/api/indicators":
           return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
         case "/api/agents/\(ConversationHistoryFixture.agentID)/draft",

@@ -294,7 +294,7 @@ describe("okou connector custom create", () => {
     expect(output).toMatchObject({
       id: CONNECTOR_ID,
       kind: "mcp",
-      connectUrl: `http://localhost:3000/connectors/_acme-mcp/connect?agentId=${AGENT_ID}&threadId=${THREAD_ID}&callbackPrompt=Verify+MCP+tools`,
+      connectUrl: `http://localhost:3000/connectors/_acme-mcp/connect?agentId=${AGENT_ID}&callbackPrompt=Verify+MCP+tools&threadId=${THREAD_ID}`,
     });
   });
 

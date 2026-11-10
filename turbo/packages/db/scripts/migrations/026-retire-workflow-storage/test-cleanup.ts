@@ -413,11 +413,24 @@ try {
   const main = await seed(true);
   const userOwned = await seed(false, "owner");
   const memory = await seed(false, "__org__", "memory");
+  const official = await seed(false, "__org__", "official-workflow@fixture");
   const sibling = `${main.prefix}-other/archive.tar.gz`;
   const newAttachment = `workflow-attachments/${orgId}/${main.workflowId}/${randomUUID()}/archive.tar.gz`;
   objects.add(sibling);
   objects.add(newAttachment);
-  const reviewed = await review(main.id);
+  const currentReview = await review(main.id);
+  // Retained receipts must remain usable for exact-job recovery and audit.
+  const retainedContents = `${JSON.stringify({
+    ...currentReview.plan,
+    inventory: { ...currentReview.plan.inventory, pendingPublications: 0 },
+  })}\n`;
+  const retainedPath = join(root, "retained-reviewed-plan.json");
+  await writeFile(retainedPath, retainedContents, { mode: 0o600, flag: "wx" });
+  const reviewed: Review = {
+    ...currentReview,
+    path: retainedPath,
+    sha: digest(retainedContents),
+  };
   for (const [key, value] of [
     ["host", databaseAddress.hostname],
     ["port", String(db.port)],
@@ -515,6 +528,7 @@ try {
   assert.equal(JSON.stringify(reviewed.plan).includes("database body"), false);
   assert.equal((await review(userOwned.id)).plan.ready.length, 0);
   assert.equal((await review(memory.id)).plan.ready.length, 0);
+  assert.equal((await review(official.id)).plan.ready.length, 0);
   await invoke(["--migrate", ...reviewedArgs(reviewed)], 1);
   await invoke(
     [
@@ -568,6 +582,8 @@ try {
   assert.equal(objects.has(newAttachment), true);
   assert.equal(await storageCount(userOwned.id), 1);
   assert.equal(await storageCount(memory.id), 1);
+  assert.equal(await storageCount(official.id), 1);
+  assert.equal(await versionCount(official.id), 1);
 
   // Pre-UUID slugs can have zero, one or multiple current namesakes. None owns
   // the captured Storage by name; current UUID Storage and Workflows survive.

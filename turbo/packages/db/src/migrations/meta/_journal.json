@@ -3193,6 +3193,34 @@
       "when": 1794197492259,
       "tag": "1534_email_integration",
       "breakpoints": true
+    },
+    {
+      "idx": 1535,
+      "version": "7",
+      "when": 1794210473360,
+      "tag": "1535_retire_official_workflow_storage_bindings",
+      "breakpoints": true
+    },
+    {
+      "idx": 1536,
+      "version": "7",
+      "when": 1794215945670,
+      "tag": "1536_validate_email_context_type",
+      "breakpoints": true
+    },
+    {
+      "idx": 1537,
+      "version": "7",
+      "when": 1794222098398,
+      "tag": "1537_user_notifications",
+      "breakpoints": true
+    },
+    {
+      "idx": 1538,
+      "version": "7",
+      "when": 1794239820973,
+      "tag": "1538_retire_workflow_publication_bridge",
+      "breakpoints": true
     }
   ]
 }

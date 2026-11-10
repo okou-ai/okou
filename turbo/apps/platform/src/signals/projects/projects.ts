@@ -20,7 +20,8 @@ import { apiClient$ } from "../api-client.ts";
 import { authenticatedSessionKey$ } from "../auth.ts";
 import { rootVersion$ } from "../root-signal.ts";
 import { accept } from "../../lib/accept.ts";
-import { pathParams$ } from "../route.ts";
+import { detachedNavigateTo$, pathParams$ } from "../route.ts";
+import { ROUTES } from "../route-paths.ts";
 import {
   catchUpChatThreadEventSource$,
   eventDrivenChatThreads$,
@@ -101,6 +102,27 @@ export const projects$ = computed((get) => {
       ? { ...project, name: rename.name, updatedAt: rename.createdAt }
       : project;
   });
+});
+/**
+ * Projects created on this page that the server has not persisted yet. A chat
+ * cannot start inside one until its creation lands.
+ */
+export const unconfirmedProjectIds$ = computed((get) => {
+  const owner = get(projectState$);
+  const persistedIds = new Set(
+    get(owner.events$)?.events.map((event) => {
+      return event.id;
+    }),
+  );
+  return new Set(
+    get(owner.optimisticCreates$)
+      .filter((event) => {
+        return !persistedIds.has(event.eventId);
+      })
+      .map((event) => {
+        return event.project.id;
+      }),
+  );
 });
 export const syncProjects$ = command(
   async ({ get, set }, signal: AbortSignal) => {
@@ -193,8 +215,17 @@ export const waitForProjectCreation$ = command(
 export const createProject$ = command(
   async (
     { get, set },
-    name: string,
-    fromThreadId: string | undefined,
+    {
+      name,
+      fromThreadId,
+      open = false,
+    }: {
+      readonly name: string;
+      /** A chat that moves into the new Project as it is created. */
+      readonly fromThreadId?: string;
+      /** Open the new Project's page, where the next chat starts inside it. */
+      readonly open?: boolean;
+    },
     signal: AbortSignal,
   ) => {
     signal.throwIfAborted();
@@ -225,6 +256,13 @@ export const createProject$ = command(
       ];
     });
     set(expandProject$, eventId);
+    if (open) {
+      // The page opens on the optimistic Project; a chat sent from it waits
+      // for the creation to be confirmed.
+      set(detachedNavigateTo$, ROUTES.project, {
+        pathParams: { projectId: eventId },
+      });
+    }
     const thread = get(eventDrivenChatThreads$).find((item) => {
       return item.id === fromThreadId;
     });

@@ -216,7 +216,7 @@ class TestOpenAIResponsesModelJsonResponseInspector:
 
     def test_work_limit_discards_partial_document_and_next_extractor_recovers(self):
         inspector = _openai_responses_json_inspector()
-        dense_array = b",".join([b"0"] * 40_000)
+        dense_array = (b"0," * 40_000)[:-1]
         inspector.feed(
             b'{"id":"resp_partial","model":"gpt-5.6-sol",'
             b'"usage":{"input_tokens":20,"output_tokens":9},"padding":['

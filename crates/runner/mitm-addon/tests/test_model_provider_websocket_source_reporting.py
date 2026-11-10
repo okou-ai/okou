@@ -229,7 +229,7 @@ class TestModelProviderWebSocketSourceReporting:
         over_budget_frame = (
             b'{"type":"response.completed","response":{"id":"resp_partial",'
             b'"model":"gpt-5.5","usage":{"input_tokens":100,"output_tokens":40}},'
-            b'"padding":[' + b",".join([b"0"] * 40_000) + b"]}"
+            b'"padding":[' + (b"0," * 40_000)[:-1] + b"]}"
         )
 
         with self._usage_webhook_api() as webhook:

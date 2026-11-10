@@ -966,8 +966,7 @@
       "actionFailed": "계속할 수 없습니다.",
       "allow": "허용",
       "allowed": "허용됨",
-      "callbackPrompt": "클라우드 브라우저가 활성화되었습니다. 이전 작업을 계속해 주세요.",
-      "cardDescription": "이 채팅에서 클라우드 브라우저를 활성화하고 작업을 자동으로 계속합니다. 컴퓨터 사용 연결이 해제됩니다.",
+      "cardDescription": "이 채팅에 클라우드 브라우저를 사용합니다. Computer Use 연결이 해제됩니다.",
       "description": "{{assistantName}}는 이 채팅 스레드에 대해 격리된 클라우드 브라우저 프로필을 사용합니다. 활성화하면 스레드의 컴퓨터 사용이 연결 해제됩니다.",
       "enable": "이 스레드에 대해 활성화",
       "enabled": "클라우드 브라우저 활성화됨",
@@ -976,8 +975,9 @@
       "unavailableDescription": "이 클라우드 브라우저 인증 링크는 유효하지 않거나 만료되었거나 이 워크스페이스에서 사용할 수 없습니다.",
       "unavailableTitle": "인증 링크를 사용할 수 없음"
     },
+    "callbackFailed": "접근이 활성화되었지만 대화를 계속할 수 없습니다. 다시 시도해 주세요.",
     "computerUse": {
-      "actionFailed": "이 컴퓨터를 승인하지 못했습니다. 채팅을 새로고침한 후 다시 시도하세요.",
+      "actionFailed": "이 컴퓨터를 승인할 수 없습니다. 다시 시도해 주세요.",
       "authorize": "승인",
       "authorized": "승인됨",
       "authorizedDescription": "이 채팅의 향후 실행을 위해 컴퓨터 액세스가 활성화되었습니다.",
@@ -1618,6 +1618,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "모두 확인했어요",
+        "emptyTitle": "새 제안이 없습니다",
+        "feedback": "제안 작업",
+        "loading": "제안 불러오는 중",
+        "navigation": "제안 둘러보기",
+        "next": "다음 제안",
+        "previous": "이전 제안",
+        "retry": "다시 시도"
+      },
       "label": "제안",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1879,17 +1889,19 @@
       "workflow": {
         "advanced": {
           "description": "도구와 작업 단계를 연결하세요.",
+          "shortTitle": "고급",
           "title": "고급 워크플로"
         },
         "description": "간단한 설정으로 반복 작업을 줄이세요.",
         "scheduled": {
           "description": "알맞은 시간에 실행하세요.",
           "items": {
-            "daily": "매일 반복 작업",
-            "once": "일회성 알림",
-            "weekly": "주간 점검"
+            "once": "지정한 시간에 한 번 실행",
+            "recurring": "일정에 따라 반복 실행"
           },
-          "prompt": "{{task}} 설정을 도와주세요. 할 일, 실행 시각, 시간대를 먼저 확인해 주세요.",
+          "prompt": "{{task}}. 할 일, 실행 시각, 시간대를 먼저 확인해 주세요.",
+          "setupTitle": "작업 예약",
+          "shortTitle": "예약",
           "title": "예약 작업"
         },
         "suggestions": "추천 작업을 선택하고 필요에 맞게 조정하세요.",
@@ -1935,6 +1947,7 @@
             }
           },
           "monitorPrompt": "{{source}}로 {{task}} 설정을 도와주세요. 흐름: {{event}} → {{action}} → {{result}}. 확인할 피드, 주제 또는 계정, 확인 주기, 요약 저장 위치를 물어보세요. 정기적으로 확인하고 이미 처리한 항목은 제외하며, 설정을 확인한 후 활성화해 주세요.",
+          "shortTitle": "트리거",
           "title": "트리거"
         }
       }
@@ -2443,7 +2456,6 @@
       "mute": "채팅 알림 끄기",
       "muted": "알림 꺼짐",
       "newChatWith": "{{agentName}}와 새 채팅",
-      "newMenu": "새로 만들기",
       "noArchived": "보관된 채팅 없음",
       "noMuted": "음소거된 채팅 없음",
       "noUnread": "읽지 않은 채팅 없음",
@@ -5073,8 +5085,10 @@
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
+    "project": "Project",
     "projects": "Projects",
     "remove": "Remove from Project",
+    "removeFromNewChat": "{{name}} 제거",
     "rename": "Rename",
     "renameProject": "Rename Project",
     "save": "Save",
@@ -5847,6 +5861,16 @@
           "title": "IndexedDB 저장소",
           "unavailable": "IndexedDB 저장소를 사용할 수 없습니다."
         },
+        "learning": {
+          "description": "최근 활동을 검토하고 개인 메모리를 한 번 업데이트합니다. 야간 실행 일정은 변경되지 않습니다.",
+          "notInstalled": "먼저 환경설정에서 학습을 켜세요.",
+          "queued": "학습이 대기열에 추가되었습니다.",
+          "requestFailed": "요청 결과를 확인할 수 없습니다.",
+          "run": "학습 실행",
+          "starting": "시작 중…",
+          "title": "학습",
+          "unavailable": "현재 학습을 사용할 수 없습니다."
+        },
         "morningBrief": {
           "description": "계정에서 활성화한 워크플로로 한 번 실행합니다. 제안을 업데이트하고 실제 이메일을 보낼 수 있습니다. 매일 실행 일정은 바뀌지 않습니다.",
           "openChat": "대화 열기",
@@ -6420,6 +6444,28 @@
       "thread_one": "{{value}}개 스레드",
       "thread_other": "{{value}}개 스레드"
     }
+  },
+  "userNotifications": {
+    "close": "닫기",
+    "countUnavailable": "읽지 않은 알림 수를 확인할 수 없어요",
+    "detailFailed": "이 알림을 불러오지 못했어요",
+    "empty": "아직 알림이 없어요",
+    "emptyDescription": "Okou의 소식이 여기에 표시됩니다.",
+    "loadFailed": "알림을 불러오지 못했어요",
+    "loading": "알림을 불러오는 중",
+    "loadMore": "이전 알림 보기",
+    "nextPage": "다음 페이지",
+    "pageNavigation": "이 메시지의 페이지",
+    "pageOf": "{{current}} / {{total}} 페이지",
+    "previousPage": "이전 페이지",
+    "readAll": "모두 읽음으로 표시",
+    "readFailed": "읽음으로 표시하지 못했어요",
+    "retry": "다시 시도",
+    "sender": "Okou 팀",
+    "title": "알림",
+    "unread": "읽지 않음",
+    "unreadCount_one": "읽지 않은 알림 {{count}}개",
+    "unreadCount_other": "읽지 않은 알림 {{count}}개"
   },
   "vnc": {
     "add": "호스트 추가",

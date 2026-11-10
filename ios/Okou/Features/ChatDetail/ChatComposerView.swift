@@ -1,3 +1,4 @@
+import ChatData
 import ChatDomain
 import PhotosUI
 import SwiftUI
@@ -27,6 +28,8 @@ struct ChatComposerView: View {
   var sendTransition: ConversationSendTransition? = nil
   /// "Message <agent>", so the field names who will do the work.
   var placeholder: String? = nil
+  var project: ChatProject? = nil
+  var removeProject: (() -> Void)? = nil
 
   @State private var isFocused = false
   @State private var showsPhotos = false
@@ -72,6 +75,11 @@ struct ChatComposerView: View {
 
   var body: some View {
     VStack(alignment: .leading, spacing: OkouSpace.sm) {
+      if let project {
+        OkouBanner(Text(verbatim: project.name), icon: "folder", dismiss: removeProject)
+          .accessibilityLabel("Project: \(project.name)")
+          .disabled(isBusy || needsUpgrade)
+      }
       if let voice = draftState?.voice, voice.error != nil || voiceActive {
         ComposerVoiceInputTray(voice: voice)
           .transition(reduceMotion ? .identity : .move(edge: .bottom).combined(with: .opacity))

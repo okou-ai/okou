@@ -46,7 +46,9 @@ final class AttachmentDraftTests: XCTestCase {
     await fulfillment(of: [creating], timeout: 3)
     let submission = try XCTUnwrap(store.newChatSubmission)
     let attachment = try XCTUnwrap(submission.message.message.attachments.first)
-    let thumbnail = try await submission.viewer.thumbnail(attachment)
+    let reads = submission.viewer.reads
+    let read = reads.thumbnail(attachment)
+    let thumbnail = try await reads.store.get(read.value).value.image
     XCTAssertNotNil(thumbnail)
     submission.viewer.open(attachment)
     let cachedURL = try XCTUnwrap(submission.viewer.preview?.file?.url)
@@ -166,7 +168,7 @@ final class AttachmentDraftTests: XCTestCase {
     })
     let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { store.close() }
-    store.selectedAgentID = AttachmentFlowFixture.agentID
+    await store.refreshNavigation()
     store.newChatDraft = "\n  Show this message immediately\n\t"
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
@@ -324,7 +326,7 @@ final class AttachmentDraftTests: XCTestCase {
       })
     let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { store.close() }
-    store.selectedAgentID = AttachmentFlowFixture.agentID
+    await store.refreshNavigation()
     store.newChatDraft = "First conversation"
     let first = Task { await store.sendNewChat(sendTransition: ConversationSendTransition()) }
     addTeardownBlock { @MainActor in
@@ -429,6 +431,35 @@ final class AttachmentDraftTests: XCTestCase {
     XCTAssertEqual(store.newChatDraft, "")
   }
 
+  func testFailedCreationPreservesTheFirstMessageWhenDefaultDraftLoadsDuringSend() async throws {
+    let creating = expectation(description: "First chat creation is pending")
+    let gate = AsyncStream<Void>.makeStream()
+    defer { gate.continuation.finish() }
+    let fixture = AttachmentFlowFixture(creation: {
+      creating.fulfill()
+      for await _ in gate.stream {}
+      return false
+    })
+    let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
+    defer { store.close() }
+    store.newChatDraft = "Keep the first message for retry"
+    let sending = Task { await store.sendNewChat() }
+    addTeardownBlock { @MainActor in
+      store.close()
+      sending.cancel()
+      gate.continuation.finish()
+      await sending.value
+    }
+    await fulfillment(of: [creating], timeout: 3)
+    await store.refreshNavigation()
+    gate.continuation.finish()
+    await sending.value
+    XCTAssertEqual(store.newChatDraft, "Keep the first message for retry")
+    XCTAssertEqual(store.selectedAgentID, AttachmentFlowFixture.agentID)
+    XCTAssertNil(store.selectedThreadID)
+    XCTAssertNotNil(store.error)
+  }
+
   func testUncertainSendSurvivesRestartWithOriginalIdentityAndNoAutomaticResend() async throws {
     for acceptedBeforeFailure in [false, true] {
       let fixture = AttachmentFlowFixture(
@@ -495,7 +526,7 @@ final class AttachmentDraftTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { store.close() }
-    store.selectedAgentID = AttachmentFlowFixture.agentID
+    await store.refreshNavigation()
     store.newChatDraft = "Agent draft"
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
@@ -506,7 +537,7 @@ final class AttachmentDraftTests: XCTestCase {
     store.startNewChat()
     XCTAssertEqual(store.newChatDraft, "Agent draft")
     XCTAssertTrue(store.newAttachmentDraft.hasAttachments)
-    let result = await store.createChat(agentID: AttachmentFlowFixture.agentID)
+    let result = await store.createChat()
     let created = try XCTUnwrap(result)
     let conversation = try XCTUnwrap(store.selectedConversation)
     conversation.draft = "Thread draft"
@@ -518,16 +549,16 @@ final class AttachmentDraftTests: XCTestCase {
     let reopened = WorkspaceStore(
       client: fixture.http.client, webURL: fixture.http.baseURL, draftStorage: storage)
     defer { reopened.close() }
+    await reopened.refreshNavigation()
     XCTAssertEqual(reopened.selectedAgentID, AttachmentFlowFixture.agentID)
     XCTAssertEqual(reopened.newChatDraft, "Agent draft")
     XCTAssertTrue(reopened.newAttachmentDraft.hasAttachments)
-    _ = await reopened.createChat(agentID: AttachmentFlowFixture.agentID)
+    _ = await reopened.createChat()
     XCTAssertEqual(reopened.selectedConversation?.draft, "Thread draft")
-    reopened.selectedAgentID = "other-agent"
-    XCTAssertEqual(reopened.newChatDraft, "")
-    XCTAssertFalse(reopened.newAttachmentDraft.hasAttachments)
-    reopened.selectedAgentID = AttachmentFlowFixture.agentID
+    reopened.startNewChat()
+    XCTAssertEqual(reopened.selectedAgentID, AttachmentFlowFixture.agentID)
     XCTAssertEqual(reopened.newChatDraft, "Agent draft")
+    XCTAssertTrue(reopened.newAttachmentDraft.hasAttachments)
     reopened.newComposer.clear()
   }
 
@@ -555,7 +586,7 @@ final class AttachmentDraftTests: XCTestCase {
     })
     let store = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
     defer { store.close() }
-    store.selectedAgentID = AttachmentFlowFixture.agentID
+    await store.refreshNavigation()
     store.newChatDraft = "Use my selected GitHub account"
     let source = try makeFile()
     defer { try? FileManager.default.removeItem(at: source.deletingLastPathComponent()) }
@@ -739,7 +770,7 @@ final class AttachmentFlowFixture: Sendable {
         return ChatHTTPResponse(
           body:
             "[{\"agentId\":\"\(Self.agentID)\",\"displayName\":\"Okou\",\"isDefaultAgent\":true}]")
-      case "/api/user-preferences": return ChatHTTPResponse(body: #"{"pinnedAgentIds":[]}"#)
+
       case "/api/feature-switches": return ChatHTTPResponse(body: #"{"effectiveSwitches":{}}"#)
       case "/api/user-model-preference": return ChatHTTPResponse(body: "{}")
       case "/api/run-models", "/api/model-catalog":

@@ -15,6 +15,7 @@ export type MessageIntegration =
   | "wechat"
   | "whatsapp"
   | "phone"
+  | "email"
   | "imessage"
   | "sms";
 
@@ -31,7 +32,7 @@ export interface UploadedFile {
 }
 
 export interface MessageDelivery {
-  readonly status: "delivered" | "pending" | "failed";
+  readonly status: "delivered" | "pending" | "accepted" | "failed";
   readonly error?: string;
   readonly operationId?: string;
 }

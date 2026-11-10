@@ -5,6 +5,7 @@ import {
 } from "./wallet.ts";
 import { command, computed, state } from "ccstate";
 import { isOrgAdmin$ } from "../../org.ts";
+import { singleAgentEnabled$ } from "../../single-agent.ts";
 import { searchParams$, updateSearchParams$ } from "../../route.ts";
 import { reloadIndexedDbDiagnosticsFromWorker$ } from "../../shared-database.ts";
 import { resetSignal } from "../../utils.ts";
@@ -35,6 +36,7 @@ import {
 // used to live at the bottom of it.
 export const SETTINGS_SECTIONS = [
   "preference",
+  "my-okou",
   "chat",
   "tools",
   "model",
@@ -69,8 +71,12 @@ export function resolveAvailableSettingsSection(
   section: SettingsSection,
   options: {
     readonly isAdmin: boolean;
+    readonly singleAgent: boolean;
   },
 ): SettingsSection {
+  if (section === "my-okou" && !options.singleAgent) {
+    return "preference";
+  }
   if (!options.isAdmin && isAdminOnlySettingsSection(section)) {
     return "preference";
   }
@@ -360,6 +366,7 @@ export const checkUnifiedSettingsParam$ = command(
 
     const resolved = resolveAvailableSettingsSection(section, {
       isAdmin,
+      singleAgent: get(singleAgentEnabled$),
     });
     set(internalActiveSection$, resolved);
     set(setBillingSubPage$, opensBillingPlans && resolved === "billing");

@@ -51,6 +51,7 @@ import { useGet, useLastResolved, useLoadable } from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { i18n } from "../../i18n/index.ts";
+import { captureArtifactAction } from "../../lib/posthog.ts";
 import type { PlatformConnectorAccountMutationIntent } from "../../signals/connector-domain.ts";
 import { downloadAttachment$ } from "../../signals/attachment-download.ts";
 import {
@@ -612,6 +613,7 @@ function GoogleDriveConnectMenuItem({
 function GoogleDriveMenuItem({
   syncTarget,
   availability,
+  surface,
   target,
   original = false,
   syncing,
@@ -620,6 +622,7 @@ function GoogleDriveMenuItem({
 }: {
   syncTarget?: ArtifactDownloadSyncTarget;
   availability: ReturnType<typeof useGoogleDriveAvailability>;
+  surface: "dialog" | "page";
   target?: GoogleWorkspaceTarget | undefined;
   original?: boolean;
   syncing: boolean;
@@ -628,6 +631,11 @@ function GoogleDriveMenuItem({
 }) {
   const { t } = useTranslation();
   const syncOrConnect = () => {
+    captureArtifactAction({
+      action: "google_drive_sync",
+      surface,
+      target: target ?? "file",
+    });
     onSyncOrConnect(availability, target ? "google" : "original");
   };
   const labels = useGoogleDriveMenuLabels(target);
@@ -823,6 +831,7 @@ function useArtifactDriveMenu({
           <GoogleDriveMenuItem
             syncTarget={syncTarget}
             availability={availability}
+            surface={surface}
             target={workspaceTarget}
             syncing={primary.syncing}
             connecting={primary.connecting}
@@ -833,6 +842,7 @@ function useArtifactDriveMenu({
           <GoogleDriveMenuItem
             syncTarget={syncTarget}
             availability={availability}
+            surface={surface}
             original
             syncing={original.syncing}
             connecting={original.connecting}
@@ -924,6 +934,7 @@ export function ArtifactDownloadMenu({
         <DropdownMenuItem
           disabled={downloadPending}
           onClick={() => {
+            captureArtifactAction({ action: "download", surface });
             detach(
               downloadAttachment({ filename: downloadName, url }, pageSignal),
               Reason.DomCallback,

@@ -46,10 +46,6 @@ export function marketingHandoffBucket(): string | undefined {
   return bucket;
 }
 
-function marketingManifestBucketKey(bucket: string): string {
-  return `${env("R2_ACCOUNT_ID")}/${bucket}`;
-}
-
 export const grantMarketingContent$ = command(
   async (
     { set },
@@ -57,7 +53,6 @@ export const grantMarketingContent$ = command(
       resourceType: "manifest" | "file";
       resourceHash: string;
       subject: string;
-      verifiedManifestBucket?: string;
     },
     signal: AbortSignal,
   ) => {
@@ -73,7 +68,7 @@ export const grantMarketingContent$ = command(
           marketingContentGrants.resourceHash,
           marketingContentGrants.subject,
         ],
-        set: { expiresAt, verifiedManifestBucket: args.verifiedManifestBucket },
+        set: { expiresAt },
       });
     signal.throwIfAborted();
   },
@@ -107,38 +102,6 @@ export const canReadMarketingContent$ = command(
   },
 );
 
-/** Public grants are publication receipts, written only after immutable storage. */
-export const publicMarketingContentHashes$ = command(
-  async (
-    { get },
-    args: { resourceType: "manifest" | "file"; hashes: readonly string[] },
-    signal: AbortSignal,
-  ) => {
-    if (args.hashes.length === 0) {
-      return new Set<string>();
-    }
-    const table = marketingContentGrants;
-    const grants = await get(db$)
-      .select({ hash: table.resourceHash })
-      .from(table)
-      .where(
-        and(
-          eq(table.resourceType, args.resourceType),
-          inArray(table.resourceHash, args.hashes),
-          eq(table.subject, "public"),
-          isNull(table.expiresAt),
-        ),
-      );
-    signal.throwIfAborted();
-    return new Set(
-      grants.map(({ hash }) => {
-        return hash;
-      }),
-    );
-  },
-);
-
-/** Bind a guest grant to one signed-in identity without consuming a shared hash. */
 export const claimMarketingManifest$ = command(
   async (
     { set },
@@ -248,100 +211,6 @@ const reserveMarketingManifestAddress$ = command(
   },
 );
 
-/** Reuse immutable full/short bindings only in the R2 account/bucket verified. */
-export const publicMarketingManifestHashes$ = command(
-  async (
-    { get, set },
-    args: { bucket: string; hashes: readonly string[] },
-    signal: AbortSignal,
-  ) => {
-    if (args.hashes.length === 0) {
-      return new Set<string>();
-    }
-    const table = marketingContentGrants;
-    const verifiedBucket = marketingManifestBucketKey(args.bucket);
-    const grants = await get(db$)
-      .select({
-        hash: table.resourceHash,
-        verifiedBucket: table.verifiedManifestBucket,
-      })
-      .from(table)
-      .where(
-        and(
-          eq(table.resourceType, "manifest"),
-          inArray(table.resourceHash, args.hashes),
-          eq(table.subject, "public"),
-          isNull(table.expiresAt),
-        ),
-      );
-    signal.throwIfAborted();
-    const verified = new Set<string>();
-    const unverified = [];
-    for (const grant of grants) {
-      if (grant.verifiedBucket === verifiedBucket) {
-        verified.add(grant.hash);
-      } else {
-        unverified.push(grant.hash);
-      }
-    }
-    // Backfill old receipts in bounded groups so a cancelled inventory keeps
-    // completed verification work. Missing grants never qualify for backfill.
-    for (let start = 0; start < unverified.length; start += 100) {
-      const hashes = unverified.slice(start, start + 100);
-      const checked: string[] = [];
-      for (let offset = 0; offset < hashes.length; offset += 4) {
-        const results = await Promise.allSettled(
-          hashes.slice(offset, offset + 4).map(async (hash) => {
-            const short = await set(
-              readMarketingManifest$,
-              { bucket: args.bucket, hash: hash.slice(0, 12) },
-              signal,
-            );
-            if (short?.hash !== hash) {
-              return;
-            }
-            const full = await set(
-              readMarketingManifest$,
-              { bucket: args.bucket, hash },
-              signal,
-            );
-            if (full?.hash === hash) {
-              checked.push(hash);
-            }
-          }),
-        );
-        signal.throwIfAborted();
-        const failure = results.find((result) => {
-          return result.status === "rejected";
-        });
-        if (failure) {
-          throw failure.reason;
-        }
-      }
-      if (checked.length === 0) {
-        continue;
-      }
-      const recorded = await set(writeDb$)
-        .update(table)
-        .set({ verifiedManifestBucket: verifiedBucket })
-        .where(
-          and(
-            eq(table.resourceType, "manifest"),
-            inArray(table.resourceHash, checked),
-            eq(table.subject, "public"),
-            isNull(table.expiresAt),
-          ),
-        )
-        .returning({ hash: table.resourceHash });
-      signal.throwIfAborted();
-      for (const { hash } of recorded) {
-        verified.add(hash);
-      }
-    }
-    return verified;
-  },
-);
-
 export const storeMarketingManifest$ = command(
   async (
     { get, set },
@@ -382,127 +251,10 @@ export const storeMarketingManifest$ = command(
         resourceType: "manifest",
         resourceHash: hash,
         subject: args.subject,
-        verifiedManifestBucket: marketingManifestBucketKey(args.bucket),
       },
       signal,
     );
     return { hash, shortHash };
-  },
-);
-
-export const publishMarketingManifests$ = command(
-  async (
-    { get, set },
-    args: { bucket: string; manifests: readonly MarketingHandoffManifest[] },
-    signal: AbortSignal,
-  ) => {
-    const verifiedManifestBucket = marketingManifestBucketKey(args.bucket);
-    const publications = new Map(
-      args.manifests.map((manifest) => {
-        const body = serializeMarketingHandoff(manifest);
-        return [marketingContentHash(body), { body, manifest }] as const;
-      }),
-    );
-    const hashes = [...publications.keys()];
-    const published = await set(
-      publicMarketingManifestHashes$,
-      { bucket: args.bucket, hashes },
-      signal,
-    );
-    const missing = [...publications].filter(([hash]) => {
-      return !published.has(hash);
-    });
-    if (missing.length === 0) {
-      return hashes;
-    }
-    const fileHashes = [
-      ...new Set(
-        missing.flatMap(([, { manifest }]) => {
-          return manifest.files.map((file) => {
-            return file.hash;
-          });
-        }),
-      ),
-    ];
-    const publicFiles = await set(
-      publicMarketingContentHashes$,
-      { resourceType: "file", hashes: fileHashes },
-      signal,
-    );
-    if (
-      fileHashes.some((hash) => {
-        return !publicFiles.has(hash);
-      })
-    ) {
-      return null;
-    }
-    // Bound R2 pressure and settle every owned write before failing the request.
-    // Failed batches publish no grants; retry safely reuses any immutable objects.
-    for (let offset = 0; offset < missing.length; offset += 4) {
-      signal.throwIfAborted();
-      const results = await Promise.allSettled(
-        missing.slice(offset, offset + 4).map(async ([hash, { body }]) => {
-          const reserved = await set(
-            reserveMarketingManifestAddress$,
-            { bucket: args.bucket, hash, body },
-            signal,
-          );
-          if (!reserved) {
-            return false;
-          }
-          await get(
-            putImmutableS3Object(
-              args.bucket,
-              `manifest/${hash}.json`,
-              body,
-              "application/json",
-              signal,
-            ),
-          );
-          signal.throwIfAborted();
-          return true;
-        }),
-      );
-      signal.throwIfAborted();
-      const failure = results.find((result) => {
-        return result.status === "rejected";
-      });
-      if (failure) {
-        throw failure.reason;
-      }
-      if (
-        results.some((result) => {
-          return result.status === "fulfilled" && !result.value;
-        })
-      ) {
-        return conflict(
-          "This handoff address is already in use. Edit your request and try again.",
-        );
-      }
-    }
-    await set(writeDb$)
-      .insert(marketingContentGrants)
-      .values(
-        missing.map(([hash]) => {
-          return {
-            resourceType: "manifest" as const,
-            resourceHash: hash,
-            subject: "public",
-            expiresAt: null,
-            verifiedManifestBucket,
-          };
-        }),
-      )
-      .onConflictDoUpdate({
-        target: [
-          marketingContentGrants.resourceType,
-          marketingContentGrants.resourceHash,
-          marketingContentGrants.subject,
-        ],
-        set: { expiresAt: null, verifiedManifestBucket },
-      });
-    signal.throwIfAborted();
-    return hashes;
   },
 );
 

@@ -33,16 +33,11 @@ final class WorkspaceStore {
       selectedConversation?.reconcileVisibility()
     }
   }
-  var selectedAgentID: String? {
-    didSet {
-      guard oldValue != selectedAgentID else { return }
-      if let selectedAgentID {
-        do { try draftStorage?.save(selectedAgentID, key: "active-agent") } catch {
-          self.error = "Cannot save the draft's Agent. " + error.localizedDescription
-        }
-      }
-      activateAgentDraft()
-    }
+  var selectedAgentID: String? { selectedConversation?.thread.agentID ?? defaultAgentID }
+  var defaultAgentID: String? { list.agents.first(where: \.isDefaultAgent)?.agentId }
+  private(set) var newChatProjectID: String?
+  var newChatProject: ChatProject? {
+    projects.projects.first { $0.id == newChatProjectID }
   }
   var newChatDraft: String {
     get { newComposer.text }
@@ -54,7 +49,7 @@ final class WorkspaceStore {
   private let voiceCapture: (@MainActor () -> any VoiceAudioCapture)?
   private let measurementScope: ChatCacheScope?
   private let draftRepository: ChatDraftRepository?
-  @ObservationIgnored private var agentDrafts: [String: ComposerDraftStore] = [:]
+  private var draftAgentID: String?
   private var agentDraftTask: Task<Void, Never>?
   private(set) var connectionStatus = RealtimeConnectionStatus.connecting
 
@@ -96,8 +91,12 @@ final class WorkspaceStore {
     client: client, sync: sync, commands: commands, resources: resources,
     didRefresh: { [weak self] in self?.applyThreads($0) },
     didFail: { [weak self] in self?.handle($0) },
-    didLoadAgents: { [weak self] in self?.selectDefaultAgent(from: $0) },
+    didLoadAgents: { [weak self] in self?.prepareDefaultDraft(from: $0) },
     readRetrySleep: readRetrySleep)
+  @ObservationIgnored lazy var projects = ChatProjectStore(
+    client: client, resources: resources, sync: sync,
+    didFail: { [weak self] in self?.handle($0) },
+    didChangeMembership: { [weak self] in await self?.list.refresh(waitForCurrent: true) })
   @ObservationIgnored private var conversations: [String: ConversationStore] = [:]
   @ObservationIgnored private var lastUse: [String: UInt64] = [:]
   private var clock: UInt64 = 0
@@ -148,10 +147,6 @@ final class WorkspaceStore {
       target: .unassigned, commands: commands, storage: draftStorage,
       didFail: { _ in })
     newComposer.setForeground(isForeground)
-    do {
-      selectedAgentID = try draftStorage?.load("active-agent", as: String.self)
-      if selectedAgentID != nil { activateAgentDraft() }
-    } catch { self.error = "Cannot restore the draft's Agent. " + error.localizedDescription }
   }
 
   func start(userID: String, workspaceID: String) async {
@@ -167,8 +162,9 @@ final class WorkspaceStore {
       }
     }
     await list.restoreCached()
+    await projects.restore(userID: userID, workspaceID: workspaceID, apiURL: client.baseURL)
     guard canContinueStartup(generation) else { return }
-    selectDefaultAgent(from: list.agents)
+    prepareDefaultDraft(from: list.agents)
     await withTaskCancellationHandler {
       async let navigation: Void = refreshNavigation()
       let realtime = RealtimeService(
@@ -201,11 +197,10 @@ final class WorkspaceStore {
     await list.refreshNavigation()
   }
 
-  private func selectDefaultAgent(from agents: [AgentRecord]) {
-    guard !closed, !needsUpgrade, !Task.isCancelled,
-      selectedAgentID == nil, selectedThreadID == nil
-    else { return }
-    selectedAgentID = agents.first(where: \.isDefaultAgent)?.agentId
+  private func prepareDefaultDraft(from agents: [AgentRecord]) {
+    guard !closed, !needsUpgrade, !Task.isCancelled else { return }
+    let id = agents.first(where: \.isDefaultAgent)?.agentId
+    if let id { activateDefaultDraft(agentID: id) }
   }
 
   var currentAgentName: String {
@@ -231,7 +226,7 @@ final class WorkspaceStore {
       workflowSource: composerWorkflows,
       draftRepository: draftRepository, draftStorage: draftStorage,
       measurementScope: measurementScope,
-      didRequestNewChat: { [weak self] in self?.startNewChat(agentID: thread.agentID) },
+      didRequestNewChat: { [weak self] in self?.startNewChat() },
       readRetrySleep: readRetrySleep)
     conversation.composer.setForeground(isForeground)
     conversation.runOutput = { [weak self] runID, handler in
@@ -254,6 +249,7 @@ final class WorkspaceStore {
     composerWorkflows.close()
     newModelSelection.close()
     list.close()
+    projects.close()
     resources.close()
     threadFeedback = nil
     search.close()
@@ -264,7 +260,6 @@ final class WorkspaceStore {
     messageMarkdown.clear()
     agentDraftTask?.cancel()
     newComposer.close()
-    for composer in agentDrafts.values { composer.close() }
     commands.closeFileCache()
   }
 
@@ -287,7 +282,6 @@ final class WorkspaceStore {
       invalidations.insert(.reconnected)
     }
     newComposer.setForeground(active)
-    for composer in agentDrafts.values { composer.setForeground(active) }
     for conversation in conversations.values { conversation.composer.setForeground(active) }
     selectedConversation?.reconcileVisibility()
     if active {
@@ -295,24 +289,22 @@ final class WorkspaceStore {
     }
   }
 
-  private func activateAgentDraft() {
-    guard !closed, let id = selectedAgentID else { return }
-    if let existing = agentDrafts[id] {
-      newComposer = existing
-    } else {
-      let composer = ComposerDraftStore(
-        target: .agent(id), commands: commands,
-        repository: draftRepository, storage: draftStorage,
-        didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
-        syncSleep: readRetrySleep)
-      // Preserve input entered before navigation resolves the default Agent.
-      if !isCreating && newComposer.hasContent && agentDrafts.isEmpty {
-        newComposer.move(to: composer)
-      }
-      agentDrafts[id] = composer
-      newComposer = composer
+  private func activateDefaultDraft(agentID: String) {
+    guard !closed, draftAgentID != agentID else { return }
+    agentDraftTask?.cancel()
+    let previous = newComposer
+    let composer = ComposerDraftStore(
+      target: .agent(agentID), commands: commands,
+      repository: draftRepository, storage: draftStorage,
+      didFail: { [weak self] in self?.handle($0) }, voiceCapture: voiceCapture?(),
+      syncSleep: readRetrySleep)
+    // Preserve input entered before navigation resolves the default Agent.
+    if !isCreating && previous.hasContent && draftAgentID == nil {
+      previous.move(to: composer)
     }
-    let composer = newComposer
+    if !isCreating { previous.close() }
+    draftAgentID = agentID
+    newComposer = composer
     composer.setForeground(isForeground)
     agentDraftTask = Task { await composer.synchronize() }
   }
@@ -347,6 +339,7 @@ final class WorkspaceStore {
     async let historyRefresh: Void = refreshConversations(batch, generation: generation)
     // Model catch-up must stay fresh, but it does not gate the chat list or messages.
     async let modelRefresh: Void = refreshModels(batch)
+    async let projectRefresh: Void = refreshProjects(batch)
     guard refreshGeneration == generation, !Task.isCancelled else { return }
     if full || batch.contains(.threadList) {
       await list.refresh()
@@ -364,6 +357,7 @@ final class WorkspaceStore {
       await selectedConversation?.refresh()
     }
     await modelRefresh
+    await projectRefresh
     guard !closed, !needsUpgrade, !Task.isCancelled, refreshGeneration == generation else { return }
     if modelStore.configuration != nil,
       full || selectedConversation?.modelSelection?.needsThreadReadback == true
@@ -381,6 +375,12 @@ final class WorkspaceStore {
       await modelStore.refresh(batch)
     } else if full {
       do { try resources.invalidate(batch) } catch { handle(error) }
+    }
+  }
+
+  private func refreshProjects(_ batch: Set<ChatInvalidation>) async {
+    if projects.active && (batch.contains(.reconnected) || batch.contains(.threadList)) {
+      await projects.refresh()
     }
   }
 
@@ -461,7 +461,6 @@ final class WorkspaceStore {
       newChatSubmission = nil
     }
     selectedThreadID = id
-    selectedAgentID = thread.agentID
     selectedConversation?.setAutomaticReadSuppressed(false, resetReadWatermark: true)
     if reselected { requestRefresh(.history(threadID: id)) }
   }
@@ -584,7 +583,7 @@ final class WorkspaceStore {
       thread, archived: archived, eventID: eventID, onFailure: { failure = $0 },
       didBegin: {
         // The list owns the write, so leaving the detail cannot cancel it.
-        if leaving { self.startNewChat(agentID: thread.agentID) }
+        if leaving { self.startNewChat() }
       })
     guard !closed, !needsUpgrade else { return false }
     if succeeded {
@@ -650,22 +649,23 @@ final class WorkspaceStore {
     newChatDraft = token + newChatDraft
   }
 
-  func startNewChat(agentID: String? = nil) {
+  func startNewChat(projectID: String? = nil) {
     guard !isCreating, !needsUpgrade, !closed else { return }
     newChatSubmission?.close()
     newChatSubmission = nil
     chatLinkRequestID = UUID()
     chatLinkThreadID = nil
     selectedThreadID = nil
-    selectedAgentID =
-      agentID ?? selectedAgentID ?? list.agents.first(where: \.isDefaultAgent)?.agentId
+    newChatProjectID = projectID
     newComposer.requestSync()
     newModelSelection.resetNewChat()
     error = nil
   }
 
+  func removeNewChatProject() { newChatProjectID = nil }
+
   var canOpenNewChatFromSystem: Bool {
-    isForeground && selectedAgentID != nil && !isCreating && !needsUpgrade && !closed
+    isForeground && defaultAgentID != nil && !isCreating && !needsUpgrade && !closed
   }
 
   @discardableResult
@@ -687,7 +687,7 @@ final class WorkspaceStore {
   }
 
   @discardableResult
-  func createChat(agentID: String? = nil, composerOptions: ChatComposerOptions? = nil) async
+  func createChat(composerOptions: ChatComposerOptions? = nil) async
     -> ChatThread?
   {
     guard !isCreating, !needsUpgrade, !closed, !Task.isCancelled else { return nil }
@@ -696,6 +696,7 @@ final class WorkspaceStore {
       newModelSelection.captureNewChatSelection()
     }
     let effort = newModelSelection.requestedEffort
+    let projectID = newChatProjectID
     newModelSelection.isSending = true
     isCreating = true
     let task = Task<ChatThread?, Never> { [weak self] in
@@ -707,13 +708,12 @@ final class WorkspaceStore {
       }
       do {
         let thread = try await commands.createThread(
-          agentID: agentID, modelSelection: selection, reasoningEffort: effort,
-          composerOptions: composerOptions)
+          modelSelection: selection, reasoningEffort: effort,
+          composerOptions: composerOptions, projectID: projectID)
         try Task.checkCancellation()
         guard !closed else { return nil }
         list.insertCreated(thread)
         selectedThreadID = thread.id
-        selectedAgentID = list.threads.first(where: { $0.id == thread.id })?.agentID
         error = nil
         return thread
       } catch is CancellationError {
@@ -732,6 +732,15 @@ final class WorkspaceStore {
     sendTransition: ConversationSendTransition? = nil, reduceMotion: Bool = false
   ) async {
     let sourceComposer = newComposer
+    defer {
+      if sourceComposer !== newComposer {
+        if !closed, sourceComposer.hasContent {
+          sourceComposer.move(to: newComposer)
+          newComposer.requestSync()
+        }
+        sourceComposer.close()
+      }
+    }
     let wasAwaitingAgent = selectedAgentID == nil
     guard sourceComposer.hasContent, sourceComposer.canSend, newAttachmentDraft.isReady,
       selectedThreadID == nil, !isCreating, !needsUpgrade, !closed, !Task.isCancelled,
@@ -739,7 +748,7 @@ final class WorkspaceStore {
     else {
       return
     }
-    let sourceAgentID = selectedAgentID
+    let sourceAgentID = defaultAgentID
     newModelSelection.connectors.configure(agentID: sourceAgentID)
     let options = newModelSelection.connectors.pendingOptions
     let messageID = UUID().uuidString.lowercased()
@@ -767,7 +776,7 @@ final class WorkspaceStore {
       if newChatSubmission?.message.id == submission.message.id { newChatSubmission = nil }
       submission.close()
     }
-    guard let created = await createChat(agentID: selectedAgentID, composerOptions: options),
+    guard let created = await createChat(composerOptions: options),
       !closed,
       let conversation = conversation(for: created.id)
     else { return }
@@ -816,8 +825,7 @@ final class WorkspaceStore {
     didRefreshReadState()
     for thread in threads { conversations[thread.id]?.thread = thread }
     if let selectedThreadID {
-      if let thread = threads.first(where: { $0.id == selectedThreadID }) {
-        selectedAgentID = thread.agentID
+      if threads.contains(where: { $0.id == selectedThreadID }) {
         selectedConversation = conversation(for: selectedThreadID)
       } else {
         self.selectedThreadID = nil

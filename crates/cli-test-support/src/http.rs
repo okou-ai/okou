@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 use tokio::sync::{mpsc, oneshot};
+use tokio::task::JoinSet;
 use tokio_util::task::AbortOnDropHandle;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -71,29 +72,36 @@ impl RecordingServer {
         let events = Arc::new(Mutex::new(Vec::new()));
         let task_events = Arc::clone(&events);
         let handle = tokio::spawn(async move {
-            while let Ok((mut socket, _peer)) = listener.accept().await {
-                let connection_events = Arc::clone(&task_events);
-                tokio::spawn(async move {
-                    let Ok(request) = read_http_request(&mut socket).await else {
-                        let _ = write_http_response(&mut socket, 400).await;
-                        return;
-                    };
-                    let status = if request.path.starts_with("/channels/") {
-                        ably_status
-                    } else {
-                        200
-                    };
-                    let path = request.path.clone();
-                    push_recorded_event(&connection_events, RecordedHttpEvent::Request(request));
-                    if path.starts_with("/channels/") && !ably_response_delay.is_zero() {
-                        tokio::time::sleep(ably_response_delay).await;
+            let mut connections = JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let Ok((mut socket, _peer)) = accepted else { break };
+                        let connection_events = Arc::clone(&task_events);
+                        connections.spawn(async move {
+                            let Ok(request) = read_http_request(&mut socket).await else {
+                                let _ = write_http_response(&mut socket, 400).await;
+                                return;
+                            };
+                            let status = if request.path.starts_with("/channels/") {
+                                ably_status
+                            } else {
+                                200
+                            };
+                            let path = request.path.clone();
+                            push_recorded_event(&connection_events, RecordedHttpEvent::Request(request));
+                            if path.starts_with("/channels/") && !ably_response_delay.is_zero() {
+                                tokio::time::sleep(ably_response_delay).await;
+                            }
+                            let _ = write_http_response(&mut socket, status).await;
+                            push_recorded_event(
+                                &connection_events,
+                                RecordedHttpEvent::Response { path, status },
+                            );
+                        });
                     }
-                    let _ = write_http_response(&mut socket, status).await;
-                    push_recorded_event(
-                        &connection_events,
-                        RecordedHttpEvent::Response { path, status },
-                    );
-                });
+                    _ = connections.join_next(), if !connections.is_empty() => {}
+                }
             }
         });
 
@@ -157,12 +165,22 @@ pub struct ControlledHttpServer {
     pub base_url: String,
     requests: Arc<AtomicUsize>,
     completed_responses: Arc<AtomicUsize>,
-    recorded_requests: Arc<Mutex<Vec<RecordedRequest>>>,
+    recorded_requests: Option<Arc<Mutex<Vec<RecordedRequest>>>>,
     request_rx: mpsc::UnboundedReceiver<ControlledRequest>,
 }
 
 impl ControlledHttpServer {
     pub async fn start() -> Result<Self, String> {
+        Self::start_with_recording(true).await
+    }
+
+    /// Deliver complete gated requests without retaining independent snapshots.
+    /// Snapshot reads through `requests()` return an error in this mode.
+    pub async fn start_without_recording() -> Result<Self, String> {
+        Self::start_with_recording(false).await
+    }
+
+    async fn start_with_recording(record_requests: bool) -> Result<Self, String> {
         let listener = TcpListener::bind("127.0.0.1:0")
             .await
             .map_err(|error| format!("bind controlled HTTP server: {error}"))?;
@@ -173,37 +191,46 @@ impl ControlledHttpServer {
         let task_requests = Arc::clone(&requests);
         let completed_responses = Arc::new(AtomicUsize::new(0));
         let task_completed_responses = Arc::clone(&completed_responses);
-        let recorded_requests = Arc::new(Mutex::new(Vec::new()));
-        let task_recorded_requests = Arc::clone(&recorded_requests);
+        let recorded_requests = record_requests.then(|| Arc::new(Mutex::new(Vec::new())));
+        let task_recorded_requests = recorded_requests.clone();
         let (request_tx, request_rx) = mpsc::unbounded_channel();
         let handle = tokio::spawn(async move {
-            while let Ok((mut socket, _peer)) = listener.accept().await {
-                let connection_tx = request_tx.clone();
-                let connection_requests = Arc::clone(&task_requests);
-                let connection_completed_responses = Arc::clone(&task_completed_responses);
-                let connection_recorded_requests = Arc::clone(&task_recorded_requests);
-                tokio::spawn(async move {
-                    let Ok(request) = read_http_request(&mut socket).await else {
-                        let _ = write_http_response(&mut socket, 400).await;
-                        return;
-                    };
-                    connection_requests.fetch_add(1, Ordering::SeqCst);
-                    if let Ok(mut requests) = connection_recorded_requests.lock() {
-                        requests.push(request.clone());
+            let mut connections = JoinSet::new();
+            loop {
+                tokio::select! {
+                    accepted = listener.accept() => {
+                        let Ok((mut socket, _peer)) = accepted else { break };
+                        let connection_tx = request_tx.clone();
+                        let connection_requests = Arc::clone(&task_requests);
+                        let connection_completed_responses = Arc::clone(&task_completed_responses);
+                        let connection_recorded_requests = task_recorded_requests.clone();
+                        connections.spawn(async move {
+                            let Ok(request) = read_http_request(&mut socket).await else {
+                                let _ = write_http_response(&mut socket, 400).await;
+                                return;
+                            };
+                            connection_requests.fetch_add(1, Ordering::SeqCst);
+                            if let Some(recorded_requests) = &connection_recorded_requests
+                                && let Ok(mut requests) = recorded_requests.lock()
+                            {
+                                requests.push(request.clone());
+                            }
+                            let (response, response_rx) = oneshot::channel();
+                            if connection_tx
+                                .send(ControlledRequest { request, response })
+                                .is_err()
+                            {
+                                return;
+                            }
+                            let Ok(status) = response_rx.await else {
+                                return;
+                            };
+                            let _ = write_http_response(&mut socket, status).await;
+                            connection_completed_responses.fetch_add(1, Ordering::SeqCst);
+                        });
                     }
-                    let (response, response_rx) = oneshot::channel();
-                    if connection_tx
-                        .send(ControlledRequest { request, response })
-                        .is_err()
-                    {
-                        return;
-                    }
-                    let Ok(status) = response_rx.await else {
-                        return;
-                    };
-                    let _ = write_http_response(&mut socket, status).await;
-                    connection_completed_responses.fetch_add(1, Ordering::SeqCst);
-                });
+                    _ = connections.join_next(), if !connections.is_empty() => {}
+                }
             }
         });
 
@@ -234,8 +261,21 @@ impl ControlledHttpServer {
 
     pub fn requests(&self) -> Result<Vec<RecordedRequest>, String> {
         self.recorded_requests
+            .as_ref()
+            .ok_or("controlled HTTP server request recording is disabled")?
             .lock()
             .map(|requests| requests.clone())
+            .map_err(|_| "controlled HTTP request mutex poisoned".to_string())
+    }
+
+    /// Transfer the recorded requests without closing the server or response gates.
+    /// Subsequent reads contain only requests recorded after this transfer.
+    pub fn take_requests(&self) -> Result<Vec<RecordedRequest>, String> {
+        self.recorded_requests
+            .as_ref()
+            .ok_or("controlled HTTP server request recording is disabled")?
+            .lock()
+            .map(|mut requests| std::mem::take(&mut *requests))
             .map_err(|_| "controlled HTTP request mutex poisoned".to_string())
     }
 }
@@ -362,3 +402,6 @@ fn push_recorded_event(events: &Arc<Mutex<Vec<RecordedHttpEvent>>>, event: Recor
         events.push(event);
     }
 }
+
+#[cfg(test)]
+mod tests;

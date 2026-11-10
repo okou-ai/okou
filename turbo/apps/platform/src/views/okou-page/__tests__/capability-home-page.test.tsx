@@ -1,4 +1,5 @@
 import { screen, waitFor, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { PRESENTATION_TEMPLATE_PICKER_ITEMS } from "@okouai/core";
@@ -189,6 +190,8 @@ test("Workflow suggestions preserve the draft and open the real workflow picker"
     expect(screen.queryByRole("dialog")).toBeNull();
   });
   click(button("All capabilities", suggestions));
+  expect(editor).toHaveTextContent(/^Focus on customer meetingsMorning brief$/);
+  expect(composerInlineTemplates()[0]).toHaveTextContent("Morning brief");
   click(button("Triggers", capabilities()));
   await expect(
     screen.findByRole("region", { name: "Triggers" }),
@@ -203,10 +206,10 @@ test("Scheduled tasks and triggers prepare their own editable automation request
   await fill(editor, "Use my work account.");
   click(button("Scheduled tasks", capabilities()));
   const scheduled = await screen.findByRole("region", {
-    name: "Scheduled tasks",
+    name: "Schedule a task",
   });
-  click(button("Daily routine", scheduled));
-  expect(editor).toHaveTextContent("Help me set up Daily routine.");
+  click(button("Repeat on a schedule", scheduled));
+  expect(editor).toHaveTextContent("Repeat on a schedule.");
   expect(editor).toHaveTextContent("which time zone to use");
   expect(editor).toHaveFocus();
   click(button("All capabilities", scheduled));
@@ -279,5 +282,104 @@ test("Search and Research open separate suggestions and prepare editable drafts 
   expect(capture.runPrompts).toStrictEqual([]);
   click(button("All capabilities", research));
   expect(capabilities()).toBeInTheDocument();
-  expect(editor).toHaveTextContent("Compare website traffic.");
+  expect(editor).toHaveTextContent(/^I am planning a research project\.$/);
+});
+
+const HOME_PROMPTS = [
+  {
+    capability: "Find people",
+    guideTitle: "Find people",
+    suggestion: "Potential customers",
+  },
+  {
+    capability: "Research",
+    guideTitle: "Research",
+    suggestion: "Compare website traffic",
+  },
+  {
+    capability: "Scheduled tasks",
+    guideTitle: "Schedule a task",
+    suggestion: "Repeat on a schedule",
+  },
+  {
+    capability: "Triggers",
+    guideTitle: "Triggers",
+    suggestion: "Email replies",
+  },
+  {
+    capability: "Advanced workflows",
+    guideTitle: "Advanced workflows",
+    suggestion: "Start your day with a clear plan",
+  },
+] as const;
+
+test.each(HOME_PROMPTS)(
+  "Closing $capability clears its unchanged injected prompt",
+  async ({ capability, guideTitle, suggestion }) => {
+    mockTemplateChat();
+    const editor = await setupHome();
+    click(button(capability, capabilities()));
+    const guide = await screen.findByRole("region", { name: guideTitle });
+    click(button(suggestion, guide));
+    expect(editor.textContent).not.toBe("");
+
+    click(button("All capabilities", guide));
+
+    expect(capabilities()).toBeInTheDocument();
+    expect(editor).toHaveFocus();
+    // Workflow template attachments are independent of the suggested text.
+    expect(editor.textContent).toBe(
+      capability === "Advanced workflows" ? "Morning brief" : "",
+    );
+  },
+);
+
+test.each(HOME_PROMPTS)(
+  "Closing $capability preserves the prompt after the user edits it",
+  async ({ capability, guideTitle, suggestion }) => {
+    mockTemplateChat();
+    const editor = await setupHome();
+    click(button(capability, capabilities()));
+    const guide = await screen.findByRole("region", { name: guideTitle });
+    click(button(suggestion, guide));
+    const user = userEvent.setup({ delay: null });
+    await user.paste(" Focus on my company.");
+    const editedText = editor.textContent;
+
+    click(button("All capabilities", guide));
+
+    expect(editor.textContent).toBe(editedText);
+    expect(editor).toHaveTextContent("Focus on my company.");
+  },
+);
+
+test("Dismissing repeated suggestions restores the original draft without stacked prompts", async () => {
+  mockTemplateChat();
+  const editor = await setupHome();
+  await fill(editor, "Keep my own brief.");
+  click(button("Find people", capabilities()));
+  const guide = await screen.findByRole("region", { name: "Find people" });
+  click(button("Potential customers", guide));
+  click(button("Event speakers", guide));
+  expect(editor).toHaveTextContent("Help me find: Event speakers.");
+
+  click(button("All capabilities", guide));
+
+  expect(editor).toHaveTextContent(/^Keep my own brief\.$/);
+});
+
+test("Dismissing a suggestion does not clear matching text the user wrote", async () => {
+  mockTemplateChat();
+  const editor = await setupHome();
+  const prompt =
+    "Help me find: Potential customers. Ask me about my target, criteria, and scope first. Return a shortlist with relevant details and source links.";
+  await fill(editor, prompt);
+  click(button("Find people", capabilities()));
+  const guide = await screen.findByRole("region", { name: "Find people" });
+  click(button("Potential customers", guide));
+  click(button("Potential customers", guide));
+
+  click(button("All capabilities", guide));
+
+  expect(editor.textContent).toBe(prompt);
 });

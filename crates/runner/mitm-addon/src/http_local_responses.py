@@ -3,7 +3,7 @@
 import json
 import urllib.parse
 from collections.abc import Callable
-from typing import Final
+from typing import Final, NoReturn
 
 from mitmproxy import http
 
@@ -13,7 +13,9 @@ import flow_metadata_keys as metadata_keys
 import http_network_log
 import matching
 import registry
+import request_classification
 from logging_utils import log_proxy_entry
+from path_language import MAX_PATH_CHARACTERS
 from request_authority import AuthorityValidationError
 from runtime_url_parsing import split_runtime_url, strip_url_query_and_fragment
 
@@ -25,6 +27,17 @@ _STALE_TLS_ADMISSION_ERROR: Final = "stale_tls_admission"
 _UNSAFE_PLATFORM_PATH_ERROR: Final = "unsafe_platform_path"
 _UPSTREAM_DESTINATION_UNBOUND_ERROR: Final = "upstream_destination_unbound"
 _HTTP_STATUS_CONFLICT = 409
+# Bound each rejected diagnostic, including its marker. Twice the matcher path
+# budget leaves room for an ordinary authority plus any within-budget path.
+_MAX_REJECTED_DIAGNOSTIC_CHARACTERS: Final = 2 * MAX_PATH_CHARACTERS
+_DIAGNOSTIC_TRUNCATION_MARKER: Final = "...[truncated]"
+
+
+def _bounded_rejected_diagnostic(value: str) -> str:
+    if len(value) <= _MAX_REJECTED_DIAGNOSTIC_CHARACTERS:
+        return value
+    prefix_length = _MAX_REJECTED_DIAGNOSTIC_CHARACTERS - len(_DIAGNOSTIC_TRUNCATION_MARKER)
+    return value[:prefix_length] + _DIAGNOSTIC_TRUNCATION_MARKER
 
 
 def _diagnostic_url_without_query_or_fragment(original_url: str) -> str:
@@ -60,6 +73,50 @@ def make_local_json_response(
         lambda: json.dumps(body).encode(),
     )
     return response
+
+
+def block_request_classification(
+    flow: http.HTTPFlow,
+    classification: request_classification.BlockingRequestClassification,
+) -> None:
+    if classification.kind == "registry_unavailable":
+        block_registry_unavailable(flow, classification.registry_unavailable)
+        return
+    if classification.kind == "stale_tls_admission":
+        block_stale_tls_admission(flow, reason=classification.stale_tls_reason)
+        return
+    if classification.kind == "invalid_registry_sandbox":
+        block_invalid_registry_sandbox(flow, classification.invalid_sandbox)
+        return
+    if classification.kind == "authority_denied":
+        block_authority_validation_error(flow, classification.authority_error)
+        return
+    if classification.kind == "platform_path_denied":
+        block_platform_path_denied(flow)
+        return
+    if classification.kind == "outlook_send_blocked":
+        block_outlook_send(flow)
+        return
+    if classification.kind == "gmail_send_blocked":
+        block_gmail_send(flow)
+        return
+    if classification.kind == "firewall_ambiguous":
+        set_firewall_ambiguous_response(flow, classification.firewall_ambiguous)
+        return
+    if classification.kind == "firewall_invalid_input":
+        set_firewall_invalid_input_response(flow, classification.firewall_invalid_input)
+        return
+    if classification.kind == "firewall_block":
+        set_firewall_block_response(flow, classification.firewall_block)
+        return
+    if classification.kind == "public_destination_denied":
+        block_public_destination_denied(flow, classification.public_destination_denial)
+        return
+    _unhandled_blocking_classification(classification)
+
+
+def _unhandled_blocking_classification(classification: NoReturn) -> NoReturn:
+    raise AssertionError(f"Unhandled request classification: {classification!r}")
 
 
 def block_authority_validation_error(
@@ -420,9 +477,9 @@ def set_firewall_invalid_input_response(
             "reason": "unsafe_path",
             "message": "Request blocked: unsafe path",
             "method": result.method,
-            "path": result.path,
+            "path": _bounded_rejected_diagnostic(result.path),
             "url": _diagnostic_url_without_query_or_fragment(
-                flow.metadata[metadata_keys.ORIGINAL_URL]
+                _bounded_rejected_diagnostic(flow.metadata[metadata_keys.ORIGINAL_URL])
             ),
             "permissions": [],
         },
@@ -514,12 +571,8 @@ def set_firewall_ambiguous_response(
 
 def block_public_destination_denied(
     flow: http.HTTPFlow,
+    denial: request_classification.PublicDestinationDenial,
     *,
-    name: str,
-    base: str,
-    destination_host: str,
-    trusted_authority_host: str,
-    reason: str,
     send_response: bool = True,
 ) -> None:
     """Record a public-destination denial and optionally install its local response.
@@ -531,6 +584,11 @@ def block_public_destination_denied(
     unchanged and does not terminate the flow; the caller must terminate it and prevent
     later request dispatch.
     """
+    name = denial.name
+    base = denial.base
+    destination_host = denial.destination_host
+    trusted_authority_host = denial.trusted_authority_host
+    reason = denial.reason
     proxy_log_path = flow_metadata.proxy_log_path(flow.metadata)
     flow.request.stream = False
     flow_metadata.set_firewall_decision(

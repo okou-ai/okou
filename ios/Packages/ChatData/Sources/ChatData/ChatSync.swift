@@ -61,6 +61,21 @@ public actor ChatSync {
     }
   }
 
+  public func cachedProjects() async -> [ChatProject]? {
+    do { return try await cache?.loadProjects() } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error("Cannot read cached Projects: \(error.localizedDescription, privacy: .public)")
+      return nil
+    }
+  }
+
+  public func persistProjects(_ projects: [ChatProject]) async {
+    do { try await cache?.saveProjects(projects) } catch {
+      Logger(subsystem: "ai.okou.ios", category: "ChatCache")
+        .error("Cannot save Projects: \(error.localizedDescription, privacy: .public)")
+    }
+  }
+
   public func cachedThreads() async -> [ChatThread]? {
     await cachedThreadList()?.threads
   }

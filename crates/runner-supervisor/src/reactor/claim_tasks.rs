@@ -21,6 +21,7 @@ use super::job_discovery::{
     recover_unconsumed_finalizing_claim,
 };
 use super::job_spawn::JobResult;
+use super::pending_candidate::PendingRetry;
 use crate::SharedFactory;
 use crate::pre_claim_admission::{
     AdmittedClaim, AdmittedResource, PreClaimOutcome, PreClaimRequest, SandboxAdmittedResource,
@@ -89,6 +90,7 @@ impl ClaimTasks {
         job: DiscoveredJob,
         profiles: &BTreeMap<String, RuntimeProfile>,
         factories: &BTreeMap<String, (SharedFactory, bool)>,
+        retry: PendingRetry,
     ) {
         if !self.has_capacity() {
             return;
@@ -129,7 +131,11 @@ impl ClaimTasks {
                 PreClaimOutcome::Pending(candidate) => ClaimTaskOutcome::Pending(candidate),
                 PreClaimOutcome::Deferred => ClaimTaskOutcome::Deferred,
             };
-            ClaimTaskResult { run_id, outcome }
+            ClaimTaskResult {
+                run_id,
+                outcome,
+                retry,
+            }
         }));
     }
 
@@ -164,7 +170,9 @@ impl ClaimTasks {
                 jobs.spawn((*claim).run(self.context.spawn_ctx.clone()));
                 Ok(DiscoveredJobResult::completed(false))
             }
-            ClaimTaskOutcome::Pending(candidate) => Ok(DiscoveredJobResult::pending(*candidate)),
+            ClaimTaskOutcome::Pending(candidate) => {
+                Ok(DiscoveredJobResult::pending(*candidate, result.retry))
+            }
             ClaimTaskOutcome::Deferred => Ok(DiscoveredJobResult::completed(false)),
             ClaimTaskOutcome::Failed(error) => Err(ClaimConsumptionError::Ownership(error)),
             // Activation used to run inline: retain its existing recovery and
@@ -194,6 +202,7 @@ impl ClaimConsumptionError {
 pub(super) struct ClaimTaskResult {
     run_id: RunId,
     outcome: ClaimTaskOutcome,
+    retry: PendingRetry,
 }
 
 enum ClaimTaskOutcome {

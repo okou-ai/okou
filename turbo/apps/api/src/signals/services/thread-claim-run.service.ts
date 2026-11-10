@@ -7,6 +7,7 @@ import {
   type PiLaunchConfig,
   type PiModelConfig,
   type SecretConnectorMetadata,
+  type PreparedExecutionContext,
   type StoredExecutionContext,
 } from "@okouai/api-contracts/contracts/runners";
 import {
@@ -80,6 +81,8 @@ import {
 } from "../../lib/error";
 import { logger } from "../../lib/log";
 import { safeSqlStateCode } from "../../lib/pg-errors";
+import type { TemplateUsageIdentity } from "../../lib/template-usage-identity";
+import { recordTemplateUsage } from "../../lib/template-usage-log";
 
 import { monotonicNow, now, nowDate, nowDateSql } from "../../lib/time";
 import { waitUntil } from "../context/wait-until";
@@ -249,10 +252,10 @@ import {
 import type { FirewallPolicies } from "@okouai/connectors/firewall-types";
 import {
   type FeatureSwitchContext,
-  getAllFeatureStates,
   isFeatureEnabled,
 } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
+import { runPlatformEnvironment } from "./run-execution-defaults";
 
 import type { SupportedFramework } from "@okouai/core/frameworks";
 import type { ImageModel } from "@okouai/core/image-model-catalog";
@@ -1031,6 +1034,7 @@ type ClaimLaunchRecord =
   | {
       readonly kind: "prompt";
       readonly context: QueuedPromptLaunchContext;
+      readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
       readonly timing: ChatCallbackPreCreateTimingCollector;
     }
   | {
@@ -1180,6 +1184,7 @@ function claimLaunchRecord(record: ClaimLaunchRecord): ClaimLaunchRecord {
   return {
     kind: "prompt",
     timing: record.timing,
+    templateUsageIdentities: record.templateUsageIdentities,
     context: {
       userId: record.context.userId,
       titled: record.context.titled,
@@ -1681,7 +1686,13 @@ export function createThreadClaimRunObjects(
   const promptRunInputRunInput$ = computed(
     async (
       get,
-    ): Promise<CreateQueuedChatRunInput | QueuedMessageAdmissionFailure> => {
+    ): Promise<
+      | {
+          readonly runInput: CreateQueuedChatRunInput;
+          readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
+        }
+      | QueuedMessageAdmissionFailure
+    > => {
       const [args, launch, model, session, host, capture, features, templates] =
         await Promise.all([
           get(promptArgsArgs$),
@@ -1731,16 +1742,19 @@ export function createThreadClaimRunObjects(
       if (!session) {
         throw new Error("A valid prompt model is missing session preparation");
       }
-      return queuedPromptRunInput({
-        input: args,
-        launch,
-        promptAndSkills,
-        model,
-        session,
-        host,
-        capture,
-        features,
-      });
+      return {
+        runInput: queuedPromptRunInput({
+          input: args,
+          launch,
+          promptAndSkills,
+          model,
+          session,
+          host,
+          capture,
+          features,
+        }),
+        templateUsageIdentities: templates.templateUsageIdentities,
+      };
     },
   );
   const internalEarlyAssembly$ = computed(
@@ -1815,13 +1829,14 @@ export function createThreadClaimRunObjects(
       if (!prepared.ok) {
         return queuedPromptPreparationRejection(prepared.error, head);
       }
-      const runInput = prepared.value;
-      if ("kind" in runInput) {
+      const preparedInput = prepared.value;
+      if ("kind" in preparedInput) {
         return {
           kind: "rejected",
-          rejection: queuedMessageRejection(runInput),
+          rejection: queuedMessageRejection(preparedInput),
         };
       }
+      const { runInput, templateUsageIdentities } = preparedInput;
       return {
         kind: "assembled",
         run: {
@@ -1833,6 +1848,7 @@ export function createThreadClaimRunObjects(
         launchRecord: {
           kind: "prompt",
           timing,
+          templateUsageIdentities,
           context: {
             userId: head.userId,
             titled: threadTitled((await get(pickedEvent$))?.thread),
@@ -2742,11 +2758,6 @@ export function createThreadClaimRunObjects(
   const prepared = { environment$ };
   const workflow = createOfficialWorkflowSignals(pickedEvent$, threadContext);
   const { officialWorkflow$ } = workflow;
-  const userTimezone$ = computed(async (get) => {
-    return (
-      (await get(bootstrap.memberMetadata$)).preferences?.timezone ?? undefined
-    );
-  });
   const shared = {
     ...resources,
     ...model,
@@ -2754,7 +2765,6 @@ export function createThreadClaimRunObjects(
     ...prepared,
     ...workflow,
     bodyEnvironment$: preCreateBodyEnvironmentEnvironment$,
-    userTimezone$: userTimezone$,
   };
   const graph = {
     input$: preCreateInput$,
@@ -2934,11 +2944,6 @@ export function createThreadClaimRunObjects(
     };
   });
   const runContextRuntime = { runtimeContext$: runRuntimeRuntimeContext$ };
-  const runContextUserTimezone$ = computed(async (get) => {
-    return selectedRunContextShared
-      ? get(selectedRunContextShared.userTimezone$)
-      : ((await get(runMemberSnapshot$)).member?.timezone ?? undefined);
-  });
   const imageModel$ = computed((get) => {
     return get(bootstrap.selectedImageModel$);
   });
@@ -2955,22 +2960,15 @@ export function createThreadClaimRunObjects(
     if (gate) {
       return gate;
     }
-    const [
-      bodyResult,
-      runtimeResult,
-      timezoneResult,
-      imageResult,
-      workflowResult,
-    ] = await Promise.all([
-      get(bodyContext$),
-      get(runtimeContext$),
-      get(runContextUserTimezone$),
-      get(imageModel$),
-      get(runContextOfficialWorkflow$),
-    ]);
+    const [bodyResult, runtimeResult, imageResult, workflowResult] =
+      await Promise.all([
+        get(bodyContext$),
+        get(runtimeContext$),
+        get(imageModel$),
+        get(runContextOfficialWorkflow$),
+      ]);
     const bodyContext = bodyResult;
     const runtimeContext = runtimeResult;
-    const userTimezone = timezoneResult;
     const selectedImageModel = imageResult;
     const officialWorkflowRun = workflowResult;
     if (isRouteError(bodyContext)) {
@@ -3016,7 +3014,6 @@ export function createThreadClaimRunObjects(
       officialWorkflowFacts: await get(
         selectedRunContextShared.officialWorkflowFacts$,
       ),
-      userTimezone,
       featureSwitchContext: bodyContext.featureSwitchContext,
       selectedImageModel,
     };
@@ -3849,7 +3846,7 @@ export function createThreadClaimRunObjects(
         return { kind: "rejected" as const, assembly: launch.assembly };
       }
       const [input, storage, runnerInput] = launch.runner;
-      const contextDraft = claimRunStoredContextDraft(runnerInput, encrypted);
+      const contextDraft = claimRunPreparedContextDraft(runnerInput, encrypted);
       return {
         kind: "prepared" as const,
         resources: [
@@ -4119,6 +4116,23 @@ export function createThreadClaimRunObjects(
         );
         if ("kind" in result && result.kind === "pending") {
           set(internalCommittedRunId$, result.run.id);
+          const launched = context.launchRecord;
+          if (launched.kind === "prompt") {
+            // Creation is durable even if cancellation or activation fails next.
+            recordTemplateUsage(
+              {
+                runId: result.run.id,
+                sourceEventId: context.head.id,
+                orgId: context.head.orgId,
+                userId: context.head.userId,
+                chatThreadId: context.head.chatThreadId,
+                dispatchPath: "queued-claim",
+                triggerSource: launched.context.runInput.triggerSource,
+                usedAt: new Date(result.publicationReturnedAt),
+              },
+              launched.templateUsageIdentities,
+            );
+          }
         }
         const transactionReturnedAt =
           "kind" in result && result.kind === "pending"
@@ -4630,9 +4644,9 @@ function bestEffortTelemetry(record: () => unknown): void {
 
 function ingestRunContextSnapshot(
   snapshot: RunContextAxiomSnapshot,
-  officialWorkflowBundles: StoredExecutionContext["officialWorkflowBundles"],
-  seedSkillBundles: StoredExecutionContext["seedSkillBundles"],
-  templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"],
+  officialWorkflowBundles: PreparedExecutionContext["officialWorkflowBundles"],
+  seedSkillBundles: PreparedExecutionContext["seedSkillBundles"],
+  templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"],
 ): void {
   bestEffortTelemetry(() => {
     return ingestToAxiom(getDatasetName("run-context"), [
@@ -5156,11 +5170,11 @@ interface StoredExecutionSecrets {
   > | null;
 }
 
-type BuiltStoredExecutionContextDraft = Omit<
-  BuiltStoredExecutionContext,
+type BuiltPreparedExecutionContextDraft = Omit<
+  BuiltPreparedExecutionContext,
   "context" | "persistedStorageMounts"
 > & {
-  readonly context: Omit<StoredExecutionContext, "storageMounts">;
+  readonly context: Omit<PreparedExecutionContext, "storageMounts">;
 };
 
 function buildStoredPlatformEnvironment(args: {
@@ -5200,7 +5214,7 @@ function modelUsageExecutionFields(args: {
   readonly modelUsageProvider: string | undefined;
   readonly modelUsageLongContextMinTotalInputTokens: number;
 }): Pick<
-  StoredExecutionContext,
+  PreparedExecutionContext,
   | "billableFirewalls"
   | "modelUsageProvider"
   | "modelUsageLongContextMinTotalInputTokens"
@@ -5213,11 +5227,11 @@ function modelUsageExecutionFields(args: {
   };
 }
 
-/** The stored execution context draft from the runner input and its encrypted secrets. */
-function claimRunStoredContextDraft<
+/** Prepare full launch input before projecting the final persisted snapshot. */
+function claimRunPreparedContextDraft<
   TEncrypted extends {
     readonly encryptedSecrets: Parameters<
-      typeof buildStoredExecutionContextDraft
+      typeof buildPreparedExecutionContextDraft
     >[1];
   },
 >(
@@ -5231,7 +5245,7 @@ function claimRunStoredContextDraft<
     return encrypted;
   }
   const { args, body, platformEnvironment } = input;
-  return buildStoredExecutionContextDraft(
+  return buildPreparedExecutionContextDraft(
     {
       ...args,
       body,
@@ -5261,9 +5275,9 @@ function capturedMountContextFields(args: {
   readonly additionalVolumes:
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
-  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
 }): Pick<
-  StoredExecutionContext,
+  PreparedExecutionContext,
   "customWorkflowSelection" | "templateGuidanceBundles"
 > {
   return {
@@ -5293,7 +5307,7 @@ function capturedMountContextFields(args: {
   };
 }
 
-function buildStoredExecutionContextDraft(
+function buildPreparedExecutionContextDraft(
   args: {
     readonly runId: string;
     readonly workflowAutomationId: string | null;
@@ -5313,15 +5327,14 @@ function buildStoredExecutionContextDraft(
     readonly additionalVolumes:
       readonly AgentRunCreateAdditionalVolume[] | undefined;
     readonly additionalVolumeSources: AdditionalVolumeSources;
-    readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
-    readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+    readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
+    readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
     readonly platformEnvironment: Record<string, string> | undefined;
-    readonly userTimezone: string | undefined;
     readonly featureSwitchContext: FeatureSwitchContext;
     readonly includeOkouTokenSecret: boolean | undefined;
   },
-  encryptedSecrets: BuiltStoredExecutionContextDraft["context"]["encryptedSecrets"],
-): BuiltStoredExecutionContextDraft {
+  encryptedSecrets: BuiltPreparedExecutionContextDraft["context"]["encryptedSecrets"],
+): BuiltPreparedExecutionContextDraft {
   const permissions = environmentPermissionManifest(args.environment);
   const executionSecrets = buildStoredExecutionSecrets(
     args.environment,
@@ -5397,14 +5410,19 @@ function buildStoredExecutionContextDraft(
       realAgentInPreview: args.body.realAgentInPreview || undefined,
       captureNetworkBodies: args.body.captureNetworkBodies || undefined,
       apiStartTime: args.apiStartTime,
-      userTimezone: args.userTimezone,
       firewalls: permissions?.firewalls,
       networkPolicies: permissions?.networkPolicies,
       connectorRuntimeTargets: [...args.environment.runtimeTargets],
-      disallowedTools: args.body.disallowedTools,
-      tools: args.body.tools,
-      settings: args.body.settings,
-      featureFlags: getAllFeatureStates(args.featureSwitchContext),
+      featureFlags: {
+        [FeatureSwitchKey.SingleAgent]: isFeatureEnabled(
+          FeatureSwitchKey.SingleAgent,
+          args.featureSwitchContext,
+        ),
+        [FeatureSwitchKey.ConnectorChatAccountAccess]: isFeatureEnabled(
+          FeatureSwitchKey.ConnectorChatAccountAccess,
+          args.featureSwitchContext,
+        ),
+      },
       ...modelUsageExecutionFields(args),
       codexRuntimeConfig: args.modelProvider?.codexRuntimeConfig ?? null,
     },
@@ -5413,10 +5431,10 @@ function buildStoredExecutionContextDraft(
   };
 }
 
-function resolveBuiltStoredExecutionContext(
+function resolveBuiltPreparedExecutionContext(
   preparedStorage: PreparedAgentRunStorage,
-  builtContextDraft: BuiltStoredExecutionContextDraft,
-): BuiltStoredExecutionContext {
+  builtContextDraft: BuiltPreparedExecutionContextDraft,
+): BuiltPreparedExecutionContext {
   return {
     ...builtContextDraft,
     persistedStorageMounts: [...preparedStorage.persistedStorageMounts],
@@ -5468,11 +5486,10 @@ interface BuildRunnerJobPayloadInput {
   readonly additionalVolumes:
     readonly AgentRunCreateAdditionalVolume[] | undefined;
   readonly additionalVolumeSources: AdditionalVolumeSources;
-  readonly seedSkillBundles: StoredExecutionContext["seedSkillBundles"];
-  readonly templateGuidanceBundles: StoredExecutionContext["templateGuidanceBundles"];
+  readonly seedSkillBundles: PreparedExecutionContext["seedSkillBundles"];
+  readonly templateGuidanceBundles: PreparedExecutionContext["templateGuidanceBundles"];
   readonly includeOkouTokenSecret: boolean | undefined;
   readonly chatThreadId: string | undefined;
-  readonly userTimezone: string | undefined;
   readonly featureSwitchContext: FeatureSwitchContext;
   readonly timing: ApiDispatchTimingCollector;
 }
@@ -5494,14 +5511,14 @@ function assembleRunnerLaunch(args: {
   readonly runnerGroup: string;
   readonly body: CreateRunBody;
   readonly preparedStorage: PreparedAgentRunStorage;
-  readonly contextDraft: BuiltStoredExecutionContextDraft;
+  readonly contextDraft: BuiltPreparedExecutionContextDraft;
   readonly piResources: PreparedPiLaunchResources | undefined;
 }): PreparedRunnerLaunch {
-  const builtContext = resolveBuiltStoredExecutionContext(
+  const builtContext = resolveBuiltPreparedExecutionContext(
     args.preparedStorage,
     args.contextDraft,
   );
-  const storedContext = storedExecutionContextWithPiResources(
+  const storedContext = preparedExecutionContextWithPiResources(
     builtContext.context,
     args.piResources,
     args.launchSnapshot.framework,
@@ -5565,7 +5582,7 @@ interface MaterializedRunnerStorage {
 
 function finalizedMaterializedLaunch(
   storage: MaterializedRunnerStorage,
-  contextDraft: BuiltStoredExecutionContextDraft,
+  contextDraft: BuiltPreparedExecutionContextDraft,
 ): PreparedRunnerLaunch {
   const { args, group, body } = storage.input;
   return assembleRunnerLaunch({
@@ -5706,16 +5723,6 @@ function initialRunBody(args: {
 // rather than a restatement that this is an agent run.
 type AgentRunOrigin = "direct" | "workflow_automation";
 
-const DISALLOWED_TOOLS = [
-  "CronCreate",
-  "CronList",
-  "CronDelete",
-  "ScheduleWakeup",
-  "AskUserQuestion",
-  "Skill(loop)",
-  "Skill(loop *)",
-] as const;
-
 function agentRunsCreateForbidden(
   message: string,
 ): ApiErrorResponse<403, "FORBIDDEN"> {
@@ -5770,12 +5777,9 @@ function createRunBody(args: {
     additionalVolumes: args.body.additionalVolumes,
     realAgentInPreview: args.body.realAgentInPreview,
     captureNetworkBodies: args.body.captureNetworkBodies,
-    tools: args.body.tools,
-    settings: args.body.settings,
     permissionPolicies: args.permissionPolicies ?? undefined,
     triggerSource,
     appendSystemPrompt: args.prompt.appendedSystemPrompt,
-    disallowedTools: [...DISALLOWED_TOOLS],
   };
 }
 
@@ -5972,12 +5976,59 @@ type CreateRunBody = Omit<
   readonly triggerSource: TriggerSource;
 };
 
+/** Keep complete preparation for registration and diagnostics, then persist
+ * only inputs that Claim cannot derive from the admitted Run or its defaults. */
+function queuedExecutionContext(
+  context: PreparedExecutionContext,
+  run: Parameters<typeof runPlatformEnvironment>[0],
+): StoredExecutionContext {
+  const {
+    cliAgentType: _cliAgentType,
+    connectorRuntimeTargets,
+    piLaunchConfig: _piLaunchConfig,
+    userTimezone: _userTimezone,
+    disallowedTools: _disallowedTools,
+    networkPolicies,
+    platformEnvironment,
+    ...queued
+  } = context;
+  const builtinSlugs = new Set(
+    connectorRuntimeTargets.flatMap((target) => {
+      return target.kind === "builtin" ? [target.connectorSlug] : [];
+    }),
+  );
+  const capturedPolicies = Object.entries(networkPolicies ?? {}).filter(
+    ([slug]) => {
+      return !builtinSlugs.has(slug);
+    },
+  );
+  const platformDefaults = runPlatformEnvironment(run);
+  const maskingKeys = new Set(context.secretValueEnvironmentKeys ?? []);
+  const capturedPlatform = Object.entries(platformEnvironment).filter(
+    ([key, value]) => {
+      return (
+        maskingKeys.has(key) ||
+        !Object.hasOwn(platformDefaults, key) ||
+        platformDefaults[key] !== value
+      );
+    },
+  );
+  return {
+    ...queued,
+    networkPolicies:
+      capturedPolicies.length > 0
+        ? Object.fromEntries(capturedPolicies)
+        : undefined,
+    platformEnvironment: Object.fromEntries(capturedPlatform),
+  };
+}
+
 interface RunnerJobPayload {
   readonly runnerGroup: string;
   readonly profile: string;
   readonly cliAgentSessionId: string | null;
   readonly reuseKey: string | null;
-  readonly executionContext: StoredExecutionContext;
+  readonly executionContext: PreparedExecutionContext;
 }
 
 function runnerJobPayload(args: {
@@ -5985,7 +6036,7 @@ function runnerJobPayload(args: {
   readonly profile: string;
   readonly cliAgentSessionId: string | null;
   readonly reuseKey: string | null;
-  readonly executionContext: StoredExecutionContext;
+  readonly executionContext: PreparedExecutionContext;
 }): RunnerJobPayload {
   return {
     runnerGroup: args.runnerGroup,
@@ -6000,8 +6051,8 @@ function runnerJobPayload(args: {
 
 // --- Private implementation: Runner payload ---
 
-interface BuiltStoredExecutionContext {
-  readonly context: StoredExecutionContext;
+interface BuiltPreparedExecutionContext {
+  readonly context: PreparedExecutionContext;
   readonly persistedStorageMounts: readonly PersistedStorageMount[];
   readonly secretNames: readonly string[];
   // Plain secret values used for run-context redaction; values, not names.
@@ -6043,7 +6094,7 @@ function buildRunContextSnapshot(args: {
   readonly runId: string;
   readonly userId: string;
   readonly body: Pick<CreateRunBody, "prompt" | "appendSystemPrompt">;
-  readonly builtContext: BuiltStoredExecutionContext;
+  readonly builtContext: BuiltPreparedExecutionContext;
 }): RunContextAxiomSnapshot {
   const storedContext = args.builtContext.context;
   const sanitizedEnvironment = sanitizeEnvironment(
@@ -6088,11 +6139,11 @@ function buildRunContextSnapshot(args: {
   return snapshot;
 }
 
-function storedExecutionContextWithPiResources(
-  context: StoredExecutionContext,
+function preparedExecutionContextWithPiResources(
+  context: PreparedExecutionContext,
   resources: PreparedPiLaunchResources | undefined,
   launchFramework: AgentRunFullLaunchSnapshot["framework"],
-): StoredExecutionContext {
+): PreparedExecutionContext {
   const finalizedContext = { ...context, cliAgentType: launchFramework };
   if (resources === undefined) {
     return finalizedContext;
@@ -6326,7 +6377,13 @@ function pendingAtomicLaunchPlan(
           profile: args.payload.profile,
           cliAgentSessionId: args.payload.cliAgentSessionId,
           reuseKey: args.payload.reuseKey,
-          executionContext: args.payload.executionContext,
+          executionContext: queuedExecutionContext(
+            args.payload.executionContext,
+            {
+              agentId: context.rowsArgs.resolved.agentId,
+              chatThreadId: context.rowsArgs.chatThreadId ?? null,
+            },
+          ),
           ...timestamps,
         },
         ["runId", "createdAt"],

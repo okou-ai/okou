@@ -1,14 +1,11 @@
 import { featureSwitchesContract } from "@okouai/api-contracts/contracts/feature-switches";
-import {
-  getAllFeatureStates,
-  getFeatureSwitchMetadata,
-} from "@okouai/core/feature-switch";
+import { getFeatureSwitchMetadata } from "@okouai/core/feature-switch";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { expect, test } from "vitest";
 
-import { click, setupPage } from "../../../__tests__/page-helper.ts";
+import { setupPage } from "../../../__tests__/page-helper.ts";
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 
 const context = testContext();
@@ -116,16 +113,6 @@ test("Lab groups active feature switches", async () => {
     ),
   ).toBeVisible();
   expect(buttonNamed("Reset all")).toBeEnabled();
-  expect(
-    within(featureSwitchGroup("Internal")).getByText(
-      "Auto-continue busy chats",
-    ),
-  ).toBeVisible();
-  expect(
-    within(featureSwitchRow(FeatureSwitchKey.AutoContinueBusyChats)).getByRole(
-      "switch",
-    ),
-  ).toHaveAttribute("aria-checked", "false");
 });
 
 test("External members cannot opt into long pasted text attachments in Lab", async () => {
@@ -146,38 +133,6 @@ test("External members cannot opt into long pasted text attachments in Lab", asy
   expect(
     screen.queryByText("Long pasted text attachments"),
   ).not.toBeInTheDocument();
-});
-
-test("Bingjie can turn automatic busy recovery off in Lab", async () => {
-  const userId = "user_3EWY21Oe3f15kfs3yYmbGgDb3NV";
-  let switches: Record<string, boolean> = { [FeatureSwitchKey.Lab]: true };
-  context.mocks.api(featureSwitchesContract.get, ({ respond }) => {
-    return respond(200, {
-      switches,
-      effectiveSwitches: getAllFeatureStates({ userId, overrides: switches }),
-    });
-  });
-  context.mocks.api(featureSwitchesContract.update, ({ body, respond }) => {
-    switches = { ...switches, ...body.switches };
-    return respond(200, {
-      switches,
-      effectiveSwitches: getAllFeatureStates({ userId, overrides: switches }),
-    });
-  });
-  await setupPage({
-    context,
-    path: "/_/lab",
-    auth: { user: { id: userId, fullName: "Bingjie" } },
-  });
-  await screen.findByText("Auto-continue busy chats");
-  const control = within(
-    featureSwitchRow(FeatureSwitchKey.AutoContinueBusyChats),
-  ).getByRole("switch");
-  expect(control).toHaveAttribute("aria-checked", "true");
-  click(control);
-  await waitFor(() => {
-    expect(control).toHaveAttribute("aria-checked", "false");
-  });
 });
 
 test("Maintainer filters narrow the feature list", async () => {

@@ -1255,7 +1255,10 @@ interface GoogleDriveFileFixture {
 
 type GoogleDriveFilesListResponse =
   | { readonly status: 200; readonly files: readonly GoogleDriveFileFixture[] }
-  | { readonly status: 401 | 403 | 429 | 500 | 503; readonly body?: string };
+  | {
+      readonly status: 401 | 403 | 429 | 500 | 503;
+      readonly body?: string | ReadableStream<Uint8Array>;
+    };
 
 interface GoogleDriveFilesListRecorder {
   readonly authorizationHeaders: (string | null)[];

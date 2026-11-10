@@ -966,8 +966,7 @@
       "actionFailed": "Tidak dapat melanjutkan.",
       "allow": "Izinkan",
       "allowed": "Diizinkan",
-      "callbackPrompt": "Browser cloud telah diaktifkan. Silakan lanjutkan tugas sebelumnya.",
-      "cardDescription": "Aktifkan browser cloud untuk chat ini dan lanjutkan secara otomatis. Ini memutus akses komputer.",
+      "cardDescription": "Gunakan browser cloud untuk chat ini. Ini memutuskan Computer Use.",
       "description": "{{assistantName}} akan menggunakan profil browser cloud terisolasi untuk thread chat ini. Mengaktifkannya akan memutus Computer Use untuk thread ini.",
       "enable": "Aktifkan untuk thread ini",
       "enabled": "Browser cloud diaktifkan",
@@ -976,8 +975,9 @@
       "unavailableDescription": "Tautan otorisasi browser cloud ini tidak valid, kedaluwarsa, atau tidak tersedia untuk ruang kerja ini.",
       "unavailableTitle": "Tautan otorisasi tidak tersedia"
     },
+    "callbackFailed": "Akses diaktifkan, tetapi percakapan tidak dapat dilanjutkan. Coba lagi.",
     "computerUse": {
-      "actionFailed": "Tidak dapat mengizinkan komputer ini. Muat ulang obrolan untuk mencoba lagi.",
+      "actionFailed": "Komputer ini tidak dapat diotorisasi. Coba lagi.",
       "authorize": "Otorisasi",
       "authorized": "Diotorisasi",
       "authorizedDescription": "Akses komputer diaktifkan untuk proses berikutnya dalam obrolan ini.",
@@ -1618,6 +1618,16 @@
       "dismissRecorded": "Suggestion dismissed",
       "doneRecorded": "Noted — this is already done",
       "editReason": "Edit reason",
+      "homeCard": {
+        "completeTitle": "Semua beres",
+        "emptyTitle": "Belum ada saran baru",
+        "feedback": "Tindakan saran",
+        "loading": "Memuat saran",
+        "navigation": "Jelajahi saran",
+        "next": "Saran berikutnya",
+        "previous": "Saran sebelumnya",
+        "retry": "Coba lagi"
+      },
       "label": "Saran",
       "lessLikeThis": "Less like this",
       "lessRecorded": "You’ll see fewer suggestions like this.",
@@ -1879,17 +1889,19 @@
       "workflow": {
         "advanced": {
           "description": "Hubungkan alat dan langkah kerja Anda.",
+          "shortTitle": "Lanjutan",
           "title": "Alur kerja lanjutan"
         },
         "description": "Sedikit pengaturan. Banyak pekerjaan terselesaikan.",
         "scheduled": {
           "description": "Jalankan pada waktu yang tepat.",
           "items": {
-            "daily": "Rutinitas harian",
-            "once": "Pengingat sekali",
-            "weekly": "Tinjauan mingguan"
+            "once": "Jalankan sekali pada waktu tertentu",
+            "recurring": "Ulangi sesuai jadwal"
           },
-          "prompt": "Bantu saya menyiapkan: {{task}}. Tanyakan tugas, waktu pelaksanaan, dan zona waktu yang digunakan.",
+          "prompt": "{{task}}. Tanyakan tugas, waktu pelaksanaan, dan zona waktu yang digunakan.",
+          "setupTitle": "Jadwalkan tugas",
+          "shortTitle": "Terjadwal",
           "title": "Tugas terjadwal"
         },
         "suggestions": "Mulai dari saran, lalu sesuaikan dengan kebutuhan Anda.",
@@ -1935,6 +1947,7 @@
             }
           },
           "monitorPrompt": "Bantu saya menyiapkan {{task}} menggunakan {{source}}. Alur: {{event}} → {{action}} → {{result}}. Tanyakan feed, topik atau akun yang dipantau, frekuensi pemeriksaan, dan lokasi ringkasan. Periksa secara berkala, lewati item yang sudah diproses, dan konfirmasi pengaturan sebelum mengaktifkannya.",
+          "shortTitle": "Pemicu",
           "title": "Pemicu"
         }
       }
@@ -2443,7 +2456,6 @@
       "mute": "Bisukan chat",
       "muted": "Dibisukan",
       "newChatWith": "Chat baru dengan {{agentName}}",
-      "newMenu": "Baru",
       "noArchived": "Tidak ada chat yang diarsipkan",
       "noMuted": "Tidak ada chat yang dibisukan",
       "noUnread": "Tidak ada chat belum dibaca",
@@ -5073,8 +5085,10 @@
     "newChat": "New chat",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
+    "project": "Project",
     "projects": "Projects",
     "remove": "Remove from Project",
+    "removeFromNewChat": "Hapus {{name}}",
     "rename": "Rename",
     "renameProject": "Rename Project",
     "save": "Save",
@@ -5847,6 +5861,16 @@
           "title": "Penyimpanan IndexedDB",
           "unavailable": "Penyimpanan IndexedDB tidak tersedia."
         },
+        "learning": {
+          "description": "Tinjau aktivitas terbaru dan perbarui memori pribadi sekali. Jadwal malam Anda tetap sama.",
+          "notInstalled": "Aktifkan pembelajaran di Preferensi sebelum menjalankannya di sini.",
+          "queued": "Pembelajaran masuk antrean.",
+          "requestFailed": "Permintaan belum dapat dikonfirmasi.",
+          "run": "Jalankan pembelajaran",
+          "starting": "Memulai…",
+          "title": "Pembelajaran",
+          "unavailable": "Pembelajaran saat ini tidak tersedia."
+        },
         "morningBrief": {
           "description": "Jalankan sekali alur kerja yang aktif di akunmu. Ini dapat memperbarui saran dan mengirim email sungguhan. Jadwal harianmu tidak berubah.",
           "openChat": "Buka percakapan",
@@ -6420,6 +6444,28 @@
       "thread_one": "{{value}} utas",
       "thread_other": "{{value}} utas"
     }
+  },
+  "userNotifications": {
+    "close": "Tutup",
+    "countUnavailable": "Jumlah notifikasi belum dibaca tidak tersedia",
+    "detailFailed": "Tidak dapat memuat notifikasi ini",
+    "empty": "Belum ada notifikasi",
+    "emptyDescription": "Pembaruan dari Okou akan muncul di sini.",
+    "loadFailed": "Tidak dapat memuat notifikasi",
+    "loading": "Memuat notifikasi",
+    "loadMore": "Tampilkan yang lebih lama",
+    "nextPage": "Halaman berikutnya",
+    "pageNavigation": "Halaman dalam pesan ini",
+    "pageOf": "Halaman {{current}} dari {{total}}",
+    "previousPage": "Halaman sebelumnya",
+    "readAll": "Tandai semua sudah dibaca",
+    "readFailed": "Tidak dapat menandai sebagai dibaca",
+    "retry": "Coba lagi",
+    "sender": "Tim Okou",
+    "title": "Notifikasi",
+    "unread": "Belum dibaca",
+    "unreadCount_one": "{{count}} notifikasi belum dibaca",
+    "unreadCount_other": "{{count}} notifikasi belum dibaca"
   },
   "vnc": {
     "add": "Tambahkan host",

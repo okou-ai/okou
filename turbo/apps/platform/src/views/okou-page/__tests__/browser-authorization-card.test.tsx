@@ -9,6 +9,8 @@ import {
 import { testContext } from "../../../signals/__tests__/test-helpers.ts";
 import { mockChatLifecycle } from "./chat-test-helpers.ts";
 
+import { mockAuthorizationCallbackThread } from "./authorization-callback-test-helpers.ts";
+
 const context = testContext();
 const THREAD_ID = "b0000000-0000-4000-a000-000000000902";
 const REQUEST_ID = "a0000000-0000-4000-a000-000000000901";
@@ -38,6 +40,7 @@ function mockConversation(
   content = AUTHORIZATION_URL,
   onSend?: (prompt: string) => void,
 ) {
+  mockAuthorizationCallbackThread(context, THREAD_ID);
   mockChatLifecycle(context, {
     threadId: THREAD_ID,
     threadTitle: "Browser authorization",
@@ -79,9 +82,9 @@ function getButton(container: HTMLElement, name: string) {
 }
 
 test.each([
-  AUTHORIZATION_URL,
-  `/browser/authorize/${REQUEST_TOKEN}`,
-  `[Enable browser](${AUTHORIZATION_URL})`,
+  `${AUTHORIZATION_URL}?callbackPrompt=${encodeURIComponent(CALLBACK)}&threadId=${THREAD_ID}`,
+  `/browser/authorize/${REQUEST_TOKEN}?callbackPrompt=${encodeURIComponent(CALLBACK)}&threadId=${THREAD_ID}`,
+  `[Enable browser](${AUTHORIZATION_URL}?callbackPrompt=${encodeURIComponent(CALLBACK)}&threadId=${THREAD_ID})`,
 ])("A user allows a browser request and continues from %s", async (url) => {
   const complete = mockRequest();
   let authorized = false;
@@ -110,7 +113,9 @@ test.each([
   await waitFor(() => {
     expect(getButton(card, "Allowed")).toBeDisabled();
   });
-  expect(sent).toStrictEqual([CALLBACK]);
+  await waitFor(() => {
+    expect(sent).toStrictEqual([CALLBACK]);
+  });
   await expect(screen.findByText(CALLBACK)).resolves.toBeInTheDocument();
   expect(screen.getByText("I need a browser to continue.")).toBeInTheDocument();
 });
@@ -138,7 +143,7 @@ test("Failed authorization leaves the task paused", async () => {
 
   await within(card).findByText("Couldn't continue.");
   expect(sent).toStrictEqual([]);
-  expect(getButton(card, "Allow")).toBeDisabled();
+  expect(getButton(card, "Allow")).toBeEnabled();
 });
 
 test("A request from another chat cannot enable a browser or continue this task", async () => {
@@ -184,4 +189,28 @@ test("Expired requests are unavailable in the transcript", async () => {
       return button.textContent?.trim() === "Allow";
     }),
   ).toBeUndefined();
+});
+
+test("A plain Browser authorization grants access without resuming the chat", async () => {
+  const complete = mockRequest();
+  const sends: string[] = [];
+  context.mocks.api(
+    browserAuthorizationRequestsContract.apply,
+    ({ respond }) => {
+      complete();
+      return respond(200, { ok: true, cloudBrowserEnabled: true });
+    },
+  );
+  await setupChat(AUTHORIZATION_URL, (text) => {
+    sends.push(text);
+  });
+  const card = await screen.findByTestId("browser-authorization-card");
+  await waitFor(() => {
+    expect(getButton(card, "Allow")).toBeEnabled();
+  });
+  click(getButton(card, "Allow"));
+  await waitFor(() => {
+    expect(getButton(card, "Allowed")).toBeDisabled();
+  });
+  expect(sends).toStrictEqual([]);
 });

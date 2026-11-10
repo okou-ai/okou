@@ -638,7 +638,7 @@ class TestAnthropicModelJsonResponseInspector:
 
     def test_work_limit_accumulates_across_chunks_without_partial_usage(self):
         inspector = _anthropic_json_inspector()
-        dense_array = b",".join([b"0"] * 40_000)
+        dense_array = (b"0," * 40_000)[:-1]
         inspector.feed(
             b'{"id":"msg_partial","model":"claude-sonnet-4-6",'
             b'"usage":{"input_tokens":50,"output_tokens":100},"padding":['

@@ -81,7 +81,6 @@ describe("Captured personal Instructions in Runner claims", () => {
           .get("instructions.md")
           ?.toString(),
       ).toBe("latest before claim");
-      expect(claim.featureFlags).toMatchObject({ singleAgent: true });
       const token = claim.platformEnvironment.OKOU_TOKEN!;
       const runHeaders = { authorization: `Bearer ${token}` };
       const saved = await accept(
@@ -108,7 +107,6 @@ describe("Captured personal Instructions in Runner claims", () => {
       });
       await mode(owned.actor, true);
       const next = await owned.claimChatRun(owned.runnerGroup, legacy.runId);
-      expect(next.claim.featureFlags).toMatchObject({ singleAgent: false });
       expect(
         readClaimedContentBundle(
           s3.objects,
@@ -169,9 +167,6 @@ describe("Captured personal Instructions in Runner claims", () => {
         owned.runnerGroup,
         retained.runId,
       );
-      expect(nonDefault.claim.featureFlags).toMatchObject({
-        singleAgent: false,
-      });
       await accept(
         client().get({
           headers: {

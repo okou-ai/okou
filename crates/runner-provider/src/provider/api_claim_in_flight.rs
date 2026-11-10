@@ -47,15 +47,16 @@ impl InFlightClaims {
         self.lock().iter().any(|registered| **registered == run_id)
     }
 
-    pub(super) fn poll_exclusions(&self, cooldowns: &[RunId]) -> Vec<RunId> {
+    pub(super) fn poll_exclusions(&self, admissions: &[RunId], cooldowns: &[RunId]) -> Vec<RunId> {
         let mut known: BTreeSet<_> = self.lock().iter().map(|registered| **registered).collect();
         // Keep pending requests first so a full cooldown inventory cannot
         // reintroduce the still-queued claim at network-round-trip cadence.
         // Omitted cooldowns remain authoritative in the existing local filter.
         let mut exclusions: Vec<_> = known.iter().copied().collect();
         exclusions.extend(
-            cooldowns
+            admissions
                 .iter()
+                .chain(cooldowns)
                 .copied()
                 .filter(|run_id| known.insert(*run_id)),
         );

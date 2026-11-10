@@ -40,7 +40,6 @@ export function inventoryQuery(
       'inventory',jsonb_build_object(
         'storages',(SELECT count(*)::int FROM storages s WHERE ${legacy}),
         'versions',(SELECT count(*)::int FROM storage_versions v JOIN storages s ON s.id=v.storage_id WHERE ${legacy}),
-        'pendingPublications',(SELECT count(*)::int FROM storage_publication_tokens WHERE starts_with(publication_key,'workflow:')),
         'unconvertedWorkflows',(SELECT count(*)::int FROM workflows WHERE official_definition_name IS NULL AND attachments IS NULL),
         'unfinishedJobs',(SELECT count(*)::int FROM background_jobs WHERE kind=$4 AND status<>'completed')
       )) AS observation`,
@@ -82,8 +81,6 @@ function referenceCtes(requireDeleted: boolean) {
       CASE WHEN EXISTS(SELECT 1 FROM org_custom_connectors WHERE skill_storage_version_id IN(SELECT id FROM captured_ids)) THEN 'custom-connector' END,
       CASE WHEN EXISTS(SELECT 1 FROM pi_resource_version_indexes WHERE storage_version_id IN(SELECT id FROM captured_ids)
         AND status IN('pending','running')) THEN 'pi-index-work' END,
-      CASE WHEN EXISTS(SELECT 1 FROM official_workflow_definition_revisions WHERE storage_id=$1::uuid
-        OR storage_version IN(SELECT id FROM captured_ids)) THEN 'official-definition' END,
       CASE WHEN EXISTS(SELECT 1 FROM storage_version_lineage WHERE storage_id=$1::uuid
         OR version_id IN(SELECT id FROM captured_ids) OR parent_version_id IN(SELECT id FROM captured_ids)) THEN 'version-lineage' END,
       CASE WHEN EXISTS(SELECT 1 FROM workflows WHERE id=$4::uuid
@@ -101,8 +98,7 @@ function referenceCtes(requireDeleted: boolean) {
         WHERE ${capturedReference("q.execution_context", "r.org_id")}) THEN 'queued-consumer' END,
       CASE WHEN EXISTS(SELECT 1 FROM live_run_ids live JOIN agent_runs r ON r.id=live.id WHERE
         (${capturedReference("r.storage_mounts", "r.org_id")} OR ${capturedReference("r.official_workflow_provenance", "r.org_id")})) THEN 'execution-consumer' END,
-      CASE WHEN EXISTS(SELECT 1 FROM workflows WHERE official_definition_name IS NULL AND attachments IS NULL) THEN 'unconverted-workflows' END,
-      CASE WHEN EXISTS(SELECT 1 FROM storage_publication_tokens WHERE starts_with(publication_key,'workflow:')) THEN 'workflow-publication' END
+      CASE WHEN EXISTS(SELECT 1 FROM workflows WHERE official_definition_name IS NULL AND attachments IS NULL) THEN 'unconverted-workflows' END
     ]::text[],NULL) AS reasons)`;
 }
 

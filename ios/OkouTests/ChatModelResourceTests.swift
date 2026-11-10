@@ -130,7 +130,7 @@ final class ChatModelResourceTests: XCTestCase {
   func testNavigationAndModelsStartIndependentWorkspaceReadsTogether() async throws {
     let gate = ModelResponseGate()
     let began = expectation(description: "Independent workspace reads have all started")
-    began.expectedFulfillmentCount = 6
+    began.expectedFulfillmentCount = 5
     let requests = Mutex<[String: Int]>([:])
     let fixture = ChatHTTPFixture { request in
       let path = request.url!.path
@@ -145,9 +145,6 @@ final class ChatModelResourceTests: XCTestCase {
           body:
             "[{\"agentId\":\"\(ModelHTTPFixtures.agentID)\",\"displayName\":\"Shared agent\",\"isDefaultAgent\":true}]"
         )
-      }
-      if path == "/api/user-preferences" {
-        return ChatHTTPResponse(status: 409, body: #"{"error":{"message":"No preferences"}}"#)
       }
       return try XCTUnwrap(ModelHTTPFixtures.response(path))
     }
@@ -171,7 +168,6 @@ final class ChatModelResourceTests: XCTestCase {
     XCTAssertNil(workspace.list.navigationError)
     var expected = initialRequests
     expected["/api/agents"] = 1
-    expected["/api/user-preferences"] = 1
     XCTAssertEqual(requests.withLock { $0 }, expected)
   }
 

@@ -1,4 +1,4 @@
-import type { ReactNode } from "react";
+import type { ReactNode, Ref } from "react";
 import {
   Button,
   cn,
@@ -41,6 +41,7 @@ export function ChatHeaderIconButton({
   icon,
   label,
   tooltip = label,
+  ref,
   largeTarget = false,
   usage,
 }: {
@@ -48,6 +49,7 @@ export function ChatHeaderIconButton({
   readonly icon: ReactNode;
   readonly label: string;
   readonly tooltip?: string;
+  readonly ref?: Ref<HTMLElement>;
   /** Touch layouts use a 44px target. */
   readonly largeTarget?: boolean;
   readonly usage: ChatHeaderIconButtonUsage;
@@ -56,6 +58,7 @@ export function ChatHeaderIconButton({
   const transitioning = useChatHeaderTransitioning(thread);
   const button = (
     <Button
+      ref={ref}
       type="button"
       variant="quiet"
       size="icon-sm"

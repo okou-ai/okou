@@ -31,6 +31,7 @@ const TEST_RUNNER_ID: &str = "550e8400-e29b-41d4-a716-446655440000";
 
 const TEST_HEARTBEAT_GENERATION: u64 = 7;
 
+mod admission_deferral;
 mod claim_observation;
 mod finalizing_source;
 mod parallel_claim;
@@ -507,6 +508,7 @@ fn api_provider_for_test_with_claim_cooldown_capacity(
             DIRECT_CANDIDATE_STALE_AFTER,
         ),
         claim_cooldowns: ClaimCooldowns::new(claim_cooldown_capacity),
+        admission_deferrals: AdmissionDeferrals::new(),
         in_flight_claims: InFlightClaims::default(),
         ably_supervisor: Mutex::new(Some(AblySupervisor::disabled())),
         active_input_notifications: ActiveInputNotifications::new(),

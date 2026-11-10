@@ -966,8 +966,7 @@
       "actionFailed": "未能继续。",
       "allow": "允许",
       "allowed": "已允许",
-      "callbackPrompt": "浏览器已启用，请继续完成刚才的任务。",
-      "cardDescription": "为当前聊天启用云浏览器并自动继续任务。这会断开电脑操作。",
+      "cardDescription": "在此聊天中使用云端浏览器。这将断开 Computer Use。",
       "description": "{{assistantName}} 会在这个聊天会话中使用独立的云端浏览器环境。启用后，该会话的 Computer Use 会断开。",
       "enable": "为这个会话启用",
       "enabled": "云端浏览器已启用",
@@ -976,8 +975,9 @@
       "unavailableDescription": "这个云端浏览器授权链接无效、已过期，或不适用于当前工作区。",
       "unavailableTitle": "授权链接不可用"
     },
+    "callbackFailed": "访问已启用，但对话未能继续。请重试。",
     "computerUse": {
-      "actionFailed": "未能授权这台电脑，请刷新聊天后重试。",
+      "actionFailed": "无法授权此电脑。请重试。",
       "authorize": "授权",
       "authorized": "已授权",
       "authorizedDescription": "已为此聊天的后续运行启用电脑访问。",
@@ -1618,6 +1618,16 @@
       "dismissRecorded": "已收起这条建议",
       "doneRecorded": "已记下，这件事已经处理了",
       "editReason": "修改原因",
+      "homeCard": {
+        "completeTitle": "全部处理完了",
+        "emptyTitle": "暂时没有新建议",
+        "feedback": "建议操作",
+        "loading": "正在加载建议",
+        "navigation": "切换建议",
+        "next": "下一条建议",
+        "previous": "上一条建议",
+        "retry": "重试"
+      },
       "label": "建议",
       "lessLikeThis": "少推荐这类内容",
       "lessRecorded": "会少推荐类似的建议",
@@ -1879,17 +1889,19 @@
       "workflow": {
         "advanced": {
           "description": "串联工具与多个步骤。",
+          "shortTitle": "高级",
           "title": "高级工作流"
         },
         "description": "简单设置，让琐事自动完成。",
         "scheduled": {
           "description": "在合适的时间自动执行。",
           "items": {
-            "daily": "每日例行任务",
-            "once": "一次性提醒",
-            "weekly": "每周回顾"
+            "once": "在指定时间执行一次",
+            "recurring": "按计划重复执行"
           },
-          "prompt": "帮我设置{{task}}。先确认要做什么、执行时间和时区。",
+          "prompt": "{{task}}。先确认要做什么、执行时间和时区。",
+          "setupTitle": "安排任务",
+          "shortTitle": "定时",
           "title": "定时任务"
         },
         "suggestions": "从一条建议开始，按你的需要调整。",
@@ -1935,6 +1947,7 @@
             }
           },
           "monitorPrompt": "帮我使用 {{source}} 设置「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先确认要关注的订阅源、主题或账号、检查频率和摘要保存位置。定期检查，只处理未处理过的新内容，确认设置后再启用。",
+          "shortTitle": "触发",
           "title": "触发器"
         }
       }
@@ -2443,7 +2456,6 @@
       "mute": "静音聊天",
       "muted": "已静音",
       "newChatWith": "与{{agentName}}新建聊天",
-      "newMenu": "新建",
       "noArchived": "没有已归档的聊天",
       "noMuted": "没有已静音的聊天",
       "noUnread": "没有未读聊天",
@@ -5073,8 +5085,10 @@
     "newChat": "新建聊天",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
+    "project": "Project",
     "projects": "Projects",
     "remove": "移出 Project",
+    "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
     "save": "保存",
@@ -5847,6 +5861,16 @@
           "title": "IndexedDB 存储",
           "unavailable": "IndexedDB 存储不可用。"
         },
+        "learning": {
+          "description": "立即回顾近期活动并更新个人记忆，不改变夜间执行计划。",
+          "notInstalled": "请先在偏好设置中开启学习，再在此运行。",
+          "queued": "学习已加入队列。",
+          "requestFailed": "无法确认请求结果。",
+          "run": "运行学习",
+          "starting": "正在启动…",
+          "title": "学习",
+          "unavailable": "学习暂时不可用。"
+        },
         "morningBrief": {
           "description": "立即运行一次账号已开启的晨间简报。它可能更新建议并发送真实邮件，每日执行时间保持不变。",
           "openChat": "打开对话",
@@ -6420,6 +6444,28 @@
       "thread_one": "{{value}} 个会话",
       "thread_other": "{{value}} 个会话"
     }
+  },
+  "userNotifications": {
+    "close": "关闭",
+    "countUnavailable": "未读数量暂不可用",
+    "detailFailed": "未能加载这条通知",
+    "empty": "暂无通知",
+    "emptyDescription": "Okou 的更新会显示在这里。",
+    "loadFailed": "未能加载通知",
+    "loading": "正在加载通知",
+    "loadMore": "查看更早的通知",
+    "nextPage": "下一页",
+    "pageNavigation": "消息中的页面",
+    "pageOf": "第 {{current}} / {{total}} 页",
+    "previousPage": "上一页",
+    "readAll": "全部已读",
+    "readFailed": "未能标记为已读",
+    "retry": "重试",
+    "sender": "Okou 团队",
+    "title": "通知",
+    "unread": "未读",
+    "unreadCount_one": "{{count}} 条未读通知",
+    "unreadCount_other": "{{count}} 条未读通知"
   },
   "vnc": {
     "add": "添加主机",

@@ -966,8 +966,7 @@
       "actionFailed": "無法繼續。",
       "allow": "允許",
       "allowed": "已允許",
-      "callbackPrompt": "瀏覽器已啟用，請繼續完成剛才的任務。",
-      "cardDescription": "為目前聊天啟用雲端瀏覽器並自動繼續任務。這會中斷電腦操作。",
+      "cardDescription": "在此聊天中使用雲端瀏覽器。這將中斷 Computer Use。",
       "description": "{{assistantName}} 會在這個聊天會話中使用獨立的雲端瀏覽器環境。啟用後，該會話的 Computer Use 會斷開。",
       "enable": "為這個會話啟用",
       "enabled": "雲端瀏覽器已啟用",
@@ -976,8 +975,9 @@
       "unavailableDescription": "這個雲端瀏覽器授權連結無效、已過期，或不適用於當前工作區。",
       "unavailableTitle": "授權連結不可用"
     },
+    "callbackFailed": "存取已啟用，但對話未能繼續。請重試。",
     "computerUse": {
-      "actionFailed": "未能授權這台電腦，請重新整理聊天後再試。",
+      "actionFailed": "無法授權此電腦。請重試。",
       "authorize": "授權",
       "authorized": "已授權",
       "authorizedDescription": "已為此聊天的後續執行啟用電腦存取。",
@@ -1618,6 +1618,16 @@
       "dismissRecorded": "已收起這則建議",
       "doneRecorded": "已記下，這件事已經處理了",
       "editReason": "修改原因",
+      "homeCard": {
+        "completeTitle": "全部處理完了",
+        "emptyTitle": "暫時沒有新建議",
+        "feedback": "建議操作",
+        "loading": "正在載入建議",
+        "navigation": "切換建議",
+        "next": "下一則建議",
+        "previous": "上一則建議",
+        "retry": "重試"
+      },
       "label": "建議",
       "lessLikeThis": "少推薦這類內容",
       "lessRecorded": "會少推薦類似的建議",
@@ -1879,17 +1889,19 @@
       "workflow": {
         "advanced": {
           "description": "串聯工具與多個步驟。",
+          "shortTitle": "進階",
           "title": "進階工作流程"
         },
         "description": "簡單設定，讓瑣事自動完成。",
         "scheduled": {
           "description": "在合適的時間自動執行。",
           "items": {
-            "daily": "每日例行任務",
-            "once": "一次性提醒",
-            "weekly": "每週回顧"
+            "once": "在指定時間執行一次",
+            "recurring": "按計畫重複執行"
           },
-          "prompt": "幫我設定{{task}}。先確認要做什麼、執行時間和時區。",
+          "prompt": "{{task}}。先確認要做什麼、執行時間和時區。",
+          "setupTitle": "安排任務",
+          "shortTitle": "定時",
           "title": "定時任務"
         },
         "suggestions": "從一條建議開始，按你的需要調整。",
@@ -1935,6 +1947,7 @@
             }
           },
           "monitorPrompt": "幫我使用 {{source}} 設定「{{task}}」。流程：{{event}} → {{action}} → {{result}}。先確認要追蹤的訂閱來源、主題或帳號、檢查頻率和摘要儲存位置。定期檢查，只處理尚未處理的新內容，確認設定後再啟用。",
+          "shortTitle": "觸發",
           "title": "觸發器"
         }
       }
@@ -2443,7 +2456,6 @@
       "mute": "靜音聊天",
       "muted": "已靜音",
       "newChatWith": "與{{agentName}}新建聊天",
-      "newMenu": "新增",
       "noArchived": "沒有已歸檔的聊天",
       "noMuted": "沒有已靜音的聊天",
       "noUnread": "沒有未讀聊天",
@@ -5073,8 +5085,10 @@
     "newChat": "新建聊天",
     "noMatches": "No projects found",
     "options": "Options for {{name}}",
+    "project": "Project",
     "projects": "Projects",
     "remove": "移出 Project",
+    "removeFromNewChat": "移除{{name}}",
     "rename": "重命名",
     "renameProject": "重命名 Project",
     "save": "保存",
@@ -5847,6 +5861,16 @@
           "title": "IndexedDB 儲存",
           "unavailable": "IndexedDB 儲存不可用。"
         },
+        "learning": {
+          "description": "立即回顧近期活動並更新個人記憶，不變更夜間執行排程。",
+          "notInstalled": "請先在偏好設定中開啟學習，再於此執行。",
+          "queued": "學習已加入佇列。",
+          "requestFailed": "無法確認請求結果。",
+          "run": "執行學習",
+          "starting": "正在啟動…",
+          "title": "學習",
+          "unavailable": "學習暫時無法使用。"
+        },
         "morningBrief": {
           "description": "立即執行一次帳號已開啟的晨間簡報。它可能更新建議並寄送實際郵件，每日執行時間保持不變。",
           "openChat": "開啟對話",
@@ -6420,6 +6444,28 @@
       "thread_one": "{{value}} 個會話",
       "thread_other": "{{value}} 個會話"
     }
+  },
+  "userNotifications": {
+    "close": "關閉",
+    "countUnavailable": "未讀數量暫不可用",
+    "detailFailed": "未能載入這則通知",
+    "empty": "暫無通知",
+    "emptyDescription": "Okou 的更新會顯示在這裡。",
+    "loadFailed": "未能載入通知",
+    "loading": "正在載入通知",
+    "loadMore": "查看更早的通知",
+    "nextPage": "下一頁",
+    "pageNavigation": "訊息中的頁面",
+    "pageOf": "第 {{current}} / {{total}} 頁",
+    "previousPage": "上一頁",
+    "readAll": "全部已讀",
+    "readFailed": "未能標記為已讀",
+    "retry": "重試",
+    "sender": "Okou 團隊",
+    "title": "通知",
+    "unread": "未讀",
+    "unreadCount_one": "{{count}} 則未讀通知",
+    "unreadCount_other": "{{count}} 則未讀通知"
   },
   "vnc": {
     "add": "新增主機",

@@ -255,22 +255,24 @@ function AuthorizationActions({
   const blocked = data?.approvalBlockedReason !== null;
   return (
     <div className="flex flex-wrap justify-end gap-2">
-      {data?.status === "pending" ? (
+      {data?.status === "pending" || (data?.status === "approved" && failed) ? (
         <>
-          <Button
-            variant="neutral"
-            disabled={busy || failed}
-            onClick={() => {
-              return onAction("deny");
-            }}
-          >
-            {t(($) => {
-              return $.desktopShellAuthorization.deny;
-            })}
-          </Button>
+          {data.status === "pending" && (
+            <Button
+              variant="neutral"
+              disabled={busy}
+              onClick={() => {
+                return onAction("deny");
+              }}
+            >
+              {t(($) => {
+                return $.desktopShellAuthorization.deny;
+              })}
+            </Button>
+          )}
           <Button
             pending={busy}
-            disabled={blocked || failed}
+            disabled={blocked || busy}
             className="bg-foreground text-background hover:bg-foreground-hover active:bg-foreground-pressed"
             onClick={() => {
               return onAction("approve");
@@ -411,7 +413,8 @@ function AuthorizationSummary({
                 })}
           </Button>
         )}
-        {data?.status === "pending" && (
+        {(data?.status === "pending" ||
+          (data?.status === "approved" && failed)) && (
           <AuthorizationActions
             data={data}
             busy={busy}

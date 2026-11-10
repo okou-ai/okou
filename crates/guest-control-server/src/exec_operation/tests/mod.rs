@@ -6,6 +6,9 @@ use std::os::unix::net::UnixStream;
 use std::process::Command;
 use std::time::Duration;
 
+#[cfg(target_os = "linux")]
+mod setup_failure;
+
 fn read_message(stream: &mut UnixStream) -> guest_control_proto::RawMessage {
     let mut hdr = [0u8; 4];
     stream.read_exact(&mut hdr).unwrap();
@@ -926,23 +929,42 @@ fn duplicate_active_exec_operation_returns_error() {
 #[test]
 fn supervised_exec_started_send_failure_releases_without_result() {
     let (guest, mut host) = UnixStream::pair().unwrap();
+    host.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
+    #[cfg(not(target_os = "linux"))]
     guest.shutdown(Shutdown::Write).unwrap();
+    #[cfg(target_os = "linux")]
+    let shutdown_socket = guest.try_clone().unwrap();
     let writer = GuestWriter::new(guest);
+    #[cfg(target_os = "linux")]
+    let gate_writer = writer.clone();
     let registry = ExecOperationRegistry::default();
     let mut request = request(47, "sleep 60");
     request.lifecycle = ExecOperationLifecycle::Supervised;
+    #[cfg(target_os = "linux")]
+    let child = setup_failure::SetupFailureChild::new();
+    #[cfg(target_os = "linux")]
+    let request = child.request(request);
     let registration = register_test_operation(&registry, request.seq, &request.label).unwrap();
     let exec_cancel = registration.cancel_token();
 
-    run_exec_operation_worker(
-        request,
-        writer,
-        Arc::new(AtomicBool::new(false)),
-        exec_cancel,
-        registration,
-        operation_guard(),
-        SystemThreadSpawner,
-    );
+    let run = move || {
+        run_exec_operation_worker(
+            request,
+            writer,
+            Arc::new(AtomicBool::new(false)),
+            exec_cancel,
+            registration,
+            operation_guard(),
+            SystemThreadSpawner,
+        );
+    };
+    #[cfg(target_os = "linux")]
+    {
+        child.fail_started_send(&gate_writer, &shutdown_socket, run);
+        child.assert_reaped();
+    }
+    #[cfg(not(target_os = "linux"))]
+    run();
 
     assert_registry_released(&registry, 47);
     let mut bytes = Vec::new();
@@ -956,18 +978,30 @@ fn stdout_drain_spawn_failure_returns_wait_failed_and_cleans_registry() {
     host.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
     let writer = GuestWriter::new(guest);
     let registry = ExecOperationRegistry::default();
+    let request = request(43, "sleep 60");
+    #[cfg(not(target_os = "linux"))]
+    let spawner = FailingThreadSpawner::fail_once(THREAD_EXEC_OPERATION_STDOUT);
+    #[cfg(target_os = "linux")]
+    let child = setup_failure::SetupFailureChild::new();
+    #[cfg(target_os = "linux")]
+    let (request, spawner) = (
+        child.request(request),
+        child.failing_spawner(THREAD_EXEC_OPERATION_STDOUT),
+    );
 
     start_exec_operation_with_spawner(
-        request(43, "sleep 60"),
+        request,
         operation_guard(),
         writer,
         Arc::new(AtomicBool::new(false)),
         registry.clone(),
-        FailingThreadSpawner::fail_once(THREAD_EXEC_OPERATION_STDOUT),
+        spawner,
     )
     .unwrap();
 
     let msg = read_message(&mut host);
+    #[cfg(target_os = "linux")]
+    child.assert_reaped();
     assert_eq!(msg.msg_type, MSG_EXEC_RESULT);
     assert_eq!(msg.seq, 43);
     let result = guest_control_proto::decode_exec_result(&msg.payload).unwrap();
@@ -984,6 +1018,15 @@ fn stdin_writer_spawn_failure_returns_wait_failed_and_cleans_registry() {
     let registry = ExecOperationRegistry::default();
     let mut request = request(46, "sleep 60");
     request.stdin_bytes = Some(b"stdin".to_vec());
+    #[cfg(not(target_os = "linux"))]
+    let spawner = FailingThreadSpawner::fail_once(THREAD_EXEC_OPERATION_STDIN);
+    #[cfg(target_os = "linux")]
+    let child = setup_failure::SetupFailureChild::new();
+    #[cfg(target_os = "linux")]
+    let (request, spawner) = (
+        child.request(request),
+        child.failing_spawner(THREAD_EXEC_OPERATION_STDIN),
+    );
 
     start_exec_operation_with_spawner(
         request,
@@ -991,11 +1034,13 @@ fn stdin_writer_spawn_failure_returns_wait_failed_and_cleans_registry() {
         writer,
         Arc::new(AtomicBool::new(false)),
         registry.clone(),
-        FailingThreadSpawner::fail_once(THREAD_EXEC_OPERATION_STDIN),
+        spawner,
     )
     .unwrap();
 
     let msg = read_message(&mut host);
+    #[cfg(target_os = "linux")]
+    child.assert_reaped();
     assert_eq!(msg.msg_type, MSG_EXEC_RESULT);
     assert_eq!(msg.seq, 46);
     let result = guest_control_proto::decode_exec_result(&msg.payload).unwrap();
@@ -1010,18 +1055,30 @@ fn stderr_drain_spawn_failure_returns_wait_failed_and_cleans_registry() {
     host.set_read_timeout(Some(Duration::from_secs(3))).unwrap();
     let writer = GuestWriter::new(guest);
     let registry = ExecOperationRegistry::default();
+    let request = request(45, "sleep 60");
+    #[cfg(not(target_os = "linux"))]
+    let spawner = FailingThreadSpawner::fail_once(THREAD_EXEC_OPERATION_STDERR);
+    #[cfg(target_os = "linux")]
+    let child = setup_failure::SetupFailureChild::new();
+    #[cfg(target_os = "linux")]
+    let (request, spawner) = (
+        child.request(request),
+        child.failing_spawner(THREAD_EXEC_OPERATION_STDERR),
+    );
 
     start_exec_operation_with_spawner(
-        request(45, "sleep 60"),
+        request,
         operation_guard(),
         writer,
         Arc::new(AtomicBool::new(false)),
         registry.clone(),
-        FailingThreadSpawner::fail_once(THREAD_EXEC_OPERATION_STDERR),
+        spawner,
     )
     .unwrap();
 
     let msg = read_message(&mut host);
+    #[cfg(target_os = "linux")]
+    child.assert_reaped();
     assert_eq!(msg.msg_type, MSG_EXEC_RESULT);
     assert_eq!(msg.seq, 45);
     let result = guest_control_proto::decode_exec_result(&msg.payload).unwrap();

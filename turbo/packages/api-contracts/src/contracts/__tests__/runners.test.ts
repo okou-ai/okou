@@ -1,13 +1,13 @@
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { describe, expect, it } from "vitest";
-import { unknown as zUnknown } from "zod";
 
 import {
   AGENT_EXECUTION_TIMEOUT_SECONDS,
   CANCELLATION_RECOVERY_STALE_AFTER_MS,
   CONNECTOR_RUNTIME_SYNC_TARGETS_MAX,
   claimCompatibleStoredExecutionContextSchema,
+  claimPreparedExecutionContextSchema,
   connectorRuntimeSyncResultSchema,
   elapsedSinceApiStartMs,
   executionContextSchema,
@@ -30,6 +30,7 @@ import {
   storageMountEntrySchema,
   storageManifestSchema,
   storedExecutionContextSchema,
+  preparedExecutionContextSchema,
   homeReuseResultSchema as runnersHomeReuseResultSchema,
 } from "../runners";
 import {
@@ -187,41 +188,53 @@ describe("runner claim response contract", () => {
     expect(context).not.toHaveProperty("experimentalProfile");
   });
 
-  it("round-trips canonical trusted environments through stored contexts", () => {
-    const storedContext = storedExecutionContextSchema.parse({
-      storageMounts: [],
-      seedSkillBundles: [],
-      connectorRuntimeTargets: [],
-      environment: {
+  it.each([
+    { featureFlags: { singleAgent: true, connectorChatAccountAccess: false } },
+    {
+      featureFlags: {
+        singleAgent: false,
+        connectorChatAccountAccess: true,
+        retainedDiagnosticFlag: true,
+      },
+    },
+  ])(
+    "round-trips trusted environments and captured Claim decisions",
+    ({ featureFlags }) => {
+      const storedContext = storedExecutionContextSchema.parse({
+        storageMounts: [],
+        seedSkillBundles: [],
+        environment: {
+          USER_VALUE: "user-value",
+        },
+        platformEnvironment: { OKOU_AGENT_ID: "stored-agent-id" },
+        secretValueEnvironmentKeys: null,
+        nativeContinuation: {
+          sessionId: null,
+          generationRunId: null,
+          recoveryPrompt: null,
+        },
+        encryptedSecrets: null,
+        featureFlags,
+      });
+      const roundTripped = storedExecutionContextSchema.parse(
+        JSON.parse(JSON.stringify(storedContext)),
+      );
+
+      expect(roundTripped.platformEnvironment).toStrictEqual({
+        OKOU_AGENT_ID: "stored-agent-id",
+      });
+      expect(roundTripped.environment).toStrictEqual({
         USER_VALUE: "user-value",
-      },
-      platformEnvironment: { OKOU_AGENT_ID: "stored-agent-id" },
-      secretValueEnvironmentKeys: null,
-      nativeContinuation: {
-        sessionId: null,
-        generationRunId: null,
-        recoveryPrompt: null,
-      },
-      encryptedSecrets: null,
-      cliAgentType: "claude-code",
-    });
-    const roundTripped = storedExecutionContextSchema.parse(
-      JSON.parse(JSON.stringify(storedContext)),
-    );
+      });
+      expect(roundTripped.featureFlags).toStrictEqual(featureFlags);
 
-    expect(roundTripped.platformEnvironment).toStrictEqual({
-      OKOU_AGENT_ID: "stored-agent-id",
-    });
-    expect(roundTripped.environment).toStrictEqual({
-      USER_VALUE: "user-value",
-    });
-
-    const emptyTrustedContext = storedExecutionContextSchema.parse({
-      ...storedContext,
-      platformEnvironment: {},
-    });
-    expect(emptyTrustedContext.platformEnvironment).toStrictEqual({});
-  });
+      const emptyTrustedContext = storedExecutionContextSchema.parse({
+        ...storedContext,
+        platformEnvironment: {},
+      });
+      expect(emptyTrustedContext.platformEnvironment).toStrictEqual({});
+    },
+  );
 });
 
 describe("stored Seed Skill bundle contract", () => {
@@ -230,7 +243,10 @@ describe("stored Seed Skill bundle contract", () => {
     seedSkillBundles: [],
     connectorRuntimeTargets: [],
     environment: null,
-    platformEnvironment: {},
+    platformEnvironment: {
+      OKOU_TOKEN: "captured-run-token",
+      CUSTOM_PLATFORM_VALUE: "explicit",
+    },
     secretValueEnvironmentKeys: null,
     nativeContinuation: {
       sessionId: null,
@@ -239,7 +255,52 @@ describe("stored Seed Skill bundle contract", () => {
     },
     encryptedSecrets: null,
     cliAgentType: "claude-code",
+    disallowedTools: [],
+    userTimezone: "Asia/Shanghai",
   };
+
+  it.each([
+    { fields: ["cliAgentType"] },
+    { fields: ["connectorRuntimeTargets"] },
+    { fields: ["cliAgentType", "connectorRuntimeTargets"] },
+  ])(
+    "decodes Run-owned omissions $fields before complete preparation",
+    ({ fields }) => {
+      const queued = Object.fromEntries(
+        Object.entries(context).filter(([field]) => {
+          return !fields.includes(field);
+        }),
+      );
+      const decoded = claimCompatibleStoredExecutionContextSchema.parse(queued);
+      expect(decoded.nativeContinuation).toStrictEqual(
+        context.nativeContinuation,
+      );
+      expect(
+        claimPreparedExecutionContextSchema.parse({
+          ...decoded,
+          cliAgentType: context.cliAgentType,
+          connectorRuntimeTargets: context.connectorRuntimeTargets,
+        }),
+      ).toStrictEqual(context);
+    },
+  );
+
+  it.each([
+    { field: "cliAgentType", value: null },
+    { field: "storageMounts", value: {} },
+    { field: "connectorRuntimeTargets", value: null },
+    { field: "piLaunchConfig", value: { schemaVersion: 1 } },
+  ])(
+    "rejects malformed supplied $field instead of an omission",
+    ({ field, value }) => {
+      expect(
+        claimCompatibleStoredExecutionContextSchema.safeParse({
+          ...context,
+          [field]: value,
+        }).success,
+      ).toBe(false);
+    },
+  );
 
   it.each(["x", "workflow-setup", "x".repeat(64)])(
     "preserves captured Skill %s for all supported roots and readers",
@@ -373,6 +434,18 @@ describe("Pi sandbox execution contract", () => {
     piLaunchConfig: piStoredContext.piLaunchConfig,
     piModelConfig: piStoredContext.piModelConfig,
   };
+  it("accepts an omitted derived Pi marker and requires it before execution", () => {
+    const { piLaunchConfig, ...piInputs } = piStoredContext;
+    const queued = { ...storedContext, ...piInputs };
+    const decoded = claimCompatibleStoredExecutionContextSchema.parse(queued);
+    expect(decoded.piModelConfig).toStrictEqual(piInputs.piModelConfig);
+    expect(claimPreparedExecutionContextSchema.safeParse(decoded).success).toBe(
+      false,
+    );
+    expect(
+      claimPreparedExecutionContextSchema.parse({ ...decoded, piLaunchConfig }),
+    ).toStrictEqual({ ...queued, piLaunchConfig });
+  });
   const pollJob = {
     runId: "22222222-2222-4222-8222-222222222222",
     prompt: "continue",
@@ -606,7 +679,7 @@ describe("Pi sandbox execution contract", () => {
     },
   ])("rejects $name without a Sandbox compatibility path", (fixture) => {
     expect(
-      storedExecutionContextSchema.safeParse({
+      preparedExecutionContextSchema.safeParse({
         ...storedContext,
         ...piStoredContext,
         piLaunchConfig: fixture.launchConfig,
@@ -615,13 +688,13 @@ describe("Pi sandbox execution contract", () => {
   });
 
   it.each(["piSessionId", "piLaunchConfig", "piModelConfig"])(
-    "rejects a stored Pi context without %s",
+    "rejects a prepared Pi context without %s",
     (missingField) => {
       const incompleteContext: Record<string, unknown> = { ...piStoredContext };
       Reflect.deleteProperty(incompleteContext, missingField);
 
       expect(
-        storedExecutionContextSchema.safeParse({
+        preparedExecutionContextSchema.safeParse({
           ...storedContext,
           ...incompleteContext,
         }).success,
@@ -629,14 +702,14 @@ describe("Pi sandbox execution contract", () => {
     },
   );
 
-  it("rejects a stored Pi framework without the entire hard-cut bundle", () => {
-    expect(storedExecutionContextSchema.safeParse(storedContext).success).toBe(
-      false,
-    );
+  it("rejects a prepared Pi framework without the entire hard-cut bundle", () => {
+    expect(
+      preparedExecutionContextSchema.safeParse(storedContext).success,
+    ).toBe(false);
   });
 
   it.each(["piLaunchConfig", "piModelConfig"] as const)(
-    "rejects stored %s without piSessionId",
+    "rejects prepared %s for another framework",
     (field) => {
       const invalidStoredContext = {
         ...storedContext,
@@ -645,7 +718,7 @@ describe("Pi sandbox execution contract", () => {
       };
 
       expect(
-        storedExecutionContextSchema.safeParse(invalidStoredContext).success,
+        preparedExecutionContextSchema.safeParse(invalidStoredContext).success,
       ).toBe(false);
     },
   );
@@ -1035,7 +1108,6 @@ describe("runner storage manifest contract", () => {
   const storedContext = {
     storageMounts: [],
     seedSkillBundles: [],
-    connectorRuntimeTargets: [],
     environment: null,
     platformEnvironment: {},
     secretValueEnvironmentKeys: null,
@@ -1045,17 +1117,16 @@ describe("runner storage manifest contract", () => {
       recoveryPrompt: null,
     },
     encryptedSecrets: null,
-    cliAgentType: "codex",
   };
 
-  it("keeps prepared readers compatible with omitted stored fields", () => {
-    const preparedStoredExecutionContextSchema =
-      storedExecutionContextSchema.extend({
-        storageManifest: zUnknown().nullable().optional(),
-      });
-
-    expect(preparedStoredExecutionContextSchema.parse(storedContext)).toEqual(
-      storedContext,
+  it("shares persisted mounts between compact and prepared contexts", () => {
+    const preparedContext = {
+      ...storedContext,
+      cliAgentType: "codex",
+      connectorRuntimeTargets: [],
+    };
+    expect(preparedExecutionContextSchema.parse(preparedContext)).toEqual(
+      preparedContext,
     );
     expect(storedExecutionContextSchema.parse(storedContext)).toEqual(
       storedContext,
@@ -2034,10 +2105,7 @@ describe("runner apiStartTime contract", () => {
 });
 
 describe("runner Claude tool list contracts", () => {
-  it("keeps runner context schemas tolerant of legacy tool list values", () => {
-    expect(
-      storedExecutionContextSchema.shape.tools.safeParse(["Bash,Read"]).success,
-    ).toBe(true);
+  it("keeps the runner wire schema tolerant of legacy tool list values", () => {
     expect(
       executionContextSchema.shape.tools.safeParse(["Bash,Read"]).success,
     ).toBe(true);

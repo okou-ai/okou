@@ -481,6 +481,7 @@ export {
   jobSchema,
   executionContextSchema,
   storedExecutionContextSchema,
+  preparedExecutionContextSchema,
   secretConnectorMetadataSchema,
   secretConnectorMetadataMapSchema,
   CANONICAL_CLAUDE_CONFIG_DIR,
@@ -507,6 +508,7 @@ export {
   type Job,
   type ExecutionContext,
   type StoredExecutionContext,
+  type PreparedExecutionContext,
   type NetworkPolicyRefresh,
   type ConnectorRuntimeTarget,
   type ConnectorRuntimeTargetRegistration,
@@ -1486,4 +1488,8 @@ export { iosPushRegistrationsContract } from "./ios-push-registrations";
 export { iosNotificationsContract } from "./ios-notifications";
 export { runConnectorAccountsContract } from "./run-connector-accounts";
 
-export { integrationsEmailContract } from "./integrations-email";
+export {
+  integrationsEmailContract,
+  integrationsEmailUploadContract,
+  MAX_EMAIL_ATTACHMENT_SIZE_BYTES,
+} from "./integrations-email";

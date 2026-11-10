@@ -11,7 +11,7 @@ final class WorkspaceResources {
   private let catalog: WorkspaceRead<ModelCatalog>
   private let features: WorkspaceRead<SidebarFeatureSwitches>
   private let agents: WorkspaceRead<[AgentRecord]>
-  private let sidebarPreferences: WorkspaceRead<SidebarPreferences>
+  private let projects: WorkspaceRead<[ChatProject]>
   let configuration: Computed<Task<ChatModelConfiguration, Error>>
 
   init(client: APIClient, sleep: @escaping @Sendable (Duration) async throws -> Void) {
@@ -26,14 +26,7 @@ final class WorkspaceResources {
     self.catalog = catalog
     self.features = features
     agents = WorkspaceRead("agents", sleep: sleep) { try await client.request("/api/agents") }
-    sidebarPreferences = WorkspaceRead("sidebar preferences", sleep: sleep) {
-      do { return try await client.request("/api/user-preferences") } catch let error
-        as APIClientError
-        where error.statusCode == 409
-      {
-        return SidebarPreferences(pinnedAgentIds: [])
-      }
-    }
+    projects = WorkspaceRead("Projects", sleep: sleep, read: ChatProjects(client: client).list)
     let preferenceValue = preference.value
     let availableValue = available.value
     let catalogValue = catalog.value
@@ -62,26 +55,17 @@ final class WorkspaceResources {
     return try store.get(catalog.value)
   }
 
-  func navigation(refresh: Bool) throws -> (
-    agents: Task<[AgentRecord], Error>, preferences: Task<SidebarPreferences, Error>
-  ) {
-    if refresh {
-      try store.set(
-        Command<Void, Void> { context in
-          try context.set(self.agents.revision, update: { $0 + 1 })
-          try context.set(self.sidebarPreferences.revision, update: { $0 + 1 })
-        })
-    }
+  func navigation(refresh: Bool) throws -> Task<[AgentRecord], Error> {
+    if refresh { try store.set(agents.revision, update: { $0 + 1 }) }
     try agents.retryFailed(in: store)
-    try sidebarPreferences.retryFailed(in: store)
-    // Both navigation tasks start before the first suspension.
-    let agents = try store.get(agents.value)
-    let preferences = try store.get(sidebarPreferences.value)
-    return (agents, preferences)
+    return try store.get(agents.value)
   }
 
-  var agentRecords: Computed<Task<[AgentRecord], Error>> { agents.value }
-  var pinnedPreferences: Computed<Task<SidebarPreferences, Error>> { sidebarPreferences.value }
+  func projectList(refresh: Bool) throws -> Task<[ChatProject], Error> {
+    if refresh { try store.set(projects.revision, update: { $0 + 1 }) }
+    try projects.retryFailed(in: store)
+    return try store.get(projects.value)
+  }
 
   func invalidate(_ changes: Set<ChatInvalidation>) throws {
     let reload = Command<Void, Void> { context in
@@ -105,7 +89,7 @@ final class WorkspaceResources {
     catalog.close()
     features.close()
     agents.close()
-    sidebarPreferences.close()
+    projects.close()
   }
 }
 

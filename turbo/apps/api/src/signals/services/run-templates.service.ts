@@ -12,6 +12,10 @@ import {
   buildGenerationTemplatesPrompt,
   type LiveGenerationTemplate,
 } from "../../lib/generation-template-prompt";
+import {
+  templateUsageIdentities,
+  type TemplateUsageIdentity,
+} from "../../lib/template-usage-identity";
 import { db$ } from "../external/db";
 import { projectUserMessage } from "./chat-user-message.service";
 import { selectedUserPresentationTemplateIds } from "./presentation-template-data.service";
@@ -23,7 +27,9 @@ import {
 } from "./user-template-data.service";
 
 export type RunTemplatesResult =
-  | RunPromptAndSkills
+  | (RunPromptAndSkills & {
+      readonly templateUsageIdentities: readonly TemplateUsageIdentity[];
+    })
   | {
       readonly error: {
         readonly code: string;
@@ -200,6 +206,7 @@ function buildRunTemplateGuidance(args: {
     }),
   ];
   return {
+    templateUsageIdentities: templateUsageIdentities(templates, mounted),
     systemPromptVariables: { generationTemplatePrompt: guidance.prompt },
     userPromptVariables: {},
     skillVolumes: references.map((reference) => {

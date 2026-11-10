@@ -13,6 +13,79 @@ Older releases are archived by month:
 - [2026-02](changelog/2026-02/CHANGELOG.md)
 - [2026-01](changelog/2026-01/CHANGELOG.md)
 
+## [0.1106.1](https://github.com/okou-ai/okou/compare/app-v0.1106.0...app-v0.1106.1) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.2
+    * @okouai/core bumped to 8.825.2
+
+## [0.1106.0](https://github.com/okou-ai/okou/compare/app-v0.1105.0...app-v0.1106.0) (2026-11-09)
+
+
+### Features
+
+* **app:** track artifact download, drive sync, and banner intent ([#46185](https://github.com/okou-ai/okou/issues/46185)) ([2d4b454](https://github.com/okou-ai/okou/commit/2d4b454b4b25a8107cd1a26c0de2a997e9403b5c))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.1
+    * @okouai/core bumped to 8.825.1
+
+## [0.1105.0](https://github.com/okou-ai/okou/compare/app-v0.1104.0...app-v0.1105.0) (2026-11-09)
+
+
+### Features
+
+* **app:** lead my okou chat list with new chat and new project rows ([#46159](https://github.com/okou-ai/okou/issues/46159)) ([1b5af70](https://github.com/okou-ai/okou/commit/1b5af7038f04cef3b637ffc1b11d8fdcf315e695))
+* **platform:** pick a new chat's project from the composer ([#46147](https://github.com/okou-ai/okou/issues/46147)) ([42dac27](https://github.com/okou-ai/okou/commit/42dac27c6ea2320312d82b489111ed1cacf5f13a))
+
+
+### Bug Fixes
+
+* **app:** group secondary chat actions in an icon-only dropdown ([#46138](https://github.com/okou-ai/okou/issues/46138)) ([e92341f](https://github.com/okou-ai/okou/commit/e92341fddca02e6b9256c02c57b4716d5c8c6fda))
+
+## [0.1104.0](https://github.com/okou-ai/okou/compare/app-v0.1103.1...app-v0.1104.0) (2026-11-09)
+
+
+### Features
+
+* **app:** show local media thumbnails while attachments upload ([#46135](https://github.com/okou-ai/okou/issues/46135)) ([939735c](https://github.com/okou-ai/okou/commit/939735cbddaa58b4a025235ad0392277df5c889a))
+* **platform:** move my okou into settings ([#46131](https://github.com/okou-ai/okou/issues/46131)) ([fbc5e70](https://github.com/okou-ai/okou/commit/fbc5e7037ebd946fe38ad361f59246b9f26644d6))
+* **platform:** refine homepage cards and suggestion review ([#46086](https://github.com/okou-ai/okou/issues/46086)) ([e623b9b](https://github.com/okou-ai/okou/commit/e623b9b2ad179812b5b38a98ff119188265311bf))
+* **platform:** run personal learning from debug settings ([#46118](https://github.com/okou-ai/okou/issues/46118)) ([1e9afe0](https://github.com/okou-ai/okou/commit/1e9afe0c6b71ababbbc00133ef889ff956247731))
+
+
+### Bug Fixes
+
+* **app:** clear unchanged home prompts when dismissing guides ([#46099](https://github.com/okou-ai/okou/issues/46099)) ([11d1df0](https://github.com/okou-ai/okou/commit/11d1df03cf4235cc60b7faf71111d3148ece6548))
+* **app:** move wallet to personal settings ([#46129](https://github.com/okou-ai/okou/issues/46129)) ([ed348e1](https://github.com/okou-ai/okou/commit/ed348e115d9b5097bead754830883c07e6bcbc38))
+* **app:** use suggestion titles for new chats ([#46141](https://github.com/okou-ai/okou/issues/46141)) ([2dd19a9](https://github.com/okou-ai/okou/commit/2dd19a904d3a2ccba94537e809a37bd8b3cc2e23))
+* **platform:** follow shadcn v4 dialog header and section spacing ([#46103](https://github.com/okou-ai/okou/issues/46103)) ([200c2c4](https://github.com/okou-ai/okou/commit/200c2c45d44a22f1c7de07ab806e63694f79504e))
+* **platform:** upgrade tiptap to 3.32.2 so instructions keep plus signs literal ([#46109](https://github.com/okou-ai/okou/issues/46109)) ([8c29b5d](https://github.com/okou-ai/okou/commit/8c29b5d2c955e0bc5104a1bb59266b18c3515569))
+* report live attachment upload progress ([#46095](https://github.com/okou-ai/okou/issues/46095)) ([85d0544](https://github.com/okou-ai/okou/commit/85d05449efca847f25a48e094ac57aef4eaa9b39))
+* unify optional callbacks across computer access cards ([#46066](https://github.com/okou-ai/okou/issues/46066)) ([fbf9922](https://github.com/okou-ai/okou/commit/fbf9922703e4f61dfddf0e377092a3382d20fdf6))
+
+
+### Refactoring
+
+* remove automatic continuation for busy chats ([#46148](https://github.com/okou-ai/okou/issues/46148)) ([54073d0](https://github.com/okou-ai/okou/commit/54073d0594fac9acbd8a07208573cd24120b7b4f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.0
+    * @okouai/core bumped to 8.825.0
+    * @okouai/ui bumped to 1.19.5
+
 ## [0.1103.1](https://github.com/okou-ai/okou/compare/app-v0.1103.0...app-v0.1103.1) (2026-11-09)
 
 

@@ -242,64 +242,61 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertNil(store.list.navigationError)
   }
 
-  func testStartupLoadsChatsAndRealtimeDuringSlowNavigationWithoutChangingTheDraftAgent()
+  func testStartupLoadsChatsAndRealtimeDuringSlowNavigationAndPreservesTheDraft()
     async throws
   {
-    for explicitSelection in [false, true] {
-      let gate = HTTPResponseGate()
-      defer { gate.open() }
-      let navigation = expectation(description: "Agent response is pending")
-      let realtime = expectation(description: "Realtime starts independently of navigation")
-      let requestedRealtime = Mutex(false)
-      let defaultAgent = "40000000-0000-4000-8000-000000000008"
-      let fixture = ChatHTTPFixture { request in
-        switch request.url?.path {
-        case "/api/agents":
-          navigation.fulfill()
-          await gate.wait()
-          return ChatHTTPResponse(
-            body: """
-              [{"agentId":"\(defaultAgent)","isDefaultAgent":true,"displayName":"Default assistant"},
-              {"agentId":"\(storeAgentID)","isDefaultAgent":false,"displayName":"Other assistant"}]
-              """)
-        case "/api/user-preferences": return ChatHTTPResponse(body: #"{"pinnedAgentIds":[]}"#)
-        case "/api/chat-threads/snapshot": return threadSnapshot(title: "Other agent's chat")
-        case "/api/chat-threads/events":
-          return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
-        case "/api/indicators":
-          return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
-        case "/api/realtime/token":
-          if requestedRealtime.withLock({ requested in
-            guard !requested else { return false }
-            requested = true
-            return true
-          }) {
-            realtime.fulfill()
-          }
-          return ChatHTTPResponse(status: 403, body: #"{"error":{"message":"Fixture"}}"#)
-        default: throw URLError(.unsupportedURL)
+    let gate = HTTPResponseGate()
+    defer { gate.open() }
+    let navigation = expectation(description: "Agent response is pending")
+    let realtime = expectation(description: "Realtime starts independently of navigation")
+    let requestedRealtime = Mutex(false)
+    let defaultAgent = "40000000-0000-4000-8000-000000000008"
+    let fixture = ChatHTTPFixture { request in
+      switch request.url?.path {
+      case "/api/agents":
+        navigation.fulfill()
+        await gate.wait()
+        return ChatHTTPResponse(
+          body: """
+            [{"agentId":"\(defaultAgent)","isDefaultAgent":true,"displayName":"Default assistant"},
+            {"agentId":"\(storeAgentID)","isDefaultAgent":false,"displayName":"Other assistant"}]
+            """)
+
+      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Other agent's chat")
+      case "/api/chat-threads/events":
+        return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
+      case "/api/indicators":
+        return ChatHTTPResponse(body: #"{"agents":{},"unreadAt":{},"threads":{}}"#)
+      case "/api/realtime/token":
+        if requestedRealtime.withLock({ requested in
+          guard !requested else { return false }
+          requested = true
+          return true
+        }) {
+          realtime.fulfill()
         }
+        return ChatHTTPResponse(status: 403, body: #"{"error":{"message":"Fixture"}}"#)
+      default: throw URLError(.unsupportedURL)
       }
-      let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
-      defer { store.close() }
-      if explicitSelection { store.startNewChat(agentID: storeAgentID) }
-      store.newChatDraft = "Input entered before navigation finishes"
-      let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
-      addTeardownBlock { @MainActor in
-        store.close()
-        startup.cancel()
-        gate.open()
-        await startup.value
-      }
-      await fulfillment(of: [navigation, realtime], timeout: 3)
-      try await waitForBusinessResult { store.list.threads.first?.title == "Other agent's chat" }
-      XCTAssertEqual(store.selectedAgentID, explicitSelection ? storeAgentID : nil)
+    }
+    let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL)
+    defer { store.close() }
+    store.newChatDraft = "Input entered before navigation finishes"
+    let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
+    addTeardownBlock { @MainActor in
+      store.close()
+      startup.cancel()
       gate.open()
       await startup.value
-      XCTAssertEqual(store.selectedAgentID, explicitSelection ? storeAgentID : defaultAgent)
-      XCTAssertEqual(store.newChatDraft, "Input entered before navigation finishes")
-      XCTAssertNil(store.selectedThreadID)
     }
+    await fulfillment(of: [navigation, realtime], timeout: 3)
+    try await waitForBusinessResult { store.list.threads.first?.title == "Other agent's chat" }
+    XCTAssertNil(store.selectedAgentID)
+    gate.open()
+    await startup.value
+    XCTAssertEqual(store.selectedAgentID, defaultAgent)
+    XCTAssertEqual(store.newChatDraft, "Input entered before navigation finishes")
+    XCTAssertNil(store.selectedThreadID)
   }
 
   func testStartupShowsCachedRecentChatsBeforeNavigationAndPreservesArchiveVisibility() async throws
@@ -326,14 +323,12 @@ final class WorkspaceStoreTests: XCTestCase {
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
       case "/api/agents":
+        navigationStarted.fulfill()
+        await releaseNavigation.wait()
         return ChatHTTPResponse(
           body: """
             [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
             """)
-      case "/api/user-preferences":
-        navigationStarted.fulfill()
-        await releaseNavigation.wait()
-        return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
       case "/api/chat-threads/snapshot": return snapshot
       case "/api/chat-threads/events":
         if holdCatchUp.withLock({ $0 }) {
@@ -360,7 +355,7 @@ final class WorkspaceStoreTests: XCTestCase {
     holdCatchUp.withLock { $0 = true }
     let store = WorkspaceStore(client: fixture.client, webURL: fixture.baseURL, cache: cache)
     defer { store.close() }
-    store.startNewChat(agentID: storeAgentID)
+    store.startNewChat()
     let startup = Task { await store.start(userID: "user", workspaceID: "workspace") }
     addTeardownBlock { @MainActor in
       store.close()
@@ -451,9 +446,6 @@ final class WorkspaceStoreTests: XCTestCase {
             [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"\(fresh ? "Fresh assistant" : "Cached assistant")"},
             {"agentId":"\(otherAgent)","isDefaultAgent":false,"displayName":"Other assistant"}]
             """)
-      case "/api/user-preferences":
-        return ChatHTTPResponse(
-          body: "{\"pinnedAgentIds\":\(fresh ? "[]" : "[\"\(otherAgent)\"]")}")
       case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
@@ -484,21 +476,20 @@ final class WorkspaceStoreTests: XCTestCase {
     }
     await fulfillment(of: [started], timeout: 3)
     try await waitForBusinessResult {
-      store.list.visiblePinnedAgents.map(\.agentId) == [storeAgentID]
+      store.selectedAgentID == storeAgentID
     }
     XCTAssertEqual(store.currentAgentName, "Cached assistant")
-    // Preferences publish independently, but a partial refresh cannot replace the disk snapshot.
+    // The cached navigation stays committed while the fresh Agent response is pending.
     let reader = cacheDirectory.cache(scope: scope)
     let held = try await reader.loadNavigation()
     XCTAssertEqual(held?.agents.first?.displayName, "Cached assistant")
-    XCTAssertEqual(held?.preferences.pinnedAgentIds, [otherAgent])
     await reader.close()
     XCTAssertEqual(
       store.list.threads(agentID: storeAgentID, archived: false).map(\.title), ["Cached chat"])
     gate.open()
     await startup.value
     XCTAssertEqual(store.currentAgentName, "Fresh assistant")
-    XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [storeAgentID])
+    XCTAssertEqual(store.selectedAgentID, storeAgentID)
     store.close()
 
     let reopened = WorkspaceStore(
@@ -507,7 +498,7 @@ final class WorkspaceStoreTests: XCTestCase {
     defer { reopened.close() }
     await reopened.list.restoreCached()
     XCTAssertEqual(reopened.list.agents.first?.displayName, "Fresh assistant")
-    XCTAssertEqual(reopened.list.visiblePinnedAgents.map(\.agentId), [storeAgentID])
+    XCTAssertEqual(reopened.selectedAgentID, storeAgentID)
   }
 
   func testClosingOrCancellingStartupKeepsCachedChatsAndStopsNavigationReads() async throws {
@@ -515,7 +506,6 @@ final class WorkspaceStoreTests: XCTestCase {
       let cacheDirectory = CacheTestDirectory(owner: self)
       let navigationStarted = expectation(
         description: "Independent navigation reads start after cached chats")
-      navigationStarted.expectedFulfillmentCount = 2
       let releaseNavigation = HTTPResponseGate()
       defer { releaseNavigation.open() }
       let fixture = ChatHTTPFixture { request in
@@ -527,10 +517,6 @@ final class WorkspaceStoreTests: XCTestCase {
             body: """
               [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"}]
               """)
-        case "/api/user-preferences":
-          navigationStarted.fulfill()
-          await releaseNavigation.wait()
-          return ChatHTTPResponse(body: #"{"pinnedAgentIds":[]}"#)
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Cached chat")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: #"{"events":[],"hasMore":false}"#)
@@ -567,7 +553,7 @@ final class WorkspaceStoreTests: XCTestCase {
     }
   }
 
-  func testSidebarUsesPinnedAgentsAndTracksSelectedChatAgent() async {
+  func testNewChatUsesDefaultAgentWhileExistingChatRetainsItsAgent() async {
     let otherAgentID = "40000000-0000-4000-8000-000000000006"
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
@@ -576,9 +562,11 @@ final class WorkspaceStoreTests: XCTestCase {
           body: """
             [{"agentId":"\(storeAgentID)","isDefaultAgent":true,"displayName":"Okou"},{"agentId":"\(otherAgentID)","isDefaultAgent":false,"displayName":"Second"}]
             """)
-      case "/api/user-preferences":
-        return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[\"\(otherAgentID)\"]}")
-      case "/api/chat-threads/snapshot": return threadSnapshot(title: "Existing chat")
+      case "/api/chat-threads/snapshot":
+        return ChatHTTPResponse(
+          body: """
+            {"chatThreads":[{"id":"\(storeThreadID)","agentId":"\(otherAgentID)","title":"Existing chat","createdAt":"\(storeDate)","updatedAt":"\(storeDate)","sortAt":"\(storeDate)"}],"latestEventId":null,"latestSeqId":null}
+            """)
       case "/api/chat-threads/events":
         return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")
       case "/api/indicators":
@@ -590,16 +578,18 @@ final class WorkspaceStoreTests: XCTestCase {
     defer { store.close() }
     await store.refreshNavigation()
     await store.refresh()
-    XCTAssertEqual(store.list.visiblePinnedAgents.map(\.agentId), [storeAgentID, otherAgentID])
     XCTAssertEqual(store.currentAgentName, "Okou")
 
-    store.startNewChat(agentID: otherAgentID)
-    XCTAssertEqual(store.currentAgentName, "Second")
+    store.startNewChat()
+    XCTAssertEqual(store.currentAgentName, "Okou")
     XCTAssertNil(store.selectedThreadID)
 
     store.selectChat(storeThreadID)
-    XCTAssertEqual(store.selectedAgentID, storeAgentID)
+    XCTAssertEqual(store.selectedAgentID, otherAgentID)
     XCTAssertEqual(store.selectedThreadID, storeThreadID)
+    store.startNewChat()
+    XCTAssertEqual(store.selectedAgentID, storeAgentID)
+    XCTAssertNil(store.selectedThreadID)
   }
 
   func testSelectedChatReassignmentUpdatesAgentContextAndNewChat() async throws {
@@ -607,6 +597,10 @@ final class WorkspaceStoreTests: XCTestCase {
     let reassigned = Mutex(false)
     let fixture = ChatHTTPFixture { request in
       switch request.url?.path {
+      case "/api/agents":
+        return ChatHTTPResponse(
+          body:
+            "[{\"agentId\":\"\(storeAgentID)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]")
       case "/api/agents/\(storeAgentID)/draft", "/api/agents/\(otherAgentID)/draft",
         "/api/chat-threads/\(storeThreadID)/draft":
         return ChatHTTPResponse(body: #"{"draftUserMessage":null,"draftAttachments":null}"#)
@@ -653,6 +647,7 @@ final class WorkspaceStoreTests: XCTestCase {
     let store = WorkspaceStore(
       client: fixture.client, webURL: fixture.baseURL, draftStorage: storage)
     defer { store.close() }
+    await store.refreshNavigation()
     await store.refresh()
     store.selectChat(storeThreadID)
     XCTAssertEqual(store.selectedAgentID, storeAgentID)
@@ -668,10 +663,10 @@ final class WorkspaceStoreTests: XCTestCase {
     XCTAssertNil(store.conversation(for: storeThreadID)?.error)
     store.startNewChat()
     XCTAssertNil(store.selectedThreadID)
-    XCTAssertEqual(store.selectedAgentID, otherAgentID)
+    XCTAssertEqual(store.selectedAgentID, storeAgentID)
 
-    // An explicit new-chat agent selection remains independent of list updates.
-    store.startNewChat(agentID: storeAgentID)
+    // Refreshing an existing thread does not change the new-chat executor.
+    store.startNewChat()
     await store.refresh()
     XCTAssertEqual(store.selectedAgentID, storeAgentID)
     store.close()
@@ -1295,7 +1290,7 @@ final class WorkspaceStoreTests: XCTestCase {
 
   func testAuxiliaryUpgradeResponseBlocksAllFurtherWorkspaceReads() async {
     for endpoint in [
-      "/api/agents", "/api/user-preferences", "/api/indicators",
+      "/api/agents", "/api/indicators",
     ] {
       let requests = Mutex<[String]>([])
       let fixture = ChatHTTPFixture { request in
@@ -1311,7 +1306,7 @@ final class WorkspaceStoreTests: XCTestCase {
             body:
               "[{\"agentId\":\"\(storeAgentID)\",\"isDefaultAgent\":true,\"displayName\":\"Okou\"}]"
           )
-        case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
+
         case "/api/chat-threads/snapshot": return threadSnapshot(title: "Chat")
         case "/api/chat-threads/events":
           return ChatHTTPResponse(body: "{\"events\":[],\"hasMore\":false}")

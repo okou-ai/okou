@@ -1,3 +1,4 @@
+import { ProjectCreateButton } from "../projects/project-row.tsx";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { Collapsible } from "@base-ui/react/collapsible";
 import type { ComponentProps, CSSProperties, ReactNode } from "react";
@@ -37,7 +38,6 @@ import { AccountDropdown } from "./sidebar-account.tsx";
 import {
   ChatThreadDialogs,
   ChatThreadsListMenu,
-  ChatThreadsNewMenu,
   ChatThreadsSection,
   useChatThreadsFilterLabel,
 } from "./sidebar-threads.tsx";
@@ -158,17 +158,10 @@ function useManageNavItems() {
       }
     }
   };
-  return MANAGE_NAV.map((item) => {
-    return item.id === "agents" && singleAgent
-      ? {
-          ...item,
-          pathname: ROUTES.myOkou,
-          activeKeys: ["myOkou"] as readonly RouteKey[],
-          label: t(($) => {
-            return $.myOkou.title;
-          }),
-        }
-      : { ...item, label: manageLabel(item.id) };
+  return MANAGE_NAV.filter((item) => {
+    return !singleAgent || item.id !== "agents";
+  }).map((item) => {
+    return { ...item, label: manageLabel(item.id) };
   });
 }
 
@@ -513,8 +506,9 @@ function ChatListHeader() {
   const openThreeColumnSearch = useSet(openThreeColumnSearchDialog$);
   const { t } = useTranslation();
   // My Okou has a single chat list, so the header carries the list's actions
-  // instead of a title. An active filter still names itself beside the toggle
-  // so a filtered list never looks like the inbox.
+  // instead of a title, and New chat leads the list itself. An active filter
+  // still names itself beside the toggle so a filtered list never looks like
+  // the inbox.
   const filterLabel = useChatThreadsFilterLabel();
   const searchLabel = t(($) => {
     return $.appShell.sidebar.searchWorkspace;
@@ -592,7 +586,7 @@ function ChatListHeader() {
             {filterLabel}
           </span>
           <ShortcutTooltipGroup items={[searchItem]} />
-          <ChatThreadsNewMenu />
+          <ProjectCreateButton />
           <ChatThreadsListMenu showMarkAllRead />
         </>
       ) : (

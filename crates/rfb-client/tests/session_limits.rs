@@ -97,22 +97,33 @@ async fn captures_the_maximum_frame_as_complete_png_within_the_shared_budget() {
     let mut reader = png::Decoder::new(Cursor::new(capture.png()))
         .read_info()
         .unwrap();
-    let mut pixels = vec![0; reader.output_buffer_size().unwrap()];
-    let frame = reader.next_frame(&mut pixels).unwrap();
-    assert_eq!((frame.width, frame.height), (8192, 1024));
-    assert_eq!(frame.color_type, png::ColorType::Rgba);
-    assert_eq!(frame.bit_depth, png::BitDepth::Eight);
-    assert_eq!(frame.buffer_size(), 8_388_608 * 4);
-    let expected_row = [17, 34, 51, 255].repeat(8192);
-    assert_eq!(pixels.len(), frame.buffer_size());
-    assert!(
-        pixels
-            .chunks_exact(expected_row.len())
-            .all(|row| row == expected_row.as_slice())
+    let info = reader.info();
+    let dimensions = info
+        .frame_control
+        .as_ref()
+        .map_or(info.size(), |frame| (frame.width, frame.height));
+    assert_eq!(dimensions, (8192, 1024));
+    assert_eq!(
+        reader.output_color_type(),
+        (png::ColorType::Rgba, png::BitDepth::Eight)
     );
+    let decoded_size = reader.output_buffer_size().unwrap();
+    assert_eq!(decoded_size, 8_388_608 * 4);
+    let expected_row = [17, 34, 51, 255].repeat(8192);
+    // Compare every decoded pixel while retaining only the decoder's row buffer.
+    let mut decoded_bytes = 0;
+    while let Some(row) = reader.next_row().unwrap() {
+        let actual = row.data();
+        assert_eq!(
+            actual,
+            &expected_row[..actual.len()],
+            "maximum-frame PNG pixel bytes changed"
+        );
+        decoded_bytes += actual.len();
+    }
+    assert_eq!(decoded_bytes, decoded_size);
     drop(expected_row);
     drop(reader);
-    drop(pixels);
     let (retained, peak) = session.memory_usage();
     assert!(retained <= peak && peak <= MEMORY_LIMIT);
     eprintln!(

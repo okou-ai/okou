@@ -10,6 +10,91 @@ Older releases are archived by month:
 - [2026-05](changelog/2026-05/CHANGELOG.md)
 - [2026-04](changelog/2026-04/CHANGELOG.md)
 
+## [2.55.3](https://github.com/okou-ai/okou/compare/api-v2.55.2...api-v2.55.3) (2026-11-10)
+
+
+### Refactoring
+
+* **api:** compact queued runner execution context ([#46198](https://github.com/okou-ai/okou/issues/46198)) ([f6abaa7](https://github.com/okou-ai/okou/commit/f6abaa77353b4c6b6d23ae10aaffa51419f9aed6))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.2
+    * @okouai/core bumped to 8.825.2
+    * @okouai/db bumped to 2.24.10
+    * @okouai/pi-agent-runtime bumped to 1.51.92
+
+## [2.55.2](https://github.com/okou-ai/okou/compare/api-v2.55.1...api-v2.55.2) (2026-11-09)
+
+
+### Bug Fixes
+
+* **api:** require ios 0.31.0 or later ([#46186](https://github.com/okou-ai/okou/issues/46186)) ([f75796f](https://github.com/okou-ai/okou/commit/f75796fa0745e3ef000478d9cd62f7307e3ea127))
+* **api:** start runner reuse windows after final candidate selection ([#46164](https://github.com/okou-ai/okou/issues/46164)) ([51eec70](https://github.com/okou-ai/okou/commit/51eec707a38a2fed444c7dbf7f01d8bb8bcf16e3))
+
+
+### Refactoring
+
+* **api:** prepare optional runner context readers ([#46173](https://github.com/okou-ai/okou/issues/46173)) ([200a124](https://github.com/okou-ai/okou/commit/200a12489fb62c0b86da3da27d9a9936d0d4463a))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.1
+    * @okouai/core bumped to 8.825.1
+    * @okouai/db bumped to 2.24.9
+    * @okouai/pi-agent-runtime bumped to 1.51.91
+
+## [2.55.1](https://github.com/okou-ai/okou/compare/api-v2.55.0...api-v2.55.1) (2026-11-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/db bumped to 2.24.8
+
+## [2.55.0](https://github.com/okou-ai/okou/compare/api-v2.54.7...api-v2.55.0) (2026-11-09)
+
+
+### Features
+
+* **email:** add file uploads and integration context ([#46119](https://github.com/okou-ai/okou/issues/46119)) ([831ba71](https://github.com/okou-ai/okou/commit/831ba71f8ef3abfe63860da9ac69970e809f8910))
+
+
+### Bug Fixes
+
+* **api:** guide integration subscription limit recovery ([#46059](https://github.com/okou-ai/okou/issues/46059)) ([0532c0c](https://github.com/okou-ai/okou/commit/0532c0c77f97245f58c5249c3d85199991a1d4e7))
+* **api:** log google drive conversion preflight failures ([#46077](https://github.com/okou-ai/okou/issues/46077)) ([de796fb](https://github.com/okou-ai/okou/commit/de796fb59073c61ec6135d26c679e933ccf762e8))
+* **api:** restore committed template usage telemetry ([#46093](https://github.com/okou-ai/okou/issues/46093)) ([c32c0b8](https://github.com/okou-ai/okou/commit/c32c0b83b95c0daba5fa16263e10516526078ecc))
+* unify optional callbacks across computer access cards ([#46066](https://github.com/okou-ai/okou/issues/46066)) ([fbf9922](https://github.com/okou-ai/okou/commit/fbf9922703e4f61dfddf0e377092a3382d20fdf6))
+
+
+### Documentation
+
+* direct chat history guidance to temporary storage ([#46104](https://github.com/okou-ai/okou/issues/46104)) ([e862ae0](https://github.com/okou-ai/okou/commit/e862ae074025e2723fa4184177fdb2ca8b354c54))
+
+
+### Refactoring
+
+* **api:** remove marketing handoff publisher endpoints ([#46061](https://github.com/okou-ai/okou/issues/46061)) ([dc72401](https://github.com/okou-ai/okou/commit/dc72401e79f1c5b6505be1a39c681af26b6d1fb2))
+* remove automatic continuation for busy chats ([#46148](https://github.com/okou-ai/okou/issues/46148)) ([54073d0](https://github.com/okou-ai/okou/commit/54073d0594fac9acbd8a07208573cd24120b7b4f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.0
+    * @okouai/core bumped to 8.825.0
+    * @okouai/db bumped to 2.24.7
+    * @okouai/pi-agent-runtime bumped to 1.51.90
+
 ## [2.54.7](https://github.com/okou-ai/okou/compare/api-v2.54.6...api-v2.54.7) (2026-11-09)
 
 

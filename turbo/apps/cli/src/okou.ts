@@ -59,6 +59,7 @@ const COMMAND_CAPABILITY_MAP: Record<
   vnc: ["vnc:read", "vnc:write", "connector:read", "connector:write"],
   run: "run-usage:read",
   mail: "connector:read",
+  email: "email:write",
   notify: "notify:write",
   doctor: null,
   credit: ["billing:read", "billing:write"],
@@ -243,6 +244,13 @@ const COMMAND_DEFINITIONS: readonly CommandDefinition[] = [
     description: "Review and send mail through Gmail or Outlook Mail",
     load: async () => {
       return (await import("./commands/mail")).mailCommand;
+    },
+  },
+  {
+    name: "email",
+    description: "Attach files to the current Email conversation",
+    load: async () => {
+      return (await import("./commands/email")).createEmailCommand();
     },
   },
   {
@@ -683,6 +691,11 @@ export function buildHelpText(
     "  Send iMessage?        okou imessage message send --help",
     "  Send SMS?             okou sms message send --help",
     "  Upload phone file?    okou phone upload-file --help",
+    ...commandExampleIfVisible(
+      "email",
+      "  Upload email file?    okou email upload-file --help",
+      payload,
+    ),
     "  Download phone file?  okou phone download-file --help",
     "  List models?          okou model ls",
     "  Subscriptions?        okou subscription list",

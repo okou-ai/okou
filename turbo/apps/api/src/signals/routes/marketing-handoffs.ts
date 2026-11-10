@@ -3,7 +3,6 @@ import { command } from "ccstate";
 import {
   MARKETING_HANDOFF_MAX_FILE_BYTES,
   marketingHandoffsContract,
-  serializeMarketingHandoff,
 } from "@okouai/api-contracts/contracts/marketing-handoffs";
 import {
   badRequestMessage,
@@ -25,8 +24,6 @@ import {
   importMarketingFiles$,
   marketingContentHash,
   marketingHandoffBucket,
-  publicMarketingManifestHashes$,
-  publishMarketingManifests$,
   readMarketingManifest$,
   storeMarketingManifest$,
 } from "../services/marketing-handoff.service";
@@ -364,156 +361,6 @@ const import$ = command(async ({ get, set }, signal: AbortSignal) => {
   return { status: 200 as const, body: { files } };
 });
 
-/** Only the trusted Marketing release publisher may grant public access. */
-const publisherContext$ = command(({ get, set }) => {
-  set(setResHeader$, "Cache-Control", "no-store");
-  const token = env("MARKETING_HANDOFF_PUBLISH_TOKEN");
-  const provided = get(authorization$);
-  if (!token || !provided || !equalSecret(provided, `Bearer ${token}`)) {
-    return resourceUnavailable("Publisher authentication required");
-  }
-  const bucket = marketingHandoffBucket();
-  return bucket
-    ? { bucket }
-    : notConfigured("Marketing handoff storage is not configured");
-});
-
-const publishFile$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = set(publisherContext$);
-  if ("status" in context) {
-    return context;
-  }
-  const body = await get(bodyResultOf(marketingHandoffsContract.publishFile));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const { data, filename } = body.data;
-  const bytes = Buffer.from(data, "base64");
-  if (
-    bytes.length > MARKETING_HANDOFF_MAX_FILE_BYTES ||
-    bytes.toString("base64") !== data
-  ) {
-    return badRequestMessage("Invalid file encoding or size");
-  }
-  const hash = marketingContentHash(bytes);
-  await get(
-    putImmutableS3Object(
-      context.bucket,
-      `files/${hash}`,
-      bytes,
-      "application/octet-stream",
-      signal,
-    ),
-  );
-  signal.throwIfAborted();
-  await set(
-    grantMarketingContent$,
-    { resourceType: "file", resourceHash: hash, subject: "public" },
-    signal,
-  );
-  return {
-    status: 200 as const,
-    body: {
-      hash,
-      filename,
-      contentType: normalizeWebUploadContentType(body.data.contentType),
-      size: bytes.length,
-    },
-  };
-});
-
-const publish$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = set(publisherContext$);
-  if ("status" in context) {
-    return context;
-  }
-  const { bucket } = context;
-  const body = await get(bodyResultOf(marketingHandoffsContract.publish));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  for (const file of body.data.files) {
-    if (
-      !(await set(
-        canReadMarketingContent$,
-        { resourceType: "file", resourceHash: file.hash, subjects: [] },
-        signal,
-      ))
-    ) {
-      return notFound("Publish files before publishing a manifest");
-    }
-  }
-  const result = await set(
-    storeMarketingManifest$,
-    { bucket, manifest: body.data, subject: "public" },
-    signal,
-  );
-  return "status" in result ? result : { status: 200 as const, body: result };
-});
-
-const publishStatus$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = set(publisherContext$);
-  if ("status" in context) {
-    return context;
-  }
-  const body = await get(bodyResultOf(marketingHandoffsContract.publishStatus));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  const hashes = [...new Set(body.data.hashes)];
-  const published = await set(
-    publicMarketingManifestHashes$,
-    { bucket: context.bucket, hashes },
-    signal,
-  );
-  return {
-    status: 200 as const,
-    body: {
-      shortAddressesVerified: true as const,
-      missing: hashes.filter((hash) => {
-        return !published.has(hash);
-      }),
-    },
-  };
-});
-
-const publishBatch$ = command(async ({ get, set }, signal: AbortSignal) => {
-  const context = set(publisherContext$);
-  if ("status" in context) {
-    return context;
-  }
-  const body = await get(bodyResultOf(marketingHandoffsContract.publishBatch));
-  signal.throwIfAborted();
-  if (!body.ok) {
-    return body.response;
-  }
-  if (
-    body.data.manifests.some((manifest) => {
-      return (
-        Buffer.byteLength(serializeMarketingHandoff(manifest)) >
-        manifestPolicy.maxBytes
-      );
-    })
-  ) {
-    return badRequestMessage("Handoff manifest is too large");
-  }
-  const hashes = await set(
-    publishMarketingManifests$,
-    { bucket: context.bucket, manifests: body.data.manifests },
-    signal,
-  );
-  if (!hashes) {
-    return notFound("Publish files before publishing a manifest");
-  }
-  if (!Array.isArray(hashes)) {
-    return hashes;
-  }
-  return { status: 200 as const, body: { hashes } };
-});
-
 const manifestPolicy: Readonly<{ maxBytes: number; tooLargeMessage: string }> =
   {
     maxBytes: 128 * 1024,
@@ -548,31 +395,5 @@ export const marketingHandoffsRoutes: readonly RouteEntry[] = [
     route: marketingHandoffsContract.import,
     handler: import$,
     requestBodyPolicy: manifestPolicy,
-  },
-  {
-    route: marketingHandoffsContract.publish,
-    handler: publish$,
-    requestBodyPolicy: manifestPolicy,
-  },
-  {
-    route: marketingHandoffsContract.publishFile,
-    handler: publishFile$,
-    requestBodyPolicy: {
-      maxBytes: Math.ceil(MARKETING_HANDOFF_MAX_FILE_BYTES / 3) * 4 + 2048,
-      tooLargeMessage: "File is too large",
-    },
-  },
-  {
-    route: marketingHandoffsContract.publishStatus,
-    handler: publishStatus$,
-    requestBodyPolicy: manifestPolicy,
-  },
-  {
-    route: marketingHandoffsContract.publishBatch,
-    handler: publishBatch$,
-    requestBodyPolicy: {
-      maxBytes: 512 * 1024,
-      tooLargeMessage: "Handoff publication batch is too large",
-    },
   },
 ];

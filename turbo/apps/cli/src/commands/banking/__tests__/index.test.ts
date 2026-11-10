@@ -156,8 +156,8 @@ describe("okou banking command", () => {
     expect(url.pathname).toBe(`/agents/${AGENT_ID}/banking`);
     expect(Array.from(url.searchParams.entries())).toStrictEqual([
       ["reason", "Review recent expenses"],
-      ["threadId", THREAD_ID],
       ["callbackPrompt", "Continue the expense review"],
+      ["threadId", THREAD_ID],
     ]);
     expect(output).toContain("end the current turn");
     expect(output).toContain("exact callback URL above verbatim");

@@ -57,6 +57,7 @@ import {
 } from "./chat-composer.ts";
 import { buildComposerAdditionalInfo } from "./composer-additional-info.ts";
 import type { ComposerTaskSelection } from "./composer-task-handoff.ts";
+import type { ComposerProjectSignals } from "../projects/composer-project.ts";
 import {
   createComposerConnectorCompletion,
   createComposerDraftActions,
@@ -68,6 +69,7 @@ import {
 } from "./image-annotation.ts";
 import {
   openImageLightbox$,
+  openVideoLightbox$,
   type AnnotationImage,
 } from "./attachment-chips.ts";
 
@@ -260,6 +262,8 @@ export interface ComposerSignals {
   readonly taskChips: ComposerTaskChipsSignals;
   readonly agentId: string;
   readonly threadId?: string;
+  /** Present on a new chat's page composer, which can start it in a Project. */
+  readonly project?: ComposerProjectSignals;
   readonly remoteAccess$: ReturnType<typeof threadRemoteAccess$>;
   readonly pendingRemoteAccess: ReturnType<
     typeof createPendingRemoteAccessSignals
@@ -280,7 +284,7 @@ export interface ComposerSignals {
   readonly queue: ComposerQueueSignals;
   readonly template: ComposerTemplateSignals;
   readonly imageAnnotation: ImageAnnotationSignals;
-  /** Previews a draft image in the lightbox, where it can be marked up. */
+  /** Previews draft media; images can also be marked up in the lightbox. */
   readonly openAttachmentPreview$: Command<
     void,
     [ChatAttachment, AnnotationImage]
@@ -303,6 +307,7 @@ interface CreateComposerSignalsOptions {
     "sending$" | "hasEvents$" | "queuedEvents$" | "runningModelSelection$"
   >;
   readonly threadId?: string;
+  readonly project?: ComposerProjectSignals;
   readonly pendingRemoteAccess?: ReturnType<
     typeof createPendingRemoteAccessSignals
   >;
@@ -566,6 +571,7 @@ export function createComposerSignals(
   const taskChips = createComposerTaskChipsSignals(create, {
     insertTemplate$: workflowComposer.insertTemplate$,
     insertPrompt$: workflowComposer.replacePromptText$,
+    clearPrompt$: workflowComposer.clearUnchangedPrompt$,
     openTemplatePicker$: workflowComposer.openTemplatePicker$,
     focusEditor$: workflowComposer.focus$,
     saveDraft$: options.draft.save$,
@@ -732,12 +738,19 @@ function createComposerAttachmentAnnotation(
       // A pending upload is not an artifact yet, so checking it must not take
       // over an open artifact sidebar. An attachment is the user's own input,
       // not a published artifact, so it carries no sharing controls.
-      set(openImageLightbox$, {
+      const input = {
         url: image.url,
         filename: attachment.filename,
         ...(image.preview ? { preview: image.preview } : {}),
         shareAvailable: false,
         splitViewAvailable: false,
+      };
+      if (attachment.contentType.startsWith("video/")) {
+        set(openVideoLightbox$, input);
+        return;
+      }
+      set(openImageLightbox$, {
+        ...input,
         annotationTarget: { attachment, annotate$: annotateAttachment$ },
       });
     },
@@ -816,6 +829,10 @@ function createComposerPrimaryActionSignal(args: {
       return "disabled";
     }
     if ((await get(args.voiceState$)).status !== "idle") {
+      return "disabled";
+    }
+    // A chat can start in a just-created Project once the server has it.
+    if (options.project && get(options.project.pending$)) {
       return "disabled";
     }
 

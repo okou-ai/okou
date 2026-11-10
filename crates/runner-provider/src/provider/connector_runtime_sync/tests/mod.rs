@@ -2450,6 +2450,10 @@ async fn batch_drops_target_superseded_while_registry_transaction_waits() {
             generation: 0,
         })
         .collect::<Vec<_>>();
+    let mut context = core.inner.active_runs.lock().await[&run_id]
+        .account_context
+        .subscribe();
+    let connection_id = "550e8400-e29b-41d4-a716-446655440002";
     let runtime_sync = server.mock(|when, then| {
         when.method(POST)
             .path(format!("/api/runners/runs/{run_id}/connector-runtime/sync"))
@@ -2467,6 +2471,7 @@ async fn batch_drops_target_superseded_while_registry_transaction_waits() {
                             "ask": [],
                             "unknownPolicy": "allow",
                         },
+                        "accountBinding": {"connectionId": connection_id, "baseUrlVars": {}},
                     },
                     {
                         "target": targets[1],
@@ -2477,6 +2482,7 @@ async fn batch_drops_target_superseded_while_registry_transaction_waits() {
                             "ask": [],
                             "unknownPolicy": "deny",
                         },
+                        "accountBinding": {"connectionId": connection_id, "baseUrlVars": {}},
                     },
                 ],
             }));
@@ -2523,6 +2529,18 @@ async fn batch_drops_target_superseded_while_registry_transaction_waits() {
     let policies = &registry_json["sandboxes"]["10.200.0.2"]["networkPolicies"];
     assert_eq!(policies["slack"]["allow"], json!(["last-known-good"]));
     assert_eq!(policies["github"]["allow"], json!(["current:write"]));
+    assert_eq!(
+        context.borrow_and_update().targets,
+        vec![
+            ConnectorRuntimeTargetRegistration::Builtin {
+                connector_slug: "github".into(),
+                source_id: Some(connection_id.into()),
+                base_url_vars: Some(HashMap::new()),
+            }
+            .account_context_target(),
+            builtin_runtime_target_registration("slack").account_context_target(),
+        ]
+    );
     let active_runs = core.inner.active_runs.lock().await;
     assert_eq!(active_runs[&run_id].connectors[&targets[0]].generation, 1);
     assert_eq!(active_runs[&run_id].connectors[&targets[1]].generation, 0);

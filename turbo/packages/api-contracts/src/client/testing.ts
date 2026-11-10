@@ -385,8 +385,14 @@ import { integrationsDiscordReadContract as OriginalIntegrationsDiscordReadContr
 import { integrationsDiscordReadContract } from "./integrations-discord-read";
 import { integrationsDiscordContract as OriginalIntegrationsDiscordContract } from "../contracts/integrations-discord";
 import { integrationsDiscordContract } from "./integrations-discord";
-import { integrationsEmailContract as OriginalIntegrationsEmailContract } from "../contracts/integrations-email";
-import { integrationsEmailContract } from "./integrations-email";
+import {
+  integrationsEmailContract as OriginalIntegrationsEmailContract,
+  integrationsEmailUploadContract as OriginalIntegrationsEmailUploadContract,
+} from "../contracts/integrations-email";
+import {
+  integrationsEmailContract,
+  integrationsEmailUploadContract,
+} from "./integrations-email";
 import { integrationsGithubContract as OriginalIntegrationsGithubContract } from "../contracts/integrations-github";
 import { integrationsGithubContract } from "./integrations-github";
 import { integrationsSlackReadContract as OriginalIntegrationsSlackReadContract } from "../contracts/integrations-slack-read";
@@ -686,6 +692,8 @@ import { userExportContract as OriginalUserExportContract } from "../contracts/u
 import { userExportContract } from "./user-export";
 import { userModelPreferenceContract as OriginalUserModelPreferenceContract } from "../contracts/user-model-preference";
 import { userModelPreferenceContract } from "./user-model-preference";
+import { userNotificationsContract as OriginalUserNotificationsContract } from "../contracts/user-notifications";
+import { userNotificationsContract } from "./user-notifications";
 import { userPermissionGrantsContract as OriginalUserPermissionGrantsContract } from "../contracts/user-permission-grants";
 import { userPermissionGrantsContract } from "./user-permission-grants";
 import { userPreferencesContract as OriginalUserPreferencesContract } from "../contracts/user-preferences";
@@ -1065,6 +1073,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [integrationsDiscordReadContract, OriginalIntegrationsDiscordReadContract],
   [integrationsDiscordContract, OriginalIntegrationsDiscordContract],
   [integrationsEmailContract, OriginalIntegrationsEmailContract],
+  [integrationsEmailUploadContract, OriginalIntegrationsEmailUploadContract],
   [integrationsGithubContract, OriginalIntegrationsGithubContract],
   [integrationsSlackReadContract, OriginalIntegrationsSlackReadContract],
   [integrationsSlackContract, OriginalIntegrationsSlackContract],
@@ -1299,6 +1308,7 @@ export const clientDescriptorContracts: readonly (readonly [
   [userBuiltinConnectorsContract, OriginalUserBuiltinConnectorsContract],
   [userExportContract, OriginalUserExportContract],
   [userModelPreferenceContract, OriginalUserModelPreferenceContract],
+  [userNotificationsContract, OriginalUserNotificationsContract],
   [userPermissionGrantsContract, OriginalUserPermissionGrantsContract],
   [userPreferencesContract, OriginalUserPreferencesContract],
   [userTemplatesContract, OriginalUserTemplatesContract],

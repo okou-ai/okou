@@ -34,11 +34,6 @@ fi
 temporary="$(mktemp "${destination}.partial.XXXXXX")"
 trap 'rm -f "$temporary"' EXIT
 
-request_headers=()
-if [[ "$url" =~ ^https://api\.github\.com/repos/[^/]+/[^/]+/releases/assets/[0-9]+$ ]]; then
-  request_headers=(--header "Accept: application/octet-stream")
-fi
-
 for ((attempt = 1; attempt <= max_attempts; attempt++)); do
   if curl \
     --fail \
@@ -47,7 +42,6 @@ for ((attempt = 1; attempt <= max_attempts; attempt++)); do
     --location \
     --connect-timeout 10 \
     --max-time 30 \
-    "${request_headers[@]}" \
     --output "$temporary" \
     -- "$url"; then
     actual_sha256="$(sha256sum "$temporary" | cut -d ' ' -f 1)"

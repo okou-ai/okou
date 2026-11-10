@@ -401,7 +401,7 @@ export const clientDescriptorManifest = [
   },
   {
     module: "integrations-email",
-    contracts: ["integrationsEmailContract"],
+    contracts: ["integrationsEmailContract", "integrationsEmailUploadContract"],
   },
   {
     module: "integrations-github",
@@ -758,6 +758,10 @@ export const clientDescriptorManifest = [
   {
     module: "user-model-preference",
     contracts: ["userModelPreferenceContract"],
+  },
+  {
+    module: "user-notifications",
+    contracts: ["userNotificationsContract"],
   },
   {
     module: "user-permission-grants",

@@ -46,7 +46,9 @@ export function BrowserAuthorizationCard({
           >
             {failed
               ? t(($) => {
-                  return $.authorization.browser.actionFailed;
+                  return enabled
+                    ? $.authorization.callbackFailed
+                    : $.authorization.browser.actionFailed;
                 })
               : unavailable
                 ? t(($) => {
@@ -66,7 +68,7 @@ export function BrowserAuthorizationCard({
         <Button
           variant="secondary"
           className="w-full shrink-0 @[640px]:w-auto"
-          disabled={loading || enabled || failed}
+          disabled={loading || busy || (enabled && !failed)}
           pending={busy}
           onClick={() => {
             detach(allow(pageSignal), Reason.DomCallback);
@@ -74,10 +76,10 @@ export function BrowserAuthorizationCard({
         >
           {loading ? (
             <Loader2 className="animate-spin" />
-          ) : enabled ? (
+          ) : enabled && !failed ? (
             <Check />
           ) : null}
-          {enabled
+          {enabled && !failed
             ? t(($) => {
                 return $.authorization.browser.allowed;
               })

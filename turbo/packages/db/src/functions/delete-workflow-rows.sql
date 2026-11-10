@@ -1,7 +1,6 @@
 -- okou:non-transactional
--- Keep each post-lock operation as a separate VOLATILE function command: a
--- waiting statement snapshot must not lose an Automation's watch identity or
--- an outgoing Stage 1 publication token committed by the preceding lock owner.
+-- Preserve separate post-lock commands so an Automation's watch identity uses
+-- the fresh snapshot after a preceding lock owner commits.
 CREATE OR REPLACE FUNCTION public.delete_workflow_rows(
   p_org_id text,
   p_workflow_id uuid,
@@ -115,12 +114,6 @@ BEGIN
         'objectKey', attachment_key)
     );
   END IF;
-
-  -- Retain the outgoing writer's Workflow-row-before-token lock order and
-  -- every subject at this exact org/Agent/Workflow publication key.
-  DELETE FROM public.storage_publication_tokens
-  WHERE org_id = p_org_id AND agent_id = locked_workflow.agent_id
-    AND publication_key = 'workflow:' || locked_workflow.id::text;
 
   RETURN jsonb_build_object('deleted', true,
     'automations', observed_automations || removed_automations);

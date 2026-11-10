@@ -1,5 +1,42 @@
 # Changelog
 
+## [8.825.2](https://github.com/okou-ai/okou/compare/core-v8.825.1...core-v8.825.2) (2026-11-10)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.2
+
+## [8.825.1](https://github.com/okou-ai/okou/compare/core-v8.825.0...core-v8.825.1) (2026-11-09)
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.1
+
+## [8.825.0](https://github.com/okou-ai/okou/compare/core-v8.824.5...core-v8.825.0) (2026-11-09)
+
+
+### Features
+
+* **app:** show local media thumbnails while attachments upload ([#46135](https://github.com/okou-ai/okou/issues/46135)) ([939735c](https://github.com/okou-ai/okou/commit/939735cbddaa58b4a025235ad0392277df5c889a))
+
+
+### Refactoring
+
+* remove automatic continuation for busy chats ([#46148](https://github.com/okou-ai/okou/issues/46148)) ([54073d0](https://github.com/okou-ai/okou/commit/54073d0594fac9acbd8a07208573cd24120b7b4f))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.46.0
+
 ## [8.824.5](https://github.com/okou-ai/okou/compare/core-v8.824.4...core-v8.824.5) (2026-11-09)
 
 

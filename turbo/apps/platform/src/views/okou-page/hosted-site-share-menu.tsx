@@ -23,6 +23,7 @@ import { useTranslation } from "react-i18next";
 import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { Switch } from "@okouai/ui/components/ui/switch";
 import { resolveEditableHostedSiteDomain } from "../../lib/platform-host.ts";
+import { captureArtifactAction } from "../../lib/posthog.ts";
 import { currentOrgInfo$ } from "../../signals/auth.ts";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
@@ -46,8 +47,10 @@ interface ShareButtonProps {
 
 function HostedSiteBannerSetting({
   session,
+  surface,
 }: {
   readonly session: HostedSiteShareSession;
+  readonly surface: "dialog" | "sidebar";
 }) {
   const { t } = useTranslation();
   const owner = useLoadable(session.visibility$);
@@ -103,6 +106,11 @@ function HostedSiteBannerSetting({
               checked={current?.showBanner === true}
               disabled={saving || banner.state !== "hasData"}
               onCheckedChange={(value) => {
+                captureArtifactAction({
+                  action: "banner_visibility_change",
+                  surface,
+                  show_banner: value,
+                });
                 detach(change(value, signal), Reason.DomCallback);
               }}
             />
@@ -720,7 +728,9 @@ export function HostedSiteShareMenu({
         <HostedSiteShareSessionMenu
           session={session}
           permissions={<HostedSitePermissions session={session} />}
-          banner={<HostedSiteBannerSetting session={session} />}
+          banner={
+            <HostedSiteBannerSetting session={session} surface={surface} />
+          }
           {...props}
         />
       ) : props.readyOnly ? null : (

@@ -23,7 +23,7 @@ async fn codex_app_server_retries_recover_or_make_room_for_recent_events()
 async fn run_retry_case(recover_before_eviction: bool) -> Result<(), Box<dyn std::error::Error>> {
     let mock = common::build_and_locate_mock_codex()?;
     let tmp = tempfile::tempdir()?;
-    let mut server = common::ControlledHttpServer::start().await?;
+    let mut server = common::ControlledHttpServer::start_without_recording().await?;
 
     unsafe {
         common::setup_codex_app_server_env(

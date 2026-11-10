@@ -2,7 +2,7 @@ import { command, computed } from "ccstate";
 import { createElement } from "react";
 import { createDesktopShellAuthorizationSignals } from "../chat-page/desktop-shell-authorization-block.ts";
 import { DesktopShellAuthorizationCard } from "../../views/okou-page/desktop-shell-authorization-card.tsx";
-import { pathParams$ } from "../route.ts";
+import { searchParams$, pathParams$ } from "../route.ts";
 import { updatePage$ } from "../react-router.ts";
 import { hideAppSkeleton$ } from "../app-skeleton.ts";
 import { updateDocumentTitle$ } from "../document-title.ts";
@@ -15,7 +15,7 @@ const pageAuthorization$ = computed((get) => {
   }
   return createDesktopShellAuthorizationSignals({
     id,
-    originalUrl: `/computer-use/shell/authorize/${id}`,
+    originalUrl: `/computer-use/shell/authorize/${id}?${get(searchParams$).toString()}`,
   });
 });
 

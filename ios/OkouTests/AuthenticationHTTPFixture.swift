@@ -1,11 +1,10 @@
 import ChatDataTestSupport
-import ClerkKit
 import Foundation
 import Network
-import Security
 import Synchronization
 import XCTest
 
+@testable import ClerkKit
 @testable import Okou
 
 /// Isolated Clerk HTTP; SDK session restoration, decoding, and native routing stay real.
@@ -31,8 +30,6 @@ final class AuthenticationHTTPFixture: Sendable {
     switch (request.httpMethod ?? "GET", request.url?.path ?? "") {
     case ("GET", "/api/agents"):
       return ChatHTTPResponse(body: "[]")
-    case ("GET", "/api/user-preferences"):
-      return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
     case ("GET", "/api/feature-switches"):
       return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
     case ("GET", "/api/chat-threads/snapshot"):
@@ -116,32 +113,10 @@ final class AuthenticationHTTPFixture: Sendable {
     state.withLock { $0 = snapshot }
     try await clerk.refreshClient()
     try await clerk.refreshEnvironment()
-    do {
-      // Reconfiguration cancels the previous SDK's queued Keychain writes.
-      // Every restored-session fixture must wait for its actual commit first.
-      let service = "ai.okou.tests." + host
-      let sessionID = snapshot.signedOut ? nil : snapshot.sessionID
-      let persisted = XCTNSPredicateExpectation(
-        predicate: NSPredicate { _, _ in
-          let query: [String: Any] = [
-            kSecClass as String: kSecClassGenericPassword,
-            kSecAttrService as String: service,
-            kSecAttrAccount as String: "cachedClient",
-            kSecReturnData as String: true,
-            kSecMatchLimit as String: kSecMatchLimitOne,
-          ]
-          var result: CFTypeRef?
-          guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess,
-            let data = result as? Data,
-            let value = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
-          else { return false }
-          return value["last_active_session_id"] as? String == sessionID
-        }, object: nil)
-      let result = await XCTWaiter.fulfillment(of: [persisted], timeout: 3)
-      _ = try XCTUnwrap(
-        result == .completed ? true : nil,
-        "The initial client must be committed to Keychain before SDK restoration")
-    }
+    // Test-only SDK reconfiguration cancels pending persistence. Retire this
+    // fixture's cache owner and await its queued writes before replacing it.
+    let cache = try XCTUnwrap(clerk.cacheManager)
+    await cache.shutdownAndDrain()
     // Recreate the SDK with its real persisted session, as on a cold launch.
     let restoredOptions = Clerk.Options(
       telemetryEnabled: false,

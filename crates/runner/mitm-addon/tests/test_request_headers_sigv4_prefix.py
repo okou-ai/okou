@@ -6,6 +6,7 @@ import pytest
 from mitmproxy import http
 from mitmproxy.net.http import http1, validate
 
+import aws_sigv4_flow
 import mitm_addon
 import registry
 import upstream_destination_binding
@@ -194,7 +195,7 @@ def test_prebound_prefix_decision_has_bounded_acquisition(
     registry_reads: list[str] = []
     load_registry_state = registry.load_registry_state
     prefix_signals: list[bool] = []
-    request_may_use_aws_sigv4 = mitm_addon._request_may_use_aws_sigv4
+    request_may_use_aws_sigv4 = aws_sigv4_flow.may_use_aws_sigv4
 
     def track_prefix_probe(candidate: http.HTTPFlow) -> bool:
         assert not registry_reads
@@ -212,7 +213,7 @@ def test_prebound_prefix_decision_has_bounded_acquisition(
         return load_registry_state(path)
 
     monkeypatch.setattr(registry, "load_registry_state", track_registry_read)
-    monkeypatch.setattr(mitm_addon, "_request_may_use_aws_sigv4", track_prefix_probe)
+    monkeypatch.setattr(aws_sigv4_flow, "may_use_aws_sigv4", track_prefix_probe)
     with (
         mitm_ctx(registry_path=str(registry_path), api_url="https://api.okou.ai"),
         fake_firewall_headers() as auth_fetch,

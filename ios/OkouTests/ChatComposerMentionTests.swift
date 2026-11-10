@@ -13,10 +13,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
     let source = workspace.mentionTestSource
-    let overview = source.suggestions(for: "")
-    let agents = overview.filter { $0.kind == .agent }
-    let chats = overview.filter { $0.kind == .chat }
-    XCTAssertEqual(agents.map(\.referenceID), (1...3).map(MentionNavigationFixture.agent))
+    let chats = source.suggestions(for: "")
     XCTAssertEqual(chats.count, 25)
     // Sidebar pinOrder puts the older pin first; mention ordering uses activity.
     XCTAssertEqual(chats.first?.referenceID, MentionNavigationFixture.thread(35))
@@ -24,8 +21,8 @@ final class ChatComposerMentionTests: XCTestCase {
     let filtered = source.suggestions(for: "pLaN")
     XCTAssertEqual(
       filtered.map(\.referenceID),
-      [MentionNavigationFixture.agent(1), MentionNavigationFixture.thread(31)])
-    XCTAssertEqual(filtered.map(\.title), ["Planner", "Cross Agent archived plan"])
+      [MentionNavigationFixture.thread(31)])
+    XCTAssertEqual(filtered.map(\.title), ["Cross Agent archived plan"])
 
     // The current chat is a valid reference, as on the PWA.
     XCTAssertEqual(
@@ -51,7 +48,7 @@ final class ChatComposerMentionTests: XCTestCase {
     let first = try XCTUnwrap(mentionTable(in: host.view)?.visibleCells.first)
     XCTAssertTrue(first.accessibilityActivate())
     try await waitForBusinessResult {
-      workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" }
+      workspace.newComposer.document.parts.contains { $0["type"]?.string == "chat_thread" }
     }
     XCTAssertEqual(input.selectedRange, NSRange(location: 9, length: 0))
     XCTAssertEqual(input.text, "Before \u{fffc} after 🌷")
@@ -62,21 +59,22 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     input.insertText("\n")
     try await waitForBusinessResult {
-      workspace.newComposer.document.parts.filter { $0["type"]?.string == "chat_thread" }.count == 1
+      workspace.newComposer.document.parts.filter { $0["type"]?.string == "chat_thread" }.count == 2
     }
     let expected = workspace.newComposer.document
     XCTAssertEqual(
-      expected.parts.map { $0["type"]?.string }, ["text", "agent", "text", "chat_thread", "text"])
+      expected.parts.map { $0["type"]?.string },
+      ["text", "chat_thread", "text", "chat_thread", "text"])
     XCTAssertEqual(expected.text, "Before  and  after 🌷")
     XCTAssertEqual(input.text, "Before \u{fffc} and \u{fffc} after 🌷")
-    try await hostingPresentationFrame()
+    try await eventually { input.undoManager?.groupingLevel == 0 }
 
     input.selectedRange = NSRange(location: 7, length: 1)
     input.deleteBackward()
     try await waitForBusinessResult {
-      !workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" }
+      workspace.newComposer.document.parts.filter { $0["type"]?.string == "chat_thread" }.count == 1
     }
-    try await hostingPresentationFrame()
+    try await eventually { input.undoManager?.groupingLevel == 0 }
     input.undoManager?.undo()
     try await waitForBusinessResult(
       message:
@@ -84,14 +82,13 @@ final class ChatComposerMentionTests: XCTestCase {
     ) { workspace.newComposer.document == expected }
     input.undoManager?.redo()
     try await waitForBusinessResult {
-      !workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" }
+      workspace.newComposer.document.parts.filter { $0["type"]?.string == "chat_thread" }.count == 1
     }
     input.undoManager?.undo()
     try await waitForBusinessResult { workspace.newComposer.document == expected }
 
     input.selectedRange = NSRange(location: 0, length: input.text.utf16.count)
     input.copy(nil)
-    XCTAssertTrue(UIPasteboard.general.string?.contains("/agents/") == true)
     XCTAssertTrue(UIPasteboard.general.string?.contains("/chats/") == true)
     input.cut(nil)
     try await waitForBusinessResult { !workspace.newComposer.hasContent }
@@ -111,7 +108,7 @@ final class ChatComposerMentionTests: XCTestCase {
     try await waitForBusinessResult { workspace.newComposer.document == expected }
   }
 
-  func testNativeMarkedTextConfirmationDoesNotInsertAMentionAndKeyboardNavigatesGroups()
+  func testNativeMarkedTextConfirmationDoesNotInsertAMentionAndKeyboardNavigatesChats()
     async throws
   {
     let navigation = MentionNavigationFixture()
@@ -132,14 +129,15 @@ final class ChatComposerMentionTests: XCTestCase {
     input.unmarkText()
     input.insertText("\n")
     try await waitForBusinessResult { workspace.newChatDraft.contains("研究\n") }
-    XCTAssertFalse(workspace.newComposer.document.parts.contains { $0["type"]?.string == "agent" })
+    XCTAssertTrue(workspace.newComposer.document.parts.allSatisfy { $0["type"]?.string == "text" })
     input.insertText("@")
     let target = try XCTUnwrap(
       workspace.mentionTestSource.suggestions(for: "").first {
         $0.referenceID == MentionNavigationFixture.thread(35)
       })
     try await waitForBusinessResult { editor.mentionSuggestions.contains(target) }
-    for _ in 0..<3 { try await mentionKey(UIKeyCommand.inputDownArrow, input: input) }
+    try await mentionKey(UIKeyCommand.inputDownArrow, input: input)
+    try await mentionKey(UIKeyCommand.inputUpArrow, input: input)
     input.insertText("\n")
     try await waitForBusinessResult {
       workspace.newComposer.document.parts.contains(target.part)
@@ -165,12 +163,14 @@ final class ChatComposerMentionTests: XCTestCase {
       conversation.close()
       workspace.close()
     }
-    let reference = try XCTUnwrap(
-      workspace.mentionTestSource.suggestions(for: "pl").first { $0.kind == .agent })
-    let draft = ChatDraftDocument(parts: [
-      reference.part, .object(["type": .string("text"), "text": .string(" ")]),
+    let reference: MessageJSON = .object([
+      "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
+      "nameSnapshot": .string("Planner"),
     ])
-    let expected = ChatDraftDocument(parts: [reference.part])
+    let draft = ChatDraftDocument(parts: [
+      reference, .object(["type": .string("text"), "text": .string(" ")]),
+    ])
+    let expected = ChatDraftDocument(parts: [reference])
     let block = try XCTUnwrap(conversation.composer.editorBlocks.first)
     conversation.composer.editBlock(block.id, document: draft)
     XCTAssertEqual(conversation.composer.document, draft)
@@ -214,13 +214,16 @@ final class ChatComposerMentionTests: XCTestCase {
         message: message, range: NSRange(location: 0, length: message.text.utf16.count)))
     let block = try XCTUnwrap(conversation.composer.addFeedback(quote))
     let source = workspace.mentionTestSource
-    let chat = try XCTUnwrap(source.suggestions(for: "plan").first { $0.kind == .chat })
-    let agent = try XCTUnwrap(source.suggestions(for: "pl").first { $0.kind == .agent })
+    let chat = try XCTUnwrap(source.suggestions(for: "plan").first)
+    let agent: MessageJSON = .object([
+      "type": .string("agent"), "agentId": .string(MentionNavigationFixture.agent(1)),
+      "nameSnapshot": .string("Planner"),
+    ])
     let note = ChatDraftDocument(parts: [
       .object(["type": .string("text"), "text": .string("Compare ")]),
       chat.part,
       .object(["type": .string("text"), "text": .string(" with ")]),
-      agent.part,
+      agent,
       .object(["type": .string("text"), "text": .string(" ")]),
     ])
     conversation.composer.editBlock(block, document: note)
@@ -255,7 +258,7 @@ final class ChatComposerMentionTests: XCTestCase {
   {
     let fixture = AttachmentFlowFixture(failSend: true)
     let workspace = WorkspaceStore(client: fixture.http.client, webURL: fixture.http.baseURL)
-    workspace.selectedAgentID = AttachmentFlowFixture.agentID
+    await workspace.refreshNavigation()
     let navigation = MentionNavigationFixture()
     let candidates = try await navigation.workspace()
     defer {
@@ -263,7 +266,7 @@ final class ChatComposerMentionTests: XCTestCase {
       candidates.close()
     }
     let reference = try XCTUnwrap(
-      candidates.mentionTestSource.suggestions(for: "plan").first { $0.kind == .chat })
+      candidates.mentionTestSource.suggestions(for: "plan").first)
     let draft = ChatDraftDocument(parts: [
       reference.part, .object(["type": .string("text"), "text": .string(" ")]),
     ])
@@ -301,7 +304,7 @@ final class ChatComposerMentionTests: XCTestCase {
         try XCTUnwrap(command.action), to: input, from: command, for: nil))
   }
 
-  func testLateStructuredPasteAndRetiredCandidateCannotEnterAnotherAgentDraft() async throws {
+  func testLateStructuredPasteAndCandidateStayWithTheirDraftAfterOpeningAChat() async throws {
     let navigation = MentionNavigationFixture()
     let workspace = try await navigation.workspace()
     defer { workspace.close() }
@@ -332,8 +335,8 @@ final class ChatComposerMentionTests: XCTestCase {
     }
     input.paste(itemProviders: [provider])
     await fulfillment(of: [started], timeout: 3)
-    workspace.startNewChat(agentID: MentionNavigationFixture.agent(2))
-    // Exercise the old callbacks after switching their draft owner, independently
+    workspace.selectChat(MentionNavigationFixture.thread(31))
+    // Exercise the old callbacks after selecting another composer, independently
     // of when SwiftUI dismantles the old editor.
     XCTAssertTrue(retiredRow.accessibilityActivate())
     delivery.release()
@@ -342,9 +345,9 @@ final class ChatComposerMentionTests: XCTestCase {
         $0["type"]?.string == "agent" && $0["agentId"]?.string == MentionNavigationFixture.agent(3)
       }
     }
-    try await hostingPresentationFrame()
-    XCTAssertFalse(workspace.newComposer.hasContent)
-    XCTAssertEqual(workspace.selectedAgentID, MentionNavigationFixture.agent(2))
+    try await eventually { mentionTable(in: host.view) == nil }
+    XCTAssertFalse(workspace.selectedConversation?.composer.hasContent ?? true)
+    XCTAssertEqual(workspace.selectedAgentID, MentionNavigationFixture.agent(1))
     XCTAssertNil(mentionTable(in: host.view))
   }
 }

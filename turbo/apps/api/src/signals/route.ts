@@ -1,4 +1,5 @@
 import { integrationsEmailRoutes } from "./routes/integrations-email";
+import { integrationsEmailUploadCompleteRoutes } from "./routes/integrations-email-upload-complete";
 import { marketingHandoffsRoutes } from "./routes/marketing-handoffs";
 import { integrationsWechatFileRoutes } from "./routes/integrations-wechat-files";
 import { integrationsWechatMessagesRoutes } from "./routes/integrations-wechat-messages";
@@ -118,6 +119,7 @@ import { feishuEventsRoutes } from "./routes/feishu-events";
 import { feishuOauthRoutes } from "./routes/feishu-oauth";
 import { getStartedRoutes } from "./routes/get-started";
 import { friendReferralRoutes } from "./routes/friend-referrals";
+import { userNotificationRoutes } from "./routes/user-notifications";
 import { githubOauthRoutes } from "./routes/github-oauth";
 import { healthRoutes } from "./routes/health";
 import { hostRoutes } from "./routes/host";
@@ -256,6 +258,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...runnersStartupRoutes,
   ...getStartedRoutes,
   ...friendReferralRoutes,
+  ...userNotificationRoutes,
   ...healthRoutes,
   ...buildInfoRoutes,
   ...authMeRoutes,
@@ -366,6 +369,7 @@ export const ROUTES: readonly RouteEntry[] = [
   ...customConnectorsRoutes,
   ...emailInboundRoutes,
   ...integrationsEmailRoutes,
+  ...integrationsEmailUploadCompleteRoutes,
   ...featureSwitchesRoutes,
   ...featureGuidesRoutes,
   ...hostRoutes,

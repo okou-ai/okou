@@ -51,7 +51,6 @@ import { setupFeishuSettingsPage$ } from "./okou-page/feishu-settings-page.ts";
 import { setupFeishuOAuthCallbackPage$ } from "./okou-page/feishu-oauth-callback-page.ts";
 import { setupActivityDetailPage$ } from "./activity-page/activity-detail-page-setup.ts";
 import { setupActivityInspectPage$ } from "./activity-page/activity-inspect-page-setup.ts";
-import { setupMyOkouPage$ } from "./my-okou-page-setup.ts";
 import { setupAgentsPage$ } from "./agents-page/agents-page-setup.ts";
 import { setupAgentDetailPage$ } from "./agents-page/agent-detail-page-setup.ts";
 import { setupArtifactsPage$ } from "./artifacts-page/artifacts-page-setup.ts";
@@ -399,10 +398,6 @@ const ROUTE_CONFIG = [
   {
     path: ROUTES.agentDetail,
     setup: setupAuthSidebarPageWrapper(setupAgentDetailPage$),
-  },
-  {
-    path: ROUTES.myOkou,
-    setup: setupAuthSidebarPageWrapper(setupMyOkouPage$),
   },
   {
     path: ROUTES.agents,

@@ -471,6 +471,7 @@ final class ChatSearchUnreadTests: XCTestCase {
   func testWorkflowsLoadOnceWithoutBuiltInsAndArtifactsFollowTheQuery() async throws {
     let workflowLoads = Mutex(0)
     let fixture = ChatHTTPFixture { request in
+      guard request.httpMethod == "GET" else { throw URLError(.unsupportedURL) }
       switch request.url?.path {
       case "/api/workflows":
         workflowLoads.withLock { $0 += 1 }
@@ -487,8 +488,10 @@ final class ChatSearchUnreadTests: XCTestCase {
                           {"id":"y","kind":"shared-thread","title":"Shared chat","thumbnail":null,"sharedThreadId":"s"}],
              "nextCursor":null}
             """)
-      default:
+      case "/api/chat/search":
         return ChatHTTPResponse(body: "{\"results\":[]}")
+      default:
+        throw URLError(.unsupportedURL)
       }
     }
     let search = ChatSearchStore(sync: ChatSync(client: fixture.client), didFail: { _ in })
@@ -790,7 +793,7 @@ private final class SearchUnreadFixture: Sendable {
           body: """
             [{"agentId":"\(Self.agent)","displayName":"Okou","isDefaultAgent":true},{"agentId":"\(Self.otherAgent)","displayName":"Research","isDefaultAgent":false}]
             """)
-      case "/api/user-preferences": return ChatHTTPResponse(body: "{\"pinnedAgentIds\":[]}")
+
       case "/api/feature-switches":
         return ChatHTTPResponse(body: "{\"effectiveSwitches\":{}}")
       case "/api/chat/search":

@@ -35,6 +35,7 @@ use sandbox::{
 use tokio::io::AsyncRead;
 use tokio::sync::{mpsc, watch};
 use tokio_util::sync::CancellationToken;
+use tokio_util::task::AbortOnDropHandle;
 use tracing::{info, warn};
 
 use crate::api::BalloonStatistics;
@@ -1524,7 +1525,8 @@ impl FirecrackerSandbox {
         let connection_submitted = Instant::now();
         #[cfg(feature = "test-support")]
         let connection_scope = guest_control_client::test_support::ConnectionScope::current();
-        let mut vsock_task = tokio::spawn(async move {
+        // Cancelling startup must also retire its pending listener or handshake.
+        let mut vsock_task = AbortOnDropHandle::new(tokio::spawn(async move {
             let connection = async move {
                 if observe_connection {
                     let (result, timing) =
@@ -1555,7 +1557,7 @@ impl FirecrackerSandbox {
                 }
             };
             connection.await
-        });
+        }));
 
         let launch_result = if self.factory_config.snapshot.is_some() {
             self.launch_from_snapshot(runtime_cancel.clone())
@@ -1816,7 +1818,7 @@ impl FirecrackerSandbox {
     }
 }
 
-async fn abort_and_join<T>(task: tokio::task::JoinHandle<T>) {
+async fn abort_and_join<T>(task: AbortOnDropHandle<T>) {
     task.abort();
     let _ = task.await;
 }

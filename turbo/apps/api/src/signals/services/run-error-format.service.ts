@@ -1,5 +1,8 @@
 import { command, computed, type Computed } from "ccstate";
-import { formatRunErrorForExternalSurface } from "@okouai/api-contracts/contracts/errors";
+import {
+  formatRunErrorForExternalSurface,
+  formatPersonalSubscriptionUsageLimitForExternalSurface,
+} from "@okouai/api-contracts/contracts/errors";
 import {
   getFrameworkForType,
   normalizeRunModelId,
@@ -181,13 +184,13 @@ export const formatRunErrorForRunOwner$ = command(
     params: Omit<
       FormatRunErrorLikeWebMessageParams,
       "failureReason" | "framework" | "modelProviderType"
-    >,
+    > & { readonly externalSurface?: boolean },
     signal: AbortSignal,
   ): Promise<string> => {
     const providerContext = await get(runErrorProviderContext(params.runId));
     signal.throwIfAborted();
 
-    return await get(
+    const message = await get(
       formatRunErrorLikeWebMessage({
         ...params,
         failureReason: providerContext?.failureReason ?? undefined,
@@ -195,6 +198,18 @@ export const formatRunErrorForRunOwner$ = command(
         modelProviderType: providerContext?.modelProviderType ?? null,
         selectedModel: providerContext?.selectedModel ?? null,
       }),
+    );
+    signal.throwIfAborted();
+    if (!params.externalSurface) {
+      return message;
+    }
+    return (
+      formatPersonalSubscriptionUsageLimitForExternalSurface({
+        failureReason: providerContext?.failureReason,
+        modelProviderType: providerContext?.modelProviderType,
+        message,
+        modelProvidersUrl: buildModelProvidersUrl(),
+      }) ?? message
     );
   },
 );

@@ -37,7 +37,6 @@
     static let sampleChats = [
       "Trip to Kyoto", "Quarterly report", "Launch checklist", "Brand colours", "Weekly sync notes",
     ]
-    @State private var menuLogos = OkouWorkspaceMenuLogos()
 
     var body: some View {
       ScrollView {
@@ -109,19 +108,7 @@
               .accessibilityLabel("Send message")
             }.padding(OkouSpace.six).glassEffect(.regular, in: RoundedRectangle(cornerRadius: 28))
           }
-          section("Pinned agents") {
-            // One line always; a long name ends in "…" (Instagram's tray does the same).
-            HStack(spacing: OkouSpace.sm) {
-              ForEach(
-                Array(["Okou", "Okou Illustrator", "Travel Master", "Vlog 剪辑师"].enumerated()),
-                id: \.offset
-              ) { index, name in
-                OkouAgentTile(
-                  avatarURL: nil, name: name, isDefault: index == 0, isSelected: index == 0,
-                  hasUnread: index == 1)
-              }
-            }
-            .background(OkouColor.sidebar)
+          section("Chat rows") {
             // Chat rows, as the sidebar draws them: status emoji, the quiet glyph,
             // and the trailing states.
             VStack(spacing: 0) {
@@ -366,7 +353,8 @@
                     Label {
                       Text(verbatim: workspace.name)
                     } icon: {
-                      menuLogos.image(workspaceID: workspace.id, imageURL: nil, hasImage: false)
+                      OkouWorkspaceMenuLogos.image(
+                        workspaceID: workspace.id, hasImage: false, cachedImage: nil)
                     }
                     .tag(workspace.id)
                   }
@@ -378,11 +366,6 @@
               }
               .buttonStyle(.plain)
               Text(verbatim: name).font(.okou(.headline))
-            }
-            .task {
-              for workspace in Self.sampleWorkspaces {
-                await menuLogos.load(workspaceID: workspace.id, imageURL: nil, hasImage: false)
-              }
             }
           }
           section("Agent identities") {
@@ -497,7 +480,7 @@
             }
           ) {
             OkouChipRail(inset: OkouSpace.lg) {
-              ForEach(["All", "Chats", "Agents"], id: \.self) { name in
+              ForEach(["All", "Chats", "Messages"], id: \.self) { name in
                 OkouChip(title: Text(name), isSelected: catalogFilter == name) {
                   catalogFilter = name
                 }

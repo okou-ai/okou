@@ -27,8 +27,9 @@ public actor ChatCommands {
   }
 
   public func createThread(
-    agentID: String? = nil, modelSelection: ChatModelSelection? = nil,
-    reasoningEffort: String? = nil, composerOptions: ChatComposerOptions? = nil
+    modelSelection: ChatModelSelection? = nil,
+    reasoningEffort: String? = nil, composerOptions: ChatComposerOptions? = nil,
+    projectID: String? = nil
   ) async throws -> ChatThread {
     async let agentsRequest: [AgentRecord] = client.request("/api/agents")
     let selection: ThreadModelSelection
@@ -44,19 +45,13 @@ public actor ChatCommands {
         preference: preference, availableModels: models, catalog: catalog)
     }
     let agents = try await agentsRequest
-    guard
-      let agent = agents.first(where: {
-        $0.agentId == agentID || (agentID == nil && $0.isDefaultAgent)
-      })
-    else {
-      if agentID != nil { throw ChatError.agentUnavailable }
-      throw ChatError.noDefaultAgent
-    }
+    guard let agent = agents.first(where: \.isDefaultAgent) else { throw ChatError.noDefaultAgent }
     let body = CreateThreadBody(
       agentId: agent.agentId, clientThreadId: UUID().uuidString,
       eventId: UUID().uuidString, model: selection.model,
       serviceTier: selection.serviceTier,
-      reasoningEffort: selection.reasoningEffort, composerOptions: composerOptions)
+      reasoningEffort: selection.reasoningEffort, composerOptions: composerOptions,
+      projectId: projectID)
     let created: CreatedThread = try await client.request(
       "/api/chat-threads", method: "POST", body: JSONEncoder().encode(body))
     if let options = composerOptions, options.chatAccountAccess {
@@ -72,7 +67,7 @@ public actor ChatCommands {
       }
     }
     return ChatThread(
-      id: created.id, agentID: agent.agentId, title: created.title ?? "",
+      id: created.id, agentID: agent.agentId, title: created.title ?? "", projectId: projectID,
       selectedModel: created.selectedModel, createdAt: created.createdAt,
       updatedAt: created.createdAt, sortAt: created.createdAt,
       pinnedAt: nil, pinOrder: nil,
@@ -321,9 +316,10 @@ public actor ChatCommands {
     let serviceTier: String?
     let reasoningEffort: String?
     let composerOptions: ChatComposerOptions?
+    let projectId: String?
 
     enum CodingKeys: String, CodingKey {
-      case agentId, clientThreadId, eventId, model, serviceTier, reasoningEffort
+      case agentId, clientThreadId, eventId, model, serviceTier, reasoningEffort, projectId
       case connectorSelections, connectorSelectionPolicy, initialRemoteAccessOverrides
     }
 
@@ -335,6 +331,7 @@ public actor ChatCommands {
       try container.encode(model, forKey: .model)
       try container.encodeIfPresent(serviceTier, forKey: .serviceTier)
       try container.encodeIfPresent(reasoningEffort, forKey: .reasoningEffort)
+      try container.encodeIfPresent(projectId, forKey: .projectId)
       if composerOptions?.chatAccountAccess != true {
         try container.encodeIfPresent(
           composerOptions?.connectorSelections, forKey: .connectorSelections)
