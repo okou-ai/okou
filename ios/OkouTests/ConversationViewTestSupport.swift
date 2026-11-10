@@ -33,7 +33,7 @@ func eventually(
     // XCTest evaluates on the creating main run loop. Observe native readiness
     // without requiring rendering or repeating the action under test.
     let ready = XCTNSPredicateExpectation(
-      predicate: NSPredicate { _, _ in MainActor.assumeIsolated { predicate() } })
+      predicate: NSPredicate { _, _ in MainActor.assumeIsolated { predicate() } }, object: nil)
     result = await XCTWaiter.fulfillment(of: [ready], timeout: seconds)
   } else {
     result = .timedOut
