@@ -170,7 +170,7 @@ enum OkouMotion {
   static let runningCycle: Double = 2.4
   /// One sweep of a working title's band (`OkouShimmerText`): faster than the web's 3.5 s
   /// thinking label, so a working chat is obvious in a list read at a glance.
-  static let shimmerText: Double = 2
+  static let shimmerText: Double = 1.5
   /// Streamed text is published at most this often so a row is not re-measured per chunk.
   static let streamFlush = Duration.milliseconds(120)
   /// Routine sync finishes sooner; only a slow sync shows its banner.

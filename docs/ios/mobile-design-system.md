@@ -124,7 +124,7 @@ not copied from CSS and are not all mandated by Apple.
 | Controls     | Minimum interactive area 44 (`minimumTarget`); large form control 52; sidebar row 48; grouped row 52 (`groupedRow`); inline content action 36 tall × 44 wide; status column 22; filter chip 36; catalog logo tile 44 / 64 with a 32 pt add control; dictation waveform 28 tall (3 pt bars, 2 pt gaps); labels can grow vertically |
 | Layout       | Page inset 24 (`pageInset`) is the one leading edge for a screen's header, section headings, rows and footer; readable single-column width 440; respect safe areas and keyboard avoidance                                                                                                                                         |
 | Icons        | Canonical Lucide 24-unit paths; native 2-unit stroke. Compiled image intrinsic size is 20 pt for system menu hosts. Explicit SwiftUI geometry follows the role table below.                                                                                                                                                       |
-| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 2 s working shimmer, fold spring, 50 ms waveform sample, 25 % sidebar parallax)                                                         |
+| Motion       | Press feedback 150 ms, ordinary transition 250 ms; honor Reduce Motion; product-specific motion is ported from Web with its timing as `OkouMotion` tokens (greeting words, running cycle, 1.5 s working shimmer, fold spring, 50 ms waveform sample, 25 % sidebar parallax)                                                       |
 | Elevation    | No shadows on in-flow content. Only surfaces floating over content (suggestion panels) take `OkouElevation.floating*` (8 % black, radius 16, y 6)                                                                                                                                                                                 |
 | Haptics      | `sensoryFeedback` only for committed moments: send (light impact), stop (medium), success of a copy/approval/send, error, sidebar open/close (selection). Never on scroll or typing                                                                                                                                               |
 
@@ -433,11 +433,11 @@ single floating line, and colour is a small accent for status only.
   (sky-600) dot breathing between 0.64× / 34 % and 0.88× / 52 % with a ring that
   spreads to 1.56× once per 2.4 s cycle. All indicators share one clock. It is the
   transcript's "working" line.
-- **Working text** uses `OkouShimmerText`, the web's `ShimmerText` made stronger for a list
-  read at a glance: the text in `placeholder` grey with a band of `foreground` (flat across
-  42–58 % of a gradient twice the text's width, about a third of the text, fading out by
-  30 % and 70 %) sweeping left to right once per 2 s (`OkouMotion.shimmerText`; the web's
-  thinking label takes 3.5 s), so a band is crossing for nearly all of every cycle. Only the
+- **Working text** uses `OkouShimmerText`: the text stays in `foreground` and a
+  soft-edged band of `placeholder` grey sweeps left to right once per 1.5 s
+  (`OkouMotion.shimmerText`; the web's thinking label takes 3.5 s). On a gradient twice the
+  text's width the band fades in from 28 %, is grey across 40–60 % and fades out by 72 %, so
+  part of the title lightens at a time with soft edges and never reads as a grey block. Only the
   gradient moves, never the glyphs. Under Reduce Motion the text breathes like a skeleton
   (1 → 0.7 → 1 over 2 s) instead.
 - `OkouUsageMeter` is the one allowance row: name left, "80% remaining" right
@@ -590,7 +590,7 @@ Every shared view, in the same groups. Feature folders keep only views bound to 
 | Component                                | Use / states                                                                                                                                                                     |
 | ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `OkouRunningIndicator`                   | Web's breathing running dot, the transcript's working line                                                                                                                       |
-| `OkouShimmerText`                        | Working text: a band of `foreground` sweeping across `placeholder` grey every 2 s, stronger than the web's thinking label (`okouShimmerText()`)                                  |
+| `OkouShimmerText`                        | Working text: a soft-edged band of `placeholder` grey sweeping across `foreground` text every 1.5 s (`okouShimmerText()`)                                                        |
 | `OkouLoadErrorRow` / `OkouLoadingRow`    | A failed read (muted sentence + quiet Try again) and a loading line (small muted spinner + label) inside lists, sheets and cards                                                 |
 | `OkouChatSkeleton` / `OkouSkeletonBlock` | A chat's first load as the web draws it: placeholder exchanges in `skeleton` grey, shimmering as one (`okouShimmer()`)                                                           |
 | `OkouBanner`                             | In-flow status line: hairline card, glyph, footnote sentence, text actions, optional ✕; `.status` / `.problem`, never red                                                        |
