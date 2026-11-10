@@ -257,6 +257,10 @@ import {
 import { WorkflowTooltip } from "./workflows-page.tsx";
 import { AutomationListIcon } from "../okou-page/workflow-automations-page.tsx";
 import { emptyAutomationsImg } from "../okou-page/platform-assets.ts";
+import {
+  switchAutomationNotificationWorkspace$,
+  workflowAutomationNotificationAccess$,
+} from "../../signals/workflows-page/workflow-automation-notification.ts";
 import { WorkflowWebhookUpgradeDialog } from "./workflow-webhook-upgrade-dialog.tsx";
 import {
   GoogleCalendarRecoveryDialogs,
@@ -954,6 +958,105 @@ function copyText(value: string): void {
   detach(writeToClipboard(value), Reason.DomCallback);
 }
 
+export function WorkflowAutomationNotificationPage() {
+  const { t } = useTranslation();
+  const access = useLoadable(workflowAutomationNotificationAccess$);
+  const retry = useSet(reloadWorkflows$);
+  const signal = useGet(pageSignal$);
+  const [switching, switchWorkspace] = useLoadableSet(
+    switchAutomationNotificationWorkspace$,
+  );
+  if (access.state === "hasData" && access.data.status === "ready") {
+    return <WorkflowDetailPage />;
+  }
+  return (
+    <DetailPageShell>
+      <DetailPageHeader>
+        <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
+          {t(($) => {
+            return $.userNotifications.automationDisabled.viewAutomation;
+          })}
+        </h1>
+      </DetailPageHeader>
+      <DetailPageMain>
+        <div className="mx-auto flex max-w-[900px] flex-col items-start gap-4 text-sm">
+          {access.state === "loading" ? (
+            <p role="status" className="text-muted-foreground">
+              {t(($) => {
+                return $.userNotifications.automationDisabled.loadingAutomation;
+              })}
+            </p>
+          ) : access.state === "hasError" ? (
+            <>
+              <p role="status" className="text-muted-foreground">
+                {t(($) => {
+                  return $.userNotifications.automationDisabled.loadFailed;
+                })}
+              </p>
+              <Button variant="outline" onClick={retry}>
+                {t(($) => {
+                  return $.userNotifications.retry;
+                })}
+              </Button>
+            </>
+          ) : access.data.status === "switchWorkspace" ? (
+            <>
+              <p className="text-muted-foreground">
+                {t(
+                  ($) => {
+                    return $.userNotifications.automationDisabled
+                      .otherWorkspace;
+                  },
+                  {
+                    workspace:
+                      access.data.workspaceName.trim() ||
+                      t(($) => {
+                        return $.userNotifications.automationDisabled
+                          .workspaceFallback;
+                      }),
+                  },
+                )}
+              </p>
+              <Button
+                variant="neutral"
+                pending={switching.state === "loading"}
+                onClick={() => {
+                  detach(switchWorkspace(signal), Reason.DomCallback);
+                }}
+              >
+                {t(($) => {
+                  return $.userNotifications.automationDisabled.switchWorkspace;
+                })}
+              </Button>
+              {switching.state === "hasError" && (
+                <p role="status" className="text-destructive">
+                  {t(($) => {
+                    return $.userNotifications.automationDisabled.switchFailed;
+                  })}
+                </p>
+              )}
+            </>
+          ) : (
+            <p role="status" className="text-muted-foreground">
+              {t(($) => {
+                return $.userNotifications.automationDisabled.unavailable;
+              })}
+            </p>
+          )}
+          <Link
+            pathname={ROUTES.workflows}
+            className={buttonVariants({ variant: "quiet", size: "sm" })}
+          >
+            {t(($) => {
+              return $.userNotifications.automationDisabled.backToWorkflows;
+            })}
+          </Link>
+        </div>
+      </DetailPageMain>
+    </DetailPageShell>
+  );
+}
+
 export function WorkflowDetailPage() {
   const { t } = useTranslation();
   const brandName = useGet(brandName$);
@@ -993,14 +1096,31 @@ function WorkflowDetailContent() {
   return (
     <DetailPageShell>
       <WorkflowBreadcrumb detail={detail} />
-      <DetailHeader
-        detail={detail}
-        activeTab={activeTab}
-        onTabChange={setActiveTab}
-      />
+      {detail?.official ? (
+        <DetailPageHeader>
+          <h1 className="text-lg font-semibold tracking-tight sm:text-xl">
+            {workflowTitle(detail)}
+          </h1>
+          <p className="mt-2 text-sm text-muted-foreground">
+            {i18n.t(($) => {
+              return $.userNotifications.automationDisabled.systemManaged;
+            })}
+          </p>
+        </DetailPageHeader>
+      ) : (
+        <DetailHeader
+          detail={detail}
+          activeTab={activeTab}
+          onTabChange={setActiveTab}
+        />
+      )}
       <DetailPageMain>
         {detail ? (
-          <WorkflowTabContent activeTab={activeTab} detail={detail} />
+          detail.official ? (
+            <AutomationsSection detail={detail} readOnly />
+          ) : (
+            <WorkflowTabContent activeTab={activeTab} detail={detail} />
+          )
         ) : (
           <p className="text-sm text-muted-foreground">
             {i18n.t(($) => {
@@ -4481,8 +4601,10 @@ function CreateChatRunFinishedAutomationDialog({
 
 function AutomationsSection({
   detail,
+  readOnly = false,
 }: {
   readonly detail: WorkflowDetailResponse;
+  readonly readOnly?: boolean;
 }) {
   const createDialog = useGet(workflowAutomationCreateDialog$);
   const setCreateDialog = useSet(setWorkflowAutomationCreateDialog$);
@@ -4503,8 +4625,12 @@ function AutomationsSection({
                 <AutomationRow
                   key={automation.id}
                   automation={automation}
-                  canOperate={automation.ownerUserId === currentUserId}
-                  canEditStructure={automation.ownerUserId === currentUserId}
+                  canOperate={
+                    !readOnly && automation.ownerUserId === currentUserId
+                  }
+                  canEditStructure={
+                    !readOnly && automation.ownerUserId === currentUserId
+                  }
                   displayTimezone={displayTimezone}
                   showDivider={index < automations.length - 1}
                 />
@@ -4538,12 +4664,14 @@ function AutomationsSection({
           </div>
         )}
       </div>
-      <WorkflowAutomationCreateDialogs
-        workflowId={detail.id}
-        displayTimezone={displayTimezone}
-        createDialog={createDialog}
-        setCreateDialog={setCreateDialog}
-      />
+      {!readOnly && (
+        <WorkflowAutomationCreateDialogs
+          workflowId={detail.id}
+          displayTimezone={displayTimezone}
+          createDialog={createDialog}
+          setCreateDialog={setCreateDialog}
+        />
+      )}
     </section>
   );
 }
@@ -8025,6 +8153,9 @@ function AutomationRow({
       <div
         ref={targeted ? scrollRef : undefined}
         data-automation-id={automation.id}
+        role="group"
+        aria-label={title}
+        tabIndex={targeted ? -1 : undefined}
         aria-current={targeted ? "true" : undefined}
         className={cn(
           "group grid min-w-0 grid-cols-1 gap-3 px-5 py-4 transition-colors first:rounded-t-2xl last:rounded-b-2xl hover:bg-state-hover sm:grid-cols-[minmax(0,1.2fr)_minmax(9rem,0.9fr)_minmax(13.5rem,1.1fr)_auto_7.75rem] sm:items-center sm:gap-4",

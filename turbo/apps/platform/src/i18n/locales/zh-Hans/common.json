@@ -6451,6 +6451,27 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "返回工作流",
+      "disabledAt": "停用时间：{{time}}",
+      "disabledImpact": "该自动化已停止按原计划运行。请先查看失败信息，再明确选择是否重新启用。",
+      "historical": "这是一条历史记录。请打开自动化查看当前状态。阅读此消息不会启用或运行自动化。",
+      "loadFailed": "无法加载此自动化",
+      "loadingAutomation": "正在加载自动化",
+      "nameFallback": "定时自动化",
+      "otherWorkspace": "此自动化位于 {{workspace}}。请切换工作区以查看。",
+      "reason_one": "连续执行失败 {{count}} 次后，已被系统自动停用。",
+      "reason_other": "连续执行失败 {{count}} 次后，已被系统自动停用。",
+      "recoveryImpact": "该自动化已暂停，系统已安排尝试恢复。请先查看当前状态，再进行更改。",
+      "switchFailed": "无法切换工作区。请重试或使用工作区切换器。",
+      "switchWorkspace": "切换工作区",
+      "systemManaged": "此自动化由系统管理。下方显示其当前状态。",
+      "systemSource": "系统通知",
+      "unavailable": "找不到此自动化，或你无权访问",
+      "viewAutomation": "查看自动化",
+      "workspace": "工作区",
+      "workspaceFallback": "原工作区"
+    },
     "close": "关闭",
     "countUnavailable": "未读数量暂不可用",
     "detailFailed": "未能加载这条通知",

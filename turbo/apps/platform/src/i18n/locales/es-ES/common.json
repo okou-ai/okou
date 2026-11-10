@@ -6541,6 +6541,28 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "Volver a los flujos de trabajo",
+      "disabledAt": "Desactivada el {{time}}",
+      "disabledImpact": "Dejó de ejecutarse según su programación anterior. Revisa la información de los errores antes de volver a activarla explícitamente.",
+      "historical": "Este es un registro de un evento pasado. Abre la automatización para comprobar su estado actual. Leer este mensaje no la activa ni la ejecuta.",
+      "loadFailed": "No se pudo cargar esta automatización",
+      "loadingAutomation": "Cargando automatización",
+      "nameFallback": "Automatización programada",
+      "otherWorkspace": "Esta automatización está en {{workspace}}. Cambia de espacio de trabajo para verla.",
+      "reason_one": "Se desactivó automáticamente tras {{count}} error de ejecución consecutivo.",
+      "reason_many": "Se desactivó automáticamente tras {{count}} errores de ejecución consecutivos.",
+      "reason_other": "Se desactivó automáticamente tras {{count}} errores de ejecución consecutivos.",
+      "recoveryImpact": "Se pausó y el sistema programó un intento de recuperación. Comprueba su estado actual antes de hacer cambios.",
+      "switchFailed": "No se pudo cambiar de espacio de trabajo. Inténtalo de nuevo o usa el selector de espacios de trabajo.",
+      "switchWorkspace": "Cambiar de espacio de trabajo",
+      "systemManaged": "El sistema gestiona esta automatización. Su estado actual se muestra a continuación.",
+      "systemSource": "Notificación del sistema",
+      "unavailable": "No se encontró la automatización o no tienes acceso",
+      "viewAutomation": "Ver automatización",
+      "workspace": "Espacio de trabajo",
+      "workspaceFallback": "Espacio de trabajo original"
+    },
     "close": "Cerrar",
     "countUnavailable": "Recuento de notificaciones sin leer no disponible",
     "detailFailed": "No se pudo cargar esta notificación",

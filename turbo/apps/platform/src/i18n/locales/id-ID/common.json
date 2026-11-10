@@ -6451,6 +6451,27 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "Kembali ke alur kerja",
+      "disabledAt": "Dinonaktifkan pada {{time}}",
+      "disabledImpact": "Otomatisasi berhenti berjalan sesuai jadwal sebelumnya. Tinjau informasi kegagalan sebelum mengaktifkannya kembali secara eksplisit.",
+      "historical": "Ini adalah catatan peristiwa sebelumnya. Buka otomatisasi untuk memeriksa status saat ini. Membaca pesan ini tidak mengaktifkan atau menjalankannya.",
+      "loadFailed": "Tidak dapat memuat otomatisasi ini",
+      "loadingAutomation": "Memuat otomatisasi",
+      "nameFallback": "Otomatisasi terjadwal",
+      "otherWorkspace": "Otomatisasi ini berada di {{workspace}}. Ganti ruang kerja untuk melihatnya.",
+      "reason_one": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",
+      "reason_other": "Dinonaktifkan otomatis setelah {{count}} kegagalan eksekusi berturut-turut.",
+      "recoveryImpact": "Otomatisasi dijeda dan sistem telah menjadwalkan upaya pemulihan. Periksa status saat ini sebelum membuat perubahan.",
+      "switchFailed": "Tidak dapat mengganti ruang kerja. Coba lagi atau gunakan pemilih ruang kerja.",
+      "switchWorkspace": "Ganti ruang kerja",
+      "systemManaged": "Otomatisasi ini dikelola sistem. Status saat ini ditampilkan di bawah.",
+      "systemSource": "Notifikasi sistem",
+      "unavailable": "Otomatisasi tidak ditemukan atau Anda tidak memiliki akses",
+      "viewAutomation": "Lihat otomatisasi",
+      "workspace": "Ruang kerja",
+      "workspaceFallback": "Ruang kerja asal"
+    },
     "close": "Tutup",
     "countUnavailable": "Jumlah notifikasi belum dibaca tidak tersedia",
     "detailFailed": "Tidak dapat memuat notifikasi ini",

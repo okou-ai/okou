@@ -348,6 +348,14 @@ const FEATURE_SWITCHES: Record<FeatureSwitchKey, FeatureSwitch> = {
     enabledUserHashes: ["032a75d8"], // Bingjie's account, including API contexts without email
     enabledEmailHashes: ["6490c77f"], // bingjie@okou.ai
   },
+  [FeatureSwitchKey.AutomationDisableNotifications]: {
+    maintainer: "bingjie@okou.ai",
+    displayName: "Automation disable notifications",
+    description:
+      "Notify automation owners in the home bell when consecutive failures automatically disable a recurring schedule.",
+    enabled: false,
+    enabledOrgIdHashes: STAFF_ORG_ID_HASHES,
+  },
   [FeatureSwitchKey.UserNotifications]: {
     maintainer: "yuma@okou.ai",
     displayName: "In-app notifications",

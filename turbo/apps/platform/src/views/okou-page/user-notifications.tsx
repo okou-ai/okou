@@ -7,7 +7,13 @@ import type {
   UserNotification,
   UserNotificationSummary,
 } from "@okouai/api-contracts/contracts/user-notifications";
-import { useGet, useLastLoadable, useLoadable, useSet } from "ccstate-react";
+import {
+  useGet,
+  useLastLoadable,
+  useLastResolved,
+  useLoadable,
+  useSet,
+} from "ccstate-react";
 import { useLoadableSet } from "ccstate-react/experimental";
 import { useTranslation } from "react-i18next";
 import { Bell, ChevronRight } from "lucide-react";
@@ -18,7 +24,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@okouai/ui/components/ui/dialog";
-import { Button } from "@okouai/ui/components/ui/button";
+import { Button, buttonVariants } from "@okouai/ui/components/ui/button";
 import { IconButton } from "@okouai/ui/components/ui/icon-button";
 import {
   Popover,
@@ -32,6 +38,7 @@ import { FeatureSwitchKey } from "@okouai/core/feature-switch-key";
 import { featureSwitch$ } from "../../signals/external/feature-switch.ts";
 import {
   notificationInbox$,
+  notificationWorkspaceNames$,
   type NotificationInbox,
 } from "../../signals/okou-page/user-notifications.ts";
 import { pageSignal$ } from "../../signals/page-signal.ts";
@@ -40,10 +47,21 @@ import {
   formatChatTimestamp,
   formatLocalizedNumber,
   formatRelativeTimestamp,
+  resolvedAppLocale,
 } from "../../i18n/format.ts";
 import { Markdown } from "../components/markdown.tsx";
 import { CarouselNavigation } from "../components/carousel-navigation.tsx";
 import { SIDEBAR_DESKTOP_MEDIA_QUERY } from "./sidebar-breakpoint.ts";
+import { userPreferences$ } from "../../signals/okou-page/settings/user-preferences.ts";
+import { ROUTES } from "../../signals/route-paths.ts";
+import { Link } from "../router/link.tsx";
+
+type AutomationDisabledMetadata = NonNullable<
+  Extract<
+    UserNotification["payload"],
+    { type: "rich_text" }
+  >["automationDisabled"]
+>;
 
 function InboxSkeleton() {
   const { t } = useTranslation();
@@ -101,21 +119,48 @@ function ReadError({ inbox }: { readonly inbox: NotificationInbox }) {
   );
 }
 
-function NotificationHeader({ item }: { readonly item: UserNotification }) {
+function NotificationHeader({
+  item,
+  automationDisabled,
+}: {
+  readonly item: UserNotification;
+  readonly automationDisabled?: AutomationDisabledMetadata;
+}) {
   const { t } = useTranslation();
+  const preferences = useLastResolved(userPreferences$);
+  const timestamp = automationDisabled?.disabledAt ?? item.createdAt;
   return (
     <DialogHeader className="shrink-0 gap-3 pr-7 text-left">
       <DialogDescription>
         {t(($) => {
-          return $.userNotifications.sender;
+          return automationDisabled
+            ? $.userNotifications.automationDisabled.systemSource
+            : $.userNotifications.sender;
         })}
       </DialogDescription>
       <DialogTitle className="text-2xl leading-tight">{item.title}</DialogTitle>
       <time
-        dateTime={item.createdAt}
+        dateTime={timestamp}
         className="block text-xs text-muted-foreground"
       >
-        {formatChatTimestamp(item.createdAt)}
+        {automationDisabled
+          ? t(
+              ($) => {
+                return $.userNotifications.automationDisabled.disabledAt;
+              },
+              {
+                time: new Date(timestamp).toLocaleString(resolvedAppLocale(), {
+                  year: "numeric",
+                  month: "short",
+                  day: "numeric",
+                  hour: "numeric",
+                  minute: "2-digit",
+                  timeZoneName: "short",
+                  ...(preferences ? { timeZone: preferences.timezone } : {}),
+                }),
+              },
+            )
+          : formatChatTimestamp(timestamp)}
       </time>
     </DialogHeader>
   );
@@ -142,6 +187,85 @@ function RichTextNotification({
             mediaPreview={false}
             className="text-sm! leading-relaxed!"
           />
+        </div>
+      </div>
+      <ReadError inbox={inbox} />
+    </>
+  );
+}
+
+function AutomationDisabledNotification({
+  inbox,
+  item,
+  metadata,
+}: {
+  readonly inbox: NotificationInbox;
+  readonly item: UserNotification;
+  readonly metadata: AutomationDisabledMetadata;
+}) {
+  const { t } = useTranslation();
+  const mounted = useSet(inbox.detailRef$);
+  const workspaceNames = useLastResolved(notificationWorkspaceNames$);
+  const workspaceName =
+    metadata.workspaceName?.trim() ||
+    workspaceNames?.get(metadata.workspaceId)?.trim() ||
+    t(($) => {
+      return $.userNotifications.automationDisabled.workspaceFallback;
+    });
+  const automationName =
+    metadata.automationName.trim() ||
+    t(($) => {
+      return $.userNotifications.automationDisabled.nameFallback;
+    });
+  return (
+    <>
+      <div ref={mounted} className="flex min-h-0 min-w-0 flex-1 flex-col gap-4">
+        <NotificationHeader item={item} automationDisabled={metadata} />
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto overscroll-contain text-sm leading-relaxed">
+          <h2 className="break-words font-semibold">{automationName}</h2>
+          <p>
+            {t(
+              ($) => {
+                return $.userNotifications.automationDisabled.reason;
+              },
+              { count: metadata.consecutiveFailures },
+            )}
+          </p>
+          <p>
+            {t(($) => {
+              return metadata.recoveryScheduled
+                ? $.userNotifications.automationDisabled.recoveryImpact
+                : $.userNotifications.automationDisabled.disabledImpact;
+            })}
+          </p>
+          <dl className="space-y-1">
+            <dt className="text-xs text-muted-foreground">
+              {t(($) => {
+                return $.userNotifications.automationDisabled.workspace;
+              })}
+            </dt>
+            <dd className="break-words">{workspaceName}</dd>
+          </dl>
+          <p className="text-xs text-muted-foreground">
+            {t(($) => {
+              return $.userNotifications.automationDisabled.historical;
+            })}
+          </p>
+          <Link
+            pathname={ROUTES.workflowDetailAutomations}
+            options={{
+              pathParams: { workflowId: metadata.workflowId },
+              searchParams: new URLSearchParams({
+                automationId: metadata.automationId,
+                workspaceId: metadata.workspaceId,
+              }),
+            }}
+            className={buttonVariants({ variant: "neutral", size: "sm" })}
+          >
+            {t(($) => {
+              return $.userNotifications.automationDisabled.viewAutomation;
+            })}
+          </Link>
         </div>
       </div>
       <ReadError inbox={inbox} />
@@ -397,6 +521,17 @@ function NotificationDetail({ inbox }: { readonly inbox: NotificationInbox }) {
   // own decision UI; a read receipt is never a confirm/approve operation.
   switch (item.payload.type) {
     case "rich_text": {
+      if (item.payload.automationDisabled) {
+        // Reading a persisted message is independent of the writer's rollout
+        // switch; switching it off must not erase historical details.
+        return (
+          <AutomationDisabledNotification
+            inbox={inbox}
+            item={item}
+            metadata={item.payload.automationDisabled}
+          />
+        );
+      }
       return (
         <RichTextNotification
           inbox={inbox}

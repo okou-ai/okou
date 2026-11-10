@@ -6472,6 +6472,27 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "Zurück zu Workflows",
+      "disabledAt": "Deaktiviert am {{time}}",
+      "disabledImpact": "Sie wird nicht mehr nach dem bisherigen Zeitplan ausgeführt. Prüfe die Fehlerinformationen, bevor du sie ausdrücklich wieder aktivierst.",
+      "historical": "Dies ist ein vergangenes Ereignis. Öffne die Automatisierung, um ihren aktuellen Status zu prüfen. Das Lesen aktiviert oder startet sie nicht.",
+      "loadFailed": "Diese Automatisierung konnte nicht geladen werden",
+      "loadingAutomation": "Automatisierung wird geladen",
+      "nameFallback": "Geplante Automatisierung",
+      "otherWorkspace": "Diese Automatisierung befindet sich in {{workspace}}. Wechsle den Arbeitsbereich, um sie anzuzeigen.",
+      "reason_one": "Nach {{count}} fehlgeschlagener Ausführung in Folge automatisch deaktiviert.",
+      "reason_other": "Nach {{count}} fehlgeschlagenen Ausführungen in Folge automatisch deaktiviert.",
+      "recoveryImpact": "Sie wurde pausiert und das System hat einen Wiederherstellungsversuch geplant. Prüfe vor Änderungen ihren aktuellen Status.",
+      "switchFailed": "Der Arbeitsbereich konnte nicht gewechselt werden. Versuche es erneut oder nutze die Arbeitsbereichsauswahl.",
+      "switchWorkspace": "Arbeitsbereich wechseln",
+      "systemManaged": "Diese Automatisierung wird vom System verwaltet. Ihr aktueller Status wird unten angezeigt.",
+      "systemSource": "Systembenachrichtigung",
+      "unavailable": "Automatisierung nicht gefunden oder kein Zugriff",
+      "viewAutomation": "Automatisierung anzeigen",
+      "workspace": "Arbeitsbereich",
+      "workspaceFallback": "Ursprünglicher Arbeitsbereich"
+    },
     "close": "Schließen",
     "countUnavailable": "Anzahl ungelesener Benachrichtigungen nicht verfügbar",
     "detailFailed": "Diese Benachrichtigung konnte nicht geladen werden",

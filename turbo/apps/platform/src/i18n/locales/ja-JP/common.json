@@ -6451,6 +6451,27 @@
     }
   },
   "userNotifications": {
+    "automationDisabled": {
+      "backToWorkflows": "ワークフローに戻る",
+      "disabledAt": "無効化日時：{{time}}",
+      "disabledImpact": "以前のスケジュールでの実行を停止しました。失敗の情報を確認してから、必要に応じて再度有効にしてください。",
+      "historical": "これは過去の記録です。現在の状態は自動化を開いて確認してください。このメッセージを読んでも、自動化は有効化・実行されません。",
+      "loadFailed": "この自動化を読み込めませんでした",
+      "loadingAutomation": "自動化を読み込み中",
+      "nameFallback": "スケジュールされた自動化",
+      "otherWorkspace": "この自動化は {{workspace}} にあります。ワークスペースを切り替えて確認してください。",
+      "reason_one": "実行が {{count}} 回連続で失敗したため、自動的に無効になりました。",
+      "reason_other": "実行が {{count}} 回連続で失敗したため、自動的に無効になりました。",
+      "recoveryImpact": "一時停止され、システムが復旧の試行を予定しています。変更する前に現在の状態を確認してください。",
+      "switchFailed": "ワークスペースを切り替えられませんでした。再試行するか、ワークスペース切り替えを使用してください。",
+      "switchWorkspace": "ワークスペースを切り替える",
+      "systemManaged": "この自動化はシステムが管理しています。現在の状態を以下に表示します。",
+      "systemSource": "システム通知",
+      "unavailable": "自動化が見つからないか、アクセス権がありません",
+      "viewAutomation": "自動化を表示",
+      "workspace": "ワークスペース",
+      "workspaceFallback": "元のワークスペース"
+    },
     "close": "閉じる",
     "countUnavailable": "未読件数を取得できません",
     "detailFailed": "この通知を読み込めませんでした",
