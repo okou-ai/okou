@@ -15,12 +15,14 @@ struct PermissionBatchCard: View {
 
 private struct PermissionBatchCardContent: View {
   @Bindable var store: PermissionBatchStore
+  let loadsState: Bool
   @Environment(\.scenePhase) private var scenePhase
   @State private var showsDetails = false
   @LoadableValue private var page: Loadable<ChatPermissionBatchSnapshot>
 
   init(store: PermissionBatchStore, loadsState: Bool) {
     self.store = store
+    self.loadsState = loadsState
     _page = LoadableValue(task: loadsState ? store.resource.value : store.resource.unrequested)
   }
 
@@ -98,7 +100,7 @@ private struct PermissionBatchCardContent: View {
         .presentationDragIndicator(.visible)
     }
     .onChange(of: scenePhase) { _, phase in
-      if phase == .active && store.isActive {
+      if phase == .active && store.isActive && loadsState {
         Task { await store.refresh() }
       }
     }
