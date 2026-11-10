@@ -21,7 +21,6 @@ from .models import (
     MAX_RETAINED_USAGE_BATCH_RETRIES,
     UsageEvent,
     UsageFlushTrigger,
-    _BatchAdmissionResult,
     _BatchEnqueueError,
     _DeliveryCompletion,
     _PendingBatch,
@@ -295,7 +294,7 @@ class UsageEventBuffer:
 
             started_at = time.monotonic()
             try:
-                admission_result = self._enqueue_pending_flush(
+                admitted_batch_count = self._enqueue_pending_flush(
                     pending_flush,
                     trigger,
                     started_at=started_at,
@@ -304,7 +303,7 @@ class UsageEventBuffer:
                 duration_ms = _elapsed_ms(started_at)
                 with self._lock:
                     retain_result = self._state.complete_admission(
-                        pending_flush, exc.admission_result
+                        pending_flush, exc.admitted_batch_count
                     )
                     timer_to_start = self._prepare_failed_flush_retention_locked(
                         trigger,
@@ -337,10 +336,10 @@ class UsageEventBuffer:
                 )
                 raise
 
-            flushed_batch_count += admission_result.admitted_batch_count
+            flushed_batch_count += admitted_batch_count
             timer_to_start = None
             with self._lock:
-                retain_result = self._state.complete_admission(pending_flush, admission_result)
+                retain_result = self._state.complete_admission(pending_flush, admitted_batch_count)
                 if retain_result.retained_batches and trigger != "shutdown":
                     timer_to_start = self._schedule_timer_if_buffered_locked()
                 self._sync_buffered_counter_locked()
@@ -352,7 +351,7 @@ class UsageEventBuffer:
                 )
             if timer_to_start is not None:
                 self._start_timer(timer_to_start)
-            if admission_result.retained_batches:
+            if admitted_batch_count < len(pending_flush.batches):
                 return flushed_batch_count
 
     def _prepare_failed_flush_retention_locked(
@@ -408,11 +407,11 @@ class UsageEventBuffer:
         trigger: UsageFlushTrigger,
         *,
         started_at: float,
-    ) -> _BatchAdmissionResult:
+    ) -> int:
         _log_flush_summaries(
             "started", trigger, pending_flush.flush_sequence, pending_flush.summaries
         )
-        admission_result = _enqueue_batches(
+        admitted_batch_count = _enqueue_batches(
             pending_flush.batches,
             (
                 self._enqueue_webhook
@@ -425,7 +424,9 @@ class UsageEventBuffer:
                 trigger,
             ),
         )
-        _apply_retained_batch_counts(pending_flush.summaries, admission_result.retained_batches)
+        _apply_retained_batch_counts(
+            pending_flush.summaries, pending_flush.batches[admitted_batch_count:]
+        )
         _log_flush_summaries(
             "enqueued",
             trigger,
@@ -433,7 +434,7 @@ class UsageEventBuffer:
             pending_flush.summaries,
             duration_ms=_elapsed_ms(started_at),
         )
-        return admission_result
+        return admitted_batch_count
 
     def _make_delivery_outcome_callback(
         self,
@@ -552,7 +553,8 @@ def _enqueue_batches(
     batches: list[_PendingBatch],
     enqueue_webhook: _EnqueueWebhook,
     delivery_outcome_callback: Callable[[_PendingBatch], _DeliveryOutcomeCallback],
-) -> _BatchAdmissionResult:
+) -> int:
+    """Return the admitted prefix length; the pending flush keeps the batch list."""
     for index, pending_batch in enumerate(batches):
         batch = pending_batch.batch
         try:
@@ -565,19 +567,7 @@ def _enqueue_batches(
                 delivery_outcome_callback(pending_batch),
             )
         except Exception as exc:
-            raise _BatchEnqueueError(
-                exc,
-                _BatchAdmissionResult(
-                    admitted_batch_count=index,
-                    retained_batches=batches[index:],
-                ),
-            ) from exc
+            raise _BatchEnqueueError(exc, index) from exc
         if admitted is False:
-            return _BatchAdmissionResult(
-                admitted_batch_count=index,
-                retained_batches=batches[index:],
-            )
-    return _BatchAdmissionResult(
-        admitted_batch_count=len(batches),
-        retained_batches=[],
-    )
+            return index
+    return len(batches)

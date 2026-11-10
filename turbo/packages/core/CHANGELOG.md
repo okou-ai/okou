@@ -1,5 +1,19 @@
 # Changelog
 
+## [8.825.5](https://github.com/okou-ai/okou/compare/core-v8.825.4...core-v8.825.5) (2026-11-10)
+
+
+### Bug Fixes
+
+* **chat:** allow direct access to hidden chats without listing them ([#46322](https://github.com/okou-ai/okou/issues/46322)) ([2eba399](https://github.com/okou-ai/okou/commit/2eba399504c64b51bcce672f760712192b1cc21e))
+
+
+### Dependencies
+
+* The following workspace dependencies were updated
+  * dependencies
+    * @okouai/api-contracts bumped to 2.47.0
+
 ## [8.825.4](https://github.com/okou-ai/okou/compare/core-v8.825.3...core-v8.825.4) (2026-11-10)
 
 

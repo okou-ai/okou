@@ -1,65 +1,83 @@
-"""Exercise installer publication and integrity with an external download fixture."""
+"""Exercise native-linter publication, provenance and offline verification."""
 
 import hashlib
+import json
 import os
-from pathlib import Path
 import shutil
 import subprocess
 import tempfile
 import unittest
-import zipfile
+from pathlib import Path
 
 
 class InstallerTests(unittest.TestCase):
     def setUp(self):
-        temporary = tempfile.TemporaryDirectory(prefix="swiftlint install ")
+        temporary = tempfile.TemporaryDirectory(prefix="native lint install ")
         self.addCleanup(temporary.cleanup)
         self.root = Path(temporary.name)
         self.ios = self.root / "ios"
-        scripts = self.ios / "scripts"
-        scripts.mkdir(parents=True)
         source = Path(__file__).resolve().parent
-        shutil.copy2(source / "install-swiftlint.sh", scripts)
-        self.installer = scripts / "install-swiftlint.sh"
-        self.version = next(
-            line.removeprefix("version=")
-            for line in (source.parent / ".swiftlint-version").read_text().splitlines()
-            if line.startswith("version=")
+        shutil.copytree(
+            source.parent / "Tools" / "SwiftLint", self.ios / "Tools" / "SwiftLint"
         )
-        self.archive = self.root / "release.zip"
-        with zipfile.ZipFile(self.archive, "w") as archive:
-            archive.writestr(
-                "swiftlint", f'#!/usr/bin/env bash\nprintf "{self.version}\\n"\n'
-            )
-            archive.writestr("LICENSE", "Fixture license\n")
-        self.pin(hashlib.sha256(self.archive.read_bytes()).hexdigest())
-        self.bin = self.root / "bin"
-        self.bin.mkdir()
-        self.command("uname", '#!/usr/bin/env bash\nprintf "Darwin\\n"\n')
-        self.command(
-            "curl",
-            '#!/usr/bin/env bash\nset -eu\n'
-            'while [[ "$1" != --output ]]; do shift; done\n'
-            'cp "$SWIFTLINT_TEST_ARCHIVE" "$2"\n',
+        (self.ios / "scripts").mkdir()
+        shutil.copy2(source / "install-swiftlint.sh", self.ios / "scripts")
+        self.installer = self.ios / "scripts" / "install-swiftlint.sh"
+        self.upstream = self.root / "upstream"
+        extension = self.upstream / "Source" / "SwiftLintExtraRules"
+        extension.mkdir(parents=True)
+        (extension / "Exports.swift").write_text("// Fixture upstream export\n")
+        (self.upstream / "LICENSE").write_text("Fixture license\n")
+        self.git("init", "--quiet")
+        self.git("add", ".")
+        self.git(
+            "-c",
+            "user.name=Fixture",
+            "-c",
+            "user.email=fixture@example.invalid",
+            "commit",
+            "-qm",
+            "fixture",
         )
+        self.revision = self.git("rev-parse", "HEAD").stdout.strip()
+        (self.ios / ".swiftlint-version").write_text(
+            f"version=0.65.1\nrevision={self.revision}\n"
+        )
+        cached_source = self.ios / ".tools" / "swiftlint" / "source" / self.revision
+        cached_source.parent.mkdir(parents=True)
+        shutil.move(self.upstream, cached_source)
+        self.compiler = self.root / "bin"
+        self.compiler.mkdir()
+        self.output = self.root / "output"
+        self.output.mkdir()
+        binary = self.output / "swiftlint"
+        binary.write_text('#!/usr/bin/env bash\nprintf "0.65.1\\n"\n')
+        binary.chmod(0o755)
+        swift = self.compiler / "swift"
+        swift.write_text(
+            "#!/usr/bin/env bash\nset -eu\n"
+            'if [[ "$*" == "--version" ]]; then echo "Fixture Swift";\n'
+            'elif [[ "$*" == *"--show-bin-path"* ]]; then echo "$SWIFTLINT_FIXTURE_OUTPUT";\n'
+            'elif [[ "$SWIFTLINT_FIXTURE_FAIL" == 1 ]]; then exit 9; fi\n'
+        )
+        swift.chmod(0o755)
         self.env = dict(
             os.environ,
-            PATH=f"{self.bin}:{os.environ['PATH']}",
-            SWIFTLINT_TEST_ARCHIVE=str(self.archive),
-        )
-        self.binary = self.ios / ".tools" / "swiftlint" / self.version / "swiftlint"
-
-    def command(self, name, content):
-        path = self.bin / name
-        path.write_text(content)
-        path.chmod(0o755)
-
-    def pin(self, checksum):
-        (self.ios / ".swiftlint-version").write_text(
-            f"version={self.version}\nsha256={checksum}\n"
+            PATH=f"{self.compiler}:{os.environ['PATH']}",
+            SWIFTLINT_FIXTURE_OUTPUT=str(self.output),
+            SWIFTLINT_FIXTURE_FAIL="0",
         )
 
-    def run_installer(self, *args):
+    def git(self, *args):
+        return subprocess.run(
+            ["git", *args],
+            cwd=self.upstream,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+
+    def invoke(self, *args):
         return subprocess.run(
             ["bash", str(self.installer), *args],
             cwd=self.root,
@@ -69,32 +87,62 @@ class InstallerTests(unittest.TestCase):
             check=False,
         )
 
-    def test_verified_install_is_available_offline(self):
-        installed = self.run_installer()
-        self.assertEqual(installed.returncode, 0, installed.stderr)
-        self.assertEqual(installed.stdout.strip(), str(self.binary))
-        self.assertEqual((self.binary.parent / "LICENSE").read_text(), "Fixture license\n")
-        self.command("curl", "#!/usr/bin/env bash\nexit 97\n")
-        cached = self.run_installer("--path-only")
+    def install(self):
+        result = self.invoke()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return Path(result.stdout.strip())
+
+    def test_installed_binary_is_available_offline(self):
+        binary = self.install()
+        self.assertEqual((binary.parent / "LICENSE").read_text(), "Fixture license\n")
+        receipt = json.loads((binary.parent / "receipt.json").read_text())
+        self.assertEqual(receipt["revision"], self.revision)
+        self.assertEqual(
+            receipt["sha256"], hashlib.sha256(binary.read_bytes()).hexdigest()
+        )
+        self.env["PATH"] = os.environ["PATH"]
+        cached = self.invoke("--path-only")
         self.assertEqual(cached.returncode, 0, cached.stderr)
-        self.assertEqual(cached.stdout, installed.stdout)
-        self.assertEqual(list(self.binary.parent.glob(".download.*")), [])
+        self.assertEqual(cached.stdout.strip(), str(binary))
 
-    def test_checksum_mismatch_does_not_publish_an_executable(self):
-        self.pin("0" * 64)
-        result = self.run_installer()
-        self.assertNotEqual(result.returncode, 0)
-        self.assertIn("checksum mismatch", result.stderr)
-        self.assertFalse(self.binary.exists())
-        self.assertEqual(list(self.binary.parent.glob(".download.*")), [])
-
-    def test_cached_version_must_match_pin(self):
-        self.binary.parent.mkdir(parents=True)
-        self.binary.write_text('#!/usr/bin/env bash\nprintf "0.0.0\\n"\n')
-        self.binary.chmod(0o755)
-        result = self.run_installer("--path-only")
+    def test_changed_rule_sources_reject_old_binary(self):
+        binary = self.install()
+        rules = self.ios / "Tools" / "SwiftLint" / "Rules"
+        (rules / "NewRule.swift").write_text("// A different rule build\n")
+        result = self.invoke("--verify", str(binary))
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("does not match", result.stderr)
+
+    def test_changed_binary_is_rejected(self):
+        binary = self.install()
+        binary.write_text('#!/usr/bin/env bash\nprintf "0.65.1\\n"\n# changed\n')
+        result = self.invoke("--path-only")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("does not match", result.stderr)
+
+    def test_wrong_version_is_not_published(self):
+        (self.output / "swiftlint").write_text(
+            '#!/usr/bin/env bash\nprintf "0.0.0\\n"\n'
+        )
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("version does not match", result.stderr)
+        self.assertEqual(
+            list((self.ios / ".tools" / "swiftlint").glob("*/receipt.json")), []
+        )
+
+    def test_failed_compilation_is_not_published(self):
+        self.env["SWIFTLINT_FIXTURE_FAIL"] = "1"
+        result = self.invoke()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(
+            list((self.ios / ".tools" / "swiftlint").glob("*/receipt.json")), []
+        )
+
+    def test_missing_binary_does_not_build_in_offline_mode(self):
+        result = self.invoke("--path-only")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("install-swiftlint.sh", result.stderr)
 
 
 if __name__ == "__main__":

@@ -346,6 +346,7 @@ struct ChatSidebarView: View {
   private func projectRow(_ group: ChatListContents.ProjectGroup) -> some View {
     let project = group.project
     let expanded = store.projects.isExpanded(project.id)
+    let trailing = projectTrailing(group.threads)
     return Button {
       withAnimation(reduceMotion ? nil : OkouMotion.disclosure) {
         store.projects.toggle(project.id)
@@ -354,12 +355,13 @@ struct ChatSidebarView: View {
       HStack(spacing: OkouSpace.sm) {
         OkouIcon(expanded ? "folder-open" : "folder", size: OkouIconSize.standard)
           .foregroundStyle(OkouColor.mutedForeground)
-        // A folded project shows what its chats are doing; an open one leaves it to them.
+        // Unread takes priority over working in a folded project; an open one leaves it to its chats.
         Text(verbatim: project.name).font(.okou(.body)).lineLimit(1)
-          .okouShimmerText(!expanded && group.threads.contains { $0.indicator == .active })
+          .okouShimmerText(
+            !expanded && trailing != .unread && group.threads.contains { $0.indicator == .active })
         Spacer(minLength: 0)
         if !expanded {
-          OkouChatTrailingMark(trailing: projectTrailing(group.threads))
+          OkouChatTrailingMark(trailing: trailing)
         }
       }
       .frame(minHeight: OkouControl.listRow)
