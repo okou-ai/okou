@@ -719,6 +719,17 @@ test("Clicking a Project's name opens its page and unfolds its chats", async () 
   expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "true");
 });
 
+test("Opening a Project's name in a new tab leaves its chats folded", async () => {
+  await setupProjectNavigation(224, "/chats/:b");
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+
+  fireEvent.click(projectLink("Launch"), { ctrlKey: true });
+  fireEvent.click(projectLink("Launch"), { metaKey: true });
+
+  expect(projectToggle("Launch")).toHaveAttribute("aria-expanded", "false");
+  expect(namedLink(projectRows(), "Thread A2")).toBeNull();
+});
+
 test("A Project page moves down into its chats when unfolded and past them when folded", async () => {
   const { a1, b } = await setupProjectNavigation(115, `/projects/${id}`);
   await waitFor(() => {

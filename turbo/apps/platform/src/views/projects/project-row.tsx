@@ -48,6 +48,7 @@ import { rootSignal$ } from "../../signals/root-signal.ts";
 import { singleAgentEnabled$ } from "../../signals/single-agent.ts";
 import { selectedProjectId$ } from "../../signals/projects/project-navigation.ts";
 import { Link } from "../router/link.tsx";
+import { shouldHandleLinkClick } from "../router/link-click.ts";
 import { detach, Reason } from "../../signals/utils.ts";
 import { ChatThreadStateText } from "../okou-page/sidebar-shared.tsx";
 import {
@@ -383,16 +384,11 @@ function ProjectTrigger({
           data-project-trigger=""
           aria-current={active ? "page" : undefined}
           onClick={(event) => {
-            if (
-              event.button !== 0 ||
-              event.metaKey ||
-              event.ctrlKey ||
-              event.shiftKey ||
-              event.altKey
-            ) {
-              return;
+            // Unfold only when the click opens the page here, not in a new
+            // tab or window.
+            if (shouldHandleLinkClick(event)) {
+              expand(project.id);
             }
-            expand(project.id);
           }}
           onDoubleClick={(event) => {
             if (
