@@ -329,6 +329,12 @@ function routeHash(hash: string | undefined): string {
   return hash.startsWith("#") ? hash : `#${hash}`;
 }
 
+// The router builds paths in serialized form, so comparing one with the
+// current address is the browser's URL equality.
+function isCurrentLocation(path: string): boolean {
+  return path === `${pathname()}${search()}${hash()}`;
+}
+
 const navigate$ = command(
   async (
     { get, set },
@@ -345,8 +351,11 @@ const navigate$ = command(
       pathname,
       options.searchParams ?? new URLSearchParams(),
     );
+    // Like the browser, a navigation to the URL already open replaces its
+    // history entry instead of adding a duplicate, and still reloads the page:
+    // its setup runs again below.
     const move: RouteMove = {
-      kind: options.replace ? "replace" : "push",
+      kind: options.replace || isCurrentLocation(newPath) ? "replace" : "push",
       path: newPath,
     };
     if (direction === "none") {
