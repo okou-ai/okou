@@ -1,3 +1,5 @@
+import { ZodError } from "zod";
+
 import {
   ProviderHttpError,
   isProviderHttpError,
@@ -130,8 +132,27 @@ export function standardOAuthErrorCode(value: unknown): string | undefined {
     : undefined;
 }
 
-// Provider errors can contain credentials in their message, body, or cause.
-// Only retain typed status codes and allowlisted OAuth error identifiers.
+function safeExceptionClass(error: unknown): string {
+  for (const errorClass of [
+    ZodError,
+    TypeError,
+    SyntaxError,
+    RangeError,
+    ReferenceError,
+    URIError,
+    EvalError,
+    AggregateError,
+    Error,
+  ]) {
+    if (error instanceof errorClass) {
+      return errorClass.name;
+    }
+  }
+  return "NonError";
+}
+
+// Never retain exception names, messages, stacks, or causes. Exception classes
+// come from trusted constructors; cause inspection stops after one boundary.
 export function oauthFailureDiagnostics(
   error: unknown,
 ): Readonly<Record<string, string | number>> {
@@ -173,5 +194,11 @@ export function oauthFailureDiagnostics(
         : {}),
     };
   }
-  return { failureKind: "unexpected" };
+  return {
+    failureKind: "unexpected",
+    exceptionClass: safeExceptionClass(error),
+    ...(error instanceof Error && error.cause !== undefined
+      ? { causeClass: safeExceptionClass(error.cause) }
+      : {}),
+  };
 }
