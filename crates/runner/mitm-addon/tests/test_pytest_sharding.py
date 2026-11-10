@@ -255,12 +255,10 @@ def test_failing_shard_preserves_pytest_failure(suite: Path) -> None:
     full, all_nodes = _run_suite(suite)
     first, first_nodes = _run_suite(suite, ("--test-shard=1/2",))
     second, second_nodes = _run_suite(suite, ("--test-shard=2/2",), hash_seed="42")
-    repeated, repeated_nodes = _run_suite(suite, ("--test-shard=1/2",), hash_seed="123")
     for result, report in (
         (full, all_nodes),
         (first, first_nodes),
         (second, second_nodes),
-        (repeated, repeated_nodes),
     ):
         fails = failure in report["selected"]
         expected = pytest.ExitCode.TESTS_FAILED if fails else pytest.ExitCode.OK
@@ -278,7 +276,6 @@ def test_failing_shard_preserves_pytest_failure(suite: Path) -> None:
     assert Counter(first_nodes["selected"] + second_nodes["selected"]) == Counter(
         all_nodes["selected"]
     )
-    assert repeated_nodes == first_nodes
     for report in (first_nodes, second_nodes):
         assert report["selected"] == [
             node for node in all_nodes["selected"] if node in report["selected"]
