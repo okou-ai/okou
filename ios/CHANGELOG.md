@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.31.3](https://github.com/okou-ai/okou/compare/ios-v0.31.2...ios-v0.31.3) (2026-11-10)
+
+
+### Bug Fixes
+
+* **ios:** restore sidebar identity from local cache ([#46190](https://github.com/okou-ai/okou/issues/46190)) ([dc79c0a](https://github.com/okou-ai/okou/commit/dc79c0a2fc7f9672ff22cbb458721bc69c7a7ae1))
+
 ## [0.31.2](https://github.com/okou-ai/okou/compare/ios-v0.31.1...ios-v0.31.2) (2026-11-09)
 
 

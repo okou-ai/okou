@@ -1,6 +1,6 @@
 [package]
 name = "cli-test-support"
-version = "0.1.9"
+version = "0.1.10"
 edition.workspace = true
 description = "Shared CLI process, HTTP and mock-build fixtures for Rust tests"
 publish = false
